@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <defs>
+    <linearGradient id="q1bronze" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e0b07a"/>
+      <stop offset="1" stop-color="#7a4a22"/>
+    </linearGradient>
+  </defs>
+  <!-- the ring -->
+  <circle cx="48" cy="44" r="32" stroke="url(#q1bronze)" stroke-width="7"/>
+  <!-- the nail -->
+  <path d="M48 88 C 45 70 38 50 38 38 C 38 28 43 24 48 31 C 53 24 58 28 58 38 C 58 50 51 70 48 88 Z"
+        fill="url(#q1bronze)"/>
+</svg>

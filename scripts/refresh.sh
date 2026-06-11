@@ -40,4 +40,14 @@ else
     "$VENV_DIR/bin/pip" install --editable "$JAC_DIR"
 fi
 
+echo "==> Ensuring editable installs of jac plugins (client, scale, super)"
+for plugin in jac-client jac-scale jac-super; do
+    pkg_name="$(echo "$plugin" | tr '-' '_')"
+    if [ -e "$VENV_DIR/lib/python"*"/site-packages/$pkg_name" ] && [ "$before_sha" = "$after_sha" ]; then
+        echo "    $plugin already installed"
+    else
+        (cd "$SUBMODULE_DIR" && "$VENV_DIR/bin/jac" install -e "$plugin")
+    fi
+done
+
 echo "==> Done. jac version: $("$VENV_DIR/bin/jac" --version 2>/dev/null || echo 'n/a')"
