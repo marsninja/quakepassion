@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" fill="none">
+  <defs>
+    <linearGradient id="wgEmber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb86b"/>
+      <stop offset="1" stop-color="#ff5e0a"/>
+    </linearGradient>
+    <radialGradient id="wgGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ff7a18" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#ff7a18" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+
+  <!-- ambient -->
+  <ellipse cx="450" cy="290" rx="380" ry="230" fill="url(#wgGlow)"/>
+
+  <!-- perspective floor grid -->
+  <g stroke="#71717a" stroke-opacity="0.16" stroke-width="1">
+    <line x1="450" y1="215" x2="-160" y2="560"/>
+    <line x1="450" y1="215" x2="40" y2="560"/>
+    <line x1="450" y1="215" x2="240" y2="560"/>
+    <line x1="450" y1="215" x2="450" y2="560"/>
+    <line x1="450" y1="215" x2="660" y2="560"/>
+    <line x1="450" y1="215" x2="860" y2="560"/>
+    <line x1="450" y1="215" x2="1060" y2="560"/>
+    <line x1="0" y1="248" x2="900" y2="248"/>
+    <line x1="0" y1="292" x2="900" y2="292"/>
+    <line x1="0" y1="348" x2="900" y2="348"/>
+    <line x1="0" y1="420" x2="900" y2="420"/>
+    <line x1="0" y1="508" x2="900" y2="508"/>
+  </g>
+
+  <!-- portal edges between areas -->
+  <g stroke="url(#wgEmber)" stroke-width="2.5" stroke-opacity="0.75">
+    <path d="M196 178 Q 300 110 408 116"/>
+    <path d="M454 114 Q 580 110 692 168"/>
+    <path d="M178 198 Q 190 280 234 332"/>
+    <path d="M290 358 Q 410 360 536 332"/>
+    <path d="M444 134 Q 500 230 548 300"/>
+    <path d="M588 336 Q 670 380 754 412"/>
+    <path d="M736 206 Q 770 310 778 402"/>
+  </g>
+
+  <!-- portal diamonds at edge midpoints -->
+  <g fill="#ffb86b">
+    <rect x="297" y="105" width="9" height="9" transform="rotate(45 301.5 109.5)"/>
+    <rect x="571" y="124" width="9" height="9" transform="rotate(45 575.5 128.5)"/>
+    <rect x="194" y="261" width="9" height="9" transform="rotate(45 198.5 265.5)"/>
+    <rect x="409" y="343" width="9" height="9" transform="rotate(45 413.5 347.5)"/>
+    <rect x="494" y="216" width="9" height="9" transform="rotate(45 498.5 220.5)"/>
+    <rect x="668" y="372" width="9" height="9" transform="rotate(45 672.5 376.5)"/>
+    <rect x="762" y="300" width="9" height="9" transform="rotate(45 766.5 304.5)"/>
+  </g>
+
+  <!-- area nodes -->
+  <g>
+    <circle cx="170" cy="170" r="30" fill="#15110c" stroke="url(#wgEmber)" stroke-width="3"/>
+    <circle cx="170" cy="170" r="18" stroke="#ff7a18" stroke-opacity="0.3" stroke-width="1.5"/>
+    <circle cx="430" cy="112" r="25" fill="#15110c" stroke="url(#wgEmber)" stroke-width="3"/>
+    <circle cx="430" cy="112" r="14" stroke="#ff7a18" stroke-opacity="0.3" stroke-width="1.5"/>
+    <circle cx="718" cy="182" r="31" fill="#15110c" stroke="url(#wgEmber)" stroke-width="3"/>
+    <circle cx="718" cy="182" r="19" stroke="#ff7a18" stroke-opacity="0.3" stroke-width="1.5"/>
+    <circle cx="258" cy="350" r="33" fill="#15110c" stroke="url(#wgEmber)" stroke-width="3"/>
+    <circle cx="258" cy="350" r="21" stroke="#ff7a18" stroke-opacity="0.3" stroke-width="1.5"/>
+    <circle cx="562" cy="320" r="27" fill="#15110c" stroke="url(#wgEmber)" stroke-width="3"/>
+    <circle cx="562" cy="320" r="16" stroke="#ff7a18" stroke-opacity="0.3" stroke-width="1.5"/>
+    <circle cx="780" cy="424" r="30" fill="#15110c" stroke="url(#wgEmber)" stroke-width="3"/>
+    <circle cx="780" cy="424" r="18" stroke="#ff7a18" stroke-opacity="0.3" stroke-width="1.5"/>
+  </g>
+
+  <!-- entities living in areas -->
+  <g fill="#ffd9a8">
+    <circle cx="178" cy="162" r="4"/>
+    <circle cx="160" cy="180" r="3"/>
+    <circle cx="250" cy="340" r="4"/>
+    <circle cx="270" cy="360" r="3"/>
+    <circle cx="570" cy="312" r="4"/>
+    <circle cx="772" cy="416" r="4"/>
+    <circle cx="788" cy="434" r="3"/>
+    <circle cx="724" cy="174" r="4"/>
+  </g>
+
+  <!-- a trigger targets edge: button fires door across the map -->
+  <path d="M250 340 Q 400 250 570 312" stroke="#ff5436" stroke-width="1.5"
+        stroke-dasharray="5 5" stroke-opacity="0.7" filter="url(#soft)"/>
+</svg>

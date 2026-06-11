@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 620" fill="none" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <defs>
+    <linearGradient id="agEmber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb86b"/>
+      <stop offset="1" stop-color="#ff5e0a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- spine: root -> Game -> World -->
+  <g stroke="#71717a" stroke-width="1.5">
+    <line x1="460" y1="68" x2="460" y2="108"/>
+    <line x1="460" y1="148" x2="460" y2="188"/>
+  </g>
+  <!-- World -> Areas -->
+  <g stroke="#71717a" stroke-width="1.5">
+    <path d="M420 218 Q 280 240 235 296"/>
+    <line x1="460" y1="228" x2="460" y2="296"/>
+    <path d="M500 218 Q 640 240 685 296"/>
+  </g>
+
+  <!-- root -->
+  <circle cx="460" cy="48" r="20" fill="#15110c" stroke="url(#agEmber)" stroke-width="3"/>
+  <text x="492" y="53" fill="#d4d4d8" font-size="14">root  (persistence anchor — save games for free)</text>
+
+  <!-- Game -->
+  <rect x="404" y="108" width="112" height="40" rx="10" fill="#15110c" stroke="url(#agEmber)" stroke-width="2"/>
+  <text x="460" y="133" fill="#fafafa" font-size="14" text-anchor="middle">Game</text>
+
+  <!-- World -->
+  <rect x="404" y="188" width="112" height="40" rx="10" fill="#15110c" stroke="url(#agEmber)" stroke-width="2"/>
+  <text x="460" y="213" fill="#fafafa" font-size="14" text-anchor="middle">World</text>
+
+  <!-- Areas -->
+  <g>
+    <rect x="155" y="296" width="160" height="46" rx="10" fill="#1c1410" stroke="url(#agEmber)" stroke-width="2"/>
+    <text x="235" y="318" fill="#fafafa" font-size="14" text-anchor="middle">Area</text>
+    <text x="235" y="334" fill="#a1a1aa" font-size="11" text-anchor="middle">BSP leaf / cluster</text>
+
+    <rect x="380" y="296" width="160" height="46" rx="10" fill="#1c1410" stroke="url(#agEmber)" stroke-width="2"/>
+    <text x="460" y="318" fill="#fafafa" font-size="14" text-anchor="middle">Area</text>
+    <text x="460" y="334" fill="#a1a1aa" font-size="11" text-anchor="middle">BSP leaf / cluster</text>
+
+    <rect x="605" y="296" width="160" height="46" rx="10" fill="#1c1410" stroke="url(#agEmber)" stroke-width="2"/>
+    <text x="685" y="318" fill="#fafafa" font-size="14" text-anchor="middle">Area</text>
+    <text x="685" y="334" fill="#a1a1aa" font-size="11" text-anchor="middle">BSP leaf / cluster</text>
+  </g>
+
+  <!-- Portal edges between areas -->
+  <g stroke="url(#agEmber)" stroke-width="2.5">
+    <line x1="315" y1="319" x2="380" y2="319"/>
+    <line x1="540" y1="319" x2="605" y2="319"/>
+  </g>
+  <rect x="318" y="306" width="56" height="22" rx="11" fill="#27201a"/>
+  <text x="346" y="321" fill="#ffb86b" font-size="11" text-anchor="middle">Portal</text>
+  <rect x="543" y="306" width="56" height="22" rx="11" fill="#27201a"/>
+  <text x="571" y="321" fill="#ffb86b" font-size="11" text-anchor="middle">Portal</text>
+
+  <!-- Areas -> Entities -->
+  <g stroke="#71717a" stroke-width="1.5">
+    <line x1="200" y1="342" x2="178" y2="430"/>
+    <line x1="270" y1="342" x2="318" y2="430"/>
+    <line x1="460" y1="342" x2="460" y2="430"/>
+    <line x1="650" y1="342" x2="610" y2="430"/>
+    <line x1="720" y1="342" x2="762" y2="430"/>
+  </g>
+  <text x="240" y="395" fill="#71717a" font-size="11">In</text>
+  <text x="470" y="395" fill="#71717a" font-size="11">In</text>
+  <text x="676" y="395" fill="#71717a" font-size="11">In</text>
+
+  <!-- Entities -->
+  <g>
+    <circle cx="178" cy="448" r="17" fill="#15110c" stroke="#ffb86b" stroke-width="2"/>
+    <text x="178" y="486" fill="#d4d4d8" font-size="12" text-anchor="middle">Button</text>
+    <circle cx="318" cy="448" r="17" fill="#15110c" stroke="#ffb86b" stroke-width="2"/>
+    <text x="318" y="486" fill="#d4d4d8" font-size="12" text-anchor="middle">Door</text>
+    <circle cx="460" cy="448" r="17" fill="#15110c" stroke="#ffb86b" stroke-width="2"/>
+    <text x="460" y="486" fill="#d4d4d8" font-size="12" text-anchor="middle">Player</text>
+    <circle cx="610" cy="448" r="17" fill="#15110c" stroke="#ffb86b" stroke-width="2"/>
+    <text x="610" y="486" fill="#d4d4d8" font-size="12" text-anchor="middle">Monster</text>
+    <circle cx="762" cy="448" r="17" fill="#15110c" stroke="#ffb86b" stroke-width="2"/>
+    <text x="762" y="486" fill="#d4d4d8" font-size="12" text-anchor="middle">Item</text>
+  </g>
+
+  <!-- Targets edge: quake's trigger chains as real typed edges -->
+  <path d="M195 448 L 301 448" stroke="#ff5436" stroke-width="2" stroke-dasharray="6 5"/>
+  <rect x="214" y="436" width="68" height="22" rx="11" fill="#2a1512"/>
+  <text x="248" y="451" fill="#ff7a63" font-size="11" text-anchor="middle">Targets</text>
+
+  <!-- walkers legend -->
+  <g>
+    <rect x="155" y="540" width="610" height="52" rx="12" fill="#15110c" stroke="#3f3f46" stroke-width="1.5"/>
+    <circle cx="187" cy="566" r="9" fill="url(#agEmber)"/>
+    <text x="210" y="571" fill="#d4d4d8" font-size="13">walkers per tick:  Input → Think → Physics → Triggers → Vis → Render</text>
+  </g>
+</svg>
