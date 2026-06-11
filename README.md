@@ -10,7 +10,7 @@ Most importantly, this project is a showcase for Jac's **Object-Spatial Programm
 
 ## Why
 
-Quake (and games in general) is the thing that got me into programming. This project celebrates that passion, and my admiration for the true GOAT, John Carmack — the man who invented the industry of 3D games.
+Quake (and games in general) is the thing that got me into programming. This project celebrates that passion, and my admiration for the true GOAT, John Carmack, the man... the coder... the ninja who invented 3D games as we know it.
 
 ## Getting Started
 
