@@ -1,0 +1,4 @@
+[submodule "jaseci"]
+	path = jaseci
+	url = https://github.com/jaseci-labs/jaseci.git
+	branch = main
