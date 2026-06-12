@@ -18,7 +18,6 @@ obj Renderer {
     def open_window() {
         rl.init_window(self.width, self.height, self.title);
         rl.set_target_fps(120);
-        rl.disable_cursor();
     }
 
     def should_close() -> bool {

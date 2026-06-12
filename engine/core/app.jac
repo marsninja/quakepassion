@@ -3,7 +3,7 @@ the pass walkers over the world graph; each frame floods visibility and
 draws only what the flood found."""
 
 import from .clock { Clock }
-import from ..input.input { Intent, sample_intent }
+import from ..input.input { Intent, sample_intent, mouse_captured }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..render.renderer { Renderer }
 import from ..world.world {
@@ -32,7 +32,7 @@ obj App {
         frame = 0;
         while not self.renderer.should_close() {
             dt = self.renderer.frame_time();
-            intent = sample_intent();
+            intent = sample_intent(dt);
             if intent.toggle_culling {
                 self.culling = not self.culling;
             }
@@ -107,11 +107,13 @@ obj App {
         if self.overlay {
             cur_name = cur.name if cur is not None else "the void";
             culling_state = "ON" if self.culling else "OFF";
+            mouse_state = "captured [Tab releases]" if mouse_captured() else "free - click or Tab to look";
             self.renderer.draw_overlay([
                 "area: " + cur_name,
                 "visible: " + str(len(targets)) + "/" + str(len(all_areas)) + " areas",
                 "culling [C]: " + culling_state,
-                "entities thinking: " + str(self.last_think)
+                "entities thinking: " + str(self.last_think),
+                "mouse: " + mouse_state
             ]);
         }
         self.renderer.end_frame();
