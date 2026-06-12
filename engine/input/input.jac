@@ -1,10 +1,11 @@
 """Input sampling. The only place that reads raylib input state; everything
 downstream consumes an Intent.
 
-Mouse-look follows the raylib_shooter's battle-tested pattern for quirky
-platforms (WSLg especially): the cursor starts free and is captured on
-click or Tab; deltas come from absolute position diffs with a warmup
-period and a spike clamp, not get_mouse_delta. Arrow keys always work."""
+Mouse-look: the cursor starts free and is captured on click or Tab.
+While captured, raylib's get_mouse_delta is trusted directly — measured
+clean under X11 (the renderer steers WSLg there) — with a short warmup
+to swallow the capture warp and a generous flick-safe clamp. Arrow keys
+always work, captured or not."""
 
 import pyray as rl;
 
@@ -22,15 +23,13 @@ obj Intent {
 
 obj MouseState {
     has captured: bool = False,
-        warmup: int = 0,
-        prev_x: float = 0.0,
-        prev_y: float = 0.0;
+        warmup: int = 0;
 }
 
 
 glob MOUSE_SENSITIVITY: float = 0.0022,
      KEY_TURN_SPEED: float = 2.2,
-     SPIKE_LIMIT: float = 150.0;
+     SPIKE_LIMIT: float = 400.0;
 
 glob _mouse: MouseState = MouseState();
 
@@ -103,20 +102,13 @@ def sample_intent(dt: float) -> Intent {
     }
 
     if _mouse.captured {
-        mx = float(rl.get_mouse_x());
-        my = float(rl.get_mouse_y());
+        d = rl.get_mouse_delta();
         if _mouse.warmup > 0 {
             _mouse.warmup -= 1;
-        } else {
-            dx = mx - _mouse.prev_x;
-            dy = my - _mouse.prev_y;
-            if dx > -SPIKE_LIMIT and dx < SPIKE_LIMIT and dy > -SPIKE_LIMIT and dy < SPIKE_LIMIT {
-                yaw -= dx * MOUSE_SENSITIVITY;
-                pitch -= dy * MOUSE_SENSITIVITY;
-            }
+        } elif d.x > -SPIKE_LIMIT and d.x < SPIKE_LIMIT and d.y > -SPIKE_LIMIT and d.y < SPIKE_LIMIT {
+            yaw -= d.x * MOUSE_SENSITIVITY;
+            pitch -= d.y * MOUSE_SENSITIVITY;
         }
-        _mouse.prev_x = mx;
-        _mouse.prev_y = my;
     }
 
     return Intent(

@@ -1,6 +1,8 @@
 """The raylib wall. Every rendering call in the engine lives here — swapping
 the graphics backend later touches this file and nothing else."""
 
+import os;
+
 import pyray as rl;
 
 import from ..math.vec3 { Vec3, forward_from }
@@ -16,6 +18,13 @@ obj Renderer {
         title: str = "QuakePassion — Phase 1: First Light";
 
     def open_window() {
+        # WSLg's Wayland compositor cannot deliver the relative pointer
+        # motion mouse-look needs; its XWayland path can. Setting the
+        # variable to empty (not unsetting it — libwayland then falls
+        # back to the default wayland-0 socket) makes GLFW pick X11.
+        if "WSL_DISTRO_NAME" in os.environ and os.environ.get("WAYLAND_DISPLAY") {
+            os.environ["WAYLAND_DISPLAY"] = "";
+        }
         rl.init_window(self.width, self.height, self.title);
         rl.set_target_fps(120);
     }
