@@ -2,9 +2,11 @@
 downstream consumes an Intent.
 
 Mouse-look: the cursor starts free and is captured on click or Tab.
-While captured, raylib's get_mouse_delta is trusted directly — measured
-clean under X11 (the renderer steers WSLg there) — with a short warmup
-to swallow the capture warp and a generous flick-safe clamp. Arrow keys
+Capture is the classic software grab — hide the cursor, measure the
+offset from window center each frame, warp back to center. GLFW's
+disable_cursor mode receives nothing from a physical mouse through
+WSLg's input pipeline (measured: zero deltas for entire sessions), but
+absolute position + set_mouse_position works everywhere. Arrow keys
 always work, captured or not."""
 
 import pyray as rl;
@@ -40,14 +42,15 @@ def mouse_captured() -> bool {
 
 
 def _capture() {
-    rl.disable_cursor();
+    rl.hide_cursor();
+    rl.set_mouse_position(rl.get_screen_width() // 2, rl.get_screen_height() // 2);
     _mouse.captured = True;
-    _mouse.warmup = 10;
+    _mouse.warmup = 3;
 }
 
 
 def _release() {
-    rl.enable_cursor();
+    rl.show_cursor();
     _mouse.captured = False;
 }
 
@@ -102,13 +105,17 @@ def sample_intent(dt: float) -> Intent {
     }
 
     if _mouse.captured {
-        d = rl.get_mouse_delta();
+        cx = rl.get_screen_width() // 2;
+        cy = rl.get_screen_height() // 2;
+        dx = float(rl.get_mouse_x() - cx);
+        dy = float(rl.get_mouse_y() - cy);
         if _mouse.warmup > 0 {
             _mouse.warmup -= 1;
-        } elif d.x > -SPIKE_LIMIT and d.x < SPIKE_LIMIT and d.y > -SPIKE_LIMIT and d.y < SPIKE_LIMIT {
-            yaw -= d.x * MOUSE_SENSITIVITY;
-            pitch -= d.y * MOUSE_SENSITIVITY;
+        } elif dx > -SPIKE_LIMIT and dx < SPIKE_LIMIT and dy > -SPIKE_LIMIT and dy < SPIKE_LIMIT {
+            yaw -= dx * MOUSE_SENSITIVITY;
+            pitch -= dy * MOUSE_SENSITIVITY;
         }
+        rl.set_mouse_position(cx, cy);
     }
 
     return Intent(
