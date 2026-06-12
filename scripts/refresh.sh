@@ -10,9 +10,10 @@ VENV_DIR="$REPO_ROOT/.venv"
 PYTHON="${PYTHON:-python3}"
 
 echo "==> Syncing jaseci submodule with upstream main"
-git -C "$REPO_ROOT" submodule update --init jaseci
+git -C "$REPO_ROOT" submodule update --init --recursive jaseci
 before_sha="$(git -C "$SUBMODULE_DIR" rev-parse HEAD)"
 git -C "$REPO_ROOT" submodule update --remote jaseci
+git -C "$REPO_ROOT" submodule update --init --recursive jaseci
 after_sha="$(git -C "$SUBMODULE_DIR" rev-parse HEAD)"
 
 if [ "$before_sha" = "$after_sha" ]; then
