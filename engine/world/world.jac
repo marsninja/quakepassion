@@ -100,23 +100,10 @@ walker VisPass {
 }
 
 
-"""Draw dispatch as traversal: visit exactly the areas VisPass collected and
-hand each to the renderer. The walker only dispatches — every raylib call
-stays behind the renderer wall."""
-walker RenderPass {
-    has targets: list[Area] = [],
-        renderer: any = None,
-        drawn: int = 0;
-
-    can start with World entry {
-        visit self.targets;
-    }
-
-    can draw with Area entry {
-        self.renderer.draw_area(here);
-        self.drawn += 1;
-    }
-}
+# RenderPass — the third engine pass — lives in engine/render/renderer.jac,
+# not here. It must hold a concrete `renderer: Renderer`, and typing it here
+# would create a world->renderer import cycle. Keeping it in the render layer
+# leaves this module raylib-free and every field in it strongly typed.
 
 
 """Can the eye see through this portal opening? Phase 1 keeps it honest and
