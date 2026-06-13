@@ -4,7 +4,7 @@ the graphics backend later touches this file and nothing else."""
 import pyray as rl;
 
 import from ..math.vec3 { Vec3, forward_from }
-import from ..world.world { Area }
+import from ..world.world { World, Area }
 
 
 glob FOV_DEGREES: float = 72.0;
@@ -80,5 +80,26 @@ obj Renderer {
 
     def close() {
         rl.close_window();
+    }
+}
+
+
+"""Draw dispatch as traversal: visit exactly the areas VisPass collected and
+hand each to the renderer. The walker only dispatches — every raylib call
+stays behind the Renderer wall. It lives here in the render layer (not in
+engine/world) so `renderer` can be concretely typed without a world->renderer
+import cycle."""
+walker RenderPass {
+    has renderer: Renderer,
+        targets: list[Area] = [],
+        drawn: int = 0;
+
+    can start with World entry {
+        visit self.targets;
+    }
+
+    can draw with Area entry {
+        self.renderer.draw_area(here);
+        self.drawn += 1;
     }
 }

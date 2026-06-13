@@ -5,9 +5,9 @@ draws only what the flood found."""
 import from .clock { Clock }
 import from ..input.input { Intent, sample_intent, mouse_captured }
 import from ..math.vec3 { Vec3, forward_from, right_from }
-import from ..render.renderer { Renderer }
+import from ..render.renderer { Renderer, RenderPass }
 import from ..world.world {
-    World, Area, Player, ThinkPass, VisPass, RenderPass,
+    World, Area, Player, ThinkPass, VisPass,
     area_containing, area_of, move_to_area
 }
 
