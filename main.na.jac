@@ -15,7 +15,7 @@ import from engine.world.world { World }
 import from games.dev.arena { build_arena }
 
 
-with entry:__main__ {
+with entry {
     world = World();    # unrooted by design: worlds are rebuilt from data
                         # every run; root is reserved for save games (phase 7)
     player = build_arena(world);
@@ -24,7 +24,7 @@ with entry:__main__ {
         player=player,
         renderer=Renderer(),
         clock=Clock(),
-        smoke=("QP_SMOKE" in os.environ)
+        smoke=(os.getenv("QP_SMOKE", "") != "")
     );
     app.run();
 }
