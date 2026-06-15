@@ -6,3 +6,6 @@ entry-point = "main.jac"
 
 [dependencies]
 raylib = ">=5.5"
+
+[test]
+directory = "tests"
