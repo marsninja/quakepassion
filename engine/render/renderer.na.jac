@@ -11,7 +11,9 @@ raylib's small math structs (`Color`, `Vector3`, `Camera3D`) are declared as
 backend lowers them through the platform C struct ABI (System V AMD64 eightbyte
 classification / AArch64 AAPCS, byval/sret), so the headline 3D API
 (`BeginMode3D(Camera3D)`, `DrawCube(Vector3, …, Color)`, `ClearBackground(Color)`)
-crosses the FFI cleanly — no scalar rlgl, no hand-rolled camera."""
+crosses the FFI cleanly — no scalar rlgl, no hand-rolled camera.
+
+Method and ability bodies live in impl/renderer.na.impl.jac."""
 
 import from vendor.raylib {
     obj Color { has r: u8, g: u8, b: u8, a: u8; }
@@ -25,7 +27,6 @@ import from vendor.raylib {
     }
 
     def InitWindow(width: i32, height: i32, title: str) -> None;
-    def SetTargetFPS(fps: i32) -> None;
     def WindowShouldClose -> bool;
     def CloseWindow -> None;
     def BeginDrawing -> None;
@@ -60,78 +61,25 @@ obj Renderer {
         height: int = 720,
         title: str = "QuakePassion — Phase 1: First Light";
 
-    def open_window() {
-        InitWindow(self.width, self.height, self.title);
-        SetTargetFPS(120);
-    }
-
-    def should_close() -> bool {
-        return WindowShouldClose();
-    }
-
-    def frame_time() -> float {
-        return GetFrameTime();
-    }
+    def open_window();
+    def should_close() -> bool;
+    def frame_time() -> float;
 
     """Begin a frame: clear and install a z-up perspective camera. The camera is
     raylib's own `Camera3D` with up = +Z (Quake's convention) and a target one
     forward-vector ahead of the eye — exactly the view the @sv renderer built."""
-    def begin_frame(eye: Vec3, yaw: float, pitch: float) {
-        BeginDrawing();
-        ClearBackground(Color(r=10, g=8, b=6, a=255));
-        target = eye.add(forward_from(yaw, pitch));
-        cam = Camera3D(
-            position=Vector3(x=eye.x, y=eye.y, z=eye.z),
-            target=Vector3(x=target.x, y=target.y, z=target.z),
-            up=Vector3(x=0.0, y=0.0, z=1.0),
-            fovy=FOV_DEGREES,
-            projection=CAMERA_PERSPECTIVE
-        );
-        BeginMode3D(cam);
-    }
+    def begin_frame(eye: Vec3, yaw: float, pitch: float);
 
     """Draw an area's graybox surfaces as solid cubes with wireframe edges."""
-    def draw_area(area: Area) {
-        for s in area.surfaces {
-            pos = Vector3(x=s.center.x, y=s.center.y, z=s.center.z);
-            face = Color(r=s.color[0], g=s.color[1], b=s.color[2], a=255);
-            edge_c = Color(
-                r=int(s.color[0] * 0.55),
-                g=int(s.color[1] * 0.55),
-                b=int(s.color[2] * 0.55),
-                a=255
-            );
-            DrawCube(pos, s.size.x, s.size.y, s.size.z, face);
-            DrawCubeWires(pos, s.size.x, s.size.y, s.size.z, edge_c);
-        }
-    }
+    def draw_area(area: Area);
 
     """End the 3D pass; raylib restores 2D screen space for overlays."""
-    def end_scene() {
-        EndMode3D();
-    }
+    def end_scene();
 
-    def draw_overlay(lines: list[str]) {
-        DrawFPS(12, 12);
-        amber = Color(r=255, g=184, b=107, a=255);
-        y = 40;
-        for line in lines {
-            DrawText(line, 12, y, 20, amber);
-            y += 26;
-        }
-    }
-
-    def end_frame() {
-        EndDrawing();
-    }
-
-    def screenshot(path: str) {
-        TakeScreenshot(path);
-    }
-
-    def close() {
-        CloseWindow();
-    }
+    def draw_overlay(lines: list[str]);
+    def end_frame();
+    def screenshot(path: str);
+    def close();
 }
 
 
@@ -144,12 +92,6 @@ walker RenderPass {
         renderer: Renderer = Renderer(),
         drawn: int = 0;
 
-    can start with World entry {
-        visit self.targets;
-    }
-
-    can draw with Area entry {
-        self.renderer.draw_area(here);
-        self.drawn += 1;
-    }
+    can start with World entry;
+    can draw with Area entry;
 }
