@@ -1,0 +1,38 @@
+name: jac test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # The pinned `jaseci` submodule is the jaclang we build against, so check
+      # it out at exactly the commit this repo records — no upstream bump in CI.
+      - name: Checkout (with jaseci submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: jaseci/jac/pyproject.toml
+
+      # jaclang is consumed as an editable install of jaseci/jac, exactly as
+      # scripts/refresh.sh sets it up locally. The renderer/input modules bind
+      # raylib, but the phase-1 tests are graphics-free, so no vendored .so is
+      # needed here.
+      - name: Install jaclang (editable from jaseci/jac)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --editable jaseci/jac
+
+      # Discovery is anchored to the project root via jac.toml ([test] directory).
+      - name: Run jac test
+        run: jac test
