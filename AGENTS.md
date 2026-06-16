@@ -41,3 +41,11 @@ Use Jac's Object-Spatial Programming (OSP) features — nodes, edges, walkers, a
 - Reach for OSP first when designing new features; only drop to non-OSP code when OSP genuinely doesn't fit.
 
 This is the same motivation as #3: QuakePassion exists in part to exercise and improve jac/jaseci, so leaning on its distinctive features is a goal, not just a stylistic preference.
+
+## 5. Use the project `.venv` for Python and jac
+
+Any time you run Python, `jac`, or jac's editable install, use the repo's `.venv` — not a system interpreter or a fresh environment.
+
+- The `.venv` already has jac installed editable from the `jaseci` submodule, so it tracks the in-repo source.
+- Run commands via `.venv/bin/python` and `.venv/bin/jac` (or activate the venv first with `source .venv/bin/activate`).
+- Re-run the editable install (`.venv/bin/pip install -e jaseci/jac`) inside the `.venv` if the install needs refreshing.
