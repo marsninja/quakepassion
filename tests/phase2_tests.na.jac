@@ -3,6 +3,8 @@ constructed byte buffers in, known values out. Mirrors Phase 1's discipline
 of testing the data/graph logic without a window."""
 
 import from formats.common.bytes { ByteReader }
+import from formats.common.pak { Pak, PakSet, PakEntry, parse_pak }
+import from tests.fixtures { PakFile, build_pak }
 
 
 test "byte reader reads little-endian fields in sequence" {
@@ -51,4 +53,51 @@ test "byte reader covers signed and unsigned widths" {
     assert r.i8() == -1;
     assert r.u16() == 32767;          # 0x7fff
     assert r.i16() == -1;             # 0xffff
+}
+
+
+test "pak parses its directory, looks up case-insensitively, and reads payloads" {
+    p = parse_pak(ByteReader(data=build_pak([
+        PakFile(name="sound/door.wav", data=b"AAA"),
+        PakFile(name="MAPS/E1M1.BSP", data=b"BSPDATA")   # stored uppercase
+    ])));
+    assert p is not None;
+    assert p.count() == 2;
+
+    e = p.lookup("sound/door.wav");
+    assert e is not None;
+    assert e.filelen == 3;
+
+    assert p.read("sound/door.wav") == b"AAA";
+    assert p.read("maps/e1m1.bsp") == b"BSPDATA";    # case-insensitive lookup
+    assert p.contains("MAPS/e1m1.bsp");
+
+    assert p.lookup("nope.txt") is None;
+    assert p.read("nope.txt") is None;
+    assert not p.contains("nope.txt");
+}
+
+
+test "pak rejects a buffer without the PACK magic" {
+    assert parse_pak(ByteReader(data=b"NOPE\x00\x00\x00\x00\x00\x00\x00\x00")) is None;
+}
+
+
+test "pakset: later mounts shadow earlier ones" {
+    pak0 = parse_pak(ByteReader(data=build_pak([
+        PakFile(name="gfx/conback.lmp", data=b"OLD"),
+        PakFile(name="only0.txt", data=b"zero")
+    ])));
+    pak1 = parse_pak(ByteReader(data=build_pak([
+        PakFile(name="gfx/conback.lmp", data=b"NEW")     # overrides pak0
+    ])));
+    assert pak0 is not None;
+    assert pak1 is not None;
+
+    ps = PakSet();
+    ps.mount(pak0);
+    ps.mount(pak1);
+    assert ps.read("gfx/conback.lmp") == b"NEW";         # later mount wins
+    assert ps.read("only0.txt") == b"zero";              # only in earlier pak
+    assert ps.read("ghost") is None;                     # absent everywhere
 }
