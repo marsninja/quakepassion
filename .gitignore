@@ -10,3 +10,6 @@
 
 # staged precompiled raylib (see scripts/stage_raylib.sh; not committed)
 vendor/
+
+# staged user-owned Quake game data (see scripts/stage_id1.sh; not committed)
+id1/
