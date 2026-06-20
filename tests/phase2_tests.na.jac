@@ -4,7 +4,8 @@ of testing the data/graph logic without a window."""
 
 import from formats.common.bytes { ByteReader }
 import from formats.common.pak { Pak, PakSet, PakEntry, parse_pak }
-import from tests.fixtures { PakFile, build_pak }
+import from formats.q1.bsp { Bsp, parse_bsp }
+import from tests.fixtures { PakFile, build_pak, build_bsp }
 
 
 test "byte reader reads little-endian fields in sequence" {
@@ -100,4 +101,44 @@ test "pakset: later mounts shadow earlier ones" {
     assert ps.read("gfx/conback.lmp") == b"NEW";         # later mount wins
     assert ps.read("only0.txt") == b"zero";              # only in earlier pak
     assert ps.read("ghost") is None;                     # absent everywhere
+}
+
+
+test "bsp29 parses every lump and resolves a face polygon" {
+    bsp = parse_bsp(build_bsp());
+    assert bsp is not None;
+    assert bsp.version == 29;
+
+    assert len(bsp.planes) == 1;
+    assert abs(bsp.planes[0].normal.z - 1.0) < 0.0001;
+    assert len(bsp.vertices) == 3;
+    assert abs(bsp.vertices[1].x - 64.0) < 0.0001;
+    assert len(bsp.edges) == 3;
+    assert bsp.edges[1].v0 == 1 and bsp.edges[1].v1 == 2;
+    assert len(bsp.surfedges) == 3;
+    assert len(bsp.faces) == 1;
+    assert bsp.faces[0].num_edges == 3;
+    assert bsp.faces[0].lightmap_ofs == -1;
+
+    assert len(bsp.nodes) == 1;
+    assert bsp.nodes[0].back == -2;                      # signed i16 child link
+    assert len(bsp.leafs) == 2;
+    assert bsp.leafs[0].contents == -2;                 # solid
+    assert bsp.leafs[1].contents == -1;                 # empty
+    assert len(bsp.marksurfaces) == 1;
+    assert len(bsp.models) == 1;
+    assert abs(bsp.models[0].maxs.z - 128.0) < 0.0001;
+    assert len(bsp.visdata) == 1;
+    assert "worldspawn" in bsp.entities;
+
+    # the face's polygon, walked through surfedges + edges (z-up, no swizzle)
+    fv = bsp.face_verts(0);
+    assert len(fv) == 3;
+    assert abs(fv[0].x - 0.0) < 0.0001 and abs(fv[1].x - 64.0) < 0.0001;
+    assert abs(fv[2].y - 64.0) < 0.0001;
+}
+
+
+test "bsp29 rejects a non-29 version" {
+    assert parse_bsp(b"\x1c\x00\x00\x00") is None;       # version 28
 }

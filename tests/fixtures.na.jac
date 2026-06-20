@@ -48,3 +48,58 @@ def build_pak(files: list[PakFile]) -> bytes {
 
     return b"PACK" + struct.pack("<ii", header_size, dir_size) + directory + payloads;
 }
+
+
+"""Assemble a tiny but valid BSP29 buffer: version 29 + a 15-lump directory,
+then the lump data laid out where the directory points. One triangular face on
+a +Z plane, three vertices/edges/surfedges, one node, a solid + an empty leaf,
+one marksurface, one model, 1 byte of visdata, and a worldspawn entity. Lumps
+we don't parse this phase (textures/texinfo/lighting/clipnodes) are empty."""
+def build_bsp() -> bytes {
+    ents = "{\n\"classname\" \"worldspawn\"\n}\n".encode("utf-8") + b"\x00";
+
+    l_entities = ents;                                                  # 0
+    l_planes = struct.pack("<ffffi", 0.0, 0.0, 1.0, 0.0, 2);            # 1: +Z plane
+    l_textures = b"";                                                   # 2
+    l_vertices = struct.pack("<fff", 0.0, 0.0, 0.0)                     # 3
+        + struct.pack("<fff", 64.0, 0.0, 0.0)
+        + struct.pack("<fff", 0.0, 64.0, 0.0);
+    l_visibility = b"\xff";                                             # 4
+    l_nodes = struct.pack("<ihhhhhhhhHH",                               # 5
+        0, -1, -2, -99, -99, -99, 99, 99, 99, 0, 1);
+    l_texinfo = b"";                                                    # 6
+    l_faces = struct.pack("<HHiHHBBBBi",                                # 7
+        0, 0, 0, 3, 0, 0, 0, 0, 0, -1);
+    l_lighting = b"";                                                   # 8
+    l_clipnodes = b"";                                                  # 9
+    l_leafs = struct.pack("<iihhhhhhHHBBBB",                            # 10: solid
+            -2, -1, -99, -99, -99, 99, 99, 99, 0, 0, 0, 0, 0, 0)
+        + struct.pack("<iihhhhhhHHBBBB",                                #     empty
+            -1, 0, -99, -99, -99, 99, 99, 99, 0, 1, 0, 0, 0, 0);
+    l_marksurfaces = struct.pack("<H", 0);                             # 11
+    l_edges = struct.pack("<HH", 0, 1)                                  # 12
+        + struct.pack("<HH", 1, 2)
+        + struct.pack("<HH", 2, 0);
+    l_surfedges = struct.pack("<i", 0)                                  # 13
+        + struct.pack("<i", 1)
+        + struct.pack("<i", 2);
+    l_models = struct.pack("<fffffffffiiiiiii",                         # 14
+        0.0, 0.0, 0.0, 64.0, 64.0, 128.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 1, 0, 1);
+
+    lumps = [
+        l_entities, l_planes, l_textures, l_vertices, l_visibility,
+        l_nodes, l_texinfo, l_faces, l_lighting, l_clipnodes,
+        l_leafs, l_marksurfaces, l_edges, l_surfedges, l_models
+    ];
+
+    header_size = 4 + 15 * 8;
+    directory = b"";
+    data = b"";
+    pos = header_size;
+    for lb in lumps {
+        directory = directory + struct.pack("<ii", pos, len(lb));
+        data = data + lb;
+        pos = pos + len(lb);
+    }
+    return struct.pack("<i", 29) + directory + data;
+}
