@@ -5,6 +5,7 @@ of testing the data/graph logic without a window."""
 import from formats.common.bytes { ByteReader }
 import from formats.common.pak { Pak, PakSet, PakEntry, parse_pak }
 import from formats.q1.bsp { Bsp, parse_bsp }
+import from formats.q1.pvs { vis_row_bytes, decompress_vis, vis_bit }
 import from tests.fixtures { PakFile, build_pak, build_bsp }
 
 
@@ -141,4 +142,24 @@ test "bsp29 parses every lump and resolves a face polygon" {
 
 test "bsp29 rejects a non-29 version" {
     assert parse_bsp(b"\x1c\x00\x00\x00") is None;       # version 28
+}
+
+
+test "pvs rle decompress and bit test" {
+    # 0x05 literal, then a zero-run of 3 (00 03), then 0xff literal
+    row = decompress_vis(b"\x05\x00\x03\xff", 0, 5);
+    assert len(row) == 5;
+    assert row[0] == 5;
+    assert row[1] == 0 and row[2] == 0 and row[3] == 0;
+    assert row[4] == 255;
+
+    assert vis_bit(row, 0);          # 0x05 -> bits 0 and 2 set
+    assert not vis_bit(row, 1);
+    assert vis_bit(row, 2);
+    assert vis_bit(row, 32);         # 0xff at byte 4 -> bits 32..39 set
+    assert vis_bit(row, 39);
+    assert not vis_bit(row, 40);     # past the row -> not visible
+
+    assert vis_row_bytes(8) == 1;
+    assert vis_row_bytes(9) == 2;    # ceil(9 / 8)
 }
