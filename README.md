@@ -14,11 +14,13 @@ Quake (and games in general) is the thing that got me into programming. This pro
 
 ## Getting Started
 
-The engine builds against [jaclang](https://github.com/jaseci-labs/jaseci) from the `jaseci` submodule, kept pinned to upstream `main`:
+The engine builds against [jaclang](https://github.com/jaseci-labs/jaseci) from the `jaseci` submodule, kept pinned to upstream `main`. The `jac` binary runs the submodule's compiler source directly via the `[dev] jaclang_source` stanza in `jac.toml` — no venv, no editable install.
 
 ```bash
-./scripts/refresh.sh   # sync the submodule and set up .venv with an editable jaclang
-source .venv/bin/activate
+curl -fsSL https://raw.githubusercontent.com/jaseci-labs/jaseci/main/scripts/install.sh | bash   # install the jac binary
+./scripts/refresh.sh    # sync the jaseci submodule
+jac test                # run the suite
+jac run main.na.jac     # fly the graybox arena
 ```
 
 ## Status

@@ -9,3 +9,6 @@ raylib = ">=5.5"
 
 [test]
 directory = "tests"
+
+[dev]
+jaclang_source = "jaseci/jac"
