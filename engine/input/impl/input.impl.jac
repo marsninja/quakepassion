@@ -1,6 +1,6 @@
 """Implementations for the input module: mouse-capture lifecycle and the
 per-frame intent sampler. Declarations (and the raylib import) live in
-input.na.jac."""
+input.jac."""
 
 impl mouse_captured() -> bool {
     return _mouse.captured;

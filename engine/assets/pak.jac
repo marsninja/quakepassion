@@ -4,7 +4,7 @@ A .pak is id Software's flat archive: a 12-byte header (magic "PACK", then
 directory offset and length as little-endian i32), and a directory of 64-byte
 entries (56-byte NUL-padded path, then data offset and size as i32). Parsing
 is split from file I/O so the format core is testable on pure bytes; method
-bodies live in impl/pak.na.impl.jac."""
+bodies live in impl/pak.impl.jac."""
 
 import struct;
 

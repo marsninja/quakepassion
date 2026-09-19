@@ -13,7 +13,7 @@ classification / AArch64 AAPCS, byval/sret), so the headline 3D API
 (`BeginMode3D(Camera3D)`, `DrawCube(Vector3, …, Color)`, `ClearBackground(Color)`)
 crosses the FFI cleanly — no scalar rlgl, no hand-rolled camera.
 
-Method and ability bodies live in impl/renderer.na.impl.jac."""
+Method and ability bodies live in impl/renderer.impl.jac."""
 
 import from vendor.raylib {
     obj Color { has r: u8, g: u8, b: u8, a: u8; }

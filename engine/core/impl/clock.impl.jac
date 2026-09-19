@@ -1,4 +1,4 @@
-"""Implementations for the Clock object. Declarations live in clock.na.jac."""
+"""Implementations for the Clock object. Declarations live in clock.jac."""
 
 impl Clock.advance(frame_dt: float) -> int {
     self.accumulator += frame_dt;

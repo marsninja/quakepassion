@@ -4,7 +4,7 @@ and you understand how the engine thinks.
 
 Nothing here knows raylib exists. Rendering hands happen in engine/render;
 this module owns structure and traversal only. Walker abilities and the graph
-helpers are bodied in impl/world.na.impl.jac; this file is the declaration
+helpers are bodied in impl/world.impl.jac; this file is the declaration
 surface."""
 
 import from ..math.vec3 { Vec3 }

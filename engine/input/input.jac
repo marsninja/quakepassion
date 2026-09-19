@@ -7,9 +7,9 @@ click or Tab; deltas come from absolute position diffs with a warmup
 period and a spike clamp, not GetMouseDelta. Arrow keys always work.
 
 Native pathway: raylib bound through the C-FFI by logical name from the
-staged sibling library (see renderer.na.jac for the linking note).
+staged sibling library (see renderer.jac for the linking note).
 
-Function bodies live in impl/input.na.impl.jac."""
+Function bodies live in impl/input.impl.jac."""
 
 import from vendor.raylib {
     def IsKeyDown(key: i32) -> bool;
@@ -46,20 +46,20 @@ glob MOUSE_SENSITIVITY: float = 0.0022,
      SPIKE_LIMIT: float = 150.0;
 
 # raylib key / button codes (raylib.h)
-glob KEY_W: int = 87,
-     KEY_A: int = 65,
-     KEY_S: int = 83,
-     KEY_D: int = 68,
-     KEY_C: int = 67,
-     KEY_F3: int = 292,
-     KEY_SPACE: int = 32,
-     KEY_LEFT_SHIFT: int = 340,
-     KEY_RIGHT: int = 262,
-     KEY_LEFT: int = 263,
-     KEY_DOWN: int = 264,
-     KEY_UP: int = 265,
-     KEY_TAB: int = 258,
-     MOUSE_LEFT: int = 0;
+glob KEY_W: i32 = 87,
+     KEY_A: i32 = 65,
+     KEY_S: i32 = 83,
+     KEY_D: i32 = 68,
+     KEY_C: i32 = 67,
+     KEY_F3: i32 = 292,
+     KEY_SPACE: i32 = 32,
+     KEY_LEFT_SHIFT: i32 = 340,
+     KEY_RIGHT: i32 = 262,
+     KEY_LEFT: i32 = 263,
+     KEY_DOWN: i32 = 264,
+     KEY_UP: i32 = 265,
+     KEY_TAB: i32 = 258,
+     MOUSE_LEFT: i32 = 0;
 
 glob _mouse: MouseState = MouseState();
 

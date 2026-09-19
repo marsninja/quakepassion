@@ -2,7 +2,7 @@
 classic 20Hz) regardless of render framerate; rendering runs as fast as
 vsync allows. advance() returns how many ticks the caller owes this frame.
 
-Method bodies live in impl/clock.na.impl.jac."""
+Method bodies live in impl/clock.impl.jac."""
 
 
 obj Clock {

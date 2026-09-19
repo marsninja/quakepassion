@@ -120,8 +120,8 @@ test "ragged directory length raises ValueError" {
 
 test "entry pointing outside the file raises ValueError" {
     name = b"a" + bytes([0] * (NAME_SIZE - 1));
-    entry = name + struct.pack("<ii", 4096, 8);
-    data = b"PACK" + struct.pack("<ii", HEADER_SIZE, ENTRY_SIZE) + entry;
+    directory_entry = name + struct.pack("<ii", 4096, 8);
+    data = b"PACK" + struct.pack("<ii", HEADER_SIZE, ENTRY_SIZE) + directory_entry;
     raised = False;
     try {
         parse_pak(data);

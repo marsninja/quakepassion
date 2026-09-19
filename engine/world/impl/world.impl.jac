@@ -1,5 +1,5 @@
 """Implementations for the world module: walker abilities and the graph
-query/rewire helpers. Declarations live in world.na.jac."""
+query/rewire helpers. Declarations live in world.jac."""
 
 impl ThinkPass.start with World entry {
     visit [here -->[?:Area]];

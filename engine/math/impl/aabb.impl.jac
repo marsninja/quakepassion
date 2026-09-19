@@ -1,4 +1,4 @@
-"""Implementations for the AABB object. Declarations live in aabb.na.jac."""
+"""Implementations for the AABB object. Declarations live in aabb.jac."""
 
 impl AABB.contains(p: Vec3) -> bool {
     return (

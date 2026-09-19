@@ -1,5 +1,5 @@
 """Implementations for the App object: the game loop and its fly/render/smoke
-steps. Declarations live in app.na.jac."""
+steps. Declarations live in app.jac."""
 
 impl App.run() {
     self.renderer.open_window();

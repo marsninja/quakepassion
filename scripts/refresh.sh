@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Sync the jaseci submodule to upstream main. The jac binary picks up the
-# submodule's jaclang source automatically via the `[dev] jaclang_source`
-# stanza in jac.toml — no venv or editable install needed.
+# Sync the reference jaseci submodule to upstream main.
+# The engine uses the installed jac binary; this does not change its compiler.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

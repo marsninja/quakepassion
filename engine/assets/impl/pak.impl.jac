@@ -1,4 +1,4 @@
-"""Implementations for the PAK archive reader. Declarations live in pak.na.jac."""
+"""Implementations for the PAK archive reader. Declarations live in pak.jac."""
 
 impl PakArchive.names() -> list[str] {
     return [e.name for e in self.entries];
@@ -12,8 +12,8 @@ impl PakArchive.read_file(name: str) -> bytes {
     if name not in self.index {
         raise KeyError(f"no such file in pak: {name}");
     }
-    entry = self.entries[self.index[name]];
-    return self.data[entry.offset:entry.offset + entry.size];
+    pak_entry = self.entries[self.index[name]];
+    return self.data[pak_entry.offset:pak_entry.offset + pak_entry.size];
 }
 
 

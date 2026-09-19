@@ -2,7 +2,7 @@
 name = "quakepassion"
 version = "0.1.0"
 description = "A heartfelt 3D engine in pure Jac and raylib that plays all three Quakes"
-entry-point = "main.jac"
+entry-point = "main"
 
 [dependencies]
 raylib = ">=5.5"
@@ -10,5 +10,7 @@ raylib = ">=5.5"
 [test]
 directory = "tests"
 
+# Local copy of the installed compiler with the native OSP visit fix.
+# Materialize with: python3 scripts/prepare_compiler.py
 [dev]
-jaclang_source = "jaseci/jac"
+jaclang_source = ".jac/compiler"
