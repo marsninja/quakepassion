@@ -4,13 +4,21 @@ draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
 
+import from ..world.level { Level }
+import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
 import from ..input.input { Intent, sample_intent, mouse_captured }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..render.renderer { Renderer, RenderPass }
 import from ..world.world {
-    World, Area, Player, ThinkPass, VisPass,
-    area_containing, area_of, move_to_area
+    World,
+    Area,
+    Player,
+    ThinkPass,
+    VisPass,
+    area_containing,
+    area_of,
+    move_to_area
 }
 
 
@@ -27,12 +35,13 @@ obj App {
         overlay: bool = True,
         smoke: bool = False,
         last_think: int = 0,
-        last_drawn: int = 0;
+        last_drawn: int = 0,
+        level: Level = Level(),
+        quake: QuakeRenderer = QuakeRenderer();
 
     def run();
     def fly(intent: Intent, dt: float);
     def render_frame();
-
     """Headless validation script: steer the camera through three known
     states and screenshot each, then quit. Drives the exact culling
     behavior a human would check by hand."""
