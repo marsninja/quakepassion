@@ -78,7 +78,7 @@ impl App.render_frame() {
         if self.overlay {
             self.renderer.draw_overlay(
                 [
-                    "Quake 1: " + self.level.name,
+                    self.level.bsp.game.upper() + ": " + self.level.name,
                     "faces: "
                         + str(self.last_drawn)
                         + "/"

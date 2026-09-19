@@ -1,45 +1,33 @@
 #!/usr/bin/env bash
-# Stage a precompiled raylib shared library into vendor/ for the native build.
-#
-# The .na.jac renderer/input bind raylib by its logical name via
-# `import from vendor.raylib`, so the native linker records a
-# `$ORIGIN/vendor/libraylib.so` DT_NEEDED — the loader resolves it beside the
-# binary regardless of cwd. This script fetches the matching precompiled release
-# (no build, no system install) and drops the .so set into vendor/, exactly the
-# way the raylib_shooter demo stages its sibling library.
+# Build raylib with the JPG/TGA decoders required by original Quake II/III assets.
+# Upstream's prebuilt raylib 6 libraries disable both formats by default.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR="$REPO_ROOT/vendor"
 RAYLIB_VERSION="6.0"
-BASE_URL="https://github.com/raysan5/raylib/releases/download/${RAYLIB_VERSION}"
-
-uname_s="$(uname -s)"
-arch="$(uname -m)"
-case "$uname_s" in
-  Linux)
-    case "$arch" in
-      x86_64|amd64)  asset="raylib-${RAYLIB_VERSION}_linux_amd64.tar.gz" ;;
-      aarch64|arm64) asset="raylib-${RAYLIB_VERSION}_linux_arm64.tar.gz" ;;
-      *) echo "Unsupported Linux arch: $arch" >&2; exit 1 ;;
-    esac
-    lib_glob="libraylib.so*" ;;
-  Darwin)
-    asset="raylib-${RAYLIB_VERSION}_macos.tar.gz"
-    lib_glob="libraylib*.dylib" ;;
-  *) echo "Unsupported OS: $uname_s" >&2; exit 1 ;;
+ARCHIVE_SHA256="2b3ee1e2120c7a0796b33062c7e9a694dd8a8caa56a96319ac8c8ecf54a90d0b"
+case "$(uname -s)" in
+  Darwin) lib_glob="libraylib*.dylib" ;;
+  Linux) lib_glob="libraylib.so*" ;;
+  *) echo "Unsupported OS" >&2; exit 1 ;;
 esac
 
-mkdir -p "$VENDOR"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-
-echo "==> Downloading $asset"
-curl -fsSL "$BASE_URL/$asset" -o "$tmp/raylib.tar.gz"
+curl -fsSL "https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz" -o "$tmp/raylib.tar.gz"
+if command -v sha256sum >/dev/null; then
+  actual="$(sha256sum "$tmp/raylib.tar.gz" | cut -d ' ' -f 1)"
+else
+  actual="$(shasum -a 256 "$tmp/raylib.tar.gz" | cut -d ' ' -f 1)"
+fi
+if [[ "$actual" != "$ARCHIVE_SHA256" ]]; then
+  echo "Raylib source checksum mismatch" >&2; exit 1
+fi
 tar -xzf "$tmp/raylib.tar.gz" -C "$tmp"
-
-lib_src_dir="$(dirname "$(find "$tmp" -name 'libraylib.so' -o -name 'libraylib.dylib' | head -n1)")"
-# cp -P preserves the version symlinks (libraylib.so -> .so.600 -> .so.6.0.0)
-cp -P "$lib_src_dir"/$lib_glob "$VENDOR/"
-echo "==> Staged raylib $RAYLIB_VERSION -> $VENDOR/"
-ls -la "$VENDOR"
+make -C "$tmp/raylib-${RAYLIB_VERSION}/src" -j4 \
+  PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=SHARED \
+  CUSTOM_CFLAGS="-DSUPPORT_FILEFORMAT_JPG=1 -DSUPPORT_FILEFORMAT_TGA=1"
+mkdir -p "$VENDOR"
+cp -P "$tmp/raylib-${RAYLIB_VERSION}/src/"$lib_glob "$VENDOR/"
+echo "Staged raylib $RAYLIB_VERSION with JPG/TGA support in $VENDOR"

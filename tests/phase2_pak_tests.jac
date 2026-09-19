@@ -5,8 +5,13 @@ import os;
 import struct;
 
 import from engine.assets.pak {
-    PakArchive, PakEntry, parse_pak, open_pak,
-    HEADER_SIZE, ENTRY_SIZE, NAME_SIZE
+    PakArchive,
+    PakEntry,
+    parse_pak,
+    open_pak,
+    HEADER_SIZE,
+    ENTRY_SIZE,
+    NAME_SIZE
 }
 
 
@@ -44,8 +49,7 @@ test "parses a synthetic pak directory" {
 
 test "payloads survive byte-exact, embedded NULs included" {
     data = build_pak(
-        ["gfx/palette.lmp", "maps/e1m1.bsp"],
-        [b"\x00\x01\x02rgb", b"BSP\x00DATA"],
+        ["gfx/palette.lmp", "maps/e1m1.bsp"], [b"\x00\x01\x02rgb", b"BSP\x00DATA"],
     );
     pak = parse_pak(data);
     assert pak.read_file("gfx/palette.lmp") == b"\x00\x01\x02rgb";
@@ -140,4 +144,14 @@ test "open_pak reads an archive from disk" {
     pak = open_pak(path);
     assert pak.read_file("maps/e1m1.bsp") == b"BSP\x00DATA";
     os.remove(path);
+}
+
+test "PAK lookup ignores case while preserving directory spelling" {
+    pak = parse_pak(
+        build_pak(["textures/e1u1/wgrate1_4.wal", "MAPS/TEST.BSP"], [b"WAL", b"BSP"])
+    );
+    assert pak.has_file("textures/e1u1/wGRATE1_4.wal");
+    assert pak.read_file("textures/e1u1/wGRATE1_4.wal") == b"WAL";
+    assert pak.read_file("maps/test.bsp") == b"BSP";
+    assert pak.names()[1] == "MAPS/TEST.BSP";
 }

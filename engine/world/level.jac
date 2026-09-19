@@ -2,7 +2,17 @@
 import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
-import from ..formats.q1.bsp { Bsp, parse_bsp, decode_pvs }
+import from ..formats.q1.bsp {
+    Bsp,
+    Texture,
+    parse_bsp,
+    decode_pvs,
+    i32_at,
+    require_range
+}
+import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
+import from ..formats.q3.bsp { parse_q3 }
+import from ..assets.pk3 { Pk3Assets }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from .world { World, Area, Player, move_to_area }
@@ -49,6 +59,7 @@ walker CollectFaces {
     can start with World entry {
         visit self.targets;
     }
+
     can collect with BspArea entry {
         for face in here.faces {
             if face not in self.seen {
@@ -80,7 +91,39 @@ obj Level {
     def visible(world: World, eye: Vec3, culling: bool) -> list[int] {
         leaf = self.locate(eye);
         targets: list[BspArea] = [];
-        if culling and leaf > 0 {
+        if self.bsp.game != "q1" {
+            cluster = self.bsp.leaves[leaf].cluster;
+            clusters: set[int] = set();
+            if culling and cluster >= 0 and self.bsp.clusters > 0 {
+                if self.bsp.game == "q2" {
+                    check = i32_at(self.bsp.visibility, 4 + cluster * 8);
+                    for bit in decode_pvs(
+                        self.bsp.visibility, check, self.bsp.clusters + 1
+                    ) {
+                        clusters.add(bit - 1);
+                    }
+                } else {
+                    offset = 8 + cluster * self.bsp.cluster_bytes;
+                    require_range(self.bsp.visibility, offset, self.bsp.cluster_bytes);
+                    for bit in range(self.bsp.clusters) {
+                        if int(self.bsp.visibility[offset + bit // 8])
+                            & (1 << (bit % 8))
+                            != 0 {
+                            clusters.add(bit);
+                        }
+                    }
+                }
+                clusters.add(cluster);
+            }
+            for i in range(len(self.areas)) {
+                if not culling
+                    or cluster < 0
+                    or self.bsp.clusters == 0
+                    or self.bsp.leaves[i].cluster in clusters {
+                    targets.append(self.areas[i]);
+                }
+            }
+        } elif culling and leaf > 0 {
             indices = decode_pvs(
                 self.bsp.visibility,
                 self.bsp.leaves[leaf].vis_offset,
@@ -112,21 +155,70 @@ def asset(paks: list[PakArchive], name: str) -> bytes {
     raise ValueError("Missing Quake asset: " + name);
 }
 
-def load_level(world: World, directory: str, map_name: str) -> Level {
-    paks: list[PakArchive] = [];
-    for filename in sorted(os.listdir(directory)) {
-        if filename.lower().endswith(".pak") {
-            paks.append(open_pak(directory + "/" + filename));
+def load_level(world: World, directory: str, map_name: str, game: str = "q1") -> Level {
+    level = Level(active=True, name=map_name);
+    if game == "q3" {
+        assets = Pk3Assets();
+        assets.open(directory);
+        level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"));
+        for texture in level.bsp.textures {
+            assets.texture(texture);
         }
-    }
-    level = Level(
-        active=True,
-        name=map_name,
-        bsp=parse_bsp(asset(paks, "maps/" + map_name + ".bsp")),
-        palette=asset(paks, "gfx/palette.lmp")
-    );
-    if len(level.palette) != 768 {
-        raise ValueError("Quake palette must contain 256 RGB colors");
+        for face in level.bsp.faces {
+            material = level.bsp.textures[face.texture];
+            face.alpha_test = material.alpha_test;
+            face.additive = material.additive;
+            face.two_sided = material.two_sided;
+        }
+        assets.close();
+        # Palette used only for the diagnostic checkerboard on missing images.
+        colors = bytearray();
+        for i in range(256) {
+            colors.extend([u8(i), u8(0), u8(i)]);
+        }
+        level.palette = bytes(colors);
+    } elif game == "q1" or game == "q2" {
+        paks: list[PakArchive] = [];
+        for filename in sorted(os.listdir(directory)) {
+            if filename.lower().endswith(".pak") {
+                paks.append(open_pak(directory + "/" + filename));
+            }
+        }
+        data = asset(paks, "maps/" + map_name + ".bsp");
+        if game == "q2" {
+            textures: list[Texture] = [];
+            for name in texture_names(data) {
+                textures.append(
+                    parse_wal(asset(paks, "textures/" + name + ".wal"), name)
+                );
+            }
+            level.bsp = parse_q2(data, textures);
+            sky_name = "unit1_";
+            for entity in level.bsp.entities {
+                if entity.fields.get("classname", "") == "worldspawn" {
+                    sky_name = entity.fields.get("sky", "unit1_");
+                }
+            }
+            for suffix in ["rt", "lf", "bk", "ft", "up", "dn"] {
+                name = "env/" + sky_name + suffix + ".tga";
+                level.bsp.sky.append(
+                    Texture(name=name, encoded=asset(paks, name), extension=".tga")
+                );
+            }
+            pcx = asset(paks, "pics/colormap.pcx");
+            if len(pcx) < 769 or pcx[len(pcx) - 769] != 12 {
+                raise ValueError("Missing PCX palette");
+            }
+            level.palette = pcx[len(pcx) - 768:];
+        } else {
+            level.bsp = parse_bsp(data);
+            level.palette = asset(paks, "gfx/palette.lmp");
+        }
+        if len(level.palette) != 768 {
+            raise ValueError("Palette must contain 256 RGB colors");
+        }
+    } else {
+        raise ValueError("QP_GAME must be q1, q2, or q3");
     }
     for i in range(len(level.bsp.leaves)) {
         leaf = level.bsp.leaves[i];
@@ -191,7 +283,8 @@ def load_level(world: World, directory: str, map_name: str) -> Level {
 
 def spawn_player(level: Level) -> Player {
     for ent in level.bsp.entities {
-        if ent.fields.get("classname", "") == "info_player_start" {
+        if ent.fields.get("classname", "")
+            in ["info_player_start", "info_player_deathmatch"] {
             coords = ent.fields.get("origin", "0 0 0").split();
             if len(coords) != 3 {
                 raise ValueError("Invalid player spawn origin");

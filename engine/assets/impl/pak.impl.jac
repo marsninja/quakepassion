@@ -5,14 +5,15 @@ impl PakArchive.names() -> list[str] {
 }
 
 impl PakArchive.has_file(name: str) -> bool {
-    return name in self.index;
+    return name.lower() in self.index;
 }
 
 impl PakArchive.read_file(name: str) -> bytes {
-    if name not in self.index {
+    key = name.lower();
+    if key not in self.index {
         raise KeyError(f"no such file in pak: {name}");
     }
-    pak_entry = self.entries[self.index[name]];
+    pak_entry = self.entries[self.index[key]];
     return self.data[pak_entry.offset:pak_entry.offset + pak_entry.size];
 }
 
@@ -62,7 +63,7 @@ impl parse_pak(data: bytes) -> PakArchive {
                 f"size={size} file={len(data)}"
             );
         }
-        pak.index[name] = len(pak.entries);
+        pak.index[name.lower()] = len(pak.entries);
         pak.entries.append(PakEntry(name=name, offset=offset, size=size));
     }
     return pak;

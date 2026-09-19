@@ -7,7 +7,13 @@ obj Texture {
     has name: str = "missing",
         width: int = 16,
         height: int = 16,
-        pixels: bytes = b"";
+        pixels: bytes = b"",
+        encoded: bytes = b"",
+        extension: str = "",
+        flags: int = 0,
+        alpha_test: int = 0,
+        additive: bool = False,
+        two_sided: bool = False;
 }
 
 obj TexInfo {
@@ -23,6 +29,13 @@ obj Face {
     has vertices: list[Vec3] = [],
         uv: list[float] = [],
         light_uv: list[float] = [],
+        indices: list[int] = [],
+        colors: list[int] = [],
+        planar: bool = True,
+        alpha_test: int = 0,
+        additive: bool = False,
+        two_sided: bool = False,
+        hidden: bool = False,
         texture: int = 0,
         light_offset: int = -1,
         light_width: int = 0,
@@ -50,6 +63,7 @@ obj Leaf {
         vis_offset: int,
         mins: Vec3,
         maxs: Vec3,
+        cluster: int = -1,
         faces: list[int] = [];
 }
 
@@ -65,7 +79,12 @@ obj MapEntity {
 }
 
 obj Bsp {
-    has textures: list[Texture] = [],
+    has game: str = "q1",
+        light_channels: int = 1,
+        clusters: int = 0,
+        cluster_bytes: int = 0,
+        sky: list[Texture] = [],
+        textures: list[Texture] = [],
         planes: list[Plane] = [],
         branches: list[Branch] = [],
         leaves: list[Leaf] = [],
