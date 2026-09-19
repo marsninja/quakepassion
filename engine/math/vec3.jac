@@ -1,6 +1,6 @@
 """3D vector math. Pure objects, pure speed — no OSP here on purpose.
 
-Method and function bodies live in impl/vec3.na.impl.jac; this file is the
+Method and function bodies live in impl/vec3.impl.jac; this file is the
 declaration surface."""
 
 import math;

@@ -1,5 +1,5 @@
 """Implementations for the vec3 module: Vec3 methods and the yaw/pitch
-basis-vector helpers. Declarations (and the `import math`) live in vec3.na.jac."""
+basis-vector helpers. Declarations (and the `import math`) live in vec3.jac."""
 
 impl Vec3.add(o: Vec3) -> Vec3 {
     return Vec3(x=self.x + o.x, y=self.y + o.y, z=self.z + o.z);

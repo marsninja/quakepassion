@@ -2,7 +2,7 @@
 the pass walkers over the world graph; each frame floods visibility and
 draws only what the flood found.
 
-Method bodies live in impl/app.na.impl.jac."""
+Method bodies live in impl/app.impl.jac."""
 
 import from .clock { Clock }
 import from ..input.input { Intent, sample_intent, mouse_captured }

@@ -2,6 +2,9 @@
 name = "website"
 entry-point = "main.jac"
 
+[dev]
+jaclang_source = "../jaseci/jac"
+
 [jac-shadcn]
 style = "nova"
 baseColor = "neutral"
@@ -29,6 +32,7 @@ react-error-boundary = "^5.0.0"
 react-hook-form = "^7.71.0"
 zod = "^4.3.6"
 "@hookform/resolvers" = "^5.2.2"
+"@tanstack/react-form" = "^1.33.0"
 
 [dependencies.npm.dev]
 vite = "^6.4.1"

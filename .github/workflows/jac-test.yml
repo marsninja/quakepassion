@@ -10,28 +10,33 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # The pinned `jaseci` submodule is the jaclang we build against, so check
-      # it out at exactly the commit this repo records — no upstream bump in CI.
-      - name: Checkout (with jaseci submodule)
+      - name: Checkout (with reference compiler source)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: jaseci/jac/pyproject.toml
-
-      # jaclang is consumed as an editable install of jaseci/jac, exactly as
-      # scripts/refresh.sh sets it up locally. The renderer/input modules bind
-      # raylib, but the phase-1 tests are graphics-free, so no vendored .so is
-      # needed here.
-      - name: Install jaclang (editable from jaseci/jac)
+      # Pin the release targeted by our compiler patch.
+      - name: Install Jac binary
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --editable jaseci/jac
+          mkdir -p "$HOME/.local/bin"
+          asset=jac-0.37.19-linux-x86_64
+          release=https://github.com/jaseci-labs/jac/releases/download/v0.37.19
+          curl -fsSL "$release/$asset" -o "$RUNNER_TEMP/$asset"
+          curl -fsSL "$release/$asset.sha256" -o "$RUNNER_TEMP/$asset.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
+          install -m 755 "$RUNNER_TEMP/$asset" "$HOME/.local/bin/jac"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Show compiler version
+        run: jac --version
+
+      - name: Apply local compiler fix
+        run: python3 scripts/prepare_compiler.py
+
+      - name: Verify native visit regression
+        run: |
+          jac build repros/native_visit_list.jac --native -o /tmp/qp-visit-repro
+          /tmp/qp-visit-repro
 
       # Discovery is anchored to the project root via jac.toml ([test] directory).
       - name: Run jac test

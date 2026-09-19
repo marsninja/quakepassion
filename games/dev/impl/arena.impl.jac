@@ -1,5 +1,5 @@
 """Implementations for the dev arena: the box helper and the hand-built two-room
-graph. Declarations live in arena.na.jac."""
+graph. Declarations live in arena.jac."""
 
 impl box(cx: float, cy: float, cz: float, sx: float, sy: float, sz: float, color: list[int]) -> Surface {
     return Surface(center=Vec3(x=cx, y=cy, z=cz), size=Vec3(x=sx, y=sy, z=sz), color=color);

@@ -1,4 +1,4 @@
-"""Axis-aligned bounding box. Method bodies live in impl/aabb.na.impl.jac."""
+"""Axis-aligned bounding box. Method bodies live in impl/aabb.impl.jac."""
 
 import from .vec3 { Vec3 }
 
