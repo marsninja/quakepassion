@@ -97,6 +97,6 @@ Validation after the fix:
 
 The patch includes a comment in the compiler declaration file to invalidate
 cached compiler bytecode alongside its implementation change. The compiler
-patch is saved for upstream review, but has not been submitted.
+patch is submitted for upstream review in [jaseci-labs/jac#9318](https://github.com/jaseci-labs/jac/pull/9318).
 The local setup deliberately accepts only 0.37.19: when upgrading Jac, retest
 this repro with `JAC_NO_DEV_SOURCE=1` and retire or rebase the patch.
