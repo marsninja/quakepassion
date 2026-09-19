@@ -68,6 +68,22 @@ includes WAL decoding/bounds, invalid BSP versions, leaf-root brush models,
 patch interpolation/winding, cluster-zero visibility, PAK case handling, and
 shader stage selection/material flags. Original assets remain outside git.
 
+## Frame pacing follow-up
+
+The initial material-state implementation flushed the GPU batch after every
+opaque texture, including Q1/Q2 textures that did not change culling state.
+This made Q1 `e1m1` appear capped near the display's 120 Hz rate. Raylib reported
+VSync disabled, and explicitly toggling it on then off did not improve timing.
+
+Flushing only before/after two-sided material state changes and at the end of
+the opaque pass removes the unnecessary submissions. On the same local machine,
+a 600-frame instrumented Q1 run improved from 4.765 seconds (126 FPS) to
+0.881 seconds (681 FPS). After discarding the first 100 frames, mean drawing
+submission time fell from 6.089 ms to 0.595 ms. These are local diagnostic runs,
+not guaranteed frame rates; map, viewpoint, window state, and GPU load matter.
+Temporary timing instrumentation was removed from the shipped loop. No FPS cap
+or VSync override was added.
+
 ## Scope and limitations
 
 - No collision, gameplay, monster/item/weapon models, or moving brush entities.
