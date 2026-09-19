@@ -4,6 +4,9 @@ renderer.jac."""
 
 impl Renderer.open_window() {
     InitWindow(i32(self.width), i32(self.height), self.title);
+    if not IsWindowReady() {
+        raise RuntimeError("Cannot open the viewer window: an active graphical desktop/display is required.");
+    }
     # fps intentionally uncapped: no SetTargetFPS, so raylib skips the
     # frame-end wait and renders as fast as the loop runs. The fixed-timestep
     # Clock keeps simulation rate independent of however fast frames fly.

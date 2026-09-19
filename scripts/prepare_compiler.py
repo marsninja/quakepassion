@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the native visit fix to a private copy of the installed Jac compiler."""
+"""Apply the native compiler fixes to a private copy of the installed Jac compiler."""
 
 import hashlib
 import os
@@ -11,10 +11,13 @@ import tempfile
 
 def main():
     repo = Path(__file__).resolve().parent.parent
-    patch = repo / "patches/jac-0.37.19-native-visit.patch"
+    patches = [
+        repo / "patches/jac-0.37.19-native-visit.patch",
+        repo / "patches/jac-0.37.19-native-assets.patch",
+    ]
     destination = repo / ".jac/compiler"
     marker = destination / ".quakepassion-patch"
-    digest = hashlib.sha256(patch.read_bytes()).hexdigest()
+    digest = hashlib.sha256(b"".join(p.read_bytes() for p in patches)).hexdigest()
     env = {**os.environ, "JAC_NO_DEV_SOURCE": "1"}
     env.pop("JAC_DEV_SOURCE", None)
     env.pop("JAC_REBUILD", None)
@@ -45,9 +48,10 @@ def main():
         # A sealed manifest makes Jac execute the original bundled bytecode.
         # This private copy must compile the patched source instead.
         (stage / "jaclang/_precompiled/MANIFEST.json").unlink(missing_ok=True)
-        subprocess.run(
-            ["patch", "--batch", "-p1", "-i", str(patch)], cwd=stage, check=True
-        )
+        for patch in patches:
+            subprocess.run(
+                ["patch", "--batch", "-p1", "-i", str(patch)], cwd=stage, check=True
+            )
         (stage / marker.name).write_text(digest + "\n")
         stage.rename(destination)
     print(f"Patched compiler prepared: {destination}")

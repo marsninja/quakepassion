@@ -38,6 +38,11 @@ jobs:
           jac build repros/native_visit_list.jac --native -o /tmp/qp-visit-repro
           /tmp/qp-visit-repro
 
+      - name: Verify native asset operations
+        run: |
+          jac build repros/native_quake_asset_ops.jac --native -o /tmp/qp-assets-repro
+          /tmp/qp-assets-repro
+
       # Discovery is anchored to the project root via jac.toml ([test] directory).
       - name: Run jac test
         run: jac test

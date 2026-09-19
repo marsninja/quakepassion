@@ -1,19 +1,11 @@
-"""The raylib wall. Every rendering call in the engine lives here — swapping
-the graphics backend later touches this file and nothing else.
+"""Raylib window, camera, overlay, and graybox rendering boundary.
 
-Native pathway: raylib is bound through Jac's C-FFI by its logical name. The
-shared library is staged at `vendor/libraylib.so`, so the import is
-`from vendor.raylib` — the native linker records a `$ORIGIN/vendor/libraylib.so`
-DT_NEEDED and the loader resolves it beside the binary regardless of cwd.
+BSP polygon rendering lives beside this module in quake.jac. Both use native
+C FFI to the staged vendor/raylib library. Small camera and color structs
+cross the FFI by value; sized casts specify the C parameter widths.
 
-raylib's small math structs (`Color`, `Vector3`, `Camera3D`) are declared as
-`obj` blocks inside the import and passed/returned **by value**: the native
-backend lowers them through the platform C struct ABI (System V AMD64 eightbyte
-classification / AArch64 AAPCS, byval/sret), so the headline 3D API
-(`BeginMode3D(Camera3D)`, `DrawCube(Vector3, …, Color)`, `ClearBackground(Color)`)
-crosses the FFI cleanly — no scalar rlgl, no hand-rolled camera.
-
-Method and ability bodies live in impl/renderer.impl.jac."""
+Method and ability bodies live in impl/renderer.impl.jac.
+"""
 
 import from vendor.raylib {
     obj Color { has r: u8, g: u8, b: u8, a: u8; }
@@ -27,6 +19,7 @@ import from vendor.raylib {
     }
 
     def InitWindow(width: i32, height: i32, title: str) -> None;
+    def IsWindowReady -> bool;
     def WindowShouldClose -> bool;
     def CloseWindow -> None;
     def BeginDrawing -> None;
@@ -59,7 +52,7 @@ glob FOV_DEGREES: float = 72.0,
 obj Renderer {
     has width: int = 1280,
         height: int = 720,
-        title: str = "QuakePassion — Phase 1: First Light";
+        title: str = "QuakePassion — Quake 1 level viewer";
 
     def open_window();
     def should_close() -> bool;
