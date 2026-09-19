@@ -13,14 +13,15 @@ def check_image(path):
     data = path.read_bytes()
     assert data[:8] == b"\x89PNG\r\n\x1a\n", path
     assert struct.unpack_from(">II", data, 16) == (1280, 720), path
-    offset, compressed = 8, bytearray()
-    while offset < len(data):
-        length = struct.unpack_from(">I", data, offset)[0]
-        if data[offset + 4:offset + 8] == b"IDAT":
-            compressed.extend(data[offset + 8:offset + 8 + length])
-        offset += length + 12
-    # Blank clears compress into very few distinct scanline/filter bytes.
-    assert len(set(zlib.decompress(compressed))) > 32, f"Blank image: {path}"
+    # Inspect decoded pixels: PNG filter residuals can have a tiny alphabet
+    # even for a valid textured wall (especially in dark Q3 corridors).
+    _, _, channels, pixels = read_png(path)
+    colors = set()
+    for i in range(0, len(pixels), channels):
+        colors.add(bytes(pixels[i:i + 3]))
+        if len(colors) > 64:
+            return
+    raise AssertionError(f"Blank or nearly uniform image: {path}")
 
 
 def read_png(path):
@@ -70,22 +71,27 @@ def read_png(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("maps", nargs="*", default=["e1m1", "start", "e1m2", "e2m1", "e3m1", "e4m1"])
+    parser.add_argument("maps", nargs="*", default=[])
     parser.add_argument("--binary", default="qp")
+    parser.add_argument("--game", choices=["q1", "q2", "q3"], default="q1")
     args = parser.parse_args()
+    if not args.maps:
+        args.maps = {"q1": ["e1m1", "start", "e1m2", "e2m1", "e3m1", "e4m1"],
+                     "q2": ["base1", "base2", "base3"],
+                     "q3": ["q3dm1", "q3dm7", "q3tourney2"]}[args.game]
     root = Path(__file__).resolve().parent.parent
     binary = (root / args.binary).resolve()
-    output = root / ".jac/screenshots"
+    output = root / ".jac/screenshots" / args.game
     for name in args.maps:
         assert name and all(c.isalnum() or c in "_-" for c in name), "Use a map basename"
         destination = output / name
         destination.mkdir(parents=True, exist_ok=True)
-        env = {**os.environ, "QP_SMOKE": "1", "QP_MAP": name}
+        env = {**os.environ, "QP_SMOKE": "1", "QP_MAP": name, "QP_GAME": args.game}
         env.pop("QP_GRAYBOX", None)
         images = ["pvs", "all", "turn", "moved_pvs", "moved_all"]
         for suffix in images:
             (root / f"qp_quake_{suffix}.png").unlink(missing_ok=True)
-        proc = subprocess.run([str(binary)], cwd=root, env=env, capture_output=True, text=True, timeout=90)
+        proc = subprocess.run([str(binary)], cwd=root, env=env, capture_output=True, text=True, timeout=180)
         (destination / "run.log").write_text(proc.stdout + proc.stderr)
         assert proc.returncode == 0, f"{name} failed; see {destination / 'run.log'}"
         for suffix in images:

@@ -1,6 +1,7 @@
-"""Quake 1 BSP viewer. Defaults to ~/quake-assets/id1 and e1m1.
+"""Native Quake I/II/III level viewer.
 
-QP_ASSETS selects the id1 directory; QP_MAP selects a map basename.
+QP_GAME selects q1 (default), q2, or q3. QP_ASSETS overrides the game's asset
+directory under ~/quake-assets; QP_MAP overrides its default map basename.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
 views and exits. All modes require a graphical display.
 """
@@ -20,10 +21,16 @@ with entry {
     # every run; root is reserved for save games (phase 7)
     level = Level();
     if os.getenv("QP_GRAYBOX", "") == "" {
+        game = os.getenv("QP_GAME", "q1");
+        directory = "baseq3" if game == "q3" else ("baseq2" if game == "q2" else "id1");
+        map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
         level = load_level(
             world,
-            os.getenv("QP_ASSETS", os.getenv("HOME", "") + "/quake-assets/id1"),
-            os.getenv("QP_MAP", "e1m1")
+            os.getenv(
+                "QP_ASSETS", os.getenv("HOME", "") + "/quake-assets/" + directory
+            ),
+            os.getenv("QP_MAP", map_name),
+            game
         );
         player = spawn_player(level);
     } else {

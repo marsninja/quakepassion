@@ -8,5 +8,5 @@
 /qp
 /main
 
-# staged precompiled raylib (see scripts/stage_raylib.sh; not committed)
+# locally built raylib (see scripts/stage_raylib.sh; not committed)
 vendor/

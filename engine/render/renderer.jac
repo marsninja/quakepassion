@@ -8,35 +8,30 @@ Method and ability bodies live in impl/renderer.impl.jac.
 """
 
 import from vendor.raylib {
-    obj Color { has r: u8, g: u8, b: u8, a: u8; }
-    obj Vector3 { has x: f32, y: f32, z: f32; }
-    obj Camera3D {
+    def rlSetClipPlanes(nearPlane: f64, farPlane: f64) -> None;  obj Color {
+        has r: u8,
+            g: u8,
+            b: u8,
+            a: u8;
+    }  obj Vector3 {
+        has x: f32,
+            y: f32,
+            z: f32;
+    }  obj Camera3D {
         has position: Vector3,
             target: Vector3,
             up: Vector3,
             fovy: f32,
             projection: i32;
-    }
-
-    def InitWindow(width: i32, height: i32, title: str) -> None;
-    def IsWindowReady -> bool;
-    def WindowShouldClose -> bool;
-    def CloseWindow -> None;
-    def BeginDrawing -> None;
-    def EndDrawing -> None;
-    def GetFrameTime -> f32;
-    def TakeScreenshot(fileName: str) -> None;
-    def DrawFPS(posX: i32, posY: i32) -> None;
-    def ClearBackground(color: Color) -> None;
-    def BeginMode3D(camera: Camera3D) -> None;
-    def EndMode3D -> None;
-    def DrawCube(
+    }  def InitWindow(width: i32, height: i32, title: str) -> None;  def IsWindowReady -> bool;  def WindowShouldClose -> bool;  def CloseWindow -> None;  def BeginDrawing -> None;  def EndDrawing -> None;  def GetFrameTime -> f32;  def TakeScreenshot(
+        fileName: str
+    ) -> None;  def DrawFPS(posX: i32, posY: i32) -> None;  def ClearBackground(
+        color: Color
+    ) -> None;  def BeginMode3D(camera: Camera3D) -> None;  def EndMode3D -> None;  def DrawCube(
         position: Vector3, width: f32, height: f32, length: f32, color: Color
-    ) -> None;
-    def DrawCubeWires(
+    ) -> None;  def DrawCubeWires(
         position: Vector3, width: f32, height: f32, length: f32, color: Color
-    ) -> None;
-    def DrawText(
+    ) -> None;  def DrawText(
         text: str, posX: i32, posY: i32, fontSize: i32, color: Color
     ) -> None;
 }
@@ -52,12 +47,11 @@ glob FOV_DEGREES: float = 72.0,
 obj Renderer {
     has width: int = 1280,
         height: int = 720,
-        title: str = "QuakePassion — Quake 1 level viewer";
+        title: str = "QuakePassion — Quake level viewer";
 
     def open_window();
     def should_close() -> bool;
     def frame_time() -> float;
-
     """Begin a frame: clear and install a z-up perspective camera. The camera is
     raylib's own `Camera3D` with up = +Z (Quake's convention) and a target one
     forward-vector ahead of the eye — exactly the view the @sv renderer built."""

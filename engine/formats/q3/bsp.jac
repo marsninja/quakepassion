@@ -1,0 +1,279 @@
+"""Quake III BSP46 surfaces, quadratic patches, and cluster visibility."""
+import from ..q1.bsp {
+    Bsp,
+    Texture,
+    Face,
+    Plane,
+    Branch,
+    Leaf,
+    Model,
+    require_range,
+    i32_at,
+    f32_at,
+    vec_at,
+    records,
+    check_index,
+    parse_entities
+}
+import from ...math.vec3 { Vec3 }
+
+obj Vertex {
+    has pos: Vec3 = Vec3(),
+        s: float = 0.0,
+        t: float = 0.0,
+        ls: float = 0.0,
+        lt: float = 0.0,
+        colors: list[float] = [];
+}
+
+def add_vertex(face: Face, v: Vertex) {
+    face.vertices.append(v.pos);
+    face.uv.extend([v.s, v.t]);
+    # Shared renderer addresses texel centers; Q3 UVs already address the whole tile.
+    face.light_uv.extend([v.ls * 128.0 - 0.5, v.lt * 128.0 - 0.5]);
+    for c in v.colors {
+        face.colors.append(min(255, max(0, int(c))));
+    }
+}
+
+def tessellate(
+    face: Face, controls: list[Vertex], width: int, height: int, steps: int = 8
+) {
+    if width < 3
+        or height < 3
+        or width % 2 != 1
+        or height % 2 != 1
+        or width * height != len(controls)
+        or steps < 1
+        or steps > 32 {
+        raise ValueError("Invalid quadratic patch grid");
+    }
+    for py in range(0, height - 2, 2) {
+        for px in range(0, width - 2, 2) {
+            base = len(face.vertices);
+            for y in range(steps + 1) {
+                v = float(y) / float(steps);
+                wy = [(1.0 - v) * (1.0 - v), 2.0 * v * (1.0 - v), v * v];
+                for x in range(steps + 1) {
+                    u = float(x) / float(steps);
+                    wx = [(1.0 - u) * (1.0 - u), 2.0 * u * (1.0 - u), u * u];
+                    out = Vertex(colors=[0.0, 0.0, 0.0, 0.0]);
+                    for j in range(3) {
+                        for i in range(3) {
+                            c = controls[(py + j) * width + px + i];
+                            weight = wx[i] * wy[j];
+                            out.pos = out.pos.add(c.pos.scale(weight));
+                            out.s += c.s * weight;
+                            out.t += c.t * weight;
+                            out.ls += c.ls * weight;
+                            out.lt += c.lt * weight;
+                            for k in range(4) {
+                                out.colors[k] += c.colors[k] * weight;
+                            }
+                        }
+                    }
+                    add_vertex(face, out);
+                }
+            }
+            for y in range(steps) {
+                for x in range(steps) {
+                    a = base + y * (steps + 1) + x;
+                    b = a + steps + 1;
+                    face.indices.extend([a, a + 1, b, a + 1, b + 1, b]);
+                }
+            }
+        }
+    }
+}
+
+def int_vec(data: bytes, p: int) -> Vec3 {
+    return Vec3(
+        x=float(i32_at(data, p)),
+        y=float(i32_at(data, p + 4)),
+        z=float(i32_at(data, p + 8))
+    );
+}
+
+def parse_q3(data: bytes) -> Bsp {
+    require_range(data, 0, 144);
+    if data[0:4] != b"IBSP" or i32_at(data, 4) != 46 {
+        raise ValueError("Expected Quake 3 BSP version 46");
+    }
+    lumps: list[bytes] = [];
+    for i in range(17) {
+        offset = i32_at(data, 8 + i * 8);
+        size = i32_at(data, 12 + i * 8);
+        require_range(data, offset, size);
+        lumps.append(data[offset:offset + size]);
+    }
+    bsp = Bsp(game="q3", light_channels=3, lighting=lumps[14], visibility=lumps[16]);
+    bsp.entities = parse_entities(lumps[0].decode("utf-8"));
+    light_count = records(bsp.lighting, 128 * 128 * 3);
+    if len(bsp.visibility) > 0 {
+        bsp.clusters = i32_at(bsp.visibility, 0);
+        bsp.cluster_bytes = i32_at(bsp.visibility, 4);
+        if bsp.clusters < 0 or bsp.cluster_bytes < (bsp.clusters + 7) // 8 {
+            raise ValueError("Invalid Q3 visibility dimensions");
+        }
+        require_range(bsp.visibility, 8, bsp.clusters * bsp.cluster_bytes);
+    }
+    for i in range(records(lumps[1], 72)) {
+        p = i * 72;
+        end = p;
+        while end < p + 64 and lumps[1][end] != 0 {
+            end += 1;
+        }
+        bsp.textures.append(
+            Texture(
+                name=lumps[1][p:end].decode("utf-8"), flags=i32_at(lumps[1], p + 64)
+            )
+        );
+    }
+    for i in range(records(lumps[2], 16)) {
+        bsp.planes.append(
+            Plane(
+                normal=vec_at(lumps[2], i * 16), distance=f32_at(lumps[2], i * 16 + 12)
+            )
+        );
+    }
+    verts: list[Vertex] = [];
+    for i in range(records(lumps[10], 44)) {
+        p = i * 44;
+        v = Vertex(
+            pos=vec_at(lumps[10], p),
+            s=f32_at(lumps[10], p + 12),
+            t=f32_at(lumps[10], p + 16),
+            ls=f32_at(lumps[10], p + 20),
+            lt=f32_at(lumps[10], p + 24)
+        );
+        for j in range(4) {
+            v.colors.append(float(lumps[10][p + 40 + j]));
+        }
+        verts.append(v);
+    }
+    index_count = records(lumps[11], 4);
+    for i in range(records(lumps[13], 104)) {
+        p = i * 104;
+        texture = i32_at(lumps[13], p);
+        check_index(texture, len(bsp.textures));
+        kind = i32_at(lumps[13], p + 8);
+        first = i32_at(lumps[13], p + 12);
+        count = i32_at(lumps[13], p + 16);
+        first_index = i32_at(lumps[13], p + 20);
+        count_index = i32_at(lumps[13], p + 24);
+        if first < 0
+            or count < 0
+            or first + count > len(verts)
+            or first_index < 0
+            or count_index < 0
+            or first_index + count_index > index_count
+            or count_index % 3 != 0 {
+            raise ValueError("Invalid Q3 surface ranges");
+        }
+        if kind < 1 or kind > 4 {
+            raise ValueError("Invalid Q3 surface type");
+        }
+        face = Face(
+            texture=texture,
+            planar=(kind == 1),
+            hidden=(kind == 4 or (bsp.textures[texture].flags & 128) != 0),
+            normal=vec_at(lumps[13], p + 84)
+        );
+        light = i32_at(lumps[13], p + 28);
+        if light >= 0 {
+            check_index(light, light_count);
+            face.light_offset = light * 128 * 128 * 3;
+            face.light_width = 128;
+            face.light_height = 128;
+            face.styles = [0];
+        }
+        if kind == 2 {
+            tessellate(
+                face,
+                verts[first:first + count],
+                i32_at(lumps[13], p + 96),
+                i32_at(lumps[13], p + 100)
+            );
+        } elif kind != 4 {
+            for j in range(first, first + count) {
+                add_vertex(face, verts[j]);
+            }
+            for j in range(first_index, first_index + count_index, 3) {
+                a = i32_at(lumps[11], j * 4);
+                b = i32_at(lumps[11], (j + 1) * 4);
+                c = i32_at(lumps[11], (j + 2) * 4);
+                check_index(a, count);
+                check_index(b, count);
+                check_index(c, count);
+                face.indices.extend([a, c, b]);
+            }
+        }
+        if len(face.vertices) > 0 {
+            face.plane_dist = face.normal.dot(face.vertices[0]);
+        }
+        bsp.faces.append(face);
+    }
+    marks = records(lumps[5], 4);
+    for i in range(records(lumps[4], 48)) {
+        p = i * 48;
+        leaf = Leaf(
+            contents=0,
+            vis_offset=-1,
+            cluster=i32_at(lumps[4], p),
+            mins=int_vec(lumps[4], p + 8),
+            maxs=int_vec(lumps[4], p + 20)
+        );
+        if leaf.cluster < -1 or (bsp.clusters > 0 and leaf.cluster >= bsp.clusters) {
+            raise ValueError("Invalid Q3 leaf cluster");
+        }
+        first = i32_at(lumps[4], p + 32);
+        count = i32_at(lumps[4], p + 36);
+        if first < 0 or count < 0 or first + count > marks {
+            raise ValueError("Invalid Q3 leaf faces");
+        }
+        for j in range(first, first + count) {
+            face_index = i32_at(lumps[5], j * 4);
+            check_index(face_index, len(bsp.faces));
+            leaf.faces.append(face_index);
+        }
+        bsp.leaves.append(leaf);
+    }
+    for i in range(records(lumps[3], 36)) {
+        p = i * 36;
+        plane = i32_at(lumps[3], p);
+        check_index(plane, len(bsp.planes));
+        bsp.branches.append(
+            Branch(
+                plane=plane, front=i32_at(lumps[3], p + 4), back=i32_at(lumps[3], p + 8)
+            )
+        );
+    }
+    for branch in bsp.branches {
+        for child in [branch.front, branch.back] {
+            if child < 0 {
+                check_index(-child - 1, len(bsp.leaves));
+            } else {
+                check_index(child, len(bsp.branches));
+            }
+        }
+    }
+    for i in range(records(lumps[7], 40)) {
+        first = i32_at(lumps[7], i * 40 + 24);
+        count = i32_at(lumps[7], i * 40 + 28);
+        if first < 0 or count < 0 or first + count > len(bsp.faces) {
+            raise ValueError("Invalid Q3 model faces");
+        }
+        bsp.models.append(
+            Model(
+                head=0,
+                first_face=first,
+                face_count=count,
+                vis_leaf_count=len(bsp.leaves) - 1
+            )
+        );
+    }
+    if not bsp.models or not bsp.leaves or not bsp.branches {
+        raise ValueError("Q3 BSP has no world");
+    }
+    return bsp;
+}

@@ -5,7 +5,9 @@ renderer.jac."""
 impl Renderer.open_window() {
     InitWindow(i32(self.width), i32(self.height), self.title);
     if not IsWindowReady() {
-        raise RuntimeError("Cannot open the viewer window: an active graphical desktop/display is required.");
+        raise RuntimeError(
+            "Cannot open the viewer window: an active graphical desktop/display is required."
+        );
     }
     # fps intentionally uncapped: no SetTargetFPS, so raylib skips the
     # frame-end wait and renders as fast as the loop runs. The fixed-timestep
@@ -31,6 +33,7 @@ impl Renderer.begin_frame(eye: Vec3, yaw: float, pitch: float) {
         fovy=f32(FOV_DEGREES),
         projection=i32(CAMERA_PERSPECTIVE)
     );
+    rlSetClipPlanes(f64(1.0), f64(32768.0));
     BeginMode3D(cam);
 }
 
