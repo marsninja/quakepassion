@@ -381,16 +381,22 @@ obj QuakeRenderer {
             if self.single_pass and level.bsp.textures[t].additive {
                 continue;
             }
+            # Flush only at culling-state boundaries: flushing every texture
+            # serializes small GPU batches and severely reduces frame rate.
             if level.bsp.textures[t].two_sided {
+                rlDrawRenderBatchActive();
                 rlDisableBackfaceCulling();
             }
             rlSetTexture(u32(self.textures[t]));
             for index in batches[t] {
                 self.polygon(level.bsp.faces[index], self.rects[index], False);
             }
-            rlDrawRenderBatchActive();
-            rlEnableBackfaceCulling();
+            if level.bsp.textures[t].two_sided {
+                rlDrawRenderBatchActive();
+                rlEnableBackfaceCulling();
+            }
         }
+        rlDrawRenderBatchActive();
         if self.single_pass {
             BeginBlendMode(i32(1));
             rlDisableDepthMask();
