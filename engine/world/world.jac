@@ -9,6 +9,7 @@ surface."""
 
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from .inventory { Inventory }
 
 
 """A single axis-aligned box of world geometry (phase 1 graybox)."""
@@ -50,13 +51,27 @@ node Entity {
 }
 
 
-node Player(Entity) {
+node Actor(Entity) {
+    has health: int = 100,
+        max_health: int = 100,
+        armor: int = 0,
+        armor_capacity: int = 200,
+        armor_ratio: float = 0.0,
+        inventory: Inventory = Inventory();
+}
+
+node Player(Actor) {
     has velocity: Vec3 = Vec3(),
         grounded: bool = False,
         teleport_cooldown: float = 0.0,
         teleport_hold: float = 0.0,
+        crouched: bool = False,
+        walk_speed: float = 320.0,
         water_depth: int = 0,
-        liquid_kind: int = 0;
+        liquid_kind: int = 0,
+        air_remaining: float = 12.0,
+        drown_damage: int = 2,
+        hazard_wait: float = 0.0;
 }
 
 

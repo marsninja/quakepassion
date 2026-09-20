@@ -113,3 +113,17 @@ test "jumping players are not attached to a moving platform" {
     ride(fixture, player, 0.05);
     assert player.pos.z == before and player.velocity.z == 270.0;
 }
+
+
+test "a crouched rider follows the same platform displacement" {
+    fixture = platform_fixture("q2");
+    fixture.collision.top_drop = 28.0;
+    fixture.collision.eye_height = -2.0;
+    player = Player(pos=Vec3(z=54.03125), crouched=True);
+    before = player.pos.z;
+    for i in range(4) {
+        ride(fixture, player, 0.25);
+    }
+    assert abs(player.pos.z - before - 64.0) < 0.00001;
+    assert player.crouched and fixture.collision.top_drop == 28.0;
+}

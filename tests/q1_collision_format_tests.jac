@@ -2,7 +2,7 @@
 import struct;
 import from engine.formats.q1.bsp { parse_bsp }
 
-def collision_bsp(clip: bytes, head: int = 0) -> bytes {
+def collision_bsp(clip: bytes, head: int = 0, vis_offset: int = -1) -> bytes {
     lumps: list[bytes] = [];
     for i in range(15) {
         lumps.append(b"");
@@ -11,7 +11,7 @@ def collision_bsp(clip: bytes, head: int = 0) -> bytes {
     lumps[2] = struct.pack("<i", 0);
     lumps[5] = struct.pack("<i2h6h2H", 0, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0);
     lumps[9] = clip;
-    lumps[10] = struct.pack("<ii6h2H4B", -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    lumps[10] = struct.pack("<ii6h2H4B", -2, vis_offset, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     lumps[14] = struct.pack(
         "<9f7i", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, head, -1, -1, 0, 0, 0
     );
@@ -54,5 +54,14 @@ test "Q1 out of range standing hull root rejects" {
     } except ValueError {
         failed = True;
     }
+    assert failed;
+}
+
+test "standalone Q1 brush assets may point to zero in an absent visibility lump" {
+    bsp = parse_bsp(collision_bsp(struct.pack("<i2h", 0, -1, -2), vis_offset=0));
+    assert bsp.leaves[0].vis_offset == -1;
+    failed = False;
+    try { parse_bsp(collision_bsp(struct.pack("<i2h", 0, -1, -2), vis_offset=1)); }
+    except ValueError { failed = True; }
     assert failed;
 }

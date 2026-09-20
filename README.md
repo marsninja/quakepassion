@@ -15,8 +15,8 @@ Quake (and games in general) is the thing that got me into programming. This pro
 ## Getting Started
 
 The native level viewer renders maps from Quake, Quake II, and Quake III Arena.
-Use the released Jac 0.37.21 binary. Its bundled compiler includes all seven
-upstream fixes needed by the viewer; no private compiler staging is required.
+The current gameplay branch uses the local Jac launcher with the compiler source
+described in [compiler setup](docs/native-cache-section-merge-blocker.md).
 
 Place your original game archives in these directories (assets are not included):
 
@@ -98,7 +98,7 @@ input-event harness built by the menu runner; `scripts/png_checks.jac` decodes
 screenshots and counts changed pixels. Unit fixtures cover RGB/RGBA PNG filters,
 blank-image rejection, and pixel comparison.
 
-The expanded 100-test suite is validated with the local compiler containing
+The expanded test suite is validated with the local compiler containing
 [Jac #9347](https://github.com/jaseci-labs/jac/pull/9347) and the additional
 [cache-section fix and build instructions](docs/native-cache-section-merge-blocker.md).
 Graphical validation requires an active desktop and original assets. Twelve maps
@@ -111,8 +111,9 @@ pixel parity with the original games.
 
 This is a level viewer with shared walking and brush collision across Q1/Q2/Q3.
 Q3 curved patches now collide using the rendered tessellation and the shared
-standing-box hull queries. Gameplay, character/item models, trains and rotating/crushing movers
-remain future work. Animated materials and full Q3 multipass
+standing-box hull queries. Initial campaign exits, health/armor, liquid damage and
+health/armor/shell pickups work through shared gameplay systems. Combat, character
+binding, trains and rotating/crushing movers remain future work. Animated materials and full Q3 multipass
 shaders, fog, skyboxes, and vertex deformation are not implemented.
 
 See [Q1 results](docs/quake1-rendering-status.md) and
@@ -130,3 +131,9 @@ Teleporters and jump pads: [validation and limits](docs/traversal-status.md).
 
 Swimming: Space ascends and Left Shift descends when submerged; forward follows
 the view direction. See [liquid detection and swimming limits](docs/swimming-status.md).
+
+Hold **Left Control** to crouch in Q2/Q3. Health, armor and shells are shown at the bottom
+of the screen; liquid hazards and drowning can kill the player. **Enter** restarts
+the level after death. Supported Q1/Q2 exits change maps and preserve player state.
+See [campaign/gameplay progress and remaining scope](docs/campaign-gameplay-status.md)
+and [animated model validation](docs/models-status.md).

@@ -23,6 +23,7 @@ obj Trace {
 walker Sweep {
     has start: Vec3,
         finish: Vec3,
+        top_drop: float = 0.0,
         low: float = 0.0,
         high: float = 1.0,
         entry_normal: Vec3 = Vec3(),
@@ -40,6 +41,7 @@ walker Sweep {
                 low=low,
                 high=high,
                 entry_normal=normal,
+                top_drop=self.top_drop,
                 depth=self.depth + 1
             );
             self.result.start_solid = self.result.start_solid
@@ -59,8 +61,9 @@ walker Sweep {
             inside = True;
             for i in range(len(here.planes)) {
                 n = here.planes[i];
-                a = n.dot(self.start) - here.distances[i];
-                b = n.dot(self.finish) - here.distances[i];
+                distance = here.distances[i] + min(0.0, n.z) * self.top_drop;
+                a = n.dot(self.start) - distance;
+                b = n.dot(self.finish) - distance;
                 if a >= 0.0 {
                     inside = False;
                 }
@@ -199,7 +202,8 @@ obj CollisionMap {
         models: list[int] = [],
         bounds: list[AABB] = [],
         groups: list[HullGroup] = [],
-        eye_height: float = 22.0;
+        eye_height: float = 22.0,
+        top_drop: float = 0.0;
 
     def add_box(lo: Vec3, hi: Vec3, offset: Vec3, mins: Vec3, maxs: Vec3) {
         self.add_brush(
@@ -315,7 +319,9 @@ obj CollisionMap {
         }
     }
 
-    def trace(start: Vec3, finish: Vec3, exclude: list[int] = []) -> Trace {
+    def trace(
+        start: Vec3, finish: Vec3, exclude: list[int] = [], top_drop: float = -1.0
+    ) -> Trace {
         result = Trace(end=finish);
         indices: list[int] = [];
         if self.groups {
@@ -341,7 +347,9 @@ obj CollisionMap {
             }
             offset = self.offsets[i];
             query = self.hulls[i] spawn Sweep(
-                start=start.sub(offset), finish=finish.sub(offset)
+                start=start.sub(offset),
+                finish=finish.sub(offset),
+                top_drop=self.top_drop if top_drop < 0.0 else top_drop
             );
             result.start_solid = result.start_solid or query.result.start_solid;
             if query.result.fraction < result.fraction {

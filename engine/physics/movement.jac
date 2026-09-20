@@ -127,16 +127,16 @@ walker MovePlayer {
                 );
             }
             here.velocity = clip_velocity(here.velocity, ground.normal);
-            if self.jump {
+            if self.jump and not here.crouched {
                 here.velocity.z = 270.0;
                 here.grounded = False;
             }
         }
         direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
-        add = max(0.0, 320.0 - here.velocity.dot(direction));
+        add = max(0.0, here.walk_speed - here.velocity.dot(direction));
         acceleration = 10.0 if here.grounded else 1.0;
         here.velocity = here.velocity.add(
-            direction.scale(min(add, acceleration * 320.0 * self.dt))
+            direction.scale(min(add, acceleration * here.walk_speed * self.dt))
         );
         if not here.grounded {
             here.velocity.z -= 800.0 * self.dt;
@@ -144,5 +144,41 @@ walker MovePlayer {
         moved = step_slide(self.collision, pos, here.velocity, self.dt, here.grounded);
         here.velocity = moved.velocity;
         here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
+    }
+}
+
+
+walker SetStance {
+    has collision: CollisionMap,
+        game: str,
+        crouch: bool,
+        dt: float;
+
+    can update with Player entry {
+        if self.dt <= 0.0 or self.game == "q1" {
+            return;
+        }
+        origin = here.pos.sub(Vec3(z=self.collision.eye_height));
+        wanted = self.crouch;
+        if wanted and self.game == "q2" and not here.crouched {
+            ground = self.collision.trace(origin, origin.add(Vec3(z=-0.25)));
+            wanted = not ground.start_solid
+                and ground.fraction < 1.0
+                and ground.normal.z >= 0.7;
+        }
+        if not wanted and here.crouched {
+            if self.collision.trace(origin, origin, top_drop=0.0).start_solid {
+                return;
+            }
+        }
+        here.crouched = wanted;
+        self.collision.top_drop = (28.0 if self.game == "q2" else 16.0)
+            if wanted
+            else 0.0;
+        self.collision.eye_height = (-2.0 if self.game == "q2" else 12.0)
+            if wanted
+            else (22.0 if self.game == "q2" else 26.0);
+        here.walk_speed = (100.0 if self.game == "q2" else 80.0) if wanted else 320.0;
+        here.pos = origin.add(Vec3(z=self.collision.eye_height));
     }
 }

@@ -211,9 +211,6 @@ def parse_entities(text: str) -> list[MapEntity] {
         i += 1;
         value = "";
         while i < len(text) and text[i] != "\"" {
-            if text[i] == "\\" and i + 1 < len(text) and text[i + 1] == "\"" {
-                i += 1;
-            }
             value += text[i];
             i += 1;
         }

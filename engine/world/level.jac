@@ -15,6 +15,7 @@ import from ..math.aabb { AABB }
 import from .doors { load_doors }
 import from .triggers { load_triggers }
 import from .traversal { load_traversal }
+import from .exits { load_exits }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
 
@@ -316,14 +317,38 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
         }
     }
     level.liquids = load_liquids(level.bsp);
+    load_exits(world, level.bsp);
     load_doors(world, level.bsp, level.collision);
     load_triggers(world, level.bsp);
     load_traversal(world, level.bsp);
     return level;
 }
 
-def spawn_player(level: Level) -> Player {
-    for ent in level.bsp.entities {
+def spawn_player(level: Level, spawnpoint: str = "") -> Player {
+    starts = [
+        entity
+        for entity in level.bsp.entities
+        if entity.fields.get("classname", "") == "info_player_start"
+    ];
+    if not starts {
+        starts = [
+            entity
+            for entity in level.bsp.entities
+            if entity.fields.get("classname", "") == "info_player_deathmatch"
+        ];
+    }
+    unnamed = [
+        entity
+        for entity in starts
+        if not entity.fields.get("targetname", "")
+    ];
+    if not spawnpoint and unnamed {
+        starts = unnamed;
+    }
+    for ent in starts {
+        if spawnpoint and ent.fields.get("targetname", "") != spawnpoint {
+            continue;
+        }
         if ent.fields.get("classname", "")
             in ["info_player_start", "info_player_deathmatch"] {
             coords = ent.fields.get("origin", "0 0 0").split();
@@ -342,5 +367,5 @@ def spawn_player(level: Level) -> Player {
             return player;
         }
     }
-    raise ValueError("Map has no info_player_start");
+    raise ValueError("Map has no matching player spawn: " + spawnpoint);
 }

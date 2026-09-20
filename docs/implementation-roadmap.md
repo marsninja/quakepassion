@@ -1,45 +1,54 @@
-# Gameplay and rendering implementation plan
+# Campaign and local arena completion plan
 
-Requested scope: buttons/target chains; riding lifts; traversal mechanics;
-pickups/combat/enemies/per-game rules; materials/sky/shaders/models/effects.
-These are tracked separately so partial support is not presented as game parity.
+The first completion target is a playable Q1/Q2 campaign and local Q3 arena
+prototype with a smaller combat roster, as clarified by the user.
+Network multiplayer and original-mod compatibility are deferred. The project is
+still a gameplay prototype, not a completed implementation of those games.
 
-1. Shared activation graph and moving buttons, with cycle-safe relay dispatch.
-2. Translating platforms carrying the player, with transactional collision checks.
-3. Teleporters, jump pads, liquid movement and crouching.
-4. Shared damage, inventory, projectiles and AI; game-specific data and rules.
-5. Asset model loading/animation and expanded material effects.
+## Validated foundations
 
-Each stage requires focused unit fixtures and representative native asset checks.
-Graphical changes additionally require captures on the local desktop. Existing
-movement/menu/door checks remain regressions. Compiler defects are reported with
-minimal repros; no engine rewrite to conceal a language/runtime defect.
+- Shared activation graph, moving buttons, proximity/touch doors and cycle-safe
+  relay dispatch.
+- Translating platforms with transactional collision and player carrying.
+- Teleporters, directional/apex jump pads, liquid queries/swimming, Q2/Q3 crouching
+  with matching collision hulls and standing clearance.
+- Initial Q1/Q2 campaign exit loading, named Q2 arrivals and failed-load rollback.
+- Shared actor health/armor, inventory slots, liquid damage, death and restart.
+- MDL/MD2/MD3 model adapters, vertex interpolation, PCX skins and a common model
+  renderer; graph-based visual components and shared model resource references.
+- Health, armor and shell pickups instantiated in normal play across all three
+  games, with shared contact/collection and initial Q3 respawn behavior.
 
-As of the start of this work, upstream #9347 remains open. Builds use the local
-`qp-cache-sections` compiler described in `native-cache-section-merge-blocker.md`.
+The regression suite passes 133 tests. Native checks cover 14 campaign exits,
+Q2/Q3 crouching, death/restart, pickup rendering and collection in all three games,
+and all installed model files.
+See [campaign status](campaign-gameplay-status.md), [model status](models-status.md),
+[buttons](buttons-status.md), [platforms](platforms-status.md),
+[traversal](traversal-status.md) and [swimming](swimming-status.md) for evidence
+and limits.
 
-## Current checkpoint
+## Remaining implementation and acceptance criteria
 
-Stage 1 has shared signal/relay nodes, target resolution, moving buttons and
-focused fixtures. The full engine suite passes 100 tests. Native asset checks
-pass 26 buttons (14 Q1, 11 Q2, 1 Q3) and the existing 19 touch triggers.
-A local root-cause fix for the [cache-section merge defect](native-cache-section-merge-blocker.md)
-unblocked validation. Stage 2 now shares mover transforms and transactional
-collision checks for translating platforms and their riders. Asset checks cover
-33 Q1/Q2 platform cycles and 30 carrying probes; Q3 platform semantics are covered
-by unit fixtures because the supplied Q3 maps contain no `func_plat` entities.
-Stage 3 now includes initial Q1/Q2/Q3 teleporters, Q1/Q2 push volumes and Q3
-jump pads. Initial liquid detection and swimming now work across all three
-games; see [swimming status](swimming-status.md). Crouching, water ledge jumps
-and per-game traversal refinements remain. Stages 4–5 have not
-started. See [traversal status](traversal-status.md).
+1. Bind characters to shared model resources; choose animations and compose Q3
+   player/weapon attachment tags. Item binding is implemented for the initial roster.
+2. Remaining pickups, weapons, hits/projectiles, enemy behaviors and local arena opponents.
+   Validate acquisition, combat, kills, deaths, respawn and arena scoring.
+3. Campaign keys, objectives, rune/boss progression, Q2 hub state and intermissions.
+   Complete representative multi-map routes. Full original campaign branches,
+   endings and complete weapon/enemy rosters follow the playable prototype.
+4. Save/load and persistent settings; verify restart and cross-map state restoration.
+5. Original audio/effects, remaining mover/trigger behaviors, model lighting and
+   material passes. Q3 armor's environment, alpha and scrolling additive stages
+   now render; other shader directives still need implementation and validation.
 
-Graphical button validation passes for all three games.
-See [button status](buttons-status.md) and [platform status](platforms-status.md).
+Every stage needs focused fixtures and representative native asset checks.
+Graphical changes also need desktop captures. No stage is complete merely because
+its loaders compile. Compiler defects must be reduced and reported, not bypassed.
 
-Before crouching, collision queries need a shorter player hull shared by walking,
-movers, trigger contacts and teleport exit validation, plus a clearance check
-before standing up. Q1's precompiled standing hull cannot simply be resized.
-Swimming now uses separate point-content queries for feet/body/head, including
-Q2/Q3 liquid brushes. Crouching must similarly update collision behavior, not
-just the camera.
+Builds currently use the local `qp-cache-sections` compiler described in
+[native-cache-section-merge-blocker.md](native-cache-section-merge-blocker.md).
+
+The model screenshot-comparison extension remains blocked by
+[missing native Path.read_bytes](native-path-read-bytes-blocker.md). Independent
+gameplay development continues without bypassing that defect. PR #9323 is no
+longer the intended resolution; the native stdlib fix needs separate discussion.

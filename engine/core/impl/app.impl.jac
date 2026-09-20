@@ -4,6 +4,8 @@ steps. Declarations live in app.jac."""
 impl App.run() {
     self.renderer.open_window();
     if self.level.active {
+        populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
+        self.models.upload(self.world);
         self.quake.upload(self.level);
     }
     frame = 0;
@@ -18,6 +20,7 @@ impl App.run() {
         }
     }
     if self.level.active {
+        self.models.close();
         self.quake.close();
     }
     self.renderer.close();
@@ -61,7 +64,11 @@ impl App.render_frame() {
         faces = self.level.visible(self.world, p.pos, self.culling);
         self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
+        self.models.draw(self.world, p.pos, self.simulation_time);
         self.renderer.end_scene();
+        if not self.smoke {
+            self.renderer.draw_status(p.health, p.armor, quantity(p.inventory, "shells"));
+        }
         if self.overlay {
             self.renderer.draw_overlay(
                 [
@@ -186,22 +193,41 @@ impl App.smoke_step(frame: int) -> bool {
 }
 
 impl App.switch_level() {
+    self.load_destination(
+        self.menu.games[self.menu.game], self.menu.maps[self.menu.selected]
+    );
+}
+
+impl App.load_destination(
+    game: str, name: str, spawnpoint: str = "", carry: bool = False
+) {
     next_renderer = QuakeRenderer();
+    next_models = ModelScene();
     try {
-        game = self.menu.games[self.menu.game];
         world = World();
-        level = load_level(
-            world, game_directory(game), self.menu.maps[self.menu.selected], game
-        );
-        player = spawn_player(level);
+        level = load_level(world, game_directory(game), name, game);
+        player = spawn_player(level, spawnpoint);
+        if carry and self.player.health > 0 and game == self.level.bsp.game {
+            player.health = self.player.health;
+            player.max_health = self.player.max_health;
+            player.armor = self.player.armor;
+            player.armor_capacity = self.player.armor_capacity;
+            player.armor_ratio = self.player.armor_ratio;
+            player.inventory = self.player.inventory;
+        }
+        populate_pickups(world, level, game_directory(game));
+        next_models.upload(world);
         next_renderer.upload(level);
         if self.level.active {
+            self.models.close();
             self.quake.close();
         }
         self.world = world;
         self.level = level;
         self.player = player;
         self.quake = next_renderer;
+        self.models = next_models;
+        self.simulation_time = 0.0;
         self.clock = Clock();
         self.skip_time = True;
         self.walking = False;
@@ -216,8 +242,11 @@ impl App.switch_level() {
             _capture();
         }
     } except Exception as error {
+        next_models.close();
         next_renderer.close();
         self.menu.message = "Cannot load level: " + str(error);
+        self.menu.opened = True;
+        _release();
     }
 }
 
@@ -266,6 +295,15 @@ impl App.step() -> bool {
         self.render_frame();
         return True;
     }
+    if self.level.active and self.player.health <= 0 {
+        self.jump_pending = False;
+        self.physics_clock.accumulator = 0.0;
+        if IsKeyPressed(i32(257)) {
+            self.load_destination(self.level.bsp.game, self.level.name);
+        }
+        self.render_frame();
+        return True;
+    }
     intent = Intent()
         if self.smoke
         else sample_intent(dt, self.sensitivity, self.invert_y);
@@ -294,6 +332,15 @@ impl App.step() -> bool {
         right_from(self.player.yaw).scale(intent.move.x)
     );
     for i in range(steps) {
+        self.simulation_time += self.physics_clock.tick_rate;
+        if self.walking and self.level.active {
+            self.player spawn SetStance(
+                collision=self.level.collision,
+                game=self.level.bsp.game,
+                crouch=intent.crouch,
+                dt=self.physics_clock.tick_rate
+            );
+        }
         previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
         if self.level.active and not self.smoke {
             self.world spawn DoorTick(
@@ -329,12 +376,49 @@ impl App.step() -> bool {
             self.jump_pending = False;
         }
         if self.level.active and not self.smoke {
+            immersed = self.level.immersion(self.player.pos);
+            self.player.water_depth = immersed.depth;
+            self.player.liquid_kind = immersed.kind;
+            self.player spawn EnvironmentTick(
+                game=self.level.bsp.game,
+                dt=self.physics_clock.tick_rate,
+                active=self.walking
+            );
+            if self.player.health <= 0 {
+                self.player.velocity = Vec3();
+                self.jump_pending = False;
+                break;
+            }
+            self.world spawn PickupTick(
+                player=self.player,
+                start=previous_origin,
+                finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+                dt=self.physics_clock.tick_rate,
+                top_drop=self.level.collision.top_drop,
+                touching=self.walking
+            );
             self.world spawn TriggerTick(
+                start=previous_origin,
+                finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+                dt=self.physics_clock.tick_rate,
+                top_drop=self.level.collision.top_drop,
+                touching=self.walking
+            );
+            exit_request = self.world spawn ExitTick(
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
                 touching=self.walking
             );
+            if exit_request.request {
+                self.load_destination(
+                    self.level.bsp.game,
+                    exit_map(exit_request.request),
+                    exit_spawn(exit_request.request),
+                    carry=True
+                );
+                break;
+            }
             self.world spawn TraversalTick(
                 player=self.player,
                 collision=self.level.collision,
