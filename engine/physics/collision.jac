@@ -298,7 +298,7 @@ obj CollisionMap {
         }
     }
 
-    def trace(start: Vec3, finish: Vec3) -> Trace {
+    def trace(start: Vec3, finish: Vec3, exclude: list[int] = []) -> Trace {
         result = Trace(end=finish);
         indices: list[int] = [];
         if self.groups {
@@ -319,6 +319,9 @@ obj CollisionMap {
             indices = list(range(len(self.hulls)));
         }
         for i in indices {
+            if i in exclude {
+                continue;
+            }
             offset = self.offsets[i];
             query = self.hulls[i] spawn Sweep(
                 start=start.sub(offset), finish=finish.sub(offset)

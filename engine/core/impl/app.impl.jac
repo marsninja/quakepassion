@@ -302,7 +302,9 @@ impl App.step() -> bool {
                 player_origin=self.player.pos.sub(
                     Vec3(z=self.level.collision.eye_height)
                 ),
-                dt=self.physics_clock.tick_rate
+                dt=self.physics_clock.tick_rate,
+                touching=self.walking,
+                player=self.player if self.walking else None
             );
         }
         if self.walking {

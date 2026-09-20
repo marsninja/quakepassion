@@ -1,6 +1,7 @@
 """Brush-contact activation of named doors through shared graph relationships."""
 import from .world { World }
-import from .doors { Door, DoorMember, HasDoor }
+import from .doors { Door, resolve_targets }
+import from .signals { Signal, Fire }
 import from ..formats.bsp { Bsp }
 import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
@@ -23,6 +24,10 @@ node TouchTrigger {
 walker Activate {
     can targets with TouchTrigger entry {
         visit [here->:Activates:->];
+    }
+
+    can signal with Signal entry {
+        here spawn Fire(emit=False);
     }
 
     can request with Door entry {
@@ -66,7 +71,6 @@ def load_triggers(world: World, bsp: Bsp) {
     volumes = build_collision(bsp, triggers=True)
         if bsp.game == "q1"
         else build_brush_collision(bsp, triggers=True);
-    doors = [world->:HasDoor:->][?:Door];
     for entity in bsp.entities {
         fields = entity.fields;
         kind = fields.get("classname", "");
@@ -90,33 +94,8 @@ def load_triggers(world: World, bsp: Bsp) {
             continue;
         }
         model = int(name[1:]);
-        targets: list[Door] = [];
-        models: list[int] = [];
-        for door in doors {
-            if target in door.names {
-                targets.append(door);
-                models.append(door.model);
-                for member in [door->:DoorMember:->][?:Door] {
-                    models.append(member.model);
-                }
-            }
-        }
-        # Do not partially execute a target fan-out containing unsupported entities.
-        supported = bool(targets);
-        for recipient in bsp.entities {
-            if recipient.fields.get("targetname", "") == target {
-                recipient_model = recipient.fields.get("model", "");
-                if recipient.fields.get("classname", "") != "func_door"
-                    or not recipient_model.startswith("*") {
-                    supported = False;
-                } elif int(recipient_model[1:]) not in models {
-                    supported = False;
-                }
-            }
-        }
-        if not supported {
-            continue;
-        }
+        targets = resolve_targets(world, bsp, target);
+        if not targets { continue; }
         volume = CollisionMap(eye_height=volumes.eye_height);
         for i in range(len(volumes.models)) {
             if volumes.models[i] == model {
