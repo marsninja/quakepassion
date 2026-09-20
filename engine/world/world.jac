@@ -52,7 +52,11 @@ node Entity {
 
 node Player(Entity) {
     has velocity: Vec3 = Vec3(),
-        grounded: bool = False;
+        grounded: bool = False,
+        teleport_cooldown: float = 0.0,
+        teleport_hold: float = 0.0,
+        water_depth: int = 0,
+        liquid_kind: int = 0;
 }
 
 

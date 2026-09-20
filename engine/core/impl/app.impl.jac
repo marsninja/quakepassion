@@ -308,10 +308,22 @@ impl App.step() -> bool {
             );
         }
         if self.walking {
+            immersed = self.level.immersion(self.player.pos);
+            self.player.water_depth = immersed.depth;
+            self.player.liquid_kind = immersed.kind;
+            swim = forward_from(self.player.yaw, self.player.pitch).scale(
+                intent.move.y
+            ).add(
+                right_from(self.player.yaw).scale(intent.move.x)
+            ).add(
+                Vec3(z=intent.move.z)
+            );
             self.player spawn MovePlayer(
                 collision=self.level.collision,
                 wish=wish,
                 jump=self.jump_pending,
+                water_depth=immersed.depth,
+                swim_wish=swim,
                 dt=self.physics_clock.tick_rate
             );
             self.jump_pending = False;
@@ -323,9 +335,19 @@ impl App.step() -> bool {
                 dt=self.physics_clock.tick_rate,
                 touching=self.walking
             );
+            self.world spawn TraversalTick(
+                player=self.player,
+                collision=self.level.collision,
+                start=previous_origin,
+                dt=self.physics_clock.tick_rate,
+                touching=self.walking
+            );
         }
     }
     if self.walking {
+        immersed = self.level.immersion(self.player.pos);
+        self.player.water_depth = immersed.depth;
+        self.player.liquid_kind = immersed.kind;
         self.fly(Intent(), 0.0);
     } else {
         self.fly(intent, dt);
