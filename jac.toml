@@ -10,7 +10,7 @@ raylib = ">=5.5"
 [test]
 directory = "tests"
 
-# Private compiler sources with native ZIP, bytearray, and aggregate C-call fixes.
+# Private compiler sources with native ZIP, bytearray, iterable, and C-call fixes.
 # See README.md for prepare_compiler.py --source and required upstream patches.
 [dev]
 jaclang_source = ".jac/compiler"

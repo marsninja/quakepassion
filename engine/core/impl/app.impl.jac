@@ -8,25 +8,9 @@ impl App.run() {
     }
     frame = 0;
     while not self.renderer.should_close() {
-        dt = self.renderer.frame_time();
-        intent = Intent() if self.smoke else sample_intent(dt);
-        if intent.toggle_culling {
-            self.culling = not self.culling;
+        if not self.step() {
+            break;
         }
-        if intent.toggle_overlay {
-            self.overlay = not self.overlay;
-        }
-
-        ticks = self.clock.advance(dt);
-        for i in range(ticks) {
-            tp = self.world spawn ThinkPass(dt=self.clock.tick_rate);
-            self.last_think = tp.entities_visited;
-        }
-
-        # phase-1 simplification: fly movement integrates per-frame for
-        # smoothness; phase 3 moves real player physics into the ticks
-        self.fly(intent, dt);
-        self.render_frame();
 
         frame += 1;
         if self.smoke and self.smoke_step(frame) {
@@ -89,6 +73,9 @@ impl App.render_frame() {
                 ]
             );
         }
+        if self.menu.opened {
+            self.menu.draw();
+        }
         self.renderer.end_frame();
         return;
     }
@@ -123,6 +110,9 @@ impl App.render_frame() {
                 "mouse: " + mouse_state
             ]
         );
+    }
+    if self.menu.opened {
+        self.menu.draw();
     }
     self.renderer.end_frame();
 }
@@ -184,4 +174,91 @@ impl App.smoke_step(frame: int) -> bool {
         return True;
     }
     return False;
+}
+
+impl App.switch_level() {
+    next_renderer = QuakeRenderer();
+    try {
+        game = self.menu.games[self.menu.game];
+        world = World();
+        level = load_level(
+            world, game_directory(game), self.menu.maps[self.menu.selected], game
+        );
+        player = spawn_player(level);
+        next_renderer.upload(level);
+        if self.level.active {
+            self.quake.close();
+        }
+        self.world = world;
+        self.level = level;
+        self.player = player;
+        self.quake = next_renderer;
+        self.clock = Clock();
+        self.skip_time = True;
+        self.menu.opened = False;
+        if self.menu.restore_mouse {
+            _capture();
+        }
+    } except Exception as error {
+        next_renderer.close();
+        self.menu.message = "Cannot load level: " + str(error);
+    }
+}
+
+impl App.step() -> bool {
+    dt = 0.0 if self.skip_time else self.renderer.frame_time();
+    self.skip_time = False;
+    if not self.smoke and IsKeyPressed(i32(256)) {
+        self.menu.opened = not self.menu.opened;
+        if self.menu.opened {
+            self.menu.restore_mouse = mouse_captured();
+            _release();
+            for i in range(3) {
+                if self.menu.games[i] == self.level.bsp.game {
+                    self.menu.game = i;
+                }
+            }
+            self.menu.scan();
+            for i in range(len(self.menu.maps)) {
+                if self.menu.maps[i] == self.level.name {
+                    self.menu.selected = i;
+                    self.menu.offset = max(0, min(i, len(self.menu.maps) - 11));
+                }
+            }
+        } elif self.menu.restore_mouse {
+            _capture();
+        }
+        self.render_frame();
+        return True;
+    }
+    if self.menu.opened {
+        action = self.menu.update();
+        if action == "quit" {
+            return False;
+        }
+        if action == "load" {
+            self.switch_level();
+        }
+        self.render_frame();
+        return True;
+    }
+    intent = Intent() if self.smoke else sample_intent(dt);
+    if intent.toggle_culling {
+        self.culling = not self.culling;
+    }
+    if intent.toggle_overlay {
+        self.overlay = not self.overlay;
+    }
+
+    ticks = self.clock.advance(dt);
+    for i in range(ticks) {
+        tp = self.world spawn ThinkPass(dt=self.clock.tick_rate);
+        self.last_think = tp.entities_visited;
+    }
+
+    # phase-1 simplification: fly movement integrates per-frame for
+    # smoothness; phase 3 moves real player physics into the ticks
+    self.fly(intent, dt);
+    self.render_frame();
+    return True;
 }

@@ -38,13 +38,15 @@ QP_GRAYBOX=1 ./qp                   # original two-room development scene
 
 For a fresh checkout, stage the compiler and raylib before building. The tested
 compiler source is ZIP-support PR #9322, commit
-`fb6940ddd52a76ea75790dda10736ef09926f0fd`, with the two additional upstream fixes:
+`fb6940ddd52a76ea75790dda10736ef09926f0fd`, with the additional upstream fixes:
 
 ```bash
 # /path/to/jac-checkout must contain the source revision above.
 python3 scripts/prepare_compiler.py --source /path/to/jac-checkout \
     --patch patches/jac-native-bytearray-extend.patch \
-    --patch patches/jac-native-aggregate-bytes.patch
+    --patch patches/jac-native-aggregate-bytes.patch \
+    --patch patches/jac-native-sorted-iterable.patch \
+    --patch patches/jac-native-scalar-return.patch
 ./scripts/stage_raylib.sh
 JAC_COMPILER_LIB=off jac clean --cache --force
 JAC_COMPILER_LIB=off jac build main.jac --native -o qp
@@ -65,7 +67,20 @@ versions differ, fetch that checkout's stubs with `zig build fetch-typeshed`.
 
 Controls: **WASD** moves, **Space/Shift** moves vertically, **Tab** or a click
 captures the mouse, and arrow keys also turn. **C** toggles PVS culling, **F3**
-toggles the overlay, and **Escape** exits. Movement is free flight through walls.
+toggles the overlay, and **Escape** opens/closes the level menu. Movement is free
+flight through walls.
+
+In the menu, choose **Quake**, **Quake II**, or **Quake III**, scroll or use
+**Up/Down** to select a map, then click **Render selected level** or press
+**Enter**. **Quit** closes the viewer; Escape resumes the current level. Movement
+pauses while the menu is open, and mouse capture is restored when it closes.
+Maps are discovered from your installed archives; Q1 brush-model BSPs are excluded.
+`QP_ASSETS` applies to the game selected by `QP_GAME`; the other games use their
+normal directories under `~/quake-assets`.
+
+The menu uses locally staged fixes from [Jac #9327](https://github.com/jaseci-labs/jac/pull/9327)
+and [#9336](https://github.com/jaseci-labs/jac/pull/9336); upstream merges are not
+required to run this prepared checkout.
 
 ## Status and validation
 
@@ -80,9 +95,10 @@ JAC_COMPILER_LIB=off jac test -j0
 python3 scripts/validate_quake.py --game q1
 python3 scripts/validate_quake.py --game q2
 python3 scripts/validate_quake.py --game q3
+python3 scripts/validate_menu.py       # exercises real menu input and game switching
 ```
 
-All 38 unit tests pass. Graphical validation requires an active desktop and original assets. Twelve maps
+All 40 unit tests pass. Graphical validation requires an active desktop and original assets. Twelve maps
 passed: six Q1, three Q2, and three Q3. Each check captures two positions and a
 camera turn, rejects blank images, and compares culling on/off at both positions.
 All 24 pairs matched exactly in the latest run. Captures and logs are ignored
