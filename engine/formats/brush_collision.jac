@@ -63,7 +63,35 @@ def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
     }
     for entity in bsp.entities {
         kind = entity.fields.get("classname", "");
-        if triggers and kind not in ["trigger_once", "trigger_multiple"] {
+        if not triggers
+            and bsp.game == "q2"
+            and kind in ["misc_teleporter", "misc_teleporter_dest"] {
+            if kind == "misc_teleporter" and not entity.fields.get("target", "") {
+                continue;
+            }
+            coords = entity.fields.get("origin", "0 0 0").split();
+            if len(coords) != 3 {
+                raise ValueError("Invalid teleport pad origin");
+            }
+            collision.add_box(
+                Vec3(x=-32.0, y=-32.0, z=-24.0),
+                Vec3(x=32.0, y=32.0, z=-16.0),
+                Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2])),
+                Vec3(x=-16.0, y=-16.0, z=-24.0),
+                Vec3(x=16.0, y=16.0, z=32.0)
+            );
+            collision.models.append(-1);
+            continue;
+        }
+
+        if triggers
+            and kind
+                not in [
+                    "trigger_once",
+                    "trigger_multiple",
+                    "trigger_teleport",
+                    "trigger_push"
+                ] {
             continue;
         }
         if not triggers

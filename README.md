@@ -98,7 +98,7 @@ input-event harness built by the menu runner; `scripts/png_checks.jac` decodes
 screenshots and counts changed pixels. Unit fixtures cover RGB/RGBA PNG filters,
 blank-image rejection, and pixel comparison.
 
-The expanded 86-test suite is validated with the local compiler containing
+The expanded 100-test suite is validated with the local compiler containing
 [Jac #9347](https://github.com/jaseci-labs/jac/pull/9347) and the additional
 [cache-section fix and build instructions](docs/native-cache-section-merge-blocker.md).
 Graphical validation requires an active desktop and original assets. Twelve maps
@@ -125,3 +125,8 @@ Shared touch triggers: [behavior, limits and validation](docs/triggers-status.md
 Buttons and activation relays: [current validation and limits](docs/buttons-status.md).
 
 Platforms and carrying: [validation and limits](docs/platforms-status.md).
+
+Teleporters and jump pads: [validation and limits](docs/traversal-status.md).
+
+Swimming: Space ascends and Left Shift descends when submerged; forward follows
+the view direction. See [liquid detection and swimming limits](docs/swimming-status.md).

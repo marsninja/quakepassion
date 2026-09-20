@@ -113,6 +113,7 @@ culling enabled versus disabled match exactly, across spawn and moved views.
   not Q3's original adaptive, directional facet rules; exact parity remains future work.
 - Ordinary linked doors translate; supported touch triggers activate named doors. Other special doors, lifts, trains and
   buttons still need behavior. Rotation and riding movers are not implemented.
-- Other trigger actions, jump pads, teleporters, liquids, swimming and crouching need behavior.
+- Initial teleporters and jump pads now work: see [traversal status](traversal-status.md).
+- Initial swimming now works: see [swimming status](swimming-status.md). Crouching, water ledge exits and further trigger actions remain.
 - Per-game movement tuning, render interpolation and full-map traversal checks.
 - Exact original-game movement fidelity is not claimed.

@@ -299,6 +299,8 @@ def parse_q3(data: bytes) -> Bsp {
                 first_face=first,
                 face_count=count,
                 vis_leaf_count=len(bsp.leaves) - 1,
+                mins=vec_at(lumps[7], i * 40),
+                maxs=vec_at(lumps[7], i * 40 + 12),
                 brushes=brushes
             )
         );

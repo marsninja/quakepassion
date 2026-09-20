@@ -272,6 +272,8 @@ def parse_bsp(data: bytes) -> Bsp {
         }
         bsp.models.append(
             Model(
+                mins=vec_at(lumps[14], p),
+                maxs=vec_at(lumps[14], p + 12),
                 head=head,
                 player_hull=player_hull,
                 first_face=first,

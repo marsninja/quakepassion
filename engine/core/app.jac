@@ -6,6 +6,7 @@ Method bodies live in impl/app.impl.jac."""
 
 import from ..world.doors { DoorTick }
 import from ..world.triggers { TriggerTick }
+import from ..world.traversal { TraversalTick }
 import from ..world.level { Level, load_level, spawn_player }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }

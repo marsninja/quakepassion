@@ -78,13 +78,41 @@ walker MovePlayer {
     has collision: CollisionMap,
         wish: Vec3 = Vec3(),
         jump: bool = False,
+        water_depth: int = 0,
+        swim_wish: Vec3 = Vec3(),
         dt: float = 1.0 / 120.0;
 
     can integrate with Player entry {
         if self.dt <= 0.0 or self.dt > 0.05 {
             return;
         }
+        if here.teleport_hold > 0.0 {
+            here.teleport_hold = max(0.0, here.teleport_hold - self.dt);
+            return;
+        }
         pos = here.pos.sub(Vec3(z=self.collision.eye_height));
+        if self.water_depth >= 2 {
+            here.grounded = False;
+            here.velocity = here.velocity.scale(
+                max(0.0, 1.0 - float(self.water_depth) * self.dt)
+            );
+            desired = self.swim_wish.normalized().scale(160.0);
+            if self.swim_wish.length() == 0.0 {
+                desired = Vec3(z=-60.0);
+            }
+            direction = desired.normalized();
+            add = max(0.0, desired.length() - here.velocity.dot(direction));
+            here.velocity = here.velocity.add(
+                direction.scale(min(add, 4.0 * desired.length() * self.dt))
+            );
+            moved = slide(self.collision, pos, here.velocity, self.dt);
+            here.velocity = moved.velocity;
+            here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
+            return;
+        }
+        if self.water_depth == 1 {
+            here.velocity = here.velocity.scale(max(0.0, 1.0 - self.dt));
+        }
         ground = self.collision.trace(pos, pos.add(Vec3(z=-0.25)));
         here.grounded = not ground.start_solid
             and ground.fraction < 1.0

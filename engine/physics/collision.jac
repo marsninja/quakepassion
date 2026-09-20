@@ -201,6 +201,23 @@ obj CollisionMap {
         groups: list[HullGroup] = [],
         eye_height: float = 22.0;
 
+    def add_box(lo: Vec3, hi: Vec3, offset: Vec3, mins: Vec3, maxs: Vec3) {
+        self.add_brush(
+            [
+                Vec3(x=1.0),
+                Vec3(x=-1.0),
+                Vec3(y=1.0),
+                Vec3(y=-1.0),
+                Vec3(z=1.0),
+                Vec3(z=-1.0)
+            ],
+            [hi.x, -lo.x, hi.y, -lo.y, hi.z, -lo.z],
+            mins,
+            maxs,
+            offset
+        );
+    }
+
     def add_brush(
         normals: list[Vec3],
         distances: list[float],

@@ -95,21 +95,13 @@ def load_triggers(world: World, bsp: Bsp) {
         }
         model = int(name[1:]);
         targets = resolve_targets(world, bsp, target);
-        if not targets { continue; }
-        volume = CollisionMap(eye_height=volumes.eye_height);
-        for i in range(len(volumes.models)) {
-            if volumes.models[i] == model {
-                volume.hulls.append(volumes.hulls[i]);
-                volume.offsets.append(volumes.offsets[i]);
-                if len(volumes.bounds) == len(volumes.hulls) {
-                    volume.bounds.append(volumes.bounds[i]);
-                }
-            }
+        if not targets {
+            continue;
         }
+        volume = trigger_volume(volumes, model);
         if not volume.hulls {
             continue;
         }
-        volume.reindex();
         interval = float(fields.get("wait", "0"));
         if interval == 0.0 {
             interval = 0.5 if bsp.game == "q3" else 0.2;
@@ -125,4 +117,20 @@ def load_triggers(world: World, bsp: Bsp) {
         }
         world +>:HasTrigger:+> trigger;
     }
+}
+
+
+def trigger_volume(volumes: CollisionMap, model: int) -> CollisionMap {
+    volume = CollisionMap(eye_height=volumes.eye_height);
+    for i in range(len(volumes.models)) {
+        if volumes.models[i] == model {
+            volume.hulls.append(volumes.hulls[i]);
+            volume.offsets.append(volumes.offsets[i]);
+            if len(volumes.bounds) == len(volumes.hulls) {
+                volume.bounds.append(volumes.bounds[i]);
+            }
+        }
+    }
+    volume.reindex();
+    return volume;
 }

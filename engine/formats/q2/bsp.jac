@@ -272,7 +272,12 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
         }
         bsp.models.append(
             Model(
-                head=head, first_face=first, face_count=count, vis_leaf_count=vis_count
+                mins=vec_at(lumps[13], p),
+                maxs=vec_at(lumps[13], p + 12),
+                head=head,
+                first_face=first,
+                face_count=count,
+                vis_leaf_count=vis_count
             )
         );
     }

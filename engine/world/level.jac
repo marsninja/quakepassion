@@ -14,6 +14,8 @@ import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from .doors { load_doors }
 import from .triggers { load_triggers }
+import from .traversal { load_traversal }
+import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
 
 node Split {
@@ -77,7 +79,8 @@ obj Level {
         brush_faces: list[int] = [],
         palette: bytes = b"",
         areas: list[BspArea] = [],
-        splits: list[Split] = [];
+        splits: list[Split] = [],
+        liquids: LiquidSpace = LiquidSpace();
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -86,6 +89,35 @@ obj Level {
         }
         query = self.splits[head] spawn Locate(eye=eye);
         return query.result;
+    }
+
+    def liquid_at(point: Vec3) -> int {
+        if not self.active {
+            return 0;
+        }
+        if self.bsp.game == "q1" {
+            return liquid_kind(self.bsp.leaves[self.locate(point)].contents, "q1");
+        }
+        sample = self.liquids spawn SampleLiquid(point=point);
+        return sample.result;
+    }
+
+    def immersion(eye: Vec3) -> Immersion {
+        result = Immersion();
+        origin = eye.sub(Vec3(z=self.collision.eye_height));
+        for height in [
+            -23.0,
+            (self.collision.eye_height - 24.0) * 0.5,
+            self.collision.eye_height
+        ] {
+            kind = self.liquid_at(origin.add(Vec3(z=height)));
+            if kind == 0 {
+                break;
+            }
+            result.depth += 1;
+            result.kind = max(result.kind, kind);
+        }
+        return result;
     }
 
     def visible(world: World, eye: Vec3, culling: bool) -> list[int] {
@@ -283,8 +315,10 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
             level.brush_faces.append(f);
         }
     }
+    level.liquids = load_liquids(level.bsp);
     load_doors(world, level.bsp, level.collision);
     load_triggers(world, level.bsp);
+    load_traversal(world, level.bsp);
     return level;
 }
 

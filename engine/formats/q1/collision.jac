@@ -31,7 +31,14 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
     # their offsets. Triggers and illusionary brushes are not solid.
     for entity in bsp.entities {
         kind = entity.fields.get("classname", "");
-        if triggers and kind not in ["trigger_once", "trigger_multiple"] {
+        if triggers
+            and kind
+                not in [
+                    "trigger_once",
+                    "trigger_multiple",
+                    "trigger_teleport",
+                    "trigger_push"
+                ] {
             continue;
         }
         if not triggers
