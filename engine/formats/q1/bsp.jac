@@ -206,6 +206,9 @@ def parse_bsp(data: bytes) -> Bsp {
             check_index(fi, len(bsp.faces));
             leaf.faces.append(fi);
         }
+        # Standalone brush assets can contain a zero offset with no VIS lump.
+        # There is no visibility stream to address; expose all leaves instead.
+        if not bsp.visibility and leaf.vis_offset == 0 { leaf.vis_offset = -1; }
         if leaf.vis_offset < -1
             or leaf.vis_offset >= len(bsp.visibility)
             and leaf.vis_offset != -1 {

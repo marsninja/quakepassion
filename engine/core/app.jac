@@ -7,11 +7,17 @@ Method bodies live in impl/app.impl.jac."""
 import from ..world.doors { DoorTick }
 import from ..world.triggers { TriggerTick }
 import from ..world.traversal { TraversalTick }
+import from ..world.exits { ExitTick, exit_map, exit_spawn }
+import from ..world.environment { EnvironmentTick }
+import from ..world.pickups { PickupTick }
+import from ..world.inventory { quantity }
+import from games.items { populate_pickups }
+import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
-import from ..physics.movement { MovePlayer }
+import from ..physics.movement { MovePlayer, SetStance }
 import from ..input.input {
     Intent,
     sample_intent,
@@ -50,6 +56,8 @@ obj App {
         last_drawn: int = 0,
         level: Level = Level(),
         quake: QuakeRenderer = QuakeRenderer(),
+        models: ModelScene = ModelScene(),
+        simulation_time: float = 0.0,
         menu: LevelMenu = LevelMenu(),
         skip_time: bool = False,
         walking: bool = False,
@@ -66,6 +74,9 @@ obj App {
     def run();
     def step() -> bool;
     def switch_level();
+    def load_destination(
+        game: str, name: str, spawnpoint: str = "", carry: bool = False
+    );
     def fly(intent: Intent, dt: float);
     def toggle_movement();
     def render_frame();

@@ -39,7 +39,8 @@ walker TriggerTick {
     has start: Vec3,
         finish: Vec3,
         dt: float,
-        touching: bool = True;
+        touching: bool = True,
+        top_drop: float = 0.0;
 
     can start_world with World entry {
         if self.dt > 0.0 {
@@ -55,7 +56,7 @@ walker TriggerTick {
         if not self.touching or here.cooldown > 0.0 {
             return;
         }
-        hit = here.volume.trace(self.start, self.finish);
+        hit = here.volume.trace(self.start, self.finish, top_drop=self.top_drop);
         if hit.start_solid or hit.fraction < 1.0 {
             here spawn Activate();
             here.activations += 1;

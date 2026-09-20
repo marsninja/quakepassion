@@ -71,6 +71,22 @@ impl Renderer.end_frame() {
     EndDrawing();
 }
 
+impl Renderer.draw_status(health: int, armor: int, shells: int = 0) {
+    color = Color(r=255, g=220, b=160, a=255);
+    DrawText(
+        "HEALTH " + str(health) + "    ARMOR " + str(armor) + "    SHELLS " + str(shells),
+        20,
+        i32(self.height - 42),
+        24,
+        color
+    );
+    if health <= 0 {
+        DrawText(
+            "You died - Enter to restart level", 20, i32(self.height - 78), 24, color
+        );
+    }
+}
+
 impl Renderer.screenshot(path: str) {
     TakeScreenshot(path);
 }

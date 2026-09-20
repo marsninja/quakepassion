@@ -6,14 +6,18 @@ animation, fog, and skyboxes require the later material renderer.
 import os;
 import from zipfile { ZipFile }
 import from ..formats.bsp { Texture }
+import from .materials { ModelMaterial, model_materials, material_name }
+import from ..formats.animated { ModelStage }
 
 obj Pk3Assets {
     has archives: list[ZipFile] = [],
         owners: dict[str, int] = {},
+        canonical_names: dict[str, str] = {},
         shaders: dict[str, str] = {},
         alpha_tests: dict[str, int] = {},
         additive: dict[str, bool] = {},
-        two_sided: dict[str, bool] = {};
+        two_sided: dict[str, bool] = {},
+        model_shaders: dict[str, ModelMaterial] = {};
 
     def open(directory: str) {
         for filename in sorted(os.listdir(directory)) {
@@ -23,6 +27,7 @@ obj Pk3Assets {
                 self.archives.append(archive);
                 for name in archive.namelist() {
                     self.owners[name] = index;
+                    self.canonical_names[name.lower()] = name;
                 }
             }
         }
@@ -34,6 +39,7 @@ obj Pk3Assets {
     }
 
     def read(name: str) -> bytes {
+        name = self.canonical_names.get(name.lower(), name);
         if name not in self.owners {
             raise ValueError("Missing PK3 asset: " + name);
         }
@@ -41,16 +47,20 @@ obj Pk3Assets {
     }
 
     def image_name(name: str) -> str {
+        name = self.canonical_names.get(name.lower(), name);
         if name in self.owners {
             return name;
         }
         stem = name;
-        if name.endswith(".tga") or name.endswith(".jpg") {
+        if name.lower().endswith(".tga") or name.lower().endswith(".jpg") {
             stem = name[:-4];
         }
         for extension in [".tga", ".jpg", ".jpeg", ".png"] {
-            if stem + extension in self.owners {
-                return stem + extension;
+            candidate = self.canonical_names.get(
+                (stem + extension).lower(), stem + extension
+            );
+            if candidate in self.owners {
+                return candidate;
             }
         }
         return "";
@@ -82,6 +92,10 @@ obj Pk3Assets {
                 }
             }
             clean += "\n";
+        }
+        parsed = model_materials(clean);
+        for key in parsed.keys() {
+            self.model_shaders[key] = parsed[key];
         }
         tokens = clean.replace("{", " { ").replace("}", " } ").split();
         depth = 0;
@@ -122,7 +136,7 @@ obj Pk3Assets {
                     fallback = "";
                 }
             } elif depth == 0 {
-                name = token;
+                name = material_name(token);
             } elif i + 1 < len(tokens) {
                 if lower == "map" or lower == "clampmap" {
                     value = tokens[i + 1];
@@ -175,11 +189,12 @@ obj Pk3Assets {
 
     def texture(texture: Texture) {
         name = "";
-        if texture.name in self.shaders {
-            name = self.image_name(self.shaders[texture.name]);
-            texture.alpha_test = self.alpha_tests.get(texture.name, 0);
-            texture.additive = self.additive.get(texture.name, False);
-            texture.two_sided = self.two_sided.get(texture.name, False);
+        key = material_name(texture.name);
+        if key in self.shaders {
+            name = self.image_name(self.shaders[key]);
+            texture.alpha_test = self.alpha_tests.get(key, 0);
+            texture.additive = self.additive.get(key, False);
+            texture.two_sided = self.two_sided.get(key, False);
         }
         if name == "" {
             name = self.image_name(texture.name);
@@ -191,10 +206,47 @@ obj Pk3Assets {
             return;
         }
         texture.encoded = self.read(name);
-        texture.extension = ".tga" if name.endswith(".tga") else ".jpg";
-        if name.endswith(".png") {
+        texture.extension = ".tga" if name.lower().endswith(".tga") else ".jpg";
+        if name.lower().endswith(".png") {
             texture.extension = ".png";
         }
+    }
+
+    def model_stages(name: str) -> list[ModelStage] {
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return [];
+        }
+        material = self.model_shaders[key];
+        if material.unsupported {
+            print("Partial model material:", name, material.unsupported);
+            return [];
+        }
+        result: list[ModelStage] = [];
+        for stage in material.stages {
+            image = self.image_name(stage.texture.name);
+            if not image {
+                raise ValueError("Missing model shader image: " + stage.texture.name);
+            }
+            texture = Texture(
+                name=image,
+                encoded=self.read(image),
+                extension=".tga" if image.lower().endswith(".tga") else ".jpg"
+            );
+            if image.lower().endswith(".png") {
+                texture.extension = ".png";
+            }
+            result.append(
+                ModelStage(
+                    texture=texture,
+                    environment=stage.environment,
+                    blend=stage.blend,
+                    scroll_u=stage.scroll_u,
+                    scroll_v=stage.scroll_v
+                )
+            );
+        }
+        return result;
     }
 
     def close() {
@@ -203,5 +255,11 @@ obj Pk3Assets {
         }
         self.archives = [];
         self.owners = {};
+        self.canonical_names = {};
+        self.model_shaders = {};
+        self.shaders = {};
+        self.alpha_tests = {};
+        self.additive = {};
+        self.two_sided = {};
     }
 }

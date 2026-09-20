@@ -62,3 +62,12 @@ test "truncated BSP header rejects" {
     }
     assert failed;
 }
+
+
+test "entity strings preserve trailing backslashes as in Q2 train light fields" {
+    text = '{"light" "175' + chr(92) + '" "classname" "light"}';
+    entities = parse_entities(text);
+    assert len(entities) == 1;
+    assert entities[0].fields["light"] == "175" + chr(92);
+    assert entities[0].fields["classname"] == "light";
+}

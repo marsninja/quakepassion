@@ -95,6 +95,7 @@ impl sample_intent(
         toggle_culling=IsKeyPressed(KEY_C),
         toggle_overlay=IsKeyPressed(KEY_F3),
         toggle_walk=IsKeyPressed(i32(293)),
-        jump=IsKeyPressed(KEY_SPACE)
+        jump=IsKeyPressed(KEY_SPACE),
+        crouch=IsKeyDown(i32(341))
     );
 }

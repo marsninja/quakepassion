@@ -52,7 +52,7 @@ walker TraversalTick {
             return;
         }
         finish = self.player.pos.sub(Vec3(z=self.collision.eye_height));
-        hit = here.volume.trace(self.start, finish);
+        hit = here.volume.trace(self.start, finish, top_drop=self.collision.top_drop);
         if not hit.start_solid and hit.fraction == 1.0 {
             return;
         }

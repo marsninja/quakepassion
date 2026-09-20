@@ -78,7 +78,9 @@ walker DoorTick {
             for index in here.hulls {
                 local = origin.sub(self.collision.offsets[index]);
                 support = self.collision.hulls[index] spawn Sweep(
-                    start=local, finish=local.add(Vec3(z=-0.25))
+                    top_drop=self.collision.top_drop,
+                    start=local,
+                    finish=local.add(Vec3(z=-0.25))
                 );
                 if not support.result.start_solid
                     and support.result.fraction < 1.0
@@ -108,7 +110,9 @@ walker DoorTick {
                     ] {
                         local = origin.sub(self.collision.offsets[index]);
                         probe = self.collision.hulls[index] spawn Sweep(
-                            start=local, finish=local.add(delta)
+                            top_drop=self.collision.top_drop,
+                            start=local,
+                            finish=local.add(delta)
                         );
                         if probe.result.start_solid or probe.result.fraction < 1.0 {
                             contact = True;
@@ -175,6 +179,7 @@ walker DoorTick {
             for j in range(len(part.hulls)) {
                 index = part.hulls[j];
                 query = self.collision.hulls[index] spawn Sweep(
+                    top_drop=self.collision.top_drop,
                     start=origin.sub(part.origins[j].add(old_motion)),
                     finish=carried.sub(part.origins[j].add(motion))
                 );
@@ -526,7 +531,7 @@ def union_bounds(a: AABB, b: AABB) -> AABB {
 
 
 def connect_targets(world: World, bsp: Bsp) {
-    signals: list[Signal] = [];
+    signals: list[Signal] = [world->:HasSignal:->][?:Signal];
     leaders = [world->:HasDoor:->][?:Door];
     for leader in leaders {
         members = [leader];
@@ -551,8 +556,11 @@ def connect_targets(world: World, bsp: Bsp) {
             signals.append(Signal(relay=True, entities=[index]));
         }
     }
+    registered = [world->:HasSignal:->][?:Signal];
     for signal in signals {
-        world +>:HasSignal:+> signal;
+        if signal not in registered {
+            world +>:HasSignal:+> signal;
+        }
     }
     # Resolve every recipient, then propagate unsupported downstream fan-outs.
     for signal in signals {

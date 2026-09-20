@@ -69,6 +69,7 @@ obj Renderer {
     def end_scene();
 
     def draw_overlay(lines: list[str]);
+    def draw_status(health: int, armor: int, shells: int = 0);
     def end_frame();
     def screenshot(path: str);
     def close();

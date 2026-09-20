@@ -36,6 +36,7 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
                 not in [
                     "trigger_once",
                     "trigger_multiple",
+                    "trigger_changelevel",
                     "trigger_teleport",
                     "trigger_push"
                 ] {

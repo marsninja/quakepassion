@@ -27,7 +27,8 @@ obj Intent {
         toggle_culling: bool = False,
         toggle_overlay: bool = False,
         toggle_walk: bool = False,
-        jump: bool = False;
+        jump: bool = False,
+        crouch: bool = False;
 }
 
 
