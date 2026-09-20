@@ -8,7 +8,7 @@ Method and ability bodies live in impl/renderer.impl.jac.
 """
 
 import from vendor.raylib {
-    def SetExitKey(key: i32) -> None;  def rlSetClipPlanes(
+    def SetTargetFPS(fps: i32) -> None;  def SetExitKey(key: i32) -> None;  def rlSetClipPlanes(
         nearPlane: f64, farPlane: f64
     ) -> None;  obj Color {
         has r: u8,
@@ -47,10 +47,13 @@ glob FOV_DEGREES: float = 72.0,
 
 
 obj Renderer {
-    has width: int = 1280,
+    has fov: float = 72.0,
+        frame_limit: int = 0,
+        width: int = 1280,
         height: int = 720,
         title: str = "QuakePassion — Quake level viewer";
 
+    def set_frame_limit(fps: int);
     def open_window();
     def should_close() -> bool;
     def frame_time() -> float;

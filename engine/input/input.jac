@@ -12,13 +12,9 @@ staged sibling library (see renderer.jac for the linking note).
 Function bodies live in impl/input.impl.jac."""
 
 import from vendor.raylib {
-    def IsKeyDown(key: i32) -> bool;
-    def IsKeyPressed(key: i32) -> bool;
-    def IsMouseButtonPressed(button: i32) -> bool;
-    def GetMouseX -> i32;
-    def GetMouseY -> i32;
-    def DisableCursor -> None;
-    def EnableCursor -> None;
+    def IsKeyDown(key: i32) -> bool;  def IsKeyPressed(key: i32) -> bool;  def IsMouseButtonPressed(
+        button: i32
+    ) -> bool;  def GetMouseX -> i32;  def GetMouseY -> i32;  def DisableCursor -> None;  def EnableCursor -> None;
 }
 
 import from ..math.vec3 { Vec3 }
@@ -29,7 +25,9 @@ obj Intent {
         look_yaw: float = 0.0,
         look_pitch: float = 0.0,
         toggle_culling: bool = False,
-        toggle_overlay: bool = False;
+        toggle_overlay: bool = False,
+        toggle_walk: bool = False,
+        jump: bool = False;
 }
 
 
@@ -67,4 +65,6 @@ glob _mouse: MouseState = MouseState();
 def mouse_captured() -> bool;
 def _capture();
 def _release();
-def sample_intent(dt: float) -> Intent;
+def sample_intent(
+    dt: float, sensitivity: float = 0.0022, invert_y: bool = False
+) -> Intent;

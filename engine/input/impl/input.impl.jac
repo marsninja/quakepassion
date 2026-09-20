@@ -17,7 +17,9 @@ impl _release() {
     _mouse.captured = False;
 }
 
-impl sample_intent(dt: float) -> Intent {
+impl sample_intent(
+    dt: float, sensitivity: float = 0.0022, invert_y: bool = False
+) -> Intent {
     mv = Vec3();
     if IsKeyDown(KEY_W) {
         mv.y += 1.0;
@@ -74,9 +76,12 @@ impl sample_intent(dt: float) -> Intent {
         } else {
             dx = mx - _mouse.prev_x;
             dy = my - _mouse.prev_y;
-            if dx > -SPIKE_LIMIT and dx < SPIKE_LIMIT and dy > -SPIKE_LIMIT and dy < SPIKE_LIMIT {
-                yaw -= dx * MOUSE_SENSITIVITY;
-                pitch -= dy * MOUSE_SENSITIVITY;
+            if dx > -SPIKE_LIMIT
+                and dx < SPIKE_LIMIT
+                and dy > -SPIKE_LIMIT
+                and dy < SPIKE_LIMIT {
+                yaw -= dx * sensitivity;
+                pitch -= dy * sensitivity * (-1.0 if invert_y else 1.0);
             }
         }
         _mouse.prev_x = mx;
@@ -88,6 +93,8 @@ impl sample_intent(dt: float) -> Intent {
         look_yaw=yaw,
         look_pitch=pitch,
         toggle_culling=IsKeyPressed(KEY_C),
-        toggle_overlay=IsKeyPressed(KEY_F3)
+        toggle_overlay=IsKeyPressed(KEY_F3),
+        toggle_walk=IsKeyPressed(i32(293)),
+        jump=IsKeyPressed(KEY_SPACE)
     );
 }

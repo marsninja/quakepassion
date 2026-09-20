@@ -2,17 +2,14 @@
 import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
-import from ..formats.q1.bsp {
-    Bsp,
-    Texture,
-    parse_bsp,
-    decode_pvs,
-    i32_at,
-    require_range
-}
+import from ..formats.q1.bsp { parse_bsp }
+import from ..formats.bsp { Bsp, Texture, decode_pvs, i32_at, require_range }
 import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
 import from ..formats.q3.bsp { parse_q3 }
 import from ..assets.pk3 { Pk3Assets }
+import from ..physics.collision { CollisionMap }
+import from ..formats.q1.collision { build_collision }
+import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from .world { World, Area, Player, move_to_area }
@@ -72,6 +69,7 @@ walker CollectFaces {
 
 obj Level {
     has active: bool = False,
+        collision: CollisionMap = CollisionMap(),
         name: str = "",
         bsp: Bsp = Bsp(),
         brush_faces: list[int] = [],
@@ -278,6 +276,11 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
             level.brush_faces.append(f);
         }
     }
+    if game == "q1" {
+        level.collision = build_collision(level.bsp);
+    } else {
+        level.collision = build_brush_collision(level.bsp);
+    }
     return level;
 }
 
@@ -291,7 +294,7 @@ def spawn_player(level: Level) -> Player {
             }
             player = Player(
                 pos=Vec3(
-                    x=float(coords[0]), y=float(coords[1]), z=float(coords[2]) + 22.0
+                    x=float(coords[0]), y=float(coords[1]), z=float(coords[2]) + level.collision.eye_height
                 ),
                 yaw=float(ent.fields.get("angle", "0")) * math.pi / 180.0
             );

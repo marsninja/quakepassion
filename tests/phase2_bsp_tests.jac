@@ -1,6 +1,7 @@
 """BSP boundary and visibility tests; no proprietary assets needed."""
 import struct;
-import from engine.formats.q1.bsp { parse_bsp, parse_entities, decode_pvs }
+import from engine.formats.q1.bsp { parse_bsp }
+import from engine.formats.bsp { parse_entities, decode_pvs }
 
 test "PVS bits address leaves starting at one" {
     assert decode_pvs(b"\x85", 0, 9) == [1, 3, 8];

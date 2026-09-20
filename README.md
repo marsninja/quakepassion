@@ -40,10 +40,14 @@ For a fresh checkout, install [Jac 0.37.21](https://github.com/jaseci-labs/jac/r
 for your platform, then stage raylib and build:
 
 ```bash
-jac --version                       # 0.37.21
+jac --version
 ./scripts/stage_raylib.sh
 jac build main.jac --native -o qp
 ```
+
+The current source needs the compiler fixes from Jac #9344; follow the
+[patched compiler setup](docs/player-movement-status.md#compiler-requirement)
+before rebuilding with the released 0.37.21 launcher.
 
 Raylib setup builds pinned 6.0 sources with JPG/TGA support, which its prebuilt
 libraries lack. It requires a C compiler and `make`; Linux also needs the desktop
@@ -54,12 +58,21 @@ be removed. Compiler patches and the Python staging helper have been retired.
 Controls: **WASD** moves, **Space/Shift** moves vertically, **Tab** or a click
 captures the mouse, and arrow keys also turn. **C** toggles PVS culling, **F3**
 toggles the overlay, and **Escape** opens/closes the level menu. Movement is free
-flight through walls.
+flight through walls by default. In all three games, **F4** toggles walking and **Space**
+jumps; `QP_WALK=1 ./qp` starts walking. Doors/lifts remain static, and switching
+levels returns to flight. See [movement status](docs/player-movement-status.md).
 
 In the menu, choose **Quake**, **Quake II**, or **Quake III**, scroll or use
 **Up/Down** to select a map, then click **Render selected level** or press
 **Enter**. **Quit** closes the viewer; Escape resumes the current level. Movement
 pauses while the menu is open, and mouse capture is restored when it closes.
+
+The **Settings** button switches to movement mode, vertical field of view, mouse
+sensitivity, inverted mouse Y, fly speed, frame limit, visibility culling, and
+the diagnostic overlay. Click the arrows or use **Up/Down** and **Left/Right**.
+Changes apply immediately and stay active across level switches for this session;
+movement mode still resets to flight on level load. **Reset defaults** restores
+the original controls and uncapped rendering. Settings are not saved to disk.
 Maps are discovered from your installed archives; Q1 brush-model BSPs are excluded.
 `QP_ASSETS` applies to the game selected by `QP_GAME`; the other games use their
 normal directories under `~/quake-assets`.
@@ -85,8 +98,10 @@ input-event harness built by the menu runner; `scripts/png_checks.jac` decodes
 screenshots and counts changed pixels. Unit fixtures cover RGB/RGBA PNG filters,
 blank-image rejection, and pixel comparison.
 
-All 44 unit tests passed on the first run with the release; a subsequent full-suite
-run crashes the released Jac 0.37.21 compiler (see [validation status](docs/validation-tooling-status.md)).
+The expanded 60-test suite is validated with the patched compiler from
+[Jac #9344](https://github.com/jaseci-labs/jac/pull/9344), which also contains the
+cache fix from #9342. The current shared-format imports require this compiler;
+see [local build instructions](docs/player-movement-status.md#compiler-requirement).
 Graphical validation requires an active desktop and original assets. Twelve maps
 passed: six Q1, three Q2, and three Q3. Each check captures two positions and a
 camera turn, rejects blank images, and compares culling on/off at both positions.
@@ -95,8 +110,9 @@ under `.jac/screenshots/<game>/<map>/`. `QP_SMOKE=1` runs one capture sequence.
 These checks establish representative rendering and culling consistency, not
 pixel parity with the original games.
 
-This is a static level viewer. Collision, gameplay, character/item models, and
-moving doors/lifts remain future work. Animated materials and full Q3 multipass
+This is a level viewer with shared walking and brush collision across Q1/Q2/Q3.
+Q3 curved-patch collision, gameplay, character/item models, and moving doors/lifts
+remain future work. Animated materials and full Q3 multipass
 shaders, fog, skyboxes, and vertex deformation are not implemented.
 
 See [Q1 results](docs/quake1-rendering-status.md) and

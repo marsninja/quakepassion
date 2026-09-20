@@ -40,7 +40,7 @@ impl App.fly(intent: Intent, dt: float) {
         Vec3(z=intent.move.z)
     );
     if wish.length() > 0.001 {
-        p.pos = p.pos.add(wish.normalized().scale(FLY_SPEED * dt));
+        p.pos = p.pos.add(wish.normalized().scale(self.fly_speed * dt));
     }
 
     # rewire the In edge when we cross into another area
@@ -53,6 +53,9 @@ impl App.fly(intent: Intent, dt: float) {
 }
 
 impl App.render_frame() {
+    if self.menu.opened {
+        self.refresh_settings();
+    }
     p = self.player;
     if self.level.active {
         faces = self.level.visible(self.world, p.pos, self.culling);
@@ -69,7 +72,13 @@ impl App.render_frame() {
                         + str(len(self.level.bsp.faces)),
                     "BSP leaf: " + str(self.level.locate(p.pos)),
                     "PVS [C]: " + ("ON" if self.culling else "OFF"),
-                    "WASD / Space / Shift: fly | Tab: mouse | F3: overlay"
+                    (
+                        "WASD: walk | Space: jump"
+                            if self.walking
+                            else "WASD / Space / Shift: fly"
+                    )
+                        + " | Tab: mouse | F3: overlay",
+                    self.movement_status
                 ]
             );
         }
@@ -195,6 +204,10 @@ impl App.switch_level() {
         self.quake = next_renderer;
         self.clock = Clock();
         self.skip_time = True;
+        self.walking = False;
+        self.jump_pending = False;
+        self.physics_clock.accumulator = 0.0;
+        self.movement_status = "F4: walk / fly";
         self.menu.opened = False;
         if self.menu.restore_mouse {
             _capture();
@@ -211,6 +224,8 @@ impl App.step() -> bool {
     if not self.smoke and IsKeyPressed(i32(256)) {
         self.menu.opened = not self.menu.opened;
         if self.menu.opened {
+            self.jump_pending = False;
+            self.physics_clock.accumulator = 0.0;
             self.menu.restore_mouse = mouse_captured();
             _release();
             for i in range(3) {
@@ -236,13 +251,21 @@ impl App.step() -> bool {
         if action == "quit" {
             return False;
         }
+        if action == "setting_left" or action == "setting_right" {
+            self.adjust_setting(-1 if action == "setting_left" else 1);
+        }
+        if action == "settings_reset" {
+            self.reset_settings();
+        }
         if action == "load" {
             self.switch_level();
         }
         self.render_frame();
         return True;
     }
-    intent = Intent() if self.smoke else sample_intent(dt);
+    intent = Intent()
+        if self.smoke
+        else sample_intent(dt, self.sensitivity, self.invert_y);
     if intent.toggle_culling {
         self.culling = not self.culling;
     }
@@ -250,15 +273,126 @@ impl App.step() -> bool {
         self.overlay = not self.overlay;
     }
 
+    if intent.toggle_walk {
+        self.toggle_movement();
+    }
     ticks = self.clock.advance(dt);
     for i in range(ticks) {
         tp = self.world spawn ThinkPass(dt=self.clock.tick_rate);
         self.last_think = tp.entities_visited;
     }
 
-    # phase-1 simplification: fly movement integrates per-frame for
-    # smoothness; phase 3 moves real player physics into the ticks
-    self.fly(intent, dt);
+    if self.walking {
+        self.fly(intent, 0.0);
+        self.jump_pending = self.jump_pending or intent.jump;
+        steps = self.physics_clock.advance(min(dt, 0.25));
+        wish = forward_from(self.player.yaw, 0.0).scale(intent.move.y).add(
+            right_from(self.player.yaw).scale(intent.move.x)
+        );
+        for i in range(steps) {
+            self.player spawn MovePlayer(
+                collision=self.level.collision,
+                wish=wish,
+                jump=self.jump_pending,
+                dt=self.physics_clock.tick_rate
+            );
+            self.jump_pending = False;
+        }
+        self.fly(Intent(), 0.0);
+    } else {
+        self.fly(intent, dt);
+    }
     self.render_frame();
     return True;
+}
+
+impl App.toggle_movement() {
+    if self.walking {
+        self.walking = False;
+        self.movement_status = "FLY | F4: walk";
+    } elif not self.level.active or not self.level.collision.hulls {
+        self.movement_status = "Walking needs a loaded collision map | F4";
+    } else {
+        origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
+        if self.level.collision.trace(origin, origin).start_solid {
+            self.movement_status = "Fly into open space before enabling walking | F4";
+            return;
+        }
+        self.walking = True;
+        self.movement_status = "WALK | F4: fly | doors/lifts are static";
+    }
+    self.player.velocity = Vec3();
+    self.player.grounded = False;
+    self.jump_pending = False;
+    self.physics_clock.accumulator = 0.0;
+}
+
+impl App.refresh_settings() {
+    self.menu.settings_labels = [
+        "Movement: " + ("Walk" if self.walking else "Fly"),
+        "Field of view (vertical): " + str(int(self.renderer.fov)),
+        "Mouse sensitivity: " + str(int(self.sensitivity / 0.0022 * 100.0 + 0.5)) + "%",
+        "Invert mouse Y: " + ("On" if self.invert_y else "Off"),
+        "Fly speed: " + str(int(self.fly_speed)),
+        "Frame limit: "
+            + (
+                str(self.renderer.frame_limit)
+                    if self.renderer.frame_limit > 0
+                    else "Uncapped"
+            ),
+        "Visibility culling: " + ("On" if self.culling else "Off"),
+        "Diagnostic overlay: " + ("On" if self.overlay else "Off")
+    ];
+}
+
+impl App.adjust_setting(direction: int) {
+    row = self.menu.setting_selected;
+    self.menu.message = "";
+    if row == 0 {
+        self.toggle_movement();
+        self.menu.message = self.movement_status;
+    } elif row == 1 {
+        self.renderer.fov = max(
+            40.0, min(110.0, self.renderer.fov + float(direction) * 2.0)
+        );
+    } elif row == 2 {
+        self.sensitivity = max(
+            0.00022, min(0.011, self.sensitivity + float(direction) * 0.00022)
+        );
+    } elif row == 3 {
+        self.invert_y = not self.invert_y;
+    } elif row == 4 {
+        self.fly_speed = max(
+            60.0, min(1920.0, self.fly_speed + float(direction) * 60.0)
+        );
+    } elif row == 5 {
+        limits = [0, 30, 60, 120, 144, 240];
+        index = 0;
+        for i in range(len(limits)) {
+            if limits[i] == self.renderer.frame_limit {
+                index = i;
+            }
+        }
+        self.renderer.set_frame_limit(
+            limits[(index + direction + len(limits)) % len(limits)]
+        );
+    } elif row == 6 {
+        self.culling = not self.culling;
+    } elif row == 7 {
+        self.overlay = not self.overlay;
+    }
+}
+
+impl App.reset_settings() {
+    self.menu.message = "";
+    if self.walking {
+        self.toggle_movement();
+    }
+    self.renderer.fov = 72.0;
+    self.renderer.set_frame_limit(0);
+    self.sensitivity = 0.0022;
+    self.invert_y = False;
+    self.fly_speed = 240.0;
+    self.culling = True;
+    self.overlay = True;
 }

@@ -9,7 +9,7 @@ import from engine.world.level {
     Locate,
     CollectFaces
 }
-import from engine.formats.q1.bsp { Bsp, Model, Leaf }
+import from engine.formats.bsp { Bsp, Model, Leaf }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
 

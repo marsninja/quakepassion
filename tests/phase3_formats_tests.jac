@@ -1,6 +1,6 @@
 """Q2 WAL bounds, Q3 patch geometry, and cluster visibility regression tests."""
 import struct;
-import from engine.formats.q1.bsp { Bsp, Face, Leaf, Model }
+import from engine.formats.bsp { Bsp, Face, Leaf, Model }
 import from engine.formats.q2.bsp { parse_wal, parse_q2 }
 import from engine.formats.q3.bsp { Vertex, tessellate, parse_q3 }
 import from engine.world.level { Level, Split, BspArea, Front, Back }

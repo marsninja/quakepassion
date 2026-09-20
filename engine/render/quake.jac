@@ -45,7 +45,7 @@ import from vendor.raylib {
     ) -> None;  def EndBlendMode -> None;
 }
 import from ..world.level { Level }
-import from ..formats.q1.bsp { Face, Texture }
+import from ..formats.bsp { Face, Texture }
 import from ..math.vec3 { Vec3 }
 
 obj LightRect {

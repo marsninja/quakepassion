@@ -1,5 +1,6 @@
 """Quake III BSP46 surfaces, quadratic patches, and cluster visibility."""
-import from ..q1.bsp {
+import from ..bsp {
+    Brush,
     Bsp,
     Texture,
     Face,
@@ -125,7 +126,9 @@ def parse_q3(data: bytes) -> Bsp {
         }
         bsp.textures.append(
             Texture(
-                name=lumps[1][p:end].decode("utf-8"), flags=i32_at(lumps[1], p + 64)
+                name=lumps[1][p:end].decode("utf-8"),
+                flags=i32_at(lumps[1], p + 64),
+                contents=i32_at(lumps[1], p + 68)
             )
         );
     }
@@ -135,6 +138,24 @@ def parse_q3(data: bytes) -> Bsp {
                 normal=vec_at(lumps[2], i * 16), distance=f32_at(lumps[2], i * 16 + 12)
             )
         );
+    }
+    side_count = records(lumps[9], 8);
+    for i in range(records(lumps[8], 12)) {
+        first = i32_at(lumps[8], i * 12);
+        count = i32_at(lumps[8], i * 12 + 4);
+        texture = i32_at(lumps[8], i * 12 + 8);
+        check_index(texture, len(bsp.textures));
+        if first < 0 or count < 0 or first + count > side_count {
+            raise ValueError("Invalid Q3 brush sides");
+        }
+        brush = Brush(contents=bsp.textures[texture].contents);
+        for j in range(first, first + count) {
+            plane = i32_at(lumps[9], j * 8);
+            check_index(plane, len(bsp.planes));
+            check_index(i32_at(lumps[9], j * 8 + 4), len(bsp.textures));
+            brush.planes.append(plane);
+        }
+        bsp.brushes.append(brush);
     }
     verts: list[Vertex] = [];
     for i in range(records(lumps[10], 44)) {
@@ -263,12 +284,21 @@ def parse_q3(data: bytes) -> Bsp {
         if first < 0 or count < 0 or first + count > len(bsp.faces) {
             raise ValueError("Invalid Q3 model faces");
         }
+        first_brush = i32_at(lumps[7], i * 40 + 32);
+        count_brush = i32_at(lumps[7], i * 40 + 36);
+        if first_brush < 0
+            or count_brush < 0
+            or first_brush + count_brush > len(bsp.brushes) {
+            raise ValueError("Invalid Q3 model brushes");
+        }
+        brushes = list(range(first_brush, first_brush + count_brush));
         bsp.models.append(
             Model(
                 head=0,
                 first_face=first,
                 face_count=count,
-                vis_leaf_count=len(bsp.leaves) - 1
+                vis_leaf_count=len(bsp.leaves) - 1,
+                brushes=brushes
             )
         );
     }

@@ -1,6 +1,7 @@
 """Quake II BSP38 and WAL decoding."""
 import math;
-import from ..q1.bsp {
+import from ..bsp {
+    Brush,
     Bsp,
     Texture,
     TexInfo,
@@ -180,6 +181,22 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
         }
         bsp.faces.append(face);
     }
+    side_count = records(lumps[15], 4);
+    for i in range(records(lumps[14], 12)) {
+        first = i32_at(lumps[14], i * 12);
+        count = i32_at(lumps[14], i * 12 + 4);
+        if first < 0 or count < 0 or first + count > side_count {
+            raise ValueError("Invalid Q2 brush sides");
+        }
+        brush = Brush(contents=i32_at(lumps[14], i * 12 + 8));
+        for j in range(first, first + count) {
+            plane = u16_at(lumps[15], j * 4);
+            check_index(plane, len(bsp.planes));
+            brush.planes.append(plane);
+        }
+        bsp.brushes.append(brush);
+    }
+    brush_marks = records(lumps[10], 2);
     mark_count = records(lumps[9], 2);
     for i in range(records(lumps[8], 28)) {
         p = i * 28;
@@ -205,6 +222,16 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
             and leaf.vis_offset != -1 {
             raise ValueError("Invalid BSP visibility offset");
         }
+        first_brush = u16_at(lumps[8], p + 24);
+        count_brush = u16_at(lumps[8], p + 26);
+        if first_brush + count_brush > brush_marks {
+            raise ValueError("Invalid Q2 leaf brushes");
+        }
+        for j in range(first_brush, first_brush + count_brush) {
+            index = u16_at(lumps[10], j * 2);
+            check_index(index, len(bsp.brushes));
+            leaf.brushes.append(index);
+        }
         bsp.leaves.append(leaf);
     }
     for i in range(records(lumps[4], 28)) {
@@ -229,8 +256,11 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
     for i in range(records(lumps[13], 48)) {
         p = i * 48;
         head = i32_at(lumps[13], p + 36);
-        if head < 0 {check_index(-head - 1, len(bsp.leaves));}
-        else {check_index(head, len(bsp.branches));}
+        if head < 0 {
+            check_index(-head - 1, len(bsp.leaves));
+        } else {
+            check_index(head, len(bsp.branches));
+        }
         first = i32_at(lumps[13], p + 40);
         count = i32_at(lumps[13], p + 44);
         if first < 0 or count < 0 or first + count > len(bsp.faces) {
@@ -248,6 +278,27 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
     }
     if not bsp.models or not bsp.leaves {
         raise ValueError("BSP has no world model");
+    }
+    for model in bsp.models {
+        pending = [model.head];
+        visited: set[int] = set();
+        brushes: set[int] = set();
+        while pending {
+            index = pending.pop();
+            if index in visited {
+                continue;
+            }
+            visited.add(index);
+            if index < 0 {
+                for brush in bsp.leaves[-index - 1].brushes {
+                    brushes.add(brush);
+                }
+            } else {
+                pending.append(bsp.branches[index].front);
+                pending.append(bsp.branches[index].back);
+            }
+        }
+        model.brushes = sorted(brushes);
     }
     return bsp;
 }

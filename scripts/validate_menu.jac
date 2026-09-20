@@ -22,9 +22,12 @@ def main() {
         env[key] = str(repo / "vendor")
             + (os.pathsep + env[key] if env.get(key) else "");
     }
-    suffixes = ["q1", "q2", "q3", "loaded_q2", "loaded_q3", "return_q1"];
+    suffixes = ["settings", "q1", "q2", "q3", "loaded_q2", "loaded_q3", "return_q1"];
     for suffix in suffixes {
         (repo / f"qp_menu_{suffix}.png").unlink(missing_ok=True);
+    }
+    for game in ["q1", "q2", "q3"] {
+        (repo / f"qp_walk_{game}.png").unlink(missing_ok=True);
     }
     ran = subprocess.run(
         [str(binary)], cwd=repo, env=env, capture_output=True, text=True, timeout=180
@@ -36,6 +39,11 @@ def main() {
         source = repo / f"qp_menu_{suffix}.png";
         check_image(source);
         shutil.copyfile(source, output / f"{suffix}.png");
+    }
+    for game in ["q1", "q2", "q3"] {
+        source = repo / f"qp_walk_{game}.png";
+        check_image(source);
+        shutil.copyfile(source, output / f"walk_{game}.png");
     }
     for line in ran.stdout.splitlines() {
         if line.startswith("MENU PASS:") {

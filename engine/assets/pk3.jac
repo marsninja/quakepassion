@@ -5,7 +5,7 @@ animation, fog, and skyboxes require the later material renderer.
 """
 import os;
 import from zipfile { ZipFile }
-import from ..formats.q1.bsp { Texture }
+import from ..formats.bsp { Texture }
 
 obj Pk3Assets {
     has archives: list[ZipFile] = [],
