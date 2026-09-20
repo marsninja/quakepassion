@@ -45,7 +45,7 @@ import from vendor.raylib {
     ) -> None;  def EndBlendMode -> None;
 }
 import from ..world.level { Level }
-import from ..formats.q1.bsp { Face, Texture }
+import from ..formats.bsp { Face, Texture }
 import from ..math.vec3 { Vec3 }
 
 obj LightRect {
@@ -344,7 +344,11 @@ obj QuakeRenderer {
                 rlTexCoord2f(f32(face.uv[index * 2]), f32(face.uv[index * 2 + 1]));
             }
             v = face.vertices[index];
-            rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
+            rlVertex3f(
+                f32(v.x + face.motion.x),
+                f32(v.y + face.motion.y),
+                f32(v.z + face.motion.z)
+            );
         }
         rlEnd();
     }
@@ -364,7 +368,7 @@ obj QuakeRenderer {
                 or (
                     face.planar
                     and not face.two_sided
-                    and face.normal.dot(eye) - face.plane_dist < -0.01
+                    and face.normal.dot(eye.sub(face.motion)) - face.plane_dist < -0.01
                 ) {
                 continue;
             }

@@ -50,7 +50,10 @@ node Entity {
 }
 
 
-node Player(Entity) {}
+node Player(Entity) {
+    has velocity: Vec3 = Vec3(),
+        grounded: bool = False;
+}
 
 
 """Per-tick entity logic. Phase 1 is a deliberate stub that still runs every
@@ -85,7 +88,6 @@ walker VisPass {
 # not here. It must hold a concrete `renderer: Renderer`, and typing it here
 # would create a world->renderer import cycle. Keeping it in the render layer
 # leaves this module raylib-free and every field in it strongly typed.
-
 
 """Can the eye see through this portal opening? Phase 1 keeps it honest and
 simple: the portal is visible when it sits in front of the camera's facing

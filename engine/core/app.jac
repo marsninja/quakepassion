@@ -4,10 +4,13 @@ draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
 
+import from ..world.doors { DoorTick }
+import from ..world.triggers { TriggerTick }
 import from ..world.level { Level, load_level, spawn_player }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
+import from ..physics.movement { MovePlayer }
 import from ..input.input {
     Intent,
     sample_intent,
@@ -47,12 +50,23 @@ obj App {
         level: Level = Level(),
         quake: QuakeRenderer = QuakeRenderer(),
         menu: LevelMenu = LevelMenu(),
-        skip_time: bool = False;
+        skip_time: bool = False,
+        walking: bool = False,
+        fly_speed: float = 240.0,
+        sensitivity: float = 0.0022,
+        invert_y: bool = False,
+        jump_pending: bool = False,
+        physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
+        movement_status: str = "F4: walk / fly";
 
+    def adjust_setting(direction: int);
+    def reset_settings();
+    def refresh_settings();
     def run();
     def step() -> bool;
     def switch_level();
     def fly(intent: Intent, dt: float);
+    def toggle_movement();
     def render_frame();
     """Headless validation script: steer the camera through three known
     states and screenshot each, then quit. Drives the exact culling

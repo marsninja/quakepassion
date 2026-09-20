@@ -2,7 +2,7 @@
 import os;
 import from zipfile { ZipFile }
 import from ..assets.pak { open_pak }
-import from ..formats.q1.bsp { i32_at, require_range, parse_entities }
+import from ..formats.bsp { i32_at, require_range, parse_entities }
 import from ..render.renderer { Color }
 import from ..input.input { IsKeyPressed, IsMouseButtonPressed, GetMouseX, GetMouseY }
 import from vendor.raylib {
@@ -48,6 +48,9 @@ def is_q1_level(data: bytes) -> bool {
 
 obj LevelMenu {
     has opened: bool = False,
+        settings_open: bool = False,
+        setting_selected: int = 0,
+        settings_labels: list[str] = [],
         restore_mouse: bool = False,
         game: int = 0,
         selected: int = 0,
@@ -101,6 +104,39 @@ obj LevelMenu {
     # Returns load, quit, or an empty string. Escape is handled by the app.
     def update() -> str {
         click = IsMouseButtonPressed(i32(0));
+        if click and self.hit(800, 82, 160, 32) {
+            self.settings_open = not self.settings_open;
+            return "";
+        }
+        if self.settings_open {
+            if IsKeyPressed(i32(264)) {
+                self.setting_selected = min(7, self.setting_selected + 1);
+            }
+            if IsKeyPressed(i32(265)) {
+                self.setting_selected = max(0, self.setting_selected - 1);
+            }
+            for row in range(8) {
+                if click and self.hit(310, 155 + row * 48, 650, 42) {
+                    self.setting_selected = row;
+                    return "setting_left"
+                        if self.hit(810, 155 + row * 48, 65, 42)
+                        else "setting_right";
+                }
+            }
+            if IsKeyPressed(i32(263)) {
+                return "setting_left";
+            }
+            if IsKeyPressed(i32(262)) or IsKeyPressed(i32(257)) {
+                return "setting_right";
+            }
+            if click and self.hit(310, 610, 260, 42) {
+                return "settings_reset";
+            }
+            if click and self.hit(760, 610, 200, 42) {
+                return "quit";
+            }
+            return "";
+        }
         for i in range(3) {
             if click and self.hit(310 + i * 220, 145, 210, 40) {
                 self.game = i;
@@ -150,6 +186,58 @@ obj LevelMenu {
             i32(280), i32(65), i32(720), i32(610), Color(r=27, g=25, b=23, a=255)
         );
         DrawText("QUAKEPASSION", i32(310), i32(85), i32(30), amber);
+        DrawRectangle(
+            i32(800), i32(82), i32(160), i32(32), Color(r=99, g=64, b=35, a=255)
+        );
+        DrawText(
+            "Levels" if self.settings_open else "Settings",
+            i32(815),
+            i32(89),
+            i32(20),
+            white
+        );
+        if self.settings_open {
+            DrawText("Settings | Esc: resume", i32(310), i32(120), i32(18), white);
+            for row in range(len(self.settings_labels)) {
+                color = Color(r=99, g=64, b=35, a=255)
+                    if row == self.setting_selected
+                    else Color(r=48, g=45, b=41, a=255);
+                DrawRectangle(i32(310), i32(155 + row * 48), i32(650), i32(42), color);
+                DrawText(
+                    self.settings_labels[row],
+                    i32(322),
+                    i32(167 + row * 48),
+                    i32(20),
+                    white
+                );
+                DrawText("<     >", i32(830), i32(167 + row * 48), i32(20), amber);
+            }
+            DrawText(
+                "Up/Down: select | Left/Right: change",
+                i32(310),
+                i32(550),
+                i32(18),
+                white
+            );
+            DrawText(
+                self.message[:75]
+                    if self.message
+                    else "Applies now; kept for this session",
+                i32(310),
+                i32(575),
+                i32(16),
+                white
+            );
+            DrawRectangle(
+                i32(310), i32(610), i32(260), i32(42), Color(r=99, g=64, b=35, a=255)
+            );
+            DrawText("Reset defaults", i32(322), i32(622), i32(20), white);
+            DrawRectangle(
+                i32(760), i32(610), i32(200), i32(42), Color(r=75, g=35, b=30, a=255)
+            );
+            DrawText("Quit", i32(825), i32(622), i32(20), white);
+            return;
+        }
         DrawText("Choose a level  |  Esc: resume", i32(310), i32(120), i32(18), white);
         titles = ["Quake", "Quake II", "Quake III"];
         for i in range(3) {

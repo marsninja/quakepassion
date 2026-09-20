@@ -10,9 +10,9 @@ impl Renderer.open_window() {
         );
     }
     SetExitKey(i32(0));  # Escape belongs to the level menu.
-    # fps intentionally uncapped: no SetTargetFPS, so raylib skips the
-    # frame-end wait and renders as fast as the loop runs. The fixed-timestep
-    # Clock keeps simulation rate independent of however fast frames fly.
+    # Default to uncapped rendering; a user-selected limit only paces frames.
+    # Simulation keeps its independent fixed timestep.
+    self.set_frame_limit(self.frame_limit);
 }
 
 impl Renderer.should_close() -> bool {
@@ -31,7 +31,7 @@ impl Renderer.begin_frame(eye: Vec3, yaw: float, pitch: float) {
         position=Vector3(x=f32(eye.x), y=f32(eye.y), z=f32(eye.z)),
         target=Vector3(x=f32(target.x), y=f32(target.y), z=f32(target.z)),
         up=Vector3(x=0.0, y=0.0, z=1.0),
-        fovy=f32(FOV_DEGREES),
+        fovy=f32(self.fov),
         projection=i32(CAMERA_PERSPECTIVE)
     );
     rlSetClipPlanes(f64(1.0), f64(32768.0));
@@ -87,4 +87,9 @@ impl RenderPass.start with World entry {
 impl RenderPass.draw with Area entry {
     self.renderer.draw_area(here);
     self.drawn += 1;
+}
+
+impl Renderer.set_frame_limit(fps: int) {
+    self.frame_limit = fps;
+    SetTargetFPS(i32(fps));
 }
