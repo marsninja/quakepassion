@@ -18,9 +18,11 @@ The first frame after loading excludes loading time from movement integration.
 
 ## Validation
 
-The native build succeeds with the local compiler and staged upstream fixes.
-All 40 unit tests pass, including catalogue deduplication and distinguishing Q1
-levels from brush models. The menu's native graphical test feeds raylib keyboard,
+The native regression checks pass with the released Jac 0.37.21 compiler.
+All 44 unit tests passed on the first run with Jac 0.37.21, including catalogue deduplication
+and distinguishing Q1 levels from brush models. Repeated full-suite runs currently
+hit a [Jac compiler crash](validation-tooling-status.md).
+The menu's native graphical test feeds raylib keyboard,
 mouse, and wheel events through the same `App.step()` loop used by the viewer:
 
 - Escape opens/closes the menu, restoring captured mouse state.
@@ -31,7 +33,7 @@ mouse, and wheel events through the same `App.step()` loop used by the viewer:
 - Quit ends the loop and the window and GPU resources close normally.
 
 ```sh
-python3 scripts/validate_menu.py
+jac run scripts/validate_menu.jac
 ```
 
 An active desktop and all three games' original assets are required. Screenshots
@@ -39,18 +41,15 @@ and logs are saved under `.jac/screenshots/menu/`. The menu and post-switch view
 were visually inspected on macOS arm64. Loading and archive scanning are
 synchronous; the fixed layout matches the viewer's 1280x720 window.
 
-## Compiler fixes used locally
+## Compiler fixes included in Jac 0.37.21
 
-These proper upstream fixes are applied to `.jac/compiler`, leaving the installed
-binary and reference submodule unchanged. Fresh setup is documented in README.
+These upstream fixes ship in Jac 0.37.21. Fresh setup is documented in README.
 
 - [Jac #9327](https://github.com/jaseci-labs/jac/pull/9327): `sorted()` supports
-  iterable inputs, including the catalogue's set of map names. Staged through
-  `patches/jac-native-sorted-iterable.patch`.
+  iterable inputs, including the catalogue's set of map names.
 - [Jac #9336](https://github.com/jaseci-labs/jac/pull/9336): scalar C results are
   no longer reinterpreted as unrelated same-width structs. The old compiler
   converted `GetMouseX()`'s i32 result into a `Color` pointer, breaking `int()`.
-  Staged through `patches/jac-native-scalar-return.patch`.
 
 The engine retains both original idioms instead of working around the compiler.
 The asset-free sorting reproduction remains in `scripts/repros/native_sorted_set.jac`;

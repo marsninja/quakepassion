@@ -1,7 +1,7 @@
 # Quake 1 level viewer: running and validated
 
 The native viewer loads original Quake PAK archives and BSP29 maps. The default
-is `~/quake-assets/id1`, map `e1m1`. Run `JAC_COMPILER_LIB=off jac build main.jac --native -o qp`, then
+is `~/quake-assets/id1`, map `e1m1`. Run `jac build main.jac --native -o qp`, then
 `./qp`. Use `QP_MAP=start ./qp` to change maps and `QP_ASSETS=/path/to/id1` to
 change the asset directory.
 
@@ -21,7 +21,7 @@ change the asset directory.
 
 ## Validation
 
-Validated locally on macOS arm64 with raylib 6.0 and the patched Jac 0.37.19 binary.
+Validated locally on macOS arm64 with raylib 6.0 and the released Jac 0.37.21 binary.
 
 - Native build succeeds, and the viewer opens and closes normally.
 - The unit tests pass, including BSP/entity/PVS parsing, spatial plane traversal,
@@ -41,7 +41,7 @@ initialization for both launch methods. The viewer now reports that condition
 before attempting GPU uploads. The successful graphical captures above were
 completed while the display was active.
 
-Reproduce with `python3 scripts/validate_quake.py` on an active desktop. Per-map images and logs live
+Reproduce with `jac run scripts/validate_quake.jac` on an active desktop. Per-map images and logs live
 in `.jac/screenshots/q1/<map>/`; those generated files are ignored by git. The
 script also accepts explicit map names. Real assets are not needed by unit tests
 and are never copied into the repository.

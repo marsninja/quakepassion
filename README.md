@@ -15,8 +15,8 @@ Quake (and games in general) is the thing that got me into programming. This pro
 ## Getting Started
 
 The native level viewer renders maps from Quake, Quake II, and Quake III Arena.
-It is validated on macOS arm64 using the local Jac 0.37.19 binary with newer
-compiler sources staged privately under `.jac/compiler`.
+Use the released Jac 0.37.21 binary. Its bundled compiler includes all seven
+upstream fixes needed by the viewer; no private compiler staging is required.
 
 Place your original game archives in these directories (assets are not included):
 
@@ -24,10 +24,10 @@ Place your original game archives in these directories (assets are not included)
 - `~/quake-assets/baseq2`: Quake II PAK files.
 - `~/quake-assets/baseq3`: Quake III PK3 files.
 
-The current checkout already has its compiler and raylib staged. Build and run:
+After installing Jac and staging raylib (see below), build and run:
 
 ```bash
-JAC_COMPILER_LIB=off jac build main.jac --native -o qp
+jac build main.jac --native -o qp
 ./qp                                # Quake: e1m1
 QP_GAME=q2 ./qp                     # Quake II: base1
 QP_GAME=q3 ./qp                     # Quake III: q3dm1
@@ -36,34 +36,20 @@ QP_GAME=q2 QP_ASSETS=/path/to/baseq2 ./qp
 QP_GRAYBOX=1 ./qp                   # original two-room development scene
 ```
 
-For a fresh checkout, stage the compiler and raylib before building. The tested
-compiler source is ZIP-support PR #9322, commit
-`fb6940ddd52a76ea75790dda10736ef09926f0fd`, with the additional upstream fixes:
+For a fresh checkout, install [Jac 0.37.21](https://github.com/jaseci-labs/jac/releases/tag/v0.37.21)
+for your platform, then stage raylib and build:
 
 ```bash
-# /path/to/jac-checkout must contain the source revision above.
-python3 scripts/prepare_compiler.py --source /path/to/jac-checkout \
-    --patch patches/jac-native-bytearray-extend.patch \
-    --patch patches/jac-native-aggregate-bytes.patch \
-    --patch patches/jac-native-sorted-iterable.patch \
-    --patch patches/jac-native-scalar-return.patch
+jac --version                       # 0.37.21
 ./scripts/stage_raylib.sh
-JAC_COMPILER_LIB=off jac clean --cache --force
-JAC_COMPILER_LIB=off jac build main.jac --native -o qp
+jac build main.jac --native -o qp
 ```
-
-Setup leaves the installed binary and reference submodule unchanged. Move an
-existing `.jac/compiler` aside before replacing it. Do not reapply patches to a
-source revision that already includes them. `JAC_COMPILER_LIB=off` selects the
-source parser compatible with these compiler sources. The legacy no-argument
-compiler setup only supplies the earlier Q1 fixes and is insufficient here.
-The first build can take a few minutes.
 
 Raylib setup builds pinned 6.0 sources with JPG/TGA support, which its prebuilt
 libraries lack. It requires a C compiler and `make`; Linux also needs the desktop
-OpenGL/X11 development dependencies. Linux has not been validated. Compiler setup
-uses matching bundled typeshed stubs when absent from the source checkout; if
-versions differ, fetch that checkout's stubs with `zig build fetch-typeshed`.
+OpenGL/X11 development dependencies. Graphical validation is performed on macOS.
+The old `.jac/compiler` directory is no longer selected by this project and can
+be removed. Compiler patches and the Python staging helper have been retired.
 
 Controls: **WASD** moves, **Space/Shift** moves vertically, **Tab** or a click
 captures the mouse, and arrow keys also turn. **C** toggles PVS culling, **F3**
@@ -78,10 +64,6 @@ Maps are discovered from your installed archives; Q1 brush-model BSPs are exclud
 `QP_ASSETS` applies to the game selected by `QP_GAME`; the other games use their
 normal directories under `~/quake-assets`.
 
-The menu uses locally staged fixes from [Jac #9327](https://github.com/jaseci-labs/jac/pull/9327)
-and [#9336](https://github.com/jaseci-labs/jac/pull/9336); upstream merges are not
-required to run this prepared checkout.
-
 ## Status and validation
 
 All three formats use Jac nodes, edges, and walkers for BSP spatial queries and
@@ -91,14 +73,21 @@ Q3 includes PK3 archives, indexed meshes, curved patches, baked lighting, and st
 shader texture selection with alpha tests, additive blending, and two-sided surfaces.
 
 ```bash
-JAC_COMPILER_LIB=off jac test -j0
-python3 scripts/validate_quake.py --game q1
-python3 scripts/validate_quake.py --game q2
-python3 scripts/validate_quake.py --game q3
-python3 scripts/validate_menu.py       # exercises real menu input and game switching
+jac test -j0
+jac run scripts/validate_quake.jac --game q1
+jac run scripts/validate_quake.jac --game q2
+jac run scripts/validate_quake.jac --game q3
+jac run scripts/validate_menu.jac       # exercises real menu input and game switching
 ```
 
-All 40 unit tests pass. Graphical validation requires an active desktop and original assets. Twelve maps
+The validation runners are Jac scripts. `scripts/menu_smoke.jac` is the native
+input-event harness built by the menu runner; `scripts/png_checks.jac` decodes
+screenshots and counts changed pixels. Unit fixtures cover RGB/RGBA PNG filters,
+blank-image rejection, and pixel comparison.
+
+All 44 unit tests passed on the first run with the release; a subsequent full-suite
+run crashes the released Jac 0.37.21 compiler (see [validation status](docs/validation-tooling-status.md)).
+Graphical validation requires an active desktop and original assets. Twelve maps
 passed: six Q1, three Q2, and three Q3. Each check captures two positions and a
 camera turn, rejects blank images, and compares culling on/off at both positions.
 All 24 pairs matched exactly in the latest run. Captures and logs are ignored

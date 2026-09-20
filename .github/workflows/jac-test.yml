@@ -9,27 +9,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      JAC_COMPILER_LIB: "off"
     steps:
       - name: Checkout (with reference compiler source)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Checkout pinned compiler source
-        uses: actions/checkout@v4
-        with:
-          repository: jaseci-labs/jac
-          ref: fb6940ddd52a76ea75790dda10736ef09926f0fd
-          path: .jac/upstream
-
-      # Keep the launcher and source revision aligned with README setup.
+      # Released compiler includes the upstream native fixes.
       - name: Install Jac binary
         run: |
           mkdir -p "$HOME/.local/bin"
-          asset=jac-0.37.19-linux-x86_64
-          release=https://github.com/jaseci-labs/jac/releases/download/v0.37.19
+          asset=jac-0.37.21-linux-x86_64
+          release=https://github.com/jaseci-labs/jac/releases/download/v0.37.21
           curl -fsSL "$release/$asset" -o "$RUNNER_TEMP/$asset"
           curl -fsSL "$release/$asset.sha256" -o "$RUNNER_TEMP/$asset.sha256"
           (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
@@ -38,14 +29,6 @@ jobs:
 
       - name: Show compiler version
         run: jac --version
-
-      - name: Stage compiler with upstream fixes
-        run: |
-          python3 scripts/prepare_compiler.py --source .jac/upstream \
-            --patch patches/jac-native-bytearray-extend.patch \
-            --patch patches/jac-native-aggregate-bytes.patch \
-            --patch patches/jac-native-sorted-iterable.patch \
-            --patch patches/jac-native-scalar-return.patch
 
       - name: Install raylib build dependencies
         run: |
@@ -75,4 +58,6 @@ jobs:
 
       # Discovery is anchored to the project root via jac.toml ([test] directory).
       - name: Run jac test
-        run: jac test -j0
+        run: |
+          jac test -j0
+          jac test -j0
