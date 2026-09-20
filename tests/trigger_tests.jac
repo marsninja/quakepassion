@@ -70,11 +70,11 @@ test "exact trigger brushes reject empty corners and catch swept contacts" {
         fixture.tick(Vec3(x=60.0, z=24.0));
         assert door.position == 0.0;
         touch(fixture, Vec3(x=220.0, y=20.0, z=24.0), Vec3(x=220.0, y=20.0, z=24.0));
-        assert triggers[0].activations == 0 and not door.requested;
+        assert triggers[0].activations == 0 and door.activation.pending == 0;
         touch(fixture, Vec3(x=100.0, z=24.0), Vec3(x=300.0, z=24.0));
-        assert triggers[0].activations == 1 and door.requested;
+        assert triggers[0].activations == 1 and door.activation.pending == 1;
         fixture.tick(Vec3(x=300.0, z=24.0));
-        assert door.position > 0.0 and not door.requested;
+        assert door.position > 0.0 and door.activation.pending == 0;
         solids = build_brush_collision(fixture.bsp);
         assert 2 not in solids.models;
     }

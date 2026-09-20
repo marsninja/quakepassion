@@ -15,12 +15,16 @@ import from engine.world.doors {
     union_bounds,
     model_bounds
 }
+import from engine.world.signals { Signal }
 import from engine.world.triggers { TouchTrigger, HasTrigger, Activates }
+import from engine.physics.collision { Sweep }
 import from engine.math.vec3 { Vec3 }
 
 with entry {
+    button_mode = os.getenv("QP_BUTTON_TEST", "0") == "1";
     trigger_mode = os.getenv("QP_TRIGGER_TEST", "0") == "1";
     prefix = "qp_trigger_" if trigger_mode else "qp_door_";
+    if button_mode { prefix = "qp_button_"; }
     renderer = Renderer();
     renderer.open_window();
     for game in ["q1", "q2", "q3"] {
@@ -28,17 +32,22 @@ with entry {
         if trigger_mode {
             name = "e1m1" if game == "q1" else ("ware1" if game == "q2" else "q3dm11");
         }
+        if button_mode { name = "e1m1" if game == "q1" else ("base1" if game == "q2" else "q3dm7"); }
         world = World();
         level = load_level(world, game_directory(game), name, game);
         doors = [
             door
             for door in [world->:HasDoor:->][?:Door]
-            if door.automatic
+            if door.automatic and door.enabled and door.kind == "door"
         ];
         sensors = [world->:HasTrigger:->][?:TouchTrigger];
         if trigger_mode {
             assert len(sensors) > 0;
-            doors = [sensors[0]->:Activates:->][?:Door];
+            signals = [sensors[0]->:Activates:->][?:Signal];
+            doors = [door for door in [world->:HasDoor:->][?:Door] if door.activation in signals];
+        }
+        if button_mode {
+            doors = [door for door in [world->:HasDoor:->][?:Door] if door.kind == "button" and door.enabled];
         }
         assert len(doors) > 0;
         door = doors[0];
@@ -55,21 +64,48 @@ with entry {
         camera = center;
         offset = Vec3();
         found = False;
-        for distance in [160.0, -160.0, 100.0, -100.0] {
-            candidate = center.add(axis.scale(distance));
-            origin = candidate.sub(Vec3(z=level.collision.eye_height));
-            if not level.collision.trace(origin, origin).start_solid {
-                camera = candidate;
-                offset = axis.scale(distance);
-                found = True;
-                break;
+        button_contact = Vec3();
+        if button_mode {
+            for height in [48.0, 96.0, 0.0] {
+                for direction in [Vec3(x=160.0), Vec3(x=-160.0), Vec3(y=160.0), Vec3(y=-160.0), Vec3(x=64.0), Vec3(x=-64.0), Vec3(y=64.0), Vec3(y=-64.0)] {
+                    candidate = center.add(direction).add(Vec3(z=height));
+                    origin = candidate.sub(Vec3(z=level.collision.eye_height));
+                    hit = level.collision.trace(origin, center);
+                    if hit.start_solid or hit.fraction == 1.0 { continue; }
+                    for hull in door.hulls {
+                        local = hit.end.sub(level.collision.offsets[hull]);
+                        probe = level.collision.hulls[hull] spawn Sweep(
+                            start=local, finish=local.add(center.sub(origin).normalized().scale(0.125))
+                        );
+                        if probe.result.start_solid or probe.result.fraction < 1.0 {
+                            camera = candidate;
+                            offset = candidate.sub(center);
+                            button_contact = hit.end;
+                            found = True;
+                            break;
+                        }
+                    }
+                    if found { break; }
+                }
+                if found { break; }
+            }
+        } else {
+            for distance in [160.0, -160.0, 100.0, -100.0] {
+                candidate = center.add(axis.scale(distance));
+                origin = candidate.sub(Vec3(z=level.collision.eye_height));
+                if not level.collision.trace(origin, origin).start_solid {
+                    camera = candidate;
+                    offset = axis.scale(distance);
+                    found = True;
+                    break;
+                }
             }
         }
         assert found;
         player = spawn_player(level);
         player.pos = camera;
         player.yaw = math.atan2(-offset.y, -offset.x);
-        player.pitch = 0.0;
+        player.pitch = -math.atan2(offset.z, math.sqrt(offset.x * offset.x + offset.y * offset.y));
         app = App(
             world=world,
             player=player,
@@ -92,7 +128,11 @@ with entry {
             Vec3(z=level.collision.eye_height)
         );
         assert level.collision.trace(probe_start, probe_finish).fraction < 1.0;
-        if trigger_mode {
+        if button_mode {
+            player.pos = button_contact.add(Vec3(z=level.collision.eye_height));
+            app.walking = True;
+            app.smoke = False;
+        } elif trigger_mode {
             sensor = sensors[0];
             sensor_offset = Vec3();
             for entity in level.bsp.entities {
@@ -159,7 +199,7 @@ with entry {
         }
         player.pos = camera;
         player.yaw = math.atan2(-offset.y, -offset.x);
-        player.pitch = 0.0;
+        player.pitch = -math.atan2(offset.z, math.sqrt(offset.x * offset.x + offset.y * offset.y));
         world spawn DoorTick(
             bsp=level.bsp,
             collision=level.collision,
@@ -178,10 +218,10 @@ with entry {
             app.render_frame();
         }
         renderer.screenshot(prefix + game + "_open.png");
-        assert level.collision.trace(probe_start, probe_finish).fraction == 1.0;
+        if not button_mode { assert level.collision.trace(probe_start, probe_finish).fraction == 1.0; }
         app.quake.close();
         print(
-            "TRIGGER RENDER PASS" if trigger_mode else "DOOR RENDER PASS", game, name
+            "BUTTON RENDER PASS" if button_mode else ("TRIGGER RENDER PASS" if trigger_mode else "DOOR RENDER PASS"), game, name
         );
     }
     renderer.close();

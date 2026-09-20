@@ -59,7 +59,7 @@ Controls: **WASD** moves, **Space/Shift** moves vertically, **Tab** or a click
 captures the mouse, and arrow keys also turn. **C** toggles PVS culling, **F3**
 toggles the overlay, and **Escape** opens/closes the level menu. Walking is the default
 in all three games. **F4** toggles free flight through walls and **Space** jumps
-while walking; `QP_WALK=0 ./qp` starts in fly mode. Ordinary proximity doors and supported touch-triggered doors open (including linked pairs); lifts remain static. Switching
+while walking; `QP_WALK=0 ./qp` starts in fly mode. Ordinary proximity doors and supported touch-triggered doors open (including linked pairs); supported buttons and translating lifts now move, and lifts carry the player. Switching
 levels returns to walking. See [movement status](docs/player-movement-status.md).
 
 In the menu, choose **Quake**, **Quake II**, or **Quake III**, scroll or use
@@ -98,10 +98,9 @@ input-event harness built by the menu runner; `scripts/png_checks.jac` decodes
 screenshots and counts changed pixels. Unit fixtures cover RGB/RGBA PNG filters,
 blank-image rejection, and pixel comparison.
 
-The expanded 78-test suite is validated with the patched compiler from
-[Jac #9347](https://github.com/jaseci-labs/jac/pull/9347), based on main with
-the earlier #9342 and #9344 fixes. The current shared-format imports require this compiler;
-see [local build instructions](docs/player-movement-status.md#compiler-requirement).
+The expanded 86-test suite is validated with the local compiler containing
+[Jac #9347](https://github.com/jaseci-labs/jac/pull/9347) and the additional
+[cache-section fix and build instructions](docs/native-cache-section-merge-blocker.md).
 Graphical validation requires an active desktop and original assets. Twelve maps
 passed: six Q1, three Q2, and three Q3. Each check captures two positions and a
 camera turn, rejects blank images, and compares culling on/off at both positions.
@@ -112,7 +111,7 @@ pixel parity with the original games.
 
 This is a level viewer with shared walking and brush collision across Q1/Q2/Q3.
 Q3 curved patches now collide using the rendered tessellation and the shared
-standing-box hull queries. Gameplay, character/item models, and lifts/special doors
+standing-box hull queries. Gameplay, character/item models, trains and rotating/crushing movers
 remain future work. Animated materials and full Q3 multipass
 shaders, fog, skyboxes, and vertex deformation are not implemented.
 
@@ -122,3 +121,7 @@ See [Q1 results](docs/quake1-rendering-status.md) and
 Shared moving doors: [behavior, limits and validation](docs/doors-status.md).
 
 Shared touch triggers: [behavior, limits and validation](docs/triggers-status.md).
+
+Buttons and activation relays: [current validation and limits](docs/buttons-status.md).
+
+Platforms and carrying: [validation and limits](docs/platforms-status.md).

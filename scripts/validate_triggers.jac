@@ -3,7 +3,7 @@ import os;
 import from engine.world.level { load_level }
 import from engine.world.world { World }
 import from engine.world.triggers { TouchTrigger, HasTrigger, Activates, TriggerTick }
-import from engine.world.doors { Door, DoorTick, model_bounds }
+import from engine.world.doors { Door, HasDoor, DoorTick, model_bounds }
 import from engine.math.vec3 { Vec3 }
 
 with entry {
@@ -54,23 +54,24 @@ with entry {
                 }
             }
             assert found;
-            receivers = [trigger->:Activates:->][?:Door];
-            assert len(receivers) > 0;
+            doors = [world->:HasDoor:->][?:Door];
             # Reset only this test's recipients to verify a fresh request.
-            for door in receivers {
-                door.requested = False;
+            for door in doors {
+                door.activation.pending = 0;
             }
             trigger spawn TriggerTick(start=point, finish=point, dt=0.01);
             assert trigger.activations == 1;
+            receivers = [door for door in doors if door.activation.pending > 0];
+            assert len(receivers) > 0;
             for door in receivers {
-                assert door.requested and not door.automatic;
+                assert door.enabled;
                 door spawn DoorTick(
                     bsp=level.bsp,
                     collision=level.collision,
                     player_origin=Vec3(x=1.0e6, y=1.0e6, z=1.0e6),
                     dt=0.01
                 );
-                assert not door.requested and door.position > 0.0;
+                assert door.activation.pending == 0 and door.position > 0.0;
             }
             total += 1;
         }

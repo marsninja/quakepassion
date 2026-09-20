@@ -82,7 +82,8 @@ test "unsupported activation remains static in every game" {
         ] {
             fixture = DoorFixture();
             fixture.setup(game, fields);
-            assert len([fixture.world->:HasDoor:->][?:Door]) == 0;
+            active = [door for door in [fixture.world->:HasDoor:->][?:Door] if door.enabled];
+            assert len(active) == 0;
         }
     }
     assert door_direction(MapEntity(fields={"angle": "-2"})).z == -1.0;
