@@ -9,6 +9,7 @@ impl Renderer.open_window() {
             "Cannot open the viewer window: an active graphical desktop/display is required."
         );
     }
+    SetExitKey(i32(0));  # Escape belongs to the level menu.
     # fps intentionally uncapped: no SetTargetFPS, so raylib skips the
     # frame-end wait and renders as fast as the loop runs. The fixed-timestep
     # Clock keeps simulation rate independent of however fast frames fly.

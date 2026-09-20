@@ -8,7 +8,9 @@ Method and ability bodies live in impl/renderer.impl.jac.
 """
 
 import from vendor.raylib {
-    def rlSetClipPlanes(nearPlane: f64, farPlane: f64) -> None;  obj Color {
+    def SetExitKey(key: i32) -> None;  def rlSetClipPlanes(
+        nearPlane: f64, farPlane: f64
+    ) -> None;  obj Color {
         has r: u8,
             g: u8,
             b: u8,

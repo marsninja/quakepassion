@@ -15,12 +15,12 @@ jobs:
         with:
           submodules: recursive
 
-      # Pin the release targeted by our compiler patch.
+      # Released compiler includes the upstream native fixes.
       - name: Install Jac binary
         run: |
           mkdir -p "$HOME/.local/bin"
-          asset=jac-0.37.19-linux-x86_64
-          release=https://github.com/jaseci-labs/jac/releases/download/v0.37.19
+          asset=jac-0.37.21-linux-x86_64
+          release=https://github.com/jaseci-labs/jac/releases/download/v0.37.21
           curl -fsSL "$release/$asset" -o "$RUNNER_TEMP/$asset"
           curl -fsSL "$release/$asset.sha256" -o "$RUNNER_TEMP/$asset.sha256"
           (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
@@ -30,8 +30,13 @@ jobs:
       - name: Show compiler version
         run: jac --version
 
-      - name: Apply local compiler fix
-        run: python3 scripts/prepare_compiler.py
+      - name: Install raylib build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential xorg-dev libgl1-mesa-dev
+
+      - name: Build raylib with JPG and TGA support
+        run: bash scripts/stage_raylib.sh
 
       - name: Verify native visit regression
         run: |
@@ -43,6 +48,16 @@ jobs:
           jac build repros/native_quake_asset_ops.jac --native -o /tmp/qp-assets-repro
           /tmp/qp-assets-repro
 
+      - name: Verify native iterable regression
+        run: |
+          jac build scripts/repros/native_sorted_set.jac --native -o /tmp/qp-sorted-repro
+          /tmp/qp-sorted-repro
+
+      - name: Build native viewer
+        run: jac build main.jac --native -o qp
+
       # Discovery is anchored to the project root via jac.toml ([test] directory).
       - name: Run jac test
-        run: jac test
+        run: |
+          jac test -j0
+          jac test -j0

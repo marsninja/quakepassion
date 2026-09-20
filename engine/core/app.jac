@@ -4,10 +4,18 @@ draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
 
-import from ..world.level { Level }
+import from ..world.level { Level, load_level, spawn_player }
+import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
-import from ..input.input { Intent, sample_intent, mouse_captured }
+import from ..input.input {
+    Intent,
+    sample_intent,
+    mouse_captured,
+    IsKeyPressed,
+    _capture,
+    _release
+}
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..render.renderer { Renderer, RenderPass }
 import from ..world.world {
@@ -37,9 +45,13 @@ obj App {
         last_think: int = 0,
         last_drawn: int = 0,
         level: Level = Level(),
-        quake: QuakeRenderer = QuakeRenderer();
+        quake: QuakeRenderer = QuakeRenderer(),
+        menu: LevelMenu = LevelMenu(),
+        skip_time: bool = False;
 
     def run();
+    def step() -> bool;
+    def switch_level();
     def fly(intent: Intent, dt: float);
     def render_frame();
     """Headless validation script: steer the camera through three known

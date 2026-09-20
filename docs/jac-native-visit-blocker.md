@@ -57,46 +57,17 @@ captured before coercion changed the active block, leaving invalid IR near
 - `QP_SMOKE=1 jac run main.jac`: fails on the same world-module compilation;
   no rendered screenshot was verified.
 
-## Local fix and current validation
+## Resolution
 
-The fix is in [patches/jac-0.37.19-native-visit.patch](../patches/jac-0.37.19-native-visit.patch).
-It changes Jac's `_codegen_visit`, not the engine's graph traversal.
+Merged in [Jac #9318](https://github.com/jaseci-labs/jac/pull/9318) and included
+in Jac 0.37.21. The native reproduction builds and runs successfully with the
+released binary. It checks both nodes across 10,000 repeated traversals.
+The engine retains its original graph traversal. The temporary compiler patch
+and Python staging helper have been removed.
 
 ```sh
-python3 scripts/prepare_compiler.py
 jac build repros/native_visit_list.jac --native -o /tmp/qp-visit-repro
 /tmp/qp-visit-repro
-jac test -j 0
-jac build main.jac --native -o main
-QP_SMOKE=1 jac run main.jac
-jac run main.jac
 ```
 
-The setup script locates the compiler shipped inside the installed Jac 0.37.19
-binary, copies it into the ignored `.jac/compiler` directory, removes the
-copied sealed manifest, and applies the patch. Removing that manifest is
-necessary: otherwise Jac executes the unchanged bundled bytecode instead of
-the edited source. `[dev] jaclang_source` selects this private compiler copy.
-The installed binary, its runtime cache, and other compiler checkouts remain
-unmodified. First use compiles the sources and can take a few minutes.
-
-Validation after the fix:
-
-- `jac test -j 0`: **19 passed**; all four requested type checks pass.
-
-- Native minimal repro builds and exits successfully; it asserts that both
-  nodes were visited on each of 10,000 repeated traversals.
-- Native engine builds successfully.
-- Both `QP_SMOKE=1 ./main` and `QP_SMOKE=1 jac run main.jac` initialize raylib,
-  write all three screenshots, and close successfully.
-- Screenshots confirm both rooms are rendered facing the portal (2/2 visible),
-  and the second room is culled facing away (1/2 visible).
-- The interactive `jac run main.jac` ran beyond the earlier abort and then
-  closed normally with exit code 0. Manual movement behavior is not exhaustively tested.
-- Compiler setup succeeds in a fresh temporary directory and is idempotent.
-
-The patch includes a comment in the compiler declaration file to invalidate
-cached compiler bytecode alongside its implementation change. The compiler
-patch is submitted for upstream review in [jaseci-labs/jac#9318](https://github.com/jaseci-labs/jac/pull/9318).
-The local setup deliberately accepts only 0.37.19: when upgrading Jac, retest
-this repro with `JAC_NO_DEV_SOURCE=1` and retire or rebase the patch.
+The observations above describe the original 0.37.19 defect, not current setup.
