@@ -44,7 +44,7 @@ with entry {
         clock=Clock(),
         smoke=(os.getenv("QP_SMOKE", "") != "")
     );
-    if os.getenv("QP_WALK", "") == "1" and not app.smoke {
+    if os.getenv("QP_WALK", "1") != "0" and not app.smoke {
         app.toggle_movement();
     }
     app.run();

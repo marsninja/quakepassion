@@ -27,12 +27,14 @@ obj TexInfo {
 }
 
 obj Face {
-    has vertices: list[Vec3] = [],
+    has motion: Vec3 = Vec3(),
+        vertices: list[Vec3] = [],
         uv: list[float] = [],
         light_uv: list[float] = [],
         indices: list[int] = [],
         colors: list[int] = [],
         planar: bool = True,
+        patch: bool = False,
         alpha_test: int = 0,
         additive: bool = False,
         two_sided: bool = False,

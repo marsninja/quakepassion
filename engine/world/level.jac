@@ -12,6 +12,8 @@ import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from .doors { load_doors }
+import from .triggers { load_triggers }
 import from .world { World, Area, Player, move_to_area }
 
 node Split {
@@ -248,6 +250,11 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
             level.splits[i] +>:Back:+> level.areas[-branch.back - 1];
         }
     }
+    if game == "q1" {
+        level.collision = build_collision(level.bsp);
+    } else {
+        level.collision = build_brush_collision(level.bsp);
+    }
     # Trigger volumes have BSP models but are not visible geometry.
     for ent in level.bsp.entities {
         model_name = ent.fields.get("model", "");
@@ -276,11 +283,8 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
             level.brush_faces.append(f);
         }
     }
-    if game == "q1" {
-        level.collision = build_collision(level.bsp);
-    } else {
-        level.collision = build_brush_collision(level.bsp);
-    }
+    load_doors(world, level.bsp, level.collision);
+    load_triggers(world, level.bsp);
     return level;
 }
 
@@ -294,7 +298,9 @@ def spawn_player(level: Level) -> Player {
             }
             player = Player(
                 pos=Vec3(
-                    x=float(coords[0]), y=float(coords[1]), z=float(coords[2]) + level.collision.eye_height
+                    x=float(coords[0]),
+                    y=float(coords[1]),
+                    z=float(coords[2]) + level.collision.eye_height
                 ),
                 yaw=float(ent.fields.get("angle", "0")) * math.pi / 180.0
             );

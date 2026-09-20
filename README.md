@@ -57,10 +57,10 @@ be removed. Compiler patches and the Python staging helper have been retired.
 
 Controls: **WASD** moves, **Space/Shift** moves vertically, **Tab** or a click
 captures the mouse, and arrow keys also turn. **C** toggles PVS culling, **F3**
-toggles the overlay, and **Escape** opens/closes the level menu. Movement is free
-flight through walls by default. In all three games, **F4** toggles walking and **Space**
-jumps; `QP_WALK=1 ./qp` starts walking. Doors/lifts remain static, and switching
-levels returns to flight. See [movement status](docs/player-movement-status.md).
+toggles the overlay, and **Escape** opens/closes the level menu. Walking is the default
+in all three games. **F4** toggles free flight through walls and **Space** jumps
+while walking; `QP_WALK=0 ./qp` starts in fly mode. Ordinary proximity doors and supported touch-triggered doors open (including linked pairs); lifts remain static. Switching
+levels returns to walking. See [movement status](docs/player-movement-status.md).
 
 In the menu, choose **Quake**, **Quake II**, or **Quake III**, scroll or use
 **Up/Down** to select a map, then click **Render selected level** or press
@@ -71,7 +71,7 @@ The **Settings** button switches to movement mode, vertical field of view, mouse
 sensitivity, inverted mouse Y, fly speed, frame limit, visibility culling, and
 the diagnostic overlay. Click the arrows or use **Up/Down** and **Left/Right**.
 Changes apply immediately and stay active across level switches for this session;
-movement mode still resets to flight on level load. **Reset defaults** restores
+movement mode resets to walking on level load. **Reset defaults** restores
 the original controls and uncapped rendering. Settings are not saved to disk.
 Maps are discovered from your installed archives; Q1 brush-model BSPs are excluded.
 `QP_ASSETS` applies to the game selected by `QP_GAME`; the other games use their
@@ -98,9 +98,9 @@ input-event harness built by the menu runner; `scripts/png_checks.jac` decodes
 screenshots and counts changed pixels. Unit fixtures cover RGB/RGBA PNG filters,
 blank-image rejection, and pixel comparison.
 
-The expanded 60-test suite is validated with the patched compiler from
-[Jac #9344](https://github.com/jaseci-labs/jac/pull/9344), which also contains the
-cache fix from #9342. The current shared-format imports require this compiler;
+The expanded 78-test suite is validated with the patched compiler from
+[Jac #9347](https://github.com/jaseci-labs/jac/pull/9347), based on main with
+the earlier #9342 and #9344 fixes. The current shared-format imports require this compiler;
 see [local build instructions](docs/player-movement-status.md#compiler-requirement).
 Graphical validation requires an active desktop and original assets. Twelve maps
 passed: six Q1, three Q2, and three Q3. Each check captures two positions and a
@@ -111,9 +111,14 @@ These checks establish representative rendering and culling consistency, not
 pixel parity with the original games.
 
 This is a level viewer with shared walking and brush collision across Q1/Q2/Q3.
-Q3 curved-patch collision, gameplay, character/item models, and moving doors/lifts
+Q3 curved patches now collide using the rendered tessellation and the shared
+standing-box hull queries. Gameplay, character/item models, and lifts/special doors
 remain future work. Animated materials and full Q3 multipass
 shaders, fog, skyboxes, and vertex deformation are not implemented.
 
 See [Q1 results](docs/quake1-rendering-status.md) and
 [Q2/Q3 results, compiler fixes, and limitations](docs/quake2-quake3-rendering-status.md).
+
+Shared moving doors: [behavior, limits and validation](docs/doors-status.md).
+
+Shared touch triggers: [behavior, limits and validation](docs/triggers-status.md).

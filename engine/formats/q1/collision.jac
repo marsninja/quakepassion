@@ -3,7 +3,7 @@ import from ..bsp { Bsp }
 import from ...physics.collision { CollisionMap, HullCell, HullFront, HullBack }
 import from ...math.vec3 { Vec3 }
 
-def build_collision(bsp: Bsp) -> CollisionMap {
+def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
     cells: list[HullCell] = [];
     terminals: list[HullCell] = [];
     for contents in range(1, 7) {
@@ -21,21 +21,29 @@ def build_collision(bsp: Bsp) -> CollisionMap {
         cells[i] +>:HullBack:+> back;
     }
     collision = CollisionMap();
-    head = bsp.models[0].player_hull;
-    collision.hulls.append(cells[head] if head >= 0 else terminals[-head - 1]);
-    collision.offsets.append(Vec3());
-    # Solid brush entities remain in their authored position until entity
-    # simulation is implemented. Triggers and illusionary brushes are not solid.
+    if not triggers {
+        head = bsp.models[0].player_hull;
+        collision.hulls.append(cells[head] if head >= 0 else terminals[-head - 1]);
+        collision.offsets.append(Vec3());
+        collision.models.append(0);
+    }
+    # Start solid brush entities at their authored position; shared movers update
+    # their offsets. Triggers and illusionary brushes are not solid.
     for entity in bsp.entities {
-        if entity.fields.get("classname", "")
-            not in [
-                "func_wall",
-                "func_door",
-                "func_door_secret",
-                "func_plat",
-                "func_train",
-                "func_button"
-            ] {
+        kind = entity.fields.get("classname", "");
+        if triggers and kind not in ["trigger_once", "trigger_multiple"] {
+            continue;
+        }
+        if not triggers
+            and kind
+                not in [
+                    "func_wall",
+                    "func_door",
+                    "func_door_secret",
+                    "func_plat",
+                    "func_train",
+                    "func_button"
+                ] {
             continue;
         }
         model = entity.fields.get("model", "");
@@ -50,6 +58,7 @@ def build_collision(bsp: Bsp) -> CollisionMap {
         if len(coords) != 3 {
             raise ValueError("Invalid collision brush origin");
         }
+        collision.models.append(index);
         head = bsp.models[index].player_hull;
         collision.hulls.append(cells[head] if head >= 0 else terminals[-head - 1]);
         collision.offsets.append(

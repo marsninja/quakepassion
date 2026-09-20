@@ -149,7 +149,6 @@ with entry {
         select_map(app, "base1");
         key(app, 257);
         assert not app.menu.opened and app.level.bsp.game == "q2";
-        key(app, 293);
         assert app.walking;
         for i in range(120) {
             app.physics_clock.accumulator += app.physics_clock.tick_rate;
@@ -166,8 +165,6 @@ with entry {
         select_map(app, "q3dm1");
         click(app, 400, 630);
         assert not app.menu.opened and app.level.bsp.game == "q3";
-        assert not app.walking;
-        key(app, 293);
         assert app.walking;
         for i in range(120) {
             app.physics_clock.accumulator += app.physics_clock.tick_rate;
@@ -187,7 +184,6 @@ with entry {
         click(app, 400, 630);
         assert not app.menu.opened and app.level.bsp.game == "q1";
         app.renderer.screenshot("qp_menu_return_q1.png");
-        key(app, 293);
         assert app.walking;
         key(app, 293);
         assert not app.walking;
@@ -198,7 +194,7 @@ with entry {
         assert app.renderer.fov == 72.0 and app.renderer.frame_limit == 0;
         assert app.sensitivity == 0.0022 and not app.invert_y;
         assert app.fly_speed == 240.0 and app.culling and app.overlay;
-        assert not app.walking;
+        assert app.walking;
         event(7, 850, 630);
         event(6, 0);
         assert not app.step();

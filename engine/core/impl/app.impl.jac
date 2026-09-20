@@ -208,6 +208,9 @@ impl App.switch_level() {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
         self.movement_status = "F4: walk / fly";
+        if not self.smoke {
+            self.toggle_movement();
+        }
         self.menu.opened = False;
         if self.menu.restore_mouse {
             _capture();
@@ -285,11 +288,24 @@ impl App.step() -> bool {
     if self.walking {
         self.fly(intent, 0.0);
         self.jump_pending = self.jump_pending or intent.jump;
-        steps = self.physics_clock.advance(min(dt, 0.25));
-        wish = forward_from(self.player.yaw, 0.0).scale(intent.move.y).add(
-            right_from(self.player.yaw).scale(intent.move.x)
-        );
-        for i in range(steps) {
+    }
+    steps = self.physics_clock.advance(min(dt, 0.25));
+    wish = forward_from(self.player.yaw, 0.0).scale(intent.move.y).add(
+        right_from(self.player.yaw).scale(intent.move.x)
+    );
+    for i in range(steps) {
+        previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
+        if self.level.active and not self.smoke {
+            self.world spawn DoorTick(
+                bsp=self.level.bsp,
+                collision=self.level.collision,
+                player_origin=self.player.pos.sub(
+                    Vec3(z=self.level.collision.eye_height)
+                ),
+                dt=self.physics_clock.tick_rate
+            );
+        }
+        if self.walking {
             self.player spawn MovePlayer(
                 collision=self.level.collision,
                 wish=wish,
@@ -298,6 +314,16 @@ impl App.step() -> bool {
             );
             self.jump_pending = False;
         }
+        if self.level.active and not self.smoke {
+            self.world spawn TriggerTick(
+                start=previous_origin,
+                finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+                dt=self.physics_clock.tick_rate,
+                touching=self.walking
+            );
+        }
+    }
+    if self.walking {
         self.fly(Intent(), 0.0);
     } else {
         self.fly(intent, dt);
@@ -319,7 +345,7 @@ impl App.toggle_movement() {
             return;
         }
         self.walking = True;
-        self.movement_status = "WALK | F4: fly | doors/lifts are static";
+        self.movement_status = "WALK | F4: fly | proximity doors active";
     }
     self.player.velocity = Vec3();
     self.player.grounded = False;
@@ -385,7 +411,7 @@ impl App.adjust_setting(direction: int) {
 
 impl App.reset_settings() {
     self.menu.message = "";
-    if self.walking {
+    if not self.walking {
         self.toggle_movement();
     }
     self.renderer.fov = 72.0;

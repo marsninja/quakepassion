@@ -5,7 +5,9 @@ import from ..math.aabb { AABB }
 node HullCell {
     has normal: Vec3 = Vec3(),
         distance: float = 0.0,
-        contents: int = 0;
+        contents: int = 0,
+        planes: list[Vec3] = [],
+        distances: list[float] = [];
 }
 
 edge HullFront {}
@@ -50,6 +52,40 @@ walker Sweep {
     }
 
     can intersect with HullCell entry {
+        if here.planes {
+            enter = 0.0;
+            leave = 1.0;
+            normal = Vec3();
+            inside = True;
+            for i in range(len(here.planes)) {
+                n = here.planes[i];
+                a = n.dot(self.start) - here.distances[i];
+                b = n.dot(self.finish) - here.distances[i];
+                if a >= 0.0 {
+                    inside = False;
+                }
+                if a >= 0.0 and b >= 0.0 {
+                    return;
+                }
+                if a >= 0.0 and b < 0.0 {
+                    fraction = a / (a - b);
+                    if fraction >= enter {
+                        enter = fraction;
+                        normal = n;
+                    }
+                } elif a < 0.0 and b >= 0.0 {
+                    leave = min(leave, a / (a - b));
+                }
+                if enter > leave {
+                    return;
+                }
+            }
+            self.result.start_solid = inside;
+            self.result.fraction = enter;
+            self.result.normal = normal;
+            return;
+        }
+
         if self.depth > 256 {
             raise ValueError("Cyclic or excessively deep collision hull");
         }
@@ -125,27 +161,31 @@ def group_hulls(bounds: list[AABB], indices: list[int], depth: int = 0) -> HullG
         group.indices = indices;
         return group;
     }
-    size = hi.sub(lo);
+    center_lo = Vec3(x=1.0e30, y=1.0e30, z=1.0e30);
+    center_hi = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);
+    for i in indices {
+        c = bounds[i].center();
+        center_lo = Vec3(
+            x=min(center_lo.x, c.x), y=min(center_lo.y, c.y), z=min(center_lo.z, c.z)
+        );
+        center_hi = Vec3(
+            x=max(center_hi.x, c.x), y=max(center_hi.y, c.y), z=max(center_hi.z, c.z)
+        );
+    }
+    size = center_hi.sub(center_lo);
     axis = 0
         if size.x >= size.y and size.x >= size.z
         else (1 if size.y >= size.z else 2);
-    mid = lo.add(hi).scale(0.5);
-    split = mid.x if axis == 0 else (mid.y if axis == 1 else mid.z);
-    left: list[int] = [];
-    right: list[int] = [];
+    ranked: list[tuple[float, int]] = [];
     for i in indices {
         center = bounds[i].center();
         value = center.x if axis == 0 else (center.y if axis == 1 else center.z);
-        if value < split {
-            left.append(i);
-        } else {
-            right.append(i);
-        }
+        ranked.append((value, i));
     }
-    if not left or not right {
-        group.indices = indices;
-        return group;
-    }
+    ranked = sorted(ranked);
+    middle = len(ranked) // 2;
+    left = [pair[1] for pair in ranked[:middle]];
+    right = [pair[1] for pair in ranked[middle:]];
     a = group_hulls(bounds, left, depth + 1);
     right_group = group_hulls(bounds, right, depth + 1);
     group +>:HullChild:+> a;
@@ -156,6 +196,7 @@ def group_hulls(bounds: list[AABB], indices: list[int], depth: int = 0) -> HullG
 obj CollisionMap {
     has hulls: list[HullCell] = [],
         offsets: list[Vec3] = [],
+        models: list[int] = [],
         bounds: list[AABB] = [],
         groups: list[HullGroup] = [],
         eye_height: float = 22.0;
@@ -170,8 +211,7 @@ obj CollisionMap {
         if len(normals) < 4 or len(normals) != len(distances) {
             raise ValueError("Invalid convex collision brush");
         }
-        cell = HullCell(contents=-2);
-        empty = HullCell(contents=-1);
+        cell = HullCell();
         lo = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);
         hi = Vec3(x=1.0e30, y=1.0e30, z=1.0e30);
         for i in range(len(normals)) {
@@ -203,14 +243,52 @@ obj CollisionMap {
             if n.z == -1.0 and n.x == 0.0 and n.y == 0.0 {
                 lo.z = max(lo.z, -distance);
             }
-            next_cell = HullCell(normal=n, distance=distance);
-            next_cell +>:HullFront:+> empty;
-            next_cell +>:HullBack:+> cell;
-            cell = next_cell;
+            cell.planes.append(n);
+            cell.distances.append(distance);
         }
         self.hulls.append(cell);
         self.offsets.append(offset);
         self.bounds.append(AABB(mins=lo.add(offset), maxs=hi.add(offset)));
+    }
+
+    # Triangle/box separating axes form the exact expanded triangle hull.
+    # Axial planes also give the spatial tree tight, finite bounds.
+    def add_triangle(a: Vec3, b: Vec3, c: Vec3, mins: Vec3, maxs: Vec3, offset: Vec3) {
+        surface = b.sub(a).cross(c.sub(a));
+        if surface.length() < 0.000001 {
+            return;
+        }
+        axes = [Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)];
+        candidates = [surface];
+        candidates.extend(axes);
+        for side in [b.sub(a), c.sub(b), a.sub(c)] {
+            for axis in axes {
+                candidates.append(side.cross(axis));
+            }
+        }
+        normals: list[Vec3] = [];
+        distances: list[float] = [];
+        for candidate in candidates {
+            if candidate.length() < 0.000001 {
+                continue;
+            }
+            unit = candidate.normalized();
+            for n in [unit, unit.scale(-1.0)] {
+                duplicate = False;
+                for prior in normals {
+                    if prior.sub(n).length() < 0.000001 {
+                        duplicate = True;
+                        break;
+                    }
+                }
+                if duplicate {
+                    continue;
+                }
+                normals.append(n);
+                distances.append(max(a.dot(n), max(b.dot(n), c.dot(n))));
+            }
+        }
+        self.add_brush(normals, distances, mins, maxs, offset);
     }
 
     def reindex() {

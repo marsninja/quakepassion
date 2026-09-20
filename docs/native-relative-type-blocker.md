@@ -78,4 +78,5 @@ especially `_resolve_sig_type`, `_resolve_jac_type`, and
 
 The previous Q1 movement validation results describe the earlier working snapshot;
 the shared-format refactor requires the compiler fix above to build natively.
-Q3 patch collision remains future work.
+Q3 tessellated patch collision is now implemented; see the movement status for
+its remaining fidelity limits.

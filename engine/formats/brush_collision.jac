@@ -3,12 +3,15 @@ import from .bsp { Bsp }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
-def add_model(collision: CollisionMap, bsp: Bsp, model: int, offset: Vec3) {
+def add_model(
+    collision: CollisionMap, bsp: Bsp, model: int, offset: Vec3, volume: bool = False
+) {
+    first = len(collision.hulls);
     width = 15.0 if bsp.game == "q3" else 16.0;
     mask = 65537 if bsp.game == "q3" else 65539;
     for index in bsp.models[model].brushes {
         brush = bsp.brushes[index];
-        if brush.contents & mask == 0 or not brush.planes {
+        if (not volume and brush.contents & mask == 0) or not brush.planes {
             continue;
         }
         normals: list[Vec3] = [];
@@ -25,26 +28,58 @@ def add_model(collision: CollisionMap, bsp: Bsp, model: int, offset: Vec3) {
             offset
         );
     }
+    if bsp.game == "q3" and not volume {
+        record = bsp.models[model];
+        for index in range(record.first_face, record.first_face + record.face_count) {
+            face = bsp.faces[index];
+            if not face.patch {
+                continue;
+            }
+            material = bsp.textures[face.texture];
+            if material.contents & mask == 0 {
+                continue;
+            }
+            for i in range(0, len(face.indices), 3) {
+                collision.add_triangle(
+                    face.vertices[face.indices[i]],
+                    face.vertices[face.indices[i + 1]],
+                    face.vertices[face.indices[i + 2]],
+                    Vec3(x=-width, y=-width, z=-24.0),
+                    Vec3(x=width, y=width, z=32.0),
+                    offset
+                );
+            }
+        }
+    }
+    for i in range(first, len(collision.hulls)) {
+        collision.models.append(model);
+    }
 }
 
-def build_brush_collision(bsp: Bsp) -> CollisionMap {
+def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
     collision = CollisionMap(eye_height=26.0 if bsp.game == "q3" else 22.0);
-    add_model(collision, bsp, 0, Vec3());
+    if not triggers {
+        add_model(collision, bsp, 0, Vec3());
+    }
     for entity in bsp.entities {
         kind = entity.fields.get("classname", "");
-        if kind
-            not in [
-                "func_wall",
-                "func_door",
-                "func_door_secret",
-                "func_plat",
-                "func_train",
-                "func_button",
-                "func_static",
-                "func_bobbing",
-                "func_rotating",
-                "func_door_rotating"
-            ] {
+        if triggers and kind not in ["trigger_once", "trigger_multiple"] {
+            continue;
+        }
+        if not triggers
+            and kind
+                not in [
+                    "func_wall",
+                    "func_door",
+                    "func_door_secret",
+                    "func_plat",
+                    "func_train",
+                    "func_button",
+                    "func_static",
+                    "func_bobbing",
+                    "func_rotating",
+                    "func_door_rotating"
+                ] {
             continue;
         }
         model = entity.fields.get("model", "");
@@ -63,7 +98,8 @@ def build_brush_collision(bsp: Bsp) -> CollisionMap {
             collision,
             bsp,
             index,
-            Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2]))
+            Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2])),
+            volume=triggers
         );
     }
     collision.reindex();

@@ -197,6 +197,7 @@ def parse_q3(data: bytes) -> Bsp {
         face = Face(
             texture=texture,
             planar=(kind == 1),
+            patch=(kind == 2),
             hidden=(kind == 4 or (bsp.textures[texture].flags & 128) != 0),
             normal=vec_at(lumps[13], p + 84)
         );
