@@ -13,6 +13,8 @@ import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from .doors { load_doors }
+import from .pickups { load_pickup_signals }
+import from .combat { load_opponent_signals }
 import from .triggers { load_triggers }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
@@ -332,6 +334,8 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
         }
     }
     level.liquids = load_liquids(level.bsp);
+    load_pickup_signals(world, level.bsp);
+    load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_doors(world, level.bsp, level.collision);
     load_triggers(world, level.bsp);

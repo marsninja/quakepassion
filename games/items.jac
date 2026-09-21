@@ -1,5 +1,6 @@
 """Initial campaign/arena pickup roster adapted to shared engine item behavior."""
 import math;
+import from engine.world.signals { Signal, HasSignal }
 import from engine.world.pickups { PickupRule, Pickup, HasPickup }
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
 import from engine.world.world { World, move_to_area }
@@ -8,10 +9,16 @@ import from engine.assets.library { AssetLibrary }
 import from engine.math.vec3 { Vec3 }
 
 
-def pickup_rule(game: str, fields: dict[str, str]) -> PickupRule | None {
+def pickup_rule(game: str, fields: dict[str, str], worldtype: int = 0) -> PickupRule | None {
     kind = fields.get("classname", "");
     flags = int(fields.get("spawnflags", "0"));
     if game == "q1" {
+        if kind in ["item_key1", "item_key2"] {
+            theme = "b" if worldtype == 2 else ("m" if worldtype == 1 else "w");
+            metal = "s" if kind == "item_key1" else "g";
+            return PickupRule(kind="key_silver" if kind == "item_key1" else "key_gold",
+                amount=1, capacity=1, model="progs/" + theme + "_" + metal + "_key.mdl");
+        }
         if kind == "item_health" {
             amount = 100 if flags & 2 else (15 if flags & 1 else 25);
             model = "b_bh100" if flags & 2 else ("b_bh10" if flags & 1 else "b_bh25");
@@ -42,6 +49,19 @@ def pickup_rule(game: str, fields: dict[str, str]) -> PickupRule | None {
             );
         }
     } elif game == "q2" {
+        key_models = {
+            "key_data_cd": "data_cd", "key_power_cube": "power", "key_pyramid": "pyramid",
+            "key_data_spinner": "spinner", "key_pass": "pass", "key_blue_key": "key",
+            "key_red_key": "red_key", "key_airstrike_target": "target"
+        };
+        if kind in key_models {
+            return PickupRule(kind=kind, amount=1, capacity=8 if kind == "key_power_cube" else 1,
+                model="models/items/keys/" + key_models[kind] + "/tris.md2");
+        }
+        if kind == "key_commander_head" {
+            return PickupRule(kind=kind, amount=1, capacity=1,
+                model="models/monsters/commandr/head/tris.md2");
+        }
         if kind
             in [
                 "item_health",
@@ -156,9 +176,10 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
     count = 0;
     library.open(directory);
     try {
-        for entity in level.bsp.entities {
-            fields = entity.fields;
-            rule = pickup_rule(level.bsp.game, fields);
+        for index in range(len(level.bsp.entities)) {
+            fields = level.bsp.entities[index].fields;
+            rule = pickup_rule(level.bsp.game, fields,
+                int(level.bsp.entities[0].fields.get("worldtype", "0")) if level.bsp.entities else 0);
             if rule is None {
                 continue;
             }
@@ -196,6 +217,9 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
                 respawn=30.0 if level.bsp.game == "q3" else 0.0
             );
+            for signal in [world->:HasSignal:->][?:Signal] {
+                if index in signal.entities { pickup.activation = signal; }
+            }
             pickup.visual = attach_model(pickup, resources[key]);
             move_to_area(pickup, level.areas[level.locate(position)]);
             world +>:HasPickup:+> pickup;

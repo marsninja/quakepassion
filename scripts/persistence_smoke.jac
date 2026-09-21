@@ -40,7 +40,9 @@ with entry {
         assert quantity(app.player.inventory, "shells") == 7;
         enemies = [app.world->:HasOpponent:->][?:Opponent];
         assert enemies[0].health == 0 and not enemies[0].visual.visible;
-        app.render_frame();
+        for frame in range(3) {
+            app.render_frame();
+        }
         renderer.screenshot("qp_persistence_" + game + ".png");
         # A malformed entity record must not replace the current playable world.
         write_save(path, saved + "INVALID\n");

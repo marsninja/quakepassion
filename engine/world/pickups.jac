@@ -1,5 +1,7 @@
 """Shared item contacts, inventory effects and arena respawn behavior."""
 import from .world { World, Entity, Player }
+import from .signals { Signal, HasSignal, Fire }
+import from ..formats.bsp { Bsp }
 import from .models { Visual }
 import from .damage { Heal }
 import from .inventory { AdjustInventory }
@@ -20,6 +22,7 @@ node Pickup(Entity) {
     has rule: PickupRule,
         visual: Visual = Visual(),
         active: bool = True,
+        activation: Signal = Signal(),
         respawn: float = 0.0,
         remaining: float = 0.0;
 }
@@ -131,6 +134,18 @@ walker PickupTick {
             here.remaining = here.respawn;
             here.visual.visible = False;
             self.collected += 1;
+            here.activation spawn Fire(inventory=self.player.inventory);
+        }
+    }
+}
+
+
+def load_pickup_signals(world: World, bsp: Bsp) {
+    for index in range(len(bsp.entities)) {
+        fields = bsp.entities[index].fields;
+        kind = fields.get("classname", "");
+        if kind.startswith("item_") or kind.startswith("key_") or kind.startswith("ammo_") {
+            world +>:HasSignal:+> Signal(entities=[index]);
         }
     }
 }

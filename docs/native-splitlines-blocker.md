@@ -1,5 +1,24 @@
 # Native splitlines adds a trailing empty record
 
+## Upstream fix
+
+[Jac PR #9388](https://github.com/jaseci-labs/jac/pull/9388) implements native
+line-boundary scanning and positional/keyword `keepends`. The original repro
+now prints `LINES 2` and `SPLITLINES PASS` with that branch. Native JIT and
+standalone-binary regressions, Python-backend parity, and existing split/rsplit
+and string lifetime tests pass. Full application acceptance now passes save/load and settings reload/reset
+on all three games with this fix; the engine parser has not been changed.
+
+## Rechecked after the upstream merges (2026-09-21)
+
+PRs #9354, #9357 and #9361 are merged. A fresh native build using upstream
+main `51584156a2935b7112028fba5ad8cbb9835f71b0` still reproduces this separate
+defect: `repros/native_splitlines.jac` prints `LINES 3`, includes `LINE []`,
+and aborts at its two-line assertion (exit 134). The compiler checkout used
+for this check is `/Users/marsninja/repos/jaseci-wt/qp-merged-validation`.
+The engine settings parser remains unchanged. The earlier integration-checkout
+details below describe the original discovery.
+
 The combined integration compiler uses upstream main `cef4810100` plus the code
 fixes from #9354, #9357 and #9361. Its local checkout is
 `/Users/marsninja/repos/jaseci-wt/qp-prototype-validation` (HEAD `41db5f4851`).

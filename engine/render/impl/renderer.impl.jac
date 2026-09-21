@@ -86,9 +86,7 @@ impl Renderer.draw_status(health: int, armor: int, shells: int = 0) {
         color
     );
     if health <= 0 {
-        DrawText(
-            "You died - Enter to restart level", 20, i32(self.height - 78), 24, color
-        );
+        self.draw_terminal("You died - Enter to restart level");
     }
 }
 
@@ -165,7 +163,7 @@ impl Renderer.draw_combat(state: CombatState, arena: bool) {
         color
     );
     if arena and state.kills >= 10 {
-        DrawText("Arena won! Enter: rematch | Esc: choose level", 20, 130, 24, color);
+        self.draw_terminal("Arena won! Enter: rematch | Esc: choose level");
     }
 }
 
@@ -173,4 +171,18 @@ impl Renderer.draw_message(message: str) {
     DrawText(
         message, 20, i32(self.height - 104), 20, Color(r=255, g=230, b=180, a=255)
     );
+}
+
+
+impl Renderer.draw_terminal(message: str) {
+    y = self.height / 2 + 32;
+    DrawRectangle(0, i32(y), i32(self.width), 56, Color(r=0, g=0, b=0, a=210));
+    DrawText(message, 20, i32(y + 16), 24, Color(r=255, g=230, b=180, a=255));
+}
+
+
+impl Renderer.draw_keys(message: str) {
+    if message {
+        DrawText(message, 20, i32(self.height - 154), 20, Color(r=255, g=230, b=180, a=255));
+    }
 }

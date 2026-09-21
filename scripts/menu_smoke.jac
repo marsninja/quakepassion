@@ -6,40 +6,7 @@ import from engine.render.renderer { Renderer }
 import from engine.world.level { load_level, spawn_player }
 import from engine.world.world { World }
 import from engine.input.input { mouse_captured, _capture }
-import from vendor.raylib {
-    # AutomationEvent has frame, type, and four contiguous int parameters.
-    obj AutomationEvent {
-        has frame: u32,
-            kind: u32,
-            p0: i32,
-            p1: i32,
-            p2: i32,
-            p3: i32;
-    }  def PlayAutomationEvent(event: AutomationEvent) -> None;
-}
-
-def event(kind: int, a: int, b: int = 0) {
-    PlayAutomationEvent(
-        AutomationEvent(
-            frame=u32(0), kind=u32(kind), p0=i32(a), p1=i32(b), p2=i32(0), p3=i32(0)
-        )
-    );
-}
-
-def key(app: App, code: int) {
-    event(2, code);
-    assert app.step();
-    event(1, code);
-    assert app.step();
-}
-
-def click(app: App, x: int, y: int) {
-    event(7, x, y);
-    event(6, 0);
-    assert app.step();
-    event(5, 0);
-    assert app.step();
-}
+import from scripts.input_events { event, key, click }
 
 def select_map(app: App, name: str) {
     target = -1;
@@ -77,30 +44,32 @@ with entry {
         key(app, 256);
         click(app, 875, 98);
         assert app.menu.settings_open;
-        click(app, 915, 174);
+        click(app, 915, 173);
         assert app.walking;
-        click(app, 840, 174);
+        click(app, 840, 173);
         assert not app.walking;
-        click(app, 915, 222);
+        click(app, 915, 215);
         assert app.renderer.fov == 74.0;
         key(app, 263);
         assert app.renderer.fov == 72.0;
         key(app, 262);
         assert app.renderer.fov == 74.0;
-        click(app, 915, 270);
+        click(app, 915, 257);
         assert app.sensitivity > 0.0022;
-        click(app, 915, 318);
+        click(app, 915, 299);
         assert app.invert_y;
-        click(app, 915, 366);
+        click(app, 915, 341);
         assert app.fly_speed == 300.0;
-        click(app, 915, 414);
+        click(app, 915, 383);
         assert app.renderer.frame_limit == 30;
-        click(app, 840, 414);
+        click(app, 840, 383);
         assert app.renderer.frame_limit == 0;
-        click(app, 915, 462);
+        click(app, 915, 425);
         assert not app.culling;
-        click(app, 915, 510);
+        click(app, 915, 467);
         assert not app.overlay;
+        click(app, 915, 509);
+        assert app.audio.volume > 0.25;
         app.renderer.screenshot("qp_menu_settings.png");
         key(app, 256);
         assert not app.menu.opened;

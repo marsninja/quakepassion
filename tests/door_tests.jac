@@ -77,7 +77,7 @@ test "unsupported activation remains static in every game" {
             {"target": "event"},
             {"health": "10"},
             {"spawnflags": "1"},
-            {"spawnflags": "8"},
+            {"spawnflags": "32"},
             {"accel": "10"}
         ] {
             fixture = DoorFixture();

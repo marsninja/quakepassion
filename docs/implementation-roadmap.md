@@ -1,66 +1,48 @@
-# Campaign and local arena completion plan
+# Campaign and local arena prototype
 
-The first completion target is a playable Q1/Q2 campaign and local Q3 arena
-prototype with a smaller combat roster, as clarified by the user.
-Network multiplayer and original-mod compatibility are deferred. The project is
-still a gameplay prototype, not a completed implementation of those games.
+The agreed target is a playable prototype using original Q1/Q2 maps and a local
+Q3 arena, with a smaller combat roster. It does not include full original-game
+behavior, network multiplayer, original mods, or an editor.
 
-## Validated foundations
+## Implemented
 
-- Shared activation graph, moving buttons, proximity/touch doors and cycle-safe
-  relay dispatch.
-- Translating platforms with transactional collision and player carrying.
-- Teleporters, directional/apex jump pads, liquid queries/swimming, Q2/Q3 crouching
-  with matching collision hulls and standing clearance.
-- Initial Q1/Q2 campaign exit loading, named Q2 arrivals and failed-load rollback.
-- Shared actor health/armor, inventory slots, liquid damage, death and restart.
-- MDL/MD2/MD3 model adapters, vertex interpolation, PCX skins and a common model
-  renderer; graph-based visual components and shared model resource references.
-- Health, armor and shell pickups instantiated in normal play across all three
-  games, with shared contact/collection and initial Q3 respawn behavior.
+- One shared spatial graph, renderer, collision/movement system and application
+  loop across all three game formats. Walking, crouching, swimming, jump pads,
+  teleporters, buttons, translating platforms and supported doors are connected.
+- Two hitscan weapons, health/armor/ammunition pickups, damage, death/restart,
+  original sounds and a HUD. Q1 soldiers, Q2 soldiers/infantry, and Q3 Sarge bots
+  use shared combat behavior with sight memory, local obstacle steering and
+  idle/run/attack animation. Q3 body/head/weapon parts use original MD3 tags.
+- Q1 silver/gold key doors, Q2 key gates, objective counters, pickup/death target
+  activation, key inventory feedback and supported map exits.
+- Q2 visited-map state retained across hub returns and save/load. Unit transitions
+  clear keys and hub history. Map selection starts fresh; failed loads preserve
+  the current world. Save format 2 rejects older snapshots explicitly.
+- Escape level/settings menu, persistent settings, F5/F9 save/load, and a local
+  ten-frag arena with bot respawn, victory banner and Enter rematch.
 
-The regression run passes 148 collected tests (including imported fixtures). Native checks cover 14 campaign exits,
-Q2/Q3 crouching, death/restart, pickup rendering and collection in all three games,
-and all installed model files.
-See [campaign status](campaign-gameplay-status.md), [model status](models-status.md),
-[buttons](buttons-status.md), [platforms](platforms-status.md),
-[traversal](traversal-status.md) and [swimming](swimming-status.md) for evidence
-and limits.
+## Acceptance and delivery
 
-## Remaining implementation and acceptance criteria
+`jac run scripts/validate_gameplay.jac` builds native persistence, input,
+campaign and combat harnesses using a disposable HOME linked to original assets.
+It checks all three games, Q1 e1m2 key collection/unlock and onward loading,
+Q2 base1/base2 return state, save/load and rollback, and repeated arena kills.
+The separate menu runner covers settings, game selection and quitting. Unit
+fixtures cover synthetic collision, gameplay and serialization edge cases.
 
-1. Bind characters to shared model resources; choose animations and compose Q3
-   player/weapon attachment tags. Item binding is implemented for the initial roster.
-2. Remaining pickups, weapons, hits/projectiles, enemy behaviors and local arena opponents.
-   Validate acquisition, combat, kills, deaths, respawn and arena scoring.
-3. Campaign keys, objectives, rune/boss progression, Q2 hub state and intermissions.
-   Complete representative multi-map routes. Full original campaign branches,
-   endings and complete weapon/enemy rosters follow the playable prototype.
-4. Save/load and persistent settings; verify restart and cross-map state restoration.
-5. Original audio/effects, remaining mover/trigger behaviors, model lighting and
-   material passes. Q3 armor's environment, alpha and scrolling additive stages
-   now render; other shader directives still need implementation and validation.
+These are controlled automated scenarios, not uninterrupted human campaign
+playthroughs. Listening to audio, judging combat feel and exploring authored maps
+remain useful manual acceptance. See [campaign details](campaign-gameplay-status.md)
+and [combat details](combat-prototype-status.md).
 
-Every stage needs focused fixtures and representative native asset checks.
-Graphical changes also need desktop captures. No stage is complete merely because
-its loaders compile. Compiler defects must be reduced and reported, not bypassed.
+The current native validation compiler is upstream Jac main at `51584156a2`
+plus [Jac #9388](https://github.com/jaseci-labs/jac/pull/9388). The released-binary
+check remains blocked until a release includes the necessary upstream fixes.
+Do not substitute source-compiler results for released-binary acceptance.
 
-The latest native validation uses the local `qp-gameplay-local` compiler, combining
-upstream PRs #9354 (native file/zlib APIs) and #9357 (numeric min/max). The unchanged
-PNG helper now decodes saved captures from all three games natively. Engine graph
-edges have also been migrated to current Jac endpoint declarations.
+## Beyond this prototype
 
-The extern ABI fix in upstream PR #9358 is also applied locally. The standalone
-file/listdir repro and full native model harness now pass, including the Q3
-material animation pixel comparison. See
-[native-file-listdir-blocker.md](native-file-listdir-blocker.md).
-
-Point collision is implemented through the shared collision walker: Q1 uses
-render BSP leaves for point queries; Q2/Q3 use unexpanded brush planes and Q3
-patch triangles. Player movement retains its existing expanded hulls.
-The native asset checks pass on Q1 e1m1, Q2 base1 and Q3 q3dm1. See
-[point query status](point-traces-status.md). The shared hitscan/opponent prototype now exists; see
-[combat progress](combat-prototype-status.md). With #9361 included, native save/load
-and cross-game restoration pass on all three games. Settings reload now exposes
-[native splitlines semantics](native-splitlines-blocker.md); the parser has not
-been changed to hide the defect.
+Full original campaign branches, boss/rune endings, complete enemies/weapons,
+projectiles and original behavior; trains/rotating/crushing movers and remaining
+trigger/material directives; global bot pathfinding and actor separation;
+network multiplayer, original-mod compatibility, and editing tools.

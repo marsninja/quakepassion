@@ -69,3 +69,17 @@ input during the app-loop sample.
 The known settings `splitlines` blocker is separate. Broad map/encounter
 stress testing is still needed before claiming all performance problems are
 eliminated; remaining immediate-mode world geometry can also limit throughput.
+
+## Campaign/character checkpoint (2026-09-21)
+
+The expanded native acceptance runner passes persistence, gameplay input,
+campaign hub/key routes and combat on all three games. Q3 now renders original
+Sarge body/head/weapon parts rather than box bots. The full unit run passes 157
+tests; subsequent focused tests cover saved counter progress and monster-death
+objective dispatch. Settings reload passes with Jac #9388 applied.
+
+A diagnostic run while other checks were active measured combat updates at
+0.38 ms/tick (Q1), 0.45 (Q2), and 0.13 (Q3). App-frame medians were 4.10, 7.81,
+and 5.94 ms respectively. These measurements establish that the added steering
+and characters remain usable on this desktop; concurrent workload makes them
+unsuitable for direct comparison with the isolated baseline above.

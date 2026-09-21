@@ -37,7 +37,7 @@ def values(line: str, count: int) -> list[float] {
 
 def snapshot(world: World, level: Level, player: Player, combat: CombatState) -> str {
     lines = [
-        "QUAKEPASSION 1",
+        "QUAKEPASSION 2",
         level.bsp.game,
         level.name,
         numbers(
@@ -103,14 +103,15 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         door.position,
                         door.remaining,
                         1.0 if door.automatic else 0.0,
-                        float(door.activation.pending)
+                        float(door.activation.pending),
+                        1.0 if door.unlocked else 0.0
                     ]
                 )
         );
     }
     for signal in [world->:HasSignal:->][?:Signal] {
         lines.append(
-            "S " + numbers([1.0 if signal.enabled else 0.0, float(signal.pending)])
+            "S " + numbers([1.0 if signal.enabled else 0.0, float(signal.pending), float(signal.remaining)])
         );
     }
     for trigger in [world->:HasTrigger:->][?:TouchTrigger] {
@@ -141,7 +142,7 @@ def restore(
 ) {
     lines = data.splitlines();
     if len(lines) < 4
-        or lines[0] != "QUAKEPASSION 1"
+        or lines[0] != "QUAKEPASSION 2"
         or lines[1] != level.bsp.game
         or lines[2] != level.name {
         raise ValueError("Save version or level mismatch");
@@ -215,7 +216,7 @@ def restore(
             item.remaining = row[1];
             item.visual.visible = item.active;
         } elif words[0] == "D" and d < len(doors) {
-            row = values(" ".join(words[2:]), 4);
+            row = values(" ".join(words[2:]), 5);
             door = doors[d];
             d += 1;
             if words[1] not in ["closed", "opening", "open", "closing", "locked"]
@@ -228,6 +229,8 @@ def restore(
             door.remaining = row[1];
             door.automatic = row[2] != 0.0;
             door.activation.pending = int(row[3]);
+            door.unlocked = row[4] != 0.0;
+            if door.unlocked and door.keys { door.hold_time = -1.0; }
             members = [door];
             members.extend([door->:DoorMember:->][?:Door]);
             for part in members {
@@ -243,11 +246,12 @@ def restore(
                 }
             }
         } elif words[0] == "S" and s < len(signals) {
-            row = values(" ".join(words[1:]), 2);
+            row = values(" ".join(words[1:]), 3);
             signal = signals[s];
             s += 1;
             signal.enabled = row[0] != 0.0;
             signal.pending = int(row[1]);
+            signal.remaining = int(row[2]);
         } elif words[0] == "T" and t < len(triggers) {
             row = values(" ".join(words[1:]), 3);
             trigger = triggers[t];

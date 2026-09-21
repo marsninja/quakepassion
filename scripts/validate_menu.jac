@@ -2,6 +2,7 @@
 import os;
 import shutil;
 import subprocess;
+import tempfile;
 import from pathlib { Path }
 import from scripts.png_checks { check_image }
 
@@ -29,9 +30,13 @@ def main() {
     for game in ["q1", "q2", "q3"] {
         (repo / f"qp_walk_{game}.png").unlink(missing_ok=True);
     }
-    ran = subprocess.run(
-        [str(binary)], cwd=repo, env=env, capture_output=True, text=True, timeout=180
-    );
+    with tempfile.TemporaryDirectory(prefix="qp-menu-") as home {
+        (Path(home) / "quake-assets").symlink_to(Path.home() / "quake-assets", target_is_directory=True);
+        env["HOME"] = home;
+        ran = subprocess.run(
+            [str(binary)], cwd=repo, env=env, capture_output=True, text=True, timeout=180
+        );
+    }
     (output / "run.log").write_text(ran.stdout + ran.stderr);
     assert ran.returncode == 0 , f"Menu validation failed: {output / 'run.log'}";
     assert "MENU PASS:" in ran.stdout , "Menu sequence did not complete";

@@ -1,5 +1,6 @@
 """Shared translating proximity doors. Unsupported activation stays static."""
 import math;
+import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
 import from .signals { Signal, Fire, Targets, HasSignal }
 import from ..formats.bsp { Bsp, MapEntity }
@@ -34,6 +35,8 @@ node Door {
         kind: str = "door",
         rest: Vec3 = Vec3(),
         activation: Signal = Signal(),
+        keys: list[str] = [],
+        unlocked: bool = False,
         automatic: bool = True,
         requested: bool = False,
         names: list[str] = [],
@@ -55,7 +58,8 @@ walker DoorTick {
         player_origin: Vec3,
         dt: float,
         touching: bool = True,
-        player: Player | None = None;
+        player: Player | None = None,
+        message: str = "";
 
     can start with World entry {
         if self.dt > 0.0 {
@@ -122,6 +126,25 @@ walker DoorTick {
             }
         }
         near = here.requested or here.activation.pending > 0 or contact;
+        if here.keys and not here.unlocked {
+            here.requested = False;
+            here.activation.pending = 0;
+            if not near or not self.touching or self.player is None or self.player.health <= 0 {
+                return;
+            }
+            for key in here.keys {
+                if quantity(self.player.inventory, key) <= 0 {
+                    self.message = "Need " + key.replace("key_", "").replace("_", " ");
+                    return;
+                }
+            }
+            for key in here.keys {
+                self.player.inventory spawn AdjustInventory(kind=key, amount=-1);
+            }
+            here.unlocked = True;
+            self.message = "Door unlocked";
+            here.hold_time = -1.0;
+        }
         here.requested = False;
         here.activation.pending = 0;
         if here.state == "locked" {
@@ -210,7 +233,8 @@ walker DoorTick {
         if next_position == 1.0 {
             here.state = "open";
             here.remaining = here.hold_time;
-            here.activation spawn Fire();
+            fired = here.activation spawn Fire(inventory=self.player.inventory if self.player is not None else None);
+            if fired.message { self.message = fired.message; }
         } elif next_position == 0.0 {
             here.state = "closed";
         }
@@ -276,6 +300,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         # Keep unsupported members in the graph so a locked half disables its group.
         flags = int(fields.get("spawnflags", "0"));
         allowed = 3840 if bsp.game == "q1" else (7936 if bsp.game == "q2" else 0);
+        if kind == "func_door" and bsp.game == "q1" { allowed |= 24; }
         if kind == "func_plat" and bsp.game != "q3" {
             allowed |= 1;
         }
@@ -347,6 +372,8 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 if kind == "func_plat"
                 else ("button" if kind == "func_button" else "door"),
             rest=Vec3(z=-distance) if kind == "func_plat" else Vec3(),
+            keys=(["key_gold"] if flags & 8 else []) + (["key_silver"] if flags & 16 else [])
+                if bsp.game == "q1" and kind == "func_door" else [],
             enabled=enabled,
             automatic=kind == "func_button" or not bool(fields.get("targetname", "")),
             names=[fields["targetname"]] if fields.get("targetname", "") else [],
@@ -460,6 +487,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             continue;
         }
         for part in assembly.members {
+            for key in part.keys {
+                if key not in leader.keys { leader.keys.append(key); }
+            }
             leader.automatic = leader.automatic and part.automatic;
             for name in part.names {
                 if name not in leader.names {
@@ -549,7 +579,19 @@ def connect_targets(world: World, bsp: Bsp) {
     }
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
-        if fields.get("classname", "") in ["trigger_relay", "target_relay"]
+        kind = fields.get("classname", "");
+        if kind in ["trigger_key", "trigger_counter"] and bsp.game in ["q1", "q2"]
+            and float(fields.get("delay", "0")) == 0.0
+            and not fields.get("killtarget", "") {
+            key = fields.get("item", "") if kind == "trigger_key" else "";
+            if kind == "trigger_counter" or (bsp.game == "q2" and key.startswith("key_")) {
+                signals.append(Signal(
+                    relay=True, entities=[index], key=key, once=True,
+                    remaining=max(1, int(fields.get("count", "2"))) if kind == "trigger_counter" else 0
+                ));
+            }
+        }
+        if kind in ["trigger_relay", "target_relay"]
             and int(fields.get("spawnflags", "0")) == 0
             and float(fields.get("delay", "0")) == 0.0
             and not fields.get("killtarget", "") {
