@@ -373,7 +373,8 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 else ("button" if kind == "func_button" else "door"),
             rest=Vec3(z=-distance) if kind == "func_plat" else Vec3(),
             keys=(["key_gold"] if flags & 8 else []) + (["key_silver"] if flags & 16 else [])
-                if bsp.game == "q1" and kind == "func_door" else [],
+                if bsp.game == "q1" and kind == "func_door" else
+                (fields["key"].split() if bsp.game == "passion" and fields.get("key", "") else []),
             enabled=enabled,
             automatic=kind == "func_button" or not bool(fields.get("targetname", "")),
             names=[fields["targetname"]] if fields.get("targetname", "") else [],

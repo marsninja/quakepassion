@@ -38,8 +38,8 @@ obj Feedback {
         if not self.ready {
             return;
         }
-        library = AssetLibrary(game=game);
-        library.open(directory);
+        library = AssetLibrary(game="q1" if game == "passion" else game);
+        library.open(directory + "/id1" if game == "passion" else directory);
         names = [
             "sound/weapons/shotgn2.wav",
             "sound/player/pain1.wav",

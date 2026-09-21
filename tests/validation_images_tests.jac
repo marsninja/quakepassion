@@ -93,3 +93,20 @@ test "unsupported PNG filters are rejected" {
         assert caught;
     }
 }
+
+test "flat interfaces can use an explicit palette threshold" {
+    with tempfile.TemporaryDirectory() as directory {
+        path = Path(directory) / "interface.png";
+        colors = b"\x00\x00\x00\x20\x20\x20\x40\x40\x40\x60\x60\x60\x80\x80\x80\xa0\xa0\xa0\xc0\xc0\xc0\xe0\xe0\xe0";
+        row = b"\x00" + colors * 160;
+        path.write_bytes(png_data(1280,720,2,row * 720));
+        check_image(path, minimum_colors=8);
+        rejected = False;
+        try { check_image(path); } except AssertionError { rejected = True; }
+        assert rejected;
+        path.write_bytes(png_data(1280,720,2,bytes((1280*3+1)*720)));
+        rejected = False;
+        try { check_image(path, minimum_colors=8); } except AssertionError { rejected = True; }
+        assert rejected;
+    }
+}

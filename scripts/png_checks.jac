@@ -71,13 +71,14 @@ def read_png(path: Path) -> PngImage {
     );
 }
 
-def check_image(path: Path) -> PngImage {
+def check_image(path: Path, minimum_colors: int = 65) -> PngImage {
+    assert minimum_colors >= 2, "A content check must reject uniform images";
     decoded = read_png(path);
     assert decoded.width == 1280 and decoded.height == 720 , str(path);
     colors: set[bytes] = set();
     for i in range(0, len(decoded.pixels), decoded.channels) {
         colors.add(decoded.pixels[i:i + 3]);
-        if len(colors) > 64 {
+        if len(colors) >= minimum_colors {
             return decoded;
         }
     }

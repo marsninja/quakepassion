@@ -105,6 +105,14 @@ impl App.render_frame() {
             );
             self.renderer.draw_combat(self.combat, self.level.bsp.game == "q3");
             self.renderer.draw_keys(key_summary(p.inventory));
+            if self.level.bsp.game == "passion" {
+                if self.notice_wait <= 0.0 {
+                    self.renderer.draw_message("PASSION " + self.level.name + " | Find both keys, reach extraction");
+                }
+                if self.expedition_complete {
+                    self.renderer.draw_terminal("Expedition complete! Enter: replay | Esc: new seed");
+                }
+            }
             if self.notice_wait > 0.0 {
                 self.renderer.draw_message(self.notice);
             }
@@ -246,7 +254,7 @@ impl App.load_destination(
     next_models = ModelScene();
     try {
         world = World();
-        level = load_level(world, game_directory(game), name, game);
+        level = open_level(world, game_directory(game), name, game);
         player = spawn_player(level, spawnpoint);
         if carry and self.player.health > 0 and game == self.level.bsp.game {
             player.health = self.player.health;
@@ -306,6 +314,7 @@ impl App.load_destination(
         }
         self.simulation_time = 0.0;
         self.combat = combat;
+        self.expedition_complete = level.completion.pending > 0;
         self.clock = Clock();
         self.skip_time = True;
         self.walking = False;
@@ -341,12 +350,15 @@ impl App.step() -> bool {
             self.physics_clock.accumulator = 0.0;
             self.menu.restore_mouse = mouse_captured();
             _release();
-            for i in range(3) {
+            for i in range(len(self.menu.games)) {
                 if self.menu.games[i] == self.level.bsp.game {
                     self.menu.game = i;
                 }
             }
             self.menu.scan();
+            if self.level.bsp.game == "passion" and self.level.name not in self.menu.maps {
+                self.menu.maps = [self.level.name] + self.menu.maps;
+            }
             for i in range(len(self.menu.maps)) {
                 if self.menu.maps[i] == self.level.name {
                     self.menu.selected = i;
@@ -388,7 +400,7 @@ impl App.step() -> bool {
     }
     if self.level.active
         and (
-            self.player.health <= 0
+            self.player.health <= 0 or self.expedition_complete
             or (self.level.bsp.game == "q3" and self.combat.kills >= 10)
         ) {
         self.jump_pending = False;
@@ -533,6 +545,11 @@ impl App.step() -> bool {
                 touching=self.walking
             );
             if exit_request.request {
+                if self.level.bsp.game == "passion" and exit_request.request == "passion_complete" {
+                    self.expedition_complete = True;
+                    self.level.completion.pending = 1;
+                    break;
+                }
                 self.load_destination(
                     self.level.bsp.game,
                     exit_map(exit_request.request),
@@ -686,7 +703,7 @@ impl App.quickload() {
         lines = data.splitlines();
         if len(lines) < 4
             or lines[0] != "QUAKEPASSION 2"
-            or lines[1] not in ["q1", "q2", "q3"] {
+            or lines[1] not in ["q1", "q2", "q3", "passion"] {
             raise ValueError("Invalid save header");
         }
         self.load_destination(lines[1], exit_map(lines[2]), saved=data, session=session);

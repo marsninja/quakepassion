@@ -8,6 +8,7 @@ obj Texture {
         width: int = 16,
         height: int = 16,
         pixels: bytes = b"",
+        rgba: bytes = b"",
         encoded: bytes = b"",
         extension: str = "",
         contents: int = 0,

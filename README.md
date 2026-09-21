@@ -35,6 +35,7 @@ jac build main.jac --native -o qp
 QP_GAME=q2 ./qp                     # Quake II: base1
 QP_GAME=q3 ./qp                     # Quake III: q3dm1
 QP_GAME=q3 QP_MAP=q3dm7 ./qp         # another map, without maps/ or .bsp
+QP_GAME=passion QP_SEED=42 ./qp      # seeded mixed-asset expedition
 QP_GAME=q2 QP_ASSETS=/path/to/baseq2 ./qp
 QP_GRAYBOX=1 ./qp                   # original two-room development scene
 ```
@@ -74,7 +75,9 @@ levels returns to walking. See [movement status](docs/player-movement-status.md)
 
 In the menu, choose **Quake**, **Quake II**, or **Quake III**, scroll or use
 **Up/Down** to select a map, then click **Render selected level** or press
-**Enter**. **Quit** closes the viewer; Escape resumes the current level. Movement
+**Enter**. **Passion** lists generated expeditions; click its tab again for new
+seeds. Collect both keys and reach extraction to complete a run. **Quit** closes
+the viewer; Escape resumes the current level. Movement
 pauses while the menu is open, and mouse capture is restored when it closes.
 
 The **Settings** button switches to movement mode, vertical field of view, mouse
@@ -102,6 +105,7 @@ jac run scripts/validate_quake.jac --game q2
 jac run scripts/validate_quake.jac --game q3
 jac run scripts/validate_menu.jac       # exercises real menu input and game switching
 jac run scripts/validate_gameplay.jac   # persistence, input, campaigns and combat
+jac run scripts/validate_passion.jac    # generated route, mixed assets, saves and menu
 ```
 
 The validation runners are Jac scripts. `scripts/menu_smoke.jac` is the native
@@ -130,6 +134,12 @@ movers remain beyond this prototype. Q3 material support is partial; see
 
 See [Q1 results](docs/quake1-rendering-status.md) and
 [Q2/Q3 results, compiler fixes, and limitations](docs/quake2-quake3-rendering-status.md).
+
+[Passion](docs/passion.md) is the fourth mode: twenty-room seeded expeditions,
+using original assets from all three games with shared collision and gameplay.
+It adds loops, separated objectives, stairs, cover, optional caches and an elevated
+bridge. Generation checks connector clearance before the level is accepted.
+The versioned seed is saved with the world and its asset-reference manifest.
 
 Shared moving doors: [behavior, limits and validation](docs/doors-status.md).
 

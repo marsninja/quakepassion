@@ -128,7 +128,7 @@ with entry {
         assert app.renderer.fov == 74.0 and app.invert_y and not app.overlay;
         app.renderer.screenshot("qp_menu_loaded_q2.png");
         key(app, 256);
-        click(app, 820, 165);
+        click(app, 700, 165);
         assert app.menu.game == 2 and "q3dm1" in app.menu.maps;
         app.renderer.screenshot("qp_menu_q3.png");
         select_map(app, "q3dm1");

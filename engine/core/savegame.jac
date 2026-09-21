@@ -69,6 +69,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             ]
         )
     ];
+    if level.asset_manifest { lines.append("M " + level.asset_manifest); }
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
@@ -184,12 +185,16 @@ def restore(
     s = 0;
     t = 0;
     v = 0;
+    manifest_seen = False;
     for line in lines[4:] {
         words = line.split();
         if not words {
             continue;
         }
-        if words[0] == "I" and len(words) == 4 {
+        if words[0] == "M" and len(words) == 2 and not manifest_seen and level.asset_manifest {
+            if words[1] != level.asset_manifest { raise ValueError("Save asset manifest mismatch"); }
+            manifest_seen = True;
+        } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);
             capacity = int(words[3]);
             if amount < 0 or capacity < amount or capacity > 10000 {
@@ -269,7 +274,7 @@ def restore(
             raise ValueError("Invalid save record");
         }
     }
-    if e != len(enemies)
+    if (bool(level.asset_manifest) != manifest_seen) or e != len(enemies)
         or p != len(pickups)
         or d != len(doors)
         or s != len(signals)

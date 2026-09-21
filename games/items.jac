@@ -5,7 +5,7 @@ import from engine.world.pickups { PickupRule, Pickup, HasPickup }
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level }
-import from engine.assets.library { AssetLibrary }
+import from engine.assets.catalog { AssetCatalog }
 import from engine.math.vec3 { Vec3 }
 
 
@@ -171,14 +171,14 @@ def pickup_rule(game: str, fields: dict[str, str], worldtype: int = 0) -> Pickup
 
 
 def populate_pickups(world: World, level: Level, directory: str) -> int {
-    library = AssetLibrary(game=level.bsp.game);
+    catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
     count = 0;
-    library.open(directory);
     try {
         for index in range(len(level.bsp.entities)) {
             fields = level.bsp.entities[index].fields;
-            rule = pickup_rule(level.bsp.game, fields,
+            source = fields.get("asset_game", level.bsp.game);
+            rule = pickup_rule(source, fields,
                 int(level.bsp.entities[0].fields.get("worldtype", "0")) if level.bsp.entities else 0);
             if rule is None {
                 continue;
@@ -202,9 +202,9 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 raise ValueError("Invalid pickup origin");
             }
             position = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
-            key = rule.model + ":" + str(rule.skin);
+            key = source + ":" + rule.model + ":" + str(rule.skin);
             if key not in resources {
-                loaded = library.model(rule.model, rule.skin);
+                loaded = catalog.model(source + ":" + rule.model, rule.skin);
                 resource = ModelResource(
                     name=key, model=loaded.model, skins=loaded.skins
                 );
@@ -226,7 +226,7 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             count += 1;
         }
     } finally {
-        library.close();
+        catalog.close();
     }
     return count;
 }

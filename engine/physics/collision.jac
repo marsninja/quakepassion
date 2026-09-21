@@ -111,6 +111,11 @@ walker Sweep {
                 if a >= 0.0 {
                     inside = False;
                 }
+                # A point ray lying on a brush side can still enter through
+                # another plane (notably the seam between adjoining floors).
+                if self.point and abs(a) < 0.0000001 and abs(b) < 0.0000001 {
+                    continue;
+                }
                 if a >= 0.0 and b >= 0.0 {
                     return;
                 }
