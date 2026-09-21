@@ -87,3 +87,47 @@ test "actor ray bounds reject grazing misses and accept inside starts" {
         == 1.0;
     assert actor_fraction(Vec3(), Vec3(), Vec3(), 22.0) == 0.0;
 }
+
+test "cached pursuit never permits an attack through newly blocking geometry" {
+    world = World();
+    enemy = Opponent(pos=Vec3(x=100.0), attack_wait=0.0, grounded=True);
+    world +>:HasOpponent:+> enemy;
+    player = Player();
+    collision = CollisionMap();
+    state = CombatState();
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert player.health == 96 and enemy.pursuing;
+    collision.add_box(
+        Vec3(x=40.0, y=-100.0, z=-100.0),
+        Vec3(x=50.0, y=100.0, z=100.0),
+        Vec3(),
+        Vec3(),
+        Vec3()
+    );
+    enemy.attack_wait = 0.0;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert player.health == 96;
+    enemy.decision_wait = 0.0;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert player.health == 96 and not enemy.pursuing;
+}
+
+test "settled opponents detect lost support and resume per tick gravity" {
+    world = World();
+    enemy = Opponent(pos=Vec3(x=2000.0), grounded=True, support_wait=0.05);
+    world +>:HasOpponent:+> enemy;
+    player = Player();
+    collision = CollisionMap();
+    state = CombatState();
+    for i in range(7) {
+        world spawn CombatTick(
+            player=player, collision=collision, state=state, dt=1.0 / 120.0
+        );
+    }
+    assert not enemy.grounded and enemy.velocity.z < 0.0;
+    prior = enemy.pos.z;
+    world spawn CombatTick(
+        player=player, collision=collision, state=state, dt=1.0 / 120.0
+    );
+    assert enemy.pos.z < prior;
+}

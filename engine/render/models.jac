@@ -2,7 +2,7 @@
 import math;
 import from ..formats.animated { AnimatedModel, ModelStage, pose }
 import from ..formats.bsp { Texture }
-import from ..math.vec3 { Vec3 }
+import from ..math.vec3 { Vec3, forward_from, right_from }
 import from .quake {
     QuakeRenderer,
     rlLoadTexture,
@@ -35,7 +35,8 @@ obj UploadedStage {
 obj ModelRenderer {
     has model: AnimatedModel = AnimatedModel(),
         textures: list[int] = [],
-        stages: list[UploadedStage] = [];
+        stages: list[UploadedStage] = [],
+        radius: float = 0.0;
 
     def upload(model: AnimatedModel, skins: list[Texture]) {
         self.close();
@@ -83,6 +84,14 @@ obj ModelRenderer {
                 }
             }
             self.model = model;
+            self.radius = 0.0;
+            for surface in model.surfaces {
+                for frame in surface.frames {
+                    for vertex in frame.vertices {
+                        self.radius = max(self.radius, vertex.length());
+                    }
+                }
+            }
         } except Exception {
             self.close();
             raise;
@@ -96,7 +105,8 @@ obj ModelRenderer {
         second: int = 0,
         blend: float = 0.0,
         eye: Vec3 = Vec3(),
-        seconds: float = 0.0
+        seconds: float = 0.0,
+        batched: bool = False
     ) {
         if not self.stages {
             return;
@@ -171,9 +181,13 @@ obj ModelRenderer {
                     }
                 }
                 rlEnd();
-                rlDrawRenderBatchActive();
-                rlEnableDepthMask();
-                EndBlendMode();
+                if stage.blend != "opaque" {
+                    rlDrawRenderBatchActive();
+                    rlEnableDepthMask();
+                    EndBlendMode();
+                } elif not batched {
+                    EndBlendMode();
+                }
             }
         }
         rlSetTexture(u32(0));
@@ -215,21 +229,39 @@ obj ModelScene {
         }
     }
 
-    def draw(world: World, eye: Vec3 = Vec3(), seconds: float = 0.0) {
+    def draw(
+        world: World,
+        eye: Vec3 = Vec3(),
+        seconds: float = 0.0,
+        culling: bool = False,
+        yaw: float = 0.0,
+        pitch: float = 0.0,
+        fov: float = 72.0,
+        aspect: float = 1.7777777778
+    ) {
         scene = world spawn GatherModels();
         for draw in scene.draws {
             if draw.resource.name in self.resources {
-                self.resources[draw.resource.name].draw(
+                renderer = self.resources[draw.resource.name];
+                if culling
+                    and not sphere_in_view(
+                        draw.origin.sub(eye), renderer.radius, yaw, pitch, fov, aspect
+                    ) {
+                    continue;
+                }
+                renderer.draw(
                     draw.origin,
                     draw.yaw,
                     draw.first,
                     draw.second,
                     draw.blend,
                     eye,
-                    seconds
+                    seconds,
+                    batched=True
                 );
             }
         }
+        EndBlendMode();
     }
 
     def close() {
@@ -238,4 +270,20 @@ obj ModelScene {
         }
         self.resources = {};
     }
+}
+
+def sphere_in_view(
+    delta: Vec3, radius: float, yaw: float, pitch: float, fov: float, aspect: float
+) -> bool {
+    forward = forward_from(yaw, pitch);
+    right = right_from(yaw);
+    up = right.cross(forward);
+    depth = delta.dot(forward);
+    vertical = math.tan(fov * math.pi / 360.0);
+    horizontal = vertical * aspect;
+    return depth >= -radius
+        and abs(delta.dot(right))
+            <= depth * horizontal + radius * math.sqrt(1.0 + horizontal * horizontal)
+        and abs(delta.dot(up))
+            <= depth * vertical + radius * math.sqrt(1.0 + vertical * vertical);
 }

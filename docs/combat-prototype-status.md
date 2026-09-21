@@ -20,7 +20,9 @@ graph; the existing `Damage` and inventory walkers apply health, armor and ammo.
 - Archive-backed shooting, pain and pickup sounds use native raylib audio.
 - F5/F9 save/load and persistent menu settings are drafted, including entity,
   inventory, mover, trigger and signal state. Restores build a replacement world
-  before replacing the current one. **Native file replacement is blocked.**
+  before replacing the current one. Native file replacement and save restoration
+  now pass with the combined upstream fixes; settings reload is blocked by
+  [native splitlines](native-splitlines-blocker.md).
 
 ## Validation and limits
 
@@ -35,8 +37,14 @@ were inspected in captures. The expanded harness now also exercises sound and
 save I/O. It reaches Q1 save replacement and exposes
 [native-os-replace-blocker.md](native-os-replace-blocker.md).
 
-The normal app input loop, match completion/rematch, persistence and audio across
-all three games still need the final integrated acceptance run. Bots currently
+The latest combined-compiler run passes the full combat harness on all three
+games, including audio resource loading/play calls, save I/O and Q3 respawn.
+The new `scripts/persistence_smoke.jac` passes actual App quicksave/quickload,
+cross-game restoration and malformed-save rejection on all three games. Combat
+captures were inspected for Q1/Q2 original models and Q3 training bots. Settings
+reload exposes native `splitlines()` adding an extra empty line; see the blocker
+above. The normal input loop, match completion/rematch, settings and subjective
+audio checks still need acceptance. Bots currently
 pursue only with line of sight; navigation around obstacles, actor separation,
 original Q3 player models, full animation state machines, projectiles, campaign
 keys/objectives/hub state and endings remain. This is progress toward the agreed

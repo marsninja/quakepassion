@@ -55,8 +55,10 @@ on branch `fix/native-os-replace`. It implements string-path replacement through
 `na_stdlib`, preserves native OS intrinsics, and rejects unsupported OS calls.
 The original standalone reproducer passes with that compiler. Its focused tests
 pass (7 tests), as does the native code generation suite (225 passed, 3 skipped).
-The combined gameplay compiler and integrated save/audio harness still need
-validation with this fix included; the results below describe the earlier run.
+The combined gameplay compiler now passes the integrated combat/save/audio
+harness on all three games, plus app-level save restoration and corrupt-save
+rejection. Settings reload exposes a separate [splitlines defect](native-splitlines-blocker.md).
+The results below describe the earlier run.
 
 The full regression run passes 148 collected tests. Combat's four focused tests and snapshot serialization's two tests pass. Before
 adding save I/O, the native combat harness passed Q1/Q2/Q3 shooting, killing and

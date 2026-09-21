@@ -17,7 +17,10 @@ node Opponent(Player) {
         arena: bool = False,
         visual: Visual = Visual(),
         animation: list[int] = [],
-        animation_time: float = 0.0;
+        animation_time: float = 0.0,
+        decision_wait: float = 0.0,
+        support_wait: float = 0.0,
+        pursuing: bool = False;
 }
 
 obj CombatState {
@@ -68,6 +71,7 @@ walker Aim {
     can begin with World entry {
         visit [here->:HasOpponent:->];
     }
+
     can test_target with Opponent entry {
         if here.health <= 0 {
             return;
@@ -153,20 +157,36 @@ walker CombatTick {
         delta = self.player.pos.sub(here.pos);
         distance = delta.length();
         here.attack_wait = max(0.0, here.attack_wait - self.dt);
-        sight = self.collision.trace_point(here.pos, self.player.pos);
-        clear = distance < 1500.0 and not sight.start_solid and sight.fraction == 1.0;
+        here.decision_wait -= self.dt;
+        if here.decision_wait <= 0.0 {
+            here.decision_wait = 0.1;
+            here.pursuing = False;
+            if distance < 1500.0 {
+                sight = self.collision.trace_point(here.pos, self.player.pos);
+                here.pursuing = not sight.start_solid and sight.fraction == 1.0;
+                # Attack only with a fresh sight query, never cached visibility.
+                if here.pursuing and here.attack_wait <= 0.0 {
+                    self.player spawn Damage(amount=6 if here.arena else 4);
+                    here.attack_wait = 0.8;
+                }
+            }
+        }
         wish = Vec3();
-        if clear {
+        if here.pursuing and distance < 1500.0 {
             here.yaw = math.atan2(delta.y, delta.x);
             if distance > 180.0 {
                 wish = Vec3(x=delta.x, y=delta.y).normalized();
             }
-            if here.attack_wait <= 0.0 {
-                self.player spawn Damage(amount=6 if here.arena else 4);
-                here.attack_wait = 0.8;
-            }
         }
-        here spawn MovePlayer(collision=self.collision, wish=wish, dt=self.dt);
+        here.support_wait -= self.dt;
+        # Settled actors probe support at 20 Hz; motion and gravity remain 120 Hz.
+        if not here.grounded
+            or here.velocity.length() > 0.000001
+            or wish.length() > 0.0
+            or here.support_wait <= 0.0 {
+            here spawn MovePlayer(collision=self.collision, wish=wish, dt=self.dt);
+            here.support_wait = 0.05;
+        }
         if here.animation {
             here.animation_time += self.dt * (8.0 if wish.length() > 0.0 else 2.0);
             index = int(here.animation_time) % len(here.animation);

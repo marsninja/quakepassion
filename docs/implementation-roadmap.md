@@ -60,5 +60,7 @@ render BSP leaves for point queries; Q2/Q3 use unexpanded brush planes and Q3
 patch triangles. Player movement retains its existing expanded hulls.
 The native asset checks pass on Q1 e1m1, Q2 base1 and Q3 q3dm1. See
 [point query status](point-traces-status.md). The shared hitscan/opponent prototype now exists; see
-[combat progress](combat-prototype-status.md). Native save/load validation is
-blocked by [atomic file replacement](native-os-replace-blocker.md).
+[combat progress](combat-prototype-status.md). With #9361 included, native save/load
+and cross-game restoration pass on all three games. Settings reload now exposes
+[native splitlines semantics](native-splitlines-blocker.md); the parser has not
+been changed to hide the defect.

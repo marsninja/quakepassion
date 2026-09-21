@@ -396,6 +396,19 @@ obj CollisionMap {
             if i in exclude {
                 continue;
             }
+            # Tree leaves hold small batches; reject each nonintersecting hull
+            # before creating its narrow-phase walker. Bounds include mover travel.
+            if len(self.bounds) == len(self.hulls) {
+                bounds = self.bounds[i];
+                if (start.x < bounds.mins.x and finish.x < bounds.mins.x)
+                    or (start.x > bounds.maxs.x and finish.x > bounds.maxs.x)
+                    or (start.y < bounds.mins.y and finish.y < bounds.mins.y)
+                    or (start.y > bounds.maxs.y and finish.y > bounds.maxs.y)
+                    or (start.z < bounds.mins.z and finish.z < bounds.mins.z)
+                    or (start.z > bounds.maxs.z and finish.z > bounds.maxs.z) {
+                    continue;
+                }
+            }
             offset = self.offsets[i];
             hull = self.point_hulls[i] if point and self.point_hulls else self.hulls[i];
             query = hull spawn Sweep(

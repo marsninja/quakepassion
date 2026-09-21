@@ -68,6 +68,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 walk_speed=100.0,
                 health=60,
                 max_health=60,
+                decision_wait=float(count % 12) / 120.0,
+                support_wait=float(count % 6) / 120.0,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0
             );
             if path {

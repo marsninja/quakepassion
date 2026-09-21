@@ -87,7 +87,16 @@ impl App.render_frame() {
         faces = self.level.visible(self.world, p.pos, self.culling);
         self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
-        self.models.draw(self.world, p.pos, self.simulation_time);
+        self.models.draw(
+            self.world,
+            p.pos,
+            self.simulation_time,
+            culling=self.culling,
+            yaw=p.yaw,
+            pitch=p.pitch,
+            fov=self.renderer.fov,
+            aspect=float(self.renderer.width) / float(self.renderer.height)
+        );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.end_scene();
         if not self.smoke {
