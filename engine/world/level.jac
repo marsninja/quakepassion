@@ -29,8 +29,8 @@ node BspArea(Area) {
         faces: list[int] = [];
 }
 
-edge Front {}
-edge Back {}
+edge Front: Split --> Split | BspArea {}
+edge Back: Split --> Split | BspArea {}
 walker Locate {
     has eye: Vec3,
         result: int = 0,

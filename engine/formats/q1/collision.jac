@@ -73,5 +73,33 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
             Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2]))
         );
     }
+    if bsp.leaves {
+        point_cells: list[HullCell] = [];
+        point_leaves: list[HullCell] = [];
+        for leaf in bsp.leaves {
+            point_leaves.append(HullCell(contents=leaf.contents));
+        }
+        for branch in bsp.branches {
+            plane = bsp.planes[branch.plane];
+            point_cells.append(HullCell(normal=plane.normal, distance=plane.distance));
+        }
+        for i in range(len(point_cells)) {
+            branch = bsp.branches[i];
+            front = point_cells[branch.front]
+                if branch.front >= 0
+                else point_leaves[-branch.front - 1];
+            back = point_cells[branch.back]
+                if branch.back >= 0
+                else point_leaves[-branch.back - 1];
+            point_cells[i] +>:HullFront:+> front;
+            point_cells[i] +>:HullBack:+> back;
+        }
+        for model in collision.models {
+            head = bsp.models[model].head;
+            collision.point_hulls.append(
+                point_cells[head] if head >= 0 else point_leaves[-head - 1]
+            );
+        }
+    }
     return collision;
 }

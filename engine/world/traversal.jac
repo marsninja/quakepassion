@@ -9,8 +9,8 @@ import from ..formats.brush_collision { build_brush_collision }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, forward_from }
 
-edge HasTraversal {}
-edge ArrivesAt {}
+edge HasTraversal: World --> Traversal {}
+edge ArrivesAt: Traversal --> Destination {}
 
 node Destination {
     has origin: Vec3,

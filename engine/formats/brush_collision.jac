@@ -27,6 +27,9 @@ def add_model(
             Vec3(x=width, y=width, z=32.0),
             offset
         );
+        collision.hulls[-1].point_blocking = brush.contents
+            & (1 if bsp.game == "q3" else 3)
+            != 0;
     }
     if bsp.game == "q3" and not volume {
         record = bsp.models[model];
@@ -39,6 +42,7 @@ def add_model(
             if material.contents & mask == 0 {
                 continue;
             }
+            first_patch = len(collision.hulls);
             for i in range(0, len(face.indices), 3) {
                 collision.add_triangle(
                     face.vertices[face.indices[i]],
@@ -48,6 +52,9 @@ def add_model(
                     Vec3(x=width, y=width, z=32.0),
                     offset
                 );
+            }
+            for i in range(first_patch, len(collision.hulls)) {
+                collision.hulls[i].point_blocking = material.contents & 1 != 0;
             }
         }
     }

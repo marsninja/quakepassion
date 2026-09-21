@@ -7,9 +7,9 @@ import from ..physics.collision { CollisionMap, Sweep }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
-edge HasDoor {}
-edge DoorLink {}
-edge DoorMember {}
+edge HasDoor: World --> Door {}
+edge DoorLink: Door --> Door {}
+edge DoorMember: Door --> Door {}
 
 walker AssembleDoors {
     has members: list[Door] = [],

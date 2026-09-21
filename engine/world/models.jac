@@ -4,9 +4,9 @@ import from ..formats.animated { AnimatedModel }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3 }
 
-edge HasVisual {}
-edge UsesModel {}
-edge HasModelResource {}
+edge HasVisual: Entity --> Visual {}
+edge UsesModel: Visual --> ModelResource {}
+edge HasModelResource: World --> ModelResource {}
 
 node ModelResource {
     has name: str,
@@ -15,7 +15,8 @@ node ModelResource {
 }
 
 node Visual {
-    has first: int = 0,
+    has offset: Vec3 = Vec3(),
+        first: int = 0,
         second: int = 0,
         blend: float = 0.0,
         visible: bool = True;
@@ -36,9 +37,11 @@ walker GatherModels {
     can begin with World entry {
         visit [here-->[?:Area]];
     }
+
     can area with Area entry {
         visit [here<-:In:<-];
     }
+
     can entity with Entity entry {
         for visual in [here->:HasVisual:->][?:Visual] {
             if not visual.visible {
@@ -48,7 +51,7 @@ walker GatherModels {
                 self.draws.append(
                     ModelDraw(
                         resource=resource,
-                        origin=here.pos,
+                        origin=here.pos.add(visual.offset),
                         yaw=here.yaw,
                         first=visual.first,
                         second=visual.second,

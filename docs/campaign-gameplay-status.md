@@ -71,3 +71,11 @@ The initial pickup roster uses generic contact bounds and authored positions;
 floor placement, per-item respawn intervals, overheal decay, triggered/team items,
 pickup sounds and Q3 companion sphere models remain. Shells are stored but cannot
 be fired until weapon behavior is connected.
+
+## Current combat/persistence work
+
+Shared hitscan combat, a small campaign opponent roster and local Q3 training
+bots are implemented locally. See [combat progress](combat-prototype-status.md)
+for validation and limits. Save/load and settings persistence are drafted but
+blocked by [native atomic replacement](native-os-replace-blocker.md); the complete
+prototype acceptance run is still outstanding.

@@ -19,7 +19,7 @@ still a gameplay prototype, not a completed implementation of those games.
 - Health, armor and shell pickups instantiated in normal play across all three
   games, with shared contact/collection and initial Q3 respawn behavior.
 
-The regression suite passes 133 tests. Native checks cover 14 campaign exits,
+The regression run passes 148 collected tests (including imported fixtures). Native checks cover 14 campaign exits,
 Q2/Q3 crouching, death/restart, pickup rendering and collection in all three games,
 and all installed model files.
 See [campaign status](campaign-gameplay-status.md), [model status](models-status.md),
@@ -45,10 +45,20 @@ Every stage needs focused fixtures and representative native asset checks.
 Graphical changes also need desktop captures. No stage is complete merely because
 its loaders compile. Compiler defects must be reduced and reported, not bypassed.
 
-Builds currently use the local `qp-cache-sections` compiler described in
-[native-cache-section-merge-blocker.md](native-cache-section-merge-blocker.md).
+The latest native validation uses the local `qp-gameplay-local` compiler, combining
+upstream PRs #9354 (native file/zlib APIs) and #9357 (numeric min/max). The unchanged
+PNG helper now decodes saved captures from all three games natively. Engine graph
+edges have also been migrated to current Jac endpoint declarations.
 
-The model screenshot-comparison extension remains blocked by
-[missing native Path.read_bytes](native-path-read-bytes-blocker.md). Independent
-gameplay development continues without bypassing that defect. PR #9323 is no
-longer the intended resolution; the native stdlib fix needs separate discussion.
+The extern ABI fix in upstream PR #9358 is also applied locally. The standalone
+file/listdir repro and full native model harness now pass, including the Q3
+material animation pixel comparison. See
+[native-file-listdir-blocker.md](native-file-listdir-blocker.md).
+
+Point collision is implemented through the shared collision walker: Q1 uses
+render BSP leaves for point queries; Q2/Q3 use unexpanded brush planes and Q3
+patch triangles. Player movement retains its existing expanded hulls.
+The native asset checks pass on Q1 e1m1, Q2 base1 and Q3 q3dm1. See
+[point query status](point-traces-status.md). The shared hitscan/opponent prototype now exists; see
+[combat progress](combat-prototype-status.md). Native save/load validation is
+blocked by [atomic file replacement](native-os-replace-blocker.md).

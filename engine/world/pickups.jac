@@ -15,7 +15,7 @@ obj PickupRule {
         armor_ratio: float = 0.0;
 }
 
-edge HasPickup {}
+edge HasPickup: World --> Pickup {}
 node Pickup(Entity) {
     has rule: PickupRule,
         visual: Visual = Visual(),

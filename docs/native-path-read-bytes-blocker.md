@@ -1,81 +1,44 @@
-# Native pathlib lacks Path.read_bytes
+# Native binary-file and PNG validation status
 
-The model harness's new screenshot comparison imports `scripts/png_checks.jac`.
-That helper type-checks successfully and passes its host-runtime fixtures, but
-native compilation fails because native `pathlib.Path` has no `read_bytes` method.
-This is a native standard-library coverage gap, not malformed PNG or asset data.
+The native stdlib implementation is proposed in upstream
+[PR #9354](https://github.com/jaseci-labs/jac/pull/9354): `Path.read_bytes()`,
+file-error handling, and mutable-buffer zlib input. The PNG decoder also required
+numeric iterable `min`, covered separately by
+[PR #9357](https://github.com/jaseci-labs/jac/pull/9357).
+The approach retains `na_stdlib`; PR #9323 is not required.
 
-AGENTS.md §3 requires stopping and reporting a valid Jac idiom that fails in the
-language/runtime. No replacement file-reading idiom was added to hide this gap.
+## Validated locally
 
-## Minimal reproduction
-
-`repros/native_path_read_bytes.jac` reads the repository's `jac.toml`:
-
-```jac
-import from pathlib { Path }
-with entry {
-    data = Path("jac.toml").read_bytes();
-    assert data.startswith(b"[project]");
-    print("PATH READ BYTES PASS", len(data));
-}
-```
-
-Using the local `qp-cache-sections` compiler:
-
-```sh
-JAC_DEV_SOURCE=/Users/marsninja/repos/jaseci-wt/qp-cache-sections/jac \
-JAC_COMPILER_LIB=off jac run repros/native_path_read_bytes.jac
-
-JAC_DEV_SOURCE=/Users/marsninja/repos/jaseci-wt/qp-cache-sections/jac \
-JAC_COMPILER_LIB=off jac build repros/native_path_read_bytes.jac --native \
-  -o .jac/qp-path-read-bytes
-```
-
-The first command reports native demotion, runs in the server codespace, and prints
-`PATH READ BYTES PASS 221`. The second fails with:
+Both fixes are combined in the local compiler checkout
+`/Users/marsninja/repos/jaseci-wt/qp-gameplay-local/jac` (integration commit
+`183f16f890`). A standalone native probe imports the unchanged
+`scripts/png_checks.jac`, decodes each saved pickup capture twice, checks its
+1280×720 dimensions and color diversity, and asserts zero differing pixels
+between identical images. All three games pass:
 
 ```text
-error[E1030]: Type "Path" has no attribute "read_bytes"
+NATIVE PNG PASS q1 1280 720
+NATIVE PNG PASS q2 1280 720
+NATIVE PNG PASS q3 1280 720
 ```
 
-`jac check scripts/png_checks.jac --print_errs` passes. Direct native compilation
-of that module exposes the same E1030. Compiling its importer instead surfaces a
-less useful `RuntimeError: Native dependency analysis failed: .../png_checks.jac`.
+This validates decoding existing captures, not a new graphical capture session.
+The original `repros/native_path_read_bytes.jac` additionally uses
+`bytes.startswith`, which is still unsupported in the native bytes emitter.
+It must not be reported as passing solely because file reads now work.
 
-## Root location and proper next change
+## Integration resolution
 
-PR #9323 is no longer the intended direction, per the project owner's decision.
-The proposal below targets the existing native runtime; no upstream implementation
-has been made as part of the pickup work.
+The full `scripts/alias_models_smoke.jac` harness also enumerates asset
+folders. Combining native file reads and `os.listdir` exposes incompatible
+LLVM declarations for libc's errno accessor. The fix in
+[PR #9358](https://github.com/jaseci-labs/jac/pull/9358) is applied locally. See
+[native-file-listdir-blocker.md](native-file-listdir-blocker.md) for the small
+reproduction and root locations. The full native harness now passes, including
+the time-separated Q3 material pixel comparison.
 
-`jac/jaclang/runtime/na_stdlib/pathlib.jac` defines the native `Path` replacement,
-but only exposes path construction, string/path operations, existence/directory
-queries and resolution. Its definition also lacks `read_bytes` on
-[upstream main](https://github.com/jaseci-labs/jac/blob/main/jac/jaclang/runtime/na_stdlib/pathlib.jac),
-checked during this work.
+Current Jac requires typed edge endpoints. Engine edges now declare their
+source/destination node types; this resolves the previous opaque dependency
+analysis failure on `engine/world/level.jac`.
 
-Implement `Path.read_bytes() -> bytes` using the native file API, preserving binary
-contents, closing the handle, and propagating file errors. Add native regression
-coverage for empty/binary files and missing files. Then rebuild the PNG helper and
-model harness; other unsupported APIs, if exposed next, must be addressed at their
-actual runtime boundary rather than rewritten in the engine.
-
-The dependency diagnostic also loses the underlying error in
-`NaIRGenPass._ensure_dep_inference` in
-`jac/jaclang/compiler/backends/native/na_ir_gen_pass.impl/core.impl.jac`.
-Propagating the existing dependency diagnostics would make this failure actionable.
-
-## Current project state
-
-- Main executable builds successfully as `./qp`.
-- All 133 engine/unit tests pass.
-- Initial health/armor/shell pickup rendering and native application collection
-  checks pass across all three games; this does not depend on the PNG helper.
-- Native crouching, initial campaign transitions and health/death/restart checks pass.
-- MDL/MD2/MD3 archive validation and model captures pass before adding the PNG
-  comparison import; the Q3 armor capture shows the corrected material layers.
-- The updated `scripts/alias_models_smoke.jac` cannot build natively until this gap
-  is fixed. Its new time-separated pixel comparison has not run.
-- Campaign/local-arena gameplay is unfinished. The agreed target is a playable
-  prototype with a smaller combat roster, not complete original-game rosters.
+No engine workaround was introduced for either compiler defect.

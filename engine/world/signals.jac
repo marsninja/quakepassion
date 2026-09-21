@@ -1,6 +1,8 @@
 """Shared activation graph. Relays forward; consumers drain queued requests."""
-edge Targets {}
-edge HasSignal {}
+import from .world { World }
+
+edge Targets: Signal --> Signal {}
+edge HasSignal: World --> Signal {}
 
 node Signal {
     has entities: list[int] = [],

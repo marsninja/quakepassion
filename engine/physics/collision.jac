@@ -7,16 +7,21 @@ node HullCell {
         distance: float = 0.0,
         contents: int = 0,
         planes: list[Vec3] = [],
-        distances: list[float] = [];
+        distances: list[float] = [],
+        point_distances: list[float] = [],
+        triangle: list[Vec3] = [],
+        point_blocking: bool = True;
 }
 
-edge HullFront {}
-edge HullBack {}
+edge HullFront: HullCell --> HullCell {}
+edge HullBack: HullCell --> HullCell {}
 
 obj Trace {
     has fraction: float = 1.0,
         normal: Vec3 = Vec3(),
         start_solid: bool = False,
+        hull: int = -1,
+        model: int = -1,
         end: Vec3 = Vec3();
 }
 
@@ -24,6 +29,7 @@ walker Sweep {
     has start: Vec3,
         finish: Vec3,
         top_drop: float = 0.0,
+        point: bool = False,
         low: float = 0.0,
         high: float = 1.0,
         entry_normal: Vec3 = Vec3(),
@@ -42,6 +48,7 @@ walker Sweep {
                 high=high,
                 entry_normal=normal,
                 top_drop=self.top_drop,
+                point=self.point,
                 depth=self.depth + 1
             );
             self.result.start_solid = self.result.start_solid
@@ -54,6 +61,41 @@ walker Sweep {
     }
 
     can intersect with HullCell entry {
+        if self.point and not here.point_blocking {
+            return;
+        }
+        if self.point and here.triangle {
+            vertex = here.triangle[0];
+            edge1 = here.triangle[1].sub(vertex);
+            edge2 = here.triangle[2].sub(vertex);
+            direction = self.finish.sub(self.start);
+            cross = direction.cross(edge2);
+            determinant = edge1.dot(cross);
+            if abs(determinant) < 0.000000001 {
+                return;
+            }
+            offset = self.start.sub(vertex);
+            u = offset.dot(cross) / determinant;
+            if u < 0.0 or u > 1.0 {
+                return;
+            }
+            other = offset.cross(edge1);
+            v = direction.dot(other) / determinant;
+            if v < 0.0 or u + v > 1.0 {
+                return;
+            }
+            fraction = edge2.dot(other) / determinant;
+            if fraction < 0.0 or fraction > 1.0 {
+                return;
+            }
+            normal = edge1.cross(edge2).normalized();
+            if normal.dot(direction) > 0.0 {
+                normal = normal.scale(-1.0);
+            }
+            self.result.fraction = fraction;
+            self.result.normal = normal;
+            return;
+        }
         if here.planes {
             enter = 0.0;
             leave = 1.0;
@@ -61,7 +103,9 @@ walker Sweep {
             inside = True;
             for i in range(len(here.planes)) {
                 n = here.planes[i];
-                distance = here.distances[i] + min(0.0, n.z) * self.top_drop;
+                distance = here.point_distances[i]
+                    if self.point and here.point_distances
+                    else here.distances[i] + min(0.0, n.z) * self.top_drop;
                 a = n.dot(self.start) - distance;
                 b = n.dot(self.finish) - distance;
                 if a >= 0.0 {
@@ -129,7 +173,7 @@ node HullGroup {
         indices: list[int] = [];
 }
 
-edge HullChild {}
+edge HullChild: HullGroup --> HullGroup {}
 
 walker FindHulls {
     has mins: Vec3,
@@ -198,6 +242,7 @@ def group_hulls(bounds: list[AABB], indices: list[int], depth: int = 0) -> HullG
 
 obj CollisionMap {
     has hulls: list[HullCell] = [],
+        point_hulls: list[HullCell] = [],
         offsets: list[Vec3] = [],
         models: list[int] = [],
         bounds: list[AABB] = [],
@@ -266,6 +311,7 @@ obj CollisionMap {
             }
             cell.planes.append(n);
             cell.distances.append(distance);
+            cell.point_distances.append(distances[i]);
         }
         self.hulls.append(cell);
         self.offsets.append(offset);
@@ -310,6 +356,7 @@ obj CollisionMap {
             }
         }
         self.add_brush(normals, distances, mins, maxs, offset);
+        self.hulls[-1].triangle = [a, b, c];
     }
 
     def reindex() {
@@ -320,7 +367,11 @@ obj CollisionMap {
     }
 
     def trace(
-        start: Vec3, finish: Vec3, exclude: list[int] = [], top_drop: float = -1.0
+        start: Vec3,
+        finish: Vec3,
+        exclude: list[int] = [],
+        top_drop: float = -1.0,
+        point: bool = False
     ) -> Trace {
         result = Trace(end=finish);
         indices: list[int] = [];
@@ -346,20 +397,26 @@ obj CollisionMap {
                 continue;
             }
             offset = self.offsets[i];
-            query = self.hulls[i] spawn Sweep(
+            hull = self.point_hulls[i] if point and self.point_hulls else self.hulls[i];
+            query = hull spawn Sweep(
                 start=start.sub(offset),
                 finish=finish.sub(offset),
-                top_drop=self.top_drop if top_drop < 0.0 else top_drop
+                point=point,
+                top_drop=0.0
+                    if point
+                    else (self.top_drop if top_drop < 0.0 else top_drop)
             );
             result.start_solid = result.start_solid or query.result.start_solid;
             if query.result.fraction < result.fraction {
+                result.hull = i;
+                result.model = self.models[i] if i < len(self.models) else -1;
                 result.fraction = query.result.fraction;
                 result.normal = query.result.normal;
             }
         }
         if result.start_solid {
             result.fraction = 0.0;
-        } elif result.fraction < 1.0 {
+        } elif result.fraction < 1.0 and not point {
             approach = abs(finish.sub(start).dot(result.normal));
             if approach > 0.00001 {
                 result.fraction = max(0.0, result.fraction - 0.03125 / approach);
@@ -367,5 +424,9 @@ obj CollisionMap {
         }
         result.end = start.lerp(finish, result.fraction);
         return result;
+    }
+
+    def trace_point(start: Vec3, finish: Vec3, exclude: list[int] = []) -> Trace {
+        return self.trace(start, finish, exclude=exclude, point=True);
     }
 }

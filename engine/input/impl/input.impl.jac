@@ -96,6 +96,8 @@ impl sample_intent(
         toggle_overlay=IsKeyPressed(KEY_F3),
         toggle_walk=IsKeyPressed(i32(293)),
         jump=IsKeyPressed(KEY_SPACE),
-        crouch=IsKeyDown(i32(341))
+        crouch=IsKeyDown(i32(341)),
+        fire=_mouse.captured and _mouse.warmup == 0 and IsMouseButtonDown(MOUSE_LEFT),
+        weapon=1 if IsKeyPressed(i32(49)) else (2 if IsKeyPressed(i32(50)) else 0)
     );
 }

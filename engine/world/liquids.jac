@@ -3,7 +3,7 @@ import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
-edge HasLiquid {}
+edge HasLiquid: LiquidSpace --> LiquidVolume {}
 node LiquidSpace {}
 node LiquidVolume {
     has kind: int,
