@@ -7,7 +7,7 @@ import from ..formats.q1.collision { build_collision }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
-edge HasExit {}
+edge HasExit: World --> LevelExit {}
 node LevelExit {
     has destination: str,
         activation: Signal = Signal(),

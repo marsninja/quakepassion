@@ -110,16 +110,18 @@ obj LevelMenu {
         }
         if self.settings_open {
             if IsKeyPressed(i32(264)) {
-                self.setting_selected = min(7, self.setting_selected + 1);
+                self.setting_selected = min(
+                    len(self.settings_labels) - 1, self.setting_selected + 1
+                );
             }
             if IsKeyPressed(i32(265)) {
                 self.setting_selected = max(0, self.setting_selected - 1);
             }
-            for row in range(8) {
-                if click and self.hit(310, 155 + row * 48, 650, 42) {
+            for row in range(len(self.settings_labels)) {
+                if click and self.hit(310, 155 + row * 42, 650, 36) {
                     self.setting_selected = row;
                     return "setting_left"
-                        if self.hit(810, 155 + row * 48, 65, 42)
+                        if self.hit(810, 155 + row * 42, 65, 42)
                         else "setting_right";
                 }
             }
@@ -202,15 +204,15 @@ obj LevelMenu {
                 color = Color(r=99, g=64, b=35, a=255)
                     if row == self.setting_selected
                     else Color(r=48, g=45, b=41, a=255);
-                DrawRectangle(i32(310), i32(155 + row * 48), i32(650), i32(42), color);
+                DrawRectangle(i32(310), i32(155 + row * 42), i32(650), i32(36), color);
                 DrawText(
                     self.settings_labels[row],
                     i32(322),
-                    i32(167 + row * 48),
+                    i32(164 + row * 42),
                     i32(20),
                     white
                 );
-                DrawText("<     >", i32(830), i32(167 + row * 48), i32(20), amber);
+                DrawText("<     >", i32(830), i32(164 + row * 42), i32(20), amber);
             }
             DrawText(
                 "Up/Down: select | Left/Right: change",
@@ -222,7 +224,7 @@ obj LevelMenu {
             DrawText(
                 self.message[:75]
                     if self.message
-                    else "Applies now; kept for this session",
+                    else "Changes are saved automatically",
                 i32(310),
                 i32(575),
                 i32(16),

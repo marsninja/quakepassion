@@ -74,7 +74,12 @@ impl Renderer.end_frame() {
 impl Renderer.draw_status(health: int, armor: int, shells: int = 0) {
     color = Color(r=255, g=220, b=160, a=255);
     DrawText(
-        "HEALTH " + str(health) + "    ARMOR " + str(armor) + "    SHELLS " + str(shells),
+        "HEALTH "
+            + str(health)
+            + "    ARMOR "
+            + str(armor)
+            + "    SHELLS "
+            + str(shells),
         20,
         i32(self.height - 42),
         24,
@@ -108,4 +113,64 @@ impl RenderPass.draw with Area entry {
 impl Renderer.set_frame_limit(fps: int) {
     self.frame_limit = fps;
     SetTargetFPS(i32(fps));
+}
+
+impl Renderer.draw_opponents(world: World, height: float) {
+    for enemy in [world->:HasOpponent:->][?:Opponent] {
+        if enemy.health <= 0 or enemy.modeled {
+            continue;
+        }
+        center = enemy.pos.sub(Vec3(z=height - 4.0));
+        DrawCube(
+            Vector3(x=f32(center.x), y=f32(center.y), z=f32(center.z)),
+            f32(28.0),
+            f32(28.0),
+            f32(48.0),
+            Color(r=180, g=40, b=35, a=255)
+        );
+        DrawCubeWires(
+            Vector3(x=f32(center.x), y=f32(center.y), z=f32(center.z)),
+            f32(30.0),
+            f32(30.0),
+            f32(50.0),
+            Color(r=255, g=210, b=80, a=255)
+        );
+    }
+}
+
+impl Renderer.draw_combat(state: CombatState, arena: bool) {
+    color = Color(r=255, g=230, b=180, a=255);
+    DrawText("+", i32(self.width / 2 - 6), i32(self.height / 2 - 12), 24, color);
+    if state.hit_flash > 0.0 {
+        DrawText(
+            "X",
+            i32(self.width / 2 - 8),
+            i32(self.height / 2 - 12),
+            24,
+            Color(r=255, g=50, b=40, a=255)
+        );
+    }
+    if state.flash > 0.0 {
+        DrawText("*", i32(self.width / 2 - 12), i32(self.height - 120), 48, color);
+    }
+    DrawText(
+        ("FRAGS " if arena else "KILLS ")
+            + str(state.kills)
+            + "    "
+            + ("[1] Basic / unlimited" if state.weapon == 1 else "[2] Heavy / shells")
+            + "    LMB: fire",
+        20,
+        i32(self.height - 68),
+        20,
+        color
+    );
+    if arena and state.kills >= 10 {
+        DrawText("Arena won! Enter: rematch | Esc: choose level", 20, 130, 24, color);
+    }
+}
+
+impl Renderer.draw_message(message: str) {
+    DrawText(
+        message, 20, i32(self.height - 104), 20, Color(r=255, g=230, b=180, a=255)
+    );
 }

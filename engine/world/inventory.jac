@@ -1,5 +1,5 @@
 """Typed inventory slots shared by player and non-player actors."""
-edge InventorySlot {}
+edge InventorySlot: Inventory --> ItemStack {}
 node Inventory {}
 node ItemStack {
     has kind: str,

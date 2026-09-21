@@ -35,13 +35,13 @@ node Area {
 
 
 """Connects two Areas through an opening. Visibility floods through these."""
-edge Portal {
+edge Portal: Area --> Area {
     has rect: AABB;
 }
 
 
 """An Entity lives In exactly one Area. The edge is rewired as it moves."""
-edge In {}
+edge In: Entity --> Area {}
 
 
 node Entity {

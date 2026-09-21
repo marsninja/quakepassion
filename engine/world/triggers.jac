@@ -8,8 +8,8 @@ import from ..formats.brush_collision { build_brush_collision }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
-edge HasTrigger {}
-edge Activates {}
+edge HasTrigger: World --> TouchTrigger {}
+edge Activates: TouchTrigger --> Door | Signal {}
 
 node TouchTrigger {
     has model: int,

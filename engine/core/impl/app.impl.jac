@@ -2,9 +2,31 @@
 steps. Declarations live in app.jac."""
 
 impl App.run() {
+    if not self.smoke {
+        preferences = Preferences();
+        try {
+            preferences.load();
+        } except Exception as error {
+            self.notice = "Settings: " + str(error);
+            self.notice_wait = 5.0;
+        }
+        self.renderer.fov = preferences.fov;
+        self.renderer.frame_limit = preferences.frame_limit;
+        self.sensitivity = preferences.sensitivity;
+        self.invert_y = preferences.invert_y;
+        self.fly_speed = preferences.fly_speed;
+        self.culling = preferences.culling;
+        self.overlay = preferences.overlay;
+        self.audio.volume = preferences.volume;
+        if self.level.active {
+            self.audio.open(self.level.bsp.game, game_directory(self.level.bsp.game));
+        }
+    }
     self.renderer.open_window();
+
     if self.level.active {
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
+        populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
         self.models.upload(self.world);
         self.quake.upload(self.level);
     }
@@ -23,6 +45,7 @@ impl App.run() {
         self.models.close();
         self.quake.close();
     }
+    self.audio.close();
     self.renderer.close();
 }
 
@@ -65,9 +88,16 @@ impl App.render_frame() {
         self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
         self.models.draw(self.world, p.pos, self.simulation_time);
+        self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.end_scene();
         if not self.smoke {
-            self.renderer.draw_status(p.health, p.armor, quantity(p.inventory, "shells"));
+            self.renderer.draw_status(
+                p.health, p.armor, quantity(p.inventory, "shells")
+            );
+            self.renderer.draw_combat(self.combat, self.level.bsp.game == "q3");
+            if self.notice_wait > 0.0 {
+                self.renderer.draw_message(self.notice);
+            }
         }
         if self.overlay {
             self.renderer.draw_overlay(
@@ -199,7 +229,7 @@ impl App.switch_level() {
 }
 
 impl App.load_destination(
-    game: str, name: str, spawnpoint: str = "", carry: bool = False
+    game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = ""
 ) {
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
@@ -216,6 +246,11 @@ impl App.load_destination(
             player.inventory = self.player.inventory;
         }
         populate_pickups(world, level, game_directory(game));
+        populate_opponents(world, level, game_directory(game));
+        combat = CombatState();
+        if saved {
+            restore(world, level, player, combat, saved);
+        }
         next_models.upload(world);
         next_renderer.upload(level);
         if self.level.active {
@@ -227,14 +262,28 @@ impl App.load_destination(
         self.player = player;
         self.quake = next_renderer;
         self.models = next_models;
+        if self.audio.ready {
+            self.audio.close();
+            try {
+                self.audio.open(game, game_directory(game));
+            } except Exception as error {
+                self.notice = "Audio: " + str(error);
+                self.notice_wait = 4.0;
+                self.audio.close();
+            }
+        }
         self.simulation_time = 0.0;
+        self.combat = combat;
         self.clock = Clock();
         self.skip_time = True;
         self.walking = False;
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
         self.movement_status = "F4: walk / fly";
-        if not self.smoke {
+        if saved {
+            self.walking = True;
+            self.movement_status = "WALK | F4: fly";
+        } elif not self.smoke {
             self.toggle_movement();
         }
         self.menu.opened = False;
@@ -295,7 +344,21 @@ impl App.step() -> bool {
         self.render_frame();
         return True;
     }
-    if self.level.active and self.player.health <= 0 {
+    if self.level.active and not self.smoke {
+        if IsKeyPressed(i32(294)) {
+            self.quicksave();
+        }
+        if IsKeyPressed(i32(298)) {
+            self.quickload();
+            self.render_frame();
+            return True;
+        }
+    }
+    if self.level.active
+        and (
+            self.player.health <= 0
+            or (self.level.bsp.game == "q3" and self.combat.kills >= 10)
+        ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
         if IsKeyPressed(i32(257)) {
@@ -307,6 +370,9 @@ impl App.step() -> bool {
     intent = Intent()
         if self.smoke
         else sample_intent(dt, self.sensitivity, self.invert_y);
+    if intent.weapon > 0 {
+        self.combat.weapon = intent.weapon;
+    }
     if intent.toggle_culling {
         self.culling = not self.culling;
     }
@@ -333,6 +399,7 @@ impl App.step() -> bool {
     );
     for i in range(steps) {
         self.simulation_time += self.physics_clock.tick_rate;
+        self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
         if self.walking and self.level.active {
             self.player spawn SetStance(
                 collision=self.level.collision,
@@ -389,7 +456,24 @@ impl App.step() -> bool {
                 self.jump_pending = False;
                 break;
             }
-            self.world spawn PickupTick(
+            old_health = self.player.health;
+            self.world spawn CombatTick(
+                player=self.player,
+                collision=self.level.collision,
+                state=self.combat,
+                dt=self.physics_clock.tick_rate,
+                active=self.walking
+            );
+            if self.player.health < old_health {
+                self.audio.play(1);
+            }
+            if intent.fire
+                and fire_weapon(
+                    self.world, self.player, self.level.collision, self.combat
+                ) {
+                self.audio.play(0);
+            }
+            pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
@@ -397,6 +481,9 @@ impl App.step() -> bool {
                 top_drop=self.level.collision.top_drop,
                 touching=self.walking
             );
+            if pickup_result.collected > 0 {
+                self.audio.play(2);
+            }
             self.world spawn TriggerTick(
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
@@ -475,7 +562,8 @@ impl App.refresh_settings() {
                     else "Uncapped"
             ),
         "Visibility culling: " + ("On" if self.culling else "Off"),
-        "Diagnostic overlay: " + ("On" if self.overlay else "Off")
+        "Diagnostic overlay: " + ("On" if self.overlay else "Off"),
+        "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%"
     ];
 }
 
@@ -514,7 +602,12 @@ impl App.adjust_setting(direction: int) {
         self.culling = not self.culling;
     } elif row == 7 {
         self.overlay = not self.overlay;
+    } elif row == 8 {
+        self.audio.volume = max(
+            0.0, min(1.0, self.audio.volume + float(direction) * 0.05)
+        );
     }
+    self.save_preferences();
 }
 
 impl App.reset_settings() {
@@ -529,4 +622,58 @@ impl App.reset_settings() {
     self.fly_speed = 240.0;
     self.culling = True;
     self.overlay = True;
+    self.audio.volume = 0.25;
+    self.save_preferences();
+}
+
+impl App.quicksave() {
+    if self.player.health <= 0 or not self.walking {
+        self.notice = "Save while alive in walk mode";
+    } else {
+        try {
+            write_save(
+                os.getenv("HOME", ".") + "/.quakepassion-save.txt",
+                snapshot(self.world, self.level, self.player, self.combat)
+            );
+            self.notice = "Saved - F9 to load";
+        } except Exception as error {
+            self.notice = "Save failed: " + str(error);
+        }
+    }
+    self.notice_wait = 4.0;
+}
+
+impl App.quickload() {
+    try {
+        data = read_save(os.getenv("HOME", ".") + "/.quakepassion-save.txt");
+        lines = data.splitlines();
+        if len(lines) < 4
+            or lines[0] != "QUAKEPASSION 1"
+            or lines[1] not in ["q1", "q2", "q3"] {
+            raise ValueError("Invalid save header");
+        }
+        self.load_destination(lines[1], exit_map(lines[2]), saved=data);
+        self.notice = "Loaded" if not self.menu.opened else self.menu.message;
+    } except Exception as error {
+        self.notice = "Load failed: " + str(error);
+    }
+    self.notice_wait = 4.0;
+}
+
+impl App.save_preferences() {
+    try {
+        Preferences(
+            fov=self.renderer.fov,
+            sensitivity=self.sensitivity,
+            invert_y=self.invert_y,
+            fly_speed=self.fly_speed,
+            frame_limit=self.renderer.frame_limit,
+            culling=self.culling,
+            overlay=self.overlay,
+            volume=self.audio.volume
+        ).save();
+        self.menu.message = "Settings saved";
+    } except Exception as error {
+        self.menu.message = "Settings save failed: " + str(error);
+    }
 }

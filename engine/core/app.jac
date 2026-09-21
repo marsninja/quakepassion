@@ -4,6 +4,10 @@ draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
 
+import os;
+import from .preferences { Preferences }
+import from ..audio.feedback { Feedback }
+import from .savegame { snapshot, restore, write_save, read_save }
 import from ..world.doors { DoorTick }
 import from ..world.triggers { TriggerTick }
 import from ..world.traversal { TraversalTick }
@@ -11,6 +15,8 @@ import from ..world.exits { ExitTick, exit_map, exit_spawn }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
 import from ..world.inventory { quantity }
+import from ..world.combat { CombatState, CombatTick, fire_weapon }
+import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
 import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
@@ -58,6 +64,8 @@ obj App {
         quake: QuakeRenderer = QuakeRenderer(),
         models: ModelScene = ModelScene(),
         simulation_time: float = 0.0,
+        combat: CombatState = CombatState(),
+        audio: Feedback = Feedback(),
         menu: LevelMenu = LevelMenu(),
         skip_time: bool = False,
         walking: bool = False,
@@ -66,7 +74,9 @@ obj App {
         invert_y: bool = False,
         jump_pending: bool = False,
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
-        movement_status: str = "F4: walk / fly";
+        movement_status: str = "F4: walk / fly",
+        notice: str = "",
+        notice_wait: float = 0.0;
 
     def adjust_setting(direction: int);
     def reset_settings();
@@ -75,8 +85,12 @@ obj App {
     def step() -> bool;
     def switch_level();
     def load_destination(
-        game: str, name: str, spawnpoint: str = "", carry: bool = False
+        game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = ""
     );
+
+    def save_preferences();
+    def quicksave();
+    def quickload();
     def fly(intent: Intent, dt: float);
     def toggle_movement();
     def render_frame();

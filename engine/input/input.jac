@@ -12,9 +12,9 @@ staged sibling library (see renderer.jac for the linking note).
 Function bodies live in impl/input.impl.jac."""
 
 import from vendor.raylib {
-    def IsKeyDown(key: i32) -> bool;  def IsKeyPressed(key: i32) -> bool;  def IsMouseButtonPressed(
+    def IsKeyDown(key: i32) -> bool;  def IsKeyPressed(key: i32) -> bool;  def IsMouseButtonDown(
         button: i32
-    ) -> bool;  def GetMouseX -> i32;  def GetMouseY -> i32;  def DisableCursor -> None;  def EnableCursor -> None;
+    ) -> bool;  def IsMouseButtonPressed(button: i32) -> bool;  def GetMouseX -> i32;  def GetMouseY -> i32;  def DisableCursor -> None;  def EnableCursor -> None;
 }
 
 import from ..math.vec3 { Vec3 }
@@ -28,7 +28,9 @@ obj Intent {
         toggle_overlay: bool = False,
         toggle_walk: bool = False,
         jump: bool = False,
-        crouch: bool = False;
+        crouch: bool = False,
+        fire: bool = False,
+        weapon: int = 0;
 }
 
 
