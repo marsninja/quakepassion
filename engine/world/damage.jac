@@ -1,6 +1,6 @@
 """Shared health and armor mutations, independent of input and rendering."""
 import math;
-import from .world { Actor }
+import from .world { Actor, Player }
 
 walker Damage {
     has amount: int,
@@ -11,6 +11,9 @@ walker Damage {
 
     can apply with Actor entry {
         if self.amount <= 0 or here.health <= 0 {
+            return;
+        }
+        if isinstance(here, Player) and here.god_mode {
             return;
         }
         if not self.bypass_armor {

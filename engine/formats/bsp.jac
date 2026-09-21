@@ -28,6 +28,8 @@ obj TexInfo {
 }
 
 obj Face {
+    has emission: bool = False,
+        moving_light: bool = False;
     has motion: Vec3 = Vec3(),
         vertices: list[Vec3] = [],
         uv: list[float] = [],

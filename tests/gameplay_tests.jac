@@ -85,3 +85,16 @@ test "liquid hazards respect game rates depth pause and noclip" {
         assert player.health == expected;
     }
 }
+
+test "god mode protects player health and armor including bypass damage" {
+    import from engine.world.world { Player }
+    player = Player(health=75, armor=50, armor_ratio=0.5, god_mode=True);
+    for bypass in [False, True] {
+        hit = player spawn Damage(amount=1000, bypass_armor=bypass);
+        assert player.health == 75 and player.armor == 50;
+        assert hit.dealt == 0 and hit.absorbed == 0 and not hit.killed;
+    }
+    player.god_mode = False;
+    hit = player spawn Damage(amount=20);
+    assert player.health == 65 and player.armor == 40 and hit.dealt == 10;
+}

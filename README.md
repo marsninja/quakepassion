@@ -82,7 +82,9 @@ pauses while the menu is open, and mouse capture is restored when it closes.
 
 The **Settings** button switches to movement mode, vertical field of view, mouse
 sensitivity, inverted mouse Y, fly speed, frame limit, volume, visibility culling, and
-the diagnostic overlay. Click the arrows or use **Up/Down** and **Left/Right**.
+the diagnostic overlay, and **God mode**. God mode prevents player health and armor
+damage from combat and hazards in all four games; it does not revive a dead player.
+Click the arrows or use **Up/Down** and **Left/Right**.
 Changes apply immediately and persist across sessions;
 movement mode resets to walking on level load. **Reset defaults** restores
 the original controls and uncapped rendering.

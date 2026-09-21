@@ -14,6 +14,8 @@ impl App.run() {
         self.renderer.frame_limit = preferences.frame_limit;
         self.sensitivity = preferences.sensitivity;
         self.invert_y = preferences.invert_y;
+        self.god_mode = preferences.god_mode;
+        self.player.god_mode = self.god_mode;
         self.fly_speed = preferences.fly_speed;
         self.culling = preferences.culling;
         self.overlay = preferences.overlay;
@@ -85,6 +87,7 @@ impl App.render_frame() {
     p = self.player;
     if self.level.active {
         faces = self.level.visible(self.world, p.pos, self.culling);
+        combat_lights(self.level.lighting, self.world, p, self.combat);
         self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
         self.models.draw(
@@ -95,7 +98,8 @@ impl App.render_frame() {
             yaw=p.yaw,
             pitch=p.pitch,
             fov=self.renderer.fov,
-            aspect=float(self.renderer.width) / float(self.renderer.height)
+            aspect=float(self.renderer.width) / float(self.renderer.height),
+            lighting=self.level.lighting
         );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.end_scene();
@@ -107,10 +111,16 @@ impl App.render_frame() {
             self.renderer.draw_keys(key_summary(p.inventory));
             if self.level.bsp.game == "passion" {
                 if self.notice_wait <= 0.0 {
-                    self.renderer.draw_message("PASSION " + self.level.name + " | Find both keys, reach extraction");
+                    self.renderer.draw_message(
+                        "PASSION "
+                            + self.level.name
+                            + " | Find both keys, reach extraction"
+                    );
                 }
                 if self.expedition_complete {
-                    self.renderer.draw_terminal("Expedition complete! Enter: replay | Esc: new seed");
+                    self.renderer.draw_terminal(
+                        "Expedition complete! Enter: replay | Esc: new seed"
+                    );
                 }
             }
             if self.notice_wait > 0.0 {
@@ -247,9 +257,17 @@ impl App.switch_level() {
 }
 
 impl App.load_destination(
-    game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = "",
-    new_unit: bool = False, session: Campaign | None = None
+    game: str,
+    name: str,
+    spawnpoint: str = "",
+    carry: bool = False,
+    saved: str = "",
+    new_unit: bool = False,
+    session: Campaign | None = None
 ) {
+    if game == "passion" {
+        self.renderer.draw_loading(name);
+    }
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
     try {
@@ -262,16 +280,24 @@ impl App.load_destination(
             player.armor = self.player.armor;
             player.armor_capacity = self.player.armor_capacity;
             player.armor_ratio = self.player.armor_ratio;
-            copied = self.player.inventory spawn CopyInventory(skip_keys=game == "q1" or new_unit);
+            copied = self.player.inventory spawn CopyInventory(
+                skip_keys=game == "q1" or new_unit
+            );
             player.inventory = copied.result;
         }
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
         combat = CombatState();
-        next_campaign = session if session is not None else (
-            self.campaign if carry and game == "q2" and self.level.bsp.game == "q2" and not new_unit
-            else Campaign()
-        );
+        next_campaign = session
+            if session is not None
+            else (
+                self.campaign
+                    if carry
+                        and game == "q2"
+                        and self.level.bsp.game == "q2"
+                        and not new_unit
+                    else Campaign()
+            );
         departed = "";
         if carry and game == "q2" and self.level.bsp.game == "q2" and not new_unit {
             departed = snapshot(self.world, self.level, self.player, self.combat);
@@ -300,6 +326,7 @@ impl App.load_destination(
         self.world = world;
         self.level = level;
         self.player = player;
+        self.player.god_mode = self.god_mode;
         self.quake = next_renderer;
         self.models = next_models;
         if self.audio.ready {
@@ -356,7 +383,8 @@ impl App.step() -> bool {
                 }
             }
             self.menu.scan();
-            if self.level.bsp.game == "passion" and self.level.name not in self.menu.maps {
+            if self.level.bsp.game == "passion"
+                and self.level.name not in self.menu.maps {
                 self.menu.maps = [self.level.name] + self.menu.maps;
             }
             for i in range(len(self.menu.maps)) {
@@ -400,13 +428,16 @@ impl App.step() -> bool {
     }
     if self.level.active
         and (
-            self.player.health <= 0 or self.expedition_complete
+            self.player.health <= 0
+            or self.expedition_complete
             or (self.level.bsp.game == "q3" and self.combat.kills >= 10)
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
         if IsKeyPressed(i32(257)) {
-            self.load_destination(self.level.bsp.game, self.level.name, session=self.campaign);
+            self.load_destination(
+                self.level.bsp.game, self.level.name, session=self.campaign
+            );
         }
         self.render_frame();
         return True;
@@ -464,7 +495,10 @@ impl App.step() -> bool {
                 touching=self.walking,
                 player=self.player if self.walking else None
             );
-            if doors.message { self.notice = doors.message; self.notice_wait = 3.0; }
+            if doors.message {
+                self.notice = doors.message;
+                self.notice_wait = 3.0;
+            }
         }
         if self.walking {
             immersed = self.level.immersion(self.player.pos);
@@ -537,7 +571,10 @@ impl App.step() -> bool {
                 top_drop=self.level.collision.top_drop,
                 touching=self.walking
             );
-            if triggers.message { self.notice = triggers.message; self.notice_wait = 3.0; }
+            if triggers.message {
+                self.notice = triggers.message;
+                self.notice_wait = 3.0;
+            }
             exit_request = self.world spawn ExitTick(
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
@@ -545,7 +582,8 @@ impl App.step() -> bool {
                 touching=self.walking
             );
             if exit_request.request {
-                if self.level.bsp.game == "passion" and exit_request.request == "passion_complete" {
+                if self.level.bsp.game == "passion"
+                    and exit_request.request == "passion_complete" {
                     self.expedition_complete = True;
                     self.level.completion.pending = 1;
                     break;
@@ -554,7 +592,8 @@ impl App.step() -> bool {
                     self.level.bsp.game,
                     exit_map(exit_request.request),
                     exit_spawn(exit_request.request),
-                    carry=True, new_unit=exit_request.request.startswith("*")
+                    carry=True,
+                    new_unit=exit_request.request.startswith("*")
                 );
                 break;
             }
@@ -615,7 +654,8 @@ impl App.refresh_settings() {
             ),
         "Visibility culling: " + ("On" if self.culling else "Off"),
         "Diagnostic overlay: " + ("On" if self.overlay else "Off"),
-        "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%"
+        "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%",
+        "God mode: " + ("On" if self.god_mode else "Off")
     ];
 }
 
@@ -658,6 +698,9 @@ impl App.adjust_setting(direction: int) {
         self.audio.volume = max(
             0.0, min(1.0, self.audio.volume + float(direction) * 0.05)
         );
+    } elif row == 9 {
+        self.god_mode = not self.god_mode;
+        self.player.god_mode = self.god_mode;
     }
     self.save_preferences();
 }
@@ -671,6 +714,8 @@ impl App.reset_settings() {
     self.renderer.set_frame_limit(0);
     self.sensitivity = 0.0022;
     self.invert_y = False;
+    self.god_mode = False;
+    self.player.god_mode = False;
     self.fly_speed = 240.0;
     self.culling = True;
     self.overlay = True;
@@ -685,7 +730,10 @@ impl App.quicksave() {
         try {
             write_save(
                 os.getenv("HOME", ".") + "/.quakepassion-save.txt",
-                pack_campaign(self.campaign, snapshot(self.world, self.level, self.player, self.combat))
+                pack_campaign(
+                    self.campaign,
+                    snapshot(self.world, self.level, self.player, self.combat)
+                )
             );
             self.notice = "Saved - F9 to load";
         } except Exception as error {
@@ -706,7 +754,9 @@ impl App.quickload() {
             or lines[1] not in ["q1", "q2", "q3", "passion"] {
             raise ValueError("Invalid save header");
         }
-        self.load_destination(lines[1], exit_map(lines[2]), saved=data, session=session);
+        self.load_destination(
+            lines[1], exit_map(lines[2]), saved=data, session=session
+        );
         self.notice = "Loaded" if not self.menu.opened else self.menu.message;
     } except Exception as error {
         self.notice = "Load failed: " + str(error);
@@ -724,7 +774,8 @@ impl App.save_preferences() {
             frame_limit=self.renderer.frame_limit,
             culling=self.culling,
             overlay=self.overlay,
-            volume=self.audio.volume
+            volume=self.audio.volume,
+            god_mode=self.god_mode
         ).save();
         self.menu.message = "Settings saved";
     } except Exception as error {
