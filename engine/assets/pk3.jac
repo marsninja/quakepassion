@@ -224,21 +224,16 @@ obj Pk3Assets {
         }
         result: list[ModelStage] = [];
         for stage in material.stages {
-            image = self.image_name(stage.texture.name);
-            if not image {
-                raise ValueError("Missing model shader image: " + stage.texture.name);
-            }
-            texture = Texture(
-                name=image,
-                encoded=self.read(image),
-                extension=".tga" if image.lower().endswith(".tga") else ".jpg"
-            );
-            if image.lower().endswith(".png") {
-                texture.extension = ".png";
-            }
+            texture = self.model_image(stage.texture.name, material.two_sided);
+            frames = [
+                self.model_image(frame.name, material.two_sided)
+                for frame in stage.frames
+            ];
             result.append(
                 ModelStage(
                     texture=texture,
+                    frames=frames,
+                    frequency=stage.frequency,
                     environment=stage.environment,
                     blend=stage.blend,
                     scroll_u=stage.scroll_u,
@@ -247,6 +242,23 @@ obj Pk3Assets {
             );
         }
         return result;
+    }
+
+    def model_image(name: str, two_sided: bool) -> Texture {
+        image = self.image_name(name);
+        if not image {
+            raise ValueError("Missing model shader image: " + name);
+        }
+        texture = Texture(
+            name=image,
+            encoded=self.read(image),
+            two_sided=two_sided,
+            extension=".tga" if image.lower().endswith(".tga") else ".jpg"
+        );
+        if image.lower().endswith(".png") {
+            texture.extension = ".png";
+        }
+        return texture;
     }
 
     def close() {

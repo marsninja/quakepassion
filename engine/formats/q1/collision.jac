@@ -35,6 +35,8 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
         if triggers
             and kind
                 not in [
+                    "trigger_hurt",
+                    "trigger_secret",
                     "trigger_once",
                     "trigger_multiple",
                     "trigger_changelevel",

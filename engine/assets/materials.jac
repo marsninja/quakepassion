@@ -4,6 +4,7 @@ import from ..formats.bsp { Texture }
 
 obj ModelMaterial {
     has stages: list[ModelStage] = [],
+        two_sided: bool = False,
         unsupported: list[str] = [];
 }
 
@@ -18,7 +19,11 @@ def material_name(name: str) -> str {
 }
 
 def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
-    tokens = clean_source.replace("{", " { ").replace("}", " } ").split();
+    tokens: list[str] = [];
+    for line in clean_source.split("\n") {
+        tokens.extend(line.replace("{", " { ").replace("}", " } ").split());
+        tokens.append("\n");
+    }
     result: dict[str, ModelMaterial] = {};
     depth = 0;
     name = "";
@@ -27,6 +32,10 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
     i = 0;
     while i < len(tokens) {
         token = tokens[i].lower();
+        if token == "\n" {
+            i += 1;
+            continue;
+        }
         if token == "{" {
             depth += 1;
             if depth == 1 {
@@ -47,7 +56,20 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
             name = tokens[i];
         } elif depth == 2 and i + 1 < len(tokens) {
             argument = tokens[i + 1].lower();
-            if token == "map" or token == "clampmap" {
+            if token == "animmap" {
+                stage.frequency = float(tokens[i + 1]);
+                i += 2;
+                while i < len(tokens) and tokens[i] not in ["\n", "{", "}"] {
+                    stage.frames.append(Texture(name=tokens[i]));
+                    i += 1;
+                }
+                if stage.frames and stage.frequency > 0.0 {
+                    stage.texture = stage.frames[0];
+                } else {
+                    material.unsupported.append("invalid animmap");
+                }
+                i -= 1;
+            } elif token == "map" or token == "clampmap" {
                 stage.texture = Texture(name=tokens[i + 1]);
                 if token == "clampmap" {
                     material.unsupported.append("clampmap");
@@ -92,11 +114,17 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
                 stage.scroll_u += float(tokens[i + 2]);
                 stage.scroll_v += float(tokens[i + 3]);
                 i += 3;
-            } elif token
-                in ["tcmod", "animmap", "alphafunc", "depthfunc", "depthwrite"] {
+            } elif token in ["tcmod", "alphafunc", "depthfunc", "depthwrite"] {
                 material.unsupported.append(token);
             }
-        } elif depth == 1 and token in ["cull", "deformvertexes"] {
+        } elif depth == 1 and token == "cull" and i + 1 < len(tokens) {
+            mode = tokens[i + 1].lower();
+            material.two_sided = mode in ["none", "disable", "twosided"];
+            if not material.two_sided {
+                material.unsupported.append("cull " + mode);
+            }
+            i += 1;
+        } elif depth == 1 and token == "deformvertexes" {
             material.unsupported.append(token);
         }
         i += 1;

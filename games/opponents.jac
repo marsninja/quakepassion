@@ -52,9 +52,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     if kind == "monster_infantry"
                     else "models/monsters/soldier/tris.md2";
             }
-            if fields.get("targetname", "") {
-                continue;
-            }
             parts = fields.get("origin", "0 0 0").split();
             if len(parts) != 3 {
                 raise ValueError("Invalid opponent origin");
@@ -67,6 +64,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             enemy = Opponent(
                 pos=position,
+                dormant=source == "q2" and int(fields.get("spawnflags","0")) & 2 != 0,
                 home=position,
                 arena=level.bsp.game == "q3",
                 walk_speed=100.0,
@@ -103,6 +101,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 }
                 enemy.modeled = True;
             }
+            enemy.visual.visible = not enemy.dormant;
             move_to_area(enemy, level.areas[level.locate(position)]);
             world +>:HasOpponent:+> enemy;
             count += 1;

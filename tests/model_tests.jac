@@ -197,3 +197,39 @@ test "MD3 tag-only models remain valid attachment animation" {
     model = parse_md3(data);
     assert not model.surfaces and model.tags[0].tags[0].name == "tag_weapon";
 }
+
+import from engine.formats.q2.sprite { parse_sp2 }
+
+test "SP2 validates frame dimensions pivots images and truncated tables" {
+    data = b"IDS2"
+        + struct.pack("<2i", 2, 1)
+        + struct.pack("<4i", 64, 32, 31, 15)
+        + b"sprites/test.pcx"
+        + bytes(48);
+    frames = parse_sp2(data);
+    assert len(frames) == 1 and frames[0].width == 64 and frames[0].height == 32;
+    assert frames[0].origin_x == 31
+        and frames[0].origin_y == 15
+        and frames[0].image == "sprites/test.pcx";
+    for invalid in [
+        data[:-1],
+        data[:4] + struct.pack("<i", 3) + data[8:],
+        data[:12] + struct.pack("<i", 0) + data[16:]
+    ] {
+        rejected = False;
+        try {
+            parse_sp2(invalid);
+        } except ValueError {
+            rejected = True;
+        }
+        assert rejected;
+    }
+}
+
+test "PCX sprite transparency is opt in and does not alter model skin alpha" {
+    data = pcx_fixture(bytes([193, 255, 7, 8, 0, 1, 2, 3, 0]));
+    sprite = parse_pcx(data, "sprite", transparent=255);
+    skin = parse_pcx(data, "skin");
+    assert int(sprite.pixels[3]) == 0 and int(skin.pixels[3]) == 255;
+    assert int(sprite.pixels[7]) == 255 and int(sprite.pixels[11]) == 255;
+}

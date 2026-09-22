@@ -1,3 +1,4 @@
+import from engine.world.signals { SignalTick }
 import from engine.world.triggers {
     TouchTrigger,
     HasTrigger,
@@ -73,7 +74,6 @@ test "one-shot and negative wait triggers cannot fire twice" {
 test "unsupported trigger rules and partial target fan-out do not activate doors" {
     for fields in [
         {"health": "1"},
-        {"delay": "1"},
         {"killtarget": "other"},
         {"angle": "90"},
         {"spawnflags": "1"},
@@ -93,4 +93,17 @@ test "unsupported trigger rules and partial target fan-out do not activate doors
     );
     load_triggers(fixture.world, fixture.bsp);
     assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 0;
+}
+
+test "delayed contact queues output even when a one shot trigger disables" {
+    fixture = trigger_fixture(once=True);
+    fixture.bsp.entities[1].fields["delay"] = "1";
+    load_triggers(fixture.world, fixture.bsp);
+    door = [fixture.world->:HasDoor:->][?:Door][0];
+    touch(fixture, Vec3(x=190.0), Vec3(x=200.0));
+    assert door.activation.pending == 0;
+    fixture.world spawn SignalTick(dt=0.5);
+    assert door.activation.pending == 0;
+    fixture.world spawn SignalTick(dt=0.5);
+    assert door.activation.pending == 1;
 }

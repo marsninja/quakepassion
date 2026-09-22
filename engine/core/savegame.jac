@@ -1,9 +1,25 @@
 """Versioned text snapshots, restored only into a newly loaded world."""
+import from engine.world.trains {
+    Train,
+    HasTrain,
+    TrackPoint,
+    HasTrack,
+    train_position
+}
+import from engine.world.hazards { Hazard, HasHazard }
+import from engine.world.speakers { Speaker, HasSpeaker }
+import from engine.world.brushes { BrushObject, HasBrush, show_brush }
 import math;
 import os;
 import from engine.world.world { World, Player }
 import from engine.world.level { Level }
-import from engine.world.combat { CombatState, Opponent, HasOpponent }
+import from engine.world.combat {
+    CombatState,
+    Opponent,
+    HasOpponent,
+    Projectile,
+    HasProjectile
+}
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.doors { Door, HasDoor, DoorMember }
 import from engine.world.inventory {
@@ -14,7 +30,13 @@ import from engine.world.inventory {
 }
 import from engine.world.triggers { TouchTrigger, HasTrigger }
 import from engine.world.traversal { Traversal, HasTraversal }
-import from engine.world.signals { Signal, HasSignal }
+import from engine.world.signals {
+    Signal,
+    HasSignal,
+    DelayedUse,
+    HasProgress,
+    Progress
+}
 import from engine.math.vec3 { Vec3 }
 
 # Deliberately simple data-only format: no code evaluation or graph deserialization.
@@ -37,7 +59,7 @@ def values(line: str, count: int) -> list[float] {
 
 def snapshot(world: World, level: Level, player: Player, combat: CombatState) -> str {
     lines = [
-        "QUAKEPASSION 2",
+        "QUAKEPASSION 3",
         level.bsp.game,
         level.name,
         numbers(
@@ -65,11 +87,47 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                 level.collision.top_drop,
                 player.teleport_cooldown,
                 player.teleport_hold,
-                combat.cooldown
+                combat.cooldown,
+                float(combat.random_state),
+                float(combat.grenade_phase),
+                combat.grenade_clock,
+                combat.grenade_remaining
             ]
         )
     ];
-    if level.asset_manifest { lines.append("M " + level.asset_manifest); }
+    for projectile in [world->:HasProjectile:->][?:Projectile] {
+        lines.append(
+            "J "
+                + (projectile.effect or "-")
+                + " "
+                + numbers(
+                    [
+                        projectile.pos.x,
+                        projectile.pos.y,
+                        projectile.pos.z,
+                        projectile.velocity.x,
+                        projectile.velocity.y,
+                        projectile.velocity.z,
+                        float(projectile.damage),
+                        float(projectile.splash),
+                        projectile.radius,
+                        1.0 if projectile.gravity else 0.0,
+                        projectile.remaining,
+                        float(projectile.beam_damage),
+                        projectile.beam_radius,
+                        float(projectile.burst_damage),
+                        projectile.burst_radius,
+                        projectile.beam_wait,
+                        projectile.burst_wait,
+                        float(projectile.phase),
+                        projectile.age
+                    ]
+                )
+        );
+    }
+    if level.asset_manifest {
+        lines.append("M " + level.asset_manifest);
+    }
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
@@ -86,13 +144,25 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         float(enemy.health),
                         enemy.yaw,
                         enemy.attack_wait,
-                        enemy.respawn_wait
+                        enemy.respawn_wait,
+                        1.0 if enemy.dormant else 0.0,
+                        enemy.spawn_wait
                     ]
                 )
         );
     }
     for pickup in [world->:HasPickup:->][?:Pickup] {
-        lines.append("P " + numbers([1.0 if pickup.active else 0.0, pickup.remaining]));
+        lines.append(
+            "P "
+                + numbers(
+                    [
+                        1.0 if pickup.active else 0.0,
+                        pickup.remaining,
+                        1.0 if pickup.waiting_for_use else 0.0,
+                        1.0 if pickup.activate_on_use else 0.0
+                    ]
+                )
+        );
     }
     for door in [world->:HasDoor:->][?:Door] {
         lines.append(
@@ -110,10 +180,57 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                 )
         );
     }
+    for train in [world->:HasTrain:->][?:Train] {
+        lines.append(
+            "R "
+                + numbers(
+                    [
+                        float(train.model),
+                        float(train.current.entity),
+                        float(train.destination.entity)
+                            if train.destination is not None
+                            else -1.0,
+                        train.motion.x,
+                        train.motion.y,
+                        train.motion.z,
+                        train.remaining,
+                        train.damage_wait,
+                        1.0 if train.running else 0.0,
+                        1.0 if train.started else 0.0
+                    ]
+                )
+        );
+    }
     for signal in [world->:HasSignal:->][?:Signal] {
         lines.append(
-            "S " + numbers([1.0 if signal.enabled else 0.0, float(signal.pending), float(signal.remaining)])
+            "S "
+                + numbers(
+                    [
+                        1.0 if signal.enabled else 0.0,
+                        float(signal.pending),
+                        float(signal.remaining),
+                        float(signal.random_state),
+                        1.0 if signal.timer_running else 0.0,
+                        signal.timer_remaining,
+                        1.0 if signal.timer_inventory is not None else 0.0
+                    ]
+                )
         );
+    }
+    saved_signals = [world->:HasSignal:->][?:Signal];
+    for index in range(len(saved_signals)) {
+        for event in saved_signals[index].queued {
+            lines.append(
+                "Q "
+                    + numbers(
+                        [
+                            float(index),
+                            event.remaining,
+                            1.0 if event.inventory is not None else 0.0
+                        ]
+                    )
+            );
+        }
     }
     for trigger in [world->:HasTrigger:->][?:TouchTrigger] {
         lines.append(
@@ -126,6 +243,31 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     ]
                 )
         );
+    }
+    for brush in [world->:HasBrush:->][?:BrushObject] {
+        lines.append(
+            "B "
+                + numbers(
+                    [
+                        float(brush.model),
+                        1.0 if brush.active else 0.0,
+                        1.0 if brush.destroyed else 0.0,
+                        float(brush.health),
+                        1.0 if brush.usable else 0.0
+                    ]
+                )
+        );
+    }
+    for speaker in [world->:HasSpeaker:->][?:Speaker] {
+        lines.append(
+            "A " + numbers([1.0 if speaker.playing else 0.0, float(speaker.requests)])
+        );
+    }
+    for progress in [world->:HasProgress:->][?:Progress] {
+        lines.append("O " + numbers([float(progress.secrets), float(progress.goals)]));
+    }
+    for hazard in [world->:HasHazard:->][?:Hazard] {
+        lines.append("H " + numbers([1.0 if hazard.enabled else 0.0, hazard.cooldown]));
     }
     for traversal in [world->:HasTraversal:->][?:Traversal] {
         lines.append(
@@ -143,12 +285,12 @@ def restore(
 ) {
     lines = data.splitlines();
     if len(lines) < 4
-        or lines[0] != "QUAKEPASSION 2"
+        or lines[0] != "QUAKEPASSION 3"
         or lines[1] != level.bsp.game
         or lines[2] != level.name {
         raise ValueError("Save version or level mismatch");
     }
-    stats = values(lines[3], 24);
+    stats = values(lines[3], 28);
     player.pos = Vec3(x=stats[0], y=stats[1], z=stats[2]);
     player.yaw = stats[3];
     player.pitch = stats[4];
@@ -162,7 +304,12 @@ def restore(
     player.air_remaining = stats[12];
     player.drown_damage = int(stats[13]);
     player.hazard_wait = stats[14];
-    if player.health < 0 or player.health > 10000 or combat.weapon not in [1, 2] {
+    if player.health < 0
+        or player.health > 10000
+        or combat.weapon < 1
+        or combat.weapon
+            > {"q1": 8, "q2": 11, "q3": 9, "passion": 2}.get(level.bsp.game, 2)
+        or stats[10] != float(combat.weapon) {
         raise ValueError("Invalid saved player");
     }
     player.velocity = Vec3(x=stats[15], y=stats[16], z=stats[17]);
@@ -172,13 +319,48 @@ def restore(
     player.teleport_cooldown = stats[21];
     player.teleport_hold = stats[22];
     combat.cooldown = stats[23];
+    if stats[24] < 1.0
+        or stats[24] >= 2147483647.0
+        or stats[24] != float(int(stats[24])) {
+        raise ValueError("Invalid weapon random state");
+    }
+    combat.random_state = int(stats[24]);
+    if stats[25] not in [0.0, 1.0, 2.0, 3.0, 4.0]
+        or stats[26] < 0.0
+        or stats[26] > 1.0
+        or stats[27] < 0.0
+        or stats[27] > 3.2
+        or (stats[25] > 0.0 and (level.bsp.game != "q2" or combat.weapon != 11)) {
+        raise ValueError("Invalid saved grenade state");
+    }
+    combat.grenade_phase = int(stats[25]);
+    combat.grenade_clock = stats[26];
+    combat.grenade_remaining = stats[27];
+    combat.impacts = [];
+    for projectile in [world->:HasProjectile:->][?:Projectile] {
+        world del --> projectile;
+    }
     player.inventory = Inventory();
     enemies = [world->:HasOpponent:->][?:Opponent];
     pickups = [world->:HasPickup:->][?:Pickup];
     doors = [world->:HasDoor:->][?:Door];
     signals = [world->:HasSignal:->][?:Signal];
+    for signal in signals {
+        signal.queued = [];
+    }
     triggers = [world->:HasTrigger:->][?:TouchTrigger];
     traversal = [world->:HasTraversal:->][?:Traversal];
+    hazards = [world->:HasHazard:->][?:Hazard];
+    h = 0;
+    brushes = [world->:HasBrush:->][?:BrushObject];
+    b = 0;
+    speakers = [world->:HasSpeaker:->][?:Speaker];
+    a = 0;
+    progress_records = [world->:HasProgress:->][?:Progress];
+    o = 0;
+    trains = [world->:HasTrain:->][?:Train];
+    tracks = [world->:HasTrack:->][?:TrackPoint];
+    r = 0;
     e = 0;
     p = 0;
     d = 0;
@@ -191,9 +373,71 @@ def restore(
         if not words {
             continue;
         }
-        if words[0] == "M" and len(words) == 2 and not manifest_seen and level.asset_manifest {
-            if words[1] != level.asset_manifest { raise ValueError("Save asset manifest mismatch"); }
+        if words[0] == "M"
+            and len(words) == 2
+            and not manifest_seen
+            and level.asset_manifest {
+            if words[1] != level.asset_manifest {
+                raise ValueError("Save asset manifest mismatch");
+            }
             manifest_seen = True;
+        } elif words[0] == "J" {
+            row = values(" ".join(words[2:]), 19);
+            effect = "" if words[1] == "-" else words[1];
+            if len(effect) > 64
+                or not all(c.isalnum() or c == "_" for c in effect)
+                or row[18] < 0.0
+                or row[18] > 60.0 {
+                raise ValueError("Invalid saved projectile effect");
+            }
+            if row[6] < 0.0
+                or row[6] > 10000.0
+                or row[6] != float(int(row[6]))
+                or row[7] < 0.0
+                or row[7] > 10000.0
+                or row[7] != float(int(row[7]))
+                or row[8] < 0.0
+                or row[8] > 10000.0
+                or row[9] not in [0.0, 1.0]
+                or row[10] <= 0.0
+                or row[10] > 60.0 {
+                raise ValueError("Invalid saved projectile");
+            }
+            if row[11] < 0.0
+                or row[11] > 10000.0
+                or row[11] != float(int(row[11]))
+                or row[12] < 0.0
+                or row[12] > 10000.0
+                or row[13] < 0.0
+                or row[13] > 10000.0
+                or row[13] != float(int(row[13]))
+                or row[14] < 0.0
+                or row[14] > 10000.0
+                or row[15] < 0.0
+                or row[15] > 0.1
+                or row[16] < 0.0
+                or row[16] > 0.1
+                or row[17] not in [0.0, 1.0, 2.0] {
+                raise ValueError("Invalid saved projectile phase");
+            }
+            world +>:HasProjectile:+> Projectile(
+                pos=Vec3(x=row[0], y=row[1], z=row[2]),
+                velocity=Vec3(x=row[3], y=row[4], z=row[5]),
+                damage=int(row[6]),
+                splash=int(row[7]),
+                radius=row[8],
+                gravity=row[9] != 0.0,
+                remaining=row[10],
+                beam_damage=int(row[11]),
+                beam_radius=row[12],
+                burst_damage=int(row[13]),
+                burst_radius=row[14],
+                beam_wait=row[15],
+                burst_wait=row[16],
+                phase=int(row[17]),
+                effect=effect,
+                age=row[18]
+            );
         } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);
             capacity = int(words[3]);
@@ -204,7 +448,7 @@ def restore(
                 kind=words[1], amount=amount, capacity=capacity
             );
         } elif words[0] == "E" and e < len(enemies) {
-            row = values(" ".join(words[1:]), 7);
+            row = values(" ".join(words[1:]), 9);
             enemy = enemies[e];
             e += 1;
             enemy.pos = Vec3(x=row[0], y=row[1], z=row[2]);
@@ -212,13 +456,27 @@ def restore(
             enemy.yaw = row[4];
             enemy.attack_wait = row[5];
             enemy.respawn_wait = row[6];
-            enemy.visual.visible = enemy.health > 0;
+            if row[7] not in [0.0, 1.0] or row[8] < -1.0 {
+                raise ValueError("Invalid saved opponent activation");
+            }
+            enemy.dormant = row[7] != 0.0;
+            enemy.spawn_wait = row[8];
+            enemy.visual.visible = enemy.health > 0 and not enemy.dormant;
         } elif words[0] == "P" and p < len(pickups) {
-            row = values(" ".join(words[1:]), 2);
+            row = values(" ".join(words[1:]), 4);
+            if row[0] not in [0.0, 1.0]
+                or row[1] < 0.0
+                or row[2] not in [0.0, 1.0]
+                or row[3] not in [0.0, 1.0]
+                or (row[0] != 0.0 and row[2] != 0.0) {
+                raise ValueError("Invalid saved pickup");
+            }
             item = pickups[p];
             p += 1;
             item.active = row[0] != 0.0;
             item.remaining = row[1];
+            item.waiting_for_use = row[2] != 0.0;
+            item.activate_on_use = row[3] != 0.0;
             item.visual.visible = item.active;
         } elif words[0] == "D" and d < len(doors) {
             row = values(" ".join(words[2:]), 5);
@@ -235,7 +493,9 @@ def restore(
             door.automatic = row[2] != 0.0;
             door.activation.pending = int(row[3]);
             door.unlocked = row[4] != 0.0;
-            if door.unlocked and door.keys { door.hold_time = -1.0; }
+            if door.unlocked and door.keys {
+                door.hold_time = -1.0;
+            }
             members = [door];
             members.extend([door->:DoorMember:->][?:Door]);
             for part in members {
@@ -250,13 +510,72 @@ def restore(
                     );
                 }
             }
+        } elif words[0] == "R" and r < len(trains) {
+            row = values(" ".join(words[1:]), 10);
+            train = trains[r];
+            r += 1;
+            if row[0] != float(train.model)
+                or row[6] < 0.0
+                or row[7] < 0.0
+                or row[8] not in [0.0, 1.0]
+                or row[9] not in [0.0, 1.0] {
+                raise ValueError("Invalid saved train");
+            }
+            current = [
+                point
+                for point in tracks
+                if float(point.entity) == row[1]
+            ];
+            destination = [
+                point
+                for point in tracks
+                if float(point.entity) == row[2]
+            ];
+            if len(current) != 1 or (row[2] != -1.0 and len(destination) != 1) {
+                raise ValueError("Invalid saved train path");
+            }
+            train.current = current[0];
+            train.destination = destination[0] if destination else None;
+            train.remaining = row[6];
+            train.damage_wait = row[7];
+            train.running = row[8] != 0.0;
+            train.started = row[9] != 0.0;
+            train_position(
+                train, Vec3(x=row[3], y=row[4], z=row[5]), level.bsp, level.collision
+            );
         } elif words[0] == "S" and s < len(signals) {
-            row = values(" ".join(words[1:]), 3);
+            row = values(" ".join(words[1:]), 7);
             signal = signals[s];
             s += 1;
             signal.enabled = row[0] != 0.0;
             signal.pending = int(row[1]);
             signal.remaining = int(row[2]);
+            if row[3] < 1.0 or row[3] >= 2147483647.0 or row[3] != float(int(row[3])) {
+                raise ValueError("Invalid saved signal random state");
+            }
+            signal.random_state = int(row[3]);
+            if row[4] not in [0.0, 1.0] or row[5] < 0.0 or row[6] not in [0.0, 1.0] {
+                raise ValueError("Invalid saved timer");
+            }
+            signal.timer_running = row[4] != 0.0;
+            signal.timer_remaining = row[5];
+            signal.timer_inventory = player.inventory if row[6] != 0.0 else None;
+        } elif words[0] == "Q" {
+            row = values(" ".join(words[1:]), 3);
+            index = int(row[0]);
+            if row[0] != float(index)
+                or index < 0
+                or index >= len(signals)
+                or row[1] < 0.0
+                or row[2] not in [0.0, 1.0] {
+                raise ValueError("Invalid delayed signal");
+            }
+            signals[index].queued.append(
+                DelayedUse(
+                    remaining=row[1],
+                    inventory=player.inventory if row[2] != 0.0 else None
+                )
+            );
         } elif words[0] == "T" and t < len(triggers) {
             row = values(" ".join(words[1:]), 3);
             trigger = triggers[t];
@@ -264,6 +583,55 @@ def restore(
             trigger.enabled = row[0] != 0.0;
             trigger.cooldown = row[1];
             trigger.activations = int(row[2]);
+        } elif words[0] == "B" and b < len(brushes) {
+            row = values(" ".join(words[1:]), 5);
+            brush = brushes[b];
+            b += 1;
+            if row[0] != float(brush.model)
+                or row[1] not in [0.0, 1.0]
+                or row[2] not in [0.0, 1.0]
+                or row[3] < 0.0
+                or row[3] != float(int(row[3]))
+                or row[4] not in [0.0, 1.0]
+                or (row[2] != 0.0 and (row[1] != 0.0 or row[3] != 0.0)) {
+                raise ValueError("Invalid saved brush");
+            }
+            brush.destroyed = row[2] != 0.0;
+            brush.health = int(row[3]);
+            brush.usable = row[4] != 0.0;
+            show_brush(brush, row[1] != 0.0, level.bsp, level.collision);
+        } elif words[0] == "A" and a < len(speakers) {
+            row = values(" ".join(words[1:]), 2);
+            if row[0] not in [0.0, 1.0]
+                or row[1] < 0.0
+                or row[1] != float(int(row[1])) {
+                raise ValueError("Invalid saved speaker");
+            }
+            speakers[a].playing = row[0] != 0.0;
+            speakers[a].requests = int(row[1]);
+            a += 1;
+        } elif words[0] == "O" and o < len(progress_records) {
+            row = values(" ".join(words[1:]), 2);
+            record = progress_records[o];
+            o += 1;
+            if row[0] < 0.0
+                or row[0] > float(record.total_secrets)
+                or row[0] != float(int(row[0]))
+                or row[1] < 0.0
+                or row[1] > float(record.total_goals)
+                or row[1] != float(int(row[1])) {
+                raise ValueError("Invalid saved campaign progress");
+            }
+            record.secrets = int(row[0]);
+            record.goals = int(row[1]);
+        } elif words[0] == "H" and h < len(hazards) {
+            row = values(" ".join(words[1:]), 2);
+            if row[0] not in [0.0, 1.0] or row[1] < 0.0 {
+                raise ValueError("Invalid saved hazard");
+            }
+            hazards[h].enabled = row[0] != 0.0;
+            hazards[h].cooldown = row[1];
+            h += 1;
         } elif words[0] == "V" and v < len(traversal) {
             row = values(" ".join(words[1:]), 2);
             link = traversal[v];
@@ -274,12 +642,18 @@ def restore(
             raise ValueError("Invalid save record");
         }
     }
-    if (bool(level.asset_manifest) != manifest_seen) or e != len(enemies)
+    if (bool(level.asset_manifest) != manifest_seen)
+        or e != len(enemies)
         or p != len(pickups)
         or d != len(doors)
         or s != len(signals)
         or t != len(triggers)
-        or v != len(traversal) {
+        or v != len(traversal)
+        or r != len(trains)
+        or h != len(hazards)
+        or o != len(progress_records)
+        or a != len(speakers)
+        or b != len(brushes) {
         raise ValueError("Save does not match this map's entities");
     }
 }

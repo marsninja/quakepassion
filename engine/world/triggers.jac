@@ -1,7 +1,7 @@
 """Brush-contact activation of named doors through shared graph relationships."""
 import from .world { World, Player }
 import from .doors { Door, resolve_targets }
-import from .signals { Signal, Fire }
+import from .signals { Signal, Fire, HasSignal, Targets }
 import from ..formats.bsp { Bsp }
 import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
@@ -76,11 +76,12 @@ def load_triggers(world: World, bsp: Bsp) {
     volumes = build_collision(bsp, triggers=True)
         if bsp.game == "q1"
         else build_brush_collision(bsp, triggers=True);
-    for entity in bsp.entities {
-        fields = entity.fields;
+    for index in range(len(bsp.entities)) {
+        fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
         target = fields.get("target", "");
-        if kind not in ["trigger_once", "trigger_multiple"] or not target {
+        secret = kind == "trigger_secret" and bsp.game == "q1";
+        if not secret and (kind not in ["trigger_once", "trigger_multiple"] or not target) {
             continue;
         }
         allowed = 3840 if bsp.game == "q1" else (7936 if bsp.game == "q2" else 0);
@@ -88,7 +89,6 @@ def load_triggers(world: World, bsp: Bsp) {
             or fields.get("targetname", "")
             or fields.get("killtarget", "")
             or float(fields.get("health", "0")) != 0.0
-            or float(fields.get("delay", "0")) != 0.0
             or float(fields.get("random", "0")) != 0.0
             or float(fields.get("angle", "0")) != 0.0
             or fields.get("angles", "0 0 0") != "0 0 0" {
@@ -99,7 +99,8 @@ def load_triggers(world: World, bsp: Bsp) {
             continue;
         }
         model = int(name[1:]);
-        targets = resolve_targets(world, bsp, target);
+        targets = [signal for signal in [world->:HasSignal:->][?:Signal] if index in signal.entities]
+            if secret else resolve_targets(world,bsp,target);
         if not targets {
             continue;
         }
@@ -115,10 +116,16 @@ def load_triggers(world: World, bsp: Bsp) {
             model=model,
             volume=volume,
             interval=max(0.0, interval),
-            once=kind == "trigger_once" or interval < 0.0
+            once=secret or kind == "trigger_once" or interval < 0.0
         );
-        for door in targets {
-            trigger +>:Activates:+> door;
+        delay = float(fields.get("delay","0")) if bsp.game != "q3" and not secret else 0.0;
+        if delay > 0.0 {
+            emission = Signal(relay=True,delay=delay);
+            for destination in targets { emission +>:Targets:+> destination; }
+            trigger +>:Activates:+> emission;
+            world +>:HasSignal:+> emission;
+        } else {
+            for destination in targets { trigger +>:Activates:+> destination; }
         }
         world +>:HasTrigger:+> trigger;
     }

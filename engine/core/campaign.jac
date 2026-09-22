@@ -63,7 +63,7 @@ def unpack_campaign(data: str) -> Campaign {
             raise ValueError("Invalid visited snapshot");
         }
         records = rows[cursor:cursor + count];
-        if records[0] != "QUAKEPASSION 2"
+        if records[0] != "QUAKEPASSION 3"
             or records[1] != "q2" or records[2] != name {
             raise ValueError("Visited map mismatch");
         }

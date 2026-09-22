@@ -1,5 +1,8 @@
 """Archive-backed gameplay sound palette with explicit native audio ownership."""
 import from ..assets.library { AssetLibrary }
+import from ..world.world { World }
+import from ..world.speakers { Speaker, HasSpeaker }
+import from ..math.vec3 { Vec3, right_from }
 import from vendor.raylib {
     obj Wave {
         has frameCount: u32,
@@ -16,7 +19,25 @@ import from vendor.raylib {
     }  obj Sound {
         has stream: AudioStream,
             frameCount: u32;
-    }  def InitAudioDevice -> None;  def IsAudioDeviceReady -> bool;  def CloseAudioDevice -> None;  def LoadWaveFromMemory(
+    }  obj Music {
+        has stream: AudioStream,
+            frameCount: u32,
+            looping: bool,
+            ctxType: i32,
+            ctxData: u64;
+    }  def LoadMusicStreamFromMemory(
+        fileType: str, data: bytes, dataSize: i32
+    ) -> Music;  def IsMusicValid(music: Music) -> bool;  def UnloadMusicStream(
+        music: Music
+    ) -> None;  def PlayMusicStream(music: Music) -> None;  def IsMusicStreamPlaying(
+        music: Music
+    ) -> bool;  def UpdateMusicStream(music: Music) -> None;  def StopMusicStream(
+        music: Music
+    ) -> None;  def PauseMusicStream(music: Music) -> None;  def ResumeMusicStream(
+        music: Music
+    ) -> None;  def SetMusicVolume(music: Music, volume: f32) -> None;  def SetMusicPan(
+        music: Music, pan: f32
+    ) -> None;  def InitAudioDevice -> None;  def IsAudioDeviceReady -> bool;  def CloseAudioDevice -> None;  def LoadWaveFromMemory(
         fileType: str, fileData: bytes, dataSize: i32
     ) -> Wave;  def LoadSoundFromWave(wave: Wave) -> Sound;  def UnloadWave(
         wave: Wave
@@ -27,12 +48,21 @@ import from vendor.raylib {
     ) -> None;
 }
 
+obj EmitterAudio {
+    has music: Music,
+        data: bytes,
+        paused: bool = False;
+}
+
 obj Feedback {
     has ready: bool = False,
         sounds: list[Sound] = [],
-        volume: float = 0.25;
+        volume: float = 0.25,
+        library: AssetLibrary | None = None,
+        emitters: dict[int, EmitterAudio] = {},
+        missing: set[int] = set();
 
-    def open(game: str, directory: str) {
+    def open(game: str, directory: str, weapons: list[str] = []) {
         InitAudioDevice();
         self.ready = IsAudioDeviceReady();
         if not self.ready {
@@ -40,6 +70,7 @@ obj Feedback {
         }
         library = AssetLibrary(game="q1" if game == "passion" else game);
         library.open(directory + "/id1" if game == "passion" else directory);
+        self.library = library;
         names = [
             "sound/weapons/shotgn2.wav",
             "sound/player/pain1.wav",
@@ -59,6 +90,7 @@ obj Feedback {
                 "sound/items/n_health.wav"
             ];
         }
+        names.extend(weapons);
         try {
             for name in names {
                 data = library.read(name);
@@ -69,8 +101,9 @@ obj Feedback {
                 self.sounds.append(LoadSoundFromWave(wave));
                 UnloadWave(wave);
             }
-        } finally {
-            library.close();
+        } except Exception {
+            self.close();
+            raise;
         }
     }
 
@@ -84,9 +117,88 @@ obj Feedback {
         PlaySound(sound);
     }
 
+    def update(world: World, eye: Vec3, yaw: float, paused: bool = False) {
+        library = self.library;
+        if not self.ready or library is None {
+            return;
+        }
+        speakers = [world->:HasSpeaker:->][?:Speaker];
+        for index in range(len(speakers)) {
+            speaker = speakers[index];
+            if index in self.missing {
+                speaker.requests = 0;
+                continue;
+            }
+            if index not in self.emitters {
+                if paused or (not speaker.playing and speaker.requests == 0) {
+                    continue;
+                }
+                try {
+                    data = library.read(speaker.path);
+                    music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));
+                    if not IsMusicValid(music) {
+                        raise ValueError("Cannot decode speaker: " + speaker.path);
+                    }
+                    music.looping = speaker.looping;
+                    self.emitters[index] = EmitterAudio(music=music, data=data);
+                } except Exception as error {
+                    print("Speaker audio unavailable:", speaker.path, str(error));
+                    self.missing.add(index);
+                    speaker.requests = 0;
+                    continue;
+                }
+            }
+            voice = self.emitters[index];
+            music = voice.music;
+            if paused {
+                if IsMusicStreamPlaying(music) {
+                    PauseMusicStream(music);
+                    voice.paused = True;
+                }
+                continue;
+            }
+            relative = speaker.origin.sub(eye);
+            spatial = not speaker.global_sound
+                and not speaker.activator_sound
+                and speaker.attenuation > 0.0;
+            gain = max(0.0, 1.0 - relative.length() * 0.0008 * speaker.attenuation)
+                if spatial
+                else 1.0;
+            pan = right_from(yaw).dot(relative.normalized()) if spatial else 0.0;
+            SetMusicVolume(music, f32(self.volume * speaker.volume * gain));
+            SetMusicPan(music, f32(max(-1.0, min(1.0, pan))));
+            if voice.paused {
+                ResumeMusicStream(music);
+                voice.paused = False;
+            }
+            if speaker.looping {
+                if speaker.playing and not IsMusicStreamPlaying(music) {
+                    PlayMusicStream(music);
+                } elif not speaker.playing and IsMusicStreamPlaying(music) {
+                    StopMusicStream(music);
+                }
+            } elif speaker.requests > 0 {
+                StopMusicStream(music);
+                PlayMusicStream(music);
+                speaker.requests = 0;
+            }
+            UpdateMusicStream(music);
+        }
+    }
+
     def close() {
         if not self.ready {
             return;
+        }
+        for voice in self.emitters.values() {
+            UnloadMusicStream(voice.music);
+        }
+        self.emitters = {};
+        self.missing = set();
+        library = self.library;
+        if library is not None {
+            library.close();
+            self.library = None;
         }
         for sound in self.sounds {
             UnloadSound(sound);

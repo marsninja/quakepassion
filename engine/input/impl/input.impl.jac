@@ -88,6 +88,15 @@ impl sample_intent(
         _mouse.prev_y = my;
     }
 
+    weapon = 0;
+    for slot in range(1, 11) {
+        if IsKeyPressed(i32(48 + slot % 10)) {
+            weapon = slot;
+        }
+    }
+    if IsKeyPressed(i32(71)) {
+        weapon = 11;
+    }
     return Intent(
         move=mv,
         look_yaw=yaw,
@@ -98,6 +107,6 @@ impl sample_intent(
         jump=IsKeyPressed(KEY_SPACE),
         crouch=IsKeyDown(i32(341)),
         fire=_mouse.captured and _mouse.warmup == 0 and IsMouseButtonDown(MOUSE_LEFT),
-        weapon=1 if IsKeyPressed(i32(49)) else (2 if IsKeyPressed(i32(50)) else 0)
+        weapon=weapon
     );
 }

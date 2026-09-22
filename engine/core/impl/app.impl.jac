@@ -21,15 +21,25 @@ impl App.run() {
         self.overlay = preferences.overlay;
         self.audio.volume = preferences.volume;
         if self.level.active {
-            self.audio.open(self.level.bsp.game, game_directory(self.level.bsp.game));
+            self.audio.open(
+                self.level.bsp.game,
+                game_directory(self.level.bsp.game),
+                weapon_sounds(self.level.bsp.game)
+            );
         }
     }
     self.renderer.open_window();
 
     if self.level.active {
+        equip_player(self.player, self.combat, self.level.bsp.game);
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
         self.models.upload(self.world);
+        self.effects.upload(
+            self.level.bsp.game,
+            game_directory(self.level.bsp.game),
+            weapon_effects(self.level.bsp.game)
+        );
         self.quake.upload(self.level);
     }
     frame = 0;
@@ -45,6 +55,7 @@ impl App.run() {
     }
     if self.level.active {
         self.models.close();
+        self.effects.close();
         self.quake.close();
     }
     self.audio.close();
@@ -85,6 +96,7 @@ impl App.render_frame() {
         self.refresh_settings();
     }
     p = self.player;
+    self.audio.update(self.world, p.pos, p.yaw, paused=self.menu.opened);
     if self.level.active {
         faces = self.level.visible(self.world, p.pos, self.culling);
         combat_lights(self.level.lighting, self.world, p, self.combat);
@@ -102,13 +114,33 @@ impl App.render_frame() {
             lighting=self.level.lighting
         );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
+        self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
+        self.effects.draw(
+            self.world, p.pos, p.yaw, p.pitch, lighting=self.level.lighting
+        );
         self.renderer.end_scene();
         if not self.smoke {
             self.renderer.draw_status(
                 p.health, p.armor, quantity(p.inventory, "shells")
             );
-            self.renderer.draw_combat(self.combat, self.level.bsp.game == "q3");
-            self.renderer.draw_keys(key_summary(p.inventory));
+            rule = selected_weapon(self.combat);
+            self.renderer.draw_combat(
+                self.combat,
+                self.level.bsp.game == "q3",
+                ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1
+            );
+            self.renderer.draw_keys(
+                " | ".join(
+                    [
+                        text
+                        for text in [
+                            key_summary(p.inventory),
+                            progress_summary(self.world)
+                        ]
+                        if text
+                    ]
+                )
+            );
             if self.level.bsp.game == "passion" {
                 if self.notice_wait <= 0.0 {
                     self.renderer.draw_message(
@@ -270,11 +302,13 @@ impl App.load_destination(
     }
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
+    next_effects = EffectScene();
     try {
         world = World();
         level = open_level(world, game_directory(game), name, game);
         player = spawn_player(level, spawnpoint);
-        if carry and self.player.health > 0 and game == self.level.bsp.game {
+        carrying = carry and self.player.health > 0 and game == self.level.bsp.game;
+        if carrying {
             player.health = self.player.health;
             player.max_health = self.player.max_health;
             player.armor = self.player.armor;
@@ -288,6 +322,18 @@ impl App.load_destination(
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
         combat = CombatState();
+        equip_player(player, combat, game, fresh=not carrying);
+        if carrying {
+            select_weapon(player, combat, self.combat.weapon);
+            combat.cooldown = self.combat.cooldown;
+            combat.random_state = self.combat.random_state;
+            combat.grenade_phase = self.combat.grenade_phase;
+            combat.grenade_clock = self.combat.grenade_clock;
+            combat.grenade_remaining = self.combat.grenade_remaining;
+            if combat.grenade_phase > 0 {
+                combat.weapon = self.combat.weapon;
+            }
+        }
         next_campaign = session
             if session is not None
             else (
@@ -314,9 +360,11 @@ impl App.load_destination(
             restore(world, level, player, combat, saved);
         }
         next_models.upload(world);
+        next_effects.upload(game, game_directory(game), weapon_effects(game));
         next_renderer.upload(level);
         if self.level.active {
             self.models.close();
+            self.effects.close();
             self.quake.close();
         }
         if departed {
@@ -329,10 +377,11 @@ impl App.load_destination(
         self.player.god_mode = self.god_mode;
         self.quake = next_renderer;
         self.models = next_models;
+        self.effects = next_effects;
         if self.audio.ready {
             self.audio.close();
             try {
-                self.audio.open(game, game_directory(game));
+                self.audio.open(game, game_directory(game), weapon_sounds(game));
             } except Exception as error {
                 self.notice = "Audio: " + str(error);
                 self.notice_wait = 4.0;
@@ -360,6 +409,7 @@ impl App.load_destination(
         }
     } except Exception as error {
         next_models.close();
+        next_effects.close();
         next_renderer.close();
         self.menu.message = "Cannot load level: " + str(error);
         self.menu.opened = True;
@@ -446,7 +496,7 @@ impl App.step() -> bool {
         if self.smoke
         else sample_intent(dt, self.sensitivity, self.invert_y);
     if intent.weapon > 0 {
-        self.combat.weapon = intent.weapon;
+        select_weapon(self.player, self.combat, intent.weapon);
     }
     if intent.toggle_culling {
         self.culling = not self.culling;
@@ -485,6 +535,24 @@ impl App.step() -> bool {
         }
         previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
         if self.level.active and not self.smoke {
+            events = self.world spawn SignalTick(dt=self.physics_clock.tick_rate);
+            self.world spawn SpeakerTick();
+            self.world spawn BrushTick(
+                bsp=self.level.bsp,
+                collision=self.level.collision,
+                player=self.player,
+                state=self.combat
+            );
+            if events.message {
+                self.notice = events.message;
+                self.notice_wait = 3.0;
+            }
+            self.world spawn TrainTick(
+                bsp=self.level.bsp,
+                collision=self.level.collision,
+                dt=self.physics_clock.tick_rate,
+                player=self.player if self.walking else None
+            );
             doors = self.world spawn DoorTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
@@ -546,12 +614,48 @@ impl App.step() -> bool {
             if self.player.health < old_health {
                 self.audio.play(1);
             }
-            if intent.fire
-                and fire_weapon(
-                    self.world, self.player, self.level.collision, self.combat
-                ) {
-                self.audio.play(0);
+            if weapon_input(
+                self.world,
+                self.player,
+                self.level.collision,
+                self.combat,
+                held=intent.fire,
+                dt=self.physics_clock.tick_rate
+            ) {
+                self.audio.play(2 + self.combat.weapon if self.combat.rules else 0);
             }
+            self.world spawn ProjectileTick(
+                player=self.player,
+                collision=self.level.collision,
+                state=self.combat,
+                dt=self.physics_clock.tick_rate
+            );
+            for impact in self.combat.impacts {
+                if impact.model >= 0 {
+                    self.world spawn ShootMover(model=impact.model);
+                    self.world spawn ShootBrush(
+                        model=impact.model,
+                        amount=impact.amount,
+                        bsp=self.level.bsp,
+                        collision=self.level.collision,
+                        player=self.player,
+                        state=self.combat
+                    );
+                }
+                if impact.splash > 0 {
+                    self.world spawn BlastBrush(
+                        origin=impact.origin,
+                        amount=impact.splash,
+                        radius=impact.radius,
+                        energy_burst=impact.energy_burst,
+                        bsp=self.level.bsp,
+                        collision=self.level.collision,
+                        player=self.player,
+                        state=self.combat
+                    );
+                }
+            }
+            self.combat.impacts = [];
             pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,
@@ -575,6 +679,15 @@ impl App.step() -> bool {
                 self.notice = triggers.message;
                 self.notice_wait = 3.0;
             }
+            self.world spawn HazardTick(
+                player=self.player,
+                start=previous_origin,
+                eye_height=self.level.collision.eye_height,
+                finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+                dt=self.physics_clock.tick_rate,
+                top_drop=self.level.collision.top_drop,
+                touching=self.walking
+            );
             exit_request = self.world spawn ExitTick(
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
@@ -729,7 +842,7 @@ impl App.quicksave() {
     } else {
         try {
             write_save(
-                os.getenv("HOME", ".") + "/.quakepassion-save.txt",
+                (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt"),
                 pack_campaign(
                     self.campaign,
                     snapshot(self.world, self.level, self.player, self.combat)
@@ -745,12 +858,14 @@ impl App.quicksave() {
 
 impl App.quickload() {
     try {
-        data = read_save(os.getenv("HOME", ".") + "/.quakepassion-save.txt");
+        data = read_save(
+            (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt")
+        );
         session = unpack_campaign(data);
         data = session.active;
         lines = data.splitlines();
         if len(lines) < 4
-            or lines[0] != "QUAKEPASSION 2"
+            or lines[0] != "QUAKEPASSION 3"
             or lines[1] not in ["q1", "q2", "q3", "passion"] {
             raise ValueError("Invalid save header");
         }

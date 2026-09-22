@@ -1,6 +1,7 @@
 """Native fixed-view renderer and gameplay timing; no settings or save writes."""
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
+import from engine.core.menu { game_directory }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.combat { CombatTick }
@@ -24,6 +25,8 @@ with entry {
             )
         );
         assert not app.menu.opened , app.menu.message;
+        if not app.audio.ready { app.audio.open(game,game_directory(game)); }
+        app.audio.volume = 0.0;
         resources = app.models.resources;
         for mode in ["full", "without_models", "full_repeat"] {
             if mode == "without_models" {
@@ -88,7 +91,9 @@ with entry {
         renderer.screenshot("qp_perf_" + game + ".png");
         app.smoke = True;
     }
+    app.audio.close();
     app.models.close();
+    app.effects.close();
     app.quake.close();
     renderer.close();
 }

@@ -136,7 +136,8 @@ impl Renderer.draw_opponents(world: World, height: float) {
     }
 }
 
-impl Renderer.draw_combat(state: CombatState, arena: bool) {
+impl Renderer.draw_combat(state: CombatState, arena: bool, ammo: int = -1) {
+    rule = selected_weapon(state);
     color = Color(r=255, g=230, b=180, a=255);
     DrawText("+", i32(self.width / 2 - 6), i32(self.height / 2 - 12), 24, color);
     if state.hit_flash > 0.0 {
@@ -155,7 +156,14 @@ impl Renderer.draw_combat(state: CombatState, arena: bool) {
         ("FRAGS " if arena else "KILLS ")
             + str(state.kills)
             + "    "
-            + ("[1] Basic / unlimited" if state.weapon == 1 else "[2] Heavy / shells")
+            + (
+                "["
+                + ("G" if rule.hand_thrown else str(state.weapon % 10))
+                + "] "
+                + rule.name
+                + " / "
+                + (str(ammo) + " " + rule.ammo if ammo >= 0 else "unlimited")
+            )
             + "    LMB: fire",
         20,
         i32(self.height - 68),
@@ -210,4 +218,29 @@ impl Renderer.draw_loading(name: str) {
         Color(r=190, g=180, b=160, a=255)
     );
     EndDrawing();
+}
+
+
+impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
+    for projectile in [world->:HasProjectile:->][?:Projectile] {
+        origin = Vector3(
+            x=f32(projectile.pos.x), y=f32(projectile.pos.y), z=f32(projectile.pos.z)
+        );
+        color = Color(r=70, g=255, b=70, a=255)
+            if projectile.beam_damage > 0
+            else Color(r=255, g=150, b=40, a=255);
+        size = f32(
+            4.0 if projectile.phase == 0 else 12.0 + (0.5 - projectile.remaining) * 60.0
+        );
+        if projectile.effect not in hidden_effects {
+            DrawCube(origin, size, size, size, color);
+        }
+        for finish in projectile.beams {
+            DrawLine3D(
+                origin,
+                Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),
+                color
+            );
+        }
+    }
 }

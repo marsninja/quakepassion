@@ -158,9 +158,12 @@ the view direction. See [liquid detection and swimming limits](docs/swimming-sta
 
 Hold **Left Control** to crouch in Q2/Q3. Health, armor and shells are shown at the bottom
 of the screen; liquid hazards and drowning can kill the player. **Enter** restarts
-the level after death. **1/2** selects weapons, **left mouse** fires, **F5/F9**
+the level after death. **1–9/0** selects owned weapons in the original games
+(**1/2** in Passion); **G** selects Q2 hand grenades. Hold fire to cook, release
+to throw. **Left mouse** fires, **F5/F9**
 saves/loads. Supported Q1/Q2 exits change maps and preserve player state; Q2 hub
 returns restore visited worlds. Ten Q3 frags wins; Enter starts a rematch.
-Older version-1 saves are rejected after the campaign state format change.
+Older version-1 and version-2 saves are rejected after the campaign state format change.
+See [weapon integration and remaining fidelity work](docs/weapons-status.md).
 See [campaign/gameplay progress and remaining scope](docs/campaign-gameplay-status.md)
 and [animated model validation](docs/models-status.md).

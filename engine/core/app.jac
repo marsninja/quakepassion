@@ -3,8 +3,14 @@ the pass walkers over the world graph; each frame floods visibility and
 draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
+import from ..world.trains { TrainTick, ShootMover }
+import from ..world.signals { SignalTick, progress_summary }
+import from ..world.hazards { HazardTick }
+import from ..world.speakers { SpeakerTick }
+import from ..world.brushes { BrushTick, ShootBrush, BlastBrush }
 
 import os;
+import from games.weapons { equip_player, weapon_sounds, weapon_effects }
 import from .campaign { Campaign, Remember, Recall, pack_campaign, unpack_campaign }
 import from .preferences { Preferences }
 import from ..audio.feedback { Feedback }
@@ -16,11 +22,20 @@ import from ..world.exits { ExitTick, exit_map, exit_spawn }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
 import from ..world.inventory { quantity, CopyInventory, key_summary }
-import from ..world.combat { CombatState, CombatTick, fire_weapon }
+import from ..world.combat {
+    CombatState,
+    CombatTick,
+    ProjectileTick,
+    fire_weapon,
+    weapon_input,
+    select_weapon,
+    selected_weapon
+}
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
 import from games.levels { open_level }
+import from ..render.effects { EffectScene }
 import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
 import from .menu { LevelMenu, game_directory }
@@ -66,6 +81,7 @@ obj App {
         level: Level = Level(),
         quake: QuakeRenderer = QuakeRenderer(),
         models: ModelScene = ModelScene(),
+        effects: EffectScene = EffectScene(),
         simulation_time: float = 0.0,
         combat: CombatState = CombatState(),
         campaign: Campaign = Campaign(),
@@ -80,6 +96,7 @@ obj App {
         jump_pending: bool = False,
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
         movement_status: str = "F4: walk / fly",
+        save_path: str = "",
         notice: str = "",
         notice_wait: float = 0.0;
 
