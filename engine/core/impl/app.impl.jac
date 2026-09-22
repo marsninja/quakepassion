@@ -881,7 +881,7 @@ impl App.quickload() {
         data = session.active;
         lines = data.splitlines();
         if len(lines) < 4
-            or lines[0] != "QUAKEPASSION 3"
+            or lines[0] != SNAPSHOT_HEADER
             or lines[1] not in ["q1", "q2", "q3", "passion"] {
             raise ValueError("Invalid save header");
         }

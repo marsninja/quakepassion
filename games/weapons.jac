@@ -486,6 +486,7 @@ def weapon_effects(game: str) -> list[EffectRule] {
     if game == "q1" {
         return [
             EffectRule(key="q1_nail", flight="progs/spike.mdl"),
+            EffectRule(key="q1_laser", flight="progs/laser.mdl"),
             EffectRule(key="q1_supernail", flight="progs/s_spike.mdl"),
             EffectRule(key="q1_grenade", flight="progs/grenade.mdl", spin=5.235987756),
             EffectRule(key="q1_rocket", flight="progs/missile.mdl")

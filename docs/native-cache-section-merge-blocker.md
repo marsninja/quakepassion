@@ -8,8 +8,8 @@ cache-clearing build step was added. The compiler worktree is
 The fix rejects merging old cache sections when their dependency records are
 stale or incoming dependency metadata changes. Four new cache regression tests
 and 24 existing interface-cache tests pass. The original relay test and the
-full 82-test engine suite pass with this compiler. Upstream publication of this
-additional fix is still pending (local commit `381b68dc3b`).
+full 82-test engine suite pass with this compiler. That earlier local fix is now expanded and published as
+[#9406](https://github.com/jaseci-labs/jac/pull/9406), based on upstream main.
 
 ## Observed failure
 
@@ -72,3 +72,20 @@ cache reuse, including native bitcode/LLVM, bytecode and interop consistency.
 Reproduced with the local #9347 compiler (cf6b69ebd2). That patch addresses
 recording/checking imported layout dependencies; it does not guard this cache
 section merge. No claim is made here about an untested newer upstream revision.
+
+## Renderer-culling follow-up
+
+The same cache boundary also allowed interop metadata with empty library lists
+to overwrite a native artifact's raylib/zlib manifest. The culling test then
+crashed during static initialization. Preserving its bitcode and explicitly
+loading the missing libraries made the exact artifact execute successfully.
+
+PR #9406 invalidates generated artifacts when dependency provenance or the
+interop manifest changes, retains separately valid interface data, and removes
+obsolete alternate native representations when replacing LLVM or bitcode.
+Eight focused regressions pass. Combined with interface/cache-identity tests,
+31 pass and three interface/stub tests fail; those same three fail without the
+patch (23 pass). Repository pre-commit checks pass.
+
+The patch is applied to the QuakePassion validation compiler as `baf54fd4bb` and
+`f05a26f30b`. No engine workaround or cache-clearing build step was added.

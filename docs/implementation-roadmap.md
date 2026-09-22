@@ -18,7 +18,7 @@ remain outside the current target.
   activation, key inventory feedback and supported map exits.
 - Q2 visited-map state retained across hub returns and save/load. Unit transitions
   clear keys and hub history. Map selection starts fresh; failed loads preserve
-  the current world. Save format 3 rejects older snapshots explicitly.
+  the current world. Save format 4 rejects older snapshots explicitly.
 - Escape level/settings menu, persistent settings, F5/F9 save/load, and a local
   ten-frag arena with bot respawn, victory banner and Enter rematch.
 
@@ -109,3 +109,11 @@ archive-backed firing sounds now have a [shared implementation](weapons-status.m
 original weapon fidelity, complete enemy rosters, bosses,
 runes/endings, remaining brush behaviors and full campaign playthroughs remain
 open; further Passion features stay deferred.
+
+### Enemy and view-weapon increment
+
+All 28 weapon definitions now load original first-person models. Campaign combat
+adds distinct Q1 dog, knight, enforcer and ogre behavior and Q2 soldier variants,
+including hostile projectiles. See [view weapons](viewweapons-status.md) and
+[enemy validation and remaining work](enemies-status.md). These increments do
+not complete the campaign or arena milestones above.

@@ -40,6 +40,7 @@ import from ..render.viewweapon { ViewWeapon }
 import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
+import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }

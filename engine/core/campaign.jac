@@ -1,25 +1,49 @@
 """Visited-map snapshots and a data-only campaign save envelope."""
+import from .save_format { SNAPSHOT_HEADER }
 edge Visited: Campaign --> MapState {}
 node Campaign {
     has active: str = "";
 }
+
 node MapState {
-    has name: str, data: str;
+    has name: str,
+        data: str;
 }
+
 walker Remember {
-    has name: str, data: str, found: bool = False;
+    has name: str,
+        data: str,
+        found: bool = False;
+
     can update with MapState entry {
-        if here.name == self.name { here.data = self.data; self.found = True; }
+        if here.name == self.name {
+            here.data = self.data;
+            self.found = True;
+        }
     }
-    can start with Campaign entry { visit [here->:Visited:->]; }
+
+    can start with Campaign entry {
+        visit [here->:Visited:->];
+    }
     can finish with Campaign exit {
-        if not self.found { here +>:Visited:+> MapState(name=self.name, data=self.data); }
+        if not self.found {
+            here +>:Visited:+> MapState(name=self.name, data=self.data);
+        }
     }
 }
+
 walker Recall {
-    has name: str, data: str = "";
-    can start with Campaign entry { visit [here->:Visited:->]; }
-    can read with MapState entry { if here.name == self.name { self.data = here.data; } }
+    has name: str,
+        data: str = "";
+
+    can start with Campaign entry {
+        visit [here->:Visited:->];
+    }
+    can read with MapState entry {
+        if here.name == self.name {
+            self.data = here.data;
+        }
+    }
 }
 
 def pack_campaign(campaign: Campaign, active: str) -> str {
@@ -45,17 +69,25 @@ def unpack_campaign(data: str) -> Campaign {
         campaign.active = data;
         return campaign;
     }
-    if len(rows) < 3 { raise ValueError("Incomplete campaign save"); }
+    if len(rows) < 3 {
+        raise ValueError("Incomplete campaign save");
+    }
     count = int(rows[1]);
-    if count < 4 or count > len(rows) - 3 { raise ValueError("Invalid active snapshot size"); }
+    if count < 4 or count > len(rows) - 3 {
+        raise ValueError("Invalid active snapshot size");
+    }
     campaign.active = "\n".join(rows[2:2 + count]) + "\n";
     cursor = 2 + count;
     maps = int(rows[cursor]);
     cursor += 1;
-    if maps < 0 or maps > 1024 { raise ValueError("Invalid visited map count"); }
+    if maps < 0 or maps > 1024 {
+        raise ValueError("Invalid visited map count");
+    }
     names: list[str] = [];
     for i in range(maps) {
-        if cursor + 2 > len(rows) { raise ValueError("Incomplete visited map"); }
+        if cursor + 2 > len(rows) {
+            raise ValueError("Incomplete visited map");
+        }
         name = rows[cursor];
         count = int(rows[cursor + 1]);
         cursor += 2;
@@ -63,14 +95,15 @@ def unpack_campaign(data: str) -> Campaign {
             raise ValueError("Invalid visited snapshot");
         }
         records = rows[cursor:cursor + count];
-        if records[0] != "QUAKEPASSION 3"
-            or records[1] != "q2" or records[2] != name {
+        if records[0] != SNAPSHOT_HEADER or records[1] != "q2" or records[2] != name {
             raise ValueError("Visited map mismatch");
         }
         campaign spawn Remember(name=name, data="\n".join(records) + "\n");
         names.append(name);
         cursor += count;
     }
-    if cursor != len(rows) { raise ValueError("Trailing campaign save data"); }
+    if cursor != len(rows) {
+        raise ValueError("Trailing campaign save data");
+    }
     return campaign;
 }

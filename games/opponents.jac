@@ -1,5 +1,7 @@
 """Small campaign roster and local arena training bots for the prototype."""
 import math;
+import from .enemies { enemy_rule }
+import from engine.world.opponent_rule { OpponentRule }
 import from .arena_character { load_character }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
@@ -22,35 +24,20 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             kind = fields.get("classname", "");
             path = "";
             arena = source == "q3";
+            rule = OpponentRule(damage=6);
             if arena {
-                if kind != "info_player_deathmatch" or (level.bsp.game == "q3" and count >= 3) {
+                if kind != "info_player_deathmatch"
+                    or (level.bsp.game == "q3" and count >= 3) {
                     continue;
                 }
                 path = "models/players/sarge";
-            } elif source == "q1" {
-                if kind not in ["monster_army"] {
-                    continue;
-                }
-                if int(fields.get("spawnflags", "0")) & 512 {
-                    continue;
-                }
-                path = "progs/soldier.mdl";
             } else {
-                if kind
-                    not in [
-                        "monster_soldier",
-                        "monster_soldier_light",
-                        "monster_soldier_ss",
-                        "monster_infantry"
-                    ] {
+                definition = enemy_rule(source, kind);
+                if definition is None or int(fields.get("spawnflags", "0")) & 512 {
                     continue;
                 }
-                if int(fields.get("spawnflags", "0")) & 512 {
-                    continue;
-                }
-                path = "models/monsters/infantry/tris.md2"
-                    if kind == "monster_infantry"
-                    else "models/monsters/soldier/tris.md2";
+                rule = definition;
+                path = rule.model;
             }
             parts = fields.get("origin", "0 0 0").split();
             if len(parts) != 3 {
@@ -64,24 +51,29 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             enemy = Opponent(
                 pos=position,
-                dormant=source == "q2" and int(fields.get("spawnflags","0")) & 2 != 0,
+                dormant=source == "q2" and int(fields.get("spawnflags", "0")) & 2 != 0,
                 home=position,
                 arena=level.bsp.game == "q3",
-                walk_speed=100.0,
-                health=60,
-                max_health=60,
+                rule=rule,
+                walk_speed=rule.speed,
+                health=rule.health,
+                max_health=rule.health,
                 decision_wait=float(count % 12) / 120.0,
                 support_wait=float(count % 6) / 120.0,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0
             );
             for signal in [world->:HasSignal:->][?:Signal] {
-                if entity_index in signal.entities { enemy.activation = signal; }
+                if entity_index in signal.entities {
+                    enemy.activation = signal;
+                }
             }
             if path {
-                key = source + ":" + path;
+                key = source + ":" + path + ":" + str(rule.skin);
                 if key not in resources {
                     library = catalog.source(source);
-                    loaded = load_character(library) if arena else library.model(path);
+                    loaded = load_character(library)
+                        if arena
+                        else library.model(path, skin=rule.skin);
                     resource = ModelResource(
                         name=key, model=loaded.model, skins=loaded.skins
                     );
@@ -93,9 +85,15 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 frames = resources[key].model.surfaces[0].frames;
                 for i in range(len(frames)) {
                     frame_name = frames[i].name;
-                    if frame_name.startswith("run") { enemy.animation.append(i); }
-                    if frame_name.startswith("stand") { enemy.idle_animation.append(i); }
-                    if frame_name.startswith("attack") or frame_name.startswith("attak") or frame_name.startswith("shoot") {
+                    if frame_name.startswith("run") {
+                        enemy.animation.append(i);
+                    }
+                    if frame_name.startswith("stand") {
+                        enemy.idle_animation.append(i);
+                    }
+                    if frame_name.startswith("attack")
+                        or frame_name.startswith("attak")
+                        or frame_name.startswith("shoot") {
                         enemy.attack_animation.append(i);
                     }
                 }

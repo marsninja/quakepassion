@@ -1,5 +1,6 @@
 """Shared weapon simulation and graph-driven opponents."""
 import math;
+import from .opponent_rule { OpponentRule }
 import from .weapons { WeaponRule }
 import from .world { World, Player }
 import from .damage { Damage }
@@ -13,7 +14,8 @@ import from ..math.vec3 { Vec3, forward_from, right_from }
 
 edge HasOpponent: World --> Opponent {}
 node Opponent(Player) {
-    has activation: Signal = Signal(),
+    has rule: OpponentRule = OpponentRule(),
+        activation: Signal = Signal(),
         dormant: bool = False,
         spawn_wait: float = -1.0,
         modeled: bool = False,
@@ -164,7 +166,8 @@ node Projectile {
         phase: int = 0,
         beams: list[Vec3] = [],
         effect: str = "",
-        age: float = 0.0;
+        age: float = 0.0,
+        hostile: bool = False;
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {
@@ -443,7 +446,7 @@ def projectile_blast(
     player: Player,
     collision: CollisionMap,
     state: CombatState,
-    direct: Opponent | None = None
+    direct: Player | None = None
 ) {
     if projectile.splash <= 0 or projectile.radius <= 0.0 {
         return;
@@ -472,12 +475,14 @@ def projectile_blast(
         strength = float(projectile.splash) * (1.0 - distance / projectile.radius)
             if state.game == "q3"
             else max(0.0, float(projectile.splash) - distance * 0.5);
-        if actor is player {
+        if actor is player and not projectile.hostile {
             strength *= 0.5;
         }
         amount = int(strength);
         if isinstance(actor, Opponent) {
-            damage_opponent(actor, amount, player.inventory, state);
+            damage_opponent(
+                actor, amount, player.inventory, None if projectile.hostile else state
+            );
         } else {
             actor spawn Damage(amount=amount);
         }
@@ -621,15 +626,41 @@ walker ProjectileTick {
         }
         finish = here.pos.add(here.velocity.scale(step));
         wall = self.collision.trace_point(here.pos, finish);
-        query = world spawn Aim(
-            start=here.pos,
-            finish=finish,
-            height=self.collision.eye_height,
-            fraction=wall.fraction
-        );
-        victim = query.target;
-        fraction = query.fraction;
+        victim: Opponent | None = None;
+        fraction = wall.fraction;
+        player_hit = False;
+        if here.hostile {
+            hit = actor_fraction(
+                here.pos, finish, self.player.pos, self.collision.eye_height
+            );
+            if self.player.health > 0 and hit < fraction {
+                fraction = hit;
+                player_hit = True;
+            }
+        } else {
+            query = world spawn Aim(
+                start=here.pos,
+                finish=finish,
+                height=self.collision.eye_height,
+                fraction=wall.fraction
+            );
+            victim = query.target;
+            fraction = query.fraction;
+        }
         here.pos = here.pos.lerp(finish, fraction);
+        if player_hit {
+            self.player spawn Damage(amount=here.damage);
+            projectile_blast(
+                world,
+                here,
+                self.player,
+                self.collision,
+                self.state,
+                self.player if here.damage > 0 else None
+            );
+            world del --> here;
+            return;
+        }
         if victim is not None {
             damage_opponent(victim, here.damage, self.player.inventory, self.state);
         } elif wall.fraction < 1.0
@@ -693,9 +724,11 @@ walker CombatTick {
         collision: CollisionMap,
         state: CombatState,
         dt: float,
-        active: bool = True;
+        active: bool = True,
+        world: World | None = None;
 
     can begin with World entry {
+        self.world = here;
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
         self.state.hit_flash = max(0.0, self.state.hit_flash - self.dt);
@@ -765,15 +798,42 @@ walker CombatTick {
                 }
                 # Attack only with a fresh sight query, never cached visibility.
                 if here.pursuing and here.attack_wait <= 0.0 {
-                    self.player spawn Damage(amount=6 if here.arena else 4);
-                    here.attack_wait = 0.8;
-                    here.attack_flash = 0.25;
+                    if distance <= here.rule.attack_range {
+                        if here.rule.melee > 0 and distance <= here.rule.melee_range {
+                            self.player spawn Damage(amount=here.rule.melee);
+                        } elif here.rule.missile_speed > 0.0
+                            and self.world is not None {
+                            velocity = delta.normalized().scale(
+                                here.rule.missile_speed
+                            );
+                            if here.rule.gravity {
+                                velocity.z = 200.0;
+                            }
+                            self.world +>:HasProjectile:+> Projectile(
+                                pos=here.pos,
+                                velocity=velocity,
+                                damage=here.rule.damage,
+                                hostile=True,
+                                effect=here.rule.missile_effect,
+                                gravity=here.rule.gravity,
+                                splash=here.rule.splash,
+                                radius=here.rule.radius,
+                                remaining=2.5 if here.rule.gravity else 5.0
+                            );
+                        } elif here.rule.melee == 0 {
+                            self.player spawn Damage(
+                                amount=6 if here.arena else here.rule.damage
+                            );
+                        }
+                        here.attack_wait = here.rule.interval;
+                        here.attack_flash = 0.25;
+                    }
                 }
             }
             here.steering = Vec3();
             goal = here.last_seen.sub(here.pos);
             if here.alert > 0.0
-                and goal.length() > (180.0 if here.pursuing else 24.0) {
+                and goal.length() > (here.rule.stop_range if here.pursuing else 24.0) {
                 direction = Vec3(x=goal.x, y=goal.y).normalized();
                 best = -1.0;
                 for angle in [0.0, 0.785398, -0.785398, 1.570796, -1.570796] {
@@ -782,7 +842,10 @@ walker CombatTick {
                         y=direction.x * math.sin(angle) + direction.y * math.cos(angle)
                     );
                     probe = self.collision.trace(
-                        here.pos, here.pos.add(candidate.scale(48.0))
+                        here.pos.sub(Vec3(z=self.collision.eye_height)),
+                        here.pos.sub(Vec3(z=self.collision.eye_height)).add(
+                            candidate.scale(48.0)
+                        )
                     );
                     score = probe.fraction + 0.15 * math.cos(angle);
                     if not probe.start_solid

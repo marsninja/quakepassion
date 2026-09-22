@@ -1,4 +1,5 @@
 """Versioned text snapshots, restored only into a newly loaded world."""
+import from .save_format { SNAPSHOT_HEADER }
 import from engine.world.trains {
     Train,
     HasTrain,
@@ -59,7 +60,7 @@ def values(line: str, count: int) -> list[float] {
 
 def snapshot(world: World, level: Level, player: Player, combat: CombatState) -> str {
     lines = [
-        "QUAKEPASSION 3",
+        SNAPSHOT_HEADER,
         level.bsp.game,
         level.name,
         numbers(
@@ -97,7 +98,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     ];
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         lines.append(
-            "J "
+            ("X " if projectile.hostile else "J ")
                 + (projectile.effect or "-")
                 + " "
                 + numbers(
@@ -285,7 +286,7 @@ def restore(
 ) {
     lines = data.splitlines();
     if len(lines) < 4
-        or lines[0] != "QUAKEPASSION 3"
+        or lines[0] != SNAPSHOT_HEADER
         or lines[1] != level.bsp.game
         or lines[2] != level.name {
         raise ValueError("Save version or level mismatch");
@@ -381,7 +382,7 @@ def restore(
                 raise ValueError("Save asset manifest mismatch");
             }
             manifest_seen = True;
-        } elif words[0] == "J" {
+        } elif words[0] in ["J", "X"] {
             row = values(" ".join(words[2:]), 19);
             effect = "" if words[1] == "-" else words[1];
             if len(effect) > 64
@@ -436,7 +437,8 @@ def restore(
                 burst_wait=row[16],
                 phase=int(row[17]),
                 effect=effect,
-                age=row[18]
+                age=row[18],
+                hostile=words[0] == "X"
             );
         } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);
