@@ -3,7 +3,7 @@ the pass walkers over the world graph; each frame floods visibility and
 draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
-import from ..world.doors { BlastButton }
+import from ..world.doors { BlastMover }
 import from ..world.trains { TrainTick, ShootMover }
 import from ..world.signals { SignalTick, progress_summary }
 import from ..world.hazards { HazardTick }

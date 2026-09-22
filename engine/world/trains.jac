@@ -1,5 +1,5 @@
 """Authored path graphs and translating train movers shared by the Quake games."""
-import from .doors { Door, HasDoor, damage_button }
+import from .doors { Door, HasDoor, DoorMember, damage_mover }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .signals { Signal, HasSignal, Fire }
@@ -365,9 +365,14 @@ walker ShootMover {
         }
     }
 
-    can button with Door entry {
-        if here.model == self.model {
-            damage_button(here, self.amount);
+    can door with Door entry {
+        members = [here];
+        members.extend([here->:DoorMember:->][?:Door]);
+        for part in members {
+            if part.model == self.model {
+                damage_mover(here, part, self.amount);
+                return;
+            }
         }
     }
 

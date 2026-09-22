@@ -166,6 +166,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
         );
     }
     for door in [world->:HasDoor:->][?:Door] {
+        member_health = [float(part.health) for part in [door->:DoorMember:->][?:Door]];
         lines.append(
             "D "
                 + door.state
@@ -179,6 +180,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         1.0 if door.unlocked else 0.0,
                         float(door.health)
                     ]
+                        + member_health
                 )
         );
     }
@@ -482,8 +484,9 @@ def restore(
             item.activate_on_use = row[3] != 0.0;
             item.visual.visible = item.active;
         } elif words[0] == "D" and d < len(doors) {
-            row = values(" ".join(words[2:]), 6);
             door = doors[d];
+            parts = [door->:DoorMember:->][?:Door];
+            row = values(" ".join(words[2:]), 6 + len(parts));
             d += 1;
             if words[1] not in ["closed", "opening", "open", "closing", "locked"]
                 or row[0] < 0.0
@@ -499,6 +502,13 @@ def restore(
             door.activation.pending = int(row[3]);
             door.unlocked = row[4] != 0.0;
             door.health = int(row[5]);
+            for index in range(len(parts)) {
+                if row[6 + index] < 0.0
+                    or row[6 + index] > float(parts[index].max_health) {
+                    raise ValueError("Invalid saved door member health");
+                }
+                parts[index].health = int(row[6 + index]);
+            }
             if door.unlocked and door.keys {
                 door.hold_time = -1.0;
             }

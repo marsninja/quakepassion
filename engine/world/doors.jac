@@ -36,6 +36,8 @@ node Door {
         kind: str = "door",
         health: int = 0,
         max_health: int = 0,
+        shared_health: bool = False,
+        fire_on_start: bool = False,
         rest: Vec3 = Vec3(),
         activation: Signal = Signal(),
         keys: list[str] = [],
@@ -167,6 +169,16 @@ walker DoorTick {
         if near {
             if here.state == "closed" or here.state == "closing" {
                 here.state = "opening";
+                if here.fire_on_start {
+                    fired = here.activation spawn Fire(
+                        inventory=self.player.inventory
+                            if self.player is not None
+                            else None
+                    );
+                    if fired.message {
+                        self.message = fired.message;
+                    }
+                }
             }
             here.remaining = here.hold_time;
         }
@@ -175,6 +187,10 @@ walker DoorTick {
                 here.remaining -= self.dt;
                 if here.remaining <= 0.0 {
                     here.state = "closing";
+                    here.health = here.max_health;
+                    for part in [here->:DoorMember:->][?:Door] {
+                        part.health = part.max_health;
+                    }
                 }
             }
             return;
@@ -239,11 +255,13 @@ walker DoorTick {
         if next_position == 1.0 {
             here.state = "open";
             here.remaining = here.hold_time;
-            fired = here.activation spawn Fire(
-                inventory=self.player.inventory if self.player is not None else None
-            );
-            if fired.message {
-                self.message = fired.message;
+            if not here.fire_on_start {
+                fired = here.activation spawn Fire(
+                    inventory=self.player.inventory if self.player is not None else None
+                );
+                if fired.message {
+                    self.message = fired.message;
+                }
             }
         } elif next_position == 0.0 {
             here.state = "closed";
@@ -319,7 +337,11 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         health = max(0, int(float(fields.get("health", "0"))));
         enabled = True;
         if flags & ~allowed
-            or (health > 0 and kind != "func_button")
+            or (
+                health > 0
+                and kind != "func_button"
+                and not (kind == "func_door" and bsp.game in ["q1", "q2"])
+            )
             or fields.get("killtarget", "")
             or fields.get("accel", "")
             or fields.get("decel", "") {
@@ -395,11 +417,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             enabled=enabled,
             health=health,
             max_health=health,
+            shared_health=bsp.game == "q1",
+            fire_on_start=kind == "func_door" and bsp.game in ["q1", "q2"],
             automatic=(
                 health == 0 and (bsp.game != "q2" or not fields.get("targetname", ""))
             )
                 if kind == "func_button"
-                else not bool(fields.get("targetname", "")),
+                else health == 0 and not bool(fields.get("targetname", "")),
             names=[fields["targetname"]] if fields.get("targetname", "") else [],
             team=fields.get("team", ""),
             linkable=flags & 4 == 0,
@@ -515,6 +539,10 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 if key not in leader.keys {
                     leader.keys.append(key);
                 }
+            }
+            if leader.shared_health and part.max_health > 0 {
+                leader.health = part.health;
+                leader.max_health = part.max_health;
             }
             leader.automatic = leader.automatic and part.automatic;
             for name in part.names {
@@ -825,7 +853,34 @@ def damage_button(button: Door, amount: int) -> bool {
     return False;
 }
 
-walker BlastButton {
+def damage_mover(leader: Door, part: Door, amount: int) -> bool {
+    if leader.kind == "button" {
+        return damage_button(leader, amount);
+    }
+    if amount <= 0
+        or not leader.enabled
+        or leader.kind != "door"
+        or leader.activation.pending > 0
+        or leader.state not in ["closed", "closing"] {
+        return False;
+    }
+    target = leader if leader.shared_health else part;
+    if target.max_health <= 0 {
+        return False;
+    }
+    target.health = max(0, target.health - amount);
+    if target.health > 0 {
+        return False;
+    }
+    leader.health = leader.max_health;
+    for member in [leader->:DoorMember:->][?:Door] {
+        member.health = member.max_health;
+    }
+    leader.activation.pending += 1;
+    return True;
+}
+
+walker BlastMover {
     has origin: Vec3,
         amount: int,
         radius: float,
@@ -839,36 +894,44 @@ walker BlastButton {
     }
 
     can hit with Door entry {
-        if here.kind != "button" or here.max_health <= 0 or not here.enabled {
+        if not here.enabled {
             return;
         }
-        center = here.bounds.center().add(here.rest).add(
-            here.travel.scale(here.position)
-        );
-        strength = blast_strength(
-            self.game,
-            self.amount,
-            self.radius,
-            center.sub(self.origin).length(),
-            self.energy_burst
-        );
-        if strength <= 0.0 {
-            return;
-        }
-        sight = self.collision.trace(
-            self.origin, center, exclude=here.hulls, point=True
-        );
-        if sight.start_solid or sight.fraction < 1.0 {
-            return;
-        }
-        if self.energy_burst {
+        members = [here];
+        members.extend([here->:DoorMember:->][?:Door]);
+        for part in members {
+            if part.max_health <= 0
+                and not (here.shared_health and here.max_health > 0) {
+                continue;
+            }
+            center = part.bounds.center().add(part.rest).add(
+                part.travel.scale(here.position)
+            );
+            strength = blast_strength(
+                self.game,
+                self.amount,
+                self.radius,
+                center.sub(self.origin).length(),
+                self.energy_burst
+            );
+            if strength <= 0.0 {
+                continue;
+            }
             sight = self.collision.trace(
-                self.player.pos, center, exclude=here.hulls, point=True
+                self.origin, center, exclude=part.hulls, point=True
             );
             if sight.start_solid or sight.fraction < 1.0 {
-                return;
+                continue;
             }
+            if self.energy_burst {
+                sight = self.collision.trace(
+                    self.player.pos, center, exclude=part.hulls, point=True
+                );
+                if sight.start_solid or sight.fraction < 1.0 {
+                    continue;
+                }
+            }
+            damage_mover(here, part, int(strength));
         }
-        damage_button(here, int(strength));
     }
 }

@@ -661,7 +661,7 @@ impl App.step() -> bool {
                     );
                 }
                 if impact.splash > 0 {
-                    self.world spawn BlastButton(
+                    self.world spawn BlastMover(
                         origin=impact.origin,
                         amount=impact.splash,
                         radius=impact.radius,

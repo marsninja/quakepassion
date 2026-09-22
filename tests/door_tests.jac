@@ -75,7 +75,6 @@ test "unsupported activation remains static in every game" {
     for game in ["q1", "q2", "q3"] {
         for fields in [
             {"target": "event"},
-            {"health": "10"},
             {"spawnflags": "1"},
             {"spawnflags": "32"},
             {"accel": "10"}

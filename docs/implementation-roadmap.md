@@ -18,7 +18,7 @@ remain outside the current target.
   activation, key inventory feedback and supported map exits.
 - Q2 visited-map state retained across hub returns and save/load. Unit transitions
   clear keys and hub history. Map selection starts fresh; failed loads preserve
-  the current world. Save format 5 rejects older snapshots explicitly.
+  the current world. Save format 6 rejects older snapshots explicitly.
 - Escape level/settings menu, persistent settings, F5/F9 save/load, and a local
   ten-frag arena with bot respawn, victory banner and Enter rematch.
 
@@ -122,5 +122,14 @@ Campaign construction now applies authored difficulty/mode exclusions to all
 entities before creating the runtime graph. Shootable buttons share weapon
 impacts, explosion damage and mover output with other entities, including saved
 partial damage. The Q2 base1 secret now follows its authored shot-button chain.
-The full suite passes 237 tests; native campaign acceptance passes these changes.
+The full suite passes 240 tests; native campaign acceptance passes these changes.
 See [spawn rules](spawn-rules-status.md) and [buttons](buttons-status.md).
+
+Q1/Q2 shootable door groups now receive direct and radius damage, retain partial
+damage across saves, and dispatch targets at the start of opening. See
+[door updates](doors-status.md#campaign-damage-activation-update).
+
+Released-toolchain CI remains blocked on the newer compiler features/fixes.
+PR #35's v0.37.21 Linux build first rejects the union-typed BSP edge endpoints
+in `engine/world/level.jac`; local native acceptance uses the documented patched
+source compiler. v0.37.21 is still the latest release checked on September 22.

@@ -20,7 +20,7 @@ explosions and visual effects. Their ownership survives snapshots. Enemy splash
 does not receive the player's self-damage reduction. Melee and instant attacks
 require fresh line of sight; traveling missiles must actually reach the player.
 
-Save format **5** rejects older snapshots because adding enemies changes the
+Save format **6** rejects older snapshots because adding enemies changes the
 positional entity records. Map and campaign-envelope readers now share a single
 format identifier. Saved Q2 hub records use the same version as the active map.
 

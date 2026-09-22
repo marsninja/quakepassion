@@ -1,4 +1,4 @@
-import from engine.world.doors { Door, HasDoor, BlastButton }
+import from engine.world.doors { Door, HasDoor, BlastMover }
 import from engine.world.trains { ShootMover }
 import from engine.world.signals { Signal, Targets }
 import from engine.world.world { Player }
@@ -71,7 +71,7 @@ test "blast damage reaches shoot buttons only through clear space" {
             );
         }
         f.collision.reindex();
-        f.world spawn BlastButton(
+        f.world spawn BlastMover(
             origin=Vec3(x=80.0, z=48.0),
             amount=100,
             radius=128.0,
