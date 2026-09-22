@@ -47,6 +47,7 @@ import from vendor.raylib {
 import from ..world.level { Level }
 import from ..formats.bsp { Face, Texture }
 import from ..math.vec3 { Vec3 }
+import from ..world.lighting { Lighting }
 
 obj LightRect {
     has x: int = 0,
@@ -54,6 +55,9 @@ obj LightRect {
 }
 
 obj QuakeRenderer {
+    has lighting: Lighting = Lighting(),
+        dynamic_positions: int = -1,
+        dynamic_colors: int = -1;
     has textures: list[int] = [],
         emissive: list[int] = [],
         sky: list[int] = [],
@@ -126,11 +130,11 @@ obj QuakeRenderer {
             # normal attribute transports lightmap UV and an enable flag.
             self.shader = LoadShaderFromMemory(
                 "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec3 vertexNormal; in vec4 vertexColor;\n"
-                    + "uniform mat4 mvp; out vec2 uv; out vec3 light; out vec4 color;\n"
-                    + "void main(){ uv=vertexTexCoord; light=vertexNormal; color=vertexColor; gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
-                "#version 330\nin vec2 uv; in vec3 light; in vec4 color; out vec4 finalColor;\n"
-                    + "uniform sampler2D texture0; uniform sampler2D bakedLight; uniform vec4 colDiffuse;\n"
-                    + "void main(){ vec4 base=texture(texture0,uv); float mode=floor(light.z*0.5+0.1); if((mode==1.0&&base.a<=0.0)||(mode==2.0&&base.a<0.5)||(mode==3.0&&base.a>=0.5)) discard; vec3 lighting=mod(light.z,2.0)>0.5?texture(bakedLight,light.xy).rgb:vec3(1.0); finalColor=vec4(base.rgb*lighting,1.0)*color*colDiffuse; }\n"
+                    + "uniform mat4 mvp; out vec2 uv; out vec3 light; out vec4 color; out vec3 worldPosition;\n"
+                    + "void main(){ uv=vertexTexCoord; light=vertexNormal; color=vertexColor; worldPosition=vertexPosition; gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
+                "#version 330\nin vec2 uv; in vec3 light; in vec4 color; in vec3 worldPosition; out vec4 finalColor;\n"
+                    + "uniform sampler2D texture0; uniform sampler2D bakedLight; uniform vec4 colDiffuse; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
+                    + "void main(){ vec4 base=texture(texture0,uv); float mode=floor(mod(light.z,16.0)*0.5+0.1); if((mode==1.0&&base.a<=0.0)||(mode==2.0&&base.a<0.5)||(mode==3.0&&base.a>=0.5)) discard; vec3 lighting=(mod(light.z,2.0)>0.5?texture(bakedLight,light.xy).rgb:vec3(1.0))*color.rgb; if(light.z<16.0){ vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition))); for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float distance=length(delta); float a=max(0.0,1.0-distance/flashPosition[i].w); lighting+=flashColor[i].rgb*a*a*max(0.0,dot(n,delta/max(distance,0.001))); }} finalColor=vec4(base.rgb*lighting,color.a)*colDiffuse; }\n"
             );
             location = GetShaderLocation(self.shader, "bakedLight");
             if int(location) < 0 {
@@ -139,6 +143,10 @@ obj QuakeRenderer {
             rlEnableShader(self.shader.id);
             rlSetUniform(location, struct.pack("<i", 1), i32(4), i32(1));
             rlDisableShader();
+            self.dynamic_positions = int(
+                GetShaderLocation(self.shader, "flashPosition[0]")
+            );
+            self.dynamic_colors = int(GetShaderLocation(self.shader, "flashColor[0]"));
         }
         for texture in level.bsp.sky {
             image_id = self.upload_image(texture);
@@ -153,8 +161,16 @@ obj QuakeRenderer {
                 if len(texture.rgba) != texture.width * texture.height * 4 {
                     raise ValueError("Invalid RGBA texture: " + texture.name);
                 }
-                gpu = rlLoadTexture(texture.rgba, i32(texture.width), i32(texture.height), i32(7), i32(1));
-                if gpu == u32(0) { raise RuntimeError("Texture upload failed"); }
+                gpu = rlLoadTexture(
+                    texture.rgba,
+                    i32(texture.width),
+                    i32(texture.height),
+                    i32(7),
+                    i32(1)
+                );
+                if gpu == u32(0) {
+                    raise RuntimeError("Texture upload failed");
+                }
                 self.textures.append(int(gpu));
                 self.emissive.append(0);
                 rlTextureParameters(gpu, i32(10242), i32(10497));
@@ -308,6 +324,16 @@ obj QuakeRenderer {
     def polygon(face: Face, rect: LightRect, light: bool) {
         rlBegin(i32(4));
         rlColor4ub(u8(255), u8(255), u8(255), u8(255));
+        if face.moving_light {
+            center = face.vertices[0].lerp(face.vertices[2], 0.5).add(face.motion);
+            color = self.lighting.sample(center, False).shade(face.normal);
+            rlColor4ub(
+                u8(int(min(255.0, max(0.0, color.x * 255.0)))),
+                u8(int(min(255.0, max(0.0, color.y * 255.0)))),
+                u8(int(min(255.0, max(0.0, color.z * 255.0)))),
+                u8(255)
+            );
+        }
         indices = face.indices;
         if len(indices) == 0 {
             indices = [];
@@ -330,7 +356,11 @@ obj QuakeRenderer {
                         f32(1.0 + float(face.alpha_test * 2))
                     );
                 } else {
-                    rlNormal3f(f32(0.0), f32(0.0), f32(float(face.alpha_test * 2)));
+                    rlNormal3f(
+                        f32(0.0),
+                        f32(0.0),
+                        f32(float(face.alpha_test * 2 + (16 if face.emission else 0)))
+                    );
                 }
             }
             if not light and face.light_offset < 0 and len(face.colors) > 0 {
@@ -366,6 +396,7 @@ obj QuakeRenderer {
     }
 
     def draw(level: Level, faces: list[int], eye: Vec3) -> int {
+        self.lighting = level.lighting;
         self.draw_sky(eye);
         # BSP winding and normal consistently face the empty side of each plane.
         batches: list[list[int]] = [];
@@ -388,6 +419,34 @@ obj QuakeRenderer {
             count += 1;
         }
         if self.single_pass {
+            positions = bytearray();
+            colors = bytearray();
+            for i in range(8) {
+                if i < len(level.lighting.dynamic) {
+                    flash = level.lighting.dynamic[i];
+                    positions.extend(
+                        struct.pack(
+                            "<ffff",
+                            flash.origin.x,
+                            flash.origin.y,
+                            flash.origin.z,
+                            flash.radius
+                        )
+                    );
+                    colors.extend(
+                        struct.pack(
+                            "<ffff", flash.color.x, flash.color.y, flash.color.z, 0.0
+                        )
+                    );
+                } else {
+                    positions.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
+                    colors.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
+                }
+            }
+            rlEnableShader(self.shader.id);
+            rlSetUniform(i32(self.dynamic_positions), bytes(positions), i32(3), i32(8));
+            rlSetUniform(i32(self.dynamic_colors), bytes(colors), i32(3), i32(8));
+            rlDisableShader();
             BeginShaderMode(self.shader);
             rlActiveTextureSlot(i32(1));
             rlEnableTexture(u32(self.atlas));

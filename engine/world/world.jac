@@ -61,6 +61,7 @@ node Actor(Entity) {
 }
 
 node Player(Actor) {
+    has god_mode: bool = False;
     has velocity: Vec3 = Vec3(),
         grounded: bool = False,
         teleport_cooldown: float = 0.0,

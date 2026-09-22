@@ -1,5 +1,8 @@
 """Graphical menu regression using raylib input events; requires original assets."""
 import from engine.core.app { App }
+import from engine.core.preferences { Preferences }
+import from engine.core.savegame { write_save }
+import from engine.world.damage { Damage }
 import from engine.core.clock { Clock }
 import from engine.core.menu { game_directory }
 import from engine.render.renderer { Renderer }
@@ -70,6 +73,17 @@ with entry {
         assert not app.overlay;
         click(app, 915, 509);
         assert app.audio.volume > 0.25;
+        click(app, 915, 551);
+        assert app.god_mode and app.player.god_mode;
+        preferences = Preferences();
+        preferences.load();
+        assert preferences.god_mode;
+        health = app.player.health;
+        armor = app.player.armor;
+        hit = app.player spawn Damage(amount=1000, bypass_armor=True);
+        assert app.player.health == health
+            and app.player.armor == armor
+            and not hit.killed;
         app.renderer.screenshot("qp_menu_settings.png");
         key(app, 256);
         assert not app.menu.opened;
@@ -153,7 +167,7 @@ with entry {
         click(app, 400, 630);
         assert not app.menu.opened and app.level.bsp.game == "q1";
         app.renderer.screenshot("qp_menu_return_q1.png");
-        assert app.walking;
+        assert app.walking and app.player.god_mode;
         key(app, 293);
         assert not app.walking;
         key(app, 256);
@@ -163,6 +177,15 @@ with entry {
         assert app.renderer.fov == 72.0 and app.renderer.frame_limit == 0;
         assert app.sensitivity == 0.0022 and not app.invert_y;
         assert app.fly_speed == 240.0 and app.culling and app.overlay;
+        assert not app.god_mode and not app.player.god_mode;
+        preferences.load();
+        assert not preferences.god_mode;
+        write_save(
+            preferences.path(), "QUAKEPASSION SETTINGS 1\n72 0.0022 0 240 0 1 1 0.25\n"
+        );
+        preferences.god_mode = True;
+        preferences.load();
+        assert not preferences.god_mode and preferences.fov == 72.0;
         assert app.walking;
         event(7, 850, 630);
         event(6, 0);

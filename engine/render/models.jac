@@ -3,6 +3,7 @@ import math;
 import from ..formats.animated { AnimatedModel, ModelStage, pose }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..world.lighting { Lighting, Illumination }
 import from .quake {
     QuakeRenderer,
     rlLoadTexture,
@@ -106,7 +107,8 @@ obj ModelRenderer {
         blend: float = 0.0,
         eye: Vec3 = Vec3(),
         seconds: float = 0.0,
-        batched: bool = False
+        batched: bool = False,
+        illumination: Illumination = Illumination()
     ) {
         if not self.stages {
             return;
@@ -122,6 +124,28 @@ obj ModelRenderer {
         for s in range(len(self.model.surfaces)) {
             surface = self.model.surfaces[s];
             vertices = pose(surface, first, second, blend);
+            colors: list[Vec3] = [];
+            if illumination.enabled {
+                normals = surface.frames[first].normals;
+                next_normals = surface.frames[second].normals;
+                for vertex in range(len(vertices)) {
+                    color = illumination.ambient.add(illumination.directed.scale(0.5));
+                    if len(normals) == len(vertices)
+                        and len(next_normals) == len(vertices) {
+                        n = normals[vertex].lerp(
+                            next_normals[vertex], max(0.0, min(1.0, blend))
+                        ).normalized();
+                        color = illumination.shade(
+                            Vec3(
+                                x=n.x * cosine - n.y * sine,
+                                y=n.x * sine + n.y * cosine,
+                                z=n.z
+                            )
+                        );
+                    }
+                    colors.append(color);
+                }
+            }
             for stage in self.stages {
                 if stage.surface != s {
                     continue;
@@ -148,6 +172,15 @@ obj ModelRenderer {
                     for corner in [0, 2, 1] {
                         index = triangle * 3 + corner;
                         v = vertices[surface.indices[index]];
+                        if illumination.enabled and stage.blend == "opaque" {
+                            color = colors[surface.indices[index]];
+                            rlColor4ub(
+                                u8(int(min(255.0, max(0.0, color.x * 255.0)))),
+                                u8(int(min(255.0, max(0.0, color.y * 255.0)))),
+                                u8(int(min(255.0, max(0.0, color.z * 255.0)))),
+                                u8(255)
+                            );
+                        }
                         u = surface.uv[index * 2];
                         t = surface.uv[index * 2 + 1];
                         if stage.environment {
@@ -237,7 +270,8 @@ obj ModelScene {
         yaw: float = 0.0,
         pitch: float = 0.0,
         fov: float = 72.0,
-        aspect: float = 1.7777777778
+        aspect: float = 1.7777777778,
+        lighting: Lighting = Lighting()
     ) {
         scene = world spawn GatherModels();
         for draw in scene.draws {
@@ -257,7 +291,8 @@ obj ModelScene {
                     draw.blend,
                     eye,
                     seconds,
-                    batched=True
+                    batched=True,
+                    illumination=lighting.sample(draw.origin.add(Vec3(z=16.0)))
                 );
             }
         }

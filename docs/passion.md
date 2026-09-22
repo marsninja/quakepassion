@@ -51,11 +51,29 @@ Original assets are loaded locally and are never copied into this repository.
 - `games/levels.jac`: imported maps and generated worlds share a level-source
   interface. `prepare_level` builds the same runtime systems for either source.
 
-Version 1 uses directional vertex brightness and conservative visibility (all
-regions potentially visible), with the existing texture batching, backface
-rejection, model culling and indexed collision. It does not reuse baked lighting
-or PVS data from unrelated original maps. Generation runs before entering a
-level; there is no per-frame geometry generation.
+Passion bakes its own colored lightmaps from generated fixtures and collision
+geometry before entering a level. Room themes use amber, cool white, and rose
+emitters. Two deterministic shadow rays per emitter sample soften static shadow
+edges. A 32-unit lightmap grid and 1,280 directional probes light the world,
+animated models, and moving doors. Lamp panels stay emissive. Combat contributes
+up to eight transient lights; model colors are evaluated once per posed vertex.
+
+Bakes are cached under `~/.cache/quakepassion/lighting`. `QP_LIGHT_CACHE` selects
+another directory; an empty value disables disk caching. The cache key includes
+the generator seed, geometry, material content, light parameters, and bake
+version. Checksums and probe validation reject corrupt entries and trigger a
+fresh bake; cache write failures leave the completed level usable.
+
+Static geometry casts baked shadows. Moving doors use probe illumination and
+are excluded from the bake's shadow rays; combat lights do not cast dynamic
+shadows. A small ambient floor keeps unlit surfaces readable; this is direct
+lighting, without radiosity or real-time global illumination. Imported Quake
+levels retain their original lighting paths.
+
+Visibility remains conservative (all regions potentially visible), with the
+existing texture batching, backface rejection, model culling and indexed
+collision. No lighting or PVS data is borrowed from unrelated original maps.
+There is no per-frame geometry generation or lighting bake.
 
 ## Validation
 
@@ -63,14 +81,17 @@ level; there is no per-frame geometry generation.
 jac test -j0 tests/passion_tests.jac
 jac build scripts/validate_generation.jac --native -o .jac/qp-generation
 DYLD_LIBRARY_PATH="$PWD/vendor" .jac/qp-generation
+jac build scripts/lighting_smoke.jac --native -o .jac/qp-lighting-cache
+QP_LIGHT_TEST_CACHE="$(mktemp -d /tmp/qp-lighting-check-XXXXXX)" .jac/qp-lighting-cache
 jac run scripts/validate_passion.jac
 ```
 
-The first two checks need no game assets or display. The desktop runner uses a
+Unit, generation, and lighting-cache checks need no game assets or display. The desktop runner uses a
 disposable HOME linked to installed assets. It exercises actual mixed resources,
 menu seed selection, ordinary movement through both key objectives to extraction,
 save/load from another game, replay and invalid-version rollback. It captures
-all three themes, the menu and completion. Evidence goes to
+all three themes, the menu, completion, and a combat flash. A pixel comparison
+checks that flashes brighten the scene above the HUD. Evidence goes to
 `.jac/screenshots/passion`. The route harness drives physics and contacts; it
 does not test player combat skill or subjective encounter pacing.
 
@@ -81,10 +102,10 @@ patterns vary by seed; it is not arbitrary freeform architecture or an infinite
 world. Optional caches reward exploration but are not hidden-wall secrets.
 The small shared combat roster and two existing weapons remain. More mission
 archetypes, moving-room transformations, global navigation, additional room
-patterns, baked/dynamic lighting and streaming can build on this implementation.
+patterns and streaming can build on this implementation.
 No WFC dependency or online generation service is required.
 
-### Verified checkpoint
+### Earlier checkpoint (before baked lighting)
 
 On the local source compiler (upstream main plus Jac #9388):
 
@@ -105,3 +126,27 @@ for rendering with models, 0.119 ms per combat tick, and 2.58 ms median / 4.32 m
 p95 application frame time on this Mac. These are sampled local measurements,
 not guarantees across all seeds or hardware. `scripts/profile_gameplay.jac` now
 includes Passion alongside the three imported games.
+
+### Lighting checkpoint
+
+Validated locally with the compiler patches listed in
+[native-lighting-validation-blockers.md](native-lighting-validation-blockers.md):
+
+- 169 project tests pass, including shadows, probe interpolation, cache decoding,
+  and separation of static probe lighting from combat flashes.
+- Native bake/cache acceptance passes cold, warm, and corrupt-cache recovery.
+  Seed 42 produces 322,002 lightmap bytes and 1,280 probes. One local run measured
+  19.59 seconds cold and 28.56 ms warm; the viewer displays a preparation screen
+  while an expedition loads.
+- Full desktop acceptance passes objectives, extraction, persistence, replay,
+  seed selection, rollback, and scene illumination from combat flashes.
+- The four-game profile completes. Q3 `q3dm1` also passes image checks with zero
+  differences between culled and all-visible rendering.
+- Passion's sampled spawn view renders at 238–240 FPS with models; application
+  frames measured 4.34 ms median / 5.94 ms p95, and combat 0.12 ms per tick.
+  A separate view near a Q3 character averaged 4.18 ms per rendered frame.
+  These are scene-specific local measurements, not hardware-independent targets.
+
+Screenshots and logs are local artifacts under `.jac/screenshots/passion`.
+The geometry bake is synchronous; loading is not cancellable during that bake.
+Dynamic shadows, radiosity, and streaming lighting remain beyond this prototype.

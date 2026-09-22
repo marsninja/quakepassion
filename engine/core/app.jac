@@ -17,6 +17,7 @@ import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
 import from ..world.inventory { quantity, CopyInventory, key_summary }
 import from ..world.combat { CombatState, CombatTick, fire_weapon }
+import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
 import from games.levels { open_level }
@@ -75,11 +76,13 @@ obj App {
         fly_speed: float = 240.0,
         sensitivity: float = 0.0022,
         invert_y: bool = False,
+        god_mode: bool = False,
         jump_pending: bool = False,
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
         movement_status: str = "F4: walk / fly",
         notice: str = "",
         notice_wait: float = 0.0;
+
     has expedition_complete: bool = False;
 
     def adjust_setting(direction: int);
@@ -89,8 +92,13 @@ obj App {
     def step() -> bool;
     def switch_level();
     def load_destination(
-        game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = "",
-        new_unit: bool = False, session: Campaign | None = None
+        game: str,
+        name: str,
+        spawnpoint: str = "",
+        carry: bool = False,
+        saved: str = "",
+        new_unit: bool = False,
+        session: Campaign | None = None
     );
 
     def save_preferences();

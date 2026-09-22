@@ -227,7 +227,7 @@ obj LevelMenu {
             DrawText(
                 "Up/Down: select | Left/Right: change",
                 i32(310),
-                i32(550),
+                i32(580),
                 i32(18),
                 white
             );
@@ -236,7 +236,7 @@ obj LevelMenu {
                     if self.message
                     else "Changes are saved automatically",
                 i32(310),
-                i32(575),
+                i32(666),
                 i32(16),
                 white
             );

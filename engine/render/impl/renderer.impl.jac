@@ -183,6 +183,31 @@ impl Renderer.draw_terminal(message: str) {
 
 impl Renderer.draw_keys(message: str) {
     if message {
-        DrawText(message, 20, i32(self.height - 154), 20, Color(r=255, g=230, b=180, a=255));
+        DrawText(
+            message, 20, i32(self.height - 154), 20, Color(r=255, g=230, b=180, a=255)
+        );
     }
+}
+
+impl Renderer.draw_loading(name: str) {
+    if not IsWindowReady() {
+        return;
+    }
+    BeginDrawing();
+    ClearBackground(Color(r=10, g=8, b=6, a=255));
+    DrawText(
+        "Preparing expedition " + name,
+        40,
+        i32(self.height / 2 - 40),
+        28,
+        Color(r=255, g=230, b=180, a=255)
+    );
+    DrawText(
+        "First visits take longer while lighting is prepared.",
+        40,
+        i32(self.height / 2 + 12),
+        20,
+        Color(r=190, g=180, b=160, a=255)
+    );
+    EndDrawing();
 }

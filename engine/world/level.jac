@@ -21,6 +21,7 @@ import from .exits { load_exits }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
+import from .lighting { Lighting }
 
 node Split {
     has normal: Vec3,
@@ -76,7 +77,9 @@ walker CollectFaces {
 }
 
 obj Level {
-    has asset_manifest: str = "", completion: Signal = Signal();
+    has lighting: Lighting = Lighting();
+    has asset_manifest: str = "",
+        completion: Signal = Signal();
     has active: bool = False,
         collision: CollisionMap = CollisionMap(),
         name: str = "",

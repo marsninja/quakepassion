@@ -20,15 +20,17 @@ All changes go on a feature branch with a PR for Jason to review first — **inc
 - If it's `main`, stop: create a feature branch, push that, and open a PR instead.
 - PR-then-merge is the rule, not a convention of convenience.
 
-## 3. Don't work around jac/jaseci bugs — surface them
+## 3. Don't work around jac/jaseci bugs — fix them upstream
 
 A core goal of QuakePassion is to exercise and improve **jac/jaseci** itself (the `jaseci` submodule). Working around a jac bug hides the defect and defeats that goal.
 
 When a reasonable Jac idiom — especially Object-Spatial Programming (OSP) constructs — fails, errors, or behaves unexpectedly:
 
 1. First verify it's actually a jac/jaseci defect, not a misuse (check docs/examples/tests in the submodule).
-2. If it is the language/runtime, **stop and report it**: the failing idiom, a minimal repro, and where in the jaseci codebase the problem likely lives.
-3. Do **not** rewrite engine code to avoid the construct.
+2. If it is the language/runtime, **pause the affected work and create a proper upstream fix**: isolate a minimal repro, fix the root cause on a feature branch based on upstream `jac` main, add regression coverage, and run the relevant checks.
+3. Push the fix and open a PR against `jaseci-labs/jac` main. This workflow is authorized without asking for separate permission for each defect. Report the issue, validation results, and PR link.
+4. **Resume the original QuakePassion work using the locally fixed compiler/runtime** while the PR awaits review. Do not wait for the upstream merge unless it is technically necessary. Keep track of the local compiler patches required for validation.
+5. Do **not** rewrite engine code to avoid the construct. If an upstream fix or PR cannot be completed, explain the concrete blocker and continue any independent work that remains possible.
 
 The point is to drive fixes upstream, not to route around them.
 
