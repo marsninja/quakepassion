@@ -253,6 +253,7 @@ test "BFG core and delayed burst are distinct and survive save exactly once" {
     player = Player();
     state = CombatState();
     level = Level(name="bfg");
+    level.bsp.game = "q2";
     equip_player(player, state, "q2");
     player.inventory spawn AdjustInventory(kind="weapon_bfg", amount=1);
     player.inventory spawn AdjustInventory(kind="cells", amount=50, capacity=200);

@@ -108,7 +108,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 damage=30,
                 interval=0.1,
                 reach=600.0,
-                model="progs/g_light.mdl"
+                model="progs/g_light.mdl",
+                avoid_underwater=True
             )
         ];
     }
@@ -251,6 +252,23 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 fuse=20.0,
                 model="models/weapons/g_bfg/tris.md2",
                 effect="q2_bfg"
+            ),
+            WeaponRule(
+                slot=11,
+                key="handgrenade",
+                name="Hand grenades",
+                ammo="grenades",
+                capacity=50,
+                pickup_ammo=5,
+                damage=125,
+                interval=1.0,
+                speed=400.0,
+                splash=125,
+                radius=165.0,
+                gravity=True,
+                fuse=3.2,
+                hand_thrown=True,
+                model="models/items/ammo/grenades/medium/tris.md2"
             )
         ];
     }
@@ -381,6 +399,9 @@ def weapon_rules(game: str) -> list[WeaponRule] {
 def equip_player(player: Player, state: CombatState, game: str, fresh: bool = True) {
     state.rules = weapon_rules(game);
     state.game = game;
+    state.fallback = [8, 5, 3, 4, 2, 1]
+        if game == "q1"
+        else ([9, 8, 5, 4, 3, 2, 1] if game == "q2" else [9, 8, 7, 6, 5, 4, 3, 2, 1]);
     if not state.rules or not fresh {
         return;
     }
@@ -429,7 +450,8 @@ def weapon_sounds(game: str) -> list[str] {
             "ROCKLF1A.WAV",
             "Hyprbf1a.wav",
             "RAILGF1A.WAV",
-            "Bfg__f1y.wav"
+            "Bfg__f1y.wav",
+            "HGRENT1A.WAV"
         ];
     } elif game == "q3" {
         names = [

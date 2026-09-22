@@ -48,7 +48,11 @@ obj CombatState {
         game: str = "",
         rules: list[WeaponRule] = [],
         random_state: int = 1,
-        impacts: list[WeaponImpact] = [];
+        impacts: list[WeaponImpact] = [],
+        fallback: list[int] = [],
+        grenade_phase: int = 0,
+        grenade_clock: float = 0.0,
+        grenade_remaining: float = 0.0;
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -181,7 +185,15 @@ def selected_weapon(state: CombatState) -> WeaponRule {
     );
 }
 
+def owns_weapon(player: Player, rule: WeaponRule) -> bool {
+    return quantity(player.inventory, "weapon_" + rule.key) > 0
+        or (rule.hand_thrown and quantity(player.inventory, rule.ammo) > 0);
+}
+
 def select_weapon(player: Player, state: CombatState, slot: int) -> bool {
+    if state.grenade_phase > 0 {
+        return False;
+    }
     if not state.rules {
         if slot not in [1, 2] {
             return False;
@@ -190,7 +202,7 @@ def select_weapon(player: Player, state: CombatState, slot: int) -> bool {
         return True;
     }
     for rule in state.rules {
-        if rule.slot == slot and quantity(player.inventory, "weapon_" + rule.key) > 0 {
+        if rule.slot == slot and owns_weapon(player, rule) {
             state.weapon = slot;
             return True;
         }
@@ -205,7 +217,7 @@ def fire_weapon(
         return False;
     }
     rule = selected_weapon(state);
-    if state.rules and quantity(player.inventory, "weapon_" + rule.key) == 0 {
+    if rule.hand_thrown or (state.rules and not owns_weapon(player, rule)) {
         return False;
     }
     if rule.ammo and quantity(player.inventory, rule.ammo) < rule.cost {
@@ -299,6 +311,129 @@ def fire_weapon(
         damage_opponent(victims[i], amounts[i], player.inventory, state);
     }
     return True;
+}
+
+# Input-driven weapons keep their timers on the fixed simulation clock.
+def throw_hand_grenade(
+    world: World,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState,
+    rule: WeaponRule,
+    held: bool
+) -> bool {
+    change = player.inventory spawn AdjustInventory(kind=rule.ammo, amount=-rule.cost);
+    if change.accepted != -rule.cost {
+        return False;
+    }
+    speed = 400.0 + (3.0 - state.grenade_remaining) * (400.0 / 3.0);
+    grenade = Projectile(
+        pos=player.pos,
+        velocity=forward_from(player.yaw, player.pitch).scale(speed).add(Vec3(z=200.0)),
+        damage=rule.damage,
+        splash=rule.splash,
+        radius=rule.radius,
+        gravity=True,
+        remaining=max(0.001, state.grenade_remaining)
+    );
+    state.shots += 1;
+    state.flash = 0.08;
+    state.cooldown = rule.interval;
+    if held {
+        projectile_blast(world, grenade, player, collision, state);
+    } else {
+        world +>:HasProjectile:+> grenade;
+    }
+    state.grenade_phase = 4 if held else 0;
+    state.grenade_clock = 0.0;
+    state.grenade_remaining = 0.0;
+    return True;
+}
+
+def fallback_weapon(player: Player, state: CombatState) -> bool {
+    for slot in state.fallback {
+        for rule in state.rules {
+            if rule.slot != slot or not owns_weapon(player, rule) {
+                continue;
+            }
+            if rule.avoid_underwater and player.water_depth > 1 {
+                continue;
+            }
+            if not rule.ammo or quantity(player.inventory, rule.ammo) >= rule.cost {
+                state.weapon = slot;
+                state.cooldown = max(state.cooldown, 0.2);
+                return True;
+            }
+        }
+    }
+    return False;
+}
+
+def weapon_input(
+    world: World,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState,
+    held: bool,
+    dt: float
+) -> bool {
+    if player.health <= 0 or dt <= 0.0 {
+        return False;
+    }
+    rule = selected_weapon(state);
+    if state.grenade_phase == 0 {
+        if not held or state.cooldown > 0.000001 {
+            return False;
+        }
+        if rule.ammo and quantity(player.inventory, rule.ammo) < rule.cost {
+            fallback_weapon(player, state);
+            return False;
+        }
+        if not rule.hand_thrown {
+            return fire_weapon(world, player, collision, state);
+        }
+        if not owns_weapon(player, rule) {
+            return False;
+        }
+        state.grenade_phase = 1;
+        state.grenade_clock = 1.0;
+        return False;
+    }
+    if state.grenade_phase == 4 {
+        if not held {
+            state.grenade_phase = 0;
+        }
+        return False;
+    }
+    if state.grenade_phase == 1 {
+        state.grenade_clock = max(0.0, state.grenade_clock - dt);
+        if state.grenade_clock > 0.000001 {
+            return False;
+        }
+        state.grenade_phase = 2;
+        state.grenade_remaining = 3.2;
+        if not held {
+            state.grenade_phase = 3;
+            state.grenade_clock = 0.1;
+        }
+        return False;
+    }
+    state.grenade_remaining = max(0.0, state.grenade_remaining - dt);
+    if state.grenade_remaining <= 0.000001 {
+        return throw_hand_grenade(world, player, collision, state, rule, True);
+    }
+    if state.grenade_phase == 2 {
+        if not held {
+            state.grenade_phase = 3;
+            state.grenade_clock = 0.1;
+        }
+        return False;
+    }
+    state.grenade_clock = max(0.0, state.grenade_clock - dt);
+    if state.grenade_clock <= 0.000001 {
+        return throw_hand_grenade(world, player, collision, state, rule, False);
+    }
+    return False;
 }
 
 def projectile_blast(

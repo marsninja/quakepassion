@@ -11,6 +11,7 @@ import from engine.world.combat {
     HasProjectile,
     ProjectileTick,
     fire_weapon,
+    weapon_input,
     select_weapon
 }
 import from engine.world.inventory { AdjustInventory }
@@ -46,6 +47,7 @@ with entry {
             player = Player();
             state = CombatState();
             level = Level(name="weapons");
+            level.bsp.game = game;
             equip_player(player, state, game);
             player.inventory spawn AdjustInventory(kind="weapon_" + rule.key, amount=1);
             if rule.ammo {
@@ -56,7 +58,22 @@ with entry {
             assert select_weapon(player, state, rule.slot);
             enemy = Opponent(pos=Vec3(x=24.0), health=2000, max_health=2000);
             world +>:HasOpponent:+> enemy;
-            assert fire_weapon(world, player, level.collision, state);
+            if rule.hand_thrown {
+                assert not weapon_input(
+                    world, player, level.collision, state, True, 0.01
+                );
+                shots = 0;
+                for frame in range(140) {
+                    if weapon_input(
+                        world, player, level.collision, state, False, 1.0 / 120.0
+                    ) {
+                        shots += 1;
+                    }
+                }
+                assert shots == 1;
+            } else {
+                assert fire_weapon(world, player, level.collision, state);
+            }
             if rule.speed > 0.0 {
                 assert enemy.health == 2000;
                 data = snapshot(world, level, player, state);

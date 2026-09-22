@@ -27,6 +27,7 @@ import from ..world.combat {
     CombatTick,
     ProjectileTick,
     fire_weapon,
+    weapon_input,
     select_weapon,
     selected_weapon
 }
@@ -95,6 +96,7 @@ obj App {
         jump_pending: bool = False,
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
         movement_status: str = "F4: walk / fly",
+        save_path: str = "",
         notice: str = "",
         notice_wait: float = 0.0;
 

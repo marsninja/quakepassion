@@ -307,7 +307,8 @@ impl App.load_destination(
         world = World();
         level = open_level(world, game_directory(game), name, game);
         player = spawn_player(level, spawnpoint);
-        if carry and self.player.health > 0 and game == self.level.bsp.game {
+        carrying = carry and self.player.health > 0 and game == self.level.bsp.game;
+        if carrying {
             player.health = self.player.health;
             player.max_health = self.player.max_health;
             player.armor = self.player.armor;
@@ -321,9 +322,17 @@ impl App.load_destination(
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
         combat = CombatState();
-        equip_player(player, combat, game, fresh=not carry);
-        if carry {
+        equip_player(player, combat, game, fresh=not carrying);
+        if carrying {
             select_weapon(player, combat, self.combat.weapon);
+            combat.cooldown = self.combat.cooldown;
+            combat.random_state = self.combat.random_state;
+            combat.grenade_phase = self.combat.grenade_phase;
+            combat.grenade_clock = self.combat.grenade_clock;
+            combat.grenade_remaining = self.combat.grenade_remaining;
+            if combat.grenade_phase > 0 {
+                combat.weapon = self.combat.weapon;
+            }
         }
         next_campaign = session
             if session is not None
@@ -605,10 +614,14 @@ impl App.step() -> bool {
             if self.player.health < old_health {
                 self.audio.play(1);
             }
-            if intent.fire
-                and fire_weapon(
-                    self.world, self.player, self.level.collision, self.combat
-                ) {
+            if weapon_input(
+                self.world,
+                self.player,
+                self.level.collision,
+                self.combat,
+                held=intent.fire,
+                dt=self.physics_clock.tick_rate
+            ) {
                 self.audio.play(2 + self.combat.weapon if self.combat.rules else 0);
             }
             self.world spawn ProjectileTick(
@@ -829,7 +842,7 @@ impl App.quicksave() {
     } else {
         try {
             write_save(
-                os.getenv("HOME", ".") + "/.quakepassion-save.txt",
+                (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt"),
                 pack_campaign(
                     self.campaign,
                     snapshot(self.world, self.level, self.player, self.combat)
@@ -845,7 +858,9 @@ impl App.quicksave() {
 
 impl App.quickload() {
     try {
-        data = read_save(os.getenv("HOME", ".") + "/.quakepassion-save.txt");
+        data = read_save(
+            (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt")
+        );
         session = unpack_campaign(data);
         data = session.active;
         lines = data.splitlines();

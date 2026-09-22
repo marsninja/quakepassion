@@ -24,5 +24,7 @@ obj WeaponRule {
         fuse: float = 5.0,
         piercing: bool = False,
         model: str = "",
-        effect: str = "";
+        effect: str = "",
+        hand_thrown: bool = False,
+        avoid_underwater: bool = False;
 }

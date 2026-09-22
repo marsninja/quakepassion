@@ -94,6 +94,9 @@ impl sample_intent(
             weapon = slot;
         }
     }
+    if IsKeyPressed(i32(71)) {
+        weapon = 11;
+    }
     return Intent(
         move=mv,
         look_yaw=yaw,

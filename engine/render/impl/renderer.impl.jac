@@ -158,7 +158,7 @@ impl Renderer.draw_combat(state: CombatState, arena: bool, ammo: int = -1) {
             + "    "
             + (
                 "["
-                + str(state.weapon % 10)
+                + ("G" if rule.hand_thrown else str(state.weapon % 10))
                 + "] "
                 + rule.name
                 + " / "

@@ -88,7 +88,10 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                 player.teleport_cooldown,
                 player.teleport_hold,
                 combat.cooldown,
-                float(combat.random_state)
+                float(combat.random_state),
+                float(combat.grenade_phase),
+                combat.grenade_clock,
+                combat.grenade_remaining
             ]
         )
     ];
@@ -287,7 +290,7 @@ def restore(
         or lines[2] != level.name {
         raise ValueError("Save version or level mismatch");
     }
-    stats = values(lines[3], 25);
+    stats = values(lines[3], 28);
     player.pos = Vec3(x=stats[0], y=stats[1], z=stats[2]);
     player.yaw = stats[3];
     player.pitch = stats[4];
@@ -304,7 +307,9 @@ def restore(
     if player.health < 0
         or player.health > 10000
         or combat.weapon < 1
-        or combat.weapon > 10 {
+        or combat.weapon
+            > {"q1": 8, "q2": 11, "q3": 9, "passion": 2}.get(level.bsp.game, 2)
+        or stats[10] != float(combat.weapon) {
         raise ValueError("Invalid saved player");
     }
     player.velocity = Vec3(x=stats[15], y=stats[16], z=stats[17]);
@@ -320,6 +325,17 @@ def restore(
         raise ValueError("Invalid weapon random state");
     }
     combat.random_state = int(stats[24]);
+    if stats[25] not in [0.0, 1.0, 2.0, 3.0, 4.0]
+        or stats[26] < 0.0
+        or stats[26] > 1.0
+        or stats[27] < 0.0
+        or stats[27] > 3.2
+        or (stats[25] > 0.0 and (level.bsp.game != "q2" or combat.weapon != 11)) {
+        raise ValueError("Invalid saved grenade state");
+    }
+    combat.grenade_phase = int(stats[25]);
+    combat.grenade_clock = stats[26];
+    combat.grenade_remaining = stats[27];
     combat.impacts = [];
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         world del --> projectile;

@@ -22,14 +22,14 @@ Implemented:
   items cannot appear from their respawn timer before first activation.
 
 The native asset/simulation harness (`scripts/weapon_smoke.jac`) passes for
-8 Q1, 10 Q2 and 9 Q3 configured weapons and 45 unique weapon/ammo model assets.
-`scripts/weapon_audio_smoke.jac` decodes and plays all 27 firing sounds. Focused
+8 Q1, 11 Q2 and 9 Q3 configured weapons and 45 unique weapon/ammo model assets.
+`scripts/weapon_audio_smoke.jac` decodes and plays all 28 firing sounds. Focused
 regressions check ownership, capped pickup acceptance, armor aggregation, rail
 penetration, thin-wall projectile sweeps, splash occlusion, death credit,
 grenade bounce/fuse and deterministic save restoration.
 
 These are functional arsenal foundations, **not full weapon fidelity**. Remaining
-work includes Q2 hand-grenade cooking, BFG charge animation/timing and immunity rules,
+work includes BFG charge animation/timing and immunity rules,
 chaingun spin-up, original recoil/animation/viewmodels, water/lightning discharge,
 exact game-specific muzzle offsets and spread sequences, projectile models and
 impact/trail effects, weapon switching/autoselection timing, dropped weapons,
@@ -81,3 +81,27 @@ billboards with ordered blending. Sprite textures load with the level and are
 released on switches. Captured Q2 `base1` flight and explosion frames confirm
 original sprite art replaces the debug boxes. Cosmetic animation age and effect
 selection are saved alongside projectile state.
+
+
+## Hand grenades and empty-weapon selection
+
+Q2 hand grenades are selected with **G** once grenade ammunition is owned. The
+fixed-step state machine handles priming, cooking, release, throw delay, fuse-
+dependent launch speed and in-hand detonation. Weapon switching cannot cancel a
+live grenade. The held-explosion latch prevents repeated detonation until release.
+Cooldowns, spread state and live-grenade timers carry across campaign transitions
+and snapshots. Empty weapons fall back through the game rules to an owned,
+usable weapon; Q1 avoids choosing lightning underwater.
+
+Four focused tests cover early release, single ammo consumption, held detonation,
+menu/simulation pause, restored throw fuse/speed and empty-weapon fallback. Native
+arsenal and audio acceptance now cover **28 weapons**. The original-map campaign
+smoke additionally carries a cooking grenade from Q2 `base1` to `base2`, saves,
+reloads and revisits the hub while preserving its state. That harness uses an
+explicit test save path instead of changing HOME or overwriting the user's save.
+Pin/cooking sound loops, first-person animations, dropped live grenades on death,
+and exact weapon-raise/lower timing remain open.
+
+After the hand-grenade and campaign-carry changes, the full local suite passes
+**221 tests**. Native arsenal checks pass for all 28 configured weapons, and
+native campaign acceptance passes the live-grenade carry/save scenario.
