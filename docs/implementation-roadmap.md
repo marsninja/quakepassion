@@ -160,3 +160,40 @@ movement in all three sampled maps. The PNG comparison ran through Jac's server
 codespace: its temporary caller could not lower a cross-module `Path` argument
 (`Cannot assign Path to parameter path of type Path`). This is not a native
 validator acceptance claim; the game executables producing the images were native.
+
+### Combat continuation (current checkpoint)
+
+The latest combat work is tracked in [combat feedback](combat-feedback-status.md):
+pellet impacts, blood, pain/death poses, weapon bob/recoil, Q1 attack timelines,
+Q2 held gun bursts and infantry melee, and Q1 ogre sweep/smash/grenade sequences.
+The current snapshot version is **11**. Earlier validation counts and snapshot
+versions above describe historical checkpoints.
+
+The expanded scope remains open. The largest remaining tasks are the unsupported
+Q1/Q2 enemy rosters and final encounters, authored campaign traversal coverage,
+global navigation and local Q3 weapon/item tactics, plus original audiovisual
+feedback and released-toolchain acceptance. Existing automated scenarios do not
+establish uninterrupted completion of the original campaigns.
+
+
+### Q2 roster continuation
+
+Berserkers and gladiators now join the shared campaign combat system, including
+alternate melee damage profiles, locked-aim railgun windup and trails, and
+positional attack cues. See [Q2 roster status](q2-roster-status.md) for behavior,
+validation, and remaining limits. Current snapshot format: **12**.
+
+The [Q2 rocket enemy](chick-status.md) adds authored rocket/slash cycles,
+conditional refires, explicit locomotion poses and signed recovery movement.
+Snapshot format is now **13**. Full original campaigns and local-arena acceptance
+remain open; prior prototype validation is not a completion claim.
+
+Q1's [Hell Knight](hell-knight-status.md) now has its canonical spike volley and
+close-range slice in the shared combat engine. Snapshot format is **14**.
+Its remaining attack repertoire and the broader campaign/arena milestones remain
+open.
+
+Supported Q2 enemies now have explicit pain sequences, per-enemy recovery timing,
+and save-resumed poses; see [combat feedback](combat-feedback-status.md).
+The latest regression checkpoint is **293 passing tests**, with native asset and
+pain-render checks. Snapshot format remains **14**.

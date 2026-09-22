@@ -6,6 +6,7 @@ import from .arena_character { load_character }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
 import from engine.world.combat { Opponent, HasOpponent }
+import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
 import from engine.assets.catalog { AssetCatalog }
@@ -54,6 +55,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 dormant=rule.script == "chthon"
                     or (source == "q2" and int(fields.get("spawnflags", "0")) & 2 != 0),
                 home=position,
+                shot_random=1 + count * 7919,
                 arena=level.bsp.game == "q3",
                 rule=rule,
                 walk_speed=rule.speed,
@@ -63,6 +65,16 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 support_wait=float(count % 6) / 120.0,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0
             );
+            if rule.attack_sound {
+                speaker = Speaker(path=rule.attack_sound, origin=position);
+                world +>:HasSpeaker:+> speaker;
+                enemy.attack_speaker = speaker;
+            }
+            if rule.melee_sound {
+                speaker = Speaker(path=rule.melee_sound, origin=position);
+                world +>:HasSpeaker:+> speaker;
+                enemy.melee_speaker = speaker;
+            }
             for signal in [world->:HasSignal:->][?:Signal] {
                 if entity_index in signal.entities {
                     enemy.activation = signal;
@@ -84,8 +96,35 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 enemy.visual = attach_model(enemy, resources[key]);
                 enemy.visual.offset = Vec3(z=-level.collision.eye_height);
                 frames = resources[key].model.surfaces[0].frames;
+                pain_family = "";
+                death_family = "";
+                pain_number = -1;
+                death_number = -1;
                 for i in range(len(frames)) {
                     frame_name = frames[i].name;
+                    family = frame_name.rstrip("0123456789");
+                    suffix = frame_name[len(family):];
+                    number = int(suffix) if suffix else 0;
+                    if frame_name.startswith("pain") {
+                        if not pain_family {
+                            pain_family = family;
+                            pain_number = number - 1;
+                        }
+                        if family == pain_family and number == pain_number + 1 {
+                            pain_number = number;
+                            enemy.pain_animation.append(i);
+                        }
+                    }
+                    if frame_name.startswith("death") {
+                        if not death_family {
+                            death_family = family;
+                            death_number = number - 1;
+                        }
+                        if family == death_family and number == death_number + 1 {
+                            death_number = number;
+                            enemy.death_animation.append(i);
+                        }
+                    }
                     if frame_name.startswith("run") {
                         enemy.animation.append(i);
                     }
@@ -96,6 +135,86 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         or frame_name.startswith("attak")
                         or frame_name.startswith("shoot") {
                         enemy.attack_animation.append(i);
+                    }
+                }
+                if rule.pain_frames {
+                    enemy.pain_animation = [];
+                    for name in rule.pain_frames {
+                        found = False;
+                        for i in range(len(frames)) {
+                            if frames[i].name == name {
+                                enemy.pain_animation.append(i);
+                                found = True;
+                                break;
+                            }
+                        }
+                        if not found {
+                            raise ValueError(
+                                "Missing pain frame: " + path + ":" + name
+                            );
+                        }
+                    }
+                }
+                if rule.run_frames {
+                    enemy.animation = [];
+                    for name in rule.run_frames {
+                        found = False;
+                        for i in range(len(frames)) {
+                            if frames[i].name == name {
+                                enemy.animation.append(i);
+                                found = True;
+                                break;
+                            }
+                        }
+                        if not found {
+                            raise ValueError("Missing run frame: " + path + ":" + name);
+                        }
+                    }
+                }
+                if rule.attack_frames {
+                    enemy.attack_animation = [];
+                    for name in rule.attack_frames {
+                        found = False;
+                        for i in range(len(frames)) {
+                            if frames[i].name == name {
+                                enemy.attack_animation.append(i);
+                                found = True;
+                                break;
+                            }
+                        }
+                        if not found {
+                            raise ValueError(
+                                "Missing attack frame: " + path + ":" + name
+                            );
+                        }
+                    }
+                }
+                for name in rule.melee_frames {
+                    found = False;
+                    for i in range(len(frames)) {
+                        if frames[i].name == name {
+                            enemy.melee_animation.append(i);
+                            found = True;
+                            break;
+                        }
+                    }
+                    if not found {
+                        raise ValueError("Missing melee frame: " + path + ":" + name);
+                    }
+                }
+                for name in rule.alternate_melee_frames {
+                    found = False;
+                    for i in range(len(frames)) {
+                        if frames[i].name == name {
+                            enemy.alternate_melee_animation.append(i);
+                            found = True;
+                            break;
+                        }
+                    }
+                    if not found {
+                        raise ValueError(
+                            "Missing alternate melee frame: " + path + ":" + name
+                        );
                     }
                 }
                 enemy.modeled = True;

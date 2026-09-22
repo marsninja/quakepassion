@@ -17,6 +17,8 @@ import os;
 import from engine.world.world { World, Player }
 import from engine.world.level { Level }
 import from engine.world.combat {
+    attack_duration,
+    attack_event_count,
     CombatState,
     Opponent,
     HasOpponent,
@@ -151,7 +153,18 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         1.0 if enemy.dormant else 0.0,
                         enemy.spawn_wait,
                         float(enemy.boss_phase),
-                        enemy.boss_time
+                        enemy.boss_time,
+                        enemy.attack_clock,
+                        float(enemy.attack_event),
+                        1.0 if enemy.attack_melee else 0.0,
+                        enemy.pain_wait,
+                        enemy.pain_cooldown,
+                        float(enemy.shot_random),
+                        float(enemy.burst_count),
+                        1.0 if enemy.alternate_melee else 0.0,
+                        enemy.attack_target.x,
+                        enemy.attack_target.y,
+                        enemy.attack_target.z
                     ]
                 )
         );
@@ -470,7 +483,7 @@ def restore(
             lightning[l].remaining = row[0];
             l += 1;
         } elif words[0] == "E" and e < len(enemies) {
-            row = values(" ".join(words[1:]), 11);
+            row = values(" ".join(words[1:]), 22);
             enemy = enemies[e];
             e += 1;
             enemy.pos = Vec3(x=row[0], y=row[1], z=row[2]);
@@ -492,7 +505,60 @@ def restore(
             }
             enemy.boss_phase = int(row[9]);
             enemy.boss_time = row[10];
-            enemy.visual.visible = enemy.health > 0 and not enemy.dormant;
+            enemy.visual.visible = (enemy.health > 0 or bool(enemy.death_animation))
+                and not enemy.dormant;
+            if row[17] < 1.0
+                or row[17] > float(enemy.rule.burst_max)
+                or row[17] != float(int(row[17])) {
+                raise ValueError("Invalid saved burst length");
+            }
+            enemy.burst_count = int(row[17]);
+            if row[13] not in [0.0, 1.0]
+                or (row[13] == 1.0 and enemy.burst_count != 1) {
+                raise ValueError("Invalid saved melee selection");
+            }
+            enemy.attack_melee = row[13] != 0.0;
+            if row[18] not in [0.0, 1.0]
+                or (
+                    row[18] == 1.0
+                    and (not enemy.attack_melee or not enemy.rule.alternate_melee_times)
+                ) {
+                raise ValueError("Invalid saved alternate melee selection");
+            }
+            enemy.alternate_melee = row[18] != 0.0;
+            enemy.attack_target = Vec3(x=row[19], y=row[20], z=row[21]);
+            if row[11] < -1.0
+                or row[11] > attack_duration(enemy)
+                or row[12] < 0.0
+                or row[12] > float(attack_event_count(enemy))
+                or row[12] != float(int(row[12]))
+                or row[13] not in [0.0, 1.0]
+                or row[14] < 0.0
+                or row[14] > enemy.rule.pain_duration
+                or row[15] < 0.0
+                or row[15] > enemy.rule.pain_interval {
+                raise ValueError("Invalid saved attack state");
+            }
+            if row[16] < 1.0
+                or row[16] >= 2147483647.0
+                or row[16] != float(int(row[16])) {
+                raise ValueError("Invalid saved opponent spread");
+            }
+            enemy.shot_random = int(row[16]);
+            enemy.attack_clock = row[11];
+            enemy.attack_event = int(row[12]);
+            enemy.attack_melee = row[13] != 0.0;
+            enemy.attack_flash = max(0.0, attack_duration(enemy) - enemy.attack_clock)
+                if enemy.attack_clock >= 0.0
+                else 0.0;
+            enemy.pain_wait = row[14];
+            enemy.pain_cooldown = row[15];
+            if enemy.health <= 0 and enemy.death_animation {
+                enemy.animation_time = float(len(enemy.death_animation));
+                enemy.visual.first = enemy.death_animation[-1];
+                enemy.visual.second = enemy.visual.first;
+                enemy.visual.blend = 0.0;
+            }
             if enemy.rule.script == "chthon" {
                 enemy.visual.visible = enemy.boss_phase > 0 and enemy.boss_phase < 7;
                 boss_pose(enemy);

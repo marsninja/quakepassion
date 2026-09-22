@@ -28,7 +28,13 @@ test "melee opponents must approach before damage and cannot attack through wall
     player.pos = Vec3(x=40.0);
     enemy.decision_wait = 0.0;
     world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
-    assert player.health == 88;
+    for i in range(30) {
+        world spawn CombatTick(
+            player=player, collision=collision, state=state, dt=0.01
+        );
+    }
+    health = player.health;
+    assert health >= 77 and health < 100;
     collision.add_box(
         Vec3(x=15.0, y=-100.0, z=-100.0),
         Vec3(x=16.0, y=100.0, z=100.0),
@@ -39,7 +45,7 @@ test "melee opponents must approach before damage and cannot attack through wall
     enemy.attack_wait = 0.0;
     enemy.decision_wait = 0.0;
     world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
-    assert player.health == 88;
+    assert player.health == health;
 }
 
 test "enemy bolts travel hit the player and preserve ownership across saves" {
@@ -56,6 +62,12 @@ test "enemy bolts travel hit the player and preserve ownership across saves" {
         player=player, collision=level.collision, state=state, dt=0.01
     );
     assert player.health == 100;
+    assert not [world->:HasProjectile:->];
+    for i in range(50) {
+        world spawn CombatTick(
+            player=player, collision=level.collision, state=state, dt=0.01
+        );
+    }
     missiles = [world->:HasProjectile:->][?:Projectile];
     assert len(missiles) == 1 and missiles[0].hostile and missiles[0].damage == 15;
     saved = snapshot(world, level, player, state);

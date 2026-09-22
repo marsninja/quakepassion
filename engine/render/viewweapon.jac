@@ -1,4 +1,5 @@
 """Camera-relative original weapons using the shared animated model renderer."""
+import math;
 import from vendor.raylib {
     obj Matrix {
         has m0: f32,
@@ -113,6 +114,19 @@ obj ViewWeapon {
         origin = player.pos.sub(
             basis.up.scale(10.0 * max(0.0, 1.0 - (seconds - self.switched_at) / 0.2))
         );
+        speed = min(
+            1.0, Vec3(x=player.velocity.x, y=player.velocity.y).length() / 320.0
+        );
+        if player.grounded {
+            origin = origin.add(
+                basis.left.scale(math.sin(seconds * 8.0) * speed * 0.5)
+            );
+            origin = origin.add(
+                basis.up.scale(abs(math.cos(seconds * 8.0)) * speed * 0.5)
+            );
+        }
+        recoil = max(0.0, 1.0 - (seconds - self.fired_at) / 0.16);
+        origin = origin.sub(basis.forward.scale(recoil * 1.5));
         model_frame = frame;
         if asset.hand.tags {
             for tag in asset.hand.tags[frame].tags {
