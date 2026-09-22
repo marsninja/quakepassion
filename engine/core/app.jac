@@ -36,6 +36,8 @@ import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
+import from ..render.viewweapon { ViewWeapon }
+import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
 import from .menu { LevelMenu, game_directory }
@@ -82,6 +84,7 @@ obj App {
         quake: QuakeRenderer = QuakeRenderer(),
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
+        viewweapon: ViewWeapon = ViewWeapon(),
         simulation_time: float = 0.0,
         combat: CombatState = CombatState(),
         campaign: Campaign = Campaign(),
