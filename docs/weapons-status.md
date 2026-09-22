@@ -31,10 +31,12 @@ grenade bounce/fuse and deterministic save restoration.
 These are functional arsenal foundations, **not full weapon fidelity**. Remaining
 work includes BFG charge animation/timing and immunity rules,
 chaingun spin-up, original recoil/animation/viewmodels, water/lightning discharge,
-exact game-specific muzzle offsets and spread sequences, projectile models and
+exact game-specific muzzle offsets and spread sequences, remaining projectile materials and
 impact/trail effects, weapon switching/autoselection timing, dropped weapons,
-powerups, and bot use of the arsenal. Most projectiles currently render as small
-markers; Q2 BFG flight/explosion effects use the original animated SP2/PCX assets. Q3 model materials still report partial support for several animated
+powerups, and bot use of the arsenal. Original MDL/MD2/MD3 models now cover nails,
+bolts, grenades and rockets. Q2 BFG flight/explosion effects use the original
+animated SP2/PCX assets; Q3 plasma uses its additive rotating sprite. Q3 BFG
+still uses a placeholder. Q3 model materials still report partial support for several animated
 shader stages. Team-linked pickups, Q2 no-touch items, floor placement/riding
 movers, and Q3 randomized respawn timing also remain open.
 
@@ -101,6 +103,35 @@ reloads and revisits the hub while preserving its state. That harness uses an
 explicit test save path instead of changing HOME or overwriting the user's save.
 Pin/cooking sound loops, first-person animations, dropped live grenades on death,
 and exact weapon-raise/lower timing remain open.
+
+## Original projectile rendering
+
+The shared effect scene loads Q1 nails, grenades and rockets; Q2 blaster bolts,
+both grenade models and rockets; and Q3 grenades, rockets and plasma. Models
+follow projectile pitch/yaw, with grenade roll driven by simulation age. The
+ordinary actor renderer retains its existing yaw-only path. Asset loading and
+texture ownership stay outside the firing path, with cleanup on level changes.
+
+Q3 rocket flare surfaces use their authored additive blending and two-sided
+rendering. Model `animMap` stages retain their image sequence and frequency,
+including the grenade's red/green overlay. This follows the original
+[Q3 shader parser](https://github.com/id-Software/Quake-III-Arena/blob/master/code/renderer/tr_shader.c).
+Other unsupported model shader operations still report partial support rather
+than silently claiming fidelity. Q3 BFG autosprite/deformation stages, projectile
+trails and most impact effects remain unfinished.
+
+`scripts/projectile_scene_smoke.jac` loads and draws all 12 configured effects
+and verifies animated grenade stages and additive rocket flare setup. Focused
+tests cover orthonormal pitch/roll transforms, inverse transforms, cull parsing,
+animation frame boundaries and line-delimited animation image lists.
+
+The native gallery passes for all 12 effects, including resource cleanup; the
+main application builds successfully. The weapon/orientation/material focused
+run passed 20 tests, followed by seven material/orientation checks after animated
+stages were added. A subsequent M5 gameplay sample measured median/p95 frames of
+3.25/5.03 ms (Q1), 6.04/8.35 ms (Q2), 5.18/7.04 ms (Q3) and 3.79/5.12 ms
+(Passion). These fixed-scene samples do not establish performance for every map
+or heavy projectile combat.
 
 After the hand-grenade and campaign-carry changes, the full local suite passes
 **221 tests**. Native arsenal checks pass for all 28 configured weapons, and

@@ -10,5 +10,9 @@ obj SpriteFrame {
 obj EffectRule {
     has key: str,
         flight: str,
-        burst: str = "";
+        burst: str = "",
+        spin: float = 0.0,
+        sprite_size: int = 32,
+        additive: bool = False,
+        rotate: float = 0.0;
 }

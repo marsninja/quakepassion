@@ -114,10 +114,10 @@ impl App.render_frame() {
             lighting=self.level.lighting
         );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
-        self.renderer.draw_projectiles(
-            self.world, hidden_effects=list(self.effects.flight.keys())
+        self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
+        self.effects.draw(
+            self.world, p.pos, p.yaw, p.pitch, lighting=self.level.lighting
         );
-        self.effects.draw(self.world, p.pos, p.yaw, p.pitch);
         self.renderer.end_scene();
         if not self.smoke {
             self.renderer.draw_status(

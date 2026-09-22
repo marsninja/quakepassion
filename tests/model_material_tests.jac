@@ -1,5 +1,36 @@
 import from engine.assets.materials { material_name, model_materials }
 import from engine.assets.pk3 { Pk3Assets }
+import from engine.formats.animated { stage_frame }
+
+test "animated material image lists end at the newline and loop by authored frequency" {
+    material = model_materials(
+        "grenade {\n{ map base.tga }\n{ animMap 7 red.tga green.tga\nblendFunc add\n} }"
+    )["grenade"];
+    assert not material.unsupported and len(material.stages) == 2;
+    stage = material.stages[1];
+    assert stage.frequency == 7.0 and stage.blend == "add";
+    assert [frame.name for frame in stage.frames] == ["red.tga", "green.tga"];
+    assert stage_frame(0.0, 7.0, 2) == 0;
+    assert stage_frame(0.2, 7.0, 2) == 1;
+    assert stage_frame(0.3, 7.0, 2) == 0;
+    assert stage_frame(-0.1, 7.0, 2) == 0;
+    assert stage_frame(10.0, 0.0, 1) == 0;
+    assert model_materials("bad { { animMap 0 a.tga\n} }")["bad"].unsupported;
+}
+
+test "rocket flare materials retain additive blending and two sided culling" {
+    for mode in ["none", "disable", "twosided"] {
+        material = model_materials(
+            "flare { cull " + mode + " { map flare.tga blendFunc GL_ONE GL_ONE } }"
+        )["flare"];
+        assert material.two_sided and not material.unsupported;
+        assert material.stages[0].blend == "add";
+    }
+    material = model_materials("body { cull back { map body.tga } }")["body"];
+    assert not material.two_sided and material.unsupported == ["cull back"];
+    material = model_materials("body { cull front { map body.tga } }")["body"];
+    assert material.unsupported == ["cull front"];
+}
 
 test "PK3 image lookup resolves mixed case and extension aliases" {
     assets = Pk3Assets();

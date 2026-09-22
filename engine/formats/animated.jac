@@ -26,10 +26,16 @@ obj AnimationFrame {
 
 obj ModelStage {
     has texture: Texture = Texture(),
+        frames: list[Texture] = [],
+        frequency: float = 0.0,
         environment: bool = False,
         scroll_u: float = 0.0,
         scroll_v: float = 0.0,
         blend: str = "opaque";
+}
+
+def stage_frame(seconds: float, frequency: float, count: int) -> int {
+    return int(max(0.0, seconds) * frequency) % count if count > 0 else 0;
 }
 
 obj AnimatedSurface {

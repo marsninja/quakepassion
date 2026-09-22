@@ -93,6 +93,7 @@ with entry {
     }
     app.audio.close();
     app.models.close();
+    app.effects.close();
     app.quake.close();
     renderer.close();
 }

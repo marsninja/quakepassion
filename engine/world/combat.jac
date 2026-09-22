@@ -334,7 +334,8 @@ def throw_hand_grenade(
         splash=rule.splash,
         radius=rule.radius,
         gravity=True,
-        remaining=max(0.001, state.grenade_remaining)
+        remaining=max(0.001, state.grenade_remaining),
+        effect=rule.effect
     );
     state.shots += 1;
     state.flash = 0.08;

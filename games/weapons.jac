@@ -53,7 +53,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 damage=9,
                 interval=0.1,
                 speed=1000.0,
-                model="progs/g_nail.mdl"
+                model="progs/g_nail.mdl",
+                effect="q1_nail"
             ),
             WeaponRule(
                 slot=5,
@@ -66,7 +67,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 damage=18,
                 interval=0.1,
                 speed=1000.0,
-                model="progs/g_nail2.mdl"
+                model="progs/g_nail2.mdl",
+                effect="q1_supernail"
             ),
             WeaponRule(
                 slot=6,
@@ -82,7 +84,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 radius=160.0,
                 gravity=True,
                 fuse=2.5,
-                model="progs/g_rock.mdl"
+                model="progs/g_rock.mdl",
+                effect="q1_grenade"
             ),
             WeaponRule(
                 slot=7,
@@ -96,7 +99,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 speed=1000.0,
                 splash=120,
                 radius=160.0,
-                model="progs/g_rock2.mdl"
+                model="progs/g_rock2.mdl",
+                effect="q1_rocket"
             ),
             WeaponRule(
                 slot=8,
@@ -121,7 +125,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 name="Blaster",
                 damage=10,
                 interval=0.5,
-                speed=1000.0
+                speed=1000.0,
+                effect="q2_bolt"
             ),
             WeaponRule(
                 slot=2,
@@ -192,7 +197,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 radius=160.0,
                 gravity=True,
                 fuse=2.5,
-                model="models/weapons/g_launch/tris.md2"
+                model="models/weapons/g_launch/tris.md2",
+                effect="q2_grenade"
             ),
             WeaponRule(
                 slot=7,
@@ -206,7 +212,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 speed=650.0,
                 splash=120,
                 radius=120.0,
-                model="models/weapons/g_rocket/tris.md2"
+                model="models/weapons/g_rocket/tris.md2",
+                effect="q2_rocket"
             ),
             WeaponRule(
                 slot=8,
@@ -218,7 +225,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 damage=20,
                 interval=0.1,
                 speed=1000.0,
-                model="models/weapons/g_hyperb/tris.md2"
+                model="models/weapons/g_hyperb/tris.md2",
+                effect="q2_bolt"
             ),
             WeaponRule(
                 slot=9,
@@ -268,7 +276,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 gravity=True,
                 fuse=3.2,
                 hand_thrown=True,
-                model="models/items/ammo/grenades/medium/tris.md2"
+                model="models/items/ammo/grenades/medium/tris.md2",
+                effect="q2_handgrenade"
             )
         ];
     }
@@ -323,7 +332,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 radius=150.0,
                 gravity=True,
                 fuse=2.5,
-                model="models/weapons2/grenadel/grenadel.md3"
+                model="models/weapons2/grenadel/grenadel.md3",
+                effect="q3_grenade"
             ),
             WeaponRule(
                 slot=5,
@@ -337,7 +347,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 speed=900.0,
                 splash=100,
                 radius=120.0,
-                model="models/weapons2/rocketl/rocketl.md3"
+                model="models/weapons2/rocketl/rocketl.md3",
+                effect="q3_rocket"
             ),
             WeaponRule(
                 slot=6,
@@ -375,7 +386,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 speed=2000.0,
                 splash=15,
                 radius=20.0,
-                model="models/weapons2/plasma/plasma.md3"
+                model="models/weapons2/plasma/plasma.md3",
+                effect="q3_plasma"
             ),
             WeaponRule(
                 slot=9,
@@ -471,10 +483,45 @@ def weapon_sounds(game: str) -> list[str] {
 
 
 def weapon_effects(game: str) -> list[EffectRule] {
+    if game == "q1" {
+        return [
+            EffectRule(key="q1_nail", flight="progs/spike.mdl"),
+            EffectRule(key="q1_supernail", flight="progs/s_spike.mdl"),
+            EffectRule(key="q1_grenade", flight="progs/grenade.mdl", spin=5.235987756),
+            EffectRule(key="q1_rocket", flight="progs/missile.mdl")
+        ];
+    }
     if game == "q2" {
         return [
             EffectRule(
                 key="q2_bfg", flight="sprites/s_bfg1.sp2", burst="sprites/s_bfg3.sp2"
+            ),
+            EffectRule(key="q2_bolt", flight="models/objects/laser/tris.md2"),
+            EffectRule(
+                key="q2_grenade",
+                flight="models/objects/grenade/tris.md2",
+                spin=5.235987756
+            ),
+            EffectRule(
+                key="q2_handgrenade",
+                flight="models/objects/grenade2/tris.md2",
+                spin=5.235987756
+            ),
+            EffectRule(key="q2_rocket", flight="models/objects/rocket/tris.md2")
+        ];
+    }
+    if game == "q3" {
+        return [
+            EffectRule(key="q3_rocket", flight="models/ammo/rocket/rocket.md3"),
+            EffectRule(
+                key="q3_grenade", flight="models/ammo/grenade1.md3", spin=4.36332313
+            ),
+            EffectRule(
+                key="q3_plasma",
+                flight="sprites/plasma1",
+                sprite_size=32,
+                additive=True,
+                rotate=931.0
             )
         ];
     }

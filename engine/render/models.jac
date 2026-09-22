@@ -1,6 +1,7 @@
 """One renderer for adapted vertex-animated models, with explicit GPU ownership."""
 import math;
-import from ..formats.animated { AnimatedModel, ModelStage, pose }
+import from ..math.orientation { Basis }
+import from ..formats.animated { AnimatedModel, ModelStage, pose, stage_frame }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..world.lighting { Lighting, Illumination }
@@ -18,7 +19,9 @@ import from .quake {
     BeginBlendMode,
     EndBlendMode,
     rlDisableDepthMask,
-    rlEnableDepthMask
+    rlEnableDepthMask,
+    rlDisableBackfaceCulling,
+    rlEnableBackfaceCulling
 }
 import from vendor.raylib {
     def rlSetBlendFactors(src: i32, dst: i32, equation: i32) -> None;
@@ -30,7 +33,10 @@ obj UploadedStage {
         environment: bool,
         scroll_u: float,
         scroll_v: float,
-        blend: str;
+        blend: str,
+        two_sided: bool = False,
+        frames: list[int] = [],
+        frequency: float = 0.0;
 }
 
 obj ModelRenderer {
@@ -52,34 +58,41 @@ obj ModelRenderer {
                 }
                 for stage in stages {
                     skin = stage.texture;
-                    texture = 0;
-                    if skin.encoded {
-                        texture = QuakeRenderer().upload_image(skin);
-                    } elif len(skin.pixels) != skin.width * skin.height * 4 {
-                        raise ValueError("Model skin must be RGBA");
-                    } else {
-                        texture = int(
-                            rlLoadTexture(
-                                skin.pixels,
-                                i32(skin.width),
-                                i32(skin.height),
-                                i32(7),
-                                i32(1)
-                            )
-                        );
+                    uploaded: list[int] = [];
+                    for skin in (stage.frames if stage.frames else [stage.texture]) {
+                        texture = 0;
+                        if skin.encoded {
+                            texture = QuakeRenderer().upload_image(skin);
+                        } elif len(skin.pixels) != skin.width * skin.height * 4 {
+                            raise ValueError("Model skin must be RGBA");
+                        } else {
+                            texture = int(
+                                rlLoadTexture(
+                                    skin.pixels,
+                                    i32(skin.width),
+                                    i32(skin.height),
+                                    i32(7),
+                                    i32(1)
+                                )
+                            );
+                        }
+                        if texture == 0 {
+                            raise RuntimeError("Model skin upload failed");
+                        }
+                        self.textures.append(texture);
+                        uploaded.append(texture);
                     }
-                    if texture == 0 {
-                        raise RuntimeError("Model skin upload failed");
-                    }
-                    self.textures.append(texture);
                     self.stages.append(
                         UploadedStage(
-                            texture=texture,
+                            texture=uploaded[0],
+                            frames=uploaded,
+                            frequency=stage.frequency,
                             surface=s,
                             environment=stage.environment,
                             scroll_u=stage.scroll_u,
                             scroll_v=stage.scroll_v,
-                            blend=stage.blend
+                            blend=stage.blend,
+                            two_sided=skin.two_sided
                         )
                     );
                 }
@@ -108,7 +121,8 @@ obj ModelRenderer {
         eye: Vec3 = Vec3(),
         seconds: float = 0.0,
         batched: bool = False,
-        illumination: Illumination = Illumination()
+        illumination: Illumination = Illumination(),
+        basis: Basis | None = None
     ) {
         if not self.stages {
             return;
@@ -121,6 +135,9 @@ obj ModelRenderer {
             y=-view.x * sine + view.y * cosine,
             z=view.z
         );
+        if basis is not None {
+            local_eye = basis.inverse(view);
+        }
         for s in range(len(self.model.surfaces)) {
             surface = self.model.surfaces[s];
             vertices = pose(surface, first, second, blend);
@@ -135,13 +152,15 @@ obj ModelRenderer {
                         n = normals[vertex].lerp(
                             next_normals[vertex], max(0.0, min(1.0, blend))
                         ).normalized();
-                        color = illumination.shade(
-                            Vec3(
-                                x=n.x * cosine - n.y * sine,
-                                y=n.x * sine + n.y * cosine,
-                                z=n.z
-                            )
+                        normal = Vec3(
+                            x=n.x * cosine - n.y * sine,
+                            y=n.x * sine + n.y * cosine,
+                            z=n.z
                         );
+                        if basis is not None {
+                            normal = basis.apply(n);
+                        }
+                        color = illumination.shade(normal);
                     }
                     colors.append(color);
                 }
@@ -149,6 +168,10 @@ obj ModelRenderer {
             for stage in self.stages {
                 if stage.surface != s {
                     continue;
+                }
+                if stage.two_sided {
+                    rlDrawRenderBatchActive();
+                    rlDisableBackfaceCulling();
                 }
                 if stage.blend == "opaque" {
                     rlSetBlendFactors(i32(1), i32(0), i32(32774));
@@ -164,7 +187,13 @@ obj ModelRenderer {
                     rlDrawRenderBatchActive();
                     rlDisableDepthMask();
                 }
-                rlSetTexture(u32(stage.texture));
+                rlSetTexture(
+                    u32(
+                        stage.frames[
+                            stage_frame(seconds, stage.frequency, len(stage.frames))
+                        ]
+                    )
+                );
                 rlBegin(i32(4));
                 rlColor4ub(u8(255), u8(255), u8(255), u8(255));
                 for triangle in range(len(surface.indices) // 3) {
@@ -206,14 +235,23 @@ obj ModelRenderer {
                             f32(u + seconds * stage.scroll_u),
                             f32(t + seconds * stage.scroll_v)
                         );
-                        rlVertex3f(
-                            f32(origin.x + v.x * cosine - v.y * sine),
-                            f32(origin.y + v.x * sine + v.y * cosine),
-                            f32(origin.z + v.z)
-                        );
+                        if basis is not None {
+                            point = origin.add(basis.apply(v));
+                            rlVertex3f(f32(point.x), f32(point.y), f32(point.z));
+                        } else {
+                            rlVertex3f(
+                                f32(origin.x + v.x * cosine - v.y * sine),
+                                f32(origin.y + v.x * sine + v.y * cosine),
+                                f32(origin.z + v.z)
+                            );
+                        }
                     }
                 }
                 rlEnd();
+                if stage.two_sided {
+                    rlDrawRenderBatchActive();
+                    rlEnableBackfaceCulling();
+                }
                 if stage.blend != "opaque" {
                     rlDrawRenderBatchActive();
                     rlEnableDepthMask();
