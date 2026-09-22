@@ -94,6 +94,7 @@ def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
         if triggers
             and kind
                 not in [
+                    "trigger_hurt",
                     "trigger_once",
                     "trigger_multiple",
                     "trigger_teleport",
@@ -105,6 +106,7 @@ def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
             and kind
                 not in [
                     "func_wall",
+                    "func_explosive",
                     "func_door",
                     "func_door_secret",
                     "func_plat",

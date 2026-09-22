@@ -13,6 +13,11 @@ import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from .doors { load_doors }
+import from .trains { load_trains }
+import from .hazards { load_hazards }
+import from .speakers { load_speakers }
+import from .brushes { load_brushes }
+import from .secret_doors { load_secret_doors }
 import from .pickups { load_pickup_signals }
 import from .combat { load_opponent_signals }
 import from .triggers { load_triggers }
@@ -348,6 +353,11 @@ def prepare_level(world: World, level: Level) {
     load_pickup_signals(world, level.bsp);
     load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
+    load_trains(world, level.bsp, level.collision);
+    load_hazards(world, level.bsp);
+    load_speakers(world,level.bsp);
+    load_secret_doors(world,level.bsp,level.collision);
+    load_brushes(world,level.bsp,level.collision);
     load_doors(world, level.bsp, level.collision);
     load_triggers(world, level.bsp);
     load_traversal(world, level.bsp);

@@ -100,3 +100,50 @@ test "armor supports Q2 salvage and Q3 capped accumulation" {
     world spawn PickupTick(player=player, start=Vec3(), finish=Vec3(), dt=0.01);
     assert player.armor == 200;
 }
+
+test "trigger spawn items await use and Q2 one use does not resurrect consumed items" {
+    world = World();
+    player = Player(health=50);
+    item = Pickup(
+        rule=PickupRule(kind="health", amount=25, capacity=100, model=""),
+        active=False,
+        waiting_for_use=True,
+        activate_on_use=True
+    );
+    item.visual.visible = False;
+    world +>:HasPickup:+> item;
+    world spawn PickupTick(player=player, start=Vec3(), finish=Vec3(), dt=100.0);
+    assert player.health == 50 and item.waiting_for_use and not item.active;
+    item.activation.pending = 1;
+    world spawn PickupTick(
+        player=player, start=Vec3(), finish=Vec3(), dt=0.01, touching=False
+    );
+    assert item.active and item.visual.visible and not item.activate_on_use;
+    world spawn PickupTick(player=player, start=Vec3(), finish=Vec3(), dt=0.01);
+    assert player.health == 75 and not item.active;
+    item.activation.pending = 1;
+    world spawn PickupTick(player=player, start=Vec3(), finish=Vec3(), dt=1.0);
+    assert player.health == 75 and not item.active;
+}
+
+test "Q3 targeted items do not time-spawn before activation and support reuse" {
+    world = World();
+    player = Player(health=10);
+    item = Pickup(
+        rule=PickupRule(kind="health", amount=25, capacity=100, model=""),
+        active=False,
+        waiting_for_use=True,
+        activate_on_use=True,
+        reusable_use=True,
+        respawn=35.0
+    );
+    world +>:HasPickup:+> item;
+    world spawn PickupTick(player=player, start=Vec3(), finish=Vec3(), dt=100.0);
+    assert player.health == 10 and item.waiting_for_use;
+    item.activation.pending = 1;
+    world spawn PickupTick(player=player, start=Vec3(), finish=Vec3(), dt=0.01);
+    assert player.health == 35 and not item.active and not item.waiting_for_use;
+    item.activation.pending = 1;
+    world spawn PickupTick(player=player, start=Vec3(), finish=Vec3(), dt=0.01);
+    assert player.health == 60 and not item.active and item.remaining == 35.0;
+}

@@ -250,6 +250,7 @@ obj CollisionMap {
         point_hulls: list[HullCell] = [],
         offsets: list[Vec3] = [],
         models: list[int] = [],
+        disabled: set[int] = set(),
         bounds: list[AABB] = [],
         groups: list[HullGroup] = [],
         eye_height: float = 22.0,
@@ -398,7 +399,7 @@ obj CollisionMap {
             indices = list(range(len(self.hulls)));
         }
         for i in indices {
-            if i in exclude {
+            if i in exclude or i in self.disabled {
                 continue;
             }
             # Tree leaves hold small batches; reject each nonintersecting hull

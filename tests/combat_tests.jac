@@ -8,7 +8,9 @@ import from engine.world.combat {
 }
 import from engine.world.world { World, Player }
 import from engine.world.inventory { AdjustInventory, quantity }
-import from engine.world.signals { Signal, Targets }
+import from engine.world.signals { Signal, Targets, Fire }
+import from engine.world.level { Level }
+import from engine.core.savegame { snapshot, restore }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 
@@ -157,4 +159,35 @@ test "opponents remember last sight and stop at expired alert" {
     enemy.decision_wait = 0.0;
     world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
     assert enemy.steering.length() == 0.0;
+}
+
+test "triggered opponents stay hidden and unhittable until their spawn delay expires" {
+    world = World(); player = Player(); state = CombatState(); collision = CollisionMap();
+    enemy = Opponent(pos=Vec3(x=100.0),dormant=True,health=60,attack_wait=5.0);
+    enemy.visual.visible = False;
+    world +>:HasOpponent:+> enemy;
+    assert fire_weapon(world,player,collision,state);
+    assert enemy.health == 60;
+    world spawn CombatTick(player=player,collision=collision,state=state,dt=1.0);
+    assert enemy.dormant and not enemy.visual.visible;
+    enemy.activation spawn Fire(emit=False);
+    world spawn CombatTick(player=player,collision=collision,state=state,dt=0.05);
+    assert enemy.dormant and not enemy.visual.visible;
+    world spawn CombatTick(player=player,collision=collision,state=state,dt=0.05);
+    assert not enemy.dormant and enemy.visual.visible;
+    state.cooldown = 0.0;
+    assert fire_weapon(world,player,collision,state);
+    assert enemy.health == 45;
+}
+
+test "opponent activation and spawn countdown survive save restore" {
+    world = World(); player = Player(); state = CombatState(); level = Level(name="fixture");
+    enemy = Opponent(pos=Vec3(x=100.0),dormant=True,spawn_wait=0.075);
+    enemy.visual.visible = False;
+    world +>:HasOpponent:+> enemy;
+    data = snapshot(world,level,player,state);
+    world spawn CombatTick(player=player,collision=level.collision,state=state,dt=0.1);
+    assert not enemy.dormant;
+    restore(world,level,player,state,data);
+    assert enemy.dormant and not enemy.visual.visible and enemy.spawn_wait == 0.075;
 }

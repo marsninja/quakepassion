@@ -2,7 +2,7 @@
 import math;
 import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
-import from .signals { Signal, Fire, Targets, HasSignal }
+import from .signals { Signal, Fire, Targets, HasSignal, DelayedUse, progress_for }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..physics.collision { CollisionMap, Sweep }
 import from ..math.vec3 { Vec3 }
@@ -307,7 +307,6 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         enabled = True;
         if flags & ~allowed
             or float(fields.get("health", "0")) != 0.0
-            or float(fields.get("delay", "0")) != 0.0
             or fields.get("killtarget", "")
             or fields.get("accel", "")
             or fields.get("decel", "") {
@@ -581,8 +580,32 @@ def connect_targets(world: World, bsp: Bsp) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
+        if (kind == "trigger_secret" and bsp.game == "q1") or
+            (kind in ["target_secret","target_goal"] and bsp.game == "q2") {
+            progress = progress_for(world);
+            secret = kind != "target_goal";
+            if secret { progress.total_secrets += 1; } else { progress.total_goals += 1; }
+            signals.append(Signal(entities=[index],relay=True,once=True,progress=progress,
+                objective="secret" if secret else "goal"));
+        }
+        if kind == "func_timer" and bsp.game in ["q2", "q3"]
+            and not fields.get("killtarget", "") {
+            interval = float(fields.get("wait","1"));
+            if interval <= 0.0 { interval = 1.0; }
+            timer = Signal(entities=[index],interval=interval,random_state=index+1,
+                variance=max(0.0,min(float(fields.get("random","1" if bsp.game == "q3" else "0")),interval-0.1)),
+                timer_running=int(fields.get("spawnflags","0")) & 1 != 0);
+            if timer.timer_running {
+                timer.timer_remaining = 0.1 if bsp.game == "q3" else max(0.0,1.0+float(fields.get("pausetime","0"))+float(fields.get("delay","0"))+timer.sample(interval));
+            }
+            signals.append(timer);
+        }
+        if kind == "trigger_always" and bsp.game in ["q2", "q3"]
+            and not fields.get("killtarget", "") {
+            startup = 0.3 if bsp.game == "q3" else max(0.2,float(fields.get("delay","0")));
+            signals.append(Signal(entities=[index],queued=[DelayedUse(remaining=startup)]));
+        }
         if kind in ["trigger_key", "trigger_counter"] and bsp.game in ["q1", "q2"]
-            and float(fields.get("delay", "0")) == 0.0
             and not fields.get("killtarget", "") {
             key = fields.get("item", "") if kind == "trigger_key" else "";
             if kind == "trigger_counter" or (bsp.game == "q2" and key.startswith("key_")) {
@@ -592,11 +615,18 @@ def connect_targets(world: World, bsp: Bsp) {
                 ));
             }
         }
-        if kind in ["trigger_relay", "target_relay"]
+        if kind in ["trigger_relay", "target_relay", "target_delay"]
             and int(fields.get("spawnflags", "0")) == 0
-            and float(fields.get("delay", "0")) == 0.0
             and not fields.get("killtarget", "") {
-            signals.append(Signal(relay=True, entities=[index]));
+            signal = Signal(relay=True, entities=[index]);
+            if kind == "target_delay" and bsp.game == "q3" {
+                signal.delay = float(fields.get("delay",fields.get("wait","1")));
+                if signal.delay <= 0.0 { signal.delay = 1.0; }
+                signal.variance = max(0.0,float(fields.get("random","0")));
+                signal.replace_pending = True;
+                signal.random_state = index+1;
+            }
+            signals.append(signal);
         }
     }
     registered = [world->:HasSignal:->][?:Signal];
@@ -608,7 +638,12 @@ def connect_targets(world: World, bsp: Bsp) {
     # Resolve every recipient, then propagate unsupported downstream fan-outs.
     for signal in signals {
         for index in signal.entities {
-            target = bsp.entities[index].fields.get("target", "");
+            fields = bsp.entities[index].fields;
+            kind = fields.get("classname", "");
+            if bsp.game in ["q1", "q2"] { signal.delay = max(signal.delay,float(fields.get("delay","0"))); }
+            if kind == "func_train" { continue; }
+            target = fields.get("pathtarget", "") if kind == "path_corner" and bsp.game != "q3" else fields.get("target", "");
+            if kind.startswith("monster_") and bsp.game == "q2" { target = fields.get("deathtarget",target); }
             if not target {
                 continue;
             }
@@ -618,6 +653,8 @@ def connect_targets(world: World, bsp: Bsp) {
                     continue;
                 }
                 found = True;
+                if kind == "path_corner" and bsp.game == "q3"
+                    and bsp.entities[recipient].fields.get("classname", "") == "path_corner" { continue; }
                 resolved = False;
                 for destination in signals {
                     if recipient in destination.entities {
@@ -648,6 +685,9 @@ def connect_targets(world: World, bsp: Bsp) {
         if not changed {
             break;
         }
+    }
+    for signal in signals {
+        if not signal.enabled { signal.queued = []; signal.timer_running = False; }
     }
     for leader in leaders {
         leader.enabled = leader.enabled and leader.activation.enabled;

@@ -12,6 +12,9 @@ obj PickupRule {
         amount: int,
         capacity: int,
         model: str,
+        ammo: str = "",
+        ammo_amount: int = 0,
+        ammo_capacity: int = 0,
         skin: int = 0,
         armor_mode: str = "replace",
         armor_ratio: float = 0.0;
@@ -22,6 +25,9 @@ node Pickup(Entity) {
     has rule: PickupRule,
         visual: Visual = Visual(),
         active: bool = True,
+        waiting_for_use: bool = False,
+        activate_on_use: bool = False,
+        reusable_use: bool = False,
         activation: Signal = Signal(),
         respawn: float = 0.0,
         remaining: float = 0.0;
@@ -72,6 +78,19 @@ walker PickupTick {
     }
 
     can collect with Pickup entry {
+        if here.activation.pending > 0 {
+            here.activation.pending = 0;
+            if here.activate_on_use {
+                here.active = True;
+                here.waiting_for_use = False;
+                here.visual.visible = True;
+                here.remaining = 0.0;
+                here.activate_on_use = here.reusable_use;
+            }
+        }
+        if here.waiting_for_use {
+            return;
+        }
         if not here.active {
             if here.respawn <= 0.0 {
                 return;
@@ -128,6 +147,12 @@ walker PickupTick {
                 kind=rule.kind, amount=rule.amount, capacity=rule.capacity
             );
             accepted = change.accepted;
+            if rule.ammo and rule.ammo_amount > 0 {
+                ammo = self.player.inventory spawn AdjustInventory(
+                    kind=rule.ammo, amount=rule.ammo_amount, capacity=rule.ammo_capacity
+                );
+                accepted += ammo.accepted;
+            }
         }
         if accepted > 0 {
             here.active = False;
@@ -144,7 +169,10 @@ def load_pickup_signals(world: World, bsp: Bsp) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
-        if kind.startswith("item_") or kind.startswith("key_") or kind.startswith("ammo_") {
+        if kind.startswith("item_")
+            or kind.startswith("key_")
+            or kind.startswith("ammo_")
+            or kind.startswith("weapon_") {
             world +>:HasSignal:+> Signal(entities=[index]);
         }
     }

@@ -40,7 +40,14 @@ import from vendor.raylib {
     ) -> None;
 }
 
-import from ..world.combat { CombatState, Opponent, HasOpponent }
+import from ..world.combat {
+    CombatState,
+    Opponent,
+    HasOpponent,
+    Projectile,
+    HasProjectile,
+    selected_weapon
+}
 import from ..math.vec3 { Vec3, forward_from }
 import from ..world.world { World, Area, Surface }
 
@@ -75,7 +82,8 @@ obj Renderer {
     def draw_opponents(world: World, height: float);
     def draw_message(message: str);
     def draw_loading(name: str);
-    def draw_combat(state: CombatState, arena: bool);
+    def draw_combat(state: CombatState, arena: bool, ammo: int = -1);
+    def draw_projectiles(world: World);
     def draw_terminal(message: str);
     def draw_keys(message: str);
     def draw_status(health: int, armor: int, shells: int = 0);
