@@ -119,13 +119,16 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
                 )
             );
         } else {
+            # Q1's runtime expands on-disk submodel bounds by one unit
+            # (Mod_LoadSubmodels). Without it the broad phase can discard a
+            # contact inside the actual clip hull, letting riders sink into lifts.
             collision.bounds.append(
                 AABB(
                     mins=record.mins.add(collision.offsets[i]).sub(
-                        Vec3(x=16.0, y=16.0, z=32.0)
+                        Vec3(x=17.0, y=17.0, z=33.0)
                     ),
                     maxs=record.maxs.add(collision.offsets[i]).add(
-                        Vec3(x=16.0, y=16.0, z=24.0)
+                        Vec3(x=17.0, y=17.0, z=25.0)
                     )
                 )
             );
