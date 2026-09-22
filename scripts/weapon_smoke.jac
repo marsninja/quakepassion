@@ -65,6 +65,11 @@ with entry {
                 world spawn ProjectileTick(
                     player=player, collision=level.collision, state=state, dt=0.05
                 );
+                if rule.burst_damage > 0 {
+                    world spawn ProjectileTick(
+                        player=player, collision=level.collision, state=state, dt=0.5
+                    );
+                }
                 assert not [world->:HasProjectile:->];
             }
             assert enemy.health < 2000;

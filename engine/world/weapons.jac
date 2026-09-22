@@ -16,8 +16,13 @@ obj WeaponRule {
         speed: float = 0.0,
         splash: int = 0,
         radius: float = 0.0,
+        beam_damage: int = 0,
+        beam_radius: float = 0.0,
+        burst_damage: int = 0,
+        burst_radius: float = 0.0,
         gravity: bool = False,
         fuse: float = 5.0,
         piercing: bool = False,
-        model: str = "";
+        model: str = "",
+        effect: str = "";
 }

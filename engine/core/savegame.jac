@@ -95,6 +95,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         lines.append(
             "J "
+                + (projectile.effect or "-")
+                + " "
                 + numbers(
                     [
                         projectile.pos.x,
@@ -107,7 +109,15 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         float(projectile.splash),
                         projectile.radius,
                         1.0 if projectile.gravity else 0.0,
-                        projectile.remaining
+                        projectile.remaining,
+                        float(projectile.beam_damage),
+                        projectile.beam_radius,
+                        float(projectile.burst_damage),
+                        projectile.burst_radius,
+                        projectile.beam_wait,
+                        projectile.burst_wait,
+                        float(projectile.phase),
+                        projectile.age
                     ]
                 )
         );
@@ -356,7 +366,14 @@ def restore(
             }
             manifest_seen = True;
         } elif words[0] == "J" {
-            row = values(" ".join(words[1:]), 11);
+            row = values(" ".join(words[2:]), 19);
+            effect = "" if words[1] == "-" else words[1];
+            if len(effect) > 64
+                or not all(c.isalnum() or c == "_" for c in effect)
+                or row[18] < 0.0
+                or row[18] > 60.0 {
+                raise ValueError("Invalid saved projectile effect");
+            }
             if row[6] < 0.0
                 or row[6] > 10000.0
                 or row[6] != float(int(row[6]))
@@ -370,6 +387,23 @@ def restore(
                 or row[10] > 60.0 {
                 raise ValueError("Invalid saved projectile");
             }
+            if row[11] < 0.0
+                or row[11] > 10000.0
+                or row[11] != float(int(row[11]))
+                or row[12] < 0.0
+                or row[12] > 10000.0
+                or row[13] < 0.0
+                or row[13] > 10000.0
+                or row[13] != float(int(row[13]))
+                or row[14] < 0.0
+                or row[14] > 10000.0
+                or row[15] < 0.0
+                or row[15] > 0.1
+                or row[16] < 0.0
+                or row[16] > 0.1
+                or row[17] not in [0.0, 1.0, 2.0] {
+                raise ValueError("Invalid saved projectile phase");
+            }
             world +>:HasProjectile:+> Projectile(
                 pos=Vec3(x=row[0], y=row[1], z=row[2]),
                 velocity=Vec3(x=row[3], y=row[4], z=row[5]),
@@ -377,7 +411,16 @@ def restore(
                 splash=int(row[7]),
                 radius=row[8],
                 gravity=row[9] != 0.0,
-                remaining=row[10]
+                remaining=row[10],
+                beam_damage=int(row[11]),
+                beam_radius=row[12],
+                burst_damage=int(row[13]),
+                burst_radius=row[14],
+                beam_wait=row[15],
+                burst_wait=row[16],
+                phase=int(row[17]),
+                effect=effect,
+                age=row[18]
             );
         } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);

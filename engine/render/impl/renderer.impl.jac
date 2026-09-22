@@ -221,18 +221,26 @@ impl Renderer.draw_loading(name: str) {
 }
 
 
-impl Renderer.draw_projectiles(world: World) {
+impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
     for projectile in [world->:HasProjectile:->][?:Projectile] {
-        DrawCube(
-            Vector3(
-                x=f32(projectile.pos.x),
-                y=f32(projectile.pos.y),
-                z=f32(projectile.pos.z)
-            ),
-            f32(4.0),
-            f32(4.0),
-            f32(4.0),
-            Color(r=255, g=150, b=40, a=255)
+        origin = Vector3(
+            x=f32(projectile.pos.x), y=f32(projectile.pos.y), z=f32(projectile.pos.z)
         );
+        color = Color(r=70, g=255, b=70, a=255)
+            if projectile.beam_damage > 0
+            else Color(r=255, g=150, b=40, a=255);
+        size = f32(
+            4.0 if projectile.phase == 0 else 12.0 + (0.5 - projectile.remaining) * 60.0
+        );
+        if projectile.effect not in hidden_effects {
+            DrawCube(origin, size, size, size, color);
+        }
+        for finish in projectile.beams {
+            DrawLine3D(
+                origin,
+                Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),
+                color
+            );
+        }
     }
 }

@@ -8,9 +8,9 @@ Method and ability bodies live in impl/renderer.impl.jac.
 """
 
 import from vendor.raylib {
-    def DrawRectangle(x: i32, y: i32, width: i32, height: i32, color: Color) -> None;  def SetTargetFPS(
-        fps: i32
-    ) -> None;  def SetExitKey(key: i32) -> None;  def rlSetClipPlanes(
+    def DrawLine3D(startPos: Vector3, endPos: Vector3, color: Color) -> None;  def DrawRectangle(
+        x: i32, y: i32, width: i32, height: i32, color: Color
+    ) -> None;  def SetTargetFPS(fps: i32) -> None;  def SetExitKey(key: i32) -> None;  def rlSetClipPlanes(
         nearPlane: f64, farPlane: f64
     ) -> None;  obj Color {
         has r: u8,
@@ -83,7 +83,7 @@ obj Renderer {
     def draw_message(message: str);
     def draw_loading(name: str);
     def draw_combat(state: CombatState, arena: bool, ammo: int = -1);
-    def draw_projectiles(world: World);
+    def draw_projectiles(world: World, hidden_effects: list[str] = []);
     def draw_terminal(message: str);
     def draw_keys(message: str);
     def draw_status(health: int, armor: int, shells: int = 0);

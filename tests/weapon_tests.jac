@@ -214,3 +214,105 @@ test "weapon spread resumes deterministically after save and all ammo types load
         }
     }
 }
+
+test "energy tendrils pierce actors but not walls and respect pulse timing" {
+    world = World();
+    player = Player(pos=Vec3(x=-500.0));
+    state = CombatState();
+    collision = CollisionMap();
+    near = Opponent(pos=Vec3(x=100.0, z=18.0), health=100);
+    far = Opponent(pos=Vec3(x=400.0, z=18.0), health=100);
+    blocked = Opponent(pos=Vec3(x=600.0, z=18.0), health=100);
+    world +>:HasOpponent:+> near;
+    world +>:HasOpponent:+> far;
+    world +>:HasOpponent:+> blocked;
+    collision.add_box(
+        Vec3(x=500.0, y=-100.0, z=-100.0),
+        Vec3(x=501.0, y=100.0, z=100.0),
+        Vec3(),
+        Vec3(),
+        Vec3()
+    );
+    orb = Projectile(
+        pos=Vec3(), velocity=Vec3(), damage=200, beam_damage=10, beam_radius=256.0
+    );
+    world +>:HasProjectile:+> orb;
+    world spawn ProjectileTick(
+        player=player, collision=collision, state=state, dt=0.05
+    );
+    assert near.health == 100 and far.health == 100;
+    world spawn ProjectileTick(
+        player=player, collision=collision, state=state, dt=0.05
+    );
+    assert near.health == 90 and far.health == 90 and blocked.health == 100;
+    assert len(orb.beams) == 1;
+}
+
+test "BFG core and delayed burst are distinct and survive save exactly once" {
+    world = World();
+    player = Player();
+    state = CombatState();
+    level = Level(name="bfg");
+    equip_player(player, state, "q2");
+    player.inventory spawn AdjustInventory(kind="weapon_bfg", amount=1);
+    player.inventory spawn AdjustInventory(kind="cells", amount=50, capacity=200);
+    assert select_weapon(player, state, 10);
+    target = Opponent(pos=Vec3(x=100.0), health=1000, max_health=1000);
+    world +>:HasOpponent:+> target;
+    assert fire_weapon(world, player, level.collision, state);
+    world spawn ProjectileTick(
+        player=player, collision=level.collision, state=state, dt=0.25
+    );
+    assert target.health == 800;
+    orbs = [world->:HasProjectile:->][?:Projectile];
+    assert len(orbs) == 1 and orbs[0].phase == 1;
+    saved = snapshot(world, level, player, state);
+    world spawn ProjectileTick(
+        player=player, collision=level.collision, state=state, dt=0.1
+    );
+    after = target.health;
+    assert after < 800 and after > 300;
+    restore(world, level, player, state, saved);
+    world spawn ProjectileTick(
+        player=player, collision=level.collision, state=state, dt=0.1
+    );
+    assert target.health == after;
+    world spawn ProjectileTick(
+        player=player, collision=level.collision, state=state, dt=0.5
+    );
+    assert target.health == after and not [world->:HasProjectile:->];
+}
+
+test "delayed energy burst also requires visibility from the shooter" {
+    world = World();
+    player = Player(pos=Vec3(x=-100.0));
+    state = CombatState();
+    collision = CollisionMap();
+    target = Opponent(pos=Vec3(x=100.0), health=1000, max_health=1000);
+    world +>:HasOpponent:+> target;
+    collision.add_box(
+        Vec3(x=-50.0, y=-100.0, z=-100.0),
+        Vec3(x=-40.0, y=100.0, z=100.0),
+        Vec3(),
+        Vec3(),
+        Vec3()
+    );
+    orb = Projectile(
+        pos=Vec3(),
+        velocity=Vec3(),
+        damage=200,
+        burst_damage=500,
+        burst_radius=1000.0,
+        phase=1,
+        burst_wait=0.1,
+        remaining=0.5
+    );
+    world +>:HasProjectile:+> orb;
+    world spawn ProjectileTick(player=player, collision=collision, state=state, dt=0.1);
+    assert target.health == 1000 and orb.phase == 2;
+    player.pos = Vec3();
+    orb.phase = 1;
+    orb.burst_wait = 0.1;
+    world spawn ProjectileTick(player=player, collision=collision, state=state, dt=0.1);
+    assert target.health < 1000 and orb.phase == 2;
+}

@@ -1,4 +1,5 @@
 """Q2 toggle walls and destructible brushes using shared geometry and damage."""
+import math;
 import from .world { World, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
@@ -265,12 +266,14 @@ walker BlastBrush {
         collision: CollisionMap,
         player: Player,
         state: CombatState,
+        energy_burst: bool = False,
         world: World | None = None;
 
     can begin with World entry {
         self.world = here;
         visit [here->:HasBrush:->];
     }
+
     can hit with BrushObject entry {
         world = self.world;
         if world is None or not here.active or here.destroyed or not here.shootable {
@@ -286,9 +289,18 @@ walker BlastBrush {
         if trace.start_solid or trace.fraction < 1.0 {
             return;
         }
-        here.health = max(
-            0, here.health - int(max(0.0, float(self.amount) - distance * 0.5))
-        );
+        if self.energy_burst {
+            owner_sight = self.collision.trace(
+                self.player.pos, here.center, exclude=here.hulls, point=True
+            );
+            if owner_sight.start_solid or owner_sight.fraction < 1.0 {
+                return;
+            }
+        }
+        strength = float(self.amount) * (1.0 - math.sqrt(distance / self.radius))
+            if self.energy_burst
+            else max(0.0, float(self.amount) - distance * 0.5);
+        here.health = max(0, here.health - int(strength));
         if here.health == 0 {
             destroy_brush(
                 world, here, self.bsp, self.collision, self.player, self.state, True

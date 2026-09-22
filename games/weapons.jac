@@ -3,6 +3,7 @@
 Animation timing, charged hand grenades and the Q2 BFG secondary laser phase
 remain separate fidelity work; ballistic effects use the common simulation.
 """
+import from engine.formats.sprite { EffectRule }
 import from engine.world.weapons { WeaponRule }
 import from engine.world.world { Player }
 import from engine.world.combat { CombatState }
@@ -238,12 +239,18 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 capacity=200,
                 pickup_ammo=50,
                 cost=50,
-                damage=500,
+                damage=200,
                 interval=2.0,
                 speed=400.0,
-                splash=500,
-                radius=1000.0,
-                model="models/weapons/g_bfg/tris.md2"
+                splash=200,
+                radius=100.0,
+                beam_damage=10,
+                beam_radius=256.0,
+                burst_damage=500,
+                burst_radius=1000.0,
+                fuse=20.0,
+                model="models/weapons/g_bfg/tris.md2",
+                effect="q2_bfg"
             )
         ];
     }
@@ -438,4 +445,16 @@ def weapon_sounds(game: str) -> list[str] {
         ];
     }
     return ["sound/weapons/" + name for name in names];
+}
+
+
+def weapon_effects(game: str) -> list[EffectRule] {
+    if game == "q2" {
+        return [
+            EffectRule(
+                key="q2_bfg", flight="sprites/s_bfg1.sp2", burst="sprites/s_bfg3.sp2"
+            )
+        ];
+    }
+    return [];
 }

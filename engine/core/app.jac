@@ -10,7 +10,7 @@ import from ..world.speakers { SpeakerTick }
 import from ..world.brushes { BrushTick, ShootBrush, BlastBrush }
 
 import os;
-import from games.weapons { equip_player, weapon_sounds }
+import from games.weapons { equip_player, weapon_sounds, weapon_effects }
 import from .campaign { Campaign, Remember, Recall, pack_campaign, unpack_campaign }
 import from .preferences { Preferences }
 import from ..audio.feedback { Feedback }
@@ -34,6 +34,7 @@ import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
 import from games.levels { open_level }
+import from ..render.effects { EffectScene }
 import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
 import from .menu { LevelMenu, game_directory }
@@ -79,6 +80,7 @@ obj App {
         level: Level = Level(),
         quake: QuakeRenderer = QuakeRenderer(),
         models: ModelScene = ModelScene(),
+        effects: EffectScene = EffectScene(),
         simulation_time: float = 0.0,
         combat: CombatState = CombatState(),
         campaign: Campaign = Campaign(),

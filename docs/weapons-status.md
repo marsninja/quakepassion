@@ -29,12 +29,12 @@ penetration, thin-wall projectile sweeps, splash occlusion, death credit,
 grenade bounce/fuse and deterministic save restoration.
 
 These are functional arsenal foundations, **not full weapon fidelity**. Remaining
-work includes Q2 hand-grenade cooking, BFG secondary lasers/explosion phases,
+work includes Q2 hand-grenade cooking, BFG charge animation/timing and immunity rules,
 chaingun spin-up, original recoil/animation/viewmodels, water/lightning discharge,
 exact game-specific muzzle offsets and spread sequences, projectile models and
 impact/trail effects, weapon switching/autoselection timing, dropped weapons,
-powerups, and bot use of the arsenal. Projectiles currently render as small
-markers. Q3 model materials still report partial support for several animated
+powerups, and bot use of the arsenal. Most projectiles currently render as small
+markers; Q2 BFG flight/explosion effects use the original animated SP2/PCX assets. Q3 model materials still report partial support for several animated
 shader stages. Team-linked pickups, Q2 no-touch items, floor placement/riding
 movers, and Q3 randomized respawn timing also remain open.
 
@@ -61,3 +61,23 @@ of 3.87 ms (Q1), 8.26 ms (Q2), 6.99 ms (Q3) and 4.20 ms (Passion). Q1/Q2/Q3 p95
 frames were 5.69/9.51/8.53 ms. A regression-test process was running concurrently;
 these are indicative samples, not an isolated performance comparison or a claim
 that every map meets a frame-time budget.
+
+
+## Q2 BFG energy phases
+
+The Q2 BFG now has 10 Hz piercing laser tendrils, a 200-point core impact and
+short-radius blast, followed by a delayed 500-point energy effect with square-root
+falloff. The delayed effect requires visibility from both the orb and shooter.
+Projectile phase, timers and random state survive snapshots; kill callbacks still
+run once. Dedicated tests cover tendril cadence/penetration/occlusion, distinct
+core and burst damage, restored pending effects, and shooter-side occlusion.
+The native original-map combat harness verifies the complete phase sequence and
+cleanup in Q2 `base1` alongside the Q1/Q3 combat checks. Implementation follows
+[Q2 projectile logic](https://github.com/id-Software/Quake-2/blob/master/game/g_weapon.c).
+
+The sprite path validates SP2 frame tables and pivots, decodes PCX palette-index
+transparency without changing model-skin alpha, and renders depth-tested camera
+billboards with ordered blending. Sprite textures load with the level and are
+released on switches. Captured Q2 `base1` flight and explosion frames confirm
+original sprite art replaces the debug boxes. Cosmetic animation age and effect
+selection are saved alongside projectile state.

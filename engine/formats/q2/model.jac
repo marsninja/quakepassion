@@ -87,7 +87,7 @@ def parse_md2(data: bytes) -> AnimatedModel {
 }
 
 
-def parse_pcx(data: bytes, name: str) -> Texture {
+def parse_pcx(data: bytes, name: str, transparent: int = -1) -> Texture {
     require_range(data, 0, 128 + 769);
     if data[0] != 10 or data[1] != 5 or data[2] != 1 or data[3] != 8 or data[65] != 1 {
         raise ValueError("Expected 8-bit paletted PCX");
@@ -132,7 +132,7 @@ def parse_pcx(data: bytes, name: str) -> Texture {
                     int(data[palette]),
                     int(data[palette + 1]),
                     int(data[palette + 2]),
-                    255
+                    0 if line[i] == transparent else 255
                 ]
             );
         }

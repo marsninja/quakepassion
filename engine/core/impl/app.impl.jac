@@ -35,6 +35,11 @@ impl App.run() {
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
         self.models.upload(self.world);
+        self.effects.upload(
+            self.level.bsp.game,
+            game_directory(self.level.bsp.game),
+            weapon_effects(self.level.bsp.game)
+        );
         self.quake.upload(self.level);
     }
     frame = 0;
@@ -50,6 +55,7 @@ impl App.run() {
     }
     if self.level.active {
         self.models.close();
+        self.effects.close();
         self.quake.close();
     }
     self.audio.close();
@@ -108,7 +114,10 @@ impl App.render_frame() {
             lighting=self.level.lighting
         );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
-        self.renderer.draw_projectiles(self.world);
+        self.renderer.draw_projectiles(
+            self.world, hidden_effects=list(self.effects.flight.keys())
+        );
+        self.effects.draw(self.world, p.pos, p.yaw, p.pitch);
         self.renderer.end_scene();
         if not self.smoke {
             self.renderer.draw_status(
@@ -293,6 +302,7 @@ impl App.load_destination(
     }
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
+    next_effects = EffectScene();
     try {
         world = World();
         level = open_level(world, game_directory(game), name, game);
@@ -341,9 +351,11 @@ impl App.load_destination(
             restore(world, level, player, combat, saved);
         }
         next_models.upload(world);
+        next_effects.upload(game, game_directory(game), weapon_effects(game));
         next_renderer.upload(level);
         if self.level.active {
             self.models.close();
+            self.effects.close();
             self.quake.close();
         }
         if departed {
@@ -356,6 +368,7 @@ impl App.load_destination(
         self.player.god_mode = self.god_mode;
         self.quake = next_renderer;
         self.models = next_models;
+        self.effects = next_effects;
         if self.audio.ready {
             self.audio.close();
             try {
@@ -387,6 +400,7 @@ impl App.load_destination(
         }
     } except Exception as error {
         next_models.close();
+        next_effects.close();
         next_renderer.close();
         self.menu.message = "Cannot load level: " + str(error);
         self.menu.opened = True;
@@ -620,6 +634,7 @@ impl App.step() -> bool {
                         origin=impact.origin,
                         amount=impact.splash,
                         radius=impact.radius,
+                        energy_burst=impact.energy_burst,
                         bsp=self.level.bsp,
                         collision=self.level.collision,
                         player=self.player,

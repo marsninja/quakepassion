@@ -137,7 +137,8 @@ obj WeaponImpact {
         amount: int = 0,
         origin: Vec3 = Vec3(),
         splash: int = 0,
-        radius: float = 0.0;
+        radius: float = 0.0,
+        energy_burst: bool = False;
 }
 
 edge HasProjectile: World --> Projectile {}
@@ -149,6 +150,17 @@ node Projectile {
         radius: float = 0.0,
         gravity: bool = False,
         remaining: float = 5.0;
+
+    has beam_damage: int = 0,
+        beam_radius: float = 0.0,
+        burst_damage: int = 0,
+        burst_radius: float = 0.0,
+        beam_wait: float = 0.1,
+        burst_wait: float = 0.0,
+        phase: int = 0,
+        beams: list[Vec3] = [],
+        effect: str = "",
+        age: float = 0.0;
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {
@@ -221,7 +233,12 @@ def fire_weapon(
             splash=rule.splash,
             radius=rule.radius,
             gravity=rule.gravity,
-            remaining=rule.fuse
+            remaining=rule.fuse,
+            effect=rule.effect,
+            beam_damage=rule.beam_damage,
+            beam_radius=rule.beam_radius,
+            burst_damage=rule.burst_damage,
+            burst_radius=rule.burst_radius
         );
         state.target = player.pos;
         return True;
@@ -342,6 +359,94 @@ def projectile_blast(
     );
 }
 
+# Energy tendrils use one ray per nearby target, piercing actors until world geometry.
+def projectile_beams(
+    world: World,
+    projectile: Projectile,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState
+) {
+    projectile.beams = [];
+    actors = [
+        enemy
+        for enemy in [world->:HasOpponent:->][?:Opponent]
+        if not enemy.dormant and enemy.health > 0
+    ];
+    for target in actors {
+        center = target.pos.sub(Vec3(z=collision.eye_height - 4.0));
+        if center.sub(projectile.pos).length() > projectile.beam_radius {
+            continue;
+        }
+        finish = projectile.pos.add(
+            center.sub(projectile.pos).normalized().scale(2048.0)
+        );
+        trace = collision.trace_point(projectile.pos, finish);
+        if trace.start_solid {
+            continue;
+        }
+        projectile.beams.append(projectile.pos.lerp(finish, trace.fraction));
+        for victim in actors {
+            if actor_fraction(projectile.pos, finish, victim.pos, collision.eye_height)
+                < trace.fraction {
+                damage_opponent(
+                    victim, projectile.beam_damage, player.inventory, state
+                );
+            }
+        }
+        if trace.fraction < 1.0 {
+            state.impacts.append(
+                WeaponImpact(
+                    model=trace.model,
+                    amount=projectile.beam_damage,
+                    origin=projectile.pos.lerp(finish, trace.fraction)
+                )
+            );
+        }
+    }
+}
+
+# The delayed energy burst needs line of sight from both the orb and its owner.
+def projectile_energy_burst(
+    world: World,
+    projectile: Projectile,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState
+) {
+    for victim in [world->:HasOpponent:->][?:Opponent] {
+        if victim.dormant or victim.health <= 0 {
+            continue;
+        }
+        center = victim.pos.sub(Vec3(z=collision.eye_height - 4.0));
+        distance = center.sub(projectile.pos).length();
+        if distance >= projectile.burst_radius {
+            continue;
+        }
+        sight = collision.trace_point(projectile.pos, center);
+        owner_sight = collision.trace_point(player.pos, center);
+        if sight.start_solid
+            or sight.fraction < 1.0
+            or owner_sight.start_solid
+            or owner_sight.fraction < 1.0 {
+            continue;
+        }
+        amount = int(
+            float(projectile.burst_damage)
+                * (1.0 - math.sqrt(distance / projectile.burst_radius))
+        );
+        damage_opponent(victim, amount, player.inventory, state);
+    }
+    state.impacts.append(
+        WeaponImpact(
+            origin=projectile.pos,
+            splash=projectile.burst_damage,
+            radius=projectile.burst_radius,
+            energy_burst=True
+        )
+    );
+}
+
 walker ProjectileTick {
     has player: Player,
         collision: CollisionMap,
@@ -353,13 +458,28 @@ walker ProjectileTick {
         self.world = here;
         visit [here->:HasProjectile:->];
     }
+
     can move with Projectile entry {
         world = self.world;
         if world is None or self.dt <= 0.0 {
             return;
         }
         step = min(self.dt, here.remaining);
+        here.age += step;
         here.remaining = max(0.0, here.remaining - self.dt);
+        if here.phase > 0 {
+            here.burst_wait = max(0.0, here.burst_wait - step);
+            if here.phase == 1 and here.burst_wait <= 0.000001 {
+                projectile_energy_burst(
+                    world, here, self.player, self.collision, self.state
+                );
+                here.phase = 2;
+            }
+            if here.remaining <= 0.0 {
+                world del --> here;
+            }
+            return;
+        }
         if here.gravity {
             here.velocity.z -= 800.0 * step;
         }
@@ -391,6 +511,15 @@ walker ProjectileTick {
             }
             return;
         } elif wall.fraction >= 1.0 and here.remaining > 0.0 {
+            if here.beam_damage > 0 {
+                here.beam_wait -= step;
+                if here.beam_wait <= 0.000001 {
+                    projectile_beams(
+                        world, here, self.player, self.collision, self.state
+                    );
+                    here.beam_wait = 0.1;
+                }
+            }
             return;
         }
         if victim is None and wall.fraction < 1.0 {
@@ -401,7 +530,17 @@ walker ProjectileTick {
         }
         # Nonexplosive missiles expire quietly at the end of their lifetime.
         projectile_blast(world, here, self.player, self.collision, self.state, victim);
-        world del --> here;
+        if here.burst_damage > 0 and (victim is not None or wall.fraction < 1.0) {
+            # Original orb backs away from impact before its delayed burst.
+            here.pos = here.pos.sub(here.velocity.scale(0.1));
+            here.velocity = Vec3();
+            here.beams = [];
+            here.phase = 1;
+            here.burst_wait = 0.1;
+            here.remaining = 0.5;
+        } else {
+            world del --> here;
+        }
     }
 }
 
