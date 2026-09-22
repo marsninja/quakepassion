@@ -5,6 +5,7 @@ draws only what the flood found.
 Method bodies live in impl/app.impl.jac."""
 
 import os;
+import from .campaign { Campaign, Remember, Recall, pack_campaign, unpack_campaign }
 import from .preferences { Preferences }
 import from ..audio.feedback { Feedback }
 import from .savegame { snapshot, restore, write_save, read_save }
@@ -14,7 +15,7 @@ import from ..world.traversal { TraversalTick }
 import from ..world.exits { ExitTick, exit_map, exit_spawn }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
-import from ..world.inventory { quantity }
+import from ..world.inventory { quantity, CopyInventory, key_summary }
 import from ..world.combat { CombatState, CombatTick, fire_weapon }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
@@ -65,6 +66,7 @@ obj App {
         models: ModelScene = ModelScene(),
         simulation_time: float = 0.0,
         combat: CombatState = CombatState(),
+        campaign: Campaign = Campaign(),
         audio: Feedback = Feedback(),
         menu: LevelMenu = LevelMenu(),
         skip_time: bool = False,
@@ -85,7 +87,8 @@ obj App {
     def step() -> bool;
     def switch_level();
     def load_destination(
-        game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = ""
+        game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = "",
+        new_unit: bool = False, session: Campaign | None = None
     );
 
     def save_preferences();

@@ -2,6 +2,7 @@
 import from ..bsp { Bsp }
 import from ...physics.collision { CollisionMap, HullCell, HullFront, HullBack }
 import from ...math.vec3 { Vec3 }
+import from ...math.aabb { AABB }
 
 def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
     cells: list[HullCell] = [];
@@ -101,5 +102,33 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
             );
         }
     }
+    for i in range(len(collision.models)) {
+        record = bsp.models[collision.models[i]];
+        if collision.models[i] == 0
+            or record.maxs.x <= record.mins.x
+            or record.maxs.y <= record.mins.y
+            or record.maxs.z <= record.mins.z {
+            # World hull includes the solid exterior; synthetic unbounded hulls
+            # must also keep their full narrow-phase semantics.
+            collision.bounds.append(
+                AABB(
+                    mins=Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30),
+                    maxs=Vec3(x=1.0e30, y=1.0e30, z=1.0e30)
+                )
+            );
+        } else {
+            collision.bounds.append(
+                AABB(
+                    mins=record.mins.add(collision.offsets[i]).sub(
+                        Vec3(x=16.0, y=16.0, z=32.0)
+                    ),
+                    maxs=record.maxs.add(collision.offsets[i]).add(
+                        Vec3(x=16.0, y=16.0, z=24.0)
+                    )
+                )
+            );
+        }
+    }
+    collision.reindex();
     return collision;
 }

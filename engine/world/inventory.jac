@@ -42,3 +42,24 @@ def quantity(inventory: Inventory, kind: str) -> int {
     }
     return 0;
 }
+
+
+walker CopyInventory {
+    has result: Inventory = Inventory(), skip_keys: bool = False;
+    can start with Inventory entry { visit [here->:InventorySlot:->]; }
+    can copy with ItemStack entry {
+        if self.skip_keys and here.kind.startswith("key_") { return; }
+        self.result spawn AdjustInventory(kind=here.kind, amount=here.quantity, capacity=here.capacity);
+    }
+}
+
+
+def key_summary(inventory: Inventory) -> str {
+    keys: list[str] = [];
+    for item in [inventory->:InventorySlot:->][?:ItemStack] {
+        if item.kind.startswith("key_") and item.quantity > 0 {
+            keys.append(item.kind[4:].replace("_", " ") + (" x" + str(item.quantity) if item.quantity > 1 else ""));
+        }
+    }
+    return "Keys: " + ", ".join(keys) if keys else "";
+}

@@ -1,8 +1,10 @@
 """Small campaign roster and local arena training bots for the prototype."""
 import math;
+import from .arena_character { load_character }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
 import from engine.world.combat { Opponent, HasOpponent }
+import from engine.world.signals { Signal, HasSignal }
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
 import from engine.assets.library { AssetLibrary }
 import from engine.math.vec3 { Vec3 }
@@ -14,7 +16,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
     player_start = spawn_player(level).pos;
     library.open(directory);
     try {
-        for entity in level.bsp.entities {
+        for entity_index in range(len(level.bsp.entities)) {
+            entity = level.bsp.entities[entity_index];
             fields = entity.fields;
             kind = fields.get("classname", "");
             path = "";
@@ -23,6 +26,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 if kind != "info_player_deathmatch" or count >= 3 {
                     continue;
                 }
+                path = "models/players/sarge";
             } elif level.bsp.game == "q1" {
                 if kind not in ["monster_army"] {
                     continue;
@@ -68,11 +72,16 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 walk_speed=100.0,
                 health=60,
                 max_health=60,
+                decision_wait=float(count % 12) / 120.0,
+                support_wait=float(count % 6) / 120.0,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0
             );
+            for signal in [world->:HasSignal:->][?:Signal] {
+                if entity_index in signal.entities { enemy.activation = signal; }
+            }
             if path {
                 if path not in resources {
-                    loaded = library.model(path);
+                    loaded = load_character(library) if arena else library.model(path);
                     resource = ModelResource(
                         name=path, model=loaded.model, skins=loaded.skins
                     );
@@ -83,8 +92,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 enemy.visual.offset = Vec3(z=-level.collision.eye_height);
                 frames = resources[path].model.surfaces[0].frames;
                 for i in range(len(frames)) {
-                    if frames[i].name.startswith("run") {
-                        enemy.animation.append(i);
+                    frame_name = frames[i].name;
+                    if frame_name.startswith("run") { enemy.animation.append(i); }
+                    if frame_name.startswith("stand") { enemy.idle_animation.append(i); }
+                    if frame_name.startswith("attack") or frame_name.startswith("attak") or frame_name.startswith("shoot") {
+                        enemy.attack_animation.append(i);
                     }
                 }
                 enemy.modeled = True;

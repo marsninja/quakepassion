@@ -1,5 +1,5 @@
 """Brush-contact activation of named doors through shared graph relationships."""
-import from .world { World }
+import from .world { World, Player }
 import from .doors { Door, resolve_targets }
 import from .signals { Signal, Fire }
 import from ..formats.bsp { Bsp }
@@ -22,12 +22,14 @@ node TouchTrigger {
 }
 
 walker Activate {
+    has player: Player | None = None, message: str = "";
     can targets with TouchTrigger entry {
         visit [here->:Activates:->];
     }
 
     can signal with Signal entry {
-        here spawn Fire(emit=False);
+        fired = here spawn Fire(emit=False, inventory=self.player.inventory if self.player is not None else None);
+        if fired.message { self.message = fired.message; }
     }
 
     can request with Door entry {
@@ -40,7 +42,8 @@ walker TriggerTick {
         finish: Vec3,
         dt: float,
         touching: bool = True,
-        top_drop: float = 0.0;
+        top_drop: float = 0.0,
+        player: Player | None = None, message: str = "";
 
     can start_world with World entry {
         if self.dt > 0.0 {
@@ -58,7 +61,8 @@ walker TriggerTick {
         }
         hit = here.volume.trace(self.start, self.finish, top_drop=self.top_drop);
         if hit.start_solid or hit.fraction < 1.0 {
-            here spawn Activate();
+            activated = here spawn Activate(player=self.player);
+            if activated.message { self.message = activated.message; }
             here.activations += 1;
             here.cooldown = here.interval;
             if here.once {

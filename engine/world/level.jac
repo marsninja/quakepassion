@@ -13,6 +13,8 @@ import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from .doors { load_doors }
+import from .pickups { load_pickup_signals }
+import from .combat { load_opponent_signals }
 import from .triggers { load_triggers }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
@@ -81,7 +83,11 @@ obj Level {
         palette: bytes = b"",
         areas: list[BspArea] = [],
         splits: list[Split] = [],
-        liquids: LiquidSpace = LiquidSpace();
+        liquids: LiquidSpace = LiquidSpace(),
+        visible_leaf: int = -2,
+        visible_game: str = "",
+        visible_culling: bool = False,
+        visible_faces: list[int] = [];
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -123,6 +129,13 @@ obj Level {
 
     def visible(world: World, eye: Vec3, culling: bool) -> list[int] {
         leaf = self.locate(eye);
+        # Map topology/PVS are immutable for a loaded Level. Movers update face
+        # transforms, not membership; their faces are always included below.
+        if leaf == self.visible_leaf
+            and culling == self.visible_culling
+            and self.visible_game == self.bsp.game {
+            return self.visible_faces;
+        }
         targets: list[BspArea] = [];
         if self.bsp.game != "q1" {
             cluster = self.bsp.leaves[leaf].cluster;
@@ -175,7 +188,11 @@ obj Level {
                 gather.seen.add(f);
             }
         }
-        return gather.faces;
+        self.visible_leaf = leaf;
+        self.visible_culling = culling;
+        self.visible_game = self.bsp.game;
+        self.visible_faces = gather.faces;
+        return self.visible_faces;
     }
 }
 
@@ -317,6 +334,8 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
         }
     }
     level.liquids = load_liquids(level.bsp);
+    load_pickup_signals(world, level.bsp);
+    load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_doors(world, level.bsp, level.collision);
     load_triggers(world, level.bsp);

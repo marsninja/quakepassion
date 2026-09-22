@@ -56,6 +56,12 @@ def step_slide(
     if not grounded or velocity.z > 0.0 {
         return flat;
     }
+    # A step cannot improve an unobstructed horizontal move (including rest).
+    wanted = velocity.scale(dt);
+    actual = flat.pos.sub(pos);
+    if abs(actual.x - wanted.x) < 0.000001 and abs(actual.y - wanted.y) < 0.000001 {
+        return flat;
+    }
     up = collision.trace(pos, pos.add(Vec3(z=18.0)));
     if up.start_solid or up.fraction < 1.0 {
         return flat;

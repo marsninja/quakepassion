@@ -8,6 +8,7 @@ Method and ability bodies live in impl/renderer.impl.jac.
 """
 
 import from vendor.raylib {
+    def DrawRectangle(x: i32, y: i32, width: i32, height: i32, color: Color) -> None;
     def SetTargetFPS(fps: i32) -> None;  def SetExitKey(key: i32) -> None;  def rlSetClipPlanes(
         nearPlane: f64, farPlane: f64
     ) -> None;  obj Color {
@@ -73,6 +74,8 @@ obj Renderer {
     def draw_opponents(world: World, height: float);
     def draw_message(message: str);
     def draw_combat(state: CombatState, arena: bool);
+    def draw_terminal(message: str);
+    def draw_keys(message: str);
     def draw_status(health: int, armor: int, shells: int = 0);
     def end_frame();
     def screenshot(path: str);

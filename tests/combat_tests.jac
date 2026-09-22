@@ -8,6 +8,7 @@ import from engine.world.combat {
 }
 import from engine.world.world { World, Player }
 import from engine.world.inventory { AdjustInventory, quantity }
+import from engine.world.signals { Signal, Targets }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 
@@ -15,6 +16,10 @@ test "weapons hit nearest living target consume shells and obey cooldown" {
     world = World();
     far = Opponent(pos=Vec3(x=200.0), health=60);
     near = Opponent(pos=Vec3(x=100.0), health=60);
+    objective = Signal(relay=True, remaining=1, once=True);
+    destination = Signal();
+    near.activation +>:Targets:+> objective;
+    objective +>:Targets:+> destination;
     world +>:HasOpponent:+> far;
     world +>:HasOpponent:+> near;
     player = Player();
@@ -22,6 +27,7 @@ test "weapons hit nearest living target consume shells and obey cooldown" {
     collision = CollisionMap();
     assert fire_weapon(world, player, collision, state);
     assert near.health == 45 and far.health == 60;
+    assert destination.pending == 0;
     assert not fire_weapon(world, player, collision, state);
     assert state.shots == 1;
     world spawn CombatTick(
@@ -32,12 +38,14 @@ test "weapons hit nearest living target consume shells and obey cooldown" {
     player.inventory spawn AdjustInventory(kind="shells", amount=2, capacity=100);
     assert fire_weapon(world, player, collision, state);
     assert near.health == 0 and state.kills == 1 and not near.visual.visible;
+    assert destination.pending == 1 and not objective.enabled;
     assert quantity(player.inventory, "shells") == 1;
     world spawn CombatTick(
         player=player, collision=collision, state=state, dt=0.7, active=False
     );
     assert fire_weapon(world, player, collision, state);
     assert far.health == 10 and state.kills == 1;
+    assert destination.pending == 1;
     player.health = 0;
     state.cooldown = 0.0;
     assert not fire_weapon(world, player, collision, state);
@@ -86,4 +94,67 @@ test "actor ray bounds reject grazing misses and accept inside starts" {
     assert actor_fraction(Vec3(y=17.0), Vec3(x=100.0, y=17.0), Vec3(x=50.0), 22.0)
         == 1.0;
     assert actor_fraction(Vec3(), Vec3(), Vec3(), 22.0) == 0.0;
+}
+
+test "cached pursuit never permits an attack through newly blocking geometry" {
+    world = World();
+    enemy = Opponent(pos=Vec3(x=100.0), attack_wait=0.0, grounded=True);
+    world +>:HasOpponent:+> enemy;
+    player = Player();
+    collision = CollisionMap();
+    state = CombatState();
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert player.health == 96 and enemy.pursuing;
+    collision.add_box(
+        Vec3(x=40.0, y=-100.0, z=-100.0),
+        Vec3(x=50.0, y=100.0, z=100.0),
+        Vec3(),
+        Vec3(),
+        Vec3()
+    );
+    enemy.attack_wait = 0.0;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert player.health == 96;
+    enemy.decision_wait = 0.0;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert player.health == 96 and not enemy.pursuing;
+}
+
+test "settled opponents detect lost support and resume per tick gravity" {
+    world = World();
+    enemy = Opponent(pos=Vec3(x=2000.0), grounded=True, support_wait=0.05);
+    world +>:HasOpponent:+> enemy;
+    player = Player();
+    collision = CollisionMap();
+    state = CombatState();
+    for i in range(7) {
+        world spawn CombatTick(
+            player=player, collision=collision, state=state, dt=1.0 / 120.0
+        );
+    }
+    assert not enemy.grounded and enemy.velocity.z < 0.0;
+    prior = enemy.pos.z;
+    world spawn CombatTick(
+        player=player, collision=collision, state=state, dt=1.0 / 120.0
+    );
+    assert enemy.pos.z < prior;
+}
+
+test "opponents remember last sight and stop at expired alert" {
+    world = World();
+    enemy = Opponent(pos=Vec3(x=300.0), attack_wait=10.0);
+    world +>:HasOpponent:+> enemy;
+    player = Player();
+    collision = CollisionMap();
+    state = CombatState();
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert enemy.alert > 0.0 and enemy.steering.x < 0.0;
+    collision.add_box(Vec3(x=140.0, y=-100.0, z=-1000.0), Vec3(x=150.0, y=100.0, z=1000.0), Vec3(), Vec3(), Vec3());
+    enemy.decision_wait = 0.0;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert not enemy.pursuing and enemy.alert > 0.0 and enemy.last_seen.x == 0.0;
+    enemy.alert = 0.0;
+    enemy.decision_wait = 0.0;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert enemy.steering.length() == 0.0;
 }

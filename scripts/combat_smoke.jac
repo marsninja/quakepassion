@@ -81,10 +81,21 @@ with entry {
         assert enemy.health == 0 and app.combat.kills == 1;
         if game == "q3" {
             enemy.home = enemy.pos;
-            world spawn CombatTick(
-                player=player, collision=level.collision, state=app.combat, dt=3.0
-            );
-            assert enemy.health > 0;
+            player.health = 100000;
+            app.combat.weapon = 1;
+            for frag in range(9) {
+                world spawn CombatTick(
+                    player=player, collision=level.collision, state=app.combat, dt=3.0
+                );
+                assert enemy.health > 0 and enemy.visual.visible;
+                for shot in range(4) {
+                    app.combat.cooldown = 0.0;
+                    assert fire_weapon(world, player, level.collision, app.combat);
+                }
+                assert enemy.health == 0 and app.combat.kills == frag + 2;
+            }
+            assert app.combat.kills == 10;
+            print("ARENA MATCH PASS: ten hitscan kills through respawn");
         }
         print("COMBAT PASS", game, count, "opponents");
         app.audio.close();

@@ -87,7 +87,16 @@ impl App.render_frame() {
         faces = self.level.visible(self.world, p.pos, self.culling);
         self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
-        self.models.draw(self.world, p.pos, self.simulation_time);
+        self.models.draw(
+            self.world,
+            p.pos,
+            self.simulation_time,
+            culling=self.culling,
+            yaw=p.yaw,
+            pitch=p.pitch,
+            fov=self.renderer.fov,
+            aspect=float(self.renderer.width) / float(self.renderer.height)
+        );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.end_scene();
         if not self.smoke {
@@ -95,6 +104,7 @@ impl App.render_frame() {
                 p.health, p.armor, quantity(p.inventory, "shells")
             );
             self.renderer.draw_combat(self.combat, self.level.bsp.game == "q3");
+            self.renderer.draw_keys(key_summary(p.inventory));
             if self.notice_wait > 0.0 {
                 self.renderer.draw_message(self.notice);
             }
@@ -229,7 +239,8 @@ impl App.switch_level() {
 }
 
 impl App.load_destination(
-    game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = ""
+    game: str, name: str, spawnpoint: str = "", carry: bool = False, saved: str = "",
+    new_unit: bool = False, session: Campaign | None = None
 ) {
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
@@ -243,11 +254,28 @@ impl App.load_destination(
             player.armor = self.player.armor;
             player.armor_capacity = self.player.armor_capacity;
             player.armor_ratio = self.player.armor_ratio;
-            player.inventory = self.player.inventory;
+            copied = self.player.inventory spawn CopyInventory(skip_keys=game == "q1" or new_unit);
+            player.inventory = copied.result;
         }
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
         combat = CombatState();
+        next_campaign = session if session is not None else (
+            self.campaign if carry and game == "q2" and self.level.bsp.game == "q2" and not new_unit
+            else Campaign()
+        );
+        departed = "";
+        if carry and game == "q2" and self.level.bsp.game == "q2" and not new_unit {
+            departed = snapshot(self.world, self.level, self.player, self.combat);
+            recalled = next_campaign spawn Recall(name=name);
+            if recalled.data {
+                height = level.collision.eye_height;
+                top = level.collision.top_drop;
+                restore(world, level, Player(), CombatState(), recalled.data);
+                level.collision.eye_height = height;
+                level.collision.top_drop = top;
+            }
+        }
         if saved {
             restore(world, level, player, combat, saved);
         }
@@ -257,6 +285,10 @@ impl App.load_destination(
             self.models.close();
             self.quake.close();
         }
+        if departed {
+            next_campaign spawn Remember(name=self.level.name, data=departed);
+        }
+        self.campaign = next_campaign;
         self.world = world;
         self.level = level;
         self.player = player;
@@ -362,7 +394,7 @@ impl App.step() -> bool {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
         if IsKeyPressed(i32(257)) {
-            self.load_destination(self.level.bsp.game, self.level.name);
+            self.load_destination(self.level.bsp.game, self.level.name, session=self.campaign);
         }
         self.render_frame();
         return True;
@@ -410,7 +442,7 @@ impl App.step() -> bool {
         }
         previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
         if self.level.active and not self.smoke {
-            self.world spawn DoorTick(
+            doors = self.world spawn DoorTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
                 player_origin=self.player.pos.sub(
@@ -420,6 +452,7 @@ impl App.step() -> bool {
                 touching=self.walking,
                 player=self.player if self.walking else None
             );
+            if doors.message { self.notice = doors.message; self.notice_wait = 3.0; }
         }
         if self.walking {
             immersed = self.level.immersion(self.player.pos);
@@ -484,13 +517,15 @@ impl App.step() -> bool {
             if pickup_result.collected > 0 {
                 self.audio.play(2);
             }
-            self.world spawn TriggerTick(
+            triggers = self.world spawn TriggerTick(
+                player=self.player,
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
                 top_drop=self.level.collision.top_drop,
                 touching=self.walking
             );
+            if triggers.message { self.notice = triggers.message; self.notice_wait = 3.0; }
             exit_request = self.world spawn ExitTick(
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
@@ -502,7 +537,7 @@ impl App.step() -> bool {
                     self.level.bsp.game,
                     exit_map(exit_request.request),
                     exit_spawn(exit_request.request),
-                    carry=True
+                    carry=True, new_unit=exit_request.request.startswith("*")
                 );
                 break;
             }
@@ -633,7 +668,7 @@ impl App.quicksave() {
         try {
             write_save(
                 os.getenv("HOME", ".") + "/.quakepassion-save.txt",
-                snapshot(self.world, self.level, self.player, self.combat)
+                pack_campaign(self.campaign, snapshot(self.world, self.level, self.player, self.combat))
             );
             self.notice = "Saved - F9 to load";
         } except Exception as error {
@@ -646,13 +681,15 @@ impl App.quicksave() {
 impl App.quickload() {
     try {
         data = read_save(os.getenv("HOME", ".") + "/.quakepassion-save.txt");
+        session = unpack_campaign(data);
+        data = session.active;
         lines = data.splitlines();
         if len(lines) < 4
-            or lines[0] != "QUAKEPASSION 1"
+            or lines[0] != "QUAKEPASSION 2"
             or lines[1] not in ["q1", "q2", "q3"] {
             raise ValueError("Invalid save header");
         }
-        self.load_destination(lines[1], exit_map(lines[2]), saved=data);
+        self.load_destination(lines[1], exit_map(lines[2]), saved=data, session=session);
         self.notice = "Loaded" if not self.menu.opened else self.menu.message;
     } except Exception as error {
         self.notice = "Load failed: " + str(error);
