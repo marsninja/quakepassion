@@ -3,7 +3,7 @@ import math;
 import from .opponent_rule { OpponentRule }
 import from .weapons { WeaponRule }
 import from .world { World, Player }
-import from .damage { Damage }
+import from .damage { Damage, blast_strength }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual }
 import from .signals { Signal, HasSignal, Fire }
@@ -472,9 +472,9 @@ def projectile_blast(
         if sight.start_solid or sight.fraction < 1.0 {
             continue;
         }
-        strength = float(projectile.splash) * (1.0 - distance / projectile.radius)
-            if state.game == "q3"
-            else max(0.0, float(projectile.splash) - distance * 0.5);
+        strength = blast_strength(
+            state.game, projectile.splash, projectile.radius, distance
+        );
         if actor is player and not projectile.hostile {
             strength *= 0.5;
         }

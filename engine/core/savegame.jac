@@ -176,7 +176,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         door.remaining,
                         1.0 if door.automatic else 0.0,
                         float(door.activation.pending),
-                        1.0 if door.unlocked else 0.0
+                        1.0 if door.unlocked else 0.0,
+                        float(door.health)
                     ]
                 )
         );
@@ -481,12 +482,14 @@ def restore(
             item.activate_on_use = row[3] != 0.0;
             item.visual.visible = item.active;
         } elif words[0] == "D" and d < len(doors) {
-            row = values(" ".join(words[2:]), 5);
+            row = values(" ".join(words[2:]), 6);
             door = doors[d];
             d += 1;
             if words[1] not in ["closed", "opening", "open", "closing", "locked"]
                 or row[0] < 0.0
-                or row[0] > 1.0 {
+                or row[0] > 1.0
+                or row[5] < 0.0
+                or row[5] > float(door.max_health) {
                 raise ValueError("Invalid saved door");
             }
             door.state = words[1];
@@ -495,6 +498,7 @@ def restore(
             door.automatic = row[2] != 0.0;
             door.activation.pending = int(row[3]);
             door.unlocked = row[4] != 0.0;
+            door.health = int(row[5]);
             if door.unlocked and door.keys {
                 door.hold_time = -1.0;
             }

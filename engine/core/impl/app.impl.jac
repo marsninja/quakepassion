@@ -648,7 +648,9 @@ impl App.step() -> bool {
             );
             for impact in self.combat.impacts {
                 if impact.model >= 0 {
-                    self.world spawn ShootMover(model=impact.model);
+                    self.world spawn ShootMover(
+                        model=impact.model, amount=impact.amount
+                    );
                     self.world spawn ShootBrush(
                         model=impact.model,
                         amount=impact.amount,
@@ -659,6 +661,15 @@ impl App.step() -> bool {
                     );
                 }
                 if impact.splash > 0 {
+                    self.world spawn BlastButton(
+                        origin=impact.origin,
+                        amount=impact.splash,
+                        radius=impact.radius,
+                        game=self.level.bsp.game,
+                        collision=self.level.collision,
+                        player=self.player,
+                        energy_burst=impact.energy_burst
+                    );
                     self.world spawn BlastBrush(
                         origin=impact.origin,
                         amount=impact.splash,

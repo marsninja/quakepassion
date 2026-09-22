@@ -33,7 +33,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 path = "models/players/sarge";
             } else {
                 definition = enemy_rule(source, kind);
-                if definition is None or int(fields.get("spawnflags", "0")) & 512 {
+                if definition is None {
                     continue;
                 }
                 rule = definition;

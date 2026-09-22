@@ -1,9 +1,8 @@
 """Q2 toggle walls and destructible brushes using shared geometry and damage."""
-import math;
 import from .world { World, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
-import from .damage { Damage }
+import from .damage { Damage, blast_strength }
 import from .doors { model_bounds }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Sweep }
@@ -297,9 +296,9 @@ walker BlastBrush {
                 return;
             }
         }
-        strength = float(self.amount) * (1.0 - math.sqrt(distance / self.radius))
-            if self.energy_burst
-            else max(0.0, float(self.amount) - distance * 0.5);
+        strength = blast_strength(
+            self.bsp.game, self.amount, self.radius, distance, self.energy_burst
+        );
         here.health = max(0, here.health - int(strength));
         if here.health == 0 {
             destroy_brush(

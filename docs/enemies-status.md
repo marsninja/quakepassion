@@ -20,7 +20,7 @@ explosions and visual effects. Their ownership survives snapshots. Enemy splash
 does not receive the player's self-damage reduction. Melee and instant attacks
 require fresh line of sight; traveling missiles must actually reach the player.
 
-Save format **4** rejects older snapshots because adding enemies changes the
+Save format **5** rejects older snapshots because adding enemies changes the
 positional entity records. Map and campaign-envelope readers now share a single
 format identifier. Saved Q2 hub records use the same version as the active map.
 
@@ -33,11 +33,12 @@ Sources:
 - https://github.com/id-Software/Quake-Tools/tree/master/qcc/v101qc
 - https://github.com/id-Software/Quake-2/blob/master/game/m_soldier.c
 
-The full game regression suite passes **230 tests** with the locally patched
+The full game regression suite passes **237 tests** with the locally patched
 compiler, including a separate warm-cache culling rerun. The native campaign
 harness passes Q2 hub revisits, cross-game save/load, carried grenade state,
 rollback and unit reset, plus Q1 e1m2 key pickup/unlock and onward e1m3 loading.
-The main native viewer builds successfully.
+The main native viewer builds successfully. Spawn filtering and shootable-button
+checks also pass on Q2 base1; see [spawn rules](spawn-rules-status.md).
 
 The test crash was a compiler-cache provenance defect, fixed in upstream
 [Jac PR #9406](https://github.com/jaseci-labs/jac/pull/9406). Source compiler

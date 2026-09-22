@@ -1,5 +1,6 @@
 """Shared translating proximity doors. Unsupported activation stays static."""
 import math;
+import from .damage { blast_strength }
 import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
 import from .signals { Signal, Fire, Targets, HasSignal, DelayedUse, progress_for }
@@ -33,6 +34,8 @@ node Door {
         speed: float,
         hold_time: float,
         kind: str = "door",
+        health: int = 0,
+        max_health: int = 0,
         rest: Vec3 = Vec3(),
         activation: Signal = Signal(),
         keys: list[str] = [],
@@ -129,7 +132,10 @@ walker DoorTick {
         if here.keys and not here.unlocked {
             here.requested = False;
             here.activation.pending = 0;
-            if not near or not self.touching or self.player is None or self.player.health <= 0 {
+            if not near
+                or not self.touching
+                or self.player is None
+                or self.player.health <= 0 {
                 return;
             }
             for key in here.keys {
@@ -233,8 +239,12 @@ walker DoorTick {
         if next_position == 1.0 {
             here.state = "open";
             here.remaining = here.hold_time;
-            fired = here.activation spawn Fire(inventory=self.player.inventory if self.player is not None else None);
-            if fired.message { self.message = fired.message; }
+            fired = here.activation spawn Fire(
+                inventory=self.player.inventory if self.player is not None else None
+            );
+            if fired.message {
+                self.message = fired.message;
+            }
         } elif next_position == 0.0 {
             here.state = "closed";
         }
@@ -300,13 +310,16 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         # Keep unsupported members in the graph so a locked half disables its group.
         flags = int(fields.get("spawnflags", "0"));
         allowed = 3840 if bsp.game == "q1" else (7936 if bsp.game == "q2" else 0);
-        if kind == "func_door" and bsp.game == "q1" { allowed |= 24; }
+        if kind == "func_door" and bsp.game == "q1" {
+            allowed |= 24;
+        }
         if kind == "func_plat" and bsp.game != "q3" {
             allowed |= 1;
         }
+        health = max(0, int(float(fields.get("health", "0"))));
         enabled = True;
         if flags & ~allowed
-            or float(fields.get("health", "0")) != 0.0
+            or (health > 0 and kind != "func_button")
             or fields.get("killtarget", "")
             or fields.get("accel", "")
             or fields.get("decel", "") {
@@ -346,7 +359,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 else (400.0 if bsp.game == "q3" else 100.0);
         }
         if hold_time == 0.0 {
-            hold_time = 1.0
+            hold_time = (3.0 if bsp.game == "q2" else 1.0)
                 if kind == "func_button"
                 else (2.0 if bsp.game == "q3" else 3.0);
         }
@@ -371,11 +384,22 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 if kind == "func_plat"
                 else ("button" if kind == "func_button" else "door"),
             rest=Vec3(z=-distance) if kind == "func_plat" else Vec3(),
-            keys=(["key_gold"] if flags & 8 else []) + (["key_silver"] if flags & 16 else [])
-                if bsp.game == "q1" and kind == "func_door" else
-                (fields["key"].split() if bsp.game == "passion" and fields.get("key", "") else []),
+            keys=(["key_gold"] if flags & 8 else [])
+                + (["key_silver"] if flags & 16 else [])
+                if bsp.game == "q1" and kind == "func_door"
+                else (
+                    fields["key"].split()
+                        if bsp.game == "passion" and fields.get("key", "")
+                        else []
+                ),
             enabled=enabled,
-            automatic=kind == "func_button" or not bool(fields.get("targetname", "")),
+            health=health,
+            max_health=health,
+            automatic=(
+                health == 0 and (bsp.game != "q2" or not fields.get("targetname", ""))
+            )
+                if kind == "func_button"
+                else not bool(fields.get("targetname", "")),
             names=[fields["targetname"]] if fields.get("targetname", "") else [],
             team=fields.get("team", ""),
             linkable=flags & 4 == 0,
@@ -488,7 +512,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         }
         for part in assembly.members {
             for key in part.keys {
-                if key not in leader.keys { leader.keys.append(key); }
+                if key not in leader.keys {
+                    leader.keys.append(key);
+                }
             }
             leader.automatic = leader.automatic and part.automatic;
             for name in part.names {
@@ -580,39 +606,85 @@ def connect_targets(world: World, bsp: Bsp) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
-        if (kind == "trigger_secret" and bsp.game == "q1") or
-            (kind in ["target_secret","target_goal"] and bsp.game == "q2") {
+        if (kind == "trigger_secret" and bsp.game == "q1")
+            or (kind in ["target_secret", "target_goal"] and bsp.game == "q2") {
             progress = progress_for(world);
             secret = kind != "target_goal";
-            if secret { progress.total_secrets += 1; } else { progress.total_goals += 1; }
-            signals.append(Signal(entities=[index],relay=True,once=True,progress=progress,
-                objective="secret" if secret else "goal"));
+            if secret {
+                progress.total_secrets += 1;
+            } else {
+                progress.total_goals += 1;
+            }
+            signals.append(
+                Signal(
+                    entities=[index],
+                    relay=True,
+                    once=True,
+                    progress=progress,
+                    objective="secret" if secret else "goal"
+                )
+            );
         }
-        if kind == "func_timer" and bsp.game in ["q2", "q3"]
+        if kind == "func_timer"
+            and bsp.game in ["q2", "q3"]
             and not fields.get("killtarget", "") {
-            interval = float(fields.get("wait","1"));
-            if interval <= 0.0 { interval = 1.0; }
-            timer = Signal(entities=[index],interval=interval,random_state=index+1,
-                variance=max(0.0,min(float(fields.get("random","1" if bsp.game == "q3" else "0")),interval-0.1)),
-                timer_running=int(fields.get("spawnflags","0")) & 1 != 0);
+            interval = float(fields.get("wait", "1"));
+            if interval <= 0.0 {
+                interval = 1.0;
+            }
+            timer = Signal(
+                entities=[index],
+                interval=interval,
+                random_state=index + 1,
+                variance=max(
+                    0.0,
+                    min(
+                        float(fields.get("random", "1" if bsp.game == "q3" else "0")),
+                        interval - 0.1
+                    )
+                ),
+                timer_running=int(fields.get("spawnflags", "0")) & 1 != 0
+            );
             if timer.timer_running {
-                timer.timer_remaining = 0.1 if bsp.game == "q3" else max(0.0,1.0+float(fields.get("pausetime","0"))+float(fields.get("delay","0"))+timer.sample(interval));
+                timer.timer_remaining = 0.1
+                    if bsp.game == "q3"
+                    else max(
+                        0.0,
+                        1.0
+                            + float(fields.get("pausetime", "0"))
+                            + float(fields.get("delay", "0"))
+                            + timer.sample(interval)
+                    );
             }
             signals.append(timer);
         }
-        if kind == "trigger_always" and bsp.game in ["q2", "q3"]
+        if kind == "trigger_always"
+            and bsp.game in ["q2", "q3"]
             and not fields.get("killtarget", "") {
-            startup = 0.3 if bsp.game == "q3" else max(0.2,float(fields.get("delay","0")));
-            signals.append(Signal(entities=[index],queued=[DelayedUse(remaining=startup)]));
+            startup = 0.3
+                if bsp.game == "q3"
+                else max(0.2, float(fields.get("delay", "0")));
+            signals.append(
+                Signal(entities=[index], queued=[DelayedUse(remaining=startup)])
+            );
         }
-        if kind in ["trigger_key", "trigger_counter"] and bsp.game in ["q1", "q2"]
+        if kind in ["trigger_key", "trigger_counter"]
+            and bsp.game in ["q1", "q2"]
             and not fields.get("killtarget", "") {
             key = fields.get("item", "") if kind == "trigger_key" else "";
-            if kind == "trigger_counter" or (bsp.game == "q2" and key.startswith("key_")) {
-                signals.append(Signal(
-                    relay=True, entities=[index], key=key, once=True,
-                    remaining=max(1, int(fields.get("count", "2"))) if kind == "trigger_counter" else 0
-                ));
+            if kind == "trigger_counter"
+                or (bsp.game == "q2" and key.startswith("key_")) {
+                signals.append(
+                    Signal(
+                        relay=True,
+                        entities=[index],
+                        key=key,
+                        once=True,
+                        remaining=max(1, int(fields.get("count", "2")))
+                            if kind == "trigger_counter"
+                            else 0
+                    )
+                );
             }
         }
         if kind in ["trigger_relay", "target_relay", "target_delay"]
@@ -620,11 +692,13 @@ def connect_targets(world: World, bsp: Bsp) {
             and not fields.get("killtarget", "") {
             signal = Signal(relay=True, entities=[index]);
             if kind == "target_delay" and bsp.game == "q3" {
-                signal.delay = float(fields.get("delay",fields.get("wait","1")));
-                if signal.delay <= 0.0 { signal.delay = 1.0; }
-                signal.variance = max(0.0,float(fields.get("random","0")));
+                signal.delay = float(fields.get("delay", fields.get("wait", "1")));
+                if signal.delay <= 0.0 {
+                    signal.delay = 1.0;
+                }
+                signal.variance = max(0.0, float(fields.get("random", "0")));
                 signal.replace_pending = True;
-                signal.random_state = index+1;
+                signal.random_state = index + 1;
             }
             signals.append(signal);
         }
@@ -640,10 +714,18 @@ def connect_targets(world: World, bsp: Bsp) {
         for index in signal.entities {
             fields = bsp.entities[index].fields;
             kind = fields.get("classname", "");
-            if bsp.game in ["q1", "q2"] { signal.delay = max(signal.delay,float(fields.get("delay","0"))); }
-            if kind == "func_train" { continue; }
-            target = fields.get("pathtarget", "") if kind == "path_corner" and bsp.game != "q3" else fields.get("target", "");
-            if kind.startswith("monster_") and bsp.game == "q2" { target = fields.get("deathtarget",target); }
+            if bsp.game in ["q1", "q2"] {
+                signal.delay = max(signal.delay, float(fields.get("delay", "0")));
+            }
+            if kind == "func_train" {
+                continue;
+            }
+            target = fields.get("pathtarget", "")
+                if kind == "path_corner" and bsp.game != "q3"
+                else fields.get("target", "");
+            if kind.startswith("monster_") and bsp.game == "q2" {
+                target = fields.get("deathtarget", target);
+            }
             if not target {
                 continue;
             }
@@ -653,8 +735,12 @@ def connect_targets(world: World, bsp: Bsp) {
                     continue;
                 }
                 found = True;
-                if kind == "path_corner" and bsp.game == "q3"
-                    and bsp.entities[recipient].fields.get("classname", "") == "path_corner" { continue; }
+                if kind == "path_corner"
+                    and bsp.game == "q3"
+                    and bsp.entities[recipient].fields.get("classname", "")
+                        == "path_corner" {
+                    continue;
+                }
                 resolved = False;
                 for destination in signals {
                     if recipient in destination.entities {
@@ -687,7 +773,10 @@ def connect_targets(world: World, bsp: Bsp) {
         }
     }
     for signal in signals {
-        if not signal.enabled { signal.queued = []; signal.timer_running = False; }
+        if not signal.enabled {
+            signal.queued = [];
+            signal.timer_running = False;
+        }
     }
     for leader in leaders {
         leader.enabled = leader.enabled and leader.activation.enabled;
@@ -715,4 +804,71 @@ def resolve_targets(world: World, bsp: Bsp, target: str) -> list[Signal] {
         }
     }
     return result;
+}
+
+
+def damage_button(button: Door, amount: int) -> bool {
+    if amount <= 0
+        or not button.enabled
+        or button.kind != "button"
+        or button.max_health <= 0
+        or button.activation.pending > 0
+        or button.state not in ["closed", "closing"] {
+        return False;
+    }
+    button.health = max(0, button.health - amount);
+    if button.health == 0 {
+        button.health = button.max_health;
+        button.activation.pending += 1;
+        return True;
+    }
+    return False;
+}
+
+walker BlastButton {
+    has origin: Vec3,
+        amount: int,
+        radius: float,
+        game: str,
+        collision: CollisionMap,
+        player: Player,
+        energy_burst: bool = False;
+
+    can begin with World entry {
+        visit [here->:HasDoor:->];
+    }
+
+    can hit with Door entry {
+        if here.kind != "button" or here.max_health <= 0 or not here.enabled {
+            return;
+        }
+        center = here.bounds.center().add(here.rest).add(
+            here.travel.scale(here.position)
+        );
+        strength = blast_strength(
+            self.game,
+            self.amount,
+            self.radius,
+            center.sub(self.origin).length(),
+            self.energy_burst
+        );
+        if strength <= 0.0 {
+            return;
+        }
+        sight = self.collision.trace(
+            self.origin, center, exclude=here.hulls, point=True
+        );
+        if sight.start_solid or sight.fraction < 1.0 {
+            return;
+        }
+        if self.energy_burst {
+            sight = self.collision.trace(
+                self.player.pos, center, exclude=here.hulls, point=True
+            );
+            if sight.start_solid or sight.fraction < 1.0 {
+                return;
+            }
+        }
+        damage_button(here, int(strength));
+    }
 }

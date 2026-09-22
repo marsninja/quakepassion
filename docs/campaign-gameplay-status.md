@@ -15,7 +15,7 @@ fresh session. Failed asset loads leave the current level and hub intact.
 Restart after death reloads the current map and preserves other visited Q2 maps.
 
 F5 saves; F9 loads the active map and Q2 hub together. Saves use a data-only
-campaign envelope and snapshot version 4. Older snapshots are rejected:
+campaign envelope and snapshot version 5. Older snapshots are rejected:
 expanding the enemy roster changes positional entity records, so
 silently reading old snapshots would risk restoring state to the wrong entities.
 Settings persist separately; menu reset restores defaults.
