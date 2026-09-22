@@ -1,5 +1,6 @@
 """Pause menu and archive-backed map catalogue."""
 import os;
+import time;
 import from zipfile { ZipFile }
 import from ..assets.pak { open_pak }
 import from ..formats.bsp { i32_at, require_range, parse_entities }
@@ -15,6 +16,7 @@ def game_directory(game: str) -> str {
     if game == os.getenv("QP_GAME", "q1") and os.getenv("QP_ASSETS", "") != "" {
         return os.getenv("QP_ASSETS", "");
     }
+    if game == "passion" { return os.getenv("HOME", "") + "/quake-assets"; }
     folder = "id1" if game == "q1" else ("baseq2" if game == "q2" else "baseq3");
     return os.getenv("HOME", "") + "/quake-assets/" + folder;
 }
@@ -57,13 +59,21 @@ obj LevelMenu {
         offset: int = 0,
         maps: list[str] = [],
         message: str = "",
-        games: list[str] = ["q1", "q2", "q3"];
+        seed_cursor: int = 0,
+        games: list[str] = ["q1", "q2", "q3", "passion"];
 
     def scan() {
         self.maps = [];
         self.selected = 0;
         self.offset = 0;
         self.message = "";
+        if self.games[self.game] == "passion" {
+            seed = max(int(time.time()), self.seed_cursor + 12) % 2147483000 + 1;
+            self.seed_cursor = seed;
+            self.maps = ["v1-" + str(seed + i) for i in range(12)];
+            self.message = "Seeded expeditions | Click Passion for fresh seeds";
+            return;
+        }
         names: list[str] = [];
         try {
             directory = game_directory(self.games[self.game]);
@@ -139,8 +149,8 @@ obj LevelMenu {
             }
             return "";
         }
-        for i in range(3) {
-            if click and self.hit(310 + i * 220, 145, 210, 40) {
+        for i in range(len(self.games)) {
+            if click and self.hit(310 + i * 165, 145, 155, 40) {
                 self.game = i;
                 self.scan();
             }
@@ -241,13 +251,13 @@ obj LevelMenu {
             return;
         }
         DrawText("Choose a level  |  Esc: resume", i32(310), i32(120), i32(18), white);
-        titles = ["Quake", "Quake II", "Quake III"];
-        for i in range(3) {
+        titles = ["Quake", "Quake II", "Quake III", "Passion"];
+        for i in range(len(self.games)) {
             color = Color(r=99, g=64, b=35, a=255)
                 if i == self.game
                 else Color(r=48, g=45, b=41, a=255);
-            DrawRectangle(i32(310 + i * 220), i32(145), i32(210), i32(40), color);
-            DrawText(titles[i], i32(325 + i * 220), i32(155), i32(22), white);
+            DrawRectangle(i32(310 + i * 165), i32(145), i32(155), i32(40), color);
+            DrawText(titles[i], i32(325 + i * 165), i32(155), i32(22), white);
         }
         for row in range(11) {
             index = self.offset + row;

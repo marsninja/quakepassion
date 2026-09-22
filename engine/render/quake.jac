@@ -120,7 +120,7 @@ obj QuakeRenderer {
     }
 
     def upload(level: Level) {
-        self.single_pass = level.bsp.game == "q3";
+        self.single_pass = level.bsp.game in ["q3", "passion"];
         if self.single_pass {
             # Baked lighting does not need a geometric normal. The batch's
             # normal attribute transports lightmap UV and an enable flag.
@@ -149,6 +149,18 @@ obj QuakeRenderer {
             rlTextureParameters(u32(image_id), i32(10243), i32(33071));
         }
         for texture in level.bsp.textures {
+            if texture.rgba {
+                if len(texture.rgba) != texture.width * texture.height * 4 {
+                    raise ValueError("Invalid RGBA texture: " + texture.name);
+                }
+                gpu = rlLoadTexture(texture.rgba, i32(texture.width), i32(texture.height), i32(7), i32(1));
+                if gpu == u32(0) { raise RuntimeError("Texture upload failed"); }
+                self.textures.append(int(gpu));
+                self.emissive.append(0);
+                rlTextureParameters(gpu, i32(10242), i32(10497));
+                rlTextureParameters(gpu, i32(10243), i32(10497));
+                continue;
+            }
             if len(texture.encoded) > 0 {
                 image_id = self.upload_image(texture);
                 self.textures.append(image_id);

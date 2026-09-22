@@ -1,14 +1,17 @@
-"""Native Quake I/II/III level viewer.
+"""Native Quake I/II/III and generated Passion expeditions.
 
-QP_GAME selects q1 (default), q2, or q3. QP_ASSETS overrides the game's asset
-directory under ~/quake-assets; QP_MAP overrides its default map basename.
+QP_GAME selects q1 (default), q2, q3 or passion. QP_ASSETS overrides the game's
+asset directory (the common parent for Passion). QP_MAP overrides its default
+map basename; QP_SEED selects Passion's version-1 expedition seed.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
 views and exits. All modes require a graphical display.
 """
 
 import os;
 
-import from engine.world.level { Level, load_level, spawn_player }
+import from engine.world.level { Level, spawn_player }
+import from games.levels { open_level }
+import from engine.core.menu { game_directory }
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
@@ -22,13 +25,11 @@ with entry {
     level = Level();
     if os.getenv("QP_GRAYBOX", "") == "" {
         game = os.getenv("QP_GAME", "q1");
-        directory = "baseq3" if game == "q3" else ("baseq2" if game == "q2" else "id1");
         map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
-        level = load_level(
+        if game == "passion" { map_name = "v1-" + os.getenv("QP_SEED", "1"); }
+        level = open_level(
             world,
-            os.getenv(
-                "QP_ASSETS", os.getenv("HOME", "") + "/quake-assets/" + directory
-            ),
+            game_directory(game),
             os.getenv("QP_MAP", map_name),
             game
         );

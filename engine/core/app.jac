@@ -19,6 +19,7 @@ import from ..world.inventory { quantity, CopyInventory, key_summary }
 import from ..world.combat { CombatState, CombatTick, fire_weapon }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
+import from games.levels { open_level }
 import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
 import from .menu { LevelMenu, game_directory }
@@ -79,6 +80,7 @@ obj App {
         movement_status: str = "F4: walk / fly",
         notice: str = "",
         notice_wait: float = 0.0;
+    has expedition_complete: bool = False;
 
     def adjust_setting(direction: int);
     def reset_settings();

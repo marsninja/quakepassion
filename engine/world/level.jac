@@ -20,6 +20,7 @@ import from .traversal { load_traversal }
 import from .exits { load_exits }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
+import from .signals { Signal }
 
 node Split {
     has normal: Vec3,
@@ -75,6 +76,7 @@ walker CollectFaces {
 }
 
 obj Level {
+    has asset_manifest: str = "", completion: Signal = Signal();
     has active: bool = False,
         collision: CollisionMap = CollisionMap(),
         name: str = "",
@@ -270,6 +272,12 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
     } else {
         raise ValueError("QP_GAME must be q1, q2, or q3");
     }
+    prepare_level(world, level);
+    return level;
+}
+
+def prepare_level(world: World, level: Level) {
+    game = level.bsp.game;
     for i in range(len(level.bsp.leaves)) {
         leaf = level.bsp.leaves[i];
         area = BspArea(
@@ -340,7 +348,6 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
     load_doors(world, level.bsp, level.collision);
     load_triggers(world, level.bsp);
     load_traversal(world, level.bsp);
-    return level;
 }
 
 def spawn_player(level: Level, spawnpoint: str = "") -> Player {

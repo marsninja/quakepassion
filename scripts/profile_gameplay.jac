@@ -17,9 +17,11 @@ with entry {
         smoke=True,
         overlay=False
     );
-    for game in ["q1", "q2", "q3"] {
+    for game in ["q1", "q2", "q3", "passion"] {
         app.load_destination(
-            game, "e1m1" if game == "q1" else ("base1" if game == "q2" else "q3dm1")
+            game, "v1-42" if game == "passion" else (
+                "e1m1" if game == "q1" else ("base1" if game == "q2" else "q3dm1")
+            )
         );
         assert not app.menu.opened , app.menu.message;
         resources = app.models.resources;
