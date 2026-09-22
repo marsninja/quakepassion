@@ -146,6 +146,7 @@ impl App.render_frame() {
                         text
                         for text in [
                             key_summary(p.inventory),
+                            rune_summary(p.inventory),
                             progress_summary(self.world)
                         ]
                         if text
@@ -306,7 +307,8 @@ impl App.load_destination(
     carry: bool = False,
     saved: str = "",
     new_unit: bool = False,
-    session: Campaign | None = None
+    session: Campaign | None = None,
+    preserve_progress: bool = False
 ) {
     if game == "passion" {
         self.renderer.draw_loading(name);
@@ -330,6 +332,13 @@ impl App.load_destination(
                 skip_keys=game == "q1" or new_unit
             );
             player.inventory = copied.result;
+        }
+        if preserve_progress and game == "q1" and self.level.bsp.game == "q1" {
+            player.inventory spawn AdjustInventory(
+                kind="runes",
+                amount=quantity(self.player.inventory, "runes"),
+                capacity=15
+            );
         }
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
@@ -371,6 +380,9 @@ impl App.load_destination(
         if saved {
             restore(world, level, player, combat, saved);
         }
+        world spawn ApplyGates(
+            inventory=player.inventory, bsp=level.bsp, collision=level.collision
+        );
         next_models.upload(world);
         next_effects.upload(game, game_directory(game), weapon_effects(game));
         next_viewweapon.upload(game, game_directory(game), view_weapons(game));
@@ -502,7 +514,10 @@ impl App.step() -> bool {
         self.physics_clock.accumulator = 0.0;
         if IsKeyPressed(i32(257)) {
             self.load_destination(
-                self.level.bsp.game, self.level.name, session=self.campaign
+                self.level.bsp.game,
+                self.level.name,
+                session=self.campaign,
+                preserve_progress=True
             );
         }
         self.render_frame();
@@ -626,6 +641,12 @@ impl App.step() -> bool {
                 state=self.combat,
                 dt=self.physics_clock.tick_rate,
                 active=self.walking
+            );
+            self.world spawn ChthonTick(
+                player=self.player,
+                state=self.combat,
+                dt=self.physics_clock.tick_rate,
+                eye_height=self.level.collision.eye_height
             );
             if self.player.health < old_health {
                 self.audio.play(1);

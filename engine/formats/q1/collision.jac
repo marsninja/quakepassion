@@ -53,7 +53,9 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
                     "func_door_secret",
                     "func_plat",
                     "func_train",
-                    "func_button"
+                    "func_button",
+                    "func_episodegate",
+                    "func_bossgate"
                 ] {
             continue;
         }

@@ -222,6 +222,18 @@ impl Renderer.draw_loading(name: str) {
 
 
 impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
+    for event in [world->:HasLightning:->][?:LightningEvent] {
+        doors = [event->:Electrode:->][?:Door];
+        if event.remaining > 0.0 and len(doors) == 2 {
+            start = electrode_point(doors[0]);
+            finish = electrode_point(doors[1]);
+            DrawLine3D(
+                Vector3(x=f32(start.x), y=f32(start.y), z=f32(start.z)),
+                Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),
+                Color(r=150, g=190, b=255, a=255)
+            );
+        }
+    }
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         origin = Vector3(
             x=f32(projectile.pos.x), y=f32(projectile.pos.y), z=f32(projectile.pos.z)

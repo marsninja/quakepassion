@@ -109,3 +109,18 @@ Q2: six groups, including the paired `city3` door). This audit ran through Jac's
 server execution path because its archive-inventory decoding uses an
 [unsupported native error-policy argument](native-decode-errors-blocker.md).
 The native viewer builds successfully with the documented source compiler.
+
+## Start-open and toggle update
+
+Start-open doors now initialize every linked face and hull at the far endpoint
+and traverse the reversed authored path. Q1/Q2 toggle doors wait at both endpoints
+and reverse smoothly when activated while moving. Proximity activation is
+throttled to one request per second; that timer is saved. Q1 DONT_LINK brushes
+remain independent. Q3 start-open behavior has synthetic coverage; its original
+maps in the installed inventory did not contain these flags.
+
+Four tests cover initial transforms, linked members, intermediate save restoration,
+toggle reversal/endpoint waits and contact debounce. Native
+`scripts/mover_flags_smoke.jac` passes 24 original groups across six campaign maps:
+19 start-open groups and five toggle groups. Crusher and rotating doors remain
+unsupported. Save format 8 rejects older layouts explicitly.

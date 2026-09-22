@@ -3,6 +3,9 @@ import from engine.world.opponent_rule { OpponentRule }
 
 def enemy_rule(game: str, kind: str) -> OpponentRule | None {
     if game == "q1" {
+        if kind == "monster_boss" {
+            return OpponentRule(model="progs/boss.mdl", script="chthon", health=3, speed=0.0);
+        }
         if kind == "monster_army" {
             return OpponentRule(model="progs/soldier.mdl", health=30);
         }

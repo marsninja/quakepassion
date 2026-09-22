@@ -40,6 +40,8 @@ import from vendor.raylib {
     ) -> None;
 }
 
+import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
+import from ..world.doors { Door }
 import from ..world.combat {
     CombatState,
     Opponent,

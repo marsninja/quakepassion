@@ -16,7 +16,7 @@ Local Q3 free-for-all loading applies `notfree`, base-game `notq3a`, and authore
 rules for the currently supported normal campaigns and local free-for-all;
 selectable campaign difficulty and other match modes remain future work.
 
-Save format 6 rejects previous snapshots because entity filtering changes
+Save format 8 rejects previous snapshots because entity filtering changes
 positional records and shootable buttons add persistent health state.
 
 Sources:

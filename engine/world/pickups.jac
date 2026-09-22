@@ -4,7 +4,7 @@ import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
 import from .models { Visual }
 import from .damage { Heal }
-import from .inventory { AdjustInventory }
+import from .inventory { AdjustInventory, quantity }
 import from ..math.vec3 { Vec3 }
 
 obj PickupRule {
@@ -16,6 +16,7 @@ obj PickupRule {
         ammo_amount: int = 0,
         ammo_capacity: int = 0,
         skin: int = 0,
+        bitmask: int = 0,
         armor_mode: str = "replace",
         armor_ratio: float = 0.0;
 }
@@ -109,7 +110,15 @@ walker PickupTick {
         }
         accepted = 0;
         rule = here.rule;
-        if rule.kind == "health" {
+        if rule.bitmask > 0 {
+            old = quantity(self.player.inventory, rule.kind);
+            self.player.inventory spawn AdjustInventory(
+                kind=rule.kind,
+                amount=(old | rule.bitmask) - old,
+                capacity=rule.capacity
+            );
+            accepted = 1;
+        } elif rule.kind == "health" {
             heal = self.player spawn Heal(amount=rule.amount, cap=rule.capacity);
             accepted = heal.restored;
         } elif rule.kind == "armor" {

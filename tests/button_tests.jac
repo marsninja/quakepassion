@@ -25,13 +25,13 @@ test "buttons require contact and emit once at the pressed endpoint" {
     }
 }
 
-test "unresolved button targets disable the whole activation" {
+test "missing button recipients do not disable the button" {
     fixture = DoorFixture();
     fixture.setup("q2", {"classname": "func_button", "target": "missing"});
     button = [fixture.world->:HasDoor:->][?:Door][0];
-    assert not button.enabled;
+    assert button.enabled;
     fixture.tick(Vec3(x=24.03125, z=24.0), 1.0);
-    assert button.position == 0.0;
+    assert button.position > 0.0;
 }
 
 test "a map button activates a named door through a relay" {

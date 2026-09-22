@@ -4,6 +4,8 @@ draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
 import from ..world.doors { BlastMover }
+import from ..world.gates { ApplyGates, rune_summary }
+import from ..world.chthon { ChthonTick }
 import from ..world.trains { TrainTick, ShootMover }
 import from ..world.signals { SignalTick, progress_summary }
 import from ..world.hazards { HazardTick }
@@ -22,7 +24,7 @@ import from ..world.traversal { TraversalTick }
 import from ..world.exits { ExitTick, exit_map, exit_spawn }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
-import from ..world.inventory { quantity, CopyInventory, key_summary }
+import from ..world.inventory { quantity, CopyInventory, key_summary, AdjustInventory }
 import from ..world.combat {
     CombatState,
     CombatTick,
@@ -120,7 +122,8 @@ obj App {
         carry: bool = False,
         saved: str = "",
         new_unit: bool = False,
-        session: Campaign | None = None
+        session: Campaign | None = None,
+        preserve_progress: bool = False
     );
 
     def save_preferences();

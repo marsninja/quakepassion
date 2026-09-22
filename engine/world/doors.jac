@@ -38,6 +38,8 @@ node Door {
         max_health: int = 0,
         shared_health: bool = False,
         fire_on_start: bool = False,
+        toggle: bool = False,
+        contact_remaining: float = 0.0,
         rest: Vec3 = Vec3(),
         activation: Signal = Signal(),
         keys: list[str] = [],
@@ -130,6 +132,14 @@ walker DoorTick {
                 }
             }
         }
+        here.contact_remaining = max(0.0, here.contact_remaining - self.dt);
+        if here.toggle and contact {
+            if here.contact_remaining > 0.0 {
+                contact = False;
+            } else {
+                here.contact_remaining = 1.0;
+            }
+        }
         near = here.requested or here.activation.pending > 0 or contact;
         if here.keys and not here.unlocked {
             here.requested = False;
@@ -166,6 +176,14 @@ walker DoorTick {
         if here.kind == "button" and here.state == "open" {
             near = False;
         }
+        if near and here.toggle and here.state in ["opening", "open"] {
+            here.state = "closing";
+            here.health = here.max_health;
+            for part in [here->:DoorMember:->][?:Door] {
+                part.health = part.max_health;
+            }
+            near = False;
+        }
         if near {
             if here.state == "closed" or here.state == "closing" {
                 here.state = "opening";
@@ -183,7 +201,7 @@ walker DoorTick {
             here.remaining = here.hold_time;
         }
         if here.state == "open" {
-            if not near and here.hold_time >= 0.0 {
+            if not near and not here.toggle and here.hold_time >= 0.0 {
                 here.remaining -= self.dt;
                 if here.remaining <= 0.0 {
                     here.state = "closing";
@@ -328,8 +346,14 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         # Keep unsupported members in the graph so a locked half disables its group.
         flags = int(fields.get("spawnflags", "0"));
         allowed = 3840 if bsp.game == "q1" else (7936 if bsp.game == "q2" else 0);
-        if kind == "func_door" and bsp.game == "q1" {
-            allowed |= 24;
+        if kind == "func_door" {
+            allowed |= 1;
+            if bsp.game in ["q1", "q2"] {
+                allowed |= 32;
+            }
+            if bsp.game == "q1" {
+                allowed |= 28;
+            }
         }
         if kind == "func_plat" and bsp.game != "q3" {
             allowed |= 1;
@@ -419,6 +443,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             max_health=health,
             shared_health=bsp.game == "q1",
             fire_on_start=kind == "func_door" and bsp.game in ["q1", "q2"],
+            toggle=kind == "func_door" and bsp.game in ["q1", "q2"] and flags & 32 != 0,
             automatic=(
                 health == 0 and (bsp.game != "q2" or not fields.get("targetname", ""))
             )
@@ -436,6 +461,10 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 maxs=bounds.maxs.add(margin).add(Vec3(z=24.0))
             )
         );
+        if kind == "func_door" and flags & 1 {
+            door.rest = door.travel;
+            door.travel = door.travel.scale(-1.0);
+        }
         if kind == "func_plat" {
             inset = 33.0 if bsp.game == "q3" else 25.0;
             lo = bounds.mins.add(Vec3(x=inset, y=inset));
@@ -585,13 +614,17 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
     collision.reindex();
     connect_targets(world, bsp);
     for mover in [world->:HasDoor:->][?:Door] {
-        if mover.enabled and mover.kind == "platform" {
-            motion = mover.rest.add(mover.travel.scale(mover.position));
-            for face in mover.faces {
-                bsp.faces[face].motion = motion;
-            }
-            for j in range(len(mover.hulls)) {
-                collision.offsets[mover.hulls[j]] = mover.origins[j].add(motion);
+        if mover.enabled {
+            members = [mover];
+            members.extend([mover->:DoorMember:->][?:Door]);
+            for part in members {
+                motion = part.rest.add(part.travel.scale(mover.position));
+                for face in part.faces {
+                    bsp.faces[face].motion = motion;
+                }
+                for j in range(len(part.hulls)) {
+                    collision.offsets[part.hulls[j]] = part.origins[j].add(motion);
+                }
             }
         }
     }
@@ -757,12 +790,10 @@ def connect_targets(world: World, bsp: Bsp) {
             if not target {
                 continue;
             }
-            found = False;
             for recipient in range(len(bsp.entities)) {
                 if bsp.entities[recipient].fields.get("targetname", "") != target {
                     continue;
                 }
-                found = True;
                 if kind == "path_corner"
                     and bsp.game == "q3"
                     and bsp.entities[recipient].fields.get("classname", "")
@@ -780,9 +811,6 @@ def connect_targets(world: World, bsp: Bsp) {
                 if not resolved {
                     signal.enabled = False;
                 }
-            }
-            if not found {
-                signal.enabled = False;
             }
         }
     }

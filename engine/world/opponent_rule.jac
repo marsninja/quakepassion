@@ -1,6 +1,7 @@
 """Game-owned enemy tuning consumed by shared graph combat behavior."""
 obj OpponentRule {
     has model: str = "",
+        script: str = "",
         skin: int = 0,
         health: int = 60,
         speed: float = 100.0,

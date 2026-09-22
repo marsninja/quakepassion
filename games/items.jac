@@ -81,6 +81,21 @@ def pickup_rule(
         return ammo[kind];
     }
     if game == "q1" {
+        if kind == "item_sigil" and flags & 15 {
+            index = 1;
+            for i in range(4) {
+                if flags & (1 << i) {
+                    index = i + 1;
+                }
+            }
+            return PickupRule(
+                kind="runes",
+                amount=1,
+                capacity=15,
+                bitmask=flags & 15,
+                model="progs/end" + str(index) + ".mdl"
+            );
+        }
         if kind in ["item_key1", "item_key2"] {
             theme = "b" if worldtype == 2 else ("m" if worldtype == 1 else "w");
             metal = "s" if kind == "item_key1" else "g";

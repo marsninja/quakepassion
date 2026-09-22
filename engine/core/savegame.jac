@@ -1,5 +1,7 @@
 """Versioned text snapshots, restored only into a newly loaded world."""
 import from .save_format { SNAPSHOT_HEADER }
+import from engine.world.gates { ApplyGates }
+import from engine.world.chthon { LightningEvent, HasLightning, boss_pose }
 import from engine.world.trains {
     Train,
     HasTrain,
@@ -147,7 +149,9 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         enemy.attack_wait,
                         enemy.respawn_wait,
                         1.0 if enemy.dormant else 0.0,
-                        enemy.spawn_wait
+                        enemy.spawn_wait,
+                        float(enemy.boss_phase),
+                        enemy.boss_time
                     ]
                 )
         );
@@ -178,7 +182,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         1.0 if door.automatic else 0.0,
                         float(door.activation.pending),
                         1.0 if door.unlocked else 0.0,
-                        float(door.health)
+                        float(door.health),
+                        door.contact_remaining
                     ]
                         + member_health
                 )
@@ -281,6 +286,9 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                 )
         );
     }
+    for event in [world->:HasLightning:->][?:LightningEvent] {
+        lines.append("L " + str(event.remaining));
+    }
     return "\n".join(lines) + "\n";
 }
 
@@ -346,6 +354,8 @@ def restore(
     }
     player.inventory = Inventory();
     enemies = [world->:HasOpponent:->][?:Opponent];
+    lightning = [world->:HasLightning:->][?:LightningEvent];
+    l = 0;
     pickups = [world->:HasPickup:->][?:Pickup];
     doors = [world->:HasDoor:->][?:Door];
     signals = [world->:HasSignal:->][?:Signal];
@@ -452,8 +462,15 @@ def restore(
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
             );
+        } elif words[0] == "L" and l < len(lightning) {
+            row = values(" ".join(words[1:]), 1);
+            if row[0] < 0.0 or row[0] > 1.0 {
+                raise ValueError("Invalid saved lightning");
+            }
+            lightning[l].remaining = row[0];
+            l += 1;
         } elif words[0] == "E" and e < len(enemies) {
-            row = values(" ".join(words[1:]), 9);
+            row = values(" ".join(words[1:]), 11);
             enemy = enemies[e];
             e += 1;
             enemy.pos = Vec3(x=row[0], y=row[1], z=row[2]);
@@ -466,7 +483,20 @@ def restore(
             }
             enemy.dormant = row[7] != 0.0;
             enemy.spawn_wait = row[8];
+            if row[9] < 0.0
+                or row[9] > 7.0
+                or row[9] != float(int(row[9]))
+                or row[10] < 0.0
+                or row[10] > 2.3 {
+                raise ValueError("Invalid saved boss state");
+            }
+            enemy.boss_phase = int(row[9]);
+            enemy.boss_time = row[10];
             enemy.visual.visible = enemy.health > 0 and not enemy.dormant;
+            if enemy.rule.script == "chthon" {
+                enemy.visual.visible = enemy.boss_phase > 0 and enemy.boss_phase < 7;
+                boss_pose(enemy);
+            }
         } elif words[0] == "P" and p < len(pickups) {
             row = values(" ".join(words[1:]), 4);
             if row[0] not in [0.0, 1.0]
@@ -486,13 +516,15 @@ def restore(
         } elif words[0] == "D" and d < len(doors) {
             door = doors[d];
             parts = [door->:DoorMember:->][?:Door];
-            row = values(" ".join(words[2:]), 6 + len(parts));
+            row = values(" ".join(words[2:]), 7 + len(parts));
             d += 1;
             if words[1] not in ["closed", "opening", "open", "closing", "locked"]
                 or row[0] < 0.0
                 or row[0] > 1.0
                 or row[5] < 0.0
-                or row[5] > float(door.max_health) {
+                or row[5] > float(door.max_health)
+                or row[6] < 0.0
+                or row[6] > 1.0 {
                 raise ValueError("Invalid saved door");
             }
             door.state = words[1];
@@ -502,12 +534,13 @@ def restore(
             door.activation.pending = int(row[3]);
             door.unlocked = row[4] != 0.0;
             door.health = int(row[5]);
+            door.contact_remaining = row[6];
             for index in range(len(parts)) {
-                if row[6 + index] < 0.0
-                    or row[6 + index] > float(parts[index].max_health) {
+                if row[7 + index] < 0.0
+                    or row[7 + index] > float(parts[index].max_health) {
                     raise ValueError("Invalid saved door member health");
                 }
-                parts[index].health = int(row[6 + index]);
+                parts[index].health = int(row[7 + index]);
             }
             if door.unlocked and door.keys {
                 door.hold_time = -1.0;
@@ -669,9 +702,13 @@ def restore(
         or h != len(hazards)
         or o != len(progress_records)
         or a != len(speakers)
-        or b != len(brushes) {
+        or b != len(brushes)
+        or l != len(lightning) {
         raise ValueError("Save does not match this map's entities");
     }
+    world spawn ApplyGates(
+        inventory=player.inventory, bsp=level.bsp, collision=level.collision
+    );
 }
 
 def write_save(path: str, data: str) {

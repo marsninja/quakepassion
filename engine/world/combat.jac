@@ -35,7 +35,9 @@ node Opponent(Player) {
         animation_time: float = 0.0,
         decision_wait: float = 0.0,
         support_wait: float = 0.0,
-        pursuing: bool = False;
+        pursuing: bool = False,
+        boss_phase: int = 0,
+        boss_time: float = 0.0;
 }
 
 obj CombatState {
@@ -97,7 +99,7 @@ def damage_opponent(
     state: CombatState | None = None,
     bypass_armor: bool = False
 ) -> int {
-    if victim.dormant {
+    if victim.dormant or victim.rule.script == "chthon" {
         return 0;
     }
     damage = victim spawn Damage(amount=amount, bypass_armor=bypass_armor);
@@ -738,6 +740,9 @@ walker CombatTick {
     }
 
     can think with Opponent entry {
+        if here.rule.script == "chthon" {
+            return;
+        }
         if here.health > 0 and here.activation.pending > 0 {
             here.activation.pending = 0;
             if here.dormant and here.spawn_wait < 0.0 {

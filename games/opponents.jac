@@ -51,7 +51,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             enemy = Opponent(
                 pos=position,
-                dormant=source == "q2" and int(fields.get("spawnflags", "0")) & 2 != 0,
+                dormant=rule.script == "chthon"
+                    or (source == "q2" and int(fields.get("spawnflags", "0")) & 2 != 0),
                 home=position,
                 arena=level.bsp.game == "q3",
                 rule=rule,
