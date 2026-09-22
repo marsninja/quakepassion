@@ -1,4 +1,5 @@
 """Authored path graphs and translating train movers shared by the Quake games."""
+import from .doors { Door, HasDoor, DoorMember, damage_mover }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .signals { Signal, HasSignal, Fire }
@@ -227,8 +228,11 @@ def move_train(
         );
         if path.start_solid or path.fraction < 1.0 {
             if train.damage > 0 and train.damage_wait <= 0.0 {
-                if isinstance(actor,Opponent) { damage_opponent(actor,train.damage); }
-                else { actor spawn Damage(amount=train.damage); }
+                if isinstance(actor, Opponent) {
+                    damage_opponent(actor, train.damage);
+                } else {
+                    actor spawn Damage(amount=train.damage);
+                }
                 train.damage_wait = 0.5;
             }
             return False;
@@ -351,10 +355,25 @@ walker TrainTick {
 }
 
 walker ShootMover {
-    has model: int;
+    has model: int,
+        amount: int = 1;
 
     can begin with World entry {
-        visit [here->:HasTrain:->];
+        if self.amount > 0 {
+            visit [here->:HasTrain:->];
+            visit [here->:HasDoor:->];
+        }
+    }
+
+    can door with Door entry {
+        members = [here];
+        members.extend([here->:DoorMember:->][?:Door]);
+        for part in members {
+            if part.model == self.model {
+                damage_mover(here, part, self.amount);
+                return;
+            }
+        }
     }
 
     can hit with Train entry {

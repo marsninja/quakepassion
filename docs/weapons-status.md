@@ -30,7 +30,7 @@ grenade bounce/fuse and deterministic save restoration.
 
 These are functional arsenal foundations, **not full weapon fidelity**. Remaining
 work includes BFG charge animation/timing and immunity rules,
-chaingun spin-up, original recoil/animation/viewmodels, water/lightning discharge,
+chaingun spin-up, exact original recoil/animation, water/lightning discharge,
 exact game-specific muzzle offsets and spread sequences, remaining projectile materials and
 impact/trail effects, weapon switching/autoselection timing, dropped weapons,
 powerups, and bot use of the arsenal. Original MDL/MD2/MD3 models now cover nails,
@@ -101,8 +101,12 @@ arsenal and audio acceptance now cover **28 weapons**. The original-map campaign
 smoke additionally carries a cooking grenade from Q2 `base1` to `base2`, saves,
 reloads and revisits the hub while preserving its state. That harness uses an
 explicit test save path instead of changing HOME or overwriting the user's save.
-Pin/cooking sound loops, first-person animations, dropped live grenades on death,
+Pin/cooking sound loops, exact first-person animation timing, dropped live grenades on death,
 and exact weapon-raise/lower timing remain open.
+
+Original first-person gun models and basic firing/idle/raise poses are now
+integrated for all 28 weapons. See [viewweapon status](viewweapons-status.md)
+for asset validation and the remaining animation/presentation gaps.
 
 ## Original projectile rendering
 

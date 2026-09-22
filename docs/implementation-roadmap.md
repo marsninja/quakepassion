@@ -18,7 +18,7 @@ remain outside the current target.
   activation, key inventory feedback and supported map exits.
 - Q2 visited-map state retained across hub returns and save/load. Unit transitions
   clear keys and hub history. Map selection starts fresh; failed loads preserve
-  the current world. Save format 3 rejects older snapshots explicitly.
+  the current world. Save format 8 rejects older snapshots explicitly.
 - Escape level/settings menu, persistent settings, F5/F9 save/load, and a local
   ten-frag arena with bot respawn, victory banner and Enter rematch.
 
@@ -109,3 +109,91 @@ archive-backed firing sounds now have a [shared implementation](weapons-status.m
 original weapon fidelity, complete enemy rosters, bosses,
 runes/endings, remaining brush behaviors and full campaign playthroughs remain
 open; further Passion features stay deferred.
+
+### Enemy and view-weapon increment
+
+All 28 weapon definitions now load original first-person models. Campaign combat
+adds distinct Q1 dog, knight, enforcer and ogre behavior and Q2 soldier variants,
+including hostile projectiles. See [view weapons](viewweapons-status.md) and
+[enemy validation and remaining work](enemies-status.md). These increments do
+not complete the campaign or arena milestones above.
+
+Campaign construction now applies authored difficulty/mode exclusions to all
+entities before creating the runtime graph. Shootable buttons share weapon
+impacts, explosion damage and mover output with other entities, including saved
+partial damage. The Q2 base1 secret now follows its authored shot-button chain.
+The full suite passes 251 tests; native campaign acceptance passes these changes.
+See [spawn rules](spawn-rules-status.md) and [buttons](buttons-status.md).
+
+Q1/Q2 shootable door groups now receive direct and radius damage, retain partial
+damage across saves, and dispatch targets at the start of opening. See
+[door updates](doors-status.md#campaign-damage-activation-update).
+
+Released-toolchain CI remains blocked on the newer compiler features/fixes.
+PR #35's v0.37.21 Linux build first rejects the union-typed BSP edge endpoints
+in `engine/world/level.jac`; local native acceptance uses the documented patched
+source compiler. v0.37.21 is still the latest release checked on September 22.
+
+### Rune and mover-state progression
+
+Q1 rune inventory, completed-episode gates and the final hub gate now follow
+the authored progression rules, with original assets and native save/load checks.
+See [rune acceptance and remaining limits](runes-status.md). Start-open doors
+and Q1/Q2 toggle doors now share the translating-mover implementation; native
+acceptance covers 24 groups across six original maps. This still does not complete
+the boss encounters, endings, full combat rosters or local-arena milestones.
+
+The first boss increment adds [Chthon's electrode encounter](chthon-status.md):
+activation, original model/attack phases, hostile lava balls, aligned lightning
+strikes, saved encounter state and delayed death output. Native original-map
+acceptance passes; full encounter fidelity and player-driven playthrough remain
+open, as does the final boss.
+
+Latest regression checkpoint: **251 tests pass** with the documented local
+source compiler. The combined native viewer builds and completes graphical smoke
+runs for Q1 `e1m1`, Q2 `base1`, and Q3 `q3dm1`. Native rune and Chthon harnesses
+pass the controlled authored-map scenarios described above. Save format 8 is the
+current layout; older snapshots are rejected.
+
+Fresh screenshots have zero PVS/all-visible pixel differences at spawn and after
+movement in all three sampled maps. The PNG comparison ran through Jac's server
+codespace: its temporary caller could not lower a cross-module `Path` argument
+(`Cannot assign Path to parameter path of type Path`). This is not a native
+validator acceptance claim; the game executables producing the images were native.
+
+### Combat continuation (current checkpoint)
+
+The latest combat work is tracked in [combat feedback](combat-feedback-status.md):
+pellet impacts, blood, pain/death poses, weapon bob/recoil, Q1 attack timelines,
+Q2 held gun bursts and infantry melee, and Q1 ogre sweep/smash/grenade sequences.
+The current snapshot version is **11**. Earlier validation counts and snapshot
+versions above describe historical checkpoints.
+
+The expanded scope remains open. The largest remaining tasks are the unsupported
+Q1/Q2 enemy rosters and final encounters, authored campaign traversal coverage,
+global navigation and local Q3 weapon/item tactics, plus original audiovisual
+feedback and released-toolchain acceptance. Existing automated scenarios do not
+establish uninterrupted completion of the original campaigns.
+
+
+### Q2 roster continuation
+
+Berserkers and gladiators now join the shared campaign combat system, including
+alternate melee damage profiles, locked-aim railgun windup and trails, and
+positional attack cues. See [Q2 roster status](q2-roster-status.md) for behavior,
+validation, and remaining limits. Current snapshot format: **12**.
+
+The [Q2 rocket enemy](chick-status.md) adds authored rocket/slash cycles,
+conditional refires, explicit locomotion poses and signed recovery movement.
+Snapshot format is now **13**. Full original campaigns and local-arena acceptance
+remain open; prior prototype validation is not a completion claim.
+
+Q1's [Hell Knight](hell-knight-status.md) now has its canonical spike volley and
+close-range slice in the shared combat engine. Snapshot format is **14**.
+Its remaining attack repertoire and the broader campaign/arena milestones remain
+open.
+
+Supported Q2 enemies now have explicit pain sequences, per-enemy recovery timing,
+and save-resumed poses; see [combat feedback](combat-feedback-status.md).
+The latest regression checkpoint is **293 passing tests**, with native asset and
+pain-render checks. Snapshot format remains **14**.

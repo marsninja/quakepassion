@@ -40,6 +40,11 @@ impl App.run() {
             game_directory(self.level.bsp.game),
             weapon_effects(self.level.bsp.game)
         );
+        self.viewweapon.upload(
+            self.level.bsp.game,
+            game_directory(self.level.bsp.game),
+            view_weapons(self.level.bsp.game)
+        );
         self.quake.upload(self.level);
     }
     frame = 0;
@@ -56,6 +61,7 @@ impl App.run() {
     if self.level.active {
         self.models.close();
         self.effects.close();
+        self.viewweapon.close();
         self.quake.close();
     }
     self.audio.close();
@@ -118,6 +124,11 @@ impl App.render_frame() {
         self.effects.draw(
             self.world, p.pos, p.yaw, p.pitch, lighting=self.level.lighting
         );
+        if not self.smoke {
+            self.viewweapon.draw(
+                p, self.combat, self.simulation_time, self.level.lighting
+            );
+        }
         self.renderer.end_scene();
         if not self.smoke {
             self.renderer.draw_status(
@@ -135,6 +146,7 @@ impl App.render_frame() {
                         text
                         for text in [
                             key_summary(p.inventory),
+                            rune_summary(p.inventory),
                             progress_summary(self.world)
                         ]
                         if text
@@ -295,7 +307,8 @@ impl App.load_destination(
     carry: bool = False,
     saved: str = "",
     new_unit: bool = False,
-    session: Campaign | None = None
+    session: Campaign | None = None,
+    preserve_progress: bool = False
 ) {
     if game == "passion" {
         self.renderer.draw_loading(name);
@@ -303,6 +316,7 @@ impl App.load_destination(
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
     next_effects = EffectScene();
+    next_viewweapon = ViewWeapon();
     try {
         world = World();
         level = open_level(world, game_directory(game), name, game);
@@ -318,6 +332,13 @@ impl App.load_destination(
                 skip_keys=game == "q1" or new_unit
             );
             player.inventory = copied.result;
+        }
+        if preserve_progress and game == "q1" and self.level.bsp.game == "q1" {
+            player.inventory spawn AdjustInventory(
+                kind="runes",
+                amount=quantity(self.player.inventory, "runes"),
+                capacity=15
+            );
         }
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
@@ -359,12 +380,17 @@ impl App.load_destination(
         if saved {
             restore(world, level, player, combat, saved);
         }
+        world spawn ApplyGates(
+            inventory=player.inventory, bsp=level.bsp, collision=level.collision
+        );
         next_models.upload(world);
         next_effects.upload(game, game_directory(game), weapon_effects(game));
+        next_viewweapon.upload(game, game_directory(game), view_weapons(game));
         next_renderer.upload(level);
         if self.level.active {
             self.models.close();
             self.effects.close();
+            self.viewweapon.close();
             self.quake.close();
         }
         if departed {
@@ -378,6 +404,7 @@ impl App.load_destination(
         self.quake = next_renderer;
         self.models = next_models;
         self.effects = next_effects;
+        self.viewweapon = next_viewweapon;
         if self.audio.ready {
             self.audio.close();
             try {
@@ -410,6 +437,7 @@ impl App.load_destination(
     } except Exception as error {
         next_models.close();
         next_effects.close();
+        next_viewweapon.close();
         next_renderer.close();
         self.menu.message = "Cannot load level: " + str(error);
         self.menu.opened = True;
@@ -486,7 +514,10 @@ impl App.step() -> bool {
         self.physics_clock.accumulator = 0.0;
         if IsKeyPressed(i32(257)) {
             self.load_destination(
-                self.level.bsp.game, self.level.name, session=self.campaign
+                self.level.bsp.game,
+                self.level.name,
+                session=self.campaign,
+                preserve_progress=True
             );
         }
         self.render_frame();
@@ -611,6 +642,12 @@ impl App.step() -> bool {
                 dt=self.physics_clock.tick_rate,
                 active=self.walking
             );
+            self.world spawn ChthonTick(
+                player=self.player,
+                state=self.combat,
+                dt=self.physics_clock.tick_rate,
+                eye_height=self.level.collision.eye_height
+            );
             if self.player.health < old_health {
                 self.audio.play(1);
             }
@@ -632,7 +669,9 @@ impl App.step() -> bool {
             );
             for impact in self.combat.impacts {
                 if impact.model >= 0 {
-                    self.world spawn ShootMover(model=impact.model);
+                    self.world spawn ShootMover(
+                        model=impact.model, amount=impact.amount
+                    );
                     self.world spawn ShootBrush(
                         model=impact.model,
                         amount=impact.amount,
@@ -643,6 +682,15 @@ impl App.step() -> bool {
                     );
                 }
                 if impact.splash > 0 {
+                    self.world spawn BlastMover(
+                        origin=impact.origin,
+                        amount=impact.splash,
+                        radius=impact.radius,
+                        game=self.level.bsp.game,
+                        collision=self.level.collision,
+                        player=self.player,
+                        energy_burst=impact.energy_burst
+                    );
                     self.world spawn BlastBrush(
                         origin=impact.origin,
                         amount=impact.splash,
@@ -865,7 +913,7 @@ impl App.quickload() {
         data = session.active;
         lines = data.splitlines();
         if len(lines) < 4
-            or lines[0] != "QUAKEPASSION 3"
+            or lines[0] != SNAPSHOT_HEADER
             or lines[1] not in ["q1", "q2", "q3", "passion"] {
             raise ValueError("Invalid save header");
         }

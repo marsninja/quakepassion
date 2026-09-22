@@ -83,3 +83,20 @@ A diagnostic run while other checks were active measured combat updates at
 and 5.94 ms respectively. These measurements establish that the added steering
 and characters remain usable on this desktop; concurrent workload makes them
 unsuitable for direct comparison with the isolated baseline above.
+
+## Enemy/view-weapon checkpoint (2026-09-22)
+
+With the nine supported Q1/Q2 enemy definitions and original view weapons,
+`scripts/profile_gameplay.jac` measures the following fixed starting views on
+this Mac at 1280×720. These short samples do not cover every map or encounter.
+
+| Game/map | App median | App p95 | Combat tick |
+| --- | ---: | ---: | ---: |
+| Q1 e1m1 | 4.10 ms | 6.09 ms | 0.34 ms |
+| Q2 base1 | 7.57 ms | 9.19 ms | 0.56 ms |
+| Q3 q3dm1 | 7.90 ms | 9.22 ms | 0.12 ms |
+| Passion v1-42 (regression only) | 4.04 ms | 5.09 ms | 0.13 ms |
+
+The three original-game screenshots were inspected with visible view weapons.
+This run uses `qp-lighting-validation/jac` and the patches listed in
+[native compiler dependencies](native-lighting-validation-blockers.md).

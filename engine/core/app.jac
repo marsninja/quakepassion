@@ -3,6 +3,9 @@ the pass walkers over the world graph; each frame floods visibility and
 draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
+import from ..world.doors { BlastMover }
+import from ..world.gates { ApplyGates, rune_summary }
+import from ..world.chthon { ChthonTick }
 import from ..world.trains { TrainTick, ShootMover }
 import from ..world.signals { SignalTick, progress_summary }
 import from ..world.hazards { HazardTick }
@@ -21,7 +24,7 @@ import from ..world.traversal { TraversalTick }
 import from ..world.exits { ExitTick, exit_map, exit_spawn }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
-import from ..world.inventory { quantity, CopyInventory, key_summary }
+import from ..world.inventory { quantity, CopyInventory, key_summary, AdjustInventory }
 import from ..world.combat {
     CombatState,
     CombatTick,
@@ -36,8 +39,11 @@ import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
+import from ..render.viewweapon { ViewWeapon }
+import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
 import from ..world.level { Level, load_level, spawn_player }
+import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
@@ -82,6 +88,7 @@ obj App {
         quake: QuakeRenderer = QuakeRenderer(),
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
+        viewweapon: ViewWeapon = ViewWeapon(),
         simulation_time: float = 0.0,
         combat: CombatState = CombatState(),
         campaign: Campaign = Campaign(),
@@ -115,7 +122,8 @@ obj App {
         carry: bool = False,
         saved: str = "",
         new_unit: bool = False,
-        session: Campaign | None = None
+        session: Campaign | None = None,
+        preserve_progress: bool = False
     );
 
     def save_preferences();

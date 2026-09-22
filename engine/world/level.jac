@@ -13,10 +13,13 @@ import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from .doors { load_doors }
+import from .gates { load_gates }
+import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
 import from .hazards { load_hazards }
 import from .speakers { load_speakers }
 import from .brushes { load_brushes }
+import from .spawns { active_entities }
 import from .secret_doors { load_secret_doors }
 import from .pickups { load_pickup_signals }
 import from .combat { load_opponent_signals }
@@ -85,6 +88,7 @@ obj Level {
     has lighting: Lighting = Lighting();
     has asset_manifest: str = "",
         completion: Signal = Signal();
+
     has active: bool = False,
         collision: CollisionMap = CollisionMap(),
         name: str = "",
@@ -286,6 +290,7 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
 
 def prepare_level(world: World, level: Level) {
     game = level.bsp.game;
+    level.bsp.entities = active_entities(game, level.bsp.entities);
     for i in range(len(level.bsp.leaves)) {
         leaf = level.bsp.leaves[i];
         area = BspArea(
@@ -350,15 +355,18 @@ def prepare_level(world: World, level: Level) {
         }
     }
     level.liquids = load_liquids(level.bsp);
+    load_gates(world, level.bsp, level.collision);
     load_pickup_signals(world, level.bsp);
     load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_trains(world, level.bsp, level.collision);
     load_hazards(world, level.bsp);
-    load_speakers(world,level.bsp);
-    load_secret_doors(world,level.bsp,level.collision);
-    load_brushes(world,level.bsp,level.collision);
+    load_speakers(world, level.bsp);
+    load_secret_doors(world, level.bsp, level.collision);
+    load_brushes(world, level.bsp, level.collision);
+    load_lightning(world, level.bsp);
     load_doors(world, level.bsp, level.collision);
+    connect_electrodes(world, level.bsp);
     load_triggers(world, level.bsp);
     load_traversal(world, level.bsp);
 }

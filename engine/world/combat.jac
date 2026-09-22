@@ -1,31 +1,50 @@
 """Shared weapon simulation and graph-driven opponents."""
 import math;
+import from .particles { impact_spray, ParticleTick, rail_trail }
+import from .opponent_rule { OpponentRule }
 import from .weapons { WeaponRule }
 import from .world { World, Player }
-import from .damage { Damage }
+import from .damage { Damage, blast_strength }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual }
+import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
-import from ..physics.movement { MovePlayer }
+import from ..physics.movement { MovePlayer, step_slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 
 edge HasOpponent: World --> Opponent {}
 node Opponent(Player) {
-    has activation: Signal = Signal(),
+    has rule: OpponentRule = OpponentRule(),
+        activation: Signal = Signal(),
         dormant: bool = False,
         spawn_wait: float = -1.0,
         modeled: bool = False,
         home: Vec3 = Vec3(),
         attack_wait: float = 0.7,
         attack_flash: float = 0.0,
+        attack_clock: float = -1.0,
+        attack_event: int = 0,
+        burst_count: int = 1,
+        attack_melee: bool = False,
+        alternate_melee: bool = False,
+        attack_target: Vec3 = Vec3(),
+        attack_speaker: Speaker | None = None,
+        melee_speaker: Speaker | None = None,
+        shot_random: int = 1,
         respawn_wait: float = 0.0,
         arena: bool = False,
         visual: Visual = Visual(),
         animation: list[int] = [],
         idle_animation: list[int] = [],
         attack_animation: list[int] = [],
+        melee_animation: list[int] = [],
+        alternate_melee_animation: list[int] = [],
+        pain_animation: list[int] = [],
+        death_animation: list[int] = [],
+        pain_wait: float = 0.0,
+        pain_cooldown: float = 0.0,
         pose_name: str = "",
         last_seen: Vec3 = Vec3(),
         alert: float = 0.0,
@@ -33,7 +52,9 @@ node Opponent(Player) {
         animation_time: float = 0.0,
         decision_wait: float = 0.0,
         support_wait: float = 0.0,
-        pursuing: bool = False;
+        pursuing: bool = False,
+        boss_phase: int = 0,
+        boss_time: float = 0.0;
 }
 
 obj CombatState {
@@ -95,7 +116,7 @@ def damage_opponent(
     state: CombatState | None = None,
     bypass_armor: bool = False
 ) -> int {
-    if victim.dormant {
+    if victim.dormant or victim.rule.script == "chthon" {
         return 0;
     }
     damage = victim spawn Damage(amount=amount, bypass_armor=bypass_armor);
@@ -107,8 +128,19 @@ def damage_opponent(
             state.kills += 1;
         }
         victim.activation spawn Fire(inventory=inventory);
-        victim.visual.visible = False;
+        victim.visual.visible = bool(victim.death_animation);
+        victim.attack_clock = -1.0;
+        victim.attack_flash = 0.0;
+        victim.pose_name = "death";
+        victim.animation_time = 0.0;
         victim.respawn_wait = 3.0;
+    } elif damage.dealt > 0 and victim.pain_cooldown <= 0.0 {
+        victim.attack_clock = -1.0;
+        victim.pain_wait = victim.rule.pain_duration;
+        victim.pain_cooldown = victim.rule.pain_interval;
+        victim.attack_flash = 0.0;
+        victim.attack_wait = max(victim.attack_wait, victim.rule.pain_duration);
+        victim.decision_wait = 0.0;
     }
     return damage.dealt;
 }
@@ -164,7 +196,8 @@ node Projectile {
         phase: int = 0,
         beams: list[Vec3] = [],
         effect: str = "",
-        age: float = 0.0;
+        age: float = 0.0,
+        hostile: bool = False;
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {
@@ -290,6 +323,17 @@ def fire_weapon(
             hits.append(query.target);
         }
         for victim in hits {
+            fraction = actor_fraction(
+                player.pos, finish, victim.pos, collision.eye_height
+            );
+            impact_spray(
+                world,
+                player.pos.lerp(finish, fraction),
+                shot.normalized().scale(-1.0),
+                True
+            );
+            victim.last_seen = player.pos;
+            victim.alert = 8.0;
             if victim not in victims {
                 victims.append(victim);
                 amounts.append(0);
@@ -297,6 +341,7 @@ def fire_weapon(
             amounts[victims.index(victim)] += rule.damage;
         }
         if (not hits or rule.piercing) and wall.fraction < 1.0 {
+            impact_spray(world, player.pos.lerp(finish, wall.fraction), wall.normal);
             state.impact_model = wall.model;
             state.impacts.append(
                 WeaponImpact(
@@ -443,7 +488,7 @@ def projectile_blast(
     player: Player,
     collision: CollisionMap,
     state: CombatState,
-    direct: Opponent | None = None
+    direct: Player | None = None
 ) {
     if projectile.splash <= 0 or projectile.radius <= 0.0 {
         return;
@@ -469,15 +514,17 @@ def projectile_blast(
         if sight.start_solid or sight.fraction < 1.0 {
             continue;
         }
-        strength = float(projectile.splash) * (1.0 - distance / projectile.radius)
-            if state.game == "q3"
-            else max(0.0, float(projectile.splash) - distance * 0.5);
-        if actor is player {
+        strength = blast_strength(
+            state.game, projectile.splash, projectile.radius, distance
+        );
+        if actor is player and not projectile.hostile {
             strength *= 0.5;
         }
         amount = int(strength);
         if isinstance(actor, Opponent) {
-            damage_opponent(actor, amount, player.inventory, state);
+            damage_opponent(
+                actor, amount, player.inventory, None if projectile.hostile else state
+            );
         } else {
             actor spawn Damage(amount=amount);
         }
@@ -621,15 +668,41 @@ walker ProjectileTick {
         }
         finish = here.pos.add(here.velocity.scale(step));
         wall = self.collision.trace_point(here.pos, finish);
-        query = world spawn Aim(
-            start=here.pos,
-            finish=finish,
-            height=self.collision.eye_height,
-            fraction=wall.fraction
-        );
-        victim = query.target;
-        fraction = query.fraction;
+        victim: Opponent | None = None;
+        fraction = wall.fraction;
+        player_hit = False;
+        if here.hostile {
+            hit = actor_fraction(
+                here.pos, finish, self.player.pos, self.collision.eye_height
+            );
+            if self.player.health > 0 and hit < fraction {
+                fraction = hit;
+                player_hit = True;
+            }
+        } else {
+            query = world spawn Aim(
+                start=here.pos,
+                finish=finish,
+                height=self.collision.eye_height,
+                fraction=wall.fraction
+            );
+            victim = query.target;
+            fraction = query.fraction;
+        }
         here.pos = here.pos.lerp(finish, fraction);
+        if player_hit {
+            self.player spawn Damage(amount=here.damage);
+            projectile_blast(
+                world,
+                here,
+                self.player,
+                self.collision,
+                self.state,
+                self.player if here.damage > 0 else None
+            );
+            world del --> here;
+            return;
+        }
         if victim is not None {
             damage_opponent(victim, here.damage, self.player.inventory, self.state);
         } elif wall.fraction < 1.0
@@ -688,14 +761,326 @@ def load_opponent_signals(world: World, bsp: Bsp) {
     }
 }
 
+def attack_times(enemy: Opponent) -> list[float] {
+    if enemy.attack_melee and enemy.alternate_melee {
+        return enemy.rule.alternate_melee_times;
+    }
+    return enemy.rule.melee_times
+        if enemy.attack_melee and enemy.rule.melee_times
+        else enemy.rule.attack_times;
+}
+
+def attack_duration(enemy: Opponent) -> float {
+    if enemy.attack_melee and enemy.alternate_melee {
+        return enemy.rule.alternate_melee_duration;
+    }
+    if enemy.attack_melee and enemy.rule.melee_times {
+        return enemy.rule.melee_duration;
+    }
+    return enemy.rule.attack_duration + float(enemy.burst_count - 1) * 0.1;
+}
+
+def attack_event_count(enemy: Opponent) -> int {
+    return len(attack_times(enemy)) + enemy.burst_count - 1;
+}
+
+def attack_event_time(enemy: Opponent) -> float {
+    if enemy.burst_count > 1 {
+        return enemy.rule.attack_times[0] + float(enemy.attack_event) * 0.1;
+    }
+    return attack_times(enemy)[enemy.attack_event];
+}
+
+def attack_pose_time(enemy: Opponent) -> float {
+    clock = enemy.attack_clock * 10.0;
+    if not enemy.attack_melee
+        and enemy.rule.hold_frame >= 0
+        and clock >= float(enemy.rule.hold_frame) {
+        clock -= min(
+            float(enemy.burst_count - 1), clock - float(enemy.rule.hold_frame)
+        );
+    }
+    return clock;
+}
+
+def opponent_aim(enemy: Opponent, player: Player) -> Vec3 {
+    target = enemy.attack_target
+        if enemy.rule.lock_aim
+        else player.pos.sub(player.velocity.scale(enemy.rule.aim_lag));
+    direction = target.sub(enemy.pos).normalized();
+    if enemy.rule.aim_spread > 0.0 or enemy.rule.aim_vertical > 0.0 {
+        side = right_from(math.atan2(direction.y, direction.x));
+        up = side.cross(direction).normalized();
+        enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+        horizontal = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
+        enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+        vertical = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
+        direction = direction.add(side.scale(horizontal * enemy.rule.aim_spread)).add(
+            up.scale(vertical * enemy.rule.aim_vertical)
+        ).normalized();
+    }
+    return direction;
+}
+
+# Enemy spread has its own saved stream; effects and AI cannot alter player spread.
+def opponent_shot(
+    world: World, enemy: Opponent, player: Player, collision: CollisionMap
+) {
+    direction = opponent_aim(enemy, player);
+    side = right_from(math.atan2(direction.y, direction.x));
+    up = side.cross(direction).normalized();
+    damage = 0;
+    for i in range(enemy.rule.pellets) {
+        shot = direction;
+        if enemy.rule.spread > 0.0 {
+            enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+            horizontal = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
+            enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+            vertical = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
+            shot = shot.add(side.scale(horizontal * enemy.rule.spread)).add(
+                up.scale(
+                    vertical
+                        * (
+                            enemy.rule.vertical_spread
+                                if enemy.rule.vertical_spread >= 0.0
+                                else enemy.rule.spread
+                        )
+                )
+            );
+        }
+        finish = enemy.pos.add(shot.normalized().scale(8192.0));
+        wall = collision.trace_point(enemy.pos, finish);
+        if enemy.rule.rail {
+            rail_trail(world, enemy.pos, enemy.pos.lerp(finish, wall.fraction));
+        }
+        hit = actor_fraction(enemy.pos, finish, player.pos, collision.eye_height);
+        if hit < wall.fraction {
+            damage += 6 if enemy.arena else enemy.rule.damage;
+        } elif wall.fraction < 1.0 and not wall.start_solid {
+            impact_spray(world, enemy.pos.lerp(finish, wall.fraction), wall.normal);
+        }
+    }
+    if damage > 0 {
+        player spawn Damage(amount=damage);
+    }
+}
+
+# Integrate authored charge distances across 10 Hz animation frames, using the
+# same stair/slide collision as walking. Keep a body-width gap to the player.
+def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: float) {
+    steps = enemy.rule.melee_steps
+        if enemy.attack_melee and enemy.rule.melee_times
+        else enemy.rule.attack_steps;
+    if enemy.attack_melee and enemy.alternate_melee {
+        steps = enemy.rule.alternate_melee_steps;
+    }
+    if not enemy.grounded or not steps or dt <= 0.0 or dt > 0.05 {
+        return;
+    }
+    travel = 0.0;
+    for frame in range(len(steps)) {
+        start = max(enemy.attack_clock, float(frame) * 0.1);
+        finish = min(enemy.attack_clock + dt, float(frame + 1) * 0.1);
+        travel += max(0.0, finish - start) * 10.0 * steps[frame];
+    }
+    goal = player.pos.sub(enemy.pos);
+    goal.z = 0.0;
+    if travel > 0.0 {
+        travel = min(travel, max(0.0, goal.length() - 32.0));
+    }
+    if abs(travel) <= 0.000001 {
+        return;
+    }
+    body = enemy.pos.sub(Vec3(z=collision.eye_height));
+    ahead = body.add(goal.normalized().scale(travel));
+    support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
+    if support.fraction == 1.0 or support.normal.z < 0.7 {
+        return;
+    }
+    moved = step_slide(collision, body, goal.normalized().scale(travel / dt), dt, True);
+    enemy.pos = moved.pos.add(Vec3(z=collision.eye_height));
+    enemy.velocity.x = 0.0;
+    enemy.velocity.y = 0.0;
+}
+
+# Attack events run on the simulation clock, independently of the 10 Hz steering query.
+def advance_attack_segment(
+    world: World, enemy: Opponent, player: Player, collision: CollisionMap, dt: float
+) {
+    if enemy.attack_clock < 0.0 or enemy.health <= 0 or enemy.dormant {
+        return;
+    }
+    attack_charge(enemy, player, collision, dt);
+    speaker = enemy.melee_speaker if enemy.attack_melee else enemy.attack_speaker;
+    sound_times = enemy.rule.attack_sound_times;
+    if enemy.attack_melee {
+        sound_times = enemy.rule.alternate_melee_sound_times
+            if enemy.alternate_melee
+            else enemy.rule.melee_sound_times;
+    }
+    if speaker is not None and dt > 0.0 {
+        speaker.origin = enemy.pos.add(Vec3());
+        for at in sound_times {
+            if (
+                enemy.attack_clock + 0.000001 < at
+                and enemy.attack_clock + dt + 0.000001 >= at
+            )
+                or (at == 0.0 and enemy.attack_clock == 0.0) {
+                speaker.requests += 1;
+            }
+        }
+    }
+    enemy.attack_clock += dt;
+    while enemy.attack_event < attack_event_count(enemy)
+        and attack_event_time(enemy) <= enemy.attack_clock + 0.000001 {
+        enemy.attack_event += 1;
+        delta = player.pos.sub(enemy.pos);
+        distance = delta.length();
+        sight = collision.trace_point(enemy.pos, player.pos);
+        if player.health <= 0
+            or (
+                (not enemy.rule.lock_aim or enemy.attack_melee)
+                and (
+                    sight.start_solid
+                    or sight.fraction < 1.0
+                    or distance > enemy.rule.attack_range
+                )
+            ) {
+            continue;
+        }
+        if enemy.attack_melee {
+            if distance <= enemy.rule.melee_range {
+                amount = enemy.rule.melee;
+                maximum = enemy.rule.melee_max;
+                if enemy.alternate_melee and enemy.rule.alternate_melee_damage >= 0 {
+                    amount = enemy.rule.alternate_melee_damage;
+                    maximum = enemy.rule.alternate_melee_max;
+                }
+                if enemy.rule.melee_random_scale > 0.0 {
+                    total = 0.0;
+                    for sample in range(3) {
+                        enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+                        total += float(enemy.shot_random) / 2147483647.0;
+                    }
+                    amount = int(total * enemy.rule.melee_random_scale);
+                } elif maximum > amount {
+                    enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+                    amount += enemy.shot_random % (maximum - amount + 1);
+                }
+                result = player spawn Damage(amount=amount);
+                if result.dealt > 0 and enemy.rule.melee_knockback > 0.0 {
+                    player.velocity = player.velocity.add(
+                        delta.normalized().scale(enemy.rule.melee_knockback)
+                    );
+                    if player.velocity.z > 0.0 {
+                        player.grounded = False;
+                    }
+                }
+            }
+        } elif enemy.rule.missile_speed > 0.0 {
+            direction = opponent_aim(enemy, player);
+            shot_index = enemy.attack_event - 1;
+            if shot_index < len(enemy.rule.missile_yaw) {
+                angle = enemy.rule.missile_yaw[shot_index] * math.pi / 180.0;
+                direction = Vec3(
+                    x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
+                    y=direction.x * math.sin(angle) + direction.y * math.cos(angle),
+                    z=direction.z
+                );
+            }
+            velocity = direction.scale(enemy.rule.missile_speed);
+            if enemy.rule.gravity {
+                velocity.z = 200.0;
+            }
+            world +>:HasProjectile:+> Projectile(
+                pos=enemy.pos,
+                velocity=velocity,
+                damage=enemy.rule.damage,
+                hostile=True,
+                effect=enemy.rule.missile_effect,
+                gravity=enemy.rule.gravity,
+                splash=enemy.rule.splash,
+                radius=enemy.rule.radius,
+                remaining=2.5 if enemy.rule.gravity else 5.0
+            );
+        } elif enemy.rule.melee == 0 or enemy.rule.melee_times {
+            opponent_shot(world, enemy, player, collision);
+        }
+    }
+    enemy.attack_flash = max(0.0, attack_duration(enemy) - enemy.attack_clock);
+    if enemy.attack_clock >= attack_duration(enemy) {
+        enemy.attack_clock = -1.0;
+    }
+}
+
+# Split a tick at the refire boundary so recovery and repeated attack movement
+# never run in the same slice. The saved clock/cursor/random stream are sufficient
+# to restore a sequence; no hidden per-frame refire flag is needed.
+def advance_attack(
+    world: World, enemy: Opponent, player: Player, collision: CollisionMap, dt: float
+) {
+    restart = enemy.rule.melee_repeat_start
+        if enemy.attack_melee
+        else enemy.rule.repeat_start;
+    boundary = enemy.rule.melee_repeat_end
+        if enemy.attack_melee
+        else enemy.rule.repeat_end;
+    chance = enemy.rule.melee_repeat_chance
+        if enemy.attack_melee
+        else enemy.rule.repeat_chance;
+    if restart < 0.0 or boundary <= restart or boundary >= attack_duration(enemy) {
+        advance_attack_segment(world, enemy, player, collision, dt);
+        return;
+    }
+    remaining = dt;
+    while remaining > 0.000001 and enemy.attack_clock >= 0.0 {
+        before = enemy.attack_clock;
+        step = remaining;
+        crossing = before < boundary - 0.000001
+            and before + step >= boundary - 0.000001;
+        if crossing {
+            step = max(0.0, boundary - before);
+        }
+        advance_attack_segment(world, enemy, player, collision, step);
+        remaining = max(0.0, remaining - step);
+        if crossing and enemy.attack_clock >= 0.0 and player.health > 0 {
+            distance = player.pos.sub(enemy.pos).length();
+            sight = collision.trace_point(enemy.pos, player.pos);
+            valid = distance <= enemy.rule.melee_range
+                if enemy.attack_melee
+                else distance > enemy.rule.melee_range;
+            if valid
+                and distance <= enemy.rule.attack_range
+                and not sight.start_solid
+                and sight.fraction == 1.0 {
+                enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+                if float(enemy.shot_random) / 2147483647.0 < chance {
+                    enemy.attack_clock = restart;
+                    enemy.attack_event = 0;
+                    for at in attack_times(enemy) {
+                        if at < restart - 0.000001 {
+                            enemy.attack_event += 1;
+                        }
+                    }
+                    # A shot on the first repeated pose happens at the boundary.
+                    advance_attack_segment(world, enemy, player, collision, 0.0);
+                }
+            }
+        }
+    }
+}
+
 walker CombatTick {
     has player: Player,
         collision: CollisionMap,
         state: CombatState,
         dt: float,
-        active: bool = True;
+        active: bool = True,
+        world: World | None = None;
 
     can begin with World entry {
+        self.world = here;
+        here spawn ParticleTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
         self.state.hit_flash = max(0.0, self.state.hit_flash - self.dt);
@@ -705,6 +1090,9 @@ walker CombatTick {
     }
 
     can think with Opponent entry {
+        if here.rule.script == "chthon" {
+            return;
+        }
         if here.health > 0 and here.activation.pending > 0 {
             here.activation.pending = 0;
             if here.dormant and here.spawn_wait < 0.0 {
@@ -733,6 +1121,16 @@ walker CombatTick {
             }
         }
         if here.health <= 0 {
+            if here.death_animation {
+                here.animation_time += self.dt * 10.0;
+                index = min(int(here.animation_time), len(here.death_animation) - 1);
+                here.visual.first = here.death_animation[index];
+                here.visual.second = here.death_animation[
+                    min(index + 1, len(here.death_animation) - 1)
+                ];
+                here.visual.blend = here.animation_time
+                    - float(int(here.animation_time));
+            }
             if not here.arena {
                 return;
             }
@@ -749,6 +1147,8 @@ walker CombatTick {
         }
         delta = self.player.pos.sub(here.pos);
         distance = delta.length();
+        here.pain_wait = max(0.0, here.pain_wait - self.dt);
+        here.pain_cooldown = max(0.0, here.pain_cooldown - self.dt);
         here.attack_wait = max(0.0, here.attack_wait - self.dt);
         here.attack_flash = max(0.0, here.attack_flash - self.dt);
         here.alert = max(0.0, here.alert - self.dt);
@@ -764,17 +1164,67 @@ walker CombatTick {
                     here.alert = 8.0;
                 }
                 # Attack only with a fresh sight query, never cached visibility.
-                if here.pursuing and here.attack_wait <= 0.0 {
-                    self.player spawn Damage(amount=6 if here.arena else 4);
-                    here.attack_wait = 0.8;
-                    here.attack_flash = 0.25;
+                if here.pursuing
+                    and here.attack_wait <= 0.0
+                    and here.pain_wait <= 0.0
+                    and here.attack_clock < 0.0 {
+                    if distance <= here.rule.attack_range
+                        and (
+                            distance >= here.rule.ranged_min
+                            or distance <= here.rule.melee_range
+                        ) {
+                        here.attack_melee = (
+                            here.rule.melee > 0 or here.rule.melee_random_scale > 0.0
+                        )
+                            and distance <= here.rule.melee_range;
+                        here.attack_target = self.player.pos.add(Vec3());
+                        here.attack_clock = 0.0;
+                        here.attack_event = 0;
+                        here.burst_count = 1;
+                        here.alternate_melee = False;
+                        if here.attack_melee and here.rule.alternate_melee_times {
+                            here.shot_random = (here.shot_random * 48271) % 2147483647;
+                            here.alternate_melee = here.shot_random > 1073741823;
+                        }
+                        if here.rule.burst_max > 1 and not here.attack_melee {
+                            here.shot_random = (here.shot_random * 48271) % 2147483647;
+                            here.burst_count = here.rule.burst_min
+                                + here.shot_random
+                                    % (here.rule.burst_max - here.rule.burst_min + 1);
+                        }
+                        here.attack_wait = max(
+                            here.rule.interval, attack_duration(here)
+                        );
+                        here.attack_flash = attack_duration(here);
+                    }
                 }
             }
             here.steering = Vec3();
             goal = here.last_seen.sub(here.pos);
             if here.alert > 0.0
-                and goal.length() > (180.0 if here.pursuing else 24.0) {
+                and goal.length() > (here.rule.stop_range if here.pursuing else 24.0) {
                 direction = Vec3(x=goal.x, y=goal.y).normalized();
+                # Local separation is evaluated with steering, not every physics tick.
+                if self.world is not None {
+                    for neighbor in [self.world->:HasOpponent:->][?:Opponent] {
+                        if neighbor == here
+                            or neighbor.health <= 0
+                            or neighbor.dormant {
+                            continue;
+                        }
+                        away = here.pos.sub(neighbor.pos);
+                        if abs(away.z) < 56.0 {
+                            away.z = 0.0;
+                            spacing = away.length();
+                            if spacing > 0.001 and spacing < 56.0 {
+                                direction = direction.add(
+                                    away.scale((56.0 - spacing) / (56.0 * spacing))
+                                );
+                            }
+                        }
+                    }
+                    direction = direction.normalized();
+                }
                 best = -1.0;
                 for angle in [0.0, 0.785398, -0.785398, 1.570796, -1.570796] {
                     candidate = Vec3(
@@ -782,8 +1232,23 @@ walker CombatTick {
                         y=direction.x * math.sin(angle) + direction.y * math.cos(angle)
                     );
                     probe = self.collision.trace(
-                        here.pos, here.pos.add(candidate.scale(48.0))
+                        here.pos.sub(Vec3(z=self.collision.eye_height)),
+                        here.pos.sub(Vec3(z=self.collision.eye_height)).add(
+                            candidate.scale(48.0)
+                        )
                     );
+                    # Grounded monsters must not blindly chase over a drop.
+                    if here.grounded {
+                        ahead = here.pos.sub(Vec3(z=self.collision.eye_height)).add(
+                            candidate.scale(32.0)
+                        );
+                        support = self.collision.trace(
+                            ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=36.0))
+                        );
+                        if support.fraction == 1.0 or support.normal.z < 0.7 {
+                            continue;
+                        }
+                    }
                     score = probe.fraction + 0.15 * math.cos(angle);
                     if not probe.start_solid
                         and probe.fraction > 0.3
@@ -794,10 +1259,19 @@ walker CombatTick {
                 }
             }
         }
-        wish = here.steering;
+        if self.world is not None {
+            advance_attack(self.world, here, self.player, self.collision, self.dt);
+        }
+        wish = Vec3()
+            if here.pain_wait > 0.0 or here.attack_flash > 0.0
+            else here.steering;
         if here.alert > 0.0 {
             goal = here.last_seen.sub(here.pos);
-            here.yaw = math.atan2(goal.y, goal.x);
+            target_yaw = math.atan2(goal.y, goal.x);
+            turn = math.atan2(
+                math.sin(target_yaw - here.yaw), math.cos(target_yaw - here.yaw)
+            );
+            here.yaw += max(-6.0 * self.dt, min(6.0 * self.dt, turn));
         }
         here.support_wait -= self.dt;
         # Settled actors probe support at 20 Hz; motion and gravity remain 120 Hz.
@@ -811,9 +1285,20 @@ walker CombatTick {
         pose_name = "attack"
             if here.attack_flash > 0.0
             else ("run" if wish.length() > 0.0 else "stand");
+        if here.pain_wait > 0.0 {
+            pose_name = "pain";
+        }
         frames = here.attack_animation
             if pose_name == "attack"
             else (here.animation if pose_name == "run" else here.idle_animation);
+        if pose_name == "attack" and here.attack_melee and here.melee_animation {
+            frames = here.alternate_melee_animation
+                if here.alternate_melee
+                else here.melee_animation;
+        }
+        if pose_name == "pain" {
+            frames = here.pain_animation;
+        }
         if not frames {
             frames = here.animation;
         }
@@ -822,10 +1307,22 @@ walker CombatTick {
             here.pose_name = pose_name;
         }
         if frames {
-            here.animation_time += self.dt * (8.0 if pose_name != "stand" else 2.0);
+            if pose_name == "attack" and here.attack_clock >= 0.0 {
+                here.animation_time = attack_pose_time(here);
+            } elif pose_name == "pain" {
+                here.animation_time = max(0.0, here.rule.pain_duration - here.pain_wait)
+                    * 10.0;
+            } else {
+                here.animation_time += self.dt * (8.0 if pose_name != "stand" else 2.0);
+            }
             index = int(here.animation_time) % len(frames);
+            if pose_name in ["attack", "pain"] {
+                index = min(int(here.animation_time), len(frames) - 1);
+            }
             here.visual.first = frames[index];
-            here.visual.second = frames[(index + 1) % len(frames)];
+            here.visual.second = frames[min(index + 1, len(frames) - 1)]
+                if pose_name in ["attack", "pain"]
+                else frames[(index + 1) % len(frames)];
             here.visual.blend = here.animation_time - float(int(here.animation_time));
         }
     }

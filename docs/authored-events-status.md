@@ -96,3 +96,21 @@ explosion/debris effects and complete spawn-overlap behavior remain open.
 
 The brush rules follow [Q2's wall and explosive entities](https://github.com/id-Software/Quake-2/blob/master/game/g_misc.c).
 The native streaming ABI is from [raylib 6.0](https://github.com/raysan5/raylib/blob/6.0/src/raylib.h).
+
+## Q1 platform collision bounds correction
+
+Q1 submodel collision bounds now include the original runtime's one-unit
+expansion before player-hull expansion. Previously the broad-phase filter could
+skip a real collision in that outer unit. In `e1m1`, the player sank into lifts
+7 and 22, causing ground probes to report a solid start and preventing walking;
+lift 7 also stalled just below its upper endpoint. This is an engine bounds bug,
+not a Jac compiler defect.
+
+The regression fails with the old bounds and passes after the correction. It
+compares indexed versus exhaustive collision on all six faces of a translated
+Q1 hull. Twenty-three collision/platform/train tests pass. The native
+`scripts/platform_walk_smoke.jac` verifies full rises and subsequent walking on
+both `e1m1` lifts and Q2 `base3` lift 41.
+
+The source behavior is `Mod_LoadSubmodels` in
+[Quake's model loader](https://github.com/id-Software/Quake/blob/master/WinQuake/model.c).

@@ -74,15 +74,17 @@ test "negative wait stays open and opening cannot sweep through player" {
 test "unsupported activation remains static in every game" {
     for game in ["q1", "q2", "q3"] {
         for fields in [
-            {"target": "event"},
-            {"health": "10"},
-            {"spawnflags": "1"},
-            {"spawnflags": "32"},
+            {"killtarget": "event"},
+            {"spawnflags": "128"},
             {"accel": "10"}
         ] {
             fixture = DoorFixture();
             fixture.setup(game, fields);
-            active = [door for door in [fixture.world->:HasDoor:->][?:Door] if door.enabled];
+            active = [
+                door
+                for door in [fixture.world->:HasDoor:->][?:Door]
+                if door.enabled
+            ];
             assert len(active) == 0;
         }
     }
@@ -148,5 +150,17 @@ test "a targeted member disables proximity activation for the entire group" {
         leaders[0].requested = True;
         fixture.tick(Vec3(x=500.0), 1.0);
         assert leaders[0].position > 0.0;
+    }
+}
+
+
+test "an absent target recipient is a no-op and does not freeze the mover" {
+    for game in ["q1", "q2", "q3"] {
+        fixture = DoorFixture();
+        fixture.setup(game, {"target": "lightning"});
+        door = [fixture.world->:HasDoor:->][?:Door][0];
+        assert door.enabled and door.activation.enabled;
+        fixture.tick(Vec3(x=60.0), 1.0);
+        assert door.state == "open";
     }
 }

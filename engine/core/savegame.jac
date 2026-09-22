@@ -1,4 +1,7 @@
 """Versioned text snapshots, restored only into a newly loaded world."""
+import from .save_format { SNAPSHOT_HEADER }
+import from engine.world.gates { ApplyGates }
+import from engine.world.chthon { LightningEvent, HasLightning, boss_pose }
 import from engine.world.trains {
     Train,
     HasTrain,
@@ -14,6 +17,8 @@ import os;
 import from engine.world.world { World, Player }
 import from engine.world.level { Level }
 import from engine.world.combat {
+    attack_duration,
+    attack_event_count,
     CombatState,
     Opponent,
     HasOpponent,
@@ -59,7 +64,7 @@ def values(line: str, count: int) -> list[float] {
 
 def snapshot(world: World, level: Level, player: Player, combat: CombatState) -> str {
     lines = [
-        "QUAKEPASSION 3",
+        SNAPSHOT_HEADER,
         level.bsp.game,
         level.name,
         numbers(
@@ -97,7 +102,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     ];
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         lines.append(
-            "J "
+            ("X " if projectile.hostile else "J ")
                 + (projectile.effect or "-")
                 + " "
                 + numbers(
@@ -146,7 +151,20 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         enemy.attack_wait,
                         enemy.respawn_wait,
                         1.0 if enemy.dormant else 0.0,
-                        enemy.spawn_wait
+                        enemy.spawn_wait,
+                        float(enemy.boss_phase),
+                        enemy.boss_time,
+                        enemy.attack_clock,
+                        float(enemy.attack_event),
+                        1.0 if enemy.attack_melee else 0.0,
+                        enemy.pain_wait,
+                        enemy.pain_cooldown,
+                        float(enemy.shot_random),
+                        float(enemy.burst_count),
+                        1.0 if enemy.alternate_melee else 0.0,
+                        enemy.attack_target.x,
+                        enemy.attack_target.y,
+                        enemy.attack_target.z
                     ]
                 )
         );
@@ -165,6 +183,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
         );
     }
     for door in [world->:HasDoor:->][?:Door] {
+        member_health = [float(part.health) for part in [door->:DoorMember:->][?:Door]];
         lines.append(
             "D "
                 + door.state
@@ -175,8 +194,11 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         door.remaining,
                         1.0 if door.automatic else 0.0,
                         float(door.activation.pending),
-                        1.0 if door.unlocked else 0.0
+                        1.0 if door.unlocked else 0.0,
+                        float(door.health),
+                        door.contact_remaining
                     ]
+                        + member_health
                 )
         );
     }
@@ -277,6 +299,9 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                 )
         );
     }
+    for event in [world->:HasLightning:->][?:LightningEvent] {
+        lines.append("L " + str(event.remaining));
+    }
     return "\n".join(lines) + "\n";
 }
 
@@ -285,7 +310,7 @@ def restore(
 ) {
     lines = data.splitlines();
     if len(lines) < 4
-        or lines[0] != "QUAKEPASSION 3"
+        or lines[0] != SNAPSHOT_HEADER
         or lines[1] != level.bsp.game
         or lines[2] != level.name {
         raise ValueError("Save version or level mismatch");
@@ -342,6 +367,8 @@ def restore(
     }
     player.inventory = Inventory();
     enemies = [world->:HasOpponent:->][?:Opponent];
+    lightning = [world->:HasLightning:->][?:LightningEvent];
+    l = 0;
     pickups = [world->:HasPickup:->][?:Pickup];
     doors = [world->:HasDoor:->][?:Door];
     signals = [world->:HasSignal:->][?:Signal];
@@ -381,7 +408,7 @@ def restore(
                 raise ValueError("Save asset manifest mismatch");
             }
             manifest_seen = True;
-        } elif words[0] == "J" {
+        } elif words[0] in ["J", "X"] {
             row = values(" ".join(words[2:]), 19);
             effect = "" if words[1] == "-" else words[1];
             if len(effect) > 64
@@ -436,7 +463,8 @@ def restore(
                 burst_wait=row[16],
                 phase=int(row[17]),
                 effect=effect,
-                age=row[18]
+                age=row[18],
+                hostile=words[0] == "X"
             );
         } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);
@@ -447,8 +475,15 @@ def restore(
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
             );
+        } elif words[0] == "L" and l < len(lightning) {
+            row = values(" ".join(words[1:]), 1);
+            if row[0] < 0.0 or row[0] > 1.0 {
+                raise ValueError("Invalid saved lightning");
+            }
+            lightning[l].remaining = row[0];
+            l += 1;
         } elif words[0] == "E" and e < len(enemies) {
-            row = values(" ".join(words[1:]), 9);
+            row = values(" ".join(words[1:]), 22);
             enemy = enemies[e];
             e += 1;
             enemy.pos = Vec3(x=row[0], y=row[1], z=row[2]);
@@ -461,7 +496,73 @@ def restore(
             }
             enemy.dormant = row[7] != 0.0;
             enemy.spawn_wait = row[8];
-            enemy.visual.visible = enemy.health > 0 and not enemy.dormant;
+            if row[9] < 0.0
+                or row[9] > 7.0
+                or row[9] != float(int(row[9]))
+                or row[10] < 0.0
+                or row[10] > 2.3 {
+                raise ValueError("Invalid saved boss state");
+            }
+            enemy.boss_phase = int(row[9]);
+            enemy.boss_time = row[10];
+            enemy.visual.visible = (enemy.health > 0 or bool(enemy.death_animation))
+                and not enemy.dormant;
+            if row[17] < 1.0
+                or row[17] > float(enemy.rule.burst_max)
+                or row[17] != float(int(row[17])) {
+                raise ValueError("Invalid saved burst length");
+            }
+            enemy.burst_count = int(row[17]);
+            if row[13] not in [0.0, 1.0]
+                or (row[13] == 1.0 and enemy.burst_count != 1) {
+                raise ValueError("Invalid saved melee selection");
+            }
+            enemy.attack_melee = row[13] != 0.0;
+            if row[18] not in [0.0, 1.0]
+                or (
+                    row[18] == 1.0
+                    and (not enemy.attack_melee or not enemy.rule.alternate_melee_times)
+                ) {
+                raise ValueError("Invalid saved alternate melee selection");
+            }
+            enemy.alternate_melee = row[18] != 0.0;
+            enemy.attack_target = Vec3(x=row[19], y=row[20], z=row[21]);
+            if row[11] < -1.0
+                or row[11] > attack_duration(enemy)
+                or row[12] < 0.0
+                or row[12] > float(attack_event_count(enemy))
+                or row[12] != float(int(row[12]))
+                or row[13] not in [0.0, 1.0]
+                or row[14] < 0.0
+                or row[14] > enemy.rule.pain_duration
+                or row[15] < 0.0
+                or row[15] > enemy.rule.pain_interval {
+                raise ValueError("Invalid saved attack state");
+            }
+            if row[16] < 1.0
+                or row[16] >= 2147483647.0
+                or row[16] != float(int(row[16])) {
+                raise ValueError("Invalid saved opponent spread");
+            }
+            enemy.shot_random = int(row[16]);
+            enemy.attack_clock = row[11];
+            enemy.attack_event = int(row[12]);
+            enemy.attack_melee = row[13] != 0.0;
+            enemy.attack_flash = max(0.0, attack_duration(enemy) - enemy.attack_clock)
+                if enemy.attack_clock >= 0.0
+                else 0.0;
+            enemy.pain_wait = row[14];
+            enemy.pain_cooldown = row[15];
+            if enemy.health <= 0 and enemy.death_animation {
+                enemy.animation_time = float(len(enemy.death_animation));
+                enemy.visual.first = enemy.death_animation[-1];
+                enemy.visual.second = enemy.visual.first;
+                enemy.visual.blend = 0.0;
+            }
+            if enemy.rule.script == "chthon" {
+                enemy.visual.visible = enemy.boss_phase > 0 and enemy.boss_phase < 7;
+                boss_pose(enemy);
+            }
         } elif words[0] == "P" and p < len(pickups) {
             row = values(" ".join(words[1:]), 4);
             if row[0] not in [0.0, 1.0]
@@ -479,12 +580,17 @@ def restore(
             item.activate_on_use = row[3] != 0.0;
             item.visual.visible = item.active;
         } elif words[0] == "D" and d < len(doors) {
-            row = values(" ".join(words[2:]), 5);
             door = doors[d];
+            parts = [door->:DoorMember:->][?:Door];
+            row = values(" ".join(words[2:]), 7 + len(parts));
             d += 1;
             if words[1] not in ["closed", "opening", "open", "closing", "locked"]
                 or row[0] < 0.0
-                or row[0] > 1.0 {
+                or row[0] > 1.0
+                or row[5] < 0.0
+                or row[5] > float(door.max_health)
+                or row[6] < 0.0
+                or row[6] > 1.0 {
                 raise ValueError("Invalid saved door");
             }
             door.state = words[1];
@@ -493,6 +599,15 @@ def restore(
             door.automatic = row[2] != 0.0;
             door.activation.pending = int(row[3]);
             door.unlocked = row[4] != 0.0;
+            door.health = int(row[5]);
+            door.contact_remaining = row[6];
+            for index in range(len(parts)) {
+                if row[7 + index] < 0.0
+                    or row[7 + index] > float(parts[index].max_health) {
+                    raise ValueError("Invalid saved door member health");
+                }
+                parts[index].health = int(row[7 + index]);
+            }
             if door.unlocked and door.keys {
                 door.hold_time = -1.0;
             }
@@ -653,9 +768,13 @@ def restore(
         or h != len(hazards)
         or o != len(progress_records)
         or a != len(speakers)
-        or b != len(brushes) {
+        or b != len(brushes)
+        or l != len(lightning) {
         raise ValueError("Save does not match this map's entities");
     }
+    world spawn ApplyGates(
+        inventory=player.inventory, bsp=level.bsp, collision=level.collision
+    );
 }
 
 def write_save(path: str, data: str) {

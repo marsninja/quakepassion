@@ -80,3 +80,47 @@ The existing graphical menu harness also passes settings, walking, grounding,
 pause, map switching and quit checks. Native movement checks pass on the original
 12-map sample, including all 96 Q3 solid-patch probes. Captures from this run are
 saved under `.jac/screenshots/doors/`.
+
+## Campaign damage activation update
+
+Q1/Q2 `func_door` brushes with health now accept weapon and explosion damage.
+Q1 linked brushes share the leader's damage threshold; Q2 team members retain
+individual thresholds. Depleting a threshold activates the entire group and
+resets its health. Proximity does not activate these doors. Damage is accepted
+again during return travel. Buttons retain their separate contact and endpoint
+activation rules.
+
+Campaign doors dispatch targets when opening starts, matching the original
+mover implementations. Save format 6 includes partial damage for every linked
+part and rejects earlier snapshots. Unit coverage exercises thresholds, ignored
+shots during opening, returning-door reversal, linked parts, explosions and
+save restoration. `scripts/shoot_door_smoke.jac` exercises eligible authored
+health doors in the installed campaign maps and checks render/collision motion.
+
+The older limits above describe the initial milestone: translating platforms,
+trains, buttons, Q1 keys and Q1 two-stage secret doors have since been implemented.
+Start-open/toggle/rotating/crushing ordinary doors, unsupported target chains,
+Q3 shot doors and exact original timing/sounds still need work. An unsupported
+member or target chain continues to keep its group static.
+
+Validation: the full suite passes **240 tests**. The original-map audit passes
+13 groups across 10 maps (Q1: seven groups, including the four-part `e4m2` door;
+Q2: six groups, including the paired `city3` door). This audit ran through Jac's
+server execution path because its archive-inventory decoding uses an
+[unsupported native error-policy argument](native-decode-errors-blocker.md).
+The native viewer builds successfully with the documented source compiler.
+
+## Start-open and toggle update
+
+Start-open doors now initialize every linked face and hull at the far endpoint
+and traverse the reversed authored path. Q1/Q2 toggle doors wait at both endpoints
+and reverse smoothly when activated while moving. Proximity activation is
+throttled to one request per second; that timer is saved. Q1 DONT_LINK brushes
+remain independent. Q3 start-open behavior has synthetic coverage; its original
+maps in the installed inventory did not contain these flags.
+
+Four tests cover initial transforms, linked members, intermediate save restoration,
+toggle reversal/endpoint waits and contact debounce. Native
+`scripts/mover_flags_smoke.jac` passes 24 original groups across six campaign maps:
+19 start-open groups and five toggle groups. Crusher and rotating doors remain
+unsupported. Save format 8 rejects older layouts explicitly.

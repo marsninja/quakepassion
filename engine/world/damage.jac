@@ -45,3 +45,20 @@ walker Heal {
         here.health += self.restored;
     }
 }
+
+
+def blast_strength(
+    game: str, amount: int, radius: float, distance: float, energy_burst: bool = False
+) -> float {
+    if amount <= 0 or radius <= 0.0 or distance >= radius {
+        return 0.0;
+    }
+    distance = max(0.0, distance);
+    if energy_burst {
+        return float(amount) * (1.0 - math.sqrt(distance / radius));
+    }
+    if game == "q3" {
+        return float(amount) * (1.0 - distance / radius);
+    }
+    return max(0.0, float(amount) - distance * 0.5);
+}

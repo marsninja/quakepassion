@@ -4,6 +4,8 @@ import from engine.core.app { App }
 import from engine.core.clock { Clock }
 import from engine.core.campaign { Visited, MapState }
 import from engine.render.renderer { Renderer }
+import from engine.world.trains { ShootMover }
+import from engine.world.signals { SignalTick, progress_for }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, select_weapon, weapon_input }
 import from engine.world.pickups { Pickup, HasPickup, PickupTick }
@@ -25,6 +27,31 @@ with entry {
     try {
         app.load_destination("q2", "base1");
         assert not app.menu.opened , app.menu.message;
+        app.world spawn SignalTick(dt=1.0);
+        assert progress_for(app.world).secrets == 0;
+        print("SPAWN RULES PASS: Q2 base1 excludes campaign-disabled startup secret");
+        buttons = [
+            door
+            for door in [app.world->:HasDoor:->][?:Door]
+            if door.model == 13
+        ];
+        assert len(buttons) == 1 and buttons[0].max_health == 1;
+        app.world spawn ShootMover(model=13, amount=1);
+        for i in range(120) {
+            app.world spawn DoorTick(
+                bsp=app.level.bsp,
+                collision=app.level.collision,
+                player_origin=app.player.pos.sub(
+                    Vec3(z=app.level.collision.eye_height)
+                ),
+                player=app.player,
+                dt=1.0 / 120.0
+            );
+        }
+        assert progress_for(app.world).secrets == 1;
+        print(
+            "SHOOT BUTTON PASS: Q2 base1 authored secret only after damage and motion"
+        );
         enemies = [app.world->:HasOpponent:->][?:Opponent];
         pickups = [app.world->:HasPickup:->][?:Pickup];
         assert enemies and pickups;

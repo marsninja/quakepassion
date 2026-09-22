@@ -3,7 +3,7 @@
 Translating touch buttons (`func_button`) now use the same mover simulation and
 render/collision transforms as doors. Physical contact starts the press; reaching
 the pressed endpoint emits the target signal. The button waits, then returns.
-Named buttons remain touchable. Fly mode does not press buttons; Escape pauses
+Named Q1/Q3 buttons remain touchable; named Q2 buttons require use. Fly mode does not press buttons; Escape pauses
 motion and dispatch.
 
 `Signal` nodes and `Targets` edges connect map entities. `Fire` walks relay
@@ -13,10 +13,15 @@ leader's signal. A missing or unsupported recipient disables the entire source
 chain, rather than executing a partial map script.
 
 Supported relays are immediate, unflagged `trigger_relay`/`target_relay` entities.
-Shootable buttons, delayed/randomized/conditional relay behavior, killtarget,
-button teams, sounds, texture-state animation, and general map scripting are not
-implemented. Doors emit output at the open endpoint; exact per-game use-target
-ordering is not claimed. Lifts and gameplay remain separate roadmap stages.
+Shootable buttons accept direct weapon damage and unobstructed explosion damage.
+They accumulate damage until their authored health is depleted, then use the
+same press/target/return sequence. Damage is disabled while pressed or pressing
+and resumes during return. Partial health and pending shot activation survive
+save/load. Q2 buttons default to a three-second wait.
+
+Shootable ordinary doors, killtarget, button teams, sounds, texture-state
+animation, and remaining conditional map scripting are still incomplete. Doors emit output at the open endpoint; exact per-game use-target
+ordering is not claimed. Shared lifts and trains have separate status documents.
 
 ## Validation
 
@@ -29,7 +34,7 @@ Use the local compiler fix described in
 [native-cache-section-merge-blocker.md](native-cache-section-merge-blocker.md):
 
 ```sh
-export JAC_DEV_SOURCE=/Users/marsninja/repos/jaseci-wt/qp-cache-sections/jac
+export JAC_DEV_SOURCE=/Users/marsninja/repos/jaseci-wt/qp-lighting-validation/jac
 export JAC_COMPILER_LIB=off
 jac test
 jac build scripts/validate_buttons.jac --native -o .jac/qp-button-check
@@ -44,3 +49,18 @@ Desktop validation now passes for Q1 `e1m1`, Q2 `base1`, and Q3 `q3dm7`.
 The harness checks physical contact, Escape pause, movement and endpoint dispatch;
 closed/pressed captures were inspected for all three games. Captures are local
 artifacts in `.jac/screenshots/buttons/` (game assets are not committed).
+
+## Damage and spawn-rule regression coverage
+
+`tests/shoot_button_tests.jac` covers damage thresholds, contact rejection,
+endpoint-only output, repeated use, saved partial damage and queued activation,
+and explosion occlusion. `tests/spawn_filter_tests.jac` covers the normal-campaign
+and local-arena entity selection that must happen before target links are built.
+The native campaign harness checks Q2 `base1` starts without a free secret and
+awards its authored `t91` secret only after model 13 is damaged and presses.
+
+Sources: [Q2 buttons](https://github.com/id-Software/Quake-2/blob/master/game/g_func.c)
+and [Q3 buttons](https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/g_mover.c).
+
+The expanded full suite passes 237 tests, and all four native campaign markers
+(startup filtering, shootable secret, hub persistence, Q1 key route) pass.

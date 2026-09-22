@@ -15,8 +15,8 @@ fresh session. Failed asset loads leave the current level and hub intact.
 Restart after death reloads the current map and preserves other visited Q2 maps.
 
 F5 saves; F9 loads the active map and Q2 hub together. Saves use a data-only
-campaign envelope and snapshot version 2. Version 1 snapshots are rejected:
-adding authored pickup/monster signals changes positional entity records, so
+campaign envelope and snapshot version 5. Older snapshots are rejected:
+expanding the enemy roster changes positional entity records, so
 silently reading old snapshots would risk restoring state to the wrong entities.
 Settings persist separately; menu reset restores defaults.
 
@@ -38,7 +38,8 @@ setup in the README. Captures/logs go to `.jac/screenshots/gameplay`.
 
 This is the smaller-roster playable prototype. Full campaign branches and endings,
 boss/rune logic, original weapon/enemy behaviors, all special trigger flags,
-trains and rotating/crushing movers are not implemented. Remaining original
+remaining rotating/crushing mover behavior is incomplete. Shared trains are now
+implemented; see [authored events](authored-events-status.md). Remaining original
 shader directives, water ledge jumps, fall damage, protection powerups and precise
 per-item placement/respawn behavior are further fidelity work. Unsupported
 activation chains are disabled rather than partially dispatched. Automated route

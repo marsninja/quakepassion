@@ -9,12 +9,13 @@ released binary and CI have not been validated against this patch set.
 | `set(bytes)` fails lowering | [#9392](https://github.com/jaseci-labs/jac/pull/9392) | `repros/native_set_bytes.jac` |
 | Tuple exception handlers miss matching exceptions | [#9394](https://github.com/jaseci-labs/jac/pull/9394) | `repros/native_oserror_handler.jac` |
 | Native monotonic clocks use Linux's clock ID on macOS | [#9393](https://github.com/jaseci-labs/jac/pull/9393) (existing upstream PR) | `repros/native_monotonic_clock.jac` |
+| Cached code can lose its foreign-library manifest | [#9406](https://github.com/jaseci-labs/jac/pull/9406) | See the upstream cache regressions |
 | Native splitlines semantics affect persistence | [#9388](https://github.com/jaseci-labs/jac/pull/9388) | See the upstream regression |
 
 The local compiler worktree is
 `/Users/marsninja/repos/jaseci-wt/qp-lighting-validation`, branch
 `validation/passion-lighting`, combining upstream main `2d533b666f` with these
-five patches. Set `JAC_DEV_SOURCE` to its `jac` directory and
+five patches plus the cache-provenance fix in #9406. Set `JAC_DEV_SOURCE` to its `jac` directory and
 `JAC_COMPILER_LIB=off`. No engine workaround replaces a failing Jac idiom.
 
 ## Regression evidence
