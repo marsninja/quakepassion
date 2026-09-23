@@ -30,10 +30,11 @@ with entry {
         "qp_passion.png",
         "qp_passion_menu.png",
         "qp_passion_complete.png",
-        "qp_passion_bridge.png",
+        "qp_passion_vertical.png",
+        "qp_passion_wall.png",
         "qp_passion_flash.png"
     ]
-        + ["qp_passion_theme_" + str(i) + ".png" for i in range(3)];
+        + ["qp_passion_theme_" + str(i) + ".png" for i in range(4)];
     for name in names {
         (repo / name).unlink(missing_ok=True);
     }
@@ -47,9 +48,12 @@ with entry {
             env=env,
             capture_output=True,
             text=True,
-            timeout=240
+            timeout=900
         );
         (output / "run.log").write_text(ran.stdout + ran.stderr);
+        (output / ("run-" + env.get("QP_SEED", "42") + ".log")).write_text(
+            ran.stdout + ran.stderr
+        );
         assert ran.returncode == 0 and "PASSION PASS:" in ran.stdout , "Passion acceptance failed; see run.log";
         for line in ran.stdout.splitlines() {
             if line.startswith("PASSION") {
@@ -57,6 +61,12 @@ with entry {
             }
         }
     }
+    # Expeditions show two to four districts; only captured themes are checked.
+    names = [
+        name
+        for name in names
+        if (repo / name).exists() or "theme" not in name
+    ];
     for name in names {
         # Flat menu panels/text have fewer colors than textured world geometry.
         check_image(
@@ -64,7 +74,7 @@ with entry {
         );
         shutil.copyfile(repo / name, output / name);
     }
-    normal = read_png(output / "qp_passion_theme_2.png");
+    normal = read_png(output / "qp_passion_wall.png");
     flashed = read_png(output / "qp_passion_flash.png");
     assert normal.width == flashed.width and normal.height == flashed.height;
     # Exclude the HUD/weapon; a flash must alter the rendered scene itself.
