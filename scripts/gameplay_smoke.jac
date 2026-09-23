@@ -6,6 +6,7 @@ import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, selected_weapon }
 import from engine.world.inventory { AdjustInventory, quantity }
+import from engine.world.arena { match_of, Competes }
 import from scripts.input_events { event, key }
 import from engine.input.input { _capture, _release }
 
@@ -21,6 +22,12 @@ with entry {
             app.load_destination(game, name);
             assert not app.menu.opened, app.menu.message;
             assert app.walking;
+            contest = match_of(app.world);
+            if game == "q3" {
+                # Skip the arena's prepare-to-fight countdown.
+                assert contest is not None and contest.warmup > 0.0;
+                contest.warmup = 0.0;
+            }
             # Freeze opponents while checking input and pause deterministically.
             enemies = [app.world->:HasOpponent:->][?:Opponent];
             for enemy in enemies { enemy.attack_wait = 1000.0; }
@@ -57,23 +64,37 @@ with entry {
             app.player.health = 0;
             before = app.simulation_time;
             for frame in range(3) { assert app.step(); }
-            assert app.simulation_time == before;
             renderer.screenshot("qp_gameplay_dead_" + game + ".png");
-            key(app, 257);
-            assert app.player.health > 0 and app.combat.kills == 0;
-            assert app.level.name == name and not app.menu.opened;
-            if rule.ammo {
-                assert quantity(app.player.inventory, rule.ammo) == starting;
-            }
             if game == "q3" {
-                app.combat.kills = 10;
+                # Arena matches keep running; firing after 1.7 s respawns the player.
+                assert app.simulation_time > before;
+                app.respawn_wait = 0.0;
+                # Jump respawns as well as fire (g_client.c respawn on any button).
+                key(app, 32);
+                assert app.player.health == app.player.max_health + 25;
+                assert app.level.name == name and not app.menu.opened;
+                assert contest is not None;
+                scores = [edge contest->:Competes:->];
+                human = [score for score in scores if score.human][0];
+                human.frags = contest.fraglimit;
+                contest.finished = True;
+                contest.winner = human.name;
                 before = app.simulation_time;
                 for frame in range(3) { assert app.step(); }
                 assert app.simulation_time == before;
                 renderer.screenshot("qp_gameplay_arena_won.png");
                 key(app, 257);
-                assert app.combat.kills == 0 and app.player.health > 0;
+                # A win advances along the ladder: q3dm1 leads to q3dm2.
+                assert app.level.name == "q3dm2" and app.player.health > 0;
+                assert not app.menu.opened;
+            } else {
+                assert app.simulation_time == before;
+                key(app, 257);
+                assert app.player.health > 0 and app.combat.kills == 0;
                 assert app.level.name == name and not app.menu.opened;
+                if rule.ammo {
+                    assert quantity(app.player.inventory, rule.ammo) == starting;
+                }
             }
             print("GAMEPLAY INPUT PASS", game);
         }

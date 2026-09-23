@@ -117,6 +117,9 @@ with entry {
                     player=player, collision=level.collision, state=app.combat, dt=3.0
                 );
                 assert enemy.health > 0 and enemy.visual.visible;
+                # Bots respawn at the furthest spawn; bring this one back into view.
+                enemy.pos = enemy.home;
+                enemy.velocity = Vec3();
                 player.inventory spawn AdjustInventory(
                     kind="bullets", amount=100, capacity=200
                 );
