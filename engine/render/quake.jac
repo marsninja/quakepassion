@@ -75,6 +75,10 @@ obj QuakeRenderer {
         styled: list[int] = [],
         stage_images: dict[int, list[list[int]]] = {},
         sky_layers: dict[int, list[int]] = {},
+        warp_shader: Shader = Shader(id=u32(0), locs=u64(0)),
+        warp_time: int = -1,
+        warp_size: int = -1,
+        warp_scroll: int = -1,
         white: int = 0,
         time: float = 0.0;
 
@@ -856,7 +860,11 @@ obj QuakeRenderer {
             }
             rlSetTexture(u32(self.textures[t]));
             for index in batches[t] {
-                self.polygon(level.bsp.faces[index], self.rects[index], False);
+                face = level.bsp.faces[index];
+                if face.warp or face.opacity < 1.0 {
+                    continue;
+                }
+                self.polygon(face, self.rects[index], False);
             }
             if level.bsp.textures[t].two_sided {
                 rlDrawRenderBatchActive();
@@ -898,7 +906,7 @@ obj QuakeRenderer {
         for batch in batches {
             for index in batch {
                 face = level.bsp.faces[index];
-                if face.light_offset >= 0 {
+                if face.light_offset >= 0 and not face.warp and face.opacity >= 1.0 {
                     self.polygon(face, self.rects[index], True);
                 }
             }
@@ -912,12 +920,105 @@ obj QuakeRenderer {
             }
             rlSetTexture(u32(self.emissive[t]));
             for index in batches[t] {
-                self.polygon(level.bsp.faces[index], self.rects[index], False);
+                face = level.bsp.faces[index];
+                if not face.warp and face.opacity >= 1.0 {
+                    self.polygon(face, self.rects[index], False);
+                }
             }
         }
         rlDrawRenderBatchActive();
         rlSetTexture(u32(0));
+        self.draw_liquids(level, batches);
         return count;
+    }
+
+    """Liquids and Q2's translucent surfaces, unlit as the originals draw them:
+    gl_warp.c EmitWaterPolys turbulence per pixel (8 texels of sine sway at
+    one radian per second), Q2 SURF_FLOWING's scroll, then the 33% and 66%
+    translucent faces blended over the world."""
+    def draw_liquids(level: Level, batches: list[list[int]]) {
+        if level.bsp.game not in ["q1", "q2"] {
+            return;
+        }
+        if self.warp_shader.id == u32(0) {
+            self.warp_shader = LoadShaderFromMemory(
+                "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor; uniform mat4 mvp; out vec2 uv; out vec4 color;\n"
+                    + "void main(){ uv=vertexTexCoord; color=vertexColor; gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
+                "#version 330\nin vec2 uv; in vec4 color; out vec4 finalColor; uniform sampler2D texture0; uniform vec4 colDiffuse; uniform float warpTime; uniform vec2 warpSize; uniform float warpScroll;\n"
+                    + "void main(){ vec2 st=uv*warpSize; vec2 w=vec2(st.x+8.0*sin(st.y*0.125+warpTime)+warpScroll, st.y+8.0*sin(st.x*0.125+warpTime))/warpSize; finalColor=texture(texture0,w)*color*colDiffuse; }\n"
+            );
+            self.warp_time = int(GetShaderLocation(self.warp_shader, "warpTime"));
+            self.warp_size = int(GetShaderLocation(self.warp_shader, "warpSize"));
+            self.warp_scroll = int(GetShaderLocation(self.warp_shader, "warpScroll"));
+        }
+        # Q2 flowing surfaces scroll 64 texels every two seconds.
+        drift = -64.0 * (self.time * 0.5 - float(int(self.time * 0.5)));
+        for pass_index in range(2) {
+            translucent = pass_index == 1;
+            if translucent {
+                BeginBlendMode(i32(0));
+                rlDisableDepthMask();
+            }
+            for t in range(len(batches)) {
+                picked = [
+                    index
+                    for index in batches[t]
+                    if (level.bsp.faces[index].warp or level.bsp.faces[index].opacity < 1.0)
+                        and (level.bsp.faces[index].opacity < 1.0) == translucent
+                ];
+                if not picked {
+                    continue;
+                }
+                texture = level.bsp.textures[t];
+                for index in picked {
+                    face = level.bsp.faces[index];
+                    alpha = int(face.opacity * 255.0);
+                    if face.warp {
+                        # Uniforms go to the program bound now, not at the flush.
+                        rlEnableShader(self.warp_shader.id);
+                        rlSetUniform(i32(self.warp_time), struct.pack("<f", self.time), i32(0), i32(1));
+                        rlSetUniform(i32(self.warp_size), struct.pack("<ff", float(texture.width), float(texture.height)), i32(1), i32(1));
+                        rlSetUniform(i32(self.warp_scroll), struct.pack("<f", drift if face.flowing else 0.0), i32(0), i32(1));
+                        rlDisableShader();
+                        BeginShaderMode(self.warp_shader);
+                    }
+                    rlSetTexture(u32(self.textures[t]));
+                    self.plain_polygon(face, alpha);
+                    rlDrawRenderBatchActive();
+                    if face.warp {
+                        EndShaderMode();
+                    }
+                }
+            }
+            if translucent {
+                rlEnableDepthMask();
+                EndBlendMode();
+            }
+        }
+        rlSetTexture(u32(0));
+    }
+
+    """A face with its base texture only, at the given opacity."""
+    def plain_polygon(face: Face, alpha: int) {
+        indices = face.indices;
+        if len(indices) == 0 {
+            indices = [];
+            for triangle in range(1, len(face.vertices) - 1) {
+                indices.extend([0, triangle + 1, triangle]);
+            }
+        }
+        rlBegin(i32(4));
+        rlColor4ub(u8(255), u8(255), u8(255), u8(alpha));
+        for index in indices {
+            rlTexCoord2f(f32(face.uv[index * 2]), f32(face.uv[index * 2 + 1]));
+            v = face.vertices[index];
+            if face.turn is not None {
+                v = face.pivot.add(face.turn.apply(v.sub(face.pivot)));
+            }
+            v = v.add(face.motion);
+            rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
+        }
+        rlEnd();
     }
 
     def close() {
@@ -956,6 +1057,10 @@ obj QuakeRenderer {
             }
         }
         self.sky_layers = {};
+        if self.warp_shader.id != u32(0) {
+            UnloadShader(self.warp_shader);
+            self.warp_shader = Shader(id=u32(0), locs=u64(0));
+        }
         if self.white != 0 {
             rlUnloadTexture(u32(self.white));
             self.white = 0;

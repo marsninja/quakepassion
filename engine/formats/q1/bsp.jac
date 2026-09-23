@@ -124,8 +124,10 @@ def parse_bsp(data: bytes) -> Bsp {
         }
         info = texinfo[ti];
         face_texture = bsp.textures[info.texture];
+        # Textures named '*' are liquids: water, slime, lava and teleporters.
         face = Face(
             texture=info.texture,
+            warp=bsp.textures[info.texture].name.startswith("*"),
             light_offset=i32_at(lumps[7], p + 16),
             normal=bsp.planes[plane].normal,
             plane_dist=bsp.planes[plane].distance

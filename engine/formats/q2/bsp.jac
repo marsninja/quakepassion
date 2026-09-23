@@ -117,8 +117,13 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
         }
         info = texinfo[ti];
         face_texture = bsp.textures[info.texture];
+        # q_shared.h SURF_WARP (8), SURF_TRANS33 (16), SURF_TRANS66 (32) and
+        # SURF_FLOWING (64).
         face = Face(
             texture=info.texture,
+            warp=(info.flags & 8) != 0,
+            flowing=(info.flags & 64) != 0,
+            opacity=0.33 if (info.flags & 16) != 0 else (0.66 if (info.flags & 32) != 0 else 1.0),
             hidden=(info.flags & 132) != 0,
             light_offset=i32_at(lumps[6], p + 16),
             normal=bsp.planes[plane].normal,

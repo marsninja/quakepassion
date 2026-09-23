@@ -53,7 +53,10 @@ obj Face {
         light_t: int = 0,
         styles: list[int] = [],
         normal: Vec3 = Vec3(),
-        plane_dist: float = 0.0;
+        plane_dist: float = 0.0,
+        warp: bool = False,
+        flowing: bool = False,
+        opacity: float = 1.0;
 }
 
 obj Plane {
