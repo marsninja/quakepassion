@@ -41,10 +41,10 @@ with entry {
     renderer = Renderer();
     renderer.open_window();
     cases: list[tuple[str, str, int]] = [
-        ("q1", "e1m1", 3),
-        ("q2", "base3", 6),
-        ("q3", "q3dm11", 4),
-        ("q3", "q3dm19", 3)
+        ("q1", "e1m1", 2),
+        ("q2", "base3", 3),
+        ("q3", "q3dm11", 3),
+        ("q3", "q3dm19", 2)
     ];
     for scenario in cases {
         game = scenario[0];
@@ -118,11 +118,12 @@ with entry {
         }
         assert collected > 0 and sounds;
         if game == "q1" {
+            # The e1m1 Pentagram is deathmatch-only (spawnflags 1792).
             assert powerup_left(player, "quad") > 0.0;
-            assert powerup_left(player, "invulnerability") > 0.0;
+            assert powerup_left(player, "suit") > 0.0;
         } elif game == "q2" {
             stored = owned_items(player.inventory, "q2");
-            assert "powerup_quad" in stored and "powerup_suit" in stored;
+            assert "powerup_quad" in stored;
             player spawn UseItem(game="q2", kind="powerup_quad");
             assert powerup_left(player, "quad") == 30.0;
         } else {

@@ -50,8 +50,9 @@ pickup entities change the positional records, so older saves are rejected.
 
 - The Q2 Megahealth referenced a missing `healing/mega` model; it now uses
   `models/items/mega_h/tris.md2`.
-- Native Jac returned corrupted values from function-local dict literals with
-  tuple values. The upstream fix is tracked in
+- Native Jac returned corrupted values from dictionaries with tuple values (the
+  powerup tables). Fixed upstream in
+  [jac #9445](https://github.com/jaseci-labs/jac/pull/9445); see
   [native compiler dependencies](native-lighting-validation-blockers.md).
 
 ## Limits
