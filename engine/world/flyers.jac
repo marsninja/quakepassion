@@ -36,7 +36,7 @@ edge HasFlyer: World --> Flyer {}
 edge HasBomb: World --> Bomb {}
 edge Bound: Flyer --> TrackPoint {}
 
-def entity_point(fields: dict[str, str]) -> Vec3 {
+def:priv entity_point(fields: dict[str, str]) -> Vec3 {
     parts = fields.get("origin", "0 0 0").split();
     if len(parts) != 3 {
         return Vec3();
