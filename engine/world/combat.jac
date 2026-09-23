@@ -82,7 +82,8 @@ node Opponent(Player) {
         route_target: Vec3 = Vec3(),
         boss_phase: int = 0,
         boss_time: float = 0.0,
-        foe: Player | None = None;
+        foe: Player | None = None,
+        roam_goal: Vec3 | None = None;
 }
 
 obj CombatState {

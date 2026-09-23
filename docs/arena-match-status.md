@@ -46,7 +46,10 @@ connect (`a +>:Competes:name=n:+> b`) were dropped. It is fixed upstream; see
 
 ## Limits
 
-Bots still use the prototype machine-gun attack and simple item goals. Weapon
+Bots with no enemy in sight roam between nearby items. Ground routing is still
+bounded and local, so on larger arenas bots can stall short of distant goals and
+seldom meet each other unless the player draws them together. Map-wide bot
+routing belongs to the bot-tactics milestone. Bots still use the prototype machine-gun attack and simple item goals. Weapon
 choice, per-bot characteristics from `botfiles/bots/*_c.c`, skill levels,
 awards (Excellent, Impressive, Humiliation), the podium intermission, time limits,
 tournament rules and team modes (including CTF) remain open.
