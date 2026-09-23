@@ -61,6 +61,21 @@ node LightSwitch {
 
 edge Switches: LightStyles --> LightSwitch {}
 
+"""Q2 g_target.c target_lightramp: when used, its target light's style runs
+from the message's first letter to its second over `speed` seconds; flagged
+TOGGLE, each later use runs it back."""
+node LightRamp {
+    has style: int,
+        first: int,
+        last: int,
+        speed: float,
+        toggle: bool = False,
+        clock: float = -1.0,
+        activation: Signal = Signal();
+}
+
+edge Ramps: LightStyles --> LightRamp {}
+
 """Advance every style at 10 Hz and flip switched lights that were triggered."""
 walker LightStyleTick {
     has dt: float;
@@ -81,6 +96,24 @@ walker LightStyleTick {
                     flipped = True;
                 }
                 lamp.activation.pending = 0;
+            }
+        }
+        for ramp in [here->:Ramps:->][?:LightRamp] {
+            if ramp.activation.pending > 0 {
+                ramp.activation.pending = 0;
+                if ramp.toggle and ramp.clock >= ramp.speed {
+                    swap = ramp.first;
+                    ramp.first = ramp.last;
+                    ramp.last = swap;
+                }
+                ramp.clock = 0.0;
+            }
+            if ramp.clock >= 0.0 {
+                ramp.clock = min(ramp.speed, ramp.clock + self.dt);
+                share = ramp.clock / ramp.speed if ramp.speed > 0.0 else 1.0;
+                letter = int(float(ramp.first) + float(ramp.last - ramp.first) * share + 0.5);
+                here.patterns[ramp.style] = chr(97 + max(0, min(25, letter)));
+                flipped = True;
             }
         }
         frame = int(here.clock * 10.0);
@@ -116,6 +149,37 @@ def load_light_styles(world: World, bsp: Bsp) -> LightStyles | None {
         styles.patterns[style] = "a" if start_off else "m";
         world +>:HasSignal:+> lamp.activation;
         styles +>:Switches:+> lamp;
+    }
+    # target_lightramp drives the style of the light it targets.
+    for index in range(len(bsp.entities)) {
+        fields = bsp.entities[index].fields;
+        if fields.get("classname", "") != "target_lightramp" {
+            continue;
+        }
+        message = fields.get("message", "");
+        if len(message) != 2 or not message.isalpha() {
+            continue;
+        }
+        target = fields.get("target", "");
+        style = -1;
+        for other in bsp.entities {
+            if other.fields.get("targetname", "") == target and other.fields.get("classname", "").startswith("light") {
+                style = int(float(other.fields.get("style", "0")));
+            }
+        }
+        if style < 32 {
+            continue;
+        }
+        ramp = LightRamp(
+            style=style,
+            first=ord(message[0].lower()) - 97,
+            last=ord(message[1].lower()) - 97,
+            speed=float(fields.get("speed", "1")),
+            toggle=int(fields.get("spawnflags", "0")) & 1 != 0,
+            activation=Signal(entities=[index])
+        );
+        world +>:HasSignal:+> ramp.activation;
+        styles +>:Ramps:+> ramp;
     }
     styles.frame = 0;
     styles.refresh();
