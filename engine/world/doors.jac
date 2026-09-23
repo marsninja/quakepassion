@@ -1,5 +1,6 @@
 """Shared translating proximity doors. Unsupported activation stays static."""
 import math;
+import from .combat { Opponent, HasOpponent }
 import from .damage { blast_strength }
 import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
@@ -45,6 +46,7 @@ node Door {
         keys: list[str] = [],
         unlocked: bool = False,
         automatic: bool = True,
+        monster_touch: bool = True,
         requested: bool = False,
         names: list[str] = [],
         enabled: bool = True,
@@ -66,10 +68,16 @@ walker DoorTick {
         dt: float,
         touching: bool = True,
         player: Player | None = None,
-        message: str = "";
+        message: str = "",
+        actors: list[Opponent] = [];
 
     can start with World entry {
         if self.dt > 0.0 {
+            self.actors = [
+                actor
+                for actor in [here->:HasOpponent:->][?:Opponent]
+                if actor.health > 0 and not actor.dormant
+            ];
             visit [here->:HasDoor:->];
         }
     }
@@ -100,12 +108,47 @@ walker DoorTick {
                 }
             }
         }
+        riders: list[Opponent] = [];
+        monster_contact = False;
+        if here.automatic and here.monster_touch and (not here.keys or here.unlocked) {
+            for actor in self.actors {
+                actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
+                if here.kind in ["door", "platform"]
+                    and here.trigger.contains(actor_origin) {
+                    monster_contact = True;
+                }
+            }
+        }
+        if here.kind == "platform" {
+            for actor in self.actors {
+                if actor.velocity.z > 0.0 {
+                    continue;
+                }
+                actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
+                for index in here.hulls {
+                    local = actor_origin.sub(self.collision.offsets[index]);
+                    support = self.collision.hulls[index] spawn Sweep(
+                        top_drop=0.0, start=local, finish=local.add(Vec3(z=-0.25))
+                    );
+                    if not support.result.start_solid
+                        and support.result.fraction < 1.0
+                        and support.result.normal.z >= 0.7 {
+                        riders.append(actor);
+                        break;
+                    }
+                }
+            }
+        }
         contact = here.automatic and here.trigger.contains(origin);
         if here.kind == "platform" {
-            contact = self.touching and (contact or (rider and here.state == "open"));
+            contact = (self.touching and (contact or (rider and here.state == "open")))
+                or monster_contact
+                or (bool(riders) and here.state == "open");
             if here.state == "closing" {
                 contact = False;
             }
+        } elif here.kind == "door" {
+            contact = contact or monster_contact;
         }
         if here.kind == "button" {
             contact = False;
@@ -256,6 +299,81 @@ walker DoorTick {
                 }
             }
         }
+        actor_destinations: list[Vec3] = [];
+        for actor in self.actors {
+            actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
+            destination = actor_origin;
+            if actor in riders {
+                destination = actor_origin.add(
+                    here.travel.scale(next_position - here.position)
+                );
+                path = self.collision.trace(
+                    actor_origin, destination, exclude=here.hulls, top_drop=0.0
+                );
+                if path.start_solid or path.fraction < 1.0 {
+                    here.state = "closing" if here.state == "opening" else "opening";
+                    return;
+                }
+            }
+            actor_destinations.append(destination);
+        }
+        # Living opponents obstruct the same swept mover volume as the player.
+        # Validate everyone before committing any member of a linked door group.
+        for actor_index in range(len(self.actors)) {
+            actor_origin = self.actors[actor_index].pos.sub(
+                Vec3(z=self.actors[actor_index].eye_height)
+            );
+            destination = actor_destinations[actor_index];
+            for part in members {
+                old_motion = part.rest.add(part.travel.scale(here.position));
+                motion = part.rest.add(part.travel.scale(next_position));
+                for j in range(len(part.hulls)) {
+                    index = part.hulls[j];
+                    if len(self.collision.bounds) == len(self.collision.hulls) {
+                        bounds = self.collision.bounds[index];
+                        if (
+                            actor_origin.x < bounds.mins.x
+                            and destination.x < bounds.mins.x
+                        )
+                            or (
+                                actor_origin.x > bounds.maxs.x
+                                and destination.x > bounds.maxs.x
+                            )
+                            or (
+                                actor_origin.y < bounds.mins.y
+                                and destination.y < bounds.mins.y
+                            )
+                            or (
+                                actor_origin.y > bounds.maxs.y
+                                and destination.y > bounds.maxs.y
+                            )
+                            or (
+                                actor_origin.z < bounds.mins.z
+                                and destination.z < bounds.mins.z
+                            )
+                            or (
+                                actor_origin.z > bounds.maxs.z
+                                and destination.z > bounds.maxs.z
+                            ) {
+                            continue;
+                        }
+                    }
+                    query = self.collision.hulls[index] spawn Sweep(
+                        top_drop=0.0,
+                        start=actor_origin.sub(part.origins[j].add(old_motion)),
+                        finish=destination.sub(part.origins[j].add(motion))
+                    );
+                    if query.result.start_solid or query.result.fraction < 1.0 {
+                        if here.kind == "platform" and here.state == "opening" {
+                            here.state = "closing";
+                        } elif here.state == "closing" {
+                            here.state = "opening";
+                        }
+                        return;
+                    }
+                }
+            }
+        }
         for part in members {
             motion = part.rest.add(part.travel.scale(next_position));
             part.position = next_position;
@@ -264,6 +382,17 @@ walker DoorTick {
             }
             for j in range(len(part.hulls)) {
                 self.collision.offsets[part.hulls[j]] = part.origins[j].add(motion);
+            }
+        }
+        for actor_index in range(len(self.actors)) {
+            actor = self.actors[actor_index];
+            if actor in riders {
+                actor.pos = actor_destinations[actor_index].add(
+                    Vec3(z=actor.eye_height)
+                );
+                actor.grounded = True;
+                actor.route = [];
+                actor.route_wait = 0.0;
             }
         }
         if rider and self.player is not None {
@@ -350,6 +479,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             allowed |= 1;
             if bsp.game in ["q1", "q2"] {
                 allowed |= 32;
+            }
+            if bsp.game == "q2" {
+                allowed |= 8;
             }
             if bsp.game == "q1" {
                 allowed |= 28;
@@ -442,6 +574,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             health=health,
             max_health=health,
             shared_health=bsp.game == "q1",
+            monster_touch=not (bsp.game == "q2" and flags & 8 != 0),
             fire_on_start=kind == "func_door" and bsp.game in ["q1", "q2"],
             toggle=kind == "func_door" and bsp.game in ["q1", "q2"] and flags & 32 != 0,
             automatic=(
@@ -574,6 +707,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 leader.max_health = part.max_health;
             }
             leader.automatic = leader.automatic and part.automatic;
+            leader.monster_touch = leader.monster_touch and part.monster_touch;
             for name in part.names {
                 if name not in leader.names {
                     leader.names.append(name);

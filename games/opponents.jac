@@ -52,6 +52,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             enemy = Opponent(
                 pos=position,
+                eye_height=level.collision.eye_height,
                 dormant=rule.script == "chthon"
                     or (source == "q2" and int(fields.get("spawnflags", "0")) & 2 != 0),
                 home=position,

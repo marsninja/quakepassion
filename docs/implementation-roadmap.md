@@ -197,3 +197,15 @@ Supported Q2 enemies now have explicit pain sequences, per-enemy recovery timing
 and save-resumed poses; see [combat feedback](combat-feedback-status.md).
 The latest regression checkpoint is **293 passing tests**, with native asset and
 pain-render checks. Snapshot format remains **14**.
+
+The next navigation increment adds collision-checked ground detours shared by
+campaign enemies and arena bots. See [ground navigation](navigation-status.md)
+for search limits, validation, and remaining global traversal work.
+
+Enemies now participate in automatic door activation, door obstruction checks,
+and platform carrying; see [enemy movers](enemy-movers-status.md). This retains
+key/remote activation restrictions and supports Q2's `NOMONSTER` flag.
+
+[Actor body isolation](actor-body-status.md) separates enemy movement and hit
+bounds from player crouching, including platform/train carrying and attack-step
+movement. Original per-monster hull dimensions and duck behavior remain open.

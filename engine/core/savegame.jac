@@ -527,6 +527,8 @@ def restore(
             }
             enemy.alternate_melee = row[18] != 0.0;
             enemy.attack_target = Vec3(x=row[19], y=row[20], z=row[21]);
+            enemy.route = [];
+            enemy.route_wait = 0.0;
             if row[11] < -1.0
                 or row[11] > attack_duration(enemy)
                 or row[12] < 0.0

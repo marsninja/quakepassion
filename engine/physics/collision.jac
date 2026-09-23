@@ -256,6 +256,21 @@ obj CollisionMap {
         eye_height: float = 22.0,
         top_drop: float = 0.0;
 
+    # Share live geometry and mover offsets, but keep actor stance independent.
+    def for_body(height: float, drop: float = 0.0) -> CollisionMap {
+        return CollisionMap(
+            hulls=self.hulls,
+            point_hulls=self.point_hulls,
+            offsets=self.offsets,
+            models=self.models,
+            disabled=self.disabled,
+            bounds=self.bounds,
+            groups=self.groups,
+            eye_height=height,
+            top_drop=drop
+        );
+    }
+
     def add_box(lo: Vec3, hi: Vec3, offset: Vec3, mins: Vec3, maxs: Vec3) {
         self.add_brush(
             [

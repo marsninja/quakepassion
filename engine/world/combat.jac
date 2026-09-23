@@ -1,6 +1,7 @@
 """Shared weapon simulation and graph-driven opponents."""
 import math;
 import from .particles { impact_spray, ParticleTick, rail_trail }
+import from .navigation { ground_route, walk_edge }
 import from .opponent_rule { OpponentRule }
 import from .weapons { WeaponRule }
 import from .world { World, Player }
@@ -16,6 +17,7 @@ import from ..math.vec3 { Vec3, forward_from, right_from }
 
 edge HasOpponent: World --> Opponent {}
 node Opponent(Player) {
+    has eye_height: float = 22.0;
     has rule: OpponentRule = OpponentRule(),
         activation: Signal = Signal(),
         dormant: bool = False,
@@ -47,12 +49,16 @@ node Opponent(Player) {
         pain_cooldown: float = 0.0,
         pose_name: str = "",
         last_seen: Vec3 = Vec3(),
+        last_seen_height: float = 22.0,
         alert: float = 0.0,
         steering: Vec3 = Vec3(),
         animation_time: float = 0.0,
         decision_wait: float = 0.0,
         support_wait: float = 0.0,
         pursuing: bool = False,
+        route: list[Vec3] = [],
+        route_wait: float = 0.0,
+        route_target: Vec3 = Vec3(),
         boss_phase: int = 0,
         boss_time: float = 0.0;
 }
@@ -73,7 +79,8 @@ obj CombatState {
         fallback: list[int] = [],
         grenade_phase: int = 0,
         grenade_clock: float = 0.0,
-        grenade_remaining: float = 0.0;
+        grenade_remaining: float = 0.0,
+        route_credit: float = 1.0;
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -82,9 +89,11 @@ obj CombatState {
 }
 
 # Finite ray versus actor box. A value of 1 means no hit before the endpoint.
-def actor_fraction(start: Vec3, finish: Vec3, eye: Vec3, height: float) -> float {
+def actor_fraction(
+    start: Vec3, finish: Vec3, eye: Vec3, height: float, top_drop: float = 0.0
+) -> float {
     lo = eye.sub(Vec3(x=16.0, y=16.0, z=height + 24.0));
-    hi = eye.add(Vec3(x=16.0, y=16.0, z=32.0 - height));
+    hi = eye.add(Vec3(x=16.0, y=16.0, z=32.0 - height - top_drop));
     origins = [start.x, start.y, start.z];
     deltas = [finish.x - start.x, finish.y - start.y, finish.z - start.z];
     mins = [lo.x, lo.y, lo.z];
@@ -160,7 +169,7 @@ walker Aim {
         if here.health <= 0 or here.dormant {
             return;
         }
-        hit = actor_fraction(self.start, self.finish, here.pos, self.height);
+        hit = actor_fraction(self.start, self.finish, here.pos, here.eye_height);
         if hit < self.fraction {
             self.fraction = hit;
             self.target = here;
@@ -312,9 +321,7 @@ def fire_weapon(
             for enemy in [world->:HasOpponent:->][?:Opponent] {
                 if enemy.health > 0
                     and not enemy.dormant
-                    and actor_fraction(
-                        player.pos, finish, enemy.pos, collision.eye_height
-                    )
+                    and actor_fraction(player.pos, finish, enemy.pos, enemy.eye_height)
                         < wall.fraction {
                     hits.append(enemy);
                 }
@@ -324,7 +331,7 @@ def fire_weapon(
         }
         for victim in hits {
             fraction = actor_fraction(
-                player.pos, finish, victim.pos, collision.eye_height
+                player.pos, finish, victim.pos, victim.eye_height
             );
             impact_spray(
                 world,
@@ -333,6 +340,7 @@ def fire_weapon(
                 True
             );
             victim.last_seen = player.pos;
+            victim.last_seen_height = collision.eye_height;
             victim.alert = 8.0;
             if victim not in victims {
                 victims.append(victim);
@@ -505,7 +513,10 @@ def projectile_blast(
         if actor is direct or actor.health <= 0 {
             continue;
         }
-        center = actor.pos.sub(Vec3(z=collision.eye_height - 4.0));
+        height = actor.eye_height
+            if isinstance(actor, Opponent)
+            else collision.eye_height;
+        center = actor.pos.sub(Vec3(z=height - 4.0));
         distance = center.sub(projectile.pos).length();
         if distance >= projectile.radius {
             continue;
@@ -557,7 +568,7 @@ def projectile_beams(
         if not enemy.dormant and enemy.health > 0
     ];
     for target in actors {
-        center = target.pos.sub(Vec3(z=collision.eye_height - 4.0));
+        center = target.pos.sub(Vec3(z=target.eye_height - 4.0));
         if center.sub(projectile.pos).length() > projectile.beam_radius {
             continue;
         }
@@ -570,7 +581,7 @@ def projectile_beams(
         }
         projectile.beams.append(projectile.pos.lerp(finish, trace.fraction));
         for victim in actors {
-            if actor_fraction(projectile.pos, finish, victim.pos, collision.eye_height)
+            if actor_fraction(projectile.pos, finish, victim.pos, victim.eye_height)
                 < trace.fraction {
                 damage_opponent(
                     victim, projectile.beam_damage, player.inventory, state
@@ -601,7 +612,7 @@ def projectile_energy_burst(
         if victim.dormant or victim.health <= 0 {
             continue;
         }
-        center = victim.pos.sub(Vec3(z=collision.eye_height - 4.0));
+        center = victim.pos.sub(Vec3(z=victim.eye_height - 4.0));
         distance = center.sub(projectile.pos).length();
         if distance >= projectile.burst_radius {
             continue;
@@ -673,7 +684,11 @@ walker ProjectileTick {
         player_hit = False;
         if here.hostile {
             hit = actor_fraction(
-                here.pos, finish, self.player.pos, self.collision.eye_height
+                here.pos,
+                finish,
+                self.player.pos,
+                self.collision.eye_height,
+                self.collision.top_drop
             );
             if self.player.health > 0 and hit < fraction {
                 fraction = hit;
@@ -853,7 +868,9 @@ def opponent_shot(
         if enemy.rule.rail {
             rail_trail(world, enemy.pos, enemy.pos.lerp(finish, wall.fraction));
         }
-        hit = actor_fraction(enemy.pos, finish, player.pos, collision.eye_height);
+        hit = actor_fraction(
+            enemy.pos, finish, player.pos, collision.eye_height, collision.top_drop
+        );
         if hit < wall.fraction {
             damage += 6 if enemy.arena else enemy.rule.damage;
         } elif wall.fraction < 1.0 and not wall.start_solid {
@@ -891,14 +908,15 @@ def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: 
     if abs(travel) <= 0.000001 {
         return;
     }
-    body = enemy.pos.sub(Vec3(z=collision.eye_height));
+    collision = collision.for_body(enemy.eye_height);
+    body = enemy.pos.sub(Vec3(z=enemy.eye_height));
     ahead = body.add(goal.normalized().scale(travel));
     support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
     if support.fraction == 1.0 or support.normal.z < 0.7 {
         return;
     }
     moved = step_slide(collision, body, goal.normalized().scale(travel / dt), dt, True);
-    enemy.pos = moved.pos.add(Vec3(z=collision.eye_height));
+    enemy.pos = moved.pos.add(Vec3(z=enemy.eye_height));
     enemy.velocity.x = 0.0;
     enemy.velocity.y = 0.0;
 }
@@ -1076,10 +1094,14 @@ walker CombatTick {
         state: CombatState,
         dt: float,
         active: bool = True,
-        world: World | None = None;
+        world: World | None = None,
+        body_collision: CollisionMap | None = None;
 
     can begin with World entry {
         self.world = here;
+        self.state.route_credit = min(
+            1.0, self.state.route_credit + max(0.0, self.dt) * 8.0
+        );
         here spawn ParticleTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
@@ -1099,6 +1121,7 @@ walker CombatTick {
                 here.spawn_wait = 0.1;
             }
             here.last_seen = self.player.pos;
+            here.last_seen_height = self.collision.eye_height;
             here.alert = 8.0;
             here.decision_wait = 0.0;
         }
@@ -1141,10 +1164,17 @@ walker CombatTick {
             }
             here.health = here.max_health;
             here.pos = here.home;
+            here.route = [];
+            here.route_wait = 0.0;
             here.velocity = Vec3();
             here.visual.visible = True;
             here.attack_wait = 1.0;
         }
+        if self.body_collision is None
+            or self.body_collision.eye_height != here.eye_height {
+            self.body_collision = self.collision.for_body(here.eye_height);
+        }
+        body_collision = self.body_collision;
         delta = self.player.pos.sub(here.pos);
         distance = delta.length();
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
@@ -1152,6 +1182,7 @@ walker CombatTick {
         here.attack_wait = max(0.0, here.attack_wait - self.dt);
         here.attack_flash = max(0.0, here.attack_flash - self.dt);
         here.alert = max(0.0, here.alert - self.dt);
+        here.route_wait = max(0.0, here.route_wait - self.dt);
         here.decision_wait -= self.dt;
         if here.decision_wait <= 0.0 {
             here.decision_wait = 0.1;
@@ -1161,6 +1192,7 @@ walker CombatTick {
                 here.pursuing = not sight.start_solid and sight.fraction == 1.0;
                 if here.pursuing {
                     here.last_seen = self.player.pos;
+                    here.last_seen_height = self.collision.eye_height;
                     here.alert = 8.0;
                 }
                 # Attack only with a fresh sight query, never cached visibility.
@@ -1200,9 +1232,40 @@ walker CombatTick {
                 }
             }
             here.steering = Vec3();
-            goal = here.last_seen.sub(here.pos);
+            destination = here.last_seen;
+            if here.grounded and here.alert > 0.0 and here.attack_clock < 0.0 {
+                origin = here.pos.sub(Vec3(z=here.eye_height));
+                target = destination.sub(Vec3(z=here.last_seen_height));
+                if here.route_target.sub(target).length() > 48.0 {
+                    here.route = [];
+                }
+                while here.route and here.route[0].sub(origin).length() < 16.0 {
+                    here.route.pop(0);
+                }
+                if here.route
+                    and walk_edge(body_collision, origin, here.route[0]) is None {
+                    here.route = [];
+                }
+                if not here.route
+                    and here.route_wait <= 0.0
+                    and self.state.route_credit >= 1.0 {
+                    self.state.route_credit -= 1.0;
+                    here.route_wait = 1.0;
+                    here.route_target = target;
+                    here.route = ground_route(body_collision, origin, target);
+                }
+                if here.route {
+                    destination = here.route[0].add(Vec3(z=here.eye_height));
+                }
+            }
+            goal = destination.sub(here.pos);
             if here.alert > 0.0
-                and goal.length() > (here.rule.stop_range if here.pursuing else 24.0) {
+                and goal.length()
+                    > (
+                        here.rule.stop_range
+                            if here.pursuing and len(here.route) <= 1
+                            else 12.0
+                    ) {
                 direction = Vec3(x=goal.x, y=goal.y).normalized();
                 # Local separation is evaluated with steering, not every physics tick.
                 if self.world is not None {
@@ -1231,23 +1294,22 @@ walker CombatTick {
                         x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
                         y=direction.x * math.sin(angle) + direction.y * math.cos(angle)
                     );
-                    probe = self.collision.trace(
-                        here.pos.sub(Vec3(z=self.collision.eye_height)),
-                        here.pos.sub(Vec3(z=self.collision.eye_height)).add(
-                            candidate.scale(48.0)
-                        )
+                    probe = body_collision.trace(
+                        here.pos.sub(Vec3(z=here.eye_height)),
+                        here.pos.sub(Vec3(z=here.eye_height)).add(candidate.scale(48.0))
                     );
-                    # Grounded monsters must not blindly chase over a drop.
                     if here.grounded {
-                        ahead = here.pos.sub(Vec3(z=self.collision.eye_height)).add(
-                            candidate.scale(32.0)
+                        origin = here.pos.sub(Vec3(z=here.eye_height));
+                        reachable = walk_edge(
+                            body_collision,
+                            origin,
+                            origin.add(candidate.scale(48.0)),
+                            match_height=False
                         );
-                        support = self.collision.trace(
-                            ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=36.0))
-                        );
-                        if support.fraction == 1.0 or support.normal.z < 0.7 {
+                        if reachable is None {
                             continue;
                         }
+                        probe.fraction = 1.0;
                     }
                     score = probe.fraction + 0.15 * math.cos(angle);
                     if not probe.start_solid
@@ -1279,7 +1341,7 @@ walker CombatTick {
             or here.velocity.length() > 0.000001
             or wish.length() > 0.0
             or here.support_wait <= 0.0 {
-            here spawn MovePlayer(collision=self.collision, wish=wish, dt=self.dt);
+            here spawn MovePlayer(collision=body_collision, wish=wish, dt=self.dt);
             here.support_wait = 0.05;
         }
         pose_name = "attack"
