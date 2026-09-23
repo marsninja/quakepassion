@@ -4,6 +4,9 @@ import from engine.world.targets { TargetEvent, HasTarget, TargetTick }
 import from engine.world.signals { Signal }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
+import from engine.world.level { Level }
+import from engine.formats.bsp { Texture, Face }
+import from engine.render.quake { QuakeRenderer }
 
 test "a used killbox telefrags everything inside it and nothing outside" {
     world = World();
@@ -20,4 +23,27 @@ test "a used killbox telefrags everything inside it and nothing outside" {
     box.activation.pending = 1;
     world spawn TargetTick(player=player, collision=collision, state=CombatState(), dt=0.01);
     assert player.health == 0 and inside.health == 0 and outside.health == 300;
+}
+
+test "Q1 and Q2 textures animate by the original clocks and entity frames" {
+    level = Level();
+    level.bsp.game = "q1";
+    level.bsp.textures = [Texture(name="+0button"), Texture(name="+1button"), Texture(name="+abutton"), Texture(name="wall")];
+    level.bsp.faces = [Face(texture=0), Face(texture=0, frame=1), Face(texture=3)];
+    drawing = QuakeRenderer();
+    drawing.build_animations(level);
+    assert drawing.anim_frames[0] == [0, 1] and drawing.anim_alternates[0] == [2];
+    drawing.time = 0.0;
+    assert drawing.shown_texture(level, 0, 0) == 0 and drawing.shown_texture(level, 0, 1) == 2;
+    drawing.time = 0.25;
+    assert drawing.shown_texture(level, 0, 0) == 1 and drawing.shown_texture(level, 3, 2) == 3;
+    q2 = Level();
+    q2.bsp.game = "q2";
+    q2.bsp.textures = [Texture(name="a"), Texture(name="b"), Texture(name="c")];
+    q2.bsp.texture_next = {0: 1, 1: 2, 2: 0};
+    q2.bsp.faces = [Face(texture=0)];
+    drawing.build_animations(q2);
+    assert drawing.anim_frames[0] == [0, 1, 2];
+    drawing.time = 1.1;
+    assert drawing.shown_texture(q2, 0, 0) == 2;
 }

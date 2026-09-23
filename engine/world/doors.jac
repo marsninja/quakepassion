@@ -377,6 +377,13 @@ walker DoorTick {
             }
             here.remaining = here.hold_time;
         }
+        # A pressed button shows its alternate (Q1 +a) or next (Q2) texture.
+        if here.kind == "button" {
+            pressed = 1 if here.state in ["opening", "open"] else 0;
+            for face in here.faces {
+                self.bsp.faces[face].frame = pressed;
+            }
+        }
         if here.state == "open" {
             if not near and not here.toggle and here.hold_time >= 0.0 {
                 here.remaining -= self.dt;

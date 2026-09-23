@@ -56,7 +56,8 @@ obj Face {
         plane_dist: float = 0.0,
         warp: bool = False,
         flowing: bool = False,
-        opacity: float = 1.0;
+        opacity: float = 1.0,
+        frame: int = 0;
 }
 
 obj Plane {
@@ -108,6 +109,7 @@ obj Bsp {
         cluster_bytes: int = 0,
         sky: list[Texture] = [],
         textures: list[Texture] = [],
+        texture_next: dict[int, int] = {},
         planes: list[Plane] = [],
         branches: list[Branch] = [],
         clipnodes: list[Branch] = [],

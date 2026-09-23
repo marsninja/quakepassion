@@ -75,6 +75,9 @@ obj QuakeRenderer {
         styled: list[int] = [],
         stage_images: dict[int, list[list[int]]] = {},
         sky_layers: dict[int, list[int]] = {},
+        anim_frames: dict[int, list[int]] = {},
+        anim_alternates: dict[int, list[int]] = {},
+        world_faces: int = 0,
         cloud_images: list[list[int]] = [],
         warp_shader: Shader = Shader(id=u32(0), locs=u64(0)),
         warp_time: int = -1,
@@ -345,6 +348,86 @@ obj QuakeRenderer {
         self.upload_stages(level);
     }
 
+    """Animated textures. Q1 (gl_model.c, R_TextureAnimation): '+0'..'+9'
+    frames cycle every 0.2 s, and an entity with a frame shows the '+a'..'+j'
+    alternates. Q2: nexttexinfo chains step at 2 frames a second in the world,
+    and by an entity's own frame on brush models."""
+    def build_animations(level: Level) {
+        self.anim_frames = {};
+        self.anim_alternates = {};
+        self.world_faces = level.bsp.models[0].face_count if level.bsp.models else len(level.bsp.faces);
+        if level.bsp.game == "q1" {
+            primary: dict[str, dict[int, int]] = {};
+            alternate: dict[str, dict[int, int]] = {};
+            for t in range(len(level.bsp.textures)) {
+                name = level.bsp.textures[t].name.lower();
+                if len(name) < 3 or not name.startswith("+") {
+                    continue;
+                }
+                key = name[2:];
+                mark = name[1];
+                if mark.isdigit() {
+                    if key not in primary { primary[key] = {}; }
+                    primary[key][int(mark)] = t;
+                } elif mark >= "a" and mark <= "j" {
+                    if key not in alternate { alternate[key] = {}; }
+                    alternate[key][ord(mark) - 97] = t;
+                }
+            }
+            for (key, frames) in primary.items() {
+                sequence: list[int] = [];
+                while len(sequence) in frames {
+                    sequence.append(frames[len(sequence)]);
+                }
+                others: list[int] = [];
+                if key in alternate {
+                    while len(others) in alternate[key] {
+                        others.append(alternate[key][len(others)]);
+                    }
+                }
+                for t in sequence {
+                    self.anim_frames[t] = sequence;
+                    if others {
+                        self.anim_alternates[t] = others;
+                    }
+                }
+                for t in others {
+                    self.anim_frames[t] = others;
+                    self.anim_alternates[t] = sequence;
+                }
+            }
+        } elif level.bsp.game == "q2" {
+            for (t, following) in level.bsp.texture_next.items() {
+                cycle = [t];
+                step = following;
+                while step != t and step in level.bsp.texture_next and len(cycle) < 32 {
+                    cycle.append(step);
+                    step = level.bsp.texture_next[step];
+                }
+                if step == t or step not in level.bsp.texture_next {
+                    self.anim_frames[t] = cycle;
+                }
+            }
+        }
+    }
+
+    """The texture a face shows now, after its animation."""
+    def shown_texture(level: Level, t: int, index: int) -> int {
+        if t not in self.anim_frames {
+            return t;
+        }
+        face = level.bsp.faces[index];
+        sequence = self.anim_frames[t];
+        if level.bsp.game == "q1" {
+            if face.frame != 0 and t in self.anim_alternates {
+                sequence = self.anim_alternates[t];
+            }
+            return sequence[int(self.time * 5.0) % len(sequence)];
+        }
+        step = face.frame if index >= self.world_faces else int(self.time * 2.0);
+        return sequence[step % len(sequence)];
+    }
+
     """Q3 cloud layers on the sky dome (tr_sky.c): each box vertex's direction
     meets a cloud sphere cloudheight above a 4096-unit world, and s and t are
     the arccosines of that point's direction, before the stage's tcMods."""
@@ -532,6 +615,7 @@ obj QuakeRenderer {
     stage records -1 (the atlas) and $whiteimage a shared white texture."""
     def upload_stages(level: Level) {
         self.upload_sky_layers(level);
+        self.build_animations(level);
         self.cloud_images = [];
         for stage in level.sky_clouds {
             sources = stage.frames if stage.frames else [stage.texture];
@@ -970,10 +1054,19 @@ obj QuakeRenderer {
                 rlDisableBackfaceCulling();
             }
             rlSetTexture(u32(self.textures[t]));
+            animated = t in self.anim_frames;
+            bound = t;
             for index in batches[t] {
                 face = level.bsp.faces[index];
                 if face.warp or face.opacity < 1.0 {
                     continue;
+                }
+                if animated {
+                    shown = self.shown_texture(level, t, index);
+                    if shown != bound {
+                        bound = shown;
+                        rlSetTexture(u32(self.textures[shown]));
+                    }
                 }
                 self.polygon(face, self.rects[index], False);
             }
@@ -1033,7 +1126,17 @@ obj QuakeRenderer {
             for index in batches[t] {
                 face = level.bsp.faces[index];
                 if not face.warp and face.opacity >= 1.0 {
+                    shown = self.shown_texture(level, t, index);
+                    if shown != t {
+                        if self.emissive[shown] == 0 {
+                            continue;
+                        }
+                        rlSetTexture(u32(self.emissive[shown]));
+                    }
                     self.polygon(face, self.rects[index], False);
+                    if shown != t {
+                        rlSetTexture(u32(self.emissive[t]));
+                    }
                 }
             }
         }
