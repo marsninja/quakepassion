@@ -11,7 +11,8 @@ obj Preferences {
         culling: bool = True,
         overlay: bool = True,
         volume: float = 0.25,
-        god_mode: bool = False;
+        god_mode: bool = False,
+        skill: int = 1;
 
     def path() -> str {
         return os.getenv("HOME", ".") + "/.quakepassion-settings.txt";
@@ -22,12 +23,13 @@ obj Preferences {
             return;
         }
         data = read_save(self.path()).splitlines();
-        if len(data) != 2
-            or data[0] not in ["QUAKEPASSION SETTINGS 1", "QUAKEPASSION SETTINGS 2"] {
+        versions = ["QUAKEPASSION SETTINGS 1", "QUAKEPASSION SETTINGS 2", "QUAKEPASSION SETTINGS 3"];
+        if len(data) != 2 or data[0] not in versions {
             raise ValueError("Invalid settings version");
         }
-        row = values(data[1], 8 if data[0] == "QUAKEPASSION SETTINGS 1" else 9);
-        self.god_mode = len(row) == 9 and row[8] != 0.0;
+        row = values(data[1], 8 + versions.index(data[0]));
+        self.god_mode = len(row) >= 9 and row[8] != 0.0;
+        self.skill = max(0, min(3, int(row[9]))) if len(row) >= 10 else 1;
         self.fov = max(40.0, min(110.0, row[0]));
         self.sensitivity = max(0.00022, min(0.011, row[1]));
         self.invert_y = row[2] != 0.0;
@@ -41,7 +43,7 @@ obj Preferences {
     def save() {
         write_save(
             self.path(),
-            "QUAKEPASSION SETTINGS 2\n"
+            "QUAKEPASSION SETTINGS 3\n"
                 + numbers(
                     [
                         self.fov,
@@ -52,7 +54,8 @@ obj Preferences {
                         1.0 if self.culling else 0.0,
                         1.0 if self.overlay else 0.0,
                         self.volume,
-                        1.0 if self.god_mode else 0.0
+                        1.0 if self.god_mode else 0.0,
+                        float(self.skill)
                     ]
                 )
                 + "\n"

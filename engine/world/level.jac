@@ -95,6 +95,7 @@ obj Level {
         completion: Signal = Signal();
 
     has active: bool = False,
+        skill: int = 1,
         collision: CollisionMap = CollisionMap(),
         name: str = "",
         bsp: Bsp = Bsp(),
@@ -223,8 +224,10 @@ def asset(paks: list[PakArchive], name: str) -> bytes {
     raise ValueError("Missing Quake asset: " + name);
 }
 
-def load_level(world: World, directory: str, map_name: str, game: str = "q1") -> Level {
-    level = Level(active=True, name=map_name);
+def load_level(
+    world: World, directory: str, map_name: str, game: str = "q1", skill: int = 1
+) -> Level {
+    level = Level(active=True, name=map_name, skill=skill);
     if game == "q3" {
         assets = Pk3Assets();
         assets.open(directory);
@@ -294,7 +297,7 @@ def load_level(world: World, directory: str, map_name: str, game: str = "q1") ->
 
 def prepare_level(world: World, level: Level) {
     game = level.bsp.game;
-    level.bsp.entities = active_entities(game, level.bsp.entities);
+    level.bsp.entities = active_entities(game, level.bsp.entities, level.skill);
     for i in range(len(level.bsp.leaves)) {
         leaf = level.bsp.leaves[i];
         area = BspArea(

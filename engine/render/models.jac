@@ -1,6 +1,6 @@
 """One renderer for adapted vertex-animated models, with explicit GPU ownership."""
 import math;
-import from ..math.orientation { Basis }
+import from ..math.orientation { Basis, model_basis }
 import from ..formats.animated { AnimatedModel, ModelStage, pose, stage_frame }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3, forward_from, right_from }
@@ -330,7 +330,10 @@ obj ModelScene {
                     eye,
                     seconds,
                     batched=True,
-                    illumination=lighting.sample(draw.origin.add(Vec3(z=16.0)))
+                    illumination=lighting.sample(draw.origin.add(Vec3(z=16.0))),
+                    basis=model_basis(draw.yaw, draw.pitch, draw.roll)
+                        if draw.pitch != 0.0 or draw.roll != 0.0
+                        else None
                 );
             }
         }

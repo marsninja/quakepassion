@@ -1,5 +1,7 @@
 """Versioned text snapshots, restored only into a newly loaded world."""
 import from .save_format { SNAPSHOT_HEADER }
+import from engine.world.gibs { Gib, HasGib }
+import from engine.world.patrols { Patrols, Holds }
 import from engine.world.gates { ApplyGates }
 import from engine.world.chthon { LightningEvent, HasLightning, boss_pose }
 import from engine.world.trains {
@@ -21,7 +23,7 @@ import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.brushes { BrushObject, HasBrush, show_brush }
 import math;
 import os;
-import from engine.world.world { World, Player }
+import from engine.world.world { World, Player, In }
 import from engine.world.level { Level }
 import from engine.world.combat {
     attack_duration,
@@ -132,7 +134,19 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             ]
         )
     ];
+    # Missiles keep their owner (never hit) and homing target as opponent indices.
+    owners = [world->:HasOpponent:->][?:Opponent];
     for projectile in [world->:HasProjectile:->][?:Projectile] {
+        owner_index = -1;
+        quarry_index = -1;
+        for index in range(len(owners)) {
+            if owners[index] is projectile.owner {
+                owner_index = index;
+            }
+            if owners[index] is projectile.quarry {
+                quarry_index = index;
+            }
+        }
         lines.append(
             ("TRAP " if projectile.trap else ("X " if projectile.hostile else "J "))
                 + (projectile.effect or "-")
@@ -159,7 +173,9 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         float(projectile.phase),
                         projectile.age,
                         projectile.homing,
-                        projectile.homing_wait
+                        projectile.homing_wait,
+                        float(owner_index),
+                        float(quarry_index)
                     ]
                 )
         );
@@ -167,6 +183,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     if level.asset_manifest {
         lines.append("M " + level.asset_manifest);
     }
+    # Loading must rebuild the entity set of the skill that was saved.
+    lines.append("SKILL " + str(level.skill));
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
@@ -255,6 +273,43 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     ]
                 )
         );
+    }
+    # Where each campaign monster is walking: its patrol corner, pause and Q2
+    # combat point, as indices into the path graph (-1 for none).
+    corners = [world->:HasTrack:->][?:TrackPoint];
+    walkers = [world->:HasOpponent:->][?:Opponent];
+    for index in range(len(walkers)) {
+        walker_node = walkers[index];
+        if walker_node.arena {
+            continue;
+        }
+        heading = -1;
+        holding = -1;
+        for slot in range(len(corners)) {
+            if corners[slot] in [walker_node->:Patrols:->] {
+                heading = slot;
+            }
+            if corners[slot] in [walker_node->:Holds:->] {
+                holding = slot;
+            }
+        }
+        lines.append(
+            "PATROL " + str(index) + " " + str(heading) + " " + str(holding) + " " + str(walker_node.patrol_wait)
+        );
+    }
+    # Corpse health and gibbing, for Q2/Q3 corpses that can still be blown apart.
+    corpses = [world->:HasOpponent:->][?:Opponent];
+    for index in range(len(corpses)) {
+        if corpses[index].health <= 0 {
+            lines.append(
+                "CORPSE "
+                    + str(index)
+                    + " "
+                    + str(corpses[index].remains)
+                    + " "
+                    + ("1" if corpses[index].gibbed else "0")
+            );
+        }
     }
     for pickup in [world->:HasPickup:->][?:Pickup] {
         lines.append(
@@ -473,6 +528,13 @@ def restore(
     for power in [player->:Empowered:->][?:Powerup] {
         player del --> power;
     }
+    # Flying gibs belong to the moment that was left; the saved one has none.
+    for gib in [world->:HasGib:->][?:Gib] {
+        for placement in [edge gib->:In:->] {
+            del placement;
+        }
+        world del --> gib;
+    }
     enemies = [world->:HasOpponent:->][?:Opponent];
     scores: list[Competes] = [];
     ranked = 0;
@@ -524,8 +586,12 @@ def restore(
             }
             manifest_seen = True;
         } elif words[0] in ["J", "X", "TRAP"] {
-            row = values(" ".join(words[2:]), 21);
+            row = values(" ".join(words[2:]), 23);
             effect = "" if words[1] == "-" else words[1];
+            if row[21] < -1.0 or row[21] >= float(len(enemies))
+                or row[22] < -1.0 or row[22] >= float(len(enemies)) {
+                raise ValueError("Invalid saved projectile owner");
+            }
             if len(effect) > 64
                 or not all(c.isalnum() or c == "_" for c in effect)
                 or row[18] < 0.0
@@ -589,7 +655,9 @@ def restore(
                 homing=row[19],
                 homing_wait=row[20],
                 hostile=words[0] in ["X", "TRAP"],
-                trap=words[0] == "TRAP"
+                trap=words[0] == "TRAP",
+                owner=enemies[int(row[21])] if row[21] >= 0.0 else None,
+                quarry=enemies[int(row[22])] if row[22] >= 0.0 else None
             );
         } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);
@@ -618,6 +686,46 @@ def restore(
             rotators[spun].crush_wait = row[2];
             place(rotators[spun], row[0], level.bsp, level.collision);
             spun += 1;
+        } elif words[0] == "PATROL" and len(words) == 5 {
+            index = int(words[1]);
+            heading = int(words[2]);
+            holding = int(words[3]);
+            corners = [world->:HasTrack:->][?:TrackPoint];
+            if index < 0 or index >= len(enemies)
+                or heading < -1 or heading >= len(corners)
+                or holding < -1 or holding >= len(corners)
+                or float(words[4]) < 0.0 {
+                raise ValueError("Invalid saved patrol");
+            }
+            walker_node = enemies[index];
+            for route_edge in [edge walker_node->:Patrols:->] {
+                del route_edge;
+            }
+            for hold_edge in [edge walker_node->:Holds:->] {
+                del hold_edge;
+            }
+            if heading >= 0 {
+                walker_node +>:Patrols:+> corners[heading];
+            }
+            if holding >= 0 {
+                walker_node +>:Holds:+> corners[holding];
+            }
+            walker_node.patrol_wait = float(words[4]);
+        } elif words[0] == "CORPSE" and len(words) == 4 {
+            index = int(words[1]);
+            if index < 0 or index >= len(enemies) or words[3] not in ["0", "1"] {
+                raise ValueError("Invalid saved corpse");
+            }
+            corpse = enemies[index];
+            corpse.remains = int(words[2]);
+            corpse.gibbed = words[3] == "1";
+            if corpse.gibbed {
+                corpse.visual.visible = False;
+            }
+        } elif words[0] == "SKILL" and len(words) == 2 {
+            if int(words[1]) != level.skill {
+                raise ValueError("Save was made on another skill");
+            }
         } elif words[0] == "MATCH" and len(words) == 7 {
             row = values(" ".join(words[1:]), 6);
             contest = match_of(world);
