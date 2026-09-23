@@ -51,7 +51,7 @@ import from vendor.raylib {
 }
 import from ..world.level { Level }
 import from ..formats.bsp { Face, Texture }
-import from ..formats.animated { ModelStage, stage_frame }
+import from ..formats.animated { ModelStage, Deform, stage_frame }
 import from ..math.vec3 { Vec3 }
 import from ..world.lighting { Lighting }
 
@@ -542,7 +542,8 @@ obj QuakeRenderer {
                 continue;
             }
             stages = level.surface_stages[t];
-            two_sided = level.bsp.textures[t].two_sided;
+            deforms = level.surface_deforms[t] if t in level.surface_deforms else [];
+            two_sided = level.bsp.textures[t].two_sided or bool(deforms);
             if two_sided {
                 rlDisableBackfaceCulling();
             }
@@ -598,7 +599,8 @@ obj QuakeRenderer {
                     if ids[0] < 0 and face.light_offset < 0 {
                         continue;
                     }
-                    self.stage_polygon(face, self.rects[index], stage, ids[0] < 0, eye, [red, green, blue, alpha]);
+                    shape = deform_face(face, deforms, eye, self.time) if deforms else None;
+                    self.stage_polygon(face, self.rects[index], stage, ids[0] < 0, eye, [red, green, blue, alpha], shape);
                 }
                 rlDrawRenderBatchActive();
                 if blended {
@@ -614,7 +616,7 @@ obj QuakeRenderer {
     }
 
     """One face for one stage: tcGen, then each tcMod in order (tr_shade_calc.c)."""
-    def stage_polygon(face: Face, rect: LightRect, stage: ModelStage, light: bool, eye: Vec3, tint: list[int]) {
+    def stage_polygon(face: Face, rect: LightRect, stage: ModelStage, light: bool, eye: Vec3, tint: list[int], shape: DeformedShape | None = None) {
         indices = face.indices;
         if len(indices) == 0 {
             indices = [];
@@ -625,6 +627,9 @@ obj QuakeRenderer {
         rlBegin(i32(4));
         for index in indices {
             v = face.vertices[index];
+            if shape is not None {
+                v = shape.points[index];
+            }
             s = 0.0;
             t = 0.0;
             if light {
@@ -636,6 +641,9 @@ obj QuakeRenderer {
                 reflected = face.normal.scale(2.0 * d).sub(viewer);
                 s = 0.5 + reflected.y * 0.5;
                 t = 0.5 - reflected.z * 0.5;
+            } elif shape is not None {
+                s = shape.coords[index * 2];
+                t = shape.coords[index * 2 + 1];
             } else {
                 s = face.uv[index * 2];
                 t = face.uv[index * 2 + 1];
@@ -692,10 +700,12 @@ obj QuakeRenderer {
             }
             rlColor4ub(u8(red), u8(green), u8(blue), u8(alpha));
             rlTexCoord2f(f32(s), f32(t));
-            if face.turn is not None {
+            if face.turn is not None and shape is None {
                 v = face.pivot.add(face.turn.apply(v.sub(face.pivot)));
             }
-            v = v.add(face.motion);
+            if shape is None {
+                v = v.add(face.motion);
+            }
             rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
         }
         rlEnd();
@@ -1087,4 +1097,92 @@ def gl_factor(name: str) -> int {
         "gl_one_minus_dst_color": 775
     };
     return factors[name] if name in factors else 1;
+}
+
+obj DeformedShape {
+    has points: list[Vec3] = [],
+        coords: list[float] = [];
+}
+
+"""tr_shade_calc.c RB_CalcDeformVertexes and the autosprite deforms, applied to
+a face's placed vertices for this frame."""
+def deform_face(face: Face, deforms: list[Deform], eye: Vec3, seconds: float) -> DeformedShape {
+    shape = DeformedShape(coords=list(face.uv));
+    for v in face.vertices {
+        placed = v;
+        if face.turn is not None {
+            placed = face.pivot.add(face.turn.apply(v.sub(face.pivot)));
+        }
+        shape.points.append(placed.add(face.motion));
+    }
+    normal = face.normal;
+    for deform in deforms {
+        if deform.kind == "wave" {
+            for i in range(len(shape.points)) {
+                p = shape.points[i];
+                offset = (p.x + p.y + p.z) * deform.spread;
+                shape.points[i] = p.add(normal.scale(deform.wave.shifted(seconds, offset)));
+            }
+        } elif deform.kind == "move" {
+            push = deform.vector.scale(deform.wave.at(seconds));
+            for i in range(len(shape.points)) {
+                shape.points[i] = shape.points[i].add(push);
+            }
+        } elif deform.kind == "bulge" {
+            for i in range(len(shape.points)) {
+                swell = math.sin(math.pi * 0.25 * shape.coords[i * 2] * deform.width + seconds * deform.speed) * deform.height;
+                shape.points[i] = shape.points[i].add(normal.scale(swell));
+            }
+        } elif deform.kind in ["autosprite", "autosprite2"] and len(shape.points) == 4 {
+            middle = shape.points[0].add(shape.points[1]).add(shape.points[2]).add(shape.points[3]).scale(0.25);
+            forward = middle.sub(eye).normalized();
+            right = forward.cross(Vec3(z=1.0));
+            if right.length() < 0.001 {
+                right = Vec3(x=1.0);
+            }
+            right = right.normalized();
+            up = right.cross(forward).normalized();
+            if deform.kind == "autosprite" {
+                # A square billboard of the quad's size with fresh corners.
+                radius = shape.points[0].sub(middle).length() * 0.707;
+                left = right.scale(-radius);
+                upward = up.scale(radius);
+                shape.points = [
+                    middle.add(left).add(upward),
+                    middle.sub(left).add(upward),
+                    middle.sub(left).sub(upward),
+                    middle.add(left).sub(upward)
+                ];
+                shape.coords = [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0];
+            } else {
+                # Keep the long axis; turn the short edges toward the viewer.
+                edges = [[0, 1], [1, 2], [2, 3], [3, 0]];
+                first = 0;
+                for e in range(4) {
+                    if shape.points[edges[e][0]].sub(shape.points[edges[e][1]]).length()
+                        < shape.points[edges[first][0]].sub(shape.points[edges[first][1]]).length() {
+                        first = e;
+                    }
+                }
+                shorts = [edges[first], edges[(first + 2) % 4]];
+                ends = [
+                    shape.points[shorts[0][0]].add(shape.points[shorts[0][1]]).scale(0.5),
+                    shape.points[shorts[1][0]].add(shape.points[shorts[1][1]]).scale(0.5)
+                ];
+                axis = ends[1].sub(ends[0]);
+                across = axis.cross(middle.sub(eye)).normalized();
+                moved = list(shape.points);
+                for k in range(2) {
+                    a = shorts[k][0];
+                    b = shorts[k][1];
+                    half = shape.points[a].sub(shape.points[b]).length() * 0.5;
+                    sign = 1.0 if shape.points[a].sub(ends[k]).dot(across) >= 0.0 else -1.0;
+                    moved[a] = ends[k].add(across.scale(half * sign));
+                    moved[b] = ends[k].sub(across.scale(half * sign));
+                }
+                shape.points = moved;
+            }
+        }
+    }
+    return shape;
 }

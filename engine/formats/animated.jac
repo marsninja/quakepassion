@@ -53,6 +53,12 @@ obj ShaderWave {
         }
         return self.base + value * self.amplitude;
     }
+
+    """The wave with its phase shifted, as deforms spread it over position."""
+    def shifted(seconds: float, offset: float) -> float {
+        moved = ShaderWave(func=self.func, base=self.base, amplitude=self.amplitude, phase=self.phase + offset, frequency=self.frequency);
+        return moved.at(seconds);
+    }
 }
 
 """One tcMod: scroll (a, b), scale (a, b), rotate (a degrees/s), turb and
@@ -62,6 +68,19 @@ obj TexMod {
         a: float = 0.0,
         b: float = 0.0,
         wave: ShaderWave = ShaderWave();
+}
+
+"""A surface-wide deformVertexes: wave and move sway vertices along the normal
+or a vector by a wave spread over position, bulge ripples along the texture's
+s, and autosprite/autosprite2 turn quads to face the viewer."""
+obj Deform {
+    has kind: str,
+        spread: float = 0.0,
+        wave: ShaderWave = ShaderWave(),
+        vector: Vec3 = Vec3(),
+        width: float = 0.0,
+        height: float = 0.0,
+        speed: float = 0.0;
 }
 
 obj ModelStage {

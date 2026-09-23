@@ -6,7 +6,7 @@ import from ..formats.q1.bsp { parse_bsp }
 import from ..formats.bsp { Bsp, Texture, decode_pvs, i32_at, require_range }
 import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
 import from ..formats.q3.bsp { parse_q3 }
-import from ..formats.animated { ModelStage }
+import from ..formats.animated { ModelStage, Deform }
 import from ..assets.pk3 { Pk3Assets }
 import from ..physics.collision { CollisionMap }
 import from ..formats.q1.collision { build_collision }
@@ -110,7 +110,8 @@ obj Level {
         visible_game: str = "",
         visible_culling: bool = False,
         visible_faces: list[int] = [],
-        surface_stages: dict[int, list[ModelStage]] = {};
+        surface_stages: dict[int, list[ModelStage]] = {},
+        surface_deforms: dict[int, list[Deform]] = {};
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -243,6 +244,10 @@ def load_level(
             stages = assets.surface_stages(level.bsp.textures[index].name);
             if stages {
                 level.surface_stages[index] = stages;
+                deforms = assets.surface_deforms(level.bsp.textures[index].name);
+                if deforms {
+                    level.surface_deforms[index] = deforms;
+                }
             }
         }
         for face in level.bsp.faces {

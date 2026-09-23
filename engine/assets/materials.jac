@@ -1,5 +1,6 @@
 """Initial ordered Q3 model shader stages; archive/image resolution stays separate."""
-import from ..formats.animated { ModelStage, ShaderWave, TexMod }
+import from ..formats.animated { ModelStage, ShaderWave, TexMod, Deform }
+import from ..math.vec3 { Vec3 }
 import from ..formats.bsp { Texture }
 
 obj ModelMaterial {
@@ -7,7 +8,8 @@ obj ModelMaterial {
         two_sided: bool = False,
         unsupported: list[str] = [],
         advanced: list[str] = [],
-        sky: bool = False;
+        sky: bool = False,
+        deforms: list[Deform] = [];
 }
 
 def number_at(tokens: list[str], i: int) -> float {
@@ -264,6 +266,29 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
             i += 1;
         } elif depth == 1 and (token == "skyparms" or (token == "surfaceparm" and i + 1 < len(tokens) and tokens[i + 1].lower() == "sky")) {
             material.sky = True;
+        } elif depth == 1 and token == "deformvertexes" and i + 1 < len(tokens) {
+            kind = tokens[i + 1].lower();
+            material.advanced.append("deformvertexes " + kind);
+            if kind == "wave" {
+                divisor = number_at(tokens, i + 2);
+                material.deforms.append(Deform(kind="wave", spread=1.0 / divisor if divisor != 0.0 else 0.0, wave=wave_at(tokens, i + 3)));
+                i += 7;
+            } elif kind == "move" {
+                material.deforms.append(
+                    Deform(kind="move", vector=Vec3(x=number_at(tokens, i + 2), y=number_at(tokens, i + 3), z=number_at(tokens, i + 4)), wave=wave_at(tokens, i + 5))
+                );
+                i += 9;
+            } elif kind == "bulge" {
+                material.deforms.append(Deform(kind="bulge", width=number_at(tokens, i + 2), height=number_at(tokens, i + 3), speed=number_at(tokens, i + 4)));
+                i += 4;
+            } elif kind in ["autosprite", "autosprite2"] {
+                material.deforms.append(Deform(kind=kind));
+                i += 1;
+            } elif kind == "normal" {
+                i += 1;
+            } else {
+                material.unsupported.append("deformvertexes " + kind);
+            }
         } elif depth == 1 and token == "deformvertexes" {
             material.unsupported.append(token);
         }

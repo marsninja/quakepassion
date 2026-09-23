@@ -7,7 +7,7 @@ import os;
 import from zipfile { ZipFile }
 import from ..formats.bsp { Texture }
 import from .materials { ModelMaterial, model_materials, material_name }
-import from ..formats.animated { ModelStage }
+import from ..formats.animated { ModelStage, Deform }
 
 obj Pk3Assets {
     has archives: list[ZipFile] = [],
@@ -288,6 +288,15 @@ obj Pk3Assets {
         return result;
     }
 
+    """The deformVertexes of a layered surface shader."""
+    def surface_deforms(name: str) -> list[Deform] {
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return [];
+        }
+        return self.model_shaders[key].deforms;
+    }
+
     def model_image(name: str, two_sided: bool) -> Texture {
         image = self.image_name(name);
         if not image {
@@ -334,6 +343,9 @@ def image_extension(path: str) -> str {
 """Whether a surface shader needs layered drawing: anything beyond one base
 stage, alone or multiplied with the lightmap, with no motion or colour."""
 def layered_material(material: ModelMaterial) -> bool {
+    if material.deforms {
+        return True;
+    }
     for stage in material.stages {
         if stage.frames or stage.mods or stage.environment or stage.rgb != "identity" or stage.alpha != "identity" {
             return True;
