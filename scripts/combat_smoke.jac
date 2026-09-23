@@ -51,7 +51,8 @@ with entry {
         enemy = opponents[0];
         found = False;
         for candidate in opponents {
-            if candidate.dormant {
+            # Exploding barrels are opponents too but never count as kills.
+            if candidate.dormant or candidate.rule.inert {
                 continue;
             }
             for offset in [

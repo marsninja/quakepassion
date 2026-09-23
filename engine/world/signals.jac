@@ -3,6 +3,8 @@ import from .world { World }
 import from .inventory { Inventory, quantity, AdjustInventory }
 
 edge Targets: Signal --> Signal {}
+"""killtarget: firing the source removes each killed recipient (SUB_UseTargets)."""
+edge Kills: Signal --> Signal {}
 edge HasSignal: World --> Signal {}
 edge HasProgress: World --> Progress {}
 node Progress {
@@ -39,6 +41,17 @@ def progress_summary(world: World) -> str {
     return " | ".join(parts);
 }
 
+"""trigger_counter progress: Q1 counter_use and Q2 trigger_counter_use."""
+def counter_text(style: str, remaining: int) -> str {
+    if style == "silent" {
+        return "";
+    }
+    if style == "q1" {
+        return "There are more to go..." if remaining >= 4 else "Only " + str(remaining) + " more to go...";
+    }
+    return str(remaining) + " more to go...";
+}
+
 obj DelayedUse {
     has remaining: float,
         inventory: Inventory | None = None;
@@ -70,7 +83,15 @@ node Signal {
         interval: float = 0.0,
         timer_running: bool = False,
         timer_remaining: float = 0.0,
-        timer_inventory: Inventory | None = None;
+        timer_inventory: Inventory | None = None,
+        message: str = "",
+        cue: str = "",
+        killed: bool = False,
+        armable: bool = False,
+        armed: bool = True,
+        counter_style: str = "",
+        grant_flags: int = 0,
+        require_flags: int = 0;
 
     def sample(base: float) -> float {
         duration = base;
@@ -97,10 +118,30 @@ walker Fire {
         scheduled: bool = False,
         inventory: Inventory | None = None,
         message: str = "",
+        cues: list[str] = [],
         seen: list[Signal] = [];
 
+    # SUB_UseTargets/G_UseTargets: show the message, remove killtargets, then
+    # the caller visits the targets.
+    def announce(source: Signal) {
+        if source.message and self.inventory is not None {
+            self.message = source.message;
+        }
+        if source.cue {
+            self.cues.append(source.cue);
+        }
+        for victim in [source->:Kills:->][?:Signal] {
+            victim.killed = True;
+            victim.enabled = False;
+            victim.queued = [];
+            victim.timer_running = False;
+            victim.pending = 0;
+        }
+    }
+
     can deliver with Signal entry {
-        if (not here.enabled and not (self.emit and self.scheduled))
+        if here.killed
+            or (not here.enabled and not (self.emit and self.scheduled))
             or here in self.seen {
             return;
         }
@@ -111,7 +152,15 @@ walker Fire {
                 here.schedule(self.inventory);
                 return;
             }
+            # target_crosslevel_target fires only once its unit flags are all set.
+            if here.require_flags {
+                flags = quantity(self.inventory, "unit_flags") if self.inventory is not None else 0;
+                if flags & here.require_flags != here.require_flags {
+                    return;
+                }
+            }
             self.scheduled = False;
+            self.announce(here);
             visit [here->:Targets:->];
         } elif here.interval > 0.0 {
             here.timer_inventory = self.inventory;
@@ -124,8 +173,21 @@ walker Fire {
                 return;
             }
             here.timer_remaining = here.sample(here.interval);
+            self.announce(here);
             visit [here->:Targets:->];
         } elif here.relay {
+            # target_crosslevel_trigger records its flags for the rest of the unit.
+            if here.grant_flags and self.inventory is not None {
+                old = quantity(self.inventory, "unit_flags");
+                self.inventory spawn AdjustInventory(
+                    kind="unit_flags", amount=(old | here.grant_flags) - old, capacity=255
+                );
+            }
+            # Q2 TRIGGERED triggers: the first use only enables touching.
+            if here.armable and not here.armed {
+                here.armed = True;
+                return;
+            }
             if here.key {
                 if self.inventory is None or quantity(self.inventory, here.key) <= 0 {
                     self.message = "Need "
@@ -137,12 +199,12 @@ walker Fire {
             if here.remaining > 0 {
                 here.remaining -= 1;
                 if here.remaining > 0 {
-                    self.message = "Objective: "
-                        + str(here.remaining)
-                        + " more activations";
+                    self.message = counter_text(here.counter_style, here.remaining);
                     return;
                 }
-                self.message = "Objective complete";
+                self.message = ""
+                    if here.counter_style == "silent"
+                    else "Sequence completed!";
             }
             record = here.progress;
             if record is not None {
@@ -167,6 +229,7 @@ walker Fire {
                 here.schedule(self.inventory);
                 return;
             }
+            self.announce(here);
             visit [here->:Targets:->];
         } else {
             here.pending += 1;
@@ -178,8 +241,10 @@ walker Fire {
 # Collect first, deliver second: newly scheduled events never age in this tick.
 walker SignalTick {
     has dt: float,
+        inventory: Inventory | None = None,
         ready: list[ReadyUse] = [],
-        message: str = "";
+        message: str = "",
+        cues: list[str] = [];
 
     can start with World entry {
         if self.dt > 0.0 {
@@ -218,11 +283,13 @@ walker SignalTick {
     can finish with World exit {
         for event in self.ready {
             fired = event.source spawn Fire(
-                scheduled=event.scheduled, inventory=event.inventory
+                scheduled=event.scheduled,
+                inventory=event.inventory if event.inventory is not None else self.inventory
             );
             if fired.message {
                 self.message = fired.message;
             }
+            self.cues.extend(fired.cues);
         }
     }
 }

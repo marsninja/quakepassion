@@ -41,7 +41,10 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
                     "trigger_multiple",
                     "trigger_changelevel",
                     "trigger_teleport",
-                    "trigger_push"
+                    "trigger_push",
+                    "trigger_onlyregistered",
+                    "trigger_setskill",
+                    "trigger_monsterjump"
                 ] {
             continue;
         }

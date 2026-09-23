@@ -1,14 +1,15 @@
 """Shared translating proximity doors. Unsupported activation stays static."""
 import math;
-import from .combat { Opponent, HasOpponent }
-import from .damage { blast_strength }
+import from .combat { Opponent, HasOpponent, damage_opponent }
+import from .damage { Damage, blast_strength }
 import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
-import from .signals { Signal, Fire, Targets, HasSignal, DelayedUse, progress_for }
+import from .signals { Signal, Fire, Targets, Kills, HasSignal, DelayedUse, progress_for }
 import from ..formats.bsp { Bsp, MapEntity }
-import from ..physics.collision { CollisionMap, Sweep }
+import from ..physics.collision { CollisionMap, Sweep, Trace }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from ..math.orientation { Basis, quake_basis }
 
 edge HasDoor: World --> Door {}
 edge DoorLink: Door --> Door {}
@@ -58,7 +59,75 @@ node Door {
         origins: list[Vec3] = [],
         position: float = 0.0,
         state: str = "closed",
-        remaining: float = 0.0;
+        remaining: float = 0.0,
+        rotation: Vec3 = Vec3(),
+        rest_angles: Vec3 = Vec3(),
+        pivot: Vec3 = Vec3(),
+        damage: int = 0,
+        crusher: bool = False,
+        crush_wait: float = 0.0;
+}
+
+"""Full travel of a mover: units for sliding movers, degrees for rotating doors."""
+def door_span(door: Door) -> float {
+    if door.rotation.length() > 0.0 {
+        return door.rotation.length();
+    }
+    return door.travel.length();
+}
+
+def door_turn(part: Door, position: float) -> Basis | None {
+    if part.rotation.length() == 0.0 and part.rest_angles.length() == 0.0 {
+        return None;
+    }
+    return quake_basis(part.rest_angles.add(part.rotation.scale(position)));
+}
+
+"""Place one mover's faces and hulls at `position` along its travel."""
+def apply_pose(part: Door, position: float, bsp: Bsp, collision: CollisionMap) {
+    motion = part.rest.add(part.travel.scale(position));
+    turn = door_turn(part, position);
+    for face in part.faces {
+        bsp.faces[face].motion = motion;
+        bsp.faces[face].turn = turn;
+        bsp.faces[face].pivot = part.pivot;
+    }
+    for j in range(len(part.hulls)) {
+        collision.set_offset(part.hulls[j], part.origins[j].add(motion));
+        if turn is not None {
+            collision.set_turn(part.hulls[j], turn);
+        }
+    }
+}
+
+"""Sweep an actor from `start` against a mover's old pose to `finish` against its
+new pose, in the mover's own frame, so moving and turning hulls both block."""
+def pose_sweep(
+    collision: CollisionMap,
+    part: Door,
+    j: int,
+    start: Vec3,
+    finish: Vec3,
+    before: float,
+    after: float,
+    top_drop: float
+) -> Trace {
+    old_base = part.origins[j].add(part.rest.add(part.travel.scale(before)));
+    new_base = part.origins[j].add(part.rest.add(part.travel.scale(after)));
+    local_start = start.sub(old_base);
+    local_finish = finish.sub(new_base);
+    old_turn = door_turn(part, before);
+    new_turn = door_turn(part, after);
+    if old_turn is not None {
+        local_start = old_turn.inverse(local_start);
+    }
+    if new_turn is not None {
+        local_finish = new_turn.inverse(local_finish);
+    }
+    query = collision.hulls[part.hulls[j]] spawn Sweep(
+        top_drop=top_drop, start=local_start, finish=local_finish
+    );
+    return query.result;
 }
 
 walker DoorTick {
@@ -71,12 +140,38 @@ walker DoorTick {
         message: str = "",
         actors: list[Opponent] = [];
 
+    """Blocked movers hurt what stops them (Q1 door_blocked/plat_crush, Q2
+    door_blocked/plat_blocked), at most ten times a second."""
+    def crush(mover: Door, victim: Player) {
+        if mover.damage <= 0 or victim.health <= 0 or mover.crush_wait > 0.0 {
+            return;
+        }
+        mover.crush_wait = 0.1;
+        if isinstance(victim, Opponent) {
+            damage_opponent(victim, mover.damage, means="crush");
+        } else {
+            victim spawn Damage(amount=mover.damage, means="crush");
+        }
+    }
+
+    # Crushers and doors with a negative wait keep pushing; others reverse.
+    def blocked(mover: Door) {
+        if mover.crusher or (mover.kind == "door" and mover.hold_time < 0.0) {
+            return;
+        }
+        if mover.state == "opening" {
+            mover.state = "closing";
+        } elif mover.state == "closing" {
+            mover.state = "opening";
+        }
+    }
+
     can start with World entry {
         if self.dt > 0.0 {
             self.actors = [
                 actor
                 for actor in [here->:HasOpponent:->][?:Opponent]
-                if actor.health > 0 and not actor.dormant
+                if actor.health > 0 and not actor.dormant and not actor.rule.inert
             ];
             visit [here->:HasDoor:->];
         }
@@ -86,6 +181,22 @@ walker DoorTick {
         if self.dt <= 0.0 or not here.enabled {
             return;
         }
+        # killtarget removes the whole mover group (G_FreeEdict).
+        if here.activation.killed {
+            here.enabled = False;
+            members = [here];
+            members.extend([here->:DoorMember:->][?:Door]);
+            for part in members {
+                for face in part.faces {
+                    self.bsp.faces[face].hidden = True;
+                }
+                for index in part.hulls {
+                    self.collision.set_disabled(index, True);
+                }
+            }
+            return;
+        }
+        here.crush_wait = max(0.0, here.crush_wait - self.dt);
         origin = self.player_origin;
         if self.player is not None {
             origin = self.player.pos.sub(Vec3(z=self.collision.eye_height));
@@ -264,7 +375,7 @@ walker DoorTick {
             0.0,
             min(
                 1.0,
-                here.position + direction * here.speed * self.dt / here.travel.length()
+                here.position + direction * here.speed * self.dt / door_span(here)
             )
         );
         members = [here];
@@ -280,21 +391,22 @@ walker DoorTick {
         }
         # Validate the whole group before changing any render or collision state.
         for part in members {
-            old_motion = part.rest.add(part.travel.scale(here.position));
-            motion = part.rest.add(part.travel.scale(next_position));
             for j in range(len(part.hulls)) {
-                index = part.hulls[j];
-                query = self.collision.hulls[index] spawn Sweep(
-                    top_drop=self.collision.top_drop,
-                    start=origin.sub(part.origins[j].add(old_motion)),
-                    finish=carried.sub(part.origins[j].add(motion))
+                query = pose_sweep(
+                    self.collision,
+                    part,
+                    j,
+                    origin,
+                    carried,
+                    here.position,
+                    next_position,
+                    self.collision.top_drop
                 );
-                if query.result.start_solid or query.result.fraction < 1.0 {
-                    if here.kind == "platform" and here.state == "opening" {
-                        here.state = "closing";
-                    } elif here.state == "closing" {
-                        here.state = "opening";
+                if query.start_solid or query.fraction < 1.0 {
+                    if self.player is not None and self.touching {
+                        self.crush(here, self.player);
                     }
+                    self.blocked(here);
                     return;
                 }
             }
@@ -325,8 +437,6 @@ walker DoorTick {
             );
             destination = actor_destinations[actor_index];
             for part in members {
-                old_motion = part.rest.add(part.travel.scale(here.position));
-                motion = part.rest.add(part.travel.scale(next_position));
                 for j in range(len(part.hulls)) {
                     index = part.hulls[j];
                     if len(self.collision.bounds) == len(self.collision.hulls) {
@@ -358,31 +468,27 @@ walker DoorTick {
                             continue;
                         }
                     }
-                    query = self.collision.hulls[index] spawn Sweep(
-                        top_drop=0.0,
-                        start=actor_origin.sub(part.origins[j].add(old_motion)),
-                        finish=destination.sub(part.origins[j].add(motion))
+                    query = pose_sweep(
+                        self.collision,
+                        part,
+                        j,
+                        actor_origin,
+                        destination,
+                        here.position,
+                        next_position,
+                        0.0
                     );
-                    if query.result.start_solid or query.result.fraction < 1.0 {
-                        if here.kind == "platform" and here.state == "opening" {
-                            here.state = "closing";
-                        } elif here.state == "closing" {
-                            here.state = "opening";
-                        }
+                    if query.start_solid or query.fraction < 1.0 {
+                        self.crush(here, self.actors[actor_index]);
+                        self.blocked(here);
                         return;
                     }
                 }
             }
         }
         for part in members {
-            motion = part.rest.add(part.travel.scale(next_position));
             part.position = next_position;
-            for face in part.faces {
-                self.bsp.faces[face].motion = motion;
-            }
-            for j in range(len(part.hulls)) {
-                self.collision.set_offset(part.hulls[j], part.origins[j].add(motion));
-            }
+            apply_pose(part, next_position, self.bsp, self.collision);
         }
         for actor_index in range(len(self.actors)) {
             actor = self.actors[actor_index];
@@ -464,12 +570,15 @@ def door_direction(entity: MapEntity) -> Vec3 {
     );
 }
 
-def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
+"""Build movers. Level loading passes `connect=False` and resolves every
+activation chain once, after all other activatable entities are loaded."""
+def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = True) {
     candidates: list[Door] = [];
     for entity in bsp.entities {
         fields = entity.fields;
         kind = fields.get("classname", "");
-        if kind not in ["func_door", "func_button", "func_plat"] {
+        rotating = kind == "func_door_rotating" and bsp.game == "q2";
+        if kind not in ["func_door", "func_button", "func_plat"] and not rotating {
             continue;
         }
         # Keep unsupported members in the graph so a locked half disables its group.
@@ -489,6 +598,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         }
         if kind == "func_plat" and bsp.game != "q3" {
             allowed |= 1;
+        }
+        # Q2/Q3 CRUSHER; Q2 rotating doors add REVERSE and the X/Y axis flags.
+        if kind == "func_door" and bsp.game in ["q2", "q3"] {
+            allowed |= 5;
+        }
+        if rotating {
+            allowed |= 1 | 2 | 4 | 8 | 32 | 64 | 128;
         }
         health = max(0, int(float(fields.get("health", "0"))));
         enabled = True;
@@ -547,6 +663,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             }
             hold_time = 1.0 if bsp.game == "q3" else 3.0;
         }
+        if rotating {
+            # g_func.c SP_func_door_rotating: degrees, 90 by default.
+            distance = float(fields.get("distance", "0"));
+            if distance == 0.0 {
+                distance = 90.0;
+            }
+        }
         if distance <= 0.0 or speed <= 0.0 {
             enabled = False;
         }
@@ -575,8 +698,11 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             max_health=health,
             shared_health=bsp.game == "q1",
             monster_touch=not (bsp.game == "q2" and flags & 8 != 0),
-            fire_on_start=kind == "func_door" and bsp.game in ["q1", "q2"],
-            toggle=kind == "func_door" and bsp.game in ["q1", "q2"] and flags & 32 != 0,
+            fire_on_start=kind in ["func_door", "func_door_rotating"]
+                and bsp.game in ["q1", "q2"],
+            toggle=kind in ["func_door", "func_door_rotating"]
+                and bsp.game in ["q1", "q2"]
+                and flags & 32 != 0,
             automatic=(
                 health == 0 and (bsp.game != "q2" or not fields.get("targetname", ""))
             )
@@ -594,7 +720,36 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 maxs=bounds.maxs.add(margin).add(Vec3(z=24.0))
             )
         );
-        if kind == "func_door" and flags & 1 {
+        # Crush damage defaults: Q1 plats 1, other movers 2 (Q1/Q2/Q3 "dmg").
+        door.damage = int(float(fields.get("dmg", "0")));
+        if door.damage == 0 and kind != "func_button" {
+            door.damage = 1 if kind == "func_plat" and bsp.game == "q1" else 2;
+        }
+        door.crusher = bsp.game in ["q2", "q3"]
+            and kind in ["func_door", "func_door_rotating"]
+            and flags & 4 != 0;
+        if rotating {
+            axis = Vec3(y=1.0);
+            if flags & 64 {
+                axis = Vec3(z=1.0);
+            } elif flags & 128 {
+                axis = Vec3(x=1.0);
+            }
+            if flags & 2 {
+                axis = axis.scale(-1.0);
+            }
+            door.travel = Vec3();
+            door.rotation = axis.scale(distance);
+            coords = fields.get("origin", "0 0 0").split();
+            if len(coords) != 3 {
+                raise ValueError("Invalid rotating door origin");
+            }
+            door.pivot = Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2]));
+            if flags & 1 {
+                door.rest_angles = door.rotation;
+                door.rotation = door.rotation.scale(-1.0);
+            }
+        } elif kind == "func_door" and flags & 1 {
             door.rest = door.travel;
             door.travel = door.travel.scale(-1.0);
         }
@@ -680,14 +835,15 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         for part in assembly.members {
             enabled = enabled and part.enabled;
             if part.speed > 0.0 {
-                duration = max(duration, part.travel.length() / part.speed);
+                duration = max(duration, door_span(part) / part.speed);
             }
             bounds = union_bounds(bounds, part.trigger);
             # A team containing another mover class cannot be animated partially.
             if part.team and bsp.game != "q1" {
                 for ent in bsp.entities {
                     if ent.fields.get("team", "") == part.team
-                        and ent.fields.get("classname", "") != "func_door" {
+                        and ent.fields.get("classname", "")
+                            not in ["func_door", "func_door_rotating"] {
                         enabled = False;
                     }
                 }
@@ -715,10 +871,12 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             }
         }
         leader.trigger = bounds;
-        leader.speed = leader.travel.length() / duration;
+        leader.speed = door_span(leader) / duration;
         for part in assembly.members {
             for index in part.hulls {
-                if len(collision.bounds) == len(collision.hulls) {
+                if part.rotation.length() > 0.0 {
+                    collision.allow_rotation(index);
+                } elif len(collision.bounds) == len(collision.hulls) {
                     b = collision.bounds[index];
                     delta = part.travel;
                     collision.bounds[index] = AABB(
@@ -746,19 +904,19 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         world +>:HasDoor:+> leader;
     }
     collision.reindex();
-    connect_targets(world, bsp);
+    if connect {
+        connect_targets(world, bsp);
+        pose_doors(world, bsp, collision);
+    }
+}
+
+def pose_doors(world: World, bsp: Bsp, collision: CollisionMap) {
     for mover in [world->:HasDoor:->][?:Door] {
         if mover.enabled {
             members = [mover];
             members.extend([mover->:DoorMember:->][?:Door]);
             for part in members {
-                motion = part.rest.add(part.travel.scale(mover.position));
-                for face in part.faces {
-                    bsp.faces[face].motion = motion;
-                }
-                for j in range(len(part.hulls)) {
-                    collision.set_offset(part.hulls[j], part.origins[j].add(motion));
-                }
+                apply_pose(part, mover.position, bsp, collision);
             }
         }
     }
@@ -816,13 +974,31 @@ def connect_targets(world: World, bsp: Bsp) {
                     relay=True,
                     once=True,
                     progress=progress,
-                    objective="secret" if secret else "goal"
+                    objective="secret" if secret else "goal",
+                    message=fields.get(
+                        "message", "You found a secret area!" if bsp.game == "q1" else ""
+                    ),
+                    cue=authored_cue(bsp.game, kind, fields)
                 )
             );
         }
-        if kind == "func_timer"
-            and bsp.game in ["q2", "q3"]
-            and not fields.get("killtarget", "") {
+        # Touch triggers are relays of their own, so use by name, touch and
+        # shooting all fire the same targets (Q1 multi_trigger, Q2 Touch_Multi).
+        if kind in ["trigger_once", "trigger_multiple", "trigger_onlyregistered"] {
+            flags = int(fields.get("spawnflags", "0"));
+            signals.append(
+                Signal(
+                    entities=[index],
+                    relay=True,
+                    once=kind == "trigger_once" or float(fields.get("wait", "0")) < 0.0,
+                    message=fields.get("message", ""),
+                    cue=authored_cue(bsp.game, kind, fields),
+                    armable=bsp.game == "q2" and flags & 4 != 0,
+                    armed=not (bsp.game == "q2" and flags & 4 != 0)
+                )
+            );
+        }
+        if kind == "func_timer" and bsp.game in ["q2", "q3"] {
             interval = float(fields.get("wait", "1"));
             if interval <= 0.0 {
                 interval = 1.0;
@@ -853,9 +1029,25 @@ def connect_targets(world: World, bsp: Bsp) {
             }
             signals.append(timer);
         }
-        if kind == "trigger_always"
-            and bsp.game in ["q2", "q3"]
-            and not fields.get("killtarget", "") {
+        if kind == "target_crosslevel_trigger" and bsp.game == "q2" {
+            signals.append(
+                Signal(
+                    entities=[index],
+                    relay=True,
+                    grant_flags=int(fields.get("spawnflags", "0")) & 255
+                )
+            );
+        }
+        if kind == "target_crosslevel_target" and bsp.game == "q2" {
+            signals.append(
+                Signal(
+                    entities=[index],
+                    require_flags=int(fields.get("spawnflags", "0")) & 255,
+                    queued=[DelayedUse(remaining=float(fields.get("delay", "0")) or 1.0)]
+                )
+            );
+        }
+        if kind == "trigger_always" and bsp.game in ["q2", "q3"] {
             startup = 0.3
                 if bsp.game == "q3"
                 else max(0.2, float(fields.get("delay", "0")));
@@ -863,9 +1055,7 @@ def connect_targets(world: World, bsp: Bsp) {
                 Signal(entities=[index], queued=[DelayedUse(remaining=startup)])
             );
         }
-        if kind in ["trigger_key", "trigger_counter"]
-            and bsp.game in ["q1", "q2"]
-            and not fields.get("killtarget", "") {
+        if kind in ["trigger_key", "trigger_counter"] and bsp.game in ["q1", "q2"] {
             key = fields.get("item", "") if kind == "trigger_key" else "";
             if kind == "trigger_counter"
                 or (bsp.game == "q2" and key.startswith("key_")) {
@@ -877,15 +1067,24 @@ def connect_targets(world: World, bsp: Bsp) {
                         once=True,
                         remaining=max(1, int(fields.get("count", "2")))
                             if kind == "trigger_counter"
-                            else 0
+                            else 0,
+                        # NOMESSAGE (1) silences the counter's progress.
+                        counter_style="silent"
+                            if int(fields.get("spawnflags", "0")) & 1
+                            else bsp.game,
+                        message=fields.get("message", "")
                     )
                 );
             }
         }
         if kind in ["trigger_relay", "target_relay", "target_delay"]
-            and int(fields.get("spawnflags", "0")) == 0
-            and not fields.get("killtarget", "") {
-            signal = Signal(relay=True, entities=[index]);
+            and int(fields.get("spawnflags", "0")) == 0 {
+            signal = Signal(
+                relay=True,
+                entities=[index],
+                message=fields.get("message", ""),
+                cue=authored_cue(bsp.game, kind, fields)
+            );
             if kind == "target_delay" and bsp.game == "q3" {
                 signal.delay = float(fields.get("delay", fields.get("wait", "1")));
                 if signal.delay <= 0.0 {
@@ -896,6 +1095,32 @@ def connect_targets(world: World, bsp: Bsp) {
                 signal.random_state = index + 1;
             }
             signals.append(signal);
+        }
+    }
+    # Recipients with no use behaviour here (visibility portals, markers, path
+    # and combat points, teleport destinations) accept uses as no-ops, so the
+    # chains through them keep working, as the originals ignore those uses.
+    covered: set[int] = set();
+    for signal in signals {
+        for index in signal.entities {
+            covered.add(index);
+        }
+    }
+    passive = [
+        "func_areaportal",
+        "info_null",
+        "info_notnull",
+        "target_position",
+        "point_combat",
+        "path_corner",
+        "info_teleport_destination",
+        "misc_teleporter_dest",
+        "misc_portal_camera"
+    ];
+    for index in range(len(bsp.entities)) {
+        if index not in covered
+            and bsp.entities[index].fields.get("classname", "") in passive {
+            signals.append(Signal(entities=[index]));
         }
     }
     registered = [world->:HasSignal:->][?:Signal];
@@ -948,6 +1173,27 @@ def connect_targets(world: World, bsp: Bsp) {
             }
         }
     }
+    # killtarget recipients without a graph identity cannot be removed; the rest
+    # of the chain still runs rather than being disabled.
+    for signal in signals {
+        for index in signal.entities {
+            victim = bsp.entities[index].fields.get("killtarget", "");
+            if not victim {
+                continue;
+            }
+            for recipient in range(len(bsp.entities)) {
+                if bsp.entities[recipient].fields.get("targetname", "") != victim {
+                    continue;
+                }
+                for destination in signals {
+                    if recipient in destination.entities and destination is not signal {
+                        signal +>:Kills:+> destination;
+                        break;
+                    }
+                }
+            }
+        }
+    }
     for iteration in range(len(signals)) {
         changed = False;
         for signal in signals {
@@ -973,6 +1219,33 @@ def connect_targets(world: World, bsp: Bsp) {
     }
 }
 
+
+"""Activation sounds: Q1/Q2 trigger `sounds` (secret, beep, switch), Q2 message
+beeps (G_UseTargets plays misc/talk1 unless `noise`), Q1 secrets' default."""
+def authored_cue(game: str, kind: str, fields: dict[str, str]) -> str {
+    style = int(fields.get("sounds", "0"));
+    if (game == "q1" and kind == "trigger_secret" or game == "q2" and kind in ["target_secret", "target_goal"]) and style == 0 and not fields.get("noise", "") {
+        style = 1;
+    }
+    if style == 1 {
+        return "sound/misc/secret.wav";
+    }
+    if style == 2 {
+        return "sound/misc/talk.wav";
+    }
+    if style == 3 {
+        return "sound/misc/trigger1.wav";
+    }
+    if game == "q2" and fields.get("message", "") {
+        noise = fields.get("noise", "");
+        if noise {
+            return ("sound/" + noise if not noise.startswith("sound/") else noise)
+                + ("" if noise.endswith(".wav") else ".wav");
+        }
+        return "sound/misc/talk1.wav";
+    }
+    return "";
+}
 
 def resolve_targets(world: World, bsp: Bsp, target: str) -> list[Signal] {
     result: list[Signal] = [];

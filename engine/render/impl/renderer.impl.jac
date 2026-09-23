@@ -259,6 +259,16 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             color = Color(r=220, g=235, b=255, a=u8(alpha));
         } elif trail.kind == "drain" {
             color = Color(r=120, g=255, b=120, a=u8(alpha));
+        } elif trail.kind.startswith("laser_") {
+            # Q2 target_laser palette colours.
+            shade = {
+                "laser_red": [255, 40, 30],
+                "laser_green": [60, 255, 60],
+                "laser_blue": [70, 110, 255],
+                "laser_yellow": [255, 230, 60],
+                "laser_orange": [255, 150, 40]
+            }.get(trail.kind, [255, 40, 30]);
+            color = Color(r=u8(shade[0]), g=u8(shade[1]), b=u8(shade[2]), a=u8(255));
         }
         DrawLine3D(
             Vector3(x=f32(trail.start.x), y=f32(trail.start.y), z=f32(trail.start.z)),

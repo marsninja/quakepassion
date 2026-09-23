@@ -253,7 +253,7 @@ def damage_opponent(
         state.hit_flash = 0.15;
     }
     if damage.killed {
-        if state is not None {
+        if state is not None and not victim.rule.inert {
             state.kills += 1;
         }
         victim.activation spawn Fire(inventory=inventory);
@@ -421,6 +421,7 @@ node Projectile {
         effect: str = "",
         age: float = 0.0,
         hostile: bool = False,
+        trap: bool = False,
         homing: float = 0.0,
         homing_wait: float = 0.0;
 }
@@ -1037,6 +1038,20 @@ walker ProjectileTick {
                 fraction = hit;
                 player_hit = True;
             }
+            # World traps (Q1 spikeshooters, fireballs) also strike monsters.
+            if here.trap {
+                query = world spawn Aim(
+                    start=here.pos,
+                    finish=finish,
+                    height=self.collision.eye_height,
+                    fraction=fraction
+                );
+                if query.target is not None and query.fraction < fraction {
+                    victim = query.target;
+                    fraction = query.fraction;
+                    player_hit = False;
+                }
+            }
         } else {
             query = world spawn Aim(
                 start=here.pos,
@@ -1068,7 +1083,7 @@ walker ProjectileTick {
                 victim,
                 here.damage,
                 self.player.inventory,
-                self.state,
+                None if here.hostile else self.state,
                 attacker=None if here.hostile else self.player
             );
         } elif wall.fraction < 1.0
@@ -1708,6 +1723,13 @@ walker CombatTick {
 
     can think with Opponent entry {
         if here.rule.script {
+            return;
+        }
+        # Inert targets (exploding barrels) only wait to be destroyed.
+        if here.rule.inert {
+            if here.pending_explosion and self.world is not None {
+                death_explosion(self.world, here, self.player, self.collision, self.state);
+            }
             return;
         }
         ensure_profiles(here);

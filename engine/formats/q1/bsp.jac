@@ -194,7 +194,14 @@ def parse_bsp(data: bytes) -> Bsp {
             contents=i32_at(lumps[10], p),
             vis_offset=i32_at(lumps[10], p + 4),
             mins=bounds_at(lumps[10], p + 8),
-            maxs=bounds_at(lumps[10], p + 14)
+            maxs=bounds_at(lumps[10], p + 14),
+            # dleaf_t ambient_level[4]: water, sky, slime, lava.
+            ambient=[
+                int(lumps[10][p + 24]),
+                int(lumps[10][p + 25]),
+                int(lumps[10][p + 26]),
+                int(lumps[10][p + 27])
+            ]
         );
         first = u16_at(lumps[10], p + 20);
         count = u16_at(lumps[10], p + 22);

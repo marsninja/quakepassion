@@ -64,6 +64,7 @@ obj OpponentRule {
         movement: str = "walk",
         decoration: bool = False,
         passive: bool = False,
+        inert: bool = False,
         pain_duration: float = 0.3,
         pain_interval: float = 1.0,
         pain_frames: list[str] = [],
@@ -152,7 +153,7 @@ def rule_profiles(rule: OpponentRule) -> list[AttackProfile] {
         return rule.attacks;
     }
     profiles: list[AttackProfile] = [];
-    if rule.decoration or rule.passive {
+    if rule.decoration or rule.passive or rule.inert {
         return profiles;
     }
     has_melee = rule.melee > 0 or rule.melee_random_scale > 0.0;

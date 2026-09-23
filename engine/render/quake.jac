@@ -325,8 +325,14 @@ obj QuakeRenderer {
         rlBegin(i32(4));
         rlColor4ub(u8(255), u8(255), u8(255), u8(255));
         if face.moving_light {
-            center = face.vertices[0].lerp(face.vertices[2], 0.5).add(face.motion);
-            color = self.lighting.sample(center, False).shade(face.normal);
+            center = face.vertices[0].lerp(face.vertices[2], 0.5);
+            facing = face.normal;
+            turn = face.turn;
+            if turn is not None {
+                center = face.pivot.add(turn.apply(center.sub(face.pivot)));
+                facing = turn.apply(facing);
+            }
+            color = self.lighting.sample(center.add(face.motion), False).shade(facing);
             rlColor4ub(
                 u8(int(min(255.0, max(0.0, color.x * 255.0)))),
                 u8(int(min(255.0, max(0.0, color.y * 255.0)))),
@@ -386,6 +392,11 @@ obj QuakeRenderer {
                 rlTexCoord2f(f32(face.uv[index * 2]), f32(face.uv[index * 2 + 1]));
             }
             v = face.vertices[index];
+            turn = face.turn;
+            if turn is not None {
+                # Rotating brush models turn about their entity origin.
+                v = face.pivot.add(turn.apply(v.sub(face.pivot)));
+            }
             rlVertex3f(
                 f32(v.x + face.motion.x),
                 f32(v.y + face.motion.y),
@@ -406,11 +417,13 @@ obj QuakeRenderer {
         count = 0;
         for index in sorted(faces) {
             face = level.bsp.faces[index];
+            # Turned faces skip plane culling; their stored plane is unrotated.
             if face.hidden
                 or len(face.vertices) < 3
                 or (
                     face.planar
                     and not face.two_sided
+                    and face.turn is None
                     and face.normal.dot(eye.sub(face.motion)) - face.plane_dist < -0.01
                 ) {
                 continue;

@@ -181,6 +181,11 @@ walker BrushTick {
 
     can use with BrushObject entry {
         world = self.world;
+        # killtarget removes the brush without any explosion.
+        if here.activation.killed and not here.destroyed {
+            here.destroyed = True;
+            show_brush(here, False, self.bsp, self.collision);
+        }
         if world is None or here.destroyed or not here.usable {
             here.activation.pending = 0;
             return;

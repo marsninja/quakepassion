@@ -1,6 +1,7 @@
 """Swept queries over a pre-expanded collision BSP, independent of game formats."""
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from ..math.orientation { Basis }
 
 node HullCell {
     has normal: Vec3 = Vec3(),
@@ -257,11 +258,40 @@ obj CollisionRevision {
     }
 }
 
+"""Sweep a world-space segment against one hull placed at `offset` and optionally
+turned about it. As in Q2's CM_TransformedBoxTrace, the query moves into the
+model's frame and the box keeps its size; the hit normal is turned back."""
+def hull_sweep(
+    hull: HullCell,
+    start: Vec3,
+    finish: Vec3,
+    offset: Vec3,
+    top_drop: float = 0.0,
+    point: bool = False,
+    turn: Basis | None = None
+) -> Trace {
+    local_start = start.sub(offset);
+    local_finish = finish.sub(offset);
+    if turn is not None {
+        local_start = turn.inverse(local_start);
+        local_finish = turn.inverse(local_finish);
+    }
+    query = hull spawn Sweep(
+        start=local_start, finish=local_finish, point=point, top_drop=top_drop
+    );
+    result = query.result;
+    if turn is not None and result.fraction < 1.0 {
+        result.normal = turn.apply(result.normal);
+    }
+    return result;
+}
+
 obj CollisionMap {
     has revision: CollisionRevision = CollisionRevision(),
         hulls: list[HullCell] = [],
         point_hulls: list[HullCell] = [],
         offsets: list[Vec3] = [],
+        turns: dict[int, Basis] = {},
         models: list[int] = [],
         disabled: set[int] = set(),
         bounds: list[AABB] = [],
@@ -276,6 +306,7 @@ obj CollisionMap {
             hulls=self.hulls,
             point_hulls=self.point_hulls,
             offsets=self.offsets,
+            turns=self.turns,
             models=self.models,
             disabled=self.disabled,
             bounds=self.bounds,
@@ -290,6 +321,33 @@ obj CollisionMap {
         if old.x == offset.x and old.y == offset.y and old.z == offset.z { return; }
         self.offsets[index] = offset;
         self.revision.touch(index);
+    }
+
+    # Rotating brush models turn about their offset (the entity origin).
+    def set_turn(index: int, turn: Basis | None) {
+        if turn is None {
+            if index not in self.turns { return; }
+            self.turns.pop(index);
+        } else {
+            self.turns[index] = turn;
+        }
+        self.revision.touch(index);
+    }
+
+    # A rotating hull can reach any orientation: bound it by its radius.
+    def allow_rotation(index: int) {
+        reach = 0.0;
+        box = self.bounds[index];
+        offset = self.offsets[index];
+        for x in [box.mins.x, box.maxs.x] {
+            for y in [box.mins.y, box.maxs.y] {
+                for z in [box.mins.z, box.maxs.z] {
+                    reach = max(reach, Vec3(x=x, y=y, z=z).sub(offset).length());
+                }
+            }
+        }
+        extent = Vec3(x=reach, y=reach, z=reach);
+        self.bounds[index] = AABB(mins=offset.sub(extent), maxs=offset.add(extent));
     }
 
     def set_disabled(index: int, disabled: bool) {
@@ -458,22 +516,22 @@ obj CollisionMap {
                     continue;
                 }
             }
-            offset = self.offsets[i];
             hull = self.point_hulls[i] if point and self.point_hulls else self.hulls[i];
-            query = hull spawn Sweep(
-                start=start.sub(offset),
-                finish=finish.sub(offset),
-                point=point,
-                top_drop=0.0
-                    if point
-                    else (self.top_drop if top_drop < 0.0 else top_drop)
+            query = hull_sweep(
+                hull,
+                start,
+                finish,
+                self.offsets[i],
+                0.0 if point else (self.top_drop if top_drop < 0.0 else top_drop),
+                point,
+                self.turns.get(i, None)
             );
-            result.start_solid = result.start_solid or query.result.start_solid;
-            if query.result.fraction < result.fraction {
+            result.start_solid = result.start_solid or query.start_solid;
+            if query.fraction < result.fraction {
                 result.hull = i;
                 result.model = self.models[i] if i < len(self.models) else -1;
-                result.fraction = query.result.fraction;
-                result.normal = query.result.normal;
+                result.fraction = query.fraction;
+                result.normal = query.normal;
             }
         }
         if result.start_solid {

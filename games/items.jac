@@ -552,6 +552,17 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
     try {
         for index in range(len(level.bsp.entities)) {
             fields = level.bsp.entities[index].fields;
+            spawned = level.bsp.game == "q2"
+                and fields.get("classname", "") == "target_spawner";
+            if spawned {
+                # The item appears at the spawner once the spawner is used.
+                fields = {
+                    "classname": fields.get("target", ""),
+                    "origin": fields.get("origin", "0 0 0"),
+                    "angle": fields.get("angle", "0"),
+                    "spawnflags": "1"
+                };
+            }
             source = fields.get("asset_game", level.bsp.game);
             rule = pickup_rule(
                 source,

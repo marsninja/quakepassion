@@ -23,6 +23,11 @@ walker SpeakerTick {
         visit [here->:HasSpeaker:->];
     }
     can update with Speaker entry {
+        if here.activation.killed {
+            here.playing = False;
+            here.requests = 0;
+            return;
+        }
         if here.activation.pending > 0 {
             if here.looping {
                 if here.activation.pending % 2 != 0 {

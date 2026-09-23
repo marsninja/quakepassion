@@ -98,7 +98,8 @@ def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
                     "trigger_once",
                     "trigger_multiple",
                     "trigger_teleport",
-                    "trigger_push"
+                    "trigger_push",
+                    "trigger_monsterjump"
                 ] {
             continue;
         }
@@ -115,7 +116,8 @@ def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
                     "func_static",
                     "func_bobbing",
                     "func_rotating",
-                    "func_door_rotating"
+                    "func_door_rotating",
+                    "func_pendulum"
                 ] {
             continue;
         }

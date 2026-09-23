@@ -33,6 +33,7 @@ impl App.run() {
     if self.level.active {
         equip_player(self.player, self.combat, self.level.bsp.game);
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
+        populate_fixtures(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
         join_match(self.world, self.player);
         populate_finale(self.world, self.level, game_directory(self.level.bsp.game));
@@ -108,6 +109,20 @@ impl App.render_frame() {
     }
     p = self.player;
     self.audio.update(self.world, p.pos, p.yaw, paused=self.menu.opened);
+    if self.level.active and self.level.bsp.game == "q1" {
+        where = self.level.locate(p.pos);
+        levels = [0, 0, 0, 0];
+        if 0 <= where and where < len(self.level.bsp.leaves)
+            and len(self.level.bsp.leaves[where].ambient) == 4 {
+            levels = self.level.bsp.leaves[where].ambient;
+        }
+        self.audio.ambient(
+            "sound/ambience/water1.wav", levels[0], self.frame_dt, self.menu.opened
+        );
+        self.audio.ambient(
+            "sound/ambience/wind2.wav", levels[1], self.frame_dt, self.menu.opened
+        );
+    }
     if self.level.active {
         faces = self.level.visible(self.world, p.pos, self.culling);
         combat_lights(self.level.lighting, self.world, p, self.combat);
@@ -206,6 +221,23 @@ impl App.render_frame() {
                 self.renderer.draw_message(self.notice);
             }
             self.renderer.draw_powerups(self.powerup_lines());
+            # Q2 help computer (F1): the current primary and secondary objectives.
+            if self.level.bsp.game == "q2" and self.show_scores {
+                lines: list[str] = [];
+                for computer in [self.world->:HasHelp:->][?:HelpComputer] {
+                    if computer.primary {
+                        lines.append("Primary: " + computer.primary);
+                    }
+                    if computer.secondary {
+                        lines.append("Secondary: " + computer.secondary);
+                    }
+                }
+                self.renderer.draw_scoreboard(
+                    "Help computer - " + self.level.name,
+                    lines if lines else ["No objectives received"],
+                    "F1: close"
+                );
+            }
             if contest is not None
                 and (
                     self.show_scores
@@ -383,8 +415,11 @@ impl App.load_destination(
     try {
         world = World();
         level = open_level(world, game_directory(game), name, game);
-        player = spawn_player(level, spawnpoint);
         carrying = carry and self.player.health > 0 and game == self.level.bsp.game;
+        runes = quantity(self.player.inventory, "runes")
+            if game == "q1" and self.level.bsp.game == "q1" and (carrying or preserve_progress)
+            else 0;
+        player = spawn_player(level, spawnpoint, returning=runes > 0 and name == "start");
         if carrying {
             # Q1 client.qc SetChangeParms clamps carried health to 50-100.
             player.health = max(50, min(100, self.player.health))
@@ -407,6 +442,7 @@ impl App.load_destination(
             );
         }
         populate_pickups(world, level, game_directory(game));
+        populate_fixtures(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
         join_match(world, player);
         populate_finale(world, level, game_directory(game));
@@ -709,6 +745,10 @@ impl App.step() -> bool {
     if intent.toggle_walk {
         self.toggle_movement();
     }
+    self.frame_dt = dt;
+    if self.level.active and not self.menu.opened {
+        self.world spawn FixtureTick(dt=dt);
+    }
     ticks = self.clock.advance(dt);
     for i in range(ticks) {
         tp = self.world spawn ThinkPass(dt=self.clock.tick_rate);
@@ -736,7 +776,12 @@ impl App.step() -> bool {
         }
         previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
         if self.level.active and not self.smoke {
-            events = self.world spawn SignalTick(dt=self.physics_clock.tick_rate);
+            events = self.world spawn SignalTick(
+                dt=self.physics_clock.tick_rate, inventory=self.player.inventory
+            );
+            for cue in events.cues {
+                self.audio.play_path(cue);
+            }
             self.world spawn SpeakerTick();
             self.world spawn BrushTick(
                 bsp=self.level.bsp,
@@ -768,6 +813,12 @@ impl App.step() -> bool {
                 self.notice = doors.message;
                 self.notice_wait = 3.0;
             }
+            self.world spawn RotatorTick(
+                bsp=self.level.bsp,
+                collision=self.level.collision,
+                dt=self.physics_clock.tick_rate,
+                player=self.player if self.walking else None
+            );
         }
         if self.walking and not self.finale_active {
             immersed = self.level.immersion(self.player.pos);
@@ -869,6 +920,8 @@ impl App.step() -> bool {
                     dt=self.physics_clock.tick_rate,
                     contacts=True
                 );
+            } else {
+                self.world spawn MonsterJumpTick();
             }
             # Swimming monsters never leave their liquid volume.
             for i in range(len(swimmers)) {
@@ -930,6 +983,17 @@ impl App.step() -> bool {
                     }
                 }
             }
+            self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
+            scripted = self.world spawn TargetTick(
+                player=self.player,
+                collision=self.level.collision,
+                state=self.combat,
+                dt=self.physics_clock.tick_rate
+            );
+            self.show_notice(scripted.message);
+            for cue in scripted.cues {
+                self.audio.play_path(cue);
+            }
             self.world spawn ProjectileTick(
                 player=self.player,
                 collision=self.level.collision,
@@ -938,6 +1002,16 @@ impl App.step() -> bool {
             );
             for impact in self.combat.impacts {
                 if impact.model >= 0 {
+                    shot = self.world spawn ShootTrigger(
+                        model=impact.model,
+                        amount=impact.amount,
+                        collision=self.level.collision,
+                        player=self.player
+                    );
+                    self.show_notice(shot.message);
+                    for cue in shot.cues {
+                        self.audio.play_path(cue);
+                    }
                     self.world spawn ShootMover(
                         model=impact.model, amount=impact.amount
                     );
@@ -951,6 +1025,17 @@ impl App.step() -> bool {
                     );
                 }
                 if impact.splash > 0 {
+                    blasted = self.world spawn ShootTrigger(
+                        origin=impact.origin,
+                        amount=impact.splash,
+                        radius=impact.radius,
+                        collision=self.level.collision,
+                        player=self.player
+                    );
+                    self.show_notice(blasted.message);
+                    for cue in blasted.cues {
+                        self.audio.play_path(cue);
+                    }
                     self.world spawn BlastMover(
                         origin=impact.origin,
                         amount=impact.splash,
@@ -998,6 +1083,13 @@ impl App.step() -> bool {
                 top_drop=self.level.collision.top_drop,
                 touching=self.walking and not self.finale_active
             );
+            for cue in triggers.cues {
+                self.audio.play_path(cue);
+            }
+            if triggers.skill >= 0 {
+                # Q1 start map halls select the skill for the next level.
+                self.skill = min(3, triggers.skill);
+            }
             if triggers.message {
                 self.notice = triggers.message;
                 self.notice_wait = 3.0;

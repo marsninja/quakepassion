@@ -12,7 +12,10 @@ import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
-import from .doors { load_doors }
+import from .rotators { load_rotators }
+import from .shooters { load_shooters }
+import from .targets { load_targets }
+import from .doors { load_doors, connect_targets, pose_doors }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
@@ -24,7 +27,7 @@ import from .spawns { active_entities }
 import from .secret_doors { load_secret_doors }
 import from .pickups { load_pickup_signals }
 import from .combat { load_opponent_signals }
-import from .triggers { load_triggers }
+import from .triggers { load_triggers, load_monster_jumps }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
@@ -367,17 +370,31 @@ def prepare_level(world: World, level: Level) {
     load_secret_doors(world, level.bsp, level.collision);
     load_brushes(world, level.bsp, level.collision);
     load_lightning(world, level.bsp);
-    load_doors(world, level.bsp, level.collision);
-    connect_electrodes(world, level.bsp);
-    load_triggers(world, level.bsp);
+    load_doors(world, level.bsp, level.collision, connect=False);
+    load_rotators(world, level.bsp, level.collision);
+    load_shooters(world, level.bsp);
+    load_targets(world, level.bsp);
     load_traversal(world, level.bsp);
+    # Resolve every activation chain once all activatable entities exist.
+    connect_targets(world, level.bsp);
+    pose_doors(world, level.bsp, level.collision);
+    connect_electrodes(world, level.bsp);
+    load_triggers(world, level.bsp, level.collision);
+    load_monster_jumps(world, level.bsp);
 }
 
-def spawn_player(level: Level, spawnpoint: str = "") -> Player {
+def spawn_player(level: Level, spawnpoint: str = "", returning: bool = False) -> Player {
+    # Q1 SelectSpawnPoint: with any rune held, the start map uses its second start.
+    kind = "info_player_start";
+    if returning
+        and level.bsp.game == "q1"
+        and any([entity.fields.get("classname", "") == "info_player_start2" for entity in level.bsp.entities]) {
+        kind = "info_player_start2";
+    }
     starts = [
         entity
         for entity in level.bsp.entities
-        if entity.fields.get("classname", "") == "info_player_start"
+        if entity.fields.get("classname", "") == kind
     ];
     if not starts {
         starts = [
@@ -399,7 +416,7 @@ def spawn_player(level: Level, spawnpoint: str = "") -> Player {
             continue;
         }
         if ent.fields.get("classname", "")
-            in ["info_player_start", "info_player_deathmatch"] {
+            in ["info_player_start", "info_player_start2", "info_player_deathmatch"] {
             coords = ent.fields.get("origin", "0 0 0").split();
             if len(coords) != 3 {
                 raise ValueError("Invalid player spawn origin");
