@@ -88,6 +88,7 @@ obj Renderer {
     def draw_combat(state: CombatState, arena: bool, ammo: int = -1);
     def draw_projectiles(world: World, hidden_effects: list[str] = []);
     def draw_terminal(message: str);
+    def draw_finale(text: str, prompt: str);
     def draw_keys(message: str);
     def draw_status(health: int, armor: int, shells: int = 0);
     def end_frame();

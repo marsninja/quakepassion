@@ -34,9 +34,9 @@ def show_brush(brush: BrushObject, active: bool, bsp: Bsp, collision: CollisionM
     }
     for h in brush.hulls {
         if active {
-            collision.disabled.discard(h);
+            collision.set_disabled(h, False);
         } else {
-            collision.disabled.add(h);
+            collision.set_disabled(h, True);
         }
     }
 }

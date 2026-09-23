@@ -6,12 +6,22 @@ edge HasTrail: World --> ShotTrail {}
 node ShotTrail {
     has start: Vec3,
         finish: Vec3,
-        remaining: float = 0.2;
+        remaining: float = 0.2,
+        kind: str = "rail";
 }
 
 def rail_trail(world: World, start: Vec3, finish: Vec3) {
     if len([world->:HasTrail:->]) < 64 {
         world +>:HasTrail:+> ShotTrail(start=start.add(Vec3()), finish=finish);
+    }
+}
+
+# Monster beams (lightning, drains) share the bounded trail budget.
+def beam_trail(world: World, start: Vec3, finish: Vec3, kind: str) {
+    if len([world->:HasTrail:->]) < 64 {
+        world +>:HasTrail:+> ShotTrail(
+            start=start.add(Vec3()), finish=finish, kind=kind, remaining=0.15
+        );
     }
 }
 

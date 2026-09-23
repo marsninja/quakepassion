@@ -189,6 +189,17 @@ impl Renderer.draw_terminal(message: str) {
 }
 
 
+impl Renderer.draw_finale(text: str, prompt: str) {
+    DrawRectangle(0, 0, i32(self.width), i32(self.height), Color(r=0, g=0, b=0, a=200));
+    lines = text.split("\n");
+    y = self.height / 2 - len(lines) * 14 - 20;
+    for line in lines {
+        DrawText(line, 80, i32(y), 22, Color(r=255, g=230, b=180, a=255));
+        y += 28;
+    }
+    DrawText(prompt, 80, i32(self.height - 70), 22, Color(r=190, g=180, b=160, a=255));
+}
+
 impl Renderer.draw_keys(message: str) {
     if message {
         DrawText(
@@ -223,13 +234,33 @@ impl Renderer.draw_loading(name: str) {
 
 impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
     for trail in [world->:HasTrail:->][?:ShotTrail] {
+        alpha = int(255.0 * min(1.0, trail.remaining / 0.2));
+        color = Color(r=100, g=160, b=255, a=u8(alpha));
+        if trail.kind == "lightning" {
+            color = Color(r=220, g=235, b=255, a=u8(alpha));
+        } elif trail.kind == "drain" {
+            color = Color(r=120, g=255, b=120, a=u8(alpha));
+        }
         DrawLine3D(
             Vector3(x=f32(trail.start.x), y=f32(trail.start.y), z=f32(trail.start.z)),
             Vector3(
                 x=f32(trail.finish.x), y=f32(trail.finish.y), z=f32(trail.finish.z)
             ),
-            Color(r=100, g=160, b=255, a=u8(255.0 * min(1.0, trail.remaining / 0.2)))
+            color
         );
+        if trail.kind == "lightning" {
+            DrawLine3D(
+                Vector3(
+                    x=f32(trail.start.x), y=f32(trail.start.y), z=f32(trail.start.z + 2.0)
+                ),
+                Vector3(
+                    x=f32(trail.finish.x),
+                    y=f32(trail.finish.y),
+                    z=f32(trail.finish.z + 2.0)
+                ),
+                Color(r=140, g=170, b=255, a=u8(alpha))
+            );
+        }
     }
     for particle in [world->:HasParticle:->][?:ImpactParticle] {
         fade = max(0.0, particle.remaining / particle.lifetime);

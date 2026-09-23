@@ -16,6 +16,7 @@ import from .doors { load_doors }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
+import from .finale { load_finale }
 import from .hazards { load_hazards }
 import from .speakers { load_speakers }
 import from .brushes { load_brushes }
@@ -123,14 +124,13 @@ obj Level {
         return sample.result;
     }
 
-    def immersion(eye: Vec3) -> Immersion {
+    def immersion(eye: Vec3, eye_height: float = -1.0) -> Immersion {
         result = Immersion();
-        origin = eye.sub(Vec3(z=self.collision.eye_height));
-        for height in [
-            -23.0,
-            (self.collision.eye_height - 24.0) * 0.5,
-            self.collision.eye_height
-        ] {
+        if eye_height < 0.0 {
+            eye_height = self.collision.eye_height;
+        }
+        origin = eye.sub(Vec3(z=eye_height));
+        for height in [-23.0, (eye_height - 24.0) * 0.5, eye_height] {
             kind = self.liquid_at(origin.add(Vec3(z=height)));
             if kind == 0 {
                 break;
@@ -360,6 +360,7 @@ def prepare_level(world: World, level: Level) {
     load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_trains(world, level.bsp, level.collision);
+    load_finale(world, level.bsp);
     load_hazards(world, level.bsp);
     load_speakers(world, level.bsp);
     load_secret_doors(world, level.bsp, level.collision);

@@ -6,6 +6,15 @@ Method bodies live in impl/app.impl.jac."""
 import from ..world.doors { BlastMover }
 import from ..world.gates { ApplyGates, rune_summary }
 import from ..world.chthon { ChthonTick }
+import from ..world.finale {
+    FinaleTick,
+    Finale,
+    HasFinale,
+    intermission_camera,
+    episode_text,
+    RUNES_TEXT,
+    VICTORY_TEXT
+}
 import from ..world.trains { TrainTick, ShootMover }
 import from ..world.signals { SignalTick, progress_summary }
 import from ..world.hazards { HazardTick }
@@ -21,13 +30,16 @@ import from .savegame { snapshot, restore, write_save, read_save }
 import from ..world.doors { DoorTick }
 import from ..world.triggers { TriggerTick }
 import from ..world.traversal { TraversalTick }
-import from ..world.exits { ExitTick, exit_map, exit_spawn }
+import from ..world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
+import from ..world.exits { ExitTick, exit_map, exit_spawn, exit_cinematic }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
 import from ..world.inventory { quantity, CopyInventory, key_summary, AdjustInventory }
 import from ..world.combat {
     CombatState,
     CombatTick,
+    Opponent,
+    HasOpponent,
     ProjectileTick,
     fire_weapon,
     weapon_input,
@@ -35,7 +47,7 @@ import from ..world.combat {
     selected_weapon
 }
 import from ..world.light_effects { combat_lights }
-import from games.opponents { populate_opponents }
+import from games.opponents { populate_opponents, populate_finale }
 import from games.items { populate_pickups }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
@@ -101,6 +113,7 @@ obj App {
         invert_y: bool = False,
         god_mode: bool = False,
         jump_pending: bool = False,
+        arena_contacts: ArenaContactIndex = ArenaContactIndex(),
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
         movement_status: str = "F4: walk / fly",
         save_path: str = "",
@@ -108,6 +121,15 @@ obj App {
         notice_wait: float = 0.0;
 
     has expedition_complete: bool = False;
+    has finale_text: str = "",
+        finale_active: bool = False,
+        intermission_text: str = "",
+        pending_map: str = "",
+        pending_spawn: str = "",
+        pending_unit: bool = False,
+        campaign_complete: bool = False,
+        runes_message: bool = False;
+    def begin_intermission(text: str);
 
     def adjust_setting(direction: int);
     def reset_settings();

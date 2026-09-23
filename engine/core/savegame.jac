@@ -10,6 +10,13 @@ import from engine.world.trains {
     train_position
 }
 import from engine.world.hazards { Hazard, HasHazard }
+import from engine.world.finale {
+    TeleportTrain,
+    HasTeleportTrain,
+    Finale,
+    HasFinale,
+    SHUB_TEXT
+}
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.brushes { BrushObject, HasBrush, show_brush }
 import math;
@@ -19,6 +26,10 @@ import from engine.world.level { Level }
 import from engine.world.combat {
     attack_duration,
     attack_event_count,
+    current_profile,
+    ensure_profiles,
+    pain_length,
+    select_profile,
     CombatState,
     Opponent,
     HasOpponent,
@@ -125,7 +136,9 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         projectile.beam_wait,
                         projectile.burst_wait,
                         float(projectile.phase),
-                        projectile.age
+                        projectile.age,
+                        projectile.homing,
+                        projectile.homing_wait
                     ]
                 )
         );
@@ -156,15 +169,24 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         enemy.boss_time,
                         enemy.attack_clock,
                         float(enemy.attack_event),
-                        1.0 if enemy.attack_melee else 0.0,
+                        float(enemy.attack_profile),
                         enemy.pain_wait,
                         enemy.pain_cooldown,
                         float(enemy.shot_random),
                         float(enemy.burst_count),
-                        1.0 if enemy.alternate_melee else 0.0,
+                        1.0 if enemy.leaping else 0.0,
                         enemy.attack_target.x,
                         enemy.attack_target.y,
-                        enemy.attack_target.z
+                        enemy.attack_target.z,
+                        1.0 if enemy.pain_down else 0.0,
+                        float(enemy.pain_variant),
+                        enemy.velocity.x,
+                        enemy.velocity.y,
+                        enemy.velocity.z,
+                        1.0 if enemy.grounded else 0.0,
+                        float(enemy.armor),
+                        float(enemy.armor_capacity),
+                        enemy.armor_ratio
                     ]
                 )
         );
@@ -302,6 +324,23 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for event in [world->:HasLightning:->][?:LightningEvent] {
         lines.append("L " + str(event.remaining));
     }
+    for ball in [world->:HasTeleportTrain:->][?:TeleportTrain] {
+        lines.append(
+            "K "
+                + numbers(
+                    [
+                        float(ball.current.entity),
+                        float(ball.destination.entity)
+                            if ball.destination is not None
+                            else -1.0,
+                        ball.pos.x,
+                        ball.pos.y,
+                        ball.pos.z,
+                        ball.yaw
+                    ]
+                )
+        );
+    }
     return "\n".join(lines) + "\n";
 }
 
@@ -369,6 +408,8 @@ def restore(
     enemies = [world->:HasOpponent:->][?:Opponent];
     lightning = [world->:HasLightning:->][?:LightningEvent];
     l = 0;
+    teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
+    k = 0;
     pickups = [world->:HasPickup:->][?:Pickup];
     doors = [world->:HasDoor:->][?:Door];
     signals = [world->:HasSignal:->][?:Signal];
@@ -409,7 +450,7 @@ def restore(
             }
             manifest_seen = True;
         } elif words[0] in ["J", "X"] {
-            row = values(" ".join(words[2:]), 19);
+            row = values(" ".join(words[2:]), 21);
             effect = "" if words[1] == "-" else words[1];
             if len(effect) > 64
                 or not all(c.isalnum() or c == "_" for c in effect)
@@ -447,6 +488,13 @@ def restore(
                 or row[17] not in [0.0, 1.0, 2.0] {
                 raise ValueError("Invalid saved projectile phase");
             }
+            if row[19] < 0.0
+                or row[19] > 10000.0
+                or row[20] < 0.0
+                or row[20] > 0.2
+                or (row[19] > 0.0 and words[0] != "X") {
+                raise ValueError("Invalid saved projectile homing");
+            }
             world +>:HasProjectile:+> Projectile(
                 pos=Vec3(x=row[0], y=row[1], z=row[2]),
                 velocity=Vec3(x=row[3], y=row[4], z=row[5]),
@@ -464,6 +512,8 @@ def restore(
                 phase=int(row[17]),
                 effect=effect,
                 age=row[18],
+                homing=row[19],
+                homing_wait=row[20],
                 hostile=words[0] == "X"
             );
         } elif words[0] == "I" and len(words) == 4 {
@@ -475,6 +525,28 @@ def restore(
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
             );
+        } elif words[0] == "K" and k < len(teleport_trains) {
+            row = values(" ".join(words[1:]), 6);
+            ball = teleport_trains[k];
+            k += 1;
+            ball_current = [
+                point
+                for point in tracks
+                if float(point.entity) == row[0]
+            ];
+            ball_destination = [
+                point
+                for point in tracks
+                if float(point.entity) == row[1]
+            ];
+            if len(ball_current) != 1
+                or (row[1] != -1.0 and len(ball_destination) != 1) {
+                raise ValueError("Invalid saved teleport train path");
+            }
+            ball.current = ball_current[0];
+            ball.destination = ball_destination[0] if ball_destination else None;
+            ball.pos = Vec3(x=row[2], y=row[3], z=row[4]);
+            ball.yaw = row[5];
         } elif words[0] == "L" and l < len(lightning) {
             row = values(" ".join(words[1:]), 1);
             if row[0] < 0.0 or row[0] > 1.0 {
@@ -483,9 +555,23 @@ def restore(
             lightning[l].remaining = row[0];
             l += 1;
         } elif words[0] == "E" and e < len(enemies) {
-            row = values(" ".join(words[1:]), 22);
+            row = values(" ".join(words[1:]), 31);
             enemy = enemies[e];
             e += 1;
+            if row[27] not in [0.0, 1.0] {
+                raise ValueError("Invalid saved opponent ground state");
+            }
+            ensure_profiles(enemy);
+            enemy.velocity = Vec3(x=row[24], y=row[25], z=row[26]);
+            enemy.grounded = row[27] != 0.0;
+            if row[28] < 0.0 or row[28] != float(int(row[28]))
+                or row[29] < row[28] or row[29] != float(int(row[29]))
+                or row[30] < 0.0 or row[30] > 1.0 {
+                raise ValueError("Invalid saved opponent armor");
+            }
+            enemy.armor = int(row[28]);
+            enemy.armor_capacity = int(row[29]);
+            enemy.armor_ratio = row[30];
             enemy.pos = Vec3(x=row[0], y=row[1], z=row[2]);
             enemy.health = int(row[3]);
             enemy.yaw = row[4];
@@ -500,45 +586,63 @@ def restore(
                 or row[9] > 7.0
                 or row[9] != float(int(row[9]))
                 or row[10] < 0.0
-                or row[10] > 2.3 {
+                or row[10] > 60.0 {
                 raise ValueError("Invalid saved boss state");
             }
             enemy.boss_phase = int(row[9]);
             enemy.boss_time = row[10];
             enemy.visual.visible = (enemy.health > 0 or bool(enemy.death_animation))
-                and not enemy.dormant;
+                and not enemy.dormant
+                and not (enemy.health <= 0 and enemy.rule.vanish_on_death);
+            if row[13] < -1.0
+                or row[13] != float(int(row[13]))
+                or int(row[13]) >= len(enemy.profiles)
+                or (row[11] >= 0.0 and row[13] < 0.0) {
+                raise ValueError("Invalid saved attack selection");
+            }
+            select_profile(enemy, int(row[13]));
+            profile = current_profile(enemy);
             if row[17] < 1.0
-                or row[17] > float(enemy.rule.burst_max)
-                or row[17] != float(int(row[17])) {
+                or row[17] > float(max(1, profile.burst_max))
+                or row[17] != float(int(row[17]))
+                or (row[17] > 1.0 and enemy.attack_melee) {
                 raise ValueError("Invalid saved burst length");
             }
             enemy.burst_count = int(row[17]);
-            if row[13] not in [0.0, 1.0]
-                or (row[13] == 1.0 and enemy.burst_count != 1) {
-                raise ValueError("Invalid saved melee selection");
+            if row[18] not in [0.0, 1.0] {
+                raise ValueError("Invalid saved leap state");
             }
-            enemy.attack_melee = row[13] != 0.0;
-            if row[18] not in [0.0, 1.0]
-                or (
-                    row[18] == 1.0
-                    and (not enemy.attack_melee or not enemy.rule.alternate_melee_times)
-                ) {
-                raise ValueError("Invalid saved alternate melee selection");
-            }
-            enemy.alternate_melee = row[18] != 0.0;
+            enemy.leaping = row[18] != 0.0;
             enemy.attack_target = Vec3(x=row[19], y=row[20], z=row[21]);
+            if row[22] not in [0.0, 1.0]
+                or (row[22] != 0.0 and enemy.rule.knockdown_duration <= 0.0)
+                or row[23] < 0.0
+                or row[23] != float(int(row[23]))
+                or int(row[23]) > len(enemy.rule.pain_variants) {
+                raise ValueError("Invalid saved pain state");
+            }
+            enemy.pain_down = row[22] != 0.0;
+            enemy.pain_variant = int(row[23]);
             enemy.route = [];
+            enemy.route_launches = [];
+            enemy.arena_goal = None;
+            enemy.arena_goal_wait = 0.0;
+            if enemy.route_search is not None {
+                enemy.route_search.cancelled = True;
+                enemy.route_search = None;
+            }
             enemy.route_wait = 0.0;
+            enemy.navigation_needed = False;
             if row[11] < -1.0
                 or row[11] > attack_duration(enemy)
                 or row[12] < 0.0
                 or row[12] > float(attack_event_count(enemy))
                 or row[12] != float(int(row[12]))
-                or row[13] not in [0.0, 1.0]
                 or row[14] < 0.0
-                or row[14] > enemy.rule.pain_duration
+                or row[14] > pain_length(enemy) + 0.000001
                 or row[15] < 0.0
-                or row[15] > enemy.rule.pain_interval {
+                or row[15]
+                    > max(enemy.rule.pain_interval, enemy.rule.knockdown_duration) {
                 raise ValueError("Invalid saved attack state");
             }
             if row[16] < 1.0
@@ -549,7 +653,6 @@ def restore(
             enemy.shot_random = int(row[16]);
             enemy.attack_clock = row[11];
             enemy.attack_event = int(row[12]);
-            enemy.attack_melee = row[13] != 0.0;
             enemy.attack_flash = max(0.0, attack_duration(enemy) - enemy.attack_clock)
                 if enemy.attack_clock >= 0.0
                 else 0.0;
@@ -622,9 +725,7 @@ def restore(
                     level.bsp.faces[face].motion = motion;
                 }
                 for i in range(len(part.hulls)) {
-                    level.collision.offsets[part.hulls[i]] = part.origins[i].add(
-                        motion
-                    );
+                    level.collision.set_offset(part.hulls[i], part.origins[i].add(motion));
                 }
             }
         } elif words[0] == "R" and r < len(trains) {
@@ -771,8 +872,22 @@ def restore(
         or o != len(progress_records)
         or a != len(speakers)
         or b != len(brushes)
-        or l != len(lightning) {
+        or l != len(lightning)
+        or k != len(teleport_trains) {
         raise ValueError("Save does not match this map's entities");
+    }
+    for finale in [world->:HasFinale:->][?:Finale] {
+        finale.camera = False;
+        finale.text = "";
+        for boss in enemies {
+            if boss.rule.script == "shub" and boss.boss_phase >= 1 {
+                finale.camera = True;
+                if boss.boss_phase >= 3 {
+                    finale.text = SHUB_TEXT;
+                    boss.visual.visible = False;
+                }
+            }
+        }
     }
     world spawn ApplyGates(
         inventory=player.inventory, bsp=level.bsp, collision=level.collision

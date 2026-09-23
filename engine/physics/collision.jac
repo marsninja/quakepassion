@@ -245,8 +245,21 @@ def group_hulls(bounds: list[AABB], indices: list[int], depth: int = 0) -> HullG
     return group;
 }
 
+# Shared by actor hull views; consumers can observe changes without scanning
+# every static brush each simulation tick.
+obj CollisionRevision {
+    has serial: int = 0,
+        changes: dict[int, int] = {};
+
+    def touch(index: int) {
+        self.serial += 1;
+        self.changes[index] = self.serial;
+    }
+}
+
 obj CollisionMap {
-    has hulls: list[HullCell] = [],
+    has revision: CollisionRevision = CollisionRevision(),
+        hulls: list[HullCell] = [],
         point_hulls: list[HullCell] = [],
         offsets: list[Vec3] = [],
         models: list[int] = [],
@@ -259,6 +272,7 @@ obj CollisionMap {
     # Share live geometry and mover offsets, but keep actor stance independent.
     def for_body(height: float, drop: float = 0.0) -> CollisionMap {
         return CollisionMap(
+            revision=self.revision,
             hulls=self.hulls,
             point_hulls=self.point_hulls,
             offsets=self.offsets,
@@ -269,6 +283,20 @@ obj CollisionMap {
             eye_height=height,
             top_drop=drop
         );
+    }
+
+    def set_offset(index: int, offset: Vec3) {
+        old = self.offsets[index];
+        if old.x == offset.x and old.y == offset.y and old.z == offset.z { return; }
+        self.offsets[index] = offset;
+        self.revision.touch(index);
+    }
+
+    def set_disabled(index: int, disabled: bool) {
+        if (index in self.disabled) == disabled { return; }
+        if disabled { self.disabled.add(index); }
+        else { self.disabled.discard(index); }
+        self.revision.touch(index);
     }
 
     def add_box(lo: Vec3, hi: Vec3, offset: Vec3, mins: Vec3, maxs: Vec3) {

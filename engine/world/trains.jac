@@ -65,7 +65,7 @@ def train_position(train: Train, motion: Vec3, bsp: Bsp, collision: CollisionMap
         bsp.faces[face].motion = motion;
     }
     for i in range(len(train.hulls)) {
-        collision.offsets[train.hulls[i]] = train.origins[i].add(motion);
+        collision.set_offset(train.hulls[i], train.origins[i].add(motion));
     }
 }
 

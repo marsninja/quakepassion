@@ -29,9 +29,9 @@ walker ApplyGates {
         }
         for index in here.hulls {
             if solid {
-                self.collision.disabled.discard(index);
+                self.collision.set_disabled(index, False);
             } else {
-                self.collision.disabled.add(index);
+                self.collision.set_disabled(index, True);
             }
         }
     }

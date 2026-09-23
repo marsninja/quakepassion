@@ -50,11 +50,29 @@ walker ExitTick {
     }
 }
 
+# A leading cinematic ("name.cin+") is skipped; "victory.pcx" ends the campaign.
+def exit_cinematic(request: str) -> str {
+    name = request.split("$")[0];
+    if "+" in name {
+        prefix = name.split("+")[0];
+        if prefix.endswith(".cin") {
+            return prefix[:-4];
+        }
+    }
+    return "";
+}
+
 # Keep the unit marker and spawnpoint in the request; only the asset name is normalized.
 def exit_map(request: str) -> str {
     name = request.split("$")[0];
+    if "+" in name {
+        name = name.split("+")[-1];
+    }
     if name.startswith("*") {
         name = name[1:];
+    }
+    if name.endswith(".pcx") and "/" not in name and "\\" not in name {
+        return name;
     }
     if not name or "/" in name or "\\" in name or "." in name {
         raise ValueError("Invalid destination map");
