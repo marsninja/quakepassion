@@ -137,11 +137,13 @@ movers remain beyond this prototype. Q3 material support is partial; see
 See [Q1 results](docs/quake1-rendering-status.md) and
 [Q2/Q3 results, compiler fixes, and limitations](docs/quake2-quake3-rendering-status.md).
 
-[Passion](docs/passion.md) is the fourth mode: twenty-room seeded expeditions,
-using original assets from all three games with shared collision and gameplay.
-It adds loops, separated objectives, stairs, cover, optional caches and an elevated
-bridge. Generation checks connector clearance before the level is accepted.
-The versioned seed is saved with the world and its asset-reference manifest.
+[Passion](docs/passion.md) is the fourth mode: seeded expeditions built from
+original assets of all three games. A cyclic mission grammar (keys, switches,
+guardians, valves, shortcuts, secrets) is embedded as rooms and A*-routed stair
+corridors, dressed by recipe interiors and wave-function-collapse cover, paced
+by an encounter director, and chosen from several candidates by quality and
+diversity. Every expedition is proven completable in its own geometry before it
+is played. The versioned seed is saved with the world and its asset manifest.
 
 Shared moving doors: [behavior, limits and validation](docs/doors-status.md).
 
