@@ -12,6 +12,7 @@ import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
+import from .bot_character { BotCharacter }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
@@ -100,7 +101,39 @@ node Opponent(Player) {
         holding: bool = False,
         patrol_wait: float = 0.0,
         patrol_speed: float = 0.0,
-        walk_animation: list[int] = [];
+        walk_animation: list[int] = [],
+        character: BotCharacter | None = None,
+        weapon_slot: int = 2,
+        weapon_wait: float = 0.0,
+        weapon_change: float = 1.0,
+        enemy_sight: float = 0.0,
+        enemy_sample: float = 0.0,
+        enemy_origin: Vec3 = Vec3(),
+        enemy_velocity: Vec3 = Vec3(),
+        aim_target: Vec3 = Vec3(),
+        think_wait: float = 0.0,
+        throttle_wait: float = 0.0,
+        throttle_shoot: float = 0.0,
+        strafe: float = 1.0,
+        strafe_wait: float = 0.0,
+        jump_wait: float = 0.0,
+        fighting: bool = False;
+}
+
+# Q3 bg_pmove.c: dropping then raising a weapon before it can fire.
+glob WEAPON_SWITCH_TIME: float = 0.45;
+
+"""g_client.c ClientSpawn arms every Q3 player, bots included, with a
+gauntlet, a machine gun and 100 bullets."""
+def arm_bot(bot: Opponent) {
+    bot.inventory spawn AdjustInventory(kind="weapon_gauntlet", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="weapon_machinegun", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="bullets", amount=100, capacity=200);
+    bot.weapon_slot = 2;
+    bot.weapon_wait = 0.0;
+    bot.weapon_change = WEAPON_SWITCH_TIME;
+    bot.fighting = False;
+    bot.enemy_sight = 0.0;
 }
 
 """Q1 ai.qc / Q2 g_ai.c FindTarget: idle monsters never notice beyond 1000 units,
@@ -164,7 +197,9 @@ obj CombatState {
         sight_wait: float = 0.0,
         navigation: RouteQueue = RouteQueue(),
         navmesh: NavMesh | None = None,
-        navmesh_checked: bool = False;
+        navmesh_checked: bool = False,
+        rail_streak: int = 0,
+        awards: list[str] = [];
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -799,7 +834,22 @@ def fire_weapon(
         }
     }
     for i in range(len(victims)) {
-        damage_opponent(victims[i], amounts[i], player.inventory, state, attacker=player);
+        damage_opponent(
+            victims[i], amounts[i], player.inventory, state, attacker=player, means=rule.key
+        );
+    }
+    # g_weapon.c: every two railgun hits in a row earn Impressive; a miss
+    # resets the count.
+    if state.game == "q3" and rule.key == "railgun" {
+        if victims {
+            state.rail_streak += 1;
+            if state.rail_streak >= 2 {
+                state.rail_streak -= 2;
+                state.awards.append("impressive");
+            }
+        } else {
+            state.rail_streak = 0;
+        }
     }
     return True;
 }
@@ -1941,12 +1991,27 @@ walker CombatTick {
                 }
             }
         }
+        # ai_dmq3.c BotFindEnemy: alert characters see further, and a new
+        # enemy must be inside a 90 degree view unless it is close or firing.
+        mind = bot.character;
+        reach = 900.0 + mind.alertness * 4000.0 if mind is not None else 1500.0;
         best: Player = self.player;
         best_distance = 100000.0;
         for candidate in candidates {
             distance = candidate.pos.sub(bot.pos).length();
-            if distance >= best_distance or distance > 1500.0 {
+            if distance >= best_distance or distance > reach {
                 continue;
+            }
+            if mind is not None and distance > 100.0 {
+                firing = candidate.attack_flash > 0.0
+                    if isinstance(candidate, Opponent)
+                    else self.state.flash > 0.0;
+                toward = candidate.pos.sub(bot.pos);
+                bearing = math.atan2(toward.y, toward.x);
+                off = abs(math.atan2(math.sin(bearing - bot.yaw), math.cos(bearing - bot.yaw)));
+                if not firing and off > math.pi / 4.0 {
+                    continue;
+                }
             }
             sight = self.collision.trace_point(bot.pos, candidate.pos);
             if sight.start_solid or sight.fraction < 1.0 {
@@ -2142,6 +2207,9 @@ walker CombatTick {
             here.health = here.max_health + 25;
             here.armor = 0;
             here.inventory = Inventory();
+            if here.character is not None {
+                arm_bot(here);
+            }
             here.gibbed = False;
             here.remains = 0;
             here.foe = None;
@@ -2261,6 +2329,7 @@ walker CombatTick {
                 # Attack only with a fresh sight query, never cached visibility.
                 if here.pursuing
                     and not here.holding
+                    and here.character is None
                     and here.attack_wait <= 0.0
                     and here.pain_wait <= 0.0
                     and here.attack_clock < 0.0
@@ -2289,9 +2358,13 @@ walker CombatTick {
             if here.alert <= 0.0 and not here.pursuing {
                 here.sighted = False;
             }
-            here.steering = Vec3();
+            # A fighting bot steers itself (BotTactics); others steer here.
+            if not here.fighting {
+                here.steering = Vec3();
+            }
             destination = here.arena_goal if here.arena_goal is not None else here.last_seen;
-            goal_height = here.last_seen_height;
+            # Arena goals sit at the bot's own eye height above the item.
+            goal_height = here.eye_height if here.arena_goal is not None else here.last_seen_height;
             # Patrol corners and Q2 combat points take precedence over the foe.
             patrol = here.patrol_goal;
             if patrol is not None {
@@ -2342,6 +2415,13 @@ walker CombatTick {
                     plan = plan_route(mesh, origin, target);
                     here.route_wait = 0.25 if plan.found else 1.0;
                     here.route_target = target;
+                    # botlib avoids goals it cannot route to; pick another.
+                    if not plan.found and here.arena_goal is not None {
+                        here.roam_goal = None;
+                        here.arena_goal = None;
+                        here.arena_goal_wait = 0.0;
+                        here.route_wait = 0.1;
+                    }
                     if plan.found {
                         here.route = plan.points;
                         here.route_launches = plan.launches;
@@ -2366,6 +2446,7 @@ walker CombatTick {
             }
             goal = destination.sub(here.pos);
             if (here.alert > 0.0 or patrol is not None)
+                and not here.fighting
                 and here.pain_wait <= 0.0
                 and here.attack_flash <= 0.0
                 and not here.leaping
@@ -2450,6 +2531,7 @@ walker CombatTick {
         mesh = self.navmesh;
         if here.arena
             and mesh is not None
+            and not here.fighting
             and here.route
             and len(here.route_areas) == len(here.route)
             and here.attack_clock < 0.0 {
@@ -2482,7 +2564,7 @@ walker CombatTick {
                 }
             }
         }
-        if self.world is not None {
+        if self.world is not None and here.character is None {
             advance_attack(
                 self.world, here, foe, self.collision, self.dt, self.player, self.state
             );
@@ -2498,14 +2580,16 @@ walker CombatTick {
         # Bots keep steering over stair steps and drops, but not while a jump or
         # pad launch is still carrying them upward.
         wish = Vec3()
-            if here.pain_wait > 0.0 or here.attack_flash > 0.0 or here.leaping
+            if here.pain_wait > 0.0
+                or (here.attack_flash > 0.0 and here.character is None)
+                or here.leaping
                 or (here.arena and not here.grounded and here.velocity.z > 100.0)
             else here.steering;
         facing = here.patrol_goal;
         if facing is None and here.alert > 0.0 {
             facing = here.last_seen;
         }
-        if facing is not None {
+        if facing is not None and not here.fighting {
             goal = facing.sub(here.pos);
             target_yaw = math.atan2(goal.y, goal.x);
             turn = math.atan2(

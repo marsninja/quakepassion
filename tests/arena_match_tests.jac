@@ -257,3 +257,35 @@ test "players join once with spawn health and match state survives saves" {
     assert scores[0].frags == 4 and scores[1].deaths == 2 and contest.warmup == 2.0;
     assert contest.fraglimit == 7;
 }
+
+test "quick frags, gauntlet frags and flawless wins earn the original awards" {
+    contest = contest_with(["Ranger", "Phobos"]);
+    contest.fraglimit = 3;
+    player = Player(health=125);
+    contest +>:Competes:name="You", human=True:+> player;
+    actors = [contest->:Competes:->];
+    ranger = actors[0];
+    phobos = actors[1];
+    ranger.health = 0;
+    ranger.killer = player;
+    first = contest spawn MatchTick(dt=0.5);
+    assert "sound/feedback/excellent.wav" not in first.cues;
+    phobos.health = 0;
+    phobos.killer = player;
+    phobos.death_means = "gauntlet";
+    second = contest spawn MatchTick(dt=0.5);
+    assert "sound/feedback/excellent.wav" in second.cues;
+    assert "sound/feedback/humiliation.wav" in second.cues;
+    rows = [edge contest->:Competes:->];
+    assert rows[2].excellent == 1 and rows[2].humiliation == 1;
+    ranger.health = 100;
+    contest spawn MatchTick(dt=5.0);
+    ranger.health = 0;
+    ranger.killer = player;
+    ranger.death_means = "";
+    last = contest spawn MatchTick(dt=0.5);
+    # Three frags and no deaths: the match is won Perfect, but not Excellent.
+    assert last.ended and "sound/player/announce/youwin.wav" in last.cues;
+    assert "sound/feedback/perfect.wav" in last.cues;
+    assert "sound/feedback/excellent.wav" not in last.cues;
+}

@@ -235,3 +235,8 @@ barrels, fixtures and ambience. Snapshot format 20.
 awareness and hearing, idle path-corner patrols and Q2 combat points,
 infighting by the Q1/Q2 rules, and gibbing into the original models with
 shootable Q2/Q3 corpses. Snapshot format 21.
+
+[Q3 bot tactics](bot-tactics-status.md): map-wide routing over the maps' own AAS
+data, botlib characters and weapon weights, original weapon choice, aim, view
+turning, reaction and fire throttle, combat movement, real weapon fire, and the
+Excellent, Impressive, Humiliation and Perfect awards.

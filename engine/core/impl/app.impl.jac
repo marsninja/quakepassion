@@ -891,12 +891,29 @@ impl App.step() -> bool {
                     active=self.walking,
                     arena_live=arena_live
                 );
+                if contest is not None {
+                    self.world spawn BotTactics(
+                        player=self.player,
+                        collision=self.level.collision,
+                        state=self.combat,
+                        rules=self.combat.rules,
+                        dt=self.physics_clock.tick_rate
+                    );
+                }
             }
             if contest is not None and not contest.finished {
                 tally = contest spawn MatchTick(dt=self.physics_clock.tick_rate);
                 for cue in tally.cues {
                     self.audio.play_path(cue);
                 }
+                for award in self.combat.awards {
+                    if award == "impressive" {
+                        credit_impressive(contest, self.player);
+                        self.audio.play_path("sound/feedback/impressive.wav");
+                        self.show_notice("Impressive!");
+                    }
+                }
+                self.combat.awards = [];
                 for message in tally.messages {
                     self.show_notice(message);
                 }

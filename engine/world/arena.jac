@@ -26,7 +26,11 @@ edge Competes: ArenaMatch --> Actor {
         frags: int = 0,
         deaths: int = 0,
         down: bool = False,
-        human: bool = False;
+        human: bool = False,
+        excellent: int = 0,
+        impressive: int = 0,
+        humiliation: int = 0,
+        last_frag: float = -100.0;
 }
 
 edge HasSpawn: World --> SpawnPoint {}
@@ -61,6 +65,17 @@ def standings(contest: ArenaMatch) -> list[Standing] {
         ordered.insert(index, row);
     }
     return ordered;
+}
+
+"""Count an Impressive for a competitor on its Competes edge."""
+def credit_impressive(contest: ArenaMatch, actor: Actor) {
+    entries = [edge contest->:Competes:->];
+    actors = [contest->:Competes:->];
+    for i in range(len(actors)) {
+        if actors[i] is actor {
+            entries[i].impressive += 1;
+        }
+    }
 }
 
 def competitor_name(contest: ArenaMatch, actor: Actor) -> str {
@@ -148,6 +163,23 @@ walker MatchTick {
                 continue;
             }
             entries[credited].frags += 1;
+            # g_combat.c rewards: two frags within CARNAGE_REWARD_TIME is
+            # Excellent; a gauntlet frag is Humiliation.
+            winner = entries[credited];
+            if here.elapsed - winner.last_frag < 3.0 {
+                winner.excellent += 1;
+                if winner.human {
+                    self.cues.append("sound/feedback/excellent.wav");
+                    self.messages.append("Excellent!");
+                }
+            }
+            winner.last_frag = here.elapsed;
+            if actor.death_means == "gauntlet" {
+                winner.humiliation += 1;
+                if winner.human or score.human {
+                    self.cues.append("sound/feedback/humiliation.wav");
+                }
+            }
             if entries[credited].human {
                 self.messages.append("You fragged " + score.name);
             } elif score.human {
@@ -176,6 +208,11 @@ walker MatchTick {
                     if human_won
                     else "sound/player/announce/" + here.winner.lower() + "_wins.wav"
             );
+            # A win without a single death is Perfect.
+            if any([score.human and score.frags == best and score.deaths == 0 for score in entries]) {
+                self.cues.append("sound/feedback/perfect.wav");
+                self.messages.append("Perfect!");
+            }
             self.messages.append(
                 "You win!" if human_won else here.winner + " wins the match"
             );

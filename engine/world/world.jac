@@ -58,7 +58,8 @@ node Actor(Entity) {
         armor_capacity: int = 200,
         armor_ratio: float = 0.0,
         inventory: Inventory = Inventory(),
-        killer: Actor | None = None;
+        killer: Actor | None = None,
+        death_means: str = "";
 }
 
 node Player(Actor) {

@@ -12,7 +12,10 @@ import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, Has
 import from engine.formats.bsp { MapEntity }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
-import from engine.world.combat { Opponent, HasOpponent, ensure_profiles }
+import from engine.world.combat { Opponent, HasOpponent, ensure_profiles, arm_bot }
+import from engine.world.bot_tactics { Q3_FIRE_SOUNDS }
+import from engine.world.bot_character { bot_skill }
+import from .botfiles { load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
@@ -386,6 +389,16 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     enemy.animation = enemy.idle_animation;
                 }
                 enemy.modeled = True;
+            }
+            if arena {
+                # The bot's own botlib character, at the Q3 skill for this level.
+                enemy.character = load_bot_character(
+                    catalog.source("q3"), bot.aifile, bot_skill(level.skill)
+                );
+                arm_bot(enemy);
+                for path in Q3_FIRE_SOUNDS {
+                    register_speaker(world, enemy, path);
+                }
             }
             if not arena {
                 enemy.patrol_speed = patrol_speed(source, kind);

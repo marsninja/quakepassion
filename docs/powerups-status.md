@@ -58,7 +58,8 @@ pickup entities change the positional records, so older saves are rejected.
 ## Limits
 
 The status bar is still the shared text HUD. Original status bar art and icons
-belong to the presentation milestone. The silencer quiets the player's own shots,
-but monsters do not yet hear gunfire, so it has no AI effect. The Q3 personal
+belong to the presentation milestone. The silencer quiets the player's own
+shots, and silenced shots no longer alert monsters that hear gunfire (see
+[monster behaviour](monster-behaviour-status.md)). The Q3 personal
 teleporter picks a random deathmatch spawn other than the nearest; it does not
 yet telefrag occupants.

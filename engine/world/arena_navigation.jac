@@ -18,8 +18,50 @@ def contact_bounds(start: Vec3, finish: Vec3, bounds: AABB) -> bool {
 }
 
 glob ARENA_ITEM_KINDS: list[str] = [
-    "health", "armor", "powerup", "holdable_medkit", "holdable_teleporter"
+    "health", "armor", "powerup", "holdable_medkit", "holdable_teleporter",
+    "weapon_shotgun", "weapon_grenadelauncher", "weapon_rocketlauncher",
+    "weapon_lightning", "weapon_railgun", "weapon_plasmagun", "weapon_bfg",
+    "weapon_machinegun", "bullets", "shells", "grenades", "rockets", "lightning",
+    "slugs", "cells", "bfg"
 ];
+
+# Which weapon each Q3 ammo type feeds.
+glob AMMO_WEAPONS: dict[str, str] = {
+    "bullets": "machinegun",
+    "shells": "shotgun",
+    "grenades": "grenadelauncher",
+    "rockets": "rocketlauncher",
+    "lightning": "lightning",
+    "slugs": "railgun",
+    "cells": "plasmagun",
+    "bfg": "bfg"
+};
+
+"""Whether an item is worth a detour to a bot: health and armor it lacks,
+powerups, a holdable when it has none, a weapon it does not own, and ammo for
+a weapon it carries that is running low (the fw_items.c needs, simplified)."""
+def bot_wants(bot: Opponent, kind: str, amount: int, holding: bool) -> bool {
+    if kind == "health" {
+        return bot.health < bot.max_health;
+    }
+    if kind == "armor" {
+        return bot.armor < amount;
+    }
+    if kind == "powerup" {
+        return True;
+    }
+    if kind.startswith("holdable_") {
+        return not holding;
+    }
+    if kind.startswith("weapon_") {
+        return quantity(bot.inventory, kind) <= 0;
+    }
+    if kind in AMMO_WEAPONS {
+        return quantity(bot.inventory, "weapon_" + AMMO_WEAPONS[kind]) > 0
+            and quantity(bot.inventory, kind) < 50;
+    }
+    return False;
+}
 
 # Authored contacts are static; bucket membership is built once for each world.
 # Entries hold live nodes, so pickup respawns and disabled portals remain current.
@@ -203,19 +245,17 @@ walker ArenaNavigationTick {
             if not pickup.active or pickup.waiting_for_use { continue; }
             kind = pickup.rule.kind;
             holding = any([quantity(here.inventory, held) > 0 for held in stored_kinds("q3")]);
-            useful = (kind == "health" and here.health < here.max_health)
-                or (kind == "armor" and here.armor < pickup.rule.amount)
-                or kind == "powerup"
-                or (kind.startswith("holdable_") and not holding);
-            if not useful { continue; }
+            if not bot_wants(here, kind, pickup.rule.amount, holding) { continue; }
             mesh = self.mesh;
             if mesh is not None
                 and not reachable(mesh, here.pos.sub(Vec3(z=here.eye_height)), pickup.pos) {
                 continue;
             }
             distance = pickup.pos.sub(here.pos).length();
-            # Powerups outweigh an ongoing fight, as in the bots' item weights.
+            # Powerups and new weapons outweigh an ongoing fight, as in the
+            # bots' item weights.
             if kind == "powerup" { distance *= 0.5; }
+            if kind.startswith("weapon_") { distance *= 0.6; }
             if distance < best
                 and (
                     not here.pursuing

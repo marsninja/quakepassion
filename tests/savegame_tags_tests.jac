@@ -1,7 +1,9 @@
 import from engine.core.savegame { snapshot, restore }
 import from engine.world.world { World, Player }
 import from engine.world.level { Level }
-import from engine.world.combat { CombatState, Projectile, HasProjectile, Opponent, HasOpponent }
+import from engine.world.combat { CombatState, Projectile, HasProjectile, Opponent, HasOpponent, arm_bot }
+import from engine.world.bot_character { BotCharacter }
+import from engine.world.inventory { quantity, AdjustInventory }
 import from engine.world.pickups { Pickup, PickupRule, HasPickup }
 import from engine.world.hazards { Hazard, HasHazard }
 import from engine.world.speakers { Speaker, HasSpeaker }
@@ -26,7 +28,10 @@ test "every snapshot record type restores alongside all the others" {
     world +>:HasShooter:+> Shooter(origin=Vec3(), clock=0.75, random_state=11);
     world +>:HasRotator:+> Rotator(model=1, clock=2.5);
     world +>:HasProjectile:+> Projectile(pos=Vec3(), velocity=Vec3(x=1.0), damage=9, hostile=True, trap=True);
-    bot = Opponent(arena=True, health=100);
+    bot = Opponent(arena=True, health=100, character=BotCharacter());
+    arm_bot(bot);
+    bot.inventory spawn AdjustInventory(kind="rockets", amount=7, capacity=200);
+    bot.weapon_slot = 5;
     world +>:HasOpponent:+> bot;
     remains = Opponent(health=0, remains=-12, gibbed=True, patrol_wait=0.5);
     world +>:HasOpponent:+> remains;
@@ -42,7 +47,7 @@ test "every snapshot record type restores alongside all the others" {
     level.name = "test";
     data = snapshot(world, level, player, CombatState());
     tags = [line.split()[0] for line in data.splitlines()[3:]];
-    for tag in ["TRAP", "SHOOTER", "MOVER", "MATCH", "SCORE", "POWER", "CORPSE", "PATROL", "SKILL", "P", "H", "A", "T", "O"] {
+    for tag in ["TRAP", "SHOOTER", "MOVER", "MATCH", "SCORE", "POWER", "CORPSE", "PATROL", "SKILL", "BOTARM", "BOTITEM", "P", "H", "A", "T", "O"] {
         assert tag in tags;
     }
     scores[0].frags = 0;
@@ -51,6 +56,8 @@ test "every snapshot record type restores alongside all the others" {
     remains.patrol_wait = 0.0;
     restore(world, level, player, CombatState(), data);
     assert remains.remains == -12 and remains.gibbed and remains.patrol_wait == 0.5;
+    assert quantity(bot.inventory, "rockets") == 7 and quantity(bot.inventory, "bullets") == 100;
+    assert bot.weapon_slot == 5;
     assert scores[0].frags == 3 and powerup_left(player, "quad") == 12.0;
     assert [world->:HasRotator:->][?:Rotator][0].clock == 2.5;
     assert [world->:HasShooter:->][?:Shooter][0].random_state == 11;
