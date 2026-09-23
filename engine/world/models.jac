@@ -23,7 +23,9 @@ node Visual {
         visible: bool = True,
         spin: float = 0.0,
         bob: float = 0.0,
-        bob_rate: float = 5.0;
+        bob_rate: float = 5.0,
+        pitch: float = 0.0,
+        roll: float = 0.0;
 }
 
 obj ModelDraw {
@@ -32,7 +34,9 @@ obj ModelDraw {
         yaw: float,
         first: int,
         second: int,
-        blend: float;
+        blend: float,
+        pitch: float = 0.0,
+        roll: float = 0.0;
 }
 
 """Collect visible models. Items spin on the shared world clock and may bob,
@@ -75,7 +79,9 @@ walker GatherModels {
                         yaw=yaw,
                         first=visual.first,
                         second=visual.second,
-                        blend=visual.blend
+                        blend=visual.blend,
+                        pitch=visual.pitch,
+                        roll=visual.roll
                     )
                 );
             }

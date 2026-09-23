@@ -87,6 +87,7 @@ walker MovePlayer {
         jump: bool = False,
         water_depth: int = 0,
         swim_wish: Vec3 = Vec3(),
+        steady: bool = False,
         dt: float = 1.0 / 120.0;
 
     can integrate with Player entry {
@@ -151,7 +152,7 @@ walker MovePlayer {
         if here.grounded {
             pos = ground.end;
             speed = here.velocity.length();
-            if speed > 0.0 {
+            if speed > 0.0 and not self.steady {
                 here.velocity = here.velocity.scale(
                     max(0.0, speed - max(100.0, speed) * 6.0 * self.dt) / speed
                 );
@@ -164,11 +165,17 @@ walker MovePlayer {
         }
         direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
         wish_speed = here.walk_speed * haste;
-        add = max(0.0, wish_speed - here.velocity.dot(direction));
-        acceleration = 10.0 if here.grounded else 1.0;
-        here.velocity = here.velocity.add(
-            direction.scale(min(add, acceleration * wish_speed * self.dt))
-        );
+        if self.steady and here.grounded {
+            # Monster movestep: a fixed stride with no friction or acceleration.
+            here.velocity.x = direction.x * wish_speed;
+            here.velocity.y = direction.y * wish_speed;
+        } else {
+            add = max(0.0, wish_speed - here.velocity.dot(direction));
+            acceleration = 10.0 if here.grounded else 1.0;
+            here.velocity = here.velocity.add(
+                direction.scale(min(add, acceleration * wish_speed * self.dt))
+            );
+        }
         if not here.grounded {
             here.velocity.z -= 800.0 * self.dt;
         }

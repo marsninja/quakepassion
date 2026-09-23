@@ -865,6 +865,9 @@ impl App.step() -> bool {
                 self.world spawn ArenaNavigationTick(collision=self.level.collision, index=self.arena_contacts, dt=self.physics_clock.tick_rate);
             }
             if not warming {
+                if self.walking {
+                    self.world spawn PatrolTick(dt=self.physics_clock.tick_rate);
+                }
                 self.world spawn CombatTick(
                     player=self.player,
                     collision=self.level.collision,
@@ -981,6 +984,9 @@ impl App.step() -> bool {
                 collision=self.level.collision,
                 state=self.combat,
                 dt=self.physics_clock.tick_rate
+            );
+            self.world spawn GibTick(
+                collision=self.level.collision, dt=self.physics_clock.tick_rate
             );
             for impact in self.combat.impacts {
                 if impact.model >= 0 {

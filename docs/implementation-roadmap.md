@@ -230,3 +230,8 @@ format 19.
 crush damage, complete trigger chains (named, shootable, directional,
 killtargets, messages), traps, Q2 targets and cross-level flags, spawners,
 barrels, fixtures and ambience. Snapshot format 20.
+
+[Monster behaviour](monster-behaviour-status.md): skill selection, original
+awareness and hearing, idle path-corner patrols and Q2 combat points,
+infighting by the Q1/Q2 rules, and gibbing into the original models with
+shootable Q2/Q3 corpses. Snapshot format 21.

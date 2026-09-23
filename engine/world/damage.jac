@@ -18,7 +18,8 @@ walker Damage {
         absorbed: int = 0,
         shielded: int = 0,
         protected: bool = False,
-        killed: bool = False;
+        killed: bool = False,
+        overkill: int = 0;
 
     can apply with Actor entry {
         if self.amount <= 0 or here.health <= 0 {
@@ -61,6 +62,8 @@ walker Damage {
             here.armor -= self.absorbed;
         }
         self.dealt = min(here.health, self.amount - self.absorbed);
+        # Health stops at zero; how far past it the hit went decides gibbing.
+        self.overkill = self.amount - self.absorbed - self.dealt;
         here.health -= self.dealt;
         self.killed = here.health == 0;
         if self.killed {

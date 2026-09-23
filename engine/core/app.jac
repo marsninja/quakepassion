@@ -83,6 +83,8 @@ import from games.opponents { populate_opponents, populate_finale }
 import from games.items { populate_pickups }
 import from games.fixtures { populate_fixtures }
 import from ..world.fixtures { FixtureTick }
+import from ..world.gibs { GibTick }
+import from ..world.patrols { PatrolTick }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
 import from ..render.viewweapon { ViewWeapon }

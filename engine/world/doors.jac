@@ -1141,7 +1141,7 @@ def connect_targets(world: World, bsp: Bsp) {
                 continue;
             }
             target = fields.get("pathtarget", "")
-                if kind == "path_corner" and bsp.game != "q3"
+                if kind in ["path_corner", "point_combat"] and bsp.game != "q3"
                 else fields.get("target", "");
             if kind.startswith("monster_") and bsp.game == "q2" {
                 target = fields.get("deathtarget", target);

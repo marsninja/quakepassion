@@ -17,6 +17,7 @@ node TrackPoint {
         speed: float = 0.0,
         teleport: bool = False,
         stop: bool = False,
+        combat: bool = False,
         activation: Signal = Signal();
 }
 
@@ -73,7 +74,9 @@ def load_trains(world: World, bsp: Bsp, collision: CollisionMap) {
     points: dict[str, TrackPoint] = {};
     for i in range(len(bsp.entities)) {
         f = bsp.entities[i].fields;
-        if f.get("classname", "") != "path_corner" or not f.get("targetname", "") {
+        kind = f.get("classname", "");
+        # Q2 point_combat chains share the graph; monsters hold at them.
+        if kind not in ["path_corner", "point_combat"] or not f.get("targetname", "") {
             continue;
         }
         parts = f.get("origin", "0 0 0").split();
@@ -86,7 +89,8 @@ def load_trains(world: World, bsp: Bsp, collision: CollisionMap) {
             origin=Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2])),
             hold_time=float(f.get("wait", "0")),
             speed=float(f.get("speed", "0")),
-            teleport=bsp.game == "q2" and int(f.get("spawnflags", "0")) & 1 != 0,
+            teleport=kind == "path_corner" and bsp.game == "q2" and int(f.get("spawnflags", "0")) & 1 != 0,
+            combat=kind == "point_combat",
             activation=Signal(entities=[i])
         );
         # Authored duplicate names select the first path corner deterministically.

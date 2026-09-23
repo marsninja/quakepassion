@@ -1,6 +1,10 @@
 """Campaign rosters and local arena training bots populated from map entities."""
 import math;
 import from .enemies { enemy_rule }
+import from .gibs { gib_rule, link_gibs }
+import from .patrols { patrol_speed }
+import from engine.world.trains { TrackPoint, HasTrack }
+import from engine.world.patrols { Patrols, Holds }
 import from engine.world.opponent_rule { OpponentRule }
 import from .arena_character { load_character }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
@@ -139,6 +143,13 @@ def arena_entities(world: World, roster: list[BotInfo], player_start: Vec3) -> l
 def populate_opponents(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
+    # Path corners and combat points by name; authored duplicates keep the first.
+    corners: dict[str, TrackPoint] = {};
+    for corner in [world->:HasTrack:->][?:TrackPoint] {
+        if corner.name not in corners {
+            corners[corner.name] = corner;
+        }
+    }
     count = 0;
     player_start = spawn_player(level).pos;
     entities = level.bsp.entities;
@@ -222,7 +233,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
                 game=source,
                 skill=level.skill,
-                ambush=source in ["q1", "q2"] and flags & 1 != 0 and kind != "arena_bot"
+                ambush=source in ["q1", "q2"] and flags & 1 != 0 and kind != "arena_bot",
+                kind=kind
             );
             ensure_profiles(enemy);
             if rule.attack_sound {
@@ -269,6 +281,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 death_family = "";
                 pain_number = -1;
                 death_number = -1;
+                walk_family = "";
+                walk_number = -1;
                 for i in range(len(frames)) {
                     frame_name = frames[i].name;
                     family = frame_name.rstrip("0123456789");
@@ -296,6 +310,16 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     }
                     if frame_name.startswith("run") {
                         enemy.animation.append(i);
+                    }
+                    if frame_name.startswith("walk") or frame_name.startswith("prowl_") {
+                        if not walk_family {
+                            walk_family = family;
+                            walk_number = number - 1;
+                        }
+                        if family == walk_family and number == walk_number + 1 {
+                            walk_number = number;
+                            enemy.walk_animation.append(i);
+                        }
                     }
                     if frame_name.startswith("stand") {
                         enemy.idle_animation.append(i);
@@ -354,6 +378,23 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     enemy.animation = enemy.idle_animation;
                 }
                 enemy.modeled = True;
+            }
+            if not arena {
+                enemy.patrol_speed = patrol_speed(source, kind);
+                walk_to = fields.get("target", "");
+                if walk_to in corners and not corners[walk_to].combat {
+                    enemy +>:Patrols:+> corners[walk_to];
+                }
+                hold_at = fields.get("combattarget", "");
+                if source == "q2" and hold_at in corners and corners[hold_at].combat {
+                    enemy +>:Holds:+> corners[hold_at];
+                }
+            }
+            gibs = gib_rule(source, kind);
+            if gibs is not None
+                and link_gibs(world, enemy, gibs, catalog.source(source), source, resources) {
+                enemy.gib_rule = gibs;
+                register_speaker(world, enemy, gibs.sound);
             }
             enemy.visual.visible = not enemy.dormant;
             move_to_area(enemy, level.areas[level.locate(position)]);
