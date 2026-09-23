@@ -2,6 +2,7 @@
 import math;
 import from .world { World }
 import from .combat { Opponent, HasOpponent }
+import from .bot_routes { NavMesh, HasNavMesh, reachable }
 import from .pickups { Pickup, HasPickup, PickupTick }
 import from .inventory { quantity }
 import from .powerups { stored_kinds }
@@ -131,13 +132,16 @@ walker ArenaNavigationTick {
         index: ArenaContactIndex = ArenaContactIndex(),
         world: World | None = None,
         pickups: list[Pickup] = [],
-        traversals: list[Traversal] = [];
+        traversals: list[Traversal] = [],
+        mesh: NavMesh | None = None;
 
     can begin with World entry {
         self.world = here;
         self.index.prepare(here);
         self.pickups = self.index.pickups;
         self.traversals = self.index.portals;
+        meshes = [here->:HasNavMesh:->][?:NavMesh];
+        self.mesh = meshes[0] if meshes else None;
         visit [here->:HasOpponent:->];
     }
 
@@ -162,6 +166,7 @@ walker ArenaNavigationTick {
             );
             if traversal.relocated {
                 here.route = [];
+                here.route_areas = [];
                 here.route_launches = [];
                 if here.route_search is not None { here.route_search.cancelled = True; here.route_search = None; }
                 here.arena_goal = None;
@@ -203,6 +208,11 @@ walker ArenaNavigationTick {
                 or kind == "powerup"
                 or (kind.startswith("holdable_") and not holding);
             if not useful { continue; }
+            mesh = self.mesh;
+            if mesh is not None
+                and not reachable(mesh, here.pos.sub(Vec3(z=here.eye_height)), pickup.pos) {
+                continue;
+            }
             distance = pickup.pos.sub(here.pos).length();
             # Powerups outweigh an ongoing fight, as in the bots' item weights.
             if kind == "powerup" { distance *= 0.5; }
@@ -225,15 +235,22 @@ walker ArenaNavigationTick {
                 roam = None;
             }
             if roam is None {
-                # Bounded ground routing reaches nearby items; hopping between
-                # them carries a bot across the map.
+                # With the map's AAS any item is a reachable long-term goal;
+                # bounded ground routing only reaches nearby items, so hopping
+                # between them carries a bot across the map.
+                mesh = self.mesh;
+                reach = 100000.0 if mesh is not None else 900.0;
                 spots = [
                     pickup.pos.add(Vec3(z=here.eye_height))
                     for pickup in self.pickups
                     if not pickup.waiting_for_use
                         and pickup.pos.sub(here.pos).length() > 256.0
-                        and pickup.pos.sub(here.pos).length() < 900.0
+                        and pickup.pos.sub(here.pos).length() < reach
                 ];
+                if mesh is not None {
+                    origin = here.pos.sub(Vec3(z=here.eye_height));
+                    spots = [spot for spot in spots if reachable(mesh, origin, spot.sub(Vec3(z=here.eye_height)))];
+                }
                 if spots {
                     here.shot_random = (here.shot_random * 48271) % 2147483647;
                     roam = spots[here.shot_random % len(spots)];
