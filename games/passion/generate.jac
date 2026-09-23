@@ -1,8 +1,40 @@
-"""Compile a mission into a bounded, traversable twenty-room expedition."""
-import from .plan { make_plan, seed_from, Contains, Chamber, Passage }
-import from .geometry { Builder, partition }
-import from .lighting { fixtures, fixture_materials, bake }
-import from engine.formats.bsp { Bsp, Texture, Model, Leaf, MapEntity }
+"""Generate a seeded Passion expedition by quality-diversity candidate search.
+
+A seed selects a niche in a descriptor space (loopiness x verticality x combat
+density x size) and an objective archetype. Several complete candidates are
+generated toward that niche: mission grammar, spatial embedding, height
+solving, interiors, corridors and the encounter director. Each candidate is
+re-proven against its own geometry by the column playtester, measured, and
+scored on quality and distance to the niche. The winner is compiled, given
+cluster visibility, checked physically and baked.
+"""
+import math;
+import from .random { Stream, stream_for, mix32 }
+import from .mission { Expedition, Beat, Link, beats_of, links_of, build_mission }
+import from .layout {
+    Site,
+    Room,
+    embed,
+    rooms_of,
+    passages_of,
+    target_heights,
+    solve_heights,
+    CELL
+}
+import from .blueprint {
+    Blueprint,
+    new_blueprint,
+    carve_rooms,
+    carve_corridors,
+    carve_windows
+}
+import from .director { direct, Economy }
+import from .compile { compile_blueprint, Compiled }
+import from .visibility { cluster_visibility, visible_pairs }
+import from .playtest { progress, Proof }
+import from .lighting { bake }
+import from .materials { DISTRICTS, DISTRICT_NAMES }
+import from engine.formats.bsp { Texture }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.level { Level, prepare_level }
 import from engine.world.world { World }
@@ -10,276 +42,262 @@ import from engine.world.exits { LevelExit, HasExit }
 import from engine.world.signals { HasSignal }
 import from engine.physics.collision { CollisionMap }
 
-def origin(point: Vec3) -> str {
-    return str(point.x) + " " + str(point.y) + " " + str(point.z);
+glob VERSION: str = "v2";
+glob CANDIDATES: int = 6;
+glob ARCHETYPES: list[str] = ["keys", "relays", "guardian", "mixed"];
+glob BINS: list[float] = [0.15, 0.5, 0.85];
+
+node Survey {
+    has seed: int = 0,
+        niche: list[int] = [],
+        target: list[float] = [],
+        measured: list[float] = [],
+        quality: float = 0.0,
+        score: float = 0.0,
+        candidates: int = 0,
+        valid: int = 0,
+        briefing: str = "",
+        archetype: str = "",
+        start: list[float] = [],
+        plan: Expedition | None = None,
+        site: Site | None = None,
+        bp: Blueprint | None = None,
+        economy: Economy | None = None,
+        visible_pairs: int = 0;
 }
 
-def entity(bsp: Bsp, kind: str, point: Vec3, source: str) {
-    bsp.entities.append(
-        MapEntity(
-            fields={"classname": kind, "origin": origin(point), "asset_game": source}
-        )
-    );
+edge Surveys: World --> Survey {}
+
+def seed_from(name: str) -> int {
+    if not name.startswith(VERSION + "-") {
+        raise ValueError("Expected expedition " + VERSION + "-SEED");
+    }
+    seed = int(name[3:]);
+    if seed < 1 or seed > 2147483646 or name != VERSION + "-" + str(seed) {
+        raise ValueError("Seed must be 1..2147483646");
+    }
+    return seed;
+}
+
+# Niche coordinates: loopiness, verticality, density and size in three bins
+# each. Consecutive seeds land in unrelated niches.
+def niche_for(seed: int) -> list[int] {
+    code = mix32(seed * 2654435761 % 4294967296) % 81;
+    return [code % 3, (code // 3) % 3, (code // 9) % 3, (code // 27) % 3];
+}
+
+obj Candidate {
+    has plan: Expedition,
+        site: Site,
+        bp: Blueprint,
+        economy: Economy,
+        proof: Proof,
+        measured: list[float] = [],
+        quality: float = 0.0,
+        score: float = 0.0;
+}
+
+def assign_districts(plan: Expedition, stream: Stream) {
+    order = stream.order(DISTRICTS);
+    count = min(DISTRICTS, max(2, plan.sections + stream.below(2)));
+    plan.districts = order[:count];
+    beats = beats_of(plan);
+    for beat in beats {
+        beat.district = plan.districts[beat.section % count];
+    }
+    # Optional rooms borrow their parent's district.
+    for beat in beats {
+        if beat.optional {
+            for other in [beat<-:Link:<-][?:Beat] {
+                beat.district = other.district;
+            }
+        }
+    }
+}
+
+def measure(candidate: Candidate) -> list[float] {
+    rooms = rooms_of(candidate.site);
+    links = [link for link in links_of(candidate.plan) if link.mode != "window"];
+    cycles = len(links) - len(rooms) + 1;
+    loop = min(1.0, float(max(0, cycles)) / max(1.0, 0.3 * float(len(rooms))));
+    climb = 0.0;
+    passages = [p for p in passages_of(candidate.site) if not p.teleport and not p.window];
+    for passage in passages {
+        a = rooms[passage.tail];
+        b = rooms[passage.head];
+        climb += float(abs((a.z + passage.tail_socket.offset) - (b.z + passage.head_socket.offset)));
+    }
+    spread = float(max([room.z for room in rooms]) - min([room.z for room in rooms]));
+    vertical = min(1.0, 0.5 * climb / max(1.0, float(len(passages))) / 96.0 + 0.5 * spread / 640.0);
+    fights = len([room for room in rooms if room.kind not in ["start", "goal", "recovery", "cache", "vista"]]);
+    density = min(1.0, float(candidate.economy.monsters) / max(1.0, float(fights)) / 5.0);
+    size = max(0.0, min(1.0, float(len(rooms) - 12) / 26.0));
+    return [loop, vertical, density, size];
+}
+
+def judge(candidate: Candidate) -> float {
+    quality = 1.0;
+    quality -= 0.08 * float(candidate.site.teleports);
+    quality += min(0.12, 0.04 * float(candidate.site.windows));
+    low = candidate.economy.low;
+    if low < 15.0 {
+        quality -= (15.0 - low) / 60.0;
+    }
+    recipes: list[str] = [];
+    for beat in candidate.bp.interiors {
+        recipe = candidate.bp.interiors[beat].recipe;
+        if recipe not in recipes {
+            recipes.append(recipe);
+        }
+    }
+    rooms = rooms_of(candidate.site);
+    quality += 0.25 * float(len(recipes)) / float(min(len(rooms), 11));
+    secrets = len([room for room in rooms if room.kind == "cache"]);
+    quality += 0.03 * float(min(secrets, 3));
+    # Every mandatory room should be on the proven route.
+    quality -= 0.05 * float(len([room for room in rooms if room.beat not in candidate.proof.rooms and not room.optional]));
+    return quality;
+}
+
+def build_candidate(seed: int, index: int, niche: list[int], archetype: str) -> Candidate | None {
+    stream = stream_for(seed, "candidate").child("k", index);
+    target_loop = BINS[niche[0]];
+    target_vertical = BINS[niche[1]];
+    target_density = [0.3, 0.55, 0.85][niche[2]];
+    rooms = [16, 24, 32][niche[3]] + stream.between(-3, 3);
+    loopiness = max(0.0, min(1.0, target_loop + stream.uniform(-0.15, 0.15)));
+    verticality = max(0.0, min(1.0, target_vertical + stream.uniform(-0.15, 0.15)));
+    density = max(0.15, min(1.0, target_density + stream.uniform(-0.1, 0.1)));
+    sections = 1 + niche[3] + stream.below(2);
+    objectives = 1 + stream.below(3);
+    plan = build_mission(seed, stream.derive("mission"), archetype, objectives, sections, rooms, loopiness);
+    plan.verticality = verticality;
+    plan.density = density;
+    plan.candidate = index;
+    assign_districts(plan, stream.derive("districts"));
+    site = embed(plan, stream.derive("layout"));
+    if site.failures {
+        return None;
+    }
+    target_heights(site, stream.derive("heights"), verticality);
+    if not solve_heights(site) {
+        return None;
+    }
+    for room in rooms_of(site) {
+        room.district = beats_of(plan)[room.beat].district;
+    }
+    bp = new_blueprint(site);
+    if not carve_rooms(bp, site, stream.derive("rooms"), verticality) {
+        return None;
+    }
+    if not carve_corridors(bp, site, plan, stream.derive("corridors"), beats_of(plan)) {
+        return None;
+    }
+    carve_windows(bp, site);
+    if [door for door in bp.doors if door.kind == "invalid"] {
+        return None;
+    }
+    economy = direct(plan, site, bp, stream.derive("director"), density);
+    starts = [mark for mark in bp.marks if mark.kind == "info_player_start"];
+    if not starts {
+        return None;
+    }
+    proof = progress(plan, bp, site, starts[0].x, starts[0].y);
+    if not proof.reached_exit {
+        return None;
+    }
+    candidate = Candidate(plan=plan, site=site, bp=bp, economy=economy, proof=proof);
+    candidate.measured = measure(candidate);
+    candidate.quality = judge(candidate);
+    return candidate;
+}
+
+def briefing_for(plan: Expedition) -> str {
+    counts: dict[str, int] = {};
+    for token in plan.objectives {
+        kind = "keys" if token.startswith("key_") else (
+            "relays" if token.startswith("relay:") else "guardians"
+        );
+        counts[kind] = counts.get(kind, 0) + 1;
+    }
+    parts: list[str] = [];
+    if counts.get("keys", 0) {
+        parts.append("recover " + str(counts["keys"]) + (" keys" if counts["keys"] > 1 else " key"));
+    }
+    if counts.get("relays", 0) {
+        parts.append("throw " + str(counts["relays"]) + (" relays" if counts["relays"] > 1 else " relay"));
+    }
+    if counts.get("guardians", 0) {
+        parts.append("slay " + str(counts["guardians"]) + (" guardians" if counts["guardians"] > 1 else " guardian"));
+    }
+    route = " > ".join([DISTRICT_NAMES[d] for d in plan.districts]);
+    return route + " | " + ", ".join(parts).capitalize() + ", reach extraction";
+}
+
+def survey(seed: int) -> Survey {
+    niche = niche_for(seed);
+    archetype = ARCHETYPES[mix32(seed + 7919) % len(ARCHETYPES)];
+    target = [BINS[niche[0]], BINS[niche[1]], [0.3, 0.55, 0.85][niche[2]], [0.15, 0.5, 0.85][niche[3]]];
+    best: Candidate | None = None;
+    result = Survey(seed=seed, niche=niche, target=target, archetype=archetype);
+    for index in range(CANDIDATES * 3) {
+        if index >= CANDIDATES and best is not None {
+            break;
+        }
+        result.candidates += 1;
+        candidate: Candidate | None = None;
+        try {
+            candidate = build_candidate(seed, index, niche, archetype);
+        } except (AssertionError, ValueError) {
+            candidate = None;
+        }
+        if candidate is None {
+            continue;
+        }
+        result.valid += 1;
+        distance = 0.0;
+        for axis in range(4) {
+            distance += (candidate.measured[axis] - target[axis]) * (candidate.measured[axis] - target[axis]);
+        }
+        candidate.score = candidate.quality - 1.2 * math.sqrt(distance);
+        if best is None or candidate.score > best.score {
+            best = candidate;
+        }
+    }
+    if best is None {
+        raise ValueError("No valid expedition candidate for seed " + str(seed));
+    }
+    result.plan = best.plan;
+    result.site = best.site;
+    result.bp = best.bp;
+    result.economy = best.economy;
+    result.measured = best.measured;
+    result.quality = best.quality;
+    result.score = best.score;
+    result.briefing = briefing_for(best.plan);
+    starts = [mark for mark in best.bp.marks if mark.kind == "info_player_start"];
+    result.start = [starts[0].x, starts[0].y, starts[0].z];
+    return result;
 }
 
 def generate(
     world: World, name: str, textures: list[Texture], cache_directory: str = ""
 ) -> Level {
-    plan = make_plan(seed_from(name));
-    rooms = [plan->:Contains:->][?:Chamber];
-    builder = Builder();
-    bsp = builder.bsp;
+    record = survey(seed_from(name));
+    bp = record.bp;
+    site = record.site;
+    if bp is None or site is None {
+        raise ValueError("Expedition survey is incomplete");
+    }
+    compiled = compile_blueprint(bp, site);
+    bsp = compiled.bsp;
     bsp.textures = textures;
-    if textures {
-        bsp.textures = textures + fixture_materials();
-    }
-    bsp.models.append(Model(head=0, first_face=0, face_count=0, vis_leaf_count=19));
-    bsp.entities.append(
-        MapEntity(fields={"classname": "worldspawn", "generator": "passion-v1"})
-    );
-    for room in rooms {
-        bsp.leaves.append(
-            Leaf(
-                contents=0,
-                vis_offset=0,
-                cluster=-1,
-                mins=Vec3(x=float(room.x) * 640.0, y=float(room.y) * 640.0, z=-64.0),
-                maxs=Vec3(
-                    x=float(room.x + 1) * 640.0, y=float(room.y + 1) * 640.0, z=512.0
-                )
-            )
-        );
-    }
-    for room in rooms {
-        builder.owner = room.index;
-        x = float(room.x) * 640.0;
-        y = float(room.y) * 640.0;
-        z = float(room.y) * 32.0;
-        material = room.theme * 2;
-        ceiling = 320.0 if room.shape == 0 else (224.0 if room.shape == 1 else 384.0);
-        if textures {
-            fixtures(builder, room, ceiling);
-        }
-        builder.box(
-            Vec3(x=x, y=y, z=z - 32.0), Vec3(x=x + 640.0, y=y + 640.0, z=z), material
-        );
-        builder.box(
-            Vec3(x=x, y=y, z=z + ceiling),
-            Vec3(x=x + 640.0, y=y + 640.0, z=z + ceiling + 16.0),
-            material + 1
-        );
-        neighbors = [room->:Passage:->][?:Chamber];
-        for side in range(4) {
-            dx = 1 if side == 0 else (-1 if side == 1 else 0);
-            dy = 1 if side == 2 else (-1 if side == 3 else 0);
-            opening = False;
-            for neighbor in neighbors {
-                if neighbor.x == room.x + dx and neighbor.y == room.y + dy {
-                    opening = True;
-                }
-            }
-            across_x = side >= 2;
-            wall = y + (640.0 if side == 2 else 0.0)
-                if across_x
-                else x + (640.0 if side == 0 else 0.0);
-            for segment in range(3 if opening else 1) {
-                first = 0.0;
-                last = 640.0;
-                bottom = z;
-                if opening {
-                    first = 0.0 if segment == 0 else (448.0 if segment == 1 else 192.0);
-                    last = 192.0
-                        if segment == 0
-                        else (640.0 if segment == 1 else 448.0);
-                    if segment == 2 {
-                        bottom = z + 176.0;
-                    }
-                }
-                inner_low = wall - 8.0 if side in [0, 2] else wall;
-                inner_high = wall if side in [0, 2] else wall + 8.0;
-                low = Vec3(x=x + first, y=inner_low, z=bottom)
-                    if across_x
-                    else Vec3(x=inner_low, y=y + first, z=bottom);
-                high = Vec3(x=x + last, y=inner_high, z=z + ceiling)
-                    if across_x
-                    else Vec3(x=inner_high, y=y + last, z=z + ceiling);
-                builder.box(low, high, material + 1);
-            }
-            if opening and side == 2 {
-                for step in range(4) {
-                    builder.box(
-                        Vec3(x=x + 192.0, y=y + 512.0 + float(step) * 32.0, z=z),
-                        Vec3(x=x + 448.0, y=y + 640.0, z=z + float(step + 1) * 8.0),
-                        material
-                    );
-                }
-            }
-        }
-        # Cover stays out of the central cross and all connector clearance.
-        if room.role not in ["arrival", "extraction"] and room.index != 7 {
-            for corner in range(2 if room.shape == 0 or room.role == "secret" else 4) {
-                cx = x + (128.0 if corner % 2 == 0 else 512.0);
-                cy = y
-                    + (
-                        512.0
-                            if room.role == "secret"
-                            else (128.0 if corner < 2 else 512.0)
-                    );
-                height = 64.0 if room.shape == 1 else ceiling;
-                builder.box(
-                    Vec3(x=cx - 24.0, y=cy - 24.0, z=z),
-                    Vec3(x=cx + 24.0, y=cy + 24.0, z=z + height),
-                    material + 1
-                );
-            }
-        }
-        if room.role == "secret" {
-            # Raised cache and stairs occupy a corner, preserving the route cross.
-            builder.box(
-                Vec3(x=x + 48.0, y=y + 32.0, z=z),
-                Vec3(x=x + 240.0, y=y + 112.0, z=z + 64.0),
-                material
-            );
-            for stair in range(8) {
-                builder.box(
-                    Vec3(x=x + 96.0, y=y + 112.0 + float(stair) * 16.0, z=z),
-                    Vec3(
-                        x=x + 192.0,
-                        y=y + 128.0 + float(stair) * 16.0,
-                        z=z + float(8 - stair) * 8.0
-                    ),
-                    material
-                );
-            }
-            builder.box(
-                Vec3(x=x + 232.0, y=y + 32.0, z=z + 64.0),
-                Vec3(x=x + 240.0, y=y + 112.0, z=z + 112.0),
-                material + 1
-            );
-        }
-        source = "q1" if room.theme == 0 else ("q2" if room.theme == 1 else "q3");
-        if room.shape == 0 {
-            for rib in [128.0, 512.0] {
-                builder.box(
-                    Vec3(x=x + rib - 12.0, y=y, z=z + ceiling - 48.0),
-                    Vec3(x=x + rib + 12.0, y=y + 640.0, z=z + ceiling),
-                    material
-                );
-            }
-        }
-        if room.index == 7 {
-            # A climbable bridge crosses above the critical route, with an optional reward.
-            builder.box(
-                Vec3(x=x + 96.0, y=y + 288.0, z=z + 112.0),
-                Vec3(x=x + 544.0, y=y + 352.0, z=z + 128.0),
-                material
-            );
-            for stair in range(8) {
-                builder.box(
-                    Vec3(x=x + 96.0, y=y + 32.0 + float(stair) * 32.0, z=z),
-                    Vec3(
-                        x=x + 192.0,
-                        y=y + 64.0 + float(stair) * 32.0,
-                        z=z + float(stair + 1) * 16.0
-                    ),
-                    material
-                );
-                builder.box(
-                    Vec3(x=x + 448.0, y=y + 352.0 + float(stair) * 32.0, z=z),
-                    Vec3(
-                        x=x + 544.0,
-                        y=y + 384.0 + float(stair) * 32.0,
-                        z=z + float(8 - stair) * 16.0
-                    ),
-                    material
-                );
-            }
-            entity(
-                bsp,
-                "item_armor_combat",
-                Vec3(x=x + 320.0, y=y + 320.0, z=z + 152.0),
-                "q2"
-            );
-        }
-        center = Vec3(x=x + 320.0, y=y + 320.0, z=z + 24.0);
-        if room.index == 0 {
-            entity(bsp, "info_player_start", center, "q1");
-            bsp.entities[-1].fields["angle"] = "90" if neighbors[0].y > room.y else "0";
-        } elif room.role == "objective" {
-            kind = "item_key2" if room.index == plan.key_rooms[0] else "item_key1";
-            entity(bsp, kind, center, "q1");
-        } elif room.role == "secret" {
-            entity(bsp, "item_shells", Vec3(x=x + 144.0, y=y + 72.0, z=z + 88.0), "q1");
-            entity(bsp, "item_health", center, source);
-        } elif room.role == "recovery" {
-            entity(bsp, "item_health", center, source);
-        } elif room.role == "encounter" {
-            kind = "monster_army"
-                if source == "q1"
-                else (
-                    "monster_soldier" if source == "q2" else "info_player_deathmatch"
-                );
-            entity(bsp, kind, center.add(Vec3(x=80.0)), source);
-            entity(
-                bsp,
-                "item_shells" if source == "q1" else "ammo_shells",
-                center.add(Vec3(x=-80.0)),
-                source
-            );
-        }
-    }
-    # Extraction has one physical entrance, secured by both expedition keys.
-    goal = rooms[19];
-    parent = [goal->:Passage:->][?:Chamber][0];
-    builder.owner = 19;
-    z = float(goal.y) * 32.0;
-    x = float(goal.x) * 640.0;
-    y = float(goal.y) * 640.0;
-    low = Vec3(x=x - 8.0, y=y + 192.0, z=z)
-        if parent.x < goal.x
-        else Vec3(x=x + 192.0, y=y - 8.0, z=z);
-    high = Vec3(x=x + 8.0, y=y + 448.0, z=z + 176.0)
-        if parent.x < goal.x
-        else Vec3(x=x + 448.0, y=y + 8.0, z=z + 176.0);
-    bsp.models.append(Model(head=-20, first_face=len(bsp.faces), face_count=0));
-    builder.box(low, high, 5, 1);
-    if parent.x < goal.x {
-        builder.panel(
-            [
-                Vec3(x=low.x - 0.125, y=y + 272.0, z=z + 72.0),
-                Vec3(x=low.x - 0.125, y=y + 272.0, z=z + 120.0),
-                Vec3(x=low.x - 0.125, y=y + 368.0, z=z + 120.0),
-                Vec3(x=low.x - 0.125, y=y + 368.0, z=z + 72.0)
-            ],
-            6,
-            1
-        );
-    } else {
-        builder.panel(
-            [
-                Vec3(x=x + 368.0, y=low.y - 0.125, z=z + 72.0),
-                Vec3(x=x + 368.0, y=low.y - 0.125, z=z + 120.0),
-                Vec3(x=x + 272.0, y=low.y - 0.125, z=z + 120.0),
-                Vec3(x=x + 272.0, y=low.y - 0.125, z=z + 72.0)
-            ],
-            6,
-            1
-        );
-    }
-    bsp.entities.append(
-        MapEntity(
-            fields={
-                "classname": "func_door",
-                "model": "*1",
-                "angle": "-1",
-                "key": "key_gold key_silver",
-                "wait": "-1",
-                "speed": "160"
-            }
-        )
-    );
-    bsp.models[0].head = partition(bsp, 0, 0, 5, 4);
+    bsp.clusters = len(bp.regions);
+    bsp.cluster_bytes = (bsp.clusters + 7) // 8;
+    bsp.visibility = cluster_visibility(bp);
+    record.visible_pairs = visible_pairs(bp, bsp.visibility);
     level = Level(active=True, name=name, bsp=bsp);
+    level.briefing = record.briefing;
     level.asset_manifest = "|".join([texture.name for texture in textures]);
     if textures {
         level.asset_manifest += "|"
@@ -292,74 +310,57 @@ def generate(
             );
     }
     prepare_level(world, level);
-    volume = CollisionMap();
-    volume.add_box(
-        Vec3(x=x + 248.0, y=y + 248.0, z=z),
-        Vec3(x=x + 392.0, y=y + 392.0, z=z + 96.0),
-        Vec3(),
-        Vec3(),
-        Vec3()
-    );
-    extraction = LevelExit(destination="passion_complete", contact=True, volume=volume);
-    world +>:HasExit:+> extraction;
-    world +>:HasSignal:+> extraction.activation;
+    world +>:Surveys:+> record;
+    if compiled.exit_low {
+        volume = CollisionMap();
+        volume.add_box(
+            Vec3(x=compiled.exit_low[0], y=compiled.exit_low[1], z=compiled.exit_low[2]),
+            Vec3(x=compiled.exit_high[0], y=compiled.exit_high[1], z=compiled.exit_high[2]),
+            Vec3(),
+            Vec3(),
+            Vec3()
+        );
+        extraction = LevelExit(destination="passion_complete", contact=True, volume=volume);
+        world +>:HasExit:+> extraction;
+        world +>:HasSignal:+> extraction.activation;
+    }
     world +>:HasSignal:+> level.completion;
-    validate_geometry(level, rooms);
+    validate_geometry(level, bp);
     if textures {
-        bake(level, rooms, cache_directory);
+        bake(level, bp, site, cache_directory);
     }
     return level;
 }
 
-def validate_geometry(level: Level, rooms: list[Chamber]) {
-    for room in rooms {
-        center = Vec3(
-            x=float(room.x) * 640.0 + 320.0,
-            y=float(room.y) * 640.0 + 320.0,
-            z=float(room.y) * 32.0 + 46.125
-        );
-        if level.collision.trace(center, center).start_solid {
-            raise ValueError("Blocked generated room center");
-        }
-        for neighbor in [room->:Passage:->][?:Chamber] {
-            if neighbor.index <= room.index or neighbor.index == 19 {
-                continue;
+# Physical checks of the compiled world against the blueprint: floors support
+# every corridor waypoint and standing hulls fit along every route.
+def validate_geometry(level: Level, bp: Blueprint) {
+    movers = [
+        i
+        for i in range(len(level.collision.models))
+        if level.collision.models[i] != 0
+    ];
+    for link in bp.routes {
+        for point in bp.routes[link] {
+            top = Vec3(x=point[0], y=point[1], z=point[2] + 64.0);
+            bottom = Vec3(x=point[0], y=point[1], z=point[2] - 8.0);
+            floor = level.collision.trace_point(top, bottom, movers);
+            if floor.start_solid or floor.fraction >= 1.0 {
+                raise ValueError("Unsupported corridor waypoint on link " + str(link));
             }
-            target = Vec3(
-                x=float(neighbor.x) * 640.0 + 320.0, y=float(neighbor.y) * 640.0 + 320.0
-            );
-            previous = float(room.y) * 32.0;
-            for sample in range(41) {
-                point = center.lerp(target, float(sample) / 40.0);
-                top = Vec3(
-                    x=point.x, y=point.y, z=float(max(room.y, neighbor.y)) * 32.0 + 64.0
-                );
-                bottom = Vec3(
-                    x=point.x, y=point.y, z=float(min(room.y, neighbor.y)) * 32.0 - 8.0
-                );
-                floor = level.collision.trace_point(top, bottom);
-                if floor.start_solid or floor.fraction >= 1.0 {
-                    raise ValueError(
-                        "Unsupported passage "
-                            + str(room.index)
-                            + "-"
-                            + str(neighbor.index)
-                            + " sample "
-                            + str(sample)
-                            + " solid="
-                            + str(floor.start_solid)
-                            + " hit="
-                            + str(floor.fraction)
-                    );
-                }
-                standing = top.lerp(bottom, floor.fraction).add(Vec3(z=46.125));
-                height = standing.z - 46.125;
-                if abs(height - previous) > 18.1
-                    or level.collision.trace(standing, standing).start_solid {
-                    raise ValueError("Unwalkable generated passage");
-                }
-                previous = height;
+            height = top.z + (bottom.z - top.z) * floor.fraction;
+            if abs(height - point[2]) > 0.5 {
+                raise ValueError("Corridor floor mismatch on link " + str(link));
+            }
+            standing = Vec3(x=point[0], y=point[1], z=height + 46.125);
+            if level.collision.trace(standing, standing, movers).start_solid {
+                raise ValueError("Blocked corridor waypoint on link " + str(link));
             }
         }
     }
+}
+
+def survey_of(world: World) -> Survey | None {
+    found = [world->:Surveys:->][?:Survey];
+    return found[0] if found else None;
 }

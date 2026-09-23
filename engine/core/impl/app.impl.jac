@@ -164,9 +164,7 @@ impl App.render_frame() {
             if self.level.bsp.game == "passion" {
                 if self.notice_wait <= 0.0 {
                     self.renderer.draw_message(
-                        "PASSION "
-                            + self.level.name
-                            + " | Find both keys, reach extraction"
+                        "PASSION " + self.level.name + " | " + self.level.briefing
                     );
                 }
                 if self.expedition_complete {

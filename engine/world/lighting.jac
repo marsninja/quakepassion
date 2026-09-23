@@ -46,6 +46,7 @@ walker GatherLamps {
 obj ProbeRegion {
     has origin: Vec3,
         spacing: Vec3 = Vec3(x=160.0, y=160.0, z=80.0),
+        counts: list[int] = [4, 4, 4],
         samples: list[Illumination] = [],
         valid: list[bool] = [];
 
@@ -58,18 +59,22 @@ obj ProbeRegion {
         ];
         low: list[int] = [];
         fraction: list[float] = [];
-        for value in coordinates {
-            value = max(0.0, min(3.0, value));
-            index = min(2, int(math.floor(value)));
+        for axis in range(3) {
+            last = self.counts[axis] - 1;
+            value = max(0.0, min(float(last), coordinates[axis]));
+            index = max(0, min(last - 1, int(math.floor(value))));
             low.append(index);
-            fraction.append(value - float(index));
+            fraction.append(max(0.0, min(1.0, value - float(index))) if last > 0 else 0.0);
         }
         result = Illumination(enabled=True, ambient=Vec3(), direction=Vec3());
         total = 0.0;
         for z in range(2) {
             for y in range(2) {
                 for x in range(2) {
-                    index = (low[2] + z) * 16 + (low[1] + y) * 4 + low[0] + x;
+                    px = min(self.counts[0] - 1, low[0] + x);
+                    py = min(self.counts[1] - 1, low[1] + y);
+                    pz = min(self.counts[2] - 1, low[2] + z);
+                    index = (pz * self.counts[1] + py) * self.counts[0] + px;
                     if not self.valid[index] {
                         continue;
                     }
@@ -98,24 +103,71 @@ obj ProbeRegion {
     }
 }
 
+# Probe regions are chosen through a coarse floor-plan grid, so interpolation
+# stays inside one room or corridor and never blends through a wall.
 obj Lighting {
     has rig: LightRig = LightRig(),
         regions: list[ProbeRegion] = [],
+        lookup: list[int] = [],
+        lookup_columns: int = 0,
+        lookup_rows: int = 0,
+        lookup_cell: float = 160.0,
         dynamic: list[FlashLight] = [],
         cache_hit: bool = False;
+
+    def region_at(point: Vec3) -> int {
+        if not self.lookup {
+            return 0;
+        }
+        x = min(self.lookup_columns - 1, max(0, int(math.floor(point.x / self.lookup_cell))));
+        y = min(self.lookup_rows - 1, max(0, int(math.floor(point.y / self.lookup_cell))));
+        return self.lookup[y * self.lookup_columns + x];
+    }
 
     def sample(point: Vec3, include_dynamic: bool = True) -> Illumination {
         if not self.regions {
             return Illumination();
         }
-        # Region-local interpolation avoids blending through room walls.
-        x = min(4, max(0, int(math.floor(point.x / 640.0))));
-        y = min(3, max(0, int(math.floor(point.y / 640.0))));
-        result = self.regions[y * 5 + x].sample(point);
+        index = self.region_at(point);
+        result = Illumination(enabled=True, ambient=Vec3(x=0.12, y=0.12, z=0.12));
+        if 0 <= index < len(self.regions) {
+            result = self.regions[index].sample(point);
+        }
         for flash in (self.dynamic if include_dynamic else []) {
             delta = flash.origin.sub(point);
             factor = max(0.0, 1.0 - delta.length() / flash.radius);
             result.ambient = result.ambient.add(flash.color.scale(factor * factor));
+        }
+        return result;
+    }
+}
+
+# Shadow queries are pluggable: collision traces by default, or any faster
+# exact test a level source can offer for its own geometry.
+obj Occluder {
+    def visibility(point: Vec3, target: Vec3) -> float {
+        return 1.0;
+    }
+}
+
+obj TraceOccluder(Occluder) {
+    has collision: CollisionMap, excluded: list[int] = [];
+
+    # A clear central ray means a fully visible emitter; otherwise two
+    # deterministic offset samples soften the shadow edge.
+    def visibility(point: Vec3, target: Vec3) -> float {
+        center = self.collision.trace_point(point, target, self.excluded);
+        if not center.start_solid and center.fraction >= 1.0 {
+            return 1.0;
+        }
+        result = 0.0;
+        for offset in [-6.0, 6.0] {
+            hit = self.collision.trace_point(
+                point, target.add(Vec3(x=offset)), self.excluded
+            );
+            if not hit.start_solid and hit.fraction >= 1.0 {
+                result += 0.5;
+            }
         }
         return result;
     }
@@ -127,6 +179,18 @@ def irradiance(
     lamps: list[Lamp],
     collision: CollisionMap,
     excluded: list[int],
+    probe: bool = False
+) -> Illumination {
+    return shade(
+        point, normal, lamps, TraceOccluder(collision=collision, excluded=excluded), probe
+    );
+}
+
+def shade(
+    point: Vec3,
+    normal: Vec3,
+    lamps: list[Lamp],
+    occluder: Occluder,
     probe: bool = False
 ) -> Illumination {
     result = Illumination(ambient=Vec3(x=0.12, y=0.12, z=0.12), direction=Vec3());
@@ -141,15 +205,9 @@ def irradiance(
         if cosine <= 0.0 {
             continue;
         }
-        # Two deterministic emitter samples soften edges without frame-time rays.
-        visibility = 0.0;
-        for offset in [-6.0, 6.0] {
-            hit = collision.trace_point(
-                point, lamp.origin.add(Vec3(x=offset)), excluded
-            );
-            if not hit.start_solid and hit.fraction >= 1.0 {
-                visibility += 0.5;
-            }
+        visibility = occluder.visibility(point, lamp.origin);
+        if visibility <= 0.0 {
+            continue;
         }
         factor = 1.0 - distance / lamp.radius;
         contribution = lamp.color.scale(

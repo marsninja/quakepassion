@@ -1,4 +1,11 @@
-"""Deterministic generated lightmaps and probes, cached by complete bake inputs."""
+"""Deterministic generated lightmaps and probes, cached by complete bake inputs.
+
+Lamps come from the blueprint (room grids, corridor runs, objective accents).
+A face only gathers lamps whose cluster can see one of the face's clusters and
+whose range reaches the face, so bake cost grows with local density instead of
+level size. Probe grids follow each cluster's bounds and are looked up through
+the macro floor plan.
+"""
 import os;
 import math;
 import struct;
@@ -10,40 +17,17 @@ import from engine.world.lighting {
     GatherLamps,
     ProbeRegion,
     Illumination,
-    irradiance
+    Occluder,
+    shade
 }
 import from engine.world.level { Level }
 import from engine.math.vec3 { Vec3 }
-import from engine.formats.bsp { Face, Texture }
-import from .geometry { Builder }
-import from .plan { Chamber }
+import from engine.formats.bsp { Face }
+import from .blueprint { Blueprint }
+import from .layout { Site, CELL }
+import from .materials { LAMP_RGB }
 
-def fixtures(builder: Builder, room: Chamber, ceiling: float) {
-    # Emission is a separate material, so dark surroundings never dim the lamp.
-    x = float(room.x) * 640.0;
-    y = float(room.y) * 640.0;
-    z = float(room.y) * 32.0;
-    for cy in [160.0, 480.0] {
-        builder.panel(
-            [
-                Vec3(x=x + 292.0, y=y + cy - 12.0, z=z + ceiling - 0.5),
-                Vec3(x=x + 292.0, y=y + cy + 12.0, z=z + ceiling - 0.5),
-                Vec3(x=x + 348.0, y=y + cy + 12.0, z=z + ceiling - 0.5),
-                Vec3(x=x + 348.0, y=y + cy - 12.0, z=z + ceiling - 0.5)
-            ],
-            7 + room.theme
-        );
-        builder.bsp.faces[-1].emission = True;
-    }
-}
-
-def fixture_materials() -> list[Texture] {
-    return [
-        Texture(name="passion:lamp-amber", width=1, height=1, rgba=b"\xff\xc4\x80\xff"),
-        Texture(name="passion:lamp-cool", width=1, height=1, rgba=b"\xad\xdc\xff\xff"),
-        Texture(name="passion:lamp-rose", width=1, height=1, rgba=b"\xff\xad\xc7\xff")
-    ];
-}
+glob BAKE_VERSION: bytes = b"passion-lighting-2-spacing32-pvs-columns-soft2-ambient012";
 
 def axes(face: Face) -> list[Vec3] {
     u = face.vertices[1].sub(face.vertices[0]).normalized();
@@ -53,12 +37,13 @@ def axes(face: Face) -> list[Vec3] {
 
 def layout(level: Level) -> int {
     offset = 0;
+    moving = level.bsp.models[1].first_face if len(level.bsp.models) > 1 else len(level.bsp.faces);
     for index in range(len(level.bsp.faces)) {
         face = level.bsp.faces[index];
         face.colors = [];
         face.light_uv = [];
         face.light_offset = -1;
-        face.moving_light = index >= level.bsp.models[1].first_face;
+        face.moving_light = index >= moving;
         if face.emission or face.moving_light {
             continue;
         }
@@ -85,7 +70,7 @@ def layout(level: Level) -> int {
 }
 
 def cache_key(level: Level, lamps: list[Lamp]) -> str {
-    digest = hashlib.sha256(b"passion-lighting-1-spacing32-probes4-soft2-ambient012");
+    digest = hashlib.sha256(BAKE_VERSION);
     digest.update(level.name.encode());
     for texture in level.bsp.textures {
         digest.update(texture.name.encode());
@@ -114,13 +99,22 @@ def cache_key(level: Level, lamps: list[Lamp]) -> str {
             )
         );
     }
+    digest.update(level.bsp.visibility);
     return digest.hexdigest();
+}
+
+def probe_count(lighting: Lighting) -> int {
+    total = 0;
+    for region in lighting.regions {
+        total += region.counts[0] * region.counts[1] * region.counts[2];
+    }
+    return total;
 }
 
 def pack_probes(lighting: Lighting) -> bytes {
     data = bytearray();
     for region in lighting.regions {
-        for i in range(64) {
+        for i in range(region.counts[0] * region.counts[1] * region.counts[2]) {
             sample = region.samples[i];
             data.append(1 if region.valid[i] else 0);
             for vector in [sample.ambient, sample.directed, sample.direction] {
@@ -132,14 +126,14 @@ def pack_probes(lighting: Lighting) -> bytes {
 }
 
 def unpack_probes(data: bytes, lighting: Lighting) {
-    if len(data) != 20 * 64 * 37 {
+    if len(data) != probe_count(lighting) * 37 {
         raise ValueError("Invalid probe cache length");
     }
     offset = 0;
     for region in lighting.regions {
         region.samples = [];
         region.valid = [];
-        for i in range(64) {
+        for i in range(region.counts[0] * region.counts[1] * region.counts[2]) {
             if data[offset] > 1 {
                 raise ValueError("Invalid probe validity");
             }
@@ -171,30 +165,258 @@ def unpack_probes(data: bytes, lighting: Lighting) {
     }
 }
 
-def bake(level: Level, rooms: list[Chamber], cache_directory: str = "") {
-    lighting = Lighting();
-    level.lighting = lighting;
-    colors = [
-        Vec3(x=1.0, y=0.77, z=0.5),
-        Vec3(x=0.68, y=0.86, z=1.0),
-        Vec3(x=1.0, y=0.68, z=0.78)
-    ];
-    for room in rooms {
-        ceiling = 320.0 if room.shape == 0 else (224.0 if room.shape == 1 else 384.0);
-        x = float(room.x) * 640.0;
-        y = float(room.y) * 640.0;
-        z = float(room.y) * 32.0;
-        for cy in [160.0, 480.0] {
-            lighting.rig +>:Emits:+> Lamp(
-                origin=Vec3(x=x + 320.0, y=y + cy, z=z + ceiling - 8.0),
-                color=colors[room.theme]
-            );
+def visible_row(level: Level, cluster: int) -> list[bool] {
+    count = level.bsp.clusters;
+    row = [False for _ in range(count)];
+    if cluster < 0 or cluster >= count {
+        return [True for _ in range(count)];
+    }
+    base = 8 + cluster * level.bsp.cluster_bytes;
+    for target in range(count) {
+        if int(level.bsp.visibility[base + target // 8]) & (1 << (target % 8)) {
+            row[target] = True;
         }
+    }
+    return row;
+}
+
+obj Rig {
+    has lamps: list[Lamp] = [], clusters: list[int] = [], rows: list[list[bool]] = [];
+
+    # Lamps that can see any of the given clusters and reach the sphere.
+    def near(clusters: list[int], center: Vec3, extent: float) -> list[Lamp] {
+        result: list[Lamp] = [];
+        for index in range(len(self.lamps)) {
+            lamp = self.lamps[index];
+            if lamp.origin.sub(center).length() > lamp.radius + extent {
+                continue;
+            }
+            home = self.clusters[index];
+            seen = home < 0 or not clusters;
+            for cluster in clusters {
+                if seen {
+                    break;
+                }
+                if cluster < 0 or (0 <= home < len(self.rows) and self.rows[home][cluster]) {
+                    seen = True;
+                }
+            }
+            if seen {
+                result.append(lamp);
+            }
+        }
+        return result;
+    }
+}
+
+# Exact shadow rays for a column heightfield: walk the columns a segment
+# crosses (Amanatides-Woo) and require its height span inside each column's air.
+obj ColumnOccluder(Occluder) {
+    has bp: Blueprint;
+
+    def clear(sx: float, sy: float, sz: float, ex: float, ey: float, ez: float) -> bool {
+        bp = self.bp;
+        x = int(math.floor(sx / 32.0));
+        y = int(math.floor(sy / 32.0));
+        end_x = int(math.floor(ex / 32.0));
+        end_y = int(math.floor(ey / 32.0));
+        dx = ex - sx;
+        dy = ey - sy;
+        step_x = 1 if dx > 0.0 else -1;
+        step_y = 1 if dy > 0.0 else -1;
+        next_x = 1000000.0;
+        next_y = 1000000.0;
+        delta_x = 1000000.0;
+        delta_y = 1000000.0;
+        if abs(dx) > 0.000001 {
+            boundary = float(x + (1 if dx > 0.0 else 0)) * 32.0;
+            next_x = (boundary - sx) / dx;
+            delta_x = 32.0 / abs(dx);
+        }
+        if abs(dy) > 0.000001 {
+            boundary = float(y + (1 if dy > 0.0 else 0)) * 32.0;
+            next_y = (boundary - sy) / dy;
+            delta_y = 32.0 / abs(dy);
+        }
+        t = 0.0;
+        for guard in range(4096) {
+            leave = min(1.0, min(next_x, next_y));
+            if x < 0 or y < 0 or x >= bp.width or y >= bp.height {
+                return False;
+            }
+            i = y * bp.width + x;
+            if bp.region[i] < 0 {
+                return False;
+            }
+            z0 = sz + (ez - sz) * t;
+            z1 = sz + (ez - sz) * leave;
+            if min(z0, z1) < float(bp.floor[i]) - 0.3 or max(z0, z1) > float(bp.ceiling[i]) + 0.3 {
+                return False;
+            }
+            if (x == end_x and y == end_y) or leave >= 1.0 {
+                return True;
+            }
+            t = leave;
+            if next_x < next_y {
+                x += step_x;
+                next_x += delta_x;
+            } else {
+                y += step_y;
+                next_y += delta_y;
+            }
+        }
+        return True;
+    }
+
+    def visibility(point: Vec3, target: Vec3) -> float {
+        if self.clear(point.x, point.y, point.z, target.x, target.y, target.z) {
+            return 1.0;
+        }
+        result = 0.0;
+        for offset in [-6.0, 6.0] {
+            if self.clear(point.x, point.y, point.z, target.x + offset, target.y, target.z) {
+                result += 0.5;
+            }
+        }
+        return result;
+    }
+}
+
+def cluster_at(bp: Blueprint, x: float, y: float) -> int {
+    cx = int(x / 32.0);
+    cy = int(y / 32.0);
+    if cx < 0 or cy < 0 or cx >= bp.width or cy >= bp.height {
+        return -1;
+    }
+    return bp.region[bp.index(cx, cy)];
+}
+
+def probe_regions(level: Level, bp: Blueprint, site: Site) -> Lighting {
+    lighting = Lighting();
+    count = len(bp.regions);
+    low_x = [1000000 for _ in range(count)];
+    low_y = [1000000 for _ in range(count)];
+    high_x = [-1 for _ in range(count)];
+    high_y = [-1 for _ in range(count)];
+    low_z = [1000000 for _ in range(count)];
+    high_z = [-1000000 for _ in range(count)];
+    for y in range(bp.height) {
+        for x in range(bp.width) {
+            i = bp.index(x, y);
+            if not bp.open(i) {
+                continue;
+            }
+            r = bp.region[i];
+            low_x[r] = min(low_x[r], x);
+            low_y[r] = min(low_y[r], y);
+            high_x[r] = max(high_x[r], x + 1);
+            high_y[r] = max(high_y[r], y + 1);
+            low_z[r] = min(low_z[r], bp.floor[i]);
+            high_z[r] = max(high_z[r], bp.ceiling[i]);
+        }
+    }
+    for r in range(count) {
+        if high_x[r] < 0 {
+            lighting.regions.append(ProbeRegion(origin=Vec3(), counts=[1, 1, 1]));
+            continue;
+        }
+        width = float(high_x[r] - low_x[r]) * 32.0 - 32.0;
+        depth = float(high_y[r] - low_y[r]) * 32.0 - 32.0;
+        rise = float(high_z[r] - low_z[r]) - 48.0;
+        nx = max(2, min(6, int(width / 160.0) + 2));
+        ny = max(2, min(6, int(depth / 160.0) + 2));
+        nz = max(2, min(4, int(rise / 96.0) + 2));
         lighting.regions.append(
-            ProbeRegion(origin=Vec3(x=x + 80.0, y=y + 80.0, z=z + 40.0))
+            ProbeRegion(
+                origin=Vec3(
+                    x=float(low_x[r]) * 32.0 + 16.0,
+                    y=float(low_y[r]) * 32.0 + 16.0,
+                    z=float(low_z[r]) + 24.0
+                ),
+                spacing=Vec3(
+                    x=max(1.0, width / float(nx - 1)),
+                    y=max(1.0, depth / float(ny - 1)),
+                    z=max(1.0, rise / float(nz - 1))
+                ),
+                counts=[nx, ny, nz]
+            )
         );
     }
+    # Floor-plan lookup: each macro cell uses the cluster owning most of it,
+    # and wall-only cells borrow a neighbor so edge samples stay lit.
+    columns = site.width;
+    rows = site.height;
+    lookup = [-1 for _ in range(columns * rows)];
+    for my in range(rows) {
+        for mx in range(columns) {
+            counts: dict[int, int] = {};
+            for dy in range(CELL) {
+                for dx in range(CELL) {
+                    x = mx * CELL + dx;
+                    y = my * CELL + dy;
+                    if x < bp.width and y < bp.height {
+                        i = bp.index(x, y);
+                        if bp.open(i) {
+                            counts[bp.region[i]] = counts.get(bp.region[i], 0) + 1;
+                        }
+                    }
+                }
+            }
+            best = -1;
+            best_count = 0;
+            for region in counts {
+                if counts[region] > best_count {
+                    best = region;
+                    best_count = counts[region];
+                }
+            }
+            lookup[my * columns + mx] = best;
+        }
+    }
+    for sweep in range(4) {
+        filled = list(lookup);
+        for my in range(rows) {
+            for mx in range(columns) {
+                if lookup[my * columns + mx] >= 0 {
+                    continue;
+                }
+                for delta in [[1, 0], [-1, 0], [0, 1], [0, -1]] {
+                    nx = mx + delta[0];
+                    ny = my + delta[1];
+                    if 0 <= nx < columns and 0 <= ny < rows and lookup[ny * columns + nx] >= 0 {
+                        filled[my * columns + mx] = lookup[ny * columns + nx];
+                        break;
+                    }
+                }
+            }
+        }
+        lookup = filled;
+    }
+    lighting.lookup = lookup;
+    lighting.lookup_columns = columns;
+    lighting.lookup_rows = rows;
+    lighting.lookup_cell = float(CELL) * 32.0;
+    return lighting;
+}
+
+def bake(level: Level, bp: Blueprint, site: Site, cache_directory: str = "") {
+    lighting = probe_regions(level, bp, site);
+    level.lighting = lighting;
+    rig = Rig();
+    for spec in bp.lamps {
+        rgb = LAMP_RGB[spec.color % len(LAMP_RGB)];
+        lamp = Lamp(
+            origin=Vec3(x=spec.x, y=spec.y, z=spec.z),
+            color=Vec3(x=rgb[0], y=rgb[1], z=rgb[2]),
+            radius=spec.radius,
+            strength=1.8 * spec.strength
+        );
+        lighting.rig +>:Emits:+> lamp;
+    }
     lamps = (lighting.rig spawn GatherLamps()).lamps;
+    rig.lamps = lamps;
+    rig.clusters = [cluster_at(bp, lamp.origin.x, lamp.origin.y) for lamp in lamps];
+    rig.rows = [visible_row(level, cluster) for cluster in range(level.bsp.clusters)];
     size = layout(level);
     path = "";
     if cache_directory {
@@ -203,7 +425,7 @@ def bake(level: Level, rooms: list[Chamber], cache_directory: str = "") {
             with open(path, "rb") as stream {
                 data = stream.read();
             }
-            if len(data) != 32 + size + 20 * 64 * 37
+            if len(data) != 32 + size + probe_count(lighting) * 37
                 or hashlib.sha256(data[32:]).digest() != data[:32] {
                 raise ValueError("Invalid lighting cache");
             }
@@ -215,13 +437,18 @@ def bake(level: Level, rooms: list[Chamber], cache_directory: str = "") {
         } except (OSError, ValueError) {}
     }
     # Doors are absent from static shadow rays; they are lit from probes as they move.
-    excluded = [
-        i
-        for i in range(len(level.collision.models))
-        if level.collision.models[i] != 0
-    ];
+    occluder = ColumnOccluder(bp=bp);
+    face_clusters: dict[int, list[int]] = {};
+    for leaf in level.bsp.leaves {
+        for index in leaf.faces {
+            clusters = face_clusters.setdefault(index, []);
+            if leaf.cluster not in clusters {
+                clusters.append(leaf.cluster);
+            }
+        }
+    }
     pixels = bytearray();
-    print("LIGHTING baking", level.name, len(level.bsp.faces), "faces");
+    print("LIGHTING baking", level.name, len(level.bsp.faces), "faces", len(lamps), "lamps");
     for index in range(len(level.bsp.faces)) {
         face = level.bsp.faces[index];
         if face.light_offset < 0 {
@@ -230,6 +457,9 @@ def bake(level: Level, rooms: list[Chamber], cache_directory: str = "") {
         start = face.vertices[0];
         u = face.vertices[1].sub(start);
         v = face.vertices[-1].sub(start);
+        center = start.add(u.scale(0.5)).add(v.scale(0.5));
+        extent = (u.length() + v.length()) * 0.5;
+        nearby = rig.near(face_clusters.get(index, []), center, extent);
         for y in range(face.light_height) {
             for x in range(face.light_width) {
                 # Inset boundary samples to avoid sampling inside the neighboring wall.
@@ -244,37 +474,44 @@ def bake(level: Level, rooms: list[Chamber], cache_directory: str = "") {
                 point = start.add(u.scale(s)).add(v.scale(t)).add(
                     face.normal.scale(0.25)
                 );
-                sample = irradiance(
-                    point, face.normal, lamps, level.collision, excluded
-                );
+                sample = shade(point, face.normal, nearby, occluder);
                 color = sample.ambient.add(sample.directed);
                 for value in [color.x, color.y, color.z] {
                     pixels.append(int(max(0.0, min(127.0, value * 127.5))));
                 }
             }
         }
-        if index % 500 == 0 {
+        if index % 1000 == 0 {
             print("LIGHTING faces", index, "/", len(level.bsp.faces));
         }
     }
     level.bsp.lighting = bytes(pixels);
-    for region in lighting.regions {
+    for r in range(len(lighting.regions)) {
+        region = lighting.regions[r];
         region.samples = [];
         region.valid = [];
-        for z in range(4) {
-            for y in range(4) {
-                for x in range(4) {
+        half = Vec3(
+            x=region.spacing.x * float(region.counts[0] - 1) * 0.5,
+            y=region.spacing.y * float(region.counts[1] - 1) * 0.5,
+            z=region.spacing.z * float(region.counts[2] - 1) * 0.5
+        );
+        nearby = rig.near([r], region.origin.add(half), half.length());
+        for z in range(region.counts[2]) {
+            for y in range(region.counts[1]) {
+                for x in range(region.counts[0]) {
                     point = region.origin.add(
-                        Vec3(x=float(x) * 160.0, y=float(y) * 160.0, z=float(z) * 80.0)
+                        Vec3(
+                            x=float(x) * region.spacing.x,
+                            y=float(y) * region.spacing.y,
+                            z=float(z) * region.spacing.z
+                        )
                     );
-                    valid = not level.collision.trace_point(
-                        point, point, excluded
-                    ).start_solid;
+                    column = cluster_at(bp, point.x, point.y);
+                    valid = column >= 0
+                        and occluder.clear(point.x, point.y, point.z, point.x, point.y, point.z);
                     region.valid.append(valid);
                     region.samples.append(
-                        irradiance(
-                            point, Vec3(), lamps, level.collision, excluded, True
-                        )
+                        shade(point, Vec3(), nearby, occluder, True)
                             if valid
                             else Illumination(ambient=Vec3())
                     );
@@ -295,5 +532,5 @@ def bake(level: Level, rooms: list[Chamber], cache_directory: str = "") {
             print("LIGHTING cache unavailable; using completed bake");
         }
     }
-    print("LIGHTING ready", len(pixels), "lightmap bytes, 1280 probes");
+    print("LIGHTING ready", len(pixels), "lightmap bytes,", probe_count(lighting), "probes");
 }
