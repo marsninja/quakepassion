@@ -392,6 +392,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         frames, rule.knockdown_frames, path, "knockdown"
                     );
                 }
+                if rule.duck_frames {
+                    enemy.duck_animation = frame_indices(
+                        frames, rule.duck_frames, path, "duck"
+                    );
+                }
                 if rule.run_frames {
                     enemy.animation = frame_indices(frames, rule.run_frames, path, "run");
                 }
