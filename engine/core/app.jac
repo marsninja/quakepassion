@@ -102,6 +102,7 @@ import from ..world.clocks { ClockTick }
 import from ..world.flyers { FlyerTick }
 import from ..world.turrets { TurretTick }
 import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
+import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..world.falling { FallingTick }
 import from ..world.trail { TrailTick }
 import from ..render.hud { HudRenderer, HudStatus }
@@ -156,6 +157,7 @@ obj App {
         last_drawn: int = 0,
         level: Level = Level(),
         quake: QuakeRenderer = QuakeRenderer(),
+        portal_target: PortalTarget = PortalTarget(),
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
         viewweapon: ViewWeapon = ViewWeapon(),
@@ -203,6 +205,7 @@ obj App {
 
     def begin_intermission(text: str);
     def begin_podium(contest: ArenaMatch);
+    def render_portal(faces: list[int]);
     def adjust_setting(direction: int);
     def reset_settings();
     def refresh_settings();

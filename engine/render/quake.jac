@@ -86,7 +86,14 @@ obj QuakeRenderer {
         white: int = 0,
         time: float = 0.0,
         fog_image: int = 0,
-        view_forward: Vec3 = Vec3(x=1.0);
+        view_forward: Vec3 = Vec3(x=1.0),
+        portal_image: int = 0,
+        portal_normal: Vec3 = Vec3(),
+        portal_dist: float = 0.0,
+        portal_width: float = 1.0,
+        portal_height: float = 1.0,
+        portal_shader: Shader = Shader(id=u32(0), locs=u64(0)),
+        portal_size: int = -1;
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
@@ -145,6 +152,9 @@ obj QuakeRenderer {
     }
 
     def upload(level: Level) {
+        if level.bsp.fogs and self.fog_image == 0 {
+            self.fog_image = upload_fog_image();
+        }
         self.single_pass = level.bsp.game in ["q3", "passion"];
         if self.single_pass {
             # Baked lighting does not need a geometric normal. The batch's
@@ -723,7 +733,11 @@ obj QuakeRenderer {
         if not self.stage_images {
             return;
         }
-        for (t, images) in self.stage_images.items() {
+        # Portal shaders sort first (SS_PORTAL), over the view rendered through them.
+        order = [t for t in self.stage_images.keys() if t in level.portal_ranges];
+        order.extend([t for t in self.stage_images.keys() if t not in level.portal_ranges]);
+        for t in order {
+            images = self.stage_images[t];
             if t >= len(batches) or not batches[t] or t not in level.surface_stages {
                 continue;
             }
@@ -732,6 +746,9 @@ obj QuakeRenderer {
             two_sided = level.bsp.textures[t].two_sided or bool(deforms);
             if two_sided {
                 rlDisableBackfaceCulling();
+            }
+            if t in level.portal_ranges {
+                self.draw_portal_backdrop(level, batches[t], deforms, eye);
             }
             for k in range(min(len(stages), len(images))) {
                 stage = stages[k];
@@ -780,13 +797,15 @@ obj QuakeRenderer {
                 } elif stage.alpha == "const" {
                     alpha = int(max(0.0, min(1.0, stage.alpha_const)) * 255.0);
                 }
+                fog_mode = fog_adjustment(stages[0], stage);
                 for index in batches[t] {
                     face = level.bsp.faces[index];
                     if ids[0] < 0 and face.light_offset < 0 {
                         continue;
                     }
                     shape = deform_face(face, deforms, eye, self.time) if deforms else None;
-                    self.stage_polygon(face, self.rects[index], stage, ids[0] < 0, eye, [red, green, blue, alpha], shape);
+                    fog = level.bsp.fogs[face.fog] if fog_mode > 0 and face.fog >= 0 and face.fog < len(level.bsp.fogs) else None;
+                    self.stage_polygon(face, self.rects[index], stage, ids[0] < 0, eye, [red, green, blue, alpha], shape, fog, fog_mode);
                 }
                 rlDrawRenderBatchActive();
                 if blended {
@@ -801,8 +820,61 @@ obj QuakeRenderer {
         rlSetTexture(u32(0));
     }
 
+    """What lies behind a portal surface before its stages blend over it: the
+    view rendered through it this frame, sampled in screen space, or black
+    for a portal whose view was not rendered."""
+    def draw_portal_backdrop(level: Level, faces: list[int], deforms: list[Deform], eye: Vec3) {
+        if self.portal_image != 0 and self.portal_shader.id == u32(0) {
+            self.portal_shader = LoadShaderFromMemory(
+                "#version 330\nin vec3 vertexPosition; uniform mat4 mvp;\n"
+                    + "void main(){ gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
+                "#version 330\nout vec4 finalColor; uniform sampler2D texture0; uniform vec2 screenSize;\n"
+                    + "void main(){ finalColor=vec4(texture(texture0, gl_FragCoord.xy/screenSize).rgb, 1.0); }\n"
+            );
+            self.portal_size = int(GetShaderLocation(self.portal_shader, "screenSize"));
+        }
+        for index in faces {
+            face = level.bsp.faces[index];
+            shown = self.portal_image != 0
+                and face.normal.dot(self.portal_normal) > 0.999
+                and abs(face.plane_dist - self.portal_dist) < 1.0;
+            shape = deform_face(face, deforms, eye, self.time) if deforms else None;
+            if shown {
+                rlDrawRenderBatchActive();
+                rlEnableShader(self.portal_shader.id);
+                rlSetUniform(i32(self.portal_size), struct.pack("<ff", self.portal_width, self.portal_height), i32(1), i32(1));
+                rlDisableShader();
+                BeginShaderMode(self.portal_shader);
+                rlSetTexture(u32(self.portal_image));
+            } else {
+                rlSetTexture(u32(self.white));
+            }
+            indices = face.indices;
+            if not indices {
+                indices = [];
+                for corner in range(1, len(face.vertices) - 1) {
+                    indices.extend([0, corner + 1, corner]);
+                }
+            }
+            rlBegin(i32(4));
+            level_color = 255 if shown else 0;
+            rlColor4ub(u8(level_color), u8(level_color), u8(level_color), u8(255));
+            for corner in indices {
+                v = shape.points[corner] if shape is not None else face.vertices[corner];
+                rlTexCoord2f(f32(0.0), f32(0.0));
+                rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
+            }
+            rlEnd();
+            rlDrawRenderBatchActive();
+            if shown {
+                EndShaderMode();
+            }
+        }
+        rlSetTexture(u32(0));
+    }
+
     """One face for one stage: tcGen, then each tcMod in order (tr_shade_calc.c)."""
-    def stage_polygon(face: Face, rect: LightRect, stage: ModelStage, light: bool, eye: Vec3, tint: list[int], shape: DeformedShape | None = None) {
+    def stage_polygon(face: Face, rect: LightRect, stage: ModelStage, light: bool, eye: Vec3, tint: list[int], shape: DeformedShape | None = None, fog: FogVolume | None = None, fog_mode: int = 0) {
         indices = face.indices;
         if len(indices) == 0 {
             indices = [];
@@ -857,11 +929,28 @@ obj QuakeRenderer {
             }
             # tr_shade_calc.c RB_CalcSpecularAlpha: a fixed light at
             # (-960, 1980, 96) reflected toward the viewer, to the 4th power.
+            if stage.alpha == "portal" {
+                # alphaGen portal: the fog of distance, opaque at the range.
+                alpha = int(max(0.0, min(1.0, v.sub(eye).length() / max(1.0, stage.alpha_const))) * 255.0);
+            }
             if stage.alpha == "specular" {
                 toward = Vec3(x=-960.0, y=1980.0, z=96.0).sub(v).normalized();
                 reflected = face.normal.scale(2.0 * face.normal.dot(toward)).sub(toward);
                 shine = max(0.0, reflected.dot(eye.sub(v).normalized()));
                 alpha = int(min(255.0, shine * shine * shine * shine * 255.0));
+            }
+            if fog is not None {
+                # RB_CalcModulateColorsByFog: fade by what the fog hides.
+                st = fog_coords(fog, v, eye, self.view_forward);
+                clear = 1.0 - fog_density(st[0], st[1]);
+                if fog_mode != 2 {
+                    red = int(float(red) * clear);
+                    green = int(float(green) * clear);
+                    blue = int(float(blue) * clear);
+                }
+                if fog_mode != 1 {
+                    alpha = int(float(alpha) * clear);
+                }
             }
             rlColor4ub(u8(red), u8(green), u8(blue), u8(alpha));
             rlTexCoord2f(f32(s), f32(t));
@@ -1360,6 +1449,10 @@ obj QuakeRenderer {
             rlUnloadTexture(u32(self.fog_image));
             self.fog_image = 0;
         }
+        if self.portal_shader.id != u32(0) {
+            UnloadShader(self.portal_shader);
+            self.portal_shader = Shader(id=u32(0), locs=u64(0));
+        }
         if self.white != 0 {
             rlUnloadTexture(u32(self.white));
             self.white = 0;
@@ -1384,6 +1477,29 @@ def fog_density(s: float, t: float) -> float {
     }
     s = min(1.0, s * 8.0);
     return math.pow(float(int(s * 255.0)) / 255.0, 0.5);
+}
+
+"""tr_shader.c FinishShader adjustColorsForFog: for a translucent shader, 1
+fades a stage's colour (GL_ONE GL_ONE, GL_ZERO GL_ONE_MINUS_SRC_COLOR), 2 its
+alpha (GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA) and 3 both (GL_ONE
+GL_ONE_MINUS_SRC_ALPHA); 0 leaves it alone."""
+def fog_adjustment(first: ModelStage, stage: ModelStage) -> int {
+    if first.blend == "opaque" or stage.blend == "opaque" {
+        return 0;
+    }
+    source = stage.blend_source.lower();
+    destination = stage.blend_destination.lower();
+    if stage.blend == "add" or (source == "gl_one" and destination == "gl_one")
+        or (source == "gl_zero" and destination == "gl_one_minus_src_color") {
+        return 1;
+    }
+    if stage.blend == "alpha" or (source == "gl_src_alpha" and destination == "gl_one_minus_src_alpha") {
+        return 2;
+    }
+    if source == "gl_one" and destination == "gl_one_minus_src_alpha" {
+        return 3;
+    }
+    return 0;
 }
 
 """tr_shade_calc.c RB_CalcFogTexCoords for one world point."""

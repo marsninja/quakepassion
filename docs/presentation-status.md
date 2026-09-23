@@ -81,8 +81,38 @@ Q3 fog volumes draw as `tr_shade.c` does:
 - The fog coordinates are `RB_CalcFogTexCoords`': depth along the view over
   eight times `distanceToOpaque`, cut at the visible surface when the eye is
   outside the fog.
+- Models whose bounding sphere dips into a fog volume (`R_ComputeFogNum`) take
+  the same fog pass over their opaque surfaces.
+- Translucent shaders in fog take no fog pass. Their stages fade instead by what
+  the fog hides (`adjustColorsForFog`): colour for additive blends, alpha for
+  alpha blends, and both for premultiplied ones.
 - Fifteen of the original maps have fog, such as the lava haze of q3dm9 and
   q3tourney2.
+
+## Portals and mirrors
+
+Q3 mirrors and camera portals render the view through them before the main
+view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
+`engine/render/portal.jac`).
+- A `misc_portal_surface` within 64 units of a `portal` shader's plane selects
+  that surface.
+  - Without a target it is a mirror: the view reflects through the plane.
+  - With one it looks out of the `misc_portal_camera`, oriented as `locateCamera`
+    and `CG_Portal` set it up. The camera aims at its target or along its angle,
+    quantized through the 162 `bytedirs` directions as the network byte is. It
+    is rolled by `roll`, and sways four degrees or spins at 25 or 75 degrees a
+    second by its flags.
+- The view transform is `R_GetPortalOrientations` and `R_MirrorPoint` /
+  `R_MirrorVector`, and visibility floods from the camera.
+- The view renders into its own framebuffer. The near plane is tilted onto the
+  portal plane (standing in for Q3's clip plane), and a mirror's image is
+  flipped, with its faces winding the other way.
+- The portal surface shows that image in screen space, then its own stages blend
+  over it. `alphaGen portal` fades them in with distance.
+- A camera portal only renders within its shader's `portalRange`, as
+  `SurfIsOffscreen` allows.
+- The original maps use this for the mirrors on q3dm0, q3dm8, q3tourney6 and
+  q3ctf2, and the teleporter windows on q3dm0, q3dm7 and q3dm11.
 
 ## Q3 shaders
 
@@ -117,11 +147,14 @@ rewires the weapon visual. The weapon drops away on death.
 - `tests/fog_tests.jac` covers `fogParms`, the fog density table and the fog
   coordinates. `scripts/fog_smoke.jac` loads the fog volumes of q3dm9,
   q3tourney2 and q3dm12 and renders them from above and from inside.
+- `tests/portal_tests.jac` covers mirror and camera views, camera sway and
+  quantized aim. `scripts/portal_smoke.jac` renders through every portal shader
+  on q3tourney6, q3dm0 and q3dm7.
 
 ## Limits
 
-- The Q1 status bar needs native `bytes.find` for its WAD parser. An upstream
-  Jac fix is in progress; until then the Q1 loader falls back to Python.
-- Portal surfaces and 3D HUD icons (`cg_draw3dIcons 1`) remain open.
-- Translucent surfaces inside fog keep their own colours: the original's
-  `adjustColorsForFog` and the fog pass on models are not applied.
+- The Q1 status bar's WAD parser needs native `bytes.find`, which comes from
+  jac#9478 (open; applied to the local validation compiler).
+- 3D HUD icons (`cg_draw3dIcons 1`) remain open.
+- Mirrors do not show the player's own body; the player has no third-person
+  model yet.

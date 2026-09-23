@@ -288,6 +288,16 @@ obj Pk3Assets {
         return result;
     }
 
+    """A portal shader's range (tr_shader.c portalRange), or -1 when the shader
+    is not a portal."""
+    def portal_range(name: str) -> float {
+        key = material_name(name);
+        if key not in self.model_shaders or not self.model_shaders[key].portal {
+            return -1.0;
+        }
+        return self.model_shaders[key].portal_range;
+    }
+
     """A fog shader's fogParms as [r, g, b, distanceToOpaque], or [] when the
     shader sets none."""
     def fog_parms(name: str) -> list[float] {

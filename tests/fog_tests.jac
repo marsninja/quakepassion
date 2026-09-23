@@ -1,6 +1,7 @@
 import from engine.assets.materials { model_materials }
-import from engine.render.quake { fog_density, fog_coords, apply_tcmods }
+import from engine.render.quake { fog_density, fog_coords, apply_tcmods, fog_adjustment }
 import from engine.formats.bsp { FogVolume }
+import from engine.render.models { model_fog }
 import from engine.math.vec3 { Vec3 }
 
 test "Q3 fog shaders, density and coordinates follow the original renderer" {
@@ -26,6 +27,15 @@ test "Q3 fog shaders, density and coordinates follow the original renderer" {
     assert fog_coords(fog, Vec3(z=0.5), eye, forward)[1] == 1.0 / 32.0;
     # From inside, anything in the fog gets the full t.
     assert fog_coords(fog, Vec3(z=-200.0), Vec3(z=-50.0), forward)[1] == 31.0 / 32.0;
+    # adjustColorsForFog only for translucent shaders, by blend.
+    glow = model_materials("a\n{\n { map a.tga\n blendfunc add\n }\n { map b.tga\n blendfunc blend\n }\n { map c.tga\n blendfunc gl_one gl_one_minus_src_alpha\n }\n}\nb\n{\n { map a.tga\n }\n { map b.tga\n blendfunc add\n }\n}\n");
+    lit = glow["a"].stages;
+    assert fog_adjustment(lit[0], lit[0]) == 1 and fog_adjustment(lit[0], lit[1]) == 2 and fog_adjustment(lit[0], lit[2]) == 3;
+    solid = glow["b"].stages;
+    assert fog_adjustment(solid[0], solid[1]) == 0;
+    # R_ComputeFogNum: a model whose bounding sphere dips into the fog is fogged.
+    assert model_fog([fog], Vec3(x=100.0, y=100.0, z=20.0), 30.0) is fog;
+    assert model_fog([fog], Vec3(x=100.0, y=100.0, z=40.0), 30.0) is None;
 }
 
 test "tcMod transform and tcGen vector follow tr_shade_calc.c" {

@@ -128,8 +128,9 @@ impl App.render_frame() {
     if self.level.active {
         faces = self.level.visible(self.world, p.pos, self.culling);
         combat_lights(self.level.lighting, self.world, p, self.combat);
-        self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
         self.quake.time = self.simulation_time;
+        self.render_portal(faces);
+        self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
         self.quake.view_forward = forward_from(p.yaw, p.pitch);
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
         self.models.draw(
@@ -141,7 +142,9 @@ impl App.render_frame() {
             pitch=p.pitch,
             fov=self.renderer.fov,
             aspect=float(self.renderer.width) / float(self.renderer.height),
-            lighting=self.level.lighting
+            lighting=self.level.lighting,
+            fogs=self.level.bsp.fogs,
+            fog_image=self.quake.fog_image
         );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
@@ -1664,6 +1667,25 @@ impl App.finish_arena(contest: ArenaMatch) {
         }
     }
     self.load_destination("q3", destination);
+}
+
+"""Render the view through the first on-screen portal before the main view."""
+impl App.render_portal(faces: list[int]) {
+    p = self.player;
+    draw_portal_view(
+        self.portal_target,
+        self.level,
+        self.world,
+        self.quake,
+        self.models,
+        self.effects,
+        faces,
+        p.pos,
+        p.yaw,
+        p.pitch,
+        self.renderer.fov,
+        self.simulation_time
+    );
 }
 
 """Q3 BeginIntermission in single player: the view moves to the intermission

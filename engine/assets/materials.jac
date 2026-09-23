@@ -14,7 +14,9 @@ obj ModelMaterial {
         deforms: list[Deform] = [],
         fog: bool = False,
         fog_color: Vec3 = Vec3(),
-        fog_depth: float = 1.0;
+        fog_depth: float = 1.0,
+        portal: bool = False,
+        portal_range: float = 256.0;
 }
 
 def number_at(tokens: list[str], i: int) -> float {
@@ -173,6 +175,13 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
             stage.alpha_const = number_at(tokens, i + 2);
             return i + 2;
         }
+        if argument == "portal" {
+            # alphaGen portal <range>: opaque at the range, clear up close.
+            stage.alpha = "portal";
+            stage.alpha_const = number_at(tokens, i + 2) or 256.0;
+            material.portal_range = stage.alpha_const;
+            return i + 2;
+        }
         if argument == "vertex" {
             stage.alpha = "vertex";
         } elif argument == "lightingspecular" {
@@ -301,6 +310,8 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
                 material.cloud_height = number_at(tokens, i + 2) if height != "-" and number_at(tokens, i + 2) > 0.0 else 128.0;
                 i += 3;
             }
+        } elif depth == 1 and token == "portal" {
+            material.portal = True;
         } elif depth == 1 and token == "fogparms" {
             # fogParms ( r g b ) distanceToOpaque, parentheses spaced or not.
             values: list[float] = [];

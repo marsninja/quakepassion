@@ -25,6 +25,7 @@ import from .clocks { load_clocks }
 import from .flyers { load_flyers }
 import from .falling { load_falling_objects }
 import from .turrets { load_turrets }
+import from .portals { load_portals }
 import from .finale { load_finale }
 import from .hazards { load_hazards }
 import from .speakers { load_speakers }
@@ -117,7 +118,8 @@ obj Level {
         surface_stages: dict[int, list[ModelStage]] = {},
         surface_deforms: dict[int, list[Deform]] = {},
         sky_clouds: list[ModelStage] = [],
-        cloud_height: float = 128.0;
+        cloud_height: float = 128.0,
+        portal_ranges: dict[int, float] = {};
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -275,6 +277,12 @@ def load_level(
                 fog.depth = parms[3];
             }
         }
+        for index in range(len(level.bsp.textures)) {
+            reach = assets.portal_range(level.bsp.textures[index].name);
+            if reach >= 0.0 {
+                level.portal_ranges[index] = reach;
+            }
+        }
         fog_shaders: list[int] = [];
         for index in range(len(level.bsp.textures)) {
             if assets.fog_parms(level.bsp.textures[index].name) {
@@ -428,6 +436,7 @@ def prepare_level(world: World, level: Level) {
     flood_doors(world, level.liquids);
     load_rotators(world, level.bsp, level.collision);
     load_turrets(world, level.bsp, level.collision);
+    load_portals(world, level.bsp);
     load_shooters(world, level.bsp);
     load_targets(world, level.bsp);
     load_traversal(world, level.bsp);
