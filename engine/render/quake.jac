@@ -74,6 +74,7 @@ obj QuakeRenderer {
         rects: list[LightRect] = [],
         styled: list[int] = [],
         stage_images: dict[int, list[list[int]]] = {},
+        sky_layers: dict[int, list[int]] = {},
         white: int = 0,
         time: float = 0.0;
 
@@ -339,9 +340,108 @@ obj QuakeRenderer {
         self.upload_stages(level);
     }
 
+    """Quake's sky textures hold a masked front layer (left half, index 0 clear)
+    beside a solid back layer (right half); each becomes its own texture."""
+    def upload_sky_layers(level: Level) {
+        self.sky_layers = {};
+        if level.bsp.game != "q1" {
+            return;
+        }
+        for t in range(len(level.bsp.textures)) {
+            texture = level.bsp.textures[t];
+            if not texture.name.startswith("sky") or texture.width != texture.height * 2 or not texture.pixels {
+                continue;
+            }
+            size = texture.height;
+            back = bytearray();
+            totals = [0, 0, 0];
+            for y in range(size) {
+                for x in range(size) {
+                    solid = int(texture.pixels[y * texture.width + x + size]);
+                    back.extend(level.palette[solid * 3:solid * 3 + 3]);
+                    back.append(255);
+                    for c in range(3) {
+                        totals[c] += int(level.palette[solid * 3 + c]);
+                    }
+                }
+            }
+            # gl_warp.c R_InitSky: clear texels take the back layer's average
+            # colour, so filtering leaves no dark fringe around the clouds.
+            average = [totals[c] // (size * size) for c in range(3)];
+            front = bytearray();
+            for y in range(size) {
+                for x in range(size) {
+                    masked = int(texture.pixels[y * texture.width + x]);
+                    if masked == 0 {
+                        front.extend([average[0], average[1], average[2], 0]);
+                    } else {
+                        front.extend(level.palette[masked * 3:masked * 3 + 3]);
+                        front.append(255);
+                    }
+                }
+            }
+            ids: list[int] = [];
+            for layer in [back, front] {
+                id = int(rlLoadTexture(bytes(layer), i32(size), i32(size), i32(7), i32(1)));
+                rlTextureParameters(u32(id), i32(10241), i32(9729));
+                rlTextureParameters(u32(id), i32(10240), i32(9729));
+                rlTextureParameters(u32(id), i32(10242), i32(10497));
+                rlTextureParameters(u32(id), i32(10243), i32(10497));
+                ids.append(id);
+            }
+            self.sky_layers[t] = ids;
+        }
+    }
+
+    """gl_warp.c EmitSkyPolys: each sky vertex maps by its direction from the
+    eye onto a flattened sphere; the back layer scrolls at 8 units a second and
+    the masked front layer at 16, blended over it."""
+    def draw_q1_sky(level: Level, batches: list[list[int]], eye: Vec3) {
+        for (t, layers) in self.sky_layers.items() {
+            if t >= len(batches) or not batches[t] {
+                continue;
+            }
+            for layer in range(2) {
+                speed = self.time * (8.0 if layer == 0 else 16.0);
+                if layer == 1 {
+                    BeginBlendMode(i32(0));
+                }
+                rlSetTexture(u32(layers[layer]));
+                for index in batches[t] {
+                    face = level.bsp.faces[index];
+                    indices = face.indices;
+                    if len(indices) == 0 {
+                        indices = [];
+                        for triangle in range(1, len(face.vertices) - 1) {
+                            indices.extend([0, triangle + 1, triangle]);
+                        }
+                    }
+                    rlBegin(i32(4));
+                    rlColor4ub(u8(255), u8(255), u8(255), u8(255));
+                    for vertex in indices {
+                        v = face.vertices[vertex].add(face.motion);
+                        direction = v.sub(eye);
+                        direction.z *= 3.0;
+                        length = direction.length();
+                        scale = 6.0 * 63.0 / max(0.001, length);
+                        rlTexCoord2f(f32((speed + direction.x * scale) / 128.0), f32((speed + direction.y * scale) / 128.0));
+                        rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
+                    }
+                    rlEnd();
+                }
+                rlDrawRenderBatchActive();
+                if layer == 1 {
+                    EndBlendMode();
+                }
+            }
+        }
+        rlSetTexture(u32(0));
+    }
+
     """Upload every image of every layered Q3 surface shader stage. A lightmap
     stage records -1 (the atlas) and $whiteimage a shared white texture."""
     def upload_stages(level: Level) {
+        self.upload_sky_layers(level);
         self.stage_images = {};
         if not level.surface_stages {
             return;
@@ -745,7 +845,7 @@ obj QuakeRenderer {
             if self.single_pass and level.bsp.textures[t].additive {
                 continue;
             }
-            if t in self.stage_images {
+            if t in self.stage_images or t in self.sky_layers {
                 continue;
             }
             # Flush only at culling-state boundaries: flushing every texture
@@ -791,6 +891,7 @@ obj QuakeRenderer {
             self.draw_layered(level, batches, eye);
             return count;
         }
+        self.draw_q1_sky(level, batches, eye);
         # raylib BLEND_MULTIPLIED: destination color times lightmap intensity.
         BeginBlendMode(i32(2));
         rlSetTexture(u32(self.atlas));
@@ -849,6 +950,12 @@ obj QuakeRenderer {
             }
         }
         self.stage_images = {};
+        for (index, layers) in self.sky_layers.items() {
+            for id in layers {
+                rlUnloadTexture(u32(id));
+            }
+        }
+        self.sky_layers = {};
         if self.white != 0 {
             rlUnloadTexture(u32(self.white));
             self.white = 0;
