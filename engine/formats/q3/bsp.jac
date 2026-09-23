@@ -273,8 +273,10 @@ def parse_q3(data: bytes) -> Bsp {
         if len(face.vertices) > 0 {
             face.plane_dist = face.normal.dot(face.vertices[0]);
         }
-        if face.fog < -1 or face.fog >= len(bsp.fogs) {
-            raise ValueError("Invalid Q3 surface fog");
+        # R_LoadSurfaces takes fogNum unchecked; some shipped maps (q3tourney6)
+        # carry indices past their fog list, which means no fog.
+        if face.fog < 0 or face.fog >= len(bsp.fogs) {
+            face.fog = -1;
         }
         bsp.faces.append(face);
     }
