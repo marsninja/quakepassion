@@ -13,6 +13,7 @@ import from .models { Visual }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .bot_character { BotCharacter }
+import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
@@ -119,7 +120,8 @@ node Opponent(Player) {
         jump_wait: float = 0.0,
         fighting: bool = False,
         weapon_visual: Visual | None = None,
-        shown_weapon: str = "";
+        shown_weapon: str = "",
+        trail_stamp: float = 0.0;
 }
 
 # Q3 bg_pmove.c: dropping then raising a weapon before it can fire.
@@ -2324,6 +2326,9 @@ walker CombatTick {
                     here.last_seen = foe.pos;
                     here.last_seen_height = foe_height;
                     here.alert = 8.0;
+                    if here.game == "q2" and foe is self.player and self.world is not None {
+                        here.trail_stamp = trail_clock(self.world);
+                    }
                     if not was_alert and not here.sighted {
                         request_sound(here, here.rule.sight_sound);
                         if not here.arena {
@@ -2364,6 +2369,25 @@ walker CombatTick {
             }
             if here.alert <= 0.0 and not here.pursuing {
                 here.sighted = False;
+            }
+            # Q2 ai_run: out of sight at the last-seen spot, hunt along the
+            # player's trail, crumb by crumb, from where the monster lost them.
+            if here.game == "q2"
+                and not here.arena
+                and here.alert > 0.0
+                and not here.pursuing
+                and foe is self.player
+                and self.world is not None {
+                lost = here.last_seen.sub(here.pos);
+                if math.sqrt(lost.x * lost.x + lost.y * lost.y) < 48.0 {
+                    crumb = next_crumb(self.world, here.trail_stamp);
+                    if crumb is not None {
+                        here.last_seen = crumb.pos.add(Vec3());
+                        here.last_seen_height = self.collision.eye_height;
+                        here.trail_stamp = crumb.stamp;
+                        here.alert = max(here.alert, 3.0);
+                    }
+                }
             }
             # A fighting bot steers itself (BotTactics); others steer here.
             if not here.fighting {

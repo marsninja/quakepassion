@@ -1036,6 +1036,9 @@ impl App.step() -> bool {
             }
             self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
             self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
+            if self.level.bsp.game == "q2" {
+                self.world spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);
+            }
             self.world spawn FallingTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
