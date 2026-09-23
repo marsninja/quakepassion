@@ -117,7 +117,9 @@ node Opponent(Player) {
         strafe: float = 1.0,
         strafe_wait: float = 0.0,
         jump_wait: float = 0.0,
-        fighting: bool = False;
+        fighting: bool = False,
+        weapon_visual: Visual | None = None,
+        shown_weapon: str = "";
 }
 
 # Q3 bg_pmove.c: dropping then raising a weapon before it can fire.
@@ -2133,6 +2135,11 @@ walker CombatTick {
             death_explosion(self.world, here, self.player, self.collision, self.state);
         }
         if here.health <= 0 {
+            # Q3 players drop their weapon when they die.
+            dropped = here.weapon_visual;
+            if dropped is not None {
+                dropped.visible = False;
+            }
             gibs = here.gib_rule;
             if here.pending_gibs >= 0 and gibs is not None and self.world is not None {
                 throw_gibs(
@@ -2726,6 +2733,14 @@ walker CombatTick {
                 if pose_name in ["attack", "pain"]
                 else frames[(index + 1) % len(frames)];
             here.visual.blend = here.animation_time - float(int(here.animation_time));
+        }
+        # A bot's held weapon is baked along its body's poses, frame for frame.
+        held = here.weapon_visual;
+        if held is not None {
+            held.first = here.visual.first;
+            held.second = here.visual.second;
+            held.blend = here.visual.blend;
+            held.visible = here.visual.visible;
         }
     }
 }

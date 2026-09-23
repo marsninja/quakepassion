@@ -6,14 +6,26 @@ import from .patrols { patrol_speed }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
 import from engine.world.opponent_rule { OpponentRule }
-import from .arena_character { load_character }
+import from .arena_character { load_character, load_character_weapon, character_rig, CharacterRig }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
 import from engine.formats.bsp { MapEntity }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
 import from engine.world.combat { Opponent, HasOpponent, ensure_profiles, arm_bot }
-import from engine.world.bot_tactics { Q3_FIRE_SOUNDS }
+import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms }
+
+glob Q3_HELD_WEAPONS: dict[str, str] = {
+    "gauntlet": "models/weapons2/gauntlet/gauntlet.md3",
+    "machinegun": "models/weapons2/machinegun/machinegun.md3",
+    "shotgun": "models/weapons2/shotgun/shotgun.md3",
+    "grenadelauncher": "models/weapons2/grenadel/grenadel.md3",
+    "rocketlauncher": "models/weapons2/rocketl/rocketl.md3",
+    "lightning": "models/weapons2/lightning/lightning.md3",
+    "railgun": "models/weapons2/railgun/railgun.md3",
+    "plasmagun": "models/weapons2/plasma/plasma.md3",
+    "bfg": "models/weapons2/bfg/bfg.md3"
+};
 import from engine.world.bot_character { bot_skill }
 import from .botfiles { load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
@@ -153,6 +165,7 @@ def arena_entities(world: World, roster: list[BotInfo], player_start: Vec3) -> l
 def populate_opponents(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
+    rigs: dict[str, CharacterRig] = {};
     # Path corners and combat points by name; authored duplicates keep the first.
     corners: dict[str, TrackPoint] = {};
     for corner in [world->:HasTrack:->][?:TrackPoint] {
@@ -287,6 +300,29 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     y=-16.0 if corner else 0.0,
                     z=-level.collision.eye_height
                 );
+                if arena {
+                    # Every weapon the bot may hold, baked along its body's poses.
+                    library = catalog.source(source);
+                    if key not in rigs {
+                        rigs[key] = character_rig(library, bot.model, bot.skin);
+                    }
+                    for (weapon, weapon_model) in Q3_HELD_WEAPONS.items() {
+                        weapon_key = key + ":weapon:" + weapon;
+                        if weapon_key not in resources and library.exists(weapon_model) {
+                            held = load_character_weapon(library, rigs[key], weapon_model);
+                            resources[weapon_key] = ModelResource(name=weapon_key, model=held.model, skins=held.skins);
+                            world +>:HasModelResource:+> resources[weapon_key];
+                        }
+                        if weapon_key in resources {
+                            enemy +>:Arms:key=weapon:+> resources[weapon_key];
+                        }
+                    }
+                    if key + ":weapon:machinegun" in resources {
+                        enemy.weapon_visual = attach_model(enemy, resources[key + ":weapon:machinegun"]);
+                        enemy.weapon_visual.offset = enemy.visual.offset;
+                        enemy.shown_weapon = "machinegun";
+                    }
+                }
                 frames = resources[key].model.surfaces[0].frames;
                 pain_family = "";
                 death_family = "";

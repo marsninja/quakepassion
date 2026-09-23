@@ -22,8 +22,34 @@ import from .inventory { quantity, AdjustInventory }
 import from .particles { rail_trail, beam_trail, impact_spray }
 import from .bot_character { BotCharacter }
 import from .powerups { damage_scale, fire_interval_scale }
+import from .models { ModelResource, UsesModel }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+
+"""A bot's baked weapon models, one edge per weapon it could hold."""
+edge Arms: Opponent --> ModelResource {
+    has key: str = "";
+}
+
+"""Show the weapon a bot now holds by rewiring its weapon visual's model edge."""
+def hold_weapon(bot: Opponent, key: str) {
+    shown = bot.weapon_visual;
+    bot.shown_weapon = key;
+    if shown is None {
+        return;
+    }
+    links = [edge bot->:Arms:->];
+    models = [bot->:Arms:->][?:ModelResource];
+    for i in range(min(len(links), len(models))) {
+        if links[i].key == key {
+            for old in [edge shown->:UsesModel:->] {
+                del old;
+            }
+            shown +>:UsesModel:+> models[i];
+            return;
+        }
+    }
+}
 
 # ai_dmq3.c attack distances: keep IDEAL_ATTACKDIST, within ATTACKRANGE.
 glob IDEAL_ATTACKDIST: float = 140.0,
@@ -271,6 +297,10 @@ walker BotTactics {
             return;
         }
         dt = self.dt;
+        held = rule_for(self.rules, here.weapon_slot);
+        if held is not None and held.key != here.shown_weapon {
+            hold_weapon(here, held.key);
+        }
         here.weapon_wait = max(0.0, here.weapon_wait - dt);
         here.weapon_change += dt;
         here.throttle_wait = max(0.0, here.throttle_wait - dt);
