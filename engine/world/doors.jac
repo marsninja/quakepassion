@@ -1164,7 +1164,9 @@ def connect_targets(world: World, bsp: Bsp) {
         "path_corner",
         "info_teleport_destination",
         "misc_teleporter_dest",
-        "misc_portal_camera"
+        "misc_portal_camera",
+        "target_string",
+        "target_character"
     ];
     for index in range(len(bsp.entities)) {
         if index not in covered
@@ -1189,8 +1191,9 @@ def connect_targets(world: World, bsp: Bsp) {
             if kind == "func_train" {
                 continue;
             }
+            # Path points and Q2 clocks fire their pathtarget.
             target = fields.get("pathtarget", "")
-                if kind in ["path_corner", "point_combat"] and bsp.game != "q3"
+                if kind in ["path_corner", "point_combat", "func_clock"] and bsp.game != "q3"
                 else fields.get("target", "");
             if kind.startswith("monster_") and bsp.game == "q2" {
                 target = fields.get("deathtarget", target);
