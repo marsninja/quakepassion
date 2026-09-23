@@ -186,11 +186,14 @@ def pickup_rule(
                 amount = 100;
                 cap = 200;
             }
+            # Quake II keeps the megahealth model outside the healing directory.
             return PickupRule(
                 kind="health",
                 amount=amount,
                 capacity=cap,
-                model="models/items/healing/" + size + "/tris.md2"
+                model="models/items/mega_h/tris.md2"
+                    if size == "mega"
+                    else "models/items/healing/" + size + "/tris.md2"
             );
         }
         if kind == "ammo_shells" {
