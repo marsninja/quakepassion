@@ -209,3 +209,14 @@ key/remote activation restrictions and supports Q2's `NOMONSTER` flag.
 [Actor body isolation](actor-body-status.md) separates enemy movement and hit
 bounds from player crouching, including platform/train carrying and attack-step
 movement. Original per-monster hull dimensions and duck behavior remain open.
+
+### Remaining-scope milestones (September 2026)
+
+The remaining original-game scope is being completed in stacked milestones:
+powerups and item presentation, Q3 ladder matches, map mechanics, monster
+behavior and difficulty, Q3 bot tactics and navigation, presentation (HUDs,
+light styles, effects), and full playthrough validation.
+
+[Powerups, holdables and item presentation](powerups-status.md): all original
+powerups and Q3 holdables as graph effects, per-item original pickup sounds,
+item spin/bob and Q3 ring models. Snapshot format 18.
