@@ -46,6 +46,20 @@ activatable entity has a `Signal`, and walkers advance the entities.
   loaded, so chains that end at shooters, targets, movers or teleporters no longer
   disable themselves.
 - `trigger_monsterjump` launches grounded walking monsters at `speed`/`height`.
+- Recipients whose use does nothing here (Q2 area portals, `info_null`,
+  `info_notnull`, `target_position`, `point_combat`, path corners and teleport
+  destinations) accept uses as no-ops, so chains through them stay enabled.
+  Switchable Q1/Q2 lights keep a saved on/off state; rendering the switched light
+  style belongs to the presentation milestone.
+- Q3 `target_give` hands its targeted items straight to the player,
+  `target_remove_powerups` strips timed powerups (used by death pits) and
+  `target_print` shows its message.
+
+On the original maps, nearly every activation chain now resolves (Q1 e2m6 268 of
+268 signals, Q2 jail4 433 of 436, Q2 security 647 of 649; previously 247/257,
+378/411 and 462/576). Q2 jail4 enables 44 mover groups instead of 24.
+`scripts/mechanics_smoke.jac` checks rotating doors, movers, shooters, lasers and
+fixtures on Q1 e2m6/e1m6, Q2 jail4/security and Q3 q3dm19/q3dm15, with captures.
 
 ## Traps, targets and destructibles
 
@@ -79,7 +93,7 @@ Snapshot format **20** stores mover clocks, shooter timing and trap projectiles.
 Rotating-mover collision uses Q2's approximation, which keeps the player's box
 unrotated. Pushing actors along a rotation checks their destination, not the
 swept arc. Q2 `func_water`, `func_object`, `func_killbox`, `func_clock`,
-`target_lightramp`, `target_character`, misc fly-by ships, turrets and monster
-`point_combat` routes remain open; turrets and combat points belong with the
+`target_lightramp`, `target_character`, animated and switched light styles, misc
+fly-by ships, turrets and monster `point_combat` routes remain open; turrets and combat points belong with the
 monster AI milestone. Q2 `MONSTER`-only triggers are not yet activated by
 monsters. Q3 portal surfaces are not rendered.

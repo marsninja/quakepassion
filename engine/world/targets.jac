@@ -20,6 +20,8 @@ import from .particles { impact_spray, beam_trail }
 import from .speakers { Speaker, HasSpeaker }
 import from .signals { Signal, HasSignal }
 import from .shooters { move_direction }
+import from .powerups { Powerup, Empowered }
+import from .pickups { Pickup, HasPickup, PickupTick }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
@@ -40,6 +42,7 @@ node TargetEvent {
         clock: float = 0.0,
         random_state: int = 1,
         speaker: Speaker | None = None,
+        gifts: list[int] = [],
         activation: Signal = Signal();
 
     def random() -> float {
@@ -91,13 +94,50 @@ walker TargetTick {
         here.activation.pending = 0;
         speaker = here.speaker;
         for i in range(uses) {
-            if here.kind == "laser" {
+            if here.kind in ["laser", "light"] {
                 here.on = not here.on;
                 continue;
             }
             if here.kind == "earthquake" {
                 here.remaining = float(here.count);
                 here.clock = 0.0;
+            }
+            # g_target.c Use_target_remove_powerups / Use_Target_Print.
+            if here.kind == "remove_powerups" {
+                for power in [self.player->:Empowered:->][?:Powerup] {
+                    if power.kind != "vitality" {
+                        self.player del --> power;
+                    }
+                }
+            }
+            # g_target.c Use_Target_Give: touch every targeted item for the user.
+            if here.kind == "give" {
+                gifts = [
+                    pickup
+                    for pickup in [world->:HasPickup:->][?:Pickup]
+                    if any([index in pickup.activation.entities for index in here.gifts])
+                ];
+                if gifts {
+                    handed = world spawn PickupTick(
+                        player=self.player,
+                        start=self.player.pos,
+                        finish=self.player.pos,
+                        dt=0.01,
+                        advance_time=False,
+                        targets=gifts,
+                        selected_only=True,
+                        forced=True
+                    );
+                    self.cues.extend(handed.sounds);
+                    for gift in gifts {
+                        gift.waiting_for_use = True;
+                        gift.active = False;
+                        gift.visual.visible = False;
+                    }
+                }
+            }
+            if here.kind == "print" and here.message {
+                self.message = here.message;
             }
             if here.kind == "help" {
                 computer = help_for(world);
@@ -233,7 +273,7 @@ def target_origin(fields: dict[str, str]) -> Vec3 {
 }
 
 def load_targets(world: World, bsp: Bsp) {
-    if bsp.game != "q2" {
+    if bsp.game not in ["q1", "q2", "q3"] {
         return;
     }
     origins: dict[str, Vec3] = {};
@@ -246,13 +286,32 @@ def load_targets(world: World, bsp: Bsp) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
-        if kind not in [
+        q2_kinds = [
             "target_explosion",
             "target_splash",
             "target_earthquake",
             "target_laser",
             "target_help"
-        ] {
+        ];
+        q3_kinds = ["target_remove_powerups", "target_print", "target_give"];
+        # Q1/Q2 named lights are switches (light_use: START_OFF 1 toggles style).
+        toggled = bsp.game in ["q1", "q2"]
+            and kind.startswith("light")
+            and bool(fields.get("targetname", ""));
+        if toggled {
+            lamp = TargetEvent(
+                kind="light",
+                origin=target_origin(fields),
+                on=int(fields.get("spawnflags", "0")) & 1 == 0,
+                count=int(float(fields.get("style", "0"))),
+                activation=Signal(entities=[index])
+            );
+            world +>:HasTarget:+> lamp;
+            world +>:HasSignal:+> lamp.activation;
+            continue;
+        }
+        if bsp.game == "q1"
+            or kind not in (q2_kinds if bsp.game == "q2" else q3_kinds) {
             continue;
         }
         flags = int(fields.get("spawnflags", "0"));
@@ -268,6 +327,14 @@ def load_targets(world: World, bsp: Bsp) {
             random_state=1 + index * 7919,
             activation=Signal(entities=[index])
         );
+        if event.kind == "give" {
+            target = fields.get("target", "");
+            event.gifts = [
+                other
+                for other in range(len(bsp.entities))
+                if target and bsp.entities[other].fields.get("targetname", "") == target
+            ];
+        }
         sound = "";
         looping = False;
         if event.kind == "explosion" {

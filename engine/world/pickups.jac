@@ -106,6 +106,7 @@ walker PickupTick {
         kinds: list[str] = [],
         targets: list[Pickup] = [],
         selected_only: bool = False,
+        forced: bool = False,
         sounds: list[str] = [],
         messages: list[str] = [],
         collected: int = 0;
@@ -135,10 +136,11 @@ walker PickupTick {
                 here.activate_on_use = here.reusable_use;
             }
         }
-        if here.waiting_for_use {
+        # Q3 target_give hands items over directly, without placing them.
+        if here.waiting_for_use and not self.forced {
             return;
         }
-        if not here.active {
+        if not here.active and not self.forced {
             if not self.advance_time { return; }
             if here.respawn <= 0.0 {
                 return;
@@ -150,9 +152,12 @@ walker PickupTick {
             here.active = True;
             here.visual.visible = True;
         }
-        if not self.touching
-            or self.player.health <= 0
-            or not pickup_contact(self.start, self.finish, here.pos, self.top_drop) {
+        if not self.forced
+            and (
+                not self.touching
+                    or self.player.health <= 0
+                    or not pickup_contact(self.start, self.finish, here.pos, self.top_drop)
+            ) {
             return;
         }
         accepted = 0;

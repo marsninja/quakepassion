@@ -15,6 +15,8 @@ import from engine.world.shooters { Shooter, HasShooter, ShooterTick, load_shoot
 import from engine.world.fixtures { Fixture, HasFixture, FixtureTick }
 import from engine.world.targets { TargetEvent, HasTarget, TargetTick, HasHelp, HelpComputer }
 import from engine.world.inventory { quantity, CopyInventory }
+import from engine.world.powerups { GrantPowerup, powerup_left }
+import from engine.world.pickups { Pickup, PickupRule, HasPickup }
 import from engine.world.combat { Opponent, HasOpponent, Projectile, HasProjectile, ProjectileTick, CombatState }
 import from engine.world.traversal { Traversal, HasTraversal, TraversalTick, Destination, ArrivesAt }
 import from engine.world.world { World, Player }
@@ -258,4 +260,35 @@ test "cross-level flags persist through a unit and gate their targets" {
     assert quantity(carried.result, "unit_flags") == 0;
     kept = player.inventory spawn CopyInventory();
     assert quantity(kept.result, "unit_flags") == 5;
+}
+
+test "Q3 remove_powerups strips timed powerups and print shows its message" {
+    world = World();
+    player = Player(health=100);
+    player spawn GrantPowerup(kind="quad", duration=30.0);
+    strip = TargetEvent(kind="remove_powerups");
+    note = TargetEvent(kind="print", message="Frag them all");
+    for event in [strip, note] {
+        world +>:HasTarget:+> event;
+        event.activation.pending = 1;
+    }
+    result = world spawn TargetTick(player=player, collision=CollisionMap(), state=CombatState(), dt=0.01);
+    assert powerup_left(player, "quad") == 0.0 and result.message == "Frag them all";
+}
+
+test "Q3 target_give hands over its targeted items without placing them" {
+    world = World();
+    player = Player(health=100);
+    armor = Pickup(
+        rule=PickupRule(kind="armor", amount=50, capacity=200, model="", armor_mode="add", armor_ratio=0.66),
+        active=False,
+        waiting_for_use=True,
+        activation=Signal(entities=[7])
+    );
+    world +>:HasPickup:+> armor;
+    gift = TargetEvent(kind="give", gifts=[7]);
+    world +>:HasTarget:+> gift;
+    gift.activation.pending = 1;
+    world spawn TargetTick(player=player, collision=CollisionMap(), state=CombatState(), dt=0.01);
+    assert player.armor == 50 and armor.waiting_for_use and not armor.visual.visible;
 }

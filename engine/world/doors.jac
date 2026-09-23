@@ -1097,6 +1097,32 @@ def connect_targets(world: World, bsp: Bsp) {
             signals.append(signal);
         }
     }
+    # Recipients with no use behaviour here (visibility portals, markers, path
+    # and combat points, teleport destinations) accept uses as no-ops, so the
+    # chains through them keep working, as the originals ignore those uses.
+    covered: set[int] = set();
+    for signal in signals {
+        for index in signal.entities {
+            covered.add(index);
+        }
+    }
+    passive = [
+        "func_areaportal",
+        "info_null",
+        "info_notnull",
+        "target_position",
+        "point_combat",
+        "path_corner",
+        "info_teleport_destination",
+        "misc_teleporter_dest",
+        "misc_portal_camera"
+    ];
+    for index in range(len(bsp.entities)) {
+        if index not in covered
+            and bsp.entities[index].fields.get("classname", "") in passive {
+            signals.append(Signal(entities=[index]));
+        }
+    }
     registered = [world->:HasSignal:->][?:Signal];
     for signal in signals {
         if signal not in registered {
