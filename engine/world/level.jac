@@ -16,7 +16,7 @@ import from ..math.aabb { AABB }
 import from .rotators { load_rotators }
 import from .shooters { load_shooters }
 import from .targets { load_targets }
-import from .doors { load_doors, connect_targets, pose_doors }
+import from .doors { load_doors, connect_targets, pose_doors, flood_doors }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
@@ -402,6 +402,7 @@ def prepare_level(world: World, level: Level) {
     load_brushes(world, level.bsp, level.collision);
     load_lightning(world, level.bsp);
     load_doors(world, level.bsp, level.collision, connect=False);
+    flood_doors(world, level.liquids);
     load_rotators(world, level.bsp, level.collision);
     load_shooters(world, level.bsp);
     load_targets(world, level.bsp);
