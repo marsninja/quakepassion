@@ -23,6 +23,7 @@ import from .trains { load_trains }
 import from .lightstyles { load_light_styles }
 import from .clocks { load_clocks }
 import from .flyers { load_flyers }
+import from .falling { load_falling_objects }
 import from .finale { load_finale }
 import from .hazards { load_hazards }
 import from .speakers { load_speakers }
@@ -399,6 +400,7 @@ def prepare_level(world: World, level: Level) {
     load_light_styles(world, level.bsp);
     load_clocks(world, level.bsp);
     load_flyers(world, level.bsp);
+    load_falling_objects(world, level.bsp, level.collision);
     load_finale(world, level.bsp);
     load_hazards(world, level.bsp);
     load_speakers(world, level.bsp);

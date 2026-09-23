@@ -1036,6 +1036,13 @@ impl App.step() -> bool {
             }
             self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
             self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
+            self.world spawn FallingTick(
+                bsp=self.level.bsp,
+                collision=self.level.collision,
+                player=self.player,
+                state=self.combat,
+                dt=self.physics_clock.tick_rate
+            );
             self.world spawn FlyerTick(
                 player=self.player,
                 collision=self.level.collision,

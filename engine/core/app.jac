@@ -96,6 +96,7 @@ import from ..world.bot_tactics { BotTactics }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
 import from ..world.clocks { ClockTick }
 import from ..world.flyers { FlyerTick }
+import from ..world.falling { FallingTick }
 import from ..render.hud { HudRenderer, HudStatus }
 import from games.hud_art { load_hud_art }
 import from games.levels { open_level }
