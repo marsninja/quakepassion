@@ -12,6 +12,16 @@ released binary and CI have not been validated against this patch set.
 | Cached code can lose its foreign-library manifest | [#9406](https://github.com/jaseci-labs/jac/pull/9406) | See the upstream cache regressions |
 | Native splitlines semantics affect persistence | [#9388](https://github.com/jaseci-labs/jac/pull/9388) | See the upstream regression |
 | Function-local dicts with tuple values return corrupted lookups | [#9445](https://github.com/jaseci-labs/jac/pull/9445) | `games/items.jac` `special_rule` (powerup tables) |
+| Typed edge connects drop inline attributes (`+>:E:name=n:+>`) | [#9446](https://github.com/jaseci-labs/jac/pull/9446) | `engine/world/arena.jac` competitor names |
+| `any`/`all` over `and`/`or` comprehensions crash (untyped `any` arguments) | [#9451](https://github.com/jaseci-labs/jac/pull/9451) | `engine/world/arena.jac` `MatchTick` winner check |
+
+The remaining-scope milestones validate with upstream main `767d19193d` plus
+#9445, #9446 and #9451, applied as patches (worktree
+`/Users/marsninja/repos/jaseci-wt/qp-scope-validation`). The open clock fix #9393
+is not included: on this base it conflicts with the bundled native `math` module
+from #9378, and the game only needs wall-clock time. Delete the project's `.jac/`
+cache after changing compiler sources; a stale cache can make `math` fail to
+lower.
 
 The local compiler worktree is
 `/Users/marsninja/repos/jaseci-wt/qp-lighting-validation`, branch
