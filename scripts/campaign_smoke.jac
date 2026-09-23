@@ -89,7 +89,9 @@ with entry {
         assert not app.menu.opened , app.menu.message;
         enemies = [app.world->:HasOpponent:->][?:Opponent];
         pickups = [app.world->:HasPickup:->][?:Pickup];
-        assert enemies[0].health == 0 and not enemies[0].visual.visible;
+        # Dead enemies with a death animation stay as visible corpses.
+        assert enemies[0].health == 0
+            and (not enemies[0].visual.visible or bool(enemies[0].death_animation));
         assert not pickups[0].active and not pickups[0].visual.visible;
         assert app.player.health == 41
             and quantity(app.player.inventory, "shells") == 5;

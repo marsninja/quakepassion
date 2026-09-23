@@ -134,6 +134,9 @@ impl App.render_frame() {
             );
         }
         self.renderer.end_scene();
+        if not self.smoke and not self.finale_active {
+            self.draw_powerup_blend();
+        }
         if self.finale_text or self.intermission_text {
             self.renderer.draw_finale(
                 self.finale_text if self.finale_text else self.intermission_text,
@@ -178,6 +181,7 @@ impl App.render_frame() {
             if self.notice_wait > 0.0 {
                 self.renderer.draw_message(self.notice);
             }
+            self.renderer.draw_powerups(self.powerup_lines());
         }
         if self.overlay {
             self.renderer.draw_overlay(
@@ -331,7 +335,10 @@ impl App.load_destination(
         player = spawn_player(level, spawnpoint);
         carrying = carry and self.player.health > 0 and game == self.level.bsp.game;
         if carrying {
-            player.health = self.player.health;
+            # Q1 client.qc SetChangeParms clamps carried health to 50-100.
+            player.health = max(50, min(100, self.player.health))
+                if game == "q1"
+                else self.player.health;
             player.max_health = self.player.max_health;
             player.armor = self.player.armor;
             player.armor_capacity = self.player.armor_capacity;
@@ -603,6 +610,18 @@ impl App.step() -> bool {
     if intent.weapon > 0 {
         select_weapon(self.player, self.combat, intent.weapon);
     }
+    if self.level.active and self.player.health > 0 and not self.finale_active {
+        stored = owned_items(self.player.inventory, self.level.bsp.game);
+        if stored and (intent.next_item or intent.prev_item) {
+            self.selected_item = (
+                self.selected_item + (1 if intent.next_item else len(stored) - 1)
+            ) % len(stored);
+            self.show_notice(item_label(stored[self.selected_item]));
+        }
+        if intent.use_item {
+            self.use_item();
+        }
+    }
     if intent.toggle_culling {
         self.culling = not self.culling;
     }
@@ -703,6 +722,7 @@ impl App.step() -> bool {
                 dt=self.physics_clock.tick_rate,
                 active=self.walking
             );
+            self.tick_powerups(self.physics_clock.tick_rate);
             if self.player.health <= 0 {
                 self.player.velocity = Vec3();
                 self.jump_pending = False;
@@ -788,7 +808,22 @@ impl App.step() -> bool {
                 held=intent.fire,
                 dt=self.physics_clock.tick_rate
             ) {
-                self.audio.play(2 + self.combat.weapon if self.combat.rules else 0);
+                silencer = effect(self.player, "silencer");
+                gain = 1.0;
+                if silencer is not None and silencer.count > 0 {
+                    silencer.count -= 1;
+                    gain = 0.2;
+                }
+                self.audio.play(
+                    2 + self.combat.weapon if self.combat.rules else 0, gain
+                );
+                # Q1 throttles the quad cue to once a second; Q2/Q3 play it per shot.
+                if empowered(self.player, "quad") and self.quad_sound_wait <= 0.0 {
+                    self.audio.play_path("sound/items/damage3.wav", gain);
+                    if self.level.bsp.game == "q1" {
+                        self.quad_sound_wait = 1.0;
+                    }
+                }
             }
             self.world spawn ProjectileTick(
                 player=self.player,
@@ -841,8 +876,14 @@ impl App.step() -> bool {
                 top_drop=self.level.collision.top_drop,
                 touching=self.walking and not self.finale_active
             );
-            if pickup_result.collected > 0 {
+            if pickup_result.collected > len(pickup_result.sounds) {
                 self.audio.play(2);
+            }
+            for sound in pickup_result.sounds {
+                self.audio.play_path(sound);
+            }
+            for message in pickup_result.messages {
+                self.show_notice(message);
             }
             triggers = self.world spawn TriggerTick(
                 player=self.player,
@@ -1113,4 +1154,152 @@ impl App.save_preferences() {
     } except Exception as error {
         self.menu.message = "Settings save failed: " + str(error);
     }
+}
+
+impl App.show_notice(message: str) {
+    if message {
+        self.notice = message;
+        self.notice_wait = 3.0;
+    }
+}
+
+"""Q2 uses the selected stored item; Q3 uses its single holdable."""
+impl App.use_item(kind: str = "") {
+    game = self.level.bsp.game;
+    items = owned_items(self.player.inventory, game);
+    if not kind {
+        if not items {
+            if game == "q3" {
+                self.audio.play_path("sound/items/use_nothing.wav");
+            }
+            return;
+        }
+        kind = items[self.selected_item % len(items)] if game == "q2" else items[0];
+    }
+    result = self.player spawn UseItem(game=game, kind=kind);
+    if result.teleport {
+        self.teleport_actor(self.player);
+    }
+    self.audio.play_path(result.cue);
+    self.show_notice(result.message);
+}
+
+"""Q3 personal teleporter: a random deathmatch spawn other than the nearest."""
+impl App.teleport_actor(actor: Player) {
+    spots: list[Vec3] = [];
+    for entity in self.level.bsp.entities {
+        if entity.fields.get("classname", "") != "info_player_deathmatch" {
+            continue;
+        }
+        parts = entity.fields.get("origin", "0 0 0").split();
+        if len(parts) == 3 {
+            spots.append(
+                Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]))
+            );
+        }
+    }
+    if not spots {
+        return;
+    }
+    if len(spots) > 1 {
+        nearest = spots[0];
+        for spot in spots {
+            if spot.sub(actor.pos).length() < nearest.sub(actor.pos).length() {
+                nearest = spot;
+            }
+        }
+        spots = [spot for spot in spots if spot is not nearest];
+    }
+    pick = int((self.combat.random() + 1.0) * 0.5 * float(len(spots))) % len(spots);
+    if not isinstance(actor, Opponent) {
+        self.audio.play_path("sound/world/teleout.wav");
+    }
+    height = actor.eye_height if isinstance(actor, Opponent) else self.level.collision.eye_height;
+    actor.pos = spots[pick].add(Vec3(z=height + 1.0));
+    actor.velocity = Vec3();
+    actor.teleport_hold = 0.1;
+    move_to_area(actor, self.level.areas[self.level.locate(actor.pos)]);
+    if isinstance(actor, Opponent) {
+        actor.route = [];
+        actor.arena_goal = None;
+    } else {
+        self.audio.play_path("sound/world/telein.wav");
+    }
+}
+
+impl App.tick_powerups(dt: float) {
+    game = self.level.bsp.game;
+    self.quad_sound_wait = max(0.0, self.quad_sound_wait - dt);
+    result = self.player spawn PowerupTick(game=game, dt=dt);
+    for cue in result.cues {
+        self.audio.play_path(cue);
+    }
+    for message in result.messages {
+        self.show_notice(message);
+    }
+    if game == "q3" {
+        for bot in [self.world->:HasOpponent:->][?:Opponent] {
+            if not bot.arena or bot.dormant or bot.health <= 0 {
+                continue;
+            }
+            bot spawn PowerupTick(game=game, dt=dt);
+            # ai_dmq3.c BotBattleUseItems: teleport out below 40, medkit below 60.
+            if bot.health < 40 and quantity(bot.inventory, "holdable_teleporter") > 0 {
+                if (bot spawn UseItem(game=game, kind="holdable_teleporter")).teleport {
+                    self.teleport_actor(bot);
+                }
+            } elif bot.health < 60 and quantity(bot.inventory, "holdable_medkit") > 0 {
+                bot spawn UseItem(game=game, kind="holdable_medkit");
+            }
+        }
+    }
+}
+
+"""Screen blends from Q1 view.c and Q2 p_view.c, flashing in the last seconds."""
+impl App.draw_powerup_blend() {
+    for power in [self.player->:Empowered:->][?:Powerup] {
+        rule = powerup_rule(self.level.bsp.game, power.kind);
+        if rule is None or len(rule.tint) != 4 or power.remaining <= 0.0 {
+            continue;
+        }
+        if power.remaining <= 3.0 and int(power.remaining * 10.0) & 4 == 0 {
+            continue;
+        }
+        self.renderer.draw_tint(rule.tint[0], rule.tint[1], rule.tint[2], rule.tint[3]);
+    }
+}
+
+impl App.powerup_lines() -> list[str] {
+    game = self.level.bsp.game;
+    lines: list[str] = [];
+    for power in [self.player->:Empowered:->][?:Powerup] {
+        if power.kind in ["power_screen", "power_shield"] {
+            lines.append(
+                item_label(power.kind)
+                    + " ON  cells "
+                    + str(quantity(self.player.inventory, "cells"))
+            );
+            continue;
+        }
+        if power.kind == "silencer" and power.count > 0 {
+            lines.append("Silencer " + str(power.count) + " shots");
+            continue;
+        }
+        rule = powerup_rule(game, power.kind);
+        if rule is not None and power.remaining > 0.0 {
+            lines.append(rule.name + " " + str(int(power.remaining + 0.999)));
+        }
+    }
+    stored = owned_items(self.player.inventory, game);
+    if stored {
+        chosen = stored[self.selected_item % len(stored)] if game == "q2" else stored[0];
+        count = quantity(self.player.inventory, chosen);
+        lines.append(
+            ("[ ] " if game == "q2" and len(stored) > 1 else "")
+                + "Enter: use "
+                + item_label(chosen)
+                + (" x" + str(count) if count > 1 else "")
+        );
+    }
+    return lines;
 }

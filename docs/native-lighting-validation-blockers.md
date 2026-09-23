@@ -11,6 +11,7 @@ released binary and CI have not been validated against this patch set.
 | Native monotonic clocks use Linux's clock ID on macOS | [#9393](https://github.com/jaseci-labs/jac/pull/9393) (existing upstream PR) | `repros/native_monotonic_clock.jac` |
 | Cached code can lose its foreign-library manifest | [#9406](https://github.com/jaseci-labs/jac/pull/9406) | See the upstream cache regressions |
 | Native splitlines semantics affect persistence | [#9388](https://github.com/jaseci-labs/jac/pull/9388) | See the upstream regression |
+| Function-local dicts with tuple values return corrupted lookups | [#9445](https://github.com/jaseci-labs/jac/pull/9445) | `games/items.jac` `special_rule` (powerup tables) |
 
 The local compiler worktree is
 `/Users/marsninja/repos/jaseci-wt/qp-lighting-validation`, branch

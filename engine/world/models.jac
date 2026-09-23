@@ -1,4 +1,5 @@
 """Visual components and shared model resources attached to world entities."""
+import math;
 import from .world { World, Area, Entity, In }
 import from ..formats.animated { AnimatedModel }
 import from ..formats.bsp { Texture }
@@ -19,7 +20,10 @@ node Visual {
         first: int = 0,
         second: int = 0,
         blend: float = 0.0,
-        visible: bool = True;
+        visible: bool = True,
+        spin: float = 0.0,
+        bob: float = 0.0,
+        bob_rate: float = 5.0;
 }
 
 obj ModelDraw {
@@ -31,8 +35,11 @@ obj ModelDraw {
         blend: float;
 }
 
+"""Collect visible models. Items spin on the shared world clock and may bob,
+as every client did (Q1/Q2 autorotate, Q3 cg.autoAngles and item bobbing)."""
 walker GatherModels {
-    has draws: list[ModelDraw] = [];
+    has draws: list[ModelDraw] = [],
+        seconds: float = 0.0;
 
     can begin with World entry {
         visit [here-->[?:Area]];
@@ -47,12 +54,25 @@ walker GatherModels {
             if not visual.visible {
                 continue;
             }
+            origin = here.pos.add(visual.offset);
+            yaw = here.yaw;
+            if visual.spin != 0.0 {
+                yaw = math.radians((visual.spin * self.seconds) % 360.0);
+            }
+            if visual.bob != 0.0 {
+                origin = origin.add(
+                    Vec3(
+                        z=visual.bob
+                            + math.cos((self.seconds + 1.0) * visual.bob_rate) * visual.bob
+                    )
+                );
+            }
             for resource in [visual->:UsesModel:->][?:ModelResource] {
                 self.draws.append(
                     ModelDraw(
                         resource=resource,
-                        origin=here.pos.add(visual.offset),
-                        yaw=here.yaw,
+                        origin=origin,
+                        yaw=yaw,
                         first=visual.first,
                         second=visual.second,
                         blend=visual.blend

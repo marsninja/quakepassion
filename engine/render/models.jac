@@ -311,7 +311,7 @@ obj ModelScene {
         aspect: float = 1.7777777778,
         lighting: Lighting = Lighting()
     ) {
-        scene = world spawn GatherModels();
+        scene = world spawn GatherModels(seconds=seconds);
         for draw in scene.draws {
             if draw.resource.name in self.resources {
                 renderer = self.resources[draw.resource.name];

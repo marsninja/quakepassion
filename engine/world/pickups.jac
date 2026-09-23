@@ -4,7 +4,8 @@ import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
 import from .models { Visual }
 import from .damage { Heal }
-import from .inventory { AdjustInventory, quantity }
+import from .inventory { Inventory, AdjustInventory, InventorySlot, ItemStack, quantity }
+import from .powerups { GrantPowerup, Powerup, Empowered, effect, stored_kinds }
 import from ..math.vec3 { Vec3 }
 
 obj PickupRule {
@@ -18,7 +19,38 @@ obj PickupRule {
         skin: int = 0,
         bitmask: int = 0,
         armor_mode: str = "replace",
-        armor_ratio: float = 0.0;
+        armor_ratio: float = 0.0,
+        powerup: str = "",
+        duration: float = 0.0,
+        additive: bool = False,
+        rot: bool = False,
+        max_health_bonus: int = 0,
+        capacities: dict[str, int] = {},
+        grants: dict[str, int] = {},
+        sound: str = "",
+        label: str = "",
+        extra_model: str = "";
+}
+
+# Raise an ammunition limit without granting ammunition (Q2 bandolier/pack).
+walker RaiseCapacity {
+    has kind: str, capacity: int;
+
+    can begin with Inventory entry {
+        slots = [
+            slot
+            for slot in [here->:InventorySlot:->][?:ItemStack]
+            if slot.kind == self.kind
+        ];
+        if not slots {
+            slot = ItemStack(kind=self.kind, capacity=self.capacity);
+            here +>:InventorySlot:+> slot;
+            return;
+        }
+        for slot in slots {
+            slot.capacity = max(slot.capacity, self.capacity);
+        }
+    }
 }
 
 edge HasPickup: World --> Pickup {}
@@ -74,6 +106,8 @@ walker PickupTick {
         kinds: list[str] = [],
         targets: list[Pickup] = [],
         selected_only: bool = False,
+        sounds: list[str] = [],
+        messages: list[str] = [],
         collected: int = 0;
 
     can begin with World entry {
@@ -117,7 +151,43 @@ walker PickupTick {
         }
         accepted = 0;
         rule = here.rule;
-        if rule.bitmask > 0 {
+        if rule.kind == "powerup" {
+            grant = self.player spawn GrantPowerup(
+                kind=rule.powerup, duration=rule.duration, additive=rule.additive
+            );
+            accepted = 1 if grant.granted is not None else 0;
+        } elif rule.kind.startswith("holdable_") {
+            # Q3 carries one holdable item at a time.
+            if not any(
+                [quantity(self.player.inventory, kind) > 0 for kind in stored_kinds("q3")]
+            ) {
+                change = self.player.inventory spawn AdjustInventory(
+                    kind=rule.kind, amount=1, capacity=1
+                );
+                accepted = change.accepted;
+            }
+        } elif rule.max_health_bonus > 0 {
+            # Q2 adrenaline also heals to the new maximum; the ancient head does not.
+            self.player.max_health += rule.max_health_bonus;
+            if rule.kind == "adrenaline" and self.player.health < self.player.max_health {
+                self.player.health = self.player.max_health;
+            }
+            accepted = 1;
+        } elif rule.capacities or rule.grants {
+            for kind in rule.capacities {
+                self.player.inventory spawn RaiseCapacity(
+                    kind=kind, capacity=rule.capacities[kind]
+                );
+            }
+            for kind in rule.grants {
+                self.player.inventory spawn AdjustInventory(
+                    kind=kind,
+                    amount=rule.grants[kind],
+                    capacity=rule.capacities.get(kind, 200)
+                );
+            }
+            accepted = 1;
+        } elif rule.bitmask > 0 {
             old = quantity(self.player.inventory, rule.kind);
             self.player.inventory spawn AdjustInventory(
                 kind=rule.kind,
@@ -128,9 +198,28 @@ walker PickupTick {
         } elif rule.kind == "health" {
             heal = self.player spawn Heal(amount=rule.amount, cap=rule.capacity);
             accepted = heal.restored;
+            if rule.rot and heal.restored > 0 {
+                rot = effect(self.player, "megahealth");
+                if rot is None {
+                    rot = Powerup(kind="megahealth", remaining=-1.0);
+                    self.player +>:Empowered:+> rot;
+                }
+                rot.clock = -4.0;
+            }
         } elif rule.kind == "armor" {
             old = self.player.armor;
-            if rule.armor_mode == "add" {
+            if rule.armor_mode == "shard" {
+                self.player.armor = min(rule.capacity, old + rule.amount)
+                    if rule.capacity > 0
+                    else old + rule.amount;
+                if self.player.armor_ratio <= 0.0 {
+                    self.player.armor_ratio = rule.armor_ratio;
+                    self.player.armor_capacity = max(
+                        self.player.armor_capacity, rule.amount
+                    );
+                }
+                accepted = self.player.armor - old;
+            } elif rule.armor_mode == "add" {
                 self.player.armor = min(rule.capacity, old + rule.amount);
                 self.player.armor_capacity = rule.capacity;
                 self.player.armor_ratio = rule.armor_ratio;
@@ -175,6 +264,12 @@ walker PickupTick {
             here.remaining = here.respawn;
             here.visual.visible = False;
             self.collected += 1;
+            if rule.sound {
+                self.sounds.append(rule.sound);
+            }
+            if rule.label {
+                self.messages.append("You got the " + rule.label);
+            }
             here.activation spawn Fire(inventory=self.player.inventory);
         }
     }

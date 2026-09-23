@@ -6,6 +6,7 @@ import from .opponent_rule { OpponentRule, AttackProfile, rule_profiles }
 import from .weapons { WeaponRule }
 import from .world { World, Player }
 import from .damage { Damage, blast_strength }
+import from .powerups { damage_scale, fire_interval_scale, empowered, speed_scale }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual }
 import from .speakers { Speaker }
@@ -450,7 +451,8 @@ def fire_weapon(
     if rule.ammo {
         player.inventory spawn AdjustInventory(kind=rule.ammo, amount=-rule.cost);
     }
-    state.cooldown = rule.interval;
+    scale = damage_scale(player, state.game);
+    state.cooldown = rule.interval * fire_interval_scale(player);
     state.flash = 0.08;
     state.shots += 1;
     state.impact_model = -1;
@@ -465,15 +467,15 @@ def fire_weapon(
         world +>:HasProjectile:+> Projectile(
             pos=player.pos,
             velocity=velocity,
-            damage=rule.damage,
-            splash=rule.splash,
+            damage=int(float(rule.damage) * scale),
+            splash=int(float(rule.splash) * scale),
             radius=rule.radius,
             gravity=rule.gravity,
             remaining=rule.fuse,
             effect=rule.effect,
-            beam_damage=rule.beam_damage,
+            beam_damage=int(float(rule.beam_damage) * scale),
             beam_radius=rule.beam_radius,
-            burst_damage=rule.burst_damage,
+            burst_damage=int(float(rule.burst_damage) * scale),
             burst_radius=rule.burst_radius
         );
         state.target = player.pos;
@@ -528,7 +530,7 @@ def fire_weapon(
                 victims.append(victim);
                 amounts.append(0);
             }
-            amounts[victims.index(victim)] += rule.damage;
+            amounts[victims.index(victim)] += int(float(rule.damage) * scale);
         }
         if (not hits or rule.piercing) and wall.fraction < 1.0 {
             impact_spray(world, player.pos.lerp(finish, wall.fraction), wall.normal);
@@ -536,7 +538,7 @@ def fire_weapon(
             state.impacts.append(
                 WeaponImpact(
                     model=wall.model,
-                    amount=rule.damage,
+                    amount=int(float(rule.damage) * scale),
                     origin=player.pos.lerp(finish, wall.fraction)
                 )
             );
@@ -562,11 +564,12 @@ def throw_hand_grenade(
         return False;
     }
     speed = 400.0 + (3.0 - state.grenade_remaining) * (400.0 / 3.0);
+    scale = damage_scale(player, state.game);
     grenade = Projectile(
         pos=player.pos,
         velocity=forward_from(player.yaw, player.pitch).scale(speed).add(Vec3(z=200.0)),
-        damage=rule.damage,
-        splash=rule.splash,
+        damage=int(float(rule.damage) * scale),
+        splash=int(float(rule.splash) * scale),
         radius=rule.radius,
         gravity=True,
         remaining=max(0.001, state.grenade_remaining),
@@ -574,7 +577,7 @@ def throw_hand_grenade(
     );
     state.shots += 1;
     state.flash = 0.08;
-    state.cooldown = rule.interval;
+    state.cooldown = rule.interval * fire_interval_scale(player);
     if held {
         projectile_blast(world, grenade, player, collision, state);
     } else {
@@ -723,7 +726,7 @@ def blast_actors(
                 actor, amount, player.inventory, None if hostile else state
             );
         } else {
-            actor spawn Damage(amount=amount);
+            actor spawn Damage(amount=amount, means="splash", source=origin);
         }
         if amount > 0 {
             actor.velocity = actor.velocity.add(
@@ -819,7 +822,7 @@ def projectile_beams(
             projectile.pos, finish, player.pos, collision.eye_height, collision.top_drop
         )
             < trace.fraction {
-            player spawn Damage(amount=projectile.beam_damage);
+            player spawn Damage(amount=projectile.beam_damage, source=projectile.pos);
         }
         return;
     }
@@ -881,7 +884,9 @@ def projectile_energy_burst(
                 amount=int(
                     float(projectile.burst_damage)
                         * (1.0 - math.sqrt(distance / projectile.burst_radius))
-                )
+                ),
+                means="splash",
+                source=projectile.pos
             );
         }
         state.impacts.append(
@@ -1001,7 +1006,9 @@ walker ProjectileTick {
         }
         here.pos = here.pos.lerp(finish, fraction);
         if player_hit {
-            self.player spawn Damage(amount=here.damage);
+            self.player spawn Damage(
+                amount=here.damage, source=here.pos.sub(here.velocity.normalized())
+            );
             projectile_blast(
                 world,
                 here,
@@ -1250,7 +1257,10 @@ def opponent_shot(
         }
     }
     if damage > 0 {
-        player spawn Damage(amount=damage);
+        player spawn Damage(
+            amount=int(float(damage) * damage_scale(enemy, "q3" if enemy.arena else "")),
+            source=enemy.pos
+        );
     }
 }
 
@@ -1274,7 +1284,7 @@ def opponent_beam(
     endpoint = origin.lerp(finish, min(wall.fraction, hit));
     beam_trail(world, origin, endpoint, profile.beam_kind);
     if hit < wall.fraction and amount > 0 {
-        player spawn Damage(amount=amount);
+        player spawn Damage(amount=amount, source=origin);
     }
 }
 
@@ -1407,7 +1417,7 @@ def advance_attack_segment(
         if profile.kind == "melee" {
             if distance <= profile.reach {
                 amount = event_damage(enemy, profile, event_index);
-                result = player spawn Damage(amount=amount);
+                result = player spawn Damage(amount=amount, source=enemy.pos);
                 if result.dealt > 0 and profile.knockback != 0.0 {
                     player.velocity = player.velocity.add(
                         delta.normalized().scale(profile.knockback)
@@ -1647,7 +1657,9 @@ walker CombatTick {
             if abs(separation.x) < 32.0
                 and abs(separation.y) < 32.0
                 and abs(separation.z) < 56.0 {
-                self.player spawn Damage(amount=100000, bypass_armor=True);
+                self.player spawn Damage(
+                    amount=100000, bypass_armor=True, bypass_protection=True
+                );
             }
         }
         if self.body_collision is None
@@ -1730,6 +1742,14 @@ walker CombatTick {
             if distance < 1500.0 {
                 sight = self.collision.trace_point(here.pos, self.player.pos);
                 here.pursuing = not sight.start_solid and sight.fraction == 1.0;
+                # Q1 ai.qc FindTarget / Q3 BotFindEnemy: invisible players are
+                # not newly noticed, though Q3 bots still spot muzzle flashes.
+                if here.pursuing
+                    and not was_alert
+                    and empowered(self.player, "invisibility")
+                    and not (here.arena and self.state.flash > 0.0) {
+                    here.pursuing = False;
+                }
                 if here.pursuing {
                     here.last_seen = self.player.pos;
                     here.last_seen_height = self.collision.eye_height;
@@ -1934,7 +1954,7 @@ walker CombatTick {
                 } elif rise < 30.0 {
                     desired.z = 1.0;
                 }
-                desired = desired.normalized().scale(here.walk_speed);
+                desired = desired.normalized().scale(here.walk_speed * speed_scale(here));
             }
             here.velocity = here.velocity.add(
                 desired.sub(here.velocity).scale(min(1.0, 8.0 * self.dt))
@@ -1955,7 +1975,7 @@ walker CombatTick {
                     and abs(contact.z) < 56.0 {
                     profile = current_profile(here);
                     amount = event_damage(here, profile, 0);
-                    result = self.player spawn Damage(amount=amount);
+                    result = self.player spawn Damage(amount=amount, source=here.pos);
                     if result.dealt > 0 {
                         push = Vec3(x=contact.x, y=contact.y).normalized();
                         self.player.velocity = self.player.velocity.add(

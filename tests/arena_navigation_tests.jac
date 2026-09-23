@@ -1,4 +1,10 @@
-import from engine.world.arena_navigation { ArenaNavigationTick, prepare_arena_links }
+import from engine.world.arena_navigation {
+    ArenaNavigationTick,
+    ArenaContactIndex,
+    prepare_arena_links
+}
+import from engine.world.powerups { powerup_left }
+import from engine.world.inventory { quantity }
 import from engine.world.combat { Opponent, HasOpponent }
 import from engine.world.world { World }
 import from engine.world.pickups { Pickup, PickupRule, HasPickup }
@@ -42,4 +48,35 @@ test "arena bots follow directed teleport goals and retain shared cooldowns" {
     world spawn ArenaNavigationTick(collision=CollisionMap(), dt=0.01, contacts=True);
     assert bot.pos.x == 900.0 and bot.teleport_cooldown > 0.0;
     assert bot.arena_goal is None;
+}
+
+test "arena bots prize powerups over a fight and hold one holdable" {
+    world = World();
+    bot = Opponent(
+        arena=True, pursuing=True, pos=Vec3(x=100.0, z=22.0), last_seen=Vec3(x=-800.0, z=22.0)
+    );
+    quad = Pickup(
+        pos=Vec3(x=400.0),
+        rule=PickupRule(kind="powerup", amount=1, capacity=1, model="", powerup="quad", duration=30.0)
+    );
+    world +>:HasOpponent:+> bot;
+    world +>:HasPickup:+> quad;
+    world spawn ArenaNavigationTick(collision=CollisionMap(), dt=0.01);
+    assert bot.arena_goal is not None and bot.arena_goal.x == 400.0;
+    bot.pos = Vec3(x=400.0, z=22.0);
+    world spawn ArenaNavigationTick(collision=CollisionMap(), dt=0.01, contacts=True);
+    assert not quad.active and powerup_left(bot, "quad") == 30.0;
+    kit = Pickup(pos=Vec3(x=400.0), rule=PickupRule(kind="holdable_medkit", amount=1, capacity=1, model=""));
+    world +>:HasPickup:+> kit;
+    world spawn ArenaNavigationTick(
+        collision=CollisionMap(), dt=0.01, contacts=True, index=ArenaContactIndex()
+    );
+    assert not kit.active and quantity(bot.inventory, "holdable_medkit") == 1;
+    bot.arena_goal_wait = 0.0;
+    world +>:HasPickup:+> Pickup(
+        pos=Vec3(x=500.0), rule=PickupRule(kind="holdable_teleporter", amount=1, capacity=1, model="")
+    );
+    bot.pursuing = False;
+    world spawn ArenaNavigationTick(collision=CollisionMap(), dt=0.01, index=ArenaContactIndex());
+    assert bot.arena_goal is None or bot.arena_goal.x != 500.0;
 }

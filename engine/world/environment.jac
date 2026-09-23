@@ -1,6 +1,7 @@
 """Liquid exposure runs on simulation time, independently of render frequency."""
 import from .world { Player }
 import from .damage { Damage }
+import from .powerups { empowered }
 
 walker EnvironmentTick {
     has game: str,
@@ -17,7 +18,9 @@ walker EnvironmentTick {
             here.hazard_wait = 0.0;
             return;
         }
-        if here.water_depth < 3 {
+        suited = empowered(here, "suit") or empowered(here, "battlesuit");
+        breathing = suited or empowered(here, "breather");
+        if here.water_depth < 3 or breathing {
             here.air_remaining = 12.0;
             here.drown_damage = 2;
         } else {
@@ -28,7 +31,9 @@ walker EnvironmentTick {
                     here.drown_damage = 10 if self.game == "q1" else 15;
                 }
                 here spawn Damage(
-                    amount=here.drown_damage, bypass_armor=self.game != "q1"
+                    amount=here.drown_damage,
+                    bypass_armor=self.game != "q1",
+                    means="drown"
                 );
                 here.air_remaining += 1.0;
             }
@@ -41,17 +46,21 @@ walker EnvironmentTick {
             return;
         }
         lava = here.liquid_kind == 3;
+        # Biosuit/environment suit rules follow Q1 client.qc and Q2 p_view.c.
+        if suited and not lava and self.game != "q3" {
+            return;
+        }
         amount = 0;
         if self.game == "q1" {
             amount = 10 if lava else 4;
-            here.hazard_wait = 0.2 if lava else 1.0;
+            here.hazard_wait = (1.0 if suited else 0.2) if lava else 1.0;
         } elif self.game == "q2" {
-            amount = 3 if lava else 1;
+            amount = (1 if suited else 3) if lava else 1;
             here.hazard_wait = 0.1;
         } else {
             amount = 30 if lava else 10;
             here.hazard_wait = 0.7;
         }
-        here spawn Damage(amount=amount * here.water_depth);
+        here spawn Damage(amount=amount * here.water_depth, means="environment");
     }
 }

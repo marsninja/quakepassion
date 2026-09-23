@@ -2,6 +2,7 @@
 import from .collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 import from ..world.world { Player }
+import from ..world.powerups { empowered, speed_scale }
 
 obj Motion {
     has pos: Vec3,
@@ -97,12 +98,35 @@ walker MovePlayer {
             return;
         }
         pos = here.pos.sub(Vec3(z=self.collision.eye_height));
+        haste = speed_scale(here);
+        if empowered(here, "flight") and self.water_depth < 2 {
+            # Q3 bg_pmove.c PM_FlyMove: view-relative thrust, flight friction 3.
+            here.grounded = False;
+            speed = here.velocity.length();
+            if speed > 0.0 {
+                here.velocity = here.velocity.scale(
+                    max(0.0, speed - speed * 3.0 * self.dt) / speed
+                );
+            }
+            if self.swim_wish.length() > 0.0 {
+                wish_speed = here.walk_speed * haste;
+                direction = self.swim_wish.normalized();
+                add = max(0.0, wish_speed - here.velocity.dot(direction));
+                here.velocity = here.velocity.add(
+                    direction.scale(min(add, 8.0 * wish_speed * self.dt))
+                );
+            }
+            moved = step_slide(self.collision, pos, here.velocity, self.dt, False);
+            here.velocity = moved.velocity;
+            here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
+            return;
+        }
         if self.water_depth >= 2 {
             here.grounded = False;
             here.velocity = here.velocity.scale(
                 max(0.0, 1.0 - float(self.water_depth) * self.dt)
             );
-            desired = self.swim_wish.normalized().scale(160.0);
+            desired = self.swim_wish.normalized().scale(160.0 * haste);
             if self.swim_wish.length() == 0.0 {
                 desired = Vec3(z=-60.0);
             }
@@ -139,10 +163,11 @@ walker MovePlayer {
             }
         }
         direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
-        add = max(0.0, here.walk_speed - here.velocity.dot(direction));
+        wish_speed = here.walk_speed * haste;
+        add = max(0.0, wish_speed - here.velocity.dot(direction));
         acceleration = 10.0 if here.grounded else 1.0;
         here.velocity = here.velocity.add(
-            direction.scale(min(add, acceleration * here.walk_speed * self.dt))
+            direction.scale(min(add, acceleration * wish_speed * self.dt))
         );
         if not here.grounded {
             here.velocity.z -= 800.0 * self.dt;

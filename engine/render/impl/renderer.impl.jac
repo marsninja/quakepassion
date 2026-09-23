@@ -312,3 +312,21 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
         }
     }
 }
+
+impl Renderer.draw_tint(r: int, g: int, b: int, a: int) {
+    DrawRectangle(
+        0,
+        0,
+        i32(self.width),
+        i32(self.height),
+        Color(r=u8(r), g=u8(g), b=u8(b), a=u8(a))
+    );
+}
+
+impl Renderer.draw_powerups(lines: list[str]) {
+    y = self.height - 140 - len(lines) * 24;
+    for line in lines {
+        DrawText(line, i32(self.width - 360), i32(y), 20, Color(r=140, g=200, b=255, a=255));
+        y += 24;
+    }
+}

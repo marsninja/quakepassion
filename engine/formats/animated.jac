@@ -52,7 +52,8 @@ obj AnimatedSurface {
 
 obj AnimatedModel {
     has surfaces: list[AnimatedSurface] = [],
-        tags: list[TagFrame] = [];
+        tags: list[TagFrame] = [],
+        flags: int = 0;
 }
 
 def model_name(data: bytes, offset: int, size: int) -> str {

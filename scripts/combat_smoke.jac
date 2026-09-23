@@ -100,7 +100,8 @@ with entry {
         app.render_frame();
         renderer.screenshot("qp_combat_hit_" + game + ".png");
         assert enemy.health == 0 and app.combat.kills == 1;
-        assert not enemy.visual.visible;
+        # Enemies with a death animation remain as visible corpses.
+        assert not enemy.visual.visible or bool(enemy.death_animation);
         data = snapshot(world, level, player, app.combat);
         path = ".jac/combat-save-" + game + ".txt";
         write_save(path, data);

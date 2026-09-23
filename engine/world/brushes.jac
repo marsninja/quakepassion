@@ -204,7 +204,11 @@ walker BrushTick {
                             start=local, finish=local
                         );
                         if hit.result.start_solid {
-                            self.player spawn Damage(amount=100000, bypass_armor=True);
+                            self.player spawn Damage(
+                                amount=100000,
+                                bypass_armor=True,
+                                bypass_protection=True
+                            );
                             break;
                         }
                     }

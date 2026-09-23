@@ -84,7 +84,9 @@ walker TraversalTick {
             # player inside solid rock.
             if not telefrag(self.world, self.player, point, self.collision.eye_height)
                 and self.collision.trace(point, point).start_solid {
-                self.player spawn Damage(amount=100000, bypass_armor=True);
+                self.player spawn Damage(
+                    amount=100000, bypass_armor=True, bypass_protection=True
+                );
             }
             return;
         }
