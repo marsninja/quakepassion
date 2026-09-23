@@ -27,7 +27,9 @@ node TouchTrigger {
         health: int = 0,
         max_health: int = 0,
         hulls: list[int] = [],
-        skill: int = -1;
+        skill: int = -1,
+        monsters: bool = False,
+        players: bool = True;
 }
 
 walker Activate {
@@ -77,9 +79,11 @@ walker TriggerTick {
         player: Player | None = None,
         message: str = "",
         cues: list[str] = [],
-        skill: int = -1;
+        skill: int = -1,
+        world: World | None = None;
 
     can start_world with World entry {
+        self.world = here;
         if self.dt > 0.0 {
             visit [here->:HasTrigger:->];
         }
@@ -93,23 +97,45 @@ walker TriggerTick {
         if here.health > 0 and here.cooldown <= 0.0 {
             here.health = here.max_health;
         }
-        if not self.touching or not here.touchable or here.cooldown > 0.0 {
+        if not here.touchable or here.cooldown > 0.0 {
             return;
         }
-        # Directional triggers only fire for players facing along them.
-        player = self.player;
-        if here.facing.length() > 0.0
-            and player is not None
-            and forward_from(player.yaw, 0.0).dot(here.facing) < 0.0 {
-            return;
-        }
-        hit = here.volume.trace(self.start, self.finish, top_drop=self.top_drop);
-        if hit.start_solid or hit.fraction < 1.0 {
-            if here.skill >= 0 {
-                self.skill = here.skill;
+        if self.touching and here.players {
+            # Directional triggers only fire for players facing along them.
+            player = self.player;
+            facing_ok = here.facing.length() <= 0.0
+                or player is None
+                or forward_from(player.yaw, 0.0).dot(here.facing) >= 0.0;
+            hit = here.volume.trace(self.start, self.finish, top_drop=self.top_drop);
+            if facing_ok and (hit.start_solid or hit.fraction < 1.0) {
+                if here.skill >= 0 {
+                    self.skill = here.skill;
+                    return;
+                }
+                fire_trigger(here, player, self);
                 return;
             }
-            fire_trigger(here, player, self);
+        }
+        # Q2 MONSTER triggers also fire for monsters standing in them
+        # (Touch_Multi); their messages go to no one.
+        world = self.world;
+        if here.monsters and world is not None {
+            for enemy in [world->:HasOpponent:->][?:Opponent] {
+                if enemy.health <= 0 or enemy.dormant {
+                    continue;
+                }
+                origin = enemy.pos.sub(Vec3(z=enemy.eye_height));
+                if here.volume.trace(origin, origin).start_solid {
+                    activated = here spawn Activate();
+                    self.cues.extend(activated.cues);
+                    here.activations += 1;
+                    here.cooldown = here.interval;
+                    if here.once {
+                        here.enabled = False;
+                    }
+                    return;
+                }
+            }
         }
     }
 }
@@ -209,7 +235,8 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
         if bsp.game == "q1" {
             allowed |= 1;
         } elif bsp.game == "q2" {
-            allowed |= 4;
+            # TRIGGERED, plus MONSTER and NOT_PLAYER for who may touch it.
+            allowed |= 7;
         }
         if flags & ~allowed {
             continue;
@@ -272,7 +299,9 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
             touchable=health == 0 and not (bsp.game == "q1" and flags & 1 != 0),
             health=health,
             max_health=health,
-            skill=int(float(fields.get("message", "1"))) if setskill else -1
+            skill=int(float(fields.get("message", "1"))) if setskill else -1,
+            monsters=bsp.game == "q2" and flags & 1 != 0,
+            players=not (bsp.game == "q2" and flags & 2 != 0)
         );
         angle = float(fields.get("angle", "0"));
         if bsp.game in ["q1", "q2"] and angle != 0.0 {

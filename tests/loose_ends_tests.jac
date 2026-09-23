@@ -2,6 +2,7 @@ import from engine.world.world { World, Player }
 import from engine.world.combat { CombatState, Opponent, HasOpponent }
 import from engine.world.targets { TargetEvent, HasTarget, TargetTick }
 import from engine.world.signals { Signal }
+import from engine.world.triggers { TouchTrigger, HasTrigger, TriggerTick }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.level { Level }
@@ -46,4 +47,34 @@ test "Q1 and Q2 textures animate by the original clocks and entity frames" {
     assert drawing.anim_frames[0] == [0, 1, 2];
     drawing.time = 1.1;
     assert drawing.shown_texture(q2, 0, 0) == 2;
+}
+
+test "Q2 monster-only triggers fire for monsters and ignore the player" {
+    world = World();
+    volume = CollisionMap();
+    volume.add_box(
+        Vec3(x=-64.0, y=-64.0, z=0.0),
+        Vec3(x=64.0, y=64.0, z=64.0),
+        Vec3(),
+        Vec3(x=-16.0, y=-16.0, z=-24.0),
+        Vec3(x=16.0, y=16.0, z=32.0)
+    );
+    trigger = TouchTrigger(model=1, volume=volume, interval=0.1, monsters=True, players=False);
+    world +>:HasTrigger:+> trigger;
+    player = Player(health=100, pos=Vec3(z=46.0));
+    world spawn TriggerTick(player=player, start=Vec3(z=24.0), finish=Vec3(z=24.0), dt=0.01);
+    assert trigger.activations == 0;
+    grunt = Opponent(health=30, pos=Vec3(x=600.0, z=46.0));
+    world +>:HasOpponent:+> grunt;
+    world spawn TriggerTick(player=player, start=Vec3(z=24.0), finish=Vec3(z=24.0), dt=0.01);
+    assert trigger.activations == 0;
+    grunt.pos = Vec3(x=20.0, z=46.0);
+    world spawn TriggerTick(player=player, start=Vec3(z=24.0), finish=Vec3(z=24.0), dt=0.01, touching=False);
+    assert trigger.activations == 1;
+    # A player-and-monster trigger still fires for the player.
+    trigger.players = True;
+    trigger.cooldown = 0.0;
+    grunt.health = 0;
+    world spawn TriggerTick(player=player, start=Vec3(z=24.0), finish=Vec3(z=24.0), dt=0.01);
+    assert trigger.activations == 2;
 }
