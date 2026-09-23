@@ -16,7 +16,9 @@ def game_directory(game: str) -> str {
     if game == os.getenv("QP_GAME", "q1") and os.getenv("QP_ASSETS", "") != "" {
         return os.getenv("QP_ASSETS", "");
     }
-    if game == "passion" { return os.getenv("HOME", "") + "/quake-assets"; }
+    if game == "passion" {
+        return os.getenv("HOME", "") + "/quake-assets";
+    }
     folder = "id1" if game == "q1" else ("baseq2" if game == "q2" else "baseq3");
     return os.getenv("HOME", "") + "/quake-assets/" + folder;
 }
@@ -70,7 +72,7 @@ obj LevelMenu {
         if self.games[self.game] == "passion" {
             seed = max(int(time.time()), self.seed_cursor + 12) % 2147483000 + 1;
             self.seed_cursor = seed;
-            self.maps = ["v1-" + str(seed + i) for i in range(12)];
+            self.maps = ["v2-" + str(seed + i) for i in range(12)];
             self.message = "Seeded expeditions | Click Passion for fresh seeds";
             return;
         }

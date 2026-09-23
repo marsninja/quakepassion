@@ -35,7 +35,9 @@ impl App.run() {
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
         populate_finale(self.world, self.level, game_directory(self.level.bsp.game));
-        if self.level.bsp.game == "q3" { prepare_arena_links(self.world, self.level.collision); }
+        if self.level.bsp.game == "q3" {
+            prepare_arena_links(self.world, self.level.collision);
+        }
         self.models.upload(self.world);
         self.effects.upload(
             self.level.bsp.game,
@@ -167,9 +169,7 @@ impl App.render_frame() {
             if self.level.bsp.game == "passion" {
                 if self.notice_wait <= 0.0 {
                     self.renderer.draw_message(
-                        "PASSION "
-                            + self.level.name
-                            + " | Find both keys, reach extraction"
+                        "PASSION " + self.level.name + " | " + self.level.briefing
                     );
                 }
                 if self.expedition_complete {
@@ -359,7 +359,9 @@ impl App.load_destination(
         populate_opponents(world, level, game_directory(game));
         populate_finale(world, level, game_directory(game));
         combat = CombatState();
-        if game == "q3" { prepare_arena_links(world, level.collision); }
+        if game == "q3" {
+            prepare_arena_links(world, level.collision);
+        }
         equip_player(player, combat, game, fresh=not carrying);
         if carrying {
             select_weapon(player, combat, self.combat.weapon);
@@ -555,7 +557,11 @@ impl App.step() -> bool {
                 unit = self.pending_unit;
                 self.pending_map = "";
                 self.load_destination(
-                    self.level.bsp.game, destination, spawnpoint, carry=True, new_unit=unit
+                    self.level.bsp.game,
+                    destination,
+                    spawnpoint,
+                    carry=True,
+                    new_unit=unit
                 );
             } elif self.campaign_complete {
                 self.campaign_complete = False;
@@ -593,9 +599,14 @@ impl App.step() -> bool {
         self.render_frame();
         return True;
     }
+    # Acceptance bots drive the real game loop through a scripted intent.
+    scripted = self.scripted;
     intent = Intent()
         if self.smoke or self.finale_active
         else sample_intent(dt, self.sensitivity, self.invert_y);
+    if scripted is not None and not self.finale_active {
+        intent = scripted;
+    }
     if intent.weapon > 0 {
         select_weapon(self.player, self.combat, intent.weapon);
     }
@@ -733,7 +744,11 @@ impl App.step() -> bool {
                 surfaces.append(swimmer.pos.add(Vec3()));
             }
             if self.level.bsp.game == "q3" {
-                self.world spawn ArenaNavigationTick(collision=self.level.collision, index=self.arena_contacts, dt=self.physics_clock.tick_rate);
+                self.world spawn ArenaNavigationTick(
+                    collision=self.level.collision,
+                    index=self.arena_contacts,
+                    dt=self.physics_clock.tick_rate
+                );
             }
             self.world spawn CombatTick(
                 player=self.player,
@@ -743,12 +758,19 @@ impl App.step() -> bool {
                 active=self.walking
             );
             if self.level.bsp.game == "q3" {
-                self.world spawn ArenaNavigationTick(collision=self.level.collision, index=self.arena_contacts, dt=self.physics_clock.tick_rate, contacts=True);
+                self.world spawn ArenaNavigationTick(
+                    collision=self.level.collision,
+                    index=self.arena_contacts,
+                    dt=self.physics_clock.tick_rate,
+                    contacts=True
+                );
             }
             # Swimming monsters never leave their liquid volume.
             for i in range(len(swimmers)) {
                 if swimmers[i].water_depth >= 2
-                    and self.level.immersion(swimmers[i].pos, swimmers[i].eye_height).depth
+                    and self.level.immersion(
+                        swimmers[i].pos, swimmers[i].eye_height
+                    ).depth
                         < 2 {
                     swimmers[i].pos = surfaces[i];
                     swimmers[i].velocity = Vec3();
@@ -909,7 +931,8 @@ impl App.step() -> bool {
                 if text {
                     self.pending_map = destination;
                     self.pending_spawn = exit_spawn(exit_request.request);
-                    self.pending_unit = destination != exit_request.request.split("$")[0];
+                    self.pending_unit = destination
+                        != exit_request.request.split("$")[0];
                     self.begin_intermission(text);
                     break;
                 }
@@ -922,7 +945,11 @@ impl App.step() -> bool {
                     destination,
                     exit_spawn(exit_request.request),
                     carry=True,
-                    new_unit=exit_request.request.split("$")[0].split("+")[-1].startswith("*")
+                    new_unit=exit_request.request.split("$")[0].split("+")[
+                        -1
+                    ].startswith(
+                        "*"
+                    )
                 );
                 break;
             }
