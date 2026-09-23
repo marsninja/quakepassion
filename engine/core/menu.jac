@@ -90,9 +90,7 @@ obj LevelMenu {
                         listed = archive.namelist();
                         names.extend(listed);
                         if "scripts/arenas.txt" in listed {
-                            arena_text = archive.read("scripts/arenas.txt").decode(
-                                "utf-8", errors="replace"
-                            );
+                            arena_text = archive.read("scripts/arenas.txt").decode("utf-8");
                         }
                     }
                 } elif self.game != 2 and filename.lower().endswith(".pak") {

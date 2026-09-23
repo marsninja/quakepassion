@@ -127,11 +127,11 @@ def find_bot(bots: list[BotInfo], name: str) -> BotInfo {
 }
 
 def load_arenas(library: AssetLibrary) -> list[ArenaInfo] {
-    return parse_arenas(library.read("scripts/arenas.txt").decode("utf-8", errors="replace"));
+    return parse_arenas(library.read("scripts/arenas.txt").decode("utf-8"));
 }
 
 def load_bots(library: AssetLibrary) -> list[BotInfo] {
-    return parse_bots(library.read("scripts/bots.txt").decode("utf-8", errors="replace"));
+    return parse_bots(library.read("scripts/bots.txt").decode("utf-8"));
 }
 
 """Completed ladder arenas and their best finishing place, kept beside settings."""

@@ -88,7 +88,8 @@ test "arena opponents respawn campaign opponents remain dead" {
     world spawn CombatTick(
         player=player, collision=CollisionMap(), state=state, dt=0.25
     );
-    assert bot.health == bot.max_health and campaign.health == 0;
+    # g_client.c ClientSpawn: arena competitors return with 25 extra health.
+    assert bot.health == bot.max_health + 25 and campaign.health == 0;
 }
 
 test "actor ray bounds reject grazing misses and accept inside starts" {

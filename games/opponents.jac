@@ -81,11 +81,7 @@ def populate_finale(world: World, level: Level, directory: str) -> int {
 """Q3 spawn points become graph nodes; the arena's roster and frag limit come
 from scripts/arenas.txt, with a three-bot skirmish for maps outside the ladder."""
 def prepare_arena(
-    world: World,
-    level: Level,
-    library: AssetLibrary,
-    player_start: Vec3,
-    roster: list[BotInfo]
+    world: World, level: Level, library: AssetLibrary, roster: list[BotInfo]
 ) -> ArenaMatch {
     for entity in level.bsp.entities {
         fields = entity.fields;
@@ -150,7 +146,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
     contest: ArenaMatch | None = None;
     try {
         if level.bsp.game == "q3" {
-            contest = prepare_arena(world, level, catalog.source("q3"), player_start, roster);
+            contest = prepare_arena(world, level, catalog.source("q3"), roster);
             entities = entities + arena_entities(world, roster, player_start);
         }
         for entity_index in range(len(entities)) {
