@@ -226,6 +226,10 @@ obj Pk3Assets {
             print("Partial model material:", name, material.unsupported);
             return [];
         }
+        # Surface-only stage features keep models on their plain skin.
+        if material.advanced {
+            return [];
+        }
         result: list[ModelStage] = [];
         for stage in material.stages {
             texture = self.model_image(stage.texture.name, material.two_sided);
@@ -244,6 +248,42 @@ obj Pk3Assets {
                     scroll_v=stage.scroll_v
                 )
             );
+        }
+        return result;
+    }
+
+    """The ordered stages of a BSP surface shader, images loaded, when the
+    shader needs more than the one-pass base-times-lightmap drawing: animated
+    maps, texture modifiers, waves, extra blended layers or vertex colour."""
+    def surface_stages(name: str) -> list[ModelStage] {
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return [];
+        }
+        material = self.model_shaders[key];
+        # Skies keep their sky-box drawing; their cloud layers belong on the dome.
+        if material.sky or material.unsupported or not material.stages or not layered_material(material) {
+            return [];
+        }
+        result: list[ModelStage] = [];
+        for stage in material.stages {
+            if not stage.lightmap and not stage.white {
+                image = self.image_name(stage.texture.name);
+                if not image {
+                    return [];
+                }
+                stage.texture = Texture(name=image, encoded=self.read(image), extension=image_extension(image));
+                frames: list[Texture] = [];
+                for frame in stage.frames {
+                    picture = self.image_name(frame.name);
+                    if not picture {
+                        return [];
+                    }
+                    frames.append(Texture(name=picture, encoded=self.read(picture), extension=image_extension(picture)));
+                }
+                stage.frames = frames;
+            }
+            result.append(stage);
         }
         return result;
     }
@@ -278,4 +318,37 @@ obj Pk3Assets {
         self.additive = {};
         self.two_sided = {};
     }
+}
+
+def image_extension(path: str) -> str {
+    lower = path.lower();
+    if lower.endswith(".tga") {
+        return ".tga";
+    }
+    if lower.endswith(".png") {
+        return ".png";
+    }
+    return ".jpg";
+}
+
+"""Whether a surface shader needs layered drawing: anything beyond one base
+stage, alone or multiplied with the lightmap, with no motion or colour."""
+def layered_material(material: ModelMaterial) -> bool {
+    for stage in material.stages {
+        if stage.frames or stage.mods or stage.environment or stage.rgb != "identity" or stage.alpha != "identity" {
+            return True;
+        }
+    }
+    count = len(material.stages);
+    if count == 1 {
+        return material.stages[0].blend not in ["opaque", "alpha"] or material.stages[0].lightmap;
+    }
+    if count == 2 {
+        first = material.stages[0];
+        second = material.stages[1];
+        plain = (first.lightmap and not second.lightmap and second.blend == "multiply")
+            or (second.lightmap and not first.lightmap and second.blend == "multiply");
+        return not plain;
+    }
+    return True;
 }

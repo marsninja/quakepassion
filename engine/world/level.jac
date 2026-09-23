@@ -6,6 +6,7 @@ import from ..formats.q1.bsp { parse_bsp }
 import from ..formats.bsp { Bsp, Texture, decode_pvs, i32_at, require_range }
 import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
 import from ..formats.q3.bsp { parse_q3 }
+import from ..formats.animated { ModelStage }
 import from ..assets.pk3 { Pk3Assets }
 import from ..physics.collision { CollisionMap }
 import from ..formats.q1.collision { build_collision }
@@ -108,7 +109,8 @@ obj Level {
         visible_leaf: int = -2,
         visible_game: str = "",
         visible_culling: bool = False,
-        visible_faces: list[int] = [];
+        visible_faces: list[int] = [],
+        surface_stages: dict[int, list[ModelStage]] = {};
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -235,6 +237,13 @@ def load_level(
         level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"));
         for texture in level.bsp.textures {
             assets.texture(texture);
+        }
+        # Shaders with animated, moving or layered stages draw stage by stage.
+        for index in range(len(level.bsp.textures)) {
+            stages = assets.surface_stages(level.bsp.textures[index].name);
+            if stages {
+                level.surface_stages[index] = stages;
+            }
         }
         for face in level.bsp.faces {
             material = level.bsp.textures[face.texture];

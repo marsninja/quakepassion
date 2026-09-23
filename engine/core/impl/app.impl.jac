@@ -129,6 +129,7 @@ impl App.render_frame() {
         faces = self.level.visible(self.world, p.pos, self.culling);
         combat_lights(self.level.lighting, self.world, p, self.combat);
         self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
+        self.quake.time = self.simulation_time;
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
         self.models.draw(
             self.world,

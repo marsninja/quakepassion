@@ -42,6 +42,9 @@ with entry {
             print("STYLES", game, name, "styled faces", len(drawing.styled), "serial", styles[0].serial);
         } else {
             assert not styles;
+            # Layered Q3 shaders: animated, moving, pulsing and blended stages.
+            print("SHADERS", game, name, "layered", len(level.surface_stages), "uploaded", len(drawing.stage_images));
+            assert level.surface_stages and len(drawing.stage_images) == len(level.surface_stages);
         }
         status = HudStatus(
             game=game, health=87, armor=45, armor_ratio=0.6, ammo=23,
@@ -53,6 +56,7 @@ with entry {
         );
         eye = spawn_player(level).pos;
         for frame in range(3) {
+            drawing.time = 1.5 + float(frame) * 0.1;
             renderer.begin_frame(eye, 0.3, 0.0);
             drawing.draw(level, level.visible(world, eye, False), eye);
             renderer.end_scene();

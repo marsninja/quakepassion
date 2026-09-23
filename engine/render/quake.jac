@@ -1,4 +1,5 @@
 """Quake polygon rendering through raylib's rlgl batch API."""
+import math;
 import struct;
 import from vendor.raylib {
     obj Shader {
@@ -44,10 +45,13 @@ import from vendor.raylib {
         r: u8, g: u8, b: u8, a: u8
     ) -> None;  def rlDrawRenderBatchActive -> None;  def BeginBlendMode(
         mode: i32
-    ) -> None;  def EndBlendMode -> None;
+    ) -> None;  def EndBlendMode -> None;  def rlSetBlendFactors(
+        src: i32, dst: i32, equation: i32
+    ) -> None;
 }
 import from ..world.level { Level }
 import from ..formats.bsp { Face, Texture }
+import from ..formats.animated { ModelStage, stage_frame }
 import from ..math.vec3 { Vec3 }
 import from ..world.lighting { Lighting }
 
@@ -68,7 +72,10 @@ obj QuakeRenderer {
         atlas: int = 0,
         atlas_size: int = 2048,
         rects: list[LightRect] = [],
-        styled: list[int] = [];
+        styled: list[int] = [],
+        stage_images: dict[int, list[list[int]]] = {},
+        white: int = 0,
+        time: float = 0.0;
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
@@ -329,6 +336,44 @@ obj QuakeRenderer {
         }
         rlTextureParameters(u32(self.atlas), i32(10241), i32(9729));
         rlTextureParameters(u32(self.atlas), i32(10240), i32(9729));
+        self.upload_stages(level);
+    }
+
+    """Upload every image of every layered Q3 surface shader stage. A lightmap
+    stage records -1 (the atlas) and $whiteimage a shared white texture."""
+    def upload_stages(level: Level) {
+        self.stage_images = {};
+        if not level.surface_stages {
+            return;
+        }
+        if self.white == 0 {
+            self.white = int(rlLoadTexture(b"\xff\xff\xff\xff", i32(1), i32(1), i32(7), i32(1)));
+        }
+        for (index, stages) in level.surface_stages.items() {
+            images: list[list[int]] = [];
+            for stage in stages {
+                if stage.lightmap {
+                    images.append([-1]);
+                    continue;
+                }
+                if stage.white {
+                    images.append([self.white]);
+                    continue;
+                }
+                sources = stage.frames if stage.frames else [stage.texture];
+                ids: list[int] = [];
+                for source in sources {
+                    image = self.upload_image(source);
+                    rlTextureParameters(u32(image), i32(10241), i32(9729));
+                    rlTextureParameters(u32(image), i32(10240), i32(9729));
+                    rlTextureParameters(u32(image), i32(10242), i32(10497));
+                    rlTextureParameters(u32(image), i32(10243), i32(10497));
+                    ids.append(image);
+                }
+                images.append(ids);
+            }
+            self.stage_images[index] = images;
+        }
     }
 
     """Relight faces whose lightmaps use animated or switched styles, as
@@ -379,6 +424,177 @@ obj QuakeRenderer {
                 bytes(pixels)
             );
         }
+    }
+
+    """Q3 layered surfaces, stage by stage (tr_shade.c RB_StageIteratorGeneric):
+    each stage's image or animMap frame, blend, colour and alpha generators,
+    texture modifiers and environment mapping."""
+    def draw_layered(level: Level, batches: list[list[int]], eye: Vec3) {
+        if not self.stage_images {
+            return;
+        }
+        for (t, images) in self.stage_images.items() {
+            if t >= len(batches) or not batches[t] or t not in level.surface_stages {
+                continue;
+            }
+            stages = level.surface_stages[t];
+            two_sided = level.bsp.textures[t].two_sided;
+            if two_sided {
+                rlDisableBackfaceCulling();
+            }
+            for k in range(min(len(stages), len(images))) {
+                stage = stages[k];
+                ids = images[k];
+                texture = self.atlas if ids[0] < 0 else ids[stage_frame(self.time, stage.frequency, len(ids))];
+                blended = not (k == 0 and stage.blend == "opaque");
+                if blended {
+                    source = 1;
+                    destination = 1;
+                    if stage.blend == "alpha" {
+                        source = 770;
+                        destination = 771;
+                    } elif stage.blend == "multiply" {
+                        source = 774;
+                        destination = 0;
+                    } elif stage.blend == "opaque" {
+                        source = 1;
+                        destination = 0;
+                    } elif stage.blend == "custom" {
+                        source = gl_factor(stage.blend_source);
+                        destination = gl_factor(stage.blend_destination);
+                    }
+                    rlSetBlendFactors(i32(source), i32(destination), i32(32774));
+                    BeginBlendMode(i32(6));
+                    if not stage.depth_write {
+                        rlDisableDepthMask();
+                    }
+                }
+                rlSetTexture(u32(texture));
+                red = 255;
+                green = 255;
+                blue = 255;
+                if stage.rgb == "wave" {
+                    level_value = int(max(0.0, min(1.0, stage.rgb_wave.at(self.time))) * 255.0);
+                    red = level_value;
+                    green = level_value;
+                    blue = level_value;
+                } elif stage.rgb == "const" {
+                    red = int(max(0.0, min(1.0, stage.rgb_const[0])) * 255.0);
+                    green = int(max(0.0, min(1.0, stage.rgb_const[1])) * 255.0);
+                    blue = int(max(0.0, min(1.0, stage.rgb_const[2])) * 255.0);
+                }
+                alpha = 255;
+                if stage.alpha == "wave" {
+                    alpha = int(max(0.0, min(1.0, stage.alpha_wave.at(self.time))) * 255.0);
+                } elif stage.alpha == "const" {
+                    alpha = int(max(0.0, min(1.0, stage.alpha_const)) * 255.0);
+                }
+                for index in batches[t] {
+                    face = level.bsp.faces[index];
+                    if ids[0] < 0 and face.light_offset < 0 {
+                        continue;
+                    }
+                    self.stage_polygon(face, self.rects[index], stage, ids[0] < 0, eye, [red, green, blue, alpha]);
+                }
+                rlDrawRenderBatchActive();
+                if blended {
+                    EndBlendMode();
+                    rlEnableDepthMask();
+                }
+            }
+            if two_sided {
+                rlEnableBackfaceCulling();
+            }
+        }
+        rlSetTexture(u32(0));
+    }
+
+    """One face for one stage: tcGen, then each tcMod in order (tr_shade_calc.c)."""
+    def stage_polygon(face: Face, rect: LightRect, stage: ModelStage, light: bool, eye: Vec3, tint: list[int]) {
+        indices = face.indices;
+        if len(indices) == 0 {
+            indices = [];
+            for triangle in range(1, len(face.vertices) - 1) {
+                indices.extend([0, triangle + 1, triangle]);
+            }
+        }
+        rlBegin(i32(4));
+        for index in indices {
+            v = face.vertices[index];
+            s = 0.0;
+            t = 0.0;
+            if light {
+                s = (face.light_uv[index * 2] + float(rect.x) + 0.5) / float(self.atlas_size);
+                t = (face.light_uv[index * 2 + 1] + float(rect.y) + 0.5) / float(self.atlas_size);
+            } elif stage.environment {
+                viewer = eye.sub(v).normalized();
+                d = face.normal.dot(viewer);
+                reflected = face.normal.scale(2.0 * d).sub(viewer);
+                s = 0.5 + reflected.y * 0.5;
+                t = 0.5 - reflected.z * 0.5;
+            } else {
+                s = face.uv[index * 2];
+                t = face.uv[index * 2 + 1];
+            }
+            for mod in stage.mods {
+                if mod.kind == "scroll" {
+                    s += mod.a * self.time;
+                    t += mod.b * self.time;
+                } elif mod.kind == "scale" {
+                    s *= mod.a;
+                    t *= mod.b;
+                } elif mod.kind == "rotate" {
+                    angle = -mod.a * self.time * math.pi / 180.0;
+                    c = math.cos(angle);
+                    n = math.sin(angle);
+                    s0 = s - 0.5;
+                    t0 = t - 0.5;
+                    s = s0 * c - t0 * n + 0.5;
+                    t = s0 * n + t0 * c + 0.5;
+                } elif mod.kind == "turb" {
+                    now = mod.wave.phase + self.time * mod.wave.frequency;
+                    s += math.sin(((v.x + v.z) / 128.0 * 0.125 + now) * 2.0 * math.pi) * mod.wave.amplitude;
+                    t += math.sin((v.y / 128.0 * 0.125 + now) * 2.0 * math.pi) * mod.wave.amplitude;
+                } elif mod.kind == "stretch" {
+                    value = mod.wave.at(self.time);
+                    if abs(value) > 0.0001 {
+                        p = 1.0 / value;
+                        s = (s - 0.5) * p + 0.5;
+                        t = (t - 0.5) * p + 0.5;
+                    }
+                }
+            }
+            red = tint[0];
+            green = tint[1];
+            blue = tint[2];
+            alpha = tint[3];
+            if (stage.rgb == "vertex" or stage.alpha == "vertex") and len(face.colors) > index * 4 + 3 {
+                if stage.rgb == "vertex" {
+                    red = min(255, face.colors[index * 4] * 2);
+                    green = min(255, face.colors[index * 4 + 1] * 2);
+                    blue = min(255, face.colors[index * 4 + 2] * 2);
+                }
+                if stage.alpha == "vertex" {
+                    alpha = face.colors[index * 4 + 3];
+                }
+            }
+            # tr_shade_calc.c RB_CalcSpecularAlpha: a fixed light at
+            # (-960, 1980, 96) reflected toward the viewer, to the 4th power.
+            if stage.alpha == "specular" {
+                toward = Vec3(x=-960.0, y=1980.0, z=96.0).sub(v).normalized();
+                reflected = face.normal.scale(2.0 * face.normal.dot(toward)).sub(toward);
+                shine = max(0.0, reflected.dot(eye.sub(v).normalized()));
+                alpha = int(min(255.0, shine * shine * shine * shine * 255.0));
+            }
+            rlColor4ub(u8(red), u8(green), u8(blue), u8(alpha));
+            rlTexCoord2f(f32(s), f32(t));
+            if face.turn is not None {
+                v = face.pivot.add(face.turn.apply(v.sub(face.pivot)));
+            }
+            v = v.add(face.motion);
+            rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
+        }
+        rlEnd();
     }
 
     def polygon(face: Face, rect: LightRect, light: bool) {
@@ -529,6 +745,9 @@ obj QuakeRenderer {
             if self.single_pass and level.bsp.textures[t].additive {
                 continue;
             }
+            if t in self.stage_images {
+                continue;
+            }
             # Flush only at culling-state boundaries: flushing every texture
             # serializes small GPU batches and severely reduces frame rate.
             if level.bsp.textures[t].two_sided {
@@ -549,7 +768,7 @@ obj QuakeRenderer {
             BeginBlendMode(i32(1));
             rlDisableDepthMask();
             for t in range(len(batches)) {
-                if not level.bsp.textures[t].additive {
+                if not level.bsp.textures[t].additive or t in self.stage_images {
                     continue;
                 }
                 if level.bsp.textures[t].two_sided {
@@ -569,6 +788,7 @@ obj QuakeRenderer {
             rlDisableTexture();
             rlActiveTextureSlot(i32(0));
             rlSetTexture(u32(0));
+            self.draw_layered(level, batches, eye);
             return count;
         }
         # raylib BLEND_MULTIPLIED: destination color times lightmap intensity.
@@ -619,9 +839,40 @@ obj QuakeRenderer {
         if self.atlas != 0 {
             rlUnloadTexture(u32(self.atlas));
         }
+        for (index, images) in self.stage_images.items() {
+            for ids in images {
+                for id in ids {
+                    if id > 0 and id != self.white {
+                        rlUnloadTexture(u32(id));
+                    }
+                }
+            }
+        }
+        self.stage_images = {};
+        if self.white != 0 {
+            rlUnloadTexture(u32(self.white));
+            self.white = 0;
+        }
         self.textures = [];
         self.emissive = [];
         self.rects = [];
         self.atlas = 0;
     }
+}
+
+"""An OpenGL blend factor from its Q3 shader spelling."""
+def gl_factor(name: str) -> int {
+    factors: dict[str, int] = {
+        "gl_zero": 0,
+        "gl_one": 1,
+        "gl_src_color": 768,
+        "gl_one_minus_src_color": 769,
+        "gl_src_alpha": 770,
+        "gl_one_minus_src_alpha": 771,
+        "gl_dst_alpha": 772,
+        "gl_one_minus_dst_alpha": 773,
+        "gl_dst_color": 774,
+        "gl_one_minus_dst_color": 775
+    };
+    return factors[name] if name in factors else 1;
 }
