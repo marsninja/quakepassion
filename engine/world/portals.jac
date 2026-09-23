@@ -315,12 +315,38 @@ def load_portals(world: World, bsp: Bsp) {
     }
 }
 
+"""tr_main.c R_PlaneForSurface: a planar face's own plane, or for a triangle
+soup (misc_model portals) the plane of its first triangle, PlaneFromPoints
+over the original winding. Returns [normal, Vec3(x=dist)]."""
+def surface_plane(face: Face) -> list[Vec3] {
+    if face.normal.length() > 0.5 {
+        return [face.normal, Vec3(x=face.plane_dist)];
+    }
+    if len(face.indices) < 3 {
+        return [Vec3(), Vec3()];
+    }
+    # The loader stores triangles as (a, c, b); Q3 wound them (a, b, c).
+    a = face.vertices[face.indices[0]];
+    b = face.vertices[face.indices[2]];
+    c = face.vertices[face.indices[1]];
+    normal = c.sub(a).cross(b.sub(a));
+    if normal.length() < 0.000001 {
+        return [Vec3(), Vec3()];
+    }
+    normal = normal.normalized();
+    return [normal, Vec3(x=a.dot(normal))];
+}
+
 """R_GetPortalOrientations and R_MirrorViewBySurface for the view (eye,
 forward, left, up) looking at `face`; None when no portal entity lies within
 64 units of its plane."""
 def portal_view(world: World, face: Face, eye: Vec3, forward: Vec3, left: Vec3, up: Vec3, seconds: float) -> PortalView | None {
-    normal = face.normal;
-    dist = face.plane_dist;
+    plane = surface_plane(face);
+    normal = plane[0];
+    dist = plane[1].x;
+    if normal.length() < 0.5 {
+        return None;
+    }
     chosen: PortalSurface | None = None;
     for portal in [world->:HasPortal:->][?:PortalSurface] {
         offset = portal.pos.dot(normal) - dist;

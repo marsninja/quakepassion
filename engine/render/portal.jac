@@ -26,7 +26,7 @@ import from .models { ModelScene }
 import from .effects { EffectScene }
 import from ..world.world { World }
 import from ..world.level { Level }
-import from ..world.portals { portal_view }
+import from ..world.portals { portal_view, surface_plane }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import math;
 
@@ -181,7 +181,8 @@ def draw_portal_view(
         if face.texture not in level.portal_ranges or face.hidden or not face.vertices {
             continue;
         }
-        if face.normal.dot(eye) - face.plane_dist <= 0.0 {
+        plane = surface_plane(face);
+        if plane[0].dot(eye) - plane[1].x <= 0.0 {
             continue;
         }
         ahead = False;
@@ -215,8 +216,8 @@ def draw_portal_view(
         effects.draw(world, view.origin, view_yaw, view_pitch, lighting=level.lighting);
         target.finish();
         quake.portal_image = target.color;
-        quake.portal_normal = face.normal;
-        quake.portal_dist = face.plane_dist;
+        quake.portal_normal = plane[0];
+        quake.portal_dist = plane[1].x;
         quake.portal_width = float(target.width);
         quake.portal_height = float(target.height);
         return True;

@@ -50,6 +50,7 @@ import from vendor.raylib {
     ) -> None;
 }
 import from ..world.level { Level }
+import from ..world.portals { surface_plane }
 import from ..formats.bsp { Face, Texture, FogVolume }
 import from ..formats.animated { ModelStage, Deform, stage_frame }
 import from ..math.vec3 { Vec3 }
@@ -931,9 +932,10 @@ obj QuakeRenderer {
         }
         for index in faces {
             face = level.bsp.faces[index];
+            plane = surface_plane(face);
             shown = self.portal_image != 0
-                and face.normal.dot(self.portal_normal) > 0.999
-                and abs(face.plane_dist - self.portal_dist) < 1.0;
+                and plane[0].dot(self.portal_normal) > 0.999
+                and abs(plane[1].x - self.portal_dist) < 1.0;
             shape = deform_face(face, deforms, eye, self.time) if deforms else None;
             if shown {
                 rlDrawRenderBatchActive();
