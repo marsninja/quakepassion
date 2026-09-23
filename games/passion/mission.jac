@@ -304,9 +304,15 @@ def pattern_gambit(g: Grammar, e: Beat, x: Beat, host: str, token: str) {
 }
 
 glob PATTERNS: list[str] = [
-    "alternatives", "lock_key", "far_key", "shortcut", "hidden", "foreshadow",
-    "switch", "gambit"
-];
+         "alternatives",
+         "lock_key",
+         "far_key",
+         "shortcut",
+         "hidden",
+         "foreshadow",
+         "switch",
+         "gambit"
+     ];
 
 def apply_pattern(g: Grammar, name: str, e: Beat, x: Beat, host: str, token: str) {
     if name == "alternatives" {
@@ -383,14 +389,23 @@ def expand_arc(g: Grammar, link: Link, tail: Beat, head: Beat, loopiness: float)
 }
 
 def pending_arcs(g: Grammar) -> list[Link] {
-    return [link for link in links_of(g.plan) if link.chain > 0];
+    return [
+        link
+        for link in links_of(g.plan)
+        if link.chain > 0
+    ];
 }
 
 def endpoints(g: Grammar, link: Link) -> list[Beat] {
     return [g.beats[link.tail], g.beats[link.head]];
 }
 
-glob KEY_TYPES: list[str] = ["key_silver", "key_gold", "key_blue_key", "key_red_key"];
+glob KEY_TYPES: list[str] = [
+         "key_silver",
+         "key_gold",
+         "key_blue_key",
+         "key_red_key"
+     ];
 
 def objective_tokens(archetype: str, count: int) -> list[str] {
     tokens: list[str] = [];
@@ -402,7 +417,9 @@ def objective_tokens(archetype: str, count: int) -> list[str] {
         } elif archetype == "guardian" {
             tokens.append("guardian:" + str(index + 1));
         } else {
-            tokens.append(KEY_TYPES[index] if index % 2 == 0 else "guardian:" + str(index + 1));
+            tokens.append(
+                KEY_TYPES[index] if index % 2 == 0 else "guardian:" + str(index + 1)
+            );
         }
     }
     return tokens;
@@ -428,14 +445,24 @@ def build_mission(
     rooms: int,
     loopiness: float
 ) -> Expedition {
-    plan = Expedition(seed=seed, archetype=archetype, sections=sections, loopiness=loopiness);
+    plan = Expedition(
+        seed=seed, archetype=archetype, sections=sections, loopiness=loopiness
+    );
     tokens = objective_tokens(archetype, objectives);
     plan.objectives = tokens;
-    used_keys = [token for token in tokens if token.startswith("key_")];
+    used_keys = [
+        token
+        for token in tokens
+        if token.startswith("key_")
+    ];
     g = Grammar(
         plan=plan,
         stream=stream,
-        keys=[key for key in KEY_TYPES if key not in used_keys],
+        keys=[
+            key
+            for key in KEY_TYPES
+            if key not in used_keys
+        ],
         nesting=1 + int(loopiness * 2.5)
     );
     start = g.beat("start", 1, 0);
@@ -450,7 +477,11 @@ def build_mission(
     }
     for section in range(sections) {
         closing = g.beat("hub" if section < sections - 1 else "junction", 2, section);
-        hosted = [index for index in range(len(tokens)) if hosts[index] == section];
+        hosted = [
+            index
+            for index in range(len(tokens))
+            if hosts[index] == section
+        ];
         weights: list[float] = [];
         for name in PATTERNS {
             weight = 1.0;
@@ -472,7 +503,9 @@ def build_mission(
         }
         name = PATTERNS[g.stream.weighted(weights)];
         host = objective_kind(tokens[hosted[0]]) if hosted else "";
-        apply_pattern(g, name, opening, closing, host, tokens[hosted[0]] if hosted else "");
+        apply_pattern(
+            g, name, opening, closing, host, tokens[hosted[0]] if hosted else ""
+        );
         # A second objective in one section hangs off the exit as a side branch.
         for extra in hosted[1:] {
             side = g.objective(objective_kind(tokens[extra]), section, tokens[extra]);
@@ -530,7 +563,9 @@ def:priv decorate(g: Grammar, loopiness: float) {
     sides = g.stream.between(0, 2 + int((1.0 - loopiness) * 2.0));
     for index in range(sides) {
         parent = candidates[g.stream.below(len(candidates))];
-        side = g.beat("recovery" if g.stream.chance(0.5) else "vista", 1, parent.section);
+        side = g.beat(
+            "recovery" if g.stream.chance(0.5) else "vista", 1, parent.section
+        );
         side.optional = True;
         g.link(parent, side);
     }
@@ -548,7 +583,11 @@ def annotate(plan: Expedition) {
         reach = start spawn Reach(tokens=tokens);
         # Breadth order within the round: distances from the start over open links.
         distances = distances_from(plan, start.id, tokens);
-        fresh = [beat for beat in all_beats if beat.id in reach.visited and beat.order < 0];
+        fresh = [
+            beat
+            for beat in all_beats
+            if beat.id in reach.visited and beat.order < 0
+        ];
         fresh = by_distance(fresh, distances);
         for beat in fresh {
             beat.order = order;
@@ -599,7 +638,8 @@ def by_distance(items: list[Beat], distances: dict[int, int]) -> list[Beat] {
     result: list[Beat] = [];
     for beat in items {
         position = len(result);
-        while position > 0 and distances[result[position - 1].id] > distances[beat.id] {
+        while position > 0
+            and distances[result[position - 1].id] > distances[beat.id] {
             position -= 1;
         }
         result.insert(position, beat);
@@ -684,7 +724,11 @@ def validate_mission(plan: Expedition) {
         }
     }
     assert len(universe) <= 16 , "Mission token space too large";
-    goal = [beat for beat in all_beats if beat.kind == "goal"];
+    goal = [
+        beat
+        for beat in all_beats
+        if beat.kind == "goal"
+    ];
     assert len(goal) == 1 , "Mission needs exactly one goal";
     states: dict[int, int] = {};
     order: list[int] = [];
@@ -700,7 +744,11 @@ def validate_mission(plan: Expedition) {
         state = order[cursor];
         beat = all_beats[state // width];
         mask = state % width;
-        held = [universe[bit] for bit in range(len(universe)) if mask & (1 << bit)];
+        held = [
+            universe[bit]
+            for bit in range(len(universe))
+            if mask & (1 << bit)
+        ];
         for step in moves(beat, held) {
             nxt = step * width + grant_mask(universe, mask, all_beats[step]);
             if nxt not in states {

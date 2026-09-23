@@ -13,11 +13,17 @@ import from .blueprint { Blueprint }
 glob DEPTH: int = 10;
 
 obj Gap {
-    has a: int, b: int, x0: float, y0: float, x1: float, y1: float;
+    has a: int,
+        b: int,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float;
 }
 
 obj Flow {
-    has portals: list[Gap] = [], by_region: dict[int, list[int]] = {};
+    has portals: list[Gap] = [],
+        by_region: dict[int, list[int]] = {};
 }
 
 def portals_of(bp: Blueprint) -> Flow {
@@ -126,11 +132,7 @@ def stabbed(chain: list[Gap]) -> bool {
 }
 
 def flow_from(
-    graph_flow: Flow,
-    region: int,
-    chain: list[Gap],
-    path: list[int],
-    seen: list[bool]
+    graph_flow: Flow, region: int, chain: list[Gap], path: list[int], seen: list[bool]
 ) {
     seen[region] = True;
     if len(chain) >= DEPTH {

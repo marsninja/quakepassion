@@ -26,12 +26,11 @@ with entry {
     if os.getenv("QP_GRAYBOX", "") == "" {
         game = os.getenv("QP_GAME", "q1");
         map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
-        if game == "passion" { map_name = "v2-" + os.getenv("QP_SEED", "1"); }
+        if game == "passion" {
+            map_name = "v2-" + os.getenv("QP_SEED", "1");
+        }
         level = open_level(
-            world,
-            game_directory(game),
-            os.getenv("QP_MAP", map_name),
-            game
+            world, game_directory(game), os.getenv("QP_MAP", map_name), game
         );
         player = spawn_player(level);
     } else {

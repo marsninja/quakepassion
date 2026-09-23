@@ -6,9 +6,10 @@ physically, and whose clusters cull something. The report also measures how
 the chosen expeditions spread over the quality-diversity descriptor grid.
 """
 import time;
-import from games.passion.generate { generate, survey_of, Survey }
+import from games.passion.generate { generate, survey_of, Survey, REJECTIONS }
 import from games.passion.playtest { progress }
 import from engine.world.world { World }
+import from engine.world.level { Level }
 
 with entry {
     seeds = list(range(1, 201)) + [104729, 2147483646];
@@ -25,10 +26,20 @@ with entry {
     culled = 0.0;
     candidates = 0;
     valid = 0;
+    failed: list[int] = [];
     for seed in seeds {
         begin = time.perf_counter();
         world = World();
-        level = generate(world, "v2-" + str(seed), []);
+        level: Level | None = None;
+        try {
+            level = generate(world, "v2-" + str(seed), []);
+        } except ValueError {
+            failed.append(seed);
+            continue;
+        }
+        if level is None {
+            continue;
+        }
         slowest = max(slowest, time.perf_counter() - begin);
         found = survey_of(world);
         assert found is not None;
@@ -64,6 +75,8 @@ with entry {
         candidates += record.candidates;
         valid += record.valid;
     }
+    print("  failed seeds", failed, "rejections", REJECTIONS);
+    assert not failed , "seeds without a valid expedition";
     count = float(len(seeds));
     print(
         "GENERATION PASS",
@@ -88,8 +101,10 @@ with entry {
         "windows",
         round(float(windows) / count, 2)
     );
-    print("  candidates valid", valid, "/", candidates);
-    print("  descriptor cells occupied", len(cells), "of 81 (loop|vertical|density|size)");
+    print("  candidates valid", valid, "/", candidates, "rejections", REJECTIONS);
+    print(
+        "  descriptor cells occupied", len(cells), "of 81 (loop|vertical|density|size)"
+    );
     print("  archetypes", archetypes);
     print("  room recipes", recipes);
 }

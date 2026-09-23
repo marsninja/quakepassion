@@ -35,7 +35,6 @@ import from .materials {
 }
 
 
-
 obj Compiled {
     has bsp: Bsp,
         leaf_of_macro: list[int] = [],
@@ -46,7 +45,10 @@ obj Compiled {
 }
 
 obj Span {
-    has x0: int, y0: int, x1: int, y1: int;
+    has x0: int,
+        y0: int,
+        x1: int,
+        y1: int;
 }
 
 # Greedy rectangle merging over columns that share a key.
@@ -61,7 +63,9 @@ def merge(keys: list[str], width: int, height: int) -> list[Span] {
             }
             key = keys[i];
             x1 = x + 1;
-            while x1 < width and not used[y * width + x1] and keys[y * width + x1] == key {
+            while x1 < width
+                and not used[y * width + x1]
+                and keys[y * width + x1] == key {
                 x1 += 1;
             }
             y1 = y + 1;
@@ -90,7 +94,10 @@ def merge(keys: list[str], width: int, height: int) -> list[Span] {
 }
 
 obj Context {
-    has bp: Blueprint, builder: Builder, leaf_of_macro: list[int], macro_width: int;
+    has bp: Blueprint,
+        builder: Builder,
+        leaf_of_macro: list[int],
+        macro_width: int;
 
     def leaf_at(x: int, y: int) -> int {
         mx = min(self.macro_width - 1, max(0, x // CELL));
@@ -223,7 +230,16 @@ def neighbor_range(bp: Blueprint, x: int, y: int) -> list[int] {
 }
 
 def neighbor_zone(bp: Blueprint, x: int, y: int) -> int {
-    for delta in [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] {
+    for delta in [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+        [1, 1],
+        [-1, -1],
+        [1, -1],
+        [-1, 1]
+    ] {
         nx = x + delta[0];
         ny = y + delta[1];
         if nx < 0 or ny < 0 or nx >= bp.width or ny >= bp.height {
@@ -273,14 +289,34 @@ def build_world(ctx: Context) {
                     side_material = material(zone, WALL_SLOT);
                     top_material = material(zone, TRIM);
                 }
-                floor_keys[i] = str(bp.floor[i]) + "|" + str(bottom) + "|" + str(top_material) + "|" + str(side_material) + "|" + str(bp.region[i]);
-                ceiling_keys[i] = str(bp.ceiling[i]) + "|" + str(top) + "|" + str(zone) + "|" + str(bp.region[i]) + "|" + str(style == STYLE_WINDOW);
+                floor_keys[i] = str(bp.floor[i])
+                    + "|"
+                    + str(bottom)
+                    + "|"
+                    + str(top_material)
+                    + "|"
+                    + str(side_material)
+                    + "|"
+                    + str(bp.region[i]);
+                ceiling_keys[i] = str(bp.ceiling[i])
+                    + "|"
+                    + str(top)
+                    + "|"
+                    + str(zone)
+                    + "|"
+                    + str(bp.region[i])
+                    + "|"
+                    + str(style == STYLE_WINDOW);
             } elif around {
                 wall_low[i] = around[0] - 16;
                 wall_high[i] = around[1] + 16;
                 zone = neighbor_zone(bp, x, y);
                 slot = TRIM if bp.style[i] == STYLE_PILLAR else WALL_SLOT;
-                wall_keys[i] = str(wall_low[i]) + "|" + str(wall_high[i]) + "|" + str(material(zone, slot));
+                wall_keys[i] = str(wall_low[i])
+                    + "|"
+                    + str(wall_high[i])
+                    + "|"
+                    + str(material(zone, slot));
             }
         }
     }
@@ -294,7 +330,14 @@ def build_world(ctx: Context) {
             span,
             floor_low[i],
             bp.floor[i],
-            [side_material, top_material, side_material, side_material, side_material, side_material],
+            [
+                side_material,
+                top_material,
+                side_material,
+                side_material,
+                side_material,
+                side_material
+            ],
             True,
             False
         );
@@ -302,7 +345,9 @@ def build_world(ctx: Context) {
     for span in merge(ceiling_keys, bp.width, bp.height) {
         i = bp.index(span.x0, span.y0);
         zone = bp.zone[i];
-        side = material(zone, WALL_SLOT) if bp.style[i] != STYLE_WINDOW else material(zone, TRIM);
+        side = material(zone, WALL_SLOT)
+            if bp.style[i] != STYLE_WINDOW
+            else material(zone, TRIM);
         emit(
             ctx,
             span,
@@ -316,7 +361,15 @@ def build_world(ctx: Context) {
     for span in merge(wall_keys, bp.width, bp.height) {
         i = bp.index(span.x0, span.y0);
         chosen = int(wall_keys[i].split("|")[2]);
-        emit(ctx, span, wall_low[i], wall_high[i], [chosen for _ in range(6)], False, False);
+        emit(
+            ctx,
+            span,
+            wall_low[i],
+            wall_high[i],
+            [chosen for _ in range(6)],
+            False,
+            False
+        );
     }
 }
 
@@ -326,7 +379,11 @@ def build_liquids(ctx: Context) {
     keys = ["" for _ in range(count)];
     for i in range(count) {
         if bp.open(i) and bp.liquid[i] != 0 and bp.surface[i] > bp.floor[i] {
-            keys[i] = str(bp.liquid[i]) + "|" + str(bp.floor[i]) + "|" + str(bp.surface[i]);
+            keys[i] = str(bp.liquid[i])
+                + "|"
+                + str(bp.floor[i])
+                + "|"
+                + str(bp.surface[i]);
         }
     }
     for span in merge(keys, bp.width, bp.height) {
@@ -336,8 +393,12 @@ def build_liquids(ctx: Context) {
         first_face = len(ctx.builder.bsp.faces);
         owners = side_owners(ctx, span, 1, bp.floor[i], bp.surface[i]);
         ctx.builder.block_shared(
-            Vec3(x=float(span.x0) * UNIT, y=float(span.y0) * UNIT, z=float(bp.floor[i])),
-            Vec3(x=float(span.x1) * UNIT, y=float(span.y1) * UNIT, z=float(bp.surface[i])),
+            Vec3(
+                x=float(span.x0) * UNIT, y=float(span.y0) * UNIT, z=float(bp.floor[i])
+            ),
+            Vec3(
+                x=float(span.x1) * UNIT, y=float(span.y1) * UNIT, z=float(bp.surface[i])
+            ),
             [texture for _ in range(6)],
             [False, True, False, False, False, False],
             [[], owners, [], [], [], []],
@@ -376,7 +437,9 @@ def build_fixtures(ctx: Context) {
             continue;
         }
         i = bp.index(x, y);
-        if not bp.open(i) or abs(float(bp.ceiling[i]) - (lamp.z + 8.0)) > 1.0 {
+        if lamp.fixture < 0.0
+            or not bp.open(i)
+            or abs(float(bp.ceiling[i]) - lamp.fixture) > 1.0 {
             continue;
         }
         z = float(bp.ceiling[i]) - 0.5;
@@ -417,11 +480,27 @@ def build_movers(ctx: Context) -> list[float] {
         low = Vec3();
         high = Vec3();
         if door.across_x {
-            low = Vec3(x=float(min(xs)) * UNIT, y=float(ys[0]) * UNIT + 8.0, z=float(door.floor));
-            high = Vec3(x=float(max(xs) + 1) * UNIT, y=float(ys[0]) * UNIT + 24.0, z=float(door.ceiling));
+            low = Vec3(
+                x=float(min(xs)) * UNIT,
+                y=float(ys[0]) * UNIT + 8.0,
+                z=float(door.floor)
+            );
+            high = Vec3(
+                x=float(max(xs) + 1) * UNIT,
+                y=float(ys[0]) * UNIT + 24.0,
+                z=float(door.ceiling)
+            );
         } else {
-            low = Vec3(x=float(xs[0]) * UNIT + 8.0, y=float(min(ys)) * UNIT, z=float(door.floor));
-            high = Vec3(x=float(xs[0]) * UNIT + 24.0, y=float(max(ys) + 1) * UNIT, z=float(door.ceiling));
+            low = Vec3(
+                x=float(xs[0]) * UNIT + 8.0,
+                y=float(min(ys)) * UNIT,
+                z=float(door.floor)
+            );
+            high = Vec3(
+                x=float(xs[0]) * UNIT + 24.0,
+                y=float(max(ys) + 1) * UNIT,
+                z=float(door.ceiling)
+            );
         }
         texture = material(door.material, ACCENT);
         if door.kind == "key" {
@@ -434,7 +513,15 @@ def build_movers(ctx: Context) -> list[float] {
         model = add_model(bsp);
         leaf = ctx.leaf_at(xs[0], ys[0]);
         ctx.builder.owner = leaf;
-        ctx.builder.block_shared(low, high, [texture for _ in range(6)], [True for _ in range(6)], [[leaf] for _ in range(6)], 1, model);
+        ctx.builder.block_shared(
+            low,
+            high,
+            [texture for _ in range(6)],
+            [True for _ in range(6)],
+            [[leaf] for _ in range(6)],
+            1,
+            model
+        );
         fields: dict[str, str] = {
             "classname": "func_door",
             "model": "*" + str(model),
@@ -447,6 +534,12 @@ def build_movers(ctx: Context) -> list[float] {
             fields["key"] = " ".join(door.keys);
         } else {
             fields["targetname"] = door.name;
+        }
+        if door.start_open {
+            # Drawn open, slams shut when triggered, reopens after its hold.
+            fields["spawnflags"] = "1";
+            fields["wait"] = str(door.hold);
+            fields["speed"] = "240";
         }
         bsp.entities.append(MapEntity(fields=fields));
     }
@@ -463,7 +556,15 @@ def build_movers(ctx: Context) -> list[float] {
         fields: dict[str, str] = {"model": "*" + str(model)};
         if volume.kind in ["button", "shootable"] {
             texture = MAT_BUTTON if volume.kind == "button" else MAT_SHOOT;
-            ctx.builder.block_shared(low, high, [texture for _ in range(6)], [True for _ in range(6)], [[leaf] for _ in range(6)], 1, model);
+            ctx.builder.block_shared(
+                low,
+                high,
+                [texture for _ in range(6)],
+                [True for _ in range(6)],
+                [[leaf] for _ in range(6)],
+                1,
+                model
+            );
             fields["classname"] = "func_button";
             fields["angle"] = "-2" if volume.kind == "button" else "-1";
             fields["target"] = volume.target;
@@ -473,7 +574,9 @@ def build_movers(ctx: Context) -> list[float] {
             }
         } else {
             ctx.builder.volume(low, high, model);
-            fields["classname"] = "trigger_once" if volume.kind == "once" else "trigger_teleport";
+            fields["classname"] = "trigger_once"
+                if volume.kind == "once"
+                else "trigger_teleport";
             fields["target"] = volume.target;
             if volume.kind == "once" {
                 fields["wait"] = "-1";
@@ -540,7 +643,17 @@ def compile_blueprint(bp: Blueprint, site: Site) -> Compiled {
     bsp.models.append(Model(head=0, first_face=0, face_count=0));
     owners = macro_owners(bp, site);
     leaf_owner: list[int] = [];
-    head = partition(bsp, owners, site.width, 0, 0, site.width, site.height, float(CELL) * UNIT, leaf_owner);
+    head = partition(
+        bsp,
+        owners,
+        site.width,
+        0,
+        0,
+        site.width,
+        site.height,
+        float(CELL) * UNIT,
+        leaf_owner
+    );
     bsp.models[0].head = head;
     bsp.models[0].vis_leaf_count = len(bsp.leaves) - 1;
     leaf_of_macro = [0 for _ in range(site.width * site.height)];
@@ -557,21 +670,30 @@ def compile_blueprint(bp: Blueprint, site: Site) -> Compiled {
             }
         }
     }
-    ctx = Context(bp=bp, builder=builder, leaf_of_macro=leaf_of_macro, macro_width=site.width);
+    ctx = Context(
+        bp=bp, builder=builder, leaf_of_macro=leaf_of_macro, macro_width=site.width
+    );
     build_world(ctx);
     build_liquids(ctx);
     build_plates(ctx);
     build_fixtures(ctx);
     world_faces = len(bsp.faces);
     world_brushes = len(bsp.brushes);
-    bsp.entities.append(MapEntity(fields={"classname": "worldspawn", "generator": "passion-v2"}));
+    bsp.entities.append(
+        MapEntity(fields={"classname": "worldspawn", "generator": "passion-v2"})
+    );
     exit_box = build_movers(ctx);
     build_entities(ctx);
     if len(bsp.models) < 2 {
         # Lighting treats faces from models[1] onward as moving; keep one sentinel.
         add_model(bsp);
     }
-    result = Compiled(bsp=bsp, leaf_of_macro=leaf_of_macro, faces_world=world_faces, brushes_world=world_brushes);
+    result = Compiled(
+        bsp=bsp,
+        leaf_of_macro=leaf_of_macro,
+        faces_world=world_faces,
+        brushes_world=world_brushes
+    );
     if exit_box {
         result.exit_low = exit_box[0:3];
         result.exit_high = exit_box[3:6];

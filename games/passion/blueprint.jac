@@ -44,7 +44,9 @@ obj DoorSpec {
         name: str = "",
         material: int = 0,
         across_x: bool = True,
-        link: int = 0;
+        link: int = 0,
+        start_open: bool = False,
+        hold: float = -1.0;
 }
 
 obj Volume {
@@ -67,11 +69,19 @@ obj Mark {
 }
 
 obj LampSpec {
-    has x: float, y: float, z: float, color: int = 0, strength: float = 1.0, radius: float = 480.0;
+    has x: float,
+        y: float,
+        z: float,
+        color: int = 0,
+        strength: float = 1.0,
+        radius: float = 480.0,
+        fixture: float = -1.0;
 }
 
 obj Plate {
-    has low: list[float] = [], high: list[float] = [], material: int = 0;
+    has low: list[float] = [],
+        high: list[float] = [],
+        material: int = 0;
 }
 
 obj Blueprint {
@@ -144,7 +154,7 @@ def room_origin(room: Room) -> list[int] {
 def room_sockets(site: Site, room: Room) -> list[Socket] {
     result: list[Socket] = [];
     for passage in passages_of(site) {
-        if passage.teleport {
+        if passage.teleport or passage.window {
             continue;
         }
         if passage.tail == room.beat {
@@ -172,7 +182,9 @@ def carve_rooms(bp: Blueprint, site: Site, stream: Stream, verticality: float) -
         sockets = room_sockets(site, room);
         interior: Interior | None = None;
         try {
-            interior = build_interior(room, sockets, stream.child("room", room.beat), room.district);
+            interior = build_interior(
+                room, sockets, stream.child("room", room.beat), room.district
+            );
         } except ValueError {
             return False;
         }
@@ -180,7 +192,9 @@ def carve_rooms(bp: Blueprint, site: Site, stream: Stream, verticality: float) -
             return False;
         }
         region = len(bp.regions);
-        bp.regions.append(Region(id=region, kind="room", beat=room.beat, district=room.district));
+        bp.regions.append(
+            Region(id=region, kind="room", beat=room.beat, district=room.district)
+        );
         origin = room_origin(room);
         for ly in range(interior.height) {
             for lx in range(interior.width) {
@@ -225,7 +239,10 @@ def carve_rooms(bp: Blueprint, site: Site, stream: Stream, verticality: float) -
 # ---------------------------------------------------------------------------
 
 obj Slice {
-    has cells: list[list[int]] = [], line: bool = True, across_x: bool = True, travel: int = 0;
+    has cells: list[list[int]] = [],
+        line: bool = True,
+        across_x: bool = True,
+        travel: int = 0;
 }
 
 def strip(x0: int, y0: int, vertical: bool) -> Slice {
@@ -244,13 +261,17 @@ def strip(x0: int, y0: int, vertical: bool) -> Slice {
 # The boundary strip between a room and the macro cell outside its side.
 def boundary_strip(room: Room, socket: Socket) -> Slice {
     if socket.side == 0 {
-        return strip(CELL * (room.x + room.w), CELL * (room.y + socket.index) + 1, True);
+        return strip(
+            CELL * (room.x + room.w), CELL * (room.y + socket.index) + 1, True
+        );
     }
     if socket.side == 1 {
         return strip(CELL * room.x, CELL * (room.y + socket.index) + 1, True);
     }
     if socket.side == 2 {
-        return strip(CELL * (room.x + socket.index) + 1, CELL * (room.y + room.h), False);
+        return strip(
+            CELL * (room.x + socket.index) + 1, CELL * (room.y + room.h), False
+        );
     }
     return strip(CELL * (room.x + socket.index) + 1, CELL * room.y, False);
 }
@@ -317,8 +338,12 @@ def corridor_slices(site: Site, passage: Passage) -> list[Slice] {
     slices: list[Slice] = [boundary_strip(a, passage.tail_socket)];
     path = passage.path;
     for index in range(len(path)) {
-        before = away(passage.tail_socket.side) if index == 0 else direction(path[index - 1], path[index]);
-        after = toward(passage.head_socket.side) if index == len(path) - 1 else direction(path[index], path[index + 1]);
+        before = away(passage.tail_socket.side)
+            if index == 0
+            else direction(path[index - 1], path[index]);
+        after = toward(passage.head_socket.side)
+            if index == len(path) - 1
+            else direction(path[index], path[index + 1]);
         slices.extend(cell_slices(path[index], before, after));
         if index < len(path) - 1 {
             slices.append(between_strip(path[index], path[index + 1]));
@@ -338,7 +363,9 @@ def slice_center(sl: Slice) -> list[float] {
     return [sx / float(len(sl.cells)) * 32.0, sy / float(len(sl.cells)) * 32.0];
 }
 
-def carve_corridors(bp: Blueprint, site: Site, plan: Expedition, stream: Stream, beats: list[Beat]) -> bool {
+def carve_corridors(
+    bp: Blueprint, site: Site, plan: Expedition, stream: Stream, beats: list[Beat]
+) -> bool {
     rooms = rooms_of(site);
     for passage in passages_of(site) {
         if passage.teleport or passage.window {
@@ -360,14 +387,18 @@ def carve_corridors(bp: Blueprint, site: Site, plan: Expedition, stream: Stream,
             }
             target_end = ledge;
         }
-        heights = stair_heights(start, target_end, len(slices), passage.mode == "valve");
+        heights = stair_heights(
+            start, target_end, len(slices), passage.mode == "valve"
+        );
         if not heights {
             return False;
         }
         district = a.district if a.order <= b.order else b.district;
         clearance = 128 + STEP * stream.below(3);
         region = len(bp.regions);
-        bp.regions.append(Region(id=region, kind="corridor", link=passage.link, district=district));
+        bp.regions.append(
+            Region(id=region, kind="corridor", link=passage.link, district=district)
+        );
         bp.corridor_ids[passage.link] = region;
         for index in range(len(slices)) {
             sl = slices[index];
@@ -431,17 +462,37 @@ def stair_heights(start: int, finish: int, count: int, valve: bool) -> list[int]
 
 # Doors occupy line slices, working back from the locked side. Keys share one
 # door; every remote token (switch, relay, guardian) gets its own leaf.
-def place_doors(bp: Blueprint, passage: Passage, slices: list[Slice], heights: list[int], clearance: int, district: int, beats: list[Beat]) {
+def place_doors(
+    bp: Blueprint,
+    passage: Passage,
+    slices: list[Slice],
+    heights: list[int],
+    clearance: int,
+    district: int,
+    beats: list[Beat]
+) {
     if passage.mode not in ["locked", "gate", "shortcut", "secret"] {
         return;
     }
     specs: list[DoorSpec] = [];
     if passage.mode == "shortcut" {
-        specs.append(DoorSpec(kind="shortcut", name="short_" + str(passage.link), link=passage.link));
+        specs.append(
+            DoorSpec(
+                kind="shortcut", name="short_" + str(passage.link), link=passage.link
+            )
+        );
     } elif passage.mode == "secret" {
-        specs.append(DoorSpec(kind="secret", name="secret_" + str(passage.link), link=passage.link));
+        specs.append(
+            DoorSpec(
+                kind="secret", name="secret_" + str(passage.link), link=passage.link
+            )
+        );
     } else {
-        keys = [token for token in passage.needs if token.startswith("key_")];
+        keys = [
+            token
+            for token in passage.needs
+            if token.startswith("key_")
+        ];
         if keys {
             specs.append(DoorSpec(kind="key", keys=keys, link=passage.link));
         }
@@ -452,7 +503,14 @@ def place_doors(bp: Blueprint, passage: Passage, slices: list[Slice], heights: l
             }
             counter += 1;
             kind = "guardian" if token.startswith("guardian:") else "remote";
-            specs.append(DoorSpec(kind=kind, keys=[token], name="gate_" + str(passage.link) + "_" + str(counter), link=passage.link));
+            specs.append(
+                DoorSpec(
+                    kind=kind,
+                    keys=[token],
+                    name="gate_" + str(passage.link) + "_" + str(counter),
+                    link=passage.link
+                )
+            );
         }
     }
     # Secret doors sit flush with the tail room's wall; the rest guard the head.
@@ -460,13 +518,20 @@ def place_doors(bp: Blueprint, passage: Passage, slices: list[Slice], heights: l
     if passage.mode == "secret" {
         positions = [0];
     } else {
-        index = len(slices) - 1;
-        while index >= 0 and len(positions) < len(specs) {
-            if slices[index].line {
-                positions.append(index);
-                index -= 2;
-            } else {
-                index -= 1;
+        # Prefer a slice of air between successive leaves; pack them if short.
+        for spacing in [2, 1] {
+            positions = [];
+            index = len(slices) - 1;
+            while index >= 0 and len(positions) < len(specs) {
+                if slices[index].line {
+                    positions.append(index);
+                    index -= spacing;
+                } else {
+                    index -= 1;
+                }
+            }
+            if len(positions) >= len(specs) {
+                break;
             }
         }
     }
@@ -486,7 +551,14 @@ def place_doors(bp: Blueprint, passage: Passage, slices: list[Slice], heights: l
     }
 }
 
-def corridor_lamps(bp: Blueprint, slices: list[Slice], heights: list[int], clearance: int, district: int, passage: Passage) {
+def corridor_lamps(
+    bp: Blueprint,
+    slices: list[Slice],
+    heights: list[int],
+    clearance: int,
+    district: int,
+    passage: Passage
+) {
     spacing = 6;
     for index in range(2, len(slices) - 1, spacing) {
         center = slice_center(slices[index]);
@@ -494,10 +566,11 @@ def corridor_lamps(bp: Blueprint, slices: list[Slice], heights: list[int], clear
             LampSpec(
                 x=center[0],
                 y=center[1],
-                z=float(heights[index] + clearance - 6),
+                z=float(heights[index] + clearance - 32),
                 color=district,
-                strength=0.9,
-                radius=360.0
+                strength=1.0,
+                radius=520.0,
+                fixture=float(heights[index] + clearance)
             )
         );
     }
@@ -514,19 +587,25 @@ def carve_windows(bp: Blueprint, site: Site) {
         b = rooms[passage.head];
         top_a = a.z + a.ceiling;
         top_b = b.z + b.ceiling;
-        sill = max(a.z, b.z) + 72;
+        # Eye-level from the higher room, an overlook far above the lower one;
+        # 40 units is too short for any hull to pass.
+        sill = max(a.z, b.z) + 32;
         lintel = sill + 40;
         if lintel > min(top_a, top_b) - 24 {
             continue;
         }
         region = len(bp.regions);
-        bp.regions.append(Region(id=region, kind="window", link=passage.link, district=a.district));
+        bp.regions.append(
+            Region(id=region, kind="window", link=passage.link, district=a.district)
+        );
         slices: list[Slice] = [boundary_strip(a, passage.tail_socket)];
         for index in range(len(passage.path)) {
             before = away(passage.tail_socket.side);
             slices.extend(cell_slices(passage.path[index], before, before));
             if index < len(passage.path) - 1 {
-                slices.append(between_strip(passage.path[index], passage.path[index + 1]));
+                slices.append(
+                    between_strip(passage.path[index], passage.path[index + 1])
+                );
             }
         }
         slices.append(boundary_strip(b, passage.head_socket));

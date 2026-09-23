@@ -24,56 +24,201 @@ import from .blueprint {
 }
 
 obj Foe {
-    has kind: str, source: str, health: int, cost: float, role: str = "melee", rank: int = 1;
+    has kind: str,
+        source: str,
+        health: int,
+        cost: float,
+        role: str = "melee",
+        rank: int = 1;
 }
 
 glob ROSTER: list[Foe] = [
-    Foe(kind="monster_army", source="q1", health=30, cost=1.0, role="ranged"),
-    Foe(kind="monster_dog", source="q1", health=25, cost=0.8, role="melee"),
-    Foe(kind="monster_knight", source="q1", health=75, cost=1.8, role="melee"),
-    Foe(kind="monster_enforcer", source="q1", health=80, cost=2.6, role="ranged", rank=2),
-    Foe(kind="monster_wizard", source="q1", health=80, cost=2.6, role="fly", rank=2),
-    Foe(kind="monster_ogre", source="q1", health=200, cost=5.0, role="ranged", rank=3),
-    Foe(kind="monster_demon1", source="q1", health=300, cost=6.0, role="melee", rank=3),
-    Foe(kind="monster_hell_knight", source="q1", health=250, cost=6.0, role="ranged", rank=3),
-    Foe(kind="monster_shalrath", source="q1", health=400, cost=8.0, role="ranged", rank=4),
-    Foe(kind="monster_shambler", source="q1", health=600, cost=12.0, role="ranged", rank=5),
-    Foe(kind="monster_soldier_light", source="q2", health=20, cost=0.8, role="ranged"),
-    Foe(kind="monster_soldier", source="q2", health=30, cost=1.0, role="ranged"),
-    Foe(kind="monster_soldier_ss", source="q2", health=40, cost=1.4, role="ranged"),
-    Foe(kind="monster_infantry", source="q2", health=100, cost=2.8, role="ranged", rank=2),
-    Foe(kind="monster_flyer", source="q2", health=50, cost=1.6, role="fly", rank=2),
-    Foe(kind="monster_parasite", source="q2", health=175, cost=4.0, role="melee", rank=3),
-    Foe(kind="monster_gunner", source="q2", health=175, cost=4.5, role="ranged", rank=3),
-    Foe(kind="monster_chick", source="q2", health=175, cost=4.5, role="ranged", rank=3),
-    Foe(kind="monster_berserk", source="q2", health=240, cost=4.8, role="melee", rank=3),
-    Foe(kind="monster_floater", source="q2", health=200, cost=5.0, role="fly", rank=3),
-    Foe(kind="monster_mutant", source="q2", health=300, cost=6.0, role="melee", rank=4),
-    Foe(kind="monster_brain", source="q2", health=300, cost=6.0, role="melee", rank=4),
-    Foe(kind="monster_hover", source="q2", health=240, cost=6.0, role="fly", rank=4),
-    Foe(kind="monster_gladiator", source="q2", health=400, cost=8.0, role="ranged", rank=4),
-    Foe(kind="monster_tank", source="q2", health=750, cost=14.0, role="ranged", rank=5),
-    Foe(kind="monster_tank_commander", source="q2", health=1000, cost=18.0, role="ranged", rank=6),
-    Foe(kind="info_player_deathmatch", source="q3", health=60, cost=2.2, role="ranged", rank=2)
-];
+         Foe(kind="monster_army", source="q1", health=30, cost=1.0, role="ranged"),
+         Foe(kind="monster_dog", source="q1", health=25, cost=0.8, role="melee"),
+         Foe(kind="monster_knight", source="q1", health=75, cost=1.8, role="melee"),
+         Foe(
+             kind="monster_enforcer",
+             source="q1",
+             health=80,
+             cost=2.6,
+             role="ranged",
+             rank=2
+         ),
+         Foe(
+             kind="monster_wizard", source="q1", health=80, cost=2.6, role="fly", rank=2
+         ),
+         Foe(
+             kind="monster_ogre",
+             source="q1",
+             health=200,
+             cost=5.0,
+             role="ranged",
+             rank=3
+         ),
+         Foe(
+             kind="monster_demon1",
+             source="q1",
+             health=300,
+             cost=6.0,
+             role="melee",
+             rank=3
+         ),
+         Foe(
+             kind="monster_hell_knight",
+             source="q1",
+             health=250,
+             cost=6.0,
+             role="ranged",
+             rank=3
+         ),
+         Foe(
+             kind="monster_shalrath",
+             source="q1",
+             health=400,
+             cost=8.0,
+             role="ranged",
+             rank=4
+         ),
+         Foe(
+             kind="monster_shambler",
+             source="q1",
+             health=600,
+             cost=12.0,
+             role="ranged",
+             rank=5
+         ),
+         Foe(
+             kind="monster_soldier_light",
+             source="q2",
+             health=20,
+             cost=0.8,
+             role="ranged"
+         ),
+         Foe(kind="monster_soldier", source="q2", health=30, cost=1.0, role="ranged"),
+         Foe(
+             kind="monster_soldier_ss", source="q2", health=40, cost=1.4, role="ranged"
+         ),
+         Foe(
+             kind="monster_infantry",
+             source="q2",
+             health=100,
+             cost=2.8,
+             role="ranged",
+             rank=2
+         ),
+         Foe(
+             kind="monster_flyer", source="q2", health=50, cost=1.6, role="fly", rank=2
+         ),
+         Foe(
+             kind="monster_parasite",
+             source="q2",
+             health=175,
+             cost=4.0,
+             role="melee",
+             rank=3
+         ),
+         Foe(
+             kind="monster_gunner",
+             source="q2",
+             health=175,
+             cost=4.5,
+             role="ranged",
+             rank=3
+         ),
+         Foe(
+             kind="monster_chick",
+             source="q2",
+             health=175,
+             cost=4.5,
+             role="ranged",
+             rank=3
+         ),
+         Foe(
+             kind="monster_berserk",
+             source="q2",
+             health=240,
+             cost=4.8,
+             role="melee",
+             rank=3
+         ),
+         Foe(
+             kind="monster_floater",
+             source="q2",
+             health=200,
+             cost=5.0,
+             role="fly",
+             rank=3
+         ),
+         Foe(
+             kind="monster_mutant",
+             source="q2",
+             health=300,
+             cost=6.0,
+             role="melee",
+             rank=4
+         ),
+         Foe(
+             kind="monster_brain",
+             source="q2",
+             health=300,
+             cost=6.0,
+             role="melee",
+             rank=4
+         ),
+         Foe(
+             kind="monster_hover", source="q2", health=240, cost=6.0, role="fly", rank=4
+         ),
+         Foe(
+             kind="monster_gladiator",
+             source="q2",
+             health=400,
+             cost=8.0,
+             role="ranged",
+             rank=4
+         ),
+         Foe(
+             kind="monster_tank",
+             source="q2",
+             health=750,
+             cost=14.0,
+             role="ranged",
+             rank=5
+         ),
+         Foe(
+             kind="monster_tank_commander",
+             source="q2",
+             health=1000,
+             cost=18.0,
+             role="ranged",
+             rank=6
+         ),
+         Foe(
+             kind="info_player_deathmatch",
+             source="q3",
+             health=60,
+             cost=2.2,
+             role="ranged",
+             rank=2
+         )
+     ];
 
 glob GUARDIANS: list[str] = [
-    "monster_shambler",
-    "monster_shalrath",
-    "monster_tank",
-    "monster_tank_commander",
-    "monster_gladiator"
-];
+         "monster_shambler",
+         "monster_shalrath",
+         "monster_tank",
+         "monster_tank_commander",
+         "monster_gladiator"
+     ];
 
 # District -> preferred roster sources; Passion deliberately mixes games.
 glob DISTRICT_SOURCES: list[list[str]] = [
-    ["q1", "q1", "q2"],
-    ["q1", "q1", "q3"],
-    ["q2", "q2", "q1"],
-    ["q2", "q2", "q3"],
-    ["q3", "q1", "q2"],
-    ["q3", "q2", "q1"]
-];
+         ["q1", "q1", "q2"],
+         ["q1", "q1", "q3"],
+         ["q2", "q2", "q1"],
+         ["q2", "q2", "q3"],
+         ["q3", "q1", "q2"],
+         ["q3", "q2", "q1"]
+     ];
 
 glob DISTRICT_ITEMS: list[str] = ["q1", "q1", "q2", "q2", "q3", "q3"];
 
@@ -103,7 +248,9 @@ obj Director {
         return rooms_of(self.site)[beat];
     }
 
-    def take_spot(room: Room, prefer_far_from: list[float], perch: bool = False) -> list[float] {
+    def take_spot(
+        room: Room, prefer_far_from: list[float], perch: bool = False
+    ) -> list[float] {
         interior = self.bp.interiors[room.beat];
         taken = self.used.setdefault(room.beat, []);
         pool = interior.perches if perch and interior.perches else interior.spots;
@@ -121,7 +268,11 @@ obj Director {
             }
             score = min(spread, 400.0);
             if prefer_far_from {
-                score += 0.4 * (abs(point[0] - prefer_far_from[0]) + abs(point[1] - prefer_far_from[1]));
+                score += 0.4
+                    * (
+                        abs(point[0] - prefer_far_from[0])
+                        + abs(point[1] - prefer_far_from[1])
+                    );
             }
             score += self.stream.unit() * 40.0;
             if score > best_score {
@@ -136,9 +287,25 @@ obj Director {
         return world_point(room, best, interior, 24.0);
     }
 
-    def mark(kind: str, point: list[float], source: str, beat: int, angle: float = 0.0, fields: dict[str, str] = {}) {
+    def mark(
+        kind: str,
+        point: list[float],
+        source: str,
+        beat: int,
+        angle: float = 0.0,
+        fields: dict[str, str] = {}
+    ) {
         self.bp.marks.append(
-            Mark(kind=kind, x=point[0], y=point[1], z=point[2], angle=angle, source=source, fields=dict(fields), beat=beat)
+            Mark(
+                kind=kind,
+                x=point[0],
+                y=point[1],
+                z=point[2],
+                angle=angle,
+                source=source,
+                fields=dict(fields),
+                beat=beat
+            )
         );
     }
 }
@@ -165,6 +332,35 @@ def facing(from_point: list[float], to_point: list[float]) -> float {
     return 90.0 if dy >= 0.0 else 270.0;
 }
 
+# The largest square (half-size) around a point whose footprint is flat floor
+# at the given height, so plates never overhang a drop and become ledges.
+def flush_half(
+    bp: Blueprint, x: float, y: float, base: float, largest: float
+) -> float {
+    for half in [largest, 48.0, 32.0, 16.0] {
+        if half > largest {
+            continue;
+        }
+        x0 = int((x - half) / 32.0);
+        x1 = int((x + half - 0.01) / 32.0);
+        y0 = int((y - half) / 32.0);
+        y1 = int((y + half - 0.01) / 32.0);
+        flat = True;
+        for cy in range(y0, y1 + 1) {
+            for cx in range(x0, x1 + 1) {
+                i = bp.index(cx, cy);
+                if not bp.open(i) or float(bp.floor[i]) != base {
+                    flat = False;
+                }
+            }
+        }
+        if flat {
+            return half;
+        }
+    }
+    return 0.0;
+}
+
 def key_item(token: str) -> list[str] {
     if token == "key_silver" {
         return ["item_key1", "q1"];
@@ -176,7 +372,11 @@ def key_item(token: str) -> list[str] {
 }
 
 def door_names_for(bp: Blueprint, token: str) -> list[str] {
-    return [door.name for door in bp.doors if token in door.keys and door.name];
+    return [
+        door.name
+        for door in bp.doors
+        if token in door.keys and door.name
+    ];
 }
 
 # ---------------------------------------------------------------------------
@@ -199,43 +399,120 @@ def stage_objectives(director: Director) {
         for token in room.grants {
             if token.startswith("key_") {
                 item = key_item(token);
-                director.mark(item[0], center, item[1], room.beat, 0.0, {"target": "ambush_" + str(room.beat)});
-                bp.lamps.append(LampSpec(x=center[0], y=center[1], z=center[2] + 72.0, color=10 if token in ["key_gold", "key_red_key"] else 11, strength=1.2, radius=300.0));
+                director.mark(
+                    item[0],
+                    center,
+                    item[1],
+                    room.beat,
+                    0.0,
+                    {"target": "ambush_" + str(room.beat)}
+                );
+                bp.lamps.append(
+                    LampSpec(
+                        x=center[0],
+                        y=center[1],
+                        z=center[2] + 72.0,
+                        color=10 if token in ["key_gold", "key_red_key"] else 11,
+                        strength=1.2,
+                        radius=300.0
+                    )
+                );
             } elif token.startswith("switch:") or token.startswith("relay:") {
                 names = door_names_for(bp, token);
-                if names {
-                    base = stage_point(director, room, 0.0);
+                base = stage_point(director, room, 0.0);
+                half = flush_half(bp, base[0], base[1], base[2], 32.0);
+                if names and half > 0.0 {
+                    # Sunk almost flush so it never becomes an unclimbable lip.
                     bp.volumes.append(
                         Volume(
-                            low=[base[0] - 32.0, base[1] - 32.0, base[2]],
-                            high=[base[0] + 32.0, base[1] + 32.0, base[2] + 8.0],
+                            low=[base[0] - half, base[1] - half, base[2] - 6.0],
+                            high=[base[0] + half, base[1] + half, base[2] + 2.0],
                             kind="button",
                             target=names[0]
                         )
                     );
-                    bp.lamps.append(LampSpec(x=base[0], y=base[1], z=base[2] + 96.0, color=12, strength=1.3, radius=320.0));
+                    bp.lamps.append(
+                        LampSpec(
+                            x=base[0],
+                            y=base[1],
+                            z=base[2] + 96.0,
+                            color=12,
+                            strength=1.3,
+                            radius=320.0
+                        )
+                    );
+                } elif names {
+                    # No flat footprint for a plate: a touch trigger still throws it.
+                    bp.volumes.append(
+                        Volume(
+                            low=[base[0] - 32.0, base[1] - 32.0, base[2]],
+                            high=[base[0] + 32.0, base[1] + 32.0, base[2] + 72.0],
+                            kind="once",
+                            target=names[0]
+                        )
+                    );
                 }
             } elif token.startswith("guardian:") {
                 names = door_names_for(bp, token);
                 boss = GUARDIANS[director.stream.below(len(GUARDIANS))];
-                source = "q1" if boss in ["monster_shambler", "monster_shalrath"] else "q2";
+                source = "q1"
+                    if boss in ["monster_shambler", "monster_shalrath"]
+                    else "q2";
                 fields: dict[str, str] = {};
                 if names {
                     fields["target"] = names[0];
                 }
-                director.mark(boss, center, source, room.beat, facing(center, doorway) if doorway else 0.0, fields);
+                director.mark(
+                    boss,
+                    center,
+                    source,
+                    room.beat,
+                    facing(center, doorway) if doorway else 0.0,
+                    fields
+                );
                 director.economy.threat += 15.0;
                 director.economy.monsters += 1;
-                bp.lamps.append(LampSpec(x=center[0], y=center[1], z=center[2] + 160.0, color=13, strength=1.1, radius=520.0));
+                bp.lamps.append(
+                    LampSpec(
+                        x=center[0],
+                        y=center[1],
+                        z=center[2] + 160.0,
+                        color=13,
+                        strength=1.1,
+                        radius=520.0
+                    )
+                );
             }
         }
         if room.kind == "goal" {
             base = stage_point(director, room, 0.0);
             bp.volumes.append(
-                Volume(low=[base[0] - 72.0, base[1] - 72.0, base[2]], high=[base[0] + 72.0, base[1] + 72.0, base[2] + 96.0], kind="exit")
+                Volume(
+                    low=[base[0] - 72.0, base[1] - 72.0, base[2]],
+                    high=[base[0] + 72.0, base[1] + 72.0, base[2] + 96.0],
+                    kind="exit"
+                )
             );
-            bp.plates.append(Plate(low=[base[0] - 64.0, base[1] - 64.0, base[2]], high=[base[0] + 64.0, base[1] + 64.0, base[2] + 2.0], material=-1));
-            bp.lamps.append(LampSpec(x=base[0], y=base[1], z=base[2] + 120.0, color=14, strength=1.4, radius=420.0));
+            half = flush_half(bp, base[0], base[1], base[2], 64.0);
+            if half > 0.0 {
+                bp.plates.append(
+                    Plate(
+                        low=[base[0] - half, base[1] - half, base[2]],
+                        high=[base[0] + half, base[1] + half, base[2] + 2.0],
+                        material=-1
+                    )
+                );
+            }
+            bp.lamps.append(
+                LampSpec(
+                    x=base[0],
+                    y=base[1],
+                    z=base[2] + 120.0,
+                    color=14,
+                    strength=1.4,
+                    radius=420.0
+                )
+            );
         }
     }
     for passage in passages_of(director.site) {
@@ -258,7 +535,12 @@ def shortcut_trigger(director: Director, passage: Passage) {
     cells = landing_cells(interior, passage.head_socket);
     bounds = cell_bounds(room, interior, cells);
     director.bp.volumes.append(
-        Volume(low=[bounds[0], bounds[1], bounds[2]], high=[bounds[3], bounds[4], bounds[2] + 96.0], kind="once", target="short_" + str(passage.link))
+        Volume(
+            low=[bounds[0], bounds[1], bounds[2]],
+            high=[bounds[3], bounds[4], bounds[2] + 96.0],
+            kind="once",
+            target="short_" + str(passage.link)
+        )
     );
 }
 
@@ -313,7 +595,11 @@ def secret_switch(director: Director, passage: Passage) {
         low = [x + 8.0, wall - 2.0, z0];
         high = [x + 24.0, wall + 6.0, z0 + 16.0];
     }
-    director.bp.volumes.append(Volume(low=low, high=high, kind="shootable", target="secret_" + str(passage.link)));
+    director.bp.volumes.append(
+        Volume(
+            low=low, high=high, kind="shootable", target="secret_" + str(passage.link)
+        )
+    );
 }
 
 def teleporter(director: Director, passage: Passage) {
@@ -336,11 +622,31 @@ def teleporter(director: Director, passage: Passage) {
         name = "tele_" + str(passage.link) + "_" + str(end);
         z = pad[2] - 24.0;
         director.bp.volumes.append(
-            Volume(low=[pad[0] - 32.0, pad[1] - 32.0, z], high=[pad[0] + 32.0, pad[1] + 32.0, z + 64.0], kind="teleport", target=name)
+            Volume(
+                low=[pad[0] - 32.0, pad[1] - 32.0, z],
+                high=[pad[0] + 32.0, pad[1] + 32.0, z + 64.0],
+                kind="teleport",
+                target=name
+            )
         );
-        director.bp.plates.append(Plate(low=[pad[0] - 32.0, pad[1] - 32.0, z], high=[pad[0] + 32.0, pad[1] + 32.0, z + 2.0], material=-2));
-        director.mark("info_notnull", arrive, "q1", target.beat, 0.0, {"targetname": name});
-        director.bp.lamps.append(LampSpec(x=pad[0], y=pad[1], z=z + 96.0, color=11, strength=1.0, radius=260.0));
+        half = flush_half(director.bp, pad[0], pad[1], z, 32.0);
+        if half > 0.0 {
+            director.bp.plates.append(
+                Plate(
+                    low=[pad[0] - half, pad[1] - half, z],
+                    high=[pad[0] + half, pad[1] + half, z + 2.0],
+                    material=-2
+                )
+            );
+        }
+        director.mark(
+            "info_notnull", arrive, "q1", target.beat, 0.0, {"targetname": name}
+        );
+        director.bp.lamps.append(
+            LampSpec(
+                x=pad[0], y=pad[1], z=z + 96.0, color=11, strength=1.0, radius=260.0
+            )
+        );
     }
 }
 
@@ -357,7 +663,9 @@ def budget_for(director: Director, room: Room, total_order: int) -> float {
     return director.density * (2.0 + 14.0 * room.tension) * size_factor * ramp;
 }
 
-def pick_foe(director: Director, sources: list[str], remaining: float, role: str, max_rank: int) -> Foe | None {
+def pick_foe(
+    director: Director, sources: list[str], remaining: float, role: str, max_rank: int
+) -> Foe | None {
     options: list[Foe] = [];
     weights: list[float] = [];
     for foe in ROSTER {
@@ -398,7 +706,11 @@ def populate(director: Director) {
         }
         sources = DISTRICT_SOURCES[room.district % len(DISTRICT_SOURCES)];
         doorway = entry_point(director, room);
-        max_rank = 1 + int(room.tension * 4.5 + float(room.order) / float(max(1, total_order)) * 1.5);
+        max_rank = 1
+            + int(
+                room.tension * 4.5
+                    + float(room.order) / float(max(1, total_order)) * 1.5
+            );
         template = "patrol";
         interior = director.bp.interiors[room.beat];
         roll = director.stream.unit();
@@ -440,13 +752,16 @@ def populate(director: Director) {
             if not point {
                 break;
             }
-            angle = facing(point, doorway) if doorway else director.stream.uniform(0.0, 360.0);
+            angle = facing(point, doorway)
+                if doorway
+                else director.stream.uniform(0.0, 360.0);
             director.mark(foe.kind, point, foe.source, room.beat, angle);
             remaining -= foe.cost;
             count += 1;
             director.economy.threat += foe.cost;
             director.economy.monsters += 1;
-            director.economy.damage += float(foe.health) * (0.07 if foe.role == "melee" else 0.1);
+            director.economy.damage += float(foe.health)
+                * (0.07 if foe.role == "melee" else 0.1);
         }
         # Key and switch rooms answer the objective with a trigger-spawned ambush.
         if room.kind in ["key", "switch"] and room.tension > 0.35 {
@@ -465,7 +780,14 @@ def populate(director: Director) {
                     if foe is None or not point {
                         break;
                     }
-                    director.mark(foe.kind, point, "q2", room.beat, director.stream.uniform(0.0, 360.0), {"spawnflags": "2", "targetname": names[0]});
+                    director.mark(
+                        foe.kind,
+                        point,
+                        "q2",
+                        room.beat,
+                        director.stream.uniform(0.0, 360.0),
+                        {"spawnflags": "2", "targetname": names[0]}
+                    );
                     director.economy.monsters += 1;
                     director.economy.damage += float(foe.health) * 0.08;
                 }
@@ -557,7 +879,8 @@ def supply(director: Director) {
             }
             for foe in ROSTER {
                 if foe.kind == mark.kind {
-                    incoming += float(foe.health) * (0.07 if foe.role == "melee" else 0.1);
+                    incoming += float(foe.health)
+                        * (0.07 if foe.role == "melee" else 0.1);
                 }
             }
         }
@@ -568,7 +891,11 @@ def supply(director: Director) {
         economy.low = min(economy.low, economy.health);
         if room.kind == "cache" {
             drop_item(director, room, "mega");
-            drop_item(director, room, "heavy_armor" if director.stream.chance(0.5) else "shells");
+            drop_item(
+                director,
+                room,
+                "heavy_armor" if director.stream.chance(0.5) else "shells"
+            );
             economy.health = min(200.0, economy.health + 100.0);
             economy.placed_health += 1;
             continue;
@@ -594,7 +921,9 @@ def supply(director: Director) {
                 economy.placed_shells += 1;
             }
         }
-        if room.tension > 0.7 and economy.armor < 20.0 and director.stream.chance(0.5) {
+        if room.tension > 0.7
+            and economy.armor < 20.0
+            and director.stream.chance(0.5) {
             if drop_item(director, room, "armor") {
                 economy.armor = 100.0;
                 economy.placed_armor += 1;
@@ -608,24 +937,129 @@ def room_lamps(director: Director) {
         interior = director.bp.interiors[room.beat];
         for cell in interior.lamps {
             point = world_point(room, cell, interior, 0.0);
+            ceiling = float(room.z + interior.ceiling[cell]);
             director.bp.lamps.append(
                 LampSpec(
                     x=point[0],
                     y=point[1],
-                    z=float(room.z + interior.ceiling[cell]) - 8.0,
+                    z=ceiling - 40.0,
                     color=room.district,
-                    strength=0.55 if room.kind == "cache" else 1.0,
-                    radius=520.0 if room.size >= 2 else 420.0
+                    strength=0.6 if room.kind == "cache" else 1.0,
+                    radius=780.0 if room.size >= 2 else 700.0,
+                    fixture=ceiling
                 )
             );
         }
     }
 }
 
-def direct(plan: Expedition, site: Site, bp: Blueprint, stream: Stream, density: float) -> Economy {
+# Arena lockdowns: entering the arena's heart slams its free entrances shut,
+# Quake II reinforcements teleport in, and the doors reopen on a timer.
+def lockdowns(director: Director) {
+    bp = director.bp;
+    arenas = [
+        room
+        for room in rooms_of(director.site)
+        if room.kind in ["arena", "hub"] and room.size >= 3 and room.tension >= 0.5
+    ];
+    limit = 1 + (1 if director.density > 0.6 else 0);
+    made = 0;
+    for room in arenas {
+        if made >= limit {
+            break;
+        }
+        name = "lock_" + str(room.beat);
+        taken: list[int] = [];
+        for door in bp.doors {
+            taken.extend(door.cells);
+        }
+        sealed = 0;
+        for passage in passages_of(director.site) {
+            if passage.teleport or passage.window {
+                continue;
+            }
+            socket = passage.tail_socket
+                if passage.tail == room.beat
+                else passage.head_socket;
+            if passage.tail != room.beat and passage.head != room.beat {
+                continue;
+            }
+            sl = boundary_strip(room, socket);
+            cells = [bp.index(cell[0], cell[1]) for cell in sl.cells];
+            if [
+                cell
+                for cell in cells
+                if cell in taken
+            ] {
+                continue;
+            }
+            bp.doors.append(
+                DoorSpec(
+                    cells=cells,
+                    floor=max([bp.floor[cell] for cell in cells]),
+                    ceiling=min([bp.ceiling[cell] for cell in cells]),
+                    kind="lockdown",
+                    name=name,
+                    material=room.district,
+                    across_x=sl.across_x,
+                    link=passage.link,
+                    start_open=True,
+                    hold=16.0 + 4.0 * float(room.size)
+                )
+            );
+            sealed += 1;
+        }
+        if sealed == 0 {
+            continue;
+        }
+        base = stage_point(director, room, 0.0);
+        bp.volumes.append(
+            Volume(
+                low=[base[0] - 96.0, base[1] - 96.0, base[2]],
+                high=[base[0] + 96.0, base[1] + 96.0, base[2] + 96.0],
+                kind="once",
+                target=name
+            )
+        );
+        reinforcements = 2 + int(room.tension * 3.0);
+        for k in range(reinforcements) {
+            foe = pick_foe(director, ["q2"], 6.0, "", 4);
+            point = director.take_spot(room, base, False);
+            if foe is None or not point {
+                break;
+            }
+            director.mark(
+                foe.kind,
+                point,
+                "q2",
+                room.beat,
+                facing(point, base),
+                {"spawnflags": "2", "targetname": name}
+            );
+            director.economy.monsters += 1;
+            director.economy.damage += float(foe.health) * 0.08;
+        }
+        bp.lamps.append(
+            LampSpec(
+                x=base[0],
+                y=base[1],
+                z=base[2] + 200.0,
+                color=13,
+                strength=0.8,
+                radius=640.0
+            )
+        );
+        made += 1;
+    }
+}
+
+def direct(
+    plan: Expedition, site: Site, bp: Blueprint, stream: Stream, density: float
+) -> Economy {
     director = Director(plan=plan, site=site, bp=bp, stream=stream, density=density);
     stage_objectives(director);
     populate(director);
+    lockdowns(director);
     supply(director);
     room_lamps(director);
     return director.economy;

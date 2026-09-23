@@ -8,8 +8,21 @@ import from games.passion.mission {
     links_of,
     validate_mission
 }
-import from games.passion.layout { embed, rooms_of, passages_of, target_heights, solve_heights }
-import from games.passion.generate { generate, survey, survey_of, seed_from, niche_for, Survey }
+import from games.passion.layout {
+    embed,
+    rooms_of,
+    passages_of,
+    target_heights,
+    solve_heights
+}
+import from games.passion.generate {
+    generate,
+    survey,
+    survey_of,
+    seed_from,
+    niche_for,
+    Survey
+}
 import from games.passion.playtest { progress }
 import from games.passion.lighting { ColumnOccluder }
 import from games.passion.blueprint { Blueprint }
@@ -61,7 +74,11 @@ test "cyclic missions are completable and softlock free across archetypes" {
             float(seed % 10) / 10.0
         );
         validate_mission(plan);
-        goal = [beat for beat in beats_of(plan) if beat.kind == "goal"];
+        goal = [
+            beat
+            for beat in beats_of(plan)
+            if beat.kind == "goal"
+        ];
         assert len(goal) == 1 and goal[0].id in plan.route;
         for beat in beats_of(plan) {
             if beat.pattern and beat.pattern not in patterns {
@@ -75,7 +92,13 @@ test "cyclic missions are completable and softlock free across archetypes" {
         }
     }
     for name in [
-        "alternatives", "lock_key", "far_key", "shortcut", "hidden", "switch", "gambit"
+        "alternatives",
+        "lock_key",
+        "far_key",
+        "shortcut",
+        "hidden",
+        "switch",
+        "gambit"
     ] {
         assert name in patterns , "pattern never used: " + name;
     }
@@ -86,7 +109,11 @@ test "cyclic missions are completable and softlock free across archetypes" {
 
 test "a mission whose goal needs an ungranted token is rejected" {
     plan = build_mission(5, stream_for(5, "mission"), "keys", 1, 1, 14, 0.5);
-    gate = [link for link in links_of(plan) if link.mode == "gate"][0];
+    gate = [
+        link
+        for link in links_of(plan)
+        if link.mode == "gate"
+    ][0];
     gate.needs = gate.needs + ["key_missing"];
     rejected = False;
     try {
@@ -180,7 +207,12 @@ test "entity wiring resolves every target and objective" {
                 assert fields.get("asset_game", "") in ["q1", "q2", "q3"];
             }
             assert kind
-                not in ["monster_zombie", "monster_boss", "monster_oldone", "monster_jorg"];
+                not in [
+                    "monster_zombie",
+                    "monster_boss",
+                    "monster_oldone",
+                    "monster_jorg"
+                ];
         }
         assert starts == 1;
     }
@@ -206,10 +238,16 @@ test "spawn is clear and stairs are walkable under real physics" {
         if len(points) < 6 or abs(points[0][2] - points[-1][2]) < 32.0 {
             continue;
         }
-        if [door for door in bp.doors if door.link == link] {
+        if [
+            door
+            for door in bp.doors
+            if door.link == link
+        ] {
             continue;
         }
-        player = Player(pos=Vec3(x=points[0][0], y=points[0][1], z=points[0][2] + 46.125));
+        player = Player(
+            pos=Vec3(x=points[0][0], y=points[0][1], z=points[0][2] + 46.125)
+        );
         for point in points[1:] {
             target = Vec3(x=point[0], y=point[1]);
             for tick in range(240) {
@@ -243,7 +281,11 @@ test "cluster visibility never hides a column a player can see" {
     assert bp is not None;
     occluder = ColumnOccluder(bp=bp);
     s = stream_for(21, "pvs-test");
-    open_cells = [i for i in range(bp.width * bp.height) if bp.region[i] >= 0];
+    open_cells = [
+        i
+        for i in range(bp.width * bp.height)
+        if bp.region[i] >= 0
+    ];
     checked = 0;
     for attempt in range(4000) {
         a = open_cells[s.below(len(open_cells))];
@@ -374,7 +416,8 @@ test "candidate search spreads expeditions across descriptor space" {
     }
     for axis in range(4) {
         values = [m[axis] for m in measured];
-        assert max(values) - min(values) > 0.25 , "descriptor axis collapsed: " + str(axis);
+        assert max(values) - min(values) > 0.25 , "descriptor axis collapsed: "
+            + str(axis);
     }
     assert len(archetypes) >= 3;
     assert len(recipes) >= 8;

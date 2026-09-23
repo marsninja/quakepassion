@@ -63,7 +63,8 @@ node Survey {
         site: Site | None = None,
         bp: Blueprint | None = None,
         economy: Economy | None = None,
-        visible_pairs: int = 0;
+        visible_pairs: int = 0,
+        rejections: dict[str, int] = {};
 }
 
 edge Surveys: World --> Survey {}
@@ -117,20 +118,40 @@ def assign_districts(plan: Expedition, stream: Stream) {
 
 def measure(candidate: Candidate) -> list[float] {
     rooms = rooms_of(candidate.site);
-    links = [link for link in links_of(candidate.plan) if link.mode != "window"];
+    links = [
+        link
+        for link in links_of(candidate.plan)
+        if link.mode != "window"
+    ];
     cycles = len(links) - len(rooms) + 1;
     loop = min(1.0, float(max(0, cycles)) / max(1.0, 0.3 * float(len(rooms))));
     climb = 0.0;
-    passages = [p for p in passages_of(candidate.site) if not p.teleport and not p.window];
+    passages = [
+        p
+        for p in passages_of(candidate.site)
+        if not p.teleport and not p.window
+    ];
     for passage in passages {
         a = rooms[passage.tail];
         b = rooms[passage.head];
-        climb += float(abs((a.z + passage.tail_socket.offset) - (b.z + passage.head_socket.offset)));
+        climb += float(
+            abs((a.z + passage.tail_socket.offset) - (b.z + passage.head_socket.offset))
+        );
     }
     spread = float(max([room.z for room in rooms]) - min([room.z for room in rooms]));
-    vertical = min(1.0, 0.5 * climb / max(1.0, float(len(passages))) / 96.0 + 0.5 * spread / 640.0);
-    fights = len([room for room in rooms if room.kind not in ["start", "goal", "recovery", "cache", "vista"]]);
-    density = min(1.0, float(candidate.economy.monsters) / max(1.0, float(fights)) / 5.0);
+    vertical = min(
+        1.0, 0.5 * climb / max(1.0, float(len(passages))) / 96.0 + 0.5 * spread / 640.0
+    );
+    fights = len(
+        [
+            room
+            for room in rooms
+            if room.kind not in ["start", "goal", "recovery", "cache", "vista"]
+        ]
+    );
+    density = min(
+        1.0, float(candidate.economy.monsters) / max(1.0, float(fights)) / 5.0
+    );
     size = max(0.0, min(1.0, float(len(rooms) - 12) / 26.0));
     return [loop, vertical, density, size];
 }
@@ -152,15 +173,43 @@ def judge(candidate: Candidate) -> float {
     }
     rooms = rooms_of(candidate.site);
     quality += 0.25 * float(len(recipes)) / float(min(len(rooms), 11));
-    secrets = len([room for room in rooms if room.kind == "cache"]);
+    secrets = len(
+        [
+            room
+            for room in rooms
+            if room.kind == "cache"
+        ]
+    );
     quality += 0.03 * float(min(secrets, 3));
     # Every mandatory room should be on the proven route.
-    quality -= 0.05 * float(len([room for room in rooms if room.beat not in candidate.proof.rooms and not room.optional]));
+    quality -= 0.05
+        * float(
+            len(
+                [
+                    room
+                    for room in rooms
+                    if room.beat not in candidate.proof.rooms and not room.optional
+                ]
+            )
+        );
     return quality;
 }
 
-def build_candidate(seed: int, index: int, niche: list[int], archetype: str) -> Candidate | None {
+glob REJECTIONS: dict[str, int] = {};
+
+# Everything one candidate attempt produced, and why it was rejected if it was.
+obj Draft {
+    has reason: str = "",
+        plan: Expedition | None = None,
+        site: Site | None = None,
+        bp: Blueprint | None = None,
+        economy: Economy | None = None,
+        proof: Proof | None = None;
+}
+
+def assemble(seed: int, index: int, niche: list[int], archetype: str) -> Draft {
     stream = stream_for(seed, "candidate").child("k", index);
+    draft = Draft();
     target_loop = BINS[niche[0]];
     target_vertical = BINS[niche[1]];
     target_density = [0.3, 0.55, 0.85][niche[2]];
@@ -170,40 +219,97 @@ def build_candidate(seed: int, index: int, niche: list[int], archetype: str) -> 
     density = max(0.15, min(1.0, target_density + stream.uniform(-0.1, 0.1)));
     sections = 1 + niche[3] + stream.below(2);
     objectives = 1 + stream.below(3);
-    plan = build_mission(seed, stream.derive("mission"), archetype, objectives, sections, rooms, loopiness);
+    plan: Expedition | None = None;
+    try {
+        plan = build_mission(
+            seed,
+            stream.derive("mission"),
+            archetype,
+            objectives,
+            sections,
+            rooms,
+            loopiness
+        );
+    } except (AssertionError, ValueError) {
+        draft.reason = "mission";
+        return draft;
+    }
+    if plan is None {
+        draft.reason = "mission";
+        return draft;
+    }
+    draft.plan = plan;
     plan.verticality = verticality;
     plan.density = density;
     plan.candidate = index;
     assign_districts(plan, stream.derive("districts"));
     site = embed(plan, stream.derive("layout"));
+    draft.site = site;
     if site.failures {
-        return None;
+        draft.reason = "layout " + site.failures;
+        return draft;
     }
     target_heights(site, stream.derive("heights"), verticality);
     if not solve_heights(site) {
-        return None;
+        draft.reason = "heights";
+        return draft;
     }
     for room in rooms_of(site) {
         room.district = beats_of(plan)[room.beat].district;
     }
     bp = new_blueprint(site);
+    draft.bp = bp;
     if not carve_rooms(bp, site, stream.derive("rooms"), verticality) {
-        return None;
+        draft.reason = "interior";
+        return draft;
     }
-    if not carve_corridors(bp, site, plan, stream.derive("corridors"), beats_of(plan)) {
-        return None;
+    if not carve_corridors(
+        bp, site, plan, stream.derive("corridors"), beats_of(plan)
+    ) {
+        draft.reason = "corridor";
+        return draft;
     }
     carve_windows(bp, site);
-    if [door for door in bp.doors if door.kind == "invalid"] {
-        return None;
+    if [
+        door
+        for door in bp.doors
+        if door.kind == "invalid"
+    ] {
+        draft.reason = "doors";
+        return draft;
     }
-    economy = direct(plan, site, bp, stream.derive("director"), density);
-    starts = [mark for mark in bp.marks if mark.kind == "info_player_start"];
+    draft.economy = direct(plan, site, bp, stream.derive("director"), density);
+    starts = [
+        mark
+        for mark in bp.marks
+        if mark.kind == "info_player_start"
+    ];
     if not starts {
-        return None;
+        draft.reason = "start";
+        return draft;
     }
     proof = progress(plan, bp, site, starts[0].x, starts[0].y);
+    draft.proof = proof;
     if not proof.reached_exit {
+        draft.reason = "proof";
+    }
+    return draft;
+}
+
+def build_candidate(
+    seed: int, index: int, niche: list[int], archetype: str
+) -> Candidate | None {
+    draft = assemble(seed, index, niche, archetype);
+    if draft.reason {
+        REJECTIONS[draft.reason] = REJECTIONS.get(draft.reason, 0) + 1;
+        return None;
+    }
+    plan = draft.plan;
+    site = draft.site;
+    bp = draft.bp;
+    economy = draft.economy;
+    proof = draft.proof;
+    if plan is None or site is None or bp is None or economy is None or proof is None {
         return None;
     }
     candidate = Candidate(plan=plan, site=site, bp=bp, economy=economy, proof=proof);
@@ -215,20 +321,32 @@ def build_candidate(seed: int, index: int, niche: list[int], archetype: str) -> 
 def briefing_for(plan: Expedition) -> str {
     counts: dict[str, int] = {};
     for token in plan.objectives {
-        kind = "keys" if token.startswith("key_") else (
-            "relays" if token.startswith("relay:") else "guardians"
-        );
+        kind = "keys"
+            if token.startswith("key_")
+            else ("relays" if token.startswith("relay:") else "guardians");
         counts[kind] = counts.get(kind, 0) + 1;
     }
     parts: list[str] = [];
     if counts.get("keys", 0) {
-        parts.append("recover " + str(counts["keys"]) + (" keys" if counts["keys"] > 1 else " key"));
+        parts.append(
+            "recover "
+                + str(counts["keys"])
+                + (" keys" if counts["keys"] > 1 else " key")
+        );
     }
     if counts.get("relays", 0) {
-        parts.append("throw " + str(counts["relays"]) + (" relays" if counts["relays"] > 1 else " relay"));
+        parts.append(
+            "throw "
+                + str(counts["relays"])
+                + (" relays" if counts["relays"] > 1 else " relay")
+        );
     }
     if counts.get("guardians", 0) {
-        parts.append("slay " + str(counts["guardians"]) + (" guardians" if counts["guardians"] > 1 else " guardian"));
+        parts.append(
+            "slay "
+                + str(counts["guardians"])
+                + (" guardians" if counts["guardians"] > 1 else " guardian")
+        );
     }
     route = " > ".join([DISTRICT_NAMES[d] for d in plan.districts]);
     return route + " | " + ", ".join(parts).capitalize() + ", reach extraction";
@@ -237,7 +355,12 @@ def briefing_for(plan: Expedition) -> str {
 def survey(seed: int) -> Survey {
     niche = niche_for(seed);
     archetype = ARCHETYPES[mix32(seed + 7919) % len(ARCHETYPES)];
-    target = [BINS[niche[0]], BINS[niche[1]], [0.3, 0.55, 0.85][niche[2]], [0.15, 0.5, 0.85][niche[3]]];
+    target = [
+        BINS[niche[0]],
+        BINS[niche[1]],
+        [0.3, 0.55, 0.85][niche[2]],
+        [0.15, 0.5, 0.85][niche[3]]
+    ];
     best: Candidate | None = None;
     result = Survey(seed=seed, niche=niche, target=target, archetype=archetype);
     for index in range(CANDIDATES * 3) {
@@ -257,7 +380,8 @@ def survey(seed: int) -> Survey {
         result.valid += 1;
         distance = 0.0;
         for axis in range(4) {
-            distance += (candidate.measured[axis] - target[axis]) * (candidate.measured[axis] - target[axis]);
+            distance += (candidate.measured[axis] - target[axis])
+                * (candidate.measured[axis] - target[axis]);
         }
         candidate.score = candidate.quality - 1.2 * math.sqrt(distance);
         if best is None or candidate.score > best.score {
@@ -275,7 +399,11 @@ def survey(seed: int) -> Survey {
     result.quality = best.quality;
     result.score = best.score;
     result.briefing = briefing_for(best.plan);
-    starts = [mark for mark in best.bp.marks if mark.kind == "info_player_start"];
+    starts = [
+        mark
+        for mark in best.bp.marks
+        if mark.kind == "info_player_start"
+    ];
     result.start = [starts[0].x, starts[0].y, starts[0].z];
     return result;
 }
@@ -314,13 +442,21 @@ def generate(
     if compiled.exit_low {
         volume = CollisionMap();
         volume.add_box(
-            Vec3(x=compiled.exit_low[0], y=compiled.exit_low[1], z=compiled.exit_low[2]),
-            Vec3(x=compiled.exit_high[0], y=compiled.exit_high[1], z=compiled.exit_high[2]),
+            Vec3(
+                x=compiled.exit_low[0], y=compiled.exit_low[1], z=compiled.exit_low[2]
+            ),
+            Vec3(
+                x=compiled.exit_high[0],
+                y=compiled.exit_high[1],
+                z=compiled.exit_high[2]
+            ),
             Vec3(),
             Vec3(),
             Vec3()
         );
-        extraction = LevelExit(destination="passion_complete", contact=True, volume=volume);
+        extraction = LevelExit(
+            destination="passion_complete", contact=True, volume=volume
+        );
         world +>:HasExit:+> extraction;
         world +>:HasSignal:+> extraction.activation;
     }

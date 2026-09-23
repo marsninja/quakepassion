@@ -60,7 +60,9 @@ node Room {
 
 # A socket is a macro position on a room boundary: side 0=+x 1=-x 2=+y 3=-y.
 obj Socket {
-    has side: int = 0, index: int = 0, offset: int = 0;
+    has side: int = 0,
+        index: int = 0,
+        offset: int = 0;
 }
 
 edge Hosts: Site --> Room {}
@@ -214,15 +216,24 @@ def place_rooms(plan: Expedition, site: Site, stream: Stream, grid: Grid) -> boo
             for attempt in range(60) {
                 anchor = placed[stream.below(len(placed))];
                 side = stream.below(4);
-                spacing = stream.between(0, 3) if stream.chance(0.8) else stream.between(3, 5);
-                candidates.append(beside(anchor, room, side, spacing, stream) + [anchor.beat, spacing]);
+                spacing = stream.between(0, 3)
+                    if stream.chance(0.8)
+                    else stream.between(3, 5);
+                candidates.append(
+                    beside(anchor, room, side, spacing, stream) + [anchor.beat, spacing]
+                );
             }
             # Deterministic rings around every placed neighbor catch crowded cases.
             for anchor in placed {
                 for spacing in range(1, 9) {
                     for side in range(4) {
-                        for shift in range(-room.w - room.h, anchor.w + anchor.h + 1, 2) {
-                            candidates.append(offset_beside(anchor, room, side, spacing, shift) + [anchor.beat, spacing]);
+                        for shift in range(
+                            -room.w - room.h, anchor.w + anchor.h + 1, 2
+                        ) {
+                            candidates.append(
+                                offset_beside(anchor, room, side, spacing, shift)
+                                    + [anchor.beat, spacing]
+                            );
                         }
                     }
                 }
@@ -242,7 +253,8 @@ def place_rooms(plan: Expedition, site: Site, stream: Stream, grid: Grid) -> boo
                 for cx in range(x - 1, x + room.w + 1) {
                     for cy in range(y - 1, y + room.h + 1) {
                         owner = grid.owner(cx, cy);
-                        if owner >= 0 and not (candidate[3] == 0 and owner == candidate[2]) {
+                        if owner >= 0
+                            and not (candidate[3] == 0 and owner == candidate[2]) {
                             crowded = True;
                         }
                     }
@@ -286,20 +298,36 @@ def place_rooms(plan: Expedition, site: Site, stream: Stream, grid: Grid) -> boo
     return True;
 }
 
-def beside(anchor: Room, room: Room, side: int, spacing: int, stream: Stream) -> list[int] {
+def beside(
+    anchor: Room, room: Room, side: int, spacing: int, stream: Stream
+) -> list[int] {
     if side == 0 {
-        return [anchor.x + anchor.w + spacing, anchor.y + stream.between(1 - room.h, anchor.h - 1)];
+        return [
+            anchor.x + anchor.w + spacing,
+            anchor.y + stream.between(1 - room.h, anchor.h - 1)
+        ];
     }
     if side == 1 {
-        return [anchor.x - room.w - spacing, anchor.y + stream.between(1 - room.h, anchor.h - 1)];
+        return [
+            anchor.x - room.w - spacing,
+            anchor.y + stream.between(1 - room.h, anchor.h - 1)
+        ];
     }
     if side == 2 {
-        return [anchor.x + stream.between(1 - room.w, anchor.w - 1), anchor.y + anchor.h + spacing];
+        return [
+            anchor.x + stream.between(1 - room.w, anchor.w - 1),
+            anchor.y + anchor.h + spacing
+        ];
     }
-    return [anchor.x + stream.between(1 - room.w, anchor.w - 1), anchor.y - room.h - spacing];
+    return [
+        anchor.x + stream.between(1 - room.w, anchor.w - 1),
+        anchor.y - room.h - spacing
+    ];
 }
 
-def offset_beside(anchor: Room, room: Room, side: int, spacing: int, shift: int) -> list[int] {
+def offset_beside(
+    anchor: Room, room: Room, side: int, spacing: int, shift: int
+) -> list[int] {
     if side == 0 {
         return [anchor.x + anchor.w + spacing, anchor.y + shift];
     }
@@ -313,7 +341,11 @@ def offset_beside(anchor: Room, room: Room, side: int, spacing: int, shift: int)
 }
 
 obj Frontier {
-    has key: int, cost: float = 0.0, estimate: float = 0.0, parent: int = -1, heading: int = -1;
+    has key: int,
+        cost: float = 0.0,
+        estimate: float = 0.0,
+        parent: int = -1,
+        heading: int = -1;
 }
 
 def neighbor_cell(key: int, side: int) -> int {
@@ -377,12 +409,7 @@ def shared_socket(a: Room, b: Room, used: dict[int, bool]) -> list[Socket] {
 }
 
 def route(
-    grid: Grid,
-    a: Room,
-    b: Room,
-    stream: Stream,
-    used: dict[int, bool],
-    corridor: int
+    grid: Grid, a: Room, b: Room, stream: Stream, used: dict[int, bool], corridor: int
 ) -> list[int] {
     starts = border(a);
     goals = border(b);
@@ -397,7 +424,9 @@ def route(
         if socket_key(a, starts[key]) in used {
             continue;
         }
-        record = Frontier(key=key, cost=1.0 + stream.unit() * 0.3, heading=starts[key].side);
+        record = Frontier(
+            key=key, cost=1.0 + stream.unit() * 0.3, heading=starts[key].side
+        );
         record.estimate = record.cost + heuristic(key, target_x, target_y);
         records[key] = record;
         open_list.append(key);
@@ -408,7 +437,8 @@ def route(
         expansions += 1;
         best_index = 0;
         for index in range(1, len(open_list)) {
-            if records[open_list[index]].estimate < records[open_list[best_index]].estimate {
+            if records[open_list[index]].estimate
+                < records[open_list[best_index]].estimate {
                 best_index = index;
             }
         }
@@ -450,7 +480,8 @@ def route(
 }
 
 def heuristic(key: int, tx2: int, ty2: int) -> float {
-    return float(abs(unpack_x(key) * 2 + 1 - tx2) + abs(unpack_y(key) * 2 + 1 - ty2)) * 0.5;
+    return float(abs(unpack_x(key) * 2 + 1 - tx2) + abs(unpack_y(key) * 2 + 1 - ty2))
+        * 0.5;
 }
 
 # Every corridor is a sequence of slices whose floors change by at most one
@@ -499,7 +530,11 @@ def direction(a: int, b: int) -> int {
 
 def route_all(plan: Expedition, site: Site, stream: Stream, grid: Grid) -> bool {
     rooms = rooms_of(site);
-    links = [link for link in links_of(plan) if link.mode != "window"];
+    links = [
+        link
+        for link in links_of(plan)
+        if link.mode != "window"
+    ];
     # Constrained links first: they cannot fall back to teleporters.
     ranked: list[Link] = [];
     for priority in [["locked", "gate", "shortcut", "secret"], ["valve"], ["open"]] {
@@ -522,7 +557,22 @@ def route_all(plan: Expedition, site: Site, stream: Stream, grid: Grid) -> bool 
             head=link.head,
             danger=link.danger
         );
-        direct = shared_socket(a, b, used) if gap(a, b) == 0 else [];
+        # Links guarded by several door leaves need a corridor to hold them.
+        leaves = len(
+            [
+                token
+                for token in link.needs
+                if not token.startswith("key_")
+            ]
+        );
+        if [
+            token
+            for token in link.needs
+            if token.startswith("key_")
+        ] {
+            leaves += 1;
+        }
+        direct = shared_socket(a, b, used) if gap(a, b) == 0 and leaves <= 1 else [];
         path: list[int] = [];
         if direct {
             passage.tail_socket = direct[0];
@@ -605,8 +655,61 @@ def:priv carve_windows(plan: Expedition, site: Site, grid: Grid) {
     }
 }
 
+# Opportunistic overlooks: slits between nearby rooms that no link joins.
+def:priv sightlines(site: Site, grid: Grid, stream: Stream) {
+    rooms = rooms_of(site);
+    wanted = 1 + stream.below(4);
+    linked: list[int] = [];
+    for passage in passages_of(site) {
+        linked.append(passage.tail * 1000 + passage.head);
+        linked.append(passage.head * 1000 + passage.tail);
+    }
+    order = stream.order(len(rooms));
+    made = 0;
+    for i in order {
+        if made >= wanted {
+            break;
+        }
+        a = rooms[i];
+        for b in rooms {
+            if made >= wanted
+                or b.beat == a.beat
+                or (a.beat * 1000 + b.beat) in linked {
+                continue;
+            }
+            if gap(a, b) > 3 or a.kind in ["cache"] or b.kind in ["cache"] {
+                continue;
+            }
+            slot = window_slot(grid, a, b);
+            if slot is None {
+                continue;
+            }
+            for key in slot.path {
+                grid.claim(unpack_x(key), unpack_y(key), 999);
+            }
+            site.windows += 1;
+            made += 1;
+            linked.append(a.beat * 1000 + b.beat);
+            linked.append(b.beat * 1000 + a.beat);
+            a +>:Passage(
+                link=-1 - site.windows,
+                mode="window",
+                window=True,
+                path=slot.path,
+                tail=a.beat,
+                head=b.beat,
+                tail_socket=slot.tail_socket,
+                head_socket=slot.head_socket
+            ):+> b;
+            break;
+        }
+    }
+}
+
 obj Slot {
-    has path: list[int] = [], tail_socket: Socket = Socket(), head_socket: Socket = Socket();
+    has path: list[int] = [],
+        tail_socket: Socket = Socket(),
+        head_socket: Socket = Socket();
 }
 
 def window_slot(grid: Grid, a: Room, b: Room) -> Slot | None {
@@ -615,7 +718,9 @@ def window_slot(grid: Grid, a: Room, b: Room) -> Slot | None {
         first = b if flip else a;
         second = a if flip else b;
         if first.x + first.w <= second.x {
-            for cy in range(max(first.y, second.y), min(first.y + first.h, second.y + second.h)) {
+            for cy in range(
+                max(first.y, second.y), min(first.y + first.h, second.y + second.h)
+            ) {
                 cells: list[int] = [];
                 clear = True;
                 for cx in range(first.x + first.w, second.x) {
@@ -628,14 +733,22 @@ def window_slot(grid: Grid, a: Room, b: Room) -> Slot | None {
                     tail_socket = Socket(side=0, index=cy - first.y);
                     head_socket = Socket(side=1, index=cy - second.y);
                     if flip {
-                        return Slot(path=list(reversed(cells)), tail_socket=head_socket, head_socket=tail_socket);
+                        return Slot(
+                            path=list(reversed(cells)),
+                            tail_socket=head_socket,
+                            head_socket=tail_socket
+                        );
                     }
-                    return Slot(path=cells, tail_socket=tail_socket, head_socket=head_socket);
+                    return Slot(
+                        path=cells, tail_socket=tail_socket, head_socket=head_socket
+                    );
                 }
             }
         }
         if first.y + first.h <= second.y {
-            for cx in range(max(first.x, second.x), min(first.x + first.w, second.x + second.w)) {
+            for cx in range(
+                max(first.x, second.x), min(first.x + first.w, second.x + second.w)
+            ) {
                 cells: list[int] = [];
                 clear = True;
                 for cy in range(first.y + first.h, second.y) {
@@ -648,9 +761,15 @@ def window_slot(grid: Grid, a: Room, b: Room) -> Slot | None {
                     tail_socket = Socket(side=2, index=cx - first.x);
                     head_socket = Socket(side=3, index=cx - second.x);
                     if flip {
-                        return Slot(path=list(reversed(cells)), tail_socket=head_socket, head_socket=tail_socket);
+                        return Slot(
+                            path=list(reversed(cells)),
+                            tail_socket=head_socket,
+                            head_socket=tail_socket
+                        );
                     }
-                    return Slot(path=cells, tail_socket=tail_socket, head_socket=head_socket);
+                    return Slot(
+                        path=cells, tail_socket=tail_socket, head_socket=head_socket
+                    );
                 }
             }
         }
@@ -714,8 +833,9 @@ def socket_point(room: Room, socket: Socket) -> list[float] {
 def socket_slack(room: Room, a: Socket, b: Socket) -> int {
     pa = socket_point(room, a);
     pb = socket_point(room, b);
-    run = abs(pa[0] - pb[0]) + abs(pa[1] - pb[1]);
-    return STEP * max(0, int(run * 0.7) - 6);
+    # Slopes are limited on diagonals too, so the run is a Chebyshev distance.
+    run = max(abs(pa[0] - pb[0]), abs(pa[1] - pb[1]));
+    return STEP * max(0, int(run * 0.8) - 6);
 }
 
 def clamp_int(value: int, low: int, high: int) -> int {
@@ -723,7 +843,9 @@ def clamp_int(value: int, low: int, high: int) -> int {
 }
 
 obj Bound {
-    has tail: int, head: int, weight: int;
+    has tail: int,
+        head: int,
+        weight: int;
 }
 
 # Heights form a system of difference constraints (x_head - x_tail <= weight)
@@ -732,7 +854,11 @@ obj Bound {
 # anchor tolerance widens until the system becomes feasible.
 def solve_heights(site: Site) -> bool {
     rooms = rooms_of(site);
-    passages = [passage for passage in passages_of(site) if not passage.teleport and not passage.window];
+    passages = [
+        passage
+        for passage in passages_of(site)
+        if not passage.teleport and not passage.window
+    ];
     count = len(rooms) + 1;
     base: list[Bound] = [];
     ends: dict[int, list[int]] = {};
@@ -769,7 +895,12 @@ def solve_heights(site: Site) -> bool {
         members = ends.get(room.beat, []);
         for i in range(len(members)) {
             for j in range(i + 1, len(members)) {
-                slack = socket_slack(room, sockets[members[i] - len(rooms) - 1], sockets[members[j] - len(rooms) - 1]) // STEP;
+                slack = socket_slack(
+                    room,
+                    sockets[members[i] - len(rooms) - 1],
+                    sockets[members[j] - len(rooms) - 1]
+                )
+                    // STEP;
                 base.append(bound_of(members[i], members[j], slack));
                 base.append(bound_of(members[j], members[i], slack));
             }
@@ -781,8 +912,12 @@ def solve_heights(site: Site) -> bool {
         for room in rooms {
             target = room.target // STEP;
             if tolerance >= 0 {
-                bounds.append(Bound(tail=anchor, head=room.beat, weight=target + tolerance));
-                bounds.append(Bound(tail=room.beat, head=anchor, weight=tolerance - target));
+                bounds.append(
+                    Bound(tail=anchor, head=room.beat, weight=target + tolerance)
+                );
+                bounds.append(
+                    Bound(tail=room.beat, head=anchor, weight=tolerance - target)
+                );
             }
         }
         distance = [0 for _ in range(count)];
@@ -809,7 +944,10 @@ def solve_heights(site: Site) -> bool {
             room.z = (distance[room.beat] - lowest) * STEP;
         }
         for index in range(len(sockets)) {
-            sockets[index].offset = (distance[len(rooms) + 1 + index] - distance[owners[index]]) * STEP;
+            sockets[index].offset = (
+                distance[len(rooms) + 1 + index] - distance[owners[index]]
+            )
+                * STEP;
         }
         return True;
     }
@@ -853,7 +991,10 @@ def normalize(site: Site) {
         room.y += shift_y;
     }
     for passage in passages_of(site) {
-        passage.path = [pack(unpack_x(key) + shift_x, unpack_y(key) + shift_y) for key in passage.path];
+        passage.path = [
+            pack(unpack_x(key) + shift_x, unpack_y(key) + shift_y)
+            for key in passage.path
+        ];
     }
     site.width = max_x - min_x + 2;
     site.height = max_y - min_y + 2;
@@ -869,6 +1010,7 @@ def embed(plan: Expedition, stream: Stream) -> Site {
         return site;
     }
     carve_windows(plan, site, grid);
+    sightlines(site, grid, stream.derive("sightlines"));
     normalize(site);
     return site;
 }

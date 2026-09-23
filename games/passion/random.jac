@@ -34,7 +34,8 @@ def hash_label(key: int, label: str) -> int {
 }
 
 obj Stream {
-    has key: int, counter: int = 0;
+    has key: int,
+        counter: int = 0;
 
     def derive(label: str) -> Stream {
         return Stream(key=hash_label(self.key, label));

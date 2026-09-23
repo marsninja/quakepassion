@@ -37,7 +37,9 @@ def axes(face: Face) -> list[Vec3] {
 
 def layout(level: Level) -> int {
     offset = 0;
-    moving = level.bsp.models[1].first_face if len(level.bsp.models) > 1 else len(level.bsp.faces);
+    moving = level.bsp.models[1].first_face
+        if len(level.bsp.models) > 1
+        else len(level.bsp.faces);
     for index in range(len(level.bsp.faces)) {
         face = level.bsp.faces[index];
         face.colors = [];
@@ -181,7 +183,9 @@ def visible_row(level: Level, cluster: int) -> list[bool] {
 }
 
 obj Rig {
-    has lamps: list[Lamp] = [], clusters: list[int] = [], rows: list[list[bool]] = [];
+    has lamps: list[Lamp] = [],
+        clusters: list[int] = [],
+        rows: list[list[bool]] = [];
 
     # Lamps that can see any of the given clusters and reach the sphere.
     def near(clusters: list[int], center: Vec3, extent: float) -> list[Lamp] {
@@ -197,7 +201,8 @@ obj Rig {
                 if seen {
                     break;
                 }
-                if cluster < 0 or (0 <= home < len(self.rows) and self.rows[home][cluster]) {
+                if cluster < 0
+                    or (0 <= home < len(self.rows) and self.rows[home][cluster]) {
                     seen = True;
                 }
             }
@@ -214,7 +219,9 @@ obj Rig {
 obj ColumnOccluder(Occluder) {
     has bp: Blueprint;
 
-    def clear(sx: float, sy: float, sz: float, ex: float, ey: float, ez: float) -> bool {
+    def clear(
+        sx: float, sy: float, sz: float, ex: float, ey: float, ez: float
+    ) -> bool {
         bp = self.bp;
         x = int(math.floor(sx / 32.0));
         y = int(math.floor(sy / 32.0));
@@ -250,7 +257,8 @@ obj ColumnOccluder(Occluder) {
             }
             z0 = sz + (ez - sz) * t;
             z1 = sz + (ez - sz) * leave;
-            if min(z0, z1) < float(bp.floor[i]) - 0.3 or max(z0, z1) > float(bp.ceiling[i]) + 0.3 {
+            if min(z0, z1) < float(bp.floor[i]) - 0.3
+                or max(z0, z1) > float(bp.ceiling[i]) + 0.3 {
                 return False;
             }
             if (x == end_x and y == end_y) or leave >= 1.0 {
@@ -274,7 +282,9 @@ obj ColumnOccluder(Occluder) {
         }
         result = 0.0;
         for offset in [-6.0, 6.0] {
-            if self.clear(point.x, point.y, point.z, target.x + offset, target.y, target.z) {
+            if self.clear(
+                point.x, point.y, point.z, target.x + offset, target.y, target.z
+            ) {
                 result += 0.5;
             }
         }
@@ -383,7 +393,9 @@ def probe_regions(level: Level, bp: Blueprint, site: Site) -> Lighting {
                 for delta in [[1, 0], [-1, 0], [0, 1], [0, -1]] {
                     nx = mx + delta[0];
                     ny = my + delta[1];
-                    if 0 <= nx < columns and 0 <= ny < rows and lookup[ny * columns + nx] >= 0 {
+                    if 0 <= nx < columns
+                        and 0 <= ny < rows
+                        and lookup[ny * columns + nx] >= 0 {
                         filled[my * columns + mx] = lookup[ny * columns + nx];
                         break;
                     }
@@ -448,7 +460,14 @@ def bake(level: Level, bp: Blueprint, site: Site, cache_directory: str = "") {
         }
     }
     pixels = bytearray();
-    print("LIGHTING baking", level.name, len(level.bsp.faces), "faces", len(lamps), "lamps");
+    print(
+        "LIGHTING baking",
+        level.name,
+        len(level.bsp.faces),
+        "faces",
+        len(lamps),
+        "lamps"
+    );
     for index in range(len(level.bsp.faces)) {
         face = level.bsp.faces[index];
         if face.light_offset < 0 {
@@ -508,7 +527,9 @@ def bake(level: Level, bp: Blueprint, site: Site, cache_directory: str = "") {
                     );
                     column = cluster_at(bp, point.x, point.y);
                     valid = column >= 0
-                        and occluder.clear(point.x, point.y, point.z, point.x, point.y, point.z);
+                        and occluder.clear(
+                            point.x, point.y, point.z, point.x, point.y, point.z
+                        );
                     region.valid.append(valid);
                     region.samples.append(
                         shade(point, Vec3(), nearby, occluder, True)
@@ -532,5 +553,11 @@ def bake(level: Level, bp: Blueprint, site: Site, cache_directory: str = "") {
             print("LIGHTING cache unavailable; using completed bake");
         }
     }
-    print("LIGHTING ready", len(pixels), "lightmap bytes,", probe_count(lighting), "probes");
+    print(
+        "LIGHTING ready",
+        len(pixels),
+        "lightmap bytes,",
+        probe_count(lighting),
+        "probes"
+    );
 }

@@ -4,11 +4,17 @@ import from engine.math.vec3 { Vec3 }
 
 # Box faces in order: -z, +z, -y, +x, +y, -x.
 glob BOX_POLYGONS: list[list[int]] = [
-    [0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]
-];
+         [0, 3, 2, 1],
+         [4, 5, 6, 7],
+         [0, 1, 5, 4],
+         [1, 2, 6, 5],
+         [2, 3, 7, 6],
+         [3, 0, 4, 7]
+     ];
 
 obj Builder {
-    has bsp: Bsp = Bsp(game="passion"), owner: int = 0;
+    has bsp: Bsp = Bsp(game="passion"),
+        owner: int = 0;
 
     def panel(points: list[Vec3], material: int, model: int = 0) {
         normal = points[1].sub(points[0]).cross(points[2].sub(points[0])).normalized();
@@ -54,9 +60,13 @@ obj Builder {
         brush = Brush(contents=contents);
         for side in range(6) {
             points = [vertices[index] for index in BOX_POLYGONS[side]];
-            normal = points[1].sub(points[0]).cross(points[2].sub(points[0])).normalized();
+            normal = points[1].sub(points[0]).cross(
+                points[2].sub(points[0])
+            ).normalized();
             brush.planes.append(len(self.bsp.planes));
-            self.bsp.planes.append(Plane(normal=normal, distance=normal.dot(points[0])));
+            self.bsp.planes.append(
+                Plane(normal=normal, distance=normal.dot(points[0]))
+            );
             if not visible[side] {
                 continue;
             }
@@ -71,7 +81,9 @@ obj Builder {
                 u = point.x if abs(normal.z) > 0.5 or abs(normal.y) > 0.5 else point.y;
                 v = point.y if abs(normal.z) > 0.5 else point.z;
                 face.uv.extend([u / 128.0, v / 128.0]);
-                brightness = int(78.0 + 40.0 * max(0.0, normal.z) + 8.0 * abs(normal.x));
+                brightness = int(
+                    78.0 + 40.0 * max(0.0, normal.z) + 8.0 * abs(normal.x)
+                );
                 face.colors.extend([brightness, brightness, brightness, 255]);
             }
             for leaf in owners[side] {
@@ -90,9 +102,13 @@ obj Builder {
         brush = Brush(contents=0);
         for side in range(6) {
             points = [vertices[index] for index in BOX_POLYGONS[side]];
-            normal = points[1].sub(points[0]).cross(points[2].sub(points[0])).normalized();
+            normal = points[1].sub(points[0]).cross(
+                points[2].sub(points[0])
+            ).normalized();
             brush.planes.append(len(self.bsp.planes));
-            self.bsp.planes.append(Plane(normal=normal, distance=normal.dot(points[0])));
+            self.bsp.planes.append(
+                Plane(normal=normal, distance=normal.dot(points[0]))
+            );
         }
         self.bsp.models[model].brushes.append(len(self.bsp.brushes));
         self.bsp.brushes.append(brush);

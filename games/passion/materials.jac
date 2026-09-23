@@ -30,86 +30,91 @@ glob MAT_WATER: int = 30,
 
 # District names double as the in-game briefing vocabulary.
 glob DISTRICT_NAMES: list[str] = [
-    "Stone Keep", "Slipgate Base", "Strogg Outpost", "Deep Mines", "Gothic Ruin", "Arena Works"
-];
+         "Stone Keep",
+         "Slipgate Base",
+         "Strogg Outpost",
+         "Deep Mines",
+         "Gothic Ruin",
+         "Arena Works"
+     ];
 
 # (source, map or directory, name) per district slot.
 glob DISTRICT_TEXTURES: list[list[list[str]]] = [
-    [
-        ["q1", "e1m2", "stone1_3"],
-        ["q1", "e1m2", "wbrick1_5"],
-        ["q1", "e1m2", "wizmet1_2"],
-        ["q1", "e1m2", "wizmet1_7"],
-        ["q1", "e1m2", "wizwood1_5"]
-    ],
-    [
-        ["q1", "e1m1", "sfloor4_2"],
-        ["q1", "e1m1", "tech04_1"],
-        ["q1", "e1m1", "tech01_1"],
-        ["q1", "e1m1", "tech08_1"],
-        ["q1", "e1m1", "crate0_side"]
-    ],
-    [
-        ["q2", "", "e1u1/floor3_1"],
-        ["q2", "", "e1u1/metal3_2"],
-        ["q2", "", "e1u1/ceil1_1"],
-        ["q2", "", "e1u1/box1_3"],
-        ["q2", "", "e1u1/box3_1"]
-    ],
-    [
-        ["q2", "", "e2u1/florr1_1"],
-        ["q2", "", "e2u1/mine02_1"],
-        ["q2", "", "e2u1/metal3_1"],
-        ["q2", "", "e2u1/metal37_1"],
-        ["q2", "", "e2u1/crys1_1"]
-    ],
-    [
-        ["q3", "", "textures/gothic_floor/metalbridge06"],
-        ["q3", "", "textures/gothic_block/blocks15"],
-        ["q3", "", "textures/gothic_block/blocks18c"],
-        ["q3", "", "textures/gothic_trim/baseboard09_c"],
-        ["q3", "", "textures/gothic_wall/iron01_e"]
-    ],
-    [
-        ["q3", "", "textures/base_floor/diamond2c"],
-        ["q3", "", "textures/base_wall/concrete"],
-        ["q3", "", "textures/base_wall/basewall01"],
-        ["q3", "", "textures/base_trim/pewter"],
-        ["q3", "", "textures/base_wall/bluemetal2"]
-    ]
-];
+         [
+             ["q1", "e1m2", "stone1_3"],
+             ["q1", "e1m2", "wbrick1_5"],
+             ["q1", "e1m2", "wizmet1_2"],
+             ["q1", "e1m2", "wizmet1_7"],
+             ["q1", "e1m2", "wizwood1_5"]
+         ],
+         [
+             ["q1", "e1m1", "sfloor4_2"],
+             ["q1", "e1m1", "tech04_1"],
+             ["q1", "e1m1", "tech01_1"],
+             ["q1", "e1m1", "tech08_1"],
+             ["q1", "e1m1", "crate0_side"]
+         ],
+         [
+             ["q2", "", "e1u1/floor3_1"],
+             ["q2", "", "e1u1/metal3_2"],
+             ["q2", "", "e1u1/ceil1_1"],
+             ["q2", "", "e1u1/box1_3"],
+             ["q2", "", "e1u1/box3_1"]
+         ],
+         [
+             ["q2", "", "e2u1/florr1_1"],
+             ["q2", "", "e2u1/mine02_1"],
+             ["q2", "", "e2u1/metal3_1"],
+             ["q2", "", "e2u1/metal37_1"],
+             ["q2", "", "e2u1/crys1_1"]
+         ],
+         [
+             ["q3", "", "textures/gothic_floor/metalbridge06"],
+             ["q3", "", "textures/gothic_block/blocks15"],
+             ["q3", "", "textures/gothic_block/blocks18c"],
+             ["q3", "", "textures/gothic_trim/baseboard09_c"],
+             ["q3", "", "textures/gothic_wall/iron01_e"]
+         ],
+         [
+             ["q3", "", "textures/base_floor/diamond2c"],
+             ["q3", "", "textures/base_wall/concrete"],
+             ["q3", "", "textures/base_wall/basewall01"],
+             ["q3", "", "textures/base_trim/pewter"],
+             ["q3", "", "textures/base_wall/bluemetal2"]
+         ]
+     ];
 
 glob SPECIAL_TEXTURES: list[list[str]] = [
-    ["q1", "e1m1", "*water0"],
-    ["q1", "e1m1", "*slime0"],
-    ["q1", "e3m2", "*lava1"],
-    ["q1", "e1m1", "*teleport"],
-    ["q1", "e1m1", "+0basebtn"],
-    ["q1", "e1m2", "+0shoot"],
-    ["q1", "e1m2", "wkey02_2"],
-    ["q1", "e1m2", "exit02_2"]
-];
+         ["q1", "e1m1", "*water0"],
+         ["q1", "e1m1", "*slime0"],
+         ["q1", "e3m2", "*lava1"],
+         ["q1", "e1m1", "*teleport"],
+         ["q1", "e1m1", "+0basebtn"],
+         ["q1", "e1m2", "+0shoot"],
+         ["q1", "e1m2", "wkey02_2"],
+         ["q1", "e1m2", "exit02_2"]
+     ];
 
 # Lamp colors: six district tints, then gold, silver, green, red and white
 # accents for objectives, teleporters, switches, guardians and extraction.
 glob LAMP_RGB: list[list[float]] = [
-    [1.0, 0.77, 0.5],
-    [0.68, 0.86, 1.0],
-    [0.95, 0.94, 0.86],
-    [1.0, 0.62, 0.36],
-    [1.0, 0.68, 0.78],
-    [0.58, 0.72, 1.0],
-    [0.9, 0.9, 0.9],
-    [0.9, 0.9, 0.9],
-    [0.9, 0.9, 0.9],
-    [0.9, 0.9, 0.9],
-    [1.0, 0.84, 0.32],
-    [0.72, 0.9, 1.0],
-    [0.45, 1.0, 0.52],
-    [1.0, 0.36, 0.3],
-    [1.0, 1.0, 1.0],
-    [0.9, 0.9, 0.9]
-];
+         [1.0, 0.77, 0.5],
+         [0.68, 0.86, 1.0],
+         [0.95, 0.94, 0.86],
+         [1.0, 0.62, 0.36],
+         [1.0, 0.68, 0.78],
+         [0.58, 0.72, 1.0],
+         [0.9, 0.9, 0.9],
+         [0.9, 0.9, 0.9],
+         [0.9, 0.9, 0.9],
+         [0.9, 0.9, 0.9],
+         [1.0, 0.84, 0.32],
+         [0.72, 0.9, 1.0],
+         [0.45, 1.0, 0.52],
+         [1.0, 0.36, 0.3],
+         [1.0, 1.0, 1.0],
+         [0.9, 0.9, 0.9]
+     ];
 
 def material(zone: int, slot: int) -> int {
     return (zone % DISTRICTS) * SLOTS + slot;
@@ -138,10 +143,17 @@ def lamp_textures -> list[Texture] {
         rgb = LAMP_RGB[index];
         pixel = bytearray();
         pixel.extend(
-            [u8(int(rgb[0] * 255.0)), u8(int(rgb[1] * 255.0)), u8(int(rgb[2] * 255.0)), u8(255)]
+            [
+                u8(int(rgb[0] * 255.0)),
+                u8(int(rgb[1] * 255.0)),
+                u8(int(rgb[2] * 255.0)),
+                u8(255)
+            ]
         );
         result.append(
-            Texture(name="passion:lamp-" + str(index), width=1, height=1, rgba=bytes(pixel))
+            Texture(
+                name="passion:lamp-" + str(index), width=1, height=1, rgba=bytes(pixel)
+            )
         );
     }
     return result;
@@ -162,7 +174,11 @@ obj Loader {
                 self.catalog.source("q1").read("maps/" + map_name + ".bsp")
             ).textures;
         }
-        found = [texture for texture in self.q1_maps[map_name] if texture.name == name];
+        found = [
+            texture
+            for texture in self.q1_maps[map_name]
+            if texture.name == name
+        ];
         if not found {
             raise ValueError("Missing Q1 material: " + name);
         }
@@ -175,7 +191,9 @@ obj Loader {
             self.q2_palette = pcx[len(pcx) - 768:];
         }
         return expand(
-            parse_wal(self.catalog.source("q2").read("textures/" + name + ".wal"), name),
+            parse_wal(
+                self.catalog.source("q2").read("textures/" + name + ".wal"), name
+            ),
             self.q2_palette,
             "q2"
         );

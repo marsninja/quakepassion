@@ -110,6 +110,20 @@ def mouth_cell(interior: Interior, socket: Socket) -> int {
     return interior.index(along, 0);
 }
 
+def neighbors8(interior: Interior, i: int) -> list[int] {
+    x = i % interior.width;
+    y = i // interior.width;
+    result: list[int] = [];
+    for dy in range(-1, 2) {
+        for dx in range(-1, 2) {
+            if (dx != 0 or dy != 0) and interior.inside(x + dx, y + dy) {
+                result.append((y + dy) * interior.width + x + dx);
+            }
+        }
+    }
+    return result;
+}
+
 # ---------------------------------------------------------------------------
 # Footprints
 # ---------------------------------------------------------------------------
@@ -162,7 +176,11 @@ def footprint(interior: Interior, recipe: str, stream: Stream) -> list[bool] {
                         for dx in range(-1, 2) {
                             nx = x + dx;
                             ny = y + dy;
-                            if nx < 0 or ny < 0 or nx >= w or ny >= h or not mask[ny * w + nx] {
+                            if nx < 0
+                                or ny < 0
+                                or nx >= w
+                                or ny >= h
+                                or not mask[ny * w + nx] {
                                 walls += 1;
                             }
                         }
@@ -226,8 +244,11 @@ def connect_mask(interior: Interior, mask: list[bool], sockets: list[Socket]) {
 # ---------------------------------------------------------------------------
 
 # Geodesic Lipschitz envelope: the largest field no higher than `desired` whose
-# neighbors differ by at most one step, with pinned cells kept exactly.
-def lipschitz(interior: Interior, desired: list[int], pinned: dict[int, int]) -> list[int] {
+# neighbors (diagonals included, so any 2x2 hull footprint spans at most one
+# step) differ by at most one step, with pinned cells kept exactly.
+def lipschitz(
+    interior: Interior, desired: list[int], pinned: dict[int, int]
+) -> list[int] {
     n = len(desired);
     field = list(desired);
     for key in pinned {
@@ -244,7 +265,7 @@ def lipschitz(interior: Interior, desired: list[int], pinned: dict[int, int]) ->
     while cursor < len(queue) {
         i = queue[cursor];
         cursor += 1;
-        for j in neighbors4(interior, i) {
+        for j in neighbors8(interior, i) {
             if not interior.open(j) {
                 continue;
             }
@@ -270,7 +291,7 @@ def lipschitz(interior: Interior, desired: list[int], pinned: dict[int, int]) ->
             if not interior.open(i) {
                 continue;
             }
-            for j in neighbors4(interior, i) {
+            for j in neighbors8(interior, i) {
                 if interior.open(j) and field[i] > field[j] + STEP {
                     field[i] = field[j] + STEP;
                     changed = True;
@@ -281,7 +302,9 @@ def lipschitz(interior: Interior, desired: list[int], pinned: dict[int, int]) ->
     return field;
 }
 
-def desired_field(interior: Interior, recipe: str, stream: Stream, span: int) -> list[int] {
+def desired_field(
+    interior: Interior, recipe: str, stream: Stream, span: int
+) -> list[int] {
     w = interior.width;
     h = interior.height;
     desired = fill(w * h, 0);
@@ -293,7 +316,9 @@ def desired_field(interior: Interior, recipe: str, stream: Stream, span: int) ->
         horizontal = stream.chance(0.5);
         for y in range(h) {
             for x in range(w) {
-                t = float(x) / float(max(1, w - 1)) if horizontal else float(y) / float(max(1, h - 1));
+                t = float(x) / float(max(1, w - 1))
+                    if horizontal
+                    else float(y) / float(max(1, h - 1));
                 level = int(t * float(bands) - 0.0001);
                 desired[y * w + x] = (level * span // max(1, bands - 1)) // STEP * STEP;
             }
@@ -313,7 +338,8 @@ def desired_field(interior: Interior, recipe: str, stream: Stream, span: int) ->
         phase_y = stream.uniform(0.0, 6.0);
         for y in range(h) {
             for x in range(w) {
-                wave = triangle(float(x) * 0.21 + phase_x) + triangle(float(y) * 0.17 + phase_y);
+                wave = triangle(float(x) * 0.21 + phase_x)
+                    + triangle(float(y) * 0.17 + phase_y);
                 desired[y * w + x] = int(wave * 0.5 * float(span)) // STEP * STEP;
             }
         }
@@ -434,7 +460,9 @@ def free_rect(interior: Interior, x0: int, y0: int, w: int, h: int) -> bool {
 }
 
 # A raised block with stairs down one side: sniper perch or key dais.
-def raise_platform(interior: Interior, x0: int, y0: int, w: int, h: int, rise: int, stair_side: int) -> bool {
+def raise_platform(
+    interior: Interior, x0: int, y0: int, w: int, h: int, rise: int, stair_side: int
+) -> bool {
     if not free_rect(interior, x0, y0, w, h) {
         return False;
     }
@@ -482,7 +510,9 @@ def raise_platform(interior: Interior, x0: int, y0: int, w: int, h: int, rise: i
     return True;
 }
 
-def sink_pit(interior: Interior, x0: int, y0: int, w: int, h: int, depth: int, liquid: int) -> bool {
+def sink_pit(
+    interior: Interior, x0: int, y0: int, w: int, h: int, depth: int, liquid: int
+) -> bool {
     if not free_rect(interior, x0, y0, w, h) {
         return False;
     }
@@ -525,7 +555,9 @@ def compatible(a: int, b: int) -> bool {
     return True;
 }
 
-def collapse_cover(interior: Interior, stream: Stream, density: float, style: int) -> int {
+def collapse_cover(
+    interior: Interior, stream: Stream, density: float, style: int
+) -> int {
     tw = interior.width // 2;
     th = interior.height // 2;
     count = tw * th;
@@ -560,7 +592,13 @@ def collapse_cover(interior: Interior, stream: Stream, density: float, style: in
             best = -1;
             best_count = 99;
             for t in range(count) {
-                open_count = len([o for o in state[t] if o]);
+                open_count = len(
+                    [
+                        o
+                        for o in state[t]
+                        if o
+                    ]
+                );
                 if open_count > 1 and open_count < best_count {
                     best = t;
                     best_count = open_count;
@@ -661,7 +699,19 @@ def choose_recipe(room: Room, stream: Stream, sockets: list[Socket]) -> str {
     if room.kind in ["start", "goal", "cache"] {
         return ["hall", "clipped"][stream.below(2)];
     }
-    options = ["hall", "clipped", "cross", "court", "cavern", "pit", "balcony", "terraces", "split", "arena", "colonnade"];
+    options = [
+        "hall",
+        "clipped",
+        "cross",
+        "court",
+        "cavern",
+        "pit",
+        "balcony",
+        "terraces",
+        "split",
+        "arena",
+        "colonnade"
+    ];
     weights = [1.0, 1.0, 0.7, 0.6, 0.8, 0.8, 0.8, 0.6, 0.5, 0.0, 0.8];
     if room.size >= 3 {
         weights[9] = 2.5;
@@ -688,7 +738,9 @@ def choose_recipe(room: Room, stream: Stream, sockets: list[Socket]) -> str {
     return options[stream.weighted(weights)];
 }
 
-def build_interior(room: Room, sockets: list[Socket], stream: Stream, district: int) -> Interior {
+def build_interior(
+    room: Room, sockets: list[Socket], stream: Stream, district: int
+) -> Interior {
     w = room.columns();
     h = room.rows();
     for attempt in range(6) {
@@ -767,7 +819,9 @@ def build_interior(room: Room, sockets: list[Socket], stream: Stream, district: 
     raise ValueError("Room interior could not be connected");
 }
 
-def landing_cells_for(interior: Interior, landing: int, sockets: list[Socket]) -> list[int] {
+def landing_cells_for(
+    interior: Interior, landing: int, sockets: list[Socket]
+) -> list[int] {
     for socket in sockets {
         if mouth_cell(interior, socket) == landing {
             return landing_cells(interior, socket);
@@ -809,7 +863,9 @@ def:priv decorate(interior: Interior, room: Room, stream: Stream) {
     if room.kind in ["key", "switch", "goal"] {
         # A central dais presents the objective; the stage stays on top.
         size = 4;
-        if raise_platform_centered(interior, sx, sy, size, 32 + STEP * stream.below(2), stream.below(4)) {
+        if raise_platform_centered(
+            interior, sx, sy, size, 32 + STEP * stream.below(2), stream.below(4)
+        ) {
             interior.stage = interior.index(sx, sy);
         }
     }
@@ -828,7 +884,9 @@ def:priv decorate(interior: Interior, room: Room, stream: Stream) {
         for attempt in range(8) {
             x0 = stream.between(2, max(2, w - pw - 2));
             y0 = stream.between(2, max(2, h - ph - 2));
-            if sink_pit(interior, x0, y0, pw, ph, 64 + STEP * stream.below(4), liquid) {
+            if sink_pit(
+                interior, x0, y0, pw, ph, 64 + STEP * stream.below(4), liquid
+            ) {
                 break;
             }
         }
@@ -871,7 +929,9 @@ def:priv decorate(interior: Interior, room: Room, stream: Stream) {
     }
 }
 
-def raise_platform_centered(interior: Interior, cx: int, cy: int, size: int, rise: int, side: int) -> bool {
+def raise_platform_centered(
+    interior: Interior, cx: int, cy: int, size: int, rise: int, side: int
+) -> bool {
     x0 = cx - size // 2;
     y0 = cy - size // 2;
     # The objective dais may occupy the locked center; clear its lock locally.
@@ -908,7 +968,9 @@ def verified(interior: Interior) -> bool {
 }
 
 def collect_spots(interior: Interior, room: Room, stream: Stream) {
-    seen = reach_from(interior, interior.landings[0] if interior.landings else interior.stage);
+    seen = reach_from(
+        interior, interior.landings[0] if interior.landings else interior.stage
+    );
     landing_zone: list[bool] = [False for _ in range(interior.width * interior.height)];
     for landing in interior.landings {
         lx = landing % interior.width;
@@ -925,7 +987,10 @@ def collect_spots(interior: Interior, room: Room, stream: Stream) {
     for y in range(1, interior.height - 1, 2) {
         for x in range(1, interior.width - 1, 2) {
             i = interior.index(x, y);
-            if seen[i] and not landing_zone[i] and interior.liquid[i] == 0 and interior.cover[i] == 0 {
+            if seen[i]
+                and not landing_zone[i]
+                and interior.liquid[i] == 0
+                and interior.cover[i] == 0 {
                 # Spots need a 3x3 clear standing area on one level.
                 good = True;
                 for j in neighbors4(interior, i) {
@@ -941,7 +1006,11 @@ def collect_spots(interior: Interior, room: Room, stream: Stream) {
     }
     order = stream.order(len(candidates));
     interior.spots = [candidates[k] for k in order];
-    interior.perches = [p for p in interior.perches if seen[p]];
+    interior.perches = [
+        p
+        for p in interior.perches
+        if seen[p]
+    ];
     # Lamps sit on a coarse grid over open space, avoiding solid cover.
     step = 8 if interior.width * interior.height > 500 else 7;
     for y in range(step // 2, interior.height, step) {

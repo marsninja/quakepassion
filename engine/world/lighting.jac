@@ -38,6 +38,7 @@ walker GatherLamps {
     can start with LightRig entry {
         visit [-->];
     }
+
     can gather with Lamp entry {
         self.lamps.append(here);
     }
@@ -64,7 +65,9 @@ obj ProbeRegion {
             value = max(0.0, min(float(last), coordinates[axis]));
             index = max(0, min(last - 1, int(math.floor(value))));
             low.append(index);
-            fraction.append(max(0.0, min(1.0, value - float(index))) if last > 0 else 0.0);
+            fraction.append(
+                max(0.0, min(1.0, value - float(index))) if last > 0 else 0.0
+            );
         }
         result = Illumination(enabled=True, ambient=Vec3(), direction=Vec3());
         total = 0.0;
@@ -119,8 +122,12 @@ obj Lighting {
         if not self.lookup {
             return 0;
         }
-        x = min(self.lookup_columns - 1, max(0, int(math.floor(point.x / self.lookup_cell))));
-        y = min(self.lookup_rows - 1, max(0, int(math.floor(point.y / self.lookup_cell))));
+        x = min(
+            self.lookup_columns - 1, max(0, int(math.floor(point.x / self.lookup_cell)))
+        );
+        y = min(
+            self.lookup_rows - 1, max(0, int(math.floor(point.y / self.lookup_cell)))
+        );
         return self.lookup[y * self.lookup_columns + x];
     }
 
@@ -151,7 +158,8 @@ obj Occluder {
 }
 
 obj TraceOccluder(Occluder) {
-    has collision: CollisionMap, excluded: list[int] = [];
+    has collision: CollisionMap,
+        excluded: list[int] = [];
 
     # A clear central ray means a fully visible emitter; otherwise two
     # deterministic offset samples soften the shadow edge.
@@ -182,7 +190,11 @@ def irradiance(
     probe: bool = False
 ) -> Illumination {
     return shade(
-        point, normal, lamps, TraceOccluder(collision=collision, excluded=excluded), probe
+        point,
+        normal,
+        lamps,
+        TraceOccluder(collision=collision, excluded=excluded),
+        probe
     );
 }
 
