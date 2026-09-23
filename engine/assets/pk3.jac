@@ -288,6 +288,43 @@ obj Pk3Assets {
         return result;
     }
 
+    """A sky shader's far box (six images, or none), cloud height and cloud
+    stages with their images loaded (tr_shader.c ParseSkyParms)."""
+    def sky_parts(name: str) -> SkyParts {
+        parts = SkyParts();
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return parts;
+        }
+        material = self.model_shaders[key];
+        if not material.sky {
+            return parts;
+        }
+        parts.cloud_height = material.cloud_height;
+        if material.farbox {
+            for suffix in ["rt", "lf", "bk", "ft", "up", "dn"] {
+                image = self.image_name(material.farbox + "_" + suffix);
+                if not image {
+                    parts.farbox = [];
+                    break;
+                }
+                parts.farbox.append(Texture(name=image, encoded=self.read(image), extension=image_extension(image)));
+            }
+        }
+        for stage in material.stages {
+            if stage.lightmap or stage.white {
+                continue;
+            }
+            image = self.image_name(stage.texture.name);
+            if not image {
+                continue;
+            }
+            stage.texture = Texture(name=image, encoded=self.read(image), extension=image_extension(image));
+            parts.clouds.append(stage);
+        }
+        return parts;
+    }
+
     """The deformVertexes of a layered surface shader."""
     def surface_deforms(name: str) -> list[Deform] {
         key = material_name(name);
@@ -327,6 +364,12 @@ obj Pk3Assets {
         self.additive = {};
         self.two_sided = {};
     }
+}
+
+obj SkyParts {
+    has farbox: list[Texture] = [],
+        cloud_height: float = 128.0,
+        clouds: list[ModelStage] = [];
 }
 
 def image_extension(path: str) -> str {

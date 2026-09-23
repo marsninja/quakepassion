@@ -75,6 +75,7 @@ obj QuakeRenderer {
         styled: list[int] = [],
         stage_images: dict[int, list[list[int]]] = {},
         sky_layers: dict[int, list[int]] = {},
+        cloud_images: list[list[int]] = [],
         warp_shader: Shader = Shader(id=u32(0), locs=u64(0)),
         warp_time: int = -1,
         warp_size: int = -1,
@@ -344,6 +345,91 @@ obj QuakeRenderer {
         self.upload_stages(level);
     }
 
+    """Q3 cloud layers on the sky dome (tr_sky.c): each box vertex's direction
+    meets a cloud sphere cloudheight above a 4096-unit world, and s and t are
+    the arccosines of that point's direction, before the stage's tcMods."""
+    def draw_clouds(level: Level, eye: Vec3) {
+        if not self.cloud_images or not level.sky_clouds {
+            return;
+        }
+        rlDrawRenderBatchActive();
+        rlDisableDepthMask();
+        rlDisableBackfaceCulling();
+        world_radius = 4096.0;
+        height = level.cloud_height;
+        steps = 8;
+        # The box sides and top, as (u axis, v axis, fixed axis) directions.
+        sides = [
+            [Vec3(y=1.0), Vec3(z=1.0), Vec3(x=1.0)],
+            [Vec3(y=-1.0), Vec3(z=1.0), Vec3(x=-1.0)],
+            [Vec3(x=-1.0), Vec3(z=1.0), Vec3(y=1.0)],
+            [Vec3(x=1.0), Vec3(z=1.0), Vec3(y=-1.0)],
+            [Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)]
+        ];
+        for k in range(min(len(level.sky_clouds), len(self.cloud_images))) {
+            stage = level.sky_clouds[k];
+            ids = self.cloud_images[k];
+            if k > 0 or stage.blend != "opaque" {
+                source = 1;
+                destination = 1;
+                if stage.blend == "alpha" {
+                    source = 770;
+                    destination = 771;
+                } elif stage.blend == "multiply" {
+                    source = 774;
+                    destination = 0;
+                } elif stage.blend == "custom" {
+                    source = gl_factor(stage.blend_source);
+                    destination = gl_factor(stage.blend_destination);
+                }
+                rlSetBlendFactors(i32(source), i32(destination), i32(32774));
+                BeginBlendMode(i32(6));
+            }
+            rlSetTexture(u32(ids[stage_frame(self.time, stage.frequency, len(ids))]));
+            shade = 255;
+            if stage.rgb == "wave" {
+                shade = int(max(0.0, min(1.0, stage.rgb_wave.at(self.time))) * 255.0);
+            }
+            rlBegin(i32(4));
+            rlColor4ub(u8(shade), u8(shade), u8(shade), u8(255));
+            for side in sides {
+                for row in range(steps) {
+                    for column in range(steps) {
+                        corners = [[column, row], [column + 1, row], [column + 1, row + 1], [column, row], [column + 1, row + 1], [column, row + 1]];
+                        for corner in corners {
+                            a = float(corner[0]) / float(steps) * 2.0 - 1.0;
+                            b = float(corner[1]) / float(steps) * 2.0 - 1.0;
+                            # The top's rows run across it; the sides' from the horizon down to up.
+                            direction = side[2].add(side[0].scale(a)).add(side[1].scale(b));
+                            sky = direction.normalized();
+                            reach = (1.0 / (2.0 * sky.dot(sky))) * (
+                                -2.0 * sky.z * world_radius
+                                    + 2.0 * math.sqrt(
+                                        sky.z * sky.z * world_radius * world_radius
+                                            + 2.0 * (sky.x * sky.x + sky.y * sky.y + sky.z * sky.z) * world_radius * height
+                                            + (sky.x * sky.x + sky.y * sky.y + sky.z * sky.z) * height * height
+                                    )
+                            );
+                            point = sky.scale(reach).add(Vec3(z=world_radius)).normalized();
+                            coords = apply_tcmods(stage, math.acos(max(-1.0, min(1.0, point.x))), math.acos(max(-1.0, min(1.0, point.y))), point, self.time);
+                            rlTexCoord2f(f32(coords[0]), f32(coords[1]));
+                            v = eye.add(direction.scale(512.0));
+                            rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
+                        }
+                    }
+                }
+            }
+            rlEnd();
+            rlDrawRenderBatchActive();
+            if k > 0 or stage.blend != "opaque" {
+                EndBlendMode();
+            }
+        }
+        rlEnableBackfaceCulling();
+        rlEnableDepthMask();
+        rlSetTexture(u32(0));
+    }
+
     """Quake's sky textures hold a masked front layer (left half, index 0 clear)
     beside a solid back layer (right half); each becomes its own texture."""
     def upload_sky_layers(level: Level) {
@@ -446,6 +532,20 @@ obj QuakeRenderer {
     stage records -1 (the atlas) and $whiteimage a shared white texture."""
     def upload_stages(level: Level) {
         self.upload_sky_layers(level);
+        self.cloud_images = [];
+        for stage in level.sky_clouds {
+            sources = stage.frames if stage.frames else [stage.texture];
+            ids: list[int] = [];
+            for source in sources {
+                image = self.upload_image(source);
+                rlTextureParameters(u32(image), i32(10241), i32(9729));
+                rlTextureParameters(u32(image), i32(10240), i32(9729));
+                rlTextureParameters(u32(image), i32(10242), i32(10497));
+                rlTextureParameters(u32(image), i32(10243), i32(10497));
+                ids.append(image);
+            }
+            self.cloud_images.append(ids);
+        }
         self.stage_images = {};
         if not level.surface_stages {
             return;
@@ -799,6 +899,7 @@ obj QuakeRenderer {
     def draw(level: Level, faces: list[int], eye: Vec3) -> int {
         self.lighting = level.lighting;
         self.draw_sky(eye);
+        self.draw_clouds(level, eye);
         # BSP winding and normal consistently face the empty side of each plane.
         batches: list[list[int]] = [];
         for texture in self.textures {
@@ -1067,6 +1168,12 @@ obj QuakeRenderer {
             }
         }
         self.sky_layers = {};
+        for ids in self.cloud_images {
+            for id in ids {
+                rlUnloadTexture(u32(id));
+            }
+        }
+        self.cloud_images = [];
         if self.warp_shader.id != u32(0) {
             UnloadShader(self.warp_shader);
             self.warp_shader = Shader(id=u32(0), locs=u64(0));
@@ -1185,4 +1292,37 @@ def deform_face(face: Face, deforms: list[Deform], eye: Vec3, seconds: float) ->
         }
     }
     return shape;
+}
+
+"""A stage's tcMods applied in order to (s, t) at a point (tr_shade_calc.c)."""
+def apply_tcmods(stage: ModelStage, s: float, t: float, point: Vec3, seconds: float) -> list[float] {
+    for mod in stage.mods {
+        if mod.kind == "scroll" {
+            s += mod.a * seconds;
+            t += mod.b * seconds;
+        } elif mod.kind == "scale" {
+            s *= mod.a;
+            t *= mod.b;
+        } elif mod.kind == "rotate" {
+            angle = -mod.a * seconds * math.pi / 180.0;
+            c = math.cos(angle);
+            n = math.sin(angle);
+            s0 = s - 0.5;
+            t0 = t - 0.5;
+            s = s0 * c - t0 * n + 0.5;
+            t = s0 * n + t0 * c + 0.5;
+        } elif mod.kind == "turb" {
+            now = mod.wave.phase + seconds * mod.wave.frequency;
+            s += math.sin(((point.x + point.z) / 128.0 * 0.125 + now) * 2.0 * math.pi) * mod.wave.amplitude;
+            t += math.sin((point.y / 128.0 * 0.125 + now) * 2.0 * math.pi) * mod.wave.amplitude;
+        } elif mod.kind == "stretch" {
+            value = mod.wave.at(seconds);
+            if abs(value) > 0.0001 {
+                p = 1.0 / value;
+                s = (s - 0.5) * p + 0.5;
+                t = (t - 0.5) * p + 0.5;
+            }
+        }
+    }
+    return [s, t];
 }

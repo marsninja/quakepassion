@@ -9,6 +9,8 @@ obj ModelMaterial {
         unsupported: list[str] = [],
         advanced: list[str] = [],
         sky: bool = False,
+        farbox: str = "",
+        cloud_height: float = 128.0,
         deforms: list[Deform] = [];
 }
 
@@ -264,7 +266,16 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
                 material.unsupported.append("cull " + mode);
             }
             i += 1;
-        } elif depth == 1 and (token == "skyparms" or (token == "surfaceparm" and i + 1 < len(tokens) and tokens[i + 1].lower() == "sky")) {
+        } elif depth == 1 and token == "skyparms" {
+            # skyParms <farbox> <cloudheight> <nearbox>
+            material.sky = True;
+            if i + 2 < len(tokens) {
+                material.farbox = "" if tokens[i + 1] == "-" else tokens[i + 1];
+                height = tokens[i + 2];
+                material.cloud_height = number_at(tokens, i + 2) if height != "-" and number_at(tokens, i + 2) > 0.0 else 128.0;
+                i += 3;
+            }
+        } elif depth == 1 and token == "surfaceparm" and i + 1 < len(tokens) and tokens[i + 1].lower() == "sky" {
             material.sky = True;
         } elif depth == 1 and token == "deformvertexes" and i + 1 < len(tokens) {
             kind = tokens[i + 1].lower();

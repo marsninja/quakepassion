@@ -198,7 +198,8 @@ def parse_q3(data: bytes) -> Bsp {
             texture=texture,
             planar=(kind == 1),
             patch=(kind == 2),
-            hidden=(kind == 4 or (bsp.textures[texture].flags & 128) != 0),
+            # SURF_SKY (4) faces show the sky behind them; SURF_NODRAW (128) nothing.
+            hidden=(kind == 4 or (bsp.textures[texture].flags & 132) != 0),
             normal=vec_at(lumps[13], p + 84)
         );
         light = i32_at(lumps[13], p + 28);

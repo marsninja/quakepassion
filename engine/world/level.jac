@@ -111,7 +111,9 @@ obj Level {
         visible_culling: bool = False,
         visible_faces: list[int] = [],
         surface_stages: dict[int, list[ModelStage]] = {},
-        surface_deforms: dict[int, list[Deform]] = {};
+        surface_deforms: dict[int, list[Deform]] = {},
+        sky_clouds: list[ModelStage] = [],
+        cloud_height: float = 128.0;
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -238,6 +240,16 @@ def load_level(
         level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"));
         for texture in level.bsp.textures {
             assets.texture(texture);
+        }
+        # The sky: its far box and cloud layers, from the first sky surface.
+        for texture in level.bsp.textures {
+            if texture.flags & 4 != 0 {
+                sky = assets.sky_parts(texture.name);
+                level.bsp.sky = sky.farbox;
+                level.sky_clouds = sky.clouds;
+                level.cloud_height = sky.cloud_height;
+                break;
+            }
         }
         # Shaders with animated, moving or layered stages draw stage by stage.
         for index in range(len(level.bsp.textures)) {

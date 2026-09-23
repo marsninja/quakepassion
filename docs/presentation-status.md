@@ -1,0 +1,108 @@
+# Presentation
+
+The three games now draw their own status bars, animated lighting, skies,
+liquids and Q3 shader surfaces, following each original renderer.
+
+## Status bars
+
+`engine/render/hud.jac` draws each game's original status bar from its own art,
+scaled up by a whole factor and centred on its virtual screen. `games/hud_art.jac`
+loads the art.
+
+- **Quake:** `sbar.c`'s status bar and inventory bar from `gfx.wad`.
+  - Big digits: `num_*`, switching to the red `anum_*` set at 25 health or armor
+    and at 10 ammo.
+  - The armor icon matching the armor's strength.
+  - Faces by health band, with pain frames and the quad, invisibility and
+    invulnerability faces (invulnerability shows 666 armor).
+  - The ammo icon.
+  - Owned and selected weapons.
+  - All four ammo counts in the small `conchars` digits.
+  - Keys, powerups and sigils.
+
+  `engine/formats/q1/wad.jac` reads WAD2 and qpic lumps.
+- **Quake II:** the single-player statusbar layout from `g_spawn.c`.
+  - Health, ammo and armor fields in `num_`/`anum_` digits, flashing when low.
+  - The health, ammo and armor icons.
+  - The held weapon's icon.
+  - The seconds left on a running powerup, with its icon.
+- **Quake III:** `cg_draw.c`'s status bar with 2D icons (`cg_draw3dIcons 0`).
+  - Ammo, health and armor in the 32×48 digits: orange, red and flashing when
+    health is low, white over 100, grey while firing.
+  - The ammo icon, the player's head icon and the armor icon.
+  - The default crosshair.
+
+The text status line remains for Passion levels and whenever art is missing.
+
+## Light styles
+
+Q1 and Q2 lightmaps keep one layer per light style.
+
+- The fixed styles (flicker, pulses, candles, strobes, fluorescent) play at
+  10 Hz. Only the lightmaps of faces that use them are relit (`R_AnimateLight`,
+  `R_BuildLightMap`).
+- Targetable lights (styles 32–62) become `LightSwitch` nodes in the signal
+  graph. They start dark when flagged `START_OFF` and toggle when triggered, as
+  `light_use` does.
+- e1m1 and base1 each relight hundreds of faces.
+
+## Skies
+
+- Quake's sky textures split into their solid back layer and masked front
+  layer. Each is mapped by view direction onto the flattened sky dome and
+  scrolled at the original speeds (`EmitSkyPolys`). Clear texels take the back
+  layer's average colour, as `R_InitSky` does, so no fringe shows.
+- Q2 keeps its sky boxes.
+- Q3 reads each sky shader's `skyParms`: the far-box images, and the cloud
+  layers drawn on the sky dome.
+  - Each dome direction meets a cloud sphere `cloudheight` above a 4096-unit
+    world, and the texture coordinates are the arccosines of that direction, as
+    `tr_sky.c` computes them.
+  - The stage's `tcMod`s, blends and colour waves then apply.
+  - `SURF_SKY` faces open onto the sky rather than drawing a texture.
+  - q3dm1's red hell sky and q3dm7's toxic clouds drift as in the original.
+
+## Liquids and translucency
+
+- Q1 `*` textures and Q2 `SURF_WARP` surfaces sway with `EmitWaterPolys`'
+  turbulence, computed per pixel.
+- Q2 `SURF_FLOWING` surfaces scroll.
+- `SURF_TRANS33` and `SURF_TRANS66` faces blend over the world unlit.
+
+## Q3 shaders
+
+- Surface shaders that need more than one lightmapped pass draw stage by stage
+  (`RB_StageIteratorGeneric`):
+  - `animMap` frames and `$lightmap` stages.
+  - Every blend function.
+  - `rgbGen` identity, vertex, const and waves (sin, triangle, square, sawtooth,
+    inverse sawtooth, noise).
+  - `alphaGen` const, wave, vertex and `lightingSpecular`.
+  - `tcMod` scroll, scale, rotate, turb and stretch, in order.
+  - `tcGen environment`.
+  - `alphaFunc` and `depthWrite`.
+- `deformVertexes` `wave`, `move` and `bulge` sway vertices. `autosprite` and
+  `autosprite2` turn quads toward the viewer.
+- Examples on the original maps: q3dm1 animates its hell flames and pentagram
+  lights, and q3dm7 its specular iron and glowing crosses.
+
+## Bots
+
+Q3 bots hold the weapon they are using. Each weapon is baked along the body's
+poses. An `Arms` edge links a bot to each weapon model, and switching weapons
+rewires the weapon visual. The weapon drops away on death.
+
+## Validation
+
+- `scripts/presentation_smoke.jac` loads and draws each game's status bar art on
+  e1m1, base1 and q3dm1. It also animates light styles on Q1 and Q2 maps and
+  uploads every layered Q3 shader.
+- `tests/lightstyle_tests.jac` covers style letters, 10 Hz animation, switches
+  and WAD pictures.
+
+## Limits
+
+- The Q1 status bar needs native `bytes.find` for its WAD parser. An upstream
+  Jac fix is in progress; until then the Q1 loader falls back to Python.
+- `tcGen vector`, `tcMod transform`, portal surfaces and 3D HUD icons
+  (`cg_draw3dIcons 1`) remain open.
