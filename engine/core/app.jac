@@ -3,6 +3,7 @@ the pass walkers over the world graph; each frame floods visibility and
 draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
+import math;
 import from ..world.doors { BlastMover }
 import from ..world.gates { ApplyGates, rune_summary }
 import from ..world.chthon { ChthonTick }
@@ -100,6 +101,7 @@ import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
 import from ..world.clocks { ClockTick }
 import from ..world.flyers { FlyerTick }
 import from ..world.turrets { TurretTick }
+import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..world.falling { FallingTick }
 import from ..world.trail { TrailTick }
 import from ..render.hud { HudRenderer, HudStatus }
@@ -200,6 +202,7 @@ obj App {
         runes_message: bool = False;
 
     def begin_intermission(text: str);
+    def begin_podium(contest: ArenaMatch);
     def adjust_setting(direction: int);
     def reset_settings();
     def refresh_settings();

@@ -62,7 +62,7 @@ def character_rig(library: AssetLibrary, character: str = "sarge", skin: str = "
     for line in library.read(config).decode("utf-8").splitlines() {
         fields = line.split("//")[0].split();
         if len(fields) >= 4 and fields[0] and fields[0][0] in "0123456789" {
-            animations.append([int(fields[0]), int(fields[1])]);
+            animations.append([int(fields[0]), int(fields[1]), int(fields[3])]);
         }
     }
     if len(animations) < 25 { raise ValueError("Incomplete player animations"); }
@@ -75,7 +75,8 @@ def character_rig(library: AssetLibrary, character: str = "sarge", skin: str = "
     );
 }
 
-"""Bake parts into single-surface poses (stand, run, attack and BOTH_DEATH1),
+"""Bake parts into single-surface poses (stand, run, attack, BOTH_DEATH1 and the
+TORSO_GESTURE taunt over idle legs),
 joined through their MD3 tags. Roles: 0 legs, 1 torso, 2 head, 3 a weapon on
 the torso's tag_weapon."""
 def bake_parts(rig: CharacterRig, roles: list[int], parts: list[ModelAsset]) -> ModelAsset {
@@ -87,18 +88,18 @@ def bake_parts(rig: CharacterRig, roles: list[int], parts: list[ModelAsset]) -> 
         source = parts[p];
         for surface in source.model.surfaces {
             output = AnimatedSurface(name=surface.name, indices=surface.indices, uv=surface.uv, stages=surface.stages);
-            for action in ["stand", "run", "attack", "death"] {
+            for action in ["stand", "run", "attack", "death", "gesture"] {
                 legs = 15 if action == "run" else 22;
-                torso = 7 if action == "attack" else 11;
+                torso = 7 if action == "attack" else (6 if action == "gesture" else 11);
                 count = abs(animations[legs][1]) if action == "run" else (
-                    abs(animations[torso][1]) if action == "attack" else 1
+                    abs(animations[torso][1]) if action in ["attack", "gesture"] else 1
                 );
                 if action == "death" {
                     count = abs(animations[0][1]);
                 }
                 for frame in range(count) {
                     leg_frame = animations[legs][0] - rig.offset + (frame if action == "run" else 0);
-                    torso_frame = animations[torso][0] + (frame if action == "attack" else 0);
+                    torso_frame = animations[torso][0] + (frame if action in ["attack", "gesture"] else 0);
                     # BOTH_* sequences share frame numbers across legs and torso.
                     if action == "death" {
                         leg_frame = animations[0][0] + frame;

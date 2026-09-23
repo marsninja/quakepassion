@@ -696,6 +696,12 @@ impl App.step() -> bool {
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
+        if contest is not None and contest.finished {
+            celebration = self.world spawn PodiumTick(dt=dt);
+            for cue in celebration.cues {
+                self.audio.play_path(cue);
+            }
+        }
         if IsKeyPressed(i32(257)) {
             if contest is not None and contest.finished {
                 self.finish_arena(contest);
@@ -960,6 +966,7 @@ impl App.step() -> bool {
                     } except Exception as error {
                         self.show_notice("Arena progress: " + str(error));
                     }
+                    self.begin_podium(contest);
                     break;
                 }
             }
@@ -1656,6 +1663,19 @@ impl App.finish_arena(contest: ArenaMatch) {
         }
     }
     self.load_destination("q3", destination);
+}
+
+"""Q3 BeginIntermission in single player: the view moves to the intermission
+point and the finishers take the podium."""
+impl App.begin_podium(contest: ArenaMatch) {
+    view = arena_intermission(self.world, self.level.bsp);
+    self.player.pos = view[0].add(Vec3());
+    self.player.yaw = math.radians(view[1].y);
+    self.player.pitch = -math.radians(view[1].x);
+    self.player.velocity = Vec3();
+    self.player.god_mode = True;
+    move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
+    raise_podium(self.world, contest, self.level, view[0], view[1], selected_weapon(self.combat).key);
 }
 
 impl App.arena_lines(contest: ArenaMatch) -> list[str] {

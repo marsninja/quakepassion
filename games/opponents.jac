@@ -28,11 +28,12 @@ glob Q3_HELD_WEAPONS: dict[str, str] = {
 };
 import from engine.world.bot_character { bot_skill }
 import from engine.world.turrets { link_turret_drivers }
+import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
 import from .botfiles { load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
-import from engine.world.models { ModelResource, HasModelResource, attach_model }
+import from engine.world.models { ModelResource, HasModelResource, UsesModel, attach_model }
 import from engine.formats.animated { AnimationFrame }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
@@ -540,6 +541,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 count += 1;
             }
         }
+        # Q3 single player: the podium and every competitor's stand-in.
+        if contest is not None {
+            prepare_podium(world, catalog.source("q3"), contest, resources, rigs);
+        }
     } finally {
         catalog.close();
     }
@@ -548,4 +553,67 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
         register_speaker(world, driver, "sound/weapons/rocklf1a.wav");
     }
     return count;
+}
+
+"""g_arenas.c SpawnPodium and SpawnModelOnVictoryPad need the podium model and a
+body for every competitor. Bots' stand-ins share their bodies; the human's is
+Sarge, with every weapon it might be holding."""
+def prepare_podium(
+    world: World,
+    library: AssetLibrary,
+    contest: ArenaMatch,
+    resources: dict[str, ModelResource],
+    rigs: dict[str, CharacterRig]
+) {
+    podium_path = "models/mapobjects/podium/podium4.md3";
+    if not library.exists(podium_path) {
+        return;
+    }
+    loaded = library.model(podium_path);
+    stage = ModelResource(name="q3:" + podium_path, model=loaded.model, skins=loaded.skins);
+    world +>:HasModelResource:+> stage;
+    podium = Podium();
+    podium.visual = attach_model(podium, stage);
+    podium.visual.visible = False;
+    world +>:HasPodium:+> podium;
+    entries = [edge contest->:Competes:->];
+    actors = [contest->:Competes:->];
+    for i in range(min(len(entries), len(actors))) {
+        bot = actors[i];
+        if not isinstance(bot, Opponent) {
+            continue;
+        }
+        bodies = [bot.visual->:UsesModel:->][?:ModelResource];
+        if not bodies or bodies[0].name not in rigs {
+            continue;
+        }
+        # Resource names are "q3:models/players/<model>:<skin>".
+        model = bodies[0].name.split(":")[1].split("/")[-1];
+        rig = rigs[bodies[0].name];
+        figure = podium_figure(bodies[0], None, "sound/player/" + model + "/taunt.wav", float(rig.animations[6][2]));
+        figure +>:Portrays:+> bot;
+        podium +>:Poses(name=entries[i].name):+> figure;
+    }
+    key = "q3:models/players/sarge:default";
+    if key not in rigs {
+        rigs[key] = character_rig(library, "sarge", "default");
+    }
+    if key not in resources {
+        body = load_character(library, "sarge", "default");
+        resources[key] = ModelResource(name=key, model=body.model, skins=body.skins);
+        world +>:HasModelResource:+> resources[key];
+    }
+    human = podium_figure(resources[key], None, "sound/player/sarge/taunt.wav", float(rigs[key].animations[6][2]));
+    for (weapon, weapon_model) in Q3_HELD_WEAPONS.items() {
+        weapon_key = key + ":weapon:" + weapon;
+        if weapon_key not in resources and library.exists(weapon_model) {
+            held = load_character_weapon(library, rigs[key], weapon_model);
+            resources[weapon_key] = ModelResource(name=weapon_key, model=held.model, skins=held.skins);
+            world +>:HasModelResource:+> resources[weapon_key];
+        }
+        if weapon_key in resources {
+            human +>:Wields(key=weapon):+> resources[weapon_key];
+        }
+    }
+    podium +>:Poses(human=True):+> human;
 }
