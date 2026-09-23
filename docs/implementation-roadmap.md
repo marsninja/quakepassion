@@ -220,3 +220,8 @@ light styles, effects), and full playthrough validation.
 [Powerups, holdables and item presentation](powerups-status.md): all original
 powerups and Q3 holdables as graph effects, per-item original pickup sounds,
 item spin/bob and Q3 ring models. Snapshot format 18.
+
+[Q3 arena matches and the ladder](arena-match-status.md): `arenas.txt` rosters
+and frag limits, bots fighting every competitor, frag credit, respawns at the
+furthest spawn, the announcer and scoreboard, and ladder progression. Snapshot
+format 19.
