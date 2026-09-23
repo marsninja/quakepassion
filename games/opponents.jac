@@ -27,6 +27,7 @@ glob Q3_HELD_WEAPONS: dict[str, str] = {
     "bfg": "models/weapons2/bfg/bfg.md3"
 };
 import from engine.world.bot_character { bot_skill }
+import from engine.world.turrets { link_turret_drivers }
 import from .botfiles { load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
@@ -541,6 +542,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
         }
     } finally {
         catalog.close();
+    }
+    # Q2 turret drivers ride their breach and fire its rockets.
+    for driver in link_turret_drivers(world) {
+        register_speaker(world, driver, "sound/weapons/rocklf1a.wav");
     }
     return count;
 }

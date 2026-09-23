@@ -129,4 +129,3 @@ rocket shot.
 
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.
-- Q2 `turret_breach`/`turret_driver` are not implemented yet.

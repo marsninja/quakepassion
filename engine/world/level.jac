@@ -24,6 +24,7 @@ import from .lightstyles { load_light_styles }
 import from .clocks { load_clocks }
 import from .flyers { load_flyers }
 import from .falling { load_falling_objects }
+import from .turrets { load_turrets }
 import from .finale { load_finale }
 import from .hazards { load_hazards }
 import from .speakers { load_speakers }
@@ -410,6 +411,7 @@ def prepare_level(world: World, level: Level) {
     load_doors(world, level.bsp, level.collision, connect=False);
     flood_doors(world, level.liquids);
     load_rotators(world, level.bsp, level.collision);
+    load_turrets(world, level.bsp, level.collision);
     load_shooters(world, level.bsp);
     load_targets(world, level.bsp);
     load_traversal(world, level.bsp);

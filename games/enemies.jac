@@ -21,6 +21,23 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
             death_sound="sound/weapons/r_exp3.wav"
         );
     }
+    # g_turret.c SP_turret_driver: an infantry body with 100 health that
+    # stands its ground, never attacks by itself and neither flinches, sights
+    # nor dodges; its turret does the shooting.
+    if game == "q2" and kind == "turret_driver" {
+        driver = enemy_rule(game, "monster_infantry");
+        if driver is None {
+            return None;
+        }
+        driver.health = 100;
+        driver.movement = "none";
+        driver.passive = True;
+        driver.pain_frames = [];
+        driver.pain_sounds = [];
+        driver.sight_sound = "";
+        driver.duck_frames = [];
+        return driver;
+    }
     if game == "q2" and kind == "misc_explobox" {
         return OpponentRule(
             model="models/objects/barrels/tris.md2",

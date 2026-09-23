@@ -1052,6 +1052,12 @@ impl App.step() -> bool {
                 state=self.combat,
                 dt=self.physics_clock.tick_rate
             );
+            self.world spawn TurretTick(
+                bsp=self.level.bsp,
+                collision=self.level.collision,
+                player=self.player,
+                dt=self.physics_clock.tick_rate
+            );
             targeted = self.world spawn TargetTick(
                 player=self.player,
                 collision=self.level.collision,
