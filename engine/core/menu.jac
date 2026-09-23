@@ -12,6 +12,9 @@ import from vendor.raylib {
     ) -> None;  def GetMouseWheelMove -> f32;
 }
 
+import from games.arenas { ArenaProgress, parse_arenas, ladder }
+import from ..world.arena { ordinal }
+
 def game_directory(game: str) -> str {
     if game == os.getenv("QP_GAME", "q1") and os.getenv("QP_ASSETS", "") != "" {
         return os.getenv("QP_ASSETS", "");
@@ -58,12 +61,14 @@ obj LevelMenu {
         selected: int = 0,
         offset: int = 0,
         maps: list[str] = [],
+        labels: list[str] = [],
         message: str = "",
         seed_cursor: int = 0,
         games: list[str] = ["q1", "q2", "q3", "passion"];
 
     def scan() {
         self.maps = [];
+        self.labels = [];
         self.selected = 0;
         self.offset = 0;
         self.message = "";
@@ -75,13 +80,20 @@ obj LevelMenu {
             return;
         }
         names: list[str] = [];
+        arena_text = "";
         try {
             directory = game_directory(self.games[self.game]);
             for filename in sorted(os.listdir(directory)) {
                 path = directory + "/" + filename;
                 if self.game == 2 and filename.lower().endswith(".pk3") {
                     with ZipFile(path) as archive {
-                        names.extend(archive.namelist());
+                        listed = archive.namelist();
+                        names.extend(listed);
+                        if "scripts/arenas.txt" in listed {
+                            arena_text = archive.read("scripts/arenas.txt").decode(
+                                "utf-8", errors="replace"
+                            );
+                        }
                     }
                 } elif self.game != 2 and filename.lower().endswith(".pak") {
                     pak = open_pak(path);
@@ -97,12 +109,48 @@ obj LevelMenu {
                 }
             }
             self.maps = map_names(names);
+            self.labels = list(self.maps);
+            if arena_text {
+                self.order_arenas(arena_text);
+            }
             if len(self.maps) == 0 {
                 self.message = "No maps found in " + directory;
             }
         } except Exception as error {
             self.message = "Cannot list maps: " + str(error);
         }
+    }
+
+    """Q3 lists its single-player ladder first, with names and best finishes."""
+    def order_arenas(text: str) {
+        progress = ArenaProgress();
+        try {
+            progress.load();
+        } except Exception as error {
+            self.message = "Arena progress: " + str(error);
+        }
+        ordered: list[str] = [];
+        labels: list[str] = [];
+        for arena in ladder(parse_arenas(text)) {
+            if arena.map in self.maps and arena.map not in ordered {
+                ordered.append(arena.map);
+                place = progress.best.get(arena.map, 0);
+                labels.append(
+                    arena.map
+                        + "  "
+                        + arena.longname
+                        + ("  [" + ordinal(place) + "]" if place > 0 else "")
+                );
+            }
+        }
+        for name in self.maps {
+            if name not in ordered {
+                ordered.append(name);
+                labels.append(name);
+            }
+        }
+        self.maps = ordered;
+        self.labels = labels;
     }
 
     def hit(x: int, y: int, w: int, h: int) -> bool {
@@ -273,7 +321,13 @@ obj LevelMenu {
                     Color(r=99, g=64, b=35, a=255)
                 );
             }
-            DrawText(self.maps[index], i32(322), i32(209 + row * 30), i32(20), white);
+            DrawText(
+                self.labels[index] if index < len(self.labels) else self.maps[index],
+                i32(322),
+                i32(209 + row * 30),
+                i32(20),
+                white
+            );
         }
         DrawText(
             str(len(self.maps)) + " maps | Scroll / Up / Down | Enter: load",

@@ -3,6 +3,9 @@ import math;
 import from .enemies { enemy_rule }
 import from engine.world.opponent_rule { OpponentRule }
 import from .arena_character { load_character }
+import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
+import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
+import from engine.formats.bsp { MapEntity }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
 import from engine.world.combat { Opponent, HasOpponent, ensure_profiles }
@@ -12,6 +15,7 @@ import from engine.world.signals { Signal, HasSignal }
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
 import from engine.formats.animated { AnimationFrame }
 import from engine.assets.catalog { AssetCatalog }
+import from engine.assets.library { AssetLibrary }
 import from engine.math.vec3 { Vec3 }
 
 def frame_indices(
@@ -74,14 +78,83 @@ def populate_finale(world: World, level: Level, directory: str) -> int {
     return len(trains);
 }
 
+"""Q3 spawn points become graph nodes; the arena's roster and frag limit come
+from scripts/arenas.txt, with a three-bot skirmish for maps outside the ladder."""
+def prepare_arena(
+    world: World,
+    level: Level,
+    library: AssetLibrary,
+    player_start: Vec3,
+    roster: list[BotInfo]
+) -> ArenaMatch {
+    for entity in level.bsp.entities {
+        fields = entity.fields;
+        if fields.get("classname", "") != "info_player_deathmatch" {
+            continue;
+        }
+        parts = fields.get("origin", "0 0 0").split();
+        if len(parts) != 3 {
+            raise ValueError("Invalid spawn origin");
+        }
+        world +>:HasSpawn:+> SpawnPoint(
+            pos=Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2])),
+            yaw=float(fields.get("angle", "0")) * math.pi / 180.0
+        );
+    }
+    arena = find_arena(load_arenas(library), level.name);
+    bots = load_bots(library);
+    names = arena.bots if arena is not None and arena.bots else ["sarge", "grunt", "major"];
+    for name in names {
+        roster.append(find_bot(bots, name));
+    }
+    contest = ArenaMatch(
+        fraglimit=arena.fraglimit if arena is not None else 20,
+        title=arena.longname if arena is not None else level.name,
+        warmup=4.0
+    );
+    world +>:HasMatch:+> contest;
+    return contest;
+}
+
+def arena_entities(world: World, roster: list[BotInfo], player_start: Vec3) -> list[MapEntity] {
+    placed: list[Vec3] = [player_start];
+    result: list[MapEntity] = [];
+    for index in range(len(roster)) {
+        choice = world spawn ChooseSpawn(avoid=placed, seed=1 + index * 7919);
+        spot = choice.pick();
+        if spot is None {
+            break;
+        }
+        placed.append(spot.pos);
+        result.append(
+            MapEntity(
+                fields={
+                    "classname": "arena_bot",
+                    "origin": str(spot.pos.x) + " " + str(spot.pos.y) + " " + str(spot.pos.z),
+                    "angle": str(spot.yaw * 180.0 / math.pi),
+                    "bot": str(index)
+                }
+            )
+        );
+    }
+    return result;
+}
+
 def populate_opponents(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
     count = 0;
     player_start = spawn_player(level).pos;
+    entities = level.bsp.entities;
+    roster: list[BotInfo] = [];
+    contest: ArenaMatch | None = None;
     try {
-        for entity_index in range(len(level.bsp.entities)) {
-            entity = level.bsp.entities[entity_index];
+        if level.bsp.game == "q3" {
+            contest = prepare_arena(world, level, catalog.source("q3"), player_start, roster);
+            entities = entities + arena_entities(world, roster, player_start);
+        }
+        for entity_index in range(len(entities)) {
+            entity = entities[entity_index];
             fields = entity.fields;
             source = fields.get("asset_game", level.bsp.game);
             kind = fields.get("classname", "");
@@ -89,12 +162,15 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             path = "";
             arena = source == "q3";
             rule = OpponentRule(damage=6);
+            bot = BotInfo(name="Sarge");
             if arena {
-                if kind != "info_player_deathmatch"
-                    or (level.bsp.game == "q3" and count >= 3) {
+                if kind == "arena_bot" {
+                    bot = roster[int(fields.get("bot", "0"))];
+                } elif level.bsp.game == "q3" or kind != "info_player_deathmatch" {
+                    # Passion encounters still place Q3 characters at these spots.
                     continue;
                 }
-                path = "models/players/sarge";
+                path = "models/players/" + bot.model;
             } else {
                 definition = enemy_rule(source, kind, flags);
                 if definition is None {
@@ -127,8 +203,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 arena=level.bsp.game == "q3",
                 rule=rule,
                 walk_speed=rule.speed,
-                health=rule.health,
-                max_health=rule.health,
+                health=125 if kind == "arena_bot" else rule.health,
+                max_health=100 if kind == "arena_bot" else rule.health,
                 decision_wait=float(count % 12) / 120.0,
                 support_wait=float(count % 6) / 120.0,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0
@@ -155,10 +231,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 }
             }
             if path {
-                key = source + ":" + path + ":" + str(rule.skin);
+                key = source + ":" + path + ":" + (bot.skin if arena else str(rule.skin));
                 if key not in resources {
                     library = catalog.source(source);
-                    loaded = load_character(library)
+                    loaded = load_character(library, bot.model, bot.skin)
                         if arena
                         else library.model(path, skin=rule.skin);
                     resource = ModelResource(
@@ -263,6 +339,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             enemy.visual.visible = not enemy.dormant;
             move_to_area(enemy, level.areas[level.locate(position)]);
             world +>:HasOpponent:+> enemy;
+            if arena and contest is not None {
+                contest +>:Competes:name=bot.name:+> enemy;
+            }
             count += 1;
             if rule.successor {
                 follower = enemy_rule(source, rule.successor, 0);

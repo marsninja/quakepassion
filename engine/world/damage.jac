@@ -13,6 +13,7 @@ walker Damage {
         bypass_protection: bool = False,
         means: str = "",
         source: Vec3 | None = None,
+        attacker: Actor | None = None,
         dealt: int = 0,
         absorbed: int = 0,
         shielded: int = 0,
@@ -62,6 +63,10 @@ walker Damage {
         self.dealt = min(here.health, self.amount - self.absorbed);
         here.health -= self.dealt;
         self.killed = here.health == 0;
+        if self.killed {
+            # Match scoring credits the attacker; None means a world death.
+            here.killer = self.attacker;
+        }
     }
 }
 

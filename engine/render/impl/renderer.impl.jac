@@ -71,7 +71,7 @@ impl Renderer.end_frame() {
     EndDrawing();
 }
 
-impl Renderer.draw_status(health: int, armor: int, shells: int = 0) {
+impl Renderer.draw_status(health: int, armor: int, shells: int = 0, arena: bool = False) {
     color = Color(r=255, g=220, b=160, a=255);
     DrawText(
         "HEALTH "
@@ -85,7 +85,7 @@ impl Renderer.draw_status(health: int, armor: int, shells: int = 0) {
         24,
         color
     );
-    if health <= 0 {
+    if health <= 0 and not arena {
         self.draw_terminal("You died - Enter to restart level");
     }
 }
@@ -136,7 +136,7 @@ impl Renderer.draw_opponents(world: World, height: float) {
     }
 }
 
-impl Renderer.draw_combat(state: CombatState, arena: bool, ammo: int = -1) {
+impl Renderer.draw_combat(state: CombatState, arena: bool, ammo: int = -1, score: str = "") {
     rule = selected_weapon(state);
     color = Color(r=255, g=230, b=180, a=255);
     DrawText("+", i32(self.width / 2 - 6), i32(self.height / 2 - 12), 24, color);
@@ -153,8 +153,7 @@ impl Renderer.draw_combat(state: CombatState, arena: bool, ammo: int = -1) {
         DrawText("*", i32(self.width / 2 - 12), i32(self.height - 120), 48, color);
     }
     DrawText(
-        ("FRAGS " if arena else "KILLS ")
-            + str(state.kills)
+        (score if score else ("FRAGS " if arena else "KILLS ") + str(state.kills))
             + "    "
             + (
                 "["
@@ -170,8 +169,28 @@ impl Renderer.draw_combat(state: CombatState, arena: bool, ammo: int = -1) {
         20,
         color
     );
-    if arena and state.kills >= 10 {
-        self.draw_terminal("Arena won! Enter: rematch | Esc: choose level");
+}
+
+impl Renderer.draw_scoreboard(title: str, lines: list[str], footer: str) {
+    height = float(110 + len(lines) * 30);
+    top = max(20.0, float(self.height) / 2.0 - height / 2.0 - 60.0);
+    left = max(20.0, float(self.width) / 2.0 - 320.0);
+    DrawRectangle(i32(left), i32(top), 640, i32(height), Color(r=0, g=0, b=0, a=190));
+    gold = Color(r=255, g=210, b=120, a=255);
+    DrawText(title, i32(left + 24), i32(top + 18), 26, gold);
+    y = top + 60;
+    for line in lines {
+        DrawText(
+            line,
+            i32(left + 24),
+            i32(y),
+            22,
+            gold if "(you)" in line else Color(r=235, g=225, b=205, a=255)
+        );
+        y += 30;
+    }
+    if footer {
+        DrawText(footer, i32(left + 24), i32(y + 12), 20, Color(r=190, g=180, b=160, a=255));
     }
 }
 

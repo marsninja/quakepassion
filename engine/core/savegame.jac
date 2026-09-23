@@ -39,6 +39,7 @@ import from engine.world.combat {
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.doors { Door, HasDoor, DoorMember }
 import from engine.world.powerups { Powerup, Empowered }
+import from engine.world.arena { Competes, match_of }
 import from engine.world.inventory {
     Inventory,
     ItemStack,
@@ -168,6 +169,34 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
         );
+    }
+    contest = match_of(world);
+    if contest is not None {
+        lines.append(
+            "MATCH "
+                + numbers(
+                    [
+                        float(contest.fraglimit),
+                        contest.elapsed,
+                        contest.warmup,
+                        1.0 if contest.finished else 0.0,
+                        float(contest.lead),
+                        float(contest.frags_called)
+                    ]
+                )
+        );
+        for score in [edge contest->:Competes:->] {
+            lines.append(
+                "SCORE "
+                    + numbers(
+                        [
+                            float(score.frags),
+                            float(score.deaths),
+                            1.0 if score.down else 0.0
+                        ]
+                    )
+            );
+        }
     }
     for power in [player->:Empowered:->][?:Powerup] {
         lines.append(
@@ -435,6 +464,8 @@ def restore(
         player del --> power;
     }
     enemies = [world->:HasOpponent:->][?:Opponent];
+    scores: list[Competes] = [];
+    ranked = 0;
     lightning = [world->:HasLightning:->][?:LightningEvent];
     l = 0;
     teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
@@ -554,6 +585,26 @@ def restore(
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
             );
+        } elif words[0] == "MATCH" and len(words) == 7 {
+            row = values(" ".join(words[1:]), 6);
+            contest = match_of(world);
+            if contest is None or row[0] < 1.0 or row[2] < 0.0 or row[2] > 10.0 {
+                raise ValueError("Invalid saved match");
+            }
+            contest.fraglimit = int(row[0]);
+            contest.elapsed = row[1];
+            contest.warmup = row[2];
+            contest.finished = row[3] != 0.0;
+            contest.lead = int(row[4]);
+            contest.frags_called = int(row[5]);
+            scores = [edge contest->:Competes:->];
+            ranked = 0;
+        } elif words[0] == "SCORE" and len(words) == 4 and ranked < len(scores) {
+            row = values(" ".join(words[1:]), 3);
+            scores[ranked].frags = int(row[0]);
+            scores[ranked].deaths = int(row[1]);
+            scores[ranked].down = row[2] != 0.0;
+            ranked += 1;
         } elif words[0] == "POWER" and len(words) == 5 {
             row = values(" ".join(words[2:]), 3);
             if words[1] not in POWERUP_KINDS
@@ -914,7 +965,8 @@ def restore(
         or a != len(speakers)
         or b != len(brushes)
         or l != len(lightning)
-        or k != len(teleport_trains) {
+        or k != len(teleport_trains)
+        or ranked != len(scores) {
         raise ValueError("Save does not match this map's entities");
     }
     for finale in [world->:HasFinale:->][?:Finale] {

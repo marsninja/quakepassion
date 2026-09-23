@@ -110,6 +110,7 @@ impl sample_intent(
         weapon=weapon,
         use_item=IsKeyPressed(i32(257)),
         next_item=IsKeyPressed(i32(93)),
-        prev_item=IsKeyPressed(i32(91))
+        prev_item=IsKeyPressed(i32(91)),
+        scores=IsKeyDown(i32(290))
     );
 }
