@@ -26,10 +26,15 @@ loads the art.
   - The health, ammo and armor icons.
   - The held weapon's icon.
   - The seconds left on a running powerup, with its icon.
-- **Quake III:** `cg_draw.c`'s status bar with 2D icons (`cg_draw3dIcons 0`).
+- **Quake III:** `cg_draw.c`'s status bar with the default 3D icons
+  (`cg_draw3dIcons 1`, `engine/render/hud_models.jac`).
   - Ammo, health and armor in the 32×48 digits: orange, red and flashing when
     health is low, white over 100, grey while firing.
-  - The ammo icon, the player's head icon and the armor icon.
+  - The held weapon's ammo box swings, the yellow armor spins, and Sarge's head
+    glances about, easing to a new angle every 0.1–2.1 s. When hurt, the head
+    swells and kicks (`CG_DrawStatusBarHead`).
+  - Each icon is drawn by `CG_Draw3DModel`: a 30° view of the model alone,
+    rendered offscreen and drawn into its box. The 2D icons remain the fallback.
   - The default crosshair.
 
 The text status line remains for Passion levels and whenever art is missing.
@@ -155,6 +160,5 @@ rewires the weapon visual. The weapon drops away on death.
 
 - The Q1 status bar's WAD parser needs native `bytes.find`, which comes from
   jac#9478 (open; applied to the local validation compiler).
-- 3D HUD icons (`cg_draw3dIcons 1`) remain open.
 - Mirrors do not show the player's own body; the player has no third-person
   model yet.

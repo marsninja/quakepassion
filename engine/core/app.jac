@@ -103,10 +103,11 @@ import from ..world.flyers { FlyerTick }
 import from ..world.turrets { TurretTick }
 import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
+import from ..render.hud_models { HudModels }
 import from ..world.falling { FallingTick }
 import from ..world.trail { TrailTick }
 import from ..render.hud { HudRenderer, HudStatus }
-import from games.hud_art { load_hud_art }
+import from games.hud_art { load_hud_art, load_q3_models }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
 import from ..render.viewweapon { ViewWeapon }
@@ -158,6 +159,7 @@ obj App {
         level: Level = Level(),
         quake: QuakeRenderer = QuakeRenderer(),
         portal_target: PortalTarget = PortalTarget(),
+        hud_models: HudModels = HudModels(),
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
         viewweapon: ViewWeapon = ViewWeapon(),

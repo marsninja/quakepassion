@@ -167,7 +167,11 @@ impl App.render_frame() {
             );
         }
         if not self.smoke and self.hud.ready {
-            self.hud.draw(self.hud_status(), self.renderer.width, self.renderer.height);
+            status = self.hud_status();
+            self.hud.draw(status, self.renderer.width, self.renderer.height);
+            if self.hud.three_d {
+                self.hud_models.draw(self.hud, status, self.renderer.width, self.renderer.height);
+            }
             if p.health <= 0 and self.level.bsp.game != "q3" {
                 self.renderer.draw_terminal("You died - Enter to restart level");
             }
@@ -1724,6 +1728,8 @@ impl App.arena_lines(contest: ArenaMatch) -> list[str] {
 impl App.prepare_presentation() {
     game = self.level.bsp.game;
     self.hud.close();
+    self.hud.three_d = False;
+    self.hud_models.close();
     self.light_styles = None;
     self.style_serial = -1;
     self.pain_health = self.player.health;
@@ -1738,6 +1744,10 @@ impl App.prepare_presentation() {
     try {
         library.open(game_directory(game));
         load_hud_art(self.hud, library, game);
+        if game == "q3" {
+            load_q3_models(self.hud_models, library);
+            self.hud.three_d = self.hud_models.ready();
+        }
     } except Exception as error {
         # Without the art the text status bar remains.
         self.hud.close();

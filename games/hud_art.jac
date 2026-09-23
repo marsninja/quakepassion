@@ -1,5 +1,8 @@
 """Load each game's original status bar art into the HUD renderer."""
 import from engine.render.hud { HudRenderer }
+import from engine.render.hud_models { HudModels }
+import from engine.render.models { ModelRenderer }
+import from .arena_character { player_part }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q1.wad { wad_pictures }
 import from engine.formats.q2.model { parse_pcx }
@@ -109,5 +112,44 @@ def load_hud_art(hud: HudRenderer, library: AssetLibrary, game: str) {
         load_q2_art(hud, library);
     } elif game == "q3" {
         load_q3_art(hud, library);
+    }
+}
+
+# bg_misc.c ammo world models by weapon.
+glob Q3_AMMO_MODELS: dict[str, str] = {
+    "machinegun": "models/powerups/ammo/machinegunam.md3",
+    "shotgun": "models/powerups/ammo/shotgunam.md3",
+    "grenadelauncher": "models/powerups/ammo/grenadeam.md3",
+    "rocketlauncher": "models/powerups/ammo/rocketam.md3",
+    "lightning": "models/powerups/ammo/lightningam.md3",
+    "railgun": "models/powerups/ammo/railgunam.md3",
+    "plasmagun": "models/powerups/ammo/plasmaam.md3",
+    "bfg": "models/powerups/ammo/bfgam.md3"
+};
+
+"""The models for Q3's 3D status bar icons: each weapon's ammo box, the yellow
+armor (cgs.media.armorModel) and Sarge's head."""
+def load_q3_models(models: HudModels, library: AssetLibrary) {
+    models.close();
+    for (weapon, path) in Q3_AMMO_MODELS.items() {
+        if library.exists(path) {
+            asset = library.model(path);
+            renderer = ModelRenderer();
+            renderer.upload(asset.model, asset.skins);
+            models.ammo[weapon] = renderer;
+        }
+    }
+    armor_path = "models/powerups/armor/armor_yel.md3";
+    if library.exists(armor_path) {
+        asset = library.model(armor_path);
+        armor = ModelRenderer();
+        armor.upload(asset.model, asset.skins);
+        models.armor = armor;
+    }
+    if library.exists("models/players/sarge/head.md3") {
+        part = player_part(library, "head", "sarge", "default");
+        head = ModelRenderer();
+        head.upload(part.model, part.skins);
+        models.set_head(head);
     }
 }
