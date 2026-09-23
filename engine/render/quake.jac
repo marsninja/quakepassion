@@ -50,7 +50,7 @@ import from vendor.raylib {
     ) -> None;
 }
 import from ..world.level { Level }
-import from ..formats.bsp { Face, Texture }
+import from ..formats.bsp { Face, Texture, FogVolume }
 import from ..formats.animated { ModelStage, Deform, stage_frame }
 import from ..math.vec3 { Vec3 }
 import from ..world.lighting { Lighting }
@@ -84,7 +84,9 @@ obj QuakeRenderer {
         warp_size: int = -1,
         warp_scroll: int = -1,
         white: int = 0,
-        time: float = 0.0;
+        time: float = 0.0,
+        fog_image: int = 0,
+        view_forward: Vec3 = Vec3(x=1.0);
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
@@ -825,6 +827,10 @@ obj QuakeRenderer {
                 reflected = face.normal.scale(2.0 * d).sub(viewer);
                 s = 0.5 + reflected.y * 0.5;
                 t = 0.5 - reflected.z * 0.5;
+            } elif stage.vectors {
+                # tcGen vector: texture axes projected from world position.
+                s = v.dot(stage.vectors[0]);
+                t = v.dot(stage.vectors[1]);
             } elif shape is not None {
                 s = shape.coords[index * 2];
                 t = shape.coords[index * 2 + 1];
@@ -832,34 +838,9 @@ obj QuakeRenderer {
                 s = face.uv[index * 2];
                 t = face.uv[index * 2 + 1];
             }
-            for mod in stage.mods {
-                if mod.kind == "scroll" {
-                    s += mod.a * self.time;
-                    t += mod.b * self.time;
-                } elif mod.kind == "scale" {
-                    s *= mod.a;
-                    t *= mod.b;
-                } elif mod.kind == "rotate" {
-                    angle = -mod.a * self.time * math.pi / 180.0;
-                    c = math.cos(angle);
-                    n = math.sin(angle);
-                    s0 = s - 0.5;
-                    t0 = t - 0.5;
-                    s = s0 * c - t0 * n + 0.5;
-                    t = s0 * n + t0 * c + 0.5;
-                } elif mod.kind == "turb" {
-                    now = mod.wave.phase + self.time * mod.wave.frequency;
-                    s += math.sin(((v.x + v.z) / 128.0 * 0.125 + now) * 2.0 * math.pi) * mod.wave.amplitude;
-                    t += math.sin((v.y / 128.0 * 0.125 + now) * 2.0 * math.pi) * mod.wave.amplitude;
-                } elif mod.kind == "stretch" {
-                    value = mod.wave.at(self.time);
-                    if abs(value) > 0.0001 {
-                        p = 1.0 / value;
-                        s = (s - 0.5) * p + 0.5;
-                        t = (t - 0.5) * p + 0.5;
-                    }
-                }
-            }
+            coords = apply_tcmods(stage, s, t, v, self.time);
+            s = coords[0];
+            t = coords[1];
             red = tint[0];
             green = tint[1];
             blue = tint[2];
@@ -990,6 +971,7 @@ obj QuakeRenderer {
             batches.append([]);
         }
         count = 0;
+        fogged: list[int] = [];
         for index in sorted(faces) {
             face = level.bsp.faces[index];
             # Turned faces skip plane culling; their stored plane is unrotated.
@@ -1003,7 +985,14 @@ obj QuakeRenderer {
                 ) {
                 continue;
             }
+            if face.fog_only {
+                fogged.append(index);
+                continue;
+            }
             batches[face.texture].append(index);
+            if face.fog >= 0 {
+                fogged.append(index);
+            }
             count += 1;
         }
         if self.single_pass {
@@ -1101,6 +1090,7 @@ obj QuakeRenderer {
             rlActiveTextureSlot(i32(0));
             rlSetTexture(u32(0));
             self.draw_layered(level, batches, eye);
+            self.draw_fog(level, fogged, eye);
             return count;
         }
         self.draw_q1_sky(level, batches, eye);
@@ -1144,6 +1134,91 @@ obj QuakeRenderer {
         rlSetTexture(u32(0));
         self.draw_liquids(level, batches);
         return count;
+    }
+
+    """tr_shade.c RB_FogPass over every opaque surface inside a fog volume, and
+    over the fog volumes' own surfaces: the fog colour blended by the fog
+    image's density at RB_CalcFogTexCoords' coordinates. s is the depth along
+    the view scaled by 1 / (8 * distanceToOpaque); t clips the fog at its
+    visible surface, cutting the distance where the eye is outside it."""
+    def draw_fog(level: Level, fogged: list[int], eye: Vec3) {
+        if not fogged or not level.bsp.fogs {
+            return;
+        }
+        if self.fog_image == 0 {
+            self.fog_image = upload_fog_image();
+        }
+        rlDrawRenderBatchActive();
+        BeginBlendMode(i32(0));
+        rlDisableDepthMask();
+        rlSetTexture(u32(self.fog_image));
+        forward = self.view_forward;
+        for index in fogged {
+            face = level.bsp.faces[index];
+            fog = level.bsp.fogs[face.fog] if face.fog >= 0 else None;
+            if fog is None or face.hidden or not self.fog_receiver(level, face) {
+                continue;
+            }
+            indices = face.indices;
+            if not indices {
+                indices = [];
+                for corner in range(1, len(face.vertices) - 1) {
+                    indices.extend([0, corner + 1, corner]);
+                }
+            }
+            if face.two_sided or face.fog_only {
+                rlDrawRenderBatchActive();
+                rlDisableBackfaceCulling();
+            }
+            rlBegin(i32(4));
+            rlColor4ub(
+                u8(min(255, int(fog.color.x * 255.0))),
+                u8(min(255, int(fog.color.y * 255.0))),
+                u8(min(255, int(fog.color.z * 255.0))),
+                u8(255)
+            );
+            for corner in indices {
+                v = face.vertices[corner];
+                if face.turn is not None {
+                    v = face.pivot.add(face.turn.apply(v.sub(face.pivot)));
+                }
+                v = v.add(face.motion);
+                st = fog_coords(fog, v, eye, forward);
+                rlTexCoord2f(f32(st[0]), f32(st[1]));
+                rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
+            }
+            rlEnd();
+            if face.two_sided or face.fog_only {
+                rlDrawRenderBatchActive();
+                rlEnableBackfaceCulling();
+            }
+        }
+        rlDrawRenderBatchActive();
+        rlSetTexture(u32(0));
+        rlEnableDepthMask();
+        EndBlendMode();
+    }
+
+    """Which surfaces take the fog pass (tr_shader.c FinishShader): opaque ones
+    (FP_EQUAL) and fog shaders' own (FP_LE); translucent and sky shaders do not.
+    Deformed surfaces are left out rather than fogged in their rest pose."""
+    def fog_receiver(level: Level, face: Face) -> bool {
+        if face.fog_only {
+            return True;
+        }
+        t = face.texture;
+        texture = level.bsp.textures[t];
+        if face.additive or texture.additive or texture.flags & 4 != 0 or t in self.sky_layers {
+            return False;
+        }
+        if t in level.surface_deforms {
+            return False;
+        }
+        if t in level.surface_stages {
+            stages = level.surface_stages[t];
+            return bool(stages) and stages[0].blend == "opaque";
+        }
+        return True;
     }
 
     """Liquids and Q2's translucent surfaces, unlit as the originals draw them:
@@ -1281,6 +1356,10 @@ obj QuakeRenderer {
             UnloadShader(self.warp_shader);
             self.warp_shader = Shader(id=u32(0), locs=u64(0));
         }
+        if self.fog_image != 0 {
+            rlUnloadTexture(u32(self.fog_image));
+            self.fog_image = 0;
+        }
         if self.white != 0 {
             rlUnloadTexture(u32(self.white));
             self.white = 0;
@@ -1290,6 +1369,56 @@ obj QuakeRenderer {
         self.rects = [];
         self.atlas = 0;
     }
+}
+
+"""tr_image.c R_CreateFogImage: 256x32 white texels whose alpha is R_FogFactor,
+the density along s thinned by how much of t lies inside the fog, through the
+square-root fog table."""
+def fog_density(s: float, t: float) -> float {
+    s -= 1.0 / 512.0;
+    if s < 0.0 or t < 1.0 / 32.0 {
+        return 0.0;
+    }
+    if t < 31.0 / 32.0 {
+        s *= (t - 1.0 / 32.0) / (30.0 / 32.0);
+    }
+    s = min(1.0, s * 8.0);
+    return math.pow(float(int(s * 255.0)) / 255.0, 0.5);
+}
+
+"""tr_shade_calc.c RB_CalcFogTexCoords for one world point."""
+def fog_coords(fog: FogVolume, point: Vec3, eye: Vec3, forward: Vec3) -> list[float] {
+    s = (forward.dot(point) - forward.dot(eye)) / (fog.depth * 8.0) + 1.0 / 512.0;
+    if not fog.has_surface {
+        return [s, 31.0 / 32.0];
+    }
+    eye_t = fog.inward.dot(eye) + fog.offset;
+    t = fog.inward.dot(point) + fog.offset;
+    if eye_t < 0.0 {
+        t = 1.0 / 32.0 if t < 1.0 else 1.0 / 32.0 + 30.0 / 32.0 * t / (t - eye_t);
+    } else {
+        t = 1.0 / 32.0 if t < 0.0 else 31.0 / 32.0;
+    }
+    return [s, t];
+}
+
+def upload_fog_image() -> int {
+    pixels = bytearray();
+    for y in range(32) {
+        for x in range(256) {
+            density = fog_density((float(x) + 0.5) / 256.0, (float(y) + 0.5) / 32.0);
+            pixels.extend(bytes([255, 255, 255, int(255.0 * density)]));
+        }
+    }
+    image = rlLoadTexture(bytes(pixels), i32(256), i32(32), i32(7), i32(1));
+    if image == u32(0) {
+        raise RuntimeError("Fog image upload failed");
+    }
+    rlTextureParameters(image, i32(10241), i32(9729));
+    rlTextureParameters(image, i32(10240), i32(9729));
+    rlTextureParameters(image, i32(10242), i32(33071));
+    rlTextureParameters(image, i32(10243), i32(33071));
+    return int(image);
 }
 
 """An OpenGL blend factor from its Q3 shader spelling."""
@@ -1425,6 +1554,12 @@ def apply_tcmods(stage: ModelStage, s: float, t: float, point: Vec3, seconds: fl
                 s = (s - 0.5) * p + 0.5;
                 t = (t - 0.5) * p + 0.5;
             }
+        } elif mod.kind == "transform" and len(mod.matrix) == 6 {
+            # RB_CalcTransformTexCoords: [s t] * [[m00 m01] [m10 m11]] + [t0 t1].
+            m = mod.matrix;
+            before = s;
+            s = before * m[0] + t * m[2] + m[4];
+            t = before * m[1] + t * m[3] + m[5];
         }
     }
     return [s, t];

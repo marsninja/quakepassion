@@ -67,7 +67,8 @@ obj TexMod {
     has kind: str,
         a: float = 0.0,
         b: float = 0.0,
-        wave: ShaderWave = ShaderWave();
+        wave: ShaderWave = ShaderWave(),
+        matrix: list[float] = [];
 }
 
 """A surface-wide deformVertexes: wave and move sway vertices along the normal
@@ -103,7 +104,8 @@ obj ModelStage {
         alpha_const: float = 1.0,
         mods: list[TexMod] = [],
         alpha_test: int = 0,
-        depth_write: bool = False;
+        depth_write: bool = False,
+        vectors: list[Vec3] = [];
 }
 
 def stage_frame(seconds: float, frequency: float, count: int) -> int {

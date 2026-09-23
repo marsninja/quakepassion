@@ -69,6 +69,21 @@ Q1 and Q2 lightmaps keep one layer per light style.
 - Q2 `SURF_FLOWING` surfaces scroll.
 - `SURF_TRANS33` and `SURF_TRANS66` faces blend over the world unlit.
 
+## Fog
+
+Q3 fog volumes draw as `tr_shade.c` does:
+- Each surface's fog number comes from the BSP. A volume's bounds and visible
+  side come from its fog brush, and its colour and `distanceToOpaque` come from
+  its shader's `fogParms`.
+- Opaque surfaces inside a volume, and the fog shaders' own surfaces, take a fog
+  pass. The pass blends the fog colour at the density read from the original
+  256×32 fog image (`R_CreateFogImage`, with the square-root fog table).
+- The fog coordinates are `RB_CalcFogTexCoords`': depth along the view over
+  eight times `distanceToOpaque`, cut at the visible surface when the eye is
+  outside the fog.
+- Fifteen of the original maps have fog, such as the lava haze of q3dm9 and
+  q3tourney2.
+
 ## Q3 shaders
 
 - Surface shaders that need more than one lightmapped pass draw stage by stage
@@ -78,8 +93,8 @@ Q1 and Q2 lightmaps keep one layer per light style.
   - `rgbGen` identity, vertex, const and waves (sin, triangle, square, sawtooth,
     inverse sawtooth, noise).
   - `alphaGen` const, wave, vertex and `lightingSpecular`.
-  - `tcMod` scroll, scale, rotate, turb and stretch, in order.
-  - `tcGen environment`.
+  - `tcMod` scroll, scale, rotate, turb, stretch and transform, in order.
+  - `tcGen environment` and `tcGen vector`.
   - `alphaFunc` and `depthWrite`.
 - `deformVertexes` `wave`, `move` and `bulge` sway vertices. `autosprite` and
   `autosprite2` turn quads toward the viewer.
@@ -99,10 +114,14 @@ rewires the weapon visual. The weapon drops away on death.
   uploads every layered Q3 shader.
 - `tests/lightstyle_tests.jac` covers style letters, 10 Hz animation, switches
   and WAD pictures.
+- `tests/fog_tests.jac` covers `fogParms`, the fog density table and the fog
+  coordinates. `scripts/fog_smoke.jac` loads the fog volumes of q3dm9,
+  q3tourney2 and q3dm12 and renders them from above and from inside.
 
 ## Limits
 
 - The Q1 status bar needs native `bytes.find` for its WAD parser. An upstream
   Jac fix is in progress; until then the Q1 loader falls back to Python.
-- `tcGen vector`, `tcMod transform`, portal surfaces and 3D HUD icons
-  (`cg_draw3dIcons 1`) remain open.
+- Portal surfaces and 3D HUD icons (`cg_draw3dIcons 1`) remain open.
+- Translucent surfaces inside fog keep their own colours: the original's
+  `adjustColorsForFog` and the fog pass on models are not applied.

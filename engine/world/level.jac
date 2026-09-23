@@ -266,11 +266,27 @@ def load_level(
                 }
             }
         }
+        # Fog volumes take their colour and thickness from their shader; fog
+        # shaders' own surfaces draw nothing but the fog pass.
+        for fog in level.bsp.fogs {
+            parms = assets.fog_parms(fog.shader);
+            if parms {
+                fog.color = Vec3(x=parms[0], y=parms[1], z=parms[2]);
+                fog.depth = parms[3];
+            }
+        }
+        fog_shaders: list[int] = [];
+        for index in range(len(level.bsp.textures)) {
+            if assets.fog_parms(level.bsp.textures[index].name) {
+                fog_shaders.append(index);
+            }
+        }
         for face in level.bsp.faces {
             material = level.bsp.textures[face.texture];
             face.alpha_test = material.alpha_test;
             face.additive = material.additive;
             face.two_sided = material.two_sided;
+            face.fog_only = face.texture in fog_shaders;
         }
         assets.close();
         # Palette used only for the diagnostic checkerboard on missing images.
