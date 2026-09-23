@@ -119,6 +119,12 @@ walker PickupTick {
 
     can collect with Pickup entry {
         if self.kinds and here.rule.kind not in self.kinds { return; }
+        if here.activation.killed {
+            here.active = False;
+            here.waiting_for_use = True;
+            here.visual.visible = False;
+            return;
+        }
         if here.activation.pending > 0 {
             here.activation.pending = 0;
             if here.activate_on_use {
@@ -280,10 +286,12 @@ def load_pickup_signals(world: World, bsp: Bsp) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
+        # target_spawner (Q2) creates its item or monster when used.
         if kind.startswith("item_")
             or kind.startswith("key_")
             or kind.startswith("ammo_")
-            or kind.startswith("weapon_") {
+            or kind.startswith("weapon_")
+            or (bsp.game == "q2" and kind == "target_spawner") {
             world +>:HasSignal:+> Signal(entities=[index]);
         }
     }

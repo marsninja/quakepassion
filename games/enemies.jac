@@ -7,6 +7,32 @@ def two(number: int) -> str {
 }
 
 def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
+    # Exploding barrels: Q1 misc.qc barrel_explode (160 radius damage) and Q2
+    # g_misc.c barrel_explode (150 plus 40 radius). They take any damage.
+    if game == "q1" and kind in ["misc_explobox", "misc_explobox2"] {
+        return OpponentRule(
+            model="maps/b_explob.bsp" if kind == "misc_explobox" else "maps/b_exbox2.bsp",
+            health=20,
+            inert=True,
+            speed=0.0,
+            death_splash=160,
+            death_radius=200.0,
+            vanish_on_death=True,
+            death_sound="sound/weapons/r_exp3.wav"
+        );
+    }
+    if game == "q2" and kind == "misc_explobox" {
+        return OpponentRule(
+            model="models/objects/barrels/tris.md2",
+            health=10,
+            inert=True,
+            speed=0.0,
+            death_splash=150,
+            death_radius=190.0,
+            vanish_on_death=True,
+            death_sound="sound/weapons/rocklx1a.wav"
+        );
+    }
     if game == "q1" {
         if kind == "monster_boss" {
             return OpponentRule(

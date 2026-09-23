@@ -273,6 +273,20 @@ walker TrainTick {
 
     can advance with Train entry {
         here.damage_wait = max(0.0, here.damage_wait - self.dt);
+        if here.activation.killed {
+            if here.faces or here.hulls {
+                for face in here.faces {
+                    self.bsp.faces[face].hidden = True;
+                }
+                for index in here.hulls {
+                    self.collision.set_disabled(index, True);
+                }
+                here.faces = [];
+                here.hulls = [];
+            }
+            here.running = False;
+            return;
+        }
         if here.activation.pending > 0 {
             if not here.running
                 and (here.game != "q1" or not here.started)

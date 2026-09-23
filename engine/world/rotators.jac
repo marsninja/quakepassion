@@ -90,7 +90,7 @@ def carry(mover: Rotator, point: Vec3, t0: float, t1: float) -> Vec3 {
     return mover.pivot.add(after[0]).add(local);
 }
 
-def overlaps(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, top_drop: float) -> bool {
+def mover_overlaps(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, top_drop: float) -> bool {
     parts = mover.pose(t);
     turn = turn_for(parts[1]);
     for j in range(len(mover.hulls)) {
@@ -180,6 +180,9 @@ walker RotatorTick {
 
     can advance with Rotator entry {
         here.crush_wait = max(0.0, here.crush_wait - self.dt);
+        if here.activation.killed {
+            return;
+        }
         if here.activation.pending > 0 {
             if here.toggle and here.activation.pending % 2 != 0 {
                 here.active = not here.active;
@@ -206,14 +209,14 @@ walker RotatorTick {
             origin = body.pos.sub(Vec3(z=heights[i]));
             drop = self.collision.top_drop if body is self.player else 0.0;
             riding = standing_on(here, self.collision, origin, here.clock, drop);
-            hit = overlaps(here, self.collision, origin, after, drop);
+            hit = mover_overlaps(here, self.collision, origin, after, drop);
             if not riding and not hit {
                 moves.append(origin);
                 continue;
             }
             pushed = carry(here, origin, here.clock, after);
             # The pushed spot must be free of the world and of the new pose.
-            clear = not overlaps(here, self.collision, pushed, after, drop)
+            clear = not mover_overlaps(here, self.collision, pushed, after, drop)
                 and not self.collision.trace(
                     pushed, pushed, exclude=here.hulls, top_drop=drop
                 ).start_solid;
@@ -253,7 +256,7 @@ walker RotatorTick {
     }
 }
 
-def entity_origin(fields: dict[str, str]) -> Vec3 {
+def mover_origin(fields: dict[str, str]) -> Vec3 {
     parts = fields.get("origin", "0 0 0").split();
     if len(parts) != 3 {
         raise ValueError("Invalid mover origin");
@@ -285,7 +288,7 @@ def load_rotators(world: World, bsp: Bsp, collision: CollisionMap) {
         flags = int(fields.get("spawnflags", "0"));
         mover = Rotator(
             model=model,
-            pivot=entity_origin(fields),
+            pivot=mover_origin(fields),
             damage=int(float(fields.get("dmg", "2"))),
             activation=Signal(entities=[index])
         );

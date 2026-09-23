@@ -29,7 +29,9 @@ import from ..audio.feedback { Feedback }
 import from .savegame { snapshot, restore, write_save, read_save }
 import from ..world.doors { DoorTick }
 import from ..world.rotators { RotatorTick }
-import from ..world.triggers { TriggerTick }
+import from ..world.shooters { ShooterTick }
+import from ..world.targets { TargetTick, HasHelp, HelpComputer }
+import from ..world.triggers { TriggerTick, ShootTrigger, MonsterJumpTick }
 import from ..world.traversal { TraversalTick }
 import from ..world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from ..world.exits { ExitTick, exit_map, exit_spawn, exit_cinematic }
@@ -79,6 +81,8 @@ import from ..world.combat {
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }
 import from games.items { populate_pickups }
+import from games.fixtures { populate_fixtures }
+import from ..world.fixtures { FixtureTick }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
 import from ..render.viewweapon { ViewWeapon }
@@ -150,6 +154,8 @@ obj App {
         notice: str = "",
         notice_wait: float = 0.0,
         selected_item: int = 0,
+        frame_dt: float = 0.0,
+        skill: int = 1,
         quad_sound_wait: float = 0.0,
         respawn_wait: float = 0.0,
         awaiting_respawn: bool = False,

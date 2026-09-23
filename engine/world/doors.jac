@@ -4,7 +4,7 @@ import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .damage { Damage, blast_strength }
 import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
-import from .signals { Signal, Fire, Targets, HasSignal, DelayedUse, progress_for }
+import from .signals { Signal, Fire, Targets, Kills, HasSignal, DelayedUse, progress_for }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..physics.collision { CollisionMap, Sweep, Trace }
 import from ..math.vec3 { Vec3 }
@@ -171,7 +171,7 @@ walker DoorTick {
             self.actors = [
                 actor
                 for actor in [here->:HasOpponent:->][?:Opponent]
-                if actor.health > 0 and not actor.dormant
+                if actor.health > 0 and not actor.dormant and not actor.rule.inert
             ];
             visit [here->:HasDoor:->];
         }
@@ -179,6 +179,21 @@ walker DoorTick {
 
     can advance with Door entry {
         if self.dt <= 0.0 or not here.enabled {
+            return;
+        }
+        # killtarget removes the whole mover group (G_FreeEdict).
+        if here.activation.killed {
+            here.enabled = False;
+            members = [here];
+            members.extend([here->:DoorMember:->][?:Door]);
+            for part in members {
+                for face in part.faces {
+                    self.bsp.faces[face].hidden = True;
+                }
+                for index in part.hulls {
+                    self.collision.set_disabled(index, True);
+                }
+            }
             return;
         }
         here.crush_wait = max(0.0, here.crush_wait - self.dt);
@@ -555,7 +570,9 @@ def door_direction(entity: MapEntity) -> Vec3 {
     );
 }
 
-def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
+"""Build movers. Level loading passes `connect=False` and resolves every
+activation chain once, after all other activatable entities are loaded."""
+def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = True) {
     candidates: list[Door] = [];
     for entity in bsp.entities {
         fields = entity.fields;
@@ -887,7 +904,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         world +>:HasDoor:+> leader;
     }
     collision.reindex();
-    connect_targets(world, bsp);
+    if connect {
+        connect_targets(world, bsp);
+        pose_doors(world, bsp, collision);
+    }
+}
+
+def pose_doors(world: World, bsp: Bsp, collision: CollisionMap) {
     for mover in [world->:HasDoor:->][?:Door] {
         if mover.enabled {
             members = [mover];
@@ -951,13 +974,31 @@ def connect_targets(world: World, bsp: Bsp) {
                     relay=True,
                     once=True,
                     progress=progress,
-                    objective="secret" if secret else "goal"
+                    objective="secret" if secret else "goal",
+                    message=fields.get(
+                        "message", "You found a secret area!" if bsp.game == "q1" else ""
+                    ),
+                    cue=authored_cue(bsp.game, kind, fields)
                 )
             );
         }
-        if kind == "func_timer"
-            and bsp.game in ["q2", "q3"]
-            and not fields.get("killtarget", "") {
+        # Touch triggers are relays of their own, so use by name, touch and
+        # shooting all fire the same targets (Q1 multi_trigger, Q2 Touch_Multi).
+        if kind in ["trigger_once", "trigger_multiple", "trigger_onlyregistered"] {
+            flags = int(fields.get("spawnflags", "0"));
+            signals.append(
+                Signal(
+                    entities=[index],
+                    relay=True,
+                    once=kind == "trigger_once" or float(fields.get("wait", "0")) < 0.0,
+                    message=fields.get("message", ""),
+                    cue=authored_cue(bsp.game, kind, fields),
+                    armable=bsp.game == "q2" and flags & 4 != 0,
+                    armed=not (bsp.game == "q2" and flags & 4 != 0)
+                )
+            );
+        }
+        if kind == "func_timer" and bsp.game in ["q2", "q3"] {
             interval = float(fields.get("wait", "1"));
             if interval <= 0.0 {
                 interval = 1.0;
@@ -988,9 +1029,25 @@ def connect_targets(world: World, bsp: Bsp) {
             }
             signals.append(timer);
         }
-        if kind == "trigger_always"
-            and bsp.game in ["q2", "q3"]
-            and not fields.get("killtarget", "") {
+        if kind == "target_crosslevel_trigger" and bsp.game == "q2" {
+            signals.append(
+                Signal(
+                    entities=[index],
+                    relay=True,
+                    grant_flags=int(fields.get("spawnflags", "0")) & 255
+                )
+            );
+        }
+        if kind == "target_crosslevel_target" and bsp.game == "q2" {
+            signals.append(
+                Signal(
+                    entities=[index],
+                    require_flags=int(fields.get("spawnflags", "0")) & 255,
+                    queued=[DelayedUse(remaining=float(fields.get("delay", "0")) or 1.0)]
+                )
+            );
+        }
+        if kind == "trigger_always" and bsp.game in ["q2", "q3"] {
             startup = 0.3
                 if bsp.game == "q3"
                 else max(0.2, float(fields.get("delay", "0")));
@@ -998,9 +1055,7 @@ def connect_targets(world: World, bsp: Bsp) {
                 Signal(entities=[index], queued=[DelayedUse(remaining=startup)])
             );
         }
-        if kind in ["trigger_key", "trigger_counter"]
-            and bsp.game in ["q1", "q2"]
-            and not fields.get("killtarget", "") {
+        if kind in ["trigger_key", "trigger_counter"] and bsp.game in ["q1", "q2"] {
             key = fields.get("item", "") if kind == "trigger_key" else "";
             if kind == "trigger_counter"
                 or (bsp.game == "q2" and key.startswith("key_")) {
@@ -1012,15 +1067,24 @@ def connect_targets(world: World, bsp: Bsp) {
                         once=True,
                         remaining=max(1, int(fields.get("count", "2")))
                             if kind == "trigger_counter"
-                            else 0
+                            else 0,
+                        # NOMESSAGE (1) silences the counter's progress.
+                        counter_style="silent"
+                            if int(fields.get("spawnflags", "0")) & 1
+                            else bsp.game,
+                        message=fields.get("message", "")
                     )
                 );
             }
         }
         if kind in ["trigger_relay", "target_relay", "target_delay"]
-            and int(fields.get("spawnflags", "0")) == 0
-            and not fields.get("killtarget", "") {
-            signal = Signal(relay=True, entities=[index]);
+            and int(fields.get("spawnflags", "0")) == 0 {
+            signal = Signal(
+                relay=True,
+                entities=[index],
+                message=fields.get("message", ""),
+                cue=authored_cue(bsp.game, kind, fields)
+            );
             if kind == "target_delay" and bsp.game == "q3" {
                 signal.delay = float(fields.get("delay", fields.get("wait", "1")));
                 if signal.delay <= 0.0 {
@@ -1083,6 +1147,27 @@ def connect_targets(world: World, bsp: Bsp) {
             }
         }
     }
+    # killtarget recipients without a graph identity cannot be removed; the rest
+    # of the chain still runs rather than being disabled.
+    for signal in signals {
+        for index in signal.entities {
+            victim = bsp.entities[index].fields.get("killtarget", "");
+            if not victim {
+                continue;
+            }
+            for recipient in range(len(bsp.entities)) {
+                if bsp.entities[recipient].fields.get("targetname", "") != victim {
+                    continue;
+                }
+                for destination in signals {
+                    if recipient in destination.entities and destination is not signal {
+                        signal +>:Kills:+> destination;
+                        break;
+                    }
+                }
+            }
+        }
+    }
     for iteration in range(len(signals)) {
         changed = False;
         for signal in signals {
@@ -1108,6 +1193,33 @@ def connect_targets(world: World, bsp: Bsp) {
     }
 }
 
+
+"""Activation sounds: Q1/Q2 trigger `sounds` (secret, beep, switch), Q2 message
+beeps (G_UseTargets plays misc/talk1 unless `noise`), Q1 secrets' default."""
+def authored_cue(game: str, kind: str, fields: dict[str, str]) -> str {
+    style = int(fields.get("sounds", "0"));
+    if (game == "q1" and kind == "trigger_secret" or game == "q2" and kind in ["target_secret", "target_goal"]) and style == 0 and not fields.get("noise", "") {
+        style = 1;
+    }
+    if style == 1 {
+        return "sound/misc/secret.wav";
+    }
+    if style == 2 {
+        return "sound/misc/talk.wav";
+    }
+    if style == 3 {
+        return "sound/misc/trigger1.wav";
+    }
+    if game == "q2" and fields.get("message", "") {
+        noise = fields.get("noise", "");
+        if noise {
+            return ("sound/" + noise if not noise.startswith("sound/") else noise)
+                + ("" if noise.endswith(".wav") else ".wav");
+        }
+        return "sound/misc/talk1.wav";
+    }
+    return "";
+}
 
 def resolve_targets(world: World, bsp: Bsp, target: str) -> list[Signal] {
     result: list[Signal] = [];

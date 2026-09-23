@@ -74,7 +74,8 @@ obj Leaf {
         maxs: Vec3,
         cluster: int = -1,
         faces: list[int] = [],
-        brushes: list[int] = [];
+        brushes: list[int] = [],
+        ambient: list[int] = [];
 }
 
 obj Model {

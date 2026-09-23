@@ -48,7 +48,8 @@ walker CopyInventory {
     has result: Inventory = Inventory(), skip_keys: bool = False;
     can start with Inventory entry { visit [here->:InventorySlot:->]; }
     can copy with ItemStack entry {
-        if self.skip_keys and here.kind.startswith("key_") { return; }
+        # A new unit also forgets Q2 cross-level trigger flags (ExitLevel).
+        if self.skip_keys and (here.kind.startswith("key_") or here.kind == "unit_flags") { return; }
         self.result spawn AdjustInventory(kind=here.kind, amount=here.quantity, capacity=here.capacity);
     }
 }

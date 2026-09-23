@@ -62,7 +62,10 @@ obj Feedback {
         emitters: dict[int, EmitterAudio] = {},
         missing: set[int] = set(),
         named: dict[str, Sound] = {},
-        unavailable: set[str] = set();
+        unavailable: set[str] = set(),
+        clips: dict[str, bytes] = {},
+        ambience: dict[str, EmitterAudio] = {},
+        ambient_levels: dict[str, float] = {};
 
     def open(game: str, directory: str, weapons: list[str] = []) {
         InitAudioDevice();
@@ -146,6 +149,58 @@ obj Feedback {
         PlaySound(sound);
     }
 
+    """Q1 S_UpdateAmbientSounds: water and sky loops follow the listener's BSP
+    leaf levels, ramping at 100 volume units a second, silent below 8."""
+    def ambient(path: str, level: int, dt: float, paused: bool = False) {
+        library = self.library;
+        if not self.ready or library is None or path in self.unavailable {
+            return;
+        }
+        target = float(level) * 0.3;
+        if target < 8.0 {
+            target = 0.0;
+        }
+        current = self.ambient_levels.get(path, 0.0);
+        step = 100.0 * dt;
+        current = min(target, current + step) if current < target else max(target, current - step);
+        self.ambient_levels[path] = current;
+        if path not in self.ambience {
+            if current <= 0.0 {
+                return;
+            }
+            try {
+                data = library.read(path);
+                music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));
+                if not IsMusicValid(music) {
+                    raise ValueError("Cannot decode ambience: " + path);
+                }
+                music.looping = True;
+                self.ambience[path] = EmitterAudio(music=music, data=data);
+            } except Exception as error {
+                print("Ambient audio unavailable:", path, str(error));
+                self.unavailable.add(path);
+                return;
+            }
+        }
+        voice = self.ambience[path];
+        if paused {
+            if IsMusicStreamPlaying(voice.music) {
+                PauseMusicStream(voice.music);
+                voice.paused = True;
+            }
+            return;
+        }
+        SetMusicVolume(voice.music, f32(self.volume * current / 255.0));
+        if voice.paused {
+            ResumeMusicStream(voice.music);
+            voice.paused = False;
+        }
+        if current > 0.0 and not IsMusicStreamPlaying(voice.music) {
+            PlayMusicStream(voice.music);
+        }
+        UpdateMusicStream(voice.music);
+    }
+
     def update(world: World, eye: Vec3, yaw: float, paused: bool = False) {
         library = self.library;
         if not self.ready or library is None {
@@ -158,12 +213,27 @@ obj Feedback {
                 speaker.requests = 0;
                 continue;
             }
+            # Distant looping emitters (hundreds of Q1 torches) hold no stream.
+            if speaker.looping and not speaker.global_sound and not speaker.activator_sound {
+                reach = speaker.origin.sub(eye).length() * 0.0008 * speaker.attenuation;
+                if reach >= 1.0 {
+                    if index in self.emitters {
+                        StopMusicStream(self.emitters[index].music);
+                        UnloadMusicStream(self.emitters[index].music);
+                        self.emitters.pop(index);
+                    }
+                    continue;
+                }
+            }
             if index not in self.emitters {
                 if paused or (not speaker.playing and speaker.requests == 0) {
                     continue;
                 }
                 try {
-                    data = library.read(speaker.path);
+                    if speaker.path not in self.clips {
+                        self.clips[speaker.path] = library.read(speaker.path);
+                    }
+                    data = self.clips[speaker.path];
                     music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));
                     if not IsMusicValid(music) {
                         raise ValueError("Cannot decode speaker: " + speaker.path);
@@ -224,6 +294,12 @@ obj Feedback {
         }
         self.emitters = {};
         self.missing = set();
+        for voice in self.ambience.values() {
+            UnloadMusicStream(voice.music);
+        }
+        self.ambience = {};
+        self.ambient_levels = {};
+        self.clips = {};
         library = self.library;
         if library is not None {
             library.close();

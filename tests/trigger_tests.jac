@@ -71,12 +71,16 @@ test "one-shot and negative wait triggers cannot fire twice" {
 }
 
 
-test "unsupported trigger rules and partial target fan-out do not activate doors" {
+test "unsupported flags and partial target fan-out do not activate doors" {
+    # Q2 MONSTER-only triggers remain unsupported; named, directional,
+    # killtarget and random triggers now load.
+    fixture = trigger_fixture();
+    fixture.bsp.entities[1].fields["spawnflags"] = "1";
+    load_triggers(fixture.world, fixture.bsp);
+    assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 0;
     for fields in [
-        {"health": "1"},
         {"killtarget": "other"},
         {"angle": "90"},
-        {"spawnflags": "1"},
         {"random": "1"},
         {"targetname": "remote"}
     ] {
@@ -85,7 +89,7 @@ test "unsupported trigger rules and partial target fan-out do not activate doors
             fixture.bsp.entities[1].fields[key] = fields[key];
         }
         load_triggers(fixture.world, fixture.bsp);
-        assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 0;
+        assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 1;
     }
     fixture = trigger_fixture();
     fixture.bsp.entities.append(

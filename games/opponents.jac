@@ -152,6 +152,17 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
         for entity_index in range(len(entities)) {
             entity = entities[entity_index];
             fields = entity.fields;
+            if level.bsp.game == "q2"
+                and fields.get("classname", "") == "target_spawner"
+                and fields.get("target", "").startswith("monster_") {
+                # Spawned monsters wait, like TRIGGER_SPAWN ones, for the spawner.
+                fields = {
+                    "classname": fields["target"],
+                    "origin": fields.get("origin", "0 0 0"),
+                    "angle": fields.get("angle", "0"),
+                    "spawnflags": "2"
+                };
+            }
             source = fields.get("asset_game", level.bsp.game);
             kind = fields.get("classname", "");
             flags = int(fields.get("spawnflags", "0"));
@@ -180,6 +191,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 raise ValueError("Invalid opponent origin");
             }
             origin = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+            # Q1 barrels are brush models spanning 0..32 from their origin.
+            corner = source == "q1" and kind in ["misc_explobox", "misc_explobox2"];
+            if corner {
+                origin = origin.add(Vec3(x=16.0, y=16.0));
+            }
             # Opponent movement uses the same eye/body contract as the player.
             position = origin.add(Vec3(z=level.collision.eye_height));
             if arena and position.sub(player_start).length() < 80.0 {
@@ -240,7 +256,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     world +>:HasModelResource:+> resource;
                 }
                 enemy.visual = attach_model(enemy, resources[key]);
-                enemy.visual.offset = Vec3(z=-level.collision.eye_height);
+                enemy.visual.offset = Vec3(
+                    x=-16.0 if corner else 0.0,
+                    y=-16.0 if corner else 0.0,
+                    z=-level.collision.eye_height
+                );
                 frames = resources[key].model.surfaces[0].frames;
                 pain_family = "";
                 death_family = "";

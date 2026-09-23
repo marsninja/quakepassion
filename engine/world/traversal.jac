@@ -5,6 +5,7 @@ import from .damage { Damage }
 import from .finale { TeleportTrain, teleport_train_at, telefrag }
 import from .triggers { trigger_volume }
 import from .doors { door_direction }
+import from .signals { Signal, HasSignal }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
@@ -31,7 +32,10 @@ node Traversal {
         enabled: bool = True,
         activations: int = 0,
         nav_entry: Vec3 | None = None,
-        nav_exit: Vec3 | None = None;
+        nav_exit: Vec3 | None = None,
+        activation: Signal = Signal(),
+        gated: bool = False,
+        window: float = 0.0;
 }
 
 walker TraversalTick {
@@ -58,6 +62,18 @@ walker TraversalTick {
     }
 
     can touch with Traversal entry {
+        if here.activation.killed {
+            here.enabled = False;
+        }
+        # Q1 tele_touch: a named teleporter only works just after it is used.
+        if here.activation.pending > 0 {
+            here.activation.pending = 0;
+            here.window = 0.2;
+        }
+        here.window = max(0.0, here.window - self.dt);
+        if here.gated and here.window <= 0.0 {
+            return;
+        }
         if self.dt <= 0.0 or not self.touching or not here.enabled or self.relocated {
             return;
         }
@@ -138,7 +154,8 @@ def load_traversal(world: World, bsp: Bsp) {
     volumes = build_collision(bsp, triggers=True)
         if bsp.game == "q1"
         else build_brush_collision(bsp, triggers=True);
-    for entity in bsp.entities {
+    for entity_index in range(len(bsp.entities)) {
+        entity = bsp.entities[entity_index];
         fields = entity.fields;
         kind = fields.get("classname", "");
         point_pad = bsp.game == "q2" and kind == "misc_teleporter";
@@ -150,10 +167,7 @@ def load_traversal(world: World, bsp: Bsp) {
         if bsp.game != "q3" and not point_pad {
             allowed |= 3 if kind == "trigger_teleport" else 1;
         }
-        if flags & ~allowed
-            or fields.get("targetname", "")
-            or fields.get("killtarget", "")
-            or float(fields.get("delay", "0")) != 0.0 {
+        if flags & ~allowed or float(fields.get("delay", "0")) != 0.0 {
             continue;
         }
         model = 0;
@@ -189,8 +203,13 @@ def load_traversal(world: World, bsp: Bsp) {
         ];
         traversal = Traversal(
             volume=volume,
-            kind="teleport" if kind == "trigger_teleport" or point_pad else "push"
+            kind="teleport" if kind == "trigger_teleport" or point_pad else "push",
+            activation=Signal(entities=[entity_index]),
+            gated=bsp.game == "q1"
+                and kind == "trigger_teleport"
+                and bool(fields.get("targetname", ""))
         );
+        world +>:HasSignal:+> traversal.activation;
         if kind == "trigger_teleport" or point_pad {
             if (bsp.game == "q2" and not point_pad) or len(targets) != 1 {
                 continue;

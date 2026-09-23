@@ -45,6 +45,9 @@ walker HazardTick {
     }
 
     can contact with Hazard entry {
+        if here.activation.killed {
+            return;
+        }
         if here.activation.pending > 0 {
             if here.toggle and here.activation.pending % 2 != 0 {
                 here.enabled = not here.enabled;

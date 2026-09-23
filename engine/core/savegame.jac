@@ -39,6 +39,7 @@ import from engine.world.combat {
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
 import from engine.world.rotators { Rotator, HasRotator, place }
+import from engine.world.shooters { Shooter, HasShooter }
 import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.arena { Competes, match_of }
 import from engine.world.inventory {
@@ -133,7 +134,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     ];
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         lines.append(
-            ("X " if projectile.hostile else "J ")
+            ("TRAP " if projectile.trap else ("X " if projectile.hostile else "J "))
                 + (projectile.effect or "-")
                 + " "
                 + numbers(
@@ -170,6 +171,9 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
         );
+    }
+    for shooter in [world->:HasShooter:->][?:Shooter] {
+        lines.append("SHOOTER " + numbers([shooter.clock, float(shooter.random_state)]));
     }
     for mover in [world->:HasRotator:->][?:Rotator] {
         lines.append(
@@ -474,6 +478,8 @@ def restore(
     ranked = 0;
     rotators = [world->:HasRotator:->][?:Rotator];
     spun = 0;
+    shooters = [world->:HasShooter:->][?:Shooter];
+    fired = 0;
     lightning = [world->:HasLightning:->][?:LightningEvent];
     l = 0;
     teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
@@ -517,7 +523,7 @@ def restore(
                 raise ValueError("Save asset manifest mismatch");
             }
             manifest_seen = True;
-        } elif words[0] in ["J", "X"] {
+        } elif words[0] in ["J", "X", "TRAP"] {
             row = values(" ".join(words[2:]), 21);
             effect = "" if words[1] == "-" else words[1];
             if len(effect) > 64
@@ -582,7 +588,8 @@ def restore(
                 age=row[18],
                 homing=row[19],
                 homing_wait=row[20],
-                hostile=words[0] == "X"
+                hostile=words[0] in ["X", "TRAP"],
+                trap=words[0] == "TRAP"
             );
         } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);
@@ -593,6 +600,14 @@ def restore(
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
             );
+        } elif words[0] == "SHOOTER" and len(words) == 3 and fired < len(shooters) {
+            row = values(" ".join(words[1:]), 2);
+            if row[1] < 1.0 or row[1] >= 2147483647.0 {
+                raise ValueError("Invalid saved shooter");
+            }
+            shooters[fired].clock = row[0];
+            shooters[fired].random_state = int(row[1]);
+            fired += 1;
         } elif words[0] == "MOVER" and len(words) == 4 and spun < len(rotators) {
             row = values(" ".join(words[1:]), 3);
             if row[0] < 0.0 or row[2] < 0.0 {
@@ -979,7 +994,8 @@ def restore(
         or l != len(lightning)
         or k != len(teleport_trains)
         or ranked != len(scores)
-        or spun != len(rotators) {
+        or spun != len(rotators)
+        or fired != len(shooters) {
         raise ValueError("Save does not match this map's entities");
     }
     for finale in [world->:HasFinale:->][?:Finale] {
