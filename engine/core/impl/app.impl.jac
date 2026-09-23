@@ -984,14 +984,14 @@ impl App.step() -> bool {
                 }
             }
             self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
-            scripted = self.world spawn TargetTick(
+            targeted = self.world spawn TargetTick(
                 player=self.player,
                 collision=self.level.collision,
                 state=self.combat,
                 dt=self.physics_clock.tick_rate
             );
-            self.show_notice(scripted.message);
-            for cue in scripted.cues {
+            self.show_notice(targeted.message);
+            for cue in targeted.cues {
                 self.audio.play_path(cue);
             }
             self.world spawn ProjectileTick(
