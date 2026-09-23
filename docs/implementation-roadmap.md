@@ -225,3 +225,8 @@ item spin/bob and Q3 ring models. Snapshot format 18.
 and frag limits, bots fighting every competitor, frag credit, respawns at the
 furthest spawn, the announcer and scoreboard, and ladder progression. Snapshot
 format 19.
+
+[Map mechanics](map-mechanics-status.md): rotating doors and periodic movers,
+crush damage, complete trigger chains (named, shootable, directional,
+killtargets, messages), traps, Q2 targets and cross-level flags, spawners,
+barrels, fixtures and ambience. Snapshot format 20.
