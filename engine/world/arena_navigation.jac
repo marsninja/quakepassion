@@ -3,6 +3,8 @@ import math;
 import from .world { World }
 import from .combat { Opponent, HasOpponent }
 import from .pickups { Pickup, HasPickup, PickupTick }
+import from .inventory { quantity }
+import from .powerups { stored_kinds }
 import from .traversal { Traversal, HasTraversal, ArrivesAt, Destination, TraversalTick }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
@@ -13,6 +15,10 @@ def contact_bounds(start: Vec3, finish: Vec3, bounds: AABB) -> bool {
         and max(start.y, finish.y) >= bounds.mins.y and min(start.y, finish.y) <= bounds.maxs.y
         and max(start.z, finish.z) >= bounds.mins.z and min(start.z, finish.z) <= bounds.maxs.z;
 }
+
+glob ARENA_ITEM_KINDS: list[str] = [
+    "health", "armor", "powerup", "holdable_medkit", "holdable_teleporter"
+];
 
 # Authored contacts are static; bucket membership is built once for each world.
 # Entries hold live nodes, so pickup respawns and disabled portals remain current.
@@ -40,7 +46,7 @@ obj ArenaContactIndex {
         self.items = {};
         self.travels = {};
         for pickup in self.pickups {
-            if pickup.rule.kind not in ["health", "armor"] { continue; }
+            if pickup.rule.kind not in ARENA_ITEM_KINDS { continue; }
             for key in self.cells(pickup.pos.sub(Vec3(x=32.0, y=32.0)), pickup.pos.add(Vec3(x=32.0, y=32.0))) {
                 if key not in self.items { self.items[key] = []; }
                 self.items[key].append(pickup);
@@ -168,7 +174,7 @@ walker ArenaNavigationTick {
             if traversal.relocated { before = finish; }
             items: list[Pickup] = [];
             for pickup in self.index.near_items(before, finish) {
-                if not pickup.active or pickup.rule.kind not in ["health", "armor"] { continue; }
+                if not pickup.active or pickup.rule.kind not in ARENA_ITEM_KINDS { continue; }
                 if contact_bounds(before, finish, AABB(
                     mins=pickup.pos.sub(Vec3(x=32.0, y=32.0, z=48.0)),
                     maxs=pickup.pos.add(Vec3(x=32.0, y=32.0, z=40.0))
@@ -176,7 +182,7 @@ walker ArenaNavigationTick {
             }
             if items {
                 self.world spawn PickupTick(player=here, start=before, finish=finish,
-                    dt=self.dt, advance_time=False, kinds=["health", "armor"],
+                    dt=self.dt, advance_time=False, kinds=ARENA_ITEM_KINDS,
                     targets=items, selected_only=True);
             }
             return;
@@ -190,11 +196,22 @@ walker ArenaNavigationTick {
         best = 1500.0;
         for pickup in self.pickups {
             if not pickup.active or pickup.waiting_for_use { continue; }
-            useful = (pickup.rule.kind == "health" and here.health < here.max_health)
-                or (pickup.rule.kind == "armor" and here.armor < pickup.rule.amount);
+            kind = pickup.rule.kind;
+            holding = any([quantity(here.inventory, held) > 0 for held in stored_kinds("q3")]);
+            useful = (kind == "health" and here.health < here.max_health)
+                or (kind == "armor" and here.armor < pickup.rule.amount)
+                or kind == "powerup"
+                or (kind.startswith("holdable_") and not holding);
             if not useful { continue; }
             distance = pickup.pos.sub(here.pos).length();
-            if distance < best and (not here.pursuing or here.health < here.max_health // 2) {
+            # Powerups outweigh an ongoing fight, as in the bots' item weights.
+            if kind == "powerup" { distance *= 0.5; }
+            if distance < best
+                and (
+                    not here.pursuing
+                        or kind == "powerup"
+                        or here.health < here.max_health // 2
+                ) {
                 best = distance;
                 target = pickup.pos.add(Vec3(z=here.eye_height));
                 here.arena_goal = target;

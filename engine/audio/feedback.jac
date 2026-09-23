@@ -60,7 +60,9 @@ obj Feedback {
         volume: float = 0.25,
         library: AssetLibrary | None = None,
         emitters: dict[int, EmitterAudio] = {},
-        missing: set[int] = set();
+        missing: set[int] = set(),
+        named: dict[str, Sound] = {},
+        unavailable: set[str] = set();
 
     def open(game: str, directory: str, weapons: list[str] = []) {
         InitAudioDevice();
@@ -107,13 +109,40 @@ obj Feedback {
         }
     }
 
-    def play(kind: int) {
+    def play(kind: int, gain: float = 1.0) {
         if not self.ready or kind < 0 or kind >= len(self.sounds) {
             return;
         }
         sound = self.sounds[kind];
-        SetSoundVolume(sound, f32(self.volume));
+        SetSoundVolume(sound, f32(self.volume * gain));
         SetSoundPitch(sound, f32(1.8 if kind == 2 else 1.0));
+        PlaySound(sound);
+    }
+
+    # Archive sounds requested by path are decoded once and cached per game.
+    def play_path(path: str, gain: float = 1.0) {
+        library = self.library;
+        if not self.ready or library is None or not path or path in self.unavailable {
+            return;
+        }
+        if path not in self.named {
+            try {
+                data = library.read(path);
+                wave = LoadWaveFromMemory(".wav", data, i32(len(data)));
+                if wave.data == u64(0) {
+                    raise ValueError("Cannot decode sound: " + path);
+                }
+                self.named[path] = LoadSoundFromWave(wave);
+                UnloadWave(wave);
+            } except Exception as error {
+                print("Sound unavailable:", path, str(error));
+                self.unavailable.add(path);
+                return;
+            }
+        }
+        sound = self.named[path];
+        SetSoundVolume(sound, f32(self.volume * max(0.0, min(1.0, gain))));
+        SetSoundPitch(sound, f32(1.0));
         PlaySound(sound);
     }
 
@@ -204,6 +233,11 @@ obj Feedback {
             UnloadSound(sound);
         }
         self.sounds = [];
+        for sound in self.named.values() {
+            UnloadSound(sound);
+        }
+        self.named = {};
+        self.unavailable = set();
         CloseAudioDevice();
         self.ready = False;
     }

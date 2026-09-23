@@ -58,8 +58,11 @@ walker HazardTick {
         if self.touching and self.player.health > 0 {
             hit = here.volume.trace(self.start, self.finish, top_drop=self.top_drop);
             if hit.start_solid or hit.fraction < 1.0 {
+                # Q2/Q3 NO_PROTECTION (flag 8) also ignores invulnerability.
                 damage = self.player spawn Damage(
-                    amount=here.damage, bypass_armor=here.bypass_armor
+                    amount=here.damage,
+                    bypass_armor=here.bypass_armor,
+                    bypass_protection=here.bypass_armor
                 );
                 self.dealt += damage.dealt;
                 here.cooldown = here.interval;

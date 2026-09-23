@@ -1,12 +1,22 @@
 """Shared health and armor mutations, independent of input and rendering."""
 import math;
 import from .world { Actor, Player }
+import from .powerups { effect, power_armor_save }
+import from ..math.vec3 { Vec3 }
 
+"""Apply one hit to an actor. `means` separates direct hits from "splash",
+"environment" (liquids), "drown" and "fall" damage, which some powerups
+ignore; `bypass_protection` marks telefrags and kill volumes."""
 walker Damage {
     has amount: int,
         bypass_armor: bool = False,
+        bypass_protection: bool = False,
+        means: str = "",
+        source: Vec3 | None = None,
         dealt: int = 0,
         absorbed: int = 0,
+        shielded: int = 0,
+        protected: bool = False,
         killed: bool = False;
 
     can apply with Actor entry {
@@ -15,6 +25,30 @@ walker Damage {
         }
         if isinstance(here, Player) and here.god_mode {
             return;
+        }
+        if not self.bypass_protection {
+            shield = effect(here, "invulnerability");
+            if shield is not None and shield.remaining > 0.0 {
+                self.protected = True;
+                shield.count += 1;
+                return;
+            }
+            suit = effect(here, "battlesuit");
+            if suit is not None and suit.remaining > 0.0 {
+                self.protected = True;
+                suit.count += 1;
+                if self.means in ["splash", "fall", "environment", "drown"] {
+                    return;
+                }
+                self.amount = max(1, self.amount // 2);
+            }
+        }
+        if not self.bypass_armor {
+            self.shielded = power_armor_save(here, self.amount, self.source);
+            self.amount -= self.shielded;
+            if self.amount <= 0 {
+                return;
+            }
         }
         if not self.bypass_armor {
             self.absorbed = min(

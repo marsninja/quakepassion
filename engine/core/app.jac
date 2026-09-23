@@ -34,6 +34,17 @@ import from ..world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, p
 import from ..world.exits { ExitTick, exit_map, exit_spawn, exit_cinematic }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
+import from ..world.powerups {
+    PowerupTick,
+    UseItem,
+    Powerup,
+    Empowered,
+    empowered,
+    powerup_rule,
+    owned_items,
+    item_label,
+    effect
+}
 import from ..world.inventory { quantity, CopyInventory, key_summary, AdjustInventory }
 import from ..world.combat {
     CombatState,
@@ -118,7 +129,9 @@ obj App {
         movement_status: str = "F4: walk / fly",
         save_path: str = "",
         notice: str = "",
-        notice_wait: float = 0.0;
+        notice_wait: float = 0.0,
+        selected_item: int = 0,
+        quad_sound_wait: float = 0.0;
 
     has expedition_complete: bool = False;
     has finale_text: str = "",
@@ -153,6 +166,12 @@ obj App {
     def quickload();
     def fly(intent: Intent, dt: float);
     def toggle_movement();
+    def use_item(kind: str = "");
+    def teleport_actor(actor: Player);
+    def tick_powerups(dt: float);
+    def show_notice(message: str);
+    def draw_powerup_blend();
+    def powerup_lines() -> list[str];
     def render_frame();
     """Headless validation script: steer the camera through three known
     states and screenshot each, then quit. Drives the exact culling

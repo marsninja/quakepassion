@@ -38,6 +38,7 @@ import from engine.world.combat {
 }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.doors { Door, HasDoor, DoorMember }
+import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.inventory {
     Inventory,
     ItemStack,
@@ -56,6 +57,23 @@ import from engine.world.signals {
 import from engine.math.vec3 { Vec3 }
 
 # Deliberately simple data-only format: no code evaluation or graph deserialization.
+glob POWERUP_KINDS: list[str] = [
+    "quad",
+    "invulnerability",
+    "invisibility",
+    "suit",
+    "breather",
+    "silencer",
+    "battlesuit",
+    "haste",
+    "regen",
+    "flight",
+    "megahealth",
+    "vitality",
+    "power_screen",
+    "power_shield"
+];
+
 def numbers(values: list[float]) -> str {
     return " ".join([str(value) for value in values]);
 }
@@ -149,6 +167,14 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
+        );
+    }
+    for power in [player->:Empowered:->][?:Powerup] {
+        lines.append(
+            "P "
+                + power.kind
+                + " "
+                + numbers([power.remaining, power.clock, float(power.count)])
         );
     }
     for enemy in [world->:HasOpponent:->][?:Opponent] {
@@ -405,6 +431,9 @@ def restore(
         world del --> projectile;
     }
     player.inventory = Inventory();
+    for power in [player->:Empowered:->][?:Powerup] {
+        player del --> power;
+    }
     enemies = [world->:HasOpponent:->][?:Opponent];
     lightning = [world->:HasLightning:->][?:LightningEvent];
     l = 0;
@@ -524,6 +553,18 @@ def restore(
             }
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
+            );
+        } elif words[0] == "P" and len(words) == 5 {
+            row = values(" ".join(words[2:]), 3);
+            if words[1] not in POWERUP_KINDS
+                or row[0] > 10000.0
+                or row[2] < 0.0
+                or row[2] > 10000.0
+                or row[2] != float(int(row[2])) {
+                raise ValueError("Invalid saved powerup");
+            }
+            player +>:Empowered:+> Powerup(
+                kind=words[1], remaining=row[0], clock=row[1], count=int(row[2])
             );
         } elif words[0] == "K" and k < len(teleport_trains) {
             row = values(" ".join(words[1:]), 6);

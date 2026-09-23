@@ -136,5 +136,5 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
         }
         surface.frame_groups.append(group);
     }
-    return AnimatedModel(surfaces=[surface]);
+    return AnimatedModel(surfaces=[surface], flags=i32_at(data, 76));
 }

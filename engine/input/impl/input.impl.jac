@@ -107,6 +107,9 @@ impl sample_intent(
         jump=IsKeyPressed(KEY_SPACE),
         crouch=IsKeyDown(i32(341)),
         fire=_mouse.captured and _mouse.warmup == 0 and IsMouseButtonDown(MOUSE_LEFT),
-        weapon=weapon
+        weapon=weapon,
+        use_item=IsKeyPressed(i32(257)),
+        next_item=IsKeyPressed(i32(93)),
+        prev_item=IsKeyPressed(i32(91))
     );
 }
