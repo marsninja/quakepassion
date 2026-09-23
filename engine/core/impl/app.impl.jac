@@ -903,6 +903,8 @@ impl App.step() -> bool {
                 self.world spawn ArenaNavigationTick(
                     collision=self.level.collision,
                     index=self.arena_contacts,
+                    bystander=self.player,
+                    bystander_height=self.level.collision.eye_height,
                     dt=self.physics_clock.tick_rate
                 );
             }
@@ -965,6 +967,8 @@ impl App.step() -> bool {
                 self.world spawn ArenaNavigationTick(
                     collision=self.level.collision,
                     index=self.arena_contacts,
+                    bystander=self.player,
+                    bystander_height=self.level.collision.eye_height,
                     dt=self.physics_clock.tick_rate,
                     contacts=True
                 );
@@ -1233,7 +1237,8 @@ impl App.step() -> bool {
                 collision=self.level.collision,
                 start=previous_origin,
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking and not self.finale_active
+                touching=self.walking and not self.finale_active,
+                tally=self.combat
             );
         }
     }
@@ -1469,41 +1474,52 @@ impl App.use_item(kind: str = "") {
     self.show_notice(result.message);
 }
 
-"""Q3 personal teleporter: a random deathmatch spawn other than the nearest."""
+"""Q3 personal teleporter (TeleportPlayer): SelectSpawnPoint picks at random
+among the furthest half of the spawn spots nobody stands on, the actor lands
+10 units above it facing its angle and is spat out at 400 units a second, and
+G_KillBox telefrags whoever is there anyway."""
 impl App.teleport_actor(actor: Player) {
-    spots: list[Vec3] = [];
-    for entity in self.level.bsp.entities {
-        if entity.fields.get("classname", "") != "info_player_deathmatch" {
-            continue;
-        }
-        parts = entity.fields.get("origin", "0 0 0").split();
-        if len(parts) == 3 {
-            spots.append(
-                Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]))
-            );
+    height = actor.eye_height if isinstance(actor, Opponent) else self.level.collision.eye_height;
+    origin = actor.pos.sub(Vec3(z=height));
+    bodies: list[Vec3] = [];
+    if actor is not self.player and self.player.health > 0 {
+        bodies.append(self.player.pos.sub(Vec3(z=self.level.collision.eye_height)));
+    }
+    for bot in [self.world->:HasOpponent:->][?:Opponent] {
+        if bot is not actor and bot.arena and bot.health > 0 and not bot.dormant {
+            bodies.append(bot.pos.sub(Vec3(z=bot.eye_height)));
         }
     }
-    if not spots {
-        return;
-    }
-    if len(spots) > 1 {
-        nearest = spots[0];
-        for spot in spots {
-            if spot.sub(actor.pos).length() < nearest.sub(actor.pos).length() {
-                nearest = spot;
-            }
+    self.combat.random();
+    choice = self.world spawn ChooseSpawn(avoid=[origin], occupied=bodies, seed=self.combat.random_state);
+    spot = choice.pick();
+    if spot is None {
+        # Every spot is taken: the first one, as G_Find would return.
+        spots = [self.world->:HasSpawn:->][?:SpawnPoint];
+        if not spots {
+            return;
         }
-        spots = [spot for spot in spots if spot is not nearest];
+        spot = spots[0];
     }
-    pick = int((self.combat.random() + 1.0) * 0.5 * float(len(spots))) % len(spots);
     if not isinstance(actor, Opponent) {
         self.audio.play_path("sound/world/teleout.wav");
     }
-    height = actor.eye_height if isinstance(actor, Opponent) else self.level.collision.eye_height;
-    actor.pos = spots[pick].add(Vec3(z=height + 1.0));
-    actor.velocity = Vec3();
-    actor.teleport_hold = 0.1;
+    arrival = spot.pos.add(Vec3(z=10.0));
+    actor.pos = arrival.add(Vec3(z=height));
+    actor.yaw = spot.yaw;
+    actor.pitch = 0.0;
+    actor.velocity = forward_from(spot.yaw, 0.0).scale(400.0);
+    actor.grounded = False;
+    actor.teleport_hold = 0.16;
     move_to_area(actor, self.level.areas[self.level.locate(actor.pos)]);
+    self.world spawn KillBox(
+        mover=actor,
+        origin=arrival,
+        game=self.level.bsp.game,
+        bystander=self.player,
+        bystander_height=self.level.collision.eye_height,
+        tally=self.combat
+    );
     if isinstance(actor, Opponent) {
         actor.route = [];
         actor.arena_goal = None;

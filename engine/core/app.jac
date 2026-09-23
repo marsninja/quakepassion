@@ -46,6 +46,8 @@ import from ..world.arena {
     Competes,
     MatchTick,
     ChooseSpawn,
+    SpawnPoint,
+    HasSpawn,
     match_of,
     join_match,
     standings,
@@ -83,7 +85,8 @@ import from ..world.combat {
     weapon_input,
     select_weapon,
     selected_weapon,
-    owns_weapon
+    owns_weapon,
+    KillBox
 }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }

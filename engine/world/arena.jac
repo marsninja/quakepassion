@@ -255,6 +255,7 @@ walker MatchTick {
 nearest other competitor and pick randomly among the furthest half."""
 walker ChooseSpawn {
     has avoid: list[Vec3] = [],
+        occupied: list[Vec3] = [],
         seed: int = 1,
         chosen: SpawnPoint | None = None,
         spots: list[SpawnPoint] = [],
@@ -265,6 +266,14 @@ walker ChooseSpawn {
     }
 
     can rank with SpawnPoint entry {
+        # SpotWouldTelefrag: skip spots whose box another body overlaps.
+        for body in self.occupied {
+            if abs(body.x - here.pos.x) < 32.0
+                and abs(body.y - here.pos.y) < 32.0
+                and abs(body.z - here.pos.z) < 56.0 {
+                return;
+            }
+        }
         nearest = 100000.0;
         for other in self.avoid {
             nearest = min(nearest, other.sub(here.pos).length());

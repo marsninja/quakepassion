@@ -423,7 +423,8 @@ def damage_opponent(
     bypass_armor: bool = False,
     attacker: Player | None = None,
     means: str = "",
-    tally: CombatState | None = None
+    tally: CombatState | None = None,
+    bypass_protection: bool = False
 ) -> int {
     if victim.dormant or victim.rule.script or victim.rule.decoration {
         return 0;
@@ -438,7 +439,11 @@ def damage_opponent(
         return 0;
     }
     damage = victim spawn Damage(
-        amount=amount, bypass_armor=bypass_armor, attacker=attacker, means=means
+        amount=amount,
+        bypass_armor=bypass_armor,
+        bypass_protection=bypass_protection,
+        attacker=attacker,
+        means=means
     );
     if state is not None and damage.dealt > 0 {
         state.hit_flash = 0.15;
@@ -1973,6 +1978,68 @@ def pain_pose_time(enemy: Opponent) -> float {
         return elapsed - hold;
     }
     return elapsed;
+}
+
+"""Telefrags (Q1 spawn_tdeath, Q2 KillBox, Q3 G_KillBox): an actor arriving
+with its origin at `origin` kills every other actor its box overlaps, through
+armor and protection. Q3 only kills players and bots; Q1's teleport-death box
+reaches a unit further."""
+walker KillBox {
+    has mover: Player,
+        origin: Vec3,
+        game: str = "",
+        bystander: Player | None = None,
+        bystander_height: float = 22.0,
+        tally: CombatState | None = None,
+        victims: int = 0;
+
+    def overlaps(actor: Player, height: float) -> bool {
+        other = actor.pos.sub(Vec3(z=height));
+        pad = 1.0 if self.game == "q1" else 0.0;
+        return abs(other.x - self.origin.x) < 32.0 + pad
+            and abs(other.y - self.origin.y) < 32.0 + pad
+            and abs(other.z - self.origin.z) < 56.0 + pad;
+    }
+
+    can begin with World entry {
+        person = self.bystander;
+        if person is not None
+            and person is not self.mover
+            and person.health > 0
+            and self.overlaps(person, self.bystander_height) {
+            person spawn Damage(
+                amount=100000,
+                bypass_armor=True,
+                bypass_protection=True,
+                means="telefrag",
+                attacker=self.mover
+            );
+            self.victims += 1;
+        }
+        visit [here->:HasOpponent:->];
+    }
+
+    can strike with Opponent entry {
+        if here is self.mover or here.health <= 0 or here.dormant {
+            return;
+        }
+        if self.game == "q3" and not here.arena {
+            return;
+        }
+        if not self.overlaps(here, here.eye_height) {
+            return;
+        }
+        damage_opponent(
+            here,
+            100000,
+            bypass_armor=True,
+            attacker=self.mover,
+            means="telefrag",
+            tally=self.tally,
+            bypass_protection=True
+        );
+        self.victims += 1;
+    }
 }
 
 """The seconds a Q2 duck lasts: its frames at 10 Hz, holding the hold frame
