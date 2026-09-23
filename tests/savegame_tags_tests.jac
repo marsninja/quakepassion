@@ -28,6 +28,8 @@ test "every snapshot record type restores alongside all the others" {
     world +>:HasProjectile:+> Projectile(pos=Vec3(), velocity=Vec3(x=1.0), damage=9, hostile=True, trap=True);
     bot = Opponent(arena=True, health=100);
     world +>:HasOpponent:+> bot;
+    remains = Opponent(health=0, remains=-12, gibbed=True, patrol_wait=0.5);
+    world +>:HasOpponent:+> remains;
     contest = ArenaMatch(fraglimit=9);
     world +>:HasMatch:+> contest;
     contest +>:Competes:name="Ranger":+> bot;
@@ -40,11 +42,15 @@ test "every snapshot record type restores alongside all the others" {
     level.name = "test";
     data = snapshot(world, level, player, CombatState());
     tags = [line.split()[0] for line in data.splitlines()[3:]];
-    for tag in ["TRAP", "SHOOTER", "MOVER", "MATCH", "SCORE", "POWER", "P", "H", "A", "T", "O"] {
+    for tag in ["TRAP", "SHOOTER", "MOVER", "MATCH", "SCORE", "POWER", "CORPSE", "PATROL", "SKILL", "P", "H", "A", "T", "O"] {
         assert tag in tags;
     }
     scores[0].frags = 0;
+    remains.remains = 0;
+    remains.gibbed = False;
+    remains.patrol_wait = 0.0;
     restore(world, level, player, CombatState(), data);
+    assert remains.remains == -12 and remains.gibbed and remains.patrol_wait == 0.5;
     assert scores[0].frags == 3 and powerup_left(player, "quad") == 12.0;
     assert [world->:HasRotator:->][?:Rotator][0].clock == 2.5;
     assert [world->:HasShooter:->][?:Shooter][0].random_state == 11;

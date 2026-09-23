@@ -134,7 +134,19 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             ]
         )
     ];
+    # Missiles keep their owner (never hit) and homing target as opponent indices.
+    owners = [world->:HasOpponent:->][?:Opponent];
     for projectile in [world->:HasProjectile:->][?:Projectile] {
+        owner_index = -1;
+        quarry_index = -1;
+        for index in range(len(owners)) {
+            if owners[index] is projectile.owner {
+                owner_index = index;
+            }
+            if owners[index] is projectile.quarry {
+                quarry_index = index;
+            }
+        }
         lines.append(
             ("TRAP " if projectile.trap else ("X " if projectile.hostile else "J "))
                 + (projectile.effect or "-")
@@ -161,7 +173,9 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         float(projectile.phase),
                         projectile.age,
                         projectile.homing,
-                        projectile.homing_wait
+                        projectile.homing_wait,
+                        float(owner_index),
+                        float(quarry_index)
                     ]
                 )
         );
@@ -572,8 +586,12 @@ def restore(
             }
             manifest_seen = True;
         } elif words[0] in ["J", "X", "TRAP"] {
-            row = values(" ".join(words[2:]), 21);
+            row = values(" ".join(words[2:]), 23);
             effect = "" if words[1] == "-" else words[1];
+            if row[21] < -1.0 or row[21] >= float(len(enemies))
+                or row[22] < -1.0 or row[22] >= float(len(enemies)) {
+                raise ValueError("Invalid saved projectile owner");
+            }
             if len(effect) > 64
                 or not all(c.isalnum() or c == "_" for c in effect)
                 or row[18] < 0.0
@@ -637,7 +655,9 @@ def restore(
                 homing=row[19],
                 homing_wait=row[20],
                 hostile=words[0] in ["X", "TRAP"],
-                trap=words[0] == "TRAP"
+                trap=words[0] == "TRAP",
+                owner=enemies[int(row[21])] if row[21] >= 0.0 else None,
+                quarry=enemies[int(row[22])] if row[22] >= 0.0 else None
             );
         } elif words[0] == "I" and len(words) == 4 {
             amount = int(words[2]);
