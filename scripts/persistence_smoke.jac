@@ -41,7 +41,9 @@ with entry {
         assert app.player.health == 57 and app.combat.kills == 2;
         assert quantity(app.player.inventory, "shells") == shells;
         enemies = [app.world->:HasOpponent:->][?:Opponent];
-        assert enemies[0].health == 0 and not enemies[0].visual.visible;
+        # Dead enemies with a death animation stay as visible corpses.
+        assert enemies[0].health == 0
+            and (not enemies[0].visual.visible or bool(enemies[0].death_animation));
         for frame in range(3) {
             app.render_frame();
         }

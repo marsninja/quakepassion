@@ -4,7 +4,7 @@ import from engine.core.app { App }
 import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
-import from engine.world.combat { Opponent, HasOpponent }
+import from engine.world.combat { Opponent, HasOpponent, selected_weapon }
 import from engine.world.inventory { AdjustInventory, quantity }
 import from scripts.input_events { event, key }
 import from engine.input.input { _capture, _release }
@@ -24,9 +24,14 @@ with entry {
             # Freeze opponents while checking input and pause deterministically.
             enemies = [app.world->:HasOpponent:->][?:Opponent];
             for enemy in enemies { enemy.attack_wait = 1000.0; }
-            app.player.inventory spawn AdjustInventory(kind="shells", amount=5, capacity=100);
+            # Starting loadouts differ; track the selected weapon's own ammunition.
             key(app, 50);
-            assert app.combat.weapon == 2;
+            rule = selected_weapon(app.combat);
+            assert app.combat.weapon == rule.slot;
+            starting = quantity(app.player.inventory, rule.ammo) if rule.ammo else 0;
+            if rule.ammo {
+                app.player.inventory spawn AdjustInventory(kind=rule.ammo, amount=5, capacity=500);
+            }
             _capture();
             for frame in range(12) { assert app.step(); }
             event(6, 0);
@@ -35,7 +40,9 @@ with entry {
             event(5, 0);
             assert app.step();
             assert app.combat.shots == 1;
-            assert quantity(app.player.inventory, "shells") == 4;
+            if rule.ammo {
+                assert quantity(app.player.inventory, rule.ammo) == starting + 5 - rule.cost;
+            }
             key(app, 256);
             assert app.menu.opened;
             before = app.simulation_time;
@@ -55,7 +62,9 @@ with entry {
             key(app, 257);
             assert app.player.health > 0 and app.combat.kills == 0;
             assert app.level.name == name and not app.menu.opened;
-            assert quantity(app.player.inventory, "shells") == 0;
+            if rule.ammo {
+                assert quantity(app.player.inventory, rule.ammo) == starting;
+            }
             if game == "q3" {
                 app.combat.kills = 10;
                 before = app.simulation_time;
