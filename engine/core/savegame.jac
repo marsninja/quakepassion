@@ -171,7 +171,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     }
     for power in [player->:Empowered:->][?:Powerup] {
         lines.append(
-            "P "
+            "POWER "
                 + power.kind
                 + " "
                 + numbers([power.remaining, power.clock, float(power.count)])
@@ -554,7 +554,7 @@ def restore(
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
             );
-        } elif words[0] == "P" and len(words) == 5 {
+        } elif words[0] == "POWER" and len(words) == 5 {
             row = values(" ".join(words[2:]), 3);
             if words[1] not in POWERUP_KINDS
                 or row[0] > 10000.0

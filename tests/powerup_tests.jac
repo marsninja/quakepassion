@@ -258,6 +258,8 @@ test "invisible players are not newly noticed but hunters keep pursuing" {
 
 test "snapshots round trip active powerups and rot clocks" {
     world = World();
+    # Pickup records share the snapshot; their tags must not collide.
+    world +>:HasPickup:+> Pickup(rule=PickupRule(kind="shells", amount=1, capacity=9, model=""));
     level = Level();
     level.name = "test";
     player = Player(health=150);
@@ -277,7 +279,7 @@ test "snapshots round trip active powerups and rot clocks" {
     assert muted is not None and muted.count == 7;
     assert len([player->:Empowered:->]) == 3;
     try {
-        restore(world, level, player, combat, data.replace("P quad", "P bogus"));
+        restore(world, level, player, combat, data.replace("POWER quad", "POWER bogus"));
         assert False;
     } except ValueError {}
 }
