@@ -20,6 +20,8 @@ import from engine.world.models { ModelResource, HasModelResource, attach_model 
 import from engine.formats.animated { AnimationFrame }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
+import from engine.formats.aas { parse_aas }
+import from engine.world.bot_routes { build_navmesh }
 import from engine.math.vec3 { Vec3 }
 
 def frame_indices(
@@ -107,6 +109,11 @@ def prepare_arena(
     for name in names {
         roster.append(find_bot(bots, name));
     }
+    # The bots' own navigation data (botlib AAS) drives map-wide routing.
+    aas_path = "maps/" + level.name + ".aas";
+    if library.exists(aas_path) {
+        build_navmesh(world, parse_aas(library.read(aas_path)));
+    }
     contest = ArenaMatch(
         fraglimit=arena.fraglimit if arena is not None else 20,
         title=arena.longname if arena is not None else level.name,
@@ -179,7 +186,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             flags = int(fields.get("spawnflags", "0"));
             path = "";
             arena = source == "q3";
-            rule = OpponentRule(damage=6);
+            # Arena bots run at Q3's g_speed of 320 like any player.
+            rule = OpponentRule(damage=6, speed=320.0);
             bot = BotInfo(name="Sarge");
             if arena {
                 if kind == "arena_bot" {

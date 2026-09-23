@@ -11,6 +11,7 @@ import from .arena { ChooseSpawn }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual }
 import from .gibs { GibRule, gibs_at, throw_gibs }
+import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
@@ -77,6 +78,7 @@ node Opponent(Player) {
         arena_goal_wait: float = 0.0,
         route: list[Vec3] = [],
         route_launches: list[Vec3] = [],
+        route_areas: list[int] = [],
         route_search: RouteSearch | None = None,
         route_wait: float = 0.0,
         navigation_needed: bool = False,
@@ -160,7 +162,9 @@ obj CombatState {
         noise: float = 0.0,
         sighter: Opponent | None = None,
         sight_wait: float = 0.0,
-        navigation: RouteQueue = RouteQueue();
+        navigation: RouteQueue = RouteQueue(),
+        navmesh: NavMesh | None = None,
+        navmesh_checked: bool = False;
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -201,6 +205,16 @@ def actor_fraction(
         }
     }
     return enter;
+}
+
+"""Whether a route waypoint is reached. Arena routes come from the AAS, whose
+points sit at standing-origin height, so height gets a step's slack."""
+def waypoint_reached(point: Vec3, origin: Vec3, loose: bool) -> bool {
+    gap = point.sub(origin);
+    if not loose {
+        return gap.length() < 8.0;
+    }
+    return math.sqrt(gap.x * gap.x + gap.y * gap.y) < 12.0 and abs(gap.z) < 28.0;
 }
 
 # Profiles derive from the rule once per opponent; rules are immutable data.
@@ -1884,6 +1898,7 @@ walker CombatTick {
         arena_live: bool = False,
         world: World | None = None,
         body_collision: CollisionMap | None = None,
+        navmesh: NavMesh | None = None,
         neighbors: dict[str, list[Opponent]] = {},
         decisions: int = 0;
 
@@ -1946,6 +1961,15 @@ walker CombatTick {
 
     can begin with World entry {
         self.world = here;
+        # The level's AAS mesh, looked up once per level.
+        if not self.state.navmesh_checked {
+            self.state.navmesh_checked = True;
+            meshes = [here->:HasNavMesh:->][?:NavMesh];
+            if meshes {
+                self.state.navmesh = meshes[0];
+            }
+        }
+        self.navmesh = self.state.navmesh;
         for enemy in [here->:HasOpponent:->][?:Opponent] {
             if enemy.health <= 0 or enemy.dormant or enemy.alert <= 0.0 {
                 if enemy.route_search is not None {
@@ -2126,6 +2150,7 @@ walker CombatTick {
             here.pose_name = "";
             here.pos = destination;
             here.route = [];
+            here.route_areas = [];
             here.route_wait = 0.0;
             here.velocity = Vec3();
             here.visual.visible = True;
@@ -2286,12 +2311,19 @@ walker CombatTick {
                     } elif here.route_search.done {
                         here.route = here.route_search.result;
                         here.route_launches = here.route_search.launches;
+                        here.route_areas = [];
                         here.route_search = None;
                         here.navigation_needed = False;
                     }
                 }
-                if here.route_target.sub(target).length() > 48.0 { here.route = []; }
-                while here.route and here.route[0].sub(origin).length() < 8.0 {
+                if here.route_target.sub(target).length() > 48.0 {
+                    here.route = [];
+                    here.route_areas = [];
+                }
+                # AAS routes are followed every tick below; local routes here.
+                while here.route
+                    and len(here.route_areas) != len(here.route)
+                    and waypoint_reached(here.route[0], origin, False) {
                     if here.route_launches and here.route_launches[0].z > 0.0 {
                         here.velocity = here.route_launches[0];
                         here.grounded = False;
@@ -2300,15 +2332,29 @@ walker CombatTick {
                     if here.route_launches { here.route_launches.pop(0); }
                     if not here.grounded { break; }
                 }
-                if not here.route
+                wants_route = not here.route
                     and here.route_search is None
                     and (here.arena_goal is not None or not here.pursuing or here.navigation_needed)
+                    and here.route_wait <= 0.0;
+                mesh = self.navmesh;
+                if wants_route and here.arena and mesh is not None {
+                    # Q3 bots route over the map's AAS, the original bots' own data.
+                    plan = plan_route(mesh, origin, target);
+                    here.route_wait = 0.25 if plan.found else 1.0;
+                    here.route_target = target;
+                    if plan.found {
+                        here.route = plan.points;
+                        here.route_launches = plan.launches;
+                        here.route_areas = plan.areas;
+                        here.navigation_needed = False;
+                    }
+                } elif wants_route
                     and len(self.state.navigation.jobs) < 8
-                    and here.route_wait <= 0.0
                     and self.state.route_credit >= 1.0 {
                     self.state.route_credit -= 1.0;
                     here.route_wait = 1.0;
                     here.route_target = target;
+                    here.route_areas = [];
                     if here.route_search is None {
                         here.route_search = RouteSearch(start=origin, finish=target, collision=body_collision, network=self.state.navigation.network, allow_jumps=here.arena);
                         self.state.navigation.jobs.append(here.route_search);
@@ -2355,14 +2401,17 @@ walker CombatTick {
                     }
                     direction = direction.normalized();
                 }
+                # AAS legs are known passable (drops, jumps and pads included);
+                # a floor probe would reject some, so the bot heads straight on.
+                trusted_leg = bool(here.route) and len(here.route_areas) == len(here.route);
                 best = -1.0;
-                for angle in [0.0, 0.785398, -0.785398, 1.570796, -1.570796] {
+                for angle in ([0.0] if trusted_leg else [0.0, 0.785398, -0.785398, 1.570796, -1.570796]) {
                     candidate = Vec3(
                         x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
                         y=direction.x * math.sin(angle) + direction.y * math.cos(angle)
                     );
                     probe = Trace();
-                    if here.grounded and here.rule.movement == "walk" {
+                    if here.grounded and here.rule.movement == "walk" and not trusted_leg {
                         origin = here.pos.sub(Vec3(z=here.eye_height));
                         reachable = walk_edge(
                             body_collision,
@@ -2371,7 +2420,9 @@ walker CombatTick {
                             match_height=False
                         );
                         if reachable is None {
-                            if angle == 0.0 {
+                            # A blocked local route is searched again; an AAS
+                            # route is authoritative, so only this heading fails.
+                            if angle == 0.0 and len(here.route_areas) != len(here.route) {
                                 here.route = [];
                                 here.route_launches = [];
                                 here.navigation_needed = True;
@@ -2394,6 +2445,43 @@ walker CombatTick {
                 }
             }
         }
+        # Bots steer every frame: an AAS waypoint is done on reaching it or on
+        # entering its target area, and takeoffs launch from the ground.
+        mesh = self.navmesh;
+        if here.arena
+            and mesh is not None
+            and here.route
+            and len(here.route_areas) == len(here.route)
+            and here.attack_clock < 0.0 {
+            standing_origin = here.pos.sub(Vec3(z=here.eye_height));
+            standing = mesh.locate(standing_origin);
+            while here.route {
+                done = waypoint_reached(here.route[0], standing_origin, True)
+                    or (here.route_areas[0] > 0 and standing == here.route_areas[0]);
+                if not done {
+                    break;
+                }
+                if here.route_launches and here.route_launches[0].z > 0.0 {
+                    if not here.grounded {
+                        break;
+                    }
+                    here.velocity = here.route_launches[0];
+                    here.grounded = False;
+                }
+                here.route.pop(0);
+                here.route_areas.pop(0);
+                if here.route_launches {
+                    here.route_launches.pop(0);
+                }
+            }
+            if here.route {
+                ahead = here.route[0].sub(standing_origin);
+                ahead.z = 0.0;
+                if ahead.length() > 0.001 {
+                    here.steering = ahead.normalized();
+                }
+            }
+        }
         if self.world is not None {
             advance_attack(
                 self.world, here, foe, self.collision, self.dt, self.player, self.state
@@ -2407,9 +2495,11 @@ walker CombatTick {
                 if here.patrol_speed > 0.0
                 else here.rule.speed * 0.4;
         }
+        # Bots keep steering over stair steps and drops, but not while a jump or
+        # pad launch is still carrying them upward.
         wish = Vec3()
             if here.pain_wait > 0.0 or here.attack_flash > 0.0 or here.leaping
-                or (here.arena and not here.grounded)
+                or (here.arena and not here.grounded and here.velocity.z > 100.0)
             else here.steering;
         facing = here.patrol_goal;
         if facing is None and here.alert > 0.0 {
