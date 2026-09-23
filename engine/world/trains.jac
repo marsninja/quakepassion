@@ -191,7 +191,10 @@ def move_train(
         if actor.health <= 0 {
             continue;
         }
-        origin = actor.pos.sub(Vec3(z=collision.eye_height));
+        height = actor.eye_height
+            if isinstance(actor, Opponent)
+            else collision.eye_height;
+        origin = actor.pos.sub(Vec3(z=height));
         rider = False;
         intersects = False;
         for i in range(len(train.hulls)) {
