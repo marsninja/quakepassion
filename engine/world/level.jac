@@ -91,6 +91,7 @@ walker CollectFaces {
 obj Level {
     has lighting: Lighting = Lighting();
     has asset_manifest: str = "",
+        briefing: str = "",
         completion: Signal = Signal();
 
     has active: bool = False,

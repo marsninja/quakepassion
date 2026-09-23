@@ -33,7 +33,11 @@ import from ..world.shooters { ShooterTick }
 import from ..world.targets { TargetTick, HasHelp, HelpComputer }
 import from ..world.triggers { TriggerTick, ShootTrigger, MonsterJumpTick }
 import from ..world.traversal { TraversalTick }
-import from ..world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
+import from ..world.arena_navigation {
+    ArenaNavigationTick,
+    ArenaContactIndex,
+    prepare_arena_links
+}
 import from ..world.exits { ExitTick, exit_map, exit_spawn, exit_cinematic }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
@@ -128,6 +132,7 @@ obj App {
         culling: bool = True,
         overlay: bool = True,
         smoke: bool = False,
+        scripted: Intent | None = None,
         last_think: int = 0,
         last_drawn: int = 0,
         level: Level = Level(),
@@ -171,8 +176,8 @@ obj App {
         pending_unit: bool = False,
         campaign_complete: bool = False,
         runes_message: bool = False;
-    def begin_intermission(text: str);
 
+    def begin_intermission(text: str);
     def adjust_setting(direction: int);
     def reset_settings();
     def refresh_settings();

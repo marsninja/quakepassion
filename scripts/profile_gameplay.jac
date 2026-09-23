@@ -20,12 +20,17 @@ with entry {
     );
     for game in ["q1", "q2", "q3", "passion"] {
         app.load_destination(
-            game, "v1-42" if game == "passion" else (
-                "e1m1" if game == "q1" else ("base1" if game == "q2" else "q3dm1")
-            )
+            game,
+            "v2-42"
+                if game == "passion"
+                else (
+                    "e1m1" if game == "q1" else ("base1" if game == "q2" else "q3dm1")
+                )
         );
         assert not app.menu.opened , app.menu.message;
-        if not app.audio.ready { app.audio.open(game,game_directory(game)); }
+        if not app.audio.ready {
+            app.audio.open(game, game_directory(game));
+        }
         app.audio.volume = 0.0;
         resources = app.models.resources;
         for mode in ["full", "without_models", "full_repeat"] {
