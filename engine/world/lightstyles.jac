@@ -92,8 +92,10 @@ walker LightStyleTick {
                 # light_use toggles on every use.
                 if lamp.activation.pending % 2 == 1 {
                     lamp.on = not lamp.on;
-                    here.patterns[lamp.style] = "m" if lamp.on else "a";
-                    flipped = True;
+                    if lamp.style >= 0 {
+                        here.patterns[lamp.style] = "m" if lamp.on else "a";
+                        flipped = True;
+                    }
                 }
                 lamp.activation.pending = 0;
             }
@@ -141,12 +143,14 @@ def load_light_styles(world: World, bsp: Bsp) -> LightStyles | None {
             continue;
         }
         style = int(float(fields.get("style", "0")));
-        if style < 32 or style > 62 {
-            continue;
-        }
         start_off = int(fields.get("spawnflags", "0")) & 1 != 0;
-        lamp = LightSwitch(style=style, on=not start_off, activation=Signal(entities=[index]));
-        styles.patterns[style] = "a" if start_off else "m";
+        # A named light without a switchable style still receives its uses,
+        # so trigger chains through it resolve, but changes nothing.
+        switchable = style >= 32 and style <= 62;
+        lamp = LightSwitch(style=style if switchable else -1, on=not start_off, activation=Signal(entities=[index]));
+        if switchable {
+            styles.patterns[style] = "a" if start_off else "m";
+        }
         world +>:HasSignal:+> lamp.activation;
         styles +>:Switches:+> lamp;
     }
