@@ -1,5 +1,5 @@
 import from engine.assets.materials { model_materials }
-import from engine.render.quake { fog_density, fog_coords, apply_tcmods, fog_adjustment }
+import from engine.render.quake { fog_density, fog_coords, apply_tcmods, fog_adjustment, stage_affine }
 import from engine.formats.bsp { FogVolume }
 import from engine.render.models { model_fog }
 import from engine.math.vec3 { Vec3 }
@@ -49,4 +49,21 @@ test "tcMod transform and tcGen vector follow tr_shade_calc.c" {
     vectors = pool.stages[1].vectors;
     assert len(vectors) == 2 and vectors[0].x == 0.01 and vectors[1].y == 0.02;
     assert "tcgen vector" not in pool.unsupported and "tcmod transform" not in pool.unsupported;
+}
+
+test "folded tcMods match applying them one by one" {
+    shaders = model_materials("x\n{\n {\n map a.tga\n tcMod scroll 0.3 -0.2\n tcMod scale 2 0.5\n tcMod rotate 45\n tcMod stretch sin 1 0.25 0 0.5\n tcMod transform 1.5 0 1.5 1 1 2\n }\n {\n map b.tga\n tcMod turb 0 0.25 0 0.05\n }\n}\n");
+    chain = shaders["x"].stages[0];
+    for seconds in [0.0, 0.7, 3.2] {
+        m = stage_affine(chain, seconds);
+        assert len(m) == 6;
+        for point in [[0.0, 0.0], [0.25, 0.75], [1.5, -2.0]] {
+            expected = apply_tcmods(chain, point[0], point[1], Vec3(), seconds);
+            s = m[0] * point[0] + m[1] * point[1] + m[2];
+            t = m[3] * point[0] + m[4] * point[1] + m[5];
+            assert abs(s - expected[0]) < 0.0001 and abs(t - expected[1]) < 0.0001;
+        }
+    }
+    # Turbulence depends on the vertex, so it keeps the per-vertex path.
+    assert stage_affine(shaders["x"].stages[1], 1.0) == [];
 }
