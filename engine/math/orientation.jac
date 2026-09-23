@@ -30,3 +30,10 @@ def model_basis(yaw: float, pitch: float, roll: float = 0.0) -> Basis {
         up=up.scale(math.cos(roll)).sub(left.scale(math.sin(roll)))
     );
 }
+
+"""Quake `[pitch, yaw, roll]` degrees (AngleVectors: positive pitch looks down)."""
+def quake_basis(angles: Vec3) -> Basis {
+    return model_basis(
+        math.radians(angles.y), -math.radians(angles.x), math.radians(angles.z)
+    );
+}

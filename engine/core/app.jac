@@ -28,6 +28,7 @@ import from .preferences { Preferences }
 import from ..audio.feedback { Feedback }
 import from .savegame { snapshot, restore, write_save, read_save }
 import from ..world.doors { DoorTick }
+import from ..world.rotators { RotatorTick }
 import from ..world.triggers { TriggerTick }
 import from ..world.traversal { TraversalTick }
 import from ..world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }

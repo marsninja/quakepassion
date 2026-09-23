@@ -37,7 +37,8 @@ import from engine.world.combat {
     HasProjectile
 }
 import from engine.world.pickups { Pickup, HasPickup }
-import from engine.world.doors { Door, HasDoor, DoorMember }
+import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
+import from engine.world.rotators { Rotator, HasRotator, place }
 import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.arena { Competes, match_of }
 import from engine.world.inventory {
@@ -168,6 +169,11 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
+        );
+    }
+    for mover in [world->:HasRotator:->][?:Rotator] {
+        lines.append(
+            "MOVER " + numbers([mover.clock, 1.0 if mover.active else 0.0, mover.crush_wait])
         );
     }
     contest = match_of(world);
@@ -466,6 +472,8 @@ def restore(
     enemies = [world->:HasOpponent:->][?:Opponent];
     scores: list[Competes] = [];
     ranked = 0;
+    rotators = [world->:HasRotator:->][?:Rotator];
+    spun = 0;
     lightning = [world->:HasLightning:->][?:LightningEvent];
     l = 0;
     teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
@@ -585,6 +593,16 @@ def restore(
             player.inventory spawn AdjustInventory(
                 kind=words[1], amount=amount, capacity=capacity
             );
+        } elif words[0] == "MOVER" and len(words) == 4 and spun < len(rotators) {
+            row = values(" ".join(words[1:]), 3);
+            if row[0] < 0.0 or row[2] < 0.0 {
+                raise ValueError("Invalid saved mover");
+            }
+            rotators[spun].clock = row[0];
+            rotators[spun].active = row[1] != 0.0;
+            rotators[spun].crush_wait = row[2];
+            place(rotators[spun], row[0], level.bsp, level.collision);
+            spun += 1;
         } elif words[0] == "MATCH" and len(words) == 7 {
             row = values(" ".join(words[1:]), 6);
             contest = match_of(world);
@@ -812,13 +830,7 @@ def restore(
             members.extend([door->:DoorMember:->][?:Door]);
             for part in members {
                 part.position = door.position;
-                motion = part.rest.add(part.travel.scale(door.position));
-                for face in part.faces {
-                    level.bsp.faces[face].motion = motion;
-                }
-                for i in range(len(part.hulls)) {
-                    level.collision.set_offset(part.hulls[i], part.origins[i].add(motion));
-                }
+                apply_pose(part, door.position, level.bsp, level.collision);
             }
         } elif words[0] == "R" and r < len(trains) {
             row = values(" ".join(words[1:]), 10);
@@ -966,7 +978,8 @@ def restore(
         or b != len(brushes)
         or l != len(lightning)
         or k != len(teleport_trains)
-        or ranked != len(scores) {
+        or ranked != len(scores)
+        or spun != len(rotators) {
         raise ValueError("Save does not match this map's entities");
     }
     for finale in [world->:HasFinale:->][?:Finale] {

@@ -12,6 +12,7 @@ import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from .rotators { load_rotators }
 import from .doors { load_doors }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
@@ -367,6 +368,7 @@ def prepare_level(world: World, level: Level) {
     load_brushes(world, level.bsp, level.collision);
     load_lightning(world, level.bsp);
     load_doors(world, level.bsp, level.collision);
+    load_rotators(world, level.bsp, level.collision);
     connect_electrodes(world, level.bsp);
     load_triggers(world, level.bsp);
     load_traversal(world, level.bsp);

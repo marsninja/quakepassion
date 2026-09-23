@@ -757,6 +757,12 @@ impl App.step() -> bool {
                 self.notice = doors.message;
                 self.notice_wait = 3.0;
             }
+            self.world spawn RotatorTick(
+                bsp=self.level.bsp,
+                collision=self.level.collision,
+                dt=self.physics_clock.tick_rate,
+                player=self.player if self.walking else None
+            );
         }
         if self.walking and not self.finale_active {
             immersed = self.level.immersion(self.player.pos);

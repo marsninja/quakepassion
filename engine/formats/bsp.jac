@@ -2,6 +2,7 @@
 import math;
 import struct;
 import from ..math.vec3 { Vec3 }
+import from ..math.orientation { Basis }
 
 obj Texture {
     has name: str = "missing",
@@ -31,6 +32,8 @@ obj Face {
     has emission: bool = False,
         moving_light: bool = False;
     has motion: Vec3 = Vec3(),
+        turn: Basis | None = None,
+        pivot: Vec3 = Vec3(),
         vertices: list[Vec3] = [],
         uv: list[float] = [],
         light_uv: list[float] = [],

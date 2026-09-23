@@ -115,7 +115,8 @@ def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
                     "func_static",
                     "func_bobbing",
                     "func_rotating",
-                    "func_door_rotating"
+                    "func_door_rotating",
+                    "func_pendulum"
                 ] {
             continue;
         }
