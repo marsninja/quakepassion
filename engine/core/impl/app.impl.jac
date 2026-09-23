@@ -1676,6 +1676,9 @@ impl App.finish_arena(contest: ArenaMatch) {
 """Render the view through the first on-screen portal before the main view."""
 impl App.render_portal(faces: list[int]) {
     p = self.player;
+    # RF_THIRD_PERSON: the player's body shows only in the portal view.
+    here = self.level.areas[self.level.locate(p.pos)] if self.level.areas else None;
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, True, here);
     draw_portal_view(
         self.portal_target,
         self.level,
@@ -1690,6 +1693,7 @@ impl App.render_portal(faces: list[int]) {
         self.renderer.fov,
         self.simulation_time
     );
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, False);
 }
 
 """Q3 BeginIntermission in single player: the view moves to the intermission

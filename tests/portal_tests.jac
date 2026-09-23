@@ -2,6 +2,10 @@ import math;
 import from engine.world.world { World }
 import from engine.world.portals { PortalSurface, HasPortal, portal_view, perpendicular, load_portals }
 import from engine.formats.bsp { Bsp, Face, MapEntity }
+import from engine.world.world { Player }
+import from engine.world.reflection { PlayerBody, HasBody, Carries, player_body, show_body }
+import from engine.world.models { ModelResource, UsesModel }
+import from engine.formats.animated { AnimatedModel, AnimatedSurface, AnimationFrame }
 import from engine.math.vec3 { Vec3 }
 
 def close(a: Vec3, b: Vec3) -> bool {
@@ -43,4 +47,28 @@ test "mirrors reflect the view and portals look out of their camera" {
     swung = portal_view(other, wall, eye, forward, left, up, math.pi / 6.0);
     assert swung is not None and abs(math.degrees(math.acos(swung.up.dot(through.up))) - 4.0) < 0.01;
     assert close(perpendicular(Vec3(z=1.0)), Vec3(x=1.0));
+}
+
+test "the player's body follows them into portal views only" {
+    world = World();
+    surface = AnimatedSurface(name="body");
+    for pose in ["stand0", "run0", "run1", "run2", "attack0"] {
+        surface.frames.append(AnimationFrame(name=pose));
+    }
+    model = ModelResource(name="sarge", model=AnimatedModel(surfaces=[surface]), skins=[]);
+    rail = ModelResource(name="rail", model=AnimatedModel(), skins=[]);
+    body = player_body(model, 10.0);
+    body +>:Carries(key="railgun"):+> rail;
+    world +>:HasBody:+> body;
+    assert not body.body.visible and body.run_frames == [1, 2, 3];
+    player = Player(health=100, pos=Vec3(x=10.0, z=26.0), yaw=1.0);
+    show_body(world, player, 26.0, "railgun", 0.0, True);
+    assert body.body.visible and body.weapon.visible and body.pos.z == 0.0 and body.yaw == 1.0;
+    assert body.body.first == 0 and [body.weapon->:UsesModel:->][?:ModelResource] == [rail];
+    # Running plays the leg cycle at its rate.
+    player.velocity = Vec3(x=320.0);
+    show_body(world, player, 26.0, "railgun", 0.15, True);
+    assert body.body.first == 2 and body.body.second == 3 and body.weapon.first == 2;
+    show_body(world, player, 26.0, "railgun", 0.15, False);
+    assert not body.body.visible and not body.weapon.visible;
 }

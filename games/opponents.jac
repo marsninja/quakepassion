@@ -29,6 +29,7 @@ glob Q3_HELD_WEAPONS: dict[str, str] = {
 import from engine.world.bot_character { bot_skill }
 import from engine.world.turrets { link_turret_drivers }
 import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
+import from engine.world.reflection { HasBody, Carries, player_body }
 import from .botfiles { load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
@@ -557,7 +558,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
 
 """g_arenas.c SpawnPodium and SpawnModelOnVictoryPad need the podium model and a
 body for every competitor. Bots' stand-ins share their bodies; the human's is
-Sarge, with every weapon it might be holding."""
+Sarge, with every weapon it might be holding, and the same body follows the
+player to be seen in mirrors."""
 def prepare_podium(
     world: World,
     library: AssetLibrary,
@@ -604,6 +606,9 @@ def prepare_podium(
         world +>:HasModelResource:+> resources[key];
     }
     human = podium_figure(resources[key], None, "sound/player/sarge/taunt.wav", float(rigs[key].animations[6][2]));
+    # The player's own body, seen only in mirrors and portals (LEGS_RUN rate).
+    reflection = player_body(resources[key], float(rigs[key].animations[15][2]));
+    world +>:HasBody:+> reflection;
     for (weapon, weapon_model) in Q3_HELD_WEAPONS.items() {
         weapon_key = key + ":weapon:" + weapon;
         if weapon_key not in resources and library.exists(weapon_model) {
@@ -613,6 +618,7 @@ def prepare_podium(
         }
         if weapon_key in resources {
             human +>:Wields(key=weapon):+> resources[weapon_key];
+            reflection +>:Carries(key=weapon):+> resources[weapon_key];
         }
     }
     podium +>:Poses(human=True):+> human;

@@ -116,6 +116,8 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   over it. `alphaGen portal` fades them in with distance.
 - A camera portal only renders within its shader's `portalRange`, as
   `SurfIsOffscreen` allows.
+- In a Q3 arena the player's own body (Sarge, holding the current weapon,
+  standing or running) is drawn only in these views, as `RF_THIRD_PERSON` does.
 - The original maps use this for the mirrors on q3dm0, q3dm8, q3tourney6 and
   q3ctf2, and the teleporter windows on q3dm0, q3dm7 and q3dm11.
 
@@ -160,5 +162,3 @@ rewires the weapon visual. The weapon drops away on death.
 
 - The Q1 status bar's WAD parser needs native `bytes.find`, which comes from
   jac#9478 (open; applied to the local validation compiler).
-- Mirrors do not show the player's own body; the player has no third-person
-  model yet.

@@ -104,6 +104,7 @@ import from ..world.turrets { TurretTick }
 import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..render.hud_models { HudModels }
+import from ..world.reflection { show_body }
 import from ..world.falling { FallingTick }
 import from ..world.trail { TrailTick }
 import from ..render.hud { HudRenderer, HudStatus }
