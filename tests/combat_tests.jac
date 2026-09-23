@@ -4,7 +4,9 @@ import from engine.world.combat {
     Opponent,
     HasOpponent,
     fire_weapon,
-    actor_fraction
+    actor_fraction,
+    attack_pause,
+    damage_opponent
 }
 import from engine.world.world { World, Player }
 import from engine.world.inventory { AdjustInventory, quantity }
@@ -145,7 +147,8 @@ test "settled opponents detect lost support and resume per tick gravity" {
 
 test "opponents remember last sight and stop at expired alert" {
     world = World();
-    enemy = Opponent(pos=Vec3(x=300.0), attack_wait=10.0);
+    # Facing the player: idle monsters only notice what is in front of them.
+    enemy = Opponent(pos=Vec3(x=300.0), attack_wait=10.0, yaw=3.14159);
     world +>:HasOpponent:+> enemy;
     player = Player();
     collision = CollisionMap();
@@ -191,4 +194,60 @@ test "opponent activation and spawn countdown survive save restore" {
     assert not enemy.dormant;
     restore(world,level,player,state,data);
     assert enemy.dormant and not enemy.visual.visible and enemy.spawn_wait == 0.075;
+}
+
+test "idle monsters notice by facing, range, gunfire and each other" {
+    world = World();
+    player = Player();
+    collision = CollisionMap();
+    state = CombatState();
+    behind = Opponent(pos=Vec3(x=300.0), attack_wait=10.0, game="q1");
+    far = Opponent(pos=Vec3(x=-1200.0), attack_wait=10.0, game="q1");
+    world +>:HasOpponent:+> behind;
+    world +>:HasOpponent:+> far;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert behind.alert == 0.0 and far.alert == 0.0;
+    # Q1 show_hostile: a fresh shot lets near monsters notice without facing.
+    state.noise = 1.0;
+    behind.decision_wait = 0.0;
+    world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    assert behind.alert > 0.0 and far.alert == 0.0;
+    # Q2 hearing reaches 1000 units, but never ambush monsters.
+    q2 = World();
+    listener = Opponent(pos=Vec3(x=-800.0), attack_wait=10.0, game="q2", yaw=3.14159);
+    ambusher = Opponent(pos=Vec3(y=-800.0), attack_wait=10.0, game="q2", ambush=True);
+    q2 +>:HasOpponent:+> listener;
+    q2 +>:HasOpponent:+> ambusher;
+    noisy = CombatState(noise=1.0);
+    q2 spawn CombatTick(player=player, collision=collision, state=noisy, dt=0.01);
+    assert listener.alert > 0.0 and ambusher.alert == 0.0;
+    # A monster that spots the player wakes others that can see it.
+    chain = World();
+    spotter = Opponent(pos=Vec3(x=300.0), attack_wait=10.0, yaw=3.14159, game="q1");
+    watcher = Opponent(pos=Vec3(x=600.0, y=300.0), attack_wait=10.0, yaw=3.14159, game="q1");
+    chain +>:HasOpponent:+> spotter;
+    chain +>:HasOpponent:+> watcher;
+    # The wall hides the player from the watcher but not the spotter.
+    collision.add_box(Vec3(x=150.0, y=60.0, z=-500.0), Vec3(x=200.0, y=110.0, z=500.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    calm = CombatState();
+    chain spawn CombatTick(player=player, collision=collision, state=calm, dt=0.01);
+    assert spotter.alert > 0.0;
+    watcher.decision_wait = 0.0;
+    chain spawn CombatTick(player=player, collision=collision, state=calm, dt=0.01);
+    assert watcher.alert > 0.0;
+}
+
+test "skill shortens or lengthens attack pauses as the originals do" {
+    q1 = Opponent(game="q1", skill=3);
+    assert attack_pause(q1) == 0.0;
+    q1.skill = 1;
+    assert attack_pause(q1) == q1.rule.interval;
+    easy = Opponent(game="q2", skill=0);
+    hard = Opponent(game="q2", skill=2);
+    assert attack_pause(easy) == easy.rule.interval * 2.0;
+    assert attack_pause(hard) == hard.rule.interval * 0.5;
+    nightmare = Opponent(game="q1", skill=3, health=100);
+    damage_opponent(nightmare, 20);
+    assert nightmare.pain_cooldown >= 5.0;
 }

@@ -16,6 +16,7 @@ impl App.run() {
         self.invert_y = preferences.invert_y;
         self.god_mode = preferences.god_mode;
         self.player.god_mode = self.god_mode;
+        self.skill = preferences.skill;
         self.fly_speed = preferences.fly_speed;
         self.culling = preferences.culling;
         self.overlay = preferences.overlay;
@@ -414,7 +415,7 @@ impl App.load_destination(
     next_viewweapon = ViewWeapon();
     try {
         world = World();
-        level = open_level(world, game_directory(game), name, game);
+        level = open_level(world, game_directory(game), name, game, self.skill);
         carrying = carry and self.player.health > 0 and game == self.level.bsp.game;
         runes = quantity(self.player.inventory, "runes")
             if game == "q1" and self.level.bsp.game == "q1" and (carrying or preserve_progress)
@@ -949,6 +950,9 @@ impl App.step() -> bool {
                 if silencer is not None and silencer.count > 0 {
                     silencer.count -= 1;
                     gain = 0.2;
+                } else {
+                    # Shots wake nearby monsters (show_hostile, PlayerNoise).
+                    self.combat.noise = 1.0;
                 }
                 self.audio.play(
                     2 + self.combat.weapon if self.combat.rules else 0, gain
@@ -1064,9 +1068,10 @@ impl App.step() -> bool {
             for cue in triggers.cues {
                 self.audio.play_path(cue);
             }
-            if triggers.skill >= 0 {
+            if triggers.skill >= 0 and triggers.skill != self.skill {
                 # Q1 start map halls select the skill for the next level.
                 self.skill = min(3, triggers.skill);
+                self.save_preferences();
             }
             if triggers.message {
                 self.notice = triggers.message;
@@ -1196,7 +1201,8 @@ impl App.refresh_settings() {
         "Visibility culling: " + ("On" if self.culling else "Off"),
         "Diagnostic overlay: " + ("On" if self.overlay else "Off"),
         "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%",
-        "God mode: " + ("On" if self.god_mode else "Off")
+        "God mode: " + ("On" if self.god_mode else "Off"),
+        "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare"][max(0, min(3, self.skill))]
     ];
 }
 
@@ -1242,6 +1248,8 @@ impl App.adjust_setting(direction: int) {
     } elif row == 9 {
         self.god_mode = not self.god_mode;
         self.player.god_mode = self.god_mode;
+    } elif row == 10 {
+        self.skill = (self.skill + direction + 4) % 4;
     }
     self.save_preferences();
 }
@@ -1257,6 +1265,7 @@ impl App.reset_settings() {
     self.invert_y = False;
     self.god_mode = False;
     self.player.god_mode = False;
+    self.skill = 1;
     self.fly_speed = 240.0;
     self.culling = True;
     self.overlay = True;
@@ -1297,6 +1306,11 @@ impl App.quickload() {
             or lines[1] not in ["q1", "q2", "q3", "passion"] {
             raise ValueError("Invalid save header");
         }
+        for line in lines {
+            if line.startswith("SKILL ") {
+                self.skill = max(0, min(3, int(line[6:])));
+            }
+        }
         self.load_destination(
             lines[1], exit_map(lines[2]), saved=data, session=session
         );
@@ -1318,7 +1332,8 @@ impl App.save_preferences() {
             culling=self.culling,
             overlay=self.overlay,
             volume=self.audio.volume,
-            god_mode=self.god_mode
+            god_mode=self.god_mode,
+            skill=self.skill
         ).save();
         self.menu.message = "Settings saved";
     } except Exception as error {

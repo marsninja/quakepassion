@@ -219,7 +219,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 max_health=100 if kind == "arena_bot" else rule.health,
                 decision_wait=float(count % 12) / 120.0,
                 support_wait=float(count % 6) / 120.0,
-                yaw=float(fields.get("angle", "0")) * math.pi / 180.0
+                yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
+                game=source,
+                skill=level.skill,
+                ambush=source in ["q1", "q2"] and flags & 1 != 0 and kind != "arena_bot"
             );
             ensure_profiles(enemy);
             if rule.attack_sound {

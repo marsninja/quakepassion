@@ -83,7 +83,48 @@ node Opponent(Player) {
         boss_phase: int = 0,
         boss_time: float = 0.0,
         foe: Player | None = None,
-        roam_goal: Vec3 | None = None;
+        roam_goal: Vec3 | None = None,
+        game: str = "",
+        skill: int = 1,
+        ambush: bool = False;
+}
+
+"""Q1 ai.qc / Q2 g_ai.c FindTarget: idle monsters never notice beyond 1000 units,
+need to face the target at mid range (500-1000), and at near range unless the
+target just fired; melee range only needs visibility."""
+def notices(watcher: Opponent, target: Vec3, distance: float, hostile: bool) -> bool {
+    if distance >= 1000.0 {
+        return False;
+    }
+    if distance < 120.0 {
+        return True;
+    }
+    toward = target.sub(watcher.pos);
+    toward.z = 0.0;
+    facing = toward.length() < 0.001
+        or toward.normalized().dot(forward_from(watcher.yaw, 0.0)) > 0.3;
+    if distance < 500.0 {
+        return facing or hostile;
+    }
+    return facing;
+}
+
+"""Time between attacks by skill: Q1 SUB_AttackFinished skips the wait on
+Nightmare; Q2 M_CheckAttack halves the attack chance on Easy and doubles it
+on Hard and above."""
+def attack_pause(enemy: Opponent) -> float {
+    if enemy.game == "q1" and enemy.skill >= 3 {
+        return 0.0;
+    }
+    if enemy.game == "q2" {
+        if enemy.skill <= 0 {
+            return enemy.rule.interval * 2.0;
+        }
+        if enemy.skill >= 2 {
+            return enemy.rule.interval * 0.5;
+        }
+    }
+    return enemy.rule.interval;
 }
 
 obj CombatState {
@@ -104,6 +145,9 @@ obj CombatState {
         grenade_clock: float = 0.0,
         grenade_remaining: float = 0.0,
         route_credit: float = 1.0,
+        noise: float = 0.0,
+        sighter: Opponent | None = None,
+        sight_wait: float = 0.0,
         navigation: RouteQueue = RouteQueue();
 
     def random() -> float {
@@ -329,6 +373,10 @@ def damage_opponent(
     victim.leaping = False;
     victim.pain_wait = pain_length(victim);
     victim.pain_cooldown = rule.pain_interval;
+    # combat.qc T_Damage: Nightmare monsters rarely return to pain frames.
+    if victim.game == "q1" and victim.skill >= 3 {
+        victim.pain_cooldown = max(victim.pain_cooldown, 5.0);
+    }
     victim.attack_flash = 0.0;
     victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
     victim.decision_wait = 0.0;
@@ -1714,6 +1762,8 @@ walker CombatTick {
         if self.active and live { self.state.navigation.advance(); }
         here spawn ParticleTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
+        self.state.noise = max(0.0, self.state.noise - self.dt);
+        self.state.sight_wait = max(0.0, self.state.sight_wait - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
         self.state.hit_flash = max(0.0, self.state.hit_flash - self.dt);
         if self.active and live {
@@ -1894,6 +1944,33 @@ walker CombatTick {
             if distance < 1500.0 {
                 sight = self.collision.trace_point(here.pos, foe.pos);
                 here.pursuing = not sight.start_solid and sight.fraction == 1.0;
+                if here.pursuing and not was_alert and not here.arena {
+                    here.pursuing = notices(here, foe.pos, distance, self.state.noise > 0.0);
+                }
+                if not here.pursuing and not was_alert and not here.arena and not here.ambush {
+                    # Q2 PlayerNoise: gunfire is heard within 1000 units.
+                    if here.game == "q2" and self.state.noise > 0.0 and distance < 1000.0 {
+                        here.last_seen = foe.pos;
+                        here.last_seen_height = foe_height;
+                        here.alert = 8.0;
+                    }
+                    # Q1 sight_entity / Q2 sight_client: a monster that has just
+                    # spotted the player wakes others that can see it.
+                    sighter = self.state.sighter;
+                    if sighter is not None
+                        and self.state.sight_wait > 0.0
+                        and sighter is not here {
+                        gap = sighter.pos.sub(here.pos).length();
+                        glimpse = self.collision.trace_point(here.pos, sighter.pos);
+                        if not glimpse.start_solid
+                            and glimpse.fraction == 1.0
+                            and notices(here, sighter.pos, gap, False) {
+                            here.last_seen = foe.pos;
+                            here.last_seen_height = foe_height;
+                            here.alert = 8.0;
+                        }
+                    }
+                }
                 # Q1 ai.qc FindTarget / Q3 BotFindEnemy: invisible players are
                 # not newly noticed, though Q3 bots still spot muzzle flashes.
                 if here.pursuing
@@ -1908,6 +1985,10 @@ walker CombatTick {
                     here.alert = 8.0;
                     if not was_alert and not here.sighted {
                         request_sound(here, here.rule.sight_sound);
+                        if not here.arena {
+                            self.state.sighter = here;
+                            self.state.sight_wait = 0.1;
+                        }
                     }
                     here.sighted = True;
                 }
@@ -1932,7 +2013,7 @@ walker CombatTick {
                                     % (profile.burst_max - profile.burst_min + 1);
                         }
                         here.attack_wait = max(
-                            here.rule.interval, attack_duration(here)
+                            attack_pause(here), attack_duration(here)
                         );
                         here.attack_flash = attack_duration(here);
                     }

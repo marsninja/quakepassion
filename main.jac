@@ -11,6 +11,7 @@ import os;
 
 import from engine.world.level { Level, spawn_player }
 import from games.levels { open_level }
+import from engine.core.preferences { Preferences }
 import from engine.core.menu { game_directory }
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
@@ -23,6 +24,15 @@ with entry {
     world = World();  # unrooted by design: worlds are rebuilt from data
     # every run; root is reserved for save games (phase 7)
     level = Level();
+    # The first level honours the saved skill before the app reads its settings.
+    skill = 1;
+    try {
+        settings = Preferences();
+        settings.load();
+        skill = settings.skill;
+    } except Exception {
+        skill = 1;
+    }
     if os.getenv("QP_GRAYBOX", "") == "" {
         game = os.getenv("QP_GAME", "q1");
         map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
@@ -31,7 +41,8 @@ with entry {
             world,
             game_directory(game),
             os.getenv("QP_MAP", map_name),
-            game
+            game,
+            skill
         );
         player = spawn_player(level);
     } else {
@@ -43,7 +54,8 @@ with entry {
         player=player,
         renderer=Renderer(),
         clock=Clock(),
-        smoke=(os.getenv("QP_SMOKE", "") != "")
+        smoke=(os.getenv("QP_SMOKE", "") != ""),
+        skill=skill
     );
     if os.getenv("QP_WALK", "1") != "0" and not app.smoke {
         app.toggle_movement();

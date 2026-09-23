@@ -167,6 +167,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     if level.asset_manifest {
         lines.append("M " + level.asset_manifest);
     }
+    # Loading must rebuild the entity set of the skill that was saved.
+    lines.append("SKILL " + str(level.skill));
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
@@ -618,6 +620,10 @@ def restore(
             rotators[spun].crush_wait = row[2];
             place(rotators[spun], row[0], level.bsp, level.collision);
             spun += 1;
+        } elif words[0] == "SKILL" and len(words) == 2 {
+            if int(words[1]) != level.skill {
+                raise ValueError("Save was made on another skill");
+            }
         } elif words[0] == "MATCH" and len(words) == 7 {
             row = values(" ".join(words[1:]), 6);
             contest = match_of(world);
