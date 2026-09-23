@@ -1054,29 +1054,42 @@ impl App.step() -> bool {
                 }
             }
             self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
-            self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
-            if self.level.bsp.game == "q2" {
-                self.world spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);
+            # Walkers for entities the level lacks are not spawned at all:
+            # each spawn searches the world's edges (survey_level).
+            if self.level_clocks {
+                self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
             }
-            self.world spawn FallingTick(
-                bsp=self.level.bsp,
-                collision=self.level.collision,
-                player=self.player,
-                state=self.combat,
-                dt=self.physics_clock.tick_rate
-            );
-            self.world spawn FlyerTick(
-                player=self.player,
-                collision=self.level.collision,
-                state=self.combat,
-                dt=self.physics_clock.tick_rate
-            );
-            self.world spawn TurretTick(
-                bsp=self.level.bsp,
-                collision=self.level.collision,
-                player=self.player,
-                dt=self.physics_clock.tick_rate
-            );
+            if self.level.bsp.game == "q2" {
+                trail = self.player_trail;
+                if trail is not None {
+                    trail spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);
+                }
+            }
+            if self.level_falling {
+                self.world spawn FallingTick(
+                    bsp=self.level.bsp,
+                    collision=self.level.collision,
+                    player=self.player,
+                    state=self.combat,
+                    dt=self.physics_clock.tick_rate
+                );
+            }
+            if self.level_flyers {
+                self.world spawn FlyerTick(
+                    player=self.player,
+                    collision=self.level.collision,
+                    state=self.combat,
+                    dt=self.physics_clock.tick_rate
+                );
+            }
+            if self.level_turrets {
+                self.world spawn TurretTick(
+                    bsp=self.level.bsp,
+                    collision=self.level.collision,
+                    player=self.player,
+                    dt=self.physics_clock.tick_rate
+                );
+            }
             targeted = self.world spawn TargetTick(
                 player=self.player,
                 collision=self.level.collision,
@@ -1729,8 +1742,20 @@ impl App.arena_lines(contest: ArenaMatch) -> list[str] {
     return lines;
 }
 
+"""Note once which per-tick entities the level has, so their walkers only
+run where there is something to tick."""
+impl App.survey_level() {
+    world = self.world;
+    self.level_clocks = bool([world->:HasClock:->]);
+    self.level_falling = bool([world->:HasFallingObject:->]);
+    self.level_flyers = bool([world->:HasFlyer:->]) or bool([world->:HasBomb:->]);
+    self.level_turrets = bool([world->:HasTurret:->]);
+    self.player_trail = trail_of(world) if self.level.bsp.game == "q2" else None;
+}
+
 impl App.prepare_presentation() {
     game = self.level.bsp.game;
+    self.survey_level();
     self.hud.close();
     self.hud.three_d = False;
     self.hud_models.close();

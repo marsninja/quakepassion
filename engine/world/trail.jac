@@ -34,7 +34,16 @@ walker TrailTick {
         dt: float;
 
     can begin with World entry {
-        trail = trail_of(here);
+        self.lay(trail_of(here));
+    }
+
+    """Spawned on the trail itself, the tick skips the search through the
+    world's edges."""
+    can follow with PlayerTrail entry {
+        self.lay(here);
+    }
+
+    def lay(trail: PlayerTrail) {
         trail.clock += self.dt;
         if self.player.health <= 0 {
             return;

@@ -98,15 +98,15 @@ import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
 import from ..world.bot_tactics { BotTactics }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
-import from ..world.clocks { ClockTick }
-import from ..world.flyers { FlyerTick }
-import from ..world.turrets { TurretTick }
+import from ..world.clocks { ClockTick, HasClock }
+import from ..world.flyers { FlyerTick, HasFlyer, HasBomb }
+import from ..world.turrets { TurretTick, HasTurret }
 import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..render.hud_models { HudModels }
 import from ..world.reflection { show_body }
-import from ..world.falling { FallingTick }
-import from ..world.trail { TrailTick }
+import from ..world.falling { FallingTick, HasFallingObject }
+import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
 import from games.hud_art { load_hud_art, load_q3_models }
 import from games.levels { open_level }
@@ -161,6 +161,11 @@ obj App {
         quake: QuakeRenderer = QuakeRenderer(),
         portal_target: PortalTarget = PortalTarget(),
         hud_models: HudModels = HudModels(),
+        level_clocks: bool = False,
+        level_falling: bool = False,
+        level_flyers: bool = False,
+        level_turrets: bool = False,
+        player_trail: PlayerTrail | None = None,
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
         viewweapon: ViewWeapon = ViewWeapon(),
@@ -209,6 +214,7 @@ obj App {
     def begin_intermission(text: str);
     def begin_podium(contest: ArenaMatch);
     def render_portal(faces: list[int]);
+    def survey_level();
     def adjust_setting(direction: int);
     def reset_settings();
     def refresh_settings();
