@@ -70,15 +70,21 @@ walker PickupTick {
         dt: float,
         top_drop: float = 0.0,
         touching: bool = True,
+        advance_time: bool = True,
+        kinds: list[str] = [],
+        targets: list[Pickup] = [],
+        selected_only: bool = False,
         collected: int = 0;
 
     can begin with World entry {
         if self.dt > 0.0 {
-            visit [here->:HasPickup:->];
+            if self.selected_only { visit self.targets; }
+            else { visit [here->:HasPickup:->]; }
         }
     }
 
     can collect with Pickup entry {
+        if self.kinds and here.rule.kind not in self.kinds { return; }
         if here.activation.pending > 0 {
             here.activation.pending = 0;
             if here.activate_on_use {
@@ -93,6 +99,7 @@ walker PickupTick {
             return;
         }
         if not here.active {
+            if not self.advance_time { return; }
             if here.respawn <= 0.0 {
                 return;
             }

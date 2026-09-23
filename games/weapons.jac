@@ -489,6 +489,9 @@ def weapon_effects(game: str) -> list[EffectRule] {
             EffectRule(key="q1_laser", flight="progs/laser.mdl"),
             EffectRule(key="q1_knightspike", flight="progs/k_spike.mdl"),
             EffectRule(key="q1_lavaball", flight="progs/lavaball.mdl"),
+            EffectRule(key="q1_wizspike", flight="progs/w_spike.mdl"),
+            EffectRule(key="q1_vorepod", flight="progs/v_spike.mdl", spin=5.235987756),
+            EffectRule(key="q1_zombiegib", flight="progs/zom_gib.mdl", spin=8.0),
             EffectRule(key="q1_supernail", flight="progs/s_spike.mdl"),
             EffectRule(key="q1_grenade", flight="progs/grenade.mdl", spin=5.235987756),
             EffectRule(key="q1_rocket", flight="progs/missile.mdl")

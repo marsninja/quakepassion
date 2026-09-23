@@ -1,0 +1,217 @@
+"""Arena-specific goals and traversal; campaign monsters retain local pursuit."""
+import math;
+import from .world { World }
+import from .combat { Opponent, HasOpponent }
+import from .pickups { Pickup, HasPickup, PickupTick }
+import from .traversal { Traversal, HasTraversal, ArrivesAt, Destination, TraversalTick }
+import from ..physics.collision { CollisionMap }
+import from ..math.vec3 { Vec3 }
+import from ..math.aabb { AABB }
+
+def contact_bounds(start: Vec3, finish: Vec3, bounds: AABB) -> bool {
+    return max(start.x, finish.x) >= bounds.mins.x and min(start.x, finish.x) <= bounds.maxs.x
+        and max(start.y, finish.y) >= bounds.mins.y and min(start.y, finish.y) <= bounds.maxs.y
+        and max(start.z, finish.z) >= bounds.mins.z and min(start.z, finish.z) <= bounds.maxs.z;
+}
+
+# Authored contacts are static; bucket membership is built once for each world.
+# Entries hold live nodes, so pickup respawns and disabled portals remain current.
+obj ArenaContactIndex {
+    has world: World | None = None,
+        pickups: list[Pickup] = [],
+        portals: list[Traversal] = [],
+        items: dict[str, list[Pickup]] = {},
+        travels: dict[str, list[Traversal]] = {};
+
+    def cells(lo: Vec3, hi: Vec3) -> list[str] {
+        keys: list[str] = [];
+        for x in range(int(math.floor(lo.x / 128.0)), int(math.floor(hi.x / 128.0)) + 1) {
+            for y in range(int(math.floor(lo.y / 128.0)), int(math.floor(hi.y / 128.0)) + 1) {
+                keys.append(str(x) + ":" + str(y));
+            }
+        }
+        return keys;
+    }
+    def prepare(world: World) {
+        if self.world is world { return; }
+        self.world = world;
+        self.pickups = [world->:HasPickup:->][?:Pickup];
+        self.portals = [world->:HasTraversal:->][?:Traversal];
+        self.items = {};
+        self.travels = {};
+        for pickup in self.pickups {
+            if pickup.rule.kind not in ["health", "armor"] { continue; }
+            for key in self.cells(pickup.pos.sub(Vec3(x=32.0, y=32.0)), pickup.pos.add(Vec3(x=32.0, y=32.0))) {
+                if key not in self.items { self.items[key] = []; }
+                self.items[key].append(pickup);
+            }
+        }
+        for portal in self.portals {
+            for bounds in portal.volume.bounds {
+                for key in self.cells(bounds.mins, bounds.maxs) {
+                    if key not in self.travels { self.travels[key] = []; }
+                    if portal not in self.travels[key] { self.travels[key].append(portal); }
+                }
+            }
+        }
+    }
+    def swept_cells(start: Vec3, finish: Vec3) -> list[str] {
+        return self.cells(Vec3(x=min(start.x, finish.x), y=min(start.y, finish.y)),
+            Vec3(x=max(start.x, finish.x), y=max(start.y, finish.y)));
+    }
+    def near_items(start: Vec3, finish: Vec3) -> list[Pickup] {
+        result: list[Pickup] = [];
+        for key in self.swept_cells(start, finish) {
+            if key in self.items {
+                for item in self.items[key] {
+                    if item not in result { result.append(item); }
+                }
+            }
+        }
+        return result;
+    }
+    def near_portals(start: Vec3, finish: Vec3) -> list[Traversal] {
+        result: list[Traversal] = [];
+        for portal in self.portals {
+            if not portal.volume.bounds { result.append(portal); }
+        }
+        for key in self.swept_cells(start, finish) {
+            if key in self.travels {
+                for portal in self.travels[key] {
+                    if portal not in result { result.append(portal); }
+                }
+            }
+        }
+        return result;
+    }
+}
+
+# Build authored directed links once at level load. Jump-pad trajectories are
+# checked against the live hull; actor movement still performs live collision.
+def prepare_arena_links(world: World, collision: CollisionMap) {
+    for portal in [world->:HasTraversal:->][?:Traversal] {
+        if not portal.volume.bounds { continue; }
+        center = portal.volume.bounds[0].center();
+        floor = collision.trace(center.add(Vec3(z=48.0)), center.sub(Vec3(z=128.0)));
+        if floor.start_solid or floor.fraction == 1.0 or floor.normal.z < 0.7 { continue; }
+        portal.nav_entry = floor.end;
+        if portal.kind == "teleport" {
+            destinations = [portal->:ArrivesAt:->][?:Destination];
+            if destinations { portal.nav_exit = destinations[0].origin; }
+        } elif portal.kind == "push" {
+            pos = floor.end;
+            velocity = portal.velocity.add(Vec3());
+            for i in range(360) {
+                velocity.z -= 800.0 / 120.0;
+                next_pos = pos.add(velocity.scale(1.0 / 120.0));
+                hit = collision.trace(pos, next_pos);
+                if hit.start_solid { break; }
+                if hit.fraction < 1.0 {
+                    if velocity.z < 0.0 and hit.normal.z >= 0.7 { portal.nav_exit = hit.end; }
+                    break;
+                }
+                pos = next_pos;
+            }
+        }
+    }
+}
+
+# Contacts use the shared gameplay walkers so teleport cooldowns, launch speeds,
+# item capacities and pickup availability have one implementation.
+walker ArenaNavigationTick {
+    has collision: CollisionMap,
+        dt: float,
+        contacts: bool = False,
+        index: ArenaContactIndex = ArenaContactIndex(),
+        world: World | None = None,
+        pickups: list[Pickup] = [],
+        traversals: list[Traversal] = [];
+
+    can begin with World entry {
+        self.world = here;
+        self.index.prepare(here);
+        self.pickups = self.index.pickups;
+        self.traversals = self.index.portals;
+        visit [here->:HasOpponent:->];
+    }
+
+    can navigate with Opponent entry {
+        if not here.arena or here.health <= 0 or here.dormant or self.world is None { return; }
+        if self.contacts {
+            origin = here.pos.sub(Vec3(z=here.eye_height));
+            before = here.arena_origin;
+            nearby: list[Traversal] = [];
+            for portal in self.index.near_portals(before, origin) {
+                if not portal.enabled { continue; }
+                if not portal.volume.bounds { nearby.append(portal); continue; }
+                for bounds in portal.volume.bounds {
+                    if contact_bounds(before, origin, bounds) {
+                        nearby.append(portal); break;
+                    }
+                }
+            }
+            traversal = self.world spawn TraversalTick(
+                player=here, collision=self.collision.for_body(here.eye_height),
+                start=before, dt=self.dt, targets=nearby, selected_only=True
+            );
+            if traversal.relocated {
+                here.route = [];
+                here.route_launches = [];
+                if here.route_search is not None { here.route_search.cancelled = True; here.route_search = None; }
+                here.arena_goal = None;
+                here.arena_goal_wait = 0.0;
+                here.decision_wait = 0.0;
+            }
+            # Item timers are advanced once by the main world tick. Actor
+            # contacts collect active items without advancing respawns.
+            finish = here.pos.sub(Vec3(z=here.eye_height));
+            if traversal.relocated { before = finish; }
+            items: list[Pickup] = [];
+            for pickup in self.index.near_items(before, finish) {
+                if not pickup.active or pickup.rule.kind not in ["health", "armor"] { continue; }
+                if contact_bounds(before, finish, AABB(
+                    mins=pickup.pos.sub(Vec3(x=32.0, y=32.0, z=48.0)),
+                    maxs=pickup.pos.add(Vec3(x=32.0, y=32.0, z=40.0))
+                )) { items.append(pickup); }
+            }
+            if items {
+                self.world spawn PickupTick(player=here, start=before, finish=finish,
+                    dt=self.dt, advance_time=False, kinds=["health", "armor"],
+                    targets=items, selected_only=True);
+            }
+            return;
+        }
+        here.arena_origin = here.pos.sub(Vec3(z=here.eye_height));
+        here.arena_goal_wait -= self.dt;
+        if here.arena_goal_wait > 0.0 { return; }
+        here.arena_goal_wait = 0.5;
+        here.arena_goal = None;
+        target = here.last_seen;
+        best = 1500.0;
+        for pickup in self.pickups {
+            if not pickup.active or pickup.waiting_for_use { continue; }
+            useful = (pickup.rule.kind == "health" and here.health < here.max_health)
+                or (pickup.rule.kind == "armor" and here.armor < pickup.rule.amount);
+            if not useful { continue; }
+            distance = pickup.pos.sub(here.pos).length();
+            if distance < best and (not here.pursuing or here.health < here.max_health // 2) {
+                best = distance;
+                target = pickup.pos.add(Vec3(z=here.eye_height));
+                here.arena_goal = target;
+            }
+        }
+        # Teleporters are directed connections. Choose one only when it improves
+        # the remaining travel estimate; ground routing still validates its entry.
+        direct = target.sub(here.pos).length();
+        for portal in self.traversals {
+            if not portal.enabled or portal.nav_entry is None or portal.nav_exit is None { continue; }
+            entrance = portal.nav_entry.add(Vec3(z=here.eye_height));
+            cost = entrance.sub(here.pos).length() + portal.nav_exit.add(Vec3(z=here.eye_height)).sub(target).length() + 64.0;
+            if cost < direct {
+                direct = cost;
+                here.arena_goal = entrance;
+            }
+        }
+        if here.arena_goal is not None { here.alert = max(here.alert, 1.0); }
+    }
+}

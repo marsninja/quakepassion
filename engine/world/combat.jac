@@ -1,8 +1,8 @@
 """Shared weapon simulation and graph-driven opponents."""
 import math;
-import from .particles { impact_spray, ParticleTick, rail_trail }
-import from .navigation { ground_route, walk_edge }
-import from .opponent_rule { OpponentRule }
+import from .particles { impact_spray, ParticleTick, rail_trail, beam_trail }
+import from .navigation { RouteSearch, RouteQueue, walk_edge }
+import from .opponent_rule { OpponentRule, AttackProfile, rule_profiles }
 import from .weapons { WeaponRule }
 import from .world { World, Player }
 import from .damage { Damage, blast_strength }
@@ -11,8 +11,8 @@ import from .models { Visual }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
-import from ..physics.collision { CollisionMap }
-import from ..physics.movement { MovePlayer, step_slide }
+import from ..physics.collision { CollisionMap, Trace }
+import from ..physics.movement { MovePlayer, step_slide, slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 
 edge HasOpponent: World --> Opponent {}
@@ -31,9 +31,12 @@ node Opponent(Player) {
         burst_count: int = 1,
         attack_melee: bool = False,
         alternate_melee: bool = False,
+        attack_profile: int = -1,
         attack_target: Vec3 = Vec3(),
         attack_speaker: Speaker | None = None,
         melee_speaker: Speaker | None = None,
+        speakers: list[Speaker] = [],
+        speaker_paths: list[str] = [],
         shot_random: int = 1,
         respawn_wait: float = 0.0,
         arena: bool = False,
@@ -43,10 +46,20 @@ node Opponent(Player) {
         attack_animation: list[int] = [],
         melee_animation: list[int] = [],
         alternate_melee_animation: list[int] = [],
+        profile_animations: list[list[int]] = [],
         pain_animation: list[int] = [],
+        pain_animations: list[list[int]] = [],
+        knockdown_animation: list[int] = [],
         death_animation: list[int] = [],
+        profiles: list[AttackProfile] = [],
         pain_wait: float = 0.0,
         pain_cooldown: float = 0.0,
+        pain_variant: int = 0,
+        pain_down: bool = False,
+        leaping: bool = False,
+        pending_explosion: bool = False,
+        successor: Opponent | None = None,
+        sighted: bool = False,
         pose_name: str = "",
         last_seen: Vec3 = Vec3(),
         last_seen_height: float = 22.0,
@@ -56,8 +69,14 @@ node Opponent(Player) {
         decision_wait: float = 0.0,
         support_wait: float = 0.0,
         pursuing: bool = False,
+        arena_origin: Vec3 = Vec3(),
+        arena_goal: Vec3 | None = None,
+        arena_goal_wait: float = 0.0,
         route: list[Vec3] = [],
+        route_launches: list[Vec3] = [],
+        route_search: RouteSearch | None = None,
         route_wait: float = 0.0,
+        navigation_needed: bool = False,
         route_target: Vec3 = Vec3(),
         boss_phase: int = 0,
         boss_time: float = 0.0;
@@ -80,7 +99,8 @@ obj CombatState {
         grenade_phase: int = 0,
         grenade_clock: float = 0.0,
         grenade_remaining: float = 0.0,
-        route_credit: float = 1.0;
+        route_credit: float = 1.0,
+        navigation: RouteQueue = RouteQueue();
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -90,10 +110,15 @@ obj CombatState {
 
 # Finite ray versus actor box. A value of 1 means no hit before the endpoint.
 def actor_fraction(
-    start: Vec3, finish: Vec3, eye: Vec3, height: float, top_drop: float = 0.0
+    start: Vec3,
+    finish: Vec3,
+    eye: Vec3,
+    height: float,
+    top_drop: float = 0.0,
+    width: float = 16.0
 ) -> float {
-    lo = eye.sub(Vec3(x=16.0, y=16.0, z=height + 24.0));
-    hi = eye.add(Vec3(x=16.0, y=16.0, z=32.0 - height - top_drop));
+    lo = eye.sub(Vec3(x=width, y=width, z=height + 24.0));
+    hi = eye.add(Vec3(x=width, y=width, z=32.0 - height - top_drop));
     origins = [start.x, start.y, start.z];
     deltas = [finish.x - start.x, finish.y - start.y, finish.z - start.z];
     mins = [lo.x, lo.y, lo.z];
@@ -118,6 +143,93 @@ def actor_fraction(
     return enter;
 }
 
+# Profiles derive from the rule once per opponent; rules are immutable data.
+def ensure_profiles(enemy: Opponent) {
+    if not enemy.profiles {
+        enemy.profiles = rule_profiles(enemy.rule);
+    }
+}
+
+def melee_order(enemy: Opponent, index: int) -> int {
+    order = 0;
+    for i in range(index) {
+        if enemy.profiles[i].kind == "melee" {
+            order += 1;
+        }
+    }
+    return order;
+}
+
+# Restore the compatibility selection flags from the chosen profile.
+def select_profile(enemy: Opponent, index: int) {
+    ensure_profiles(enemy);
+    enemy.attack_profile = index;
+    profile = current_profile(enemy);
+    enemy.attack_melee = index >= 0 and profile.kind == "melee";
+    enemy.alternate_melee = enemy.attack_melee and melee_order(enemy, index) == 1;
+}
+
+def profile_frames(enemy: Opponent, index: int) -> list[int] {
+    if index >= 0
+        and index < len(enemy.profile_animations)
+        and enemy.profile_animations[index] {
+        return enemy.profile_animations[index];
+    }
+    ensure_profiles(enemy);
+    if index < 0 or index >= len(enemy.profiles) {
+        return enemy.attack_animation;
+    }
+    if enemy.profiles[index].kind == "melee" {
+        if melee_order(enemy, index) == 1 and enemy.alternate_melee_animation {
+            return enemy.alternate_melee_animation;
+        }
+        if enemy.melee_animation {
+            return enemy.melee_animation;
+        }
+    }
+    return enemy.attack_animation;
+}
+
+def speaker_for(enemy: Opponent, path: str) -> Speaker | None {
+    if not path {
+        return None;
+    }
+    for i in range(len(enemy.speaker_paths)) {
+        if enemy.speaker_paths[i] == path and i < len(enemy.speakers) {
+            return enemy.speakers[i];
+        }
+    }
+    return None;
+}
+
+def profile_speaker(enemy: Opponent) -> Speaker | None {
+    profile = current_profile(enemy);
+    speaker = speaker_for(enemy, profile.sound);
+    if speaker is not None {
+        return speaker;
+    }
+    return enemy.melee_speaker if profile.kind == "melee" else enemy.attack_speaker;
+}
+
+def request_sound(enemy: Opponent, path: str) {
+    speaker = speaker_for(enemy, path);
+    if speaker is not None {
+        speaker.origin = enemy.pos.add(Vec3());
+        speaker.requests += 1;
+    }
+}
+
+def pain_length(enemy: Opponent) -> float {
+    if enemy.pain_down {
+        return enemy.rule.knockdown_duration;
+    }
+    if enemy.pain_variant > 0
+        and enemy.pain_variant - 1 < len(enemy.rule.pain_variant_durations) {
+        return enemy.rule.pain_variant_durations[enemy.pain_variant - 1];
+    }
+    return enemy.rule.pain_duration;
+}
+
 def damage_opponent(
     victim: Opponent,
     amount: int,
@@ -125,7 +237,7 @@ def damage_opponent(
     state: CombatState | None = None,
     bypass_armor: bool = False
 ) -> int {
-    if victim.dormant or victim.rule.script == "chthon" {
+    if victim.dormant or victim.rule.script or victim.rule.decoration {
         return 0;
     }
     damage = victim spawn Damage(amount=amount, bypass_armor=bypass_armor);
@@ -137,19 +249,85 @@ def damage_opponent(
             state.kills += 1;
         }
         victim.activation spawn Fire(inventory=inventory);
-        victim.visual.visible = bool(victim.death_animation);
+        victim.visual.visible = bool(victim.death_animation)
+            and not victim.rule.vanish_on_death;
         victim.attack_clock = -1.0;
         victim.attack_flash = 0.0;
+        victim.leaping = False;
+        victim.pain_down = False;
         victim.pose_name = "death";
         victim.animation_time = 0.0;
         victim.respawn_wait = 3.0;
-    } elif damage.dealt > 0 and victim.pain_cooldown <= 0.0 {
+        victim.pending_explosion = victim.rule.death_splash > 0;
+        request_sound(victim, victim.rule.death_sound);
+        return damage.dealt;
+    }
+    if damage.dealt <= 0 {
+        return 0;
+    }
+    rule = victim.rule;
+    if rule.pain_health_reset > 0 {
+        victim.health = rule.pain_health_reset;
+    }
+    if damage.dealt < rule.pain_threshold {
+        return damage.dealt;
+    }
+    if rule.knockdown_damage > 0
+        and damage.dealt >= rule.knockdown_damage
+        and not victim.pain_down {
+        victim.pain_down = True;
+        victim.pain_variant = 0;
         victim.attack_clock = -1.0;
-        victim.pain_wait = victim.rule.pain_duration;
-        victim.pain_cooldown = victim.rule.pain_interval;
+        victim.leaping = False;
+        victim.pain_wait = rule.knockdown_duration;
+        victim.pain_cooldown = max(victim.pain_cooldown, rule.knockdown_duration);
         victim.attack_flash = 0.0;
-        victim.attack_wait = max(victim.attack_wait, victim.rule.pain_duration);
+        victim.attack_wait = max(victim.attack_wait, rule.knockdown_duration);
         victim.decision_wait = 0.0;
+        if rule.pain_sounds {
+            request_sound(
+                victim, rule.pain_sounds[(victim.shot_random // 7919) % len(rule.pain_sounds)]
+            );
+        }
+        return damage.dealt;
+    }
+    if victim.pain_cooldown > 0.0 or victim.pain_down {
+        return damage.dealt;
+    }
+    if rule.pain_chance_scale > 0.0 {
+        victim.shot_random = (victim.shot_random * 48271) % 2147483647;
+        chance = float(victim.shot_random) / 2147483647.0 * rule.pain_chance_scale;
+        if chance > float(damage.dealt) {
+            return damage.dealt;
+        }
+    }
+    victim.pain_variant = 0;
+    for i in range(len(rule.pain_variant_damage)) {
+        if damage.dealt <= rule.pain_variant_damage[i] {
+            victim.pain_variant = i + 1;
+            break;
+        }
+    }
+    if rule.pain_variant_damage
+        and victim.pain_variant == 0
+        and len(rule.pain_variants) > len(rule.pain_variant_damage) {
+        victim.pain_variant = len(rule.pain_variant_damage) + 1;
+    }
+    if rule.pain_variants and not rule.pain_variant_damage {
+        victim.shot_random = (victim.shot_random * 48271) % 2147483647;
+        victim.pain_variant = 1 + victim.shot_random % len(rule.pain_variants);
+    }
+    victim.attack_clock = -1.0;
+    victim.leaping = False;
+    victim.pain_wait = pain_length(victim);
+    victim.pain_cooldown = rule.pain_interval;
+    victim.attack_flash = 0.0;
+    victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
+    victim.decision_wait = 0.0;
+    if rule.pain_sounds {
+        request_sound(
+            victim, rule.pain_sounds[(victim.shot_random // 7919) % len(rule.pain_sounds)]
+        );
     }
     return damage.dealt;
 }
@@ -166,10 +344,12 @@ walker Aim {
     }
 
     can test_target with Opponent entry {
-        if here.health <= 0 or here.dormant {
+        if here.health <= 0 or here.dormant or here.pain_down or here.rule.decoration {
             return;
         }
-        hit = actor_fraction(self.start, self.finish, here.pos, here.eye_height);
+        hit = actor_fraction(
+            self.start, self.finish, here.pos, here.eye_height, 0.0, here.rule.width
+        );
         if hit < self.fraction {
             self.fraction = hit;
             self.target = here;
@@ -206,7 +386,9 @@ node Projectile {
         beams: list[Vec3] = [],
         effect: str = "",
         age: float = 0.0,
-        hostile: bool = False;
+        hostile: bool = False,
+        homing: float = 0.0,
+        homing_wait: float = 0.0;
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {
@@ -490,15 +672,18 @@ def weapon_input(
     return False;
 }
 
-def projectile_blast(
+def blast_actors(
     world: World,
-    projectile: Projectile,
+    origin: Vec3,
+    splash: int,
+    radius: float,
+    hostile: bool,
     player: Player,
     collision: CollisionMap,
     state: CombatState,
     direct: Player | None = None
 ) {
-    if projectile.splash <= 0 or projectile.radius <= 0.0 {
+    if splash <= 0 or radius <= 0.0 {
         return;
     }
     actors: list[Player] = [player];
@@ -517,35 +702,60 @@ def projectile_blast(
             if isinstance(actor, Opponent)
             else collision.eye_height;
         center = actor.pos.sub(Vec3(z=height - 4.0));
-        distance = center.sub(projectile.pos).length();
-        if distance >= projectile.radius {
+        distance = center.sub(origin).length();
+        if distance >= radius {
             continue;
         }
-        sight = collision.trace_point(projectile.pos, center);
+        sight = collision.trace_point(origin, center);
         if sight.start_solid or sight.fraction < 1.0 {
             continue;
         }
-        strength = blast_strength(
-            state.game, projectile.splash, projectile.radius, distance
-        );
-        if actor is player and not projectile.hostile {
+        strength = blast_strength(state.game, splash, radius, distance);
+        if actor is player and not hostile {
             strength *= 0.5;
+        }
+        if isinstance(actor, Opponent) {
+            strength *= actor.rule.blast_scale;
         }
         amount = int(strength);
         if isinstance(actor, Opponent) {
             damage_opponent(
-                actor, amount, player.inventory, None if projectile.hostile else state
+                actor, amount, player.inventory, None if hostile else state
             );
         } else {
             actor spawn Damage(amount=amount);
         }
         if amount > 0 {
             actor.velocity = actor.velocity.add(
-                center.sub(projectile.pos).normalized().scale(float(amount) * 4.0)
+                center.sub(origin).normalized().scale(float(amount) * 4.0)
             );
             actor.grounded = False;
         }
     }
+}
+
+def projectile_blast(
+    world: World,
+    projectile: Projectile,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState,
+    direct: Player | None = None
+) {
+    if projectile.splash <= 0 or projectile.radius <= 0.0 {
+        return;
+    }
+    blast_actors(
+        world,
+        projectile.pos,
+        projectile.splash,
+        projectile.radius,
+        projectile.hostile,
+        player,
+        collision,
+        state,
+        direct
+    );
     state.impacts.append(
         WeaponImpact(
             origin=projectile.pos, splash=projectile.splash, radius=projectile.radius
@@ -553,7 +763,34 @@ def projectile_blast(
     );
 }
 
-# Energy tendrils use one ray per nearby target, piercing actors until world geometry.
+# Exploding monsters damage everything nearby, including their own kind.
+def death_explosion(
+    world: World,
+    enemy: Opponent,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState
+) {
+    enemy.pending_explosion = False;
+    origin = enemy.pos.sub(Vec3(z=enemy.eye_height - 4.0));
+    blast_actors(
+        world,
+        origin,
+        enemy.rule.death_splash,
+        enemy.rule.death_radius,
+        True,
+        player,
+        collision,
+        state,
+        enemy
+    );
+    state.impacts.append(
+        WeaponImpact(
+            origin=origin, splash=enemy.rule.death_splash, radius=enemy.rule.death_radius
+        )
+    );
+}
+
 def projectile_beams(
     world: World,
     projectile: Projectile,
@@ -562,6 +799,30 @@ def projectile_beams(
     state: CombatState
 ) {
     projectile.beams = [];
+    if projectile.hostile {
+        if player.health <= 0 {
+            return;
+        }
+        center = player.pos.sub(Vec3(z=collision.eye_height - 4.0));
+        if center.sub(projectile.pos).length() > projectile.beam_radius {
+            return;
+        }
+        finish = projectile.pos.add(
+            center.sub(projectile.pos).normalized().scale(2048.0)
+        );
+        trace = collision.trace_point(projectile.pos, finish);
+        if trace.start_solid {
+            return;
+        }
+        projectile.beams.append(projectile.pos.lerp(finish, trace.fraction));
+        if actor_fraction(
+            projectile.pos, finish, player.pos, collision.eye_height, collision.top_drop
+        )
+            < trace.fraction {
+            player spawn Damage(amount=projectile.beam_damage);
+        }
+        return;
+    }
     actors = [
         enemy
         for enemy in [world->:HasOpponent:->][?:Opponent]
@@ -608,6 +869,31 @@ def projectile_energy_burst(
     collision: CollisionMap,
     state: CombatState
 ) {
+    if projectile.hostile {
+        center = player.pos.sub(Vec3(z=collision.eye_height - 4.0));
+        distance = center.sub(projectile.pos).length();
+        sight = collision.trace_point(projectile.pos, center);
+        if player.health > 0
+            and distance < projectile.burst_radius
+            and not sight.start_solid
+            and sight.fraction >= 1.0 {
+            player spawn Damage(
+                amount=int(
+                    float(projectile.burst_damage)
+                        * (1.0 - math.sqrt(distance / projectile.burst_radius))
+                )
+            );
+        }
+        state.impacts.append(
+            WeaponImpact(
+                origin=projectile.pos,
+                splash=projectile.burst_damage,
+                radius=projectile.burst_radius,
+                energy_burst=True
+            )
+        );
+        return;
+    }
     for victim in [world->:HasOpponent:->][?:Opponent] {
         if victim.dormant or victim.health <= 0 {
             continue;
@@ -673,6 +959,15 @@ walker ProjectileTick {
                 world del --> here;
             }
             return;
+        }
+        # Homing pods retarget at the original 5 Hz cadence; a dead target ends pursuit.
+        if here.hostile and here.homing > 0.0 and self.player.health > 0 {
+            here.homing_wait = max(0.0, here.homing_wait - step);
+            if here.homing_wait <= 0.000001 {
+                here.homing_wait = 0.2;
+                target = self.player.pos.sub(Vec3(z=12.0));
+                here.velocity = target.sub(here.pos).normalized().scale(here.homing);
+            }
         }
         if here.gravity {
             here.velocity.z -= 800.0 * step;
@@ -776,23 +1071,41 @@ def load_opponent_signals(world: World, bsp: Bsp) {
     }
 }
 
-def attack_times(enemy: Opponent) -> list[float] {
-    if enemy.attack_melee and enemy.alternate_melee {
-        return enemy.rule.alternate_melee_times;
+# Without a selection, timing and aim follow the primary ranged sequence, as
+# the single-attack definitions did.
+def current_profile(enemy: Opponent) -> AttackProfile {
+    ensure_profiles(enemy);
+    if enemy.attack_profile >= 0 and enemy.attack_profile < len(enemy.profiles) {
+        return enemy.profiles[enemy.attack_profile];
     }
-    return enemy.rule.melee_times
-        if enemy.attack_melee and enemy.rule.melee_times
-        else enemy.rule.attack_times;
+    for profile in enemy.profiles {
+        if profile.kind == "ranged" {
+            return profile;
+        }
+    }
+    if enemy.profiles {
+        return enemy.profiles[0];
+    }
+    return AttackProfile(damage=enemy.rule.damage);
+}
+
+def melee_reach(enemy: Opponent) -> float {
+    ensure_profiles(enemy);
+    reach = 0.0;
+    for profile in enemy.profiles {
+        if profile.kind == "melee" {
+            reach = max(reach, profile.reach);
+        }
+    }
+    return reach;
+}
+
+def attack_times(enemy: Opponent) -> list[float] {
+    return current_profile(enemy).times;
 }
 
 def attack_duration(enemy: Opponent) -> float {
-    if enemy.attack_melee and enemy.alternate_melee {
-        return enemy.rule.alternate_melee_duration;
-    }
-    if enemy.attack_melee and enemy.rule.melee_times {
-        return enemy.rule.melee_duration;
-    }
-    return enemy.rule.attack_duration + float(enemy.burst_count - 1) * 0.1;
+    return current_profile(enemy).duration + float(enemy.burst_count - 1) * 0.1;
 }
 
 def attack_event_count(enemy: Opponent) -> int {
@@ -801,37 +1114,88 @@ def attack_event_count(enemy: Opponent) -> int {
 
 def attack_event_time(enemy: Opponent) -> float {
     if enemy.burst_count > 1 {
-        return enemy.rule.attack_times[0] + float(enemy.attack_event) * 0.1;
+        return attack_times(enemy)[0] + float(enemy.attack_event) * 0.1;
     }
     return attack_times(enemy)[enemy.attack_event];
 }
 
 def attack_pose_time(enemy: Opponent) -> float {
     clock = enemy.attack_clock * 10.0;
-    if not enemy.attack_melee
-        and enemy.rule.hold_frame >= 0
-        and clock >= float(enemy.rule.hold_frame) {
-        clock -= min(
-            float(enemy.burst_count - 1), clock - float(enemy.rule.hold_frame)
-        );
+    profile = current_profile(enemy);
+    if profile.kind != "melee"
+        and profile.hold_frame >= 0
+        and clock >= float(profile.hold_frame) {
+        clock -= min(float(enemy.burst_count - 1), clock - float(profile.hold_frame));
     }
     return clock;
 }
 
-def opponent_aim(enemy: Opponent, player: Player) -> Vec3 {
+# Weighted choice among sequences whose range brackets contain the target.
+# Close attacks take priority, as in the original decision tables. Randomness
+# is consumed only when more than one sequence qualifies.
+def choose_attack(enemy: Opponent, distance: float) -> int {
+    ensure_profiles(enemy);
+    close: list[int] = [];
+    far: list[int] = [];
+    for i in range(len(enemy.profiles)) {
+        profile = enemy.profiles[i];
+        if profile.kind == "melee" {
+            if distance <= profile.max_range {
+                close.append(i);
+            }
+        } elif distance >= profile.min_range and distance <= profile.max_range {
+            far.append(i);
+        }
+    }
+    pool = close if close else far;
+    if not pool {
+        return -1;
+    }
+    if len(pool) == 1 {
+        return pool[0];
+    }
+    total = 0.0;
+    for i in pool {
+        total += max(0.0, enemy.profiles[i].weight);
+    }
+    enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+    roll = float(enemy.shot_random) / 2147483647.0 * total;
+    accumulated = 0.0;
+    for i in pool {
+        accumulated += max(0.0, enemy.profiles[i].weight);
+        if roll < accumulated {
+            return i;
+        }
+    }
+    return pool[-1];
+}
+
+def rotate_yaw(direction: Vec3, degrees: float) -> Vec3 {
+    if degrees == 0.0 {
+        return direction;
+    }
+    angle = degrees * math.pi / 180.0;
+    return Vec3(
+        x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
+        y=direction.x * math.sin(angle) + direction.y * math.cos(angle),
+        z=direction.z
+    );
+}
+
+def opponent_aim(enemy: Opponent, player: Player, profile: AttackProfile) -> Vec3 {
     target = enemy.attack_target
-        if enemy.rule.lock_aim
-        else player.pos.sub(player.velocity.scale(enemy.rule.aim_lag));
+        if profile.lock_aim
+        else player.pos.sub(player.velocity.scale(profile.aim_lag));
     direction = target.sub(enemy.pos).normalized();
-    if enemy.rule.aim_spread > 0.0 or enemy.rule.aim_vertical > 0.0 {
+    if profile.aim_spread > 0.0 or profile.aim_vertical > 0.0 {
         side = right_from(math.atan2(direction.y, direction.x));
         up = side.cross(direction).normalized();
         enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
         horizontal = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
         enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
         vertical = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
-        direction = direction.add(side.scale(horizontal * enemy.rule.aim_spread)).add(
-            up.scale(vertical * enemy.rule.aim_vertical)
+        direction = direction.add(side.scale(horizontal * profile.aim_spread)).add(
+            up.scale(vertical * profile.aim_vertical)
         ).normalized();
     }
     return direction;
@@ -839,40 +1203,48 @@ def opponent_aim(enemy: Opponent, player: Player) -> Vec3 {
 
 # Enemy spread has its own saved stream; effects and AI cannot alter player spread.
 def opponent_shot(
-    world: World, enemy: Opponent, player: Player, collision: CollisionMap
+    world: World,
+    enemy: Opponent,
+    player: Player,
+    collision: CollisionMap,
+    profile: AttackProfile | None = None,
+    yaw_offset: float = 0.0
 ) {
-    direction = opponent_aim(enemy, player);
+    if profile is None {
+        profile = current_profile(enemy);
+    }
+    direction = rotate_yaw(opponent_aim(enemy, player, profile), yaw_offset);
     side = right_from(math.atan2(direction.y, direction.x));
     up = side.cross(direction).normalized();
     damage = 0;
-    for i in range(enemy.rule.pellets) {
+    for i in range(profile.pellets) {
         shot = direction;
-        if enemy.rule.spread > 0.0 {
+        if profile.spread > 0.0 {
             enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
             horizontal = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
             enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
             vertical = float(enemy.shot_random) / 2147483647.0 * 2.0 - 1.0;
-            shot = shot.add(side.scale(horizontal * enemy.rule.spread)).add(
+            shot = shot.add(side.scale(horizontal * profile.spread)).add(
                 up.scale(
                     vertical
                         * (
-                            enemy.rule.vertical_spread
-                                if enemy.rule.vertical_spread >= 0.0
-                                else enemy.rule.spread
+                            profile.vertical_spread
+                                if profile.vertical_spread >= 0.0
+                                else profile.spread
                         )
                 )
             );
         }
         finish = enemy.pos.add(shot.normalized().scale(8192.0));
         wall = collision.trace_point(enemy.pos, finish);
-        if enemy.rule.rail {
+        if profile.rail {
             rail_trail(world, enemy.pos, enemy.pos.lerp(finish, wall.fraction));
         }
         hit = actor_fraction(
             enemy.pos, finish, player.pos, collision.eye_height, collision.top_drop
         );
         if hit < wall.fraction {
-            damage += 6 if enemy.arena else enemy.rule.damage;
+            damage += 6 if enemy.arena else profile.damage;
         } elif wall.fraction < 1.0 and not wall.start_solid {
             impact_spray(world, enemy.pos.lerp(finish, wall.fraction), wall.normal);
         }
@@ -882,15 +1254,72 @@ def opponent_shot(
     }
 }
 
+# Instant beams stop at world geometry; a hit needs the target box before it.
+def opponent_beam(
+    world: World,
+    enemy: Opponent,
+    player: Player,
+    collision: CollisionMap,
+    profile: AttackProfile,
+    amount: int
+) {
+    origin = enemy.pos.add(Vec3(z=18.0));
+    target = player.pos.sub(Vec3(z=collision.eye_height - 20.0));
+    direction = target.sub(origin).normalized();
+    finish = origin.add(direction.scale(profile.reach));
+    wall = collision.trace_point(origin, finish);
+    hit = actor_fraction(
+        origin, finish, player.pos, collision.eye_height, collision.top_drop
+    );
+    endpoint = origin.lerp(finish, min(wall.fraction, hit));
+    beam_trail(world, origin, endpoint, profile.beam_kind);
+    if hit < wall.fraction and amount > 0 {
+        player spawn Damage(amount=amount);
+    }
+}
+
+def launch_leap(enemy: Opponent, player: Player, profile: AttackProfile) {
+    goal = player.pos.sub(enemy.pos);
+    goal.z = 0.0;
+    if goal.length() < 0.001 {
+        goal = forward_from(enemy.yaw, 0.0);
+    }
+    lift = profile.leap_lift;
+    if profile.leap_lift_random > 0.0 {
+        enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+        lift += float(enemy.shot_random) / 2147483647.0 * profile.leap_lift_random;
+    }
+    enemy.pos = enemy.pos.add(Vec3(z=1.0));
+    enemy.velocity = goal.normalized().scale(profile.leap_speed).add(Vec3(z=lift));
+    enemy.grounded = False;
+    enemy.leaping = True;
+    enemy.route = [];
+}
+
+def event_damage(enemy: Opponent, profile: AttackProfile, index: int) -> int {
+    if profile.damages and index < len(profile.damages) {
+        return profile.damages[index];
+    }
+    amount = profile.damage;
+    if profile.random_scale > 0.0 {
+        total = 0.0;
+        for sample in range(3) {
+            enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+            total += float(enemy.shot_random) / 2147483647.0;
+        }
+        return int(total * profile.random_scale);
+    }
+    if profile.damage_max > amount {
+        enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+        amount += enemy.shot_random % (profile.damage_max - amount + 1);
+    }
+    return amount;
+}
+
 # Integrate authored charge distances across 10 Hz animation frames, using the
 # same stair/slide collision as walking. Keep a body-width gap to the player.
 def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: float) {
-    steps = enemy.rule.melee_steps
-        if enemy.attack_melee and enemy.rule.melee_times
-        else enemy.rule.attack_steps;
-    if enemy.attack_melee and enemy.alternate_melee {
-        steps = enemy.rule.alternate_melee_steps;
-    }
+    steps = current_profile(enemy).steps;
     if not enemy.grounded or not steps or dt <= 0.0 or dt > 0.05 {
         return;
     }
@@ -928,17 +1357,12 @@ def advance_attack_segment(
     if enemy.attack_clock < 0.0 or enemy.health <= 0 or enemy.dormant {
         return;
     }
+    profile = current_profile(enemy);
     attack_charge(enemy, player, collision, dt);
-    speaker = enemy.melee_speaker if enemy.attack_melee else enemy.attack_speaker;
-    sound_times = enemy.rule.attack_sound_times;
-    if enemy.attack_melee {
-        sound_times = enemy.rule.alternate_melee_sound_times
-            if enemy.alternate_melee
-            else enemy.rule.melee_sound_times;
-    }
+    speaker = profile_speaker(enemy);
     if speaker is not None and dt > 0.0 {
         speaker.origin = enemy.pos.add(Vec3());
-        for at in sound_times {
+        for at in profile.sound_times {
             if (
                 enemy.attack_clock + 0.000001 < at
                 and enemy.attack_clock + dt + 0.000001 >= at
@@ -948,81 +1372,101 @@ def advance_attack_segment(
             }
         }
     }
+    extra = speaker_for(enemy, profile.extra_sound);
+    if extra is not None and dt > 0.0 {
+        extra.origin = enemy.pos.add(Vec3());
+        for at in profile.extra_sound_times {
+            if (
+                enemy.attack_clock + 0.000001 < at
+                and enemy.attack_clock + dt + 0.000001 >= at
+            )
+                or (at == 0.0 and enemy.attack_clock == 0.0) {
+                extra.requests += 1;
+            }
+        }
+    }
     enemy.attack_clock += dt;
     while enemy.attack_event < attack_event_count(enemy)
         and attack_event_time(enemy) <= enemy.attack_clock + 0.000001 {
         enemy.attack_event += 1;
+        event_index = enemy.attack_event - 1;
         delta = player.pos.sub(enemy.pos);
         distance = delta.length();
         sight = collision.trace_point(enemy.pos, player.pos);
         if player.health <= 0
             or (
-                (not enemy.rule.lock_aim or enemy.attack_melee)
+                (not profile.lock_aim or profile.kind == "melee")
                 and (
                     sight.start_solid
                     or sight.fraction < 1.0
-                    or distance > enemy.rule.attack_range
+                    or distance > profile.max_range
                 )
             ) {
             continue;
         }
-        if enemy.attack_melee {
-            if distance <= enemy.rule.melee_range {
-                amount = enemy.rule.melee;
-                maximum = enemy.rule.melee_max;
-                if enemy.alternate_melee and enemy.rule.alternate_melee_damage >= 0 {
-                    amount = enemy.rule.alternate_melee_damage;
-                    maximum = enemy.rule.alternate_melee_max;
-                }
-                if enemy.rule.melee_random_scale > 0.0 {
-                    total = 0.0;
-                    for sample in range(3) {
-                        enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
-                        total += float(enemy.shot_random) / 2147483647.0;
-                    }
-                    amount = int(total * enemy.rule.melee_random_scale);
-                } elif maximum > amount {
-                    enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
-                    amount += enemy.shot_random % (maximum - amount + 1);
-                }
+        if profile.kind == "melee" {
+            if distance <= profile.reach {
+                amount = event_damage(enemy, profile, event_index);
                 result = player spawn Damage(amount=amount);
-                if result.dealt > 0 and enemy.rule.melee_knockback > 0.0 {
+                if result.dealt > 0 and profile.knockback != 0.0 {
                     player.velocity = player.velocity.add(
-                        delta.normalized().scale(enemy.rule.melee_knockback)
+                        delta.normalized().scale(profile.knockback)
                     );
                     if player.velocity.z > 0.0 {
                         player.grounded = False;
                     }
                 }
             }
-        } elif enemy.rule.missile_speed > 0.0 {
-            direction = opponent_aim(enemy, player);
-            shot_index = enemy.attack_event - 1;
-            if shot_index < len(enemy.rule.missile_yaw) {
-                angle = enemy.rule.missile_yaw[shot_index] * math.pi / 180.0;
-                direction = Vec3(
-                    x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
-                    y=direction.x * math.sin(angle) + direction.y * math.cos(angle),
-                    z=direction.z
+        } elif profile.kind == "leap" {
+            launch_leap(enemy, player, profile);
+        } elif profile.kind == "beam" {
+            opponent_beam(
+                world,
+                enemy,
+                player,
+                collision,
+                profile,
+                event_damage(enemy, profile, event_index)
+            );
+        } elif profile.missile_speed > 0.0 {
+            direction = opponent_aim(enemy, player, profile);
+            if event_index < len(profile.missile_yaw) {
+                direction = rotate_yaw(direction, profile.missile_yaw[event_index]);
+            }
+            count = max(1, profile.missile_count);
+            for shot in range(count) {
+                aimed = rotate_yaw(
+                    direction, (float(shot) - float(count - 1) * 0.5) * 6.0
+                )
+                    if count > 1
+                    else direction;
+                velocity = aimed.scale(profile.missile_speed);
+                if profile.gravity {
+                    velocity.z = 200.0;
+                }
+                world +>:HasProjectile:+> Projectile(
+                    pos=enemy.pos,
+                    velocity=velocity,
+                    damage=profile.damage,
+                    hostile=True,
+                    effect=profile.missile_effect,
+                    gravity=profile.gravity,
+                    splash=profile.splash,
+                    radius=profile.radius,
+                    homing=profile.homing,
+                    homing_wait=0.2 if profile.homing > 0.0 else 0.0,
+                    beam_damage=profile.beam_damage,
+                    beam_radius=profile.beam_radius,
+                    burst_damage=profile.burst_damage,
+                    burst_radius=profile.burst_radius,
+                    remaining=2.5 if profile.gravity else 5.0
                 );
             }
-            velocity = direction.scale(enemy.rule.missile_speed);
-            if enemy.rule.gravity {
-                velocity.z = 200.0;
-            }
-            world +>:HasProjectile:+> Projectile(
-                pos=enemy.pos,
-                velocity=velocity,
-                damage=enemy.rule.damage,
-                hostile=True,
-                effect=enemy.rule.missile_effect,
-                gravity=enemy.rule.gravity,
-                splash=enemy.rule.splash,
-                radius=enemy.rule.radius,
-                remaining=2.5 if enemy.rule.gravity else 5.0
-            );
-        } elif enemy.rule.melee == 0 or enemy.rule.melee_times {
-            opponent_shot(world, enemy, player, collision);
+        } else {
+            offset = profile.missile_yaw[event_index]
+                if event_index < len(profile.missile_yaw)
+                else 0.0;
+            opponent_shot(world, enemy, player, collision, profile, offset);
         }
     }
     enemy.attack_flash = max(0.0, attack_duration(enemy) - enemy.attack_clock);
@@ -1037,15 +1481,10 @@ def advance_attack_segment(
 def advance_attack(
     world: World, enemy: Opponent, player: Player, collision: CollisionMap, dt: float
 ) {
-    restart = enemy.rule.melee_repeat_start
-        if enemy.attack_melee
-        else enemy.rule.repeat_start;
-    boundary = enemy.rule.melee_repeat_end
-        if enemy.attack_melee
-        else enemy.rule.repeat_end;
-    chance = enemy.rule.melee_repeat_chance
-        if enemy.attack_melee
-        else enemy.rule.repeat_chance;
+    profile = current_profile(enemy);
+    restart = profile.repeat_start;
+    boundary = profile.repeat_end;
+    chance = profile.repeat_chance;
     if restart < 0.0 or boundary <= restart or boundary >= attack_duration(enemy) {
         advance_attack_segment(world, enemy, player, collision, dt);
         return;
@@ -1064,11 +1503,14 @@ def advance_attack(
         if crossing and enemy.attack_clock >= 0.0 and player.health > 0 {
             distance = player.pos.sub(enemy.pos).length();
             sight = collision.trace_point(enemy.pos, player.pos);
-            valid = distance <= enemy.rule.melee_range
-                if enemy.attack_melee
-                else distance > enemy.rule.melee_range;
+            valid = distance <= profile.reach
+                if profile.kind == "melee"
+                else (
+                    distance > melee_reach(enemy)
+                    and distance >= profile.min_range
+                );
             if valid
-                and distance <= enemy.rule.attack_range
+                and distance <= profile.max_range
                 and not sight.start_solid
                 and sight.fraction == 1.0 {
                 enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
@@ -1088,6 +1530,22 @@ def advance_attack(
     }
 }
 
+def pain_pose_time(enemy: Opponent) -> float {
+    elapsed = max(0.0, pain_length(enemy) - enemy.pain_wait) * 10.0;
+    if enemy.pain_down and enemy.rule.knockdown_hold_frame >= 0 {
+        hold_frame = float(enemy.rule.knockdown_hold_frame);
+        hold = enemy.rule.knockdown_hold_time * 10.0;
+        if elapsed < hold_frame {
+            return elapsed;
+        }
+        if elapsed < hold_frame + hold {
+            return hold_frame;
+        }
+        return elapsed - hold;
+    }
+    return elapsed;
+}
+
 walker CombatTick {
     has player: Player,
         collision: CollisionMap,
@@ -1095,13 +1553,44 @@ walker CombatTick {
         dt: float,
         active: bool = True,
         world: World | None = None,
-        body_collision: CollisionMap | None = None;
+        body_collision: CollisionMap | None = None,
+        neighbors: dict[str, list[Opponent]] = {},
+        decisions: int = 0;
+
+    def cell(x: int, y: int) -> str { return str(x) + ":" + str(y); }
+
+    def nearby(pos: Vec3) -> list[Opponent] {
+        result: list[Opponent] = [];
+        x = int(math.floor(pos.x / 64.0));
+        y = int(math.floor(pos.y / 64.0));
+        for dx in [-1, 0, 1] {
+            for dy in [-1, 0, 1] {
+                key = self.cell(x + dx, y + dy);
+                if key in self.neighbors { result.extend(self.neighbors[key]); }
+            }
+        }
+        return result;
+    }
 
     can begin with World entry {
         self.world = here;
+        for enemy in [here->:HasOpponent:->][?:Opponent] {
+            if enemy.health <= 0 or enemy.dormant or enemy.alert <= 0.0 {
+                if enemy.route_search is not None {
+                    enemy.route_search.cancelled = True;
+                    enemy.route_search = None;
+                }
+                if enemy.health <= 0 or enemy.dormant { continue; }
+            }
+            key = self.cell(int(math.floor(enemy.pos.x / 64.0)), int(math.floor(enemy.pos.y / 64.0)));
+            if key not in self.neighbors { self.neighbors[key] = []; }
+            self.neighbors[key].append(enemy);
+        }
         self.state.route_credit = min(
             1.0, self.state.route_credit + max(0.0, self.dt) * 8.0
         );
+        self.state.navigation.network.refresh(self.collision);
+        if self.active and self.player.health > 0 { self.state.navigation.advance(); }
         here spawn ParticleTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
@@ -1112,7 +1601,25 @@ walker CombatTick {
     }
 
     can think with Opponent entry {
-        if here.rule.script == "chthon" {
+        if here.rule.script {
+            return;
+        }
+        ensure_profiles(here);
+        if here.rule.decoration {
+            if here.activation.pending > 0 {
+                # Targeted static figures leave the scene, as the original teleport-away bodies do.
+                here.activation.pending = 0;
+                here.visual.visible = False;
+            }
+            if here.idle_animation {
+                here.animation_time += self.dt * 4.0;
+                index = int(here.animation_time) % len(here.idle_animation);
+                here.visual.first = here.idle_animation[index];
+                here.visual.second = here.idle_animation[
+                    (index + 1) % len(here.idle_animation)
+                ];
+                here.visual.blend = here.animation_time - float(int(here.animation_time));
+            }
             return;
         }
         if here.health > 0 and here.activation.pending > 0 {
@@ -1143,6 +1650,14 @@ walker CombatTick {
                 self.player spawn Damage(amount=100000, bypass_armor=True);
             }
         }
+        if self.body_collision is None
+            or self.body_collision.eye_height != here.eye_height {
+            self.body_collision = self.collision.for_body(here.eye_height);
+        }
+        body_collision = self.body_collision;
+        if here.pending_explosion and self.world is not None {
+            death_explosion(self.world, here, self.player, self.collision, self.state);
+        }
         if here.health <= 0 {
             if here.death_animation {
                 here.animation_time += self.dt * 10.0;
@@ -1153,6 +1668,26 @@ walker CombatTick {
                 ];
                 here.visual.blend = here.animation_time
                     - float(int(here.animation_time));
+            }
+            if here.rule.movement == "fly" and not here.grounded {
+                here spawn MovePlayer(collision=body_collision, wish=Vec3(), dt=self.dt);
+            }
+            successor = here.successor;
+            if successor is not None
+                and successor.dormant
+                and successor.spawn_wait < 0.0
+                and here.animation_time >= float(len(here.death_animation)) - 1.0 {
+                # The mech's pilot bursts out toward the player once the wreck settles.
+                successor.spawn_wait = 0.8;
+                successor.pos = here.pos.add(Vec3());
+                successor.home = here.pos.add(Vec3());
+                toward = self.player.pos.sub(here.pos);
+                toward.z = 0.0;
+                successor.velocity = toward.normalized().scale(400.0).add(Vec3(z=200.0));
+                successor.yaw = math.atan2(toward.y, toward.x);
+                successor.last_seen = self.player.pos;
+                successor.last_seen_height = self.collision.eye_height;
+                successor.alert = 8.0;
             }
             if not here.arena {
                 return;
@@ -1169,24 +1704,29 @@ walker CombatTick {
             here.velocity = Vec3();
             here.visual.visible = True;
             here.attack_wait = 1.0;
+            here.attack_profile = -1;
+            here.leaping = False;
+            here.pain_down = False;
+            here.pain_wait = 0.0;
         }
-        if self.body_collision is None
-            or self.body_collision.eye_height != here.eye_height {
-            self.body_collision = self.collision.for_body(here.eye_height);
-        }
-        body_collision = self.body_collision;
         delta = self.player.pos.sub(here.pos);
         distance = delta.length();
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
+        if here.pain_wait <= 0.0 and here.pain_down {
+            here.pain_down = False;
+            here.pain_variant = 0;
+        }
         here.pain_cooldown = max(0.0, here.pain_cooldown - self.dt);
         here.attack_wait = max(0.0, here.attack_wait - self.dt);
         here.attack_flash = max(0.0, here.attack_flash - self.dt);
         here.alert = max(0.0, here.alert - self.dt);
         here.route_wait = max(0.0, here.route_wait - self.dt);
         here.decision_wait -= self.dt;
-        if here.decision_wait <= 0.0 {
+        if here.decision_wait <= 0.0 and self.decisions < 8 {
+            self.decisions += 1;
             here.decision_wait = 0.1;
             here.pursuing = False;
+            was_alert = here.alert > 0.0;
             if distance < 1500.0 {
                 sight = self.collision.trace_point(here.pos, self.player.pos);
                 here.pursuing = not sight.start_solid and sight.fraction == 1.0;
@@ -1194,35 +1734,30 @@ walker CombatTick {
                     here.last_seen = self.player.pos;
                     here.last_seen_height = self.collision.eye_height;
                     here.alert = 8.0;
+                    if not was_alert and not here.sighted {
+                        request_sound(here, here.rule.sight_sound);
+                    }
+                    here.sighted = True;
                 }
                 # Attack only with a fresh sight query, never cached visibility.
                 if here.pursuing
                     and here.attack_wait <= 0.0
                     and here.pain_wait <= 0.0
-                    and here.attack_clock < 0.0 {
-                    if distance <= here.rule.attack_range
-                        and (
-                            distance >= here.rule.ranged_min
-                            or distance <= here.rule.melee_range
-                        ) {
-                        here.attack_melee = (
-                            here.rule.melee > 0 or here.rule.melee_random_scale > 0.0
-                        )
-                            and distance <= here.rule.melee_range;
+                    and here.attack_clock < 0.0
+                    and not here.leaping {
+                    selected = choose_attack(here, distance);
+                    if selected >= 0 {
+                        select_profile(here, selected);
+                        profile = here.profiles[selected];
                         here.attack_target = self.player.pos.add(Vec3());
                         here.attack_clock = 0.0;
                         here.attack_event = 0;
                         here.burst_count = 1;
-                        here.alternate_melee = False;
-                        if here.attack_melee and here.rule.alternate_melee_times {
+                        if profile.burst_max > 1 and not here.attack_melee {
                             here.shot_random = (here.shot_random * 48271) % 2147483647;
-                            here.alternate_melee = here.shot_random > 1073741823;
-                        }
-                        if here.rule.burst_max > 1 and not here.attack_melee {
-                            here.shot_random = (here.shot_random * 48271) % 2147483647;
-                            here.burst_count = here.rule.burst_min
+                            here.burst_count = profile.burst_min
                                 + here.shot_random
-                                    % (here.rule.burst_max - here.rule.burst_min + 1);
+                                    % (profile.burst_max - profile.burst_min + 1);
                         }
                         here.attack_wait = max(
                             here.rule.interval, attack_duration(here)
@@ -1231,28 +1766,51 @@ walker CombatTick {
                     }
                 }
             }
+            if here.alert <= 0.0 and not here.pursuing {
+                here.sighted = False;
+            }
             here.steering = Vec3();
-            destination = here.last_seen;
-            if here.grounded and here.alert > 0.0 and here.attack_clock < 0.0 {
+            destination = here.arena_goal if here.arena_goal is not None else here.last_seen;
+            if here.grounded
+                and here.alert > 0.0
+                and here.attack_clock < 0.0
+                and here.rule.movement == "walk" {
                 origin = here.pos.sub(Vec3(z=here.eye_height));
                 target = destination.sub(Vec3(z=here.last_seen_height));
-                if here.route_target.sub(target).length() > 48.0 {
-                    here.route = [];
+                if here.route_search is not None {
+                    if here.route_search.finish.sub(target).length() > 48.0 {
+                        here.route_search.cancelled = True;
+                        here.route_search = None;
+                    } elif here.route_search.done {
+                        here.route = here.route_search.result;
+                        here.route_launches = here.route_search.launches;
+                        here.route_search = None;
+                        here.navigation_needed = False;
+                    }
                 }
-                while here.route and here.route[0].sub(origin).length() < 16.0 {
+                if here.route_target.sub(target).length() > 48.0 { here.route = []; }
+                while here.route and here.route[0].sub(origin).length() < 8.0 {
+                    if here.route_launches and here.route_launches[0].z > 0.0 {
+                        here.velocity = here.route_launches[0];
+                        here.grounded = False;
+                    }
                     here.route.pop(0);
-                }
-                if here.route
-                    and walk_edge(body_collision, origin, here.route[0]) is None {
-                    here.route = [];
+                    if here.route_launches { here.route_launches.pop(0); }
+                    if not here.grounded { break; }
                 }
                 if not here.route
+                    and here.route_search is None
+                    and (here.arena_goal is not None or not here.pursuing or here.navigation_needed)
+                    and len(self.state.navigation.jobs) < 8
                     and here.route_wait <= 0.0
                     and self.state.route_credit >= 1.0 {
                     self.state.route_credit -= 1.0;
                     here.route_wait = 1.0;
                     here.route_target = target;
-                    here.route = ground_route(body_collision, origin, target);
+                    if here.route_search is None {
+                        here.route_search = RouteSearch(start=origin, finish=target, collision=body_collision, network=self.state.navigation.network, allow_jumps=here.arena);
+                        self.state.navigation.jobs.append(here.route_search);
+                    }
                 }
                 if here.route {
                     destination = here.route[0].add(Vec3(z=here.eye_height));
@@ -1260,16 +1818,20 @@ walker CombatTick {
             }
             goal = destination.sub(here.pos);
             if here.alert > 0.0
+                and here.pain_wait <= 0.0
+                and here.attack_flash <= 0.0
+                and not here.leaping
+                and here.rule.movement != "none"
                 and goal.length()
                     > (
                         here.rule.stop_range
-                            if here.pursuing and len(here.route) <= 1
+                            if here.pursuing and here.arena_goal is None and len(here.route) <= 1
                             else 12.0
                     ) {
                 direction = Vec3(x=goal.x, y=goal.y).normalized();
                 # Local separation is evaluated with steering, not every physics tick.
                 if self.world is not None {
-                    for neighbor in [self.world->:HasOpponent:->][?:Opponent] {
+                    for neighbor in self.nearby(here.pos) {
                         if neighbor == here
                             or neighbor.health <= 0
                             or neighbor.dormant {
@@ -1294,11 +1856,8 @@ walker CombatTick {
                         x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
                         y=direction.x * math.sin(angle) + direction.y * math.cos(angle)
                     );
-                    probe = body_collision.trace(
-                        here.pos.sub(Vec3(z=here.eye_height)),
-                        here.pos.sub(Vec3(z=here.eye_height)).add(candidate.scale(48.0))
-                    );
-                    if here.grounded {
+                    probe = Trace();
+                    if here.grounded and here.rule.movement == "walk" {
                         origin = here.pos.sub(Vec3(z=here.eye_height));
                         reachable = walk_edge(
                             body_collision,
@@ -1307,9 +1866,16 @@ walker CombatTick {
                             match_height=False
                         );
                         if reachable is None {
+                            if angle == 0.0 {
+                                here.route = [];
+                                here.route_launches = [];
+                                here.navigation_needed = True;
+                            }
                             continue;
                         }
-                        probe.fraction = 1.0;
+                    } else {
+                        origin = here.pos.sub(Vec3(z=here.eye_height));
+                        probe = body_collision.trace(origin, origin.add(candidate.scale(48.0)));
                     }
                     score = probe.fraction + 0.15 * math.cos(angle);
                     if not probe.start_solid
@@ -1317,6 +1883,8 @@ walker CombatTick {
                         and score > best {
                         best = score;
                         here.steering = candidate;
+                        # Candidates are ordered by descending directional score.
+                        if probe.fraction == 1.0 { break; }
                     }
                 }
             }
@@ -1325,7 +1893,8 @@ walker CombatTick {
             advance_attack(self.world, here, self.player, self.collision, self.dt);
         }
         wish = Vec3()
-            if here.pain_wait > 0.0 or here.attack_flash > 0.0
+            if here.pain_wait > 0.0 or here.attack_flash > 0.0 or here.leaping
+                or (here.arena and not here.grounded)
             else here.steering;
         if here.alert > 0.0 {
             goal = here.last_seen.sub(here.pos);
@@ -1335,14 +1904,67 @@ walker CombatTick {
             );
             here.yaw += max(-6.0 * self.dt, min(6.0 * self.dt, turn));
         }
-        here.support_wait -= self.dt;
-        # Settled actors probe support at 20 Hz; motion and gravity remain 120 Hz.
-        if not here.grounded
-            or here.velocity.length() > 0.000001
-            or wish.length() > 0.0
-            or here.support_wait <= 0.0 {
-            here spawn MovePlayer(collision=body_collision, wish=wish, dt=self.dt);
-            here.support_wait = 0.05;
+        if here.rule.movement == "walk" or here.rule.movement == "none" {
+            if here.rule.movement == "none" {
+                here.velocity = Vec3();
+            } else {
+                here.support_wait -= self.dt;
+                # Settled actors probe support at 20 Hz; motion and gravity remain 120 Hz.
+                if not here.grounded
+                    or here.velocity.length() > 0.000001
+                    or wish.length() > 0.0
+                    or here.support_wait <= 0.0 {
+                    here spawn MovePlayer(
+                        collision=body_collision, wish=wish, dt=self.dt
+                    );
+                    here.support_wait = 0.05;
+                }
+            }
+        } elif here.rule.movement == "swim" and here.water_depth < 2 {
+            here spawn MovePlayer(collision=body_collision, wish=Vec3(), dt=self.dt);
+        } elif self.dt > 0.0 and self.dt <= 0.05 {
+            # Fliers and swimmers hold 30 to 40 units above the target origin.
+            desired = Vec3();
+            if wish.length() > 0.0 {
+                desired = Vec3(x=wish.x, y=wish.y);
+                rise = (here.pos.z - here.eye_height)
+                    - (here.last_seen.z - here.last_seen_height);
+                if rise > 40.0 {
+                    desired.z = -1.0;
+                } elif rise < 30.0 {
+                    desired.z = 1.0;
+                }
+                desired = desired.normalized().scale(here.walk_speed);
+            }
+            here.velocity = here.velocity.add(
+                desired.sub(here.velocity).scale(min(1.0, 8.0 * self.dt))
+            );
+            body = here.pos.sub(Vec3(z=here.eye_height));
+            moved = slide(body_collision, body, here.velocity, self.dt);
+            here.velocity = moved.velocity;
+            here.pos = moved.pos.add(Vec3(z=here.eye_height));
+            here.grounded = False;
+        }
+        if here.leaping {
+            if here.grounded {
+                here.leaping = False;
+            } elif here.velocity.length() > 400.0 and self.player.health > 0 {
+                contact = self.player.pos.sub(here.pos);
+                if abs(contact.x) < here.rule.width + 16.0
+                    and abs(contact.y) < here.rule.width + 16.0
+                    and abs(contact.z) < 56.0 {
+                    profile = current_profile(here);
+                    amount = event_damage(here, profile, 0);
+                    result = self.player spawn Damage(amount=amount);
+                    if result.dealt > 0 {
+                        push = Vec3(x=contact.x, y=contact.y).normalized();
+                        self.player.velocity = self.player.velocity.add(
+                            push.scale(float(amount) * 8.0)
+                        );
+                    }
+                    here.leaping = False;
+                }
+            }
         }
         pose_name = "attack"
             if here.attack_flash > 0.0
@@ -1350,16 +1972,19 @@ walker CombatTick {
         if here.pain_wait > 0.0 {
             pose_name = "pain";
         }
-        frames = here.attack_animation
-            if pose_name == "attack"
-            else (here.animation if pose_name == "run" else here.idle_animation);
-        if pose_name == "attack" and here.attack_melee and here.melee_animation {
-            frames = here.alternate_melee_animation
-                if here.alternate_melee
-                else here.melee_animation;
+        frames = here.animation if pose_name == "run" else here.idle_animation;
+        if pose_name == "attack" {
+            frames = profile_frames(here, here.attack_profile);
         }
         if pose_name == "pain" {
             frames = here.pain_animation;
+            if here.pain_down and here.knockdown_animation {
+                frames = here.knockdown_animation;
+            } elif here.pain_variant > 0
+                and here.pain_variant - 1 < len(here.pain_animations)
+                and here.pain_animations[here.pain_variant - 1] {
+                frames = here.pain_animations[here.pain_variant - 1];
+            }
         }
         if not frames {
             frames = here.animation;
@@ -1372,8 +1997,7 @@ walker CombatTick {
             if pose_name == "attack" and here.attack_clock >= 0.0 {
                 here.animation_time = attack_pose_time(here);
             } elif pose_name == "pain" {
-                here.animation_time = max(0.0, here.rule.pain_duration - here.pain_wait)
-                    * 10.0;
+                here.animation_time = pain_pose_time(here);
             } else {
                 here.animation_time += self.dt * (8.0 if pose_name != "stand" else 2.0);
             }

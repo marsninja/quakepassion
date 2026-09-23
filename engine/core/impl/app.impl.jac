@@ -34,6 +34,8 @@ impl App.run() {
         equip_player(self.player, self.combat, self.level.bsp.game);
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
+        populate_finale(self.world, self.level, game_directory(self.level.bsp.game));
+        if self.level.bsp.game == "q3" { prepare_arena_links(self.world, self.level.collision); }
         self.models.upload(self.world);
         self.effects.upload(
             self.level.bsp.game,
@@ -124,12 +126,18 @@ impl App.render_frame() {
         self.effects.draw(
             self.world, p.pos, p.yaw, p.pitch, lighting=self.level.lighting
         );
-        if not self.smoke {
+        if not self.smoke and not self.finale_active {
             self.viewweapon.draw(
                 p, self.combat, self.simulation_time, self.level.lighting
             );
         }
         self.renderer.end_scene();
+        if self.finale_text or self.intermission_text {
+            self.renderer.draw_finale(
+                self.finale_text if self.finale_text else self.intermission_text,
+                "Enter: " + ("main menu" if self.campaign_complete else "continue")
+            );
+        }
         if not self.smoke {
             self.renderer.draw_status(
                 p.health, p.armor, quantity(p.inventory, "shells")
@@ -342,7 +350,9 @@ impl App.load_destination(
         }
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
+        populate_finale(world, level, game_directory(game));
         combat = CombatState();
+        if game == "q3" { prepare_arena_links(world, level.collision); }
         equip_player(player, combat, game, fresh=not carrying);
         if carrying {
             select_weapon(player, combat, self.combat.weapon);
@@ -398,6 +408,7 @@ impl App.load_destination(
         }
         self.campaign = next_campaign;
         self.world = world;
+        self.arena_contacts = ArenaContactIndex();
         self.level = level;
         self.player = player;
         self.player.god_mode = self.god_mode;
@@ -418,6 +429,29 @@ impl App.load_destination(
         self.simulation_time = 0.0;
         self.combat = combat;
         self.expedition_complete = level.completion.pending > 0;
+        self.finale_text = "";
+        self.finale_active = False;
+        self.intermission_text = "";
+        self.pending_map = "";
+        self.pending_spawn = "";
+        self.pending_unit = False;
+        self.campaign_complete = False;
+        if game == "q1"
+            and name == "start"
+            and quantity(player.inventory, "runes") == 15
+            and not self.runes_message {
+            self.runes_message = True;
+            self.intermission_text = RUNES_TEXT;
+        }
+        for finale in [world->:HasFinale:->][?:Finale] {
+            if finale.camera {
+                self.begin_intermission("");
+                if finale.text {
+                    self.finale_text = finale.text;
+                    self.campaign_complete = True;
+                }
+            }
+        }
         self.clock = Clock();
         self.skip_time = True;
         self.walking = False;
@@ -504,6 +538,35 @@ impl App.step() -> bool {
             return True;
         }
     }
+    if self.level.active and (self.intermission_text or self.campaign_complete) {
+        self.jump_pending = False;
+        self.physics_clock.accumulator = 0.0;
+        if IsKeyPressed(i32(257)) {
+            if self.pending_map {
+                destination = self.pending_map;
+                spawnpoint = self.pending_spawn;
+                unit = self.pending_unit;
+                self.pending_map = "";
+                self.load_destination(
+                    self.level.bsp.game, destination, spawnpoint, carry=True, new_unit=unit
+                );
+            } elif self.campaign_complete {
+                self.campaign_complete = False;
+                self.finale_text = "";
+                self.menu.opened = True;
+                self.menu.restore_mouse = mouse_captured();
+                _release();
+                self.menu.scan();
+            } else {
+                self.intermission_text = "";
+            }
+        }
+        if self.finale_active and not self.campaign_complete and not self.pending_map {
+            self.finale_active = False;
+        }
+        self.render_frame();
+        return True;
+    }
     if self.level.active
         and (
             self.player.health <= 0
@@ -524,7 +587,7 @@ impl App.step() -> bool {
         return True;
     }
     intent = Intent()
-        if self.smoke
+        if self.smoke or self.finale_active
         else sample_intent(dt, self.sensitivity, self.invert_y);
     if intent.weapon > 0 {
         select_weapon(self.player, self.combat, intent.weapon);
@@ -599,7 +662,7 @@ impl App.step() -> bool {
                 self.notice_wait = 3.0;
             }
         }
-        if self.walking {
+        if self.walking and not self.finale_active {
             immersed = self.level.immersion(self.player.pos);
             self.player.water_depth = immersed.depth;
             self.player.liquid_kind = immersed.kind;
@@ -635,6 +698,23 @@ impl App.step() -> bool {
                 break;
             }
             old_health = self.player.health;
+            swimmers = [
+                enemy
+                for enemy in [self.world->:HasOpponent:->][?:Opponent]
+                if enemy.rule.movement == "swim"
+                    and not enemy.dormant
+                    and enemy.health > 0
+            ];
+            surfaces: list[Vec3] = [];
+            for swimmer in swimmers {
+                swimmer.water_depth = self.level.immersion(
+                    swimmer.pos, swimmer.eye_height
+                ).depth;
+                surfaces.append(swimmer.pos.add(Vec3()));
+            }
+            if self.level.bsp.game == "q3" {
+                self.world spawn ArenaNavigationTick(collision=self.level.collision, index=self.arena_contacts, dt=self.physics_clock.tick_rate);
+            }
             self.world spawn CombatTick(
                 player=self.player,
                 collision=self.level.collision,
@@ -642,12 +722,39 @@ impl App.step() -> bool {
                 dt=self.physics_clock.tick_rate,
                 active=self.walking
             );
+            if self.level.bsp.game == "q3" {
+                self.world spawn ArenaNavigationTick(collision=self.level.collision, index=self.arena_contacts, dt=self.physics_clock.tick_rate, contacts=True);
+            }
+            # Swimming monsters never leave their liquid volume.
+            for i in range(len(swimmers)) {
+                if swimmers[i].water_depth >= 2
+                    and self.level.immersion(swimmers[i].pos, swimmers[i].eye_height).depth
+                        < 2 {
+                    swimmers[i].pos = surfaces[i];
+                    swimmers[i].velocity = Vec3();
+                }
+            }
             self.world spawn ChthonTick(
                 player=self.player,
                 state=self.combat,
                 dt=self.physics_clock.tick_rate,
                 eye_height=self.level.collision.eye_height
             );
+            self.world spawn FinaleTick(
+                player=self.player, state=self.combat, dt=self.physics_clock.tick_rate
+            );
+            for finale in [self.world->:HasFinale:->][?:Finale] {
+                if finale.camera and not self.finale_active {
+                    self.begin_intermission("");
+                }
+                if finale.text and not self.campaign_complete {
+                    self.finale_text = finale.text;
+                    self.campaign_complete = True;
+                }
+            }
+            if self.campaign_complete {
+                break;
+            }
             if self.player.health < old_health {
                 self.audio.play(1);
             }
@@ -710,7 +817,7 @@ impl App.step() -> bool {
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
                 top_drop=self.level.collision.top_drop,
-                touching=self.walking
+                touching=self.walking and not self.finale_active
             );
             if pickup_result.collected > 0 {
                 self.audio.play(2);
@@ -721,7 +828,7 @@ impl App.step() -> bool {
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
                 top_drop=self.level.collision.top_drop,
-                touching=self.walking
+                touching=self.walking and not self.finale_active
             );
             if triggers.message {
                 self.notice = triggers.message;
@@ -734,13 +841,13 @@ impl App.step() -> bool {
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
                 top_drop=self.level.collision.top_drop,
-                touching=self.walking
+                touching=self.walking and not self.finale_active
             );
             exit_request = self.world spawn ExitTick(
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking
+                touching=self.walking and not self.finale_active
             );
             if exit_request.request {
                 if self.level.bsp.game == "passion"
@@ -749,12 +856,32 @@ impl App.step() -> bool {
                     self.level.completion.pending = 1;
                     break;
                 }
+                destination = exit_map(exit_request.request);
+                cinematic = exit_cinematic(exit_request.request);
+                if destination.endswith(".pcx") {
+                    self.finale_text = VICTORY_TEXT;
+                    self.campaign_complete = True;
+                    self.begin_intermission("");
+                    break;
+                }
+                text = episode_text(self.level.bsp.game, self.level.name, destination);
+                if text {
+                    self.pending_map = destination;
+                    self.pending_spawn = exit_spawn(exit_request.request);
+                    self.pending_unit = destination != exit_request.request.split("$")[0];
+                    self.begin_intermission(text);
+                    break;
+                }
+                if cinematic {
+                    self.notice = "Cinematic " + cinematic + " skipped";
+                    self.notice_wait = 4.0;
+                }
                 self.load_destination(
                     self.level.bsp.game,
-                    exit_map(exit_request.request),
+                    destination,
                     exit_spawn(exit_request.request),
                     carry=True,
-                    new_unit=exit_request.request.startswith("*")
+                    new_unit=exit_request.request.split("$")[0].split("+")[-1].startswith("*")
                 );
                 break;
             }
@@ -763,7 +890,7 @@ impl App.step() -> bool {
                 collision=self.level.collision,
                 start=previous_origin,
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking
+                touching=self.walking and not self.finale_active
             );
         }
     }
@@ -777,6 +904,21 @@ impl App.step() -> bool {
     }
     self.render_frame();
     return True;
+}
+
+# Freeze the player at the authored intermission camera and show a text panel.
+impl App.begin_intermission(text: str) {
+    self.intermission_text = text;
+    self.finale_active = True;
+    self.player.velocity = Vec3();
+    self.player.god_mode = True;
+    self.jump_pending = False;
+    view = intermission_camera(self.level.bsp);
+    if view.found {
+        self.player.pos = view.origin.add(Vec3());
+        self.player.yaw = view.yaw;
+        self.player.pitch = view.pitch;
+    }
 }
 
 impl App.toggle_movement() {

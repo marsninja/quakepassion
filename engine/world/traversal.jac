@@ -1,6 +1,8 @@
 """Shared swept-contact traversal, with map-defined destinations and launches."""
 import math;
 import from .world { World, Player }
+import from .damage { Damage }
+import from .finale { TeleportTrain, teleport_train_at, telefrag }
 import from .triggers { trigger_volume }
 import from .doors { door_direction }
 import from ..formats.bsp { Bsp, MapEntity }
@@ -11,6 +13,7 @@ import from ..math.vec3 { Vec3, forward_from }
 
 edge HasTraversal: World --> Traversal {}
 edge ArrivesAt: Traversal --> Destination {}
+edge FollowsTrain: Traversal --> TeleportTrain {}
 
 node Destination {
     has origin: Vec3,
@@ -26,7 +29,9 @@ node Traversal {
         velocity: Vec3 = Vec3(),
         once: bool = False,
         enabled: bool = True,
-        activations: int = 0;
+        activations: int = 0,
+        nav_entry: Vec3 | None = None,
+        nav_exit: Vec3 | None = None;
 }
 
 walker TraversalTick {
@@ -35,16 +40,21 @@ walker TraversalTick {
         start: Vec3,
         dt: float,
         touching: bool = True,
-        relocated: bool = False;
+        relocated: bool = False,
+        targets: list[Traversal] = [],
+        selected_only: bool = False,
+        world: World | None = None;
 
     can begin with World entry {
         if self.dt <= 0.0 or not self.touching {
             return;
         }
+        self.world = here;
         self.player.teleport_cooldown = max(
             0.0, self.player.teleport_cooldown - self.dt
         );
-        visit [here->:HasTraversal:->];
+        if self.selected_only { visit self.targets; }
+        else { visit [here->:HasTraversal:->]; }
     }
 
     can touch with Traversal entry {
@@ -54,6 +64,28 @@ walker TraversalTick {
         finish = self.player.pos.sub(Vec3(z=self.collision.eye_height));
         hit = here.volume.trace(self.start, finish, top_drop=self.collision.top_drop);
         if not hit.start_solid and hit.fraction == 1.0 {
+            return;
+        }
+        if here.kind == "teleport_train" {
+            if self.player.teleport_cooldown > 0.0 or self.world is None {
+                return;
+            }
+            trains = [here->:FollowsTrain:->][?:TeleportTrain];
+            if len(trains) != 1 {
+                return;
+            }
+            point = trains[0].pos.add(Vec3());
+            self.player.pos = point.add(Vec3(z=self.collision.eye_height));
+            self.player.velocity = Vec3();
+            self.player.teleport_cooldown = 0.2;
+            self.relocated = True;
+            here.activations += 1;
+            # Whatever occupies the ball's spot is telefragged: the boss, or the
+            # player inside solid rock.
+            if not telefrag(self.world, self.player, point, self.collision.eye_height)
+                and self.collision.trace(point, point).start_solid {
+                self.player spawn Damage(amount=100000, bypass_armor=True);
+            }
             return;
         }
         if here.kind == "teleport" {
@@ -162,6 +194,22 @@ def load_traversal(world: World, bsp: Bsp) {
                 continue;
             }
             destination = targets[0];
+            if destination.fields.get("classname", "") == "misc_teleporttrain" {
+                train_index = -1;
+                for i in range(len(bsp.entities)) {
+                    if bsp.entities[i] is destination {
+                        train_index = i;
+                    }
+                }
+                train = teleport_train_at(world, train_index);
+                if train is None {
+                    continue;
+                }
+                traversal.kind = "teleport_train";
+                traversal +>:FollowsTrain:+> train;
+                world +>:HasTraversal:+> traversal;
+                continue;
+            }
             supported = ["info_teleport_destination"]
                 if bsp.game == "q1"
                 else ["target_position", "misc_teleporter_dest", "info_notnull"];

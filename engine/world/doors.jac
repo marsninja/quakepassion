@@ -381,7 +381,7 @@ walker DoorTick {
                 self.bsp.faces[face].motion = motion;
             }
             for j in range(len(part.hulls)) {
-                self.collision.offsets[part.hulls[j]] = part.origins[j].add(motion);
+                self.collision.set_offset(part.hulls[j], part.origins[j].add(motion));
             }
         }
         for actor_index in range(len(self.actors)) {
@@ -757,7 +757,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                     bsp.faces[face].motion = motion;
                 }
                 for j in range(len(part.hulls)) {
-                    collision.offsets[part.hulls[j]] = part.origins[j].add(motion);
+                    collision.set_offset(part.hulls[j], part.origins[j].add(motion));
                 }
             }
         }
