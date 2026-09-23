@@ -92,6 +92,9 @@ obj Renderer {
     def draw_finale(text: str, prompt: str);
     def draw_keys(message: str);
     def draw_status(health: int, armor: int, shells: int = 0, arena: bool = False);
+    """Beside an original status bar: the crosshair, the hit marker and the
+    arena score line."""
+    def draw_aim(state: CombatState, crosshair: bool, score: str);
     def draw_tint(r: int, g: int, b: int, a: int);
     def draw_powerups(lines: list[str]);
     def end_frame();

@@ -34,7 +34,9 @@ import from vendor.raylib {
         image: Image
     ) -> None;  def rlLoadTexture(
         data: bytes, width: i32, height: i32, format: i32, mipmapCount: i32
-    ) -> u32;  def rlUnloadTexture(id: u32) -> None;  def rlTextureParameters(
+    ) -> u32;  def rlUpdateTexture(
+        id: u32, offsetX: i32, offsetY: i32, width: i32, height: i32, format: i32, data: bytes
+    ) -> None;  def rlUnloadTexture(id: u32) -> None;  def rlTextureParameters(
         id: u32, param: i32, value: i32
     ) -> None;  def rlSetTexture(id: u32) -> None;  def rlBegin(mode: i32) -> None;  def rlEnd -> None;  def rlTexCoord2f(
         x: f32, y: f32
@@ -65,7 +67,8 @@ obj QuakeRenderer {
         shader: Shader = Shader(id=u32(0), locs=u64(0)),
         atlas: int = 0,
         atlas_size: int = 2048,
-        rects: list[LightRect] = [];
+        rects: list[LightRect] = [],
+        styled: list[int] = [];
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
@@ -258,7 +261,10 @@ obj QuakeRenderer {
         y = 1;
         row_height = 0;
         shared: dict[int, LightRect] = {};
+        self.styled = [];
+        face_index = -1;
         for face in level.bsp.faces {
+            face_index += 1;
             if level.bsp.game == "q3" and face.light_offset in shared {
                 self.rects.append(shared[face.light_offset]);
                 continue;
@@ -281,6 +287,10 @@ obj QuakeRenderer {
             shared[face.light_offset] = rect;
             rect.x = x;
             rect.y = y;
+            # Faces lit by an animated or switchable style are relit each frame.
+            if any([style != 0 for style in face.styles]) {
+                self.styled.append(face_index);
+            }
             for ly in range(-1, h + 1) {
                 for lx in range(-1, w + 1) {
                     sample = min(max(ly, 0), h - 1) * w + min(max(lx, 0), w - 1);
@@ -319,6 +329,56 @@ obj QuakeRenderer {
         }
         rlTextureParameters(u32(self.atlas), i32(10241), i32(9729));
         rlTextureParameters(u32(self.atlas), i32(10240), i32(9729));
+    }
+
+    """Relight faces whose lightmaps use animated or switched styles, as
+    R_AnimateLight and R_BuildLightMap do: each style layer is scaled by its
+    current brightness before the layers are added."""
+    def animate_styles(level: Level, values: dict[int, float]) {
+        if self.atlas == 0 {
+            return;
+        }
+        channels = level.bsp.light_channels;
+        for index in self.styled {
+            face = level.bsp.faces[index];
+            rect = self.rects[index];
+            w = face.light_width;
+            h = face.light_height;
+            pixels = bytearray(b"\xff") * ((w + 2) * (h + 2) * 4);
+            scales = [values[style] if style in values else 1.0 for style in face.styles];
+            for ly in range(-1, h + 1) {
+                for lx in range(-1, w + 1) {
+                    sample = min(max(ly, 0), h - 1) * w + min(max(lx, 0), w - 1);
+                    p = ((ly + 1) * (w + 2) + lx + 1) * 4;
+                    for channel in range(3) {
+                        brightness = 0.0;
+                        for style in range(len(face.styles)) {
+                            brightness += float(
+                                int(
+                                    level.bsp.lighting[
+                                        face.light_offset
+                                            + (style * w * h + sample) * channels
+                                            + (channel if channels == 3 else 0)
+                                    ]
+                                )
+                            )
+                                * 2.0
+                                * scales[style];
+                        }
+                        pixels[p + channel] = min(255, int(brightness));
+                    }
+                }
+            }
+            rlUpdateTexture(
+                u32(self.atlas),
+                i32(rect.x - 1),
+                i32(rect.y - 1),
+                i32(w + 2),
+                i32(h + 2),
+                i32(7),
+                bytes(pixels)
+            );
+        }
     }
 
     def polygon(face: Face, rect: LightRect, light: bool) {

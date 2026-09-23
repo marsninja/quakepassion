@@ -19,6 +19,7 @@ import from .doors { load_doors, connect_targets, pose_doors }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
+import from .lightstyles { load_light_styles }
 import from .finale { load_finale }
 import from .hazards { load_hazards }
 import from .speakers { load_speakers }
@@ -367,6 +368,7 @@ def prepare_level(world: World, level: Level) {
     load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_trains(world, level.bsp, level.collision);
+    load_light_styles(world, level.bsp);
     load_finale(world, level.bsp);
     load_hazards(world, level.bsp);
     load_speakers(world, level.bsp);

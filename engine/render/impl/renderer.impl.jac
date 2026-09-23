@@ -90,6 +90,19 @@ impl Renderer.draw_status(health: int, armor: int, shells: int = 0, arena: bool 
     }
 }
 
+impl Renderer.draw_aim(state: CombatState, crosshair: bool, score: str) {
+    color = Color(r=255, g=230, b=180, a=255);
+    if crosshair {
+        DrawText("+", i32(self.width / 2 - 6), i32(self.height / 2 - 12), 24, color);
+    }
+    if state.hit_flash > 0.0 {
+        DrawText("X", i32(self.width / 2 - 8), i32(self.height / 2 - 12), 24, Color(r=255, g=50, b=40, a=255));
+    }
+    if score {
+        DrawText(score, i32(self.width - 20 - len(score) * 11), 16, 20, color);
+    }
+}
+
 impl Renderer.screenshot(path: str) {
     TakeScreenshot(path);
 }

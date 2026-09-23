@@ -59,6 +59,7 @@ import from ..world.powerups {
     Powerup,
     Empowered,
     empowered,
+    powerup_left,
     powerup_rule,
     owned_items,
     item_label,
@@ -81,7 +82,8 @@ import from ..world.combat {
     fire_weapon,
     weapon_input,
     select_weapon,
-    selected_weapon
+    selected_weapon,
+    owns_weapon
 }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }
@@ -91,6 +93,9 @@ import from ..world.fixtures { FixtureTick }
 import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
 import from ..world.bot_tactics { BotTactics }
+import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
+import from ..render.hud { HudRenderer, HudStatus }
+import from games.hud_art { load_hud_art }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
 import from ..render.viewweapon { ViewWeapon }
@@ -144,6 +149,11 @@ obj App {
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
         viewweapon: ViewWeapon = ViewWeapon(),
+        hud: HudRenderer = HudRenderer(),
+        light_styles: LightStyles | None = None,
+        style_serial: int = -1,
+        pain_time: float = 0.0,
+        pain_health: int = 0,
         simulation_time: float = 0.0,
         combat: CombatState = CombatState(),
         campaign: Campaign = Campaign(),
@@ -213,6 +223,10 @@ obj App {
     def arena_lines(contest: ArenaMatch) -> list[str];
     def finish_arena(contest: ArenaMatch);
     def powerup_lines() -> list[str];
+    """Load the original status bar art and the light styles for the level."""
+    def prepare_presentation();
+    """What the original status bar shows this frame."""
+    def hud_status() -> HudStatus;
     def render_frame();
     """Headless validation script: steer the camera through three known
     states and screenshot each, then quit. Drives the exact culling

@@ -53,6 +53,7 @@ impl App.run() {
             view_weapons(self.level.bsp.game)
         );
         self.quake.upload(self.level);
+        self.prepare_presentation();
     }
     frame = 0;
     while not self.renderer.should_close() {
@@ -160,13 +161,21 @@ impl App.render_frame() {
                 "Enter: " + ("main menu" if self.campaign_complete else "continue")
             );
         }
+        if not self.smoke and self.hud.ready {
+            self.hud.draw(self.hud_status(), self.renderer.width, self.renderer.height);
+            if p.health <= 0 and self.level.bsp.game != "q3" {
+                self.renderer.draw_terminal("You died - Enter to restart level");
+            }
+        }
         if not self.smoke {
-            self.renderer.draw_status(
-                p.health,
-                p.armor,
-                quantity(p.inventory, "shells"),
-                arena=self.level.bsp.game == "q3"
-            );
+            if not self.hud.ready {
+                self.renderer.draw_status(
+                    p.health,
+                    p.armor,
+                    quantity(p.inventory, "shells"),
+                    arena=self.level.bsp.game == "q3"
+                );
+            }
             rule = selected_weapon(self.combat);
             contest = match_of(self.world) if self.level.bsp.game == "q3" else None;
             score = "";
@@ -187,12 +196,16 @@ impl App.render_frame() {
                     }
                 }
             }
-            self.renderer.draw_combat(
-                self.combat,
-                self.level.bsp.game == "q3",
-                ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
-                score=score
-            );
+            if self.hud.ready {
+                self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
+            } else {
+                self.renderer.draw_combat(
+                    self.combat,
+                    self.level.bsp.game == "q3",
+                    ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
+                    score=score
+                );
+            }
             self.renderer.draw_keys(
                 " | ".join(
                     [
@@ -514,6 +527,7 @@ impl App.load_destination(
         self.models = next_models;
         self.effects = next_effects;
         self.viewweapon = next_viewweapon;
+        self.prepare_presentation();
         if self.audio.ready {
             self.audio.close();
             try {
@@ -749,6 +763,18 @@ impl App.step() -> bool {
     self.frame_dt = dt;
     if self.level.active and not self.menu.opened {
         self.world spawn FixtureTick(dt=dt);
+        self.world spawn LightStyleTick(dt=dt);
+        styles = self.light_styles;
+        if styles is not None and styles.serial != self.style_serial {
+            self.style_serial = styles.serial;
+            self.quake.animate_styles(self.level, styles.values);
+        }
+        # Sbar_DrawFace shows the pain face briefly after each hit.
+        if self.player.health < self.pain_health {
+            self.pain_time = 0.2;
+        }
+        self.pain_health = self.player.health;
+        self.pain_time = max(0.0, self.pain_time - dt);
     }
     ticks = self.clock.advance(dt);
     for i in range(ticks) {
@@ -1610,4 +1636,75 @@ impl App.arena_lines(contest: ArenaMatch) -> list[str] {
         );
     }
     return lines;
+}
+
+impl App.prepare_presentation() {
+    game = self.level.bsp.game;
+    self.hud.close();
+    self.light_styles = None;
+    self.style_serial = -1;
+    self.pain_health = self.player.health;
+    styles = [self.world->:HasLightStyles:->][?:LightStyles];
+    if styles {
+        self.light_styles = styles[0];
+    }
+    if game not in ["q1", "q2", "q3"] or not self.level.active {
+        return;
+    }
+    library = AssetLibrary(game=game);
+    try {
+        library.open(game_directory(game));
+        load_hud_art(self.hud, library, game);
+    } except Exception as error {
+        # Without the art the text status bar remains.
+        self.hud.close();
+        self.show_notice("HUD: " + str(error));
+    }
+    library.close();
+}
+
+impl App.hud_status() -> HudStatus {
+    p = self.player;
+    game = self.level.bsp.game;
+    rule = selected_weapon(self.combat);
+    owned = [weapon.key for weapon in self.combat.rules if owns_weapon(p, weapon)];
+    counts: dict[str, int] = {};
+    for kind in ["shells", "nails", "rockets", "cells"] {
+        counts[kind] = quantity(p.inventory, kind);
+    }
+    keys: list[str] = [];
+    if quantity(p.inventory, "key_silver") > 0 {
+        keys.append("key1");
+    }
+    if quantity(p.inventory, "key_gold") > 0 {
+        keys.append("key2");
+    }
+    powers: list[str] = [];
+    remaining = 0.0;
+    for kind in ["quad", "invulnerability", "invisibility", "suit", "breather", "battlesuit", "haste", "regen", "flight"] {
+        left = powerup_left(p, kind);
+        if left > 0.0 {
+            powers.append(kind);
+            remaining = max(remaining, left);
+        }
+    }
+    return HudStatus(
+        game=game,
+        health=p.health,
+        armor=p.armor,
+        armor_ratio=p.armor_ratio,
+        ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
+        ammo_kind=rule.ammo,
+        weapon=rule.key,
+        weapons=owned,
+        ammo_counts=counts,
+        keys=keys,
+        sigils=quantity(p.inventory, "runes") & 15,
+        powerups=powers,
+        powerup_time=remaining,
+        pain=self.pain_time,
+        firing=self.combat.cooldown > 0.1,
+        arena=game == "q3",
+        clock=self.simulation_time
+    );
 }
