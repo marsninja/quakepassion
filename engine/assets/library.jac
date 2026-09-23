@@ -35,6 +35,13 @@ obj AssetLibrary {
         }
     }
 
+    def exists(name: str) -> bool {
+        if self.game == "q3" {
+            return self.pk3.exists(name);
+        }
+        return any([archive.has_file(name) for archive in self.paks]);
+    }
+
     def read(name: str) -> bytes {
         if self.game == "q3" {
             return self.pk3.read(name);

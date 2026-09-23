@@ -38,6 +38,10 @@ obj Pk3Assets {
         }
     }
 
+    def exists(name: str) -> bool {
+        return self.canonical_names.get(name.lower(), name) in self.owners;
+    }
+
     def read(name: str) -> bytes {
         name = self.canonical_names.get(name.lower(), name);
         if name not in self.owners {

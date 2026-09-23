@@ -38,6 +38,17 @@ import from ..world.arena_navigation {
 import from ..world.exits { ExitTick, exit_map, exit_spawn, exit_cinematic }
 import from ..world.environment { EnvironmentTick }
 import from ..world.pickups { PickupTick }
+import from ..world.arena {
+    ArenaMatch,
+    Competes,
+    MatchTick,
+    ChooseSpawn,
+    match_of,
+    join_match,
+    standings,
+    ordinal
+}
+import from games.arenas { ArenaProgress, load_arenas, next_arena }
 import from ..world.powerups {
     PowerupTick,
     UseItem,
@@ -49,7 +60,14 @@ import from ..world.powerups {
     item_label,
     effect
 }
-import from ..world.inventory { quantity, CopyInventory, key_summary, AdjustInventory }
+import from ..world.inventory {
+    Inventory,
+    quantity,
+    CopyInventory,
+    key_summary,
+    AdjustInventory
+}
+import from ..assets.library { AssetLibrary }
 import from ..world.combat {
     CombatState,
     CombatTick,
@@ -136,7 +154,11 @@ obj App {
         notice: str = "",
         notice_wait: float = 0.0,
         selected_item: int = 0,
-        quad_sound_wait: float = 0.0;
+        quad_sound_wait: float = 0.0,
+        respawn_wait: float = 0.0,
+        awaiting_respawn: bool = False,
+        show_scores: bool = False,
+        arena_progress: ArenaProgress = ArenaProgress();
 
     has expedition_complete: bool = False;
     has finale_text: str = "",
@@ -176,6 +198,9 @@ obj App {
     def tick_powerups(dt: float);
     def show_notice(message: str);
     def draw_powerup_blend();
+    def respawn_arena_player();
+    def arena_lines(contest: ArenaMatch) -> list[str];
+    def finish_arena(contest: ArenaMatch);
     def powerup_lines() -> list[str];
     def render_frame();
     """Headless validation script: steer the camera through three known

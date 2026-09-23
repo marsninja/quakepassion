@@ -34,6 +34,7 @@ impl App.run() {
         equip_player(self.player, self.combat, self.level.bsp.game);
         populate_pickups(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
+        join_match(self.world, self.player);
         populate_finale(self.world, self.level, game_directory(self.level.bsp.game));
         if self.level.bsp.game == "q3" {
             prepare_arena_links(self.world, self.level.collision);
@@ -145,13 +146,36 @@ impl App.render_frame() {
         }
         if not self.smoke {
             self.renderer.draw_status(
-                p.health, p.armor, quantity(p.inventory, "shells")
+                p.health,
+                p.armor,
+                quantity(p.inventory, "shells"),
+                arena=self.level.bsp.game == "q3"
             );
             rule = selected_weapon(self.combat);
+            contest = match_of(self.world) if self.level.bsp.game == "q3" else None;
+            score = "";
+            if contest is not None {
+                rows = standings(contest);
+                for i in range(len(rows)) {
+                    if rows[i].human {
+                        leader = rows[1].frags if i == 0 and len(rows) > 1 else rows[0].frags;
+                        score = "FRAGS "
+                            + str(rows[i].frags)
+                            + " / "
+                            + str(contest.fraglimit)
+                            + "  "
+                            + ordinal(i + 1)
+                            + (" (next " if i == 0 else " (leader ")
+                            + str(leader)
+                            + ")";
+                    }
+                }
+            }
             self.renderer.draw_combat(
                 self.combat,
                 self.level.bsp.game == "q3",
-                ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1
+                ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
+                score=score
             );
             self.renderer.draw_keys(
                 " | ".join(
@@ -182,6 +206,33 @@ impl App.render_frame() {
                 self.renderer.draw_message(self.notice);
             }
             self.renderer.draw_powerups(self.powerup_lines());
+            if contest is not None
+                and (
+                    self.show_scores
+                        or p.health <= 0
+                        or contest.finished
+                        or contest.warmup > 0.0
+                ) {
+                footer = "F1: scores";
+                if contest.finished {
+                    rows = standings(contest);
+                    footer = (
+                        "You win! Enter: next arena"
+                            if rows and rows[0].human
+                            else contest.winner + " wins. Enter: rematch"
+                    )
+                        + " | Esc: choose level";
+                } elif contest.warmup > 0.0 {
+                    footer = "Prepare to fight: " + str(int(contest.warmup + 0.999));
+                } elif p.health <= 0 {
+                    footer = "Fire or jump to respawn";
+                }
+                self.renderer.draw_scoreboard(
+                    contest.title + " - frag limit " + str(contest.fraglimit),
+                    self.arena_lines(contest),
+                    footer
+                );
+            }
         }
         if self.overlay {
             self.renderer.draw_overlay(
@@ -357,6 +408,7 @@ impl App.load_destination(
         }
         populate_pickups(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
+        join_match(world, player);
         populate_finale(world, level, game_directory(game));
         combat = CombatState();
         if game == "q3" {
@@ -580,21 +632,29 @@ impl App.step() -> bool {
         self.render_frame();
         return True;
     }
+    contest = match_of(self.world)
+        if self.level.active and self.level.bsp.game == "q3"
+        else None;
+    arena_live = contest is not None and not contest.finished;
     if self.level.active
         and (
-            self.player.health <= 0
+            (self.player.health <= 0 and not arena_live)
             or self.expedition_complete
-            or (self.level.bsp.game == "q3" and self.combat.kills >= 10)
+            or (contest is not None and contest.finished)
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
         if IsKeyPressed(i32(257)) {
-            self.load_destination(
-                self.level.bsp.game,
-                self.level.name,
-                session=self.campaign,
-                preserve_progress=True
-            );
+            if contest is not None and contest.finished {
+                self.finish_arena(contest);
+            } else {
+                self.load_destination(
+                    self.level.bsp.game,
+                    self.level.name,
+                    session=self.campaign,
+                    preserve_progress=True
+                );
+            }
         }
         self.render_frame();
         return True;
@@ -607,6 +667,23 @@ impl App.step() -> bool {
     if scripted is not None and not self.finale_active {
         intent = scripted;
     }
+    self.show_scores = intent.scores;
+    # Q3 respawn: attack or jump after 1.7 s, forced after 20 s (g_forcerespawn).
+    if arena_live and self.player.health <= 0 {
+        if not self.awaiting_respawn {
+            self.awaiting_respawn = True;
+            self.respawn_wait = 1.7;
+        }
+        self.respawn_wait -= dt;
+        if (self.respawn_wait <= 0.0 and (intent.fire or intent.jump))
+            or self.respawn_wait <= -18.3 {
+            self.respawn_arena_player();
+        }
+        intent.fire = False;
+        intent.jump = False;
+        intent.move = Vec3();
+    }
+    warming = contest is not None and contest.warmup > 0.0;
     if intent.weapon > 0 {
         select_weapon(self.player, self.combat, intent.weapon);
     }
@@ -723,7 +800,7 @@ impl App.step() -> bool {
                 active=self.walking
             );
             self.tick_powerups(self.physics_clock.tick_rate);
-            if self.player.health <= 0 {
+            if self.player.health <= 0 and not arena_live {
                 self.player.velocity = Vec3();
                 self.jump_pending = False;
                 break;
@@ -750,13 +827,41 @@ impl App.step() -> bool {
                     dt=self.physics_clock.tick_rate
                 );
             }
-            self.world spawn CombatTick(
-                player=self.player,
-                collision=self.level.collision,
-                state=self.combat,
-                dt=self.physics_clock.tick_rate,
-                active=self.walking
-            );
+            if not warming {
+                self.world spawn CombatTick(
+                    player=self.player,
+                    collision=self.level.collision,
+                    state=self.combat,
+                    dt=self.physics_clock.tick_rate,
+                    active=self.walking,
+                    arena_live=arena_live
+                );
+            }
+            if contest is not None and not contest.finished {
+                tally = contest spawn MatchTick(dt=self.physics_clock.tick_rate);
+                for cue in tally.cues {
+                    self.audio.play_path(cue);
+                }
+                for message in tally.messages {
+                    self.show_notice(message);
+                }
+                warming = contest.warmup > 0.0;
+                if tally.ended {
+                    rows = standings(contest);
+                    place = 1;
+                    for i in range(len(rows)) {
+                        if rows[i].human {
+                            place = i + 1;
+                        }
+                    }
+                    try {
+                        self.arena_progress.record(self.level.name, place);
+                    } except Exception as error {
+                        self.show_notice("Arena progress: " + str(error));
+                    }
+                    break;
+                }
+            }
             if self.level.bsp.game == "q3" {
                 self.world spawn ArenaNavigationTick(
                     collision=self.level.collision,
@@ -800,7 +905,7 @@ impl App.step() -> bool {
             if self.player.health < old_health {
                 self.audio.play(1);
             }
-            if weapon_input(
+            if not warming and weapon_input(
                 self.world,
                 self.player,
                 self.level.collision,
@@ -1299,6 +1404,79 @@ impl App.powerup_lines() -> list[str] {
                 + "Enter: use "
                 + item_label(chosen)
                 + (" x" + str(count) if count > 1 else "")
+        );
+    }
+    return lines;
+}
+
+"""g_client.c ClientSpawn for the human: furthest spawn, fresh loadout, 125 health."""
+impl App.respawn_arena_player() {
+    avoid: list[Vec3] = [];
+    for bot in [self.world->:HasOpponent:->][?:Opponent] {
+        if bot.health > 0 {
+            avoid.append(bot.pos);
+        }
+    }
+    self.combat.random();
+    choice = self.world spawn ChooseSpawn(avoid=avoid, seed=self.combat.random_state);
+    spot = choice.pick();
+    player = self.player;
+    player.inventory = Inventory();
+    equip_player(player, self.combat, self.level.bsp.game);
+    player.health = player.max_health + 25;
+    player.armor = 0;
+    player.killer = None;
+    player.velocity = Vec3();
+    player.pitch = 0.0;
+    if spot is not None {
+        player.pos = spot.pos.add(Vec3(z=self.level.collision.eye_height + 1.0));
+        player.yaw = spot.yaw;
+    }
+    move_to_area(player, self.level.areas[self.level.locate(player.pos)]);
+    self.combat.cooldown = 0.5;
+    self.combat.grenade_phase = 0;
+    self.awaiting_respawn = False;
+    self.respawn_wait = 0.0;
+    self.audio.play_path("sound/world/telein.wav");
+}
+
+"""Leave a finished match: the winner advances along the ladder; otherwise rematch."""
+impl App.finish_arena(contest: ArenaMatch) {
+    rows = standings(contest);
+    won = bool(rows) and rows[0].human;
+    destination = self.level.name;
+    if won {
+        library = AssetLibrary(game="q3");
+        try {
+            library.open(game_directory("q3"));
+            following = next_arena(load_arenas(library), self.level.name);
+            if following {
+                destination = following;
+            }
+        } except Exception as error {
+            self.show_notice("Arena ladder: " + str(error));
+        } finally {
+            library.close();
+        }
+    }
+    self.load_destination("q3", destination);
+}
+
+impl App.arena_lines(contest: ArenaMatch) -> list[str] {
+    rows = standings(contest);
+    lines: list[str] = [];
+    for i in range(len(rows)) {
+        row = rows[i];
+        lines.append(
+            ordinal(i + 1)
+                + "  "
+                + row.name
+                + ("  (you)" if row.human else "")
+                + "   "
+                + str(row.frags)
+                + " frags   "
+                + str(row.deaths)
+                + " deaths"
         );
     }
     return lines;

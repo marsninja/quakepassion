@@ -1,2 +1,2 @@
 """Snapshot identity shared by individual maps and campaign envelopes."""
-glob SNAPSHOT_HEADER: str = "QUAKEPASSION 18";
+glob SNAPSHOT_HEADER: str = "QUAKEPASSION 19";

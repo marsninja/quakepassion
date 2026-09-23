@@ -7,6 +7,7 @@ import from .weapons { WeaponRule }
 import from .world { World, Player }
 import from .damage { Damage, blast_strength }
 import from .powerups { damage_scale, fire_interval_scale, empowered, speed_scale }
+import from .arena { ChooseSpawn }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual }
 import from .speakers { Speaker }
@@ -80,7 +81,9 @@ node Opponent(Player) {
         navigation_needed: bool = False,
         route_target: Vec3 = Vec3(),
         boss_phase: int = 0,
-        boss_time: float = 0.0;
+        boss_time: float = 0.0,
+        foe: Player | None = None,
+        roam_goal: Vec3 | None = None;
 }
 
 obj CombatState {
@@ -236,12 +239,16 @@ def damage_opponent(
     amount: int,
     inventory: Inventory | None = None,
     state: CombatState | None = None,
-    bypass_armor: bool = False
+    bypass_armor: bool = False,
+    attacker: Player | None = None,
+    means: str = ""
 ) -> int {
     if victim.dormant or victim.rule.script or victim.rule.decoration {
         return 0;
     }
-    damage = victim spawn Damage(amount=amount, bypass_armor=bypass_armor);
+    damage = victim spawn Damage(
+        amount=amount, bypass_armor=bypass_armor, attacker=attacker, means=means
+    );
     if state is not None and damage.dealt > 0 {
         state.hit_flash = 0.15;
     }
@@ -258,7 +265,7 @@ def damage_opponent(
         victim.pain_down = False;
         victim.pose_name = "death";
         victim.animation_time = 0.0;
-        victim.respawn_wait = 3.0;
+        victim.respawn_wait = 1.7 if victim.arena else 3.0;
         victim.pending_explosion = victim.rule.death_splash > 0;
         request_sound(victim, victim.rule.death_sound);
         return damage.dealt;
@@ -331,6 +338,32 @@ def damage_opponent(
         );
     }
     return damage.dealt;
+}
+
+"""One hit from an opponent. Opponent victims (arena bots fighting each other)
+go through the full opponent damage path so they die, animate and score."""
+def strike(
+    target: Player,
+    amount: int,
+    attacker: Opponent,
+    source: Vec3 | None = None,
+    means: str = ""
+) -> int {
+    if isinstance(target, Opponent) {
+        dealt = damage_opponent(target, amount, attacker=attacker, means=means);
+        if dealt > 0 {
+            target.alert = max(target.alert, 8.0);
+            target.last_seen = attacker.pos;
+            if target.arena {
+                target.foe = attacker;
+            }
+        }
+        return dealt;
+    }
+    result = target spawn Damage(
+        amount=amount, source=source, attacker=attacker, means=means
+    );
+    return result.dealt;
 }
 
 walker Aim {
@@ -545,7 +578,7 @@ def fire_weapon(
         }
     }
     for i in range(len(victims)) {
-        damage_opponent(victims[i], amounts[i], player.inventory, state);
+        damage_opponent(victims[i], amounts[i], player.inventory, state, attacker=player);
     }
     return True;
 }
@@ -723,10 +756,20 @@ def blast_actors(
         amount = int(strength);
         if isinstance(actor, Opponent) {
             damage_opponent(
-                actor, amount, player.inventory, None if hostile else state
+                actor,
+                amount,
+                player.inventory,
+                None if hostile else state,
+                attacker=None if hostile else player,
+                means="splash"
             );
         } else {
-            actor spawn Damage(amount=amount, means="splash", source=origin);
+            actor spawn Damage(
+                amount=amount,
+                means="splash",
+                source=origin,
+                attacker=None if hostile else player
+            );
         }
         if amount > 0 {
             actor.velocity = actor.velocity.add(
@@ -848,7 +891,7 @@ def projectile_beams(
             if actor_fraction(projectile.pos, finish, victim.pos, victim.eye_height)
                 < trace.fraction {
                 damage_opponent(
-                    victim, projectile.beam_damage, player.inventory, state
+                    victim, projectile.beam_damage, player.inventory, state, attacker=player
                 );
             }
         }
@@ -920,7 +963,7 @@ def projectile_energy_burst(
             float(projectile.burst_damage)
                 * (1.0 - math.sqrt(distance / projectile.burst_radius))
         );
-        damage_opponent(victim, amount, player.inventory, state);
+        damage_opponent(victim, amount, player.inventory, state, attacker=player, means="splash");
     }
     state.impacts.append(
         WeaponImpact(
@@ -1021,7 +1064,13 @@ walker ProjectileTick {
             return;
         }
         if victim is not None {
-            damage_opponent(victim, here.damage, self.player.inventory, self.state);
+            damage_opponent(
+                victim,
+                here.damage,
+                self.player.inventory,
+                self.state,
+                attacker=None if here.hostile else self.player
+            );
         } elif wall.fraction < 1.0
             and here.gravity
             and here.remaining > 0.0
@@ -1257,8 +1306,10 @@ def opponent_shot(
         }
     }
     if damage > 0 {
-        player spawn Damage(
-            amount=int(float(damage) * damage_scale(enemy, "q3" if enemy.arena else "")),
+        strike(
+            player,
+            int(float(damage) * damage_scale(enemy, "q3" if enemy.arena else "")),
+            enemy,
             source=enemy.pos
         );
     }
@@ -1284,7 +1335,7 @@ def opponent_beam(
     endpoint = origin.lerp(finish, min(wall.fraction, hit));
     beam_trail(world, origin, endpoint, profile.beam_kind);
     if hit < wall.fraction and amount > 0 {
-        player spawn Damage(amount=amount, source=origin);
+        strike(player, amount, enemy, source=origin);
     }
 }
 
@@ -1417,8 +1468,8 @@ def advance_attack_segment(
         if profile.kind == "melee" {
             if distance <= profile.reach {
                 amount = event_damage(enemy, profile, event_index);
-                result = player spawn Damage(amount=amount, source=enemy.pos);
-                if result.dealt > 0 and profile.knockback != 0.0 {
+                dealt = strike(player, amount, enemy, source=enemy.pos);
+                if dealt > 0 and profile.knockback != 0.0 {
                     player.velocity = player.velocity.add(
                         delta.normalized().scale(profile.knockback)
                     );
@@ -1562,6 +1613,7 @@ walker CombatTick {
         state: CombatState,
         dt: float,
         active: bool = True,
+        arena_live: bool = False,
         world: World | None = None,
         body_collision: CollisionMap | None = None,
         neighbors: dict[str, list[Opponent]] = {},
@@ -1582,6 +1634,48 @@ walker CombatTick {
         return result;
     }
 
+    """Q3 BotFindEnemy: keep a living, visible enemy; otherwise take the
+    nearest visible competitor, falling back to the player."""
+    def select_foe(bot: Opponent) -> Player {
+        current = bot.foe;
+        if current is not None and current.health > 0 {
+            dormant = isinstance(current, Opponent) and current.dormant;
+            if not dormant {
+                sight = self.collision.trace_point(bot.pos, current.pos);
+                if bot.alert > 0.0 or (not sight.start_solid and sight.fraction == 1.0) {
+                    return current;
+                }
+            }
+        }
+        candidates: list[Player] = [];
+        if self.player.health > 0 {
+            candidates.append(self.player);
+        }
+        if self.world is not None {
+            for other in [self.world->:HasOpponent:->][?:Opponent] {
+                if other is not bot and other.arena and other.health > 0 and not other.dormant {
+                    candidates.append(other);
+                }
+            }
+        }
+        best: Player = self.player;
+        best_distance = 100000.0;
+        for candidate in candidates {
+            distance = candidate.pos.sub(bot.pos).length();
+            if distance >= best_distance or distance > 1500.0 {
+                continue;
+            }
+            sight = self.collision.trace_point(bot.pos, candidate.pos);
+            if sight.start_solid or sight.fraction < 1.0 {
+                continue;
+            }
+            best = candidate;
+            best_distance = distance;
+        }
+        bot.foe = best if best_distance < 100000.0 else None;
+        return best;
+    }
+
     can begin with World entry {
         self.world = here;
         for enemy in [here->:HasOpponent:->][?:Opponent] {
@@ -1600,12 +1694,14 @@ walker CombatTick {
             1.0, self.state.route_credit + max(0.0, self.dt) * 8.0
         );
         self.state.navigation.network.refresh(self.collision);
-        if self.active and self.player.health > 0 { self.state.navigation.advance(); }
+        # Arena matches keep running while the player waits to respawn.
+        live = self.player.health > 0 or self.arena_live;
+        if self.active and live { self.state.navigation.advance(); }
         here spawn ParticleTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
         self.state.hit_flash = max(0.0, self.state.hit_flash - self.dt);
-        if self.active and self.player.health > 0 {
+        if self.active and live {
             visit [here->:HasOpponent:->];
         }
     }
@@ -1705,12 +1801,38 @@ walker CombatTick {
                 return;
             }
             here.respawn_wait = max(0.0, here.respawn_wait - self.dt);
-            if here.respawn_wait > 0.0
-                or here.home.sub(self.player.pos).length() < 80.0 {
+            if here.respawn_wait > 0.0 {
                 return;
             }
-            here.health = here.max_health;
-            here.pos = here.home;
+            destination = here.home;
+            spawn_yaw = here.yaw;
+            if self.world is not None {
+                avoid = [self.player.pos];
+                for other in [self.world->:HasOpponent:->][?:Opponent] {
+                    if other is not here and other.health > 0 {
+                        avoid.append(other.pos);
+                    }
+                }
+                here.shot_random = (here.shot_random * 48271) % 2147483647;
+                choice = self.world spawn ChooseSpawn(avoid=avoid, seed=here.shot_random);
+                spot = choice.pick();
+                if spot is not None {
+                    destination = spot.pos.add(Vec3(z=here.eye_height + 1.0));
+                    spawn_yaw = spot.yaw;
+                }
+            }
+            if destination.sub(self.player.pos).length() < 80.0 {
+                return;
+            }
+            # g_client.c ClientSpawn: 25 over maximum, empty armor and inventory.
+            here.health = here.max_health + 25;
+            here.armor = 0;
+            here.inventory = Inventory();
+            here.foe = None;
+            here.alert = 0.0;
+            here.yaw = spawn_yaw;
+            here.pose_name = "";
+            here.pos = destination;
             here.route = [];
             here.route_wait = 0.0;
             here.velocity = Vec3();
@@ -1721,7 +1843,15 @@ walker CombatTick {
             here.pain_down = False;
             here.pain_wait = 0.0;
         }
-        delta = self.player.pos.sub(here.pos);
+        # Arena bots fight every competitor; campaign monsters hunt the player.
+        foe: Player = self.player;
+        if here.arena {
+            foe = self.select_foe(here);
+        }
+        foe_height = foe.eye_height
+            if isinstance(foe, Opponent)
+            else self.collision.eye_height;
+        delta = foe.pos.sub(here.pos);
         distance = delta.length();
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
         if here.pain_wait <= 0.0 and here.pain_down {
@@ -1740,19 +1870,19 @@ walker CombatTick {
             here.pursuing = False;
             was_alert = here.alert > 0.0;
             if distance < 1500.0 {
-                sight = self.collision.trace_point(here.pos, self.player.pos);
+                sight = self.collision.trace_point(here.pos, foe.pos);
                 here.pursuing = not sight.start_solid and sight.fraction == 1.0;
                 # Q1 ai.qc FindTarget / Q3 BotFindEnemy: invisible players are
                 # not newly noticed, though Q3 bots still spot muzzle flashes.
                 if here.pursuing
                     and not was_alert
-                    and empowered(self.player, "invisibility")
-                    and not (here.arena and self.state.flash > 0.0) {
+                    and empowered(foe, "invisibility")
+                    and not (here.arena and foe is self.player and self.state.flash > 0.0) {
                     here.pursuing = False;
                 }
                 if here.pursuing {
-                    here.last_seen = self.player.pos;
-                    here.last_seen_height = self.collision.eye_height;
+                    here.last_seen = foe.pos;
+                    here.last_seen_height = foe_height;
                     here.alert = 8.0;
                     if not was_alert and not here.sighted {
                         request_sound(here, here.rule.sight_sound);
@@ -1769,7 +1899,7 @@ walker CombatTick {
                     if selected >= 0 {
                         select_profile(here, selected);
                         profile = here.profiles[selected];
-                        here.attack_target = self.player.pos.add(Vec3());
+                        here.attack_target = foe.pos.add(Vec3());
                         here.attack_clock = 0.0;
                         here.attack_event = 0;
                         here.burst_count = 1;
@@ -1910,7 +2040,7 @@ walker CombatTick {
             }
         }
         if self.world is not None {
-            advance_attack(self.world, here, self.player, self.collision, self.dt);
+            advance_attack(self.world, here, foe, self.collision, self.dt);
         }
         wish = Vec3()
             if here.pain_wait > 0.0 or here.attack_flash > 0.0 or here.leaping

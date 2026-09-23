@@ -33,7 +33,8 @@ obj Intent {
         weapon: int = 0,
         use_item: bool = False,
         next_item: bool = False,
-        prev_item: bool = False;
+        prev_item: bool = False,
+        scores: bool = False;
 }
 
 

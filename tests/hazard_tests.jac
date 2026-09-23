@@ -92,5 +92,5 @@ test "arena bots take damage from death volumes without requiring player contact
     f.world spawn HazardTick(
         player=Player(), start=Vec3(), finish=Vec3(), dt=0.1, touching=False
     );
-    assert enemy.health == 0 and not enemy.visual.visible and enemy.respawn_wait == 3.0;
+    assert enemy.health == 0 and not enemy.visual.visible and enemy.respawn_wait == 1.7;
 }

@@ -85,12 +85,13 @@ obj Renderer {
     def draw_opponents(world: World, height: float);
     def draw_message(message: str);
     def draw_loading(name: str);
-    def draw_combat(state: CombatState, arena: bool, ammo: int = -1);
+    def draw_combat(state: CombatState, arena: bool, ammo: int = -1, score: str = "");
+    def draw_scoreboard(title: str, lines: list[str], footer: str);
     def draw_projectiles(world: World, hidden_effects: list[str] = []);
     def draw_terminal(message: str);
     def draw_finale(text: str, prompt: str);
     def draw_keys(message: str);
-    def draw_status(health: int, armor: int, shells: int = 0);
+    def draw_status(health: int, armor: int, shells: int = 0, arena: bool = False);
     def draw_tint(r: int, g: int, b: int, a: int);
     def draw_powerups(lines: list[str]);
     def end_frame();

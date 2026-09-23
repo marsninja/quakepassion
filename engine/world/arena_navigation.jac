@@ -217,6 +217,34 @@ walker ArenaNavigationTick {
                 here.arena_goal = target;
             }
         }
+        # Like ai_dmq3.c long-term goals: with no enemy and nothing needed, head
+        # for a distant item and pick another on arrival, so bots meet.
+        if here.arena_goal is None and not here.pursuing {
+            roam = here.roam_goal;
+            if roam is not None and roam.sub(here.pos).length() < 96.0 {
+                roam = None;
+            }
+            if roam is None {
+                # Bounded ground routing reaches nearby items; hopping between
+                # them carries a bot across the map.
+                spots = [
+                    pickup.pos.add(Vec3(z=here.eye_height))
+                    for pickup in self.pickups
+                    if not pickup.waiting_for_use
+                        and pickup.pos.sub(here.pos).length() > 256.0
+                        and pickup.pos.sub(here.pos).length() < 900.0
+                ];
+                if spots {
+                    here.shot_random = (here.shot_random * 48271) % 2147483647;
+                    roam = spots[here.shot_random % len(spots)];
+                }
+            }
+            here.roam_goal = roam;
+            if roam is not None {
+                target = roam;
+                here.arena_goal = roam;
+            }
+        }
         # Teleporters are directed connections. Choose one only when it improves
         # the remaining travel estimate; ground routing still validates its entry.
         direct = target.sub(here.pos).length();
