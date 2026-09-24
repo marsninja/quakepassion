@@ -14,7 +14,7 @@ import from engine.world.doors { Door, HasDoor, authored_cue }
 import from engine.world.shooters { Shooter, HasShooter, ShooterTick, load_shooters, move_direction }
 import from engine.world.fixtures { Fixture, HasFixture, FixtureTick }
 import from engine.world.targets { TargetEvent, HasTarget, TargetTick, HasHelp, HelpComputer }
-import from engine.world.inventory { quantity, CopyInventory }
+import from engine.world.inventory { quantity, CopyInventory, AdjustInventory }
 import from engine.world.powerups { GrantPowerup, powerup_left }
 import from engine.world.pickups { Pickup, PickupRule, HasPickup }
 import from engine.world.combat { Opponent, HasOpponent, Projectile, HasProjectile, ProjectileTick, CombatState }
@@ -256,8 +256,15 @@ test "cross-level flags persist through a unit and gate their targets" {
     strict +>:Targets:+> output;
     strict spawn Fire(inventory=player.inventory);
     assert output.pending == 1;
-    carried = player.inventory spawn CopyInventory(skip_keys=True);
+    carried = player.inventory spawn CopyInventory(skip_flags=True);
     assert quantity(carried.result, "unit_flags") == 0;
+    # Keys survive a single-player unit change; only Q1 strips them.
+    player.inventory spawn AdjustInventory(kind="key_data_cd", amount=1);
+    unit = player.inventory spawn CopyInventory(skip_flags=True);
+    assert quantity(unit.result, "key_data_cd") == 1;
+    level = player.inventory spawn CopyInventory(skip_keys=True);
+    assert quantity(level.result, "key_data_cd") == 0;
+    assert quantity(level.result, "unit_flags") == 5;
     kept = player.inventory spawn CopyInventory();
     assert quantity(kept.result, "unit_flags") == 5;
 }

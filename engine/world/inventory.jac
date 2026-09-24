@@ -45,11 +45,12 @@ def quantity(inventory: Inventory, kind: str) -> int {
 
 
 walker CopyInventory {
-    has result: Inventory = Inventory(), skip_keys: bool = False;
+    has result: Inventory = Inventory(), skip_keys: bool = False, skip_flags: bool = False;
     can start with Inventory entry { visit [here->:InventorySlot:->]; }
     can copy with ItemStack entry {
-        # A new unit also forgets Q2 cross-level trigger flags (ExitLevel).
-        if self.skip_keys and (here.kind.startswith("key_") or here.kind == "unit_flags") { return; }
+        if self.skip_keys and here.kind.startswith("key_") { return; }
+        # A new unit forgets Q2 cross-level trigger flags (use_target_changelevel).
+        if self.skip_flags and here.kind == "unit_flags" { return; }
         self.result spawn AdjustInventory(kind=here.kind, amount=here.quantity, capacity=here.capacity);
     }
 }

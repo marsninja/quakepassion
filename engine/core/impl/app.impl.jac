@@ -54,6 +54,7 @@ impl App.run() {
         );
         self.quake.upload(self.level);
         self.prepare_presentation();
+        self.record_entry();
     }
     frame = 0;
     while not self.renderer.should_close() {
@@ -166,11 +167,31 @@ impl App.render_frame() {
                 "Enter: " + ("main menu" if self.campaign_complete else "continue")
             );
         }
-        if not self.smoke and self.hud.ready {
+        if self.stats_screen {
+            self.draw_stats();
+        }
+        if not self.smoke and self.hud.ready and not self.stats_screen {
             status = self.hud_status();
             self.hud.draw(status, self.renderer.width, self.renderer.height);
             if self.hud.three_d {
                 self.hud_models.draw(self.hud, status, self.renderer.width, self.renderer.height);
+            }
+            # Sbar_Draw: the solo scoreboard replaces the bar while scores are
+            # held or the player is dead.
+            if self.level.bsp.game == "q1" and (self.show_scores or p.health <= 0) {
+                progress = progress_for(self.world);
+                self.hud.draw_q1_scores(
+                    self.combat.kills,
+                    self.total_monsters,
+                    progress.secrets,
+                    progress.total_secrets,
+                    int(self.simulation_time),
+                    self.level.bsp.entities[0].fields.get("message", "")
+                        if self.level.bsp.entities
+                        else "",
+                    self.renderer.width,
+                    self.renderer.height
+                );
             }
             if p.health <= 0 and self.level.bsp.game != "q3" {
                 self.renderer.draw_terminal("You died - Enter to restart level");
@@ -206,7 +227,9 @@ impl App.render_frame() {
                 }
             }
             if self.hud.ready {
-                self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
+                if not self.finale_active {
+                    self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
+                }
             } else {
                 self.renderer.draw_combat(
                     self.combat,
@@ -244,9 +267,18 @@ impl App.render_frame() {
                 self.renderer.draw_message(self.notice);
             }
             self.renderer.draw_powerups(self.powerup_lines());
-            # Q2 help computer (F1): the current primary and secondary objectives.
-            if self.level.bsp.game == "q2" and self.show_scores {
-                lines: list[str] = [];
+            # p_hud.c HelpComputer (F1): skill, level name, the primary and
+            # secondary objectives, and kills, goals and secrets so far.
+            if self.level.bsp.game == "q2" and self.help_open and not self.stats_screen {
+                lines: list[str] = [
+                    ["Easy", "Medium", "Hard", "Hard+"][max(0, min(3, self.level.skill))]
+                        + " - "
+                        + (
+                            self.level.bsp.entities[0].fields.get("message", self.level.name)
+                                if self.level.bsp.entities
+                                else self.level.name
+                        )
+                ];
                 for computer in [self.world->:HasHelp:->][?:HelpComputer] {
                     if computer.primary {
                         lines.append("Primary: " + computer.primary);
@@ -255,10 +287,12 @@ impl App.render_frame() {
                         lines.append("Secondary: " + computer.secondary);
                     }
                 }
+                if len(lines) == 1 {
+                    lines.append("No objectives received");
+                }
+                lines.append(self.tally_line());
                 self.renderer.draw_scoreboard(
-                    "Help computer - " + self.level.name,
-                    lines if lines else ["No objectives received"],
-                    "F1: close"
+                    "Help computer - " + self.level.name, lines, "F1: close"
                 );
             }
             if contest is not None
@@ -438,10 +472,17 @@ impl App.load_destination(
     try {
         world = World();
         level = open_level(world, game_directory(game), name, game, self.skill);
-        carrying = carry and self.player.health > 0 and game == self.level.bsp.game;
         runes = quantity(self.player.inventory, "runes")
-            if game == "q1" and self.level.bsp.game == "q1" and (carrying or preserve_progress)
+            if game == "q1"
+                and self.level.bsp.game == "q1"
+                and ((carry and self.player.health > 0) or preserve_progress)
             else 0;
+        # Q1 DecodeLevelParms: with any rune held, start.bsp takes away all
+        # stuff (SetNewParms); the runes themselves are server flags and stay.
+        carrying = carry
+            and self.player.health > 0
+            and game == self.level.bsp.game
+            and not (game == "q1" and name == "start" and runes > 0);
         player = spawn_player(level, spawnpoint, returning=runes > 0 and name == "start");
         if carrying {
             # Q1 client.qc SetChangeParms clamps carried health to 50-100.
@@ -452,16 +493,22 @@ impl App.load_destination(
             player.armor = self.player.armor;
             player.armor_capacity = self.player.armor_capacity;
             player.armor_ratio = self.player.armor_ratio;
+            # Q1 strips keys between levels; Q2 strips them between units only
+            # in coop (BeginIntermission) but forgets the unit's cross-level
+            # trigger flags (use_target_changelevel).
             copied = self.player.inventory spawn CopyInventory(
-                skip_keys=game == "q1" or new_unit
+                skip_keys=game == "q1", skip_flags=new_unit
             );
             player.inventory = copied.result;
-        }
-        if preserve_progress and game == "q1" and self.level.bsp.game == "q1" {
+            # SetChangeParms: at least 25 shells carry over.
+            if game == "q1" and quantity(player.inventory, "shells") < 25 {
+                player.inventory spawn AdjustInventory(
+                    kind="shells", amount=25 - quantity(player.inventory, "shells")
+                );
+            }
+        } elif runes > 0 {
             player.inventory spawn AdjustInventory(
-                kind="runes",
-                amount=quantity(self.player.inventory, "runes"),
-                capacity=15
+                kind="runes", amount=runes, capacity=15
             );
         }
         populate_pickups(world, level, game_directory(game));
@@ -589,6 +636,11 @@ impl App.load_destination(
         if self.menu.restore_mouse {
             _capture();
         }
+        self.stats_screen = False;
+        self.stats_wait = 0.0;
+        self.pending_text = "";
+        self.help_open = False;
+        self.record_entry();
     } except Exception as error {
         next_models.close();
         next_effects.close();
@@ -659,10 +711,25 @@ impl App.step() -> bool {
             return True;
         }
     }
-    if self.level.active and (self.intermission_text or self.campaign_complete) {
+    if self.level.active
+        and (self.intermission_text or self.campaign_complete or self.stats_screen) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
-        if IsKeyPressed(i32(257)) {
+        # IntermissionThink: after the enforced wait, attack, jump or use (or
+        # Enter) leaves; scripted runs press fire or jump.
+        script = self.scripted;
+        scripted_press = script is not None and (script.fire or script.jump);
+        pressed = scripted_press
+            or (not self.smoke and (IsKeyPressed(i32(257)) or IsKeyPressed(i32(32))));
+        if self.stats_screen {
+            self.stats_wait = max(0.0, self.stats_wait - dt);
+            if pressed and self.stats_wait <= 0.0 {
+                self.finish_stats();
+            }
+            self.render_frame();
+            return True;
+        }
+        if pressed {
             if self.pending_map {
                 destination = self.pending_map;
                 spawnpoint = self.pending_spawn;
@@ -714,12 +781,7 @@ impl App.step() -> bool {
             if contest is not None and contest.finished {
                 self.finish_arena(contest);
             } else {
-                self.load_destination(
-                    self.level.bsp.game,
-                    self.level.name,
-                    session=self.campaign,
-                    preserve_progress=True
-                );
+                self.restart_level();
             }
         }
         self.render_frame();
@@ -734,6 +796,10 @@ impl App.step() -> bool {
         intent = scripted;
     }
     self.show_scores = intent.scores;
+    # p_hud.c Cmd_Help_f: F1 opens and closes the Q2 help computer.
+    if intent.help and self.level.active and self.level.bsp.game == "q2" {
+        self.help_open = not self.help_open;
+    }
     # Q3 respawn: attack or jump after 1.7 s, forced after 20 s (g_forcerespawn).
     if arena_live and self.player.health <= 0 {
         if not self.awaiting_respawn {
@@ -1240,28 +1306,25 @@ impl App.step() -> bool {
                     break;
                 }
                 text = episode_text(self.level.bsp.game, self.level.name, destination);
-                if text {
-                    self.pending_map = destination;
-                    self.pending_spawn = exit_spawn(exit_request.request);
-                    self.pending_unit = destination
-                        != exit_request.request.split("$")[0];
-                    self.begin_intermission(text);
-                    break;
-                }
+                unit = exit_request.request.split("$")[0].split("+")[-1].startswith("*");
                 if cinematic {
                     self.notice = "Cinematic " + cinematic + " skipped";
                     self.notice_wait = 4.0;
                 }
+                # Q1 execute_changelevel shows the stats unless NO_INTERMISSION;
+                # Q2 BeginIntermission pauses only at the end of a unit.
+                game = self.level.bsp.game;
+                if (game == "q1" and (exit_request.intermission or text))
+                    or (game == "q2" and unit) {
+                    self.begin_stats(destination, exit_spawn(exit_request.request), unit, text);
+                    break;
+                }
                 self.load_destination(
-                    self.level.bsp.game,
+                    game,
                     destination,
                     exit_spawn(exit_request.request),
                     carry=True,
-                    new_unit=exit_request.request.split("$")[0].split("+")[
-                        -1
-                    ].startswith(
-                        "*"
-                    )
+                    new_unit=unit
                 );
                 break;
             }
@@ -1306,11 +1369,87 @@ impl App.begin_intermission(text: str) {
     self.player.velocity = Vec3();
     self.player.god_mode = True;
     self.jump_pending = False;
-    view = intermission_camera(self.level.bsp);
+    self.combat.random();
+    view = intermission_camera(self.level.bsp, self.combat.random_state);
     if view.found {
         self.player.pos = view.origin.add(Vec3());
         self.player.yaw = view.yaw;
         self.player.pitch = view.pitch;
+    }
+}
+
+impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
+    self.pending_map = destination;
+    self.pending_spawn = spawnpoint;
+    self.pending_unit = unit;
+    self.pending_text = text;
+    self.completed_time = self.simulation_time;
+    self.begin_intermission("");
+    self.stats_screen = True;
+    # execute_changelevel: at least two seconds before a key may leave.
+    self.stats_wait = 2.0;
+}
+
+impl App.finish_stats() {
+    self.stats_screen = False;
+    if self.pending_text {
+        self.intermission_text = self.pending_text;
+        self.pending_text = "";
+        return;
+    }
+    if self.pending_map {
+        destination = self.pending_map;
+        self.pending_map = "";
+        self.load_destination(
+            self.level.bsp.game,
+            destination,
+            self.pending_spawn,
+            carry=True,
+            new_unit=self.pending_unit
+        );
+    }
+}
+
+impl App.restart_level() {
+    if not self.entry_save {
+        self.load_destination(
+            self.level.bsp.game,
+            self.level.name,
+            session=self.campaign,
+            preserve_progress=True
+        );
+        return;
+    }
+    try {
+        session = unpack_campaign(self.entry_save);
+        self.load_destination(
+            self.level.bsp.game, self.level.name, saved=session.active, session=session
+        );
+    } except Exception as error {
+        self.show_notice("Restart failed: " + str(error));
+    }
+}
+
+impl App.record_entry() {
+    self.total_monsters = len(
+        [
+            enemy
+            for enemy in [self.world->:HasOpponent:->][?:Opponent]
+            if not enemy.arena
+                and not enemy.rule.decoration
+                and not enemy.rule.inert
+                and not enemy.rule.script
+        ]
+    );
+    self.entry_save = "";
+    if self.level.bsp.game in ["q1", "q2"] and self.level.active {
+        try {
+            self.entry_save = pack_campaign(
+                self.campaign, snapshot(self.world, self.level, self.player, self.combat)
+            );
+        } except Exception as error {
+            self.show_notice("Autosave: " + str(error));
+        }
     }
 }
 
@@ -1800,6 +1939,50 @@ impl App.prepare_presentation() {
         self.show_notice("HUD: " + str(error));
     }
     library.close();
+}
+
+"""Kills, goals and secrets as the Q2 help computer lists them."""
+impl App.tally_line() -> str {
+    progress = progress_for(self.world);
+    return "Kills "
+        + str(self.combat.kills)
+        + "/"
+        + str(self.total_monsters)
+        + "   Goals "
+        + str(progress.goals)
+        + "/"
+        + str(progress.total_goals)
+        + "   Secrets "
+        + str(progress.secrets)
+        + "/"
+        + str(progress.total_secrets);
+}
+
+"""The stats screen: Q1's intermission plaque in the original art (a text
+panel without it); Q2's unit summary with the help computer's tallies."""
+impl App.draw_stats() {
+    progress = progress_for(self.world);
+    seconds = int(self.completed_time);
+    if self.level.bsp.game == "q1" and self.hud.ready and self.hud.has_pic("inter") {
+        self.hud.draw_q1_intermission(
+            seconds,
+            progress.secrets,
+            progress.total_secrets,
+            self.combat.kills,
+            self.total_monsters,
+            self.renderer.width,
+            self.renderer.height
+        );
+        return;
+    }
+    self.renderer.draw_scoreboard(
+        "Unit complete" if self.level.bsp.game == "q2" else "Level complete",
+        [
+            "Time " + str(seconds // 60) + ":" + str((seconds % 60) // 10) + str(seconds % 10),
+            self.tally_line()
+        ],
+        "Enter: continue" if self.stats_wait <= 0.0 else ""
+    );
 }
 
 impl App.hud_status() -> HudStatus {

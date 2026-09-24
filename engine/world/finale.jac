@@ -44,23 +44,30 @@ def entity_point(entity: MapEntity) -> Vec3 {
     return Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
 }
 
-# The first authored intermission camera; mangle pitch is positive downward.
-def intermission_camera(bsp: Bsp) -> IntermissionView {
+# An authored intermission camera; `pick` chooses among several (Q1
+# FindIntermission picks one at random). Q1 info_intermission uses `mangle`,
+# Q2 info_player_intermission `angles`; pitch is positive downward.
+def intermission_camera(bsp: Bsp, pick: int = 0) -> IntermissionView {
+    spots = [
+        entity
+        for entity in bsp.entities
+        if entity.fields.get("classname", "")
+            in ["info_intermission", "info_player_intermission"]
+    ];
     view = IntermissionView();
-    for entity in bsp.entities {
-        if entity.fields.get("classname", "") != "info_intermission" {
-            continue;
-        }
-        angles = entity.fields.get("mangle", "0 0 0").split();
-        if len(angles) != 3 {
-            raise ValueError("Invalid intermission mangle");
-        }
-        view.found = True;
-        view.origin = entity_point(entity);
-        view.pitch = -float(angles[0]) * math.pi / 180.0;
-        view.yaw = float(angles[1]) * math.pi / 180.0;
+    if not spots {
         return view;
     }
+    entity = spots[pick % len(spots)];
+    key = "mangle" if entity.fields.get("classname", "") == "info_intermission" else "angles";
+    angles = entity.fields.get(key, "0 0 0").split();
+    if len(angles) != 3 {
+        raise ValueError("Invalid intermission angles");
+    }
+    view.found = True;
+    view.origin = entity_point(entity);
+    view.pitch = -float(angles[0]) * math.pi / 180.0;
+    view.yaw = float(angles[1]) * math.pi / 180.0;
     return view;
 }
 

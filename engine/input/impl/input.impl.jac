@@ -111,6 +111,7 @@ impl sample_intent(
         use_item=IsKeyPressed(i32(257)),
         next_item=IsKeyPressed(i32(93)),
         prev_item=IsKeyPressed(i32(91)),
-        scores=IsKeyDown(i32(290))
+        scores=IsKeyDown(i32(290)),
+        help=IsKeyPressed(i32(290))
     );
 }
