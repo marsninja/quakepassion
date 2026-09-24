@@ -98,10 +98,12 @@ save restoration. `scripts/shoot_door_smoke.jac` exercises eligible authored
 health doors in the installed campaign maps and checks render/collision motion.
 
 The older limits above describe the initial milestone: translating platforms,
-trains, buttons, Q1 keys and Q1 two-stage secret doors have since been implemented.
-Start-open/toggle/rotating/crushing ordinary doors, unsupported target chains,
-Q3 shot doors and exact original timing/sounds still need work. An unsupported
-member or target chain continues to keep its group static.
+trains, buttons, Q1 keys and Q1 two-stage secret doors have since been implemented,
+as have start-open, toggle, rotating and crushing doors, killtarget, Q2
+ANIMATED flags, accel/decel (as constant speed), door messages and mover sounds
+([level flow](level-flow-status.md)). Q3 shot doors still need work. Only a
+member with spawnflags the original never defines keeps its group static, and
+the chain audit names it.
 
 Validation: the full suite passes **240 tests**. The original-map audit passes
 13 groups across 10 maps (Q1: seven groups, including the four-part `e4m2` door;
