@@ -17,7 +17,7 @@ import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms, hold_weapon }
 import from engine.world.models { WeaponKit, PlayerRig }
 import from engine.world.player_rig { rig_sound_paths }
 
-import from engine.world.bot_character { bot_skill }
+import from engine.world.bot_character { bot_skill, bot_handicap }
 import from engine.world.turrets { link_turret_drivers }
 import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
 import from engine.world.reflection { HasBody, Carries, player_body }
@@ -228,6 +228,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             # Opponent movement uses the same eye/body contract as the player.
             position = origin.add(Vec3(z=level.collision.eye_height));
+            handicap = bot_handicap(bot_skill(level.skill));
             if arena and position.sub(player_start).length() < 80.0 {
                 continue;
             }
@@ -245,8 +246,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 arena=level.bsp.game == "q3",
                 rule=rule,
                 walk_speed=rule.speed,
-                health=125 if kind == "arena_bot" else rule.health,
-                max_health=100 if kind == "arena_bot" else rule.health,
+                # G_AddBot's handicap is the bot's maximum health.
+                health=handicap + 25 if kind == "arena_bot" else rule.health,
+                max_health=handicap if kind == "arena_bot" else rule.health,
                 decision_wait=float(count % 12) / 120.0,
                 support_wait=float(count % 6) / 120.0,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0,

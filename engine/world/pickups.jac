@@ -207,7 +207,11 @@ walker PickupTick {
             );
             accepted = 1;
         } elif rule.kind == "health" {
-            heal = self.player spawn Heal(amount=rule.amount, cap=rule.capacity);
+            # Q3 Pickup_Health caps at the handicapped maximum (or twice it).
+            cap = rule.capacity
+                if self.player.max_health >= 100
+                else rule.capacity * self.player.max_health // 100;
+            heal = self.player spawn Heal(amount=rule.amount, cap=cap);
             accepted = heal.restored;
             if rule.rot and heal.restored > 0 {
                 rot = effect(self.player, "megahealth");

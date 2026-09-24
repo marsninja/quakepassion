@@ -1344,6 +1344,7 @@ impl App.refresh_settings() {
         "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%",
         "God mode: " + ("On" if self.god_mode else "Off"),
         "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare"][max(0, min(3, self.skill))]
+            + " (Q3: " + ["I Can Win", "Bring It On", "Hurt Me Plenty", "Hardcore"][max(0, min(3, self.skill))] + ")"
     ];
 }
 
@@ -1665,6 +1666,13 @@ impl App.respawn_arena_player() {
         player.yaw = spot.yaw;
     }
     move_to_area(player, self.level.areas[self.level.locate(player.pos)]);
+    # g_client.c ClientSpawn: G_KillBox telefrags a bot standing on the spot.
+    self.world spawn KillBox(
+        mover=player,
+        origin=player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+        game="q3",
+        tally=self.combat
+    );
     self.combat.cooldown = 0.5;
     self.combat.grenade_phase = 0;
     self.awaiting_respawn = False;

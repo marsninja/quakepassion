@@ -14,7 +14,7 @@ import from .player_rig { PoseRig, rig_sound, reset_rig }
 import from .body_queue { CorpseTick, leave_corpse }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
-import from .bot_character { BotCharacter }
+import from .bot_character { BotCharacter, BotState }
 import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
@@ -108,6 +108,7 @@ node Opponent(Player) {
         patrol_speed: float = 0.0,
         walk_animation: list[int] = [],
         character: BotCharacter | None = None,
+        bot_state: BotState = BotState(),
         weapon_slot: int = 2,
         weapon_wait: float = 0.0,
         weapon_change: float = 1.0,
@@ -2504,9 +2505,6 @@ walker CombatTick {
                     spawn_yaw = spot.yaw;
                 }
             }
-            if destination.sub(self.player.pos).length() < 80.0 {
-                return;
-            }
             # CopyToBodyQue: the old body stays where it fell.
             if isinstance(corpse, PlayerRig) and self.world is not None {
                 leave_corpse(self.world, here, corpse);
@@ -2524,8 +2522,21 @@ walker CombatTick {
             here.alert = 0.0;
             here.yaw = spawn_yaw;
             here.pitch = 0.0;
+            here.crouched = False;
+            here.bot_state = BotState();
             here.pose_name = "";
             here.pos = destination;
+            # g_client.c ClientSpawn: G_KillBox telefrags whoever stands there.
+            if self.world is not None {
+                self.world spawn KillBox(
+                    mover=here,
+                    origin=destination.sub(Vec3(z=here.eye_height)),
+                    game="q3",
+                    bystander=self.player,
+                    bystander_height=self.collision.eye_height,
+                    tally=self.state
+                );
+            }
             here.route = [];
             here.route_areas = [];
             here.route_wait = 0.0;
@@ -2893,6 +2904,10 @@ walker CombatTick {
         # Idle patrols walk at the original walk-cycle pace; anything else runs.
         strolling = here.patrol_goal is not None and here.alert <= 0.0;
         here.walk_speed = here.rule.speed;
+        # bg_pmove.c pm_duckScale: crouching Q3 bots move at a quarter speed.
+        if here.crouched and here.character is not None {
+            here.walk_speed *= 0.25;
+        }
         if strolling {
             here.walk_speed = here.patrol_speed
                 if here.patrol_speed > 0.0
@@ -2911,7 +2926,7 @@ walker CombatTick {
         if facing is None and here.alert > 0.0 {
             facing = here.last_seen;
         }
-        if facing is not None and not here.fighting {
+        if facing is not None and not here.fighting and here.character is None {
             goal = facing.sub(here.pos);
             target_yaw = math.atan2(goal.y, goal.x);
             turn = math.atan2(

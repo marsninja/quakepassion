@@ -3,8 +3,8 @@ import from games.botfiles { skill_blocks, values_at, weapon_weights, character_
 import from games.weapons { weapon_rules }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, Projectile, HasProjectile, arm_bot }
-import from engine.world.bot_tactics { BotTactics, choose_weapon, turn_view, bot_fire, rule_for }
-import from engine.world.bot_character { BotCharacter, bot_skill }
+import from engine.world.bot_tactics { BotTactics, choose_weapon, change_view, steer_view, look_at, bot_fire, rule_for, bot_aggression }
+import from engine.world.bot_character { BotCharacter, BotState, bot_skill, bot_handicap }
 import from engine.world.inventory { quantity, AdjustInventory }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
@@ -47,7 +47,9 @@ test "botlib characters load exact skills and interpolate between them" {
     # Characteristic_BFloat clamps to [0, 1]; per-weapon values override.
     assert mind.name == "Sample" and mind.reaction == 1.0;
     assert mind.accuracy_for("railgun") == 0.9 and mind.accuracy_for("shotgun") == 0.85;
-    assert bot_skill(0) == 2.0 and bot_skill(1) == 3.0 and bot_skill(3) == 5.0;
+    # Normal is Q3's default Bring It On; handicaps from G_AddBot.
+    assert bot_skill(0) == 1.0 and bot_skill(1) == 2.0 and bot_skill(3) == 4.0;
+    assert bot_handicap(1.0) == 50 and bot_handicap(2.0) == 70 and bot_handicap(3.0) == 90 and bot_handicap(4.0) == 100;
 }
 
 test "bots pick their heaviest loaded weapon and shun a distant lightning gun" {
@@ -69,14 +71,50 @@ test "bots pick their heaviest loaded weapon and shun a distant lightning gun" {
 
 test "bot views turn at their characters' limited speed" {
     bot = Opponent(arena=True, yaw=0.0);
+    look_at(bot, Vec3(y=100.0));
+    assert abs(bot.bot_state.ideal_yaw - 90.0) < 0.0001;
     slow = BotCharacter(view_factor=0.5, view_maxchange=90.0);
-    turn_view(bot, slow, Vec3(y=100.0), 0.1);
-    # A quarter turn is capped at 9 degrees per 0.1 s think.
-    assert abs(bot.yaw - math.radians(9.0)) < 0.0001;
+    change_view(bot.bot_state, slow, True, 0.05);
+    # BotChangeViewAngles: a quarter turn is capped at 240 degrees a second.
+    assert abs(bot.bot_state.yaw - 12.0) < 0.0001;
     fast = BotCharacter(view_factor=0.5, view_maxchange=3600.0);
-    bot.yaw = 0.0;
-    turn_view(bot, fast, Vec3(y=100.0), 0.1);
-    assert abs(bot.yaw - math.pi / 4.0) < 0.0001;
+    state = BotState(ideal_yaw=90.0);
+    change_view(state, fast, True, 0.05);
+    assert abs(state.yaw - 45.0) < 0.0001;
+    # With no enemy the view drifts toward the movement at a slow 0.05.
+    state = BotState(ideal_yaw=90.0);
+    change_view(state, fast, False, 0.05);
+    assert abs(state.yaw - 4.5) < 0.0001;
+    # The drawn view moves every tick, between 50 ms server frames.
+    bot = Opponent(arena=True, yaw=0.0);
+    look_at(bot, Vec3(y=100.0));
+    seen: list[float] = [];
+    for tick in range(20) {
+        steer_view(bot, fast, True, 0.01);
+        seen.append(bot.yaw);
+    }
+    assert len(set(seen)) >= 12;
+    # The "over reaction" model overshoots, then settles on the target.
+    for tick in range(100) {
+        steer_view(bot, fast, True, 0.01);
+    }
+    assert abs(math.degrees(bot.yaw) - 90.0) < 1.0;
+}
+
+test "outgunned bots want to retreat and well-armed ones to fight" {
+    bot = Opponent(arena=True, health=100);
+    arm_bot(bot);
+    foe = Player(health=100, pos=Vec3(x=300.0));
+    assert bot_aggression(bot, foe, "machinegun") == 0.0;
+    bot.inventory spawn AdjustInventory(kind="weapon_rocketlauncher", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="rockets", amount=10, capacity=200);
+    assert bot_aggression(bot, foe, "rocketlauncher") == 90.0;
+    # Hurt without armor, or below an enemy far overhead, it would rather not.
+    bot.health = 70;
+    assert bot_aggression(bot, foe, "rocketlauncher") == 0.0;
+    bot.health = 100;
+    foe.pos = Vec3(x=300.0, z=260.0);
+    assert bot_aggression(bot, foe, "rocketlauncher") == 0.0;
 }
 
 test "bots hold fire for their reaction time, then shoot what they face" {
@@ -119,4 +157,79 @@ test "bot rockets fly as owned projectiles and use up ammo" {
     assert len(missiles) == 1 and missiles[0].owner is bot and missiles[0].hostile;
     assert missiles[0].velocity.length() > 899.0 and missiles[0].splash == 100;
     assert quantity(bot.inventory, "rockets") == 9 and bot.weapon_wait == 0.8;
+}
+
+def arena_floor() -> CollisionMap {
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-2000.0, y=-2000.0, z=-64.0), Vec3(x=2000.0, y=2000.0, z=0.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    return collision;
+}
+
+def duel(mind: BotCharacter, gap: float) -> Opponent {
+    world = World();
+    collision = arena_floor();
+    state = CombatState(game="q3");
+    rules = weapon_rules("q3");
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=22.0), grounded=True, character=mind);
+    foe = Opponent(arena=True, health=100, pos=Vec3(x=gap, z=22.0), grounded=True);
+    arm_bot(bot);
+    world +>:HasOpponent:+> bot;
+    world +>:HasOpponent:+> foe;
+    bot.foe = foe;
+    bot.arena_goal = Vec3(x=-500.0, z=22.0);
+    for tick in range(30) {
+        world spawn BotTactics(player=Player(), collision=collision, state=state, rules=rules, dt=0.01);
+    }
+    return bot;
+}
+
+test "outgunned bots retreat while shooting back; armed ones fight with attack moves" {
+    # Only a machine gun: BotWantsToRetreat, so the route follower steers.
+    wary = duel(BotCharacter(attack_skill=0.9), 300.0);
+    assert wary.bot_state.battle == "retreat" and not wary.fighting;
+    # A railgun with slugs makes it keen: it fights, strafing across the enemy.
+    world = World();
+    collision = arena_floor();
+    rules = weapon_rules("q3");
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=22.0), grounded=True, character=BotCharacter(attack_skill=0.9, weights={"railgun": 100}));
+    arm_bot(bot);
+    bot.inventory spawn AdjustInventory(kind="weapon_railgun", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="slugs", amount=10, capacity=200);
+    foe = Opponent(arena=True, health=100, pos=Vec3(x=140.0, z=22.0));
+    world +>:HasOpponent:+> bot;
+    world +>:HasOpponent:+> foe;
+    bot.foe = foe;
+    for tick in range(30) {
+        world spawn BotTactics(player=Player(), collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
+    }
+    assert bot.bot_state.battle == "fight" and bot.fighting;
+    # At the ideal distance BotAttackMove strafes sideways (or backs off).
+    assert abs(bot.steering.y) > 0.5 and bot.steering.x <= 0.001;
+    # Out of sight, a keen bot chases where the enemy was.
+    collision.add_box(Vec3(x=60.0, y=-2000.0, z=0.0), Vec3(x=80.0, y=2000.0, z=6000.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    for tick in range(20) {
+        world spawn BotTactics(player=Player(), collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
+    }
+    assert bot.bot_state.battle == "chase" and bot.bot_state.chase_target.x == 140.0;
+}
+
+test "unskilled bots stand, mediocre ones only close or open the distance" {
+    world = World();
+    collision = arena_floor();
+    rules = weapon_rules("q3");
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=22.0), grounded=True, character=BotCharacter(attack_skill=0.3));
+    arm_bot(bot);
+    bot.inventory spawn AdjustInventory(kind="weapon_railgun", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="slugs", amount=10, capacity=200);
+    foe = Opponent(arena=True, health=100, pos=Vec3(x=600.0, z=22.0));
+    world +>:HasOpponent:+> bot;
+    world +>:HasOpponent:+> foe;
+    bot.foe = foe;
+    for tick in range(15) {
+        world spawn BotTactics(player=Player(), collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
+    }
+    assert bot.bot_state.battle == "fight";
+    assert bot.steering.x > 0.99 and abs(bot.steering.y) < 0.001;
 }

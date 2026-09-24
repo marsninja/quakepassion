@@ -242,6 +242,21 @@ walker ArenaNavigationTick {
         if here.arena_goal_wait > 0.0 { return; }
         here.arena_goal_wait = 0.5;
         here.arena_goal = None;
+        # Battle nodes steer to their own goals: a chase to where the enemy
+        # was last seen, a nearby item grabbed mid-fight (Battle_NBG).
+        battle = here.bot_state.battle;
+        if battle == "chase" {
+            here.arena_goal = here.bot_state.chase_target.add(Vec3());
+            here.alert = max(here.alert, 1.0);
+            return;
+        }
+        grab = here.bot_state.nearby_goal;
+        if battle == "nbg" and grab is not None {
+            here.arena_goal = grab.add(Vec3());
+            here.alert = max(here.alert, 1.0);
+            return;
+        }
+        retreating = battle == "retreat";
         target = here.last_seen;
         best = 1500.0;
         for pickup in self.pickups {
@@ -262,6 +277,7 @@ walker ArenaNavigationTick {
             if distance < best
                 and (
                     not here.pursuing
+                        or retreating
                         or kind == "powerup"
                         or here.health < here.max_health // 2
                 ) {
@@ -272,7 +288,7 @@ walker ArenaNavigationTick {
         }
         # Like ai_dmq3.c long-term goals: with no enemy and nothing needed, head
         # for a distant item and pick another on arrival, so bots meet.
-        if here.arena_goal is None and not here.pursuing {
+        if here.arena_goal is None and (not here.pursuing or retreating) {
             roam = here.roam_goal;
             if roam is not None and roam.sub(here.pos).length() < 96.0 {
                 roam = None;
