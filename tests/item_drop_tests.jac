@@ -12,7 +12,7 @@ import from engine.world.pickups {
 import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, toss_items }
 import from engine.world.powerups { Powerup, Empowered, powerup_left }
 import from engine.world.inventory { quantity, AdjustInventory }
-import from engine.world.models { ModelResource }
+import from engine.world.models { ModelResource, powerup_shaders }
 import from engine.world.arena_navigation { ArenaContactIndex }
 import from engine.formats.animated { AnimatedModel }
 import from engine.physics.collision { CollisionMap }
@@ -128,4 +128,14 @@ test "a dying player drops its weapon and powerups, which vanish after 30 s" {
     assert not toss_items(world, victim, "machinegun", collision, 26.0);
     victim.inventory spawn AdjustInventory(kind="slugs", amount=-3, capacity=200);
     assert not toss_items(world, victim, "railgun", collision, 26.0);
+}
+
+test "powerups dress bodies and weapons in their shaders" {
+    assert powerup_shaders([], 0.0) == [""];
+    assert powerup_shaders(["quad"], 0.0) == ["", "powerups/quad"];
+    assert powerup_shaders(["quad", "battlesuit"], 0.0, True) == ["", "powerups/quadWeapon", "powerups/battleWeapon"];
+    # Invisibility replaces the model; regeneration flashes a tenth of the time.
+    assert powerup_shaders(["invisibility", "quad"], 0.0) == ["powerups/invisibility"];
+    assert powerup_shaders(["regen"], 0.15) == ["", "powerups/regen"];
+    assert powerup_shaders(["regen"], 0.25) == [""];
 }

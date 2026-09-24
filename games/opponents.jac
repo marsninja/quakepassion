@@ -6,7 +6,7 @@ import from .patrols { patrol_speed }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
 import from engine.world.opponent_rule { OpponentRule }
-import from .arena_character { character_rig, CharacterRig, character_body, weapon_kits, Q3_HELD_WEAPONS }
+import from .arena_character { character_rig, CharacterRig, character_body, weapon_kits, powerup_shells, Q3_HELD_WEAPONS }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
 import from engine.formats.bsp { MapEntity }
@@ -287,6 +287,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     rigs[key] = character_rig(library, bot.model, bot.skin);
                 }
                 kits = weapon_kits(world, library, resources, kits);
+                powerup_shells(world, library, resources);
                 body = character_body(world, resources, rigs[key], key, count + 1);
                 body.offset = Vec3(z=-level.collision.eye_height);
                 body.voice = player_voice(library, bot.model);

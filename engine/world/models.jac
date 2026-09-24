@@ -1,6 +1,7 @@
 """Visual components and shared model resources attached to world entities."""
 import math;
-import from .world { World, Area, Entity, In }
+import from .world { World, Area, Entity, In, Actor }
+import from .powerups { Empowered, Powerup }
 import from ..formats.animated { AnimatedModel, ModelTag }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3 }
@@ -39,7 +40,52 @@ obj ModelDraw {
         pitch: float = 0.0,
         roll: float = 0.0,
         basis: Basis | None = None,
-        light_origin: Vec3 | None = None;
+        light_origin: Vec3 | None = None,
+        shader: str = "",
+        inflate: float = 0.0;
+}
+
+"""Q3 powerup shaders (cgs.media.quadShader and friends), registered as model
+resources named "shader:<shader>", and how far each pushes the surface out
+(its deformVertexes wave base). Bodies and weapons use different ones."""
+glob POWERUP_BODY_SHELLS: dict[str, str] = {
+    "quad": "powerups/quad",
+    "regen": "powerups/regen",
+    "battlesuit": "powerups/battleSuit"
+};
+glob POWERUP_WEAPON_SHELLS: dict[str, str] = {
+    "quad": "powerups/quadWeapon",
+    "battlesuit": "powerups/battleWeapon"
+};
+glob POWERUP_INVISIBLE: str = "powerups/invisibility";
+glob POWERUP_INFLATE: dict[str, float] = {
+    "powerups/quad": 3.0,
+    "powerups/regen": 3.0,
+    "powerups/battleSuit": 1.0,
+    "powerups/quadWeapon": 0.5,
+    "powerups/battleWeapon": 0.5,
+    "powerups/invisibility": 0.0
+};
+
+"""CG_AddRefEntityWithPowerups (and CG_AddWeaponWithPowerups for a weapon):
+the shaders one model is drawn with. An invisible player is only the
+invisibility shader; otherwise the model itself ("") then a shell per
+powerup, the regeneration one flashing a tenth of the time."""
+def powerup_shaders(powers: list[str], seconds: float, weapon: bool = False) -> list[str] {
+    if "invisibility" in powers {
+        return [POWERUP_INVISIBLE];
+    }
+    shaders = [""];
+    shells = POWERUP_WEAPON_SHELLS if weapon else POWERUP_BODY_SHELLS;
+    for kind in ["quad", "regen", "battlesuit"] {
+        if kind in powers and kind in shells {
+            if kind == "regen" and int(seconds * 10.0) % 10 != 1 {
+                continue;
+            }
+            shaders.append(shells[kind]);
+        }
+    }
+    return shaders;
 }
 
 """A Q3 animation.cfg sequence (cg_players.c animation_t): its frames, the
@@ -203,8 +249,26 @@ walker GatherModels {
         visit [here<-:In:<-];
     }
 
-    """CG_Player: legs, torso, head, gun, barrel and flash for one rig."""
-    def add_rig(rig: PlayerRig, origin: Vec3) {
+    """One model draw per powerup shader."""
+    def add_part(draw: ModelDraw, shaders: list[str]) {
+        for shader in shaders {
+            if not shader {
+                self.draws.append(draw);
+                continue;
+            }
+            self.draws.append(
+                ModelDraw(resource=draw.resource, origin=draw.origin, yaw=draw.yaw, first=draw.first,
+                    second=draw.second, blend=draw.blend, basis=draw.basis, light_origin=draw.light_origin,
+                    shader="shader:" + shader, inflate=POWERUP_INFLATE.get(shader, 0.0))
+            );
+        }
+    }
+
+    """CG_Player: legs, torso, head, gun, barrel and flash for one rig, each
+    with its carrier's powerup shaders."""
+    def add_rig(rig: PlayerRig, origin: Vec3, powers: list[str] = []) {
+        body = powerup_shaders(powers, self.seconds) if powers else [""];
+        arms = powerup_shaders(powers, self.seconds, True) if powers else [""];
         links = [edge rig->:Wears:->];
         models = [rig->:Wears:->][?:ModelResource];
         lower: ModelResource | None = None;
@@ -226,26 +290,29 @@ walker GatherModels {
         legs = Placement(origin=origin, basis=quake_basis(rig.legs_angles));
         legs_blend = 1.0 - rig.legs.backlerp;
         torso_blend = 1.0 - rig.torso.backlerp;
-        self.draws.append(
+        self.add_part(
             ModelDraw(resource=lower, origin=legs.origin, yaw=0.0, first=rig.legs.old_frame,
-                second=rig.legs.frame, blend=legs_blend, basis=legs.basis, light_origin=origin)
+                second=rig.legs.frame, blend=legs_blend, basis=legs.basis, light_origin=origin),
+            body
         );
         mount = lerp_tag(lower.model, rig.legs.old_frame, rig.legs.frame, legs_blend, "tag_torso");
         if mount is None {
             return;
         }
         torso = legs.on_tag(mount, quake_basis(rig.torso_angles));
-        self.draws.append(
+        self.add_part(
             ModelDraw(resource=upper, origin=torso.origin, yaw=0.0, first=rig.torso.old_frame,
-                second=rig.torso.frame, blend=torso_blend, basis=torso.basis, light_origin=origin)
+                second=rig.torso.frame, blend=torso_blend, basis=torso.basis, light_origin=origin),
+            body
         );
         if head is not None {
             neck = lerp_tag(upper.model, rig.torso.old_frame, rig.torso.frame, torso_blend, "tag_head");
             if neck is not None {
                 top = torso.on_tag(neck, quake_basis(rig.head_angles));
-                self.draws.append(
+                self.add_part(
                     ModelDraw(resource=head, origin=top.origin, yaw=0.0, first=0, second=0,
-                        blend=0.0, basis=top.basis, light_origin=origin)
+                        blend=0.0, basis=top.basis, light_origin=origin),
+                    body
                 );
             }
         }
@@ -276,17 +343,19 @@ walker GatherModels {
             return;
         }
         held = torso.on_tag(hand);
-        self.draws.append(
+        self.add_part(
             ModelDraw(resource=gun, origin=held.origin, yaw=0.0, first=0, second=0, blend=0.0,
-                basis=held.basis, light_origin=origin)
+                basis=held.basis, light_origin=origin),
+            arms
         );
         if barrel is not None {
             spindle = lerp_tag(gun.model, 0, 0, 0.0, "tag_barrel");
             if spindle is not None {
                 spun = held.on_tag(spindle, quake_basis(Vec3(z=rig.barrel_roll)));
-                self.draws.append(
+                self.add_part(
                     ModelDraw(resource=barrel, origin=spun.origin, yaw=0.0, first=0, second=0,
-                        blend=0.0, basis=spun.basis, light_origin=origin)
+                        blend=0.0, basis=spun.basis, light_origin=origin),
+                    arms
                 );
             }
         }
@@ -311,7 +380,11 @@ walker GatherModels {
             }
             origin = here.pos.add(visual.offset);
             if isinstance(visual, PlayerRig) {
-                self.add_rig(visual, origin);
+                powers: list[str] = [];
+                if isinstance(here, Actor) {
+                    powers = [power.kind for power in [here->:Empowered:->][?:Powerup] if power.remaining != 0.0];
+                }
+                self.add_rig(visual, origin, powers);
                 continue;
             }
             yaw = here.yaw;

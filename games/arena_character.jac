@@ -3,6 +3,7 @@ and the weapons they hold, loaded as the original client registers them."""
 import from engine.assets.library { AssetLibrary, ModelAsset }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.bsp { Texture }
+import from engine.formats.animated { AnimatedModel, AnimatedSurface }
 import from engine.world.world { World }
 import from engine.world.models { ModelResource, HasModelResource, AnimationClip, WeaponKit, KitPart, PlayerRig }
 import from engine.world.player_rig { rig_clips, dress_rig }
@@ -184,4 +185,26 @@ def weapon_kits(
         kits[weapon] = kit;
     }
     return kits;
+}
+
+"""Q3's powerup shaders (quad, regeneration and battle suit shells and the
+invisibility shader, cg_main.c CG_RegisterGraphics) as model resources the
+renderer draws bodies and weapons with."""
+def powerup_shells(world: World, library: AssetLibrary, resources: dict[str, ModelResource]) {
+    for shader in [
+        "powerups/quad", "powerups/regen", "powerups/battleSuit", "powerups/invisibility",
+        "powerups/quadWeapon", "powerups/battleWeapon"
+    ] {
+        key = "shader:" + shader;
+        if key in resources {
+            continue;
+        }
+        stages = library.pk3.model_stages(shader, True);
+        if not stages {
+            continue;
+        }
+        model = AnimatedModel(surfaces=[AnimatedSurface(name=shader, stages=stages)]);
+        resources[key] = ModelResource(name=key, model=model, skins=[stages[0].texture]);
+        world +>:HasModelResource:+> resources[key];
+    }
 }

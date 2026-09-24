@@ -127,10 +127,19 @@ obj ModelRenderer {
         basis: Basis | None = None,
         fog: FogVolume | None = None,
         fog_image: int = 0,
-        forward: Vec3 = Vec3(x=1.0)
+        forward: Vec3 = Vec3(x=1.0),
+        overlay: ModelRenderer | None = None,
+        inflate: float = 0.0
     ) {
         if not self.stages {
             return;
+        }
+        # A custom shader (Q3 powerup shells, invisibility) replaces every
+        # surface's stages, its vertices pushed out along their normals.
+        stage_list = self.stages;
+        if overlay is not None {
+            stage_list = overlay.stages;
+            fog = None;
         }
         cosine = math.cos(yaw);
         sine = math.sin(yaw);
@@ -167,6 +176,17 @@ obj ModelRenderer {
         for s in range(len(self.model.surfaces)) {
             surface = self.model.surfaces[s];
             vertices = pose(surface, first, second, blend);
+            if inflate != 0.0 {
+                a = surface.frames[first].normals;
+                b = surface.frames[second].normals;
+                if len(a) == len(vertices) and len(b) == len(vertices) {
+                    fraction = max(0.0, min(1.0, blend));
+                    vertices = [
+                        vertices[i].add(a[i].lerp(b[i], fraction).scale(inflate))
+                        for i in range(len(vertices))
+                    ];
+                }
+            }
             colors: list[Vec3] = [];
             if illumination.enabled {
                 normals = surface.frames[first].normals;
@@ -188,8 +208,8 @@ obj ModelRenderer {
                     colors.append(color);
                 }
             }
-            for stage in self.stages {
-                if stage.surface != s {
+            for stage in stage_list {
+                if overlay is None and stage.surface != s {
                     continue;
                 }
                 if stage.two_sided {
@@ -398,6 +418,13 @@ obj ModelScene {
                     shared_light = lighting.sample(lit_from.add(Vec3(z=16.0)));
                     illumination = shared_light;
                 }
+                overlay: ModelRenderer | None = None;
+                if draw.shader {
+                    if draw.shader not in self.resources {
+                        continue;
+                    }
+                    overlay = self.resources[draw.shader];
+                }
                 renderer.draw(
                     draw.origin,
                     draw.yaw,
@@ -407,6 +434,8 @@ obj ModelScene {
                     eye,
                     seconds,
                     batched=True,
+                    overlay=overlay,
+                    inflate=draw.inflate,
                     illumination=illumination,
                     basis=draw.basis
                         if draw.basis is not None

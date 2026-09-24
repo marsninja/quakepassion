@@ -25,7 +25,9 @@ import from vendor.raylib {
 import from .quake { rlDrawRenderBatchActive }
 import from .models { ModelRenderer }
 import from ..assets.library { AssetLibrary }
-import from ..formats.animated { AnimatedModel }
+import from ..formats.animated { AnimatedModel, AnimatedSurface }
+import from ..world.models { powerup_shaders, POWERUP_INFLATE, POWERUP_INVISIBLE }
+import from ..world.powerups { Empowered, Powerup }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, model_basis }
 import from ..world.world { Player }
@@ -47,6 +49,7 @@ obj ViewWeapon {
         shots: int = -1,
         fired_at: float = -100.0,
         switched_at: float = -100.0,
+        shells: dict[str, ModelRenderer] = {},
         barrel_angle: float = 0.0,
         barrel_time: float = 0.0,
         barrel_spinning: bool = False,
@@ -60,6 +63,17 @@ obj ViewWeapon {
         library = AssetLibrary(game=game);
         try {
             library.open(directory);
+            if game == "q3" {
+                # The powerup shaders the gun may be drawn with.
+                for shader in [POWERUP_INVISIBLE, "powerups/quadWeapon", "powerups/battleWeapon"] {
+                    stages = library.pk3.model_stages(shader, True);
+                    if stages {
+                        shell = ModelRenderer();
+                        shell.upload(AnimatedModel(surfaces=[AnimatedSurface(name=shader, stages=stages)]), [stages[0].texture]);
+                        self.shells[shader] = shell;
+                    }
+                }
+            }
             for rule in rules {
                 renderer = ModelRenderer();
                 asset = ViewAsset(rule=rule, drawing=renderer);
@@ -193,16 +207,27 @@ obj ViewWeapon {
             z=max(0.1, illumination.ambient.z)
         );
         try {
-            asset.drawing.draw(
-                origin,
-                player.yaw,
-                first=model_frame,
-                second=model_frame,
-                eye=player.pos,
-                seconds=seconds,
-                illumination=illumination,
-                basis=basis
-            );
+            # CG_AddWeaponWithPowerups: invisible, or plain plus powerup shells.
+            powers = [power.kind for power in [player->:Empowered:->][?:Powerup] if power.remaining != 0.0];
+            shaders = powerup_shaders(powers, seconds, True);
+            for shader in shaders {
+                shell = self.shells[shader] if shader in self.shells else None;
+                if shader and shell is None {
+                    continue;
+                }
+                asset.drawing.draw(
+                    origin,
+                    player.yaw,
+                    first=model_frame,
+                    second=model_frame,
+                    eye=player.pos,
+                    seconds=seconds,
+                    illumination=illumination,
+                    basis=basis,
+                    overlay=shell,
+                    inflate=POWERUP_INFLATE.get(shader, 0.0)
+                );
+            }
             if asset.barrel.stages and asset.drawing.model.tags {
                 for tag in asset.drawing.model.tags[0].tags {
                     if tag.name == "tag_barrel" {
@@ -213,14 +238,22 @@ obj ViewWeapon {
                             left=basis.apply(mount.apply(turned.left)),
                             up=basis.apply(mount.apply(turned.up))
                         );
-                        asset.barrel.draw(
-                            origin.add(basis.apply(tag.origin)),
-                            player.yaw,
-                            eye=player.pos,
-                            seconds=seconds,
-                            illumination=illumination,
-                            basis=barrel_basis
-                        );
+                        for shader in shaders {
+                            shell = self.shells[shader] if shader in self.shells else None;
+                            if shader and shell is None {
+                                continue;
+                            }
+                            asset.barrel.draw(
+                                origin.add(basis.apply(tag.origin)),
+                                player.yaw,
+                                eye=player.pos,
+                                seconds=seconds,
+                                illumination=illumination,
+                                basis=barrel_basis,
+                                overlay=shell,
+                                inflate=POWERUP_INFLATE.get(shader, 0.0)
+                            );
+                        }
                         break;
                     }
                 }
@@ -261,6 +294,10 @@ obj ViewWeapon {
             asset.barrel.close();
             asset.flash.close();
         }
+        for shell in self.shells.values() {
+            shell.close();
+        }
+        self.shells = {};
         self.assets = {};
         self.selected = -1;
         self.shots = -1;

@@ -1,5 +1,6 @@
 import math;
-import from engine.world.world { World, Area, move_to_area }
+import from engine.world.world { World, Area, Player, move_to_area }
+import from engine.world.powerups { GrantPowerup }
 import from engine.world.models {
     ModelResource,
     GatherModels,
@@ -265,4 +266,21 @@ test "a respawning body leaves its corpse, which sinks and goes" {
     }
     assert not [world->:HasCorpse:->][?:Corpse];
     assert abs(bodies[0].pos.z - 15.0) < 0.2;
+}
+
+test "a quad-carrying body is drawn again in the quad shell" {
+    world = World();
+    area = Area(name="0", bounds=AABB(mins=Vec3(), maxs=Vec3()));
+    world ++> area;
+    rig = sarge();
+    carrier = Player(health=100, pos=Vec3(x=100.0));
+    carrier +>:HasVisual:+> rig;
+    move_to_area(carrier, area);
+    carrier spawn GrantPowerup(kind="quad", duration=30.0);
+    draws = (world spawn GatherModels()).draws;
+    shells = [draw for draw in draws if draw.shader == "shader:powerups/quad"];
+    assert len(draws) == 6 and len(shells) == 3 and shells[0].inflate == 3.0;
+    carrier spawn GrantPowerup(kind="invisibility", duration=30.0);
+    draws = (world spawn GatherModels()).draws;
+    assert len(draws) == 3 and all([draw.shader == "shader:powerups/invisibility" for draw in draws]);
 }
