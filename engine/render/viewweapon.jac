@@ -37,6 +37,7 @@ obj ViewAsset {
     has rule: ViewWeaponRule,
         drawing: ModelRenderer,
         barrel: ModelRenderer = ModelRenderer(),
+        flash: ModelRenderer = ModelRenderer(),
         hand: AnimatedModel = AnimatedModel();
 }
 
@@ -45,7 +46,11 @@ obj ViewWeapon {
         selected: int = -1,
         shots: int = -1,
         fired_at: float = -100.0,
-        switched_at: float = -100.0;
+        switched_at: float = -100.0,
+        barrel_angle: float = 0.0,
+        barrel_time: float = 0.0,
+        barrel_spinning: bool = False,
+        flash_roll: float = 0.0;
 
     def upload(game: str, directory: str, rules: list[ViewWeaponRule]) {
         self.close();
@@ -73,6 +78,11 @@ obj ViewWeapon {
                         barrel = library.model(barrel_path);
                         asset.barrel.upload(barrel.model, barrel.skins);
                     }
+                    flash_path = rule.model[:-4] + "_flash.md3";
+                    if flash_path.lower() in library.pk3.canonical_names {
+                        flash = library.model(flash_path);
+                        asset.flash.upload(flash.model, flash.skins);
+                    }
                 }
             }
         } except Exception {
@@ -96,6 +106,22 @@ obj ViewWeapon {
         if self.shots != state.shots {
             self.shots = state.shots;
             self.fired_at = seconds;
+            # CG_AddPlayerWeapon turns each flash a random few degrees.
+            self.flash_roll = math.sin(seconds * 7919.0) * 10.0;
+        }
+        # cg_weapons.c CG_MachinegunSpinAngle: 0.9 degrees a millisecond while
+        # firing, coasting to a stop over a second.
+        firing = seconds - self.fired_at < 0.2;
+        delta = max(0.0, seconds - self.barrel_time) * 1000.0;
+        spin = self.barrel_angle + delta * 0.9;
+        if not self.barrel_spinning {
+            coast = min(delta, 1000.0);
+            spin = self.barrel_angle + coast * 0.5 * (0.9 + (1000.0 - coast) / 1000.0);
+        }
+        if self.barrel_spinning != firing {
+            self.barrel_time = seconds;
+            self.barrel_angle = spin % 360.0;
+            self.barrel_spinning = firing;
         }
         asset = self.assets[state.weapon];
         frames = len(asset.hand.tags)
@@ -180,10 +206,12 @@ obj ViewWeapon {
             if asset.barrel.stages and asset.drawing.model.tags {
                 for tag in asset.drawing.model.tags[0].tags {
                     if tag.name == "tag_barrel" {
+                        turned = model_basis(0.0, 0.0, math.radians(spin % 360.0));
+                        mount = Basis(forward=tag.axes[0], left=tag.axes[1], up=tag.axes[2]);
                         barrel_basis = Basis(
-                            forward=basis.apply(tag.axes[0]),
-                            left=basis.apply(tag.axes[1]),
-                            up=basis.apply(tag.axes[2])
+                            forward=basis.apply(mount.apply(turned.forward)),
+                            left=basis.apply(mount.apply(turned.left)),
+                            up=basis.apply(mount.apply(turned.up))
                         );
                         asset.barrel.draw(
                             origin.add(basis.apply(tag.origin)),
@@ -192,6 +220,30 @@ obj ViewWeapon {
                             seconds=seconds,
                             illumination=illumination,
                             basis=barrel_basis
+                        );
+                        break;
+                    }
+                }
+            }
+            # The muzzle flash on tag_flash: MUZZLE_FLASH_TIME after a shot,
+            # or all the while the lightning gun or gauntlet fires.
+            continuous = state.weapon in [1, 6] and firing;
+            if asset.flash.stages and asset.drawing.model.tags
+                and (seconds - self.fired_at < 0.03 or continuous) {
+                for tag in asset.drawing.model.tags[0].tags {
+                    if tag.name == "tag_flash" {
+                        turned = model_basis(0.0, 0.0, math.radians(self.flash_roll));
+                        mount = Basis(forward=tag.axes[0], left=tag.axes[1], up=tag.axes[2]);
+                        asset.flash.draw(
+                            origin.add(basis.apply(tag.origin)),
+                            player.yaw,
+                            eye=player.pos,
+                            seconds=seconds,
+                            basis=Basis(
+                                forward=basis.apply(mount.apply(turned.forward)),
+                                left=basis.apply(mount.apply(turned.left)),
+                                up=basis.apply(mount.apply(turned.up))
+                            )
                         );
                         break;
                     }
@@ -207,6 +259,7 @@ obj ViewWeapon {
         for asset in self.assets.values() {
             asset.drawing.close();
             asset.barrel.close();
+            asset.flash.close();
         }
         self.assets = {};
         self.selected = -1;

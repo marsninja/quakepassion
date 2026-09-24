@@ -22,30 +22,28 @@ import from .inventory { quantity, AdjustInventory }
 import from .particles { rail_trail, beam_trail, impact_spray }
 import from .bot_character { BotCharacter }
 import from .powerups { damage_scale, fire_interval_scale }
-import from .models { ModelResource, UsesModel }
+import from .models { PlayerRig, WeaponKit }
+import from .player_rig { hold_kit }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 
-"""A bot's baked weapon models, one edge per weapon it could hold."""
-edge Arms: Opponent --> ModelResource {
+"""The weapon kits a bot can hold, one edge per weapon."""
+edge Arms: Opponent --> WeaponKit {
     has key: str = "";
 }
 
-"""Show the weapon a bot now holds by rewiring its weapon visual's model edge."""
+"""Put the weapon a bot now holds in its body's hand."""
 def hold_weapon(bot: Opponent, key: str) {
-    shown = bot.weapon_visual;
     bot.shown_weapon = key;
-    if shown is None {
+    rig = bot.visual;
+    if not isinstance(rig, PlayerRig) {
         return;
     }
     links = [edge bot->:Arms:->];
-    models = [bot->:Arms:->][?:ModelResource];
-    for i in range(min(len(links), len(models))) {
+    kits = [bot->:Arms:->][?:WeaponKit];
+    for i in range(min(len(links), len(kits))) {
         if links[i].key == key {
-            for old in [edge shown->:UsesModel:->] {
-                del old;
-            }
-            shown +>:UsesModel:+> models[i];
+            hold_kit(rig, kits[i]);
             return;
         }
     }
@@ -205,6 +203,10 @@ def bot_fire(
     }
     bot.weapon_wait = rule.interval * fire_interval_scale(bot);
     bot.attack_flash = min(0.25, max(0.1, rule.interval));
+    # EV_FIRE_WEAPON: the torso's attack and the muzzle flash.
+    if isinstance(bot.visual, PlayerRig) {
+        bot.visual.shots += 1;
+    }
     if rule.slot - 1 < len(Q3_FIRE_SOUNDS) {
         request_sound(bot, Q3_FIRE_SOUNDS[rule.slot - 1]);
     }
@@ -298,7 +300,8 @@ walker BotTactics {
         }
         dt = self.dt;
         held = rule_for(self.rules, here.weapon_slot);
-        if held is not None and held.key != here.shown_weapon {
+        # PM_FinishWeaponChange: the new weapon appears once the old one is down.
+        if held is not None and held.key != here.shown_weapon and here.weapon_change >= 0.2 {
             hold_weapon(here, held.key);
         }
         here.weapon_wait = max(0.0, here.weapon_wait - dt);

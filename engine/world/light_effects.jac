@@ -2,6 +2,7 @@
 import from .lighting { Lighting, FlashLight }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, CombatState }
+import from .models { PlayerRig, WeaponKit, Holds, RIG_FLASH_TIME }
 import from ..math.vec3 { Vec3, forward_from }
 
 def combat_lights(
@@ -25,7 +26,14 @@ def combat_lights(
     opponents = [world->:HasOpponent:->][?:Opponent];
     for i in range(len(opponents)) {
         enemy = opponents[i];
-        if enemy.health > 0 and enemy.attack_flash > 0.0 {
+        rig = enemy.visual;
+        if isinstance(rig, PlayerRig) {
+            # CG_AddPlayerWeapon: a Q3 muzzle flash lights its surroundings in
+            # the weapon's colour for as long as the flash shows.
+            if enemy.health > 0 and rig.clock - rig.flash_time < RIG_FLASH_TIME * 2.0 {
+                candidates.append((enemy.pos.sub(player.pos).length(), i));
+            }
+        } elif enemy.health > 0 and enemy.attack_flash > 0.0 {
             candidates.append((enemy.pos.sub(player.pos).length(), i));
         }
     }
@@ -34,6 +42,18 @@ def combat_lights(
             break;
         }
         enemy = opponents[candidate[1]];
+        rig = enemy.visual;
+        if isinstance(rig, PlayerRig) {
+            kits = [rig->:Holds:->][?:WeaponKit];
+            lighting.dynamic.append(
+                FlashLight(
+                    origin=enemy.pos.add(forward_from(enemy.yaw, enemy.pitch).scale(20.0)),
+                    color=kits[0].light if kits else Vec3(x=1.0, y=1.0, z=0.0),
+                    radius=300.0
+                )
+            );
+            continue;
+        }
         lighting.dynamic.append(
             FlashLight(
                 origin=enemy.pos,

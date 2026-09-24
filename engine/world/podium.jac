@@ -6,7 +6,8 @@ winner plays its gesture and taunt (CelebrateStart), and stands again when the
 gesture timer runs out (CelebrateStop)."""
 import math;
 import from .world { World, Entity, move_to_area }
-import from .models { Visual, ModelResource, UsesModel, HasVisual }
+import from .models { Visual, ModelResource, UsesModel, HasVisual, PlayerRig, WeaponKit, Holds }
+import from .player_rig { PoseRig, hold_kit, reset_rig }
 import from .arena { ArenaMatch, ChooseSpawn, standings }
 import from .combat { Opponent }
 import from .level { Level }
@@ -20,9 +21,6 @@ glob PODIUM_OFFSETS: list[Vec3] = [
     Vec3(x=-19.0, y=-60.0, z=45.0)
 ];
 
-# TIMER_GESTURE: 34 frames at 66 ms, plus 50.
-glob GESTURE_TIME: float = 2.294;
-
 node Podium(Entity) {
     has visual: Visual = Visual(),
         shown: bool = False,
@@ -32,13 +30,9 @@ node Podium(Entity) {
         taunts: int = 0;
 }
 
-"""A finisher's stand-in on the podium: its body, weapon and taunt."""
+"""A finisher's stand-in on the podium: its body (holding a weapon) and taunt."""
 node Figure(Entity) {
-    has body: Visual = Visual(),
-        weapon: Visual = Visual(),
-        stand_frame: int = 0,
-        gesture_frames: list[int] = [],
-        gesture_rate: float = 15.0,
+    has body: PlayerRig = PlayerRig(),
         taunt: str = "";
 }
 
@@ -54,30 +48,15 @@ edge Poses: Podium --> Figure {
 """A bot's stand-in copies the weapon the bot holds when the match ends."""
 edge Portrays: Figure --> Opponent {}
 """The human's stand-in can hold any weapon."""
-edge Wields: Figure --> ModelResource {
+edge Wields: Figure --> WeaponKit {
     has key: str = "";
 }
 
-"""A figure for one finisher, drawn with the given body and weapon models."""
-def podium_figure(body: ModelResource, weapon: ModelResource | None, taunt: str, gesture_rate: float) -> Figure {
-    figure = Figure(taunt=taunt, gesture_rate=gesture_rate);
-    figure +>:HasVisual:+> figure.body;
-    figure.body +>:UsesModel:+> body;
-    figure +>:HasVisual:+> figure.weapon;
-    if weapon is not None {
-        figure.weapon +>:UsesModel:+> weapon;
-    }
-    frames = body.model.surfaces[0].frames if body.model.surfaces else [];
-    for i in range(len(frames)) {
-        if frames[i].name == "stand0" {
-            figure.stand_frame = i;
-        }
-        if frames[i].name.startswith("gesture") {
-            figure.gesture_frames.append(i);
-        }
-    }
-    figure.body.visible = False;
-    figure.weapon.visible = False;
+"""A figure for one finisher, drawn with the given body."""
+def podium_figure(body: PlayerRig, taunt: str) -> Figure {
+    figure = Figure(body=body, taunt=taunt);
+    figure +>:HasVisual:+> body;
+    body.visible = False;
     return figure;
 }
 
@@ -171,12 +150,9 @@ def raise_podium(world: World, contest: ArenaMatch, level: Level, view: Vec3, an
         figure.pos = base.add(forward.scale(offset.x)).add(right.scale(offset.y)).add(Vec3(z=offset.z));
         figure.yaw = facing;
         figure.body.visible = True;
-        figure.body.first = figure.stand_frame;
-        figure.body.second = figure.stand_frame;
-        figure.body.blend = 0.0;
-        figure.weapon.first = figure.stand_frame;
-        figure.weapon.second = figure.stand_frame;
-        figure.weapon.blend = 0.0;
+        # SpawnModelOnVictoryPad: standing, facing the view.
+        reset_rig(figure.body, math.degrees(facing));
+        figure.body spawn PoseRig(dt=0.0, yaw=facing);
         podium +>:Stands(place=place + 1):+> figure;
         move_to_area(figure, level.areas[level.locate(figure.pos)]);
     }
@@ -186,34 +162,29 @@ def raise_podium(world: World, contest: ArenaMatch, level: Level, view: Vec3, an
 """Give a figure the weapon its competitor holds (a machine gun when it has
 none, as SpawnModelOnVictoryPad does)."""
 def dress_figure(figure: Figure, held: str) -> None {
-    chosen: ModelResource | None = None;
+    chosen: WeaponKit | None = None;
     for bot in [figure->:Portrays:->][?:Opponent] {
-        shown = bot.weapon_visual;
-        if shown is not None {
-            models = [shown->:UsesModel:->][?:ModelResource];
-            if models {
-                chosen = models[0];
+        rig = bot.visual;
+        if isinstance(rig, PlayerRig) {
+            kits = [rig->:Holds:->][?:WeaponKit];
+            if kits {
+                chosen = kits[0];
             }
         }
     }
     links = [edge figure->:Wields:->];
-    arms = [figure->:Wields:->][?:ModelResource];
+    arms = [figure->:Wields:->][?:WeaponKit];
     for i in range(min(len(links), len(arms))) {
         if links[i].key == (held or "machinegun") {
             chosen = arms[i];
         }
     }
-    for old in [edge figure.weapon->:UsesModel:->] {
-        del old;
-    }
-    if chosen is not None {
-        figure.weapon +>:UsesModel:+> chosen;
-    }
-    figure.weapon.visible = chosen is not None;
+    hold_kit(figure.body, chosen);
 }
 
-"""CelebrateStart two seconds after the podium rises; CelebrateStop when the
-gesture timer runs out."""
+"""CelebrateStart two seconds after the podium rises: the winner plays
+TORSO_GESTURE and its taunt; CelebrateStop returns it to TORSO_STAND when the
+gesture timer runs out. Every figure keeps breathing on LEGS_IDLE."""
 walker PodiumTick {
     has dt: float,
         cues: list[str] = [];
@@ -235,36 +206,21 @@ walker PodiumTick {
                 winner = figures[i];
             }
         }
-        if winner is None or not winner.gesture_frames {
-            return;
-        }
-        if not here.celebrating and not here.celebrated and here.clock >= 2.0 {
+        gesture = False;
+        if winner is not None and not here.celebrating and not here.celebrated and here.clock >= 2.0 {
             here.celebrating = True;
+            gesture = True;
             here.taunts += 1;
             if winner.taunt {
                 self.cues.append(winner.taunt);
             }
         }
-        if not here.celebrating {
-            return;
-        }
-        elapsed = here.clock - 2.0;
-        if elapsed >= GESTURE_TIME {
+        if here.celebrating and winner is not None and winner.body.torso_timer <= 0.0 and not gesture {
             here.celebrating = False;
             here.celebrated = True;
-            winner.body.first = winner.stand_frame;
-            winner.body.second = winner.stand_frame;
-            winner.body.blend = 0.0;
-        } else {
-            position = elapsed * winner.gesture_rate;
-            last = len(winner.gesture_frames) - 1;
-            index = min(int(position), last);
-            winner.body.first = winner.gesture_frames[index];
-            winner.body.second = winner.gesture_frames[min(index + 1, last)];
-            winner.body.blend = position - float(int(position)) if index < last else 0.0;
         }
-        winner.weapon.first = winner.body.first;
-        winner.weapon.second = winner.body.second;
-        winner.weapon.blend = winner.body.blend;
+        for figure in figures {
+            figure.body spawn PoseRig(dt=self.dt, yaw=figure.yaw, gesture=gesture and figure is winner);
+        }
     }
 }

@@ -3,7 +3,8 @@ import from engine.world.world { World, Player }
 import from engine.world.level { Level, BspArea }
 import from engine.world.combat { Opponent, HasOpponent }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes }
-import from engine.world.models { ModelResource, Visual, UsesModel }
+import from engine.world.models { ModelResource, PlayerRig, WeaponKit, Holds }
+import from engine.world.player_rig { dress_rig, rig_clips, hold_kit, ANIM_TORSO_GESTURE, ANIM_TORSO_STAND, ANIM_LEGS_IDLE }
 import from engine.world.podium {
     Podium,
     HasPodium,
@@ -18,19 +19,17 @@ import from engine.world.podium {
     arena_intermission
 }
 import from engine.formats.bsp { Bsp, Model, MapEntity }
-import from engine.formats.animated { AnimatedModel, AnimatedSurface, AnimationFrame }
+import from engine.formats.animated { AnimatedModel }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
 
-def body_model(name: str) -> ModelResource {
-    surface = AnimatedSurface(name="body");
-    for pose in ["stand0", "run0", "run1", "attack0", "death0"] {
-        surface.frames.append(AnimationFrame(name=pose));
+def body_model(name: str) -> PlayerRig {
+    rows: list[list[float]] = [];
+    for i in range(25) {
+        rows.append([float(i * 40), 40.0 if i == ANIM_TORSO_GESTURE else 1.0, 0.0, 18.0]);
     }
-    for i in range(30) {
-        surface.frames.append(AnimationFrame(name="gesture" + str(i)));
-    }
-    return ModelResource(name=name, model=AnimatedModel(surfaces=[surface]), skins=[]);
+    part = ModelResource(name=name, model=AnimatedModel(), skins=[]);
+    return dress_rig(rig_clips(rows), part, part, part);
 }
 
 test "the top three finishers take the podium facing the intermission view" {
@@ -47,23 +46,23 @@ test "the top three finishers take the podium facing the intermission view" {
     world +>:HasMatch:+> contest;
     podium = Podium();
     world +>:HasPodium:+> podium;
-    rocket = ModelResource(name="rocketlauncher", model=AnimatedModel(), skins=[]);
-    rail = ModelResource(name="railgun", model=AnimatedModel(), skins=[]);
+    rocket = WeaponKit(key="rocketlauncher");
+    rail = WeaponKit(key="railgun");
     names = ["Sarge", "Grunt", "Major"];
     frags = [20, 7, 3];
     for i in range(3) {
         bot = Opponent(arena=True, game="q3", health=0);
-        bot.weapon_visual = Visual();
-        bot.weapon_visual +>:UsesModel:+> rocket;
+        bot.visual = body_model(names[i]);
+        hold_kit(bot.visual, rocket);
         world +>:HasOpponent:+> bot;
         contest +>:Competes(name=names[i], frags=frags[i]):+> bot;
-        figure = podium_figure(body_model(names[i]), None, "sound/player/" + names[i] + "/taunt.wav", 15.0);
+        figure = podium_figure(body_model(names[i]), "sound/player/" + names[i] + "/taunt.wav");
         figure +>:Portrays:+> bot;
         podium +>:Poses(name=names[i]):+> figure;
     }
     player = Player(health=100);
     contest +>:Competes(name="You", frags=12, human=True):+> player;
-    you = podium_figure(body_model("sarge"), None, "sound/player/sarge/taunt.wav", 15.0);
+    you = podium_figure(body_model("sarge"), "sound/player/sarge/taunt.wav");
     you +>:Wields(key="railgun"):+> rail;
     podium +>:Poses(human=True):+> you;
     assert raise_podium(world, contest, level, view[0], view[1], "railgun") is podium;
@@ -83,19 +82,21 @@ test "the top three finishers take the podium facing the intermission view" {
             # The human came second: offsetSecond, holding the railgun.
             assert standing[i] is you;
             assert abs(standing[i].pos.x - 90.0) < 0.001 and abs(abs(standing[i].pos.y) - 60.0) < 0.001;
-            assert [you.weapon->:UsesModel:->][?:ModelResource] == [rail] and you.weapon.visible;
+            assert [you.body->:Holds:->][?:WeaponKit] == [rail] and you.body.weapon == "railgun";
         } else {
             assert abs(standing[i].pos.z - 75.0) < 0.001;
         }
     }
     assert winner is not None and winner.body.visible;
-    assert [winner.weapon->:UsesModel:->][?:ModelResource] == [rocket];
+    assert [winner.body->:Holds:->][?:WeaponKit] == [rocket];
     # CelebrateStart two seconds in: gesture and taunt, then stand again.
     tick = world spawn PodiumTick(dt=1.9);
-    assert not tick.cues and winner.body.first == winner.stand_frame;
+    assert not tick.cues and winner.body.torso_anim == ANIM_TORSO_STAND and winner.body.legs_anim == ANIM_LEGS_IDLE;
     tick = world spawn PodiumTick(dt=0.2);
     assert tick.cues == ["sound/player/Sarge/taunt.wav"];
-    assert winner.body.first == winner.gesture_frames[1];
-    world spawn PodiumTick(dt=2.3);
-    assert winner.body.first == winner.stand_frame and podium.celebrated and podium.taunts == 1;
+    assert winner.body.torso_anim == ANIM_TORSO_GESTURE;
+    for step in range(24) {
+        world spawn PodiumTick(dt=0.1);
+    }
+    assert winner.body.torso_anim == ANIM_TORSO_STAND and podium.celebrated and podium.taunts == 1;
 }
