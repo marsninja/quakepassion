@@ -85,6 +85,10 @@ and the player's own mirror body.
 
 ## Limits
 
+- Bots' powerup shells and invisibility are not drawn yet: native
+  `isinstance(here, Actor)` in `GatherModels` is false for `Opponent`, whose
+  module `models.jac` does not import (a Jac defect with a minimal repro, to be
+  fixed upstream). The player's view weapon shows its shells.
 - Bodies are not solid and cannot be gibbed once left behind.
 - Head offsets, `fixedlegs` and `fixedtorso` from `animation.cfg` are ignored.
 - The powerup shaders drop their texture rotation and turbulence.
