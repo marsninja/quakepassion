@@ -8,6 +8,7 @@ obj WeaponRule {
         pickup_ammo: int = 0,
         cost: int = 1,
         damage: int = 10,
+        kick: int = -1,
         interval: float = 0.1,
         pellets: int = 1,
         spread: float = 0.0,
@@ -26,7 +27,12 @@ obj WeaponRule {
         model: str = "",
         effect: str = "",
         hand_thrown: bool = False,
-        avoid_underwater: bool = False;
+        avoid_underwater: bool = False,
+        circular: bool = False,
+        punch: float = 0.0,
+        punch_time: float = 0.0,
+        raise_time: float = 0.0,
+        lower_time: float = 0.0;
 }
 
 obj ViewWeaponRule {

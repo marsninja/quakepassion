@@ -19,6 +19,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=2,
                 key="shotgun",
                 name="Shotgun",
+                punch=2.0,
+                punch_time=0.2,
                 ammo="shells",
                 capacity=100,
                 pickup_ammo=5,
@@ -32,6 +34,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=3,
                 key="supershotgun",
                 name="Super shotgun",
+                punch=4.0,
+                punch_time=0.4,
                 ammo="shells",
                 capacity=100,
                 pickup_ammo=5,
@@ -47,6 +51,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=4,
                 key="nailgun",
                 name="Nailgun",
+                punch=2.0,
+                punch_time=0.2,
                 ammo="nails",
                 capacity=200,
                 pickup_ammo=30,
@@ -60,6 +66,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=5,
                 key="supernailgun",
                 name="Super nailgun",
+                punch=2.0,
+                punch_time=0.2,
                 ammo="nails",
                 capacity=200,
                 pickup_ammo=30,
@@ -74,6 +82,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=6,
                 key="grenadelauncher",
                 name="Grenade launcher",
+                punch=2.0,
+                punch_time=0.2,
                 ammo="rockets",
                 capacity=100,
                 pickup_ammo=5,
@@ -91,6 +101,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=7,
                 key="rocketlauncher",
                 name="Rocket launcher",
+                punch=2.0,
+                punch_time=0.2,
                 ammo="rockets",
                 capacity=100,
                 pickup_ammo=5,
@@ -106,6 +118,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=8,
                 key="lightning",
                 name="Thunderbolt",
+                punch=2.0,
+                punch_time=0.2,
                 ammo="cells",
                 capacity=100,
                 pickup_ammo=15,
@@ -123,7 +137,12 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=1,
                 key="blaster",
                 name="Blaster",
+                punch=1.0,
+                punch_time=0.1,
+                raise_time=0.4,
+                lower_time=0.3,
                 damage=10,
+                kick=1,
                 interval=0.5,
                 speed=1000.0,
                 effect="q2_bolt"
@@ -132,10 +151,15 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=2,
                 key="shotgun",
                 name="Shotgun",
+                punch=2.0,
+                punch_time=0.1,
+                raise_time=0.7,
+                lower_time=0.3,
                 ammo="shells",
                 capacity=100,
                 pickup_ammo=10,
                 damage=4,
+                kick=8,
                 interval=1.0,
                 pellets=12,
                 spread=0.0625,
@@ -146,11 +170,16 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=3,
                 key="supershotgun",
                 name="Super shotgun",
+                punch=2.0,
+                punch_time=0.1,
+                raise_time=0.6,
+                lower_time=0.4,
                 ammo="shells",
                 capacity=100,
                 pickup_ammo=10,
                 cost=2,
                 damage=6,
+                kick=12,
                 interval=1.0,
                 pellets=20,
                 spread=0.125,
@@ -161,10 +190,13 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=4,
                 key="machinegun",
                 name="Machinegun",
+                raise_time=0.3,
+                lower_time=0.4,
                 ammo="bullets",
                 capacity=200,
                 pickup_ammo=50,
                 damage=8,
+                kick=2,
                 interval=0.1,
                 spread=0.037,
                 vertical_spread=0.061,
@@ -174,11 +206,14 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=5,
                 key="chaingun",
                 name="Chaingun",
+                raise_time=0.4,
+                lower_time=0.3,
                 ammo="bullets",
                 capacity=200,
                 pickup_ammo=50,
                 damage=8,
-                interval=0.05,
+                kick=2,
+                interval=0.1,
                 spread=0.037,
                 vertical_spread=0.061,
                 model="models/weapons/g_chain/tris.md2"
@@ -187,6 +222,10 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=6,
                 key="grenadelauncher",
                 name="Grenade launcher",
+                punch=1.0,
+                punch_time=0.1,
+                raise_time=0.5,
+                lower_time=0.5,
                 ammo="grenades",
                 capacity=50,
                 pickup_ammo=5,
@@ -204,6 +243,10 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=7,
                 key="rocketlauncher",
                 name="Rocket launcher",
+                punch=1.0,
+                punch_time=0.1,
+                raise_time=0.4,
+                lower_time=0.4,
                 ammo="rockets",
                 capacity=50,
                 pickup_ammo=5,
@@ -219,10 +262,15 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=8,
                 key="hyperblaster",
                 name="Hyperblaster",
+                punch=1.0,
+                punch_time=0.1,
+                raise_time=0.5,
+                lower_time=0.4,
                 ammo="cells",
                 capacity=200,
                 pickup_ammo=50,
                 damage=20,
+                kick=1,
                 interval=0.1,
                 speed=1000.0,
                 model="models/weapons/g_hyperb/tris.md2",
@@ -232,10 +280,15 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=9,
                 key="railgun",
                 name="Railgun",
+                punch=3.0,
+                punch_time=0.1,
+                raise_time=0.3,
+                lower_time=0.5,
                 ammo="slugs",
                 capacity=50,
                 pickup_ammo=10,
                 damage=150,
+                kick=250,
                 interval=1.5,
                 piercing=True,
                 model="models/weapons/g_rail/tris.md2"
@@ -244,6 +297,10 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=10,
                 key="bfg",
                 name="BFG10K",
+                punch=40.0,
+                punch_time=0.5,
+                raise_time=0.8,
+                lower_time=0.3,
                 ammo="cells",
                 capacity=200,
                 pickup_ammo=50,
@@ -287,41 +344,50 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=1,
                 key="gauntlet",
                 name="Gauntlet",
+                raise_time=0.25,
+                lower_time=0.2,
                 damage=50,
                 interval=0.4,
-                reach=32.0
+                reach=46.0
             ),
             WeaponRule(
                 slot=2,
                 key="machinegun",
                 name="Machinegun",
+                circular=True,
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="bullets",
                 capacity=200,
                 pickup_ammo=40,
                 damage=7,
                 interval=0.1,
-                spread=0.0073,
-                vertical_spread=0.0073,
+                spread=0.0244,
+                vertical_spread=0.0244,
                 model="models/weapons2/machinegun/machinegun.md3"
             ),
             WeaponRule(
                 slot=3,
                 key="shotgun",
                 name="Shotgun",
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="shells",
                 capacity=200,
                 pickup_ammo=10,
                 damage=10,
                 interval=1.0,
                 pellets=11,
-                spread=0.043,
-                vertical_spread=0.043,
+                spread=0.085,
+                vertical_spread=0.085,
                 model="models/weapons2/shotgun/shotgun.md3"
             ),
             WeaponRule(
                 slot=4,
                 key="grenadelauncher",
                 name="Grenade launcher",
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="grenades",
                 capacity=200,
                 pickup_ammo=10,
@@ -339,6 +405,9 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=5,
                 key="rocketlauncher",
                 name="Rocket launcher",
+                fuse=15.0,
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="rockets",
                 capacity=200,
                 pickup_ammo=10,
@@ -354,6 +423,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=6,
                 key="lightning",
                 name="Lightning gun",
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="lightning",
                 capacity=200,
                 pickup_ammo=100,
@@ -366,6 +437,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=7,
                 key="railgun",
                 name="Railgun",
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="slugs",
                 capacity=200,
                 pickup_ammo=10,
@@ -378,6 +451,9 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=8,
                 key="plasmagun",
                 name="Plasma gun",
+                fuse=10.0,
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="cells",
                 capacity=200,
                 pickup_ammo=50,
@@ -393,6 +469,9 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 slot=9,
                 key="bfg",
                 name="BFG10K",
+                fuse=10.0,
+                raise_time=0.25,
+                lower_time=0.2,
                 ammo="bfg",
                 capacity=200,
                 pickup_ammo=20,
@@ -401,7 +480,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 speed=2000.0,
                 splash=100,
                 radius=120.0,
-                model="models/weapons2/bfg/bfg.md3"
+                model="models/weapons2/bfg/bfg.md3",
+                effect="q3_bfg"
             )
         ];
     }
@@ -494,7 +574,12 @@ def weapon_effects(game: str) -> list[EffectRule] {
             EffectRule(key="q1_zombiegib", flight="progs/zom_gib.mdl", spin=8.0),
             EffectRule(key="q1_supernail", flight="progs/s_spike.mdl"),
             EffectRule(key="q1_grenade", flight="progs/grenade.mdl", spin=5.235987756),
-            EffectRule(key="q1_rocket", flight="progs/missile.mdl")
+            EffectRule(key="q1_rocket", flight="progs/missile.mdl"),
+            # BecomeExplosion: s_explode1-6 at 10 Hz.
+            EffectRule(key="q1_explosion", flight="progs/s_explod.spr", explosion=True),
+            # Beam segments: shambler bolt.mdl, the player's bolt2.mdl.
+            EffectRule(key="q1_bolt", flight="progs/bolt.mdl"),
+            EffectRule(key="q1_bolt2", flight="progs/bolt2.mdl")
         ];
     }
     if game == "q2" {
@@ -513,7 +598,22 @@ def weapon_effects(game: str) -> list[EffectRule] {
                 flight="models/objects/grenade2/tris.md2",
                 spin=5.235987756
             ),
-            EffectRule(key="q2_rocket", flight="models/objects/rocket/tris.md2")
+            EffectRule(key="q2_rocket", flight="models/objects/rocket/tris.md2"),
+            # cl_tent.c: rocket bursts start on frame 0 or 15, grenades on 30.
+            EffectRule(
+                key="q2_explosion",
+                flight="models/objects/r_explode/tris.md2",
+                explosion=True,
+                skins=7,
+                frames=[0, 15]
+            ),
+            EffectRule(
+                key="q2_grenade_explosion",
+                flight="models/objects/r_explode/tris.md2",
+                explosion=True,
+                skins=7,
+                frames=[30]
+            )
         ];
     }
     if game == "q3" {
@@ -528,7 +628,58 @@ def weapon_effects(game: str) -> list[EffectRule] {
                 sprite_size=32,
                 additive=True,
                 rotate=931.0
-            )
+            ),
+            EffectRule(key="q3_bfg", flight="models/weaphits/bfg.md3", spin=6.0),
+            # gfx.shader rocketExplosion / grenadeExplosion / bfgExplosion animmaps.
+            EffectRule(
+                key="q3_rocket_explosion",
+                flight="",
+                images=[
+                    "models/weaphits/rlboom/rlboom_" + str(i)
+                    for i in range(1, 9)
+                ],
+                fps=8.0,
+                sprite_size=30,
+                grow=42.0,
+                additive=True,
+                explosion=True
+            ),
+            EffectRule(
+                key="q3_grenade_explosion",
+                flight="",
+                images=[
+                    "models/weaphits/glboom/glboom_" + str(i)
+                    for i in range(1, 4)
+                ],
+                fps=5.0,
+                sprite_size=30,
+                grow=42.0,
+                additive=True,
+                explosion=True
+            ),
+            EffectRule(
+                key="q3_bfg_explosion",
+                flight="",
+                images=[
+                    "models/weaphits/bfgboom/bfgboom_" + str(i)
+                    for i in range(1, 4)
+                ],
+                fps=5.0,
+                sprite_size=30,
+                grow=42.0,
+                additive=True,
+                explosion=True
+            ),
+            EffectRule(
+                key="q3_plasma_explosion",
+                flight="models/weaphits/plasmaboom",
+                sprite_size=24,
+                additive=True,
+                explosion=True
+            ),
+            EffectRule(key="q3_railcore", flight="gfx/misc/railcorethin_mono", additive=True),
+            EffectRule(key="q3_raildisc", flight="gfx/misc/raildisc_mono2", additive=True),
+            EffectRule(key="q3_lightning", flight="gfx/misc/lightning3", additive=True)
         ];
     }
     return [];
