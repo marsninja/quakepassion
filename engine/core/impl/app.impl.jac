@@ -1217,8 +1217,13 @@ impl App.step() -> bool {
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking and not self.finale_active
+                touching=self.walking and not self.finale_active,
+                inventory=self.player.inventory
             );
+            self.show_notice(exit_request.message);
+            for cue in exit_request.cues {
+                self.audio.play_path(cue);
+            }
             if exit_request.request {
                 if self.level.bsp.game == "passion"
                     and exit_request.request == "passion_complete" {
