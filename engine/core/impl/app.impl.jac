@@ -152,8 +152,15 @@ impl App.render_frame() {
             self.world, p.pos, p.yaw, p.pitch, lighting=self.level.lighting
         );
         if not self.smoke and not self.finale_active {
+            inset = self.hud.view_inset(
+                self.level.bsp.game, self.renderer.width, self.renderer.height
+            );
             self.viewweapon.draw(
-                p, self.combat, self.simulation_time, self.level.lighting
+                p,
+                self.combat,
+                self.simulation_time,
+                self.level.lighting,
+                lift=inset / float(max(1, self.renderer.height))
             );
         }
         self.renderer.end_scene();

@@ -83,7 +83,9 @@ obj ViewWeapon {
         }
     }
 
-    def draw(player: Player, state: CombatState, seconds: float, lighting: Lighting) {
+    """`lift` raises the weapon by that fraction of the screen height, so a
+    weapon drawn at the bottom of the view sits above an opaque status bar."""
+    def draw(player: Player, state: CombatState, seconds: float, lighting: Lighting, lift: float = 0.0) {
         if player.health <= 0 or state.weapon not in self.assets {
             return;
         }
@@ -159,6 +161,14 @@ obj ViewWeapon {
         weapon_projection.m14 = f32(
             0.3 * float(projection.m14) - 0.7 * float(projection.m15)
         );
+        # Shift clip-space y by the lift (in NDC, twice the screen fraction).
+        if lift > 0.0 {
+            shift = 2.0 * lift;
+            weapon_projection.m1 = f32(float(projection.m1) + shift * float(projection.m3));
+            weapon_projection.m5 = f32(float(projection.m5) + shift * float(projection.m7));
+            weapon_projection.m9 = f32(float(projection.m9) + shift * float(projection.m11));
+            weapon_projection.m13 = f32(float(projection.m13) + shift * float(projection.m15));
+        }
         rlSetMatrixProjection(weapon_projection);
         illumination = lighting.sample(player.pos);
         illumination.ambient = Vec3(

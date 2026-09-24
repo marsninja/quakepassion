@@ -151,6 +151,17 @@ obj HudRenderer {
         }
     }
 
+    """Screen pixels the status bars cover at the bottom of the view. Quake's
+    full status bar (viewsize 100) shrinks the 3D view to sit above its two
+    bars (sbar.c sb_lines 48); the later games overlay their HUD on the view."""
+    def view_inset(game: str, width: int, height: int) -> float {
+        if not self.ready or game != "q1" {
+            return 0.0;
+        }
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        return 48.0 * scale;
+    }
+
     def draw(status: HudStatus, width: int, height: int) {
         if not self.ready {
             return;
