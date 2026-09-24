@@ -61,8 +61,8 @@ test "model materials preserve environment base then alpha overlay ordering" {
 
 test "model material parser reports unsupported directives and handles archive overrides" {
     archive = Pk3Assets();
-    archive.parse_shaders("models/a { { map old.tga tcMod rotate 30 } }");
-    assert archive.model_shaders["models/a"].unsupported == ["tcmod"];
+    archive.parse_shaders("models/a { { map old.tga tcMod entityTranslate } }");
+    assert archive.model_shaders["models/a"].unsupported == ["tcmod entitytranslate"];
     archive.parse_shaders("// override\nmodels/a { { map new.tga blendFunc add } }");
     material = archive.model_shaders["models/a"];
     assert not material.unsupported;

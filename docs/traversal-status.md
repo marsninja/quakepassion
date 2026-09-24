@@ -19,11 +19,15 @@ Implemented:
 - Q1/Q2 directional `trigger_push`, including one-shot pushes.
 - Q3 `trigger_push` velocity calculated from the brush model's authored center
   and its target apex, using the same 800-unit gravity as walking.
+- Arriving telefrags whoever the arriving body overlaps (Q1 `spawn_tdeath`, Q2
+  `KillBox`, Q3 `G_KillBox`), through armor and invulnerability. The kill counts
+  for the player. Q3 telefrags only players and bots, and bots teleporting onto
+  the player telefrag them too.
 - All BSP adapters retain model bounds. Trigger-volume extraction is shared
   with the existing door/button activation system.
 
 This remains partial traversal support. Named
-or scripted teleport activation, randomized destination selection, telefragging,
+or scripted teleport activation, randomized destination selection,
 teleport effects/sounds, Q1/Q3 post-teleport input lock timing and
 crouching are not implemented. Initial liquid movement is described in
 [swimming status](swimming-status.md). Missing/ambiguous targets and unsupported flags

@@ -43,6 +43,8 @@ node TargetEvent {
         random_state: int = 1,
         speaker: Speaker | None = None,
         gifts: list[int] = [],
+        mins: Vec3 = Vec3(),
+        maxs: Vec3 = Vec3(),
         activation: Signal = Signal();
 
     def random() -> float {
@@ -82,6 +84,26 @@ walker TargetTick {
         if self.dt > 0.0 {
             self.world = here;
             visit [here->:HasTarget:->];
+        }
+    }
+
+    def kill_inside(box: TargetEvent, world: World) {
+        actors: list[Player] = [self.player];
+        actors.extend([enemy for enemy in [world->:HasOpponent:->][?:Opponent] if enemy.health > 0 and not enemy.dormant]);
+        for actor in actors {
+            height = actor.eye_height if isinstance(actor, Opponent) else self.collision.eye_height;
+            origin = actor.pos.sub(Vec3(z=height));
+            inside = origin.x + 16.0 > box.mins.x and origin.x - 16.0 < box.maxs.x
+                and origin.y + 16.0 > box.mins.y and origin.y - 16.0 < box.maxs.y
+                and origin.z + 32.0 > box.mins.z and origin.z - 24.0 < box.maxs.z;
+            if not inside or actor.health <= 0 {
+                continue;
+            }
+            if isinstance(actor, Opponent) {
+                damage_opponent(actor, 100000, bypass_armor=True, means="telefrag", tally=self.state);
+            } else {
+                actor spawn Damage(amount=100000, bypass_armor=True, bypass_protection=True, means="telefrag");
+            }
         }
     }
 
@@ -135,6 +157,10 @@ walker TargetTick {
                         gift.visual.visible = False;
                     }
                 }
+            }
+            # g_misc.c use_killbox: KillBox telefrags whatever stands inside.
+            if here.kind == "killbox" {
+                self.kill_inside(here, world);
             }
             if here.kind == "print" and here.message {
                 self.message = here.message;
@@ -294,20 +320,15 @@ def load_targets(world: World, bsp: Bsp) {
             "target_help"
         ];
         q3_kinds = ["target_remove_powerups", "target_print", "target_give"];
-        # Q1/Q2 named lights are switches (light_use: START_OFF 1 toggles style).
-        toggled = bsp.game in ["q1", "q2"]
-            and kind.startswith("light")
-            and bool(fields.get("targetname", ""));
-        if toggled {
-            lamp = TargetEvent(
-                kind="light",
-                origin=target_origin(fields),
-                on=int(fields.get("spawnflags", "0")) & 1 == 0,
-                count=int(float(fields.get("style", "0"))),
-                activation=Signal(entities=[index])
-            );
-            world +>:HasTarget:+> lamp;
-            world +>:HasSignal:+> lamp.activation;
+        # Q1/Q2 named lights are LightSwitch nodes (see lightstyles.jac).
+        if bsp.game == "q2" and kind == "func_killbox" {
+            reference = fields.get("model", "");
+            if reference.startswith("*") and reference[1:].isdigit() and int(reference[1:]) < len(bsp.models) {
+                record = bsp.models[int(reference[1:])];
+                box = TargetEvent(kind="killbox", mins=record.mins, maxs=record.maxs, activation=Signal(entities=[index]));
+                world +>:HasTarget:+> box;
+                world +>:HasSignal:+> box.activation;
+            }
             continue;
         }
         if bsp.game == "q1"

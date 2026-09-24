@@ -53,6 +53,7 @@ impl App.run() {
             view_weapons(self.level.bsp.game)
         );
         self.quake.upload(self.level);
+        self.prepare_presentation();
     }
     frame = 0;
     while not self.renderer.should_close() {
@@ -127,7 +128,10 @@ impl App.render_frame() {
     if self.level.active {
         faces = self.level.visible(self.world, p.pos, self.culling);
         combat_lights(self.level.lighting, self.world, p, self.combat);
+        self.quake.time = self.simulation_time;
+        self.render_portal(faces);
         self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
+        self.quake.view_forward = forward_from(p.yaw, p.pitch);
         self.last_drawn = self.quake.draw(self.level, faces, p.pos);
         self.models.draw(
             self.world,
@@ -138,7 +142,9 @@ impl App.render_frame() {
             pitch=p.pitch,
             fov=self.renderer.fov,
             aspect=float(self.renderer.width) / float(self.renderer.height),
-            lighting=self.level.lighting
+            lighting=self.level.lighting,
+            fogs=self.level.bsp.fogs,
+            fog_image=self.quake.fog_image
         );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
@@ -160,13 +166,25 @@ impl App.render_frame() {
                 "Enter: " + ("main menu" if self.campaign_complete else "continue")
             );
         }
+        if not self.smoke and self.hud.ready {
+            status = self.hud_status();
+            self.hud.draw(status, self.renderer.width, self.renderer.height);
+            if self.hud.three_d {
+                self.hud_models.draw(self.hud, status, self.renderer.width, self.renderer.height);
+            }
+            if p.health <= 0 and self.level.bsp.game != "q3" {
+                self.renderer.draw_terminal("You died - Enter to restart level");
+            }
+        }
         if not self.smoke {
-            self.renderer.draw_status(
-                p.health,
-                p.armor,
-                quantity(p.inventory, "shells"),
-                arena=self.level.bsp.game == "q3"
-            );
+            if not self.hud.ready {
+                self.renderer.draw_status(
+                    p.health,
+                    p.armor,
+                    quantity(p.inventory, "shells"),
+                    arena=self.level.bsp.game == "q3"
+                );
+            }
             rule = selected_weapon(self.combat);
             contest = match_of(self.world) if self.level.bsp.game == "q3" else None;
             score = "";
@@ -187,12 +205,16 @@ impl App.render_frame() {
                     }
                 }
             }
-            self.renderer.draw_combat(
-                self.combat,
-                self.level.bsp.game == "q3",
-                ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
-                score=score
-            );
+            if self.hud.ready {
+                self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
+            } else {
+                self.renderer.draw_combat(
+                    self.combat,
+                    self.level.bsp.game == "q3",
+                    ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
+                    score=score
+                );
+            }
             self.renderer.draw_keys(
                 " | ".join(
                     [
@@ -514,6 +536,7 @@ impl App.load_destination(
         self.models = next_models;
         self.effects = next_effects;
         self.viewweapon = next_viewweapon;
+        self.prepare_presentation();
         if self.audio.ready {
             self.audio.close();
             try {
@@ -681,6 +704,12 @@ impl App.step() -> bool {
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
+        if contest is not None and contest.finished {
+            celebration = self.world spawn PodiumTick(dt=dt);
+            for cue in celebration.cues {
+                self.audio.play_path(cue);
+            }
+        }
         if IsKeyPressed(i32(257)) {
             if contest is not None and contest.finished {
                 self.finish_arena(contest);
@@ -749,6 +778,18 @@ impl App.step() -> bool {
     self.frame_dt = dt;
     if self.level.active and not self.menu.opened {
         self.world spawn FixtureTick(dt=dt);
+        self.world spawn LightStyleTick(dt=dt);
+        styles = self.light_styles;
+        if styles is not None and styles.serial != self.style_serial {
+            self.style_serial = styles.serial;
+            self.quake.animate_styles(self.level, styles.values);
+        }
+        # Sbar_DrawFace shows the pain face briefly after each hit.
+        if self.player.health < self.pain_health {
+            self.pain_time = 0.2;
+        }
+        self.pain_health = self.player.health;
+        self.pain_time = max(0.0, self.pain_time - dt);
     }
     ticks = self.clock.advance(dt);
     for i in range(ticks) {
@@ -876,6 +917,8 @@ impl App.step() -> bool {
                 self.world spawn ArenaNavigationTick(
                     collision=self.level.collision,
                     index=self.arena_contacts,
+                    bystander=self.player,
+                    bystander_height=self.level.collision.eye_height,
                     dt=self.physics_clock.tick_rate
                 );
             }
@@ -931,6 +974,7 @@ impl App.step() -> bool {
                     } except Exception as error {
                         self.show_notice("Arena progress: " + str(error));
                     }
+                    self.begin_podium(contest);
                     break;
                 }
             }
@@ -938,6 +982,8 @@ impl App.step() -> bool {
                 self.world spawn ArenaNavigationTick(
                     collision=self.level.collision,
                     index=self.arena_contacts,
+                    bystander=self.player,
+                    bystander_height=self.level.collision.eye_height,
                     dt=self.physics_clock.tick_rate,
                     contacts=True
                 );
@@ -1008,6 +1054,42 @@ impl App.step() -> bool {
                 }
             }
             self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
+            # Walkers for entities the level lacks are not spawned at all:
+            # each spawn searches the world's edges (survey_level).
+            if self.level_clocks {
+                self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
+            }
+            if self.level.bsp.game == "q2" {
+                trail = self.player_trail;
+                if trail is not None {
+                    trail spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);
+                }
+            }
+            if self.level_falling {
+                self.world spawn FallingTick(
+                    bsp=self.level.bsp,
+                    collision=self.level.collision,
+                    player=self.player,
+                    state=self.combat,
+                    dt=self.physics_clock.tick_rate
+                );
+            }
+            if self.level_flyers {
+                self.world spawn FlyerTick(
+                    player=self.player,
+                    collision=self.level.collision,
+                    state=self.combat,
+                    dt=self.physics_clock.tick_rate
+                );
+            }
+            if self.level_turrets {
+                self.world spawn TurretTick(
+                    bsp=self.level.bsp,
+                    collision=self.level.collision,
+                    player=self.player,
+                    dt=self.physics_clock.tick_rate
+                );
+            }
             targeted = self.world spawn TargetTick(
                 player=self.player,
                 collision=self.level.collision,
@@ -1183,7 +1265,8 @@ impl App.step() -> bool {
                 collision=self.level.collision,
                 start=previous_origin,
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking and not self.finale_active
+                touching=self.walking and not self.finale_active,
+                tally=self.combat
             );
         }
     }
@@ -1419,41 +1502,52 @@ impl App.use_item(kind: str = "") {
     self.show_notice(result.message);
 }
 
-"""Q3 personal teleporter: a random deathmatch spawn other than the nearest."""
+"""Q3 personal teleporter (TeleportPlayer): SelectSpawnPoint picks at random
+among the furthest half of the spawn spots nobody stands on, the actor lands
+10 units above it facing its angle and is spat out at 400 units a second, and
+G_KillBox telefrags whoever is there anyway."""
 impl App.teleport_actor(actor: Player) {
-    spots: list[Vec3] = [];
-    for entity in self.level.bsp.entities {
-        if entity.fields.get("classname", "") != "info_player_deathmatch" {
-            continue;
-        }
-        parts = entity.fields.get("origin", "0 0 0").split();
-        if len(parts) == 3 {
-            spots.append(
-                Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]))
-            );
+    height = actor.eye_height if isinstance(actor, Opponent) else self.level.collision.eye_height;
+    origin = actor.pos.sub(Vec3(z=height));
+    bodies: list[Vec3] = [];
+    if actor is not self.player and self.player.health > 0 {
+        bodies.append(self.player.pos.sub(Vec3(z=self.level.collision.eye_height)));
+    }
+    for bot in [self.world->:HasOpponent:->][?:Opponent] {
+        if bot is not actor and bot.arena and bot.health > 0 and not bot.dormant {
+            bodies.append(bot.pos.sub(Vec3(z=bot.eye_height)));
         }
     }
-    if not spots {
-        return;
-    }
-    if len(spots) > 1 {
-        nearest = spots[0];
-        for spot in spots {
-            if spot.sub(actor.pos).length() < nearest.sub(actor.pos).length() {
-                nearest = spot;
-            }
+    self.combat.random();
+    choice = self.world spawn ChooseSpawn(avoid=[origin], occupied=bodies, seed=self.combat.random_state);
+    spot = choice.pick();
+    if spot is None {
+        # Every spot is taken: the first one, as G_Find would return.
+        spots = [self.world->:HasSpawn:->][?:SpawnPoint];
+        if not spots {
+            return;
         }
-        spots = [spot for spot in spots if spot is not nearest];
+        spot = spots[0];
     }
-    pick = int((self.combat.random() + 1.0) * 0.5 * float(len(spots))) % len(spots);
     if not isinstance(actor, Opponent) {
         self.audio.play_path("sound/world/teleout.wav");
     }
-    height = actor.eye_height if isinstance(actor, Opponent) else self.level.collision.eye_height;
-    actor.pos = spots[pick].add(Vec3(z=height + 1.0));
-    actor.velocity = Vec3();
-    actor.teleport_hold = 0.1;
+    arrival = spot.pos.add(Vec3(z=10.0));
+    actor.pos = arrival.add(Vec3(z=height));
+    actor.yaw = spot.yaw;
+    actor.pitch = 0.0;
+    actor.velocity = forward_from(spot.yaw, 0.0).scale(400.0);
+    actor.grounded = False;
+    actor.teleport_hold = 0.16;
     move_to_area(actor, self.level.areas[self.level.locate(actor.pos)]);
+    self.world spawn KillBox(
+        mover=actor,
+        origin=arrival,
+        game=self.level.bsp.game,
+        bystander=self.player,
+        bystander_height=self.level.collision.eye_height,
+        tally=self.combat
+    );
     if isinstance(actor, Opponent) {
         actor.route = [];
         actor.arena_goal = None;
@@ -1592,6 +1686,42 @@ impl App.finish_arena(contest: ArenaMatch) {
     self.load_destination("q3", destination);
 }
 
+"""Render the view through the first on-screen portal before the main view."""
+impl App.render_portal(faces: list[int]) {
+    p = self.player;
+    # RF_THIRD_PERSON: the player's body shows only in the portal view.
+    here = self.level.areas[self.level.locate(p.pos)] if self.level.areas else None;
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, True, here);
+    draw_portal_view(
+        self.portal_target,
+        self.level,
+        self.world,
+        self.quake,
+        self.models,
+        self.effects,
+        faces,
+        p.pos,
+        p.yaw,
+        p.pitch,
+        self.renderer.fov,
+        self.simulation_time
+    );
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, False);
+}
+
+"""Q3 BeginIntermission in single player: the view moves to the intermission
+point and the finishers take the podium."""
+impl App.begin_podium(contest: ArenaMatch) {
+    view = arena_intermission(self.world, self.level.bsp);
+    self.player.pos = view[0].add(Vec3());
+    self.player.yaw = math.radians(view[1].y);
+    self.player.pitch = -math.radians(view[1].x);
+    self.player.velocity = Vec3();
+    self.player.god_mode = True;
+    move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
+    raise_podium(self.world, contest, self.level, view[0], view[1], selected_weapon(self.combat).key);
+}
+
 impl App.arena_lines(contest: ArenaMatch) -> list[str] {
     rows = standings(contest);
     lines: list[str] = [];
@@ -1610,4 +1740,93 @@ impl App.arena_lines(contest: ArenaMatch) -> list[str] {
         );
     }
     return lines;
+}
+
+"""Note once which per-tick entities the level has, so their walkers only
+run where there is something to tick."""
+impl App.survey_level() {
+    world = self.world;
+    self.level_clocks = bool([world->:HasClock:->]);
+    self.level_falling = bool([world->:HasFallingObject:->]);
+    self.level_flyers = bool([world->:HasFlyer:->]) or bool([world->:HasBomb:->]);
+    self.level_turrets = bool([world->:HasTurret:->]);
+    self.player_trail = trail_of(world) if self.level.bsp.game == "q2" else None;
+}
+
+impl App.prepare_presentation() {
+    game = self.level.bsp.game;
+    self.survey_level();
+    self.hud.close();
+    self.hud.three_d = False;
+    self.hud_models.close();
+    self.light_styles = None;
+    self.style_serial = -1;
+    self.pain_health = self.player.health;
+    styles = [self.world->:HasLightStyles:->][?:LightStyles];
+    if styles {
+        self.light_styles = styles[0];
+    }
+    if game not in ["q1", "q2", "q3"] or not self.level.active {
+        return;
+    }
+    library = AssetLibrary(game=game);
+    try {
+        library.open(game_directory(game));
+        load_hud_art(self.hud, library, game);
+        if game == "q3" {
+            load_q3_models(self.hud_models, library);
+            self.hud.three_d = self.hud_models.ready();
+        }
+    } except Exception as error {
+        # Without the art the text status bar remains.
+        self.hud.close();
+        self.show_notice("HUD: " + str(error));
+    }
+    library.close();
+}
+
+impl App.hud_status() -> HudStatus {
+    p = self.player;
+    game = self.level.bsp.game;
+    rule = selected_weapon(self.combat);
+    owned = [weapon.key for weapon in self.combat.rules if owns_weapon(p, weapon)];
+    counts: dict[str, int] = {};
+    for kind in ["shells", "nails", "rockets", "cells"] {
+        counts[kind] = quantity(p.inventory, kind);
+    }
+    keys: list[str] = [];
+    if quantity(p.inventory, "key_silver") > 0 {
+        keys.append("key1");
+    }
+    if quantity(p.inventory, "key_gold") > 0 {
+        keys.append("key2");
+    }
+    powers: list[str] = [];
+    remaining = 0.0;
+    for kind in ["quad", "invulnerability", "invisibility", "suit", "breather", "battlesuit", "haste", "regen", "flight"] {
+        left = powerup_left(p, kind);
+        if left > 0.0 {
+            powers.append(kind);
+            remaining = max(remaining, left);
+        }
+    }
+    return HudStatus(
+        game=game,
+        health=p.health,
+        armor=p.armor,
+        armor_ratio=p.armor_ratio,
+        ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
+        ammo_kind=rule.ammo,
+        weapon=rule.key,
+        weapons=owned,
+        ammo_counts=counts,
+        keys=keys,
+        sigils=quantity(p.inventory, "runes") & 15,
+        powerups=powers,
+        powerup_time=remaining,
+        pain=self.pain_time,
+        firing=self.combat.cooldown > 0.1,
+        arena=game == "q3",
+        clock=self.simulation_time
+    );
 }

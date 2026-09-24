@@ -61,5 +61,9 @@ The status bar is still the shared text HUD. Original status bar art and icons
 belong to the presentation milestone. The silencer quiets the player's own
 shots, and silenced shots no longer alert monsters that hear gunfire (see
 [monster behaviour](monster-behaviour-status.md)). The Q3 personal
-teleporter picks a random deathmatch spawn other than the nearest; it does not
-yet telefrag occupants.
+teleporter follows `TeleportPlayer`:
+- It picks at random from the furthest half of the deathmatch spawns that
+  nobody stands on.
+- The user lands 10 units above the spawn, facing its angle, and is pushed out
+  at 400 units a second.
+- `G_KillBox` telefrags anyone at the spawn anyway.

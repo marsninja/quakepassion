@@ -14,10 +14,23 @@ released binary and CI have not been validated against this patch set.
 | Function-local dicts with tuple values return corrupted lookups | [#9445](https://github.com/jaseci-labs/jac/pull/9445) | `games/items.jac` `special_rule` (powerup tables) |
 | Typed edge connects drop inline attributes (`+>:E:name=n:+>`) | [#9446](https://github.com/jaseci-labs/jac/pull/9446) | `engine/world/arena.jac` competitor names |
 | `any`/`all` over `and`/`or` comprehensions crash (untyped `any` arguments) | [#9451](https://github.com/jaseci-labs/jac/pull/9451) | `engine/world/arena.jac` `MatchTick` winner check |
+| A user `floor` (and other C symbol names) collided with libc | [#9470](https://github.com/jaseci-labs/jac/pull/9470) (merged) | `engine/world/bot_routes.jac` |
+| Same-named archetypes in different modules (`Passage`, `Holds`) share one identity | [#9472](https://github.com/jaseci-labs/jac/pull/9472) | Q3 AAS routing beside patrol edges |
+| Native `dict ==` and nested containers compared by address | [#9475](https://github.com/jaseci-labs/jac/pull/9475) (merged) | `tests/bot_tactics_tests.jac` |
+| `bytes.find` and the bytes search family not lowered | [#9478](https://github.com/jaseci-labs/jac/pull/9478) | `engine/formats/q1/wad.jac` status bar art |
+| A JIT unit calls a linked unit's Python-only functions natively on a cold cache | [#9480](https://github.com/jaseci-labs/jac/pull/9480) | `tests/lightstyle_tests.jac` segfault |
+| Event abilities named `drop` treated as destructor hooks | [#9486](https://github.com/jaseci-labs/jac/pull/9486) | `engine/world/flyers.jac` `FlyerTick` |
+| `bytes(n)` and related bytes/bytearray constructors not lowered | [#9492](https://github.com/jaseci-labs/jac/pull/9492) | `engine/render/portal.jac` framebuffer textures |
+| Cold builds drop libm-named `math` functions from the native layout (`sqrt`, `sin`, `cos` demoted) | [#9498](https://github.com/jaseci-labs/jac/pull/9498) | Any cold native build: 177 demotions |
+| `jac run` treats a `window=` edge field as the browser global and moves modules to client code | [#9500](https://github.com/jaseci-labs/jac/pull/9500) | `games/passion/layout.jac` under `scripts/map_sweep.jac` |
+| No pointers to C structs: out-params, retained pointers and C-owned buffers (new C interop surface) | [#9506](https://github.com/jaseci-labs/jac/pull/9506) | `engine/render/renderer.jac` pinned multi-buffered batch |
 
-The remaining-scope milestones validate with upstream main `767d19193d` plus
-#9445, #9446 and #9451, applied as patches (worktree
-`/Users/marsninja/repos/jaseci-wt/qp-scope-validation`). The open clock fix #9393
+The Q3 bot, presentation and loose-ends milestones validate with upstream main
+`245f3ab813` plus #9443, #9445–#9449, #9451, #9465, #9470, #9472, #9475, #9478,
+#9480, #9486, #9492, #9498, #9500 and #9506, applied as patches (worktree
+`/Users/marsninja/repos/jaseci-wt/qp-combined`). Earlier remaining-scope
+milestones used upstream main `767d19193d` plus #9445, #9446 and #9451
+(worktree `/Users/marsninja/repos/jaseci-wt/qp-scope-validation`). The open clock fix #9393
 is not included: on this base it conflicts with the bundled native `math` module
 from #9378, and the game only needs wall-clock time. Delete the project's `.jac/`
 cache after changing compiler sources; a stale cache can make `math` fail to

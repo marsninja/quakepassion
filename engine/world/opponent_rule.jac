@@ -52,7 +52,10 @@ obj AttackProfile {
         beam_kind: str = "lightning",
         leap_speed: float = 0.0,
         leap_lift: float = 0.0,
-        leap_lift_random: float = 0.0;
+        leap_lift_random: float = 0.0,
+        dodge_only: bool = False,
+        crouch_start: float = -1.0,
+        crouch_end: float = -1.0;
 }
 
 obj OpponentRule {
@@ -68,6 +71,16 @@ obj OpponentRule {
         pain_duration: float = 0.3,
         pain_interval: float = 1.0,
         pain_frames: list[str] = [],
+        duck_frames: list[str] = [],
+        duck_down: int = 0,
+        duck_hold: int = 1,
+        duck_up: int = 3,
+        duck_grenade: str = "",
+        crouch_frames: list[str] = [],
+        crouch_times: list[float] = [],
+        crouch_duration: float = 0.0,
+        crouch_start: float = -1.0,
+        crouch_end: float = -1.0,
         pain_variants: list[list[str]] = [],
         pain_variant_damage: list[int] = [],
         pain_variant_durations: list[float] = [],
@@ -260,6 +273,35 @@ def rule_profiles(rule: OpponentRule) -> list[AttackProfile] {
                 radius=rule.radius
             )
         );
+        # Q2 soldiers answer some dodges by crouching and firing (attack3).
+        if rule.crouch_frames {
+            profiles.append(
+                AttackProfile(
+                    name="crouch",
+                    kind="ranged",
+                    weight=0.0,
+                    dodge_only=True,
+                    min_range=rule.ranged_min,
+                    max_range=rule.attack_range,
+                    times=rule.crouch_times,
+                    duration=rule.crouch_duration,
+                    frames=rule.crouch_frames,
+                    sound=rule.attack_sound,
+                    sound_times=rule.crouch_times,
+                    damage=rule.damage,
+                    pellets=rule.pellets,
+                    spread=rule.spread,
+                    vertical_spread=rule.vertical_spread,
+                    aim_spread=rule.aim_spread,
+                    aim_vertical=rule.aim_vertical,
+                    aim_lag=rule.aim_lag,
+                    missile_speed=rule.missile_speed,
+                    missile_effect=rule.missile_effect,
+                    crouch_start=rule.crouch_start,
+                    crouch_end=rule.crouch_end
+                )
+            );
+        }
     }
     return profiles;
 }

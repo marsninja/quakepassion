@@ -53,7 +53,13 @@ obj Face {
         light_t: int = 0,
         styles: list[int] = [],
         normal: Vec3 = Vec3(),
-        plane_dist: float = 0.0;
+        plane_dist: float = 0.0,
+        warp: bool = False,
+        flowing: bool = False,
+        opacity: float = 1.0,
+        frame: int = 0,
+        fog: int = -1,
+        fog_only: bool = False;
 }
 
 obj Plane {
@@ -98,6 +104,19 @@ obj Brush {
         contents: int = 0;
 }
 
+"""A Q3 fog volume (dfog_t): an axial brush, and the plane of its visible side
+when it has one, with the normal pointing into the fog (tr_bsp.c R_LoadFogs)."""
+obj FogVolume {
+    has shader: str = "",
+        mins: Vec3 = Vec3(),
+        maxs: Vec3 = Vec3(),
+        has_surface: bool = False,
+        inward: Vec3 = Vec3(),
+        offset: float = 0.0,
+        color: Vec3 = Vec3(),
+        depth: float = 1.0;
+}
+
 obj Bsp {
     has game: str = "q1",
         light_channels: int = 1,
@@ -105,6 +124,7 @@ obj Bsp {
         cluster_bytes: int = 0,
         sky: list[Texture] = [],
         textures: list[Texture] = [],
+        texture_next: dict[int, int] = {},
         planes: list[Plane] = [],
         branches: list[Branch] = [],
         clipnodes: list[Branch] = [],
@@ -114,7 +134,8 @@ obj Bsp {
         models: list[Model] = [],
         entities: list[MapEntity] = [],
         lighting: bytes = b"",
-        visibility: bytes = b"";
+        visibility: bytes = b"",
+        fogs: list[FogVolume] = [];
 }
 
 def require_range(data: bytes, offset: int, size: int) {

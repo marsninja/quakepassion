@@ -7,6 +7,7 @@ import from .world { World, Player }
 import from .signals { Signal, Fire, Targets, Kills, HasSignal, DelayedUse, progress_for }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..physics.collision { CollisionMap, Sweep, Trace }
+import from .liquids { LiquidSpace, LiquidVolume, HasLiquid }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis, quake_basis }
@@ -28,6 +29,9 @@ walker AssembleDoors {
         visit [here->:DoorLink:->];
     }
 }
+
+"""A func_water door carries its liquid volumes with it."""
+edge Floods: Door --> LiquidVolume {}
 
 node Door {
     has model: int,
@@ -65,7 +69,8 @@ node Door {
         pivot: Vec3 = Vec3(),
         damage: int = 0,
         crusher: bool = False,
-        crush_wait: float = 0.0;
+        crush_wait: float = 0.0,
+        flooding: bool = False;
 }
 
 """Full travel of a mover: units for sliding movers, degrees for rotating doors."""
@@ -83,10 +88,28 @@ def door_turn(part: Door, position: float) -> Basis | None {
     return quake_basis(part.rest_angles.add(part.rotation.scale(position)));
 }
 
+"""Join each func_water door to the liquid volumes of its brush model."""
+def flood_doors(world: World, liquids: LiquidSpace) {
+    volumes = [liquids->:HasLiquid:->][?:LiquidVolume];
+    for door in [world->:HasDoor:->][?:Door] {
+        if not door.flooding {
+            continue;
+        }
+        for volume in volumes {
+            if volume.model == door.model {
+                door +>:Floods:+> volume;
+            }
+        }
+    }
+}
+
 """Place one mover's faces and hulls at `position` along its travel."""
 def apply_pose(part: Door, position: float, bsp: Bsp, collision: CollisionMap) {
     motion = part.rest.add(part.travel.scale(position));
     turn = door_turn(part, position);
+    for volume in [part->:Floods:->][?:LiquidVolume] {
+        volume.offset = motion;
+    }
     for face in part.faces {
         bsp.faces[face].motion = motion;
         bsp.faces[face].turn = turn;
@@ -354,6 +377,13 @@ walker DoorTick {
             }
             here.remaining = here.hold_time;
         }
+        # A pressed button shows its alternate (Q1 +a) or next (Q2) texture.
+        if here.kind == "button" {
+            pressed = 1 if here.state in ["opening", "open"] else 0;
+            for face in here.faces {
+                self.bsp.faces[face].frame = pressed;
+            }
+        }
         if here.state == "open" {
             if not near and not here.toggle and here.hold_time >= 0.0 {
                 here.remaining -= self.dt;
@@ -578,7 +608,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         fields = entity.fields;
         kind = fields.get("classname", "");
         rotating = kind == "func_door_rotating" and bsp.game == "q2";
-        if kind not in ["func_door", "func_button", "func_plat"] and not rotating {
+        # g_func.c SP_func_water: a door whose brush is liquid.
+        water = kind == "func_water" and bsp.game == "q2";
+        if kind not in ["func_door", "func_button", "func_plat"] and not rotating and not water {
             continue;
         }
         # Keep unsupported members in the graph so a locked half disables its group.
@@ -605,6 +637,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         }
         if rotating {
             allowed |= 1 | 2 | 4 | 8 | 32 | 64 | 128;
+        }
+        if water {
+            allowed |= 1;
         }
         health = max(0, int(float(fields.get("health", "0"))));
         enabled = True;
@@ -634,6 +669,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         if lip == 0.0 and bsp.game != "q3" {
             lip = 4.0 if kind == "func_button" else 8.0;
         }
+        if water {
+            lip = float(fields.get("lip", "0"));
+        }
         distance = abs(direction.x) * size.x
             + abs(direction.y) * size.y
             + abs(direction.z) * size.z
@@ -662,6 +700,11 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 speed = 150.0 if bsp.game == "q1" else 200.0;
             }
             hold_time = 1.0 if bsp.game == "q3" else 3.0;
+        }
+        # Water rises at 25 units a second and toggles unless given a wait.
+        if water {
+            speed = float(fields.get("speed", "0")) or 25.0;
+            hold_time = float(fields.get("wait", "0")) or -1.0;
         }
         if rotating {
             # g_func.c SP_func_door_rotating: degrees, 90 by default.
@@ -700,14 +743,15 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             monster_touch=not (bsp.game == "q2" and flags & 8 != 0),
             fire_on_start=kind in ["func_door", "func_door_rotating"]
                 and bsp.game in ["q1", "q2"],
-            toggle=kind in ["func_door", "func_door_rotating"]
+            toggle=(kind in ["func_door", "func_door_rotating"]
                 and bsp.game in ["q1", "q2"]
-                and flags & 32 != 0,
+                and flags & 32 != 0)
+                or (water and hold_time < 0.0),
             automatic=(
                 health == 0 and (bsp.game != "q2" or not fields.get("targetname", ""))
             )
                 if kind == "func_button"
-                else health == 0 and not bool(fields.get("targetname", "")),
+                else health == 0 and not bool(fields.get("targetname", "")) and not water,
             names=[fields["targetname"]] if fields.get("targetname", "") else [],
             team=fields.get("team", ""),
             linkable=flags & 4 == 0,
@@ -749,9 +793,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 door.rest_angles = door.rotation;
                 door.rotation = door.rotation.scale(-1.0);
             }
-        } elif kind == "func_door" and flags & 1 {
+        } elif (kind == "func_door" or water) and flags & 1 {
             door.rest = door.travel;
             door.travel = door.travel.scale(-1.0);
+        }
+        if water {
+            door.monster_touch = False;
+            door.flooding = True;
         }
         if kind == "func_plat" {
             inset = 33.0 if bsp.game == "q3" else 25.0;
@@ -795,7 +843,8 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             door.hulls.append(i);
             door.origins.append(collision.offsets[i]);
         }
-        door.enabled = door.enabled and bool(door.hulls);
+        # Liquid movers have no solid hulls; their volumes move instead.
+        door.enabled = door.enabled and (bool(door.hulls) or door.flooding);
         candidates.append(door);
     }
     for i in range(len(candidates)) {
@@ -1115,7 +1164,9 @@ def connect_targets(world: World, bsp: Bsp) {
         "path_corner",
         "info_teleport_destination",
         "misc_teleporter_dest",
-        "misc_portal_camera"
+        "misc_portal_camera",
+        "target_string",
+        "target_character"
     ];
     for index in range(len(bsp.entities)) {
         if index not in covered
@@ -1140,8 +1191,9 @@ def connect_targets(world: World, bsp: Bsp) {
             if kind == "func_train" {
                 continue;
             }
+            # Path points and Q2 clocks fire their pathtarget.
             target = fields.get("pathtarget", "")
-                if kind in ["path_corner", "point_combat"] and bsp.game != "q3"
+                if kind in ["path_corner", "point_combat", "func_clock"] and bsp.game != "q3"
                 else fields.get("target", "");
             if kind.startswith("monster_") and bsp.game == "q2" {
                 target = fields.get("deathtarget", target);

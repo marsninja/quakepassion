@@ -37,7 +37,16 @@ import from vendor.raylib {
         position: Vector3, width: f32, height: f32, length: f32, color: Color
     ) -> None;  def DrawText(
         text: str, posX: i32, posY: i32, fontSize: i32, color: Color
-    ) -> None;
+    ) -> None;  obj rlVertexBuffer;  obj rlDrawCall;  obj rlRenderBatch {
+        has bufferCount: i32,
+            currentBuffer: i32,
+            vertexBuffer: ptr[rlVertexBuffer],
+            draws: ptr[rlDrawCall],
+            drawCounter: i32,
+            currentDepth: f32;
+    }  def rlLoadRenderBatch(numBuffers: i32, bufferElements: i32) -> rlRenderBatch;  def rlUnloadRenderBatch(
+        batch: rlRenderBatch
+    ) -> None;  def rlSetRenderBatchActive(batch: &mut Pinned[rlRenderBatch] | None) -> None;
 }
 
 import from ..world.particles { HasParticle, ImpactParticle, HasTrail, ShotTrail }
@@ -59,12 +68,19 @@ glob FOV_DEGREES: float = 72.0,
      CAMERA_PERSPECTIVE: int = 0;
 
 
+# rlgl's default batch has one vertex buffer, so every flush refills the
+# buffer the GPU may still be drawing from and waits for it. Rotating through
+# several lets a flush fill one the GPU has finished with.
+glob BATCH_BUFFERS: int = 64,
+     BATCH_ELEMENTS: int = 2048;
+
 obj Renderer {
     has fov: float = 72.0,
         frame_limit: int = 0,
         width: int = 1280,
         height: int = 720,
-        title: str = "QuakePassion — Quake level viewer";
+        title: str = "QuakePassion — Quake level viewer",
+        batch: Pinned[rlRenderBatch] | None = None;
 
     def set_frame_limit(fps: int);
     def open_window();
@@ -92,6 +108,9 @@ obj Renderer {
     def draw_finale(text: str, prompt: str);
     def draw_keys(message: str);
     def draw_status(health: int, armor: int, shells: int = 0, arena: bool = False);
+    """Beside an original status bar: the crosshair, the hit marker and the
+    arena score line."""
+    def draw_aim(state: CombatState, crosshair: bool, score: str);
     def draw_tint(r: int, g: int, b: int, a: int);
     def draw_powerups(lines: list[str]);
     def end_frame();

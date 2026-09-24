@@ -10,6 +10,10 @@ impl Renderer.open_window() {
         );
     }
     SetExitKey(i32(0));  # Escape belongs to the level menu.
+    # raylib keeps a pointer to the active batch, so it lives in a pin.
+    batch = pin(rlLoadRenderBatch(i32(BATCH_BUFFERS), i32(BATCH_ELEMENTS)));
+    self.batch = batch;
+    rlSetRenderBatchActive(&mut batch);
     # Default to uncapped rendering; a user-selected limit only paces frames.
     # Simulation keeps its independent fixed timestep.
     self.set_frame_limit(self.frame_limit);
@@ -90,11 +94,30 @@ impl Renderer.draw_status(health: int, armor: int, shells: int = 0, arena: bool 
     }
 }
 
+impl Renderer.draw_aim(state: CombatState, crosshair: bool, score: str) {
+    color = Color(r=255, g=230, b=180, a=255);
+    if crosshair {
+        DrawText("+", i32(self.width / 2 - 6), i32(self.height / 2 - 12), 24, color);
+    }
+    if state.hit_flash > 0.0 {
+        DrawText("X", i32(self.width / 2 - 8), i32(self.height / 2 - 12), 24, Color(r=255, g=50, b=40, a=255));
+    }
+    if score {
+        DrawText(score, i32(self.width - 20 - len(score) * 11), 16, 20, color);
+    }
+}
+
 impl Renderer.screenshot(path: str) {
     TakeScreenshot(path);
 }
 
 impl Renderer.close() {
+    batch = self.batch;
+    if batch is not None {
+        rlSetRenderBatchActive(None);
+        rlUnloadRenderBatch(batch.value);
+        self.batch = None;
+    }
     CloseWindow();
 }
 

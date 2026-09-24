@@ -79,6 +79,36 @@ models through edges. Walkers drive patrols, gib flight and combat.
 - Snapshot format **21** records corpse health and gibbing, patrol progress and
   the skill. Flying gibs are not saved.
 
+## Trail hunting
+
+Q2's player trail (`p_trail.c`) is a graph of up to eight `TrailMark` crumbs
+hanging off a `PlayerTrail` node (`engine/world/trail.jac`). The player drops a
+crumb every half second once they are 32 units from the last one. A Q2 monster
+that reaches the spot where it lost the player follows the crumbs laid since
+then, oldest first, instead of giving up.
+
+## Dodging
+
+Q2 `check_dodge` (`g_weapon.c`) runs on each player blaster, hyperblaster and
+rocket shot.
+
+- It warns the first monster along the shot's line, but only if that monster
+  faces the shooter. On easy the warning comes only a quarter of the time.
+- A warned soldier, infantry, gunner, iron maiden, medic or brain ducks a
+  quarter of the time, interrupting whatever it was doing, and takes the
+  shooter as its enemy.
+- The duck plays the model's `duck` frames and holds its hold frame until a
+  second after the duck-down frame, as `monster_duck_down` sets `pausetime`.
+- Between the duck-down and duck-up frames the monster's box top is 32 units
+  lower, so eye-level shots pass over it. It neither moves nor attacks while
+  ducking, and pain cuts the duck short.
+- On medium a soldier answers a third of its dodges by crouching and firing
+  (`attack3`), and on hard two thirds. It fires at `attak303`, loops back once
+  while the second-long duck lasts, and stays crouched from the first shot to
+  `attak307`.
+- On hard a gunner lobs a grenade half the time as it ducks
+  (`gunner_duck_down`).
+
 ## Validation
 
 - Tests:
@@ -88,6 +118,9 @@ models through edges. Walkers drive patrols, gib flight and combat.
   - `tests/patrol_tests.jac`: corner loops, Q2 waits and pathtargets, combat
     points, saves.
   - `tests/combat_tests.jac`: awareness and skill.
+  - `tests/trail_tests.jac`: crumb laying and following.
+  - `tests/dodge_tests.jac`: duck timing and box, facing checks, soldier
+    crouch-fire by skill.
 - `scripts/monsters_smoke.jac` runs on `e1m1`, `e1m2`, `base1` and `q3dm1`. It
   gibs a monster and renders the flying pieces, walks every patroller along its
   corners, and stages a fight between two monster kinds.
@@ -96,5 +129,3 @@ models through edges. Walkers drive patrols, gib flight and combat.
 
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.
-- Q2 `turret_breach`/`turret_driver`, monster "trail" hunting from the player's
-  recent positions, and dodging are not implemented yet.
