@@ -12,7 +12,7 @@ import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, Has
 import from engine.formats.bsp { MapEntity }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
-import from engine.world.combat { Opponent, HasOpponent, Drops, ensure_profiles, arm_bot }
+import from engine.world.combat { Opponent, HasOpponent, Drops, Bloodied, ensure_profiles, arm_bot }
 import from engine.world.pickups { Pickup, HasPickup }
 import from .items { monster_drop, item_spin }
 import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms }
@@ -305,6 +305,25 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     world +>:HasModelResource:+> resource;
                 }
                 enemy.visual = attach_model(enemy, resources[key]);
+                # Q2 *_pain: below half health a monster shows its next,
+                # bloodied skin (skinnum |= 1).
+                if source == "q2" and not arena and not rule.inert and not rule.decoration {
+                    hurt_key = source + ":" + path + ":" + str(rule.skin | 1);
+                    if hurt_key != key and hurt_key not in resources {
+                        try {
+                            hurt = catalog.source(source).model(path, skin=rule.skin | 1);
+                            resources[hurt_key] = ModelResource(
+                                name=hurt_key, model=hurt.model, skins=hurt.skins
+                            );
+                            world +>:HasModelResource:+> resources[hurt_key];
+                        } except ValueError {
+                            hurt_key = key;
+                        }
+                    }
+                    if hurt_key != key and hurt_key in resources {
+                        enemy +>:Bloodied:+> resources[hurt_key];
+                    }
+                }
                 enemy.visual.offset = Vec3(
                     x=-16.0 if corner else 0.0,
                     y=-16.0 if corner else 0.0,

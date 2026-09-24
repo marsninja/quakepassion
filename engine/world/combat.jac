@@ -9,7 +9,7 @@ import from .damage { Damage, blast_strength }
 import from .powerups { damage_scale, fire_interval_scale, empowered, speed_scale }
 import from .arena { ChooseSpawn }
 import from .inventory { Inventory, quantity, AdjustInventory }
-import from .models { Visual }
+import from .models { Visual, ModelResource, UsesModel }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .bot_character { BotCharacter }
@@ -130,7 +130,9 @@ node Opponent(Player) {
         idle_wait: float = -1.0,
         tend_wait: float = 0.0,
         revived: bool = False,
-        power_cells: int = -1;
+        power_cells: int = -1,
+        wounded: bool = False,
+        healthy_skin: ModelResource | None = None;
 }
 
 """How far the player's box (at origin `body`) reaches into an actor's box,
@@ -206,6 +208,37 @@ walker ClearActors {
     }
 }
 
+"""A Q2 monster's bloodied skin, shown once it falls below half health."""
+edge Bloodied: Opponent --> ModelResource {}
+
+"""Swap a monster's model skin between healthy and bloodied (Q2 skinnum |= 1)."""
+def show_wounds(enemy: Opponent, wounded: bool) {
+    if enemy.wounded == wounded {
+        return;
+    }
+    hurt = [enemy->:Bloodied:->][?:ModelResource];
+    if not hurt {
+        return;
+    }
+    shown = [enemy.visual->:UsesModel:->][?:ModelResource];
+    if not shown {
+        return;
+    }
+    if wounded {
+        enemy.healthy_skin = shown[0];
+        enemy.visual del --> shown[0];
+        enemy.visual +>:UsesModel:+> hurt[0];
+    } else {
+        healthy = enemy.healthy_skin;
+        if healthy is None {
+            return;
+        }
+        enemy.visual del --> shown[0];
+        enemy.visual +>:UsesModel:+> healthy;
+    }
+    enemy.wounded = wounded;
+}
+
 """The item a monster leaves where it dies (Q1 backpacks, Q2 `item`)."""
 edge Drops: Opponent --> Pickup {}
 
@@ -267,6 +300,7 @@ walker FindPatient {
 def raise_patient(patient: Opponent, medic: Opponent, hunted: Player | None) {
     patient.health = patient.rule.health;
     patient.revived = True;
+    show_wounds(patient, False);
     patient.visual.visible = True;
     patient.pose_name = "";
     patient.animation_time = 0.0;
@@ -789,6 +823,9 @@ def damage_opponent(
         return 0;
     }
     rule = victim.rule;
+    if victim.health < victim.max_health // 2 {
+        show_wounds(victim, True);
+    }
     if rule.pain_health_reset > 0 {
         victim.health = rule.pain_health_reset;
     }
