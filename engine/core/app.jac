@@ -85,10 +85,16 @@ import from ..world.combat {
     fire_weapon,
     weapon_input,
     select_weapon,
+    change_weapon,
+    cycle_weapon,
+    pickup_switch,
     selected_weapon,
     owns_weapon,
     KillBox
 }
+import from ..world.vitals { CrashLand, VoiceTick }
+import from ..world.particles { Explosion, HasExplosion }
+import from ..render.view_feedback { ViewFeedback, death_view }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }
 import from games.items { populate_pickups }
@@ -200,6 +206,16 @@ obj App {
         awaiting_respawn: bool = False,
         show_scores: bool = False,
         arena_progress: ArenaProgress = ArenaProgress();
+    # Player feedback: view blends and kicks, printed lines, the last pickup
+    # shown on the status bar, hits already heard, Q3's ammo warning.
+    has view: ViewFeedback = ViewFeedback(),
+        notify_lines: list[str] = [],
+        notify_ages: list[float] = [],
+        pickup_icon: str = "",
+        pickup_name: str = "",
+        pickup_time: float = 0.0,
+        heard_hits: int = 0,
+        ammo_warning: int = 0;
 
     has expedition_complete: bool = False;
     has finale_text: str = "",
@@ -241,6 +257,18 @@ obj App {
     def teleport_actor(actor: Player);
     def tick_powerups(dt: float);
     def show_notice(message: str);
+    """A printed line at the top left (sprint / cprintf), kept three seconds."""
+    def notify(message: str);
+    """Play an archive sound heard from `origin` (ATTN_NORM falloff)."""
+    def play_at(path: str, origin: Vec3);
+    """Sounds and prints the combat simulation asked for this tick."""
+    def combat_feedback();
+    """Liquid, damage and pickup screen tints and Q3's damage blob."""
+    def draw_view_blend();
+    """Q3 CG_CheckAmmo: warn when little ammo is left for the owned weapons."""
+    def check_ammo();
+    """Q2 STAT_SELECTED_ICON: the icon of the selected stored item."""
+    def selected_icon() -> str;
     def draw_powerup_blend();
     def respawn_arena_player();
     def arena_lines(contest: ArenaMatch) -> list[str];

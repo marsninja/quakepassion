@@ -64,7 +64,16 @@ def wad_pictures(data: bytes, palette: bytes) -> dict[str, Texture] {
                 name=lump.name,
                 width=128,
                 height=128,
-                pixels=indexed_rgba(data[lump.offset:lump.offset + 128 * 128], palette)
+                # Draw_Character skips colour 0: the sheet's black is clear.
+                pixels=indexed_rgba(
+                    bytes(
+                        [
+                            255 if value == 0 else value
+                            for value in data[lump.offset:lump.offset + 128 * 128]
+                        ]
+                    ),
+                    palette
+                )
             );
             continue;
         }

@@ -66,12 +66,153 @@ def pickup_sound(game: str, rule: PickupRule, worldtype: int) -> str {
     return "";
 }
 
+# Q2 g_items.c itemlist pickup names and status bar icons (pics/*.pcx).
+glob Q2_PICKUPS: dict[str, tuple[str, str]] = {
+    "weapon_shotgun": ("Shotgun", "w_shotgun"),
+    "weapon_supershotgun": ("Super Shotgun", "w_sshotgun"),
+    "weapon_machinegun": ("Machinegun", "w_machinegun"),
+    "weapon_chaingun": ("Chaingun", "w_chaingun"),
+    "weapon_grenadelauncher": ("Grenade Launcher", "w_glauncher"),
+    "weapon_rocketlauncher": ("Rocket Launcher", "w_rlauncher"),
+    "weapon_hyperblaster": ("HyperBlaster", "w_hyperblaster"),
+    "weapon_railgun": ("Railgun", "w_railgun"),
+    "weapon_bfg": ("BFG10K", "w_bfg"),
+    "ammo_shells": ("Shells", "a_shells"),
+    "ammo_bullets": ("Bullets", "a_bullets"),
+    "ammo_grenades": ("Grenades", "a_grenades"),
+    "ammo_rockets": ("Rockets", "a_rockets"),
+    "ammo_cells": ("Cells", "a_cells"),
+    "ammo_slugs": ("Slugs", "a_slugs"),
+    "item_health": ("Health", "i_health"),
+    "item_health_small": ("Health", "i_health"),
+    "item_health_large": ("Health", "i_health"),
+    "item_health_mega": ("Health", "i_health"),
+    "item_armor_jacket": ("Jacket Armor", "i_jacketarmor"),
+    "item_armor_combat": ("Combat Armor", "i_combatarmor"),
+    "item_armor_body": ("Body Armor", "i_bodyarmor"),
+    "item_armor_shard": ("Armor Shard", "i_jacketarmor"),
+    "item_power_screen": ("Power Screen", "i_powerscreen"),
+    "item_power_shield": ("Power Shield", "i_powershield"),
+    "item_quad": ("Quad Damage", "p_quad"),
+    "item_invulnerability": ("Invulnerability", "p_invulnerability"),
+    "item_silencer": ("Silencer", "p_silencer"),
+    "item_breather": ("Rebreather", "p_rebreather"),
+    "item_enviro": ("Environment Suit", "p_envirosuit"),
+    "item_ancient_head": ("Ancient Head", "i_fixme"),
+    "item_adrenaline": ("Adrenaline", "p_adrenaline"),
+    "item_bandolier": ("Bandolier", "p_bandolier"),
+    "item_pack": ("Ammo Pack", "i_pack"),
+    "key_data_cd": ("Data CD", "k_datacd"),
+    "key_power_cube": ("Power Cube", "k_powercube"),
+    "key_pyramid": ("Pyramid Key", "k_pyramid"),
+    "key_data_spinner": ("Data Spinner", "k_dataspin"),
+    "key_pass": ("Security Pass", "k_security"),
+    "key_blue_key": ("Blue Key", "k_bluekey"),
+    "key_red_key": ("Red Key", "k_redkey"),
+    "key_commander_head": ("Commander's Head", "k_comhead"),
+    "key_airstrike_target": ("Airstrike Marker", "i_airstrike")
+};
+
+# Q3 bg_misc.c bg_itemlist pickup names and icons.
+glob Q3_PICKUPS: dict[str, tuple[str, str]] = {
+    "weapon_shotgun": ("Shotgun", "icons/iconw_shotgun"),
+    "weapon_machinegun": ("Machinegun", "icons/iconw_machinegun"),
+    "weapon_grenadelauncher": ("Grenade Launcher", "icons/iconw_grenade"),
+    "weapon_rocketlauncher": ("Rocket Launcher", "icons/iconw_rocket"),
+    "weapon_lightning": ("Lightning Gun", "icons/iconw_lightning"),
+    "weapon_railgun": ("Railgun", "icons/iconw_railgun"),
+    "weapon_plasmagun": ("Plasma Gun", "icons/iconw_plasma"),
+    "weapon_bfg": ("BFG10K", "icons/iconw_bfg"),
+    "ammo_shells": ("Shells", "icons/icona_shotgun"),
+    "ammo_bullets": ("Bullets", "icons/icona_machinegun"),
+    "ammo_grenades": ("Grenades", "icons/icona_grenade"),
+    "ammo_cells": ("Cells", "icons/icona_plasma"),
+    "ammo_lightning": ("Lightning", "icons/icona_lightning"),
+    "ammo_rockets": ("Rockets", "icons/icona_rocket"),
+    "ammo_slugs": ("Slugs", "icons/icona_railgun"),
+    "ammo_bfg": ("Bfg Ammo", "icons/icona_bfg"),
+    "item_health_small": ("5 Health", "icons/iconh_green"),
+    "item_health": ("25 Health", "icons/iconh_yellow"),
+    "item_health_large": ("50 Health", "icons/iconh_red"),
+    "item_health_mega": ("Mega Health", "icons/iconh_mega"),
+    "item_armor_shard": ("Armor Shard", "icons/iconr_shard"),
+    "item_armor_combat": ("Armor", "icons/iconr_yellow"),
+    "item_armor_body": ("Heavy Armor", "icons/iconr_red"),
+    "item_quad": ("Quad Damage", "icons/quad"),
+    "item_enviro": ("Battle Suit", "icons/envirosuit"),
+    "item_haste": ("Speed", "icons/haste"),
+    "item_invis": ("Invisibility", "icons/invis"),
+    "item_regen": ("Regeneration", "icons/regen"),
+    "item_flight": ("Flight", "icons/flight"),
+    "holdable_teleporter": ("Personal Teleporter", "icons/teleporter"),
+    "holdable_medkit": ("Medkit", "icons/medkit")
+};
+
+# Q1 items.qc / weapons.qc netnames for "You got the ..." (id 1.06).
+glob Q1_NAMES: dict[str, str] = {
+    "weapon_supershotgun": "Double-barrelled Shotgun",
+    "weapon_nailgun": "nailgun",
+    "weapon_supernailgun": "Super Nailgun",
+    "weapon_grenadelauncher": "Grenade Launcher",
+    "weapon_rocketlauncher": "Rocket Launcher",
+    "weapon_lightning": "Thunderbolt",
+    "item_shells": "shells",
+    "item_spikes": "nails",
+    "item_rockets": "rockets",
+    "item_cells": "cells",
+    "item_artifact_invulnerability": "Pentagram of Protection",
+    "item_artifact_envirosuit": "Biosuit",
+    "item_artifact_invisibility": "Ring of Shadows",
+    "item_artifact_super_damage": "Quad Damage"
+};
+
+"""What picking the item up says and shows: Q1 sprints ("You got the Rocket
+Launcher", "You receive 25 health", "You got armor", centerprinted "You got
+the rune!"); Q2 and Q3 put the item's icon and name on the status bar
+(STAT_PICKUP_ICON/STRING, CG_DrawPickupItem). Q3 weapons top up their ammo
+(Pickup_Weapon) and items announce their respawn."""
+def present_pickup(game: str, kind: str, rule: PickupRule, worldtype: int) {
+    if game == "q1" {
+        if kind == "item_health" {
+            rule.message = "You receive " + str(rule.amount) + " health";
+        } elif kind.startswith("item_armor") {
+            rule.message = "You got armor";
+        } elif kind in ["item_key1", "item_key2"] {
+            metal = "silver" if kind == "item_key1" else "gold";
+            rule.message = "You got the "
+                + metal
+                + [" key", " runekey", " keycard"][max(0, min(2, worldtype))];
+        } elif kind == "item_sigil" {
+            rule.message = "You got the rune!";
+        } elif kind in Q1_NAMES {
+            rule.message = "You got the " + Q1_NAMES[kind];
+        }
+        return;
+    }
+    table = Q2_PICKUPS if game == "q2" else Q3_PICKUPS;
+    if kind in table {
+        rule.label = table[kind][0];
+        rule.icon = table[kind][1];
+    }
+    if game == "q3" {
+        if kind.startswith("weapon_") {
+            rule.topup = True;
+        }
+        rule.respawn_sound = "sound/items/poweruprespawn.wav"
+            if rule.kind == "powerup"
+            else "sound/items/respawn1.wav";
+    }
+}
+
 def pickup_rule(
     game: str, fields: dict[str, str], worldtype: int = 0
 ) -> PickupRule | None {
     rule = item_rule(game, fields, worldtype);
     if rule is not None and not rule.sound {
         rule.sound = pickup_sound(game, rule, worldtype);
+    }
+    if rule is not None {
+        present_pickup(game, fields.get("classname", ""), rule, worldtype);
     }
     return rule;
 }
@@ -241,13 +382,15 @@ def item_rule(
                 "item_health_large",
                 "item_health_mega"
             ] {
+            # g_items.c Pickup_Health: capped at max_health, except the
+            # stimpack and mega health (HEALTH_IGNORE_MAX).
             size = "medium";
             amount = 10;
-            cap = 100;
+            cap = 0;
             if kind == "item_health_small" {
                 size = "stimpack";
                 amount = 2;
-                cap = 200;
+                cap = 10000;
             }
             if kind == "item_health_large" {
                 size = "large";

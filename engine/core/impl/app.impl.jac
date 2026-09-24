@@ -130,16 +130,36 @@ impl App.render_frame() {
         combat_lights(self.level.lighting, self.world, p, self.combat);
         self.quake.time = self.simulation_time;
         self.render_portal(faces);
-        self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
-        self.quake.view_forward = forward_from(p.yaw, p.pitch);
-        self.last_drawn = self.quake.draw(self.level, faces, p.pos);
+        # The view: damage and landing kicks, weapon punch, the dead view.
+        game = self.level.bsp.game;
+        self.view.take_damage(p);
+        self.view.advance(self.frame_dt);
+        eye = p.pos.sub(Vec3(z=self.view.eye_drop()));
+        view_yaw = p.yaw;
+        view_pitch = p.pitch - math.radians(self.view.pitch());
+        view_roll = math.radians(self.view.roll());
+        if self.combat.punch_time > 0.0 and self.combat.punch_left > 0.0 {
+            view_pitch += math.radians(
+                self.combat.punch * self.combat.punch_left / self.combat.punch_time
+            );
+        }
+        if p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active {
+            dead = death_view(p, game, self.level.collision.eye_height);
+            eye = p.pos.sub(Vec3(z=dead[0]));
+            view_pitch = math.radians(dead[1]);
+            view_roll = math.radians(dead[2]);
+            view_yaw = dead[3];
+        }
+        self.renderer.begin_frame(eye, view_yaw, view_pitch, view_roll);
+        self.quake.view_forward = forward_from(view_yaw, view_pitch);
+        self.last_drawn = self.quake.draw(self.level, faces, eye);
         self.models.draw(
             self.world,
-            p.pos,
+            eye,
             self.simulation_time,
             culling=self.culling,
-            yaw=p.yaw,
-            pitch=p.pitch,
+            yaw=view_yaw,
+            pitch=view_pitch,
             fov=self.renderer.fov,
             aspect=float(self.renderer.width) / float(self.renderer.height),
             lighting=self.level.lighting,
@@ -149,7 +169,7 @@ impl App.render_frame() {
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
         self.effects.draw(
-            self.world, p.pos, p.yaw, p.pitch, lighting=self.level.lighting
+            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
         );
         if not self.smoke and not self.finale_active {
             self.viewweapon.draw(
@@ -158,6 +178,7 @@ impl App.render_frame() {
         }
         self.renderer.end_scene();
         if not self.smoke and not self.finale_active {
+            self.draw_view_blend();
             self.draw_powerup_blend();
         }
         if self.finale_text or self.intermission_text {
@@ -240,7 +261,8 @@ impl App.render_frame() {
                     );
                 }
             }
-            if self.notice_wait > 0.0 {
+            # With the original art the status bar layer prints messages.
+            if self.notice_wait > 0.0 and not self.hud.ready {
                 self.renderer.draw_message(self.notice);
             }
             self.renderer.draw_powerups(self.powerup_lines());
@@ -704,6 +726,13 @@ impl App.step() -> bool {
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
+        # A death on the last tick of a frame is still voiced.
+        if self.player.health <= 0 and self.level.active {
+            voice = self.player spawn VoiceTick(game=self.level.bsp.game, dt=0.0);
+            for cue in voice.cues {
+                self.audio.play_path(cue);
+            }
+        }
         if contest is not None and contest.finished {
             celebration = self.world spawn PodiumTick(dt=dt);
             for cue in celebration.cues {
@@ -750,8 +779,11 @@ impl App.step() -> bool {
         intent.move = Vec3();
     }
     warming = contest is not None and contest.warmup > 0.0;
-    if intent.weapon > 0 {
-        select_weapon(self.player, self.combat, intent.weapon);
+    if intent.weapon > 0 and self.player.health > 0 {
+        change_weapon(self.player, self.combat, intent.weapon);
+    }
+    if intent.weapon_step != 0 and self.player.health > 0 {
+        cycle_weapon(self.player, self.combat, intent.weapon_step);
     }
     if self.level.active and self.player.health > 0 and not self.finale_active {
         stored = owned_items(self.player.inventory, self.level.bsp.game);
@@ -806,8 +838,15 @@ impl App.step() -> bool {
         right_from(self.player.yaw).scale(intent.move.x)
     );
     for i in range(steps) {
+        jumped = False;
         self.simulation_time += self.physics_clock.tick_rate;
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
+        self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
+        self.notify_ages = [age - self.physics_clock.tick_rate for age in self.notify_ages];
+        while self.notify_ages and self.notify_ages[0] <= 0.0 {
+            self.notify_ages.pop(0);
+            self.notify_lines.pop(0);
+        }
         if self.walking and self.level.active {
             self.player spawn SetStance(
                 collision=self.level.collision,
@@ -873,32 +912,49 @@ impl App.step() -> bool {
             ).add(
                 Vec3(z=intent.move.z)
             );
-            self.player spawn MovePlayer(
+            moved = self.player spawn MovePlayer(
                 collision=self.level.collision,
                 wish=wish,
-                jump=self.jump_pending,
+                jump=self.jump_pending or intent.jump_held,
                 water_depth=immersed.depth,
                 swim_wish=swim,
+                game=self.level.bsp.game,
                 dt=self.physics_clock.tick_rate
             );
             self.jump_pending = False;
+            jumped = jumped or moved.jumped;
+            if moved.landed > 0.0 and self.level.active {
+                landing = self.player spawn CrashLand(
+                    game=self.level.bsp.game,
+                    speed=moved.landed,
+                    water_depth=self.level.immersion(self.player.pos).depth
+                );
+                self.audio.play_path(landing.cue);
+                self.view.landing(landing.kick, landing.drop);
+            }
         }
         if self.level.active and not self.smoke {
             immersed = self.level.immersion(self.player.pos);
             self.player.water_depth = immersed.depth;
             self.player.liquid_kind = immersed.kind;
+            old_health = self.player.health;
             self.player spawn EnvironmentTick(
                 game=self.level.bsp.game,
                 dt=self.physics_clock.tick_rate,
                 active=self.walking
             );
             self.tick_powerups(self.physics_clock.tick_rate);
+            voice = self.player spawn VoiceTick(
+                game=self.level.bsp.game, dt=self.physics_clock.tick_rate, jumped=jumped
+            );
+            for cue in voice.cues {
+                self.audio.play_path(cue);
+            }
             if self.player.health <= 0 and not arena_live {
                 self.player.velocity = Vec3();
                 self.jump_pending = False;
                 break;
             }
-            old_health = self.player.health;
             swimmers = [
                 enemy
                 for enemy in [self.world->:HasOpponent:->][?:Opponent]
@@ -959,6 +1015,9 @@ impl App.step() -> bool {
                 self.combat.awards = [];
                 for message in tally.messages {
                     self.show_notice(message);
+                }
+                for line in tally.obituaries {
+                    self.notify(line);
                 }
                 warming = contest.warmup > 0.0;
                 if tally.ended {
@@ -1022,7 +1081,9 @@ impl App.step() -> bool {
             if self.campaign_complete {
                 break;
             }
-            if self.player.health < old_health {
+            # Q1 and Q2 pain is voiced by VoiceTick; Q3's player sounds
+            # belong to its player model.
+            if self.player.health < old_health and self.level.bsp.game not in ["q1", "q2"] {
                 self.audio.play(1);
             }
             if not warming and weapon_input(
@@ -1042,9 +1103,11 @@ impl App.step() -> bool {
                     # Shots wake nearby monsters (show_hostile, PlayerNoise).
                     self.combat.noise = 1.0;
                 }
-                self.audio.play(
-                    2 + self.combat.weapon if self.combat.rules else 0, gain
-                );
+                if not self.combat.quiet {
+                    self.audio.play(
+                        2 + self.combat.weapon if self.combat.rules else 0, gain
+                    );
+                }
                 # Q1 throttles the quad cue to once a second; Q2/Q3 play it per shot.
                 if empowered(self.player, "quad") and self.quad_sound_wait <= 0.0 {
                     self.audio.play_path("sound/items/damage3.wav", gain);
@@ -1053,6 +1116,7 @@ impl App.step() -> bool {
                     }
                 }
             }
+            self.combat_feedback();
             self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
             # Walkers for entities the level lacks are not spawned at all:
             # each spawn searches the world's edges (survey_level).
@@ -1167,6 +1231,12 @@ impl App.step() -> bool {
                 }
             }
             self.combat.impacts = [];
+            for blast in [self.world->:HasExplosion:->][?:Explosion] {
+                if not blast.heard {
+                    blast.heard = True;
+                    self.play_at(blast.sound, blast.pos);
+                }
+            }
             pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,
@@ -1181,8 +1251,31 @@ impl App.step() -> bool {
             for sound in pickup_result.sounds {
                 self.audio.play_path(sound);
             }
-            for message in pickup_result.messages {
-                self.show_notice(message);
+            game = self.level.bsp.game;
+            if game in ["q1", "passion"] {
+                for message in pickup_result.messages {
+                    if message.endswith("!") {
+                        self.show_notice(message);
+                    } else {
+                        self.notify(message);
+                    }
+                }
+            } else {
+                for picked in pickup_result.picked {
+                    if picked.icon or picked.label {
+                        self.pickup_icon = picked.icon;
+                        self.pickup_name = picked.label;
+                        self.pickup_time = 3.0;
+                    }
+                }
+            }
+            if pickup_result.collected > 0 {
+                self.view.pickup();
+            }
+            for key in pickup_result.weapons {
+                pickup_switch(
+                    self.player, self.combat, key, key in pickup_result.fresh_weapons
+                );
             }
             triggers = self.world spawn TriggerTick(
                 player=self.player,
@@ -1481,6 +1574,91 @@ impl App.show_notice(message: str) {
     }
 }
 
+impl App.notify(message: str) {
+    if not message {
+        return;
+    }
+    # con_notifytime 3 seconds, NUM_CON_TIMES 4 lines.
+    self.notify_lines.append(message);
+    self.notify_ages.append(3.0);
+    while len(self.notify_lines) > 4 {
+        self.notify_lines.pop(0);
+        self.notify_ages.pop(0);
+    }
+}
+
+impl App.play_at(path: str, origin: Vec3) {
+    if path {
+        distance = origin.sub(self.player.pos).length();
+        self.audio.play_path(path, max(0.0, 1.0 - distance / 1000.0));
+    }
+}
+
+impl App.combat_feedback() {
+    for cue in self.combat.cues {
+        self.audio.play_path(cue);
+    }
+    self.combat.cues = [];
+    for message in self.combat.messages {
+        self.notify(message);
+    }
+    self.combat.messages = [];
+    # cg_playerstate.c CG_CheckLocalSounds: hit.wav when a shot lands.
+    if self.combat.hits != self.heard_hits {
+        if self.level.bsp.game == "q3" and self.combat.hits > self.heard_hits {
+            self.audio.play_path("sound/feedback/hit.wav");
+        }
+        self.heard_hits = self.combat.hits;
+    }
+    if self.level.bsp.game == "q3" {
+        self.check_ammo();
+    }
+}
+
+impl App.check_ammo() {
+    total = 0;
+    for rule in self.combat.rules {
+        if not rule.ammo or not owns_weapon(self.player, rule) {
+            continue;
+        }
+        shots = quantity(self.player.inventory, rule.ammo);
+        heavy = rule.key in ["rocketlauncher", "grenadelauncher", "railgun", "shotgun"];
+        total += shots * (1000 if heavy else 200);
+    }
+    previous = self.ammo_warning;
+    self.ammo_warning = 0 if total >= 5000 else (2 if total == 0 else 1);
+    if self.ammo_warning != previous and self.ammo_warning > 0 and self.player.health > 0 {
+        self.audio.play_path("sound/weapons/noammo.wav");
+    }
+}
+
+impl App.draw_view_blend() {
+    submerged = self.player.water_depth >= 3;
+    for layer in self.view.tints(self.player.liquid_kind, submerged) {
+        self.renderer.draw_tint(layer.r, layer.g, layer.b, layer.a);
+    }
+    # CG_DamageBlendBlob: viewBloodBlend (blood_screen.tga) eight units in
+    # front of the eye, pushed toward the hit, radius 3 per point of kick.
+    spot = self.view.blob();
+    if spot and self.hud.has_pic("blood_screen") {
+        width = float(self.renderer.width);
+        height = float(self.renderer.height);
+        # At 8 units the half-height of the view spans 8 * tan(fov / 2).
+        reach = 8.0 * math.tan(math.radians(self.renderer.fov) * 0.5);
+        size = spot[2] * 8.0 / reach * height * 0.5;
+        cx = width * 0.5 + spot[0] * 8.0 / reach * height * 0.5;
+        cy = height * 0.5 - spot[1] * 8.0 / reach * height * 0.5;
+        self.hud.blit(
+            "blood_screen",
+            cx - size,
+            cy - size,
+            size * 2.0,
+            size * 2.0,
+            [255, 255, 255, int(255.0 * spot[3])]
+        );
+    }
+}
+
 """Q2 uses the selected stored item; Q3 uses its single holdable."""
 impl App.use_item(kind: str = "") {
     game = self.level.bsp.game;
@@ -1762,6 +1940,12 @@ impl App.prepare_presentation() {
     self.light_styles = None;
     self.style_serial = -1;
     self.pain_health = self.player.health;
+    self.view.reset(game);
+    self.notify_lines = [];
+    self.notify_ages = [];
+    self.pickup_time = 0.0;
+    self.heard_hits = self.combat.hits;
+    self.ammo_warning = 0;
     styles = [self.world->:HasLightStyles:->][?:LightStyles];
     if styles {
         self.light_styles = styles[0];
@@ -1827,6 +2011,33 @@ impl App.hud_status() -> HudStatus {
         pain=self.pain_time,
         firing=self.combat.cooldown > 0.1,
         arena=game == "q3",
-        clock=self.simulation_time
+        clock=self.simulation_time,
+        notify=self.notify_lines,
+        center=self.notice if self.notice_wait > 0.0 else "",
+        pickup_icon=self.pickup_icon,
+        pickup_name=self.pickup_name,
+        pickup_fade=self.pickup_time,
+        selected_icon=self.selected_icon(),
+        ammo_warning=self.ammo_warning if game == "q3" and p.health > 0 else 0
     );
+}
+
+impl App.selected_icon() -> str {
+    if self.level.bsp.game != "q2" {
+        return "";
+    }
+    stored = owned_items(self.player.inventory, "q2");
+    if not stored {
+        return "";
+    }
+    icons: dict[str, str] = {
+        "powerup_quad": "p_quad",
+        "powerup_invulnerability": "p_invulnerability",
+        "powerup_breather": "p_rebreather",
+        "powerup_suit": "p_envirosuit",
+        "powerup_silencer": "p_silencer",
+        "power_screen": "i_powerscreen",
+        "power_shield": "i_powershield"
+    };
+    return icons.get(stored[self.selected_item % len(stored)], "");
 }

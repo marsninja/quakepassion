@@ -64,7 +64,14 @@ obj HudStatus {
         score: int = 0,
         leader: int = 0,
         arena: bool = False,
-        clock: float = 0.0;
+        clock: float = 0.0,
+        notify: list[str] = [],
+        center: str = "",
+        pickup_icon: str = "",
+        pickup_name: str = "",
+        pickup_fade: float = 0.0,
+        selected_icon: str = "",
+        ammo_warning: int = 0;
 }
 
 obj HudRenderer {
@@ -162,7 +169,63 @@ obj HudRenderer {
         } elif status.game == "q3" {
             self.draw_q3(status, width, height);
         }
+        self.draw_messages(status, width, height);
         rlDrawRenderBatchActive();
+    }
+
+    """A line in the game's character sheet (Q1/Q2 conchars, Q3 bigchars):
+    a 16 by 16 grid of cells, `size` pixels square on screen."""
+    def chars(message: str, x: float, y: float, size: float, tint: list[int] = [255, 255, 255, 255]) {
+        for i in range(len(message)) {
+            code = ord(message[i]) & 255;
+            if code == 32 {
+                continue;
+            }
+            column = float(code % 16) / 16.0;
+            row = float(code // 16) / 16.0;
+            self.blit(
+                "conchars",
+                x + float(i) * size,
+                y,
+                size,
+                size,
+                tint,
+                column,
+                row,
+                column + 1.0 / 16.0,
+                row + 1.0 / 16.0
+            );
+        }
+    }
+
+    """Printed messages where the games put them: the notify lines at the top
+    left (Con_DrawNotify, CG_DrawNotify), centre prints a third of the way
+    down (SCR_DrawCenterString, CG_DrawCenterString), and Q3's ammo warning
+    (CG_DrawAmmoWarning) near the top."""
+    def draw_messages(status: HudStatus, width: int, height: int) {
+        if not self.has_pic("conchars") {
+            return;
+        }
+        big = status.game == "q3";
+        scale = float(height) / 480.0 if big else float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        size = (16.0 if big else 8.0) * scale;
+        y = 0.0;
+        for line in status.notify {
+            self.chars(line, 0.0 if not big else 4.0 * scale, y, size * (0.5 if big else 1.0));
+            y += size * (0.5 if big else 1.0);
+        }
+        if status.center {
+            lines = status.center.split("\n");
+            top = float(height) * (0.30 if big else 0.35);
+            for line in lines {
+                self.chars(line, (float(width) - float(len(line)) * size) * 0.5, top, size);
+                top += size + 2.0 * scale;
+            }
+        }
+        if big and status.ammo_warning > 0 {
+            warning = "OUT OF AMMO" if status.ammo_warning == 2 else "LOW AMMO WARNING";
+            self.chars(warning, (float(width) - float(len(warning)) * size) * 0.5, 64.0 * scale, size);
+        }
     }
 
     # ---- Quake (sbar.c) ----
@@ -302,6 +365,17 @@ obj HudRenderer {
             armor = "i_bodyarmor" if status.armor_ratio >= 0.8 else ("i_combatarmor" if status.armor_ratio >= 0.6 else "i_jacketarmor");
             self.pic(armor, left + 250.0 * scale, low, scale);
         }
+        # STAT_SELECTED_ICON and the picked-up item's icon and name
+        # (STAT_PICKUP_ICON/STRING) for three seconds.
+        if status.selected_icon {
+            self.pic(status.selected_icon, left + 296.0 * scale, low, scale);
+        }
+        if status.pickup_icon and status.pickup_fade > 0.0 {
+            self.pic(status.pickup_icon, left, float(height) - 50.0 * scale, scale);
+            if status.pickup_name and self.has_pic("conchars") {
+                self.chars(status.pickup_name, left + 26.0 * scale, float(height) - 42.0 * scale, 8.0 * scale);
+            }
+        }
         # The selected weapon's icon sits in the help-icon slot.
         if status.weapon and self.has_pic("w_" + status.weapon) {
             self.pic("w_" + status.weapon, left + 148.0 * scale, float(height) - 50.0 * scale, scale);
@@ -362,6 +436,16 @@ obj HudRenderer {
             self.q3_field(status.armor, 3, left + 370.0 * scale, y, scale, white if status.armor > 100 else normal);
             if not self.three_d {
                 self.blit("armor", left + 470.0 * scale, y, 48.0 * scale, 48.0 * scale);
+            }
+        }
+        # CG_DrawPickupItem: the icon and name above the lower left, fading
+        # over three seconds.
+        if status.pickup_icon and status.pickup_fade > 0.0 and self.has_pic(status.pickup_icon) {
+            fade = [255, 255, 255, int(255.0 * min(1.0, status.pickup_fade))];
+            top = float(height) - 96.0 * scale;
+            self.blit(status.pickup_icon, left + 8.0 * scale, top, 48.0 * scale, 48.0 * scale, fade);
+            if status.pickup_name and self.has_pic("conchars") {
+                self.chars(status.pickup_name, left + 64.0 * scale, top + 17.0 * scale, 14.0 * scale, fade);
             }
         }
         # The default crosshair (cg_drawCrosshair 4), 24 units square.

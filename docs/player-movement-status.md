@@ -44,7 +44,10 @@ and the same hull walker used by Q1 resolves contact. Tests compare indexed
 queries with exhaustive sweeps.
 
 Movement supplies swept collision, wall sliding, corner clipping, gravity,
-ground friction/acceleration, jumping, and an 18-unit step. Walkable ground
+ground friction/acceleration, jumping, and an 18-unit step (Q2/Q3 also step
+while falling). Q2/Q3 check the jump before friction, jumps need the button
+released, and landings report their speed for falling damage (see
+[player-feedback-status.md](player-feedback-status.md)). Walkable ground
 requires an upward normal of at least 0.7. Physics runs at 120 Hz with bounded
 catch-up; rendering remains uncapped. Menu pause suspends movement and discards
 pending jump input. Walking cannot be enabled inside solid geometry; fly to a

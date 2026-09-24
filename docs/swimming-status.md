@@ -16,10 +16,10 @@ Escape pauses movement; teleport arrival holds still apply.
 
 This is initial shared swimming, not exact per-game physics parity. The current
 160-unit input speed cap, water acceleration and drag are shared across games.
-Currents, automatic ledge/water jumps, drowning, lava/slime damage, underwater
-postprocessing, sounds and per-game movement tuning remain unfinished. Crouching
-also remains separate work. Liquid types are recorded for future gameplay; they
-do not yet cause damage.
+Water jumps out of pools, the underwater view tints and the water sounds follow
+each game (see [player-feedback-status.md](player-feedback-status.md)); drowning
+and lava/slime damage live in `EnvironmentTick`. Currents and per-game swimming
+speeds remain unfinished.
 
 ## Validation
 
