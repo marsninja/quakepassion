@@ -269,8 +269,10 @@ test "flipper stays a swimmer and static bodies ignore damage" {
     statue = Opponent(rule=body, health=1);
     damage_opponent(statue, 50);
     assert statue.health == 1;
+    # Crucified marines hang still and harmless but can be killed.
     crucified = enemy_rule("q2", "misc_insane", 8);
-    assert crucified is not None and crucified.decoration;
+    assert crucified is not None and crucified.passive and crucified.movement == "none";
+    assert not crucified.decoration;
     marine = enemy_rule("q2", "misc_insane");
     assert marine is not None and not marine.decoration;
     assert choose_attack(Opponent(rule=marine), 50.0) == -1;

@@ -19,6 +19,9 @@ import from engine.math.vec3 { Vec3 }
 test "chick rocket winds up and saved release deals direct damage only once" {
     rule = enemy_rule("q2", "monster_chick");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     world = World();
     level = Level(name="rocket");
     level.bsp.game = "q2";
@@ -51,6 +54,9 @@ test "chick rocket winds up and saved release deals direct damage only once" {
 test "chick rocket windup is interrupted by pain" {
     rule = enemy_rule("q2", "monster_chick");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     world = World();
     player = Player(pos=Vec3(x=500.0));
     enemy = Opponent(rule=rule, attack_wait=0.0);
@@ -67,6 +73,9 @@ test "chick slash uses melee timeline and can be escaped" {
     for escape in [False, True] {
         rule = enemy_rule("q2", "monster_chick");
         assert rule is not None;
+        # Attack the moment it may, to time the sequence itself.
+        rule.near_chance = 1.0;
+        rule.mid_chance = 1.0;
         world = World();
         player = Player(pos=Vec3(x=60.0));
         enemy = Opponent(rule=rule, attack_wait=0.0);
@@ -93,6 +102,9 @@ test "authored recovery can move backward but stops at walls and ledges" {
     for obstruction in [0, 1, 2] {
         rule = enemy_rule("q2", "monster_chick");
         assert rule is not None;
+        # Attack the moment it may, to time the sequence itself.
+        rule.near_chance = 1.0;
+        rule.mid_chance = 1.0;
         collision = CollisionMap();
         collision.add_box(
             Vec3(x=-1.0 if obstruction == 2 else -100.0, y=-100.0, z=-10.0),
@@ -127,6 +139,9 @@ test "authored recovery can move backward but stops at walls and ledges" {
 test "chick repeats rocket body without replaying initial windup and saves cursor" {
     rule = enemy_rule("q2", "monster_chick");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     world = World();
     level = Level(name="refire");
     level.bsp.game = "q2";
@@ -160,6 +175,9 @@ test "chick declines repeat for random choice or lost sight" {
     for blocked in [False, True] {
         rule = enemy_rule("q2", "monster_chick");
         assert rule is not None;
+        # Attack the moment it may, to time the sequence itself.
+        rule.near_chance = 1.0;
+        rule.mid_chance = 1.0;
         world = World();
         player = Player(pos=Vec3(x=500.0));
         enemy = Opponent(rule=rule, attack_wait=0.0, shot_random=30000);
@@ -185,6 +203,9 @@ test "chick declines repeat for random choice or lost sight" {
 test "chick repeated slash resumes after save and stops when player escapes" {
     rule = enemy_rule("q2", "monster_chick");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     world = World();
     level = Level(name="reslash");
     level.bsp.game = "q2";

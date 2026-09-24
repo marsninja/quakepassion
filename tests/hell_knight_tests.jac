@@ -17,6 +17,9 @@ import from engine.math.vec3 { Vec3 }
 test "hell knight fires six distinct directions after windup" {
     rule = enemy_rule("q1", "monster_hell_knight");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     world = World();
     level = Level(name="fan");
     player = Player(pos=Vec3(x=500.0));
@@ -43,6 +46,9 @@ test "hell knight fires six distinct directions after windup" {
 test "hell knight saves the volley cursor and vertical scatter stream" {
     rule = enemy_rule("q1", "monster_hell_knight");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     world = World();
     level = Level(name="fan");
     level.bsp.game = "q1";
@@ -70,6 +76,9 @@ test "hell knight saves the volley cursor and vertical scatter stream" {
 test "hell knight sword hits can be escaped and pain cancels pending spikes" {
     rule = enemy_rule("q1", "monster_hell_knight");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     world = World();
     level = Level(name="sword");
     player = Player(pos=Vec3(x=50.0));

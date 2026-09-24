@@ -401,8 +401,9 @@ def attack_pause(enemy: Opponent, melee: bool = False) -> float {
     if melee or (enemy.game == "q1" and enemy.skill >= 3) {
         return 0.0;
     }
-    enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
-    roll = float(enemy.shot_random) / 2147483647.0;
+    # Drawn beside the monster's stream (another multiplier) rather than from
+    # it, so the attack sequence's own choices keep their order.
+    roll = float((enemy.shot_random * 16807) % 2147483647) / 2147483647.0;
     return enemy.rule.rest_min + enemy.rule.rest_random * roll;
 }
 
@@ -454,6 +455,18 @@ def attack_chance(enemy: Opponent, distance: float, melee: bool) -> float {
         return 0.05 if has_melee else 0.1;
     }
     return 0.0;
+}
+
+"""Whether a monster has a ranged attack; melee-only monsters press in to
+strike rather than circling."""
+def shoots(enemy: Opponent) -> bool {
+    ensure_profiles(enemy);
+    for profile in enemy.profiles {
+        if profile.kind in ["ranged", "beam"] and not profile.dodge_only {
+            return True;
+        }
+    }
+    return False;
 }
 
 """Roll a decision's attack chance with the monster's own random stream."""
@@ -3216,7 +3229,7 @@ walker CombatTick {
             # when sliding and, for every monster, once it has closed in.
             circling = closing
                 and here.character is None
-                and (here.slide_wait > 0.0 or goal.length() <= stop);
+                and (here.slide_wait > 0.0 or (goal.length() <= stop and shoots(here)));
             if (here.alert > 0.0 or patrol is not None)
                 and not here.fighting
                 and here.pain_wait <= 0.0
@@ -3226,8 +3239,13 @@ walker CombatTick {
                 and (circling or goal.length() > stop) {
                 direction = Vec3(x=goal.x, y=goal.y).normalized();
                 if circling {
+                    # Sideways with a slight inward pull, so the circle holds
+                    # its radius instead of spiralling out.
                     side = 1.0 if here.lefty else -1.0;
-                    direction = Vec3(x=-direction.y * side, y=direction.x * side);
+                    direction = Vec3(
+                        x=-direction.y * side + direction.x * 0.3,
+                        y=direction.x * side + direction.y * 0.3
+                    ).normalized();
                 }
                 # Local separation is evaluated with steering, not every physics tick.
                 if self.world is not None {
@@ -3394,8 +3412,10 @@ walker CombatTick {
                         steady=strolling
                     );
                     here.support_wait = 0.05;
-                    # SV_movestep: a monster cannot step into the player.
+                    # SV_movestep: a monster cannot step into the player
+                    # (a leap is a toss that lands on it instead).
                     if self.player.health > 0
+                        and not here.leaping
                         and actor_overlap(
                             self.player.pos.sub(Vec3(z=self.collision.eye_height)),
                             self.collision.top_drop,

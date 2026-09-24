@@ -22,6 +22,9 @@ test "enforcer burst has windup and resumes without replay after saving" {
     state = CombatState();
     rule = enemy_rule("q1", "monster_enforcer");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     enemy = Opponent(rule=rule, attack_wait=0.0);
     world +>:HasOpponent:+> enemy;
     world spawn CombatTick(
@@ -53,6 +56,9 @@ test "windup can be interrupted and fresh walls block an already scheduled shot"
     collision = CollisionMap();
     rule = enemy_rule("q1", "monster_enforcer");
     assert rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rule.near_chance = 1.0;
+    rule.mid_chance = 1.0;
     enemy = Opponent(rule=rule, attack_wait=0.0);
     world +>:HasOpponent:+> enemy;
     world spawn CombatTick(player=player, collision=collision, state=state, dt=0.2);
