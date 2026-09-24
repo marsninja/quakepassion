@@ -25,10 +25,13 @@ released binary and CI have not been validated against this patch set.
 | `jac run` treats a `window=` edge field as the browser global and moves modules to client code | [#9500](https://github.com/jaseci-labs/jac/pull/9500) | `games/passion/layout.jac` under `scripts/map_sweep.jac` |
 | No pointers to C structs: out-params, retained pointers and C-owned buffers (new C interop surface) | [#9506](https://github.com/jaseci-labs/jac/pull/9506) | `engine/render/renderer.jac` pinned multi-buffered batch |
 | A cached native test module called a function through an unlinked extern (null pointer) after a dependency was demoted | [#9533](https://github.com/jaseci-labs/jac/pull/9533) | `tests/monster_tactics_tests.jac` segfault |
+| A native demotion verdict outlived the fix to the imported module that caused it | [#9537](https://github.com/jaseci-labs/jac/pull/9537) | `games/weapons.jac` stayed on the Python fallback |
+| Typed edge hops and edge deletion scanned the node's whole adjacency (O(degree)) | [#9536](https://github.com/jaseci-labs/jac/pull/9536) | Q2 base1 frame: 76–83 ms → 14 ms median (World holds thousands of edges) |
 
 Every fix above through #9506 is in release 0.37.23 (upstream main
 `58cb97eb75`). The playability milestone validates with that commit plus #9533,
-applied as a patch (worktree `/Users/marsninja/repos/jaseci-wt/qp-integration`).
+#9536 and #9537, applied as patches (worktree
+`/Users/marsninja/repos/jaseci-wt/qp-integration`).
 
 The Q3 bot, presentation and loose-ends milestones validated with upstream main
 `245f3ab813` plus #9443, #9445–#9449, #9451, #9465, #9470, #9472, #9475, #9478,
