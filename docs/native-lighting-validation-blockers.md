@@ -20,10 +20,14 @@ released binary and CI have not been validated against this patch set.
 | `bytes.find` and the bytes search family not lowered | [#9478](https://github.com/jaseci-labs/jac/pull/9478) | `engine/formats/q1/wad.jac` status bar art |
 | A JIT unit calls a linked unit's Python-only functions natively on a cold cache | [#9480](https://github.com/jaseci-labs/jac/pull/9480) | `tests/lightstyle_tests.jac` segfault |
 | Event abilities named `drop` treated as destructor hooks | [#9486](https://github.com/jaseci-labs/jac/pull/9486) | `engine/world/flyers.jac` `FlyerTick` |
+| `bytes(n)` and related bytes/bytearray constructors not lowered | [#9492](https://github.com/jaseci-labs/jac/pull/9492) | `engine/render/portal.jac` framebuffer textures |
+| Cold builds drop libm-named `math` functions from the native layout (`sqrt`, `sin`, `cos` demoted) | [#9498](https://github.com/jaseci-labs/jac/pull/9498) | Any cold native build: 177 demotions |
+| `jac run` treats a `window=` edge field as the browser global and moves modules to client code | [#9500](https://github.com/jaseci-labs/jac/pull/9500) | `games/passion/layout.jac` under `scripts/map_sweep.jac` |
+| No pointers to C structs: out-params, retained pointers and C-owned buffers (new C interop surface) | [#9506](https://github.com/jaseci-labs/jac/pull/9506) | `engine/render/renderer.jac` pinned multi-buffered batch |
 
 The Q3 bot, presentation and loose-ends milestones validate with upstream main
 `245f3ab813` plus #9443, #9445–#9449, #9451, #9465, #9470, #9472, #9475, #9478,
-#9480 and #9486, applied as patches (worktree
+#9480, #9486, #9492, #9498, #9500 and #9506, applied as patches (worktree
 `/Users/marsninja/repos/jaseci-wt/qp-combined`). Earlier remaining-scope
 milestones used upstream main `767d19193d` plus #9445, #9446 and #9451
 (worktree `/Users/marsninja/repos/jaseci-wt/qp-scope-validation`). The open clock fix #9393
