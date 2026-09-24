@@ -13,7 +13,8 @@ import from .combat {
     WeaponImpact,
     blast_actors,
     damage_opponent,
-    actor_fraction
+    actor_fraction,
+    opponent_fraction
 }
 import from .damage { Damage }
 import from .particles { impact_spray, beam_trail }
@@ -268,7 +269,7 @@ walker TargetTick {
             if enemy.health <= 0 or enemy.dormant {
                 continue;
             }
-            touch = actor_fraction(event.origin, finish, enemy.pos, enemy.eye_height);
+            touch = opponent_fraction(event.origin, finish, enemy);
             if touch < reach {
                 reach = touch;
                 victim = enemy;

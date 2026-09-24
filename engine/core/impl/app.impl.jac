@@ -65,6 +65,11 @@ impl App.run() {
         if self.smoke and self.smoke_step(frame) {
             break;
         }
+        # QP_CAPTURE: one screenshot of the full frame, then exit.
+        if self.capture_frame > 0 and frame >= self.capture_frame {
+            self.renderer.screenshot(self.capture_path);
+            break;
+        }
     }
     if self.level.active {
         self.models.close();
@@ -887,6 +892,9 @@ impl App.step() -> bool {
                 water_depth=immersed.depth,
                 swim_wish=swim,
                 dt=self.physics_clock.tick_rate
+            );
+            self.world spawn ClearActors(
+                player=self.player, collision=self.level.collision
             );
             self.jump_pending = False;
         }

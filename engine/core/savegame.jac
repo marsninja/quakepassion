@@ -313,6 +313,20 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             );
         }
     }
+    # A power screen's remaining cells, and whether a medic raised the monster
+    # (a raised monster's targets are cleared).
+    for index in range(len(corpses)) {
+        if corpses[index].power_cells >= 0 or corpses[index].revived {
+            lines.append(
+                "TACTIC "
+                    + str(index)
+                    + " "
+                    + str(corpses[index].power_cells)
+                    + " "
+                    + ("1" if corpses[index].revived else "0")
+            );
+        }
+    }
     for index in range(len(corpses)) {
         if corpses[index].health <= 0 {
             lines.append(
@@ -758,6 +772,13 @@ def restore(
             if corpse.gibbed {
                 corpse.visual.visible = False;
             }
+        } elif words[0] == "TACTIC" and len(words) == 4 {
+            index = int(words[1]);
+            if index < 0 or index >= len(enemies) or words[3] not in ["0", "1"] {
+                raise ValueError("Invalid saved monster tactics");
+            }
+            enemies[index].power_cells = int(words[2]);
+            enemies[index].revived = words[3] == "1";
         } elif words[0] == "SKILL" and len(words) == 2 {
             if int(words[1]) != level.skill {
                 raise ValueError("Save was made on another skill");

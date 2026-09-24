@@ -231,6 +231,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind in ["monster_ogre", "monster_ogre_marksman"] {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=64.0,
                 sight_sound="sound/ogre/ogwake.wav",
                 pain_sounds=["sound/ogre/ogpain1.wav"],
                 death_sound="sound/ogre/ogdth.wav",
@@ -322,6 +324,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_wizard" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=40.0,
                 model="progs/wizard.mdl",
                 health=80,
                 movement="fly",
@@ -370,6 +374,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_demon1" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=64.0,
                 model="progs/demon.mdl",
                 health=300,
                 width=32.0,
@@ -435,6 +441,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_shambler" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=64.0,
                 model="progs/shambler.mdl",
                 health=600,
                 width=32.0,
@@ -620,6 +628,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_shalrath" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=64.0,
                 model="progs/shalrath.mdl",
                 health=400,
                 width=32.0,
@@ -693,6 +703,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_fish" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=24.0,
                 model="progs/fish.mdl",
                 health=25,
                 movement="swim",
@@ -973,6 +985,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_mutant" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=48.0,
                 model="models/monsters/mutant/tris.md2",
                 health=300,
                 width=32.0,
@@ -1029,6 +1043,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_parasite" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=24.0,
                 model="models/monsters/parasite/tris.md2",
                 health=175,
                 speed=254.0,
@@ -1083,6 +1099,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_brain" {
             return OpponentRule(
+                power_screen=100,
                 model="models/monsters/brain/tris.md2",
                 duck_frames=["duck" + two(i) for i in range(1, 9)],
                 duck_down=1,
@@ -1275,6 +1292,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_flipper" {
             return OpponentRule(
+                hull_bottom=0.0,
+                hull_top=16.0,
                 model="models/monsters/flipper/tris.md2",
                 health=50,
                 movement="swim",
@@ -1312,6 +1331,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind in ["monster_tank", "monster_tank_commander"] {
             return OpponentRule(
+                hull_bottom=-16.0,
+                hull_top=72.0,
                 model="models/monsters/tank/tris.md2",
                 skin=2 if kind == "monster_tank_commander" else 0,
                 health=1000 if kind == "monster_tank_commander" else 750,
@@ -1425,6 +1446,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_supertank" {
             return OpponentRule(
+                hull_bottom=0.0,
+                hull_top=112.0,
                 model="models/monsters/boss1/tris.md2",
                 health=1500,
                 width=64.0,
@@ -1483,6 +1506,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_boss2" {
             return OpponentRule(
+                hull_bottom=0.0,
+                hull_top=80.0,
                 model="models/monsters/boss2/tris.md2",
                 health=2000,
                 width=56.0,
@@ -1545,6 +1570,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_jorg" {
             return OpponentRule(
+                hull_bottom=0.0,
+                hull_top=140.0,
                 model="models/monsters/boss3/jorg/tris.md2",
                 health=3000,
                 width=80.0,
@@ -1612,6 +1639,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_makron" {
             return OpponentRule(
+                hull_bottom=0.0,
+                hull_top=90.0,
                 model="models/monsters/boss3/rider/tris.md2",
                 health=3000,
                 width=30.0,
@@ -1769,6 +1798,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_chick" {
             return OpponentRule(
+                hull_bottom=0.0,
+                hull_top=56.0,
                 sight_sound="sound/chick/chksght1.wav",
                 pain_sounds=["sound/chick/chkpain1.wav", "sound/chick/chkpain2.wav", "sound/chick/chkpain3.wav"],
                 death_sound="sound/chick/chkdeth1.wav",
@@ -1895,6 +1926,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_gladiator" {
             return OpponentRule(
+                hull_bottom=-24.0,
+                hull_top=64.0,
                 sight_sound="sound/gladiator/sight.wav",
                 pain_sounds=["sound/gladiator/pain.wav", "sound/gladiator/gldpain2.wav"],
                 death_sound="sound/gladiator/glddeth2.wav",

@@ -87,7 +87,8 @@ import from ..world.combat {
     select_weapon,
     selected_weapon,
     owns_weapon,
-    KillBox
+    KillBox,
+    ClearActors
 }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }
@@ -154,6 +155,8 @@ obj App {
         culling: bool = True,
         overlay: bool = True,
         smoke: bool = False,
+        capture_frame: int = 0,
+        capture_path: str = "",
         scripted: Intent | None = None,
         last_think: int = 0,
         last_drawn: int = 0,

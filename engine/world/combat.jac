@@ -129,7 +129,81 @@ node Opponent(Player) {
         lefty: bool = False,
         idle_wait: float = -1.0,
         tend_wait: float = 0.0,
-        revived: bool = False;
+        revived: bool = False,
+        power_cells: int = -1;
+}
+
+"""How far the player's box (at origin `body`) reaches into an actor's box,
+horizontally, or None when they do not overlap. Living monsters and bots are
+solid to the player (SOLID_SLIDEBOX); corpses are not."""
+def actor_overlap(body: Vec3, top_drop: float, actor: Opponent) -> Vec3 | None {
+    if actor.health <= 0
+        or actor.dormant
+        or actor.rule.decoration
+        or actor.rule.script
+        or not actor.visual.visible {
+        return None;
+    }
+    return box_overlap(
+        body,
+        top_drop,
+        actor.pos.sub(Vec3(z=actor.eye_height)),
+        actor.rule.width,
+        actor.rule.hull_bottom,
+        actor.rule.hull_top
+    );
+}
+
+def box_overlap(
+    body: Vec3, top_drop: float, origin: Vec3, width: float, bottom: float, top: float
+) -> Vec3 | None {
+    if body.z - 24.0 >= origin.z + top or body.z + 32.0 - top_drop <= origin.z + bottom {
+        return None;
+    }
+    reach = 16.0 + width;
+    apart = body.sub(origin);
+    if abs(apart.x) >= reach or abs(apart.y) >= reach {
+        return None;
+    }
+    # Leave along the shallower side.
+    depth_x = reach - abs(apart.x);
+    depth_y = reach - abs(apart.y);
+    if depth_x < depth_y {
+        return Vec3(x=depth_x if apart.x >= 0.0 else -depth_x);
+    }
+    return Vec3(y=depth_y if apart.y >= 0.0 else -depth_y);
+}
+
+"""Push the player back out of any living monster or bot it walked into,
+and stop its motion into that body, so actors block the player."""
+walker ClearActors {
+    has player: Player,
+        collision: CollisionMap;
+
+    can begin with World entry {
+        if self.player.health > 0 {
+            visit [here->:HasOpponent:->];
+        }
+    }
+
+    can shove with Opponent entry {
+        body = self.player.pos.sub(Vec3(z=self.collision.eye_height));
+        push = actor_overlap(body, self.collision.top_drop, here);
+        if push is None {
+            return;
+        }
+        moved = self.collision.trace(body, body.add(push));
+        if moved.start_solid or moved.fraction < 1.0 {
+            return;
+        }
+        self.player.pos = self.player.pos.add(push);
+        if push.x != 0.0 and self.player.velocity.x * push.x < 0.0 {
+            self.player.velocity.x = 0.0;
+        }
+        if push.y != 0.0 and self.player.velocity.y * push.y < 0.0 {
+            self.player.velocity.y = 0.0;
+        }
+    }
 }
 
 """The item a monster leaves where it dies (Q1 backpacks, Q2 `item`)."""
@@ -398,10 +472,12 @@ def actor_fraction(
     eye: Vec3,
     height: float,
     top_drop: float = 0.0,
-    width: float = 16.0
+    width: float = 16.0,
+    bottom: float = -24.0,
+    top: float = 32.0
 ) -> float {
-    lo = eye.sub(Vec3(x=width, y=width, z=height + 24.0));
-    hi = eye.add(Vec3(x=width, y=width, z=32.0 - height - top_drop));
+    lo = eye.sub(Vec3(x=width, y=width, z=height - bottom));
+    hi = eye.add(Vec3(x=width, y=width, z=top - height - top_drop));
     origins = [start.x, start.y, start.z];
     deltas = [finish.x - start.x, finish.y - start.y, finish.z - start.z];
     mins = [lo.x, lo.y, lo.z];
@@ -424,6 +500,20 @@ def actor_fraction(
         }
     }
     return enter;
+}
+
+"""A segment against an opponent's own box (its SP_monster_* mins/maxs)."""
+def opponent_fraction(start: Vec3, finish: Vec3, enemy: Opponent) -> float {
+    return actor_fraction(
+        start,
+        finish,
+        enemy.pos,
+        enemy.eye_height,
+        0.0,
+        enemy.rule.width,
+        enemy.rule.hull_bottom,
+        enemy.rule.hull_top
+    );
 }
 
 """Whether a route waypoint is reached. Arena routes come from the AAS, whose
@@ -616,6 +706,27 @@ def damage_opponent(
         }
         return 0;
     }
+    # g_combat.c CheckPowerArmor: a monster's power screen takes a third of
+    # the damage from in front of it, one cell per point, until its cells run
+    # out (the Q2 brain carries 100). Ducking brains drop the screen.
+    if victim.rule.power_screen > 0
+        and not bypass_armor
+        and attacker is not None
+        and amount > 0
+        and not crouching(victim) {
+        if victim.power_cells < 0 {
+            victim.power_cells = victim.rule.power_screen;
+        }
+        toward = attacker.pos.sub(victim.pos);
+        toward.z = 0.0;
+        if victim.power_cells > 0
+            and toward.length() > 0.001
+            and toward.normalized().dot(forward_from(victim.yaw, 0.0)) > 0.3 {
+            saved = min(victim.power_cells, amount // 3);
+            victim.power_cells -= saved;
+            amount -= saved;
+        }
+    }
     damage = victim spawn Damage(
         amount=amount,
         bypass_armor=bypass_armor,
@@ -713,6 +824,17 @@ def damage_opponent(
             return damage.dealt;
         }
     }
+    # m_*.c *_pain: on Nightmare a Q2 monster only cries out, with no pain
+    # animation to interrupt it.
+    if victim.game == "q2" and victim.skill >= 3 {
+        victim.pain_cooldown = rule.pain_interval;
+        if rule.pain_sounds {
+            request_sound(
+                victim, rule.pain_sounds[(victim.shot_random // 7919) % len(rule.pain_sounds)]
+            );
+        }
+        return damage.dealt;
+    }
     victim.pain_variant = 0;
     for i in range(len(rule.pain_variant_damage)) {
         if damage.dealt <= rule.pain_variant_damage[i] {
@@ -804,7 +926,9 @@ walker Aim {
             here.pos,
             here.eye_height,
             40.0 if corpse else (32.0 if crouching(here) else 0.0),
-            here.rule.width
+            here.rule.width,
+            here.rule.hull_bottom,
+            here.rule.hull_top
         );
         if hit < self.fraction {
             self.fraction = hit;
@@ -1005,8 +1129,7 @@ def fire_weapon(
             for enemy in [world->:HasOpponent:->][?:Opponent] {
                 if enemy.health > 0
                     and not enemy.dormant
-                    and actor_fraction(player.pos, finish, enemy.pos, enemy.eye_height)
-                        < wall.fraction {
+                    and opponent_fraction(player.pos, finish, enemy) < wall.fraction {
                     hits.append(enemy);
                 }
             }
@@ -1014,9 +1137,7 @@ def fire_weapon(
             hits.append(query.target);
         }
         for victim in hits {
-            fraction = actor_fraction(
-                player.pos, finish, victim.pos, victim.eye_height
-            );
+            fraction = opponent_fraction(player.pos, finish, victim);
             impact_spray(
                 world,
                 player.pos.lerp(finish, fraction),
@@ -1374,8 +1495,7 @@ def projectile_beams(
         }
         projectile.beams.append(projectile.pos.lerp(finish, trace.fraction));
         for victim in actors {
-            if actor_fraction(projectile.pos, finish, victim.pos, victim.eye_height)
-                < trace.fraction {
+            if opponent_fraction(projectile.pos, finish, victim) < trace.fraction {
                 damage_opponent(
                     victim, projectile.beam_damage, player.inventory, state, attacker=player
                 );
@@ -3219,6 +3339,7 @@ walker CombatTick {
                     or here.velocity.length() > 0.000001
                     or wish.length() > 0.0
                     or here.support_wait <= 0.0 {
+                    before = here.pos.add(Vec3());
                     here spawn MovePlayer(
                         collision=body_collision,
                         wish=wish,
@@ -3226,6 +3347,25 @@ walker CombatTick {
                         steady=strolling
                     );
                     here.support_wait = 0.05;
+                    # SV_movestep: a monster cannot step into the player.
+                    if self.player.health > 0
+                        and actor_overlap(
+                            self.player.pos.sub(Vec3(z=self.collision.eye_height)),
+                            self.collision.top_drop,
+                            here
+                        ) is not None
+                        and box_overlap(
+                            self.player.pos.sub(Vec3(z=self.collision.eye_height)),
+                            self.collision.top_drop,
+                            before.sub(Vec3(z=here.eye_height)),
+                            here.rule.width,
+                            here.rule.hull_bottom,
+                            here.rule.hull_top
+                        ) is None {
+                        here.pos = Vec3(x=before.x, y=before.y, z=here.pos.z);
+                        here.velocity.x = 0.0;
+                        here.velocity.y = 0.0;
+                    }
                 }
             }
         } elif here.rule.movement == "swim" and here.water_depth < 2 {
