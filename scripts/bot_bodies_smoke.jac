@@ -1,7 +1,8 @@
 """Original arenas: Q3 bots fight with bodies on the three-part rig, and each
 pose the audit asked for is captured from beside the bot: running, strafing,
-backpedalling, firing with a muzzle flash, aiming up and down, dying, and a
-corpse left behind after the respawn."""
+backpedalling, firing with a muzzle flash, aiming up and down, dying, a corpse
+left behind after the respawn, a quad damage shell and an item dropped on
+death."""
 import math;
 import from engine.core.menu { game_directory }
 import from engine.core.app { App }
@@ -13,7 +14,8 @@ import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileT
 import from engine.world.arena { MatchTick, match_of }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.bot_tactics { BotTactics }
-import from engine.world.pickups { PickupTick }
+import from engine.world.pickups { PickupTick, Pickup, HasPickup }
+import from engine.world.powerups { GrantPowerup }
 import from engine.world.models { PlayerRig }
 import from engine.world.body_queue { Corpse, HasCorpse }
 import from engine.world.player_rig {
@@ -93,9 +95,13 @@ with entry {
             assert isinstance(bot.visual, PlayerRig);
         }
         eye = level.collision.eye_height;
-        wanted = ["run", "strafe", "back", "fire", "aim_up", "aim_down", "death", "corpse"]
+        wanted = ["run", "strafe", "back", "fire", "aim_up", "aim_down", "death", "corpse", "quad", "drop"]
             if name == "q3dm7"
             else ["run", "strafe", "back", "fire"];
+        # One bot carries a quad damage, to show its shell (and drop it).
+        if name == "q3dm7" {
+            bots[0] spawn GrantPowerup(kind="quad", duration=60.0);
+        }
         taken: list[str] = [];
         contacts = ArenaContactIndex();
         dt = 1.0 / 120.0;
@@ -141,12 +147,25 @@ with entry {
                     and bot.respawn_wait < 1.35 and bot.respawn_wait > 0.7 {
                     state = "death";
                 }
+                if rig.alive and bot is bots[0] and "quad" not in taken and tick > 240 {
+                    state = "quad";
+                }
                 if state and state in wanted and state not in taken {
                     side = math.pi / 2.0 if state in ["strafe", "aim_up", "aim_down", "death"] else math.pi / 4.0;
                     if capture(app, level.collision, bot, eye, side, "qp_bot_" + name + "_" + state + ".png") {
                         taken.append(state);
                         print("  tick", tick, "bot", bot.kind, "legs", rig.legs_anim, "torso", rig.torso_anim, "dir", rig.move_dir,
                             "pitch", round(math.degrees(bot.pitch), 1), "weapon", rig.weapon, "battle", bot.bot_state.battle);
+                    }
+                }
+            }
+            if "drop" not in taken and "drop" in wanted {
+                for item in [world->:HasPickup:->][?:Pickup] {
+                    if item.dropped and item.lifetime < 29.0
+                        and capture(app, level.collision, item, 15.0, math.pi / 3.0, "qp_bot_" + name + "_drop.png") {
+                        taken.append("drop");
+                        print("  dropped", item.rule.kind);
+                        break;
                     }
                 }
             }

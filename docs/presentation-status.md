@@ -140,9 +140,10 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
 
 ## Bots
 
-Q3 bots hold the weapon they are using. Each weapon is baked along the body's
-poses. An `Arms` edge links a bot to each weapon model, and switching weapons
-rewires the weapon visual. The weapon drops away on death.
+Q3 bots hold the weapon they are using, on their body's `tag_weapon`. An
+`Arms` edge links a bot to each weapon kit, and a switch swaps the kit once the
+old weapon is lowered. Bodies, animation, muzzle flashes and powerup shells are
+described in [Q3 player bodies](player-bodies-status.md).
 
 ## Validation
 
