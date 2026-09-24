@@ -826,8 +826,11 @@ def damage_opponent(
         }
         victim.foe = None;
         victim.resume_hunt = False;
-        victim.last_seen = attacker.pos.add(Vec3());
-        victim.last_seen_height = 22.0;
+        # Hitscan has already recorded the shooter with their stance.
+        if victim.last_seen.sub(attacker.pos).length() > 0.001 {
+            victim.last_seen = attacker.pos.add(Vec3());
+            victim.last_seen_height = 22.0;
+        }
         victim.alert = 8.0;
         victim.sighted = True;
         victim.decision_wait = 0.0;
