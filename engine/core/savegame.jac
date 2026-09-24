@@ -299,6 +299,19 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     }
     # Corpse health and gibbing, for Q2/Q3 corpses that can still be blown apart.
     corpses = [world->:HasOpponent:->][?:Opponent];
+    # Arena bots keep their weapon, ammo and holdables: one BOTITEM per stack.
+    for index in range(len(corpses)) {
+        armed = corpses[index];
+        if armed.character is None {
+            continue;
+        }
+        lines.append("BOTARM " + str(index) + " " + str(armed.weapon_slot));
+        for stack in [armed.inventory->:InventorySlot:->][?:ItemStack] {
+            lines.append(
+                "BOTITEM " + str(index) + " " + stack.kind + " " + str(stack.quantity) + " " + str(stack.capacity)
+            );
+        }
+    }
     for index in range(len(corpses)) {
         if corpses[index].health <= 0 {
             lines.append(
@@ -711,6 +724,24 @@ def restore(
                 walker_node +>:Holds:+> corners[holding];
             }
             walker_node.patrol_wait = float(words[4]);
+        } elif words[0] == "BOTARM" and len(words) == 3 {
+            index = int(words[1]);
+            slot = int(words[2]);
+            if index < 0 or index >= len(enemies) or slot < 1 or slot > 9 {
+                raise ValueError("Invalid saved bot arms");
+            }
+            enemies[index].inventory = Inventory();
+            enemies[index].weapon_slot = slot;
+        } elif words[0] == "BOTITEM" and len(words) == 5 {
+            index = int(words[1]);
+            amount = int(words[3]);
+            capacity = int(words[4]);
+            if index < 0 or index >= len(enemies) or amount < 0 or capacity < amount or capacity > 10000 {
+                raise ValueError("Invalid saved bot item");
+            }
+            enemies[index].inventory spawn AdjustInventory(
+                kind=words[2], amount=amount, capacity=capacity
+            );
         } elif words[0] == "CORPSE" and len(words) == 4 {
             index = int(words[1]);
             if index < 0 or index >= len(enemies) or words[3] not in ["0", "1"] {

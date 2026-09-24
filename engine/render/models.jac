@@ -21,8 +21,10 @@ import from .quake {
     rlDisableDepthMask,
     rlEnableDepthMask,
     rlDisableBackfaceCulling,
-    rlEnableBackfaceCulling
+    rlEnableBackfaceCulling,
+    fog_coords
 }
+import from ..formats.bsp { FogVolume }
 import from vendor.raylib {
     def rlSetBlendFactors(src: i32, dst: i32, equation: i32) -> None;
 }
@@ -122,7 +124,10 @@ obj ModelRenderer {
         seconds: float = 0.0,
         batched: bool = False,
         illumination: Illumination = Illumination(),
-        basis: Basis | None = None
+        basis: Basis | None = None,
+        fog: FogVolume | None = None,
+        fog_image: int = 0,
+        forward: Vec3 = Vec3(x=1.0)
     ) {
         if not self.stages {
             return;
@@ -260,6 +265,37 @@ obj ModelRenderer {
                     EndBlendMode();
                 }
             }
+            # RB_FogPass over the model's opaque surfaces inside a fog volume.
+            if fog is not None and fog_image != 0 and any([stage.surface == s and stage.blend == "opaque" for stage in self.stages]) {
+                rlDrawRenderBatchActive();
+                BeginBlendMode(i32(0));
+                rlDisableDepthMask();
+                rlSetTexture(u32(fog_image));
+                rlBegin(i32(4));
+                rlColor4ub(
+                    u8(min(255, int(fog.color.x * 255.0))),
+                    u8(min(255, int(fog.color.y * 255.0))),
+                    u8(min(255, int(fog.color.z * 255.0))),
+                    u8(255)
+                );
+                for triangle in range(len(surface.indices) // 3) {
+                    for corner in [0, 2, 1] {
+                        v = vertices[surface.indices[triangle * 3 + corner]];
+                        point = origin.add(basis.apply(v)) if basis is not None else Vec3(
+                            x=origin.x + v.x * cosine - v.y * sine,
+                            y=origin.y + v.x * sine + v.y * cosine,
+                            z=origin.z + v.z
+                        );
+                        st = fog_coords(fog, point, eye, forward);
+                        rlTexCoord2f(f32(st[0]), f32(st[1]));
+                        rlVertex3f(f32(point.x), f32(point.y), f32(point.z));
+                    }
+                }
+                rlEnd();
+                rlDrawRenderBatchActive();
+                rlEnableDepthMask();
+                EndBlendMode();
+            }
         }
         rlSetTexture(u32(0));
     }
@@ -279,6 +315,19 @@ obj ModelRenderer {
 
 import from ..world.world { World }
 import from ..world.models { ModelResource, HasModelResource, GatherModels }
+
+"""tr_main.c R_ComputeFogNum: the first fog volume the model's bounding sphere
+overlaps."""
+def model_fog(fogs: list[FogVolume], origin: Vec3, radius: float) -> FogVolume | None {
+    for fog in fogs {
+        if origin.x - radius < fog.maxs.x and origin.x + radius > fog.mins.x
+            and origin.y - radius < fog.maxs.y and origin.y + radius > fog.mins.y
+            and origin.z - radius < fog.maxs.z and origin.z + radius > fog.mins.z {
+            return fog;
+        }
+    }
+    return None;
+}
 
 obj ModelScene {
     has resources: dict[str, ModelRenderer] = {};
@@ -309,9 +358,12 @@ obj ModelScene {
         pitch: float = 0.0,
         fov: float = 72.0,
         aspect: float = 1.7777777778,
-        lighting: Lighting = Lighting()
+        lighting: Lighting = Lighting(),
+        fogs: list[FogVolume] = [],
+        fog_image: int = 0
     ) {
         scene = world spawn GatherModels(seconds=seconds);
+        forward = forward_from(yaw, pitch);
         for draw in scene.draws {
             if draw.resource.name in self.resources {
                 renderer = self.resources[draw.resource.name];
@@ -333,7 +385,10 @@ obj ModelScene {
                     illumination=lighting.sample(draw.origin.add(Vec3(z=16.0))),
                     basis=model_basis(draw.yaw, draw.pitch, draw.roll)
                         if draw.pitch != 0.0 or draw.roll != 0.0
-                        else None
+                        else None,
+                    fog=model_fog(fogs, draw.origin, renderer.radius),
+                    fog_image=fog_image,
+                    forward=forward
                 );
             }
         }

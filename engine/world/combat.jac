@@ -12,6 +12,8 @@ import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
+import from .bot_character { BotCharacter }
+import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
@@ -53,10 +55,12 @@ node Opponent(Player) {
         profile_animations: list[list[int]] = [],
         pain_animation: list[int] = [],
         pain_animations: list[list[int]] = [],
+        duck_animation: list[int] = [],
         knockdown_animation: list[int] = [],
         death_animation: list[int] = [],
         profiles: list[AttackProfile] = [],
         pain_wait: float = 0.0,
+        duck_wait: float = 0.0,
         pain_cooldown: float = 0.0,
         pain_variant: int = 0,
         pain_down: bool = False,
@@ -100,7 +104,42 @@ node Opponent(Player) {
         holding: bool = False,
         patrol_wait: float = 0.0,
         patrol_speed: float = 0.0,
-        walk_animation: list[int] = [];
+        walk_animation: list[int] = [],
+        character: BotCharacter | None = None,
+        weapon_slot: int = 2,
+        weapon_wait: float = 0.0,
+        weapon_change: float = 1.0,
+        enemy_sight: float = 0.0,
+        enemy_sample: float = 0.0,
+        enemy_origin: Vec3 = Vec3(),
+        enemy_velocity: Vec3 = Vec3(),
+        aim_target: Vec3 = Vec3(),
+        think_wait: float = 0.0,
+        throttle_wait: float = 0.0,
+        throttle_shoot: float = 0.0,
+        strafe: float = 1.0,
+        strafe_wait: float = 0.0,
+        jump_wait: float = 0.0,
+        fighting: bool = False,
+        weapon_visual: Visual | None = None,
+        shown_weapon: str = "",
+        trail_stamp: float = 0.0;
+}
+
+# Q3 bg_pmove.c: dropping then raising a weapon before it can fire.
+glob WEAPON_SWITCH_TIME: float = 0.45;
+
+"""g_client.c ClientSpawn arms every Q3 player, bots included, with a
+gauntlet, a machine gun and 100 bullets."""
+def arm_bot(bot: Opponent) {
+    bot.inventory spawn AdjustInventory(kind="weapon_gauntlet", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="weapon_machinegun", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="bullets", amount=100, capacity=200);
+    bot.weapon_slot = 2;
+    bot.weapon_wait = 0.0;
+    bot.weapon_change = WEAPON_SWITCH_TIME;
+    bot.fighting = False;
+    bot.enemy_sight = 0.0;
 }
 
 """Q1 ai.qc / Q2 g_ai.c FindTarget: idle monsters never notice beyond 1000 units,
@@ -164,7 +203,9 @@ obj CombatState {
         sight_wait: float = 0.0,
         navigation: RouteQueue = RouteQueue(),
         navmesh: NavMesh | None = None,
-        navmesh_checked: bool = False;
+        navmesh_checked: bool = False,
+        rail_streak: int = 0,
+        awards: list[str] = [];
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -382,7 +423,8 @@ def damage_opponent(
     bypass_armor: bool = False,
     attacker: Player | None = None,
     means: str = "",
-    tally: CombatState | None = None
+    tally: CombatState | None = None,
+    bypass_protection: bool = False
 ) -> int {
     if victim.dormant or victim.rule.script or victim.rule.decoration {
         return 0;
@@ -397,7 +439,11 @@ def damage_opponent(
         return 0;
     }
     damage = victim spawn Damage(
-        amount=amount, bypass_armor=bypass_armor, attacker=attacker, means=means
+        amount=amount,
+        bypass_armor=bypass_armor,
+        bypass_protection=bypass_protection,
+        attacker=attacker,
+        means=means
     );
     if state is not None and damage.dealt > 0 {
         state.hit_flash = 0.15;
@@ -490,6 +536,7 @@ def damage_opponent(
     }
     victim.attack_clock = -1.0;
     victim.leaping = False;
+    victim.duck_wait = 0.0;
     victim.pain_wait = pain_length(victim);
     victim.pain_cooldown = rule.pain_interval;
     # combat.qc T_Damage: Nightmare monsters rarely return to pain frames.
@@ -554,13 +601,14 @@ walker Aim {
             or here.rule.decoration {
             return;
         }
-        # Q2 lowers a corpse's box top to -8; Q3 to the corpse height.
+        # Q2 lowers a corpse's box top to -8; Q3 to the corpse height. A
+        # ducking Q2 monster lowers its own by 32.
         hit = actor_fraction(
             self.start,
             self.finish,
             here.pos,
             here.eye_height,
-            40.0 if corpse else 0.0,
+            40.0 if corpse else (32.0 if crouching(here) else 0.0),
             here.rule.width
         );
         if hit < self.fraction {
@@ -732,6 +780,9 @@ def fire_weapon(
             burst_damage=int(float(rule.burst_damage) * scale),
             burst_radius=rule.burst_radius
         );
+        if state.game == "q2" and rule.effect in ["q2_bolt", "q2_rocket"] {
+            check_dodge(world, player, direction, collision, state);
+        }
         state.target = player.pos;
         return True;
     }
@@ -799,7 +850,22 @@ def fire_weapon(
         }
     }
     for i in range(len(victims)) {
-        damage_opponent(victims[i], amounts[i], player.inventory, state, attacker=player);
+        damage_opponent(
+            victims[i], amounts[i], player.inventory, state, attacker=player, means=rule.key
+        );
+    }
+    # g_weapon.c: every two railgun hits in a row earn Impressive; a miss
+    # resets the count.
+    if state.game == "q3" and rule.key == "railgun" {
+        if victims {
+            state.rail_streak += 1;
+            if state.rail_streak >= 2 {
+                state.rail_streak -= 2;
+                state.awards.append("impressive");
+            }
+        } else {
+            state.rail_streak = 0;
+        }
     }
     return True;
 }
@@ -1420,6 +1486,22 @@ def attack_event_time(enemy: Opponent) -> float {
     return attack_times(enemy)[enemy.attack_event];
 }
 
+def begin_attack(enemy: Opponent, index: int, target: Vec3) {
+    select_profile(enemy, index);
+    profile = enemy.profiles[index];
+    enemy.attack_target = target.add(Vec3());
+    enemy.attack_clock = 0.0;
+    enemy.attack_event = 0;
+    enemy.burst_count = 1;
+    if profile.burst_max > 1 and not enemy.attack_melee {
+        enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+        enemy.burst_count = profile.burst_min
+            + enemy.shot_random % (profile.burst_max - profile.burst_min + 1);
+    }
+    enemy.attack_wait = max(attack_pause(enemy), attack_duration(enemy));
+    enemy.attack_flash = attack_duration(enemy);
+}
+
 def attack_pose_time(enemy: Opponent) -> float {
     clock = enemy.attack_clock * 10.0;
     profile = current_profile(enemy);
@@ -1440,6 +1522,9 @@ def choose_attack(enemy: Opponent, distance: float) -> int {
     far: list[int] = [];
     for i in range(len(enemy.profiles)) {
         profile = enemy.profiles[i];
+        if profile.dodge_only {
+            continue;
+        }
         if profile.kind == "melee" {
             if distance <= profile.max_range {
                 close.append(i);
@@ -1603,6 +1688,34 @@ def opponent_beam(
     if hit.actor is not None and amount > 0 {
         strike(hit.actor, amount, enemy, source=origin, tally=tally);
     }
+}
+
+def launch_missile(
+    world: World, enemy: Opponent, direction: Vec3, profile: AttackProfile, quarry: Player
+) {
+    velocity = direction.scale(profile.missile_speed);
+    if profile.gravity {
+        velocity.z = 200.0;
+    }
+    world +>:HasProjectile:+> Projectile(
+        pos=enemy.pos,
+        velocity=velocity,
+        damage=profile.damage,
+        hostile=True,
+        effect=profile.missile_effect,
+        gravity=profile.gravity,
+        splash=profile.splash,
+        radius=profile.radius,
+        homing=profile.homing,
+        homing_wait=0.2 if profile.homing > 0.0 else 0.0,
+        beam_damage=profile.beam_damage,
+        beam_radius=profile.beam_radius,
+        burst_damage=profile.burst_damage,
+        burst_radius=profile.burst_radius,
+        remaining=2.5 if profile.gravity else 5.0,
+        owner=enemy,
+        quarry=quarry
+    );
 }
 
 def launch_leap(enemy: Opponent, player: Player, profile: AttackProfile) {
@@ -1775,29 +1888,7 @@ def advance_attack_segment(
                 )
                     if count > 1
                     else direction;
-                velocity = aimed.scale(profile.missile_speed);
-                if profile.gravity {
-                    velocity.z = 200.0;
-                }
-                world +>:HasProjectile:+> Projectile(
-                    pos=enemy.pos,
-                    velocity=velocity,
-                    damage=profile.damage,
-                    hostile=True,
-                    effect=profile.missile_effect,
-                    gravity=profile.gravity,
-                    splash=profile.splash,
-                    radius=profile.radius,
-                    homing=profile.homing,
-                    homing_wait=0.2 if profile.homing > 0.0 else 0.0,
-                    beam_damage=profile.beam_damage,
-                    beam_radius=profile.beam_radius,
-                    burst_damage=profile.burst_damage,
-                    burst_radius=profile.burst_radius,
-                    remaining=2.5 if profile.gravity else 5.0,
-                    owner=enemy,
-                    quarry=player
-                );
+                launch_missile(world, enemy, aimed, profile, player);
             }
         } else {
             offset = profile.missile_yaw[event_index]
@@ -1889,6 +1980,215 @@ def pain_pose_time(enemy: Opponent) -> float {
     return elapsed;
 }
 
+"""Telefrags (Q1 spawn_tdeath, Q2 KillBox, Q3 G_KillBox): an actor arriving
+with its origin at `origin` kills every other actor its box overlaps, through
+armor and protection. Q3 only kills players and bots; Q1's teleport-death box
+reaches a unit further."""
+walker KillBox {
+    has mover: Player,
+        origin: Vec3,
+        game: str = "",
+        bystander: Player | None = None,
+        bystander_height: float = 22.0,
+        tally: CombatState | None = None,
+        victims: int = 0;
+
+    def overlaps(actor: Player, height: float) -> bool {
+        other = actor.pos.sub(Vec3(z=height));
+        pad = 1.0 if self.game == "q1" else 0.0;
+        return abs(other.x - self.origin.x) < 32.0 + pad
+            and abs(other.y - self.origin.y) < 32.0 + pad
+            and abs(other.z - self.origin.z) < 56.0 + pad;
+    }
+
+    can begin with World entry {
+        person = self.bystander;
+        if person is not None
+            and person is not self.mover
+            and person.health > 0
+            and self.overlaps(person, self.bystander_height) {
+            person spawn Damage(
+                amount=100000,
+                bypass_armor=True,
+                bypass_protection=True,
+                means="telefrag",
+                attacker=self.mover
+            );
+            self.victims += 1;
+        }
+        visit [here->:HasOpponent:->];
+    }
+
+    can strike with Opponent entry {
+        if here is self.mover or here.health <= 0 or here.dormant {
+            return;
+        }
+        if self.game == "q3" and not here.arena {
+            return;
+        }
+        if not self.overlaps(here, here.eye_height) {
+            return;
+        }
+        damage_opponent(
+            here,
+            100000,
+            bypass_armor=True,
+            attacker=self.mover,
+            means="telefrag",
+            tally=self.tally,
+            bypass_protection=True
+        );
+        self.victims += 1;
+    }
+}
+
+"""The seconds a Q2 duck lasts: its frames at 10 Hz, holding the hold frame
+until a second after the duck-down frame (monster_duck_down sets pausetime)."""
+def duck_length(enemy: Opponent) -> float {
+    rule = enemy.rule;
+    extra = max(0, rule.duck_down + 10 - rule.duck_hold);
+    return float(len(rule.duck_frames) + extra) / 10.0;
+}
+
+def duck_pose_time(enemy: Opponent) -> float {
+    rule = enemy.rule;
+    elapsed = max(0.0, duck_length(enemy) - enemy.duck_wait) * 10.0;
+    extra = float(max(0, rule.duck_down + 10 - rule.duck_hold));
+    hold = float(rule.duck_hold);
+    if elapsed < hold {
+        return elapsed;
+    }
+    if elapsed < hold + extra {
+        return hold;
+    }
+    return elapsed - extra;
+}
+
+"""Whether the monster's box top is lowered 32 units: between the duck-down and
+duck-up frames of a duck, or through a crouched attack's window."""
+def crouching(enemy: Opponent) -> bool {
+    if enemy.health <= 0 {
+        return False;
+    }
+    if enemy.duck_wait > 0.0 {
+        pose = duck_pose_time(enemy);
+        return pose >= float(enemy.rule.duck_down) and pose < float(enemy.rule.duck_up);
+    }
+    if enemy.attack_clock >= 0.0 and enemy.attack_profile >= 0 {
+        profile = current_profile(enemy);
+        return profile.crouch_start >= 0.0
+            and enemy.attack_clock >= profile.crouch_start
+            and enemy.attack_clock < profile.crouch_end;
+    }
+    return False;
+}
+
+"""A Q2 monster's dodge (soldier_dodge, infantry_dodge, gunner_dodge,
+chick_dodge, medic_dodge, brain_dodge): a quarter of the time it takes the
+shooter as its enemy and ducks, interrupting whatever it was doing. Soldiers
+on medium and hard sometimes crouch and fire instead."""
+walker Dodge {
+    has shooter: Player,
+        roll: float,
+        choice: float,
+        grenade_roll: float = 0.0,
+        world: World | None = None,
+        ducked: bool = False;
+
+    can duck with Opponent entry {
+        rule = here.rule;
+        if not rule.duck_frames or not here.duck_animation or here.health <= 0 or here.pain_down {
+            return;
+        }
+        if self.roll > 0.25 {
+            return;
+        }
+        if here.alert <= 0.0 and here.foe is None {
+            here.last_seen = self.shooter.pos.add(Vec3());
+            here.last_seen_height = 22.0;
+            here.alert = 8.0;
+        }
+        here.pain_wait = 0.0;
+        here.leaping = False;
+        here.attack_flash = 0.0;
+        here.attack_clock = -1.0;
+        here.attack_profile = -1;
+        ensure_profiles(here);
+        crouch = -1;
+        for i in range(len(here.profiles)) {
+            if here.profiles[i].dodge_only {
+                crouch = i;
+            }
+        }
+        # soldier_dodge: easy always ducks; medium ducks two times in three
+        # and hard one in three, otherwise attack3.
+        threshold = 0.33 if here.skill == 1 else 0.66;
+        if crouch >= 0 and here.skill >= 1 and self.choice <= threshold {
+            here.duck_wait = 0.0;
+            begin_attack(here, crouch, self.shooter.pos);
+        } else {
+            here.duck_wait = duck_length(here);
+            # gunner_duck_down: on hard, half the time lob a grenade straight
+            # ahead going down (GunnerGrenade fires along the gunner's facing).
+            world = self.world;
+            if rule.duck_grenade and here.skill >= 2 and self.grenade_roll > 0.5 and world is not None {
+                for profile in here.profiles {
+                    if profile.name == rule.duck_grenade {
+                        ahead = Vec3(x=math.cos(here.yaw), y=math.sin(here.yaw));
+                        launch_missile(world, here, ahead, profile, self.shooter);
+                    }
+                }
+            }
+        }
+        self.ducked = True;
+    }
+}
+
+"""g_weapon.c check_dodge: a player's blaster bolt or rocket warns the first
+monster along its line, if that monster faces the shooter. On easy the warning
+itself comes only a quarter of the time."""
+def check_dodge(
+    world: World,
+    player: Player,
+    direction: Vec3,
+    collision: CollisionMap,
+    state: CombatState
+) -> Opponent | None {
+    finish = player.pos.add(direction.scale(8192.0));
+    wall = collision.trace_point(player.pos, finish);
+    query = world spawn Aim(
+        start=player.pos,
+        finish=finish,
+        height=collision.eye_height,
+        fraction=wall.fraction
+    );
+    target = query.target;
+    if target is None or target.health <= 0 or target.arena {
+        return None;
+    }
+    if target.skill == 0 and state.random() * 0.5 + 0.5 > 0.25 {
+        return None;
+    }
+    # infront(target, shooter): the shooter is within the monster's forward cone.
+    toward = player.pos.sub(target.pos);
+    toward.z = 0.0;
+    if toward.length() < 0.000001 {
+        return None;
+    }
+    facing = Vec3(x=math.cos(target.yaw), y=math.sin(target.yaw));
+    if facing.dot(toward.normalized()) <= 0.3 {
+        return None;
+    }
+    target spawn Dodge(
+        shooter=player,
+        roll=state.random() * 0.5 + 0.5,
+        choice=state.random() * 0.5 + 0.5,
+        grenade_roll=state.random() * 0.5 + 0.5,
+        world=world
+    );
+    return target;
+}
+
 walker CombatTick {
     has player: Player,
         collision: CollisionMap,
@@ -1941,12 +2241,27 @@ walker CombatTick {
                 }
             }
         }
+        # ai_dmq3.c BotFindEnemy: alert characters see further, and a new
+        # enemy must be inside a 90 degree view unless it is close or firing.
+        mind = bot.character;
+        reach = 900.0 + mind.alertness * 4000.0 if mind is not None else 1500.0;
         best: Player = self.player;
         best_distance = 100000.0;
         for candidate in candidates {
             distance = candidate.pos.sub(bot.pos).length();
-            if distance >= best_distance or distance > 1500.0 {
+            if distance >= best_distance or distance > reach {
                 continue;
+            }
+            if mind is not None and distance > 100.0 {
+                firing = candidate.attack_flash > 0.0
+                    if isinstance(candidate, Opponent)
+                    else self.state.flash > 0.0;
+                toward = candidate.pos.sub(bot.pos);
+                bearing = math.atan2(toward.y, toward.x);
+                off = abs(math.atan2(math.sin(bearing - bot.yaw), math.cos(bearing - bot.yaw)));
+                if not firing and off > math.pi / 4.0 {
+                    continue;
+                }
             }
             sight = self.collision.trace_point(bot.pos, candidate.pos);
             if sight.start_solid or sight.fraction < 1.0 {
@@ -2068,6 +2383,11 @@ walker CombatTick {
             death_explosion(self.world, here, self.player, self.collision, self.state);
         }
         if here.health <= 0 {
+            # Q3 players drop their weapon when they die.
+            dropped = here.weapon_visual;
+            if dropped is not None {
+                dropped.visible = False;
+            }
             gibs = here.gib_rule;
             if here.pending_gibs >= 0 and gibs is not None and self.world is not None {
                 throw_gibs(
@@ -2142,6 +2462,9 @@ walker CombatTick {
             here.health = here.max_health + 25;
             here.armor = 0;
             here.inventory = Inventory();
+            if here.character is not None {
+                arm_bot(here);
+            }
             here.gibbed = False;
             here.remains = 0;
             here.foe = None;
@@ -2192,6 +2515,7 @@ walker CombatTick {
         delta = foe.pos.sub(here.pos);
         distance = delta.length();
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
+        here.duck_wait = max(0.0, here.duck_wait - self.dt);
         if here.pain_wait <= 0.0 and here.pain_down {
             here.pain_down = False;
             here.pain_variant = 0;
@@ -2249,6 +2573,9 @@ walker CombatTick {
                     here.last_seen = foe.pos;
                     here.last_seen_height = foe_height;
                     here.alert = 8.0;
+                    if here.game == "q2" and foe is self.player and self.world is not None {
+                        here.trail_stamp = trail_clock(self.world);
+                    }
                     if not was_alert and not here.sighted {
                         request_sound(here, here.rule.sight_sound);
                         if not here.arena {
@@ -2261,37 +2588,47 @@ walker CombatTick {
                 # Attack only with a fresh sight query, never cached visibility.
                 if here.pursuing
                     and not here.holding
+                    and here.character is None
                     and here.attack_wait <= 0.0
                     and here.pain_wait <= 0.0
+                    and here.duck_wait <= 0.0
                     and here.attack_clock < 0.0
                     and not here.leaping {
                     selected = choose_attack(here, distance);
                     if selected >= 0 {
-                        select_profile(here, selected);
-                        profile = here.profiles[selected];
-                        here.attack_target = foe.pos.add(Vec3());
-                        here.attack_clock = 0.0;
-                        here.attack_event = 0;
-                        here.burst_count = 1;
-                        if profile.burst_max > 1 and not here.attack_melee {
-                            here.shot_random = (here.shot_random * 48271) % 2147483647;
-                            here.burst_count = profile.burst_min
-                                + here.shot_random
-                                    % (profile.burst_max - profile.burst_min + 1);
-                        }
-                        here.attack_wait = max(
-                            attack_pause(here), attack_duration(here)
-                        );
-                        here.attack_flash = attack_duration(here);
+                        begin_attack(here, selected, foe.pos);
                     }
                 }
             }
             if here.alert <= 0.0 and not here.pursuing {
                 here.sighted = False;
             }
-            here.steering = Vec3();
+            # Q2 ai_run: out of sight at the last-seen spot, hunt along the
+            # player's trail, crumb by crumb, from where the monster lost them.
+            if here.game == "q2"
+                and not here.arena
+                and here.alert > 0.0
+                and not here.pursuing
+                and foe is self.player
+                and self.world is not None {
+                lost = here.last_seen.sub(here.pos);
+                if math.sqrt(lost.x * lost.x + lost.y * lost.y) < 48.0 {
+                    crumb = next_crumb(self.world, here.trail_stamp);
+                    if crumb is not None {
+                        here.last_seen = crumb.pos.add(Vec3());
+                        here.last_seen_height = self.collision.eye_height;
+                        here.trail_stamp = crumb.stamp;
+                        here.alert = max(here.alert, 3.0);
+                    }
+                }
+            }
+            # A fighting bot steers itself (BotTactics); others steer here.
+            if not here.fighting {
+                here.steering = Vec3();
+            }
             destination = here.arena_goal if here.arena_goal is not None else here.last_seen;
-            goal_height = here.last_seen_height;
+            # Arena goals sit at the bot's own eye height above the item.
+            goal_height = here.eye_height if here.arena_goal is not None else here.last_seen_height;
             # Patrol corners and Q2 combat points take precedence over the foe.
             patrol = here.patrol_goal;
             if patrol is not None {
@@ -2342,6 +2679,13 @@ walker CombatTick {
                     plan = plan_route(mesh, origin, target);
                     here.route_wait = 0.25 if plan.found else 1.0;
                     here.route_target = target;
+                    # botlib avoids goals it cannot route to; pick another.
+                    if not plan.found and here.arena_goal is not None {
+                        here.roam_goal = None;
+                        here.arena_goal = None;
+                        here.arena_goal_wait = 0.0;
+                        here.route_wait = 0.1;
+                    }
                     if plan.found {
                         here.route = plan.points;
                         here.route_launches = plan.launches;
@@ -2366,6 +2710,7 @@ walker CombatTick {
             }
             goal = destination.sub(here.pos);
             if (here.alert > 0.0 or patrol is not None)
+                and not here.fighting
                 and here.pain_wait <= 0.0
                 and here.attack_flash <= 0.0
                 and not here.leaping
@@ -2450,6 +2795,7 @@ walker CombatTick {
         mesh = self.navmesh;
         if here.arena
             and mesh is not None
+            and not here.fighting
             and here.route
             and len(here.route_areas) == len(here.route)
             and here.attack_clock < 0.0 {
@@ -2482,7 +2828,7 @@ walker CombatTick {
                 }
             }
         }
-        if self.world is not None {
+        if self.world is not None and here.character is None {
             advance_attack(
                 self.world, here, foe, self.collision, self.dt, self.player, self.state
             );
@@ -2498,14 +2844,17 @@ walker CombatTick {
         # Bots keep steering over stair steps and drops, but not while a jump or
         # pad launch is still carrying them upward.
         wish = Vec3()
-            if here.pain_wait > 0.0 or here.attack_flash > 0.0 or here.leaping
+            if here.pain_wait > 0.0
+                or here.duck_wait > 0.0
+                or (here.attack_flash > 0.0 and here.character is None)
+                or here.leaping
                 or (here.arena and not here.grounded and here.velocity.z > 100.0)
             else here.steering;
         facing = here.patrol_goal;
         if facing is None and here.alert > 0.0 {
             facing = here.last_seen;
         }
-        if facing is not None {
+        if facing is not None and not here.fighting {
             goal = facing.sub(here.pos);
             target_yaw = math.atan2(goal.y, goal.x);
             turn = math.atan2(
@@ -2595,6 +2944,9 @@ walker CombatTick {
         if here.pain_wait > 0.0 {
             pose_name = "pain";
         }
+        if here.duck_wait > 0.0 and here.duck_animation {
+            pose_name = "duck";
+        }
         # Idle patrols use the walk cycle (Q1 prowl/walk, Q2 walk) at 10 Hz.
         if pose_name == "run" and here.alert <= 0.0 and here.walk_animation {
             pose_name = "walk";
@@ -2616,6 +2968,9 @@ walker CombatTick {
                 frames = here.pain_animations[here.pain_variant - 1];
             }
         }
+        if pose_name == "duck" {
+            frames = here.duck_animation;
+        }
         if not frames {
             frames = here.animation;
         }
@@ -2628,20 +2983,30 @@ walker CombatTick {
                 here.animation_time = attack_pose_time(here);
             } elif pose_name == "pain" {
                 here.animation_time = pain_pose_time(here);
+            } elif pose_name == "duck" {
+                here.animation_time = duck_pose_time(here);
             } else {
                 here.animation_time += self.dt * (
                     10.0 if pose_name == "walk" else (8.0 if pose_name != "stand" else 2.0)
                 );
             }
             index = int(here.animation_time) % len(frames);
-            if pose_name in ["attack", "pain"] {
+            if pose_name in ["attack", "pain", "duck"] {
                 index = min(int(here.animation_time), len(frames) - 1);
             }
             here.visual.first = frames[index];
             here.visual.second = frames[min(index + 1, len(frames) - 1)]
-                if pose_name in ["attack", "pain"]
+                if pose_name in ["attack", "pain", "duck"]
                 else frames[(index + 1) % len(frames)];
             here.visual.blend = here.animation_time - float(int(here.animation_time));
+        }
+        # A bot's held weapon is baked along its body's poses, frame for frame.
+        held = here.weapon_visual;
+        if held is not None {
+            held.first = here.visual.first;
+            held.second = here.visual.second;
+            held.blend = here.visual.blend;
+            held.visible = here.visual.visible;
         }
     }
 }

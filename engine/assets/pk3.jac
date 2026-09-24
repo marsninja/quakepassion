@@ -7,7 +7,7 @@ import os;
 import from zipfile { ZipFile }
 import from ..formats.bsp { Texture }
 import from .materials { ModelMaterial, model_materials, material_name }
-import from ..formats.animated { ModelStage }
+import from ..formats.animated { ModelStage, Deform }
 
 obj Pk3Assets {
     has archives: list[ZipFile] = [],
@@ -226,6 +226,10 @@ obj Pk3Assets {
             print("Partial model material:", name, material.unsupported);
             return [];
         }
+        # Surface-only stage features keep models on their plain skin.
+        if material.advanced {
+            return [];
+        }
         result: list[ModelStage] = [];
         for stage in material.stages {
             texture = self.model_image(stage.texture.name, material.two_sided);
@@ -246,6 +250,109 @@ obj Pk3Assets {
             );
         }
         return result;
+    }
+
+    """The ordered stages of a BSP surface shader, images loaded, when the
+    shader needs more than the one-pass base-times-lightmap drawing: animated
+    maps, texture modifiers, waves, extra blended layers or vertex colour."""
+    def surface_stages(name: str) -> list[ModelStage] {
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return [];
+        }
+        material = self.model_shaders[key];
+        # Skies keep their sky-box drawing; their cloud layers belong on the dome.
+        if material.sky or material.unsupported or not material.stages or not layered_material(material) {
+            return [];
+        }
+        result: list[ModelStage] = [];
+        for stage in material.stages {
+            if not stage.lightmap and not stage.white {
+                image = self.image_name(stage.texture.name);
+                if not image {
+                    return [];
+                }
+                stage.texture = Texture(name=image, encoded=self.read(image), extension=image_extension(image));
+                frames: list[Texture] = [];
+                for frame in stage.frames {
+                    picture = self.image_name(frame.name);
+                    if not picture {
+                        return [];
+                    }
+                    frames.append(Texture(name=picture, encoded=self.read(picture), extension=image_extension(picture)));
+                }
+                stage.frames = frames;
+            }
+            result.append(stage);
+        }
+        return result;
+    }
+
+    """A portal shader's range (tr_shader.c portalRange), or -1 when the shader
+    is not a portal."""
+    def portal_range(name: str) -> float {
+        key = material_name(name);
+        if key not in self.model_shaders or not self.model_shaders[key].portal {
+            return -1.0;
+        }
+        return self.model_shaders[key].portal_range;
+    }
+
+    """A fog shader's fogParms as [r, g, b, distanceToOpaque], or [] when the
+    shader sets none."""
+    def fog_parms(name: str) -> list[float] {
+        key = material_name(name);
+        if key not in self.model_shaders or not self.model_shaders[key].fog {
+            return [];
+        }
+        material = self.model_shaders[key];
+        return [material.fog_color.x, material.fog_color.y, material.fog_color.z, material.fog_depth];
+    }
+
+    """A sky shader's far box (six images, or none), cloud height and cloud
+    stages with their images loaded (tr_shader.c ParseSkyParms)."""
+    def sky_parts(name: str) -> SkyParts {
+        parts = SkyParts();
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return parts;
+        }
+        material = self.model_shaders[key];
+        if not material.sky {
+            return parts;
+        }
+        parts.cloud_height = material.cloud_height;
+        if material.farbox {
+            for suffix in ["rt", "lf", "bk", "ft", "up", "dn"] {
+                image = self.image_name(material.farbox + "_" + suffix);
+                if not image {
+                    parts.farbox = [];
+                    break;
+                }
+                parts.farbox.append(Texture(name=image, encoded=self.read(image), extension=image_extension(image)));
+            }
+        }
+        for stage in material.stages {
+            if stage.lightmap or stage.white {
+                continue;
+            }
+            image = self.image_name(stage.texture.name);
+            if not image {
+                continue;
+            }
+            stage.texture = Texture(name=image, encoded=self.read(image), extension=image_extension(image));
+            parts.clouds.append(stage);
+        }
+        return parts;
+    }
+
+    """The deformVertexes of a layered surface shader."""
+    def surface_deforms(name: str) -> list[Deform] {
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return [];
+        }
+        return self.model_shaders[key].deforms;
     }
 
     def model_image(name: str, two_sided: bool) -> Texture {
@@ -278,4 +385,46 @@ obj Pk3Assets {
         self.additive = {};
         self.two_sided = {};
     }
+}
+
+obj SkyParts {
+    has farbox: list[Texture] = [],
+        cloud_height: float = 128.0,
+        clouds: list[ModelStage] = [];
+}
+
+def image_extension(path: str) -> str {
+    lower = path.lower();
+    if lower.endswith(".tga") {
+        return ".tga";
+    }
+    if lower.endswith(".png") {
+        return ".png";
+    }
+    return ".jpg";
+}
+
+"""Whether a surface shader needs layered drawing: anything beyond one base
+stage, alone or multiplied with the lightmap, with no motion or colour."""
+def layered_material(material: ModelMaterial) -> bool {
+    if material.deforms {
+        return True;
+    }
+    for stage in material.stages {
+        if stage.frames or stage.mods or stage.environment or stage.rgb != "identity" or stage.alpha != "identity" {
+            return True;
+        }
+    }
+    count = len(material.stages);
+    if count == 1 {
+        return material.stages[0].blend not in ["opaque", "alpha"] or material.stages[0].lightmap;
+    }
+    if count == 2 {
+        first = material.stages[0];
+        second = material.stages[1];
+        plain = (first.lightmap and not second.lightmap and second.blend == "multiply")
+            or (second.lightmap and not first.lightmap and second.blend == "multiply");
+        return not plain;
+    }
+    return True;
 }

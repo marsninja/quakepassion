@@ -4,6 +4,7 @@ import from engine.world.level { load_level }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick }
 import from engine.world.arena { MatchTick, SpawnPoint, HasSpawn, match_of, standings }
+import from engine.world.bot_tactics { BotTactics }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.models { UsesModel, ModelResource }
 import from games.opponents { populate_opponents }
@@ -33,7 +34,7 @@ with entry {
         }
         # A spectator player far away lets the bots fight among themselves.
         player = Player(health=0, pos=Vec3(z=-100000.0));
-        state = CombatState();
+        state = CombatState(game="q3");
         equip_player(player, state, "q3");
         contest.warmup = 0.0;
         contacts = ArenaContactIndex();
@@ -49,6 +50,7 @@ with entry {
                 dt=1.0 / 120.0,
                 arena_live=True
             );
+            world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=1.0 / 120.0);
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=1.0 / 120.0, contacts=True);
             contest spawn MatchTick(dt=1.0 / 120.0);
             if contest.finished {

@@ -6,17 +6,35 @@ import from .patrols { patrol_speed }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
 import from engine.world.opponent_rule { OpponentRule }
-import from .arena_character { load_character }
+import from .arena_character { load_character, load_character_weapon, character_rig, CharacterRig }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
 import from engine.formats.bsp { MapEntity }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
-import from engine.world.combat { Opponent, HasOpponent, ensure_profiles }
+import from engine.world.combat { Opponent, HasOpponent, ensure_profiles, arm_bot }
+import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms }
+
+glob Q3_HELD_WEAPONS: dict[str, str] = {
+    "gauntlet": "models/weapons2/gauntlet/gauntlet.md3",
+    "machinegun": "models/weapons2/machinegun/machinegun.md3",
+    "shotgun": "models/weapons2/shotgun/shotgun.md3",
+    "grenadelauncher": "models/weapons2/grenadel/grenadel.md3",
+    "rocketlauncher": "models/weapons2/rocketl/rocketl.md3",
+    "lightning": "models/weapons2/lightning/lightning.md3",
+    "railgun": "models/weapons2/railgun/railgun.md3",
+    "plasmagun": "models/weapons2/plasma/plasma.md3",
+    "bfg": "models/weapons2/bfg/bfg.md3"
+};
+import from engine.world.bot_character { bot_skill }
+import from engine.world.turrets { link_turret_drivers }
+import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
+import from engine.world.reflection { HasBody, Carries, player_body }
+import from .botfiles { load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
-import from engine.world.models { ModelResource, HasModelResource, attach_model }
+import from engine.world.models { ModelResource, HasModelResource, UsesModel, attach_model }
 import from engine.formats.animated { AnimationFrame }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
@@ -150,6 +168,7 @@ def arena_entities(world: World, roster: list[BotInfo], player_start: Vec3) -> l
 def populate_opponents(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
+    rigs: dict[str, CharacterRig] = {};
     # Path corners and combat points by name; authored duplicates keep the first.
     corners: dict[str, TrackPoint] = {};
     for corner in [world->:HasTrack:->][?:TrackPoint] {
@@ -284,6 +303,29 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     y=-16.0 if corner else 0.0,
                     z=-level.collision.eye_height
                 );
+                if arena {
+                    # Every weapon the bot may hold, baked along its body's poses.
+                    library = catalog.source(source);
+                    if key not in rigs {
+                        rigs[key] = character_rig(library, bot.model, bot.skin);
+                    }
+                    for (weapon, weapon_model) in Q3_HELD_WEAPONS.items() {
+                        weapon_key = key + ":weapon:" + weapon;
+                        if weapon_key not in resources and library.exists(weapon_model) {
+                            held = load_character_weapon(library, rigs[key], weapon_model);
+                            resources[weapon_key] = ModelResource(name=weapon_key, model=held.model, skins=held.skins);
+                            world +>:HasModelResource:+> resources[weapon_key];
+                        }
+                        if weapon_key in resources {
+                            enemy +>:Arms:key=weapon:+> resources[weapon_key];
+                        }
+                    }
+                    if key + ":weapon:machinegun" in resources {
+                        enemy.weapon_visual = attach_model(enemy, resources[key + ":weapon:machinegun"]);
+                        enemy.weapon_visual.offset = enemy.visual.offset;
+                        enemy.shown_weapon = "machinegun";
+                    }
+                }
                 frames = resources[key].model.surfaces[0].frames;
                 pain_family = "";
                 death_family = "";
@@ -353,6 +395,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         frames, rule.knockdown_frames, path, "knockdown"
                     );
                 }
+                if rule.duck_frames {
+                    enemy.duck_animation = frame_indices(
+                        frames, rule.duck_frames, path, "duck"
+                    );
+                }
                 if rule.run_frames {
                     enemy.animation = frame_indices(frames, rule.run_frames, path, "run");
                 }
@@ -386,6 +433,16 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     enemy.animation = enemy.idle_animation;
                 }
                 enemy.modeled = True;
+            }
+            if arena {
+                # The bot's own botlib character, at the Q3 skill for this level.
+                enemy.character = load_bot_character(
+                    catalog.source("q3"), bot.aifile, bot_skill(level.skill)
+                );
+                arm_bot(enemy);
+                for path in Q3_FIRE_SOUNDS {
+                    register_speaker(world, enemy, path);
+                }
             }
             if not arena {
                 enemy.patrol_speed = patrol_speed(source, kind);
@@ -485,8 +542,84 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 count += 1;
             }
         }
+        # Q3 single player: the podium and every competitor's stand-in.
+        if contest is not None {
+            prepare_podium(world, catalog.source("q3"), contest, resources, rigs);
+        }
     } finally {
         catalog.close();
     }
+    # Q2 turret drivers ride their breach and fire its rockets.
+    for driver in link_turret_drivers(world) {
+        register_speaker(world, driver, "sound/weapons/rocklf1a.wav");
+    }
     return count;
+}
+
+"""g_arenas.c SpawnPodium and SpawnModelOnVictoryPad need the podium model and a
+body for every competitor. Bots' stand-ins share their bodies; the human's is
+Sarge, with every weapon it might be holding, and the same body follows the
+player to be seen in mirrors."""
+def prepare_podium(
+    world: World,
+    library: AssetLibrary,
+    contest: ArenaMatch,
+    resources: dict[str, ModelResource],
+    rigs: dict[str, CharacterRig]
+) {
+    podium_path = "models/mapobjects/podium/podium4.md3";
+    if not library.exists(podium_path) {
+        return;
+    }
+    loaded = library.model(podium_path);
+    stage = ModelResource(name="q3:" + podium_path, model=loaded.model, skins=loaded.skins);
+    world +>:HasModelResource:+> stage;
+    podium = Podium();
+    podium.visual = attach_model(podium, stage);
+    podium.visual.visible = False;
+    world +>:HasPodium:+> podium;
+    entries = [edge contest->:Competes:->];
+    actors = [contest->:Competes:->];
+    for i in range(min(len(entries), len(actors))) {
+        bot = actors[i];
+        if not isinstance(bot, Opponent) {
+            continue;
+        }
+        bodies = [bot.visual->:UsesModel:->][?:ModelResource];
+        if not bodies or bodies[0].name not in rigs {
+            continue;
+        }
+        # Resource names are "q3:models/players/<model>:<skin>".
+        model = bodies[0].name.split(":")[1].split("/")[-1];
+        rig = rigs[bodies[0].name];
+        figure = podium_figure(bodies[0], None, "sound/player/" + model + "/taunt.wav", float(rig.animations[6][2]));
+        figure +>:Portrays:+> bot;
+        podium +>:Poses(name=entries[i].name):+> figure;
+    }
+    key = "q3:models/players/sarge:default";
+    if key not in rigs {
+        rigs[key] = character_rig(library, "sarge", "default");
+    }
+    if key not in resources {
+        body = load_character(library, "sarge", "default");
+        resources[key] = ModelResource(name=key, model=body.model, skins=body.skins);
+        world +>:HasModelResource:+> resources[key];
+    }
+    human = podium_figure(resources[key], None, "sound/player/sarge/taunt.wav", float(rigs[key].animations[6][2]));
+    # The player's own body, seen only in mirrors and portals (LEGS_RUN rate).
+    reflection = player_body(resources[key], float(rigs[key].animations[15][2]));
+    world +>:HasBody:+> reflection;
+    for (weapon, weapon_model) in Q3_HELD_WEAPONS.items() {
+        weapon_key = key + ":weapon:" + weapon;
+        if weapon_key not in resources and library.exists(weapon_model) {
+            held = load_character_weapon(library, rigs[key], weapon_model);
+            resources[weapon_key] = ModelResource(name=weapon_key, model=held.model, skins=held.skins);
+            world +>:HasModelResource:+> resources[weapon_key];
+        }
+        if weapon_key in resources {
+            human +>:Wields(key=weapon):+> resources[weapon_key];
+            reflection +>:Carries(key=weapon):+> resources[weapon_key];
+        }
+    }
+    podium +>:Poses(human=True):+> human;
 }

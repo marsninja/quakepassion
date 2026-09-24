@@ -21,8 +21,7 @@ Coverage is in `tests/chick_tests.jac`, `scripts/q2_attack_smoke.jac`, and
 `scripts/chick_render_smoke.jac`.
 
 Current snapshot version is **13**, rejecting older saves because the additional
-map opponents and sound emitters change positional entity records. Dodge/duck,
-original muzzle offsets, wounded skins, varied pain/death, launch/reload sound
+map opponents and sound emitters change positional entity records. Original muzzle offsets, wounded skins, varied pain/death, launch/reload sound
 cues, gibs and global navigation remain unfinished. This increment is not a
 certificate of complete campaign behavior.
 

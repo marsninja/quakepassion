@@ -1,5 +1,6 @@
 """Quake III BSP46 surfaces, quadratic patches, and cluster visibility."""
 import from ..bsp {
+    FogVolume,
     Brush,
     Bsp,
     Texture,
@@ -157,6 +158,43 @@ def parse_q3(data: bytes) -> Bsp {
         }
         bsp.brushes.append(brush);
     }
+    # dfog_t: shader name, brush and visible side. Fog brushes are axial, their
+    # first six sides bounding -x, +x, -y, +y, -z, +z.
+    for i in range(records(lumps[12], 72)) {
+        p = i * 72;
+        end = p;
+        while end < p + 64 and lumps[12][end] != 0 {
+            end += 1;
+        }
+        brush_index = i32_at(lumps[12], p + 64);
+        side = i32_at(lumps[12], p + 68);
+        check_index(brush_index, len(bsp.brushes));
+        sides = bsp.brushes[brush_index].planes;
+        if len(sides) < 6 {
+            raise ValueError("Q3 fog brush needs six sides");
+        }
+        fog = FogVolume(
+            shader=lumps[12][p:end].decode("utf-8"),
+            mins=Vec3(
+                x=-bsp.planes[sides[0]].distance,
+                y=-bsp.planes[sides[2]].distance,
+                z=-bsp.planes[sides[4]].distance
+            ),
+            maxs=Vec3(
+                x=bsp.planes[sides[1]].distance,
+                y=bsp.planes[sides[3]].distance,
+                z=bsp.planes[sides[5]].distance
+            )
+        );
+        if side >= 0 {
+            check_index(side, len(sides));
+            visible = bsp.planes[sides[side]];
+            fog.has_surface = True;
+            fog.inward = visible.normal.scale(-1.0);
+            fog.offset = visible.distance;
+        }
+        bsp.fogs.append(fog);
+    }
     verts: list[Vertex] = [];
     for i in range(records(lumps[10], 44)) {
         p = i * 44;
@@ -196,9 +234,11 @@ def parse_q3(data: bytes) -> Bsp {
         }
         face = Face(
             texture=texture,
+            fog=i32_at(lumps[13], p + 4),
             planar=(kind == 1),
             patch=(kind == 2),
-            hidden=(kind == 4 or (bsp.textures[texture].flags & 128) != 0),
+            # SURF_SKY (4) faces show the sky behind them; SURF_NODRAW (128) nothing.
+            hidden=(kind == 4 or (bsp.textures[texture].flags & 132) != 0),
             normal=vec_at(lumps[13], p + 84)
         );
         light = i32_at(lumps[13], p + 28);
@@ -232,6 +272,11 @@ def parse_q3(data: bytes) -> Bsp {
         }
         if len(face.vertices) > 0 {
             face.plane_dist = face.normal.dot(face.vertices[0]);
+        }
+        # R_LoadSurfaces takes fogNum unchecked; some shipped maps (q3tourney6)
+        # carry indices past their fog list, which means no fog.
+        if face.fog < 0 or face.fog >= len(bsp.fogs) {
+            face.fog = -1;
         }
         bsp.faces.append(face);
     }

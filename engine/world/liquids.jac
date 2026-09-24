@@ -7,7 +7,9 @@ edge HasLiquid: LiquidSpace --> LiquidVolume {}
 node LiquidSpace {}
 node LiquidVolume {
     has kind: int,
-        volume: CollisionMap;
+        volume: CollisionMap,
+        model: int = 0,
+        offset: Vec3 = Vec3();
 }
 
 walker SampleLiquid {
@@ -18,7 +20,9 @@ walker SampleLiquid {
         visit [here->:HasLiquid:->];
     }
     can sample with LiquidVolume entry {
-        if here.volume.trace(self.point, self.point).start_solid {
+        # A func_water volume carries its mover's current offset.
+        local = self.point.sub(here.offset);
+        if here.volume.trace(local, local).start_solid {
             self.result = max(self.result, here.kind);
         }
     }
@@ -66,6 +70,37 @@ def load_liquids(bsp: Bsp) -> LiquidSpace {
         if volume.hulls {
             volume.reindex();
             space +>:HasLiquid:+> LiquidVolume(kind=kind, volume=volume);
+        }
+    }
+    # Q2 func_water: a door-like mover whose brushes are liquid.
+    for entity in bsp.entities {
+        reference = entity.fields.get("model", "");
+        if bsp.game != "q2" or entity.fields.get("classname", "") != "func_water" or not reference.startswith("*") {
+            continue;
+        }
+        model = int(reference[1:]);
+        if model <= 0 or model >= len(bsp.models) {
+            continue;
+        }
+        for kind in [1, 2, 3] {
+            volume = CollisionMap();
+            for index in bsp.models[model].brushes {
+                brush = bsp.brushes[index];
+                if liquid_kind(brush.contents, bsp.game) != kind or not brush.planes {
+                    continue;
+                }
+                normals: list[Vec3] = [];
+                distances: list[float] = [];
+                for plane in brush.planes {
+                    normals.append(bsp.planes[plane].normal);
+                    distances.append(bsp.planes[plane].distance);
+                }
+                volume.add_brush(normals, distances, Vec3(), Vec3(), Vec3());
+            }
+            if volume.hulls {
+                volume.reindex();
+                space +>:HasLiquid:+> LiquidVolume(kind=kind, volume=volume, model=model);
+            }
         }
     }
     return space;

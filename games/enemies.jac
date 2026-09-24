@@ -21,6 +21,23 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
             death_sound="sound/weapons/r_exp3.wav"
         );
     }
+    # g_turret.c SP_turret_driver: an infantry body with 100 health that
+    # stands its ground, never attacks by itself and neither flinches, sights
+    # nor dodges; its turret does the shooting.
+    if game == "q2" and kind == "turret_driver" {
+        driver = enemy_rule(game, "monster_infantry");
+        if driver is None {
+            return None;
+        }
+        driver.health = 100;
+        driver.movement = "none";
+        driver.passive = True;
+        driver.pain_frames = [];
+        driver.pain_sounds = [];
+        driver.sight_sound = "";
+        driver.duck_frames = [];
+        return driver;
+    }
     if game == "q2" and kind == "misc_explobox" {
         return OpponentRule(
             model="models/objects/barrels/tris.md2",
@@ -673,6 +690,11 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_gunner" {
             return OpponentRule(
                 model="models/monsters/gunner/tris.md2",
+                duck_frames=["duck" + two(i) for i in range(1, 9)],
+                duck_down=0,
+                duck_hold=2,
+                duck_up=6,
+                duck_grenade="grenades",
                 health=175,
                 speed=121.0,
                 interval=1.0,
@@ -1009,6 +1031,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_brain" {
             return OpponentRule(
                 model="models/monsters/brain/tris.md2",
+                duck_frames=["duck" + two(i) for i in range(1, 9)],
+                duck_down=1,
+                duck_hold=2,
+                duck_up=4,
                 health=300,
                 speed=40.0,
                 interval=1.0,
@@ -1106,6 +1132,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_medic" {
             return OpponentRule(
                 model="models/monsters/medic/tris.md2",
+                duck_frames=["duck" + str(i) for i in range(1, 17)],
+                duck_down=2,
+                duck_hold=3,
+                duck_up=6,
                 health=300,
                 width=24.0,
                 speed=248.0,
@@ -1671,6 +1701,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_chick" {
             return OpponentRule(
                 model="models/monsters/bitch/tris.md2",
+                duck_frames=["duck" + two(i) for i in range(1, 8)],
+                duck_down=0,
+                duck_hold=2,
+                duck_up=4,
                 pain_duration=0.5,
                 pain_interval=3.0,
                 pain_frames=["pain" + str(i) for i in range(101, 106)],
@@ -1813,6 +1847,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_infantry" {
             return OpponentRule(
                 model="models/monsters/infantry/tris.md2",
+                duck_frames=["duck" + two(i) for i in range(1, 6)],
+                duck_down=0,
+                duck_hold=1,
+                duck_up=3,
                 pain_duration=1.0,
                 pain_interval=3.0,
                 pain_frames=["pain" + str(i) for i in range(101, 111)],
@@ -1840,6 +1878,17 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind in ["monster_soldier_light", "monster_soldier", "monster_soldier_ss"] {
             rule = OpponentRule(
                 model="models/monsters/soldier/tris.md2",
+                duck_frames=["duck" + two(i) for i in range(1, 6)],
+                duck_down=0,
+                duck_hold=1,
+                duck_up=3,
+                # attak301-309, looping back from 306 to 303 once while the
+                # one-second duck lasts: shots at 303, crouched from 303 to 307.
+                crouch_frames=["attak30" + str(i) for i in [1, 2, 3, 4, 5, 6, 3, 4, 5, 6, 7, 8, 9]],
+                crouch_times=[0.2, 0.6],
+                crouch_duration=1.3,
+                crouch_start=0.2,
+                crouch_end=1.0,
                 pain_duration=0.5,
                 pain_interval=3.0,
                 pain_frames=["pain" + str(i) for i in range(101, 106)],

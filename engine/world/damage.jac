@@ -69,6 +69,7 @@ walker Damage {
         if self.killed {
             # Match scoring credits the attacker; None means a world death.
             here.killer = self.attacker;
+            here.death_means = self.means;
         }
     }
 }
