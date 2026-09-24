@@ -200,6 +200,7 @@ obj App {
         respawn_wait: float = 0.0,
         awaiting_respawn: bool = False,
         show_scores: bool = False,
+        show_help: bool = False,
         arena_progress: ArenaProgress = ArenaProgress();
 
     has expedition_complete: bool = False;

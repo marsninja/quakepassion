@@ -245,7 +245,7 @@ impl App.render_frame() {
             }
             self.renderer.draw_powerups(self.powerup_lines());
             # Q2 help computer (F1): the current primary and secondary objectives.
-            if self.level.bsp.game == "q2" and self.show_scores {
+            if self.level.bsp.game == "q2" and self.show_help {
                 lines: list[str] = [];
                 for computer in [self.world->:HasHelp:->][?:HelpComputer] {
                     if computer.primary {
@@ -268,7 +268,7 @@ impl App.render_frame() {
                         or contest.finished
                         or contest.warmup > 0.0
                 ) {
-                footer = "F1: scores";
+                footer = "Tab: scores";
                 if contest.finished {
                     rows = standings(contest);
                     footer = (
@@ -304,7 +304,7 @@ impl App.render_frame() {
                             if self.walking
                             else "WASD / Space / Shift: fly"
                     )
-                        + " | Tab: mouse | F3: overlay",
+                        + " | `: mouse | Tab: scores | F3: overlay",
                     self.movement_status
                 ]
             );
@@ -334,9 +334,9 @@ impl App.render_frame() {
     if self.overlay {
         cur_name = cur.name if cur is not None else "the void";
         culling_state = "ON" if self.culling else "OFF";
-        mouse_state = "captured [Tab releases]"
+        mouse_state = "captured [` releases]"
             if mouse_captured()
-            else "free - click or Tab to look";
+            else "free - click or ` to look";
         self.renderer.draw_overlay(
             [
                 "area: " + cur_name,
@@ -734,6 +734,7 @@ impl App.step() -> bool {
         intent = scripted;
     }
     self.show_scores = intent.scores;
+    self.show_help = intent.help;
     # Q3 respawn: attack or jump after 1.7 s, forced after 20 s (g_forcerespawn).
     if arena_live and self.player.health <= 0 {
         if not self.awaiting_respawn {

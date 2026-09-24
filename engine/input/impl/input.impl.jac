@@ -56,8 +56,9 @@ impl sample_intent(
         pitch -= KEY_TURN_SPEED * dt;
     }
 
-    # capture lifecycle: click or Tab grabs the mouse, Tab releases
-    if IsKeyPressed(KEY_TAB) {
+    # capture lifecycle: a click or the console key (`) grabs the mouse, the
+    # console key or Escape's menu releases it; Tab is the scoreboard.
+    if IsKeyPressed(i32(96)) {
         if _mouse.captured {
             _release();
         } else {
@@ -111,6 +112,7 @@ impl sample_intent(
         use_item=IsKeyPressed(i32(257)),
         next_item=IsKeyPressed(i32(93)),
         prev_item=IsKeyPressed(i32(91)),
-        scores=IsKeyDown(i32(290))
+        scores=IsKeyDown(KEY_TAB) or IsKeyDown(i32(290)),
+        help=IsKeyDown(i32(290))
     );
 }
