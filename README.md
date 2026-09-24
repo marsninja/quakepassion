@@ -38,6 +38,7 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp         # another map, without maps/ or .bsp
 QP_GAME=passion QP_SEED=42 ./qp      # seeded mixed-asset expedition
 QP_GAME=q2 QP_ASSETS=/path/to/baseq2 ./qp
 QP_GRAYBOX=1 ./qp                   # original two-room development scene
+QP_CAPTURE=300:shot.png ./qp        # play 300 frames, save a full screenshot, exit
 ```
 
 For a fresh checkout, install [Jac 0.37.21](https://github.com/jaseci-labs/jac/releases/tag/v0.37.21)
