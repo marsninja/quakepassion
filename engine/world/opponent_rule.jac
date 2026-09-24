@@ -100,6 +100,7 @@ obj OpponentRule {
         death_splash: int = 0,
         death_radius: float = 0.0,
         vanish_on_death: bool = False,
+        explodes: bool = False,
         idle_frames: list[str] = [],
         death_frames: list[str] = [],
         sight_sound: str = "",

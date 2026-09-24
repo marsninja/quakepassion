@@ -770,7 +770,7 @@ def damage_opponent(
     }
     if isinstance(attacker, Opponent) {
         react_to_damage(victim, attacker);
-    } elif attacker is not None and not victim.arena {
+    } elif attacker is not None and not victim.arena and not victim.rule.passive {
         # Q1 T_Damage / Q2 M_ReactToDamage: any hit from the player, a
         # projectile or splash included, makes the player the enemy at once,
         # even over a monster it was fighting.
@@ -2797,6 +2797,13 @@ walker CombatTick {
             if here.rule.movement == "fly" and not here.grounded {
                 here spawn MovePlayer(collision=body_collision, wish=Vec3(), dt=self.dt);
             }
+            # BossExplode: a settled Q2 boss wreck blows apart.
+            if here.rule.explodes
+                and not here.gibbed
+                and here.death_animation
+                and here.animation_time >= float(len(here.death_animation)) - 1.0 {
+                burst(here, 0);
+            }
             successor = here.successor;
             if successor is not None
                 and successor.dormant
@@ -2940,7 +2947,10 @@ walker CombatTick {
             was_alert = here.alert > 0.0;
             if distance < 1500.0 {
                 sight = self.collision.trace_point(here.pos, foe.pos);
-                here.pursuing = not sight.start_solid and sight.fraction == 1.0;
+                # Q2 AI_GOOD_GUY (misc_insane): passive figures never hunt.
+                here.pursuing = not sight.start_solid
+                    and sight.fraction == 1.0
+                    and not here.rule.passive;
                 if here.pursuing and not was_alert and not here.arena {
                     here.pursuing = notices(here, foe.pos, distance, self.state.noise > 0.0);
                 }

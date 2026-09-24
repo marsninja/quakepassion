@@ -1446,6 +1446,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_supertank" {
             return OpponentRule(
+                explodes=True,
                 hull_bottom=0.0,
                 hull_top=112.0,
                 model="models/monsters/boss1/tris.md2",
@@ -1506,6 +1507,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_boss2" {
             return OpponentRule(
+                explodes=True,
                 hull_bottom=0.0,
                 hull_top=80.0,
                 model="models/monsters/boss2/tris.md2",
@@ -1570,6 +1572,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_jorg" {
             return OpponentRule(
+                explodes=True,
                 hull_bottom=0.0,
                 hull_top=140.0,
                 model="models/monsters/boss3/jorg/tris.md2",
@@ -1752,27 +1755,44 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
             );
         }
         if kind == "misc_insane" {
+            # m_insane.c: harmless marines (AI_GOOD_GUY) that never hunt the
+            # player; they moan and scream, crawl with spawnflag 4, and hang
+            # crucified with spawnflag 8. All of them can be killed.
             if flags & 8 {
                 return OpponentRule(
                     model="models/monsters/insane/tris.md2",
                     health=100,
                     movement="none",
-                    decoration=True,
+                    passive=True,
                     speed=0.0,
-                    idle_frames=["cross" + str(i) for i in range(1, 16)]
+                    idle_frames=["cross" + str(i) for i in range(1, 16)],
+                    death_frames=["cross1"],
+                    pain_sounds=["sound/insane/insane5.wav"],
+                    idle_sound="sound/insane/insane7.wav"
                 );
             }
+            crawls = flags & 4 != 0;
             return OpponentRule(
                 model="models/monsters/insane/tris.md2",
                 health=100,
                 speed=30.0,
                 stop_range=120.0,
-                idle_frames=["stand" + str(i) for i in range(60, 66)],
-                run_frames=["walk" + str(i) for i in range(27, 40)],
-                pain_frames=["st_pain" + str(i) for i in range(2, 13)],
-                pain_duration=1.1,
+                idle_frames=["crawl" + str(i) for i in range(1, 10)]
+                    if crawls
+                    else ["stand" + str(i) for i in range(60, 66)],
+                run_frames=["crawl" + str(i) for i in range(1, 10)]
+                    if crawls
+                    else ["walk" + str(i) for i in range(27, 40)],
+                pain_frames=["cr_pain" + str(i) for i in range(2, 11)]
+                    if crawls
+                    else ["st_pain" + str(i) for i in range(2, 13)],
+                pain_duration=0.9 if crawls else 1.1,
                 pain_interval=3.0,
-                death_frames=["st_death" + str(i) for i in range(2, 19)],
+                death_frames=["cr_death" + str(i) for i in range(10, 17)]
+                    if crawls
+                    else ["st_death" + str(i) for i in range(2, 19)],
+                pain_sounds=["sound/insane/insane1.wav", "sound/insane/insane2.wav", "sound/insane/insane3.wav"],
+                idle_sound="sound/insane/insane9.wav",
                 passive=True
             );
         }
