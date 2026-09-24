@@ -22,7 +22,9 @@ models through edges. Walkers drive patrols, gib flight and combat.
 - Idle monsters never notice anything beyond 1000 units. From 500 to 1000 units
   they need to be facing the player. Closer than that, a fresh shot is enough.
   Within melee range, sight alone is enough (Q1 `FindTarget`, Q2 `FindTarget`).
-- Q2 monsters also hear gunfire within 1000 units (`PlayerNoise`).
+- Q2 monsters also hear gunfire within 1000 units (`PlayerNoise`), but only from
+  clusters in the map's potentially hearable set (PHS), so walls and floors
+  stop it. Closed doors (areaportals) do not yet block it.
 - Ambush monsters (spawnflag 1) wait for sight.
 - A monster that spots the player wakes others that can see it (Q1
   `sight_entity`, Q2 `sight_client`).
@@ -99,6 +101,7 @@ its target, so fights are spent moving between attacks.
 
 ## Bodies
 
+- A Q2 monster below half health shows its bloodied skin (`skinnum |= 1`).
 - Hit boxes use each monster's `SP_monster_*` height instead of the player's.
   For example, Q1 shambler/ogre/fiend/vore boxes rise to 64, the Q2 tank to 72,
   the supertank to 112 and Jorg to 140.
