@@ -132,7 +132,8 @@ node Opponent(Player) {
         revived: bool = False,
         power_cells: int = -1,
         wounded: bool = False,
-        healthy_skin: ModelResource | None = None;
+        healthy_skin: ModelResource | None = None,
+        heard: bool = True;
 }
 
 """How far the player's box (at origin `body`) reaches into an actor's box,
@@ -3009,7 +3010,10 @@ walker CombatTick {
                 }
                 if not here.pursuing and not was_alert and not here.arena and not here.ambush {
                     # Q2 PlayerNoise: gunfire is heard within 1000 units.
-                    if here.game == "q2" and self.state.noise > 0.0 and distance < 1000.0 {
+                    if here.game == "q2"
+                        and self.state.noise > 0.0
+                        and distance < 1000.0
+                        and here.heard {
                         here.last_seen = foe.pos;
                         here.last_seen_height = foe_height;
                         here.alert = 8.0;

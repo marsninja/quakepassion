@@ -1056,6 +1056,19 @@ impl App.step() -> bool {
                 } else {
                     # Shots wake nearby monsters (show_hostile, PlayerNoise).
                     self.combat.noise = 1.0;
+                    # Q2 FindTarget hears a noise only from inside its PHS.
+                    if self.level.bsp.game == "q2" {
+                        heard = self.level.hearable(self.player.pos);
+                        for listener in [self.world->:HasOpponent:->][?:Opponent] {
+                            if listener.alert <= 0.0
+                                and listener.health > 0
+                                and not listener.dormant
+                                and listener.pos.sub(self.player.pos).length() < 1000.0 {
+                                leaf = self.level.locate(listener.pos);
+                                listener.heard = self.level.bsp.leaves[leaf].cluster in heard;
+                            }
+                        }
+                    }
                 }
                 self.audio.play(
                     2 + self.combat.weapon if self.combat.rules else 0, gain
