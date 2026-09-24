@@ -1,5 +1,6 @@
 """Authored path graphs and translating train movers shared by the Quake games."""
-import from .doors { Door, HasDoor, DoorMember, damage_mover }
+import from .doors { Door, HasDoor, DoorMember, damage_mover, mover_voices, mover_voice }
+import from .speakers { Speaker }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .signals { Signal, HasSignal, Fire, note_chain }
@@ -65,7 +66,22 @@ node Train {
         activation: Signal = Signal(),
         faces: list[int] = [],
         hulls: list[int] = [],
-        origins: list[Vec3] = [];
+        origins: list[Vec3] = [],
+        bounds: AABB = AABB(mins=Vec3(), maxs=Vec3()),
+        touch_message: str = "",
+        message_wait: float = 0.0,
+        start_voice: Speaker | None = None,
+        move_voice: Speaker | None = None,
+        stop_voice: Speaker | None = None,
+        was_moving: bool = False;
+}
+
+"""Give a train its start, moving and stop sounds at its brush centre."""
+def voice_train(world: World, train: Train, voices: list[str]) {
+    centre = train.bounds.center().add(train.motion);
+    train.start_voice = mover_voice(world, train.game, voices[0], False, centre);
+    train.move_voice = mover_voice(world, train.game, voices[1], True, centre);
+    train.stop_voice = mover_voice(world, train.game, voices[2], False, centre);
 }
 
 def train_position(train: Train, motion: Vec3, bsp: Bsp, collision: CollisionMap) {
@@ -153,9 +169,11 @@ def load_trains(world: World, bsp: Bsp, collision: CollisionMap) {
                 if bsp.game != "q1" and flags & 4
                 else int(f.get("dmg", "100" if bsp.game == "q2" else "2")),
             activation=Signal(entities=[i]),
-            faces=list(range(record.first_face, record.first_face + record.face_count))
+            faces=list(range(record.first_face, record.first_face + record.face_count)),
+            bounds=AABB(mins=record.mins.add(original), maxs=record.maxs.add(original))
         );
         attach_train(world, bsp, collision, train);
+        voice_train(world, train, mover_voices(bsp.game, "func_train", f));
     }
     collision.reindex();
     load_elevators(world, bsp);
@@ -300,8 +318,66 @@ walker TrainTick {
         dt: float,
         player: Player | None = None,
         actors: list[Player] = [],
-        tracks: list[TrackPoint] = [];
+        tracks: list[TrackPoint] = [],
+        message: str = "",
+        cues: list[str] = [];
 
+    """Q1 train_next/train_wait and Q2 train_next/train_wait: the moving loop
+    runs while the train travels and the stop sound marks each pause. Secret
+    doors add their start sound when they leave their closed position."""
+    def voice(train: Train) {
+        moving = train.running
+            and (train.destination is not None or train.remaining <= 0.11);
+        centre = train.bounds.center().add(train.motion);
+        for speaker in [train.start_voice, train.move_voice, train.stop_voice] {
+            if speaker is not None {
+                speaker.origin = centre;
+            }
+        }
+        if moving and not train.was_moving {
+            start = train.start_voice;
+            if start is not None and train.motion.length() < 0.001 {
+                start.requests += 1;
+            }
+            loop = train.move_voice;
+            if loop is not None {
+                loop.playing = True;
+            }
+        } elif train.was_moving and not moving {
+            loop = train.move_voice;
+            if loop is not None {
+                loop.playing = False;
+            }
+            stop = train.stop_voice;
+            if stop is not None {
+                stop.requests += 1;
+            }
+        }
+        train.was_moving = moving;
+    }
+
+    """Q1 secret_touch: a secret door's message to the player touching it,
+    every two seconds, until the door is first used."""
+    def touch_note(train: Train) {
+        person = self.player;
+        train.message_wait = max(0.0, train.message_wait - self.dt);
+        if not train.touch_message
+            or train.message_wait > 0.0
+            or person is None
+            or person.health <= 0 {
+            return;
+        }
+        origin = person.pos.sub(Vec3(z=self.collision.eye_height));
+        lo = train.bounds.mins.add(train.motion);
+        hi = train.bounds.maxs.add(train.motion);
+        if origin.x + 17.0 >= lo.x and origin.x - 17.0 <= hi.x
+            and origin.y + 17.0 >= lo.y and origin.y - 17.0 <= hi.y
+            and origin.z + 33.0 >= lo.z and origin.z - 25.0 <= hi.z {
+            self.message = train.touch_message;
+            self.cues.append("sound/misc/talk.wav");
+            train.message_wait = 2.0;
+        }
+    }
 
     can begin with World entry {
         if self.dt <= 0.0 {
@@ -349,6 +425,8 @@ walker TrainTick {
 
     can advance with Train entry {
         here.damage_wait = max(0.0, here.damage_wait - self.dt);
+        self.voice(here);
+        self.touch_note(here);
         if here.activation.killed {
             if here.faces or here.hulls {
                 for face in here.faces {
@@ -369,6 +447,8 @@ walker TrainTick {
                 and (here.kind != "secret" or here.motion.length() < 0.00001) {
                 here.running = True;
                 here.remaining = 0.0;
+                # fd_secret_use: no more message once the door is used.
+                here.touch_message = "";
                 if here.kind == "secret" {
                     here.activation spawn Fire(
                         inventory=self.player.inventory

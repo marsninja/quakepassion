@@ -901,12 +901,16 @@ impl App.step() -> bool {
                 self.notice = events.message;
                 self.notice_wait = 3.0;
             }
-            self.world spawn TrainTick(
+            trains = self.world spawn TrainTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
                 dt=self.physics_clock.tick_rate,
                 player=self.player if self.walking else None
             );
+            self.show_notice(trains.message);
+            for cue in trains.cues {
+                self.audio.play_path(cue);
+            }
             doors = self.world spawn DoorTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
@@ -920,6 +924,9 @@ impl App.step() -> bool {
             if doors.message {
                 self.notice = doors.message;
                 self.notice_wait = 3.0;
+            }
+            for cue in doors.cues {
+                self.audio.play_path(cue);
             }
             self.world spawn RotatorTick(
                 bsp=self.level.bsp,

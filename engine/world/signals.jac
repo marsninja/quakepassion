@@ -57,6 +57,23 @@ def chain_notes(world: World) -> list[ChainNote] {
     return [world->:HasChainNote:->][?:ChainNote];
 }
 
+"""Q2 key pickup names (g_items.c itemlist) for trigger_key_use's message."""
+glob KEY_NAMES: dict[str, str] = {
+    "key_data_cd": "Data CD",
+    "key_power_cube": "Power Cube",
+    "key_pyramid": "Pyramid Key",
+    "key_data_spinner": "Data Spinner",
+    "key_pass": "Security Pass",
+    "key_blue_key": "Blue Key",
+    "key_red_key": "Red Key",
+    "key_commander_head": "Commander's Head",
+    "key_airstrike_target": "Airstrike Marker"
+};
+
+def key_name(key: str) -> str {
+    return KEY_NAMES.get(key, key.replace("key_", "").replace("_", " "));
+}
+
 """trigger_counter progress: Q1 counter_use and Q2 trigger_counter_use."""
 def counter_text(style: str, remaining: int) -> str {
     if style == "silent" {
@@ -110,7 +127,8 @@ node Signal {
         require_flags: int = 0,
         pathtarget: str = "",
         routed: bool = False,
-        calls: list[str] = [];
+        calls: list[str] = [],
+        key_wait: float = 0.0;
 
     def sample(base: float) -> float {
         duration = base;
@@ -215,13 +233,19 @@ walker Fire {
                 here.armed = True;
                 return;
             }
+            # trigger_key_use: "You need the <item>" with misc/keytry.wav at
+            # most every five seconds, misc/keyuse.wav when the key is taken.
             if here.key {
                 if self.inventory is None or quantity(self.inventory, here.key) <= 0 {
-                    self.message = "Need "
-                        + here.key.replace("key_", "").replace("_", " ");
+                    if self.inventory is not None and here.key_wait <= 0.0 {
+                        self.message = "You need the " + key_name(here.key);
+                        self.cues.append("sound/misc/keytry.wav");
+                        here.key_wait = 5.0;
+                    }
                     return;
                 }
                 self.inventory spawn AdjustInventory(kind=here.key, amount=-1);
+                self.cues.append("sound/misc/keyuse.wav");
             }
             if here.remaining > 0 {
                 here.remaining -= 1;
@@ -278,12 +302,13 @@ walker SignalTick {
             visit [
                 signal
                 for signal in [here->:HasSignal:->][?:Signal]
-                if signal.queued or signal.timer_running
+                if signal.queued or signal.timer_running or signal.key_wait > 0.0
             ];
         }
     }
 
     can advance with Signal entry {
+        here.key_wait = max(0.0, here.key_wait - self.dt);
         pending: list[DelayedUse] = [];
         for event in here.queued {
             event.remaining = max(0.0, event.remaining - self.dt);

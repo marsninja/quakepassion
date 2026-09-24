@@ -1,12 +1,13 @@
 """Q1 two-stage secret doors built on the shared translating mover graph."""
 import math;
 import from .world { World }
-import from .trains { Train, TrackPoint, TrackNext, HasTrack, attach_train }
+import from .trains { Train, TrackPoint, TrackNext, HasTrack, attach_train, voice_train }
 import from .signals { Signal }
-import from .doors { door_direction }
+import from .doors { door_direction, mover_voices }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, right_from }
+import from ..math.aabb { AABB }
 
 def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
     if bsp.game != "q1" {
@@ -84,9 +85,13 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             shootable=(not fields.get("targetname", "") or flags & 16 != 0)
                 and flags & 8 == 0,
             activation=Signal(entities=[index]),
-            faces=list(range(record.first_face, record.first_face + record.face_count))
+            faces=list(range(record.first_face, record.first_face + record.face_count)),
+            bounds=AABB(mins=record.mins, maxs=record.maxs),
+            touch_message=fields.get("message", "")
         );
         attach_train(world, bsp, collision, train);
+        # func_door_secret: `sounds` 0 means 3.
+        voice_train(world, train, mover_voices("q1", "func_door_secret", fields));
     }
     collision.reindex();
 }

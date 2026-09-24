@@ -17,6 +17,7 @@ import from .signals {
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..physics.collision { CollisionMap, Sweep, Trace }
 import from .liquids { LiquidSpace, LiquidVolume, HasLiquid }
+import from .speakers { Speaker, HasSpeaker }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis, quake_basis }
@@ -81,7 +82,126 @@ node Door {
         crush_wait: float = 0.0,
         flooding: bool = False,
         entity: int = -1,
-        reason: str = "";
+        reason: str = "",
+        touch_message: str = "",
+        message_wait: float = 0.0,
+        talk: str = "",
+        key_message: str = "",
+        key_try: str = "",
+        key_use: str = "",
+        voices: list[str] = [],
+        start_voice: Speaker | None = None,
+        move_voice: Speaker | None = None,
+        stop_voice: Speaker | None = None,
+        voice_on_open: bool = False,
+        voiced_state: str = "";
+}
+
+"""The start, moving (looped) and stop sounds of a mover. Q1 doors.qc,
+plats.qc, buttons.qc and func_train pick them by `sounds` (the moving sound
+loops by its cue point until the stop sound replaces it); Q2 g_func.c uses
+dr1_*, pt1_* and butn2 unless `sounds` is 1, and a train's `noise` loops."""
+def mover_voices(game: str, kind: str, fields: dict[str, str]) -> list[str] {
+    style = int(float(fields.get("sounds", "0")));
+    if game == "q1" {
+        if kind == "func_door" {
+            pairs = [
+                ["", ""],
+                ["doors/doormv1.wav", "doors/drclos4.wav"],
+                ["doors/hydro1.wav", "doors/hydro2.wav"],
+                ["doors/stndr1.wav", "doors/stndr2.wav"],
+                ["doors/ddoor1.wav", "doors/ddoor2.wav"]
+            ];
+            pair = pairs[style] if 0 <= style and style < len(pairs) else ["", ""];
+            return ["", pair[0], pair[1]];
+        }
+        if kind == "func_plat" {
+            if style == 1 {
+                return ["", "plats/plat1.wav", "plats/plat2.wav"];
+            }
+            return ["", "plats/medplat1.wav", "plats/medplat2.wav"];
+        }
+        if kind == "func_button" {
+            presses = ["buttons/airbut1.wav", "buttons/switch21.wav", "buttons/switch02.wav", "buttons/switch04.wav"];
+            return [presses[style] if 0 <= style and style < len(presses) else "", "", ""];
+        }
+        if kind == "func_train" {
+            return ["", "plats/train1.wav", "plats/train2.wav"] if style == 1 else ["", "", ""];
+        }
+        if kind == "func_door_secret" {
+            if style == 1 {
+                return ["doors/latch2.wav", "doors/winch2.wav", "doors/drclos4.wav"];
+            }
+            if style == 2 {
+                return ["doors/airdoor2.wav", "doors/airdoor1.wav", "doors/airdoor2.wav"];
+            }
+            return ["doors/basesec2.wav", "doors/basesec1.wav", "doors/basesec2.wav"];
+        }
+        return ["", "", ""];
+    }
+    if game == "q2" {
+        if kind in ["func_door", "func_door_rotating"] and style != 1 {
+            return ["doors/dr1_strt.wav", "doors/dr1_mid.wav", "doors/dr1_end.wav"];
+        }
+        if kind == "func_plat" {
+            return ["plats/pt1_strt.wav", "plats/pt1_mid.wav", "plats/pt1_end.wav"];
+        }
+        if kind == "func_button" and style != 1 {
+            return ["switches/butn2.wav", "", ""];
+        }
+        if kind == "func_water" and style in [1, 2] {
+            return ["world/mov_watr.wav", "", "world/stp_watr.wav"];
+        }
+        if kind == "func_train" and fields.get("noise", "") {
+            noise = fields["noise"];
+            return ["", noise if noise.endswith(".wav") else noise + ".wav", ""];
+        }
+    }
+    return ["", "", ""];
+}
+
+"""A positional mover sound as a world speaker (ATTN_NORM for Q1, ATTN_STATIC
+for Q2's movers)."""
+def mover_voice(world: World, game: str, path: str, looping: bool, origin: Vec3) -> Speaker | None {
+    if not path {
+        return None;
+    }
+    voice = Speaker(
+        path="sound/" + path,
+        origin=origin,
+        looping=looping,
+        attenuation=3.0 if game == "q2" else 1.0
+    );
+    world +>:HasSpeaker:+> voice;
+    return voice;
+}
+
+"""Q1 door_touch and Q2 trigger_key wording for a missing key."""
+def key_text(game: str, key: str, worldtype: int) -> str {
+    if game == "q1" {
+        metal = "gold" if key == "key_gold" else "silver";
+        noun = "key" if worldtype == 0 else ("runekey" if worldtype == 1 else "keycard");
+        return "You need the " + metal + " " + noun;
+    }
+    return "Need " + key.replace("key_", "").replace("_", " ");
+}
+
+"""Whether a player standing at `origin` touches one of the mover's brushes
+at its current pose (a one-unit reach around the player box)."""
+def touches_mover(leader: Door, origin: Vec3) -> bool {
+    members = [leader];
+    members.extend([leader->:DoorMember:->][?:Door]);
+    for part in members {
+        shift = part.rest.add(part.travel.scale(leader.position));
+        lo = part.bounds.mins.add(shift);
+        hi = part.bounds.maxs.add(shift);
+        if origin.x + 17.0 >= lo.x and origin.x - 17.0 <= hi.x
+            and origin.y + 17.0 >= lo.y and origin.y - 17.0 <= hi.y
+            and origin.z + 33.0 >= lo.z and origin.z - 25.0 <= hi.z {
+            return True;
+        }
+    }
+    return False;
 }
 
 """Full travel of a mover: units for sliding movers, degrees for rotating doors."""
@@ -172,7 +292,41 @@ walker DoorTick {
         touching: bool = True,
         player: Player | None = None,
         message: str = "",
+        cues: list[str] = [],
         actors: list[Opponent] = [];
+
+    """Start the moving loop and the start sound when a mover sets off; stop
+    the loop and play the stop sound when it comes to rest."""
+    def voice(mover: Door) {
+        moving = mover.state in ["opening", "closing"];
+        was = mover.voiced_state in ["opening", "closing"];
+        mover.voiced_state = mover.state;
+        centre = mover.bounds.center().add(mover.rest).add(mover.travel.scale(mover.position));
+        for speaker in [mover.start_voice, mover.move_voice, mover.stop_voice] {
+            if speaker is not None {
+                speaker.origin = centre;
+            }
+        }
+        if moving and not was {
+            start = mover.start_voice;
+            if start is not None and (not mover.voice_on_open or mover.state == "opening") {
+                start.requests += 1;
+            }
+            loop = mover.move_voice;
+            if loop is not None {
+                loop.playing = True;
+            }
+        } elif was and not moving {
+            loop = mover.move_voice;
+            if loop is not None {
+                loop.playing = False;
+            }
+            stop = mover.stop_voice;
+            if stop is not None {
+                stop.requests += 1;
+            }
+        }
+    }
 
     """Blocked movers hurt what stops them (Q1 door_blocked/plat_crush, Q2
     door_blocked/plat_blocked), at most ten times a second."""
@@ -231,9 +385,26 @@ walker DoorTick {
             return;
         }
         here.crush_wait = max(0.0, here.crush_wait - self.dt);
+        here.message_wait = max(0.0, here.message_wait - self.dt);
+        self.voice(here);
         origin = self.player_origin;
         if self.player is not None {
             origin = self.player.pos.sub(Vec3(z=self.collision.eye_height));
+        }
+        # Q1 door_touch / Q2 door_touch: a door that opens elsewhere tells the
+        # player who touches it, until it is first used.
+        if here.touch_message
+            and here.message_wait <= 0.0
+            and self.touching
+            and self.player is not None
+            and self.player.health > 0
+            and here.state == "closed"
+            and touches_mover(here, origin) {
+            self.message = here.touch_message;
+            if here.talk {
+                self.cues.append(here.talk);
+            }
+            here.message_wait = 2.0 if here.talk == "sound/misc/talk.wav" else 5.0;
         }
         rider = False;
         if here.kind == "platform"
@@ -340,7 +511,15 @@ walker DoorTick {
             }
             for key in here.keys {
                 if quantity(self.player.inventory, key) <= 0 {
-                    self.message = "Need " + key.replace("key_", "").replace("_", " ");
+                    # door_touch: the key message and try sound every 2 seconds.
+                    if here.message_wait <= 0.0 {
+                        self.message = here.key_message
+                            or "Need " + key.replace("key_", "").replace("_", " ");
+                        if here.key_try {
+                            self.cues.append(here.key_try);
+                        }
+                        here.message_wait = 2.0;
+                    }
                     return;
                 }
             }
@@ -348,7 +527,12 @@ walker DoorTick {
                 self.player.inventory spawn AdjustInventory(kind=key, amount=-1);
             }
             here.unlocked = True;
-            self.message = "Door unlocked";
+            here.touch_message = "";
+            if here.key_use {
+                self.cues.append(here.key_use);
+            } else {
+                self.message = "Door unlocked";
+            }
             here.hold_time = -1.0;
         }
         here.requested = False;
@@ -373,6 +557,8 @@ walker DoorTick {
             near = False;
         }
         if near {
+            # door_use: messages are for touch only and end with the first use.
+            here.touch_message = "";
             if here.state == "closed" or here.state == "closing" {
                 here.state = "opening";
                 if here.fire_on_start {
@@ -792,6 +978,29 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 maxs=bounds.maxs.add(margin).add(Vec3(z=24.0))
             )
         );
+        message = fields.get("message", "");
+        if kind == "func_button" and message and bsp.game in ["q1", "q2"] {
+            # A button's message is printed when it fires (SUB_UseTargets).
+            door.activation.message = message;
+            door.activation.cue = "sound/misc/talk.wav" if bsp.game == "q1" else "sound/misc/talk1.wav";
+        }
+        # Q1 door_touch prints any door's message; Q2 only a named, unshot door's.
+        if kind in ["func_door", "func_door_rotating"]
+            and message
+            and (bsp.game == "q1" or (bsp.game == "q2" and fields.get("targetname", "") and health == 0)) {
+            door.touch_message = message;
+            door.talk = "sound/misc/talk.wav" if bsp.game == "q1" else "sound/misc/talk1.wav";
+        }
+        if door.keys and bsp.game == "q1" {
+            worldtype = int(float(bsp.entities[0].fields.get("worldtype", "0"))) if bsp.entities else 0;
+            door.key_message = key_text("q1", door.keys[0], worldtype);
+            noises = ["med", "rune", "base"];
+            noise = noises[worldtype] if 0 <= worldtype and worldtype < 3 else "med";
+            door.key_try = "sound/doors/" + noise + "try.wav";
+            door.key_use = "sound/doors/" + noise + "use.wav";
+        }
+        door.voices = mover_voices(bsp.game, kind, fields);
+        door.voice_on_open = kind == "func_button";
         # Crush damage defaults: Q1 plats 1, other movers 2 (Q1/Q2/Q3 "dmg").
         door.damage = int(float(fields.get("dmg", "0")));
         if door.damage == 0 and kind != "func_button" {
@@ -953,6 +1162,16 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                     leader.keys.append(key);
                 }
             }
+            # LinkDoors: the master takes a member's message and key wording.
+            if part.touch_message and not leader.touch_message {
+                leader.touch_message = part.touch_message;
+                leader.talk = part.talk;
+            }
+            if part.key_message and not leader.key_message {
+                leader.key_message = part.key_message;
+                leader.key_try = part.key_try;
+                leader.key_use = part.key_use;
+            }
             if leader.shared_health and part.max_health > 0 {
                 leader.health = part.health;
                 leader.max_health = part.max_health;
@@ -996,6 +1215,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 leader +>:DoorMember:+> part;
             }
         }
+        if len(leader.voices) == 3 {
+            centre = leader.bounds.center().add(leader.rest).add(leader.travel.scale(leader.position));
+            leader.start_voice = mover_voice(world, bsp.game, leader.voices[0], False, centre);
+            leader.move_voice = mover_voice(world, bsp.game, leader.voices[1], True, centre);
+            leader.stop_voice = mover_voice(world, bsp.game, leader.voices[2], False, centre);
+        }
+        leader.voiced_state = leader.state;
         world +>:HasDoor:+> leader;
     }
     collision.reindex();
@@ -1322,8 +1548,9 @@ def connect_targets(world: World, bsp: Bsp) {
 }
 
 
-"""Activation sounds: Q1/Q2 trigger `sounds` (secret, beep, switch), Q2 message
-beeps (G_UseTargets plays misc/talk1 unless `noise`), Q1 secrets' default."""
+"""Activation sounds: Q1/Q2 trigger `sounds` (secret, beep, switch), message
+beeps (Q1 SUB_UseTargets misc/talk, Q2 G_UseTargets misc/talk1 unless
+`noise`), Q1 secrets' default."""
 def authored_cue(game: str, kind: str, fields: dict[str, str]) -> str {
     style = int(fields.get("sounds", "0"));
     if (game == "q1" and kind == "trigger_secret" or game == "q2" and kind in ["target_secret", "target_goal"]) and style == 0 and not fields.get("noise", "") {
@@ -1337,6 +1564,10 @@ def authored_cue(game: str, kind: str, fields: dict[str, str]) -> str {
     }
     if style == 3 {
         return "sound/misc/trigger1.wav";
+    }
+    # Q1 SUB_UseTargets: a message without a noise sounds misc/talk.
+    if game == "q1" and fields.get("message", "") and style == 0 {
+        return "sound/misc/talk.wav";
     }
     if game == "q2" and fields.get("message", "") {
         noise = fields.get("noise", "");
