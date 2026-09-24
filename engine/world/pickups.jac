@@ -1,5 +1,5 @@
 """Shared item contacts, inventory effects and arena respawn behavior."""
-import from .world { World, Entity, Player }
+import from .world { World, Entity, Player, In }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
 import from .models { Visual }
@@ -54,6 +54,9 @@ walker RaiseCapacity {
 }
 
 edge HasPickup: World --> Pickup {}
+"""An item. Q3 items may belong to a team, of which one member is present at a
+time (`benched` marks the rest); `jitter` is Q3's `random` respawn spread;
+`dropped` items were thrown by a dying player and vanish after `lifetime`."""
 node Pickup(Entity) {
     has rule: PickupRule,
         visual: Visual = Visual(),
@@ -63,7 +66,54 @@ node Pickup(Entity) {
         reusable_use: bool = False,
         activation: Signal = Signal(),
         respawn: float = 0.0,
-        remaining: float = 0.0;
+        remaining: float = 0.0,
+        benched: bool = False,
+        jitter: float = 0.0,
+        seed: int = 1,
+        dropped: bool = False,
+        lifetime: float = 0.0,
+        duration: float = -1.0;
+}
+
+"""g_main.c G_FindTeams for items: every item with the same `team` key is in
+one chain, and g_items.c RespawnItem brings back a random member of it."""
+node ItemTeam {
+    has name: str = "",
+        seed: int = 1;
+
+    """A random member (rand() % count)."""
+    def pick(members: list[Pickup]) -> Pickup | None {
+        if not members {
+            return None;
+        }
+        self.seed = (self.seed * 48271) % 2147483647;
+        return members[self.seed % len(members)];
+    }
+}
+
+edge TeamMember: ItemTeam --> Pickup {}
+edge InTeam: Pickup --> ItemTeam {}
+
+"""The respawn wait after a pickup: g_items.c adds crandom() * random, at
+least a second."""
+def respawn_wait(item: Pickup) -> float {
+    if item.jitter <= 0.0 {
+        return item.respawn;
+    }
+    item.seed = (item.seed * 48271) % 2147483647;
+    spread = (float(item.seed) / 2147483647.0 * 2.0 - 1.0) * item.jitter;
+    return max(1.0, item.respawn + spread);
+}
+
+"""Take a dropped item out of the world."""
+def remove_pickup(world: World, item: Pickup) {
+    item.active = False;
+    item.visual.visible = False;
+    world del ->:HasPickup:-> item;
+    for link in [edge item->:In:->] {
+        del link;
+    }
+    world.item_serial += 1;
 }
 
 # Segment against an item box expanded by the player body; preserves fast crossings.
@@ -109,9 +159,11 @@ walker PickupTick {
         forced: bool = False,
         sounds: list[str] = [],
         messages: list[str] = [],
-        collected: int = 0;
+        collected: int = 0,
+        world: World | None = None;
 
     can begin with World entry {
+        self.world = here;
         if self.dt > 0.0 {
             if self.selected_only { visit self.targets; }
             else { visit [here->:HasPickup:->]; }
@@ -140,14 +192,36 @@ walker PickupTick {
         if here.waiting_for_use and not self.forced {
             return;
         }
+        # LaunchItem: dropped items are freed after thirty seconds.
+        if here.dropped and self.advance_time {
+            here.lifetime -= self.dt;
+            world = self.world;
+            if here.lifetime <= 0.0 and world is not None {
+                remove_pickup(world, here);
+                return;
+            }
+        }
         if not here.active and not self.forced {
-            if not self.advance_time { return; }
+            if not self.advance_time or here.benched { return; }
             if here.respawn <= 0.0 {
                 return;
             }
             here.remaining = max(0.0, here.remaining - self.dt);
             if here.remaining > 0.0 {
                 return;
+            }
+            # RespawnItem: a team brings back one member at random.
+            teams = [here->:InTeam:->][?:ItemTeam];
+            if teams {
+                chosen = teams[0].pick([teams[0]->:TeamMember:->][?:Pickup]);
+                if chosen is not None and chosen is not here {
+                    here.benched = True;
+                    chosen.benched = False;
+                    chosen.active = True;
+                    chosen.remaining = 0.0;
+                    chosen.visual.visible = True;
+                    return;
+                }
             }
             here.active = True;
             here.visual.visible = True;
@@ -163,8 +237,11 @@ walker PickupTick {
         accepted = 0;
         rule = here.rule;
         if rule.kind == "powerup" {
+            # A dropped powerup keeps the time its carrier had left.
             grant = self.player spawn GrantPowerup(
-                kind=rule.powerup, duration=rule.duration, additive=rule.additive
+                kind=rule.powerup,
+                duration=here.duration if here.duration > 0.0 else rule.duration,
+                additive=rule.additive
             );
             accepted = 1 if grant.granted is not None else 0;
         } elif rule.kind.startswith("holdable_") {
@@ -276,8 +353,12 @@ walker PickupTick {
         }
         if accepted > 0 {
             here.active = False;
-            here.remaining = here.respawn;
+            here.remaining = respawn_wait(here);
             here.visual.visible = False;
+            world = self.world;
+            if here.dropped and world is not None {
+                remove_pickup(world, here);
+            }
             self.collected += 1;
             if rule.sound {
                 self.sounds.append(rule.sound);

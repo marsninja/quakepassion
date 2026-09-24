@@ -789,6 +789,10 @@ impl App.step() -> bool {
         if hurt {
             self.pain_time = 0.2;
         }
+        if self.level.bsp.game == "q3" and self.player.health <= 0 and self.pain_health > 0 {
+            # g_combat.c player_die: TossClientItems.
+            toss_items(self.world, self.player, selected_weapon(self.combat).key, self.level.collision, self.level.collision.eye_height);
+        }
         if self.level.bsp.game == "q3" {
             # cg_event.c: the player's own body cues its pain, death, jumps,
             # landings and footsteps in its character's voice.

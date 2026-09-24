@@ -12,6 +12,7 @@ import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual, PlayerRig }
 import from .player_rig { PoseRig, rig_sound, reset_rig }
 import from .body_queue { CorpseTick, leave_corpse }
+import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .bot_character { BotCharacter, BotState }
@@ -2436,6 +2437,10 @@ walker CombatTick {
             }
             corpse = here.visual;
             if isinstance(corpse, PlayerRig) {
+                # TossClientItems as the body starts to fall.
+                if corpse.alive and self.world is not None {
+                    toss_items(self.world, here, here.shown_weapon, self.collision, here.eye_height);
+                }
                 self.pose_body(here, corpse, Vec3());
             }
             gibs = here.gib_rule;

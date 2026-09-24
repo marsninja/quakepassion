@@ -21,7 +21,9 @@ obj Surface {
 
 
 node World {
-    has name: str = "dev";
+    has name: str = "dev",
+        # Bumped whenever items are dropped into or leave the world at runtime.
+        item_serial: int = 0;
 }
 
 

@@ -324,7 +324,11 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             );
         }
     }
+    # Dropped items are transient and not saved; a benched team member is.
     for pickup in [world->:HasPickup:->][?:Pickup] {
+        if pickup.dropped {
+            continue;
+        }
         lines.append(
             "P "
                 + numbers(
@@ -332,7 +336,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         1.0 if pickup.active else 0.0,
                         pickup.remaining,
                         1.0 if pickup.waiting_for_use else 0.0,
-                        1.0 if pickup.activate_on_use else 0.0
+                        1.0 if pickup.activate_on_use else 0.0,
+                        1.0 if pickup.benched else 0.0
                     ]
                 )
         );
@@ -559,7 +564,7 @@ def restore(
     l = 0;
     teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
     k = 0;
-    pickups = [world->:HasPickup:->][?:Pickup];
+    pickups = [pickup for pickup in [world->:HasPickup:->][?:Pickup] if not pickup.dropped];
     doors = [world->:HasDoor:->][?:Door];
     signals = [world->:HasSignal:->][?:Signal];
     for signal in signals {
@@ -933,7 +938,11 @@ def restore(
                 boss_pose(enemy);
             }
         } elif words[0] == "P" and p < len(pickups) {
-            row = values(" ".join(words[1:]), 4);
+            # Older saves have no benched flag.
+            row = values(" ".join(words[1:]), 5 if len(words) == 6 else 4);
+            if len(row) == 4 {
+                row.append(0.0);
+            }
             if row[0] not in [0.0, 1.0]
                 or row[1] < 0.0
                 or row[2] not in [0.0, 1.0]
@@ -947,6 +956,7 @@ def restore(
             item.remaining = row[1];
             item.waiting_for_use = row[2] != 0.0;
             item.activate_on_use = row[3] != 0.0;
+            item.benched = row[4] != 0.0;
             item.visual.visible = item.active;
         } elif words[0] == "D" and d < len(doors) {
             door = doors[d];

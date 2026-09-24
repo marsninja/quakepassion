@@ -70,7 +70,8 @@ obj ArenaContactIndex {
         pickups: list[Pickup] = [],
         portals: list[Traversal] = [],
         items: dict[str, list[Pickup]] = {},
-        travels: dict[str, list[Traversal]] = {};
+        travels: dict[str, list[Traversal]] = {},
+        serial: int = -1;
 
     def cells(lo: Vec3, hi: Vec3) -> list[str] {
         keys: list[str] = [];
@@ -82,8 +83,10 @@ obj ArenaContactIndex {
         return keys;
     }
     def prepare(world: World) {
-        if self.world is world { return; }
+        # Dropped items come and go; the index is rebuilt when they do.
+        if self.world is world and self.serial == world.item_serial { return; }
         self.world = world;
+        self.serial = world.item_serial;
         self.pickups = [world->:HasPickup:->][?:Pickup];
         self.portals = [world->:HasTraversal:->][?:Traversal];
         self.items = {};
