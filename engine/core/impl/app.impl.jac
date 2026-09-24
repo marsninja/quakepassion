@@ -170,7 +170,9 @@ impl App.render_frame() {
         if self.stats_screen {
             self.draw_stats();
         }
-        if not self.smoke and self.hud.ready and not self.stats_screen {
+        # The status bar gives way to intermission views (Sbar_Draw draws only
+        # the intermission or finale overlay then).
+        if not self.smoke and self.hud.ready and not self.finale_active {
             status = self.hud_status();
             self.hud.draw(status, self.renderer.width, self.renderer.height);
             if self.hud.three_d {
