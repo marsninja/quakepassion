@@ -3,9 +3,9 @@
 Quake: sbar.c's 320-wide status and inventory bars (gfx.wad), with the face,
 armor, health and ammo numbers, weapon and ammo inventory, keys, sigils and
 powerups. Quake II: the single-player statusbar layout (g_spawn.c) with its
-pics/*.pcx fields and icons. Quake III: cg_draw.c's status bar with 2D icons
-(cg_draw3dIcons 0): ammo, health with the player's head icon, armor and the
-crosshair. Each layout is scaled up by a whole factor and
+pics/*.pcx fields and icons. Quake III: cg_draw.c's status bar: ammo, health
+with the player's head, armor and the crosshair, with 3D model icons
+(hud_models.jac) or, without them, the 2D icons (cg_draw3dIcons 0). Each layout is scaled up by a whole factor and
 centred, as source ports draw the original virtual screens."""
 import math;
 import from vendor.raylib {
@@ -70,7 +70,8 @@ obj HudStatus {
 obj HudRenderer {
     has pics: dict[str, HudPic] = {},
         game: str = "",
-        ready: bool = False;
+        ready: bool = False,
+        three_d: bool = False;
 
     def add(name: str, texture: Texture) {
         id = 0;
@@ -344,21 +345,24 @@ obj HudRenderer {
         low = [255, 51, 51, 255];
         grey = [128, 128, 128, 255];
         white = [255, 255, 255, 255];
+        # With 3D icons (HudModels) the models take these boxes instead.
         if status.ammo >= 0 {
             self.q3_field(status.ammo, 3, left, y, scale, grey if status.firing else normal);
             icon = "ammo_" + status.weapon;
-            if self.has_pic(icon) {
+            if self.has_pic(icon) and not self.three_d {
                 self.blit(icon, left + 100.0 * scale, y, 48.0 * scale, 48.0 * scale);
             }
         }
         tint = white if status.health > 100 else (normal if status.health > 25 else (low if int(status.clock * 4.0) % 2 == 0 else normal));
         self.q3_field(status.health, 3, left + 185.0 * scale, y, scale, tint);
-        if self.has_pic("head") {
+        if self.has_pic("head") and not self.three_d {
             self.blit("head", left + 285.0 * scale, y, 48.0 * scale, 48.0 * scale);
         }
         if status.armor > 0 {
             self.q3_field(status.armor, 3, left + 370.0 * scale, y, scale, white if status.armor > 100 else normal);
-            self.blit("armor", left + 470.0 * scale, y, 48.0 * scale, 48.0 * scale);
+            if not self.three_d {
+                self.blit("armor", left + 470.0 * scale, y, 48.0 * scale, 48.0 * scale);
+            }
         }
         # The default crosshair (cg_drawCrosshair 4), 24 units square.
         if self.has_pic("crosshair") {

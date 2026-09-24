@@ -3,6 +3,7 @@ the pass walkers over the world graph; each frame floods visibility and
 draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
+import math;
 import from ..world.doors { BlastMover }
 import from ..world.gates { ApplyGates, rune_summary }
 import from ..world.chthon { ChthonTick }
@@ -46,6 +47,8 @@ import from ..world.arena {
     Competes,
     MatchTick,
     ChooseSpawn,
+    SpawnPoint,
+    HasSpawn,
     match_of,
     join_match,
     standings,
@@ -83,7 +86,8 @@ import from ..world.combat {
     weapon_input,
     select_weapon,
     selected_weapon,
-    owns_weapon
+    owns_weapon,
+    KillBox
 }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }
@@ -94,8 +98,17 @@ import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
 import from ..world.bot_tactics { BotTactics }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
+import from ..world.clocks { ClockTick, HasClock }
+import from ..world.flyers { FlyerTick, HasFlyer, HasBomb }
+import from ..world.turrets { TurretTick, HasTurret }
+import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
+import from ..render.portal { PortalTarget, draw_portal_view }
+import from ..render.hud_models { HudModels }
+import from ..world.reflection { show_body }
+import from ..world.falling { FallingTick, HasFallingObject }
+import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
-import from games.hud_art { load_hud_art }
+import from games.hud_art { load_hud_art, load_q3_models }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
 import from ..render.viewweapon { ViewWeapon }
@@ -146,6 +159,13 @@ obj App {
         last_drawn: int = 0,
         level: Level = Level(),
         quake: QuakeRenderer = QuakeRenderer(),
+        portal_target: PortalTarget = PortalTarget(),
+        hud_models: HudModels = HudModels(),
+        level_clocks: bool = False,
+        level_falling: bool = False,
+        level_flyers: bool = False,
+        level_turrets: bool = False,
+        player_trail: PlayerTrail | None = None,
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
         viewweapon: ViewWeapon = ViewWeapon(),
@@ -192,6 +212,9 @@ obj App {
         runes_message: bool = False;
 
     def begin_intermission(text: str);
+    def begin_podium(contest: ArenaMatch);
+    def render_portal(faces: list[int]);
+    def survey_level();
     def adjust_setting(direction: int);
     def reset_settings();
     def refresh_settings();

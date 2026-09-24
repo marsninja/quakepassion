@@ -3,6 +3,7 @@ import math;
 import from .world { World, Player }
 import from .damage { Damage }
 import from .finale { TeleportTrain, teleport_train_at, telefrag }
+import from .combat { KillBox, CombatState }
 import from .triggers { trigger_volume }
 import from .doors { door_direction }
 import from .signals { Signal, HasSignal }
@@ -35,7 +36,8 @@ node Traversal {
         nav_exit: Vec3 | None = None,
         activation: Signal = Signal(),
         gated: bool = False,
-        window: float = 0.0;
+        window: float = 0.0,
+        game: str = "";
 }
 
 walker TraversalTick {
@@ -47,6 +49,9 @@ walker TraversalTick {
         relocated: bool = False,
         targets: list[Traversal] = [],
         selected_only: bool = False,
+        bystander: Player | None = None,
+        bystander_height: float = 22.0,
+        tally: CombatState | None = None,
         world: World | None = None;
 
     can begin with World entry {
@@ -131,6 +136,18 @@ walker TraversalTick {
             self.player.teleport_cooldown = 0.2;
             self.player.teleport_hold = destination.hold_time;
             self.relocated = True;
+            # Whoever already stands at the destination is telefragged.
+            world = self.world;
+            if world is not None {
+                world spawn KillBox(
+                    mover=self.player,
+                    origin=destination.origin,
+                    game=here.game,
+                    bystander=self.bystander,
+                    bystander_height=self.bystander_height,
+                    tally=self.tally
+                );
+            }
         } else {
             self.player.velocity = here.velocity.scale(1.0);
         }
@@ -202,6 +219,7 @@ def load_traversal(world: World, bsp: Bsp) {
             if target and item.fields.get("targetname", "") == target
         ];
         traversal = Traversal(
+            game=bsp.game,
             volume=volume,
             kind="teleport" if kind == "trigger_teleport" or point_pad else "push",
             activation=Signal(entities=[entity_index]),

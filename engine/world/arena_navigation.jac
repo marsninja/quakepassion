@@ -1,6 +1,6 @@
 """Arena-specific goals and traversal; campaign monsters retain local pursuit."""
 import math;
-import from .world { World }
+import from .world { World, Player }
 import from .combat { Opponent, HasOpponent }
 import from .bot_routes { NavMesh, HasNavMesh, reachable }
 import from .pickups { Pickup, HasPickup, PickupTick }
@@ -175,7 +175,9 @@ walker ArenaNavigationTick {
         world: World | None = None,
         pickups: list[Pickup] = [],
         traversals: list[Traversal] = [],
-        mesh: NavMesh | None = None;
+        mesh: NavMesh | None = None,
+        bystander: Player | None = None,
+        bystander_height: float = 22.0;
 
     can begin with World entry {
         self.world = here;
@@ -204,7 +206,8 @@ walker ArenaNavigationTick {
             }
             traversal = self.world spawn TraversalTick(
                 player=here, collision=self.collision.for_body(here.eye_height),
-                start=before, dt=self.dt, targets=nearby, selected_only=True
+                start=before, dt=self.dt, targets=nearby, selected_only=True,
+                bystander=self.bystander, bystander_height=self.bystander_height
             );
             if traversal.relocated {
                 here.route = [];

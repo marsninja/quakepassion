@@ -8,7 +8,8 @@ import math;
 import from engine.world.fixtures { Fixture, HasFixture }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
-import from engine.world.world { World, move_to_area }
+import from engine.world.world { World, Entity, move_to_area }
+import from engine.world.flyers { Flyer, HasFlyer, Bomb, HasBomb }
 import from engine.world.level { Level }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.math.vec3 { Vec3 }
@@ -95,6 +96,16 @@ def fixture_rule(game: str, kind: str, flags: int) -> FixtureRule | None {
         if kind == "misc_easterchick2" {
             return FixtureRule(model="models/monsters/bitch/tris.md2", frames=list(range(248, 288)));
         }
+        # g_misc.c SP_misc_gib_*: severed remains left lying in the level.
+        if kind == "misc_gib_head" {
+            return FixtureRule(model="models/objects/gibs/skull/tris.md2");
+        }
+        if kind == "misc_gib_arm" {
+            return FixtureRule(model="models/objects/gibs/arm/tris.md2");
+        }
+        if kind == "misc_gib_leg" {
+            return FixtureRule(model="models/objects/gibs/leg/tris.md2");
+        }
         if kind == "misc_eastertank" {
             return FixtureRule(model="models/monsters/tank/tris.md2", frames=list(range(254, 293)));
         }
@@ -165,6 +176,35 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
             move_to_area(fixture, level.areas[level.locate(position)]);
             world +>:HasFixture:+> fixture;
             count += 1;
+        }
+        # Fly-by ships and their bombs take their original models.
+        flyers = [world->:HasFlyer:->][?:Flyer];
+        bombs = [world->:HasBomb:->][?:Bomb];
+        pieces: list[Entity] = [];
+        paths: list[str] = [];
+        for flyer in flyers {
+            pieces.append(flyer);
+            paths.append(flyer.model);
+        }
+        for bomb in bombs {
+            pieces.append(bomb);
+            paths.append("models/objects/bomb/tris.md2");
+        }
+        for i in range(len(pieces)) {
+            key = "q2:" + paths[i];
+            if key not in resources {
+                loaded = catalog.model(key);
+                resources[key] = ModelResource(name=key, model=loaded.model, skins=loaded.skins);
+                world +>:HasModelResource:+> resources[key];
+            }
+            shown = attach_model(pieces[i], resources[key]);
+            shown.visible = False;
+            if isinstance(pieces[i], Flyer) {
+                flyers[i].visual = shown;
+            } else {
+                bombs[i - len(flyers)].visual = shown;
+            }
+            move_to_area(pieces[i], level.areas[level.locate(pieces[i].pos)]);
         }
     } finally {
         catalog.close();

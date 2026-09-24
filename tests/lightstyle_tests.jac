@@ -6,7 +6,9 @@ import from engine.world.lightstyles {
     Switches,
     LightStyleTick,
     load_light_styles,
-    letter_scale
+    letter_scale,
+    LightRamp,
+    Ramps
 }
 import from engine.world.world { World }
 import from engine.formats.bsp { Bsp, MapEntity }
@@ -56,4 +58,26 @@ test "gfx.wad pictures decode through the palette with index 255 transparent" {
     sbar = pictures["sbar"];
     assert sbar.width == 2 and sbar.height == 1;
     assert list(sbar.pixels) == [3, 4, 5, 255, 253, 254, 255, 0];
+}
+
+test "light ramps run their target light between two letters, reversing on toggle" {
+    world = World();
+    bsp = Bsp(game="q2");
+    bsp.entities = [
+        MapEntity(fields={"classname": "worldspawn"}),
+        MapEntity(fields={"classname": "light", "targetname": "hall", "style": "40"}),
+        MapEntity(fields={"classname": "target_lightramp", "target": "hall", "message": "az", "speed": "2", "spawnflags": "1"})
+    ];
+    styles = load_light_styles(world, bsp);
+    assert styles is not None;
+    ramps = [styles->:Ramps:->][?:LightRamp];
+    assert len(ramps) == 1 and ramps[0].style == 40;
+    ramps[0].activation.pending = 1;
+    world spawn LightStyleTick(dt=1.0);
+    assert styles.patterns[40] == "n";
+    world spawn LightStyleTick(dt=1.0);
+    assert styles.patterns[40] == "z" and styles.values[40] > 2.0;
+    ramps[0].activation.pending = 1;
+    world spawn LightStyleTick(dt=2.0);
+    assert styles.patterns[40] == "a" and styles.values[40] == 0.0;
 }

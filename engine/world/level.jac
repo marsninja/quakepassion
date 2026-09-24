@@ -16,11 +16,16 @@ import from ..math.aabb { AABB }
 import from .rotators { load_rotators }
 import from .shooters { load_shooters }
 import from .targets { load_targets }
-import from .doors { load_doors, connect_targets, pose_doors }
+import from .doors { load_doors, connect_targets, pose_doors, flood_doors }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
 import from .lightstyles { load_light_styles }
+import from .clocks { load_clocks }
+import from .flyers { load_flyers }
+import from .falling { load_falling_objects }
+import from .turrets { load_turrets }
+import from .portals { load_portals }
 import from .finale { load_finale }
 import from .hazards { load_hazards }
 import from .speakers { load_speakers }
@@ -113,7 +118,8 @@ obj Level {
         surface_stages: dict[int, list[ModelStage]] = {},
         surface_deforms: dict[int, list[Deform]] = {},
         sky_clouds: list[ModelStage] = [],
-        cloud_height: float = 128.0;
+        cloud_height: float = 128.0,
+        portal_ranges: dict[int, float] = {};
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -262,11 +268,33 @@ def load_level(
                 }
             }
         }
+        # Fog volumes take their colour and thickness from their shader; fog
+        # shaders' own surfaces draw nothing but the fog pass.
+        for fog in level.bsp.fogs {
+            parms = assets.fog_parms(fog.shader);
+            if parms {
+                fog.color = Vec3(x=parms[0], y=parms[1], z=parms[2]);
+                fog.depth = parms[3];
+            }
+        }
+        for index in range(len(level.bsp.textures)) {
+            reach = assets.portal_range(level.bsp.textures[index].name);
+            if reach >= 0.0 {
+                level.portal_ranges[index] = reach;
+            }
+        }
+        fog_shaders: list[int] = [];
+        for index in range(len(level.bsp.textures)) {
+            if assets.fog_parms(level.bsp.textures[index].name) {
+                fog_shaders.append(index);
+            }
+        }
         for face in level.bsp.faces {
             material = level.bsp.textures[face.texture];
             face.alpha_test = material.alpha_test;
             face.additive = material.additive;
             face.two_sided = material.two_sided;
+            face.fog_only = face.texture in fog_shaders;
         }
         assets.close();
         # Palette used only for the diagnostic checkerboard on missing images.
@@ -395,6 +423,9 @@ def prepare_level(world: World, level: Level) {
     load_exits(world, level.bsp);
     load_trains(world, level.bsp, level.collision);
     load_light_styles(world, level.bsp);
+    load_clocks(world, level.bsp);
+    load_flyers(world, level.bsp);
+    load_falling_objects(world, level.bsp, level.collision);
     load_finale(world, level.bsp);
     load_hazards(world, level.bsp);
     load_speakers(world, level.bsp);
@@ -402,7 +433,10 @@ def prepare_level(world: World, level: Level) {
     load_brushes(world, level.bsp, level.collision);
     load_lightning(world, level.bsp);
     load_doors(world, level.bsp, level.collision, connect=False);
+    flood_doors(world, level.liquids);
     load_rotators(world, level.bsp, level.collision);
+    load_turrets(world, level.bsp, level.collision);
+    load_portals(world, level.bsp);
     load_shooters(world, level.bsp);
     load_targets(world, level.bsp);
     load_traversal(world, level.bsp);

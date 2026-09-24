@@ -100,6 +100,11 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
                 flags=i32_at(lumps[5], p + 32)
             )
         );
+        # nexttexinfo chains animated textures (-1 ends the chain).
+        following = i32_at(lumps[5], p + 72);
+        if following > 0 and following * 76 < len(lumps[5]) {
+            bsp.texture_next[i] = following;
+        }
     }
     edge_count = records(lumps[11], 4);
     surf_count = records(lumps[12], 4);

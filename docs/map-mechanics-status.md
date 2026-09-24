@@ -88,12 +88,51 @@ fixtures on Q1 e2m6/e1m6, Q2 jail4/security and Q3 q3dm19/q3dm15, with captures.
 
 Snapshot format **20** stores mover clocks, shooter timing and trap projectiles.
 
+## Q2 entities from the loose-ends pass
+
+- `func_water` moves like a door, and its liquid volume moves with its brush, so
+  pools fill and drain.
+- `func_killbox`, when used, telefrags everything inside its box, the player
+  included.
+- `func_object` brushes drop under gravity shortly after spawning, or appear and
+  drop when used if flagged `TRIGGER_SPAWN`. They land on the first floor below
+  them and crush what they fall on for `dmg` (100 by default).
+- `func_clock` counts up or down each second. It writes its time into a
+  `target_string`, which switches the texture frames of its team of
+  `target_character` brushes. A finished timer fires its `pathtarget` and
+  restarts if flagged `MULTI_USE`.
+- `target_lightramp` ramps a light style between two letters over `speed`
+  seconds (a `Ramps` edge to the light).
+- `misc_viper` and `misc_strogg_ship` appear when used and fly their
+  `path_corner` chain at 300 units a second, firing each corner's `pathtarget`.
+  `misc_viper_bomb` falls with the viper's velocity and bursts on impact.
+- `turret_breach`, `turret_base` and `turret_driver` (jail1, strike;
+  `engine/world/turrets.jac`):
+  - The driver is an infantry soldier riding behind the gun (a `Mans` edge). It
+    spots the player as a monster would and aims the breach at their eyes.
+  - The breach turns at most `speed` degrees a second on each axis, within its
+    pitch limits (30° up and down by default) and yaw limits. The base turns with
+    it in yaw.
+  - Once the reaction time has passed (3 − skill seconds from sighting), the
+    breach fires a 100–150 damage rocket at 550 + 50 × skill units a second from
+    its muzzle point, then waits a second longer before firing again.
+  - The driver moves with the gun, rising as the gun tilts down, snapped to
+    eighths as `turret_breach_think` does. When it dies, the gun levels off and
+    stays idle.
+- `trigger_multiple` and `trigger_once` flagged `MONSTER` also fire for monsters
+  standing in them, and `NOT_PLAYER` ones ignore the player. fact2 uses both,
+  one of them for a crusher door only monsters trip.
+- Texture animation follows `R_TextureAnimation` for Q1 and texinfo `nexttexture`
+  chains for Q2, and buttons show their pressed frames.
+- `scripts/turret_smoke.jac` shows each turret swinging toward the player and
+  firing on jail1 and strike. `tests/turret_tests.jac`, `tests/clock_tests.jac`,
+  `tests/loose_ends_tests.jac` and `tests/trail_tests.jac` cover the rest.
+
 ## Limits
 
 Rotating-mover collision uses Q2's approximation, which keeps the player's box
 unrotated. Pushing actors along a rotation checks their destination, not the
-swept arc. Q2 `func_water`, `func_object`, `func_killbox`, `func_clock`,
-`target_lightramp`, `target_character`, animated and switched light styles, misc
-fly-by ships, turrets and monster `point_combat` routes remain open; turrets and combat points belong with the
-monster AI milestone. Q2 `MONSTER`-only triggers are not yet activated by
-monsters. Q3 portal surfaces are not rendered.
+swept arc. A turning turret does not push or crush what it swings into
+(`turret_blocked`), and a save does not keep a turret's current aim.
+`target_actor` is not implemented: the only one in the shipped maps (biggun) has
+no `misc_actor` to drive. Q3 portal surfaces are not rendered.

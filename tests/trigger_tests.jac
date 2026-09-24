@@ -72,10 +72,16 @@ test "one-shot and negative wait triggers cannot fire twice" {
 
 
 test "unsupported flags and partial target fan-out do not activate doors" {
-    # Q2 MONSTER-only triggers remain unsupported; named, directional,
-    # killtarget and random triggers now load.
+    # Q2 MONSTER and NOT_PLAYER triggers load as monster triggers; flags the
+    # original never defines still keep a trigger out. Named, directional,
+    # killtarget and random triggers load.
     fixture = trigger_fixture();
-    fixture.bsp.entities[1].fields["spawnflags"] = "1";
+    fixture.bsp.entities[1].fields["spawnflags"] = "3";
+    load_triggers(fixture.world, fixture.bsp);
+    loaded = [fixture.world->:HasTrigger:->][?:TouchTrigger];
+    assert len(loaded) == 1 and loaded[0].monsters and not loaded[0].players;
+    fixture = trigger_fixture();
+    fixture.bsp.entities[1].fields["spawnflags"] = "8";
     load_triggers(fixture.world, fixture.bsp);
     assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 0;
     for fields in [

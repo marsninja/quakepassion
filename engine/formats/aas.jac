@@ -71,34 +71,38 @@ obj Aas {
     }
 }
 
-"""A header integer; be_aas_file.c AAS_DData XORs each header byte after the
-version with its offset times 119."""
-def header_i32(data: bytes, p: int) -> int {
+"""A header integer. Version 5 files hide their header: be_aas_file.c
+AAS_DData XORs each byte after the version with its offset times 119.
+Version 4 (AASVERSION_OLD, e.g. q3dm19) stores it plainly."""
+def header_i32(data: bytes, p: int, hidden: bool = True) -> int {
     value = 0;
     for k in range(4) {
-        value |= (data[p + k] ^ (((p + k - 8) * 119) & 255)) << (8 * k);
+        mask = ((p + k - 8) * 119) & 255 if hidden else 0;
+        value |= (data[p + k] ^ mask) << (8 * k);
     }
     return value - 4294967296 if value >= 2147483648 else value;
 }
 
-def lump(data: bytes, index: int) -> tuple[int, int] {
-    return (header_i32(data, 12 + index * 8), header_i32(data, 16 + index * 8));
+def lump(data: bytes, index: int, hidden: bool = True) -> tuple[int, int] {
+    return (header_i32(data, 12 + index * 8, hidden), header_i32(data, 16 + index * 8, hidden));
 }
 
 def parse_aas(data: bytes) -> Aas {
     require_range(data, 0, 124);
-    if data[0:4] != b"EAAS" or i32_at(data, 4) != 5 {
+    version = i32_at(data, 4);
+    if data[0:4] != b"EAAS" or version not in [4, 5] {
         raise ValueError("Unsupported AAS file");
     }
-    result = Aas(checksum=header_i32(data, 8));
-    planes = lump(data, 2);
+    hidden = version == 5;
+    result = Aas(checksum=header_i32(data, 8, hidden));
+    planes = lump(data, 2, hidden);
     require_range(data, planes[0], planes[1]);
     for i in range(planes[1] // 20) {
         p = planes[0] + i * 20;
         result.normals.append(vec_at(data, p));
         result.dists.append(f32_at(data, p + 12));
     }
-    nodes = lump(data, 10);
+    nodes = lump(data, 10, hidden);
     require_range(data, nodes[0], nodes[1]);
     for i in range(nodes[1] // 12) {
         p = nodes[0] + i * 12;
@@ -110,8 +114,8 @@ def parse_aas(data: bytes) -> Aas {
         result.front.append(i32_at(data, p + 4));
         result.back.append(i32_at(data, p + 8));
     }
-    areas = lump(data, 7);
-    settings = lump(data, 8);
+    areas = lump(data, 7, hidden);
+    settings = lump(data, 8, hidden);
     require_range(data, areas[0], areas[1]);
     require_range(data, settings[0], settings[1]);
     count = areas[1] // 48;
@@ -133,7 +137,7 @@ def parse_aas(data: bytes) -> Aas {
             )
         );
     }
-    reaches = lump(data, 9);
+    reaches = lump(data, 9, hidden);
     require_range(data, reaches[0], reaches[1]);
     for i in range(reaches[1] // 44) {
         p = reaches[0] + i * 44;

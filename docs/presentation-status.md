@@ -26,10 +26,15 @@ loads the art.
   - The health, ammo and armor icons.
   - The held weapon's icon.
   - The seconds left on a running powerup, with its icon.
-- **Quake III:** `cg_draw.c`'s status bar with 2D icons (`cg_draw3dIcons 0`).
+- **Quake III:** `cg_draw.c`'s status bar with the default 3D icons
+  (`cg_draw3dIcons 1`, `engine/render/hud_models.jac`).
   - Ammo, health and armor in the 32×48 digits: orange, red and flashing when
     health is low, white over 100, grey while firing.
-  - The ammo icon, the player's head icon and the armor icon.
+  - The held weapon's ammo box swings, the yellow armor spins, and Sarge's head
+    glances about, easing to a new angle every 0.1–2.1 s. When hurt, the head
+    swells and kicks (`CG_DrawStatusBarHead`).
+  - Each icon is drawn by `CG_Draw3DModel`: a 30° view of the model alone,
+    rendered offscreen and drawn into its box. The 2D icons remain the fallback.
   - The default crosshair.
 
 The text status line remains for Passion levels and whenever art is missing.
@@ -69,6 +74,53 @@ Q1 and Q2 lightmaps keep one layer per light style.
 - Q2 `SURF_FLOWING` surfaces scroll.
 - `SURF_TRANS33` and `SURF_TRANS66` faces blend over the world unlit.
 
+## Fog
+
+Q3 fog volumes draw as `tr_shade.c` does:
+- Each surface's fog number comes from the BSP. A volume's bounds and visible
+  side come from its fog brush, and its colour and `distanceToOpaque` come from
+  its shader's `fogParms`.
+- Opaque surfaces inside a volume, and the fog shaders' own surfaces, take a fog
+  pass. The pass blends the fog colour at the density read from the original
+  256×32 fog image (`R_CreateFogImage`, with the square-root fog table).
+- The fog coordinates are `RB_CalcFogTexCoords`': depth along the view over
+  eight times `distanceToOpaque`, cut at the visible surface when the eye is
+  outside the fog.
+- Models whose bounding sphere dips into a fog volume (`R_ComputeFogNum`) take
+  the same fog pass over their opaque surfaces.
+- Translucent shaders in fog take no fog pass. Their stages fade instead by what
+  the fog hides (`adjustColorsForFog`): colour for additive blends, alpha for
+  alpha blends, and both for premultiplied ones.
+- Fifteen of the original maps have fog, such as the lava haze of q3dm9 and
+  q3tourney2.
+
+## Portals and mirrors
+
+Q3 mirrors and camera portals render the view through them before the main
+view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
+`engine/render/portal.jac`).
+- A `misc_portal_surface` within 64 units of a `portal` shader's plane selects
+  that surface.
+  - Without a target it is a mirror: the view reflects through the plane.
+  - With one it looks out of the `misc_portal_camera`, oriented as `locateCamera`
+    and `CG_Portal` set it up. The camera aims at its target or along its angle,
+    quantized through the 162 `bytedirs` directions as the network byte is. It
+    is rolled by `roll`, and sways four degrees or spins at 25 or 75 degrees a
+    second by its flags.
+- The view transform is `R_GetPortalOrientations` and `R_MirrorPoint` /
+  `R_MirrorVector`, and visibility floods from the camera.
+- The view renders into its own framebuffer. The near plane is tilted onto the
+  portal plane (standing in for Q3's clip plane), and a mirror's image is
+  flipped, with its faces winding the other way.
+- The portal surface shows that image in screen space, then its own stages blend
+  over it. `alphaGen portal` fades them in with distance.
+- A camera portal only renders within its shader's `portalRange`, as
+  `SurfIsOffscreen` allows.
+- In a Q3 arena the player's own body (Sarge, holding the current weapon,
+  standing or running) is drawn only in these views, as `RF_THIRD_PERSON` does.
+- The original maps use this for the mirrors on q3dm0, q3dm8, q3tourney6 and
+  q3ctf2, and the teleporter windows on q3dm0, q3dm7 and q3dm11.
+
 ## Q3 shaders
 
 - Surface shaders that need more than one lightmapped pass draw stage by stage
@@ -78,8 +130,8 @@ Q1 and Q2 lightmaps keep one layer per light style.
   - `rgbGen` identity, vertex, const and waves (sin, triangle, square, sawtooth,
     inverse sawtooth, noise).
   - `alphaGen` const, wave, vertex and `lightingSpecular`.
-  - `tcMod` scroll, scale, rotate, turb and stretch, in order.
-  - `tcGen environment`.
+  - `tcMod` scroll, scale, rotate, turb, stretch and transform, in order.
+  - `tcGen environment` and `tcGen vector`.
   - `alphaFunc` and `depthWrite`.
 - `deformVertexes` `wave`, `move` and `bulge` sway vertices. `autosprite` and
   `autosprite2` turn quads toward the viewer.
@@ -99,10 +151,14 @@ rewires the weapon visual. The weapon drops away on death.
   uploads every layered Q3 shader.
 - `tests/lightstyle_tests.jac` covers style letters, 10 Hz animation, switches
   and WAD pictures.
+- `tests/fog_tests.jac` covers `fogParms`, the fog density table and the fog
+  coordinates. `scripts/fog_smoke.jac` loads the fog volumes of q3dm9,
+  q3tourney2 and q3dm12 and renders them from above and from inside.
+- `tests/portal_tests.jac` covers mirror and camera views, camera sway and
+  quantized aim. `scripts/portal_smoke.jac` renders through every portal shader
+  on q3tourney6, q3dm0 and q3dm7.
 
 ## Limits
 
-- The Q1 status bar needs native `bytes.find` for its WAD parser. An upstream
-  Jac fix is in progress; until then the Q1 loader falls back to Python.
-- `tcGen vector`, `tcMod transform`, portal surfaces and 3D HUD icons
-  (`cg_draw3dIcons 1`) remain open.
+- The Q1 status bar's WAD parser needs native `bytes.find`, which comes from
+  jac#9478 (open; applied to the local validation compiler).

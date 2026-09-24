@@ -11,7 +11,12 @@ obj ModelMaterial {
         sky: bool = False,
         farbox: str = "",
         cloud_height: float = 128.0,
-        deforms: list[Deform] = [];
+        deforms: list[Deform] = [],
+        fog: bool = False,
+        fog_color: Vec3 = Vec3(),
+        fog_depth: float = 1.0,
+        portal: bool = False,
+        portal_range: float = 256.0;
 }
 
 def number_at(tokens: list[str], i: int) -> float {
@@ -93,6 +98,25 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
     }
     if token == "tcgen" {
         stage.environment = argument == "environment";
+        if argument == "vector" {
+            # tcGen vector ( sx sy sz ) ( tx ty tz ), parentheses spaced or not.
+            values: list[float] = [];
+            j = i + 2;
+            while j < len(tokens) and tokens[j] != "\n" and len(values) < 6 {
+                text = tokens[j].replace("(", "").replace(")", "");
+                if text {
+                    values.append(number_at([text], 0));
+                }
+                j += 1;
+            }
+            if len(values) == 6 {
+                stage.vectors = [Vec3(x=values[0], y=values[1], z=values[2]), Vec3(x=values[3], y=values[4], z=values[5])];
+                material.advanced.append("tcgen vector");
+            } else {
+                material.unsupported.append("tcgen vector");
+            }
+            return j - 1;
+        }
         if argument == "lightmap" {
             stage.lightmap = True;
             material.advanced.append("tcgen lightmap");
@@ -151,6 +175,13 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
             stage.alpha_const = number_at(tokens, i + 2);
             return i + 2;
         }
+        if argument == "portal" {
+            # alphaGen portal <range>: opaque at the range, clear up close.
+            stage.alpha = "portal";
+            stage.alpha_const = number_at(tokens, i + 2) or 256.0;
+            material.portal_range = stage.alpha_const;
+            return i + 2;
+        }
         if argument == "vertex" {
             stage.alpha = "vertex";
         } elif argument == "lightingspecular" {
@@ -191,6 +222,10 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
         if argument == "stretch" {
             stage.mods.append(TexMod(kind="stretch", wave=wave_at(tokens, i + 2)));
             return i + 6;
+        }
+        if argument == "transform" {
+            stage.mods.append(TexMod(kind="transform", matrix=[number_at(tokens, i + k) for k in range(2, 8)]));
+            return i + 7;
         }
         material.unsupported.append("tcmod " + argument);
         return i + 1;
@@ -275,6 +310,25 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
                 material.cloud_height = number_at(tokens, i + 2) if height != "-" and number_at(tokens, i + 2) > 0.0 else 128.0;
                 i += 3;
             }
+        } elif depth == 1 and token == "portal" {
+            material.portal = True;
+        } elif depth == 1 and token == "fogparms" {
+            # fogParms ( r g b ) distanceToOpaque, parentheses spaced or not.
+            values: list[float] = [];
+            j = i + 1;
+            while j < len(tokens) and tokens[j] != "\n" and len(values) < 4 {
+                text = tokens[j].replace("(", "").replace(")", "");
+                if text {
+                    values.append(number_at([text], 0));
+                }
+                j += 1;
+            }
+            if len(values) == 4 {
+                material.fog = True;
+                material.fog_color = Vec3(x=values[0], y=values[1], z=values[2]);
+                material.fog_depth = max(1.0, values[3]);
+            }
+            i = j - 1;
         } elif depth == 1 and token == "surfaceparm" and i + 1 < len(tokens) and tokens[i + 1].lower() == "sky" {
             material.sky = True;
         } elif depth == 1 and token == "deformvertexes" and i + 1 < len(tokens) {
