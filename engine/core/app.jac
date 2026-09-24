@@ -33,7 +33,7 @@ import from ..world.rotators { RotatorTick }
 import from ..world.shooters { ShooterTick }
 import from ..world.targets { TargetTick, HasHelp, HelpComputer }
 import from ..world.triggers { TriggerTick, ShootTrigger, MonsterJumpTick }
-import from ..world.traversal { TraversalTick }
+import from ..world.traversal { TraversalTick, TeleportMonsters }
 import from ..world.arena_navigation {
     ArenaNavigationTick,
     ArenaContactIndex,

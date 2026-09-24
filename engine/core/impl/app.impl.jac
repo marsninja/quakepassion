@@ -1265,7 +1265,7 @@ impl App.step() -> bool {
                 );
                 break;
             }
-            self.world spawn TraversalTick(
+            traversed = self.world spawn TraversalTick(
                 player=self.player,
                 collision=self.level.collision,
                 start=previous_origin,
@@ -1273,6 +1273,18 @@ impl App.step() -> bool {
                 touching=self.walking and not self.finale_active,
                 tally=self.combat
             );
+            for cue in traversed.cues {
+                self.audio.play_path(cue);
+            }
+            if self.level.bsp.game in ["q1", "q2"] {
+                self.world spawn TeleportMonsters(
+                    collision=self.level.collision,
+                    dt=self.physics_clock.tick_rate,
+                    player=self.player,
+                    player_height=self.level.collision.eye_height,
+                    tally=self.combat
+                );
+            }
         }
     }
     if self.walking {
