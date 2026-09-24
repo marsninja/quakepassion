@@ -4,7 +4,7 @@ import from .particles { impact_spray, ParticleTick, rail_trail, beam_trail }
 import from .navigation { RouteSearch, RouteQueue, walk_edge }
 import from .opponent_rule { OpponentRule, AttackProfile, rule_profiles }
 import from .weapons { WeaponRule }
-import from .world { World, Player }
+import from .world { World, Player, area_of, move_to_area }
 import from .damage { Damage, blast_strength }
 import from .powerups { damage_scale, fire_interval_scale, empowered, speed_scale }
 import from .arena { ChooseSpawn }
@@ -16,6 +16,7 @@ import from .bot_character { BotCharacter }
 import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
+import from .pickups { Pickup }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace }
 import from ..physics.movement { MovePlayer, step_slide, slide }
@@ -123,8 +124,130 @@ node Opponent(Player) {
         fighting: bool = False,
         weapon_visual: Visual | None = None,
         shown_weapon: str = "",
-        trail_stamp: float = 0.0;
+        trail_stamp: float = 0.0,
+        slide_wait: float = 0.0,
+        lefty: bool = False,
+        idle_wait: float = -1.0,
+        tend_wait: float = 0.0,
+        revived: bool = False;
 }
+
+"""The item a monster leaves where it dies (Q1 backpacks, Q2 `item`)."""
+edge Drops: Opponent --> Pickup {}
+
+"""A Q2 medic's claim on the corpse it is going to raise (AI_MEDIC with the
+corpse as its enemy and the corpse's owner set to the medic)."""
+edge Mends: Opponent --> Opponent {}
+
+"""Q2 m_medic.c medic_FindDeadMonster: the healthiest-born corpse within 1024
+units the medic can see, that has finished dying and nobody else is raising."""
+walker FindPatient {
+    has medic: Opponent,
+        collision: CollisionMap,
+        best: Opponent | None = None;
+
+    can begin with World entry {
+        visit [here->:HasOpponent:->];
+    }
+
+    can consider with Opponent entry {
+        if here is self.medic
+            or here.health > 0
+            or here.gibbed
+            or here.dormant
+            or here.arena
+            or not here.visual.visible
+            or not here.death_animation
+            or here.rule.inert
+            or here.rule.decoration
+            or here.rule.passive
+            or here.rule.script
+            or here.rule.successor
+            or here.kind in ["monster_supertank", "monster_boss2", "monster_jorg", "monster_makron", "misc_insane"] {
+            return;
+        }
+        if here.animation_time < float(len(here.death_animation)) - 1.0 {
+            return;
+        }
+        for claimant in [here<-:Mends:<-][?:Opponent] {
+            if claimant.health > 0 {
+                return;
+            }
+        }
+        if here.pos.sub(self.medic.pos).length() > 1024.0 {
+            return;
+        }
+        sight = self.collision.trace_point(self.medic.pos, here.pos);
+        if sight.start_solid or sight.fraction < 1.0 {
+            return;
+        }
+        best = self.best;
+        if best is None or here.rule.health > best.rule.health {
+            self.best = here;
+        }
+    }
+}
+
+"""m_medic.c medic_cable_attack: stand the corpse back up as a fresh monster
+(ED_CallSpawn with its targets cleared) hunting the medic's old enemy."""
+def raise_patient(patient: Opponent, medic: Opponent, hunted: Player | None) {
+    patient.health = patient.rule.health;
+    patient.revived = True;
+    patient.visual.visible = True;
+    patient.pose_name = "";
+    patient.animation_time = 0.0;
+    patient.attack_clock = -1.0;
+    patient.attack_flash = 0.0;
+    patient.attack_wait = 1.0;
+    patient.attack_profile = -1;
+    patient.pain_wait = 0.0;
+    patient.pain_down = False;
+    patient.duck_wait = 0.0;
+    patient.leaping = False;
+    patient.remains = 0;
+    patient.pending_gibs = -1;
+    patient.pending_explosion = False;
+    patient.route = [];
+    patient.route_areas = [];
+    patient.foe = None;
+    patient.patrol_goal = None;
+    patient.holding = False;
+    patient.velocity = Vec3();
+    if hunted is not None and hunted.health > 0 {
+        patient.last_seen = hunted.pos.add(Vec3());
+        patient.alert = 8.0;
+        patient.sighted = True;
+        medic.last_seen = hunted.pos.add(Vec3());
+        medic.alert = 8.0;
+    }
+    medic del --> patient;
+}
+
+"""One event of the medic's cable: within 256 units and in sight the cable
+reaches the corpse, and at the profile's raise time the corpse stands up."""
+def cable_event(
+    world: World,
+    medic: Opponent,
+    patient: Opponent,
+    profile: AttackProfile,
+    at: float,
+    collision: CollisionMap,
+    hunted: Player | None
+) {
+    if patient.health > 0 or patient.gibbed {
+        return;
+    }
+    body = patient.pos.sub(Vec3(z=patient.eye_height * 0.5));
+    sight = collision.trace_point(medic.pos, body);
+    if body.sub(medic.pos).length() > 256.0 or sight.start_solid or sight.fraction < 1.0 {
+        return;
+    }
+    beam_trail(world, medic.pos.add(forward_from(medic.yaw, 0.0).scale(16.0)), body, "drain");
+    if abs(at - profile.revive_at) < 0.001 {
+        raise_patient(patient, medic, hunted);
+    }
+}
+
 
 # Q3 bg_pmove.c: dropping then raising a weapon before it can fire.
 glob WEAPON_SWITCH_TIME: float = 0.45;
@@ -162,22 +285,77 @@ def notices(watcher: Opponent, target: Vec3, distance: float, hostile: bool) -> 
     return facing;
 }
 
-"""Time between attacks by skill: Q1 SUB_AttackFinished skips the wait on
-Nightmare; Q2 M_CheckAttack halves the attack chance on Easy and doubles it
-on Hard and above."""
-def attack_pause(enemy: Opponent) -> float {
-    if enemy.game == "q1" and enemy.skill >= 3 {
+"""The wait after an attack before the next may start (attack_finished).
+Q1 SUB_AttackFinished and Q2 M_CheckAttack wait a random time after a ranged
+attack (0-2 seconds unless the monster sets its own), and none after melee;
+Q1 Nightmare skips the wait."""
+def attack_pause(enemy: Opponent, melee: bool = False) -> float {
+    if melee or (enemy.game == "q1" and enemy.skill >= 3) {
         return 0.0;
     }
+    enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+    roll = float(enemy.shot_random) / 2147483647.0;
+    return enemy.rule.rest_min + enemy.rule.rest_random * roll;
+}
+
+"""Q1 fight.qc CheckAttack and Q2 g_ai.c M_CheckAttack: each 10 Hz decision
+a monster in range only starts an attack with a chance that falls with range
+class, so between attacks it keeps running at its target. Melee reach always
+attacks (Q2 Easy: one time in four). Q2 scales the chance by skill, and
+monsters standing their ground fire more often."""
+def attack_chance(enemy: Opponent, distance: float, melee: bool) -> float {
+    rule = enemy.rule;
     if enemy.game == "q2" {
+        if melee {
+            return 0.25 if enemy.skill <= 0 else 1.0;
+        }
+        chance = 0.0;
+        if enemy.holding or rule.movement == "none" {
+            chance = 0.4;
+        } elif distance <= 80.0 {
+            chance = 0.2;
+        } elif distance < 500.0 {
+            chance = rule.near_chance if rule.near_chance >= 0.0 else 0.1;
+        } elif distance < 1000.0 {
+            chance = rule.mid_chance if rule.mid_chance >= 0.0 else 0.02;
+        }
         if enemy.skill <= 0 {
-            return enemy.rule.interval * 2.0;
+            chance *= 0.5;
+        } elif enemy.skill >= 2 {
+            chance *= 2.0;
         }
-        if enemy.skill >= 2 {
-            return enemy.rule.interval * 0.5;
-        }
+        return chance;
     }
-    return enemy.rule.interval;
+    if melee {
+        return 1.0;
+    }
+    has_melee = melee_reach(enemy) > 0.0;
+    if distance < 120.0 {
+        return 0.9;
+    }
+    if distance < 500.0 {
+        if rule.near_chance >= 0.0 {
+            return rule.near_chance;
+        }
+        return 0.2 if has_melee else 0.4;
+    }
+    if distance < 1000.0 {
+        if rule.mid_chance >= 0.0 {
+            return rule.mid_chance;
+        }
+        return 0.05 if has_melee else 0.1;
+    }
+    return 0.0;
+}
+
+"""Roll a decision's attack chance with the monster's own random stream."""
+def attack_roll(enemy: Opponent, distance: float, melee: bool) -> bool {
+    chance = attack_chance(enemy, distance, melee);
+    if chance >= 1.0 {
+        return True;
+    }
+    enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+    return float(enemy.shot_random) / 2147483647.0 < chance;
 }
 
 obj CombatState {
@@ -457,7 +635,10 @@ def damage_opponent(
                 tally.kills += 1;
             }
         }
-        victim.activation spawn Fire(inventory=inventory);
+        # A raised monster's targets were cleared (m_medic.c ED_CallSpawn).
+        if not victim.revived {
+            victim.activation spawn Fire(inventory=inventory);
+        }
         victim.visual.visible = bool(victim.death_animation)
             and not victim.rule.vanish_on_death;
         victim.attack_clock = -1.0;
@@ -478,6 +659,20 @@ def damage_opponent(
     }
     if isinstance(attacker, Opponent) {
         react_to_damage(victim, attacker);
+    } elif attacker is not None and not victim.arena {
+        # Q1 T_Damage / Q2 M_ReactToDamage: any hit from the player, a
+        # projectile or splash included, makes the player the enemy at once,
+        # even over a monster it was fighting.
+        if victim.game == "q1" and victim.alert <= 0.0 {
+            victim.attack_wait = max(victim.attack_wait, 1.0);
+        }
+        victim.foe = None;
+        victim.resume_hunt = False;
+        victim.last_seen = attacker.pos.add(Vec3());
+        victim.last_seen_height = 22.0;
+        victim.alert = 8.0;
+        victim.sighted = True;
+        victim.decision_wait = 0.0;
     }
     if damage.dealt <= 0 {
         return 0;
@@ -1498,7 +1693,8 @@ def begin_attack(enemy: Opponent, index: int, target: Vec3) {
         enemy.burst_count = profile.burst_min
             + enemy.shot_random % (profile.burst_max - profile.burst_min + 1);
     }
-    enemy.attack_wait = max(attack_pause(enemy), attack_duration(enemy));
+    enemy.attack_wait = attack_duration(enemy)
+        + attack_pause(enemy, melee=profile.kind == "melee");
     enemy.attack_flash = attack_duration(enemy);
 }
 
@@ -1522,7 +1718,7 @@ def choose_attack(enemy: Opponent, distance: float) -> int {
     far: list[int] = [];
     for i in range(len(enemy.profiles)) {
         profile = enemy.profiles[i];
-        if profile.dodge_only {
+        if profile.dodge_only or profile.kind == "revive" {
             continue;
         }
         if profile.kind == "melee" {
@@ -1836,6 +2032,19 @@ def advance_attack_segment(
         and attack_event_time(enemy) <= enemy.attack_clock + 0.000001 {
         enemy.attack_event += 1;
         event_index = enemy.attack_event - 1;
+        # Each further shot of a burst sounds again (the muzzle flash event).
+        if enemy.burst_count > 1 and event_index > 0 and speaker is not None {
+            speaker.requests += 1;
+        }
+        if profile.kind == "revive" {
+            if isinstance(player, Opponent) {
+                at = profile.times[event_index]
+                    if event_index < len(profile.times)
+                    else -1.0;
+                cable_event(world, enemy, player, profile, at, collision, person);
+            }
+            continue;
+        }
         delta = player.pos.sub(enemy.pos);
         distance = delta.length();
         sight = collision.trace_point(enemy.pos, player.pos);
@@ -2217,6 +2426,44 @@ walker CombatTick {
         return result;
     }
 
+    """A medic's current patient, searching twice a second for a new one."""
+    def tend(medic: Opponent) -> Opponent | None {
+        for patient in [medic->:Mends:->][?:Opponent] {
+            if patient.health <= 0 and not patient.gibbed and patient.visual.visible {
+                return patient;
+            }
+            medic del --> patient;
+        }
+        world = self.world;
+        medic.tend_wait -= self.dt;
+        if world is None or medic.tend_wait > 0.0 or medic.attack_clock >= 0.0 {
+            return None;
+        }
+        medic.tend_wait = 0.5;
+        search = world spawn FindPatient(medic=medic, collision=self.collision);
+        found = search.best;
+        if found is not None {
+            medic +>:Mends:+> found;
+        }
+        return found;
+    }
+
+    """Q1 CheckAttack / Q2 M_CheckAttack: hold a ranged attack unless the
+    shot from the eye reaches the target, not another monster in the way."""
+    def clear_shot(shooter: Opponent, target: Player, profile: AttackProfile) -> bool {
+        world = self.world;
+        if profile.kind == "melee" or world is None {
+            return True;
+        }
+        query = world spawn Aim(
+            start=shooter.pos,
+            finish=target.pos,
+            height=self.collision.eye_height,
+            ignore=shooter
+        );
+        return query.target is None or query.target is target;
+    }
+
     """Q3 BotFindEnemy: keep a living, visible enemy; otherwise take the
     nearest visible competitor, falling back to the player."""
     def select_foe(bot: Opponent) -> Player {
@@ -2401,6 +2648,22 @@ walker CombatTick {
                 );
             }
             here.pending_gibs = -1;
+            # Q1 DropBackpack / Q2 Drop_Item: the carried item lands at the
+            # body's feet (Q2 items sit 15 units up, as droptofloor leaves them).
+            for item in [here->:Drops:->][?:Pickup] {
+                body = here.pos.sub(Vec3(z=here.eye_height));
+                floor = self.collision.trace_point(body, body.sub(Vec3(z=128.0)));
+                landing = body.lerp(body.sub(Vec3(z=128.0)), floor.fraction);
+                item.pos = landing.add(Vec3(z=15.0 if here.game == "q2" else 0.0));
+                item.active = True;
+                item.dropped = True;
+                item.visual.visible = True;
+                area = area_of(here);
+                if area is not None {
+                    move_to_area(item, area);
+                }
+                here del --> item;
+            }
             if here.death_animation {
                 here.animation_time += self.dt * 10.0;
                 index = min(int(here.animation_time), len(here.death_animation) - 1);
@@ -2505,6 +2768,16 @@ walker CombatTick {
                 here.resume_hunt = False;
             }
         }
+        # Q2 m_medic.c: a medic makes the best corpse in sight its enemy
+        # (AI_MEDIC), runs to it and raises it with its cable.
+        patient: Opponent | None = None;
+        if here.rule.medic and here.health > 0 {
+            patient = self.tend(here);
+            if patient is not None {
+                foe = patient;
+                here.alert = max(here.alert, 3.0);
+            }
+        }
         # An alerted monster leaves its patrol unless it is bound for a combat point.
         if here.alert > 0.0 and not here.holding {
             here.patrol_goal = None;
@@ -2525,6 +2798,20 @@ walker CombatTick {
         here.attack_flash = max(0.0, here.attack_flash - self.dt);
         here.alert = max(0.0, here.alert - self.dt);
         here.route_wait = max(0.0, here.route_wait - self.dt);
+        here.slide_wait = max(0.0, here.slide_wait - self.dt);
+        # Q2 ai_stand / Q1 idle frames: an unalerted monster mutters now and
+        # then, every 15 to 30 seconds.
+        if here.alert <= 0.0 and here.rule.idle_sound {
+            here.idle_wait -= self.dt;
+            if here.idle_wait <= 0.0 {
+                if here.idle_wait > -1.0 {
+                    request_sound(here, here.rule.idle_sound);
+                }
+                here.shot_random = (here.shot_random * 48271) % 2147483647;
+                here.idle_wait = 15.0
+                    * (1.0 + float(here.shot_random) / 2147483647.0);
+            }
+        }
         here.decision_wait -= self.dt;
         if here.decision_wait <= 0.0 and self.decisions < 8 {
             self.decisions += 1;
@@ -2577,6 +2864,11 @@ walker CombatTick {
                         here.trail_stamp = trail_clock(self.world);
                     }
                     if not was_alert and not here.sighted {
+                        # Q1 ai.qc HuntTarget: SUB_AttackFinished(1), a moment
+                        # to react before a newly woken monster first fires.
+                        if here.game == "q1" and not here.arena {
+                            here.attack_wait = max(here.attack_wait, 1.0);
+                        }
                         request_sound(here, here.rule.sight_sound);
                         if not here.arena {
                             self.state.sighter = here;
@@ -2595,8 +2887,34 @@ walker CombatTick {
                     and here.attack_clock < 0.0
                     and not here.leaping {
                     selected = choose_attack(here, distance);
-                    if selected >= 0 {
+                    if patient is not None {
+                        selected = -1;
+                        for i in range(len(here.profiles)) {
+                            if here.profiles[i].kind == "revive"
+                                and distance <= here.profiles[i].max_range {
+                                selected = i;
+                            }
+                        }
+                        if selected >= 0 {
+                            begin_attack(here, selected, foe.pos);
+                            selected = -1;
+                        }
+                    }
+                    if selected >= 0
+                        and attack_roll(
+                            here, distance, here.profiles[selected].kind == "melee"
+                        )
+                        and self.clear_shot(here, foe, here.profiles[selected]) {
                         begin_attack(here, selected, foe.pos);
+                    } elif here.rule.slides and here.slide_wait <= 0.0 {
+                        # Q2 M_CheckAttack / Q1 WizardCheckAttack: a flier that
+                        # holds its fire side-steps (AS_SLIDING) about a third
+                        # of the time; held briefly rather than re-rolled.
+                        here.shot_random = (here.shot_random * 48271) % 2147483647;
+                        roll = float(here.shot_random) / 2147483647.0;
+                        if roll < 0.3 {
+                            here.slide_wait = 0.6 + 2.6 * roll;
+                        }
                     }
                 }
             }
@@ -2621,6 +2939,18 @@ walker CombatTick {
                         here.alert = max(here.alert, 3.0);
                     }
                 }
+            }
+            # Q1 ai_run keeps its enemy until one of them dies, and movetogoal
+            # steers at the enemy itself whether it is visible or not, so a
+            # woken monster follows the player through the level.
+            if here.game == "q1"
+                and not here.arena
+                and here.alert > 0.0
+                and not here.pursuing
+                and foe.health > 0 {
+                here.last_seen = foe.pos.add(Vec3());
+                here.last_seen_height = foe_height;
+                here.alert = 8.0;
             }
             # A fighting bot steers itself (BotTactics); others steer here.
             if not here.fighting {
@@ -2709,22 +3039,29 @@ walker CombatTick {
                 }
             }
             goal = destination.sub(here.pos);
+            closing = here.pursuing
+                and patient is None
+                and here.arena_goal is None
+                and patrol is None
+                and len(here.route) <= 1;
+            stop = here.rule.stop_range if closing else 12.0;
+            # ai_run_slide: circle the target instead of standing still, both
+            # when sliding and, for every monster, once it has closed in.
+            circling = closing
+                and here.character is None
+                and (here.slide_wait > 0.0 or goal.length() <= stop);
             if (here.alert > 0.0 or patrol is not None)
                 and not here.fighting
                 and here.pain_wait <= 0.0
                 and here.attack_flash <= 0.0
                 and not here.leaping
                 and here.rule.movement != "none"
-                and goal.length()
-                    > (
-                        here.rule.stop_range
-                            if here.pursuing
-                                and here.arena_goal is None
-                                and patrol is None
-                                and len(here.route) <= 1
-                            else 12.0
-                    ) {
+                and (circling or goal.length() > stop) {
                 direction = Vec3(x=goal.x, y=goal.y).normalized();
+                if circling {
+                    side = 1.0 if here.lefty else -1.0;
+                    direction = Vec3(x=-direction.y * side, y=direction.x * side);
+                }
                 # Local separation is evaluated with steering, not every physics tick.
                 if self.world is not None {
                     for neighbor in self.nearby(here.pos) {
@@ -2765,6 +3102,12 @@ walker CombatTick {
                             match_height=False
                         );
                         if reachable is None {
+                            if circling {
+                                if angle == 0.0 {
+                                    here.lefty = not here.lefty;
+                                }
+                                continue;
+                            }
                             # A blocked local route is searched again; an AAS
                             # route is authoritative, so only this heading fails.
                             if angle == 0.0 and len(here.route_areas) != len(here.route) {
@@ -2777,6 +3120,10 @@ walker CombatTick {
                     } else {
                         origin = here.pos.sub(Vec3(z=here.eye_height));
                         probe = body_collision.trace(origin, origin.add(candidate.scale(48.0)));
+                    }
+                    # A blocked slide turns to the other side (ai_run_slide).
+                    if circling and angle == 0.0 and probe.fraction < 1.0 {
+                        here.lefty = not here.lefty;
                     }
                     score = probe.fraction + 0.15 * math.cos(angle);
                     if not probe.start_solid
@@ -2920,7 +3267,8 @@ walker CombatTick {
         if here.leaping {
             if here.grounded {
                 here.leaping = False;
-            } elif here.velocity.length() > 400.0 and foe.health > 0 {
+            } elif here.velocity.length() > current_profile(here).leap_contact_speed
+                and foe.health > 0 {
                 contact = foe.pos.sub(here.pos);
                 if abs(contact.x) < here.rule.width + 16.0
                     and abs(contact.y) < here.rule.width + 16.0

@@ -53,9 +53,11 @@ obj AttackProfile {
         leap_speed: float = 0.0,
         leap_lift: float = 0.0,
         leap_lift_random: float = 0.0,
+        leap_contact_speed: float = 400.0,
         dodge_only: bool = False,
         crouch_start: float = -1.0,
-        crouch_end: float = -1.0;
+        crouch_end: float = -1.0,
+        revive_at: float = -1.0;
 }
 
 obj OpponentRule {
@@ -101,6 +103,7 @@ obj OpponentRule {
         sight_sound: str = "",
         pain_sounds: list[str] = [],
         death_sound: str = "",
+        idle_sound: str = "",
         successor: str = "",
         speed: float = 100.0,
         damage: int = 4,
@@ -113,7 +116,12 @@ obj OpponentRule {
         lock_aim: bool = False,
         rail: bool = False,
         ranged_min: float = 0.0,
-        interval: float = 0.8,
+        near_chance: float = -1.0,
+        mid_chance: float = -1.0,
+        rest_min: float = 0.0,
+        rest_random: float = 2.0,
+        slides: bool = False,
+        medic: bool = False,
         attack_sound: str = "",
         attack_sound_times: list[float] = [0.0],
         melee_sound: str = "",

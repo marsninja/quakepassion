@@ -58,6 +58,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_hell_knight" {
             return OpponentRule(
+                sight_sound="sound/hknight/sight1.wav",
+                pain_sounds=["sound/hknight/pain1.wav"],
+                death_sound="sound/hknight/death1.wav",
+                idle_sound="sound/hknight/idle.wav",
                 model="progs/hknight.mdl",
                 health=250,
                 speed=190.0,
@@ -77,11 +81,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 melee_duration=1.0,
                 melee_frames=["slice" + str(i) for i in range(1, 11)],
                 melee_steps=[9.0, 6.0, 13.0, 4.0, 7.0, 15.0, 8.0, 2.0, 0.0, 3.0],
-                melee_sound="sound/hknight/slash1.wav"
+                melee_sound="sound/hknight/slash1.wav",
+                rest_min=2.0,
+                rest_random=1.0
             );
         }
         if kind == "monster_army" {
             return OpponentRule(
+                sight_sound="sound/soldier/sight1.wav",
+                pain_sounds=["sound/soldier/pain1.wav", "sound/soldier/pain2.wav"],
+                death_sound="sound/soldier/death1.wav",
+                attack_sound="sound/soldier/sattck1.wav",
+                attack_sound_times=[0.4],
+                idle_sound="sound/soldier/idle.wav",
                 model="progs/soldier.mdl",
                 health=30,
                 attack_times=[0.4],
@@ -99,38 +111,65 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ],
                 pellets=4,
                 spread=0.1,
-                aim_lag=0.2
+                aim_lag=0.2,
+                near_chance=0.4,
+                mid_chance=0.05,
+                rest_min=1.0,
+                rest_random=1.0
             );
         }
         if kind == "monster_dog" {
+            # rottweiler.qc: DogCheckAttack bites in melee range and otherwise
+            # leaps (CheckDogJump, 80 to 150 units) at 300 forward and 200 up.
             return OpponentRule(
+                sight_sound="sound/dog/dsight.wav",
+                pain_sounds=["sound/dog/dpain1.wav"],
+                death_sound="sound/dog/ddeath.wav",
+                idle_sound="sound/dog/idle.wav",
                 model="progs/dog.mdl",
-                melee_sound="sound/dog/dattack1.wav",
-                melee_sound_times=[0.3],
-                attack_steps=[10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
-                attack_times=[0.3],
-                attack_duration=0.8,
-                attack_frames=[
-                    "attack1",
-                    "attack2",
-                    "attack3",
-                    "attack4",
-                    "attack5",
-                    "attack6",
-                    "attack7",
-                    "attack8"
-                ],
                 health=25,
                 speed=180.0,
-                melee=12,
-                melee_random_scale=8.0,
-                attack_range=100.0,
-                melee_range=100.0,
-                stop_range=48.0
+                near_chance=1.0,
+                rest_random=0.0,
+                stop_range=48.0,
+                attacks=[
+                    AttackProfile(
+                        name="bite",
+                        kind="melee",
+                        max_range=100.0,
+                        reach=100.0,
+                        times=[0.3],
+                        duration=0.8,
+                        frames=["attack" + str(i) for i in range(1, 9)],
+                        steps=[10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
+                        sound="sound/dog/dattack1.wav",
+                        sound_times=[0.3],
+                        damage=12,
+                        random_scale=8.0
+                    ),
+                    AttackProfile(
+                        name="leap",
+                        kind="leap",
+                        min_range=100.0,
+                        max_range=150.0,
+                        times=[0.1],
+                        duration=0.9,
+                        frames=["leap" + str(i) for i in range(1, 10)],
+                        damage=10,
+                        damage_max=20,
+                        leap_speed=300.0,
+                        leap_lift=200.0,
+                        leap_contact_speed=300.0
+                    )
+                ]
             );
         }
         if kind == "monster_knight" {
             return OpponentRule(
+                sight_sound="sound/knight/ksight.wav",
+                pain_sounds=["sound/knight/khurt.wav"],
+                death_sound="sound/knight/kdeath.wav",
+                idle_sound="sound/knight/idle.wav",
                 model="progs/knight.mdl",
                 melee_sound="sound/knight/sword1.wav",
                 attack_steps=[0.0, 7.0, 4.0, 0.0, 3.0, 4.0, 1.0, 3.0, 1.0, 5.0],
@@ -159,6 +198,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_enforcer" {
             return OpponentRule(
+                sight_sound="sound/enforcer/sight1.wav",
+                pain_sounds=["sound/enforcer/pain1.wav", "sound/enforcer/pain2.wav"],
+                death_sound="sound/enforcer/death1.wav",
+                idle_sound="sound/enforcer/idle1.wav",
                 model="progs/enforcer.mdl",
                 attack_sound="sound/enforcer/enfire.wav",
                 attack_sound_times=[0.5, 0.9],
@@ -188,6 +231,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind in ["monster_ogre", "monster_ogre_marksman"] {
             return OpponentRule(
+                sight_sound="sound/ogre/ogwake.wav",
+                pain_sounds=["sound/ogre/ogpain1.wav"],
+                death_sound="sound/ogre/ogdth.wav",
+                idle_sound="sound/ogre/ogidle.wav",
                 model="progs/ogre.mdl",
                 attack_sound="sound/weapons/grenade.wav",
                 attack_sound_times=[0.3],
@@ -252,7 +299,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 gravity=True,
                 splash=40,
                 radius=80.0,
-                interval=1.0
+                near_chance=0.1,
+                mid_chance=0.05,
+                rest_min=1.0,
+                rest_random=2.0
             );
         }
         if kind == "monster_oldone" {
@@ -275,8 +325,12 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 model="progs/wizard.mdl",
                 health=80,
                 movement="fly",
+                slides=True,
                 speed=160.0,
-                interval=2.0,
+                near_chance=0.6,
+                mid_chance=0.2,
+                rest_min=2.0,
+                rest_random=0.0,
                 idle_frames=["hover" + str(i) for i in range(1, 9)],
                 run_frames=["fly" + str(i) for i in range(1, 15)],
                 pain_frames=["pain" + str(i) for i in range(1, 5)],
@@ -320,7 +374,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=300,
                 width=32.0,
                 speed=237.0,
-                interval=1.0,
+                near_chance=1.0,
+                rest_random=0.0,
                 stop_range=60.0,
                 pain_frames=["pain" + str(i) for i in range(1, 7)],
                 pain_duration=0.6,
@@ -384,7 +439,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=600,
                 width=32.0,
                 speed=213.0,
-                interval=3.0,
+                near_chance=1.0,
+                mid_chance=1.0,
+                rest_min=2.0,
+                rest_random=2.0,
                 stop_range=64.0,
                 blast_scale=0.5,
                 pain_frames=["pain" + str(i) for i in range(1, 7)],
@@ -489,7 +547,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 model="progs/zombie.mdl",
                 health=60,
                 speed=27.0,
-                interval=1.0,
                 stop_range=64.0,
                 idle_frames=["stand" + str(i) for i in range(1, 16)],
                 run_frames=["run" + str(i) for i in range(1, 19)],
@@ -567,7 +624,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=400,
                 width=32.0,
                 speed=29.0,
-                interval=1.0,
                 stop_range=120.0,
                 idle_frames=["walk1"],
                 run_frames=["walk" + str(i) for i in range(2, 13)] + ["walk1"],
@@ -604,7 +660,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 model="progs/tarbaby.mdl",
                 health=80,
                 speed=20.0,
-                interval=0.5,
+                near_chance=1.0,
+                rest_random=0.0,
                 stop_range=48.0,
                 idle_frames=["walk1"],
                 run_frames=["run" + str(i) for i in range(11, 26)],
@@ -640,7 +697,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=25,
                 movement="swim",
                 speed=120.0,
-                interval=0.5,
                 stop_range=40.0,
                 idle_frames=["swim" + str(i) for i in range(1, 19)],
                 run_frames=["swim" + str(i) for i in range(1, 19, 2)],
@@ -697,7 +753,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 duck_grenade="grenades",
                 health=175,
                 speed=121.0,
-                interval=1.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 run_frames=["run" + two(i) for i in range(1, 9)],
                 pain_variants=[
@@ -759,8 +814,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 model="models/monsters/flyer/tris.md2",
                 health=50,
                 movement="fly",
+                slides=True,
                 speed=100.0,
-                interval=1.0,
                 idle_frames=["stand" + two(i) for i in range(1, 46)],
                 run_frames=["stand" + two(i) for i in range(1, 46)],
                 pain_variants=[
@@ -814,8 +869,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=200,
                 width=24.0,
                 movement="fly",
+                slides=True,
                 speed=130.0,
-                interval=1.0,
                 idle_frames=["stand1" + two(i) for i in range(1, 53)],
                 run_frames=["stand1" + two(i) for i in range(1, 53)],
                 pain_variants=[
@@ -881,8 +936,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=240,
                 width=24.0,
                 movement="fly",
+                slides=True,
                 speed=100.0,
-                interval=1.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 run_frames=["forwrd" + two(i) for i in range(1, 36)],
                 pain_variants=[
@@ -922,7 +977,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=300,
                 width=32.0,
                 speed=227.0,
-                interval=1.0,
                 stop_range=60.0,
                 idle_frames=["stand1" + two(i) for i in range(1, 52)],
                 run_frames=["run" + two(i) for i in range(3, 9)],
@@ -978,7 +1032,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 model="models/monsters/parasite/tris.md2",
                 health=175,
                 speed=254.0,
-                interval=1.0,
                 stop_range=120.0,
                 idle_frames=["stand" + two(i) for i in range(1, 18)],
                 run_frames=["run" + two(i) for i in range(3, 10)],
@@ -1037,7 +1090,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 duck_up=4,
                 health=300,
                 speed=40.0,
-                interval=1.0,
                 stop_range=60.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 run_frames=["walk1" + two(i) for i in range(1, 12)],
@@ -1139,7 +1191,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=300,
                 width=24.0,
                 speed=248.0,
-                interval=1.0,
                 idle_frames=["wait" + str(i) for i in range(1, 91)],
                 run_frames=["run" + str(i) for i in range(1, 7)],
                 pain_variants=[
@@ -1152,7 +1203,30 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 sight_sound="sound/medic/medsght1.wav",
                 pain_sounds=["sound/medic/medpain1.wav", "sound/medic/medpain2.wav"],
                 death_sound="sound/medic/meddeth1.wav",
+                idle_sound="sound/medic/idle.wav",
+                medic=True,
                 attacks=[
+                    # medic_move_attackCable (attack33-60): the hook launches
+                    # at attack42, the cable holds from attack43 to 51 and the
+                    # corpse stands up at attack50; then it retracts.
+                    AttackProfile(
+                        name="cable",
+                        kind="revive",
+                        max_range=160.0,
+                        times=[1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8],
+                        revive_at=1.7,
+                        duration=2.8,
+                        frames=["attack" + str(i) for i in range(33, 61)],
+                        steps=[
+                            2.0, 3.0, 5.0, 4.4, 4.7, 5.0, 6.0, 4.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -15.0,
+                            -1.5, -1.2, -3.0, -2.0, 0.3, 0.7, 1.2, 1.3
+                        ],
+                        sound="sound/medic/medatck2.wav",
+                        sound_times=[0.9],
+                        extra_sound="sound/medic/medatck4.wav",
+                        extra_sound_times=[1.1]
+                    ),
                     AttackProfile(
                         name="blaster",
                         kind="ranged",
@@ -1205,7 +1279,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=50,
                 movement="swim",
                 speed=240.0,
-                interval=0.5,
                 stop_range=48.0,
                 idle_frames=["flphor" + two(i) for i in range(1, 25)],
                 run_frames=["flpver" + two(i) for i in range(6, 30)],
@@ -1244,7 +1317,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=1000 if kind == "monster_tank_commander" else 750,
                 width=32.0,
                 speed=47.0,
-                interval=1.0,
                 stop_range=100.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 run_frames=["walk" + two(i) for i in range(5, 21)],
@@ -1357,7 +1429,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=1500,
                 width=64.0,
                 speed=120.0,
-                interval=1.0,
                 stop_range=160.0,
                 idle_frames=["stand" + str(i) for i in range(1, 61)],
                 run_frames=["forwrd" + str(i) for i in range(1, 19)],
@@ -1416,8 +1487,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=2000,
                 width=56.0,
                 movement="fly",
+                slides=True,
                 speed=80.0,
-                interval=1.0,
                 stop_range=160.0,
                 idle_frames=["stand" + str(i) for i in range(30, 51)],
                 run_frames=["walk" + str(i) for i in range(1, 21)],
@@ -1478,7 +1549,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=3000,
                 width=80.0,
                 speed=76.0,
-                interval=1.0,
                 stop_range=200.0,
                 idle_frames=["stand" + two(i) for i in range(1, 52)],
                 run_frames=["walk" + two(i) for i in range(6, 20)],
@@ -1546,7 +1616,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=3000,
                 width=30.0,
                 speed=84.0,
-                interval=1.0,
                 stop_range=160.0,
                 idle_frames=["stand2" + two(i) for i in range(1, 61)],
                 run_frames=["walk2" + two(i) for i in range(4, 14)],
@@ -1700,6 +1769,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_chick" {
             return OpponentRule(
+                sight_sound="sound/chick/chksght1.wav",
+                pain_sounds=["sound/chick/chkpain1.wav", "sound/chick/chkpain2.wav", "sound/chick/chkpain3.wav"],
+                death_sound="sound/chick/chkdeth1.wav",
+                idle_sound="sound/chick/chkidle1.wav",
                 model="models/monsters/bitch/tris.md2",
                 duck_frames=["duck" + two(i) for i in range(1, 8)],
                 duck_down=0,
@@ -1791,6 +1864,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_berserk" {
             return OpponentRule(
+                sight_sound="sound/berserk/sight.wav",
+                pain_sounds=["sound/berserk/berpain2.wav"],
+                death_sound="sound/berserk/berdeth2.wav",
+                idle_sound="sound/berserk/beridle1.wav",
                 model="models/monsters/berserk/tris.md2",
                 pain_duration=0.4,
                 pain_interval=3.0,
@@ -1818,6 +1895,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_gladiator" {
             return OpponentRule(
+                sight_sound="sound/gladiator/sight.wav",
+                pain_sounds=["sound/gladiator/pain.wav", "sound/gladiator/gldpain2.wav"],
+                death_sound="sound/gladiator/glddeth2.wav",
+                idle_sound="sound/gladiator/gldidle1.wav",
                 model="models/monsters/gladiatr/tris.md2",
                 pain_duration=0.6,
                 pain_interval=3.0,
@@ -1846,6 +1927,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_infantry" {
             return OpponentRule(
+                sight_sound="sound/infantry/infsght1.wav",
+                pain_sounds=["sound/infantry/infpain1.wav", "sound/infantry/infpain2.wav"],
+                death_sound="sound/infantry/infdeth1.wav",
+                idle_sound="sound/infantry/infidle1.wav",
                 model="models/monsters/infantry/tris.md2",
                 duck_frames=["duck" + two(i) for i in range(1, 6)],
                 duck_down=0,
@@ -1872,11 +1957,22 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 burst_min=4,
                 burst_max=19,
                 hold_frame=10,
-                attack_frames=["attak" + str(i) for i in range(101, 116)]
+                attack_frames=["attak" + str(i) for i in range(101, 116)],
+                attack_sound="sound/infantry/infatck1.wav",
+                attack_sound_times=[1.0],
+                melee_sound="sound/infantry/infatck2.wav",
+                melee_sound_times=[0.3]
             );
         }
         if kind in ["monster_soldier_light", "monster_soldier", "monster_soldier_ss"] {
             rule = OpponentRule(
+                sight_sound="sound/soldier/solsght1.wav",
+                pain_sounds=["sound/soldier/solpain2.wav"],
+                death_sound="sound/soldier/soldeth2.wav",
+                attack_sound="sound/soldier/solatck2.wav",
+                attack_sound_times=[0.2],
+                idle_sound="sound/soldier/solidle1.wav",
+                run_frames=["run0" + str(i) for i in range(3, 9)],
                 model="models/monsters/soldier/tris.md2",
                 duck_frames=["duck" + two(i) for i in range(1, 6)],
                 duck_down=0,
@@ -1903,6 +1999,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 attack_frames=["attak" + str(i) for i in range(101, 113)]
             );
             if kind == "monster_soldier" {
+                rule.pain_sounds = ["sound/soldier/solpain1.wav"];
+                rule.death_sound = "sound/soldier/soldeth1.wav";
+                rule.attack_sound = "sound/soldier/solatck1.wav";
                 rule.health = 30;
                 rule.skin = 2;
                 rule.damage = 2;
@@ -1912,6 +2011,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 rule.spread = 1000.0 / 8192.0;
                 rule.vertical_spread = 500.0 / 8192.0;
             } elif kind == "monster_soldier_ss" {
+                rule.pain_sounds = ["sound/soldier/solpain3.wav"];
+                rule.death_sound = "sound/soldier/soldeth3.wav";
+                rule.attack_sound = "sound/soldier/solatck3.wav";
                 rule.health = 40;
                 rule.skin = 4;
                 rule.damage = 2;
