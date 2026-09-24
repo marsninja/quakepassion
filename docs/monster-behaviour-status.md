@@ -12,9 +12,9 @@ models through edges. Walkers drive patrols, gib flight and combat.
   `trigger_setskill` changes it too, as Q1's start map does.
 - Spawn filtering drops entities flagged "not in easy/normal/hard" (spawnflags
   256/512/1024) for the current skill.
-- Q1 Nightmare removes the pause between attacks, and pain animations can replay
-  no sooner than every 5 s. Q2 Easy doubles the pause between attacks, and Hard
-  or above halves it.
+- Q1 Nightmare removes the wait after an attack, and pain animations can replay
+  no sooner than every 5 s. Q2 Easy halves the attack chances below, and Hard or
+  above doubles them. On Nightmare, Q2 monsters cry out but skip pain animations.
 - Saves record the skill; loading a save made at another skill is refused.
 
 ## Noticing the player
@@ -27,6 +27,85 @@ models through edges. Walkers drive patrols, gib flight and combat.
 - A monster that spots the player wakes others that can see it (Q1
   `sight_entity`, Q2 `sight_client`).
 - An invisible player is not newly noticed.
+
+## Fighting on the move
+
+Monsters no longer attack the moment they are able to. Each 10 Hz decision rolls
+the originals' attack chance, and a monster that holds its fire keeps running at
+its target, so fights are spent moving between attacks.
+
+- Chances by range (Q1 `CheckAttack`, Q2 `M_CheckAttack`):
+
+  | Game | Melee | Near (<500) | Mid (<1000) | Far |
+  | --- | --- | --- | --- | --- |
+  | Q1 | 0.9 | 0.4 (0.2 with a melee attack) | 0.1 (0.05) | never |
+  | Q2 | 0.2 | 0.1 | 0.02 | never |
+
+  Monsters with their own checks override these:
+  - Q1: soldier 0.4/0.05, ogre 0.1/0.05, Scrag 0.6/0.2, shambler always within
+    reach; the fiend and dog leap whenever in range.
+  - Q2: a monster standing its ground rolls 0.4.
+- Melee reach always attacks (Q2 Easy: one time in four).
+- After a ranged attack a monster waits a random 0–2 s before the next
+  (`SUB_AttackFinished`, `attack_finished`). Soldiers wait 1–2 s, ogres 1–3 s,
+  shamblers 2–4 s, the Scrag and hell knight at least 2 s.
+- A newly woken Q1 monster waits one second before first firing (`HuntTarget`).
+- Ranged attacks wait for a clear shot. Another monster in the way holds fire.
+- Fliers and the Scrag slide sideways about a third of the times they hold fire
+  (`ai_run_slide`). Every monster that has closed to its stopping range circles
+  its target instead of standing still, and turns back when blocked.
+- The Q1 dog leaps between 100 and 150 units (`CheckDogJump`).
+- `scripts/engagement_probe.jac` fights 25 monsters on e1m1, e1m2, e2m1, base1 and
+  base2 for 10 s each against a standing player:
+
+  | | Share of fight spent moving | Attacks per 10 s |
+  | --- | --- | --- |
+  | Before | 6% | 6.8 |
+  | Now | 51% | 4.4 |
+
+  Before, most monsters never moved at all.
+
+## Waking and hunting
+
+- Any hit from the player wakes a monster and turns it on the player, even
+  over a monster it was fighting. This includes projectiles and splash, not just
+  hitscan (Q1 `T_Damage`, Q2 `M_ReactToDamage`).
+- A Q1 monster keeps its enemy until one of them dies. Out of sight it heads for
+  the player's current position (`movetogoal`), so it follows the player through
+  the level. Q2 monsters follow the player trail (below).
+- Unalerted monsters mutter their idle sound every 15–30 s.
+- Common monsters that were silent now have their sight, pain, death, idle and
+  weapon sounds: Q1 soldier, dog, knight, enforcer, ogre and hell knight; Q2
+  soldiers, infantry, berserker, gladiator, iron maiden and medic. Burst fire
+  sounds on every shot.
+
+## Medics, power screens and drops
+
+- A Q2 medic takes the healthiest-born corpse it can see within 1024 units as its
+  enemy (`medic_FindDeadMonster`). A `Mends` edge marks the claim. The medic runs
+  to the corpse and plays its cable sequence. If the corpse is within 256 units
+  and in sight at `attack50`, it stands up as a fresh monster hunting the medic's
+  old enemy. Raised monsters keep no targets, so a second death fires nothing.
+- The Q2 brain's power screen (`CheckPowerArmor`) absorbs a third of frontal
+  damage from its 100 cells. It is off while the brain ducks.
+- Q1 grunts, enforcers and ogres drop a backpack with 5 shells, 5 cells or 2
+  rockets (`DropBackpack`). Q2 monsters drop their `item` key (`Drop_Item`).
+  Drops are hidden `Pickup`s linked by `Drops` edges and revealed where the
+  monster falls.
+- The supertank, boss2 and Jorg blow apart into metal and meat once their death
+  animation ends (`BossExplode`).
+- Q2's insane marines are harmless (`AI_GOOD_GUY`): they never hunt the player,
+  crawlers crawl, and the crucified can be killed.
+
+## Bodies
+
+- Hit boxes use each monster's `SP_monster_*` height instead of the player's.
+  For example, Q1 shambler/ogre/fiend/vore boxes rise to 64, the Q2 tank to 72,
+  the supertank to 112 and Jorg to 140.
+- Living monsters and bots are solid to the player (`SOLID_SLIDEBOX`): the player
+  is pushed back out of them and stopped. A monster cannot step into the player.
+  Corpses stay passable. Movement collision still uses the player's hull for
+  every monster.
 
 ## Patrols and combat points
 
@@ -76,8 +155,9 @@ models through edges. Walkers drive patrols, gib flight and combat.
 - Q1 heads stay where they land. Other pieces fade after 10–20 s (Q3: 5–8 s).
 - Q2 and Q3 corpses remain shootable with a lowered box and keep taking damage
   until they gib. Q1 monster corpses take no damage, as in the original.
-- Snapshot format **21** records corpse health and gibbing, patrol progress and
-  the skill. Flying gibs are not saved.
+- Snapshot format **22** records corpse health and gibbing, patrol progress, the
+  skill, power-screen cells, raised monsters and dropped items. Flying gibs are
+  not saved.
 
 ## Trail hunting
 
@@ -112,6 +192,8 @@ rocket shot.
 ## Validation
 
 - Tests:
+  - `tests/monster_tactics_tests.jac`: attack chances, moving between attacks,
+    waking on player hits, Q1 hunting, medic revival, dropped items.
   - `tests/infighting_tests.jac`: provocation rules, line of fire, missile owners,
     kill counting, return to the player.
   - `tests/gib_tests.jac`: thresholds, corpse damage, flight, landing and fading.
