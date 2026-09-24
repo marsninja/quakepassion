@@ -2,7 +2,7 @@
 import from .doors { Door, HasDoor, DoorMember, damage_mover }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
-import from .signals { Signal, HasSignal, Fire }
+import from .signals { Signal, HasSignal, Fire, note_chain }
 import from .damage { Damage }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Sweep }
@@ -22,6 +22,14 @@ node TrackPoint {
 }
 
 edge TrackNext: TrackPoint --> TrackPoint {}
+edge HasElevator: World --> Elevator {}
+edge Lifts: Elevator --> Train {}
+
+"""Q2 trigger_elevator: a use from a caller with a `pathtarget` sends the idle
+train straight to that path corner (trigger_elevator_use, train_resume)."""
+node Elevator {
+    has activation: Signal = Signal();
+}
 edge HasTrack: World --> TrackPoint {}
 edge HasTrain: World --> Train {}
 walker TrainRoute {
@@ -150,6 +158,39 @@ def load_trains(world: World, bsp: Bsp, collision: CollisionMap) {
         attach_train(world, bsp, collision, train);
     }
     collision.reindex();
+    load_elevators(world, bsp);
+}
+
+"""g_func.c trigger_elevator_init: the elevator's target must name a func_train."""
+def load_elevators(world: World, bsp: Bsp) {
+    if bsp.game != "q2" {
+        return;
+    }
+    trains = [world->:HasTrain:->][?:Train];
+    for index in range(len(bsp.entities)) {
+        fields = bsp.entities[index].fields;
+        if fields.get("classname", "") != "trigger_elevator" {
+            continue;
+        }
+        target = fields.get("target", "");
+        lifted: Train | None = None;
+        for train in trains {
+            if target
+                and bsp.entities[train.activation.entities[0]].fields.get("targetname", "")
+                    == target {
+                lifted = train;
+                break;
+            }
+        }
+        if lifted is None {
+            note_chain(world, index, "elevator without a func_train " + target);
+            continue;
+        }
+        elevator = Elevator(activation=Signal(entities=[index], routed=True));
+        elevator +>:Lifts:+> lifted;
+        world +>:HasElevator:+> elevator;
+        world +>:HasSignal:+> elevator.activation;
+    }
 }
 
 def attach_train(world: World, bsp: Bsp, collision: CollisionMap, train: Train) {
@@ -258,7 +299,9 @@ walker TrainTick {
         collision: CollisionMap,
         dt: float,
         player: Player | None = None,
-        actors: list[Player] = [];
+        actors: list[Player] = [],
+        tracks: list[TrackPoint] = [];
+
 
     can begin with World entry {
         if self.dt <= 0.0 {
@@ -272,7 +315,36 @@ walker TrainTick {
                 self.actors.append(enemy);
             }
         }
+        self.tracks = [here->:HasTrack:->][?:TrackPoint];
+        visit [here->:HasElevator:->];
         visit [here->:HasTrain:->];
+    }
+
+    # An idle train answers the latest call whose path corner exists; a busy
+    # (moving or waiting) one ignores it, as trigger_elevator_use does.
+    can call with Elevator entry {
+        calls = here.activation.calls;
+        here.activation.calls = [];
+        here.activation.pending = 0;
+        for train in [here->:Lifts:->][?:Train] {
+            if train.running or train.activation.killed {
+                continue;
+            }
+            for name in calls {
+                for point in self.tracks {
+                    if point.name == name {
+                        train.destination = point;
+                        train.running = True;
+                        train.remaining = 0.0;
+                        train.started = True;
+                        break;
+                    }
+                }
+                if train.running {
+                    break;
+                }
+            }
+        }
     }
 
     can advance with Train entry {

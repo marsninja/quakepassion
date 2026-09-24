@@ -4,7 +4,16 @@ import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .damage { Damage, blast_strength }
 import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
-import from .signals { Signal, Fire, Targets, Kills, HasSignal, DelayedUse, progress_for }
+import from .signals {
+    Signal,
+    Fire,
+    Targets,
+    Kills,
+    HasSignal,
+    DelayedUse,
+    progress_for,
+    note_chain
+}
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..physics.collision { CollisionMap, Sweep, Trace }
 import from .liquids { LiquidSpace, LiquidVolume, HasLiquid }
@@ -70,7 +79,9 @@ node Door {
         damage: int = 0,
         crusher: bool = False,
         crush_wait: float = 0.0,
-        flooding: bool = False;
+        flooding: bool = False,
+        entity: int = -1,
+        reason: str = "";
 }
 
 """Full travel of a mover: units for sliding movers, degrees for rotating doors."""
@@ -604,7 +615,8 @@ def door_direction(entity: MapEntity) -> Vec3 {
 activation chain once, after all other activatable entities are loaded."""
 def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = True) {
     candidates: list[Door] = [];
-    for entity in bsp.entities {
+    for index in range(len(bsp.entities)) {
+        entity = bsp.entities[index];
         fields = entity.fields;
         kind = fields.get("classname", "");
         rotating = kind == "func_door_rotating" and bsp.game == "q2";
@@ -631,29 +643,39 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         if kind == "func_plat" and bsp.game != "q3" {
             allowed |= 1;
         }
+        # Q1 buttons.qc reads no spawnflags; Q2 func_door's bit 2 is unused ("x").
+        if kind == "func_button" and bsp.game == "q1" {
+            allowed |= 1;
+        }
+        if kind == "func_door" and bsp.game == "q2" {
+            allowed |= 2;
+        }
         # Q2/Q3 CRUSHER; Q2 rotating doors add REVERSE and the X/Y axis flags.
         if kind == "func_door" and bsp.game in ["q2", "q3"] {
             allowed |= 5;
         }
+        # g_func.c SP_func_door: ANIMATED (16) and ANIMATED_FAST (64) only
+        # animate the door's textures (EF_ANIM_ALL, EF_ANIM_ALLFAST).
+        if kind == "func_door" and bsp.game == "q2" {
+            allowed |= 16 | 64;
+        }
         if rotating {
-            allowed |= 1 | 2 | 4 | 8 | 32 | 64 | 128;
+            allowed |= 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128;
         }
         if water {
             allowed |= 1;
         }
         health = max(0, int(float(fields.get("health", "0"))));
-        enabled = True;
-        if flags & ~allowed
-            or (
-                health > 0
-                and kind != "func_button"
-                and not (kind == "func_door" and bsp.game in ["q1", "q2"])
-            )
-            or fields.get("killtarget", "")
-            or fields.get("accel", "")
-            or fields.get("decel", "") {
-            enabled = False;
+        reason = "";
+        if flags & ~allowed {
+            reason = "spawnflags " + str(flags & ~allowed);
+        } elif health > 0
+            and kind != "func_button"
+            and not (kind in ["func_door", "func_door_rotating"] and bsp.game in ["q1", "q2"]) {
+            reason = "shootable " + kind;
         }
+        # killtarget is a Kills edge fired with the mover's targets; Q2 accel and
+        # decel ramps (Think_AccelMove) are approximated by the constant speed.
         name = fields.get("model", "");
         if not name.startswith("*") {
             continue;
@@ -713,9 +735,15 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 distance = 90.0;
             }
         }
-        if distance <= 0.0 or speed <= 0.0 {
-            enabled = False;
+        # A mover whose lip swallows its size still runs its cycle and fires its
+        # targets (Move_Calc finishes at once); negative distances reverse it.
+        if abs(distance) < 0.01 {
+            distance = 0.01;
         }
+        if speed <= 0.0 and not reason {
+            reason = "no speed";
+        }
+        enabled = not reason;
         # Expand the proximity volume by the standing player extents as well.
         margin = Vec3(x=76.0, y=76.0, z=8.0);
         if kind == "func_button" {
@@ -844,7 +872,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             door.origins.append(collision.offsets[i]);
         }
         # Liquid movers have no solid hulls; their volumes move instead.
-        door.enabled = door.enabled and (bool(door.hulls) or door.flooding);
+        # A member without clip hulls (drawn-only brushes) still moves in view.
+        if door.enabled and not door.hulls and not door.faces and not door.flooding {
+            reason = "no collision hull";
+            door.enabled = False;
+        }
+        door.entity = index;
+        door.reason = reason;
         candidates.append(door);
     }
     for i in range(len(candidates)) {
@@ -881,8 +915,12 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         enabled = True;
         duration = 0.0;
         bounds = leader.trigger;
+        why = "";
         for part in assembly.members {
-            enabled = enabled and part.enabled;
+            if not part.enabled {
+                enabled = False;
+                why = why or part.reason;
+            }
             if part.speed > 0.0 {
                 duration = max(duration, door_span(part) / part.speed);
             }
@@ -894,11 +932,19 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                         and ent.fields.get("classname", "")
                             not in ["func_door", "func_door_rotating"] {
                         enabled = False;
+                        why = why or "team with " + ent.fields.get("classname", "");
                     }
                 }
             }
         }
         if not enabled or duration <= 0.0 {
+            for part in assembly.members {
+                note_chain(
+                    world,
+                    part.entity,
+                    "static mover: " + (part.reason or why or "no travel time")
+                );
+            }
             continue;
         }
         for part in assembly.members {
@@ -1147,8 +1193,8 @@ def connect_targets(world: World, bsp: Bsp) {
         }
     }
     # Recipients with no use behaviour here (visibility portals, markers, path
-    # and combat points, teleport destinations) accept uses as no-ops, so the
-    # chains through them keep working, as the originals ignore those uses.
+    # and combat points, teleport destinations) accept uses as no-ops, as the
+    # originals ignore those uses.
     covered: set[int] = set();
     for signal in signals {
         for index in signal.entities {
@@ -1166,7 +1212,12 @@ def connect_targets(world: World, bsp: Bsp) {
         "misc_teleporter_dest",
         "misc_portal_camera",
         "target_string",
-        "target_character"
+        "target_character",
+        # No use function in the originals: worldspawn, exploding barrels and
+        # monster jump triggers are named but never react to a use.
+        "worldspawn",
+        "misc_explobox",
+        "trigger_monsterjump"
     ];
     for index in range(len(bsp.entities)) {
         if index not in covered
@@ -1180,7 +1231,8 @@ def connect_targets(world: World, bsp: Bsp) {
             world +>:HasSignal:+> signal;
         }
     }
-    # Resolve every recipient, then propagate unsupported downstream fan-outs.
+    # Resolve every recipient; recipients without a use are only noted.
+    unused: list[int] = [];
     for signal in signals {
         for index in signal.entities {
             fields = bsp.entities[index].fields;
@@ -1188,13 +1240,17 @@ def connect_targets(world: World, bsp: Bsp) {
             if bsp.game in ["q1", "q2"] {
                 signal.delay = max(signal.delay, float(fields.get("delay", "0")));
             }
-            if kind == "func_train" {
+            # Trains follow their target; Q2 changelevels never use theirs.
+            if kind == "func_train" or kind == "target_changelevel" {
                 continue;
             }
-            # Path points and Q2 clocks fire their pathtarget.
-            target = fields.get("pathtarget", "")
-                if kind in ["path_corner", "point_combat", "func_clock"] and bsp.game != "q3"
-                else fields.get("target", "");
+            # Path points and Q2 clocks fire their pathtarget; other users hand
+            # theirs to the elevators they call.
+            passes = kind in ["path_corner", "point_combat", "func_clock"] and bsp.game != "q3";
+            target = fields.get("pathtarget", "") if passes else fields.get("target", "");
+            if not passes and bsp.game == "q2" and fields.get("pathtarget", "") {
+                signal.pathtarget = fields["pathtarget"];
+            }
             if kind.startswith("monster_") and bsp.game == "q2" {
                 target = fields.get("deathtarget", target);
             }
@@ -1219,8 +1275,16 @@ def connect_targets(world: World, bsp: Bsp) {
                         break;
                     }
                 }
-                if not resolved {
-                    signal.enabled = False;
+                # Q1 SUB_UseTargets and Q2 G_UseTargets skip targets without a
+                # use; the rest of the chain still fires.
+                if not resolved and recipient not in unused {
+                    unused.append(recipient);
+                    note_chain(
+                        world,
+                        recipient,
+                        "no use for "
+                            + bsp.entities[recipient].fields.get("classname", "")
+                    );
                 }
             }
         }
@@ -1244,20 +1308,6 @@ def connect_targets(world: World, bsp: Bsp) {
                     }
                 }
             }
-        }
-    }
-    for iteration in range(len(signals)) {
-        changed = False;
-        for signal in signals {
-            for destination in [signal->:Targets:->][?:Signal] {
-                if signal.enabled and not destination.enabled {
-                    signal.enabled = False;
-                    changed = True;
-                }
-            }
-        }
-        if not changed {
-            break;
         }
     }
     for signal in signals {
@@ -1306,16 +1356,12 @@ def resolve_targets(world: World, bsp: Bsp, target: str) -> list[Signal] {
         if bsp.entities[index].fields.get("targetname", "") != target {
             continue;
         }
-        found = False;
+        # Recipients without a use are skipped, as G_UseTargets does.
         for signal in signals {
             if signal.enabled and index in signal.entities {
                 result.append(signal);
-                found = True;
                 break;
             }
-        }
-        if not found {
-            return [];
         }
     }
     return result;

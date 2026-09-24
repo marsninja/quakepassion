@@ -5,6 +5,7 @@ import from .world { World, Entity, Player }
 import from .trains { TrackPoint, HasTrack, TrackNext }
 import from .combat { Opponent, HasOpponent, CombatState, request_sound }
 import from .models { Visual }
+import from .signals { Signal, HasSignal }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..math.vec3 { Vec3 }
 
@@ -14,7 +15,9 @@ node TeleportTrain(Entity) {
         current: TrackPoint,
         destination: TrackPoint | None = None,
         speed: float = 100.0,
-        visual: Visual = Visual();
+        visual: Visual = Visual(),
+        running: bool = True,
+        activation: Signal = Signal();
 }
 
 edge HasFinale: World --> Finale {}
@@ -107,10 +110,17 @@ def load_finale(world: World, bsp: Bsp) {
         if speed <= 0.0 {
             speed = 100.0;
         }
+        # func_train_find: a named train waits for its first use (train_use).
         train = TeleportTrain(
-            entity=index, current=first, speed=speed, pos=first.origin.add(Vec3())
+            entity=index,
+            current=first,
+            speed=speed,
+            pos=first.origin.add(Vec3()),
+            running=not fields.get("targetname", ""),
+            activation=Signal(entities=[index])
         );
         world +>:HasTeleportTrain:+> train;
+        world +>:HasSignal:+> train.activation;
     }
     for entity in bsp.entities {
         if entity.fields.get("classname", "") == "monster_oldone" {
@@ -149,6 +159,13 @@ walker TeleportTrainTick {
     }
 
     can advance with TeleportTrain entry {
+        if here.activation.pending > 0 {
+            here.activation.pending = 0;
+            here.running = True;
+        }
+        if not here.running {
+            return;
+        }
         remaining = here.speed * self.dt;
         if remaining <= 0.0 {
             return;

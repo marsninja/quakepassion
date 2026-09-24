@@ -41,6 +41,22 @@ def progress_summary(world: World) -> str {
     return " | ".join(parts);
 }
 
+"""Load-time diagnostics: an entity a chain skips or a mover left static, and
+why. scripts/chain_audit.jac reports them per map."""
+edge HasChainNote: World --> ChainNote {}
+node ChainNote {
+    has entity: int,
+        reason: str;
+}
+
+def note_chain(world: World, entity: int, reason: str) {
+    world +>:HasChainNote:+> ChainNote(entity=entity, reason=reason);
+}
+
+def chain_notes(world: World) -> list[ChainNote] {
+    return [world->:HasChainNote:->][?:ChainNote];
+}
+
 """trigger_counter progress: Q1 counter_use and Q2 trigger_counter_use."""
 def counter_text(style: str, remaining: int) -> str {
     if style == "silent" {
@@ -91,7 +107,10 @@ node Signal {
         armed: bool = True,
         counter_style: str = "",
         grant_flags: int = 0,
-        require_flags: int = 0;
+        require_flags: int = 0,
+        pathtarget: str = "",
+        routed: bool = False,
+        calls: list[str] = [];
 
     def sample(base: float) -> float {
         duration = base;
@@ -129,6 +148,14 @@ walker Fire {
         }
         if source.cue {
             self.cues.append(source.cue);
+        }
+        # Q2 trigger_elevator_use reads the caller's pathtarget (`other`).
+        if source.pathtarget {
+            for recipient in [source->:Targets:->][?:Signal] {
+                if recipient.routed {
+                    recipient.calls.append(source.pathtarget);
+                }
+            }
         }
         for victim in [source->:Kills:->][?:Signal] {
             victim.killed = True;

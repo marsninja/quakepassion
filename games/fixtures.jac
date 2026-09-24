@@ -5,7 +5,7 @@ ambientsound call each makes; Q1 ambient_* entities and fluorescent lights are
 static looping sounds at ATTN_STATIC. Q2 dead bodies, mine lights, banners and
 novelty models follow g_misc.c."""
 import math;
-import from engine.world.fixtures { Fixture, HasFixture }
+import from engine.world.fixtures { Fixture, HasFixture, FIXTURE_USES, fixture_signal }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
 import from engine.world.world { World, Entity, move_to_area }
@@ -118,8 +118,8 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
     resources: dict[str, ModelResource] = {};
     count = 0;
     try {
-        for entity in level.bsp.entities {
-            fields = entity.fields;
+        for index in range(len(level.bsp.entities)) {
+            fields = level.bsp.entities[index].fields;
             source = fields.get("asset_game", level.bsp.game);
             rule = fixture_rule(
                 source, fields.get("classname", ""), int(fields.get("spawnflags", "0"))
@@ -157,6 +157,11 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
                 frames=rule.frames
             );
+            kind = fields.get("classname", "");
+            if kind in FIXTURE_USES and fields.get("targetname", "") {
+                fixture.activation = fixture_signal(world, index);
+                fixture.usage = FIXTURE_USES[kind];
+            }
             surface = resources[key].model.surfaces[0];
             if rule.group >= 0 and rule.group < len(surface.frame_groups) {
                 group = surface.frame_groups[rule.group];
