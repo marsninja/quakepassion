@@ -177,7 +177,8 @@ impl App.render_frame() {
         self.effects.draw(
             self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
         );
-        if not self.smoke and not self.finale_active {
+        podium = self.postgame is not None;
+        if not self.smoke and not self.finale_active and not podium {
             inset = self.hud.view_inset(
                 self.level.bsp.game, self.renderer.width, self.renderer.height
             );
@@ -205,7 +206,8 @@ impl App.render_frame() {
         }
         # The status bar gives way to intermission views (Sbar_Draw draws only
         # the intermission or finale overlay then).
-        if not self.smoke and self.hud.ready and not self.finale_active {
+        # CG_Draw2D: the intermission shows no status bar.
+        if not self.smoke and self.hud.ready and not self.finale_active and not podium {
             status = self.hud_status();
             self.hud.draw(status, self.renderer.width, self.renderer.height);
             if self.hud.three_d {
@@ -352,11 +354,27 @@ impl App.render_frame() {
                 } elif p.health <= 0 {
                     footer = "Fire or jump to respawn";
                 }
-                self.renderer.draw_scoreboard(
-                    contest.title + " - frag limit " + str(contest.fraglimit),
-                    self.arena_lines(contest),
-                    footer
-                );
+                board = self.postgame;
+                if contest.finished and board is not None and self.hud.ready {
+                    draw_postgame(self.hud, board, self.postgame_clock, self.renderer.width, self.renderer.height);
+                } elif self.hud.ready and not contest.finished {
+                    killer = p.killer;
+                    draw_scoreboard(
+                        self.hud,
+                        self.hud_models if self.hud.three_d else None,
+                        self.board_lines(contest),
+                        competitor_name(contest, killer) if p.health <= 0 and killer is not None and killer is not p else "",
+                        self.renderer.width,
+                        self.renderer.height,
+                        self.simulation_time
+                    );
+                } else {
+                    self.renderer.draw_scoreboard(
+                        contest.title + " - frag limit " + str(contest.fraglimit),
+                        self.arena_lines(contest),
+                        footer
+                    );
+                }
             }
         }
         if self.overlay {
@@ -819,10 +837,17 @@ impl App.step() -> bool {
             for cue in celebration.cues {
                 self.audio.play_path(cue);
             }
+            self.postgame_clock += dt;
+            if self.postgame is not None {
+                self.postgame_input(contest);
+                self.render_frame();
+                return True;
+            }
         }
         if IsKeyPressed(i32(257)) {
             if contest is not None and contest.finished {
-                self.finish_arena(contest);
+                rows = standings(contest);
+                self.finish_arena(contest, bool(rows) and rows[0].human);
             } else {
                 self.restart_level();
             }
@@ -2062,12 +2087,10 @@ impl App.respawn_arena_player() {
     self.audio.play_path("sound/world/telein.wav");
 }
 
-"""Leave a finished match: the winner advances along the ladder; otherwise rematch."""
-impl App.finish_arena(contest: ArenaMatch) {
-    rows = standings(contest);
-    won = bool(rows) and rows[0].human;
+"""Leave a finished match for the next arena along the ladder, or replay it."""
+impl App.finish_arena(contest: ArenaMatch, advance: bool = True) {
     destination = self.level.name;
-    if won {
+    if advance {
         library = AssetLibrary(game="q3");
         try {
             library.open(game_directory("q3"));
@@ -2118,6 +2141,124 @@ impl App.begin_podium(contest: ArenaMatch) {
     self.player.god_mode = True;
     move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
     raise_podium(self.world, contest, self.level, view[0], view[1], selected_weapon(self.combat).key);
+    # UI_SPPostgameMenu_f: the player's awards for the match, logged to the
+    # career totals (UI_LogAwardData), the podium names and the score lines.
+    rows = score_rows(contest);
+    mine = [row for row in rows if row.human];
+    board = Postgame(start=self.postgame_clock, board_start=self.postgame_clock, phase_start=self.postgame_clock,
+        ignore_until=self.postgame_clock + 1.5);
+    if mine {
+        me = mine[0];
+        shots = self.combat.accuracy_shots;
+        accuracy = self.combat.accuracy_hits * 100 // shots if shots > 0 else 0;
+        perfect = me.rank == 0 and not me.tied and me.deaths == 0;
+        try {
+            self.award_log.load();
+        } except Exception as error {
+            self.show_notice("Award log: " + str(error));
+        }
+        career = self.award_log.totals.get("frags", 0);
+        for medal in postgame_medals(accuracy, me.impressive, me.excellent, me.humiliation, me.frags, perfect, career) {
+            board.medals.append(medal.kind);
+            board.amounts.append(medal.amount);
+        }
+        try {
+            for (kind, amount) in [("accuracy", 1 if accuracy >= 50 else 0), ("impressive", me.impressive),
+                ("excellent", me.excellent), ("gauntlet", me.humiliation), ("frags", me.frags),
+                ("perfect", 1 if perfect else 0)] {
+                if amount > 0 {
+                    self.award_log.log(kind, amount);
+                }
+            }
+        } except Exception as error {
+            self.show_notice("Award log: " + str(error));
+        }
+        board.won = me.rank == 0;
+        board.focus = 2 if board.won else 1;
+        self.audio.play_path("music/win.wav" if board.won else "music/loss.wav");
+    }
+    board.places = [row.name for row in rows[:3]];
+    board.scores = [postgame_score_line(row.rank, row.tied, row.name, row.frags) for row in rows[:8]];
+    self.postgame = board;
+}
+
+"""UI_SPPostgameMenu_MenuKey and its buttons: any key skips the podium and
+then the awards; left and right choose a button and Enter presses it."""
+impl App.postgame_input(contest: ArenaMatch) {
+    board = self.postgame;
+    if board is None {
+        return;
+    }
+    for cue in board.update(self.postgame_clock) {
+        self.audio.play_path(cue);
+    }
+    pressed = "";
+    if IsKeyPressed(i32(257)) or IsKeyPressed(i32(335)) {
+        pressed = "enter";
+    } elif IsKeyPressed(i32(263)) {
+        pressed = "left";
+    } elif IsKeyPressed(i32(262)) {
+        pressed = "right";
+    } elif IsKeyPressed(i32(32)) or IsMouseButtonPressed(i32(0)) {
+        pressed = "any";
+    }
+    if not pressed {
+        return;
+    }
+    action = board.key(self.postgame_clock, pressed);
+    if action == "next" {
+        self.finish_arena(contest, True);
+    } elif action == "replay" {
+        self.finish_arena(contest, False);
+    } elif action == "menu" {
+        self.menu.opened = True;
+        self.menu.restore_mouse = mouse_captured();
+        _release();
+        for i in range(len(self.menu.games)) {
+            if self.menu.games[i] == "q3" {
+                self.menu.game = i;
+            }
+        }
+        self.menu.scan();
+    }
+}
+
+impl App.board_lines(contest: ArenaMatch) -> list[BoardLine] {
+    lines: list[BoardLine] = [];
+    minutes = int(contest.elapsed / 60.0);
+    for row in score_rows(contest) {
+        line = BoardLine(name=row.name, score=row.frags, minutes=minutes, human=row.human, rank=row.rank,
+            tied=row.tied, excellent=row.excellent, impressive=row.impressive, gauntlet=row.humiliation);
+        actor = row.actor;
+        if row.human {
+            line.icon = "head";
+            line.head = self.hud_models.head;
+            line.head_origin = self.hud_models.head_origin;
+        } elif isinstance(actor, Opponent) {
+            mind = actor.character;
+            if mind is not None {
+                line.skill = int(mind.skill + 0.5);
+            }
+            rig = actor.visual;
+            if isinstance(rig, PlayerRig) {
+                line.icon = "icon:" + rig.character;
+                links = [edge rig->:Wears:->];
+                parts = [rig->:Wears:->][?:ModelResource];
+                for i in range(min(len(links), len(parts))) {
+                    name = parts[i].name;
+                    if links[i].role == "head" and name in self.models.resources {
+                        line.head = self.models.resources[name];
+                        if name not in self.head_views {
+                            self.head_views[name] = head_view(self.models.resources[name], rig.head_offset);
+                        }
+                        line.head_origin = self.head_views[name];
+                    }
+                }
+            }
+        }
+        lines.append(line);
+    }
+    return lines;
 }
 
 impl App.arena_lines(contest: ArenaMatch) -> list[str] {
@@ -2166,6 +2307,8 @@ impl App.prepare_presentation() {
     self.pickup_time = 0.0;
     self.heard_hits = self.combat.hits;
     self.ammo_warning = 0;
+    self.postgame = None;
+    self.head_views = {};
     styles = [self.world->:HasLightStyles:->][?:LightStyles];
     if styles {
         self.light_styles = styles[0];
@@ -2180,6 +2323,14 @@ impl App.prepare_presentation() {
         if game == "q3" {
             load_q3_models(self.hud_models, library);
             self.hud.three_d = self.hud_models.ready();
+            characters: list[str] = [];
+            for bot in [self.world->:HasOpponent:->][?:Opponent] {
+                rig = bot.visual;
+                if isinstance(rig, PlayerRig) and rig.character not in characters {
+                    characters.append(rig.character);
+                }
+            }
+            load_character_icons(self.hud, library, characters);
         }
     } except Exception as error {
         # Without the art the text status bar remains.

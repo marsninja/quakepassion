@@ -517,7 +517,9 @@ obj CombatState {
         navmesh: NavMesh | None = None,
         navmesh_checked: bool = False,
         rail_streak: int = 0,
-        awards: list[str] = [];
+        awards: list[str] = [],
+        accuracy_shots: int = 0,
+        accuracy_hits: int = 0;
     # Weapon handling state: Q2 chaingun spin frames, BFG wind-up, machinegun
     # climb (machinegun_shots); the firing view punch; sounds and messages
     # for the game to play and print; whether the last shot keeps quiet
@@ -1320,6 +1322,10 @@ def fire_weapon(
     state.cooldown = rule.interval * fire_interval_scale(player);
     state.flash = 0.08;
     state.shots += 1;
+    # FireWeapon counts every shot but the gauntlet's for accuracy.
+    if state.game == "q3" and rule.key != "gauntlet" {
+        state.accuracy_shots += 1;
+    }
     state.impact_model = -1;
     if rule.punch > 0.0 {
         state.punch = rule.punch;
@@ -1469,6 +1475,11 @@ def fire_weapon(
     }
     for i in range(len(bodies)) {
         damage_corpse(world, bodies[i], wounds[i]);
+    }
+    # Bullet_Fire, ShotgunPattern, weapon_railgun_fire and the lightning gun
+    # count a shot that strikes someone alive once toward accuracy.
+    if state.game == "q3" and rule.key != "gauntlet" and any([victim.health > 0 for victim in victims]) {
+        state.accuracy_hits += 1;
     }
     for i in range(len(victims)) {
         # Q2 fire_lead / Q3 Bullet_Fire push along the aim.
@@ -1838,9 +1849,10 @@ def blast_actors(
     state: CombatState,
     direct: Player | None = None,
     attacker: Opponent | None = None
-) {
+) -> bool {
+    hurt = False;
     if splash <= 0 or radius <= 0.0 {
-        return;
+        return hurt;
     }
     # G_RadiusDamage reaches the bodies left behind as well.
     for body in [world->:HasCorpse:->][?:Corpse] {
@@ -1921,7 +1933,8 @@ def blast_actors(
             knock_back(actor, state.game, away, float(int(push)), self_hit);
         }
         if isinstance(actor, Opponent) {
-            damage_opponent(
+            living = actor.health > 0;
+            dealt = damage_opponent(
                 actor,
                 amount,
                 player.inventory,
@@ -1930,6 +1943,7 @@ def blast_actors(
                 means="splash",
                 tally=state if hostile else None
             );
+            hurt = hurt or (living and dealt > 0);
         } else {
             actor spawn Damage(
                 amount=amount,
@@ -1939,6 +1953,7 @@ def blast_actors(
             );
         }
     }
+    return hurt;
 }
 
 """A missile's direct hit pushes along its flight (Q3 G_MissileImpact, Q2
@@ -1969,7 +1984,7 @@ def projectile_blast(
     if projectile.splash <= 0 or projectile.radius <= 0.0 {
         return;
     }
-    blast_actors(
+    hurt = blast_actors(
         world,
         projectile.pos,
         projectile.splash,
@@ -1981,6 +1996,10 @@ def projectile_blast(
         direct,
         projectile.owner
     );
+    # G_MissileImpact: splash that hurts anyone counts toward accuracy.
+    if hurt and not projectile.hostile and state.game == "q3" {
+        state.accuracy_hits += 1;
+    }
     state.impacts.append(
         WeaponImpact(
             origin=projectile.pos, splash=projectile.splash, radius=projectile.radius
@@ -2288,6 +2307,10 @@ walker ProjectileTick {
             return;
         }
         if victim is not None {
+            # LogAccuracyHit: a player's missile striking someone alive.
+            if not here.hostile and victim.health > 0 and self.state.game == "q3" {
+                self.state.accuracy_hits += 1;
+            }
             damage_opponent(
                 victim,
                 here.damage,
