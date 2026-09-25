@@ -17,7 +17,7 @@ import from ..world.finale {
     VICTORY_TEXT
 }
 import from ..world.trains { TrainTick, ShootMover }
-import from ..world.signals { SignalTick, progress_summary }
+import from ..world.signals { SignalTick, progress_summary, progress_for }
 import from ..world.hazards { HazardTick }
 import from ..world.speakers { SpeakerTick }
 import from ..world.brushes { BrushTick, ShootBrush, BlastBrush }
@@ -33,7 +33,7 @@ import from ..world.rotators { RotatorTick }
 import from ..world.shooters { ShooterTick }
 import from ..world.targets { TargetTick, HasHelp, HelpComputer }
 import from ..world.triggers { TriggerTick, ShootTrigger, MonsterJumpTick }
-import from ..world.traversal { TraversalTick }
+import from ..world.traversal { TraversalTick, TeleportMonsters }
 import from ..world.arena_navigation {
     ArenaNavigationTick,
     ArenaContactIndex,
@@ -229,8 +229,30 @@ obj App {
         pending_unit: bool = False,
         campaign_complete: bool = False,
         runes_message: bool = False;
+    # Level flow: the end-of-level stats screen (Q1 execute_changelevel and
+    # IntermissionThink, Q2 end of unit), the text shown after it, the level's
+    # monster total, the Q2 help computer toggle and the level-entry autosave
+    # that a death restarts from (Q1 restart with the entry parms, Q2 autosave).
+    has stats_screen: bool = False,
+        stats_wait: float = 0.0,
+        completed_time: float = 0.0,
+        pending_text: str = "",
+        total_monsters: int = 0,
+        help_open: bool = False,
+        entry_save: str = "";
 
     def begin_intermission(text: str);
+    """Show the end-of-level stats at the intermission camera, then go on to
+    the pending map (or the pending episode text) once a key is pressed."""
+    def begin_stats(destination: str, spawnpoint: str, unit: bool, text: str);
+    """Leave the stats screen: the episode text next, else the pending map."""
+    def finish_stats();
+    def draw_stats();
+    def tally_line() -> str;
+    """Restart the level from its entry autosave after the player died."""
+    def restart_level();
+    """Take the level-entry autosave and count the level's monsters."""
+    def record_entry();
     def begin_podium(contest: ArenaMatch);
     def render_portal(faces: list[int]);
     def survey_level();

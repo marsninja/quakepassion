@@ -31,8 +31,8 @@ Q2 `deathtarget` overrides the outgoing death target. The underlying reference i
   timing, periodic toggling and repeatable variance.
 - `scripts/validate_events.jac` exercises original Q1 `e1m2`/`e2m6`, Q2
   `base1`/`fact2`/`ware2`, and Q3 `q3dm7`/`q3dm17`. It checks exact snapshot
-  round-trips after advancing the event scheduler. This does not certify every
-  target chain: unsupported recipients still prevent that chain from activating.
+  round-trips after advancing the event scheduler. Recipients without a use are
+  skipped rather than disabling their chain; `scripts/chain_audit.jac` reports them.
 - Save format 3 includes these states together with train movers. No version-3
   snapshot was released before this branch; version-2 saves remain incompatible.
 

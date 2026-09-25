@@ -1,6 +1,7 @@
 """Map-defined campaign exit requests, separate from application loading."""
 import from .world { World }
-import from .signals { Signal, HasSignal }
+import from .signals { Signal, HasSignal, Fire, note_chain }
+import from .inventory { Inventory }
 import from .triggers { trigger_volume }
 import from ..formats.bsp { Bsp }
 import from ..formats.q1.collision { build_collision }
@@ -13,6 +14,7 @@ node LevelExit {
         activation: Signal = Signal(),
         volume: CollisionMap = CollisionMap(),
         contact: bool = False,
+        intermission: bool = True,
         cooldown: float = 0.0;
 }
 
@@ -21,7 +23,11 @@ walker ExitTick {
         finish: Vec3,
         dt: float,
         touching: bool = True,
-        request: str = "";
+        inventory: Inventory | None = None,
+        request: str = "",
+        intermission: bool = True,
+        message: str = "",
+        cues: list[str] = [];
 
     can begin with World entry {
         if self.dt > 0.0 and self.touching {
@@ -39,13 +45,21 @@ walker ExitTick {
         }
         active = here.activation.pending > 0;
         here.activation.pending = 0;
+        touched = False;
         if here.contact {
             hit = here.volume.trace(self.start, self.finish);
-            active = active or hit.start_solid or hit.fraction < 1.0;
+            touched = hit.start_solid or hit.fraction < 1.0;
         }
-        if active {
+        if active or touched {
             self.request = here.destination;
+            self.intermission = here.intermission;
             here.cooldown = 1.0;
+        }
+        # Q1 changelevel_touch: SUB_UseTargets before the level changes.
+        if touched {
+            fired = here.activation spawn Fire(inventory=self.inventory);
+            self.message = fired.message;
+            self.cues.extend(fired.cues);
         }
     }
 }
@@ -101,31 +115,34 @@ def load_exits(world: World, bsp: Bsp) {
             continue;
         }
         destination = fields.get("map", "");
-        if not destination
-            or fields.get("killtarget", "")
-            or fields.get("target", "")
-            or float(fields.get("delay", "0")) != 0.0 {
-            continue;
-        }
-        allowed = 3841 if bsp.game == "q1" else 7936;
-        if int(fields.get("spawnflags", "0")) & ~allowed {
+        # Q2 use_target_changelevel ignores the exit's own target, killtarget,
+        # delay and spawnflags; Q1 changelevel_touch fires its targets itself.
+        if not destination {
+            note_chain(world, index, "exit without a map");
             continue;
         }
         try {
             exit_map(destination);
             exit_spawn(destination);
         } except ValueError {
+            note_chain(world, index, "exit with an invalid map " + destination);
             continue;
         }
         signal = Signal(entities=[index]);
-        portal = LevelExit(destination=destination, activation=signal, contact=contact);
+        portal = LevelExit(
+            destination=destination,
+            activation=signal,
+            contact=contact,
+            # Q1 NO_INTERMISSION (1) goes straight to the next map.
+            intermission=not (contact and int(fields.get("spawnflags", "0")) & 1 != 0)
+        );
         if contact {
             model = fields.get("model", "");
-            if not model.startswith("*") or fields.get("targetname", "") {
-                continue;
+            if model.startswith("*") {
+                portal.volume = trigger_volume(volumes, int(model[1:]));
             }
-            portal.volume = trigger_volume(volumes, int(model[1:]));
             if not portal.volume.hulls {
+                note_chain(world, index, "exit without a trigger volume");
                 continue;
             }
         }

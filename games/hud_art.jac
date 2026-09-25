@@ -4,7 +4,7 @@ import from engine.render.hud_models { HudModels }
 import from engine.render.models { ModelRenderer }
 import from .arena_character { player_part }
 import from engine.formats.bsp { Texture }
-import from engine.formats.q1.wad { wad_pictures }
+import from engine.formats.q1.wad { wad_pictures, lump_picture }
 import from engine.formats.q2.model { parse_pcx }
 import from engine.assets.library { AssetLibrary }
 import from .items { Q2_PICKUPS, Q3_PICKUPS }
@@ -46,9 +46,17 @@ def load_q1_art(hud: HudRenderer, library: AssetLibrary) {
     if not library.exists("gfx.wad") {
         return;
     }
-    pictures = wad_pictures(library.read("gfx.wad"), library.read("gfx/palette.lmp"));
+    palette = library.read("gfx/palette.lmp");
+    pictures = wad_pictures(library.read("gfx.wad"), palette);
     for (name, picture) in pictures.items() {
         hud.add(name, picture);
+    }
+    # Sbar_IntermissionOverlay's plaques live outside the WAD.
+    for name in ["complete", "inter"] {
+        path = "gfx/" + name + ".lmp";
+        if library.exists(path) {
+            hud.add(name, lump_picture(library.read(path), palette, name));
+        }
     }
     hud.ready = hud.has_pic("sbar") and hud.has_pic("num_0");
 }

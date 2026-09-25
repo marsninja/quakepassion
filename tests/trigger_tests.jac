@@ -71,10 +71,10 @@ test "one-shot and negative wait triggers cannot fire twice" {
 }
 
 
-test "unsupported flags and partial target fan-out do not activate doors" {
-    # Q2 MONSTER and NOT_PLAYER triggers load as monster triggers; flags the
-    # original never defines still keep a trigger out. Named, directional,
-    # killtarget and random triggers load.
+test "trigger flags load and a partial target fan-out still opens its door" {
+    # Q2 MONSTER and NOT_PLAYER triggers load as monster triggers; bits the
+    # original never reads are ignored, as SP_trigger_multiple ignores them.
+    # Named, directional, killtarget and random triggers load.
     fixture = trigger_fixture();
     fixture.bsp.entities[1].fields["spawnflags"] = "3";
     load_triggers(fixture.world, fixture.bsp);
@@ -83,7 +83,7 @@ test "unsupported flags and partial target fan-out do not activate doors" {
     fixture = trigger_fixture();
     fixture.bsp.entities[1].fields["spawnflags"] = "8";
     load_triggers(fixture.world, fixture.bsp);
-    assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 0;
+    assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 1;
     for fields in [
         {"killtarget": "other"},
         {"angle": "90"},
@@ -97,12 +97,15 @@ test "unsupported flags and partial target fan-out do not activate doors" {
         load_triggers(fixture.world, fixture.bsp);
         assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 1;
     }
+    # G_UseTargets skips a recipient without a use and still uses the rest.
     fixture = trigger_fixture();
     fixture.bsp.entities.append(
         MapEntity(fields={"classname": "target_relay", "targetname": "gate"})
     );
     load_triggers(fixture.world, fixture.bsp);
-    assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 0;
+    assert len([fixture.world->:HasTrigger:->][?:TouchTrigger]) == 1;
+    touch(fixture, Vec3(x=100.0, z=24.0), Vec3(x=300.0, z=24.0));
+    assert [fixture.world->:HasDoor:->][?:Door][0].activation.pending == 1;
 }
 
 test "delayed contact queues output even when a one shot trigger disables" {

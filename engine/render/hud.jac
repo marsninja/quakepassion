@@ -74,6 +74,15 @@ obj HudStatus {
         ammo_warning: int = 0;
 }
 
+"""A number right-aligned in `digits` columns, as printf's %3i."""
+def pad_number(value: int, digits: int) -> str {
+    text = str(value);
+    while len(text) < digits {
+        text = " " + text;
+    }
+    return text;
+}
+
 obj HudRenderer {
     has pics: dict[str, HudPic] = {},
         game: str = "",
@@ -337,6 +346,74 @@ obj HudRenderer {
         if status.ammo >= 0 {
             self.q1_number(status.ammo, 3, left + 248.0 * scale, bar, scale, status.ammo <= 10);
         }
+    }
+
+    """Draw_String with the conchars sheet."""
+    def q1_text(text: str, x: float, y: float, scale: float) {
+        for c in text {
+            if c != " " {
+                self.q1_char(ord(c) & 255, x, y, scale);
+            }
+            x += 8.0 * scale;
+        }
+    }
+
+    """Sbar_SoloScoreboard over sb_scorebar (shown while scores are held or the
+    player is dead): monsters, secrets, time and the level name."""
+    def draw_q1_scores(
+        kills: int,
+        total: int,
+        secrets: int,
+        total_secrets: int,
+        seconds: int,
+        title: str,
+        width: int,
+        height: int
+    ) {
+        if not self.ready or self.game != "q1" {
+            return;
+        }
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        left = (float(width) - 320.0 * scale) * 0.5;
+        bar = float(height) - 24.0 * scale;
+        self.pic("scorebar", left, bar, scale);
+        self.q1_text("Monsters:" + pad_number(kills, 3) + " /" + pad_number(total, 3), left + 8.0 * scale, bar + 4.0 * scale, scale);
+        self.q1_text("Secrets :" + pad_number(secrets, 3) + " /" + pad_number(total_secrets, 3), left + 8.0 * scale, bar + 12.0 * scale, scale);
+        self.q1_text("Time :" + pad_number(seconds // 60, 3) + ":" + str((seconds % 60) // 10) + str(seconds % 10), left + 184.0 * scale, bar + 4.0 * scale, scale);
+        self.q1_text(title, left + (232.0 - float(len(title)) * 4.0) * scale, bar + 12.0 * scale, scale);
+        rlDrawRenderBatchActive();
+    }
+
+    """Sbar_IntermissionOverlay: the level-complete plaque with the time,
+    secrets and monsters in the big digits, on a centred 320x200 screen."""
+    def draw_q1_intermission(
+        seconds: int,
+        secrets: int,
+        total_secrets: int,
+        kills: int,
+        total: int,
+        width: int,
+        height: int
+    ) {
+        if not self.ready or self.game != "q1" {
+            return;
+        }
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 200.0))));
+        left = (float(width) - 320.0 * scale) * 0.5;
+        top = (float(height) - 200.0 * scale) * 0.5;
+        self.pic("complete", left + 64.0 * scale, top + 24.0 * scale, scale);
+        self.pic("inter", left, top + 56.0 * scale, scale);
+        self.q1_number(seconds // 60, 3, left + 160.0 * scale, top + 64.0 * scale, scale, False);
+        self.pic("num_colon", left + 234.0 * scale, top + 64.0 * scale, scale);
+        self.pic("num_" + str((seconds % 60) // 10), left + 246.0 * scale, top + 64.0 * scale, scale);
+        self.pic("num_" + str(seconds % 10), left + 266.0 * scale, top + 64.0 * scale, scale);
+        self.q1_number(secrets, 3, left + 160.0 * scale, top + 104.0 * scale, scale, False);
+        self.pic("num_slash", left + 232.0 * scale, top + 104.0 * scale, scale);
+        self.q1_number(total_secrets, 3, left + 240.0 * scale, top + 104.0 * scale, scale, False);
+        self.q1_number(kills, 3, left + 160.0 * scale, top + 144.0 * scale, scale, False);
+        self.pic("num_slash", left + 232.0 * scale, top + 144.0 * scale, scale);
+        self.q1_number(total, 3, left + 240.0 * scale, top + 144.0 * scale, scale, False);
+        rlDrawRenderBatchActive();
     }
 
     # ---- Quake II (single_statusbar) ----

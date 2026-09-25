@@ -5,6 +5,7 @@ import from .world { World, Entity, Player }
 import from .trains { TrackPoint, HasTrack, TrackNext }
 import from .combat { Opponent, HasOpponent, CombatState, request_sound }
 import from .models { Visual }
+import from .signals { Signal, HasSignal }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..math.vec3 { Vec3 }
 
@@ -14,7 +15,9 @@ node TeleportTrain(Entity) {
         current: TrackPoint,
         destination: TrackPoint | None = None,
         speed: float = 100.0,
-        visual: Visual = Visual();
+        visual: Visual = Visual(),
+        running: bool = True,
+        activation: Signal = Signal();
 }
 
 edge HasFinale: World --> Finale {}
@@ -41,23 +44,30 @@ def entity_point(entity: MapEntity) -> Vec3 {
     return Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
 }
 
-# The first authored intermission camera; mangle pitch is positive downward.
-def intermission_camera(bsp: Bsp) -> IntermissionView {
+# An authored intermission camera; `pick` chooses among several (Q1
+# FindIntermission picks one at random). Q1 info_intermission uses `mangle`,
+# Q2 info_player_intermission `angles`; pitch is positive downward.
+def intermission_camera(bsp: Bsp, pick: int = 0) -> IntermissionView {
+    spots = [
+        entity
+        for entity in bsp.entities
+        if entity.fields.get("classname", "")
+            in ["info_intermission", "info_player_intermission"]
+    ];
     view = IntermissionView();
-    for entity in bsp.entities {
-        if entity.fields.get("classname", "") != "info_intermission" {
-            continue;
-        }
-        angles = entity.fields.get("mangle", "0 0 0").split();
-        if len(angles) != 3 {
-            raise ValueError("Invalid intermission mangle");
-        }
-        view.found = True;
-        view.origin = entity_point(entity);
-        view.pitch = -float(angles[0]) * math.pi / 180.0;
-        view.yaw = float(angles[1]) * math.pi / 180.0;
+    if not spots {
         return view;
     }
+    entity = spots[pick % len(spots)];
+    key = "mangle" if entity.fields.get("classname", "") == "info_intermission" else "angles";
+    angles = entity.fields.get(key, "0 0 0").split();
+    if len(angles) != 3 {
+        raise ValueError("Invalid intermission angles");
+    }
+    view.found = True;
+    view.origin = entity_point(entity);
+    view.pitch = -float(angles[0]) * math.pi / 180.0;
+    view.yaw = float(angles[1]) * math.pi / 180.0;
     return view;
 }
 
@@ -107,10 +117,17 @@ def load_finale(world: World, bsp: Bsp) {
         if speed <= 0.0 {
             speed = 100.0;
         }
+        # func_train_find: a named train waits for its first use (train_use).
         train = TeleportTrain(
-            entity=index, current=first, speed=speed, pos=first.origin.add(Vec3())
+            entity=index,
+            current=first,
+            speed=speed,
+            pos=first.origin.add(Vec3()),
+            running=not fields.get("targetname", ""),
+            activation=Signal(entities=[index])
         );
         world +>:HasTeleportTrain:+> train;
+        world +>:HasSignal:+> train.activation;
     }
     for entity in bsp.entities {
         if entity.fields.get("classname", "") == "monster_oldone" {
@@ -149,6 +166,13 @@ walker TeleportTrainTick {
     }
 
     can advance with TeleportTrain entry {
+        if here.activation.pending > 0 {
+            here.activation.pending = 0;
+            here.running = True;
+        }
+        if not here.running {
+            return;
+        }
         remaining = here.speed * self.dt;
         if remaining <= 0.0 {
             return;

@@ -3,7 +3,8 @@
 target_explosion deals `dmg` radius damage (radius dmg+40) with a rocket-style
 blast; target_splash sprays particles and optionally hurts; target_earthquake
 jolts grounded actors for `count` seconds; target_laser is a toggled damaging
-beam; target_help updates the help computer's objectives."""
+beam; target_help updates the help computer's objectives; target_temp_entity
+shows its client effect."""
 import math;
 import from .world { World, Player }
 import from .combat {
@@ -198,6 +199,12 @@ walker TargetTick {
                 # g_target.c target_explosion_explode: TE_EXPLOSION1.
                 explode(world, here.origin, blast_kind(self.state.game, "q2_rocket"));
             }
+            # g_target.c Use_Target_Tent: only the client-side effect.
+            if here.kind == "temp_entity" {
+                for j in range(6 if here.count == 22 else 2) {
+                    impact_spray(world, here.origin, Vec3(z=1.0));
+                }
+            }
             if here.kind == "splash" {
                 for j in range(max(1, here.count // 8)) {
                     impact_spray(world, here.origin, here.direction);
@@ -317,7 +324,8 @@ def load_targets(world: World, bsp: Bsp) {
             "target_splash",
             "target_earthquake",
             "target_laser",
-            "target_help"
+            "target_help",
+            "target_temp_entity"
         ];
         q3_kinds = ["target_remove_powerups", "target_print", "target_give"];
         # Q1/Q2 named lights are LightSwitch nodes (see lightstyles.jac).
@@ -360,6 +368,13 @@ def load_targets(world: World, bsp: Bsp) {
         looping = False;
         if event.kind == "explosion" {
             sound = "sound/weapons/rocklx1a.wav";
+        } elif event.kind == "temp_entity" {
+            # The effect number is `style`; boss1 uses TE_BOSSTPORT (22), which
+            # the client shows as a big teleport burst with misc/bigtele.wav.
+            event.count = int(fields.get("style", "0"));
+            if event.count == 22 {
+                sound = "sound/misc/bigtele.wav";
+            }
         } elif event.kind == "splash" {
             event.count = event.count or 32;
         } elif event.kind == "earthquake" {

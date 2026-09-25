@@ -10,9 +10,13 @@ appear in the HUD.
 Q2 hub transitions retain visited world snapshots (items, opponents, movers,
 triggers and signals), while carrying current player health/armor/inventory and
 using the destination's authored arrival. A `*` unit transition clears hub history
-and keys. Q1 map transitions clear keys. Selecting a map from the menu starts a
+and cross-level trigger flags but keeps keys (the original strips them only in
+coop). Q1 map transitions clear keys. Selecting a map from the menu starts a
 fresh session. Failed asset loads leave the current level and hub intact.
-Restart after death reloads the current map and preserves other visited Q2 maps.
+Restart after death reloads the autosave taken on level entry: the player's
+health, armor, inventory, weapons, keys and unit flags as they entered, with the
+Q2 hub as it was then. Q1 exits show the intermission stats and Q2 unit exits a
+unit summary; see [level flow](level-flow-status.md).
 
 F5 saves; F9 loads the active map and Q2 hub together. Saves use a data-only
 campaign envelope and snapshot version 5. Older snapshots are rejected:
@@ -41,6 +45,7 @@ boss/rune logic, original weapon/enemy behaviors, all special trigger flags,
 remaining rotating/crushing mover behavior is incomplete. Shared trains are now
 implemented; see [authored events](authored-events-status.md). Remaining original
 shader directives, water ledge jumps, fall damage, protection powerups and precise
-per-item placement/respawn behavior are further fidelity work. Unsupported
-activation chains are disabled rather than partially dispatched. Automated route
-checks do not certify every original campaign map is completable.
+per-item placement/respawn behavior are further fidelity work. Activation chains
+skip recipients without a use, as the originals do; `scripts/chain_audit.jac`
+checks that every exit, mover, trigger and train of the Q1 and Q2 campaigns
+loads. Automated route checks do not certify a human traversal of every map.

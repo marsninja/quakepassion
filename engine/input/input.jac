@@ -36,7 +36,8 @@ obj Intent {
         use_item: bool = False,
         next_item: bool = False,
         prev_item: bool = False,
-        scores: bool = False;
+        scores: bool = False,
+        help: bool = False;
 }
 
 

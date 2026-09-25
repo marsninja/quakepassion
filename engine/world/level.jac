@@ -37,6 +37,7 @@ import from .combat { load_opponent_signals }
 import from .triggers { load_triggers, load_monster_jumps }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
+import from .fixtures { load_fixture_uses }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
@@ -460,6 +461,7 @@ def prepare_level(world: World, level: Level) {
     load_shooters(world, level.bsp);
     load_targets(world, level.bsp);
     load_traversal(world, level.bsp);
+    load_fixture_uses(world, level.bsp);
     # Resolve every activation chain once all activatable entities exist.
     connect_targets(world, level.bsp);
     pose_doors(world, level.bsp, level.collision);

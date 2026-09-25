@@ -842,8 +842,12 @@ def restore(
                 or (row[1] != -1.0 and len(ball_destination) != 1) {
                 raise ValueError("Invalid saved teleport train path");
             }
+            start = ball.current;
             ball.current = ball_current[0];
             ball.destination = ball_destination[0] if ball_destination else None;
+            ball.running = ball.running
+                or ball.destination is not None
+                or ball.current is not start;
             ball.pos = Vec3(x=row[2], y=row[3], z=row[4]);
             ball.yaw = row[5];
         } elif words[0] == "L" and l < len(lightning) {
