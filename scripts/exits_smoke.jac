@@ -6,6 +6,8 @@ import from engine.render.renderer { Renderer }
 import from engine.world.level { load_level, spawn_player }
 import from engine.world.world { World }
 import from engine.world.exits { LevelExit, HasExit, exit_map }
+import from engine.input.input { Intent }
+import from engine.world.inventory { quantity }
 
 with entry {
     renderer = Renderer();
@@ -40,10 +42,19 @@ with entry {
         app.physics_clock.accumulator = app.physics_clock.tick_rate;
         app.skip_time = True;
         assert app.step();
+        # Q1 exits pause on the intermission stats until a key after 2 s.
+        if app.stats_screen {
+            assert app.level.name == name;
+            app.stats_wait = 0.0;
+            app.scripted = Intent(fire=True);
+            assert app.step();
+            app.scripted = None;
+        }
         assert app.level.name == exit_map(exits[0].destination);
         assert app.walking and not app.menu.opened;
         assert app.player.health == 73 and app.player.armor == 42;
-        assert app.player.inventory is inventory;
+        # The carried inventory is a copy (keys and unit flags filtered).
+        assert quantity(app.player.inventory, "shells") >= quantity(inventory, "shells");
         for i in range(3) {
             app.render_frame();
         }

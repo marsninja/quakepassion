@@ -1,6 +1,7 @@
 """Shared fixed-step walking behavior over the collision query interface."""
+import math;
 import from .collision { CollisionMap }
-import from ..math.vec3 { Vec3 }
+import from ..math.vec3 { Vec3, forward_from }
 import from ..world.world { Player }
 import from ..world.powerups { empowered, speed_scale }
 
@@ -51,10 +52,17 @@ def slide(collision: CollisionMap, pos: Vec3, velocity: Vec3, dt: float) -> Moti
 }
 
 def step_slide(
-    collision: CollisionMap, pos: Vec3, velocity: Vec3, dt: float, grounded: bool
+    collision: CollisionMap,
+    pos: Vec3,
+    velocity: Vec3,
+    dt: float,
+    grounded: bool,
+    air_step: bool = False
 ) -> Motion {
     flat = slide(collision, pos, velocity, dt);
-    if not grounded or velocity.z > 0.0 {
+    # Q2/Q3 PM_StepSlideMove also steps while falling, catching ledges; Q1
+    # SV_WalkMove does not stair up while jumping. None step while rising.
+    if velocity.z > 0.0 or (not grounded and not air_step) {
         return flat;
     }
     # A step cannot improve an unobstructed horizontal move (including rest).
@@ -88,7 +96,11 @@ walker MovePlayer {
         water_depth: int = 0,
         swim_wish: Vec3 = Vec3(),
         steady: bool = False,
-        dt: float = 1.0 / 120.0;
+        game: str = "",
+        dt: float = 1.0 / 120.0,
+        jumped: bool = False,
+        water_jumped: bool = False,
+        landed: float = 0.0;
 
     can integrate with Player entry {
         if self.dt <= 0.0 or self.dt > 0.05 {
@@ -122,8 +134,17 @@ walker MovePlayer {
             here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
             return;
         }
+        if here.water_jump_time > 0.0 {
+            self.water_jump_move(here, pos);
+            return;
+        }
+        if self.water_depth == 2 and self.check_water_jump(here, pos) {
+            self.water_jump_move(here, pos);
+            return;
+        }
         if self.water_depth >= 2 {
             here.grounded = False;
+            here.fall_speed = 0.0;
             here.velocity = here.velocity.scale(
                 max(0.0, 1.0 - float(self.water_depth) * self.dt)
             );
@@ -144,6 +165,11 @@ walker MovePlayer {
         if self.water_depth == 1 {
             here.velocity = here.velocity.scale(max(0.0, 1.0 - self.dt));
         }
+        if not self.jump {
+            here.jump_held = False;
+        }
+        here.knockback_time = max(0.0, here.knockback_time - self.dt);
+        was_grounded = here.grounded;
         ground = self.collision.trace(pos, pos.add(Vec3(z=-0.25)));
         here.grounded = not ground.start_solid
             and ground.fraction < 1.0
@@ -151,16 +177,30 @@ walker MovePlayer {
             and here.velocity.z <= 0.0;
         if here.grounded {
             pos = ground.end;
-            speed = here.velocity.length();
-            if speed > 0.0 and not self.steady {
-                here.velocity = here.velocity.scale(
-                    max(0.0, speed - max(100.0, speed) * 6.0 * self.dt) / speed
-                );
+            if not was_grounded and here.fall_speed < 0.0 {
+                # The speed the body hit the ground at (Q1 jump_flag, Q2
+                # oldvelocity, Q3 PM_CrashLand's previous velocity).
+                self.landed = -here.fall_speed;
             }
-            here.velocity = clip_velocity(here.velocity, ground.normal);
-            if self.jump and not here.crouched {
-                here.velocity.z = 270.0;
-                here.grounded = False;
+            here.fall_speed = 0.0;
+            wants_jump = self.jump and not here.jump_held and not here.crouched;
+            # Q2/Q3 pmove check the jump before ground friction, so a jump on
+            # landing keeps its speed (strafe jumping); Q1 applies friction in
+            # SV_ClientThink before PlayerJump.
+            if wants_jump and self.game in ["q2", "q3"] {
+                self.take_off(here);
+            } else {
+                speed = here.velocity.length();
+                # Q3 PM_Friction skips ground friction while knocked back.
+                if speed > 0.0 and not self.steady and here.knockback_time <= 0.0 {
+                    here.velocity = here.velocity.scale(
+                        max(0.0, speed - max(100.0, speed) * 6.0 * self.dt) / speed
+                    );
+                }
+                here.velocity = clip_velocity(here.velocity, ground.normal);
+                if wants_jump {
+                    self.take_off(here);
+                }
             }
         }
         direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
@@ -178,10 +218,97 @@ walker MovePlayer {
         }
         if not here.grounded {
             here.velocity.z -= 800.0 * self.dt;
+            here.fall_speed = here.velocity.z;
         }
-        moved = step_slide(self.collision, pos, here.velocity, self.dt, here.grounded);
+        moved = step_slide(
+            self.collision,
+            pos,
+            here.velocity,
+            self.dt,
+            here.grounded,
+            self.game in ["q2", "q3"]
+        );
         here.velocity = moved.velocity;
         here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
+    }
+
+    """Q1 PlayerJump / Q2 PM_CheckJump / Q3 PM_CheckJump: 270 units a second
+    up, and not again until the button is released (FL_JUMPRELEASED,
+    PMF_JUMP_HELD). Q2 adds to an upward velocity."""
+    def take_off(body: Player) {
+        body.velocity.z = max(270.0, body.velocity.z + 270.0)
+            if self.game == "q2"
+            else 270.0;
+        body.grounded = False;
+        body.jump_held = True;
+        self.jumped = True;
+    }
+
+    """Q1 CheckWaterJump, Q2 PM_CheckSpecialMovement, Q3 PM_CheckWaterJump:
+    waist deep, facing a wall that is solid at the waist and open above it,
+    the swimmer springs out of the water."""
+    def check_water_jump(body: Player, pos: Vec3) -> bool {
+        ahead = Vec3(x=math.cos(body.yaw), y=math.sin(body.yaw));
+        if self.game == "q1" {
+            low = pos.add(Vec3(z=8.0));
+            waist = self.collision.trace_point(low, low.add(ahead.scale(24.0)));
+            if waist.fraction >= 1.0 or waist.start_solid {
+                return False;
+            }
+            high = pos.add(Vec3(z=32.0));
+            if self.collision.trace_point(high, high.add(ahead.scale(24.0))).fraction < 1.0 {
+                return False;
+            }
+            push = Vec3(x=-waist.normal.x, y=-waist.normal.y).scale(50.0);
+            body.velocity = Vec3(x=push.x, y=push.y, z=225.0);
+        } else {
+            low = pos.add(Vec3(z=4.0));
+            waist = self.collision.trace_point(low, low.add(ahead.scale(30.0)));
+            if waist.fraction >= 1.0 or waist.start_solid {
+                return False;
+            }
+            high = pos.add(Vec3(z=20.0));
+            if self.collision.trace_point(high, high.add(ahead.scale(30.0))).fraction < 1.0 {
+                return False;
+            }
+            if self.game == "q3" {
+                body.velocity = forward_from(body.yaw, body.pitch).scale(200.0);
+            } else {
+                body.velocity = ahead.scale(50.0);
+            }
+            body.velocity.z = 350.0;
+        }
+        body.water_jump_time = 2.0;
+        body.grounded = False;
+        body.jump_held = True;
+        self.water_jumped = True;
+        return True;
+    }
+
+    """Out of the water without control: Q1 SV_WaterJump holds the push until
+    the body leaves the water, with no gravity while wet; Q2/Q3 fall under
+    gravity and give control back once falling."""
+    def water_jump_move(body: Player, pos: Vec3) {
+        body.water_jump_time = max(0.0, body.water_jump_time - self.dt);
+        if self.game == "q1" {
+            if self.water_depth == 0 {
+                body.water_jump_time = 0.0;
+                body.velocity.z -= 800.0 * self.dt;
+            }
+        } else {
+            body.velocity.z -= 800.0 * self.dt;
+            if body.velocity.z < 0.0 {
+                body.water_jump_time = 0.0;
+            }
+        }
+        moved = step_slide(self.collision, pos, body.velocity, self.dt, False, True);
+        # Q1 keeps pressing toward the ledge (movedir) until clear of the water.
+        if self.game == "q1" and body.water_jump_time > 0.0 {
+            moved.velocity.x = body.velocity.x;
+            moved.velocity.y = body.velocity.y;
+        }
+        body.velocity = moved.velocity;
+        body.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
     }
 }
 

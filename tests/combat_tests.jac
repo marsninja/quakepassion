@@ -6,6 +6,7 @@ import from engine.world.combat {
     fire_weapon,
     actor_fraction,
     attack_pause,
+    attack_chance,
     damage_opponent
 }
 import from engine.world.world { World, Player }
@@ -241,12 +242,18 @@ test "idle monsters notice by facing, range, gunfire and each other" {
 test "skill shortens or lengthens attack pauses as the originals do" {
     q1 = Opponent(game="q1", skill=3);
     assert attack_pause(q1) == 0.0;
+    # SUB_AttackFinished (2*random()) after a ranged attack; none after melee.
     q1.skill = 1;
-    assert attack_pause(q1) == q1.rule.interval;
+    for sample in range(20) {
+        pause = attack_pause(q1);
+        assert pause >= 0.0 and pause <= 2.0;
+    }
+    assert attack_pause(q1, melee=True) == 0.0;
+    # Q2 skill scales the attack chance rather than the pause.
     easy = Opponent(game="q2", skill=0);
     hard = Opponent(game="q2", skill=2);
-    assert attack_pause(easy) == easy.rule.interval * 2.0;
-    assert attack_pause(hard) == hard.rule.interval * 0.5;
+    assert attack_chance(easy, 300.0, False) == 0.05;
+    assert attack_chance(hard, 300.0, False) == 0.2;
     nightmare = Opponent(game="q1", skill=3, health=100);
     damage_opponent(nightmare, 20);
     assert nightmare.pain_cooldown >= 5.0;

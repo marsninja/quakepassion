@@ -1,6 +1,6 @@
 """Authored damage volumes, activation, and game-specific contact intervals."""
 import from .world { World, Player }
-import from .signals { Signal, HasSignal }
+import from .signals { Signal, HasSignal, note_chain }
 import from .damage { Damage }
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .triggers { trigger_volume }
@@ -107,6 +107,7 @@ def load_hazards(world: World, bsp: Bsp) {
         }
         volume = trigger_volume(volumes, int(model[1:]));
         if not volume.hulls {
+            note_chain(world, index, "hurt without a trigger volume");
             continue;
         }
         flags = int(fields.get("spawnflags", "0"));
@@ -124,8 +125,8 @@ def load_hazards(world: World, bsp: Bsp) {
             activation=Signal(entities=[index])
         );
         world +>:HasHazard:+> hazard;
-        if hazard.toggle {
-            world +>:HasSignal:+> hazard.activation;
-        }
+        # Only TOGGLE hurts have a use (hurt_use), but every one can be
+        # killtargeted, so each keeps its graph identity.
+        world +>:HasSignal:+> hazard.activation;
     }
 }

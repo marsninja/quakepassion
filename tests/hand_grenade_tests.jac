@@ -6,8 +6,11 @@ import from engine.world.combat {
     HasProjectile,
     weapon_input,
     select_weapon,
-    CombatTick
+    CombatTick,
+    Opponent,
+    HasOpponent
 }
+import from engine.math.vec3 { Vec3 }
 import from engine.world.inventory { AdjustInventory, quantity }
 import from engine.world.level { Level }
 import from engine.core.savegame { snapshot, restore }
@@ -114,9 +117,15 @@ test "empty weapons fall back to an owned usable weapon" {
         assert not weapon_input(world, player, collision, state, True, 0.01);
         assert state.weapon == 1;
         assert state.cooldown >= 0.2;
+        # The fallback waits out the swap (Q2 frames, Q3 drop and raise).
         world spawn CombatTick(
-            player=player, collision=collision, state=state, dt=0.2, active=False
+            player=player, collision=collision, state=state, dt=state.cooldown, active=False
         );
+        if game == "q3" {
+            # The gauntlet only fires on contact.
+            assert not weapon_input(world, player, collision, state, True, 0.01);
+            world +>:HasOpponent:+> Opponent(pos=Vec3(x=30.0), health=100, arena=True, game="q3");
+        }
         assert weapon_input(world, player, collision, state, True, 0.01);
     }
 }

@@ -17,7 +17,7 @@ import from ..world.finale {
     VICTORY_TEXT
 }
 import from ..world.trains { TrainTick, ShootMover }
-import from ..world.signals { SignalTick, progress_summary }
+import from ..world.signals { SignalTick, progress_summary, progress_for }
 import from ..world.hazards { HazardTick }
 import from ..world.speakers { SpeakerTick }
 import from ..world.brushes { BrushTick, ShootBrush, BlastBrush }
@@ -33,7 +33,7 @@ import from ..world.rotators { RotatorTick }
 import from ..world.shooters { ShooterTick }
 import from ..world.targets { TargetTick, HasHelp, HelpComputer }
 import from ..world.triggers { TriggerTick, ShootTrigger, MonsterJumpTick }
-import from ..world.traversal { TraversalTick }
+import from ..world.traversal { TraversalTick, TeleportMonsters }
 import from ..world.arena_navigation {
     ArenaNavigationTick,
     ArenaContactIndex,
@@ -85,10 +85,17 @@ import from ..world.combat {
     fire_weapon,
     weapon_input,
     select_weapon,
+    change_weapon,
+    cycle_weapon,
+    pickup_switch,
     selected_weapon,
     owns_weapon,
-    KillBox
+    KillBox,
+    ClearActors
 }
+import from ..world.vitals { CrashLand, VoiceTick }
+import from ..world.particles { Explosion, HasExplosion }
+import from ..render.view_feedback { ViewFeedback, death_view }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }
 import from games.items { populate_pickups }
@@ -155,6 +162,8 @@ obj App {
         culling: bool = True,
         overlay: bool = True,
         smoke: bool = False,
+        capture_frame: int = 0,
+        capture_path: str = "",
         scripted: Intent | None = None,
         last_think: int = 0,
         last_drawn: int = 0,
@@ -200,8 +209,17 @@ obj App {
         respawn_wait: float = 0.0,
         awaiting_respawn: bool = False,
         show_scores: bool = False,
-        show_help: bool = False,
         arena_progress: ArenaProgress = ArenaProgress();
+    # Player feedback: view blends and kicks, printed lines, the last pickup
+    # shown on the status bar, hits already heard, Q3's ammo warning.
+    has view: ViewFeedback = ViewFeedback(),
+        notify_lines: list[str] = [],
+        notify_ages: list[float] = [],
+        pickup_icon: str = "",
+        pickup_name: str = "",
+        pickup_time: float = 0.0,
+        heard_hits: int = 0,
+        ammo_warning: int = 0;
 
     has expedition_complete: bool = False;
     has finale_text: str = "",
@@ -212,8 +230,30 @@ obj App {
         pending_unit: bool = False,
         campaign_complete: bool = False,
         runes_message: bool = False;
+    # Level flow: the end-of-level stats screen (Q1 execute_changelevel and
+    # IntermissionThink, Q2 end of unit), the text shown after it, the level's
+    # monster total, the Q2 help computer toggle and the level-entry autosave
+    # that a death restarts from (Q1 restart with the entry parms, Q2 autosave).
+    has stats_screen: bool = False,
+        stats_wait: float = 0.0,
+        completed_time: float = 0.0,
+        pending_text: str = "",
+        total_monsters: int = 0,
+        help_open: bool = False,
+        entry_save: str = "";
 
     def begin_intermission(text: str);
+    """Show the end-of-level stats at the intermission camera, then go on to
+    the pending map (or the pending episode text) once a key is pressed."""
+    def begin_stats(destination: str, spawnpoint: str, unit: bool, text: str);
+    """Leave the stats screen: the episode text next, else the pending map."""
+    def finish_stats();
+    def draw_stats();
+    def tally_line() -> str;
+    """Restart the level from its entry autosave after the player died."""
+    def restart_level();
+    """Take the level-entry autosave and count the level's monsters."""
+    def record_entry();
     def begin_podium(contest: ArenaMatch);
     def render_portal(faces: list[int]);
     def survey_level();
@@ -243,6 +283,18 @@ obj App {
     def teleport_actor(actor: Player);
     def tick_powerups(dt: float);
     def show_notice(message: str);
+    """A printed line at the top left (sprint / cprintf), kept three seconds."""
+    def notify(message: str);
+    """Play an archive sound heard from `origin` (ATTN_NORM falloff)."""
+    def play_at(path: str, origin: Vec3);
+    """Sounds and prints the combat simulation asked for this tick."""
+    def combat_feedback();
+    """Liquid, damage and pickup screen tints and Q3's damage blob."""
+    def draw_view_blend();
+    """Q3 CG_CheckAmmo: warn when little ammo is left for the owned weapons."""
+    def check_ammo();
+    """Q2 STAT_SELECTED_ICON: the icon of the selected stored item."""
+    def selected_icon() -> str;
     def draw_powerup_blend();
     def respawn_arena_player();
     def arena_lines(contest: ArenaMatch) -> list[str];

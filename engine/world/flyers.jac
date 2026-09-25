@@ -7,6 +7,7 @@ import from .world { World, Entity, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .trains { TrackPoint, TrackNext, HasTrack }
 import from .combat { CombatState, WeaponImpact, blast_actors }
+import from .particles { explode }
 import from .models { Visual }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
@@ -177,6 +178,8 @@ walker FlyerTick {
             here.activation spawn Fire();
             blast_actors(world, here.pos, here.damage, float(here.damage + 40), True, self.player, self.collision, self.state);
             self.state.impacts.append(WeaponImpact(origin=here.pos, splash=here.damage, radius=float(here.damage + 40)));
+            # misc_viper_bomb_touch: BecomeExplosion2, the grenade burst.
+            explode(world, here.pos, "q2_grenade_explosion");
         }
     }
 }

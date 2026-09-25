@@ -14,7 +14,7 @@ test "berserker spike and club have different windups and damage" {
         world = World();
         level = Level(name="berserk");
         player = Player(pos=Vec3(x=60.0));
-        enemy = Opponent(rule=rule, shot_random=seed, attack_wait=0.0);
+        enemy = Opponent(game="q2", rule=rule, shot_random=seed, attack_wait=0.0);
         world +>:HasOpponent:+> enemy;
         state = CombatState(game="q2");
         world spawn CombatTick(

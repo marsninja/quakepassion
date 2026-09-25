@@ -230,15 +230,10 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
             and kind not in ["trigger_once", "trigger_multiple", "trigger_onlyregistered"] {
             continue;
         }
+        # Q1 reads only NOTOUCH (1); Q2 only MONSTER, NOT_PLAYER and TRIGGERED
+        # (1, 2, 4). Other bits are editor leftovers the games ignore.
         flags = int(fields.get("spawnflags", "0"));
-        allowed = 3840 if bsp.game == "q1" else (7936 if bsp.game == "q2" else 0);
-        if bsp.game == "q1" {
-            allowed |= 1;
-        } elif bsp.game == "q2" {
-            # TRIGGERED, plus MONSTER and NOT_PLAYER for who may touch it.
-            allowed |= 7;
-        }
-        if flags & ~allowed {
+        if bsp.game == "q3" and flags != 0 {
             continue;
         }
         name = fields.get("model", "");
@@ -255,9 +250,6 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
         }
         if relay is None and not setskill {
             targets = resolve_targets(world, bsp, target) if target else [];
-            if target and not targets {
-                continue;
-            }
             relay = Signal(
                 entities=[index],
                 relay=True,

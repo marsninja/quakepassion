@@ -19,6 +19,7 @@ test "infantry punch winds up and applies bounded damage and knockback" {
     world = World();
     player = Player(pos=Vec3(x=60.0));
     enemy = Opponent(
+        game="q2",
         rule=rule,
         attack_wait=0.0,
         melee_animation=[20, 21, 22, 23, 24, 25, 26, 27],
@@ -94,7 +95,7 @@ test "god mode blocks infantry punch damage and knockback" {
     assert rule is not None;
     world = World();
     player = Player(pos=Vec3(x=60.0), god_mode=True);
-    enemy = Opponent(rule=rule, attack_wait=0.0);
+    enemy = Opponent(game="q2", rule=rule, attack_wait=0.0);
     world +>:HasOpponent:+> enemy;
     world spawn CombatTick(
         player=player, collision=CollisionMap(), state=CombatState(), dt=0.5

@@ -64,7 +64,16 @@ def wad_pictures(data: bytes, palette: bytes) -> dict[str, Texture] {
                 name=lump.name,
                 width=128,
                 height=128,
-                pixels=indexed_rgba(data[lump.offset:lump.offset + 128 * 128], palette)
+                # Draw_Character skips colour 0: the sheet's black is clear.
+                pixels=indexed_rgba(
+                    bytes(
+                        [
+                            255 if value == 0 else value
+                            for value in data[lump.offset:lump.offset + 128 * 128]
+                        ]
+                    ),
+                    palette
+                )
             );
             continue;
         }
@@ -86,4 +95,22 @@ def wad_pictures(data: bytes, palette: bytes) -> dict[str, Texture] {
         );
     }
     return pictures;
+}
+
+"""A standalone qpic lump file (gfx/*.lmp: width, height, palette indices),
+such as the intermission plaques gfx/complete.lmp and gfx/inter.lmp."""
+def lump_picture(data: bytes, palette: bytes, name: str) -> Texture {
+    require_range(data, 0, 8);
+    width = i32_at(data, 0);
+    height = i32_at(data, 4);
+    if width <= 0 or height <= 0 or width > 1024 or height > 1024 {
+        raise ValueError("Invalid qpic " + name);
+    }
+    require_range(data, 8, width * height);
+    return Texture(
+        name=name,
+        width=width,
+        height=height,
+        pixels=indexed_rgba(data[8:8 + width * height], palette)
+    );
 }

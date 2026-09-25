@@ -1,4 +1,4 @@
-"""Q2 toggle walls and destructible brushes using shared geometry and damage."""
+"""Q1/Q2 walls and Q2 destructible brushes using shared geometry and damage."""
 import from .world { World, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
@@ -21,6 +21,7 @@ node BrushObject {
         toggle: bool = False,
         spawn_only: bool = False,
         usable: bool = True,
+        alternate: bool = False,
         faces: list[int] = [],
         hulls: list[int] = [],
         hidden: list[bool] = [],
@@ -41,15 +42,23 @@ def show_brush(brush: BrushObject, active: bool, bsp: Bsp, collision: CollisionM
     }
 }
 
+"""Q2 func_explosive and func_wall, and Q1 func_wall. A plain wall (Q2 without
+TRIGGER_SPAWN, TOGGLE or START_ON; every Q1 wall) keeps a graph identity so a
+killtarget can remove it; Q1 func_wall_use swaps to the alternate textures."""
 def load_brushes(world: World, bsp: Bsp, collision: CollisionMap) {
-    if bsp.game != "q2" {
+    if bsp.game not in ["q1", "q2"] {
         return;
     }
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
         flags = int(fields.get("spawnflags", "0"));
-        if kind != "func_explosive" and (kind != "func_wall" or flags & 7 == 0) {
+        if kind != "func_wall" and (kind != "func_explosive" or bsp.game != "q2") {
+            continue;
+        }
+        # Named or killtargeted plain walls only; the rest stay world geometry.
+        plain = kind == "func_wall" and (bsp.game == "q1" or flags & 7 == 0);
+        if plain and not fields.get("targetname", "") {
             continue;
         }
         reference = fields.get("model", "");
@@ -65,8 +74,10 @@ def load_brushes(world: World, bsp: Bsp, collision: CollisionMap) {
             model=model,
             kind=kind,
             center=model_bounds(bsp, model).center(),
-            active=flags & 4 != 0 if kind == "func_wall" else flags & 1 == 0,
-            toggle=kind == "func_wall" and flags & 6 != 0,
+            active=(plain or flags & 4 != 0) if kind == "func_wall" else flags & 1 == 0,
+            toggle=kind == "func_wall" and not plain and flags & 6 != 0,
+            usable=not plain or bsp.game == "q1",
+            alternate=plain and bsp.game == "q1",
             spawn_only=kind == "func_explosive" and flags & 1 != 0,
             shootable=kind == "func_explosive"
                 and (flags & 1 != 0 or not fields.get("targetname", "")),
@@ -195,6 +206,12 @@ walker BrushTick {
         for i in range(requests) {
             if here.destroyed or not here.usable {
                 break;
+            }
+            if here.alternate {
+                for face in here.faces {
+                    self.bsp.faces[face].frame = 1 - self.bsp.faces[face].frame;
+                }
+                continue;
             }
             if here.kind == "func_wall" or here.spawn_only {
                 show_brush(here, not here.active, self.bsp, self.collision);

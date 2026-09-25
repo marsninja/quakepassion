@@ -54,6 +54,7 @@ impl App.run() {
         );
         self.quake.upload(self.level);
         self.prepare_presentation();
+        self.record_entry();
     }
     frame = 0;
     while not self.renderer.should_close() {
@@ -63,6 +64,11 @@ impl App.run() {
 
         frame += 1;
         if self.smoke and self.smoke_step(frame) {
+            break;
+        }
+        # QP_CAPTURE: one screenshot of the full frame, then exit.
+        if self.capture_frame > 0 and frame >= self.capture_frame {
+            self.renderer.screenshot(self.capture_path);
             break;
         }
     }
@@ -130,16 +136,36 @@ impl App.render_frame() {
         combat_lights(self.level.lighting, self.world, p, self.combat);
         self.quake.time = self.simulation_time;
         self.render_portal(faces);
-        self.renderer.begin_frame(p.pos, p.yaw, p.pitch);
-        self.quake.view_forward = forward_from(p.yaw, p.pitch);
-        self.last_drawn = self.quake.draw(self.level, faces, p.pos);
+        # The view: damage and landing kicks, weapon punch, the dead view.
+        game = self.level.bsp.game;
+        self.view.take_damage(p);
+        self.view.advance(self.frame_dt);
+        eye = p.pos.sub(Vec3(z=self.view.eye_drop()));
+        view_yaw = p.yaw;
+        view_pitch = p.pitch - math.radians(self.view.pitch());
+        view_roll = math.radians(self.view.roll());
+        if self.combat.punch_time > 0.0 and self.combat.punch_left > 0.0 {
+            view_pitch += math.radians(
+                self.combat.punch * self.combat.punch_left / self.combat.punch_time
+            );
+        }
+        if p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active {
+            dead = death_view(p, game, self.level.collision.eye_height);
+            eye = p.pos.sub(Vec3(z=dead[0]));
+            view_pitch = math.radians(dead[1]);
+            view_roll = math.radians(dead[2]);
+            view_yaw = dead[3];
+        }
+        self.renderer.begin_frame(eye, view_yaw, view_pitch, view_roll);
+        self.quake.view_forward = forward_from(view_yaw, view_pitch);
+        self.last_drawn = self.quake.draw(self.level, faces, eye);
         self.models.draw(
             self.world,
-            p.pos,
+            eye,
             self.simulation_time,
             culling=self.culling,
-            yaw=p.yaw,
-            pitch=p.pitch,
+            yaw=view_yaw,
+            pitch=view_pitch,
             fov=self.renderer.fov,
             aspect=float(self.renderer.width) / float(self.renderer.height),
             lighting=self.level.lighting,
@@ -149,15 +175,23 @@ impl App.render_frame() {
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
         self.effects.draw(
-            self.world, p.pos, p.yaw, p.pitch, lighting=self.level.lighting
+            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
         );
         if not self.smoke and not self.finale_active {
+            inset = self.hud.view_inset(
+                self.level.bsp.game, self.renderer.width, self.renderer.height
+            );
             self.viewweapon.draw(
-                p, self.combat, self.simulation_time, self.level.lighting
+                p,
+                self.combat,
+                self.simulation_time,
+                self.level.lighting,
+                lift=inset / float(max(1, self.renderer.height))
             );
         }
         self.renderer.end_scene();
         if not self.smoke and not self.finale_active {
+            self.draw_view_blend();
             self.draw_powerup_blend();
         }
         if self.finale_text or self.intermission_text {
@@ -166,11 +200,33 @@ impl App.render_frame() {
                 "Enter: " + ("main menu" if self.campaign_complete else "continue")
             );
         }
-        if not self.smoke and self.hud.ready {
+        if self.stats_screen {
+            self.draw_stats();
+        }
+        # The status bar gives way to intermission views (Sbar_Draw draws only
+        # the intermission or finale overlay then).
+        if not self.smoke and self.hud.ready and not self.finale_active {
             status = self.hud_status();
             self.hud.draw(status, self.renderer.width, self.renderer.height);
             if self.hud.three_d {
                 self.hud_models.draw(self.hud, status, self.renderer.width, self.renderer.height);
+            }
+            # Sbar_Draw: the solo scoreboard replaces the bar while scores are
+            # held or the player is dead.
+            if self.level.bsp.game == "q1" and (self.show_scores or p.health <= 0) {
+                progress = progress_for(self.world);
+                self.hud.draw_q1_scores(
+                    self.combat.kills,
+                    self.total_monsters,
+                    progress.secrets,
+                    progress.total_secrets,
+                    int(self.simulation_time),
+                    self.level.bsp.entities[0].fields.get("message", "")
+                        if self.level.bsp.entities
+                        else "",
+                    self.renderer.width,
+                    self.renderer.height
+                );
             }
             if p.health <= 0 and self.level.bsp.game != "q3" {
                 self.renderer.draw_terminal("You died - Enter to restart level");
@@ -206,7 +262,9 @@ impl App.render_frame() {
                 }
             }
             if self.hud.ready {
-                self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
+                if not self.finale_active {
+                    self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
+                }
             } else {
                 self.renderer.draw_combat(
                     self.combat,
@@ -240,13 +298,23 @@ impl App.render_frame() {
                     );
                 }
             }
-            if self.notice_wait > 0.0 {
+            # With the original art the status bar layer prints messages.
+            if self.notice_wait > 0.0 and not self.hud.ready {
                 self.renderer.draw_message(self.notice);
             }
             self.renderer.draw_powerups(self.powerup_lines());
-            # Q2 help computer (F1): the current primary and secondary objectives.
-            if self.level.bsp.game == "q2" and self.show_help {
-                lines: list[str] = [];
+            # p_hud.c HelpComputer (F1): skill, level name, the primary and
+            # secondary objectives, and kills, goals and secrets so far.
+            if self.level.bsp.game == "q2" and self.help_open and not self.stats_screen {
+                lines: list[str] = [
+                    ["Easy", "Medium", "Hard", "Hard+"][max(0, min(3, self.level.skill))]
+                        + " - "
+                        + (
+                            self.level.bsp.entities[0].fields.get("message", self.level.name)
+                                if self.level.bsp.entities
+                                else self.level.name
+                        )
+                ];
                 for computer in [self.world->:HasHelp:->][?:HelpComputer] {
                     if computer.primary {
                         lines.append("Primary: " + computer.primary);
@@ -255,10 +323,12 @@ impl App.render_frame() {
                         lines.append("Secondary: " + computer.secondary);
                     }
                 }
+                if len(lines) == 1 {
+                    lines.append("No objectives received");
+                }
+                lines.append(self.tally_line());
                 self.renderer.draw_scoreboard(
-                    "Help computer - " + self.level.name,
-                    lines if lines else ["No objectives received"],
-                    "F1: close"
+                    "Help computer - " + self.level.name, lines, "F1: close"
                 );
             }
             if contest is not None
@@ -438,10 +508,17 @@ impl App.load_destination(
     try {
         world = World();
         level = open_level(world, game_directory(game), name, game, self.skill);
-        carrying = carry and self.player.health > 0 and game == self.level.bsp.game;
         runes = quantity(self.player.inventory, "runes")
-            if game == "q1" and self.level.bsp.game == "q1" and (carrying or preserve_progress)
+            if game == "q1"
+                and self.level.bsp.game == "q1"
+                and ((carry and self.player.health > 0) or preserve_progress)
             else 0;
+        # Q1 DecodeLevelParms: with any rune held, start.bsp takes away all
+        # stuff (SetNewParms); the runes themselves are server flags and stay.
+        carrying = carry
+            and self.player.health > 0
+            and game == self.level.bsp.game
+            and not (game == "q1" and name == "start" and runes > 0);
         player = spawn_player(level, spawnpoint, returning=runes > 0 and name == "start");
         if carrying {
             # Q1 client.qc SetChangeParms clamps carried health to 50-100.
@@ -452,16 +529,22 @@ impl App.load_destination(
             player.armor = self.player.armor;
             player.armor_capacity = self.player.armor_capacity;
             player.armor_ratio = self.player.armor_ratio;
+            # Q1 strips keys between levels; Q2 strips them between units only
+            # in coop (BeginIntermission) but forgets the unit's cross-level
+            # trigger flags (use_target_changelevel).
             copied = self.player.inventory spawn CopyInventory(
-                skip_keys=game == "q1" or new_unit
+                skip_keys=game == "q1", skip_flags=new_unit
             );
             player.inventory = copied.result;
-        }
-        if preserve_progress and game == "q1" and self.level.bsp.game == "q1" {
+            # SetChangeParms: at least 25 shells carry over.
+            if game == "q1" and quantity(player.inventory, "shells") < 25 {
+                player.inventory spawn AdjustInventory(
+                    kind="shells", amount=25 - quantity(player.inventory, "shells")
+                );
+            }
+        } elif runes > 0 {
             player.inventory spawn AdjustInventory(
-                kind="runes",
-                amount=quantity(self.player.inventory, "runes"),
-                capacity=15
+                kind="runes", amount=runes, capacity=15
             );
         }
         populate_pickups(world, level, game_directory(game));
@@ -589,6 +672,11 @@ impl App.load_destination(
         if self.menu.restore_mouse {
             _capture();
         }
+        self.stats_screen = False;
+        self.stats_wait = 0.0;
+        self.pending_text = "";
+        self.help_open = False;
+        self.record_entry();
     } except Exception as error {
         next_models.close();
         next_effects.close();
@@ -659,10 +747,25 @@ impl App.step() -> bool {
             return True;
         }
     }
-    if self.level.active and (self.intermission_text or self.campaign_complete) {
+    if self.level.active
+        and (self.intermission_text or self.campaign_complete or self.stats_screen) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
-        if IsKeyPressed(i32(257)) {
+        # IntermissionThink: after the enforced wait, attack, jump or use (or
+        # Enter) leaves; scripted runs press fire or jump.
+        script = self.scripted;
+        scripted_press = script is not None and (script.fire or script.jump);
+        pressed = scripted_press
+            or (not self.smoke and (IsKeyPressed(i32(257)) or IsKeyPressed(i32(32))));
+        if self.stats_screen {
+            self.stats_wait = max(0.0, self.stats_wait - dt);
+            if pressed and self.stats_wait <= 0.0 {
+                self.finish_stats();
+            }
+            self.render_frame();
+            return True;
+        }
+        if pressed {
             if self.pending_map {
                 destination = self.pending_map;
                 spawnpoint = self.pending_spawn;
@@ -704,6 +807,13 @@ impl App.step() -> bool {
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
+        # A death on the last tick of a frame is still voiced.
+        if self.player.health <= 0 and self.level.active {
+            voice = self.player spawn VoiceTick(game=self.level.bsp.game, dt=0.0);
+            for cue in voice.cues {
+                self.audio.play_path(cue);
+            }
+        }
         if contest is not None and contest.finished {
             celebration = self.world spawn PodiumTick(dt=dt);
             for cue in celebration.cues {
@@ -714,12 +824,7 @@ impl App.step() -> bool {
             if contest is not None and contest.finished {
                 self.finish_arena(contest);
             } else {
-                self.load_destination(
-                    self.level.bsp.game,
-                    self.level.name,
-                    session=self.campaign,
-                    preserve_progress=True
-                );
+                self.restart_level();
             }
         }
         self.render_frame();
@@ -734,7 +839,10 @@ impl App.step() -> bool {
         intent = scripted;
     }
     self.show_scores = intent.scores;
-    self.show_help = intent.help;
+    # p_hud.c Cmd_Help_f: F1 opens and closes the Q2 help computer.
+    if intent.help and self.level.active and self.level.bsp.game == "q2" {
+        self.help_open = not self.help_open;
+    }
     # Q3 respawn: attack or jump after 1.7 s, forced after 20 s (g_forcerespawn).
     if arena_live and self.player.health <= 0 {
         if not self.awaiting_respawn {
@@ -751,8 +859,11 @@ impl App.step() -> bool {
         intent.move = Vec3();
     }
     warming = contest is not None and contest.warmup > 0.0;
-    if intent.weapon > 0 {
-        select_weapon(self.player, self.combat, intent.weapon);
+    if intent.weapon > 0 and self.player.health > 0 {
+        change_weapon(self.player, self.combat, intent.weapon);
+    }
+    if intent.weapon_step != 0 and self.player.health > 0 {
+        cycle_weapon(self.player, self.combat, intent.weapon_step);
     }
     if self.level.active and self.player.health > 0 and not self.finale_active {
         stored = owned_items(self.player.inventory, self.level.bsp.game);
@@ -819,8 +930,15 @@ impl App.step() -> bool {
         right_from(self.player.yaw).scale(intent.move.x)
     );
     for i in range(steps) {
+        jumped = False;
         self.simulation_time += self.physics_clock.tick_rate;
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
+        self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
+        self.notify_ages = [age - self.physics_clock.tick_rate for age in self.notify_ages];
+        while self.notify_ages and self.notify_ages[0] <= 0.0 {
+            self.notify_ages.pop(0);
+            self.notify_lines.pop(0);
+        }
         if self.walking and self.level.active {
             self.player spawn SetStance(
                 collision=self.level.collision,
@@ -848,12 +966,16 @@ impl App.step() -> bool {
                 self.notice = events.message;
                 self.notice_wait = 3.0;
             }
-            self.world spawn TrainTick(
+            trains = self.world spawn TrainTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
                 dt=self.physics_clock.tick_rate,
                 player=self.player if self.walking else None
             );
+            self.show_notice(trains.message);
+            for cue in trains.cues {
+                self.audio.play_path(cue);
+            }
             doors = self.world spawn DoorTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
@@ -867,6 +989,9 @@ impl App.step() -> bool {
             if doors.message {
                 self.notice = doors.message;
                 self.notice_wait = 3.0;
+            }
+            for cue in doors.cues {
+                self.audio.play_path(cue);
             }
             self.world spawn RotatorTick(
                 bsp=self.level.bsp,
@@ -886,32 +1011,52 @@ impl App.step() -> bool {
             ).add(
                 Vec3(z=intent.move.z)
             );
-            self.player spawn MovePlayer(
+            moved = self.player spawn MovePlayer(
                 collision=self.level.collision,
                 wish=wish,
-                jump=self.jump_pending,
+                jump=self.jump_pending or intent.jump_held,
                 water_depth=immersed.depth,
                 swim_wish=swim,
+                game=self.level.bsp.game,
                 dt=self.physics_clock.tick_rate
             );
+            self.world spawn ClearActors(
+                player=self.player, collision=self.level.collision
+            );
             self.jump_pending = False;
+            jumped = jumped or moved.jumped;
+            if moved.landed > 0.0 and self.level.active {
+                landing = self.player spawn CrashLand(
+                    game=self.level.bsp.game,
+                    speed=moved.landed,
+                    water_depth=self.level.immersion(self.player.pos).depth
+                );
+                self.audio.play_path(landing.cue);
+                self.view.landing(landing.kick, landing.drop);
+            }
         }
         if self.level.active and not self.smoke {
             immersed = self.level.immersion(self.player.pos);
             self.player.water_depth = immersed.depth;
             self.player.liquid_kind = immersed.kind;
+            old_health = self.player.health;
             self.player spawn EnvironmentTick(
                 game=self.level.bsp.game,
                 dt=self.physics_clock.tick_rate,
                 active=self.walking
             );
             self.tick_powerups(self.physics_clock.tick_rate);
+            voice = self.player spawn VoiceTick(
+                game=self.level.bsp.game, dt=self.physics_clock.tick_rate, jumped=jumped
+            );
+            for cue in voice.cues {
+                self.audio.play_path(cue);
+            }
             if self.player.health <= 0 and not arena_live {
                 self.player.velocity = Vec3();
                 self.jump_pending = False;
                 break;
             }
-            old_health = self.player.health;
             swimmers = [
                 enemy
                 for enemy in [self.world->:HasOpponent:->][?:Opponent]
@@ -972,6 +1117,9 @@ impl App.step() -> bool {
                 self.combat.awards = [];
                 for message in tally.messages {
                     self.show_notice(message);
+                }
+                for line in tally.obituaries {
+                    self.notify(line);
                 }
                 warming = contest.warmup > 0.0;
                 if tally.ended {
@@ -1035,7 +1183,8 @@ impl App.step() -> bool {
             if self.campaign_complete {
                 break;
             }
-            if self.player.health < old_health and self.level.bsp.game != "q3" {
+            # Q1 and Q2 pain is voiced by VoiceTick, Q3's by its player model.
+            if self.player.health < old_health and self.level.bsp.game not in ["q1", "q2", "q3"] {
                 self.audio.play(1);
             }
             if not warming and weapon_input(
@@ -1054,10 +1203,25 @@ impl App.step() -> bool {
                 } else {
                     # Shots wake nearby monsters (show_hostile, PlayerNoise).
                     self.combat.noise = 1.0;
+                    # Q2 FindTarget hears a noise only from inside its PHS.
+                    if self.level.bsp.game == "q2" {
+                        heard = self.level.hearable(self.player.pos);
+                        for listener in [self.world->:HasOpponent:->][?:Opponent] {
+                            if listener.alert <= 0.0
+                                and listener.health > 0
+                                and not listener.dormant
+                                and listener.pos.sub(self.player.pos).length() < 1000.0 {
+                                leaf = self.level.locate(listener.pos);
+                                listener.heard = self.level.bsp.leaves[leaf].cluster in heard;
+                            }
+                        }
+                    }
                 }
-                self.audio.play(
-                    2 + self.combat.weapon if self.combat.rules else 0, gain
-                );
+                if not self.combat.quiet {
+                    self.audio.play(
+                        2 + self.combat.weapon if self.combat.rules else 0, gain
+                    );
+                }
                 # Q1 throttles the quad cue to once a second; Q2/Q3 play it per shot.
                 if empowered(self.player, "quad") and self.quad_sound_wait <= 0.0 {
                     self.audio.play_path("sound/items/damage3.wav", gain);
@@ -1066,6 +1230,7 @@ impl App.step() -> bool {
                     }
                 }
             }
+            self.combat_feedback();
             self.world spawn ShooterTick(dt=self.physics_clock.tick_rate);
             # Walkers for entities the level lacks are not spawned at all:
             # each spawn searches the world's edges (survey_level).
@@ -1180,6 +1345,12 @@ impl App.step() -> bool {
                 }
             }
             self.combat.impacts = [];
+            for blast in [self.world->:HasExplosion:->][?:Explosion] {
+                if not blast.heard {
+                    blast.heard = True;
+                    self.play_at(blast.sound, blast.pos);
+                }
+            }
             pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,
@@ -1194,8 +1365,31 @@ impl App.step() -> bool {
             for sound in pickup_result.sounds {
                 self.audio.play_path(sound);
             }
-            for message in pickup_result.messages {
-                self.show_notice(message);
+            game = self.level.bsp.game;
+            if game in ["q1", "passion"] {
+                for message in pickup_result.messages {
+                    if message.endswith("!") {
+                        self.show_notice(message);
+                    } else {
+                        self.notify(message);
+                    }
+                }
+            } else {
+                for picked in pickup_result.picked {
+                    if picked.icon or picked.label {
+                        self.pickup_icon = picked.icon;
+                        self.pickup_name = picked.label;
+                        self.pickup_time = 3.0;
+                    }
+                }
+            }
+            if pickup_result.collected > 0 {
+                self.view.pickup();
+            }
+            for key in pickup_result.weapons {
+                pickup_switch(
+                    self.player, self.combat, key, key in pickup_result.fresh_weapons
+                );
             }
             triggers = self.world spawn TriggerTick(
                 player=self.player,
@@ -1230,8 +1424,13 @@ impl App.step() -> bool {
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking and not self.finale_active
+                touching=self.walking and not self.finale_active,
+                inventory=self.player.inventory
             );
+            self.show_notice(exit_request.message);
+            for cue in exit_request.cues {
+                self.audio.play_path(cue);
+            }
             if exit_request.request {
                 if self.level.bsp.game == "passion"
                     and exit_request.request == "passion_complete" {
@@ -1248,32 +1447,29 @@ impl App.step() -> bool {
                     break;
                 }
                 text = episode_text(self.level.bsp.game, self.level.name, destination);
-                if text {
-                    self.pending_map = destination;
-                    self.pending_spawn = exit_spawn(exit_request.request);
-                    self.pending_unit = destination
-                        != exit_request.request.split("$")[0];
-                    self.begin_intermission(text);
-                    break;
-                }
+                unit = exit_request.request.split("$")[0].split("+")[-1].startswith("*");
                 if cinematic {
                     self.notice = "Cinematic " + cinematic + " skipped";
                     self.notice_wait = 4.0;
                 }
+                # Q1 execute_changelevel shows the stats unless NO_INTERMISSION;
+                # Q2 BeginIntermission pauses only at the end of a unit.
+                game = self.level.bsp.game;
+                if (game == "q1" and (exit_request.intermission or text))
+                    or (game == "q2" and unit) {
+                    self.begin_stats(destination, exit_spawn(exit_request.request), unit, text);
+                    break;
+                }
                 self.load_destination(
-                    self.level.bsp.game,
+                    game,
                     destination,
                     exit_spawn(exit_request.request),
                     carry=True,
-                    new_unit=exit_request.request.split("$")[0].split("+")[
-                        -1
-                    ].startswith(
-                        "*"
-                    )
+                    new_unit=unit
                 );
                 break;
             }
-            self.world spawn TraversalTick(
+            traversed = self.world spawn TraversalTick(
                 player=self.player,
                 collision=self.level.collision,
                 start=previous_origin,
@@ -1281,6 +1477,18 @@ impl App.step() -> bool {
                 touching=self.walking and not self.finale_active,
                 tally=self.combat
             );
+            for cue in traversed.cues {
+                self.audio.play_path(cue);
+            }
+            if self.level.bsp.game in ["q1", "q2"] {
+                self.world spawn TeleportMonsters(
+                    collision=self.level.collision,
+                    dt=self.physics_clock.tick_rate,
+                    player=self.player,
+                    player_height=self.level.collision.eye_height,
+                    tally=self.combat
+                );
+            }
         }
     }
     if self.walking {
@@ -1302,11 +1510,87 @@ impl App.begin_intermission(text: str) {
     self.player.velocity = Vec3();
     self.player.god_mode = True;
     self.jump_pending = False;
-    view = intermission_camera(self.level.bsp);
+    self.combat.random();
+    view = intermission_camera(self.level.bsp, self.combat.random_state);
     if view.found {
         self.player.pos = view.origin.add(Vec3());
         self.player.yaw = view.yaw;
         self.player.pitch = view.pitch;
+    }
+}
+
+impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
+    self.pending_map = destination;
+    self.pending_spawn = spawnpoint;
+    self.pending_unit = unit;
+    self.pending_text = text;
+    self.completed_time = self.simulation_time;
+    self.begin_intermission("");
+    self.stats_screen = True;
+    # execute_changelevel: at least two seconds before a key may leave.
+    self.stats_wait = 2.0;
+}
+
+impl App.finish_stats() {
+    self.stats_screen = False;
+    if self.pending_text {
+        self.intermission_text = self.pending_text;
+        self.pending_text = "";
+        return;
+    }
+    if self.pending_map {
+        destination = self.pending_map;
+        self.pending_map = "";
+        self.load_destination(
+            self.level.bsp.game,
+            destination,
+            self.pending_spawn,
+            carry=True,
+            new_unit=self.pending_unit
+        );
+    }
+}
+
+impl App.restart_level() {
+    if not self.entry_save {
+        self.load_destination(
+            self.level.bsp.game,
+            self.level.name,
+            session=self.campaign,
+            preserve_progress=True
+        );
+        return;
+    }
+    try {
+        session = unpack_campaign(self.entry_save);
+        self.load_destination(
+            self.level.bsp.game, self.level.name, saved=session.active, session=session
+        );
+    } except Exception as error {
+        self.show_notice("Restart failed: " + str(error));
+    }
+}
+
+impl App.record_entry() {
+    self.total_monsters = len(
+        [
+            enemy
+            for enemy in [self.world->:HasOpponent:->][?:Opponent]
+            if not enemy.arena
+                and not enemy.rule.decoration
+                and not enemy.rule.inert
+                and not enemy.rule.script
+        ]
+    );
+    self.entry_save = "";
+    if self.level.bsp.game in ["q1", "q2"] and self.level.active {
+        try {
+            self.entry_save = pack_campaign(
+                self.campaign, snapshot(self.world, self.level, self.player, self.combat)
+            );
+        } except Exception as error {
+            self.show_notice("Autosave: " + str(error));
+        }
     }
 }
 
@@ -1492,6 +1776,91 @@ impl App.show_notice(message: str) {
     if message {
         self.notice = message;
         self.notice_wait = 3.0;
+    }
+}
+
+impl App.notify(message: str) {
+    if not message {
+        return;
+    }
+    # con_notifytime 3 seconds, NUM_CON_TIMES 4 lines.
+    self.notify_lines.append(message);
+    self.notify_ages.append(3.0);
+    while len(self.notify_lines) > 4 {
+        self.notify_lines.pop(0);
+        self.notify_ages.pop(0);
+    }
+}
+
+impl App.play_at(path: str, origin: Vec3) {
+    if path {
+        distance = origin.sub(self.player.pos).length();
+        self.audio.play_path(path, max(0.0, 1.0 - distance / 1000.0));
+    }
+}
+
+impl App.combat_feedback() {
+    for cue in self.combat.cues {
+        self.audio.play_path(cue);
+    }
+    self.combat.cues = [];
+    for message in self.combat.messages {
+        self.notify(message);
+    }
+    self.combat.messages = [];
+    # cg_playerstate.c CG_CheckLocalSounds: hit.wav when a shot lands.
+    if self.combat.hits != self.heard_hits {
+        if self.level.bsp.game == "q3" and self.combat.hits > self.heard_hits {
+            self.audio.play_path("sound/feedback/hit.wav");
+        }
+        self.heard_hits = self.combat.hits;
+    }
+    if self.level.bsp.game == "q3" {
+        self.check_ammo();
+    }
+}
+
+impl App.check_ammo() {
+    total = 0;
+    for rule in self.combat.rules {
+        if not rule.ammo or not owns_weapon(self.player, rule) {
+            continue;
+        }
+        shots = quantity(self.player.inventory, rule.ammo);
+        heavy = rule.key in ["rocketlauncher", "grenadelauncher", "railgun", "shotgun"];
+        total += shots * (1000 if heavy else 200);
+    }
+    previous = self.ammo_warning;
+    self.ammo_warning = 0 if total >= 5000 else (2 if total == 0 else 1);
+    if self.ammo_warning != previous and self.ammo_warning > 0 and self.player.health > 0 {
+        self.audio.play_path("sound/weapons/noammo.wav");
+    }
+}
+
+impl App.draw_view_blend() {
+    submerged = self.player.water_depth >= 3;
+    for layer in self.view.tints(self.player.liquid_kind, submerged) {
+        self.renderer.draw_tint(layer.r, layer.g, layer.b, layer.a);
+    }
+    # CG_DamageBlendBlob: viewBloodBlend (blood_screen.tga) eight units in
+    # front of the eye, pushed toward the hit, radius 3 per point of kick.
+    spot = self.view.blob();
+    if spot and self.hud.has_pic("blood_screen") {
+        width = float(self.renderer.width);
+        height = float(self.renderer.height);
+        # At 8 units the half-height of the view spans 8 * tan(fov / 2).
+        reach = 8.0 * math.tan(math.radians(self.renderer.fov) * 0.5);
+        size = spot[2] * 8.0 / reach * height * 0.5;
+        cx = width * 0.5 + spot[0] * 8.0 / reach * height * 0.5;
+        cy = height * 0.5 - spot[1] * 8.0 / reach * height * 0.5;
+        self.hud.blit(
+            "blood_screen",
+            cx - size,
+            cy - size,
+            size * 2.0,
+            size * 2.0,
+            [255, 255, 255, int(255.0 * spot[3])]
+        );
     }
 }
 
@@ -1783,6 +2152,12 @@ impl App.prepare_presentation() {
     self.light_styles = None;
     self.style_serial = -1;
     self.pain_health = self.player.health;
+    self.view.reset(game);
+    self.notify_lines = [];
+    self.notify_ages = [];
+    self.pickup_time = 0.0;
+    self.heard_hits = self.combat.hits;
+    self.ammo_warning = 0;
     styles = [self.world->:HasLightStyles:->][?:LightStyles];
     if styles {
         self.light_styles = styles[0];
@@ -1804,6 +2179,50 @@ impl App.prepare_presentation() {
         self.show_notice("HUD: " + str(error));
     }
     library.close();
+}
+
+"""Kills, goals and secrets as the Q2 help computer lists them."""
+impl App.tally_line() -> str {
+    progress = progress_for(self.world);
+    return "Kills "
+        + str(self.combat.kills)
+        + "/"
+        + str(self.total_monsters)
+        + "   Goals "
+        + str(progress.goals)
+        + "/"
+        + str(progress.total_goals)
+        + "   Secrets "
+        + str(progress.secrets)
+        + "/"
+        + str(progress.total_secrets);
+}
+
+"""The stats screen: Q1's intermission plaque in the original art (a text
+panel without it); Q2's unit summary with the help computer's tallies."""
+impl App.draw_stats() {
+    progress = progress_for(self.world);
+    seconds = int(self.completed_time);
+    if self.level.bsp.game == "q1" and self.hud.ready and self.hud.has_pic("inter") {
+        self.hud.draw_q1_intermission(
+            seconds,
+            progress.secrets,
+            progress.total_secrets,
+            self.combat.kills,
+            self.total_monsters,
+            self.renderer.width,
+            self.renderer.height
+        );
+        return;
+    }
+    self.renderer.draw_scoreboard(
+        "Unit complete" if self.level.bsp.game == "q2" else "Level complete",
+        [
+            "Time " + str(seconds // 60) + ":" + str((seconds % 60) // 10) + str(seconds % 10),
+            self.tally_line()
+        ],
+        "Enter: continue" if self.stats_wait <= 0.0 else ""
+    );
 }
 
 impl App.hud_status() -> HudStatus {
@@ -1848,6 +2267,33 @@ impl App.hud_status() -> HudStatus {
         pain=self.pain_time,
         firing=self.combat.cooldown > 0.1,
         arena=game == "q3",
-        clock=self.simulation_time
+        clock=self.simulation_time,
+        notify=self.notify_lines,
+        center=self.notice if self.notice_wait > 0.0 else "",
+        pickup_icon=self.pickup_icon,
+        pickup_name=self.pickup_name,
+        pickup_fade=self.pickup_time,
+        selected_icon=self.selected_icon(),
+        ammo_warning=self.ammo_warning if game == "q3" and p.health > 0 else 0
     );
+}
+
+impl App.selected_icon() -> str {
+    if self.level.bsp.game != "q2" {
+        return "";
+    }
+    stored = owned_items(self.player.inventory, "q2");
+    if not stored {
+        return "";
+    }
+    icons: dict[str, str] = {
+        "powerup_quad": "p_quad",
+        "powerup_invulnerability": "p_invulnerability",
+        "powerup_breather": "p_rebreather",
+        "powerup_suit": "p_envirosuit",
+        "powerup_silencer": "p_silencer",
+        "power_screen": "i_powerscreen",
+        "power_shield": "i_powershield"
+    };
+    return icons.get(stored[self.selected_item % len(stored)], "");
 }

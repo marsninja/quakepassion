@@ -37,7 +37,8 @@ activatable entity has a `Signal`, and walkers advance the entities.
   `sounds`, Q2 `noise`/`misc/talk1`, secret cues). Counters use the original
   "Only 2 more to go..." and "Sequence completed!" wording.
 - Named Q1 teleporters only work just after they are used, as `tele_touch`
-  requires (used for monster teleport-ins). Q1 `info_player_start2` is used on the
+  requires. Monsters use them too (closet teleport-ins); see
+  [level flow](level-flow-status.md). Q1 `info_player_start2` is used on the
   start map once a rune is held.
 - Q2 `target_crosslevel_trigger` records unit flags. `target_crosslevel_target`
   fires on level entry once all its flags are set. The flags clear when a new

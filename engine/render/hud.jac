@@ -64,7 +64,23 @@ obj HudStatus {
         score: int = 0,
         leader: int = 0,
         arena: bool = False,
-        clock: float = 0.0;
+        clock: float = 0.0,
+        notify: list[str] = [],
+        center: str = "",
+        pickup_icon: str = "",
+        pickup_name: str = "",
+        pickup_fade: float = 0.0,
+        selected_icon: str = "",
+        ammo_warning: int = 0;
+}
+
+"""A number right-aligned in `digits` columns, as printf's %3i."""
+def pad_number(value: int, digits: int) -> str {
+    text = str(value);
+    while len(text) < digits {
+        text = " " + text;
+    }
+    return text;
 }
 
 obj HudRenderer {
@@ -151,6 +167,17 @@ obj HudRenderer {
         }
     }
 
+    """Screen pixels the status bars cover at the bottom of the view. Quake's
+    full status bar (viewsize 100) shrinks the 3D view to sit above its two
+    bars (sbar.c sb_lines 48); the later games overlay their HUD on the view."""
+    def view_inset(game: str, width: int, height: int) -> float {
+        if not self.ready or game != "q1" {
+            return 0.0;
+        }
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        return 48.0 * scale;
+    }
+
     def draw(status: HudStatus, width: int, height: int) {
         if not self.ready {
             return;
@@ -162,7 +189,63 @@ obj HudRenderer {
         } elif status.game == "q3" {
             self.draw_q3(status, width, height);
         }
+        self.draw_messages(status, width, height);
         rlDrawRenderBatchActive();
+    }
+
+    """A line in the game's character sheet (Q1/Q2 conchars, Q3 bigchars):
+    a 16 by 16 grid of cells, `size` pixels square on screen."""
+    def chars(message: str, x: float, y: float, size: float, tint: list[int] = [255, 255, 255, 255]) {
+        for i in range(len(message)) {
+            code = ord(message[i]) & 255;
+            if code == 32 {
+                continue;
+            }
+            column = float(code % 16) / 16.0;
+            row = float(code // 16) / 16.0;
+            self.blit(
+                "conchars",
+                x + float(i) * size,
+                y,
+                size,
+                size,
+                tint,
+                column,
+                row,
+                column + 1.0 / 16.0,
+                row + 1.0 / 16.0
+            );
+        }
+    }
+
+    """Printed messages where the games put them: the notify lines at the top
+    left (Con_DrawNotify, CG_DrawNotify), centre prints a third of the way
+    down (SCR_DrawCenterString, CG_DrawCenterString), and Q3's ammo warning
+    (CG_DrawAmmoWarning) near the top."""
+    def draw_messages(status: HudStatus, width: int, height: int) {
+        if not self.has_pic("conchars") {
+            return;
+        }
+        big = status.game == "q3";
+        scale = float(height) / 480.0 if big else float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        size = (16.0 if big else 8.0) * scale;
+        y = 0.0;
+        for line in status.notify {
+            self.chars(line, 0.0 if not big else 4.0 * scale, y, size * (0.5 if big else 1.0));
+            y += size * (0.5 if big else 1.0);
+        }
+        if status.center {
+            lines = status.center.split("\n");
+            top = float(height) * (0.30 if big else 0.35);
+            for line in lines {
+                self.chars(line, (float(width) - float(len(line)) * size) * 0.5, top, size);
+                top += size + 2.0 * scale;
+            }
+        }
+        if big and status.ammo_warning > 0 {
+            warning = "OUT OF AMMO" if status.ammo_warning == 2 else "LOW AMMO WARNING";
+            self.chars(warning, (float(width) - float(len(warning)) * size) * 0.5, 64.0 * scale, size);
+        }
     }
 
     # ---- Quake (sbar.c) ----
@@ -265,6 +348,74 @@ obj HudRenderer {
         }
     }
 
+    """Draw_String with the conchars sheet."""
+    def q1_text(text: str, x: float, y: float, scale: float) {
+        for c in text {
+            if c != " " {
+                self.q1_char(ord(c) & 255, x, y, scale);
+            }
+            x += 8.0 * scale;
+        }
+    }
+
+    """Sbar_SoloScoreboard over sb_scorebar (shown while scores are held or the
+    player is dead): monsters, secrets, time and the level name."""
+    def draw_q1_scores(
+        kills: int,
+        total: int,
+        secrets: int,
+        total_secrets: int,
+        seconds: int,
+        title: str,
+        width: int,
+        height: int
+    ) {
+        if not self.ready or self.game != "q1" {
+            return;
+        }
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        left = (float(width) - 320.0 * scale) * 0.5;
+        bar = float(height) - 24.0 * scale;
+        self.pic("scorebar", left, bar, scale);
+        self.q1_text("Monsters:" + pad_number(kills, 3) + " /" + pad_number(total, 3), left + 8.0 * scale, bar + 4.0 * scale, scale);
+        self.q1_text("Secrets :" + pad_number(secrets, 3) + " /" + pad_number(total_secrets, 3), left + 8.0 * scale, bar + 12.0 * scale, scale);
+        self.q1_text("Time :" + pad_number(seconds // 60, 3) + ":" + str((seconds % 60) // 10) + str(seconds % 10), left + 184.0 * scale, bar + 4.0 * scale, scale);
+        self.q1_text(title, left + (232.0 - float(len(title)) * 4.0) * scale, bar + 12.0 * scale, scale);
+        rlDrawRenderBatchActive();
+    }
+
+    """Sbar_IntermissionOverlay: the level-complete plaque with the time,
+    secrets and monsters in the big digits, on a centred 320x200 screen."""
+    def draw_q1_intermission(
+        seconds: int,
+        secrets: int,
+        total_secrets: int,
+        kills: int,
+        total: int,
+        width: int,
+        height: int
+    ) {
+        if not self.ready or self.game != "q1" {
+            return;
+        }
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 200.0))));
+        left = (float(width) - 320.0 * scale) * 0.5;
+        top = (float(height) - 200.0 * scale) * 0.5;
+        self.pic("complete", left + 64.0 * scale, top + 24.0 * scale, scale);
+        self.pic("inter", left, top + 56.0 * scale, scale);
+        self.q1_number(seconds // 60, 3, left + 160.0 * scale, top + 64.0 * scale, scale, False);
+        self.pic("num_colon", left + 234.0 * scale, top + 64.0 * scale, scale);
+        self.pic("num_" + str((seconds % 60) // 10), left + 246.0 * scale, top + 64.0 * scale, scale);
+        self.pic("num_" + str(seconds % 10), left + 266.0 * scale, top + 64.0 * scale, scale);
+        self.q1_number(secrets, 3, left + 160.0 * scale, top + 104.0 * scale, scale, False);
+        self.pic("num_slash", left + 232.0 * scale, top + 104.0 * scale, scale);
+        self.q1_number(total_secrets, 3, left + 240.0 * scale, top + 104.0 * scale, scale, False);
+        self.q1_number(kills, 3, left + 160.0 * scale, top + 144.0 * scale, scale, False);
+        self.pic("num_slash", left + 232.0 * scale, top + 144.0 * scale, scale);
+        self.q1_number(total, 3, left + 240.0 * scale, top + 144.0 * scale, scale, False);
+        rlDrawRenderBatchActive();
+    }
+
     # ---- Quake II (single_statusbar) ----
 
     """SCR_DrawField: right-aligned 16-unit digits of num_ (or anum_)."""
@@ -301,6 +452,17 @@ obj HudRenderer {
             self.q2_field(status.armor, 3, left + 200.0 * scale, low, scale, False);
             armor = "i_bodyarmor" if status.armor_ratio >= 0.8 else ("i_combatarmor" if status.armor_ratio >= 0.6 else "i_jacketarmor");
             self.pic(armor, left + 250.0 * scale, low, scale);
+        }
+        # STAT_SELECTED_ICON and the picked-up item's icon and name
+        # (STAT_PICKUP_ICON/STRING) for three seconds.
+        if status.selected_icon {
+            self.pic(status.selected_icon, left + 296.0 * scale, low, scale);
+        }
+        if status.pickup_icon and status.pickup_fade > 0.0 {
+            self.pic(status.pickup_icon, left, float(height) - 50.0 * scale, scale);
+            if status.pickup_name and self.has_pic("conchars") {
+                self.chars(status.pickup_name, left + 26.0 * scale, float(height) - 42.0 * scale, 8.0 * scale);
+            }
         }
         # The selected weapon's icon sits in the help-icon slot.
         if status.weapon and self.has_pic("w_" + status.weapon) {
@@ -362,6 +524,16 @@ obj HudRenderer {
             self.q3_field(status.armor, 3, left + 370.0 * scale, y, scale, white if status.armor > 100 else normal);
             if not self.three_d {
                 self.blit("armor", left + 470.0 * scale, y, 48.0 * scale, 48.0 * scale);
+            }
+        }
+        # CG_DrawPickupItem: the icon and name above the lower left, fading
+        # over three seconds.
+        if status.pickup_icon and status.pickup_fade > 0.0 and self.has_pic(status.pickup_icon) {
+            fade = [255, 255, 255, int(255.0 * min(1.0, status.pickup_fade))];
+            top = float(height) - 96.0 * scale;
+            self.blit(status.pickup_icon, left + 8.0 * scale, top, 48.0 * scale, 48.0 * scale, fade);
+            if status.pickup_name and self.has_pic("conchars") {
+                self.chars(status.pickup_name, left + 64.0 * scale, top + 17.0 * scale, 14.0 * scale, fade);
             }
         }
         # The default crosshair (cg_drawCrosshair 4), 24 units square.

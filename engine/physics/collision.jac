@@ -26,6 +26,83 @@ obj Trace {
         end: Vec3 = Vec3();
 }
 
+"""One convex brush (its planes) or, for point traces, one patch triangle:
+the narrow-phase test at a hull leaf, as a plain call rather than a walker."""
+def leaf_sweep(cell: HullCell, start: Vec3, finish: Vec3, point: bool, top_drop: float) -> Trace {
+    if point and not cell.point_blocking {
+        return Trace();
+    }
+    if point and cell.triangle {
+        vertex = cell.triangle[0];
+        edge1 = cell.triangle[1].sub(vertex);
+        edge2 = cell.triangle[2].sub(vertex);
+        direction = finish.sub(start);
+        cross = direction.cross(edge2);
+        determinant = edge1.dot(cross);
+        if abs(determinant) < 0.000000001 {
+            return Trace();
+        }
+        offset = start.sub(vertex);
+        u = offset.dot(cross) / determinant;
+        if u < 0.0 or u > 1.0 {
+            return Trace();
+        }
+        other = offset.cross(edge1);
+        v = direction.dot(other) / determinant;
+        if v < 0.0 or u + v > 1.0 {
+            return Trace();
+        }
+        fraction = edge2.dot(other) / determinant;
+        if fraction < 0.0 or fraction > 1.0 {
+            return Trace();
+        }
+        normal = edge1.cross(edge2).normalized();
+        if normal.dot(direction) > 0.0 {
+            normal = normal.scale(-1.0);
+        }
+        return Trace(fraction=fraction, normal=normal);
+    }
+    if cell.planes {
+        enter = 0.0;
+        leave = 1.0;
+        normal = Vec3();
+        inside = True;
+        for i in range(len(cell.planes)) {
+            n = cell.planes[i];
+            distance = cell.point_distances[i]
+                if point and cell.point_distances
+                else cell.distances[i] + min(0.0, n.z) * top_drop;
+            a = n.dot(start) - distance;
+            b = n.dot(finish) - distance;
+            if a >= 0.0 {
+                inside = False;
+            }
+            # A point ray lying on a brush side can still enter through
+            # another plane (notably the seam between adjoining floors).
+            if point and abs(a) < 0.0000001 and abs(b) < 0.0000001 {
+                continue;
+            }
+            if a >= 0.0 and b >= 0.0 {
+                return Trace();
+            }
+            if a >= 0.0 and b < 0.0 {
+                fraction = a / (a - b);
+                if fraction >= enter {
+                    enter = fraction;
+                    normal = n;
+                }
+            } elif a < 0.0 and b >= 0.0 {
+                leave = min(leave, a / (a - b));
+            }
+            if enter > leave {
+                return Trace();
+            }
+        }
+        return Trace(fraction=enter, normal=normal, start_solid=inside);
+    }
+    return Trace();
+}
+
 walker Sweep {
     has start: Vec3,
         finish: Vec3,
@@ -62,83 +139,15 @@ walker Sweep {
     }
 
     can intersect with HullCell entry {
-        if self.point and not here.point_blocking {
+        if here.planes or (self.point and here.triangle) or (self.point and not here.point_blocking) {
+            leaf = leaf_sweep(here, self.start, self.finish, self.point, self.top_drop);
+            if leaf.fraction < 1.0 or leaf.start_solid {
+                self.result.fraction = leaf.fraction;
+                self.result.normal = leaf.normal;
+                self.result.start_solid = leaf.start_solid;
+            }
             return;
         }
-        if self.point and here.triangle {
-            vertex = here.triangle[0];
-            edge1 = here.triangle[1].sub(vertex);
-            edge2 = here.triangle[2].sub(vertex);
-            direction = self.finish.sub(self.start);
-            cross = direction.cross(edge2);
-            determinant = edge1.dot(cross);
-            if abs(determinant) < 0.000000001 {
-                return;
-            }
-            offset = self.start.sub(vertex);
-            u = offset.dot(cross) / determinant;
-            if u < 0.0 or u > 1.0 {
-                return;
-            }
-            other = offset.cross(edge1);
-            v = direction.dot(other) / determinant;
-            if v < 0.0 or u + v > 1.0 {
-                return;
-            }
-            fraction = edge2.dot(other) / determinant;
-            if fraction < 0.0 or fraction > 1.0 {
-                return;
-            }
-            normal = edge1.cross(edge2).normalized();
-            if normal.dot(direction) > 0.0 {
-                normal = normal.scale(-1.0);
-            }
-            self.result.fraction = fraction;
-            self.result.normal = normal;
-            return;
-        }
-        if here.planes {
-            enter = 0.0;
-            leave = 1.0;
-            normal = Vec3();
-            inside = True;
-            for i in range(len(here.planes)) {
-                n = here.planes[i];
-                distance = here.point_distances[i]
-                    if self.point and here.point_distances
-                    else here.distances[i] + min(0.0, n.z) * self.top_drop;
-                a = n.dot(self.start) - distance;
-                b = n.dot(self.finish) - distance;
-                if a >= 0.0 {
-                    inside = False;
-                }
-                # A point ray lying on a brush side can still enter through
-                # another plane (notably the seam between adjoining floors).
-                if self.point and abs(a) < 0.0000001 and abs(b) < 0.0000001 {
-                    continue;
-                }
-                if a >= 0.0 and b >= 0.0 {
-                    return;
-                }
-                if a >= 0.0 and b < 0.0 {
-                    fraction = a / (a - b);
-                    if fraction >= enter {
-                        enter = fraction;
-                        normal = n;
-                    }
-                } elif a < 0.0 and b >= 0.0 {
-                    leave = min(leave, a / (a - b));
-                }
-                if enter > leave {
-                    return;
-                }
-            }
-            self.result.start_solid = inside;
-            self.result.fraction = enter;
-            self.result.normal = normal;
-            return;
-        }
-
         if self.depth > 256 {
             raise ValueError("Cyclic or excessively deep collision hull");
         }
@@ -181,9 +190,42 @@ node HullGroup {
 
 edge HullChild: HullGroup --> HullGroup {}
 
+"""Whether the segment from `start` to `finish` passes through `box` (slab
+test), so a long diagonal trace does not collect every hull in its bounding
+box."""
+def segment_meets_box(start: Vec3, finish: Vec3, box: AABB) -> bool {
+    span = slab(start.x, finish.x - start.x, box.mins.x - 1.0, box.maxs.x + 1.0, 0.0, 1.0);
+    if span[0] > span[1] {
+        return False;
+    }
+    span = slab(start.y, finish.y - start.y, box.mins.y - 1.0, box.maxs.y + 1.0, span[0], span[1]);
+    if span[0] > span[1] {
+        return False;
+    }
+    span = slab(start.z, finish.z - start.z, box.mins.z - 1.0, box.maxs.z + 1.0, span[0], span[1]);
+    return span[0] <= span[1];
+}
+
+"""Narrow the segment's [enter, leave] interval to one axis slab."""
+def slab(
+    origin: float, delta: float, low: float, high: float, enter: float, leave: float
+) -> tuple[float, float] {
+    if abs(delta) < 0.000001 {
+        if origin < low or origin > high {
+            return (1.0, 0.0);
+        }
+        return (enter, leave);
+    }
+    a = (low - origin) / delta;
+    b = (high - origin) / delta;
+    return (max(enter, min(a, b)), min(leave, max(a, b)));
+}
+
 walker FindHulls {
     has mins: Vec3,
         maxs: Vec3,
+        start: Vec3 = Vec3(),
+        finish: Vec3 = Vec3(),
         indices: list[int] = [];
 
     can select with HullGroup entry {
@@ -194,6 +236,9 @@ walker FindHulls {
             or self.mins.y > b.maxs.y
             or self.maxs.z < b.mins.z
             or self.mins.z > b.maxs.z {
+            return;
+        }
+        if not segment_meets_box(self.start, self.finish, b) {
             return;
         }
         self.indices.extend(here.indices);
@@ -276,10 +321,16 @@ def hull_sweep(
         local_start = turn.inverse(local_start);
         local_finish = turn.inverse(local_finish);
     }
-    query = hull spawn Sweep(
-        start=local_start, finish=local_finish, point=point, top_drop=top_drop
-    );
-    result = query.result;
+    # A brush or triangle leaf is one plain test; only BSP hulls are walked.
+    result = Trace();
+    if hull.planes or (point and hull.triangle) or (point and not hull.point_blocking) {
+        result = leaf_sweep(hull, local_start, local_finish, point, top_drop);
+    } else {
+        query = hull spawn Sweep(
+            start=local_start, finish=local_finish, point=point, top_drop=top_drop
+        );
+        result = query.result;
+    }
     if turn is not None and result.fraction < 1.0 {
         result.normal = turn.apply(result.normal);
     }
@@ -484,6 +535,8 @@ obj CollisionMap {
         indices: list[int] = [];
         if self.groups {
             candidates = self.groups[0] spawn FindHulls(
+                start=start,
+                finish=finish,
                 mins=Vec3(
                     x=min(start.x, finish.x),
                     y=min(start.y, finish.y),
@@ -512,7 +565,8 @@ obj CollisionMap {
                     or (start.y < bounds.mins.y and finish.y < bounds.mins.y)
                     or (start.y > bounds.maxs.y and finish.y > bounds.maxs.y)
                     or (start.z < bounds.mins.z and finish.z < bounds.mins.z)
-                    or (start.z > bounds.maxs.z and finish.z > bounds.maxs.z) {
+                    or (start.z > bounds.maxs.z and finish.z > bounds.maxs.z)
+                    or not segment_meets_box(start, finish, bounds) {
                     continue;
                 }
             }

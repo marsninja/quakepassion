@@ -10,8 +10,16 @@ impl Renderer.open_window() {
         );
     }
     SetExitKey(i32(0));  # Escape belongs to the level menu.
-    # raylib keeps a pointer to the active batch, so it lives in a pin.
+    # raylib keeps a pointer to the active batch, so it lives in a pin. Each
+    # buffer's vertex array enables only the attributes of the shader current
+    # while it loads; rlglInit pretends the default shader has vertexNormal for
+    # its own batch. Load ours under a shader with all four, or the normals
+    # that carry Q3 lightmap coordinates never reach any shader.
+    attributes = LoadShaderFromMemory(BATCH_ATTRIBUTES_VS, BATCH_ATTRIBUTES_FS);
+    BeginShaderMode(attributes);
     batch = pin(rlLoadRenderBatch(i32(BATCH_BUFFERS), i32(BATCH_ELEMENTS)));
+    EndShaderMode();
+    UnloadShader(attributes);
     self.batch = batch;
     rlSetRenderBatchActive(&mut batch);
     # Default to uncapped rendering; a user-selected limit only paces frames.
@@ -27,14 +35,22 @@ impl Renderer.frame_time() -> float {
     return GetFrameTime();
 }
 
-impl Renderer.begin_frame(eye: Vec3, yaw: float, pitch: float) {
+impl Renderer.begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0) {
     BeginDrawing();
     ClearBackground(Color(r=10, g=8, b=6, a=255));
-    target = eye.add(forward_from(yaw, pitch));
+    ahead = forward_from(yaw, pitch);
+    target = eye.add(ahead);
+    # A rolled view tilts the camera's up vector about the line of sight.
+    up = Vec3(z=1.0);
+    if abs(roll) > 0.000001 {
+        side = right_from(yaw);
+        level = side.cross(ahead).normalized();
+        up = level.scale(math.cos(roll)).add(side.scale(math.sin(roll)));
+    }
     cam = Camera3D(
         position=Vector3(x=f32(eye.x), y=f32(eye.y), z=f32(eye.z)),
         target=Vector3(x=f32(target.x), y=f32(target.y), z=f32(target.z)),
-        up=Vector3(x=0.0, y=0.0, z=1.0),
+        up=Vector3(x=f32(up.x), y=f32(up.y), z=f32(up.z)),
         fovy=f32(self.fov),
         projection=i32(CAMERA_PERSPECTIVE)
     );
@@ -276,6 +292,10 @@ impl Renderer.draw_loading(name: str) {
 
 impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
     for trail in [world->:HasTrail:->][?:ShotTrail] {
+        # Styled rails and beams are drawn by the effect scene.
+        if trail.kind in hidden_effects {
+            continue;
+        }
         alpha = int(255.0 * min(1.0, trail.remaining / 0.2));
         color = Color(r=100, g=160, b=255, a=u8(alpha));
         if trail.kind == "lightning" {
@@ -320,6 +340,16 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             if particle.blood
             else Color(r=210, g=185, b=145, a=u8(int(255.0 * fade)));
         size = f32(0.4 + fade * 0.6);
+        if particle.fire {
+            # Q1 ramp1/ramp2, Q2 0xe0: yellow cooling through orange to red.
+            color = Color(
+                r=255,
+                g=u8(int(60.0 + 180.0 * fade)),
+                b=u8(int(20.0 + 60.0 * fade * fade)),
+                a=u8(int(255.0 * min(1.0, fade * 1.5)))
+            );
+            size = f32(1.2 + fade * 1.2);
+        }
         DrawCube(
             Vector3(
                 x=f32(particle.pos.x), y=f32(particle.pos.y), z=f32(particle.pos.z)

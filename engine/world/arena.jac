@@ -99,11 +99,31 @@ def ordinal(place: int) -> str {
     return "3rd" if place == 3 else str(place) + "th";
 }
 
+"""cg_event.c CG_Obituary's line for one competitor killing another."""
+def obituary(victim: str, killer: str, means: str) -> str {
+    lines: dict[str, tuple[str, str]] = {
+        "gauntlet": ("was pummeled by ", ""),
+        "machinegun": ("was machinegunned by ", ""),
+        "shotgun": ("was gunned down by ", ""),
+        "grenadelauncher": ("ate ", "'s grenade"),
+        "rocketlauncher": ("ate ", "'s rocket"),
+        "splash": ("almost dodged ", "'s rocket"),
+        "plasmagun": ("was melted by ", "'s plasmagun"),
+        "railgun": ("was railed by ", ""),
+        "lightning": ("was electrocuted by ", ""),
+        "bfg": ("was blasted by ", "'s BFG"),
+        "telefrag": ("tried to invade ", "'s personal space")
+    };
+    words = lines.get(means, ("was killed by ", ""));
+    return victim + " " + words[0] + killer + words[1];
+}
+
 """Advance the match: frag credit on each fresh death, then Q3's local sounds."""
 walker MatchTick {
     has dt: float,
         cues: list[str] = [],
         messages: list[str] = [],
+        obituaries: list[str] = [],
         ended: bool = False;
 
     can tally with ArenaMatch entry {
@@ -181,9 +201,23 @@ walker MatchTick {
                 }
             }
             if entries[credited].human {
-                self.messages.append("You fragged " + score.name);
+                # cg_event.c CG_Obituary: the frag and the new standing.
+                mine = entries[credited].frags;
+                ahead = len([other for other in entries if not other.human and other.frags > mine]);
+                tied = any([not other.human and other.frags == mine for other in entries]);
+                self.messages.append(
+                    "You fragged "
+                        + score.name
+                        + "\n"
+                        + ("Tied for " if tied else "")
+                        + ordinal(ahead + 1)
+                        + " place with "
+                        + str(mine)
+                );
             } elif score.human {
                 self.messages.append("You were fragged by " + entries[credited].name);
+            } else {
+                self.obituaries.append(obituary(score.name, entries[credited].name, actor.death_means));
             }
         }
         if not changed {

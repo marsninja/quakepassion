@@ -9,8 +9,8 @@ motion and dispatch.
 `Signal` nodes and `Targets` edges connect map entities. `Fire` walks relay
 chains, deduplicating visits so cycles terminate and diamond-shaped fan-outs do
 not activate the same recipient twice. Door group members resolve to their
-leader's signal. A missing or unsupported recipient disables the entire source
-chain, rather than executing a partial map script.
+leader's signal. A recipient without a use is skipped and the rest of the chain
+still fires, as SUB_UseTargets/G_UseTargets do (see [level flow](level-flow-status.md)).
 
 Supported relays are immediate, unflagged `trigger_relay`/`target_relay` entities.
 Shootable buttons accept direct weapon damage and unobstructed explosion damage.

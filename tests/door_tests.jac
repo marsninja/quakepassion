@@ -7,6 +7,7 @@ import from engine.world.doors {
     door_direction
 }
 import from engine.world.world { World }
+import from engine.world.signals { chain_notes }
 import from engine.formats.bsp { Bsp, Face, Model, MapEntity }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
@@ -71,12 +72,12 @@ test "negative wait stays open and opening cannot sweep through player" {
     assert door.state == "open";
 }
 
-test "unsupported activation remains static in every game" {
+test "unknown spawnflags stay static; killtarget and accel doors move" {
     for game in ["q1", "q2", "q3"] {
         for fields in [
             {"killtarget": "event"},
             {"spawnflags": "128"},
-            {"accel": "10"}
+            {"accel": "10", "decel": "10"}
         ] {
             fixture = DoorFixture();
             fixture.setup(game, fields);
@@ -85,8 +86,18 @@ test "unsupported activation remains static in every game" {
                 for door in [fixture.world->:HasDoor:->][?:Door]
                 if door.enabled
             ];
-            assert len(active) == 0;
+            assert len(active) == (0 if "spawnflags" in fields else 1);
+            if "spawnflags" in fields {
+                notes = chain_notes(fixture.world);
+                assert notes and "spawnflags 128" in notes[0].reason;
+            }
         }
+    }
+    # Q2 ANIMATED (16) and ANIMATED_FAST (64) only animate textures.
+    for flags in ["16", "64", "80"] {
+        fixture = DoorFixture();
+        fixture.setup("q2", {"spawnflags": flags});
+        assert [door for door in [fixture.world->:HasDoor:->][?:Door] if door.enabled];
     }
     assert door_direction(MapEntity(fields={"angle": "-2"})).z == -1.0;
     assert abs(door_direction(MapEntity(fields={"angle": "90"})).y - 1.0) < 0.000001;

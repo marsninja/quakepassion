@@ -13,7 +13,7 @@ staged sibling library (see renderer.jac for the linking note).
 Function bodies live in impl/input.impl.jac."""
 
 import from vendor.raylib {
-    def IsKeyDown(key: i32) -> bool;  def IsKeyPressed(key: i32) -> bool;  def IsMouseButtonDown(
+    def IsKeyDown(key: i32) -> bool;  def IsKeyPressed(key: i32) -> bool;  def GetMouseWheelMove -> f32;  def IsMouseButtonDown(
         button: i32
     ) -> bool;  def IsMouseButtonPressed(button: i32) -> bool;  def GetMouseX -> i32;  def GetMouseY -> i32;  def DisableCursor -> None;  def EnableCursor -> None;
 }
@@ -29,9 +29,11 @@ obj Intent {
         toggle_overlay: bool = False,
         toggle_walk: bool = False,
         jump: bool = False,
+        jump_held: bool = False,
         crouch: bool = False,
         fire: bool = False,
         weapon: int = 0,
+        weapon_step: int = 0,
         use_item: bool = False,
         next_item: bool = False,
         prev_item: bool = False,

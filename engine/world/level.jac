@@ -37,6 +37,7 @@ import from .combat { load_opponent_signals }
 import from .triggers { load_triggers, load_monster_jumps }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
+import from .fixtures { load_fixture_uses }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
@@ -156,6 +157,26 @@ obj Level {
             result.kind = max(result.kind, kind);
         }
         return result;
+    }
+
+    """Q2 PHS: the clusters that can hear a sound made at `eye`, from the
+    potentially hearable set compiled into the map (PlayerNoise / gi.inPHS).
+    Other games return no clusters."""
+    def hearable(eye: Vec3) -> set[int] {
+        clusters: set[int] = set();
+        if self.bsp.game != "q2" or self.bsp.clusters <= 0 {
+            return clusters;
+        }
+        cluster = self.bsp.leaves[self.locate(eye)].cluster;
+        if cluster < 0 {
+            return clusters;
+        }
+        check = i32_at(self.bsp.visibility, 8 + cluster * 8);
+        for bit in decode_pvs(self.bsp.visibility, check, self.bsp.clusters + 1) {
+            clusters.add(bit - 1);
+        }
+        clusters.add(cluster);
+        return clusters;
     }
 
     def visible(world: World, eye: Vec3, culling: bool) -> list[int] {
@@ -440,6 +461,7 @@ def prepare_level(world: World, level: Level) {
     load_shooters(world, level.bsp);
     load_targets(world, level.bsp);
     load_traversal(world, level.bsp);
+    load_fixture_uses(world, level.bsp);
     # Resolve every activation chain once all activatable entities exist.
     connect_targets(world, level.bsp);
     pose_doors(world, level.bsp, level.collision);

@@ -44,11 +44,17 @@ import from vendor.raylib {
             draws: ptr[rlDrawCall],
             drawCounter: i32,
             currentDepth: f32;
-    }  def rlLoadRenderBatch(numBuffers: i32, bufferElements: i32) -> rlRenderBatch;  def rlUnloadRenderBatch(
+    }  obj BatchShader {
+        has id: u32,
+            locs: u64;
+    }  def LoadShaderFromMemory(vs: str, fs: str) -> BatchShader;  def UnloadShader(
+        shader: BatchShader
+    ) -> None;  def BeginShaderMode(shader: BatchShader) -> None;  def EndShaderMode -> None;  def rlLoadRenderBatch(numBuffers: i32, bufferElements: i32) -> rlRenderBatch;  def rlUnloadRenderBatch(
         batch: rlRenderBatch
     ) -> None;  def rlSetRenderBatchActive(batch: &mut Pinned[rlRenderBatch] | None) -> None;
 }
 
+import math;
 import from ..world.particles { HasParticle, ImpactParticle, HasTrail, ShotTrail }
 import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
 import from ..world.doors { Door }
@@ -60,7 +66,7 @@ import from ..world.combat {
     HasProjectile,
     selected_weapon
 }
-import from ..math.vec3 { Vec3, forward_from }
+import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..world.world { World, Area, Surface }
 
 
@@ -73,6 +79,11 @@ glob FOV_DEGREES: float = 72.0,
 # several lets a flush fill one the GPU has finished with.
 glob BATCH_BUFFERS: int = 64,
      BATCH_ELEMENTS: int = 2048;
+
+# A shader reading every batch vertex attribute, active while the batch loads:
+# each buffer's vertex array enables only the attributes the current shader has.
+glob BATCH_ATTRIBUTES_VS: str = "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec3 vertexNormal; in vec4 vertexColor; uniform mat4 mvp; out vec4 shade;\nvoid main(){ shade=vertexColor+vec4(vertexNormal,vertexTexCoord.x); gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
+     BATCH_ATTRIBUTES_FS: str = "#version 330\nin vec4 shade; out vec4 finalColor;\nvoid main(){ finalColor=shade; }\n";
 
 obj Renderer {
     has fov: float = 72.0,
@@ -89,7 +100,7 @@ obj Renderer {
     """Begin a frame: clear and install a z-up perspective camera. The camera is
     raylib's own `Camera3D` with up = +Z (Quake's convention) and a target one
     forward-vector ahead of the eye — exactly the view the @sv renderer built."""
-    def begin_frame(eye: Vec3, yaw: float, pitch: float);
+    def begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0);
 
     """Draw an area's graybox surfaces as solid cubes with wireframe edges."""
     def draw_area(area: Area);

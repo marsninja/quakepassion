@@ -4,7 +4,9 @@ QP_GAME selects q1 (default), q2, q3 or passion. QP_ASSETS overrides the game's
 asset directory (the common parent for Passion). QP_MAP overrides its default
 map basename; QP_SEED selects Passion's version-1 expedition seed.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
-views and exits. All modes require a graphical display.
+views and exits. QP_CAPTURE=<frame>:<file.png> plays normally and saves one
+full screenshot (HUD and weapon included) at that frame, then exits. All modes
+require a graphical display.
 """
 
 import os;
@@ -59,6 +61,11 @@ with entry {
         smoke=(os.getenv("QP_SMOKE", "") != ""),
         skill=skill
     );
+    capture = os.getenv("QP_CAPTURE", "");
+    if ":" in capture {
+        app.capture_frame = int(capture.split(":", 1)[0]);
+        app.capture_path = capture.split(":", 1)[1];
+    }
     if os.getenv("QP_WALK", "1") != "0" and not app.smoke {
         app.toggle_movement();
     }

@@ -23,7 +23,7 @@ import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.brushes { BrushObject, HasBrush, show_brush }
 import math;
 import os;
-import from engine.world.world { World, Player, In }
+import from engine.world.world { World, Player, In, move_to_area }
 import from engine.world.level { Level }
 import from engine.world.combat {
     attack_duration,
@@ -35,6 +35,8 @@ import from engine.world.combat {
     CombatState,
     Opponent,
     HasOpponent,
+    Drops,
+    show_wounds,
     Projectile,
     HasProjectile
 }
@@ -312,6 +314,24 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             );
         }
     }
+    # A power screen's remaining cells, and whether a medic raised the monster
+    # (a raised monster's targets are cleared).
+    for index in range(len(corpses)) {
+        if corpses[index].power_cells >= 0
+            or corpses[index].revived
+            or corpses[index].wounded {
+            lines.append(
+                "TACTIC "
+                    + str(index)
+                    + " "
+                    + str(corpses[index].power_cells)
+                    + " "
+                    + ("1" if corpses[index].revived else "0")
+                    + " "
+                    + ("1" if corpses[index].wounded else "0")
+            );
+        }
+    }
     for index in range(len(corpses)) {
         if corpses[index].health <= 0 {
             lines.append(
@@ -337,7 +357,11 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         pickup.remaining,
                         1.0 if pickup.waiting_for_use else 0.0,
                         1.0 if pickup.activate_on_use else 0.0,
-                        1.0 if pickup.benched else 0.0
+                        1.0 if pickup.benched else 0.0,
+                        1.0 if pickup.released else 0.0,
+                        pickup.pos.x,
+                        pickup.pos.y,
+                        pickup.pos.z
                     ]
                 )
         );
@@ -758,6 +782,17 @@ def restore(
             if corpse.gibbed {
                 corpse.visual.visible = False;
             }
+        } elif words[0] == "TACTIC" and len(words) == 5 {
+            index = int(words[1]);
+            if index < 0
+                or index >= len(enemies)
+                or words[3] not in ["0", "1"]
+                or words[4] not in ["0", "1"] {
+                raise ValueError("Invalid saved monster tactics");
+            }
+            enemies[index].power_cells = int(words[2]);
+            enemies[index].revived = words[3] == "1";
+            show_wounds(enemies[index], words[4] == "1");
         } elif words[0] == "SKILL" and len(words) == 2 {
             if int(words[1]) != level.skill {
                 raise ValueError("Save was made on another skill");
@@ -812,8 +847,12 @@ def restore(
                 or (row[1] != -1.0 and len(ball_destination) != 1) {
                 raise ValueError("Invalid saved teleport train path");
             }
+            start = ball.current;
             ball.current = ball_current[0];
             ball.destination = ball_destination[0] if ball_destination else None;
+            ball.running = ball.running
+                or ball.destination is not None
+                or ball.current is not start;
             ball.pos = Vec3(x=row[2], y=row[3], z=row[4]);
             ball.yaw = row[5];
         } elif words[0] == "L" and l < len(lightning) {
@@ -938,15 +977,13 @@ def restore(
                 boss_pose(enemy);
             }
         } elif words[0] == "P" and p < len(pickups) {
-            # Older saves have no benched flag.
-            row = values(" ".join(words[1:]), 5 if len(words) == 6 else 4);
-            if len(row) == 4 {
-                row.append(0.0);
-            }
+            row = values(" ".join(words[1:]), 9);
             if row[0] not in [0.0, 1.0]
                 or row[1] < 0.0
                 or row[2] not in [0.0, 1.0]
                 or row[3] not in [0.0, 1.0]
+                or row[4] not in [0.0, 1.0]
+                or row[5] not in [0.0, 1.0]
                 or (row[0] != 0.0 and row[2] != 0.0) {
                 raise ValueError("Invalid saved pickup");
             }
@@ -958,6 +995,15 @@ def restore(
             item.activate_on_use = row[3] != 0.0;
             item.benched = row[4] != 0.0;
             item.visual.visible = item.active;
+            # An item a dead monster already dropped stays where it fell.
+            if row[5] != 0.0 {
+                item.released = True;
+                item.pos = Vec3(x=row[6], y=row[7], z=row[8]);
+                for owner in [item<-:Drops:<-][?:Opponent] {
+                    owner del --> item;
+                }
+                move_to_area(item, level.areas[level.locate(item.pos)]);
+            }
         } elif words[0] == "D" and d < len(doors) {
             door = doors[d];
             parts = [door->:DoorMember:->][?:Door];

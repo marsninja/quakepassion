@@ -29,7 +29,11 @@ obj PickupRule {
         grants: dict[str, int] = {},
         sound: str = "",
         label: str = "",
-        extra_model: str = "";
+        extra_model: str = "",
+        message: str = "",
+        icon: str = "",
+        topup: bool = False,
+        respawn_sound: str = "";
 }
 
 # Raise an ammunition limit without granting ammunition (Q2 bandolier/pack).
@@ -71,6 +75,7 @@ node Pickup(Entity) {
         jitter: float = 0.0,
         seed: int = 1,
         dropped: bool = False,
+        released: bool = False,
         lifetime: float = 0.0,
         duration: float = -1.0;
 }
@@ -159,6 +164,9 @@ walker PickupTick {
         forced: bool = False,
         sounds: list[str] = [],
         messages: list[str] = [],
+        picked: list[PickupRule] = [],
+        weapons: list[str] = [],
+        fresh_weapons: list[str] = [],
         collected: int = 0,
         world: World | None = None;
 
@@ -225,6 +233,10 @@ walker PickupTick {
             }
             here.active = True;
             here.visual.visible = True;
+            # g_items.c RespawnItem: EV_ITEM_RESPAWN, poweruprespawn for powerups.
+            if here.rule.respawn_sound {
+                self.sounds.append(here.rule.respawn_sound);
+            }
         }
         if not self.forced
             and (
@@ -340,15 +352,29 @@ walker PickupTick {
                 accepted = 1;
             }
         } else {
+            owned = quantity(self.player.inventory, rule.kind);
             change = self.player.inventory spawn AdjustInventory(
                 kind=rule.kind, amount=rule.amount, capacity=rule.capacity
             );
             accepted = change.accepted;
             if rule.ammo and rule.ammo_amount > 0 {
+                amount = rule.ammo_amount;
+                if rule.topup {
+                    # Q3 Pickup_Weapon: top up to the pickup's count, or one
+                    # shot when already above it; the weapon is always taken.
+                    amount = max(1, rule.ammo_amount - quantity(self.player.inventory, rule.ammo));
+                    accepted = 1;
+                }
                 ammo = self.player.inventory spawn AdjustInventory(
-                    kind=rule.ammo, amount=rule.ammo_amount, capacity=rule.ammo_capacity
+                    kind=rule.ammo, amount=amount, capacity=rule.ammo_capacity
                 );
                 accepted += ammo.accepted;
+            }
+            if accepted > 0 and rule.kind.startswith("weapon_") {
+                self.weapons.append(rule.kind[7:]);
+                if owned == 0 {
+                    self.fresh_weapons.append(rule.kind[7:]);
+                }
             }
         }
         if accepted > 0 {
@@ -363,9 +389,12 @@ walker PickupTick {
             if rule.sound {
                 self.sounds.append(rule.sound);
             }
-            if rule.label {
+            if rule.message {
+                self.messages.append(rule.message);
+            } elif rule.label {
                 self.messages.append("You got the " + rule.label);
             }
+            self.picked.append(rule);
             here.activation spawn Fire(inventory=self.player.inventory);
         }
     }

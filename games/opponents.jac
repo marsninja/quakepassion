@@ -12,7 +12,9 @@ import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, Has
 import from engine.formats.bsp { MapEntity }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
-import from engine.world.combat { Opponent, HasOpponent, ensure_profiles, arm_bot }
+import from engine.world.combat { Opponent, HasOpponent, Drops, Bloodied, ensure_profiles, arm_bot }
+import from engine.world.pickups { Pickup, HasPickup }
+import from .items { monster_drop, item_spin }
 import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms, hold_weapon }
 import from engine.world.models { WeaponKit, PlayerRig }
 import from engine.world.player_rig { rig_sound_paths }
@@ -273,6 +275,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 register_speaker(world, enemy, pain_sound);
             }
             register_speaker(world, enemy, rule.death_sound);
+            # Idle mutterings carry only a short way (ATTN_IDLE).
+            idle = register_speaker(world, enemy, rule.idle_sound);
+            if idle is not None {
+                idle.attenuation = 2.0;
+            }
             for signal in [world->:HasSignal:->][?:Signal] {
                 if entity_index in signal.entities {
                     enemy.activation = signal;
@@ -316,6 +323,25 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     world +>:HasModelResource:+> resource;
                 }
                 enemy.visual = attach_model(enemy, resources[key]);
+                # Q2 *_pain: below half health a monster shows its next,
+                # bloodied skin (skinnum |= 1).
+                if source == "q2" and not arena and not rule.inert and not rule.decoration {
+                    hurt_key = source + ":" + path + ":" + str(rule.skin | 1);
+                    if hurt_key != key and hurt_key not in resources {
+                        try {
+                            hurt = catalog.source(source).model(path, skin=rule.skin | 1);
+                            resources[hurt_key] = ModelResource(
+                                name=hurt_key, model=hurt.model, skins=hurt.skins
+                            );
+                            world +>:HasModelResource:+> resources[hurt_key];
+                        } except ValueError {
+                            hurt_key = key;
+                        }
+                    }
+                    if hurt_key != key and hurt_key in resources {
+                        enemy +>:Bloodied:+> resources[hurt_key];
+                    }
+                }
                 enemy.visual.offset = Vec3(
                     x=-16.0 if corner else 0.0,
                     y=-16.0 if corner else 0.0,
@@ -328,6 +354,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 death_number = -1;
                 walk_family = "";
                 walk_number = -1;
+                run_family = "";
+                run_number = -1;
+                stand_family = "";
+                stand_number = -1;
                 for i in range(len(frames)) {
                     frame_name = frames[i].name;
                     family = frame_name.rstrip("0123456789");
@@ -353,8 +383,17 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                             enemy.death_animation.append(i);
                         }
                     }
+                    # One contiguous run and stand cycle: models such as the
+                    # Q2 soldier hold several run and stand families.
                     if frame_name.startswith("run") {
-                        enemy.animation.append(i);
+                        if not run_family {
+                            run_family = family;
+                            run_number = number - 1;
+                        }
+                        if family == run_family and number == run_number + 1 {
+                            run_number = number;
+                            enemy.animation.append(i);
+                        }
                     }
                     if frame_name.startswith("walk") or frame_name.startswith("prowl_") {
                         if not walk_family {
@@ -367,7 +406,14 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         }
                     }
                     if frame_name.startswith("stand") {
-                        enemy.idle_animation.append(i);
+                        if not stand_family {
+                            stand_family = family;
+                            stand_number = number - 1;
+                        }
+                        if family == stand_family and number == stand_number + 1 {
+                            stand_number = number;
+                            enemy.idle_animation.append(i);
+                        }
                     }
                     if frame_name.startswith("attack")
                         or frame_name.startswith("attak")
@@ -455,6 +501,24 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 and link_gibs(world, enemy, gibs, catalog.source(source), source, resources) {
                 enemy.gib_rule = gibs;
                 register_speaker(world, enemy, gibs.sound);
+            }
+            # The item a monster drops waits, hidden, until the monster dies.
+            drop = None if arena else monster_drop(source, kind, fields);
+            if drop is not None {
+                drop_key = source + ":" + drop.model + ":" + str(drop.skin);
+                if drop_key not in resources {
+                    carried = catalog.source(source).model(drop.model, drop.skin);
+                    resources[drop_key] = ModelResource(
+                        name=drop_key, model=carried.model, skins=carried.skins
+                    );
+                    world +>:HasModelResource:+> resources[drop_key];
+                }
+                dropped = Pickup(rule=drop, pos=position, active=False);
+                dropped.visual = attach_model(dropped, resources[drop_key]);
+                dropped.visual.spin = item_spin(source, drop, resources[drop_key].model.flags);
+                dropped.visual.visible = False;
+                world +>:HasPickup:+> dropped;
+                enemy +>:Drops:+> dropped;
             }
             enemy.visual.visible = not enemy.dormant;
             move_to_area(enemy, level.areas[level.locate(position)]);

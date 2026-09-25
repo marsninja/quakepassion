@@ -14,5 +14,11 @@ obj EffectRule {
         spin: float = 0.0,
         sprite_size: int = 32,
         additive: bool = False,
-        rotate: float = 0.0;
+        rotate: float = 0.0,
+        images: list[str] = [],
+        fps: float = 10.0,
+        grow: float = 0.0,
+        skins: int = 1,
+        frames: list[int] = [],
+        explosion: bool = False;
 }

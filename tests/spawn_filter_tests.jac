@@ -50,7 +50,10 @@ test "excluded startup triggers cannot award campaign secrets" {
     world spawn SignalTick(dt=1.0);
     progress = progress_for(world);
     assert progress.total_secrets == 1 and progress.secrets == 0;
-    assert len([world->:HasSignal:->][?:Signal]) == 1;
+    # The excluded trigger_always (entity 2) is never loaded.
+    for signal in [world->:HasSignal:->][?:Signal] {
+        assert 2 not in signal.entities;
+    }
 }
 
 test "local Q3 arena respects free-for-all and base-game exclusions" {
