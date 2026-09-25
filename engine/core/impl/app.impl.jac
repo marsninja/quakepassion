@@ -65,6 +65,11 @@ impl App.run() {
         if self.smoke and self.smoke_step(frame) {
             break;
         }
+        # QP_CAPTURE: one screenshot of the full frame, then exit.
+        if self.capture_frame > 0 and frame >= self.capture_frame {
+            self.renderer.screenshot(self.capture_path);
+            break;
+        }
     }
     if self.level.active {
         self.models.close();
@@ -172,8 +177,15 @@ impl App.render_frame() {
             self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
         );
         if not self.smoke and not self.finale_active {
+            inset = self.hud.view_inset(
+                self.level.bsp.game, self.renderer.width, self.renderer.height
+            );
             self.viewweapon.draw(
-                p, self.combat, self.simulation_time, self.level.lighting
+                p,
+                self.combat,
+                self.simulation_time,
+                self.level.lighting,
+                lift=inset / float(max(1, self.renderer.height))
             );
         }
         self.renderer.end_scene();
@@ -921,6 +933,9 @@ impl App.step() -> bool {
                 game=self.level.bsp.game,
                 dt=self.physics_clock.tick_rate
             );
+            self.world spawn ClearActors(
+                player=self.player, collision=self.level.collision
+            );
             self.jump_pending = False;
             jumped = jumped or moved.jumped;
             if moved.landed > 0.0 and self.level.active {
@@ -1102,6 +1117,19 @@ impl App.step() -> bool {
                 } else {
                     # Shots wake nearby monsters (show_hostile, PlayerNoise).
                     self.combat.noise = 1.0;
+                    # Q2 FindTarget hears a noise only from inside its PHS.
+                    if self.level.bsp.game == "q2" {
+                        heard = self.level.hearable(self.player.pos);
+                        for listener in [self.world->:HasOpponent:->][?:Opponent] {
+                            if listener.alert <= 0.0
+                                and listener.health > 0
+                                and not listener.dormant
+                                and listener.pos.sub(self.player.pos).length() < 1000.0 {
+                                leaf = self.level.locate(listener.pos);
+                                listener.heard = self.level.bsp.leaves[leaf].cluster in heard;
+                            }
+                        }
+                    }
                 }
                 if not self.combat.quiet {
                     self.audio.play(

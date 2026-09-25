@@ -108,6 +108,18 @@ def gib_rule(game: str, kind: str) -> GibRule | None {
         if kind in ["monster_tank", "monster_tank_commander"] {
             return q2_gibs(-200, "gear", 0, 1, ["sm_metal", "sm_metal", "sm_metal", "sm_metal", "chest"]);
         }
+        # m_supertank.c BossExplode (also boss2 and Jorg): once the death
+        # animation ends the wreck blows apart; damage never gibs them.
+        if kind in ["monster_supertank", "monster_jorg"] {
+            bits = q2_gibs(-100000, "gear", 0, 2, ["sm_metal", "sm_metal", "chest"]);
+            bits.sound = "sound/weapons/rocklx1a.wav";
+            return bits;
+        }
+        if kind == "monster_boss2" {
+            bits = q2_gibs(-100000, "head2", 2, 2);
+            bits.sound = "sound/weapons/rocklx1a.wav";
+            return bits;
+        }
         if kind == "monster_flipper" {
             return q2_gibs(-30, "sm_meat", 2, 2);
         }

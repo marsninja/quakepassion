@@ -158,6 +158,26 @@ obj Level {
         return result;
     }
 
+    """Q2 PHS: the clusters that can hear a sound made at `eye`, from the
+    potentially hearable set compiled into the map (PlayerNoise / gi.inPHS).
+    Other games return no clusters."""
+    def hearable(eye: Vec3) -> set[int] {
+        clusters: set[int] = set();
+        if self.bsp.game != "q2" or self.bsp.clusters <= 0 {
+            return clusters;
+        }
+        cluster = self.bsp.leaves[self.locate(eye)].cluster;
+        if cluster < 0 {
+            return clusters;
+        }
+        check = i32_at(self.bsp.visibility, 8 + cluster * 8);
+        for bit in decode_pvs(self.bsp.visibility, check, self.bsp.clusters + 1) {
+            clusters.add(bit - 1);
+        }
+        clusters.add(cluster);
+        return clusters;
+    }
+
     def visible(world: World, eye: Vec3, culling: bool) -> list[int] {
         leaf = self.locate(eye);
         # Map topology/PVS are immutable for a loaded Level. Movers update face

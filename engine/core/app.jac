@@ -90,7 +90,8 @@ import from ..world.combat {
     pickup_switch,
     selected_weapon,
     owns_weapon,
-    KillBox
+    KillBox,
+    ClearActors
 }
 import from ..world.vitals { CrashLand, VoiceTick }
 import from ..world.particles { Explosion, HasExplosion }
@@ -160,6 +161,8 @@ obj App {
         culling: bool = True,
         overlay: bool = True,
         smoke: bool = False,
+        capture_frame: int = 0,
+        capture_path: str = "",
         scripted: Intent | None = None,
         last_think: int = 0,
         last_drawn: int = 0,

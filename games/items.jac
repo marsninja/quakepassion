@@ -821,3 +821,35 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
     }
     return count;
 }
+
+"""What a monster leaves when it dies. Q1 DropBackpack: grunts carry 5
+shells, enforcers 5 cells and ogres 2 rockets (their ammo_* fields). Q2
+monster_death_use: Drop_Item of the monster's `item` key."""
+def monster_drop(game: str, kind: str, fields: dict[str, str]) -> PickupRule | None {
+    if game == "q1" {
+        packed = {
+            "monster_army": "shells",
+            "monster_enforcer": "cells",
+            "monster_ogre": "rockets",
+            "monster_ogre_marksman": "rockets"
+        };
+        if kind not in packed {
+            return None;
+        }
+        ammo = packed[kind];
+        return PickupRule(
+            kind="backpack",
+            amount=1,
+            capacity=1,
+            capacities={ammo: 100},
+            grants={ammo: 2 if ammo == "rockets" else 5},
+            model="progs/backpack.mdl",
+            sound="sound/weapons/lock4.wav"
+        );
+    }
+    if game == "q2" and fields.get("item", "") {
+        return pickup_rule("q2", {"classname": fields["item"]});
+    }
+    return None;
+}
+
