@@ -470,6 +470,26 @@ def prepare_level(world: World, level: Level) {
     load_monster_jumps(world, level.bsp);
 }
 
+"""Q1 SV_CheckStuck: a start embedded in the floor or a wall by a unit or
+two (Q1 e2m7's is) is moved up to 17 units up and one unit sideways to the
+first free spot, as the original does for a stuck player."""
+def unstick(collision: CollisionMap, origin: Vec3) -> Vec3 {
+    if not collision.trace(origin, origin).start_solid {
+        return origin;
+    }
+    for rise in range(18) {
+        for dx in [0.0, -1.0, 1.0] {
+            for dy in [0.0, -1.0, 1.0] {
+                spot = origin.add(Vec3(x=dx, y=dy, z=float(rise)));
+                if not collision.trace(spot, spot).start_solid {
+                    return spot;
+                }
+            }
+        }
+    }
+    return origin;
+}
+
 def spawn_player(level: Level, spawnpoint: str = "", returning: bool = False) -> Player {
     # Q1 SelectSpawnPoint: with any rune held, the start map uses its second start.
     kind = "info_player_start";
@@ -508,12 +528,12 @@ def spawn_player(level: Level, spawnpoint: str = "", returning: bool = False) ->
             if len(coords) != 3 {
                 raise ValueError("Invalid player spawn origin");
             }
+            origin = unstick(
+                level.collision,
+                Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2]))
+            );
             player = Player(
-                pos=Vec3(
-                    x=float(coords[0]),
-                    y=float(coords[1]),
-                    z=float(coords[2]) + level.collision.eye_height
-                ),
+                pos=origin.add(Vec3(z=level.collision.eye_height)),
                 yaw=float(ent.fields.get("angle", "0")) * math.pi / 180.0
             );
             move_to_area(player, level.areas[level.locate(player.pos)]);
