@@ -1,5 +1,15 @@
 """Campaign enemy definitions; behavioral special cases remain explicit work."""
 import from engine.world.opponent_rule { OpponentRule, AttackProfile }
+import from engine.math.vec3 { Vec3 }
+
+# Muzzle-flash light colours: Q1 EF_MUZZLEFLASH (the engine's orange flash)
+# and Q2 CL_ParseMuzzleFlash2's per-weapon dlight colours.
+glob Q1_FLASH: Vec3 = Vec3(x=1.0, y=0.65, z=0.25);
+glob Q2_GUN_FLASH: Vec3 = Vec3(x=1.0, y=1.0, z=0.0);
+glob Q2_ROCKET_FLASH: Vec3 = Vec3(x=1.0, y=0.5, z=0.2);
+glob Q2_GRENADE_FLASH: Vec3 = Vec3(x=1.0, y=0.5, z=0.0);
+glob Q2_RAIL_FLASH: Vec3 = Vec3(x=0.5, y=0.5, z=1.0);
+glob Q2_BFG_FLASH: Vec3 = Vec3(x=0.5, y=1.0, z=0.5);
 
 # Q2 model frames use two digit numbering within each family.
 def two(number: int) -> str {
@@ -69,6 +79,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 missile_speed=300.0,
                 missile_effect="q1_knightspike",
                 missile_yaw=[-12.0, -6.0, 0.0, 6.0, 12.0, 18.0],
+                # hknight_shot: the box centre, 20 ahead.
+                muzzles=[Vec3(x=20.0, z=8.0)],
                 aim_vertical=0.05,
                 attack_times=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
                 attack_duration=1.1,
@@ -112,6 +124,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 pellets=4,
                 spread=0.1,
                 aim_lag=0.2,
+                # FireBullets: 10 ahead at 0.7 of the box's height.
+                muzzles=[Vec3(x=10.0, z=20.8)],
+                flash=Q1_FLASH,
                 near_chance=0.4,
                 mid_chance=0.05,
                 rest_min=1.0,
@@ -226,7 +241,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=80,
                 damage=15,
                 missile_speed=600.0,
-                missile_effect="q1_laser"
+                missile_effect="q1_laser",
+                # enforcer_fire: v_forward * 30 + v_right * 8.5 + '0 0 16'.
+                muzzles=[Vec3(x=30.0, y=8.5, z=16.0)],
+                flash=Q1_FLASH
             );
         }
         if kind in ["monster_ogre", "monster_ogre_marksman"] {
@@ -301,6 +319,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 gravity=True,
                 splash=40,
                 radius=80.0,
+                # OgreFireGrenade: from the origin.
+                muzzles=[Vec3()],
+                flash=Q1_FLASH,
                 near_chance=0.1,
                 mid_chance=0.05,
                 rest_min=1.0,
@@ -367,7 +388,13 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound_times=[0.0, 0.3, 0.8],
                         damage=9,
                         missile_speed=600.0,
-                        missile_effect="q1_wizspike"
+                        missile_effect="q1_wizspike",
+                        # Wiz_StartFast: '0 0 30' + v_forward * 14 and
+                        # v_right * -14 for the first spike, 14 the second.
+                        muzzles=[
+                            Vec3(x=14.0, y=-14.0, z=30.0), Vec3(x=14.0, y=14.0, z=30.0)
+                        ],
+                        flash=Q1_FLASH
                     )
                 ]
             );
@@ -535,7 +562,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound_times=[0.0],
                         extra_sound="sound/shambler/sboom.wav",
                         extra_sound_times=[0.7],
-                        damage=10
+                        damage=10,
+                        flash=Q1_FLASH
                     )
                 ]
             );
@@ -591,6 +619,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         damage=10,
                         missile_speed=600.0,
                         missile_effect="q1_zombiegib",
+                        # ZombieFireGrenade(st): st_x ahead, st_y right,
+                        # st_z - 24 up.
+                        muzzles=[Vec3(x=-10.0, y=-22.0, z=6.0)],
                         gravity=True
                     ),
                     AttackProfile(
@@ -606,6 +637,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         damage=10,
                         missile_speed=600.0,
                         missile_effect="q1_zombiegib",
+                        muzzles=[Vec3(x=-10.0, y=-24.0, z=5.0)],
                         gravity=True
                     ),
                     AttackProfile(
@@ -621,6 +653,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         damage=10,
                         missile_speed=600.0,
                         missile_effect="q1_zombiegib",
+                        muzzles=[Vec3(x=-12.0, y=-19.0, z=5.0)],
                         gravity=True
                     )
                 ]
@@ -660,6 +693,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         radius=80.0,
                         missile_speed=400.0,
                         missile_effect="q1_vorepod",
+                        # ShalMissile: '0 0 10' above the origin.
+                        muzzles=[Vec3(z=10.0)],
+                        flash=Q1_FLASH,
                         homing=250.0
                     )
                 ]
@@ -798,7 +834,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         damage=3,
                         spread=300.0 / 8192.0,
                         vertical_spread=500.0 / 8192.0,
-                        aim_lag=0.2
+                        aim_lag=0.2,
+                        # GunnerFire: MZ2_GUNNER_MACHINEGUN_1 to 8, scaled 1.15.
+                        muzzles=[
+                            Vec3(x=34.615, y=4.485, z=22.54),
+                            Vec3(x=33.465, y=2.875, z=23.805),
+                            Vec3(x=32.43, y=2.875, z=25.53),
+                            Vec3(x=32.43, y=4.14, z=25.3),
+                            Vec3(x=30.935, y=2.3, z=26.91),
+                            Vec3(x=30.475, y=0.69, z=23.92),
+                            Vec3(x=30.935, y=0.575, z=24.725),
+                            Vec3(x=33.35, y=2.76, z=22.425)
+                        ],
+                        flash=Q2_GUN_FLASH
                     ),
                     AttackProfile(
                         name="grenades",
@@ -816,7 +864,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         radius=90.0,
                         missile_speed=600.0,
                         missile_effect="q2_grenade",
-                        gravity=True
+                        gravity=True,
+                        muzzles=[Vec3(x=5.29, y=-19.32, z=8.395)],
+                        flash=Q2_GRENADE_FLASH
                     )
                 ]
             );
@@ -870,7 +920,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound_times=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
                         damage=1,
                         missile_speed=1000.0,
-                        missile_effect="q2_bolt"
+                        missile_effect="q2_bolt",
+                        # flyer_fireleft / flyer_fireright in turn.
+                        muzzles=[Vec3(x=12.1, y=13.4, z=-14.5), Vec3(x=12.1, y=-7.4, z=-14.5)],
+                        flash=Q2_GUN_FLASH
                     )
                 ]
             );
@@ -937,7 +990,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound_times=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
                         damage=1,
                         missile_speed=1000.0,
-                        missile_effect="q2_bolt"
+                        missile_effect="q2_bolt",
+                        muzzles=[Vec3(x=32.5, y=-0.8, z=10.0)],
+                        flash=Q2_GUN_FLASH
                     )
                 ]
             );
@@ -978,7 +1033,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound_times=[0.3, 0.4],
                         damage=1,
                         missile_speed=1000.0,
-                        missile_effect="q2_bolt"
+                        missile_effect="q2_bolt",
+                        muzzles=[Vec3(x=32.5, y=-0.8, z=10.0)],
+                        flash=Q2_GUN_FLASH
                     )
                 ]
             );
@@ -1285,7 +1342,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         ],
                         damage=2,
                         missile_speed=1000.0,
-                        missile_effect="q2_bolt"
+                        missile_effect="q2_bolt",
+                        muzzles=[Vec3(x=12.1, y=5.4, z=16.5)],
+                        flash=Q2_GUN_FLASH
                     )
                 ]
             );
@@ -1367,7 +1426,13 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound_times=[0.9, 1.2, 1.5],
                         damage=30,
                         missile_speed=800.0,
-                        missile_effect="q2_bolt"
+                        missile_effect="q2_bolt",
+                        muzzles=[
+                            Vec3(x=20.7, y=-18.5, z=28.7),
+                            Vec3(x=16.6, y=-21.5, z=30.1),
+                            Vec3(x=11.8, y=-23.9, z=32.1)
+                        ],
+                        flash=Q2_GUN_FLASH
                     ),
                     AttackProfile(
                         name="machinegun",
@@ -1402,6 +1467,29 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         damage=20,
                         spread=300.0 / 8192.0,
                         vertical_spread=500.0 / 8192.0,
+                        # TankMachineGun: MZ2_TANK_MACHINEGUN_1 to 19 as the gun sweeps.
+                        muzzles=[
+                            Vec3(x=22.9, y=-0.7, z=25.3),
+                            Vec3(x=22.2, y=6.2, z=22.3),
+                            Vec3(x=19.4, y=13.1, z=18.6),
+                            Vec3(x=19.4, y=18.8, z=18.6),
+                            Vec3(x=17.9, y=25.0, z=18.6),
+                            Vec3(x=14.1, y=30.5, z=20.6),
+                            Vec3(x=9.3, y=35.3, z=22.1),
+                            Vec3(x=4.7, y=38.4, z=22.1),
+                            Vec3(x=-1.1, y=40.4, z=24.1),
+                            Vec3(x=-6.5, y=41.2, z=24.1),
+                            Vec3(x=3.2, y=40.1, z=24.7),
+                            Vec3(x=11.7, y=36.7, z=26.0),
+                            Vec3(x=18.9, y=31.3, z=26.0),
+                            Vec3(x=24.4, y=24.4, z=26.4),
+                            Vec3(x=27.1, y=17.1, z=27.2),
+                            Vec3(x=28.5, y=9.1, z=28.0),
+                            Vec3(x=27.1, y=2.2, z=28.0),
+                            Vec3(x=24.9, y=-2.8, z=28.0),
+                            Vec3(x=21.6, y=-7.0, z=26.4)
+                        ],
+                        flash=Q2_GUN_FLASH,
                         missile_yaw=[
                             40.0,
                             32.0,
@@ -1439,7 +1527,13 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         splash=50,
                         radius=70.0,
                         missile_speed=550.0,
-                        missile_effect="q2_rocket"
+                        missile_effect="q2_rocket",
+                        muzzles=[
+                            Vec3(x=6.2, y=29.1, z=49.1),
+                            Vec3(x=6.9, y=23.8, z=49.1),
+                            Vec3(x=8.3, y=17.8, z=49.5)
+                        ],
+                        flash=Q2_ROCKET_FLASH
                     )
                 ]
             );
@@ -1485,7 +1579,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         repeat_chance=0.9,
                         damage=6,
                         spread=300.0 / 8192.0,
-                        vertical_spread=500.0 / 8192.0
+                        vertical_spread=500.0 / 8192.0,
+                        muzzles=[Vec3(x=30.0, y=30.0, z=88.5)],
+                        flash=Q2_GUN_FLASH
                     ),
                     AttackProfile(
                         name="rockets",
@@ -1500,7 +1596,13 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         splash=50,
                         radius=70.0,
                         missile_speed=500.0,
-                        missile_effect="q2_rocket"
+                        missile_effect="q2_rocket",
+                        muzzles=[
+                            Vec3(x=16.0, y=-22.5, z=91.2),
+                            Vec3(x=16.0, y=-33.4, z=86.7),
+                            Vec3(x=16.0, y=-42.8, z=83.3)
+                        ],
+                        flash=Q2_ROCKET_FLASH
                     )
                 ]
             );
@@ -1549,7 +1651,11 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         pellets=3,
                         spread=300.0 / 8192.0,
                         vertical_spread=500.0 / 8192.0,
-                        aim_lag=0.2
+                        aim_lag=0.2,
+                        # Boss2MachineGun: the left and right guns together.
+                        muzzles=[Vec3(x=32.0, y=-40.0, z=70.0), Vec3(x=32.0, y=40.0, z=70.0)],
+                        volley=True,
+                        flash=Q2_GUN_FLASH
                     ),
                     AttackProfile(
                         name="rockets",
@@ -1565,7 +1671,16 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         radius=70.0,
                         missile_speed=500.0,
                         missile_effect="q2_rocket",
-                        missile_count=4
+                        missile_count=4,
+                        # Boss2Rocket: MZ2_BOSS2_ROCKET_1 to 4 at once.
+                        muzzles=[
+                            Vec3(x=22.0, y=16.0, z=10.0),
+                            Vec3(x=22.0, y=8.0, z=10.0),
+                            Vec3(x=22.0, y=-8.0, z=10.0),
+                            Vec3(x=22.0, y=-16.0, z=10.0)
+                        ],
+                        volley=True,
+                        flash=Q2_ROCKET_FLASH
                     )
                 ]
             );
@@ -1615,7 +1730,11 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         pellets=2,
                         spread=300.0 / 8192.0,
                         vertical_spread=500.0 / 8192.0,
-                        aim_lag=0.2
+                        aim_lag=0.2,
+                        # jorg_firebullet: the left and right arm guns together.
+                        muzzles=[Vec3(x=78.5, y=-47.1, z=96.0), Vec3(x=78.5, y=46.7, z=96.0)],
+                        volley=True,
+                        flash=Q2_GUN_FLASH
                     ),
                     AttackProfile(
                         name="bfg",
@@ -1635,7 +1754,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         beam_damage=10,
                         beam_radius=256.0,
                         burst_damage=50,
-                        burst_radius=200.0
+                        burst_radius=200.0,
+                        muzzles=[Vec3(x=6.3, y=-9.0, z=111.2)],
+                        flash=Q2_BFG_FLASH
                     )
                 ]
             );
@@ -1686,7 +1807,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         beam_damage=10,
                         beam_radius=256.0,
                         burst_damage=50,
-                        burst_radius=300.0
+                        burst_radius=300.0,
+                        muzzles=[Vec3(x=17.0, y=-19.5, z=62.9)],
+                        flash=Q2_BFG_FLASH
                     ),
                     AttackProfile(
                         name="hyperblaster",
@@ -1717,6 +1840,27 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         damage=15,
                         missile_speed=1000.0,
                         missile_effect="q2_bolt",
+                        # MakronHyperblaster: MZ2_MAKRON_BLASTER_1 to 17 by frame.
+                        muzzles=[
+                            Vec3(x=-3.6, y=-24.1, z=59.5),
+                            Vec3(x=-1.6, y=-19.3, z=59.5),
+                            Vec3(x=-0.1, y=-14.4, z=59.5),
+                            Vec3(x=2.0, y=-7.6, z=59.5),
+                            Vec3(x=3.4, y=1.3, z=59.5),
+                            Vec3(x=3.7, y=11.1, z=59.5),
+                            Vec3(x=-0.3, y=22.3, z=59.5),
+                            Vec3(x=-6.0, y=33.0, z=59.5),
+                            Vec3(x=-9.3, y=36.4, z=59.5),
+                            Vec3(x=-7.0, y=35.0, z=59.5),
+                            Vec3(x=-2.1, y=29.0, z=59.5),
+                            Vec3(x=3.9, y=17.3, z=59.5),
+                            Vec3(x=6.1, y=5.8, z=59.5),
+                            Vec3(x=5.9, y=-4.4, z=59.5),
+                            Vec3(x=4.2, y=-14.1, z=59.5),
+                            Vec3(x=2.4, y=-18.8, z=59.5),
+                            Vec3(x=-1.8, y=-25.5, z=59.5)
+                        ],
+                        flash=Q2_GUN_FLASH,
                         missile_yaw=[
                             80.0,
                             70.0,
@@ -1749,7 +1893,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound_times=[0.0],
                         damage=50,
                         rail=True,
-                        lock_aim=True
+                        lock_aim=True,
+                        muzzles=[Vec3(x=-17.3, y=7.8, z=72.4)],
+                        flash=Q2_RAIL_FLASH
                     )
                 ]
             );
@@ -1846,6 +1992,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 damage=50,
                 missile_speed=500.0,
                 missile_effect="q2_rocket",
+                muzzles=[Vec3(x=24.8, y=-9.0, z=39.0)],
+                flash=Q2_ROCKET_FLASH,
                 splash=50,
                 radius=70.0,
                 attack_times=[1.3],
@@ -1966,6 +2114,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 damage=50,
                 lock_aim=True,
                 rail=True,
+                muzzles=[Vec3(x=30.0, y=18.0, z=28.0)],
+                flash=Q2_RAIL_FLASH,
                 ranged_min=112.0,
                 stop_range=64.0,
                 attack_times=[0.3],
@@ -2007,6 +2157,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 spread=300.0 / 8192.0,
                 vertical_spread=500.0 / 8192.0,
                 aim_lag=0.2,
+                muzzles=[Vec3(x=26.6, y=7.1, z=13.1)],
+                flash=Q2_GUN_FLASH,
                 attack_times=[1.0],
                 attack_duration=1.5,
                 burst_min=4,
@@ -2049,6 +2201,11 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 missile_effect="q2_bolt",
                 aim_spread=1000.0 / 8192.0,
                 aim_vertical=500.0 / 8192.0,
+                # soldier_fire: flash 1 standing (attack1), 3 crouched
+                # (attack3), 4 for the machine gunner (attack4), scaled 1.2.
+                muzzles=[Vec3(x=12.72, y=9.24, z=9.36)],
+                crouch_muzzles=[Vec3(x=24.96, y=12.12, z=-3.24)],
+                flash=Q2_GUN_FLASH,
                 attack_times=[0.2],
                 attack_duration=1.2,
                 attack_frames=["attak" + str(i) for i in range(101, 113)]
@@ -2081,6 +2238,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 rule.burst_min = 4;
                 rule.burst_max = 11;
                 rule.hold_frame = 2;
+                rule.muzzles = [Vec3(x=9.12, y=11.16, z=0.96)];
             }
             return rule;
         }

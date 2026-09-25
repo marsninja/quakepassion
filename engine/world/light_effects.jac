@@ -1,7 +1,14 @@
 """A fixed budget of transient combat lights; no extra simulation timers."""
 import from .lighting { Lighting, FlashLight }
 import from .world { World, Player }
-import from .combat { Opponent, HasOpponent, CombatState, Projectile, HasProjectile }
+import from .combat {
+    Opponent,
+    HasOpponent,
+    CombatState,
+    Projectile,
+    HasProjectile,
+    muzzle_flash_age
+}
 import from .particles { Explosion, HasExplosion }
 import from .models { PlayerRig, WeaponKit, Holds, RIG_FLASH_TIME }
 import from ..math.vec3 { Vec3, forward_from }
@@ -75,7 +82,7 @@ def combat_lights(
             if enemy.health > 0 and rig.clock - rig.flash_time < RIG_FLASH_TIME * 2.0 {
                 candidates.append((enemy.pos.sub(player.pos).length(), i));
             }
-        } elif enemy.health > 0 and enemy.attack_flash > 0.0 {
+        } elif enemy.health > 0 and muzzle_flash_age(enemy) >= 0.0 {
             candidates.append((enemy.pos.sub(player.pos).length(), i));
         }
     }
@@ -96,13 +103,10 @@ def combat_lights(
             );
             continue;
         }
+        # A monster's shot lights its muzzle for a moment (Q1 EF_MUZZLEFLASH,
+        # Q2 CL_ParseMuzzleFlash2's 200-231 unit light in the flash's colour).
         lighting.dynamic.append(
-            FlashLight(
-                origin=enemy.pos,
-                color=Vec3(x=1.0, y=0.5, z=0.2).scale(
-                    min(1.0, enemy.attack_flash / 0.1)
-                )
-            )
+            FlashLight(origin=enemy.flash_origin, color=enemy.flash_color, radius=216.0)
         );
     }
 }
