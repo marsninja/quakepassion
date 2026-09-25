@@ -10,8 +10,16 @@ impl Renderer.open_window() {
         );
     }
     SetExitKey(i32(0));  # Escape belongs to the level menu.
-    # raylib keeps a pointer to the active batch, so it lives in a pin.
+    # raylib keeps a pointer to the active batch, so it lives in a pin. Each
+    # buffer's vertex array enables only the attributes of the shader current
+    # while it loads; rlglInit pretends the default shader has vertexNormal for
+    # its own batch. Load ours under a shader with all four, or the normals
+    # that carry Q3 lightmap coordinates never reach any shader.
+    attributes = LoadShaderFromMemory(BATCH_ATTRIBUTES_VS, BATCH_ATTRIBUTES_FS);
+    BeginShaderMode(attributes);
     batch = pin(rlLoadRenderBatch(i32(BATCH_BUFFERS), i32(BATCH_ELEMENTS)));
+    EndShaderMode();
+    UnloadShader(attributes);
     self.batch = batch;
     rlSetRenderBatchActive(&mut batch);
     # Default to uncapped rendering; a user-selected limit only paces frames.
