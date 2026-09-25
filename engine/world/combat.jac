@@ -145,7 +145,8 @@ node Opponent(Player) {
         wounded: bool = False,
         healthy_skin: ModelResource | None = None,
         heard: bool = True,
-        foe_wait: float = -1.0;
+        foe_wait: float = -1.0,
+        touch_origin: Vec3 | None = None;
 }
 
 """How far the player's box (at origin `body`) reaches into an actor's box,

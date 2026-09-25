@@ -71,16 +71,56 @@ def touches_volume(volume: CollisionMap, origin: Vec3, width: float = 16.0, top:
     return False;
 }
 
+"""Whether a body's box, moving from `start` to `finish`, touches a trigger
+volume anywhere on the way: the moving box against each volume box, as
+touches_volume grows them, by the slab test."""
+def sweeps_volume(
+    volume: CollisionMap, start: Vec3, finish: Vec3, width: float = 16.0, top: float = 32.0
+) -> bool {
+    for box in volume.bounds {
+        lo = box.mins.add(Vec3(x=16.0 - width - 2.0, y=16.0 - width - 2.0, z=-2.0));
+        hi = box.maxs.add(Vec3(x=width - 16.0 + 2.0, y=width - 16.0 + 2.0, z=top - 32.0 + 2.0));
+        origins = [start.x, start.y, start.z];
+        deltas = [finish.x - start.x, finish.y - start.y, finish.z - start.z];
+        mins = [lo.x, lo.y, lo.z];
+        maxs = [hi.x, hi.y, hi.z];
+        enter = 0.0;
+        leave = 1.0;
+        for axis in range(3) {
+            if abs(deltas[axis]) < 0.000001 {
+                if origins[axis] < mins[axis] or origins[axis] > maxs[axis] {
+                    enter = 2.0;
+                }
+            } else {
+                a = (mins[axis] - origins[axis]) / deltas[axis];
+                b = (maxs[axis] - origins[axis]) / deltas[axis];
+                enter = max(enter, min(a, b));
+                leave = min(leave, max(a, b));
+            }
+        }
+        if enter <= leave {
+            return True;
+        }
+    }
+    return False;
+}
+
+# A monster moving farther than this in one tick was placed, not moved.
+glob MONSTER_SWEEP_LIMIT: float = 256.0;
+
 """A monster's own touch box: Q1/Q2 walkers are 32 wide up to 32 above their
-origin; the large hull (and anything wider) reaches 64."""
+origin; the large hull (and anything wider) reaches 64. The box is swept from
+where the monster was last checked, so a fast monster (a leaping fiend, a
+charging mutant) cannot pass through a thin trigger between two ticks."""
 def monster_touches(volume: CollisionMap, actor: Opponent) -> bool {
     width = max(16.0, actor.rule.width);
-    return touches_volume(
-        volume,
-        actor.pos.sub(Vec3(z=actor.eye_height)),
-        width,
-        64.0 if width > 16.0 else 32.0
-    );
+    top = 64.0 if width > 16.0 else 32.0;
+    origin = actor.pos.sub(Vec3(z=actor.eye_height));
+    start = actor.touch_origin;
+    if start is not None and start.sub(origin).length() <= MONSTER_SWEEP_LIMIT {
+        return sweeps_volume(volume, start, origin, width, top);
+    }
+    return touches_volume(volume, origin, width, top);
 }
 
 """A short teleport flash (Q1 R_TeleportSplash, Q2 CL_TeleportParticles, Q3
@@ -299,6 +339,13 @@ walker TeleportMonsters {
                 for item in [here->:HasTraversal:->][?:Traversal]
                 if item.monsters and item.enabled and (not item.gated or item.window > 0.0)
             ];
+        }
+    }
+
+    # Where each monster stands now starts its next sweep.
+    can settle with World exit {
+        for actor in [here->:HasOpponent:->][?:Opponent] {
+            actor.touch_origin = actor.pos.sub(Vec3(z=actor.eye_height));
         }
     }
 
