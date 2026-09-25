@@ -41,7 +41,7 @@ QP_GRAYBOX=1 ./qp                   # original two-room development scene
 QP_CAPTURE=300:shot.png ./qp        # play 300 frames, save a full screenshot, exit
 ```
 
-For a fresh checkout, install [Jac 0.37.21](https://github.com/jaseci-labs/jac/releases/tag/v0.37.21)
+For a fresh checkout, install [Jac 0.37.23](https://github.com/jaseci-labs/jac/releases/tag/v0.37.23)
 for your platform, then stage raylib and build:
 
 ```bash
