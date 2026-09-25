@@ -4,7 +4,7 @@ import from games.weapons { weapon_rules }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, Projectile, HasProjectile, arm_bot }
 import from engine.world.bot_tactics { BotTactics, choose_weapon, change_view, steer_view, look_at, bot_fire, rule_for, bot_aggression }
-import from engine.world.bot_character { BotCharacter, BotState, bot_skill, bot_handicap }
+import from engine.world.bot_character { BotCharacter, BotState, bot_skill, bot_handicap, Q3_SKILL_NAMES }
 import from engine.world.inventory { quantity, AdjustInventory }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
@@ -50,6 +50,12 @@ test "botlib characters load exact skills and interpolate between them" {
     # Normal is Q3's default Bring It On; handicaps from G_AddBot.
     assert bot_skill(0) == 1.0 and bot_skill(1) == 2.0 and bot_skill(3) == 4.0;
     assert bot_handicap(1.0) == 50 and bot_handicap(2.0) == 70 and bot_handicap(3.0) == 90 and bot_handicap(4.0) == 100;
+    # The fifth setting is Nightmare!: the character's own skill 5 block and
+    # no handicap.
+    assert bot_skill(4) == 5.0 and bot_handicap(bot_skill(4)) == 100;
+    assert Q3_SKILL_NAMES[int(bot_skill(4)) - 1] == "Nightmare!" and Q3_SKILL_NAMES[int(bot_skill(2)) - 1] == "Hurt Me Plenty";
+    nightmare = skill_blocks(SAMPLE + "skill 5\n{\n\tCHARACTERISTIC_AIM_ACCURACY\t\t0.95\n}\n");
+    assert values_at(nightmare, 5.0)["CHARACTERISTIC_AIM_ACCURACY"] == "0.95";
 }
 
 test "bots pick their heaviest loaded weapon and shun a distant lightning gun" {

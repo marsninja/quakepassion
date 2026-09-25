@@ -104,6 +104,7 @@ import from ..world.fixtures { FixtureTick }
 import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
 import from ..world.bot_tactics { BotTactics }
+import from ..world.bot_character { Q3_SKILL_NAMES }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
 import from ..world.clocks { ClockTick, HasClock }
 import from ..world.flyers { FlyerTick, HasFlyer, HasBomb }

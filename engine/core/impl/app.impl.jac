@@ -507,7 +507,7 @@ impl App.load_destination(
     next_viewweapon = ViewWeapon();
     try {
         world = World();
-        level = open_level(world, game_directory(game), name, game, self.skill);
+        level = open_level(world, game_directory(game), name, game, self.skill if game == "q3" else min(3, self.skill));
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"
                 and self.level.bsp.game == "q1"
@@ -1632,8 +1632,8 @@ impl App.refresh_settings() {
         "Diagnostic overlay: " + ("On" if self.overlay else "Off"),
         "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%",
         "God mode: " + ("On" if self.god_mode else "Off"),
-        "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare"][max(0, min(3, self.skill))]
-            + " (Q3: " + ["I Can Win", "Bring It On", "Hurt Me Plenty", "Hardcore"][max(0, min(3, self.skill))] + ")"
+        "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare", "Nightmare"][max(0, min(4, self.skill))]
+            + " (Q3: " + Q3_SKILL_NAMES[max(0, min(4, self.skill))] + ")"
     ];
 }
 
@@ -1680,7 +1680,12 @@ impl App.adjust_setting(direction: int) {
         self.god_mode = not self.god_mode;
         self.player.god_mode = self.god_mode;
     } elif row == 10 {
-        self.skill = (self.skill + direction + 4) % 4;
+        # Q1 and Q2 have four skills; the fifth is Q3's Nightmare!, which
+        # they play as Nightmare. ui_spskill.c announces it.
+        self.skill = (self.skill + direction + 5) % 5;
+        if self.skill == 4 and self.level.bsp.game == "q3" {
+            self.audio.play_path("sound/misc/nightmare.wav");
+        }
     }
     self.save_preferences();
 }
@@ -1739,7 +1744,7 @@ impl App.quickload() {
         }
         for line in lines {
             if line.startswith("SKILL ") {
-                self.skill = max(0, min(3, int(line[6:])));
+                self.skill = max(0, min(4, int(line[6:])));
             }
         }
         self.load_destination(

@@ -37,9 +37,13 @@ obj BotCharacter {
     }
 }
 
-"""Q3's five skill levels from the game's four: Easy is I Can Win, Normal is
-Bring It On (g_spSkill's default of 2), Hard is Hurt Me Plenty and Nightmare
-is Hardcore."""
+# ui_spskill.c's names for g_spSkill 1-5.
+glob Q3_SKILL_NAMES: list[str] = ["I Can Win", "Bring It On", "Hurt Me Plenty", "Hardcore", "Nightmare!"];
+
+"""Q3's five skill levels from the game's settings (0-4): Easy is I Can Win,
+Normal is Bring It On (g_spSkill's default of 2), Hard is Hurt Me Plenty,
+Nightmare is Hardcore, and the fifth setting, which Q1 and Q2 play as
+Nightmare, is Nightmare!. Bots take the botlib character of that skill."""
 def bot_skill(skill: int) -> float {
     return float(max(1, min(5, skill + 1)));
 }
