@@ -38,8 +38,11 @@ test "all three games share platform carrying up and down without drift" {
         before = player.pos.z;
         ride(fixture, player, 0.0);
         assert platform.position == 0.0 and player.pos.z == before;
-        for i in range(4) {
-            ride(fixture, player, 0.25);
+        # Q2 plats ramp up and down (Think_AccelMove) and take 1.2 s here.
+        for i in range(6) {
+            if platform.state != "open" {
+                ride(fixture, player, 0.25);
+            }
         }
         assert platform.position == 1.0 and platform.state == "open";
         assert abs(player.pos.z - before - 64.0) < 0.00001;
@@ -50,8 +53,10 @@ test "all three games share platform carrying up and down without drift" {
         ride(fixture, player, 10.0);
         assert platform.state == "closing";
         player.pos.x = 0.0;
-        for i in range(4) {
-            ride(fixture, player, 0.25);
+        for i in range(6) {
+            if platform.state != "closed" {
+                ride(fixture, player, 0.25);
+            }
         }
         assert platform.position == 0.0 and platform.state == "closed";
         assert abs(player.pos.z - before) < 0.00001;
@@ -100,7 +105,9 @@ test "named Q1 and Q2 platforms unlock downward while Q3 starts at the bottom" {
         }
         platform.activation.pending = 1;
         fixture.tick(Vec3(x=500.0), 0.25);
-        assert platform.position == (0.25 if game == "q3" else 0.75);
+        # Q2's ramp sits still for a frame, then covers 5 and 3.2 units.
+        expected = 0.25 if game == "q3" else (0.871875 if game == "q2" else 0.75);
+        assert abs(platform.position - expected) < 0.00001;
     }
 }
 
@@ -121,7 +128,7 @@ test "a crouched rider follows the same platform displacement" {
     fixture.collision.eye_height = -2.0;
     player = Player(pos=Vec3(z=54.03125), crouched=True);
     before = player.pos.z;
-    for i in range(4) {
+    for i in range(5) {
         ride(fixture, player, 0.25);
     }
     assert abs(player.pos.z - before - 64.0) < 0.00001;
