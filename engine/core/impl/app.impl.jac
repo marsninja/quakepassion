@@ -264,7 +264,7 @@ impl App.render_frame() {
                 }
             }
             if self.hud.ready {
-                if not self.finale_active {
+                if not self.finale_active and self.postgame is None {
                     self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
                 }
             } else {

@@ -125,31 +125,21 @@ with entry {
     shoot(app, "qp_arena_scoreboard.png");
     app.show_scores = False;
 
-    # A bot beside a wall, lit from the light grid, then full bright.
     subject = bots[0];
     for bot in bots {
         if bot.health > 0 {
             subject = bot;
         }
     }
-    middle = subject.pos.sub(Vec3(z=subject.eye_height * 0.5));
-    if look(app, level.collision, middle, subject.yaw + math.pi / 4.0, 90.0, "qp_arena_bot_lit.png") {
-        grid = level.lighting.grid;
-        level.lighting.grid = None;
-        shoot(app, "qp_arena_bot_fullbright.png");
-        level.lighting.grid = grid;
-        lit = level.lighting.sample(subject.pos.sub(Vec3(z=10.0)));
-        print("LIGHT at bot", round(lit.ambient.x, 3), round(lit.ambient.y, 3), round(lit.ambient.z, 3),
-            "directed", round(lit.directed.x, 3), round(lit.directed.y, 3), round(lit.directed.z, 3));
-    }
-
     # A bot dies holding a railgun and a quad: its drops are thrown.
     victim = subject;
     victim.inventory spawn AdjustInventory(kind="weapon_railgun", amount=1, capacity=1);
     victim.inventory spawn AdjustInventory(kind="slugs", amount=10, capacity=200);
     victim.shown_weapon = "railgun";
     victim spawn GrantPowerup(kind="quad", duration=30.0);
-    damage_opponent(victim, 1000, attacker=bots[-1] if bots[-1] is not victim else bots[0], means="railgun");
+    # Short of GIB_HEALTH, so the body stays whole until it is shot apart.
+    victim.armor = 0;
+    damage_opponent(victim, victim.health + 10, attacker=bots[-1] if bots[-1] is not victim else bots[0], means="railgun");
     tick_world(app, human, contacts, 0.2);
     thrown = [item for item in [world->:HasPickup:->][?:Pickup] if item.dropped];
     print("THROWN", len(thrown), [in_flight(item) for item in thrown]);
@@ -207,6 +197,24 @@ with entry {
     board.update(app.postgame_clock);
     assert board.phase == 3;
     shoot(app, "qp_arena_postgame_menu.png");
+    # A bot beside a wall, lit from the light grid, then full bright as
+    # models were before. (Last: the grid is switched off for good, as saving
+    # and restoring it hits a native Jac defect, see the report.)
+    contest.finished = False;
+    lit_bot = bots[0];
+    for bot in bots {
+        if bot.health > 0 {
+            lit_bot = bot;
+        }
+    }
+    middle = lit_bot.pos.sub(Vec3(z=lit_bot.eye_height * 0.5));
+    if look(app, level.collision, middle, lit_bot.yaw + math.pi / 4.0, 90.0, "qp_arena_bot_lit.png") {
+        lit = level.lighting.sample(lit_bot.pos.sub(Vec3(z=10.0)));
+        print("LIGHT at bot", round(lit.ambient.x, 3), round(lit.ambient.y, 3), round(lit.ambient.z, 3),
+            "directed", round(lit.directed.x, 3), round(lit.directed.y, 3), round(lit.directed.z, 3));
+        level.lighting.grid = None;
+        shoot(app, "qp_arena_bot_fullbright.png");
+    }
     app.models.close();
     app.quake.close();
     renderer.close();
