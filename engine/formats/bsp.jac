@@ -90,6 +90,7 @@ obj Model {
         face_count: int,
         vis_leaf_count: int = 0,
         player_hull: int = -1,
+        large_hull: int = -1,
         brushes: list[int] = [],
         mins: Vec3 = Vec3(),
         maxs: Vec3 = Vec3();

@@ -35,6 +35,9 @@ import from ..math.vec3 { Vec3, forward_from, right_from }
 edge HasOpponent: World --> Opponent {}
 node Opponent(Player) {
     has eye_height: float = 22.0;
+    # Moves with its own box (rule width and hull) rather than the player's:
+    # set for monsters on their own game's maps.
+    has own_hull: bool = False;
     has rule: OpponentRule = OpponentRule(),
         activation: Signal = Signal(),
         dormant: bool = False,
@@ -2604,6 +2607,37 @@ def event_damage(enemy: Opponent, profile: AttackProfile, index: int) -> int {
     return amount;
 }
 
+"""The collision a monster moves with. On its own game's maps that is its
+own box: Q2's mins/maxs (SV_Move's box trace), or Q1's hull 2 for monsters
+wider than 32 units (SV_HullForEntity). Elsewhere, and for bots, it is the
+player's box."""
+def monster_collision(collision: CollisionMap, enemy: Opponent) -> CollisionMap {
+    if not enemy.own_hull {
+        return collision.for_body(enemy.eye_height);
+    }
+    rule = enemy.rule;
+    return collision.for_body(
+        enemy.eye_height,
+        0.0,
+        Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom),
+        Vec3(x=rule.width, y=rule.width, z=rule.hull_top)
+    );
+}
+
+"""Which cached body view a monster shares with others of its size."""
+def monster_body_key(enemy: Opponent) -> str {
+    if not enemy.own_hull {
+        return str(enemy.eye_height);
+    }
+    return str(enemy.eye_height)
+        + ":"
+        + str(enemy.rule.width)
+        + ":"
+        + str(enemy.rule.hull_bottom)
+        + ":"
+        + str(enemy.rule.hull_top);
+}
+
 # Integrate authored charge distances across 10 Hz animation frames, using the
 # same stair/slide collision as walking. Keep a body-width gap to the player.
 def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: float) {
@@ -2625,7 +2659,7 @@ def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: 
     if abs(travel) <= 0.000001 {
         return;
     }
-    collision = collision.for_body(enemy.eye_height);
+    collision = monster_collision(collision, enemy);
     body = enemy.pos.sub(Vec3(z=enemy.eye_height));
     ahead = body.add(goal.normalized().scale(travel));
     support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
@@ -3067,6 +3101,7 @@ walker CombatTick {
         arena_live: bool = False,
         world: World | None = None,
         body_collision: CollisionMap | None = None,
+        bodies: dict[str, CollisionMap] = {},
         navmesh: NavMesh | None = None,
         neighbors: dict[str, list[Opponent]] = {},
         decisions: int = 0;
@@ -3318,11 +3353,12 @@ walker CombatTick {
                 );
             }
         }
-        if self.body_collision is None
-            or self.body_collision.eye_height != here.eye_height {
-            self.body_collision = self.collision.for_body(here.eye_height);
+        body_key = monster_body_key(here);
+        if body_key not in self.bodies {
+            self.bodies[body_key] = monster_collision(self.collision, here);
         }
-        body_collision = self.body_collision;
+        self.body_collision = self.bodies[body_key];
+        body_collision = self.bodies[body_key];
         if here.pending_explosion and self.world is not None {
             death_explosion(self.world, here, self.player, self.collision, self.state);
         }
