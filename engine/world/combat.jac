@@ -18,7 +18,7 @@ import from .arena { ChooseSpawn }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual, ModelResource, UsesModel, PlayerRig }
 import from .player_rig { PoseRig, rig_sound, reset_rig }
-import from .body_queue { CorpseTick, leave_corpse }
+import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_corpse, shootable }
 import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
@@ -1077,10 +1077,26 @@ walker Aim {
         height: float,
         fraction: float = 1.0,
         target: Opponent | None = None,
-        ignore: Opponent | None = None;
+        ignore: Opponent | None = None,
+        corpse: Corpse | None = None;
 
     can begin with World entry {
         visit [here->:HasOpponent:->];
+        # Q3 bodies left behind (CONTENTS_CORPSE) stop shots too.
+        visit [here->:HasCorpse:->];
+    }
+
+    can test_corpse with Corpse entry {
+        if not shootable(here) {
+            return;
+        }
+        # A dead player's box top is lowered to -8 (player_die).
+        hit = actor_fraction(self.start, self.finish, here.pos, here.eye_height, 40.0);
+        if hit < self.fraction {
+            self.fraction = hit;
+            self.target = None;
+            self.corpse = here;
+        }
     }
 
     can test_target with Opponent entry {
@@ -1107,6 +1123,7 @@ walker Aim {
         if hit < self.fraction {
             self.fraction = hit;
             self.target = here;
+            self.corpse = None;
         }
     }
 }
@@ -1116,7 +1133,8 @@ any monster other than the shooter, as Q1 traceline and Q2 gi.trace hit
 whatever stands in the way."""
 obj LineHit {
     has actor: Player | None = None,
-        fraction: float = 1.0;
+        fraction: float = 1.0,
+        corpse: Corpse | None = None;
 }
 
 def line_of_fire(
@@ -1145,6 +1163,10 @@ def line_of_fire(
     );
     if query.target is not None and query.fraction < result.fraction {
         result.actor = query.target;
+        result.fraction = query.fraction;
+    } elif query.corpse is not None and query.fraction < result.fraction {
+        result.actor = None;
+        result.corpse = query.corpse;
         result.fraction = query.fraction;
     }
     return result;
@@ -1349,6 +1371,8 @@ def fire_weapon(
     victims: list[Opponent] = [];
     amounts: list[int] = [];
     kicks: list[float] = [];
+    bodies: list[Corpse] = [];
+    wounds: list[int] = [];
     for pellet in range(rule.pellets) {
         shot = direction;
         if rule.spread > 0.0 and rule.circular {
@@ -1391,6 +1415,14 @@ def fire_weapon(
             }
         } elif query.target is not None {
             hits.append(query.target);
+        } elif query.corpse is not None {
+            body = query.corpse;
+            impact_spray(world, player.pos.lerp(finish, query.fraction), shot.normalized().scale(-1.0), True);
+            if body not in bodies {
+                bodies.append(body);
+                wounds.append(0);
+            }
+            wounds[bodies.index(body)] += int(float(rule.damage) * scale);
         }
         if rule.key == "lightning" {
             # Q1 TE_LIGHTNING2 (bolt2.mdl) / Q3 CG_LightningBolt, to the hit.
@@ -1423,7 +1455,7 @@ def fire_weapon(
             )
                 * scale;
         }
-        if (not hits or rule.piercing) and wall.fraction < 1.0 {
+        if (not hits or rule.piercing) and query.corpse is None and wall.fraction < 1.0 {
             impact_spray(world, player.pos.lerp(finish, wall.fraction), wall.normal);
             state.impact_model = wall.model;
             state.impacts.append(
@@ -1434,6 +1466,9 @@ def fire_weapon(
                 )
             );
         }
+    }
+    for i in range(len(bodies)) {
+        damage_corpse(world, bodies[i], wounds[i]);
     }
     for i in range(len(victims)) {
         # Q2 fire_lead / Q3 Bullet_Fire push along the aim.
@@ -1807,6 +1842,27 @@ def blast_actors(
     if splash <= 0 or radius <= 0.0 {
         return;
     }
+    # G_RadiusDamage reaches the bodies left behind as well.
+    for body in [world->:HasCorpse:->][?:Corpse] {
+        if not shootable(body) {
+            continue;
+        }
+        base = body.pos.sub(Vec3(z=body.eye_height));
+        gap = Vec3(
+            x=max(0.0, abs(origin.x - base.x) - 16.0),
+            y=max(0.0, abs(origin.y - base.y) - 16.0),
+            z=max(0.0, base.z - 24.0 - origin.z, origin.z - base.z + 8.0)
+        );
+        reach = gap.length();
+        if reach >= radius {
+            continue;
+        }
+        sight = collision.trace_point(origin, base.add(Vec3(z=-12.0)));
+        if sight.start_solid or sight.fraction < 1.0 {
+            continue;
+        }
+        damage_corpse(world, body, int(blast_strength(state.game, splash, radius, reach)));
+    }
     actors: list[Player] = [player];
     actors.extend(
         [
@@ -2157,6 +2213,7 @@ walker ProjectileTick {
         finish = here.pos.add(here.velocity.scale(step));
         wall = self.collision.trace_point(here.pos, finish);
         victim: Opponent | None = None;
+        body: Corpse | None = None;
         fraction = wall.fraction;
         player_hit = False;
         if here.hostile {
@@ -2183,6 +2240,10 @@ walker ProjectileTick {
                 victim = query.target;
                 fraction = query.fraction;
                 player_hit = False;
+            } elif query.corpse is not None and query.fraction < fraction {
+                body = query.corpse;
+                fraction = query.fraction;
+                player_hit = False;
             }
         } else {
             query = world spawn Aim(
@@ -2192,7 +2253,16 @@ walker ProjectileTick {
                 fraction=wall.fraction
             );
             victim = query.target;
+            body = query.corpse;
             fraction = query.fraction;
+        }
+        if body is not None {
+            # A missile bursts on a body it strikes (G_MissileImpact).
+            here.pos = here.pos.lerp(finish, fraction);
+            damage_corpse(world, body, here.damage);
+            projectile_blast(world, here, self.player, self.collision, self.state);
+            world del --> here;
+            return;
         }
         here.pos = here.pos.lerp(finish, fraction);
         struck: Player | None = self.player if player_hit else victim;
@@ -3432,7 +3502,9 @@ walker CombatTick {
             }
             # CopyToBodyQue: the old body stays where it fell.
             if isinstance(corpse, PlayerRig) and self.world is not None {
-                leave_corpse(self.world, here, corpse);
+                gibs = here.gib_rule;
+                leave_corpse(self.world, here, corpse, here.remains, gibs,
+                    speaker_for(here, gibs.sound) if gibs is not None else None, here.eye_height);
             }
             # g_client.c ClientSpawn: 25 over maximum, empty armor and inventory.
             here.health = here.max_health + 25;

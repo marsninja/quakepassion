@@ -28,6 +28,7 @@ import from .arena_navigation { bot_wants }
 import from .powerups { stored_kinds }
 import from .models { PlayerRig, WeaponKit }
 import from .player_rig { hold_kit }
+import from .body_queue { Corpse, damage_corpse }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 
@@ -365,6 +366,8 @@ def bot_fire(
     }
     struck: list[Player] = [];
     totals: list[int] = [];
+    bodies: list[Corpse] = [];
+    wounds: list[int] = [];
     for pellet in range(max(1, rule.pellets)) {
         shot = spread_direction(bot, forward, rule);
         finish = start.add(shot.scale(reach));
@@ -388,9 +391,20 @@ def bot_fire(
                 struck.append(hit.actor);
                 totals.append(rule.damage);
             }
+        } elif hit.corpse is not None {
+            body = hit.corpse;
+            impact_spray(world, endpoint, shot.scale(-1.0), True);
+            if body not in bodies {
+                bodies.append(body);
+                wounds.append(0);
+            }
+            wounds[bodies.index(body)] += int(float(rule.damage) * scale);
         } elif wall.fraction < 1.0 and not wall.start_solid and rule.key != "gauntlet" {
             impact_spray(world, endpoint, wall.normal);
         }
+    }
+    for slot in range(len(bodies)) {
+        damage_corpse(world, bodies[slot], wounds[slot]);
     }
     for slot in range(len(struck)) {
         strike(

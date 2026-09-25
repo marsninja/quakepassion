@@ -1,7 +1,12 @@
 import from games.enemies { enemy_rule }
 import from games.gibs { gib_rule }
 import from engine.world.world { World, Area, move_to_area }
-import from engine.world.combat { Opponent, HasOpponent, Aim, damage_opponent }
+import from engine.world.combat { Opponent, HasOpponent, Aim, CombatState, damage_opponent, fire_weapon, blast_actors }
+import from engine.world.body_queue { Corpse, HasCorpse, leave_corpse, damage_corpse }
+import from engine.world.models { PlayerRig }
+import from engine.world.speakers { Speaker }
+import from engine.world.world { Player }
+import from games.weapons { equip_player }
 import from engine.world.gibs { Gib, HasGib, GibsInto, GibTick, throw_gibs }
 import from engine.world.models { ModelResource, GatherModels }
 import from engine.formats.animated { AnimatedModel }
@@ -102,4 +107,46 @@ test "gibs fly from their linked models, settle on the floor and fade" {
     left = [world->:HasGib:->][?:Gib];
     assert len(left) == 1 and left[0].lasting;
     assert len((world spawn GatherModels()).draws) == 1;
+}
+
+test "Q3 bodies left behind soak shots and splash until they gib" {
+    world = World();
+    area = Area(name="0", bounds=AABB(mins=Vec3(), maxs=Vec3()));
+    world ++> area;
+    bot = Opponent(arena=True, game="q3", kind="arena_bot", pos=Vec3(x=200.0, z=26.0), eye_height=26.0, health=0);
+    bot.gib_rule = gib_rule("q3", "arena_bot");
+    link_models(bot);
+    move_to_area(bot, area);
+    rig = PlayerRig(alive=False);
+    sound = Speaker(path="sound/player/gibsplt1.wav", origin=Vec3());
+    # CopyToBodyQue keeps the dead player's health; a body already past
+    # GIB_HEALTH takes no more damage.
+    spent = leave_corpse(world, bot, rig, -45, bot.gib_rule, sound, 26.0);
+    assert spent is not None and spent.gibs is None;
+    body = leave_corpse(world, bot, rig, -10, bot.gib_rule, sound, 26.0);
+    assert body is not None and body.gibs is not None;
+    # Shots meet the body's lowered box: 24 to 8 units below its origin,
+    # which is its eye height (26) below the recorded eye.
+    low = world spawn Aim(start=Vec3(z=-16.0), finish=Vec3(x=400.0, z=-16.0), height=26.0);
+    assert low.corpse is body and low.target is None;
+    high = world spawn Aim(start=Vec3(z=0.0), finish=Vec3(x=400.0, z=0.0), height=26.0);
+    assert high.corpse is None;
+    assert not damage_corpse(world, body, 20) and body.remains == -30;
+    # At GIB_HEALTH (-40) it bursts into its gib models and is gone.
+    assert damage_corpse(world, body, 10);
+    assert len([world->:HasGib:->][?:Gib]) == 4 and sound.requests == 1;
+    assert body not in [world->:HasCorpse:->][?:Corpse] and not body.body.visible;
+    # A player's machine gun and a rocket's splash reach bodies too.
+    shot = leave_corpse(world, bot, PlayerRig(alive=False), -35, bot.gib_rule, sound, 26.0);
+    player = Player(pos=Vec3(z=-16.0), health=100);
+    state = CombatState(game="q3");
+    equip_player(player, state, "q3");
+    collision = CollisionMap(eye_height=26.0);
+    assert fire_weapon(world, player, collision, state);
+    assert shot is not None and shot.remains == -42 and shot not in [world->:HasCorpse:->][?:Corpse];
+    blasted = leave_corpse(world, bot, PlayerRig(alive=False), -5, bot.gib_rule, sound, 26.0);
+    blast_actors(world, Vec3(x=200.0, z=-10.0), 100, 120.0, False, Player(pos=Vec3(x=-5000.0), health=100), collision, state);
+    assert blasted is not None and blasted.remains <= -40 and blasted not in [world->:HasCorpse:->][?:Corpse];
+    # The body that was already past GIB_HEALTH is still lying there.
+    assert [world->:HasCorpse:->][?:Corpse] == [spent];
 }
