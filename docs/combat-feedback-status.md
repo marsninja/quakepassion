@@ -178,4 +178,16 @@ shambler and vore). This replaces the glow monsters used to carry for the whole
 of an attack. Beam attacks (the shambler's lightning, parasite drain) keep their
 beam origins.
 
-Validation: the muzzle and flash tests in `tests/q2_attack_tests.jac`.
+Dynamic lights now reach the world in every game. `combat_lights` used to
+return nothing outside Passion (it waited for Passion's light probes), so no
+original map showed a muzzle flash, explosion or missile light; now Q3 feeds
+them to its single-pass world shader, and Q1/Q2 draw the faces within a
+light's reach again, additively, as their texture times the lights at each
+pixel (standing in for `R_AddDynamicLights` adding them to the lightmaps).
+Original-game models are still lit without them.
+
+Validation: the muzzle and flash tests in `tests/q2_attack_tests.jac`;
+`scripts/muzzle_flash_smoke.jac` makes an e1m1 grunt and a base1 light
+soldier fire and captures each before and during its flash (inspected: the
+walls and floor around each light up, yellow in Q2). It also checks that
+base1's areas and area portals load with a door holding its portal.

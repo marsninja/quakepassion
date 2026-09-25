@@ -34,9 +34,6 @@ def combat_lights(
     lighting: Lighting, world: World, player: Player, state: CombatState
 ) {
     lighting.dynamic = [];
-    if not lighting.regions {
-        return;
-    }
     if state.flash > 0.0 {
         lighting.dynamic.append(
             FlashLight(
