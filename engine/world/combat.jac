@@ -2830,7 +2830,7 @@ walker CombatTick {
                 landing = body.lerp(body.sub(Vec3(z=128.0)), floor.fraction);
                 item.pos = landing.add(Vec3(z=15.0 if here.game == "q2" else 0.0));
                 item.active = True;
-                item.dropped = True;
+                item.released = True;
                 item.visual.visible = True;
                 area = area_of(here);
                 if area is not None {

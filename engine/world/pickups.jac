@@ -64,7 +64,7 @@ node Pickup(Entity) {
         activation: Signal = Signal(),
         respawn: float = 0.0,
         remaining: float = 0.0,
-        dropped: bool = False;
+        released: bool = False;
 }
 
 # Segment against an item box expanded by the player body; preserves fast crossings.

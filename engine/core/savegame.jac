@@ -353,7 +353,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         pickup.remaining,
                         1.0 if pickup.waiting_for_use else 0.0,
                         1.0 if pickup.activate_on_use else 0.0,
-                        1.0 if pickup.dropped else 0.0,
+                        1.0 if pickup.released else 0.0,
                         pickup.pos.x,
                         pickup.pos.y,
                         pickup.pos.z
@@ -986,7 +986,7 @@ def restore(
             item.visual.visible = item.active;
             # An item a dead monster already dropped stays where it fell.
             if row[4] != 0.0 {
-                item.dropped = True;
+                item.released = True;
                 item.pos = Vec3(x=row[5], y=row[6], z=row[7]);
                 for owner in [item<-:Drops:<-][?:Opponent] {
                     owner del --> item;

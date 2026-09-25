@@ -184,7 +184,7 @@ test "dead monsters drop what they carry where they fall" {
     assert not backpack.active;
     damage_opponent(grunt, 1000, attacker=player);
     world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 60.0);
-    assert backpack.active and backpack.dropped;
+    assert backpack.active and backpack.released;
     assert abs(backpack.pos.z) < 0.5 and abs(backpack.pos.x - 100.0) < 0.5;
     assert not [grunt->:Drops:->];
 }
