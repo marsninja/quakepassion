@@ -87,6 +87,8 @@ node Opponent(Player) {
         animation_time: float = 0.0,
         decision_wait: float = 0.0,
         support_wait: float = 0.0,
+        rest_serial: int = -1,
+        rest_pos: Vec3 = Vec3(),
         pursuing: bool = False,
         arena_origin: Vec3 = Vec3(),
         arena_goal: Vec3 | None = None,
@@ -146,6 +148,32 @@ node Opponent(Player) {
         healthy_skin: ModelResource | None = None,
         heard: bool = True,
         foe_wait: float = -1.0;
+}
+
+"""Whether a monster's resting place may have changed: it has moved since it
+settled, or a hull near it (a door, lift or train) has moved or gone since.
+A settled monster runs no movement at all until then; its last move left it
+exactly where it was, so another would too."""
+def rest_disturbed(enemy: Opponent, collision: CollisionMap) -> bool {
+    serial = enemy.rest_serial;
+    if serial < 0
+        or enemy.pos.x != enemy.rest_pos.x
+        or enemy.pos.y != enemy.rest_pos.y
+        or enemy.pos.z != enemy.rest_pos.z {
+        return True;
+    }
+    revision = collision.revision;
+    if revision.serial == serial {
+        return False;
+    }
+    origin = enemy.pos.sub(Vec3(z=enemy.eye_height));
+    for (index, changed) in revision.changes.items() {
+        if changed > serial and collision.reaches(index, origin, 64.0) {
+            return True;
+        }
+    }
+    enemy.rest_serial = revision.serial;
+    return False;
 }
 
 """How far the player's box (at origin `body`) reaches into an actor's box,
@@ -3972,11 +4000,15 @@ walker CombatTick {
                 here.velocity = Vec3();
             } else {
                 here.support_wait -= self.dt;
-                # Settled actors probe support at 20 Hz; motion and gravity remain 120 Hz.
-                if not here.grounded
-                    or here.velocity.length() > 0.000001
-                    or wish.length() > 0.0
-                    or here.support_wait <= 0.0 {
+                # Motion and gravity run at 120 Hz. Resting actors probe support
+                # at 20 Hz, and a settled one only once its place is disturbed.
+                moving = here.velocity.length() > 0.000001 or wish.length() > 0.0;
+                if moving
+                    or (not here.grounded and here.rest_serial < 0)
+                    or (
+                        here.support_wait <= 0.0
+                        and rest_disturbed(here, body_collision)
+                    ) {
                     before = here.pos.add(Vec3());
                     here spawn MovePlayer(
                         collision=body_collision,
@@ -3985,6 +4017,17 @@ walker CombatTick {
                         steady=strolling
                     );
                     here.support_wait = 0.05;
+                    # A move that went nowhere settles the actor (on the ground,
+                    # or wedged where gravity cannot move it).
+                    here.rest_serial = -1;
+                    if not moving
+                        and here.velocity.length() <= 0.000001
+                        and here.pos.x == before.x
+                        and here.pos.y == before.y
+                        and here.pos.z == before.z {
+                        here.rest_serial = body_collision.revision.serial;
+                        here.rest_pos = here.pos.add(Vec3());
+                    }
                     # SV_movestep: a monster cannot step into the player
                     # (a leap is a toss that lands on it instead).
                     if self.player.health > 0
@@ -4038,10 +4081,15 @@ walker CombatTick {
             here.velocity = here.velocity.add(
                 desired.sub(here.velocity).scale(min(1.0, 8.0 * self.dt))
             );
-            body = here.pos.sub(Vec3(z=here.eye_height));
-            moved = slide(body_collision, body, here.velocity, self.dt);
-            here.velocity = moved.velocity;
-            here.pos = moved.pos.add(Vec3(z=here.eye_height));
+            if wish.length() == 0.0 and here.velocity.length() < 0.01 {
+                # A hovering body whose drift has died away stays put.
+                here.velocity = Vec3();
+            } else {
+                body = here.pos.sub(Vec3(z=here.eye_height));
+                moved = slide(body_collision, body, here.velocity, self.dt);
+                here.velocity = moved.velocity;
+                here.pos = moved.pos.add(Vec3(z=here.eye_height));
+            }
             here.grounded = False;
         }
         if here.leaping {
