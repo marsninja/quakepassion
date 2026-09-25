@@ -539,6 +539,12 @@ obj CombatState {
         quiet: bool = False,
         firing: bool = False,
         hits: int = 0;
+    # The last weapon change, for the view: the slot put away, how long it
+    # takes to lower and the new one to rise, and a count of changes.
+    has holstered: int = -1,
+        lowering: float = 0.0,
+        raising: float = 0.0,
+        switches: int = 0;
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -1605,6 +1611,10 @@ rises: Q1 changes at once, Q2 plays each weapon's deactivate and activate
 frames, Q3 drops for 200 ms and raises for 250 ms (bg_pmove.c)."""
 def swap_weapon(state: CombatState, rule: WeaponRule) {
     old = selected_weapon(state);
+    state.holstered = old.slot;
+    state.lowering = old.lower_time;
+    state.raising = rule.raise_time;
+    state.switches += 1;
     state.weapon = rule.slot;
     state.spin = 0;
     state.climb = 0;

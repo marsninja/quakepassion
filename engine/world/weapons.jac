@@ -43,6 +43,27 @@ obj ViewWeaponRule {
         fire_last: int = -1,
         idle_first: int = 0,
         idle_last: int = 0;
+    # The switch: frames played while the weapon lowers and while it rises,
+    # at `switch_rate` frames a second (-1 for none).
+    has lower_first: int = -1,
+        lower_last: int = -1,
+        raise_first: int = -1,
+        raise_last: int = -1,
+        switch_rate: float = 10.0;
+}
+
+"""The frame of a weapon `elapsed` seconds into lowering (or raising), or -1
+when it has no such frames: Q2 Weapon_Generic's WEAPON_DROPPING and
+WEAPON_ACTIVATING frames, Q3 CG_MapTorsoToWeaponFrame's hand frames for
+TORSO_DROP and TORSO_RAISE."""
+def switch_frame(rule: ViewWeaponRule, count: int, lowering: bool, elapsed: float) -> int {
+    first = rule.lower_first if lowering else rule.raise_first;
+    last = rule.lower_last if lowering else rule.raise_last;
+    if first < 0 or last < first {
+        return -1;
+    }
+    frame = first + int(max(0.0, elapsed) * rule.switch_rate);
+    return max(0, min(count - 1, min(last, frame)));
 }
 
 """Sample cosmetic frames from simulation time without advancing weapon logic."""
