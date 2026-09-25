@@ -6,7 +6,7 @@ import from .patrols { patrol_speed }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
 import from engine.world.opponent_rule { OpponentRule }
-import from .arena_character { load_character, load_character_weapon, character_rig, CharacterRig }
+import from .arena_character { character_rig, CharacterRig, character_body, weapon_kits, powerup_shells, Q3_HELD_WEAPONS }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
 import from engine.formats.bsp { MapEntity }
@@ -15,20 +15,11 @@ import from engine.world.level { Level, spawn_player }
 import from engine.world.combat { Opponent, HasOpponent, Drops, Bloodied, ensure_profiles, arm_bot }
 import from engine.world.pickups { Pickup, HasPickup }
 import from .items { monster_drop, item_spin }
-import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms }
+import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms, hold_weapon }
+import from engine.world.models { WeaponKit, PlayerRig }
+import from engine.world.player_rig { rig_sound_paths }
 
-glob Q3_HELD_WEAPONS: dict[str, str] = {
-    "gauntlet": "models/weapons2/gauntlet/gauntlet.md3",
-    "machinegun": "models/weapons2/machinegun/machinegun.md3",
-    "shotgun": "models/weapons2/shotgun/shotgun.md3",
-    "grenadelauncher": "models/weapons2/grenadel/grenadel.md3",
-    "rocketlauncher": "models/weapons2/rocketl/rocketl.md3",
-    "lightning": "models/weapons2/lightning/lightning.md3",
-    "railgun": "models/weapons2/railgun/railgun.md3",
-    "plasmagun": "models/weapons2/plasma/plasma.md3",
-    "bfg": "models/weapons2/bfg/bfg.md3"
-};
-import from engine.world.bot_character { bot_skill }
+import from engine.world.bot_character { bot_skill, bot_handicap }
 import from engine.world.turrets { link_turret_drivers }
 import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
 import from engine.world.reflection { HasBody, Carries, player_body }
@@ -36,7 +27,7 @@ import from .botfiles { load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
-import from engine.world.models { ModelResource, HasModelResource, UsesModel, attach_model }
+import from engine.world.models { ModelResource, HasModelResource, UsesModel, HasVisual, attach_model }
 import from engine.formats.animated { AnimationFrame }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
@@ -171,6 +162,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
     rigs: dict[str, CharacterRig] = {};
+    kits: dict[str, WeaponKit] = {};
     # Path corners and combat points by name; authored duplicates keep the first.
     corners: dict[str, TrackPoint] = {};
     for corner in [world->:HasTrack:->][?:TrackPoint] {
@@ -238,6 +230,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             # Opponent movement uses the same eye/body contract as the player.
             position = origin.add(Vec3(z=level.collision.eye_height));
+            handicap = bot_handicap(bot_skill(level.skill));
             if arena and position.sub(player_start).length() < 80.0 {
                 continue;
             }
@@ -255,8 +248,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 arena=level.bsp.game == "q3",
                 rule=rule,
                 walk_speed=rule.speed,
-                health=125 if kind == "arena_bot" else rule.health,
-                max_health=100 if kind == "arena_bot" else rule.health,
+                # G_AddBot's handicap is the bot's maximum health.
+                health=handicap + 25 if kind == "arena_bot" else rule.health,
+                max_health=handicap if kind == "arena_bot" else rule.health,
                 decision_wait=float(count % 12) / 120.0,
                 support_wait=float(count % 6) / 120.0,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
@@ -291,13 +285,37 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     enemy.activation = signal;
                 }
             }
-            if path {
-                key = source + ":" + path + ":" + (bot.skin if arena else str(rule.skin));
+            if path and arena {
+                # CG_Player: a Q3 body is three tagged parts on their own
+                # animations, holding one of the shared weapon kits.
+                key = source + ":" + path + ":" + bot.skin;
+                library = catalog.source(source);
+                if key not in rigs {
+                    rigs[key] = character_rig(library, bot.model, bot.skin);
+                }
+                kits = weapon_kits(world, library, resources, kits);
+                powerup_shells(world, library, resources);
+                body = character_body(world, resources, rigs[key], key, count + 1);
+                body.offset = Vec3(z=-level.collision.eye_height);
+                body.voice = player_voice(library, bot.model);
+                body.footsteps = rigs[key].footsteps;
+                enemy.visual = body;
+                enemy +>:HasVisual:+> body;
+                for (weapon, kit) in kits.items() {
+                    enemy +>:Arms(key=weapon):+> kit;
+                }
+                hold_weapon(enemy, "machinegun");
+                for sound in rig_sound_paths(body) {
+                    if library.exists(sound) {
+                        register_speaker(world, enemy, sound);
+                    }
+                }
+                enemy.modeled = True;
+            } elif path {
+                key = source + ":" + path + ":" + str(rule.skin);
                 if key not in resources {
                     library = catalog.source(source);
-                    loaded = load_character(library, bot.model, bot.skin)
-                        if arena
-                        else library.model(path, skin=rule.skin);
+                    loaded = library.model(path, skin=rule.skin);
                     resource = ModelResource(
                         name=key, model=loaded.model, skins=loaded.skins
                     );
@@ -329,29 +347,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     y=-16.0 if corner else 0.0,
                     z=-level.collision.eye_height
                 );
-                if arena {
-                    # Every weapon the bot may hold, baked along its body's poses.
-                    library = catalog.source(source);
-                    if key not in rigs {
-                        rigs[key] = character_rig(library, bot.model, bot.skin);
-                    }
-                    for (weapon, weapon_model) in Q3_HELD_WEAPONS.items() {
-                        weapon_key = key + ":weapon:" + weapon;
-                        if weapon_key not in resources and library.exists(weapon_model) {
-                            held = load_character_weapon(library, rigs[key], weapon_model);
-                            resources[weapon_key] = ModelResource(name=weapon_key, model=held.model, skins=held.skins);
-                            world +>:HasModelResource:+> resources[weapon_key];
-                        }
-                        if weapon_key in resources {
-                            enemy +>:Arms:key=weapon:+> resources[weapon_key];
-                        }
-                    }
-                    if key + ":weapon:machinegun" in resources {
-                        enemy.weapon_visual = attach_model(enemy, resources[key + ":weapon:machinegun"]);
-                        enemy.weapon_visual.offset = enemy.visual.offset;
-                        enemy.shown_weapon = "machinegun";
-                    }
-                }
                 frames = resources[key].model.surfaces[0].frames;
                 pain_family = "";
                 death_family = "";
@@ -608,7 +603,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
         }
         # Q3 single player: the podium and every competitor's stand-in.
         if contest is not None {
-            prepare_podium(world, catalog.source("q3"), contest, resources, rigs);
+            prepare_podium(world, catalog.source("q3"), contest, resources, rigs, kits);
         }
     } finally {
         catalog.close();
@@ -629,7 +624,8 @@ def prepare_podium(
     library: AssetLibrary,
     contest: ArenaMatch,
     resources: dict[str, ModelResource],
-    rigs: dict[str, CharacterRig]
+    rigs: dict[str, CharacterRig],
+    kits: dict[str, WeaponKit]
 ) {
     podium_path = "models/mapobjects/podium/podium4.md3";
     if not library.exists(podium_path) {
@@ -646,17 +642,16 @@ def prepare_podium(
     actors = [contest->:Competes:->];
     for i in range(min(len(entries), len(actors))) {
         bot = actors[i];
-        if not isinstance(bot, Opponent) {
+        if not isinstance(bot, Opponent) or not isinstance(bot.visual, PlayerRig) {
             continue;
         }
-        bodies = [bot.visual->:UsesModel:->][?:ModelResource];
-        if not bodies or bodies[0].name not in rigs {
+        key = bot.visual.character;
+        if key not in rigs {
             continue;
         }
-        # Resource names are "q3:models/players/<model>:<skin>".
-        model = bodies[0].name.split(":")[1].split("/")[-1];
-        rig = rigs[bodies[0].name];
-        figure = podium_figure(bodies[0], None, "sound/player/" + model + "/taunt.wav", float(rig.animations[6][2]));
+        # Keys are "q3:models/players/<model>:<skin>".
+        model = key.split(":")[1].split("/")[-1];
+        figure = podium_figure(character_body(world, resources, rigs[key], key), "sound/player/" + model + "/taunt.wav");
         figure +>:Portrays:+> bot;
         podium +>:Poses(name=entries[i].name):+> figure;
     }
@@ -664,26 +659,21 @@ def prepare_podium(
     if key not in rigs {
         rigs[key] = character_rig(library, "sarge", "default");
     }
-    if key not in resources {
-        body = load_character(library, "sarge", "default");
-        resources[key] = ModelResource(name=key, model=body.model, skins=body.skins);
-        world +>:HasModelResource:+> resources[key];
-    }
-    human = podium_figure(resources[key], None, "sound/player/sarge/taunt.wav", float(rigs[key].animations[6][2]));
-    # The player's own body, seen only in mirrors and portals (LEGS_RUN rate).
-    reflection = player_body(resources[key], float(rigs[key].animations[15][2]));
+    kits = weapon_kits(world, library, resources, kits);
+    human = podium_figure(character_body(world, resources, rigs[key], key), "sound/player/sarge/taunt.wav");
+    # The player's own body, seen only in mirrors and portals.
+    reflection = player_body(character_body(world, resources, rigs[key], key));
     world +>:HasBody:+> reflection;
-    for (weapon, weapon_model) in Q3_HELD_WEAPONS.items() {
-        weapon_key = key + ":weapon:" + weapon;
-        if weapon_key not in resources and library.exists(weapon_model) {
-            held = load_character_weapon(library, rigs[key], weapon_model);
-            resources[weapon_key] = ModelResource(name=weapon_key, model=held.model, skins=held.skins);
-            world +>:HasModelResource:+> resources[weapon_key];
-        }
-        if weapon_key in resources {
-            human +>:Wields(key=weapon):+> resources[weapon_key];
-            reflection +>:Carries(key=weapon):+> resources[weapon_key];
-        }
+    for (weapon, kit) in kits.items() {
+        human +>:Wields(key=weapon):+> kit;
+        reflection +>:Carries(key=weapon):+> kit;
     }
     podium +>:Poses(human=True):+> human;
+}
+
+"""The directory of a model's player sounds; models without their own use
+Sarge's, as CG_LoadClientInfo falls back to the default model."""
+def player_voice(library: AssetLibrary, model: str) -> str {
+    voice = "sound/player/" + model + "/";
+    return voice if library.exists(voice + "pain100_1.wav") else "sound/player/sarge/";
 }

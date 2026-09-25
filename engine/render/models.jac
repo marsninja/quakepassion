@@ -128,7 +128,9 @@ obj ModelRenderer {
         fog: FogVolume | None = None,
         fog_image: int = 0,
         forward: Vec3 = Vec3(x=1.0),
-        alpha: float = 1.0
+        alpha: float = 1.0,
+        overlay: ModelRenderer | None = None,
+        inflate: float = 0.0
     ) {
         if not self.stages {
             return;
@@ -136,8 +138,36 @@ obj ModelRenderer {
         # A fading model (Q2 RF_TRANSLUCENT explosions) blends its opaque skins.
         fading = alpha < 0.999;
         opacity = u8(int(max(0.0, min(1.0, alpha)) * 255.0));
+        # A custom shader (Q3 powerup shells, invisibility) replaces every
+        # surface's stages, its vertices pushed out along their normals.
+        stage_list = self.stages;
+        if overlay is not None {
+            stage_list = overlay.stages;
+            fog = None;
+        }
         cosine = math.cos(yaw);
         sine = math.sin(yaw);
+        # A full model frame is applied component-wise, like the yaw rotation.
+        fx = cosine;
+        fy = sine;
+        fz = 0.0;
+        lx = -sine;
+        ly = cosine;
+        lz = 0.0;
+        ux = 0.0;
+        uy = 0.0;
+        uz = 1.0;
+        if basis is not None {
+            fx = basis.forward.x;
+            fy = basis.forward.y;
+            fz = basis.forward.z;
+            lx = basis.left.x;
+            ly = basis.left.y;
+            lz = basis.left.z;
+            ux = basis.up.x;
+            uy = basis.up.y;
+            uz = basis.up.z;
+        }
         view = eye.sub(origin);
         local_eye = Vec3(
             x=view.x * cosine + view.y * sine,
@@ -150,6 +180,17 @@ obj ModelRenderer {
         for s in range(len(self.model.surfaces)) {
             surface = self.model.surfaces[s];
             vertices = pose(surface, first, second, blend);
+            if inflate != 0.0 {
+                a = surface.frames[first].normals;
+                b = surface.frames[second].normals;
+                if len(a) == len(vertices) and len(b) == len(vertices) {
+                    fraction = max(0.0, min(1.0, blend));
+                    vertices = [
+                        vertices[i].add(a[i].lerp(b[i], fraction).scale(inflate))
+                        for i in range(len(vertices))
+                    ];
+                }
+            }
             colors: list[Vec3] = [];
             if illumination.enabled {
                 normals = surface.frames[first].normals;
@@ -162,20 +203,17 @@ obj ModelRenderer {
                             next_normals[vertex], max(0.0, min(1.0, blend))
                         ).normalized();
                         normal = Vec3(
-                            x=n.x * cosine - n.y * sine,
-                            y=n.x * sine + n.y * cosine,
-                            z=n.z
+                            x=n.x * fx + n.y * lx + n.z * ux,
+                            y=n.x * fy + n.y * ly + n.z * uy,
+                            z=n.x * fz + n.y * lz + n.z * uz
                         );
-                        if basis is not None {
-                            normal = basis.apply(n);
-                        }
                         color = illumination.shade(normal);
                     }
                     colors.append(color);
                 }
             }
-            for stage in self.stages {
-                if stage.surface != s {
+            for stage in stage_list {
+                if overlay is None and stage.surface != s {
                     continue;
                 }
                 if stage.two_sided {
@@ -248,16 +286,11 @@ obj ModelRenderer {
                             f32(u + seconds * stage.scroll_u),
                             f32(t + seconds * stage.scroll_v)
                         );
-                        if basis is not None {
-                            point = origin.add(basis.apply(v));
-                            rlVertex3f(f32(point.x), f32(point.y), f32(point.z));
-                        } else {
-                            rlVertex3f(
-                                f32(origin.x + v.x * cosine - v.y * sine),
-                                f32(origin.y + v.x * sine + v.y * cosine),
-                                f32(origin.z + v.z)
-                            );
-                        }
+                        rlVertex3f(
+                            f32(origin.x + v.x * fx + v.y * lx + v.z * ux),
+                            f32(origin.y + v.x * fy + v.y * ly + v.z * uy),
+                            f32(origin.z + v.x * fz + v.y * lz + v.z * uz)
+                        );
                     }
                 }
                 rlEnd();
@@ -289,10 +322,10 @@ obj ModelRenderer {
                 for triangle in range(len(surface.indices) // 3) {
                     for corner in [0, 2, 1] {
                         v = vertices[surface.indices[triangle * 3 + corner]];
-                        point = origin.add(basis.apply(v)) if basis is not None else Vec3(
-                            x=origin.x + v.x * cosine - v.y * sine,
-                            y=origin.y + v.x * sine + v.y * cosine,
-                            z=origin.z + v.z
+                        point = Vec3(
+                            x=origin.x + v.x * fx + v.y * lx + v.z * ux,
+                            y=origin.y + v.x * fy + v.y * ly + v.z * uy,
+                            z=origin.z + v.x * fz + v.y * lz + v.z * uz
                         );
                         st = fog_coords(fog, point, eye, forward);
                         rlTexCoord2f(f32(st[0]), f32(st[1]));
@@ -372,6 +405,9 @@ obj ModelScene {
     ) {
         scene = world spawn GatherModels(seconds=seconds);
         forward = forward_from(yaw, pitch);
+        # A rig's parts share one lighting origin (RF_LIGHTING_ORIGIN).
+        shared_origin: Vec3 | None = None;
+        shared_light = Illumination();
         for draw in scene.draws {
             if draw.resource.name in self.resources {
                 renderer = self.resources[draw.resource.name];
@@ -380,6 +416,22 @@ obj ModelScene {
                         draw.origin.sub(eye), renderer.radius, yaw, pitch, fov, aspect
                     ) {
                     continue;
+                }
+                lit_from = draw.light_origin;
+                illumination = shared_light;
+                if lit_from is None {
+                    illumination = lighting.sample(draw.origin.add(Vec3(z=16.0)));
+                } elif lit_from is not shared_origin {
+                    shared_origin = lit_from;
+                    shared_light = lighting.sample(lit_from.add(Vec3(z=16.0)));
+                    illumination = shared_light;
+                }
+                overlay: ModelRenderer | None = None;
+                if draw.shader {
+                    if draw.shader not in self.resources {
+                        continue;
+                    }
+                    overlay = self.resources[draw.shader];
                 }
                 renderer.draw(
                     draw.origin,
@@ -390,10 +442,16 @@ obj ModelScene {
                     eye,
                     seconds,
                     batched=True,
-                    illumination=lighting.sample(draw.origin.add(Vec3(z=16.0))),
-                    basis=model_basis(draw.yaw, draw.pitch, draw.roll)
-                        if draw.pitch != 0.0 or draw.roll != 0.0
-                        else None,
+                    overlay=overlay,
+                    inflate=draw.inflate,
+                    illumination=illumination,
+                    basis=draw.basis
+                        if draw.basis is not None
+                        else (
+                            model_basis(draw.yaw, draw.pitch, draw.roll)
+                                if draw.pitch != 0.0 or draw.roll != 0.0
+                                else None
+                        ),
                     fog=model_fog(fogs, draw.origin, renderer.radius),
                     fog_image=fog_image,
                     forward=forward

@@ -16,10 +16,13 @@ import from .damage { Damage, blast_strength }
 import from .powerups { damage_scale, fire_interval_scale, empowered, speed_scale }
 import from .arena { ChooseSpawn }
 import from .inventory { Inventory, quantity, AdjustInventory }
-import from .models { Visual, ModelResource, UsesModel }
+import from .models { Visual, ModelResource, UsesModel, PlayerRig }
+import from .player_rig { PoseRig, rig_sound, reset_rig }
+import from .body_queue { CorpseTick, leave_corpse }
+import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
-import from .bot_character { BotCharacter }
+import from .bot_character { BotCharacter, BotState }
 import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
@@ -114,6 +117,7 @@ node Opponent(Player) {
         patrol_speed: float = 0.0,
         walk_animation: list[int] = [],
         character: BotCharacter | None = None,
+        bot_state: BotState = BotState(),
         weapon_slot: int = 2,
         weapon_wait: float = 0.0,
         weapon_change: float = 1.0,
@@ -822,7 +826,7 @@ def damage_opponent(
         if not victim.revived {
             victim.activation spawn Fire(inventory=inventory);
         }
-        victim.visual.visible = bool(victim.death_animation)
+        victim.visual.visible = (bool(victim.death_animation) or isinstance(victim.visual, PlayerRig))
             and not victim.rule.vanish_on_death;
         victim.attack_clock = -1.0;
         victim.attack_flash = 0.0;
@@ -862,6 +866,12 @@ def damage_opponent(
     }
     if damage.dealt <= 0 {
         return 0;
+    }
+    # Q3 players never stop to flinch: the body twitches and cries out
+    # (CG_PainEvent) while it keeps moving.
+    if isinstance(victim.visual, PlayerRig) {
+        victim.visual.hurt = True;
+        return damage.dealt;
     }
     rule = victim.rule;
     if victim.health < victim.max_health // 2 {
@@ -3171,6 +3181,42 @@ walker CombatTick {
         return best;
     }
 
+    """A Q3 body follows its bot the way bg_pmove.c animates every player:
+    legs from its movement, torso from its weapon, and cg_event.c's sounds
+    from where it stands."""
+    def pose_body(bot: Opponent, rig: PlayerRig, wish: Vec3) {
+        switching = "";
+        if bot.character is not None and bot.health > 0 {
+            if bot.weapon_change < 0.2 {
+                switching = "drop";
+            } elif bot.weapon_change < WEAPON_SWITCH_TIME {
+                switching = "raise";
+            }
+        }
+        hurt = rig.hurt;
+        rig.hurt = False;
+        pose = rig spawn PoseRig(
+            dt=self.dt,
+            grounded=bot.grounded,
+            velocity=bot.velocity,
+            wish=wish,
+            yaw=bot.yaw,
+            pitch=bot.pitch,
+            water_depth=bot.water_depth,
+            crouched=bot.crouched,
+            alive=bot.health > 0,
+            health=bot.health,
+            hurt=hurt,
+            switching=switching,
+            ready=bot.weapon_wait <= 0.0,
+            shots=rig.shots,
+            haste=empowered(bot, "haste")
+        );
+        for cue in pose.sounds {
+            request_sound(bot, rig_sound(rig, cue));
+        }
+    }
+
     can begin with World entry {
         self.world = here;
         # The level's AAS mesh, looked up once per level.
@@ -3202,6 +3248,7 @@ walker CombatTick {
         live = self.player.health > 0 or self.arena_live;
         if self.active and live { self.state.navigation.advance(); }
         here spawn ParticleTick(dt=self.dt);
+        here spawn CorpseTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
         self.state.noise = max(0.0, self.state.noise - self.dt);
         self.state.sight_wait = max(0.0, self.state.sight_wait - self.dt);
@@ -3285,6 +3332,14 @@ walker CombatTick {
             if dropped is not None {
                 dropped.visible = False;
             }
+            corpse = here.visual;
+            if isinstance(corpse, PlayerRig) {
+                # TossClientItems as the body starts to fall.
+                if corpse.alive and self.world is not None {
+                    toss_items(self.world, here, here.shown_weapon, self.collision, here.eye_height);
+                }
+                self.pose_body(here, corpse, Vec3());
+            }
             gibs = here.gib_rule;
             if here.pending_gibs >= 0 and gibs is not None and self.world is not None {
                 throw_gibs(
@@ -3306,7 +3361,7 @@ walker CombatTick {
                 landing = body.lerp(body.sub(Vec3(z=128.0)), floor.fraction);
                 item.pos = landing.add(Vec3(z=15.0 if here.game == "q2" else 0.0));
                 item.active = True;
-                item.dropped = True;
+                item.released = True;
                 item.visual.visible = True;
                 area = area_of(here);
                 if area is not None {
@@ -3375,8 +3430,9 @@ walker CombatTick {
                     spawn_yaw = spot.yaw;
                 }
             }
-            if destination.sub(self.player.pos).length() < 80.0 {
-                return;
+            # CopyToBodyQue: the old body stays where it fell.
+            if isinstance(corpse, PlayerRig) and self.world is not None {
+                leave_corpse(self.world, here, corpse);
             }
             # g_client.c ClientSpawn: 25 over maximum, empty armor and inventory.
             here.health = here.max_health + 25;
@@ -3390,13 +3446,30 @@ walker CombatTick {
             here.foe = None;
             here.alert = 0.0;
             here.yaw = spawn_yaw;
+            here.pitch = 0.0;
+            here.crouched = False;
+            here.bot_state = BotState();
             here.pose_name = "";
             here.pos = destination;
+            # g_client.c ClientSpawn: G_KillBox telefrags whoever stands there.
+            if self.world is not None {
+                self.world spawn KillBox(
+                    mover=here,
+                    origin=destination.sub(Vec3(z=here.eye_height)),
+                    game="q3",
+                    bystander=self.player,
+                    bystander_height=self.collision.eye_height,
+                    tally=self.state
+                );
+            }
             here.route = [];
             here.route_areas = [];
             here.route_wait = 0.0;
             here.velocity = Vec3();
             here.visual.visible = True;
+            if isinstance(corpse, PlayerRig) {
+                reset_rig(corpse, math.degrees(spawn_yaw));
+            }
             here.attack_wait = 1.0;
             here.attack_profile = -1;
             here.leaping = False;
@@ -3864,6 +3937,10 @@ walker CombatTick {
         # Idle patrols walk at the original walk-cycle pace; anything else runs.
         strolling = here.patrol_goal is not None and here.alert <= 0.0;
         here.walk_speed = here.rule.speed;
+        # bg_pmove.c pm_duckScale: crouching Q3 bots move at a quarter speed.
+        if here.crouched and here.character is not None {
+            here.walk_speed *= 0.25;
+        }
         if strolling {
             here.walk_speed = here.patrol_speed
                 if here.patrol_speed > 0.0
@@ -3882,7 +3959,7 @@ walker CombatTick {
         if facing is None and here.alert > 0.0 {
             facing = here.last_seen;
         }
-        if facing is not None and not here.fighting {
+        if facing is not None and not here.fighting and here.character is None {
             goal = facing.sub(here.pos);
             target_yaw = math.atan2(goal.y, goal.x);
             turn = math.atan2(
@@ -3988,6 +4065,11 @@ walker CombatTick {
                     here.leaping = False;
                 }
             }
+        }
+        rig = here.visual;
+        if isinstance(rig, PlayerRig) {
+            self.pose_body(here, rig, wish);
+            return;
         }
         pose_name = "attack"
             if here.attack_flash > 0.0

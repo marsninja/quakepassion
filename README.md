@@ -67,8 +67,9 @@ OpenGL/X11 development dependencies. Graphical validation is performed on macOS.
 The old `.jac/compiler` directory is no longer selected by this project and can
 be removed. Compiler patches and the Python staging helper have been retired.
 
-Controls: **WASD** moves, **Space/Shift** moves vertically, **Tab** or a click
-captures the mouse, and arrow keys also turn. **C** toggles PVS culling, **F3**
+Controls: **WASD** moves, **Space/Shift** moves vertically, a click or the
+console key (**`**) captures the mouse (**`** or Escape releases it), arrow keys
+also turn, and holding **Tab** (or **F1**) shows the arena scoreboard. **C** toggles PVS culling, **F3**
 toggles the overlay, and **Escape** opens/closes the level menu. Walking is the default
 in all three games. **F4** toggles free flight through walls and **Space** jumps
 while walking; `QP_WALK=0 ./qp` starts in fly mode. Ordinary proximity doors and supported touch-triggered doors open (including linked pairs); supported buttons and translating lifts now move, and lifts carry the player. Switching

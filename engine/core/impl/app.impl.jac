@@ -338,7 +338,7 @@ impl App.render_frame() {
                         or contest.finished
                         or contest.warmup > 0.0
                 ) {
-                footer = "F1: scores";
+                footer = "Tab: scores";
                 if contest.finished {
                     rows = standings(contest);
                     footer = (
@@ -374,7 +374,7 @@ impl App.render_frame() {
                             if self.walking
                             else "WASD / Space / Shift: fly"
                     )
-                        + " | Tab: mouse | F3: overlay",
+                        + " | `: mouse | Tab: scores | F3: overlay",
                     self.movement_status
                 ]
             );
@@ -404,9 +404,9 @@ impl App.render_frame() {
     if self.overlay {
         cur_name = cur.name if cur is not None else "the void";
         culling_state = "ON" if self.culling else "OFF";
-        mouse_state = "captured [Tab releases]"
+        mouse_state = "captured [` releases]"
             if mouse_captured()
-            else "free - click or Tab to look";
+            else "free - click or ` to look";
         self.renderer.draw_overlay(
             [
                 "area: " + cur_name,
@@ -897,8 +897,20 @@ impl App.step() -> bool {
             self.quake.animate_styles(self.level, styles.values);
         }
         # Sbar_DrawFace shows the pain face briefly after each hit.
-        if self.player.health < self.pain_health {
+        hurt = self.player.health < self.pain_health;
+        if hurt {
             self.pain_time = 0.2;
+        }
+        if self.level.bsp.game == "q3" and self.player.health <= 0 and self.pain_health > 0 {
+            # g_combat.c player_die: TossClientItems.
+            toss_items(self.world, self.player, selected_weapon(self.combat).key, self.level.collision, self.level.collision.eye_height);
+        }
+        if self.level.bsp.game == "q3" {
+            # cg_event.c: the player's own body cues its pain, death, jumps,
+            # landings and footsteps in its character's voice.
+            for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots) {
+                self.audio.play_path(cue);
+            }
         }
         self.pain_health = self.player.health;
         self.pain_time = max(0.0, self.pain_time - dt);
@@ -1171,9 +1183,8 @@ impl App.step() -> bool {
             if self.campaign_complete {
                 break;
             }
-            # Q1 and Q2 pain is voiced by VoiceTick; Q3's player sounds
-            # belong to its player model.
-            if self.player.health < old_health and self.level.bsp.game not in ["q1", "q2"] {
+            # Q1 and Q2 pain is voiced by VoiceTick, Q3's by its player model.
+            if self.player.health < old_health and self.level.bsp.game not in ["q1", "q2", "q3"] {
                 self.audio.play(1);
             }
             if not warming and weapon_input(
@@ -1622,6 +1633,7 @@ impl App.refresh_settings() {
         "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%",
         "God mode: " + ("On" if self.god_mode else "Off"),
         "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare"][max(0, min(3, self.skill))]
+            + " (Q3: " + ["I Can Win", "Bring It On", "Hurt Me Plenty", "Hardcore"][max(0, min(3, self.skill))] + ")"
     ];
 }
 
@@ -2028,6 +2040,13 @@ impl App.respawn_arena_player() {
         player.yaw = spot.yaw;
     }
     move_to_area(player, self.level.areas[self.level.locate(player.pos)]);
+    # g_client.c ClientSpawn: G_KillBox telefrags a bot standing on the spot.
+    self.world spawn KillBox(
+        mover=player,
+        origin=player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+        game="q3",
+        tally=self.combat
+    );
     self.combat.cooldown = 0.5;
     self.combat.grenade_phase = 0;
     self.awaiting_respawn = False;
@@ -2062,7 +2081,7 @@ impl App.render_portal(faces: list[int]) {
     p = self.player;
     # RF_THIRD_PERSON: the player's body shows only in the portal view.
     here = self.level.areas[self.level.locate(p.pos)] if self.level.areas else None;
-    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, True, here);
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, True, here, self.combat.shots);
     draw_portal_view(
         self.portal_target,
         self.level,

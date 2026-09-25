@@ -1,21 +1,38 @@
-"""Adapt Q3's tagged player parts to the engine's shared animated model format."""
+"""Q3 player characters: their tagged part models, animation table and sounds,
+and the weapons they hold, loaded as the original client registers them."""
 import from engine.assets.library { AssetLibrary, ModelAsset }
 import from engine.formats.q3.model { parse_md3 }
-import from engine.formats.animated { AnimatedModel, AnimatedSurface, AnimationFrame, ModelTag }
 import from engine.formats.bsp { Texture }
+import from engine.formats.animated { AnimatedModel, AnimatedSurface }
+import from engine.world.world { World }
+import from engine.world.models { ModelResource, HasModelResource, AnimationClip, WeaponKit, KitPart, PlayerRig }
+import from engine.world.player_rig { rig_clips, dress_rig }
 import from engine.math.vec3 { Vec3 }
 
-
-def tag_at(model: AnimatedModel, frame: int, name: str) -> ModelTag {
-    if frame < 0 or frame >= len(model.tags) { raise ValueError("Invalid player tag frame"); }
-    for tag in model.tags[frame].tags { if tag.name == name { return tag; } }
-    raise ValueError("Missing player attachment: " + name);
-}
-
-def transform(tag: ModelTag, vector: Vec3, normal: bool = False) -> Vec3 {
-    result = tag.axes[0].scale(vector.x).add(tag.axes[1].scale(vector.y)).add(tag.axes[2].scale(vector.z));
-    return result if normal else result.add(tag.origin);
-}
+# The world models each held weapon uses, and cg_weapons.c CG_RegisterWeapon's
+# muzzle flash light colours.
+glob Q3_HELD_WEAPONS: dict[str, str] = {
+    "gauntlet": "models/weapons2/gauntlet/gauntlet.md3",
+    "machinegun": "models/weapons2/machinegun/machinegun.md3",
+    "shotgun": "models/weapons2/shotgun/shotgun.md3",
+    "grenadelauncher": "models/weapons2/grenadel/grenadel.md3",
+    "rocketlauncher": "models/weapons2/rocketl/rocketl.md3",
+    "lightning": "models/weapons2/lightning/lightning.md3",
+    "railgun": "models/weapons2/railgun/railgun.md3",
+    "plasmagun": "models/weapons2/plasma/plasma.md3",
+    "bfg": "models/weapons2/bfg/bfg.md3"
+};
+glob Q3_FLASH_LIGHTS: dict[str, Vec3] = {
+    "gauntlet": Vec3(x=0.6, y=0.6, z=1.0),
+    "machinegun": Vec3(x=1.0, y=1.0, z=0.0),
+    "shotgun": Vec3(x=1.0, y=1.0, z=0.0),
+    "grenadelauncher": Vec3(x=1.0, y=0.7, z=0.0),
+    "rocketlauncher": Vec3(x=1.0, y=0.75, z=0.0),
+    "lightning": Vec3(x=0.6, y=0.6, z=1.0),
+    "railgun": Vec3(x=1.0, y=0.5, z=0.0),
+    "plasmagun": Vec3(x=0.6, y=0.6, z=1.0),
+    "bfg": Vec3(x=1.0, y=0.7, z=1.0)
+};
 
 def player_part(
     library: AssetLibrary, part: str, character: str = "sarge", skin: str = "default"
@@ -46,99 +63,148 @@ def player_part(
     return ModelAsset(model=model, skins=skins);
 }
 
-"""A Q3 player's animation table and tagged parts, loaded once and baked into
-the body and into each weapon it can hold."""
+"""A Q3 character as CG_ParseAnimationFile reads it: the three part models,
+the animation table (`animations` rows are [first, count, fps] as listed; the
+clips are the client's, with legs frames shifted past the torso-only ones),
+and its footstep sound type."""
 obj CharacterRig {
     has lower: ModelAsset,
         upper: ModelAsset,
         head: ModelAsset,
         animations: list[list[int]],
-        offset: int;
+        clips: list[AnimationClip] = [],
+        footsteps: str = "step",
+        sex: str = "m",
+        offset: int = 0;
 }
+
+# cg_main.c footstep sound names by animation.cfg footsteps type.
+glob Q3_FOOTSTEP_NAMES: dict[str, str] = {
+    "default": "step",
+    "normal": "step",
+    "boot": "boot",
+    "flesh": "flesh",
+    "mech": "mech",
+    "energy": "energy"
+};
 
 def character_rig(library: AssetLibrary, character: str = "sarge", skin: str = "default") -> CharacterRig {
     animations: list[list[int]] = [];
+    rows: list[list[float]] = [];
+    footsteps = "step";
+    sex = "m";
     config = "models/players/" + character + "/animation.cfg";
     for line in library.read(config).decode("utf-8").splitlines() {
         fields = line.split("//")[0].split();
-        if len(fields) >= 4 and fields[0] and fields[0][0] in "0123456789" {
+        if not fields {
+            continue;
+        }
+        keyword = fields[0].lower();
+        if keyword == "footsteps" and len(fields) >= 2 {
+            footsteps = Q3_FOOTSTEP_NAMES.get(fields[1].lower(), "step");
+        } elif keyword == "sex" and len(fields) >= 2 {
+            sex = fields[1].lower()[:1];
+        } elif len(fields) >= 4 and fields[0][0] in "0123456789" and len(rows) < 25 {
             animations.append([int(fields[0]), int(fields[1]), int(fields[3])]);
+            rows.append([float(fields[0]), float(fields[1]), float(fields[2]), float(fields[3])]);
         }
     }
-    if len(animations) < 25 { raise ValueError("Incomplete player animations"); }
+    if len(rows) < 25 { raise ValueError("Incomplete player animations"); }
+    # Legs-only sequences skip the torso-only frames lower.md3 lacks.
+    offset = animations[13][0] - animations[6][0];
+    for i in range(13, 25) {
+        rows[i][0] = rows[i][0] - float(offset);
+    }
     return CharacterRig(
         lower=player_part(library, "lower", character, skin),
         upper=player_part(library, "upper", character, skin),
         head=player_part(library, "head", character, skin),
         animations=animations,
-        offset=animations[13][0] - animations[6][0]
+        clips=rig_clips(rows),
+        footsteps=footsteps,
+        sex=sex,
+        offset=offset
     );
 }
 
-"""Bake parts into single-surface poses (stand, run, attack, BOTH_DEATH1 and the
-TORSO_GESTURE taunt over idle legs),
-joined through their MD3 tags. Roles: 0 legs, 1 torso, 2 head, 3 a weapon on
-the torso's tag_weapon."""
-def bake_parts(rig: CharacterRig, roles: list[int], parts: list[ModelAsset]) -> ModelAsset {
-    animations = rig.animations;
-    model = AnimatedModel();
-    skins: list[Texture] = [];
-    for p in range(len(parts)) {
-        part = roles[p];
-        source = parts[p];
-        for surface in source.model.surfaces {
-            output = AnimatedSurface(name=surface.name, indices=surface.indices, uv=surface.uv, stages=surface.stages);
-            for action in ["stand", "run", "attack", "death", "gesture"] {
-                legs = 15 if action == "run" else 22;
-                torso = 7 if action == "attack" else (6 if action == "gesture" else 11);
-                count = abs(animations[legs][1]) if action == "run" else (
-                    abs(animations[torso][1]) if action in ["attack", "gesture"] else 1
-                );
-                if action == "death" {
-                    count = abs(animations[0][1]);
-                }
-                for frame in range(count) {
-                    leg_frame = animations[legs][0] - rig.offset + (frame if action == "run" else 0);
-                    torso_frame = animations[torso][0] + (frame if action in ["attack", "gesture"] else 0);
-                    # BOTH_* sequences share frame numbers across legs and torso.
-                    if action == "death" {
-                        leg_frame = animations[0][0] + frame;
-                        torso_frame = leg_frame;
-                    }
-                    index = leg_frame if part == 0 else (torso_frame if part == 1 else 0);
-                    if index < 0 or index >= len(surface.frames) { raise ValueError("Player animation out of range"); }
-                    original = surface.frames[index];
-                    pose = AnimationFrame(name=action + str(frame));
-                    torso_tag = tag_at(rig.lower.model, leg_frame, "tag_torso");
-                    head_tag = tag_at(rig.upper.model, torso_frame, "tag_weapon" if part == 3 else "tag_head");
-                    for vertex in original.vertices {
-                        point = transform(head_tag, vertex) if part >= 2 else vertex;
-                        pose.vertices.append(transform(torso_tag, point) if part > 0 else point);
-                    }
-                    for normal in original.normals {
-                        point = transform(head_tag, normal, True) if part >= 2 else normal;
-                        pose.normals.append(transform(torso_tag, point, True) if part > 0 else point);
-                    }
-                    output.frames.append(pose);
-                }
-            }
-            model.surfaces.append(output);
-        }
-        skins.extend(source.skins);
+"""The world's shared model resource for `key`, registered once."""
+def shared_resource(world: World, resources: dict[str, ModelResource], key: str, asset: ModelAsset) -> ModelResource {
+    if key not in resources {
+        resources[key] = ModelResource(name=key, model=asset.model, skins=asset.skins);
+        world +>:HasModelResource:+> resources[key];
     }
-    return ModelAsset(model=model, skins=skins);
+    return resources[key];
 }
 
-"""A Q3 player's body: legs, torso and head."""
-def load_character(
-    library: AssetLibrary, character: str = "sarge", skin: str = "default"
-) -> ModelAsset {
-    rig = character_rig(library, character, skin);
-    return bake_parts(rig, [0, 1, 2], [rig.lower, rig.upper, rig.head]);
+"""A body for one character, wearing its shared part models. `key` is
+"q3:models/players/<model>:<skin>"; each part adds ":lower", ":upper" or
+":head"."""
+def character_body(
+    world: World,
+    resources: dict[str, ModelResource],
+    rig: CharacterRig,
+    key: str,
+    seed: int = 1
+) -> PlayerRig {
+    body = dress_rig(
+        rig.clips,
+        shared_resource(world, resources, key + ":lower", rig.lower),
+        shared_resource(world, resources, key + ":upper", rig.upper),
+        shared_resource(world, resources, key + ":head", rig.head),
+        seed
+    );
+    body.character = key;
+    body.footsteps = rig.footsteps;
+    return body;
 }
 
-"""A weapon held in a Q3 player's hand, baked along the body's poses so the
-two animate frame for frame."""
-def load_character_weapon(library: AssetLibrary, rig: CharacterRig, weapon_model: str) -> ModelAsset {
-    return bake_parts(rig, [3], [library.model(weapon_model)]);
+"""Every weapon's world models (cg_weapons.c CG_RegisterWeapon: the gun, and
+its _barrel and _flash models where they exist), shared by every body."""
+def weapon_kits(
+    world: World,
+    library: AssetLibrary,
+    resources: dict[str, ModelResource],
+    kits: dict[str, WeaponKit]
+) -> dict[str, WeaponKit] {
+    for (weapon, path) in Q3_HELD_WEAPONS.items() {
+        if weapon in kits or not library.exists(path) {
+            continue;
+        }
+        kit = WeaponKit(
+            key=weapon,
+            light=Q3_FLASH_LIGHTS.get(weapon, Vec3(x=1.0, y=1.0, z=1.0)),
+            continuous=weapon in ["lightning", "gauntlet"]
+        );
+        kit +>:KitPart(role="weapon"):+> shared_resource(world, resources, "q3:" + path, library.model(path));
+        for role in ["barrel", "flash"] {
+            extra = path[:-4] + "_" + role + ".md3";
+            if library.exists(extra) {
+                kit +>:KitPart(role=role):+> shared_resource(world, resources, "q3:" + extra, library.model(extra));
+            }
+        }
+        kits[weapon] = kit;
+    }
+    return kits;
+}
+
+"""Q3's powerup shaders (quad, regeneration and battle suit shells and the
+invisibility shader, cg_main.c CG_RegisterGraphics) as model resources the
+renderer draws bodies and weapons with."""
+def powerup_shells(world: World, library: AssetLibrary, resources: dict[str, ModelResource]) {
+    for shader in [
+        "powerups/quad", "powerups/regen", "powerups/battleSuit", "powerups/invisibility",
+        "powerups/quadWeapon", "powerups/battleWeapon"
+    ] {
+        key = "shader:" + shader;
+        if key in resources {
+            continue;
+        }
+        stages = library.pk3.model_stages(shader, True);
+        if not stages {
+            continue;
+        }
+        model = AnimatedModel(surfaces=[AnimatedSurface(name=shader, stages=stages)]);
+        resources[key] = ModelResource(name=key, model=model, skins=[stages[0].texture]);
+        world +>:HasModelResource:+> resources[key];
+    }
 }

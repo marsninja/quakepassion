@@ -2,7 +2,8 @@
 import math;
 import from .weapons { weapon_rules }
 import from engine.world.signals { Signal, HasSignal }
-import from engine.world.pickups { PickupRule, Pickup, HasPickup }
+import from engine.world.pickups { PickupRule, Pickup, HasPickup, ItemTeam, TeamMember, InTeam }
+import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs }
 import from engine.world.powerups { powerup_rule }
 import from engine.world.models {
     ModelResource,
@@ -691,6 +692,7 @@ def item_spin(game: str, rule: PickupRule, flags: int) -> float {
 def populate_pickups(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
+    teams: dict[str, ItemTeam] = {};
     count = 0;
     try {
         for index in range(len(level.bsp.entities)) {
@@ -715,10 +717,6 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                     else 0
             );
             if rule is None {
-                continue;
-            }
-            # Team selection still needs linked randomized respawn semantics.
-            if fields.get("team", "") {
                 continue;
             }
             flags = int(fields.get("spawnflags", "0"));
@@ -787,6 +785,8 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 pos=position,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
                 respawn=respawn,
+                jitter=max(0.0, float(fields.get("random", "0"))) if level.bsp.game == "q3" else 0.0,
+                seed=1 + index * 7919,
                 active=not waiting_for_use,
                 waiting_for_use=waiting_for_use,
                 activate_on_use=waiting_for_use or level.bsp.game == "q3",
@@ -811,10 +811,27 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 pickup.visual.bob = 4.0;
                 pickup.visual.bob_rate = 5.0 + float(index) * 0.01;
             }
+            # G_FindTeams: the first item of a team is present, the rest wait
+            # for RespawnItem to pick them.
+            team_name = fields.get("team", "") if level.bsp.game == "q3" else "";
+            if team_name {
+                if team_name not in teams {
+                    teams[team_name] = ItemTeam(name=team_name, seed=1 + index * 48271);
+                } else {
+                    pickup.benched = True;
+                    pickup.active = False;
+                    pickup.remaining = 0.0;
+                }
+                teams[team_name] +>:TeamMember:+> pickup;
+                pickup +>:InTeam:+> teams[team_name];
+            }
             pickup.visual.visible = pickup.active;
             move_to_area(pickup, level.areas[level.locate(position)]);
             world +>:HasPickup:+> pickup;
             count += 1;
+        }
+        if level.bsp.game == "q3" {
+            prepare_drops(world, catalog, resources);
         }
     } finally {
         catalog.close();
@@ -853,3 +870,40 @@ def monster_drop(game: str, kind: str, fields: dict[str, str]) -> PickupRule | N
     return None;
 }
 
+# The weapons and powerups g_combat.c TossClientItems can throw.
+glob Q3_DROPPABLE: list[str] = [
+    "weapon_shotgun", "weapon_grenadelauncher", "weapon_rocketlauncher", "weapon_lightning",
+    "weapon_railgun", "weapon_plasmagun", "weapon_bfg",
+    "item_quad", "item_enviro", "item_haste", "item_invis", "item_regen", "item_flight"
+];
+
+"""Every item a dying Q3 player may drop, with its models loaded now so the
+renderer has them before any are thrown."""
+def prepare_drops(world: World, catalog: AssetCatalog, resources: dict[str, ModelResource]) {
+    for classname in Q3_DROPPABLE {
+        rule = pickup_rule("q3", {"classname": classname});
+        if rule is None {
+            continue;
+        }
+        names = ["q3:" + rule.model + ":" + str(rule.skin)];
+        if rule.extra_model {
+            names.append("q3:" + rule.extra_model + ":0");
+        }
+        drop = ItemDrop(kind=rule.powerup if rule.kind == "powerup" else rule.kind, rule=rule, bob=4.0);
+        for name in names {
+            if name not in resources {
+                parts = name.rsplit(":", 1);
+                source = parts[0][len("q3:"):];
+                if not catalog.source("q3").exists(source) {
+                    continue;
+                }
+                loaded = catalog.model(parts[0], int(parts[1]));
+                resources[name] = ModelResource(name=name, model=loaded.model, skins=loaded.skins);
+                world +>:HasModelResource:+> resources[name];
+            }
+            drop +>:DropsAs:+> resources[name];
+        }
+        drop.spin = item_spin("q3", rule, resources[names[0]].model.flags) if names[0] in resources else 0.0;
+        world +>:HasItemDrop:+> drop;
+    }
+}

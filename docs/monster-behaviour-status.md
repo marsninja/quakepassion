@@ -92,7 +92,7 @@ its target, so fights are spent moving between attacks.
   damage from its 100 cells. It is off while the brain ducks.
 - Q1 grunts, enforcers and ogres drop a backpack with 5 shells, 5 cells or 2
   rockets (`DropBackpack`). Q2 monsters drop their `item` key (`Drop_Item`).
-  Drops are hidden `Pickup`s linked by `Drops` edges and revealed where the
+  Drops are hidden `Pickup`s linked by `Drops` edges (marked `released` once shown) and revealed where the
   monster falls.
 - The supertank, boss2 and Jorg blow apart into metal and meat once their death
   animation ends (`BossExplode`).

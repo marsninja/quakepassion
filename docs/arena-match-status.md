@@ -27,13 +27,15 @@ spawns.
 - The player respawns with fire or jump after 1.7 s, and automatically after
   20 s, at the furthest spawn with the standard loadout. The match keeps running
   meanwhile.
-- **F1** shows the scoreboard, which also appears during the countdown, while
+- **Tab** (or **F1**) shows the scoreboard, which also appears during the countdown, while
   dead and at match end. At the end, **Enter** advances a winner to the next
   ladder arena, or starts a rematch otherwise.
 - The level menu lists Q3's ladder first (training, tiers, final), with arena
   names and the best finish from `~/.quakepassion-arena.txt`.
-- Bot characters are baked from their own models and skins and now include
-  `BOTH_DEATH1`, so fallen bots play their death sequence.
+- Bots use their own models and skins as three-part animated bodies (see
+  [Q3 player bodies](player-bodies-status.md)).
+- `ClientSpawn`'s `G_KillBox` telefrags anyone on the spawn spot when a bot
+  or the player respawns.
 
 Snapshot format **19** stores the match clock, countdown, lead state and every
 competitor's frags and deaths.

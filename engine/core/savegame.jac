@@ -344,7 +344,11 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             );
         }
     }
+    # Dropped items are transient and not saved; a benched team member is.
     for pickup in [world->:HasPickup:->][?:Pickup] {
+        if pickup.dropped {
+            continue;
+        }
         lines.append(
             "P "
                 + numbers(
@@ -353,7 +357,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         pickup.remaining,
                         1.0 if pickup.waiting_for_use else 0.0,
                         1.0 if pickup.activate_on_use else 0.0,
-                        1.0 if pickup.dropped else 0.0,
+                        1.0 if pickup.benched else 0.0,
+                        1.0 if pickup.released else 0.0,
                         pickup.pos.x,
                         pickup.pos.y,
                         pickup.pos.z
@@ -583,7 +588,7 @@ def restore(
     l = 0;
     teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
     k = 0;
-    pickups = [world->:HasPickup:->][?:Pickup];
+    pickups = [pickup for pickup in [world->:HasPickup:->][?:Pickup] if not pickup.dropped];
     doors = [world->:HasDoor:->][?:Door];
     signals = [world->:HasSignal:->][?:Signal];
     for signal in signals {
@@ -972,12 +977,13 @@ def restore(
                 boss_pose(enemy);
             }
         } elif words[0] == "P" and p < len(pickups) {
-            row = values(" ".join(words[1:]), 8);
+            row = values(" ".join(words[1:]), 9);
             if row[0] not in [0.0, 1.0]
                 or row[1] < 0.0
                 or row[2] not in [0.0, 1.0]
                 or row[3] not in [0.0, 1.0]
                 or row[4] not in [0.0, 1.0]
+                or row[5] not in [0.0, 1.0]
                 or (row[0] != 0.0 and row[2] != 0.0) {
                 raise ValueError("Invalid saved pickup");
             }
@@ -987,11 +993,12 @@ def restore(
             item.remaining = row[1];
             item.waiting_for_use = row[2] != 0.0;
             item.activate_on_use = row[3] != 0.0;
+            item.benched = row[4] != 0.0;
             item.visual.visible = item.active;
             # An item a dead monster already dropped stays where it fell.
-            if row[4] != 0.0 {
-                item.dropped = True;
-                item.pos = Vec3(x=row[5], y=row[6], z=row[7]);
+            if row[5] != 0.0 {
+                item.released = True;
+                item.pos = Vec3(x=row[6], y=row[7], z=row[8]);
                 for owner in [item<-:Drops:<-][?:Opponent] {
                     owner del --> item;
                 }

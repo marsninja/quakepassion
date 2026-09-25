@@ -6,7 +6,7 @@ import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick
 import from engine.world.arena { MatchTick, SpawnPoint, HasSpawn, match_of, standings }
 import from engine.world.bot_tactics { BotTactics }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.models { UsesModel, ModelResource }
+import from engine.world.models { ModelResource, PlayerRig, Wears, Holds, WeaponKit }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
 import from games.weapons { equip_player }
@@ -28,9 +28,11 @@ with entry {
         assert len(bots) == scenario[1];
         assert len([world->:HasSpawn:->][?:SpawnPoint]) >= 4;
         names = [row.name for row in standings(contest)];
+        # Every bot wears its three tagged parts and holds a weapon.
         for bot in bots {
-            resources = [bot.visual->:UsesModel:->][?:ModelResource];
-            assert resources and bot.death_animation and bot.animation;
+            rig = bot.visual;
+            assert isinstance(rig, PlayerRig) and len(rig.clips) == 27;
+            assert len([rig->:Wears:->][?:ModelResource]) == 3 and [rig->:Holds:->][?:WeaponKit];
         }
         # A spectator player far away lets the bots fight among themselves.
         player = Player(health=0, pos=Vec3(z=-100000.0));

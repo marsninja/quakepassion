@@ -42,11 +42,15 @@ character and weapon-weight files. Each bot's AI follows `ai_dmq3.c`.
     skills 1 and 4 (or 4 and 5), as `be_ai_char.c` does.
   - Missing characteristics come from `bots/default_c.c`.
   - Weapon weights come from the `W_*` defines in the character's `_w.c` file.
-- The game's four skills map onto Q3's five: Easy → Bring It On, Normal → Hurt
-  Me Plenty, Hard → Hardcore, Nightmare → Nightmare!
+- The game's four skills map onto Q3's first four: Easy → I Can Win, Normal →
+  Bring It On (`g_spSkill`'s default), Hard → Hurt Me Plenty, Nightmare →
+  Hardcore. The settings menu shows both names. Nightmare! is not reachable.
+- `G_AddBot`'s handicap applies: 50, 70 and 90 at skills 1-3. It is the bot's
+  maximum health (it spawns with 25 more), caps its health pickups, and scales
+  the damage it deals.
 - Characteristics used: aim skill and accuracy (including per weapon), reaction
-  time, fire throttle, view factor and maximum turn rate, attack skill, jumper
-  and alertness.
+  time, fire throttle, view factor and maximum turn rate, attack skill, jumper,
+  croucher and alertness.
 
 ## Combat (`engine/world/bot_tactics.jac`)
 
@@ -61,8 +65,13 @@ character and weapon-weight files. Each bot's AI follows `ai_dmq3.c`.
     splash weapons aim at the floor under a grounded enemy.
   - Accuracy adds the original 20/20/10-unit random error.
   - Aim is worse at an enemy that just changed direction.
-- **Turning:** `BotChangeViewAngles`. The view turns by the remaining angle
-  times the view factor, capped at the character's maximum turn rate.
+- **Turning:** `BotChangeViewAngles`'s "over reaction" model, stepped every
+  50 ms server frame and drawn smoothly between frames. Against an enemy it
+  uses the character's view factor and maximum turn rate; otherwise a slow
+  0.05 and 360 degrees a second.
+- **Looking:** in battle, at the aim point. Otherwise, at the point 300 units
+  along the route (`BotMovementViewTarget`), so roaming bots face where they
+  go.
 - **Firing** (`BotCheckAttack`): a bot waits out its reaction time and the fire
   throttle, fires only when the target is within its field of fire (50°, or
   120° up close), and uses the gauntlet only within 60 units.
@@ -71,9 +80,28 @@ character and weapon-weight files. Each bot's AI follows `ai_dmq3.c`.
     beams.
   - Rockets, grenades, plasma and BFG shots are owned projectiles, so a bot's
     splash can hurt itself and cost a frag.
-- **Movement** (`BotAttackMove`): bots keep the ideal attack distance, strafe
-  with attack skill (never off a ledge), and jump as their jumper
-  characteristic likes.
+- **Battle nodes** (`ai_dmnet.c`, simplified), from `BotAggression`:
+  - **Fight** when well armed. Movement is `BotAttackMove`.
+  - **Retreat** when outgunned (`BotWantsToRetreat`), for example holding only
+    the machine gun or hurt without armor. The bot follows its item route,
+    aiming and shooting back at a visible enemy. Q3 only aims back above 0.3
+    attack skill, but with `G_AddBot`'s handicap a skill 1-2 bot's health stays
+    under `BotAggression`'s 60/80 marks, so it would retreat for good and
+    never shoot (Ranger on q3dm1 at Normal did not). Every skill aims back
+    here.
+  - **Nearby goal** (`Battle_NBG`): every second a retreating bot looks for a
+    wanted item within 1.5 s of travel and grabs it.
+  - **Chase**: an enemy lost from sight is chased to its last position for up
+    to 10 s when the bot is keen (`BotWantsToChase`). Otherwise the bot
+    returns to its goals.
+- **Movement** (`BotAttackMove`):
+  - Bots below 0.2 attack skill stand. Up to 0.4 they only close or open the
+    distance.
+  - Better bots strafe. The direction flips with a 6.5% chance per think after
+    0.4-0.6 s, and whenever the way is blocked (a wall or a ledge). They back
+    off one think in ten and keep the ideal distance.
+  - They jump when `random() < jumper`, at most once a second. They crouch for
+    `croucher × 5` s, moving at a quarter speed.
 - **Finding enemies** (`BotFindEnemy`): the search range grows with alertness.
   A new enemy must be inside a 90° view unless it is close or firing.
 
@@ -89,10 +117,32 @@ competitor's `Competes` edge.
 
 Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
 
+## Items
+
+- **Drops** (`engine/world/drops.jac`, `TossClientItems`): a dying bot or
+  player throws down the weapon it held and every powerup it carried. The
+  gauntlet, the machine gun and weapons without ammo stay. A powerup keeps the
+  seconds that were left. Dropped items never respawn and are removed after
+  30 s. Bots see them as goals.
+- **Item teams** (`G_FindTeams`, `RespawnItem`): items sharing a `team` key
+  show one member at a time, and each respawn brings back a random one. This
+  covers the teamed armor, powerups and weapons of q3dm3, q3dm8, q3dm10,
+  q3dm18, q3tourney1 and q3tourney6.
+- The `random` key spreads each respawn by up to that many seconds either way,
+  never under one second.
+- Saves keep which team member is out. Dropped items are not saved.
+
 ## Validation
 
-- `tests/bot_tactics_tests.jac`: character parsing and interpolation, weapon
-  choice, turn limits, reaction and fire, projectiles.
+- `tests/bot_tactics_tests.jac`: character parsing and interpolation, skill
+  and handicap, weapon choice, view turning, aggression, battle nodes, attack
+  moves, reaction and fire (a retreating bot of every skill 1-5 turns on a
+  visible enemy and fires within 3 s), projectiles.
+- `scripts/bot_fire_probe.jac` traces each bot's battle node, sight, weapon,
+  aim error and shots per half second on q3dm1 (Ranger against the player)
+  and q3dm7.
+- `tests/item_drop_tests.jac`: item teams, respawn spread, drops and powerup
+  shaders.
 - `tests/arena_match_tests.jac`: awards.
 - `tests/savegame_tags_tests.jac`: bot inventories.
 - `scripts/bot_combat_smoke.jac`: bots on q3dm7, q3dm6 and q3tourney2 load their
@@ -101,6 +151,7 @@ Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
 
 ## Limits
 
-- Bots always show the machine gun model; the held weapon is not swapped yet.
-- Rocket jumps, the team chat and taunts, item weights beyond simple needs, and
-  the podium intermission remain open.
+- Bodies are covered in [Q3 player bodies](player-bodies-status.md).
+- Rocket jumps, team chat and taunts, and item weights beyond simple needs
+  remain open.
+- Dropped items do not fly. They land on the floor a short toss from the body.
