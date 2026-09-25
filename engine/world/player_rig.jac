@@ -299,6 +299,7 @@ walker PoseRig {
         shots: int = -1,
         gesture: bool = False,
         haste: bool = False,
+        gibbed: bool = False,
         sounds: list[str] = [];
 
     can pose with PlayerRig entry {
@@ -325,7 +326,10 @@ walker PoseRig {
                 self.start_legs(rig, death, True);
                 self.start_torso(rig, death);
                 rig.firing = False;
-                self.sounds.append("death" + str(choice + 1));
+                # A gibbed body (EV_GIB_PLAYER) makes no death cry.
+                if not self.gibbed {
+                    self.sounds.append("death" + str(choice + 1));
+                }
             }
         } else {
             self.animate_legs(rig);

@@ -908,7 +908,7 @@ impl App.step() -> bool {
         if self.level.bsp.game == "q3" {
             # cg_event.c: the player's own body cues its pain, death, jumps,
             # landings and footsteps in its character's voice.
-            for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots) {
+            for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots, q3_gibbed(self.player)) {
                 self.audio.play_path(cue);
             }
         }

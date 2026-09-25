@@ -314,6 +314,34 @@ test "Q3 weapons top up their ammo; Q2 health stops at max_health" {
     assert q1 is not None and q1.message == "You receive 25 health";
 }
 
+test "a player killed past the gib health gibs with each game's sound" {
+    gibs = {
+        "q1": ["sound/player/gib.wav", "sound/player/udeath.wav"],
+        "q2": ["sound/misc/udeath.wav"],
+        "q3": ["sound/player/gibsplt1.wav"]
+    };
+    for game in ["q1", "q2", "q3"] {
+        body = Player(health=50);
+        body spawn VoiceTick(game=game, dt=0.01);
+        body spawn Damage(amount=95, bypass_armor=True);
+        voice = body spawn VoiceTick(game=game, dt=0.01);
+        assert body.death_overkill == 45;
+        assert len(voice.cues) == 1 and voice.cues[0] in gibs[game];
+        # Just past zero is an ordinary death.
+        whole = Player(health=50);
+        whole spawn VoiceTick(game=game, dt=0.01);
+        whole spawn Damage(amount=80, bypass_armor=True);
+        voice = whole spawn VoiceTick(game=game, dt=0.01);
+        assert not [cue for cue in voice.cues if cue in gibs[game]];
+    }
+    # Q1 GibPlayer: a telefrag's own sound.
+    fragged = Player(health=50);
+    fragged spawn VoiceTick(game="q1", dt=0.01);
+    fragged spawn Damage(amount=50000, bypass_armor=True, means="telefrag");
+    voice = fragged spawn VoiceTick(game="q1", dt=0.01);
+    assert voice.cues == ["sound/player/teledth1.wav"];
+}
+
 test "the voice notices water, pain and death; the view flashes and kicks" {
     player = Player();
     player spawn VoiceTick(game="q1", dt=0.01);
@@ -324,7 +352,7 @@ test "the voice notices water, pain and death; the view flashes and kicks" {
     player spawn Damage(amount=10);
     voice = player spawn VoiceTick(game="q1", dt=0.01);
     assert len(voice.cues) == 1 and voice.cues[0].startswith("sound/player/pain");
-    player spawn Damage(amount=200);
+    player spawn Damage(amount=100);
     voice = player spawn VoiceTick(game="q1", dt=0.01);
     assert len(voice.cues) == 1 and voice.cues[0].startswith("sound/player/death");
     voice = player spawn VoiceTick(game="q1", dt=0.0);

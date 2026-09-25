@@ -93,7 +93,7 @@ import from ..world.combat {
     KillBox,
     ClearActors
 }
-import from ..world.vitals { CrashLand, VoiceTick }
+import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
 import from ..world.particles { Explosion, HasExplosion }
 import from ..render.view_feedback { ViewFeedback, death_view }
 import from ..world.light_effects { combat_lights }

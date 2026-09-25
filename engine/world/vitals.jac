@@ -122,6 +122,11 @@ def voice_of(player: Player) -> Voice {
     return voice;
 }
 
+"""Q3 GIB_HEALTH: a player killed 40 or more past zero bursts."""
+def q3_gibbed(body: Player) -> bool {
+    return body.health <= 0 and body.death_overkill >= 40;
+}
+
 """Once per tick: Q1 client.qc WaterMove (inh2o/inlava/slimbrn2 on entry,
 outwater.wav on leaving, gasp1/gasp2 surfacing), player.qc PainSound (drown
 and lava/slime burn sounds, pain1-6 at most twice a second) and DeathSound
@@ -129,7 +134,9 @@ and lava/slime burn sounds, pain1-6 at most twice a second) and DeathSound
 P_WorldEffects (watr_in/lava_in, watr_out, watr_un, gasp1/gasp2, burn1/burn2
 in lava once a second, gurp while drowning) and P_DamageFeedback's pain
 sounds by health (0.7 s apart), with p_client.c death1-4; Q3 only
-the water events (EV_WATER_TOUCH/LEAVE/UNDER/CLEAR). `jumped` is the pmove
+the water events (EV_WATER_TOUCH/LEAVE/UNDER/CLEAR) and the gib sound. A
+body killed past the gib health gibs with its game's sound instead of the
+death cry (Q1 GibPlayer, Q2 player_die, Q3 EV_GIB_PLAYER). `jumped` is the pmove
 jump this tick (Q1 plyrjmp8.wav, Q2 *jump1.wav)."""
 walker VoiceTick {
     has game: str,
@@ -159,6 +166,11 @@ walker VoiceTick {
             }
             if before < 3 and now >= 3 {
                 self.cues.append("sound/player/watr_un.wav");
+            }
+            # g_combat.c player_die: at GIB_HEALTH the body gibs
+            # (EV_GIB_PLAYER's gibSound) instead of its death cry.
+            if here.health <= 0 and not voice.dead and q3_gibbed(here) {
+                self.cues.append("sound/player/gibsplt1.wav");
             }
         }
         voice.water_depth = now;
@@ -193,7 +205,17 @@ walker VoiceTick {
         }
         if body.health <= 0 {
             if not voice.dead {
-                if now >= 3 {
+                # player.qc PlayerDie: below -40 health GibPlayer's
+                # teledth1 for a telefrag, else gib or udeath at even odds.
+                if body.death_overkill > 40 {
+                    if body.death_means == "telefrag" {
+                        self.cues.append("sound/player/teledth1.wav");
+                    } else {
+                        self.cues.append(
+                            "sound/player/gib.wav" if voice.pick(2) == 0 else "sound/player/udeath.wav"
+                        );
+                    }
+                } elif now >= 3 {
                     self.cues.append("sound/player/h2odeath.wav");
                 } else {
                     self.cues.append("sound/player/death" + str(1 + voice.pick(5)) + ".wav");
@@ -251,7 +273,12 @@ walker VoiceTick {
         }
         if body.health <= 0 {
             if not voice.dead {
-                self.cues.append("sound/player/male/death" + str(1 + voice.pick(4)) + ".wav");
+                # p_client.c player_die: below -40 health the body gibs.
+                if body.death_overkill > 40 {
+                    self.cues.append("sound/misc/udeath.wav");
+                } else {
+                    self.cues.append("sound/player/male/death" + str(1 + voice.pick(4)) + ".wav");
+                }
             }
             return;
         }
