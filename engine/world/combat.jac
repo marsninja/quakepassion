@@ -140,7 +140,8 @@ node Opponent(Player) {
         power_cells: int = -1,
         wounded: bool = False,
         healthy_skin: ModelResource | None = None,
-        heard: bool = True;
+        heard: bool = True,
+        foe_wait: float = -1.0;
 }
 
 """How far the player's box (at origin `body`) reaches into an actor's box,
@@ -3407,7 +3408,20 @@ walker CombatTick {
         # returns to the old enemy once that one dies).
         foe: Player = self.player;
         if here.arena {
-            foe = self.select_foe(here);
+            # ai_main.c: a bot looks for enemies at its think rate (10 Hz), not
+            # every physics tick, and keeps its enemy in between. Each bot
+            # starts at its own decision offset, so their looks are staggered.
+            if here.foe_wait < 0.0 {
+                here.foe_wait = max(0.0, here.decision_wait);
+            }
+            here.foe_wait -= self.dt;
+            current = here.foe;
+            if here.foe_wait <= 0.0 or (current is not None and current.health <= 0) {
+                here.foe_wait = 0.1;
+                foe = self.select_foe(here);
+            } elif current is not None {
+                foe = current;
+            }
         } elif here.foe is not None {
             rival = here.foe;
             if rival.health > 0 and not (isinstance(rival, Opponent) and rival.dormant) {
