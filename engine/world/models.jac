@@ -242,11 +242,15 @@ walker GatherModels {
         seconds: float = 0.0;
 
     can begin with World entry {
-        visit [here-->[?:Area]];
+        # Only areas holding entities (most BSP leaves hold none).
+        visit [area for area in [here-->[?:Area]] if area.occupants > 0];
     }
 
     can area with Area entry {
-        visit [here<-:In:<-];
+        inside = [here<-:In:<-];
+        # Entities removed without move_to_area leave a stale count; fix it.
+        here.occupants = len(inside);
+        visit inside;
     }
 
     """One model draw per powerup shader."""

@@ -53,6 +53,6 @@ impl build_arena(world: World) -> Player {
     ) :+> b;
 
     player = Player(pos=Vec3(x=64.0, y=128.0, z=56.0), yaw=0.0, pitch=0.0);
-    player +>: In :+> a;
+    move_to_area(player, a);
     return player;
 }

@@ -138,10 +138,15 @@ test "think pass reaches every entity in the world" {
     p = Player();
     e1 = Entity();
     e2 = Entity();
-    p +>: In :+> a;
-    e1 +>: In :+> a;
-    e2 +>: In :+> b;
+    move_to_area(p, a);
+    move_to_area(e1, a);
+    move_to_area(e2, b);
 
+    tp = w spawn ThinkPass(dt=0.05);
+    assert tp.entities_visited == 3;
+    # Areas left empty are skipped.
+    move_to_area(e2, a);
+    assert b.occupants == 0 and a.occupants == 3;
     tp = w spawn ThinkPass(dt=0.05);
     assert tp.entities_visited == 3;
 }
