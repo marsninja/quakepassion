@@ -7,6 +7,7 @@ import from engine.formats.bsp { Texture }
 import from engine.formats.q1.wad { wad_pictures }
 import from engine.formats.q2.model { parse_pcx }
 import from engine.assets.library { AssetLibrary }
+import from .items { Q2_PICKUPS, Q3_PICKUPS }
 
 glob Q2_WEAPON_PICS: dict[str, str] = {
     "blaster": "w_blaster",
@@ -66,6 +67,19 @@ def load_q2_art(hud: HudRenderer, library: AssetLibrary) {
             hud.add(name, parse_pcx(library.read(path), path, 255));
         }
     }
+    # Pickup and selected-item icons, and the console characters.
+    for shown in Q2_PICKUPS.values() {
+        names.append(shown[1]);
+    }
+    for extra in ["conchars", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier"] {
+        names.append(extra);
+    }
+    for name in names {
+        path = "pics/" + name + ".pcx";
+        if library.exists(path) and not hud.has_pic(name) {
+            hud.add(name, parse_pcx(library.read(path), path, 255));
+        }
+    }
     for (key, pic) in Q2_WEAPON_PICS.items() {
         path = "pics/" + pic + ".pcx";
         if library.exists(path) {
@@ -89,7 +103,15 @@ def load_q3_art(hud: HudRenderer, library: AssetLibrary) {
             hud.add("ammo_" + key, art);
         }
     }
+    for shown in Q3_PICKUPS.values() {
+        art = encoded(library, shown[1] + ".tga");
+        if art is not None {
+            hud.add(shown[1], art);
+        }
+    }
     for (name, path) in [
+        ("conchars", "gfx/2d/bigchars.tga"),
+        ("blood_screen", "gfx/damage/blood_screen.tga"),
         ("armor", "icons/iconr_yellow.tga"),
         ("head", "models/players/sarge/icon_default.tga"),
         ("crosshair", "gfx/2d/crosshaire.tga")

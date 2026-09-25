@@ -16,7 +16,7 @@ import from .combat {
     actor_fraction
 }
 import from .damage { Damage }
-import from .particles { impact_spray, beam_trail }
+import from .particles { impact_spray, beam_trail, explode, blast_kind }
 import from .speakers { Speaker, HasSpeaker }
 import from .signals { Signal, HasSignal }
 import from .shooters { move_direction }
@@ -194,9 +194,8 @@ walker TargetTick {
                         radius=float(here.damage + 40)
                     )
                 );
-                for j in range(3) {
-                    impact_spray(world, here.origin, Vec3(z=1.0));
-                }
+                # g_target.c target_explosion_explode: TE_EXPLOSION1.
+                explode(world, here.origin, blast_kind(self.state.game, "q2_rocket"));
             }
             if here.kind == "splash" {
                 for j in range(max(1, here.count // 8)) {

@@ -127,11 +127,15 @@ obj ModelRenderer {
         basis: Basis | None = None,
         fog: FogVolume | None = None,
         fog_image: int = 0,
-        forward: Vec3 = Vec3(x=1.0)
+        forward: Vec3 = Vec3(x=1.0),
+        alpha: float = 1.0
     ) {
         if not self.stages {
             return;
         }
+        # A fading model (Q2 RF_TRANSLUCENT explosions) blends its opaque skins.
+        fading = alpha < 0.999;
+        opacity = u8(int(max(0.0, min(1.0, alpha)) * 255.0));
         cosine = math.cos(yaw);
         sine = math.sin(yaw);
         view = eye.sub(origin);
@@ -178,7 +182,11 @@ obj ModelRenderer {
                     rlDrawRenderBatchActive();
                     rlDisableBackfaceCulling();
                 }
-                if stage.blend == "opaque" {
+                if stage.blend == "opaque" and fading {
+                    rlDrawRenderBatchActive();
+                    BeginBlendMode(i32(0));
+                    rlDisableDepthMask();
+                } elif stage.blend == "opaque" {
                     rlSetBlendFactors(i32(1), i32(0), i32(32774));
                     BeginBlendMode(i32(6));
                 } else {
@@ -200,7 +208,7 @@ obj ModelRenderer {
                     )
                 );
                 rlBegin(i32(4));
-                rlColor4ub(u8(255), u8(255), u8(255), u8(255));
+                rlColor4ub(u8(255), u8(255), u8(255), opacity);
                 for triangle in range(len(surface.indices) // 3) {
                     # Alias model file triangles wind clockwise; rlgl expects CCW.
                     for corner in [0, 2, 1] {
@@ -257,7 +265,7 @@ obj ModelRenderer {
                     rlDrawRenderBatchActive();
                     rlEnableBackfaceCulling();
                 }
-                if stage.blend != "opaque" {
+                if stage.blend != "opaque" or fading {
                     rlDrawRenderBatchActive();
                     rlEnableDepthMask();
                     EndBlendMode();

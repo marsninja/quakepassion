@@ -1,6 +1,13 @@
 """Shared weapon simulation and graph-driven opponents."""
 import math;
-import from .particles { impact_spray, ParticleTick, rail_trail, beam_trail }
+import from .particles {
+    impact_spray,
+    ParticleTick,
+    rail_trail,
+    beam_trail,
+    explode,
+    blast_kind
+}
 import from .navigation { RouteSearch, RouteQueue, walk_edge }
 import from .opponent_rule { OpponentRule, AttackProfile, rule_profiles }
 import from .weapons { WeaponRule }
@@ -206,6 +213,21 @@ obj CombatState {
         navmesh_checked: bool = False,
         rail_streak: int = 0,
         awards: list[str] = [];
+    # Weapon handling state: Q2 chaingun spin frames, BFG wind-up, machinegun
+    # climb (machinegun_shots); the firing view punch; sounds and messages
+    # for the game to play and print; whether the last shot keeps quiet
+    # (Q3's lightning hums rather than refiring its sound); hits landed.
+    has spin: int = 0,
+        charge: float = 0.0,
+        climb: int = 0,
+        punch: float = 0.0,
+        punch_time: float = 0.0,
+        punch_left: float = 0.0,
+        cues: list[str] = [],
+        messages: list[str] = [],
+        quiet: bool = False,
+        firing: bool = False,
+        hits: int = 0;
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -447,6 +469,7 @@ def damage_opponent(
     );
     if state is not None and damage.dealt > 0 {
         state.hit_flash = 0.15;
+        state.hits += 1;
     }
     if damage.killed {
         # Q1/Q2 Killed counts every monster death, whoever caused it.
@@ -554,18 +577,101 @@ def damage_opponent(
     return damage.dealt;
 }
 
+# Q2 m_*.c self->mass (misc_explobox 400); the player and the rest weigh 200.
+glob Q2_MASSES: dict[str, float] = {
+    "monster_soldier_light": 100.0,
+    "monster_soldier": 100.0,
+    "monster_soldier_ss": 100.0,
+    "monster_flipper": 100.0,
+    "monster_flyer": 50.0,
+    "monster_hover": 150.0,
+    "monster_berserk": 250.0,
+    "monster_parasite": 250.0,
+    "monster_mutant": 300.0,
+    "monster_floater": 300.0,
+    "misc_insane": 300.0,
+    "monster_gladiator": 400.0,
+    "monster_medic": 400.0,
+    "monster_brain": 400.0,
+    "misc_explobox": 400.0,
+    "monster_tank": 500.0,
+    "monster_tank_commander": 500.0,
+    "monster_makron": 500.0,
+    "monster_supertank": 800.0,
+    "monster_boss2": 1000.0,
+    "monster_jorg": 1000.0
+};
+
+"""Knockback, figured before armor and protection. Q1 T_Damage pushes only
+walking bodies (the player) by dir*damage*8; Q2 T_Damage pushes anything that
+moves by 500*knockback/mass, the rocket-jump hack using 1600 when a player
+hurts himself, and nothing once killed (FL_NO_KNOCKBACK); Q3 G_Damage pushes
+players and bots by g_knockback 1000 * min(damage, 200) / mass 200 and holds
+off ground friction for 2 ms a point (PMF_TIME_KNOCKBACK, 50-200 ms)."""
+def knock_back(
+    actor: Player, game: str, direction: Vec3, amount: float, self_hit: bool = False
+) {
+    if amount <= 0.0 or direction.length() < 0.000001 {
+        return;
+    }
+    if isinstance(actor, Opponent)
+        and (
+            actor.dormant
+                or actor.rule.script
+                or actor.rule.decoration
+                or actor.rule.movement == "none"
+        ) {
+        return;
+    }
+    speed = 0.0;
+    if game == "q2" {
+        mass = 200.0;
+        if isinstance(actor, Opponent) {
+            if actor.health <= 0 {
+                return;
+            }
+            mass = max(50.0, Q2_MASSES.get(actor.kind, 200.0));
+        }
+        human = self_hit and not isinstance(actor, Opponent);
+        speed = (1600.0 if human else 500.0) * amount / mass;
+    } elif game == "q3" {
+        if isinstance(actor, Opponent) and not actor.arena {
+            return;
+        }
+        knock = min(amount, 200.0);
+        speed = 1000.0 * knock / 200.0;
+        if actor.knockback_time <= 0.0 {
+            actor.knockback_time = max(0.05, min(0.2, knock * 0.002));
+        }
+    } else {
+        if isinstance(actor, Opponent) {
+            return;
+        }
+        speed = amount * 8.0;
+    }
+    actor.velocity = actor.velocity.add(direction.normalized().scale(speed));
+    if actor.velocity.z > 0.0 {
+        actor.grounded = False;
+    }
+}
+
 """One hit from an opponent. Opponent victims (arena bots fighting each other,
 or campaign monsters caught in infighting) go through the full opponent damage
-path so they die, animate, score and retaliate."""
+path so they die, animate, score and retaliate. `kick` is the Q2 knockback
+(-1 takes the damage); the push runs from `source` to the target."""
 def strike(
     target: Player,
     amount: int,
     attacker: Opponent,
     source: Vec3 | None = None,
     means: str = "",
-    tally: CombatState | None = None
+    tally: CombatState | None = None,
+    kick: int = -1
 ) -> int {
+    origin = source if source is not None else attacker.pos;
+    push = float(amount if kick < 0 else kick);
     if isinstance(target, Opponent) {
+        knock_back(target, attacker.game, target.pos.sub(origin), push);
         dealt = damage_opponent(target, amount, attacker=attacker, means=means, tally=tally);
         if dealt > 0 and target.arena {
             target.alert = max(target.alert, 8.0);
@@ -573,6 +679,9 @@ def strike(
             target.foe = attacker;
         }
         return dealt;
+    }
+    if target.health > 0 {
+        knock_back(target, attacker.game, target.pos.sub(origin), push);
     }
     result = target spawn Damage(
         amount=amount, source=source, attacker=attacker, means=means
@@ -686,6 +795,7 @@ node Projectile {
         beams: list[Vec3] = [],
         effect: str = "",
         age: float = 0.0,
+        kick: int = -1,
         hostile: bool = False,
         trap: bool = False,
         homing: float = 0.0,
@@ -737,6 +847,37 @@ def select_weapon(player: Player, state: CombatState, slot: int) -> bool {
     return False;
 }
 
+"""Where a weapon's trail leaves the view: Q2 P_ProjectSource (7 right, 8
+down), Q3 CalcMuzzlePoint and the gun's flash tag, Q1 W_FireLightning's
+origin + 16 (6 below the eye)."""
+def muzzle_point(player: Player, game: str) -> Vec3 {
+    ahead = forward_from(player.yaw, player.pitch);
+    side = right_from(player.yaw);
+    up = side.cross(ahead).normalized();
+    if game == "q1" {
+        return player.pos.add(ahead.scale(8.0)).sub(Vec3(z=6.0));
+    }
+    if game == "q2" {
+        return player.pos.add(ahead.scale(8.0)).add(side.scale(7.0)).sub(up.scale(8.0));
+    }
+    return player.pos.add(ahead.scale(14.0)).add(side.scale(5.0)).sub(up.scale(6.0));
+}
+
+"""Q1 W_FireLightning under water (waterlevel above 1): every cell goes at
+once as T_RadiusDamage(self, self, 35 * cells), the shooter taking half."""
+def discharge_lightning(
+    world: World, player: Player, collision: CollisionMap, state: CombatState, rule: WeaponRule
+) {
+    cells = quantity(player.inventory, rule.ammo);
+    player.inventory spawn AdjustInventory(kind=rule.ammo, amount=-cells);
+    state.cooldown = rule.interval * fire_interval_scale(player);
+    state.flash = 0.08;
+    state.shots += 1;
+    amount = int(float(35 * cells) * damage_scale(player, state.game));
+    center = player.pos.sub(Vec3(z=collision.eye_height - 4.0));
+    blast_actors(world, center, amount, float(amount + 40), False, player, collision, state);
+}
+
 def fire_weapon(
     world: World, player: Player, collision: CollisionMap, state: CombatState
 ) -> bool {
@@ -750,6 +891,22 @@ def fire_weapon(
     if rule.ammo and quantity(player.inventory, rule.ammo) < rule.cost {
         return False;
     }
+    direction = forward_from(player.yaw, player.pitch);
+    # Q3 PM_Weapon: the gauntlet only "fires" when it touches someone.
+    if state.game == "q3" and rule.key == "gauntlet" {
+        reach = player.pos.add(direction.scale(rule.reach));
+        wall = collision.trace_point(player.pos, reach);
+        touch = world spawn Aim(
+            start=player.pos, finish=reach, height=collision.eye_height, fraction=wall.fraction
+        );
+        if touch.target is None {
+            return False;
+        }
+    }
+    if state.game == "q1" and rule.key == "lightning" and player.water_depth > 1 {
+        discharge_lightning(world, player, collision, state, rule);
+        return True;
+    }
     if rule.ammo {
         player.inventory spawn AdjustInventory(kind=rule.ammo, amount=-rule.cost);
     }
@@ -758,12 +915,29 @@ def fire_weapon(
     state.flash = 0.08;
     state.shots += 1;
     state.impact_model = -1;
-    direction = forward_from(player.yaw, player.pitch);
+    if rule.punch > 0.0 {
+        state.punch = rule.punch;
+        state.punch_time = rule.punch_time;
+        state.punch_left = rule.punch_time;
+    }
+    # Q2 Machinegun_Fire: each shot of a burst aims 1.5 degrees higher,
+    # up to nine (machinegun_shots), and the view climbs with it.
+    if state.game == "q2" and rule.key == "machinegun" {
+        climb = 1.5 * float(state.climb);
+        direction = forward_from(player.yaw, player.pitch + math.radians(climb));
+        state.punch = climb;
+        state.punch_time = 0.1;
+        state.punch_left = 0.1;
+        state.climb = min(9, state.climb + 1);
+    }
     side = right_from(player.yaw);
     up = side.cross(direction).normalized();
     if rule.speed > 0.0 {
         velocity = direction.scale(rule.speed);
-        if rule.gravity {
+        if rule.gravity and state.game == "q3" {
+            # g_weapon.c weapon_grenadelauncher_fire: aim a little upward.
+            velocity = direction.add(Vec3(z=0.2)).normalized().scale(rule.speed);
+        } elif rule.gravity {
             velocity = velocity.add(Vec3(z=200.0));
         }
         world +>:HasProjectile:+> Projectile(
@@ -778,7 +952,8 @@ def fire_weapon(
             beam_damage=int(float(rule.beam_damage) * scale),
             beam_radius=rule.beam_radius,
             burst_damage=int(float(rule.burst_damage) * scale),
-            burst_radius=rule.burst_radius
+            burst_radius=rule.burst_radius,
+            kick=int(float(rule.kick) * scale) if rule.kick >= 0 else -1
         );
         if state.game == "q2" and rule.effect in ["q2_bolt", "q2_rocket"] {
             check_dodge(world, player, direction, collision, state);
@@ -789,9 +964,16 @@ def fire_weapon(
     # Aggregate pellet damage before armor, death targets and kill credit.
     victims: list[Opponent] = [];
     amounts: list[int] = [];
+    kicks: list[float] = [];
     for pellet in range(rule.pellets) {
         shot = direction;
-        if rule.spread > 0.0 {
+        if rule.spread > 0.0 and rule.circular {
+            # Q3 Bullet_Fire: a random angle around the aim, a random reach.
+            turn = (state.random() + 1.0) * math.pi;
+            shot = shot.add(side.scale(math.cos(turn) * state.random() * rule.spread)).add(
+                up.scale(math.sin(turn) * state.random() * rule.spread)
+            );
+        } elif rule.spread > 0.0 {
             shot = shot.add(side.scale(state.random() * rule.spread)).add(
                 up.scale(state.random() * rule.vertical_spread)
             );
@@ -815,8 +997,26 @@ def fire_weapon(
                     hits.append(enemy);
                 }
             }
+            # Q2 fire_rail TE_RAILTRAIL / Q3 CG_RailTrail, to the wall.
+            if state.game in ["q2", "q3"] {
+                rail_trail(
+                    world,
+                    muzzle_point(player, state.game),
+                    player.pos.lerp(finish, wall.fraction),
+                    state.game + "_rail"
+                );
+            }
         } elif query.target is not None {
             hits.append(query.target);
+        }
+        if rule.key == "lightning" {
+            # Q1 TE_LIGHTNING2 (bolt2.mdl) / Q3 CG_LightningBolt, to the hit.
+            beam_trail(
+                world,
+                muzzle_point(player, state.game),
+                player.pos.lerp(finish, query.fraction),
+                "player_lightning"
+            );
         }
         for victim in hits {
             fraction = actor_fraction(
@@ -834,8 +1034,13 @@ def fire_weapon(
             if victim not in victims {
                 victims.append(victim);
                 amounts.append(0);
+                kicks.append(0.0);
             }
             amounts[victims.index(victim)] += int(float(rule.damage) * scale);
+            kicks[victims.index(victim)] += float(
+                rule.kick if rule.kick >= 0 else rule.damage
+            )
+                * scale;
         }
         if (not hits or rule.piercing) and wall.fraction < 1.0 {
             impact_spray(world, player.pos.lerp(finish, wall.fraction), wall.normal);
@@ -850,6 +1055,8 @@ def fire_weapon(
         }
     }
     for i in range(len(victims)) {
+        # Q2 fire_lead / Q3 Bullet_Fire push along the aim.
+        knock_back(victims[i], state.game, direction, kicks[i]);
         damage_opponent(
             victims[i], amounts[i], player.inventory, state, attacker=player, means=rule.key
         );
@@ -909,6 +1116,186 @@ def throw_hand_grenade(
     return True;
 }
 
+"""The BFG's wind-up: when it ends the cells are checked again, since power
+armor may have spent them, and the orb leaves."""
+def bfg_wind_up(
+    world: World,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState,
+    rule: WeaponRule,
+    dt: float
+) -> bool {
+    state.charge = max(0.0, state.charge - dt);
+    if state.charge > 0.000001 {
+        return False;
+    }
+    rest = state.cooldown;
+    state.cooldown = 0.0;
+    if rule.key == "bfg" and fire_weapon(world, player, collision, state) {
+        state.cooldown = max(0.0, rest);
+    } else {
+        state.cooldown = rest;
+    }
+    return False;
+}
+
+"""p_weapon.c Chaingun_Fire: at 10 frames a second it fires one bullet a
+frame for five frames, two for the next five, then three while the trigger
+holds; chngnu1a.wav spins it up and chngnd1a.wav winds it down."""
+def chaingun_frame(
+    world: World,
+    player: Player,
+    collision: CollisionMap,
+    state: CombatState,
+    rule: WeaponRule,
+    held: bool
+) -> bool {
+    if not held {
+        if state.spin > 10 {
+            state.cues.append("sound/weapons/Chngnd1a.wav");
+        }
+        state.spin = 0;
+        return False;
+    }
+    if state.cooldown > 0.000001 {
+        return False;
+    }
+    if quantity(player.inventory, rule.ammo) < rule.cost {
+        state.spin = 0;
+        out_of_ammo(player, state);
+        return False;
+    }
+    state.spin += 1;
+    if state.spin == 1 {
+        state.cues.append("sound/weapons/Chngnu1a.wav");
+    }
+    shots = 1 if state.spin <= 5 else (2 if state.spin <= 10 else 3);
+    fired = False;
+    for shot in range(shots) {
+        state.cooldown = 0.0;
+        if fire_weapon(world, player, collision, state) {
+            fired = True;
+        }
+    }
+    state.cooldown = 0.1 * fire_interval_scale(player);
+    return fired;
+}
+
+"""Firing without ammo: Q2 and Q3 click (noammo.wav), then all change to the best weapon with ammo (Q1 W_CheckNoAmmo,
+Q2 NoAmmoWeaponChange, Q3 CG_OutOfAmmoChange)."""
+def out_of_ammo(player: Player, state: CombatState) {
+    if state.game in ["q2", "q3"] {
+        state.cues.append("sound/weapons/noammo.wav");
+    }
+    fallback_weapon(player, state);
+}
+
+"""The weapon a slot names, if the rules have one."""
+def weapon_rule(state: CombatState, slot: int) -> WeaponRule | None {
+    for rule in state.rules {
+        if rule.slot == slot {
+            return rule;
+        }
+    }
+    return None;
+}
+
+def has_ammo_for(player: Player, rule: WeaponRule) -> bool {
+    return not rule.ammo or quantity(player.inventory, rule.ammo) >= rule.cost;
+}
+
+"""Swap to `slot`, holding fire while the old weapon lowers and the new one
+rises: Q1 changes at once, Q2 plays each weapon's deactivate and activate
+frames, Q3 drops for 200 ms and raises for 250 ms (bg_pmove.c)."""
+def swap_weapon(state: CombatState, rule: WeaponRule) {
+    old = selected_weapon(state);
+    state.weapon = rule.slot;
+    state.spin = 0;
+    state.climb = 0;
+    state.charge = 0.0;
+    state.cooldown = max(state.cooldown, old.lower_time + rule.raise_time);
+}
+
+"""The player's weapon command: Q1 W_ChangeWeapon ("no weapon.", "not enough
+ammo."), Q2 Use_Weapon ("No shells for Shotgun."), Q3 CG_Weapon_f (silently
+refuses a weapon without ammo). Returns whether the weapon changed."""
+def change_weapon(player: Player, state: CombatState, slot: int) -> bool {
+    if state.grenade_phase > 0 or state.charge > 0.0 or not state.rules {
+        return select_weapon(player, state, slot);
+    }
+    rule = weapon_rule(state, slot);
+    if rule is None or not owns_weapon(player, rule) {
+        if state.game == "q1" {
+            state.messages.append("no weapon.");
+        } elif state.game == "q2" and rule is not None {
+            state.messages.append("Out of item: " + rule.name);
+        }
+        return False;
+    }
+    if not has_ammo_for(player, rule) {
+        if state.game == "q1" {
+            state.messages.append("not enough ammo.");
+        } elif state.game == "q2" {
+            state.messages.append(
+                ("No " if quantity(player.inventory, rule.ammo) == 0 else "Not enough ")
+                    + rule.ammo
+                    + " for "
+                    + rule.name
+                    + "."
+            );
+        }
+        return False;
+    }
+    if rule.slot == state.weapon {
+        return False;
+    }
+    swap_weapon(state, rule);
+    return True;
+}
+
+"""Next or previous weapon (Q1 impulse 10/12 CycleWeaponCommand, Q2
+weapnext/weapprev, Q3 CG_NextWeapon_f): the nearest slot either way that
+holds an owned weapon with ammo."""
+def cycle_weapon(player: Player, state: CombatState, step: int) -> bool {
+    if step == 0 or not state.rules or state.grenade_phase > 0 or state.charge > 0.0 {
+        return False;
+    }
+    slots = sorted([rule.slot for rule in state.rules]);
+    if state.weapon not in slots {
+        return False;
+    }
+    here = slots.index(state.weapon);
+    for offset in range(1, len(slots)) {
+        rule = weapon_rule(state, slots[(here + offset * step) % len(slots)]);
+        if rule is not None and owns_weapon(player, rule) and has_ammo_for(player, rule) {
+            swap_weapon(state, rule);
+            return True;
+        }
+    }
+    return False;
+}
+
+"""Changing to a picked-up weapon: Q1 weapon_touch always does in single
+player; Q2 Pickup_Weapon does the first time one is picked up; Q3
+CG_ItemPickup (cg_autoswitch) does for any weapon but the machinegun."""
+def pickup_switch(player: Player, state: CombatState, key: str, fresh: bool) -> bool {
+    if state.grenade_phase > 0 or state.charge > 0.0 {
+        return False;
+    }
+    for rule in state.rules {
+        if rule.key != key or rule.slot == state.weapon or not owns_weapon(player, rule) {
+            continue;
+        }
+        if (state.game == "q2" and not fresh) or (state.game == "q3" and key == "machinegun") {
+            return False;
+        }
+        swap_weapon(state, rule);
+        return True;
+    }
+    return False;
+}
+
 def fallback_weapon(player: Player, state: CombatState) -> bool {
     for slot in state.fallback {
         for rule in state.rules {
@@ -919,7 +1306,7 @@ def fallback_weapon(player: Player, state: CombatState) -> bool {
                 continue;
             }
             if not rule.ammo or quantity(player.inventory, rule.ammo) >= rule.cost {
-                state.weapon = slot;
+                swap_weapon(state, rule);
                 state.cooldown = max(state.cooldown, 0.2);
                 return True;
             }
@@ -940,16 +1327,45 @@ def weapon_input(
         return False;
     }
     rule = selected_weapon(state);
+    was_firing = state.firing;
+    state.firing = held;
+    state.quiet = False;
+    state.punch_left = max(0.0, state.punch_left - dt);
+    if not held {
+        state.climb = 0;
+    }
+    if state.charge > 0.0 {
+        return bfg_wind_up(world, player, collision, state, rule, dt);
+    }
+    if state.game == "q2" and rule.key == "chaingun" {
+        return chaingun_frame(world, player, collision, state, rule, held);
+    }
     if state.grenade_phase == 0 {
         if not held or state.cooldown > 0.000001 {
             return False;
         }
         if rule.ammo and quantity(player.inventory, rule.ammo) < rule.cost {
-            fallback_weapon(player, state);
+            out_of_ammo(player, state);
             return False;
         }
+        # p_weapon.c weapon_bfg_fire: the muzzle flash and sound at gunframe
+        # 9, the orb itself eight frames later.
+        if state.game == "q2" and rule.key == "bfg" {
+            state.charge = 0.8;
+            state.flash = 0.08;
+            state.cooldown = rule.interval * fire_interval_scale(player);
+            return True;
+        }
         if not rule.hand_thrown {
-            return fire_weapon(world, player, collision, state);
+            fired = fire_weapon(world, player, collision, state);
+            # cg_weapons.c: the lightning gun sounds lg_fire once, then hums.
+            if fired and state.game == "q3" and rule.key == "lightning" and was_firing {
+                state.quiet = True;
+                if state.shots % 12 == 0 {
+                    state.cues.append("sound/weapons/lightning/lg_hum.wav");
+                }
+            }
+            return fired;
         }
         if not owns_weapon(player, rule) {
             return False;
@@ -1026,8 +1442,19 @@ def blast_actors(
         height = actor.eye_height
             if isinstance(actor, Opponent)
             else collision.eye_height;
-        center = actor.pos.sub(Vec3(z=height - 4.0));
+        body = actor.pos.sub(Vec3(z=height));
+        center = body.add(Vec3(z=4.0));
         distance = center.sub(origin).length();
+        if state.game == "q3" {
+            # G_RadiusDamage measures from the nearest point of the box.
+            width = actor.rule.width if isinstance(actor, Opponent) else 15.0;
+            gap = Vec3(
+                x=max(0.0, abs(origin.x - body.x) - width),
+                y=max(0.0, abs(origin.y - body.y) - width),
+                z=max(0.0, body.z - 24.0 - origin.z, origin.z - body.z - 32.0)
+            );
+            distance = gap.length();
+        }
         if distance >= radius {
             continue;
         }
@@ -1036,13 +1463,26 @@ def blast_actors(
             continue;
         }
         strength = blast_strength(state.game, splash, radius, distance);
-        if actor is player and not hostile {
+        # Q1/Q2 T_RadiusDamage and Q3 G_Damage halve an attacker's own
+        # splash; Q3 figures the knockback before halving (rocket jumps).
+        self_hit = (actor is player and not hostile)
+            or (hostile and attacker is not None and actor is attacker);
+        push = strength;
+        if self_hit {
             strength *= 0.5;
+            if state.game != "q3" {
+                push = strength;
+            }
         }
         if isinstance(actor, Opponent) {
             strength *= actor.rule.blast_scale;
         }
         amount = int(strength);
+        if not corpse {
+            # Q3 pushes the centre of mass 24 units higher.
+            away = body.sub(origin).add(Vec3(z=24.0 if state.game == "q3" else 0.0));
+            knock_back(actor, state.game, away, float(int(push)), self_hit);
+        }
         if isinstance(actor, Opponent) {
             damage_opponent(
                 actor,
@@ -1061,12 +1501,23 @@ def blast_actors(
                 attacker=attacker if hostile else player
             );
         }
-        if amount > 0 and not corpse {
-            actor.velocity = actor.velocity.add(
-                center.sub(origin).normalized().scale(float(amount) * 4.0)
-            );
-            actor.grounded = False;
-        }
+    }
+}
+
+"""A missile's direct hit pushes along its flight (Q3 G_MissileImpact, Q2
+touch functions) or away from it (Q1 T_Damage). Q2 rockets and the BFG pass
+no knockback on contact; their blast does the pushing."""
+def missile_knock(projectile: Projectile, victim: Player, game: str) {
+    amount = float(projectile.damage);
+    if projectile.kick >= 0 {
+        amount = float(projectile.kick);
+    } elif game == "q2" and projectile.splash > 0 and not projectile.gravity {
+        amount = 0.0;
+    }
+    if game in ["q2", "q3"] {
+        knock_back(victim, game, projectile.velocity, amount);
+    } else {
+        knock_back(victim, game, victim.pos.sub(projectile.pos), amount);
     }
 }
 
@@ -1098,6 +1549,7 @@ def projectile_blast(
             origin=projectile.pos, splash=projectile.splash, radius=projectile.radius
         )
     );
+    explode(world, projectile.pos, blast_kind(state.game, projectile.effect));
 }
 
 # Exploding monsters damage everything nearby, including their own kind.
@@ -1126,6 +1578,10 @@ def death_explosion(
             origin=origin, splash=enemy.rule.death_splash, radius=enemy.rule.death_radius
         )
     );
+    # Q1 barrels BecomeExplosion; Q2 barrel_explode shows the grenade burst on
+    # the ground and the rocket burst in the air, as flyer_die does.
+    kind = blast_kind(state.game, "q2_grenade" if enemy.grounded else "q2_rocket");
+    explode(world, origin, kind);
 }
 
 def projectile_beams(
@@ -1156,7 +1612,9 @@ def projectile_beams(
             projectile.pos, finish, player.pos, collision.eye_height, collision.top_drop
         )
             < trace.fraction {
-            player spawn Damage(amount=projectile.beam_damage, source=projectile.pos);
+            player spawn Damage(
+                amount=projectile.beam_damage, source=projectile.pos, energy=True
+            );
         }
         return;
     }
@@ -1220,7 +1678,8 @@ def projectile_energy_burst(
                         * (1.0 - math.sqrt(distance / projectile.burst_radius))
                 ),
                 means="splash",
-                source=projectile.pos
+                source=projectile.pos,
+                energy=True
             );
         }
         state.impacts.append(
@@ -1356,11 +1815,16 @@ walker ProjectileTick {
             fraction = query.fraction;
         }
         here.pos = here.pos.lerp(finish, fraction);
+        struck: Player | None = self.player if player_hit else victim;
+        if struck is not None {
+            missile_knock(here, struck, self.state.game);
+        }
         if player_hit {
             self.player spawn Damage(
                 amount=here.damage,
                 source=here.pos.sub(here.velocity.normalized()),
-                attacker=here.owner
+                attacker=here.owner,
+                energy=self.state.game == "q2" and here.effect in ["q2_bolt", "q2_bfg"]
             );
             projectile_blast(
                 world,
@@ -1386,13 +1850,16 @@ walker ProjectileTick {
             and here.gravity
             and here.remaining > 0.0
             and not wall.start_solid {
+            # Q3 G_BounceMissile keeps 65% and rests below 40 u/s on any
+            # floor steeper than 0.2.
+            arena = self.state.game == "q3";
             here.velocity = here.velocity.sub(
                 wall.normal.scale(2.0 * here.velocity.dot(wall.normal))
             ).scale(
-                0.5
+                0.65 if arena else 0.5
             );
             here.pos = here.pos.add(wall.normal.scale(0.1));
-            if wall.normal.z > 0.7 and here.velocity.length() < 40.0 {
+            if wall.normal.z > (0.2 if arena else 0.7) and here.velocity.length() < 40.0 {
                 here.velocity = Vec3();
             }
             return;
@@ -1853,7 +2320,15 @@ def advance_attack_segment(
         if profile.kind == "melee" {
             if distance <= profile.reach {
                 amount = event_damage(enemy, profile, event_index);
-                dealt = strike(player, amount, enemy, source=enemy.pos, tally=tally);
+                # Q2 fire_hit adds its own kick below (DAMAGE_NO_KNOCKBACK).
+                dealt = strike(
+                    player,
+                    amount,
+                    enemy,
+                    source=enemy.pos,
+                    tally=tally,
+                    kick=0 if enemy.game == "q2" else -1
+                );
                 if dealt > 0 and profile.knockback != 0.0 {
                     player.velocity = player.velocity.add(
                         delta.normalized().scale(profile.knockback)
@@ -2927,7 +3402,7 @@ walker CombatTick {
                     and abs(contact.z) < 56.0 {
                     profile = current_profile(here);
                     amount = event_damage(here, profile, 0);
-                    dealt = strike(foe, amount, here, source=here.pos, tally=self.state);
+                    dealt = strike(foe, amount, here, source=here.pos, tally=self.state, kick=0);
                     if dealt > 0 {
                         push = Vec3(x=contact.x, y=contact.y).normalized();
                         foe.velocity = foe.velocity.add(

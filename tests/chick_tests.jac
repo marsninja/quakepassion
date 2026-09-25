@@ -69,7 +69,7 @@ test "chick slash uses melee timeline and can be escaped" {
         assert rule is not None;
         world = World();
         player = Player(pos=Vec3(x=60.0));
-        enemy = Opponent(rule=rule, attack_wait=0.0);
+        enemy = Opponent(game="q2", rule=rule, attack_wait=0.0);
         world +>:HasOpponent:+> enemy;
         collision = CollisionMap();
         state = CombatState(game="q2");

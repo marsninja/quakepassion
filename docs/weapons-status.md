@@ -7,12 +7,15 @@ game work takes priority.
 Implemented:
 
 - Owned weapon inventory, original starting loadouts, weapon/ammo pickups and
-  per-game capacities. Keys **1–9**, and **0** for Q2's BFG, select owned weapons.
+  per-game capacities. Keys **1–9**, and **0** for Q2's BFG, select owned weapons
+  with ammo; the mouse wheel and `/` cycle them (see
+  [player-feedback-status.md](player-feedback-status.md) for switching,
+  autoswitch, knockback, explosions and trails).
 - Pellet spread with a saved random stream; damage aggregates before armor and
   death callbacks. Rails penetrate opponents but stop at world geometry.
 - Traveling bolts, nails, rockets, plasma and BFG projectiles, swept impact
   detection, grenade gravity/bounce/fuses, splash visibility, self-damage and
-  blast knockback. Active projectiles live in the world graph and survive saves.
+  each game's knockback. Active projectiles live in the world graph and survive saves.
 - Shot and blast damage to Q2 destructible brushes and shot activation of Q1
   secret doors. Opponent deaths use the shared target/kill-credit path.
 - Weapon names and current ammo in the HUD; archive-backed weapon sounds are
@@ -29,14 +32,13 @@ penetration, thin-wall projectile sweeps, splash occlusion, death credit,
 grenade bounce/fuse and deterministic save restoration.
 
 These are functional arsenal foundations, **not full weapon fidelity**. Remaining
-work includes BFG charge animation/timing and immunity rules,
-chaingun spin-up, exact original recoil/animation, water/lightning discharge,
-exact game-specific muzzle offsets and spread sequences, remaining projectile materials and
-impact/trail effects, weapon switching/autoselection timing, dropped weapons,
+work includes BFG immunity rules, exact original recoil/animation, exact
+game-specific muzzle offsets and spread sequences, remaining projectile
+materials, impact marks, dropped weapons,
 powerups, and bot use of the arsenal. Original MDL/MD2/MD3 models now cover nails,
 bolts, grenades and rockets. Q2 BFG flight/explosion effects use the original
-animated SP2/PCX assets; Q3 plasma uses its additive rotating sprite. Q3 BFG
-still uses a placeholder. Q3 model materials still report partial support for several animated
+animated SP2/PCX assets; Q3 plasma uses its additive rotating sprite and the Q3
+BFG flies as `models/weaphits/bfg.md3`. Q3 model materials still report partial support for several animated
 shader stages. Team-linked pickups, Q2 no-touch items, floor placement/riding
 movers, and Q3 randomized respawn timing also remain open.
 
@@ -122,7 +124,7 @@ including the grenade's red/green overlay. This follows the original
 [Q3 shader parser](https://github.com/id-Software/Quake-III-Arena/blob/master/code/renderer/tr_shader.c).
 Other unsupported model shader operations still report partial support rather
 than silently claiming fidelity. Q3 BFG autosprite/deformation stages, projectile
-trails and most impact effects remain unfinished.
+smoke trails and impact marks remain unfinished.
 
 `scripts/projectile_scene_smoke.jac` loads and draws all 12 configured effects
 and verifies animated grenade stages and additive rocket flare setup. Focused

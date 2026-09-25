@@ -6,11 +6,13 @@ import from ..math.vec3 { Vec3 }
 
 """Apply one hit to an actor. `means` separates direct hits from "splash",
 "environment" (liquids), "drown" and "fall" damage, which some powerups
-ignore; `bypass_protection` marks telefrags and kill volumes."""
+ignore; `bypass_protection` marks telefrags and kill volumes; `energy` marks
+Q2 energy weapons, which armor stops less well."""
 walker Damage {
     has amount: int,
         bypass_armor: bool = False,
         bypass_protection: bool = False,
+        energy: bool = False,
         means: str = "",
         source: Vec3 | None = None,
         attacker: Actor | None = None,
@@ -53,10 +55,14 @@ walker Damage {
             }
         }
         if not self.bypass_armor {
+            ratio = here.armor_ratio;
+            if self.energy {
+                ratio = energy_protection(ratio);
+            }
             self.absorbed = min(
                 here.armor,
                 int(
-                    math.ceil(float(self.amount) * max(0.0, min(1.0, here.armor_ratio)))
+                    math.ceil(float(self.amount) * max(0.0, min(1.0, ratio)))
                 )
             );
             here.armor -= self.absorbed;
@@ -65,6 +71,15 @@ walker Damage {
         # Health stops at zero; how far past it the hit went decides gibbing.
         self.overkill = self.amount - self.absorbed - self.dealt;
         here.health -= self.dealt;
+        if isinstance(here, Player) {
+            # Collected for the view's damage blend and kick, as Q1 T_Damage
+            # sums dmg_take/dmg_save and Q2 T_Damage damage_blood/armor.
+            here.damage_blood += self.amount - self.absorbed;
+            here.damage_armor += self.absorbed + self.shielded;
+            if self.source is not None {
+                here.damage_from = self.source;
+            }
+        }
         self.killed = here.health == 0;
         if self.killed {
             # Match scoring credits the attacker; None means a world death.
@@ -72,6 +87,19 @@ walker Damage {
             here.death_means = self.means;
         }
     }
+}
+
+"""Q2 g_items.c armor info: energy weapons (DAMAGE_ENERGY: blasters, the
+BFG) meet jacket armor's 0 energy protection, combat armor's 0.3 and body
+armor's 0.6 instead of their 0.3/0.6/0.8 normal protection."""
+def energy_protection(normal: float) -> float {
+    if normal >= 0.8 {
+        return 0.6;
+    }
+    if normal >= 0.6 {
+        return 0.3;
+    }
+    return 0.0;
 }
 
 walker Heal {

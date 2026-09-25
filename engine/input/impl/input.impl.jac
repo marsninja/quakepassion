@@ -97,6 +97,18 @@ impl sample_intent(
     if IsKeyPressed(i32(71)) {
         weapon = 11;
     }
+    # Next / previous weapon: the mouse wheel (Q3 weapnext/weapprev) and
+    # Q1's default "/" (impulse 10).
+    step = 0;
+    wheel = float(GetMouseWheelMove());
+    if wheel > 0.0 {
+        step = 1;
+    } elif wheel < 0.0 {
+        step = -1;
+    }
+    if IsKeyPressed(i32(47)) {
+        step = 1;
+    }
     return Intent(
         move=mv,
         look_yaw=yaw,
@@ -105,9 +117,11 @@ impl sample_intent(
         toggle_overlay=IsKeyPressed(KEY_F3),
         toggle_walk=IsKeyPressed(i32(293)),
         jump=IsKeyPressed(KEY_SPACE),
+        jump_held=IsKeyDown(KEY_SPACE),
         crouch=IsKeyDown(i32(341)),
         fire=_mouse.captured and _mouse.warmup == 0 and IsMouseButtonDown(MOUSE_LEFT),
         weapon=weapon,
+        weapon_step=step,
         use_item=IsKeyPressed(i32(257)),
         next_item=IsKeyPressed(i32(93)),
         prev_item=IsKeyPressed(i32(91)),

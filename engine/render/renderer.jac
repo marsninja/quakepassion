@@ -54,6 +54,7 @@ import from vendor.raylib {
     ) -> None;  def rlSetRenderBatchActive(batch: &mut Pinned[rlRenderBatch] | None) -> None;
 }
 
+import math;
 import from ..world.particles { HasParticle, ImpactParticle, HasTrail, ShotTrail }
 import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
 import from ..world.doors { Door }
@@ -65,7 +66,7 @@ import from ..world.combat {
     HasProjectile,
     selected_weapon
 }
-import from ..math.vec3 { Vec3, forward_from }
+import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..world.world { World, Area, Surface }
 
 
@@ -99,7 +100,7 @@ obj Renderer {
     """Begin a frame: clear and install a z-up perspective camera. The camera is
     raylib's own `Camera3D` with up = +Z (Quake's convention) and a target one
     forward-vector ahead of the eye — exactly the view the @sv renderer built."""
-    def begin_frame(eye: Vec3, yaw: float, pitch: float);
+    def begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0);
 
     """Draw an area's graybox surfaces as solid cubes with wireframe edges."""
     def draw_area(area: Area);

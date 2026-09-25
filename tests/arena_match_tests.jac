@@ -118,7 +118,7 @@ test "frags follow killers, world deaths cost a frag and the limit ends the matc
     ranger.health = 0;
     ranger.killer = player;
     first = contest spawn MatchTick(dt=0.01);
-    assert first.messages == ["You fragged Ranger"];
+    assert first.messages == ["You fragged Ranger\n1st place with 1"];
     assert "sound/feedback/takenlead.wav" in first.cues;
     contest spawn MatchTick(dt=0.01);
     assert standings(contest)[0].frags == 1;
