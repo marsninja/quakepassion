@@ -2,6 +2,7 @@
 import math;
 import from .particles {
     impact_spray,
+    wall_impact,
     ParticleTick,
     rail_trail,
     beam_trail,
@@ -1430,7 +1431,14 @@ def fire_weapon(
                 * scale;
         }
         if (not hits or rule.piercing) and wall.fraction < 1.0 {
-            impact_spray(world, player.pos.lerp(finish, wall.fraction), wall.normal);
+            struck_at = player.pos.lerp(finish, wall.fraction);
+            surface = collision.surface_class(wall);
+            if surface < 2 {
+                impact_spray(world, struck_at, wall.normal);
+            }
+            wall_impact(
+                world, state.game, rule.key, struck_at, wall.normal, surface, wall.model, collision
+            );
             state.impact_model = wall.model;
             state.impacts.append(
                 WeaponImpact(
@@ -2262,10 +2270,43 @@ walker ProjectileTick {
             return;
         }
         if victim is None and wall.fraction < 1.0 {
+            surface = self.collision.surface_class(wall);
+            # Q2 rocket_touch / Q3 G_MissileImpact: a missile striking the
+            # sky (SURF_SKY, SURF_NOIMPACT) just vanishes.
+            if surface >= 2 {
+                world del --> here;
+                return;
+            }
             here.pos = here.pos.add(wall.normal.scale(0.1));
             self.state.impacts.append(
                 WeaponImpact(model=wall.model, amount=here.damage, origin=here.pos)
             );
+            wall_impact(
+                world,
+                self.state.game,
+                here.effect,
+                here.pos,
+                wall.normal,
+                surface,
+                wall.model,
+                self.collision
+            );
+        } elif victim is None and here.effect == "q3_grenade" {
+            # G_ExplodeMissile: a grenade bursting at rest marks the floor it
+            # lies on (CG_ImpactMark projects 20 units along the up direction).
+            floor = self.collision.trace_point(here.pos, here.pos.sub(Vec3(z=20.0)));
+            if floor.fraction < 1.0 and not floor.start_solid {
+                wall_impact(
+                    world,
+                    "q3",
+                    here.effect,
+                    here.pos.lerp(here.pos.sub(Vec3(z=20.0)), floor.fraction),
+                    floor.normal,
+                    self.collision.surface_class(floor),
+                    floor.model,
+                    self.collision
+                );
+            }
         }
         # Nonexplosive missiles expire quietly at the end of their lifetime.
         projectile_blast(world, here, self.player, self.collision, self.state, victim);
@@ -2560,7 +2601,22 @@ def opponent_shot(
                 totals.append(amount);
             }
         } elif wall.fraction < 1.0 and not wall.start_solid {
-            impact_spray(world, start.lerp(finish, wall.fraction), wall.normal);
+            surface = collision.surface_class(wall);
+            if surface < 2 {
+                impact_spray(world, start.lerp(finish, wall.fraction), wall.normal);
+            }
+            # Q2 monster_fire_bullet's TE_GUNSHOT ricochets; the shotgun's
+            # TE_SHOTGUN and Q1's TE_GUNSHOT are silent.
+            wall_impact(
+                world,
+                enemy.game,
+                "railgun" if profile.rail else ("bullet" if profile.pellets == 1 or profile.volley else "shotgun"),
+                start.lerp(finish, wall.fraction),
+                wall.normal,
+                surface,
+                wall.model,
+                collision
+            );
         }
     }
     for slot in range(len(struck)) {

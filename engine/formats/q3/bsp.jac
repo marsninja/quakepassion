@@ -153,8 +153,10 @@ def parse_q3(data: bytes) -> Bsp {
         for j in range(first, first + count) {
             plane = i32_at(lumps[9], j * 8);
             check_index(plane, len(bsp.planes));
-            check_index(i32_at(lumps[9], j * 8 + 4), len(bsp.textures));
+            shader = i32_at(lumps[9], j * 8 + 4);
+            check_index(shader, len(bsp.textures));
             brush.planes.append(plane);
+            brush.side_flags.append(bsp.textures[shader].flags);
         }
         bsp.brushes.append(brush);
     }

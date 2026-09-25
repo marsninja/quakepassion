@@ -1351,6 +1351,12 @@ impl App.step() -> bool {
                     self.play_at(blast.sound, blast.pos);
                 }
             }
+            for struck in [self.world->:HasImpactSound:->][?:ImpactSound] {
+                if not struck.heard {
+                    struck.heard = True;
+                    self.play_at(struck.sound, struck.pos);
+                }
+            }
             pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,

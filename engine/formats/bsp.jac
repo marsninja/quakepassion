@@ -101,7 +101,8 @@ obj MapEntity {
 
 obj Brush {
     has planes: list[int] = [],
-        contents: int = 0;
+        contents: int = 0,
+        side_flags: list[int] = [];
 }
 
 """A Q3 fog volume (dfog_t): an axial brush, and the plane of its visible side

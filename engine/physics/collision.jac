@@ -349,6 +349,10 @@ obj CollisionMap {
         groups: list[HullGroup] = [],
         eye_height: float = 22.0,
         top_drop: float = 0.0;
+    # Brush sides a shot leaves nothing on, by hull: the sky and Q3
+    # SURF_NOIMPACT take no impact at all, Q3 SURF_NOMARKS no marks.
+    has no_impact: dict[int, list[Vec3]] = {},
+        no_marks: dict[int, list[Vec3]] = {};
 
     # Share live geometry and mover offsets, but keep actor stance independent.
     def for_body(height: float, drop: float = 0.0) -> CollisionMap {
@@ -363,8 +367,30 @@ obj CollisionMap {
             bounds=self.bounds,
             groups=self.groups,
             eye_height=height,
-            top_drop=drop
+            top_drop=drop,
+            no_impact=self.no_impact,
+            no_marks=self.no_marks
         );
+    }
+
+    """What the surface a point trace ended on takes from a shot: 2 nothing
+    (sky, SURF_NOIMPACT: g_weapon.c and fire_lead skip their impact
+    events), 1 no mark (SURF_NOMARKS), 0 both."""
+    def surface_class(trace: Trace) -> int {
+        if trace.fraction >= 1.0 or trace.hull < 0 {
+            return 0;
+        }
+        for normal in self.no_impact.get(trace.hull, []) {
+            if normal.dot(trace.normal) > 0.99 {
+                return 2;
+            }
+        }
+        for normal in self.no_marks.get(trace.hull, []) {
+            if normal.dot(trace.normal) > 0.99 {
+                return 1;
+            }
+        }
+        return 0;
     }
 
     def set_offset(index: int, offset: Vec3) {

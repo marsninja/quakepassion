@@ -19,7 +19,7 @@ import from .combat {
 }
 import from .weapons { WeaponRule }
 import from .inventory { quantity, AdjustInventory }
-import from .particles { rail_trail, beam_trail, impact_spray }
+import from .particles { rail_trail, beam_trail, impact_spray, wall_impact }
 import from .bot_character { BotCharacter, BotState }
 import from .powerups { damage_scale, fire_interval_scale, empowered }
 import from .pickups { Pickup, HasPickup }
@@ -389,7 +389,13 @@ def bot_fire(
                 totals.append(rule.damage);
             }
         } elif wall.fraction < 1.0 and not wall.start_solid and rule.key != "gauntlet" {
-            impact_spray(world, endpoint, wall.normal);
+            surface = collision.surface_class(wall);
+            if surface < 2 {
+                impact_spray(world, endpoint, wall.normal);
+            }
+            wall_impact(
+                world, "q3", rule.key, endpoint, wall.normal, surface, wall.model, collision
+            );
         }
     }
     for slot in range(len(struck)) {

@@ -94,7 +94,7 @@ import from ..world.combat {
     ClearActors
 }
 import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
-import from ..world.particles { Explosion, HasExplosion }
+import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
 import from ..render.view_feedback { ViewFeedback, death_view }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }

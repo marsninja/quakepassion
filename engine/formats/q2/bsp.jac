@@ -203,6 +203,11 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
             plane = u16_at(lumps[15], j * 4);
             check_index(plane, len(bsp.planes));
             brush.planes.append(plane);
+            # dbrushside_t texinfo is a signed short; bevels have none.
+            side_texinfo = u16_at(lumps[15], j * 4 + 2);
+            brush.side_flags.append(
+                texinfo[side_texinfo].flags if side_texinfo < len(texinfo) else 0
+            );
         }
         bsp.brushes.append(brush);
     }

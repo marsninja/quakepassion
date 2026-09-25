@@ -4,7 +4,7 @@ The shared combat simulation now emits debris at each hitscan wall impact and bl
 
 Supported modeled opponents play one original pain/death frame family. Pain briefly interrupts movement and attacks, with a cooldown to prevent permanent stun. Death holds the last frame; restored dead opponents use that pose. Turning is rate limited, steering includes local spacing, and grounded actors check support ahead. Ranged attack animations stop forward movement; authored melee sequences can charge. First-person weapons have small movement bob and shot recoil.
 
-This is not yet original-game behavioral parity. Remaining work includes frame-timed attacks and each monster's authored movement distances, broader enemy rosters, path navigation and Q3 tactical/item decisions, game-specific impact textures/sounds and decals, muzzle flashes, gibs, and varied pain/death sequences. Local spacing is steering, not full actor collision. Particle gravity does not collide with subsequent surfaces. Blood/debris currently share a compact particle renderer across games.
+This is not yet original-game behavioral parity. Remaining work includes frame-timed attacks and each monster's authored movement distances, broader enemy rosters, path navigation and Q3 tactical/item decisions, game-specific impact textures, gibs, and varied pain/death sequences (impact marks, ricochets and monster muzzle flashes are covered below). Local spacing is steering, not full actor collision. Particle gravity does not collide with subsequent surfaces. Blood/debris currently share a compact particle renderer across games.
 
 Validation entry points: `tests/feedback_tests.jac`, existing combat tests, and native `scripts/feedback_render_smoke.jac` (requires Q1 assets in `~/quake-assets/id1` and an active display).
 
@@ -114,3 +114,68 @@ Q1 `e2m3`, Q2 `bunk1`, and Q3 `q3dm1` with exit status zero.
 This implements the short pain sequences. Damage-dependent/random alternatives,
 airborne reactions, nightmare suppression, authored pain movement, wounded skins,
 and pain audio remain unfinished. These checks do not establish campaign parity.
+
+## Impact marks and ricochets
+
+Shots that strike the world play each game's impact sound once, from where they
+struck (`ImpactSound` nodes, played like explosions):
+
+- Q1 (`CL_ParseTEnt`): nails and super nails `tink1` four times in five, else
+  `ric1`–`ric3`; the enforcer's laser `enfstop`, scrag and hell knight spikes
+  their `hit` sounds. Q1's `TE_GUNSHOT` is silent.
+- Q2: bullets (`TE_GUNSHOT`: the machine gun, chaingun and monster guns)
+  `world/ric1`–`ric3` three times in sixteen; shotgun pellets (`TE_SHOTGUN`)
+  are silent; blaster bolts `lashit`.
+- Q3 (`CG_MissileHitWall`): the machine gun always ricochets, the lightning gun
+  plays its `lg_hit` sounds, the shotgun is silent.
+
+The choice uses a roll derived from the impact point, not gameplay random
+numbers. Sparks (the existing particle spray) still show on every wall hit.
+
+Q3 leaves `CG_ImpactMark` marks (`ImpactMark` nodes): `bullet_mrk` for the
+machine gun (radius 8) and shotgun (4), `hole_lg_mrk` for the lightning gun
+(12), `burn_med_mrk` for rockets and grenades (64) and the BFG (32), and
+`plasma_mrk` for the plasma gun (16) and railgun (24, in the rail colour). Each
+is a square on the struck plane at a random turn, drawn after the world with a
+small distance-scaled lift standing in for `polygonOffset`: bullet, burn and
+hole marks darken what is behind them (`GL_ZERO GL_ONE_MINUS_SRC_COLOR`) and fade
+their colour, energy marks blend by alpha with their glow dying over three
+seconds. Marks last 10 seconds, fading over the last one; the pool holds 128
+and the oldest gives way. A grenade bursting at rest marks the floor under it.
+Marks go only on world brushes (not movers, as Q3 marks only the world model).
+
+Surfaces: brush sides keep their texture flags. Sky (Q2/Q3 `SURF_SKY`) and Q3
+`SURF_NOIMPACT` sides take no sparks, sound or mark, and missiles striking them
+vanish without exploding (`G_MissileImpact`, `rocket_touch`); Q3 `SURF_NOMARKS`
+sides take no mark.
+
+Limits: Q3 clips a mark to the faces it covers (`CM_MarkFragments`); here a
+mark whose corners would leave its plane shrinks (up to twice, halving) instead,
+so marks near an edge are smaller rather than clipped. Marks are not saved.
+
+Validation: `tests/impact_tests.jac`; `scripts/impact_marks_smoke.jac` fires
+every Q3 hitscan and missile weapon at a q3dm1 wall and captures the sparks
+(`qp_impact_sparks.png`), the marks (`qp_impact_marks.png`) and the marks four
+seconds later (`qp_impact_marks_later.png`), which were inspected.
+
+## Monster muzzles and flashes
+
+Monster shots leave per-attack muzzles instead of the eye: `AttackProfile.muzzles`
+holds forward, right and up offsets from the origin, one per shot of a sequence
+(or, for a `volley`, one per gun of one shot). Q2 monsters use
+`m_flash.c monster_flash_offset` through `G_ProjectSource` (the soldier's by
+attack, the gunner's, tank's and Makron's sweeps by frame, the Hornet's and
+Jorg's twin guns and the Hornet's four rocket tubes as volleys); Q1 monsters use
+their QuakeC launch origins (grunt `FireBullets`, `enforcer_fire`, the ogre's
+origin, scrag spikes left then right, zombie throws, the vore's pod, the hell
+knight's box centre). Aim runs from the muzzle, and a wall between the origin and
+the muzzle stops the shot there, as `fire_lead`'s origin trace does.
+
+Each shot lights a 0.1 s dynamic light at the muzzle in its weapon's colour (Q2
+`CL_ParseMuzzleFlash2`: yellow guns and blasters, orange rockets and grenades,
+blue rails, green BFG; Q1 `EF_MUZZLEFLASH` on the grunt, enforcer, ogre, scrag,
+shambler and vore). This replaces the glow monsters used to carry for the whole
+of an attack. Beam attacks (the shambler's lightning, parasite drain) keep their
+beam origins.
+
+Validation: the muzzle and flash tests in `tests/q2_attack_tests.jac`.
