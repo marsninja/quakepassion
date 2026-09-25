@@ -293,7 +293,8 @@ walker DoorTick {
         player: Player | None = None,
         message: str = "",
         cues: list[str] = [],
-        actors: list[Opponent] = [];
+        actors: list[Opponent] = [],
+        origins: list[Vec3] = [];
 
     """Start the moving loop and the start sound when a mover sets off; stop
     the loop and play the stop sound when it comes to rest."""
@@ -301,6 +302,10 @@ walker DoorTick {
         moving = mover.state in ["opening", "closing"];
         was = mover.voiced_state in ["opening", "closing"];
         mover.voiced_state = mover.state;
+        # A mover at rest neither moves its sounds nor starts or stops them.
+        if not moving and not was {
+            return;
+        }
         centre = mover.bounds.center().add(mover.rest).add(mover.travel.scale(mover.position));
         for speaker in [mover.start_voice, mover.move_voice, mover.stop_voice] {
             if speaker is not None {
@@ -361,6 +366,9 @@ walker DoorTick {
                 for actor in [here->:HasOpponent:->][?:Opponent]
                 if actor.health > 0 and not actor.dormant and not actor.rule.inert
             ];
+            self.origins = [
+                actor.pos.sub(Vec3(z=actor.eye_height)) for actor in self.actors
+            ];
             visit [here->:HasDoor:->];
         }
     }
@@ -411,6 +419,9 @@ walker DoorTick {
             and self.player is not None
             and self.player.velocity.z <= 0.0 {
             for index in here.hulls {
+                if not self.collision.reaches(index, origin, 1.0) {
+                    continue;
+                }
                 local = origin.sub(self.collision.offsets[index]);
                 support = self.collision.hulls[index] spawn Sweep(
                     top_drop=self.collision.top_drop,
@@ -427,21 +438,26 @@ walker DoorTick {
         riders: list[Opponent] = [];
         monster_contact = False;
         if here.automatic and here.monster_touch and (not here.keys or here.unlocked) {
-            for actor in self.actors {
-                actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
-                if here.kind in ["door", "platform"]
-                    and here.trigger.contains(actor_origin) {
-                    monster_contact = True;
+            if here.kind in ["door", "platform"] {
+                for actor_origin in self.origins {
+                    if here.trigger.contains(actor_origin) {
+                        monster_contact = True;
+                        break;
+                    }
                 }
             }
         }
         if here.kind == "platform" {
-            for actor in self.actors {
+            for actor_index in range(len(self.actors)) {
+                actor = self.actors[actor_index];
                 if actor.velocity.z > 0.0 {
                     continue;
                 }
-                actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
+                actor_origin = self.origins[actor_index];
                 for index in here.hulls {
+                    if not self.collision.reaches(index, actor_origin, 1.0) {
+                        continue;
+                    }
                     local = actor_origin.sub(self.collision.offsets[index]);
                     support = self.collision.hulls[index] spawn Sweep(
                         top_drop=0.0, start=local, finish=local.add(Vec3(z=-0.25))
@@ -470,6 +486,9 @@ walker DoorTick {
             contact = False;
             if self.touching and here.automatic {
                 for index in here.hulls {
+                    if not self.collision.reaches(index, origin, 1.0) {
+                        continue;
+                    }
                     for delta in [
                         Vec3(x=0.125),
                         Vec3(x=-0.125),
@@ -619,6 +638,12 @@ walker DoorTick {
         # Validate the whole group before changing any render or collision state.
         for part in members {
             for j in range(len(part.hulls)) {
+                # Bounds cover the mover's whole travel (or turn).
+                if not self.collision.reaches(
+                    part.hulls[j], origin, carried.sub(origin).length() + 1.0
+                ) {
+                    continue;
+                }
                 query = pose_sweep(
                     self.collision,
                     part,
