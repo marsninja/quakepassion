@@ -61,7 +61,10 @@ def leave_corpse(world: World, actor: Entity, rig: PlayerRig) -> Corpse | None {
         alive=False,
         character=rig.character,
         voice=rig.voice,
-        footsteps=rig.footsteps
+        footsteps=rig.footsteps,
+        head_offset=rig.head_offset,
+        fixed_legs=rig.fixed_legs,
+        fixed_torso=rig.fixed_torso
     );
     links = [edge rig->:Wears:->];
     parts = [rig->:Wears:->][?:ModelResource];

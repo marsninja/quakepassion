@@ -28,6 +28,23 @@ def icon_projection() -> Matrix {
     );
 }
 
+"""CG_DrawHead: centre a head model and back off until it nearly fills the
+box, then apply its animation.cfg `headoffset` (per-model tweaking)."""
+def head_view(renderer: ModelRenderer, offset: Vec3 = Vec3()) -> Vec3 {
+    lo = Vec3(x=100000.0, y=100000.0, z=100000.0);
+    hi = Vec3(x=-100000.0, y=-100000.0, z=-100000.0);
+    for surface in renderer.model.surfaces {
+        if surface.frames {
+            for v in surface.frames[0].vertices {
+                lo = Vec3(x=min(lo.x, v.x), y=min(lo.y, v.y), z=min(lo.z, v.z));
+                hi = Vec3(x=max(hi.x, v.x), y=max(hi.y, v.y), z=max(hi.z, v.z));
+            }
+        }
+    }
+    length = 0.7 * (hi.z - lo.z);
+    return Vec3(x=length / 0.268, y=0.5 * (lo.y + hi.y), z=-0.5 * (lo.z + hi.z)).add(offset);
+}
+
 obj HudModels {
     has ammo: dict[str, ModelRenderer] = {},
         armor: ModelRenderer | None = None,
@@ -53,21 +70,10 @@ obj HudModels {
         return float(self.random_state) / 2147483647.0;
     }
 
-    """CG_DrawHead: centre the head and back off until it nearly fills the box."""
-    def set_head(renderer: ModelRenderer) {
+    """The status bar's head (the player's), placed as CG_DrawHead does."""
+    def set_head(renderer: ModelRenderer, offset: Vec3 = Vec3()) {
         self.head = renderer;
-        lo = Vec3(x=100000.0, y=100000.0, z=100000.0);
-        hi = Vec3(x=-100000.0, y=-100000.0, z=-100000.0);
-        for surface in renderer.model.surfaces {
-            if surface.frames {
-                for v in surface.frames[0].vertices {
-                    lo = Vec3(x=min(lo.x, v.x), y=min(lo.y, v.y), z=min(lo.z, v.z));
-                    hi = Vec3(x=max(hi.x, v.x), y=max(hi.y, v.y), z=max(hi.z, v.z));
-                }
-            }
-        }
-        length = 0.7 * (hi.z - lo.z);
-        self.head_origin = Vec3(x=length / 0.268, y=0.5 * (lo.y + hi.y), z=-0.5 * (lo.z + hi.z));
+        self.head_origin = head_view(renderer, offset);
     }
 
     """CG_DrawStatusBar's 3D icons over the Q3 status bar laid out by `hud`."""

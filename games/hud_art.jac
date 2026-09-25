@@ -2,7 +2,7 @@
 import from engine.render.hud { HudRenderer }
 import from engine.render.hud_models { HudModels }
 import from engine.render.models { ModelRenderer }
-import from .arena_character { player_part }
+import from .arena_character { player_part, animation_settings }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q1.wad { wad_pictures, lump_picture }
 import from engine.formats.q2.model { parse_pcx }
@@ -180,6 +180,7 @@ def load_q3_models(models: HudModels, library: AssetLibrary) {
         part = player_part(library, "head", "sarge", "default");
         head = ModelRenderer();
         head.upload(part.model, part.skins);
-        models.set_head(head);
+        settings = animation_settings(library.read("models/players/sarge/animation.cfg").decode("utf-8"));
+        models.set_head(head, settings.head_offset);
     }
 }
