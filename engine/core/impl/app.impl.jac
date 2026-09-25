@@ -1287,6 +1287,9 @@ impl App.step() -> bool {
             self.world spawn GibTick(
                 collision=self.level.collision, dt=self.physics_clock.tick_rate
             );
+            self.world spawn TossTick(
+                collision=self.level.collision, dt=self.physics_clock.tick_rate
+            );
             for impact in self.combat.impacts {
                 if impact.model >= 0 {
                     shot = self.world spawn ShootTrigger(

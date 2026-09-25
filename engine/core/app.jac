@@ -113,7 +113,7 @@ import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..render.hud_models { HudModels }
 import from ..world.reflection { show_body, follow_body }
-import from ..world.drops { toss_items }
+import from ..world.drops { toss_items, TossTick }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }

@@ -9,7 +9,7 @@ import from engine.world.pickups {
     InTeam,
     respawn_wait
 }
-import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, toss_items }
+import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, toss_items, TossTick, in_flight }
 import from engine.world.powerups { Powerup, Empowered, powerup_left }
 import from engine.world.inventory { quantity, AdjustInventory }
 import from engine.world.models { ModelResource, powerup_shaders }
@@ -101,7 +101,8 @@ test "a dying player drops its weapon and powerups, which vanish after 30 s" {
     world ++> area;
     drop_table(world);
     collision = floor_map();
-    victim = Player(health=0, pos=Vec3(z=26.0));
+    # The body's origin stands 24 units over the floor, its eye 26 above that.
+    victim = Player(health=0, pos=Vec3(z=50.0));
     move_to_area(victim, area);
     victim.inventory spawn AdjustInventory(kind="weapon_railgun", amount=1, capacity=1);
     victim.inventory spawn AdjustInventory(kind="slugs", amount=3, capacity=200);
@@ -111,8 +112,22 @@ test "a dying player drops its weapon and powerups, which vanish after 30 s" {
     assert not index.pickups;
     items = toss_items(world, victim, "railgun", collision, 26.0);
     assert len(items) == 2 and all([item.dropped and item.active for item in items]);
-    # Dropped items rest on the floor, and the bots' index sees them.
-    assert abs(items[0].pos.z - 15.0) < 0.5;
+    # Drop_Item throws each from the body's origin: the weapon straight
+    # ahead, the powerup 45 degrees round, rising at first.
+    assert all([in_flight(item) and abs(item.pos.z - 24.0) < 0.001 for item in items]);
+    peak = 0.0;
+    for step in range(200) {
+        world spawn TossTick(collision=collision, dt=0.01);
+        peak = max(peak, items[0].pos.z);
+    }
+    assert peak > 40.0;
+    # They land a unit off the floor (their boxes reach 15 down) some way out.
+    for item in items {
+        assert not in_flight(item) and abs(item.pos.z - 16.0) < 0.5;
+        assert item.pos.sub(Vec3()).length() > 60.0 and item.pos.sub(Vec3()).length() < 130.0;
+    }
+    assert abs(items[0].pos.y) < 0.001 and items[0].pos.x > 60.0;
+    assert abs(items[1].pos.x - items[1].pos.y) < 0.5;
     index.prepare(world);
     assert len(index.pickups) == 2;
     # The quad keeps the carrier's remaining whole seconds.
@@ -124,6 +139,17 @@ test "a dying player drops its weapon and powerups, which vanish after 30 s" {
     taker.pos = Vec3(z=-100000.0);
     tick(world, taker, 30.0);
     assert not [world->:HasPickup:->][?:Pickup];
+    # A dropped item stops dead against a wall (physicsBounce 0) and drops.
+    wall = floor_map();
+    wall.add_box(Vec3(x=40.0, y=-100.0, z=0.0), Vec3(x=48.0, y=100.0, z=200.0), Vec3(), Vec3(), Vec3());
+    wall.reindex();
+    victim.inventory spawn AdjustInventory(kind="slugs", amount=3, capacity=200);
+    thrown = toss_items(world, victim, "railgun", wall, 26.0);
+    for step in range(200) {
+        world spawn TossTick(collision=wall, dt=0.01);
+    }
+    assert thrown[0].pos.x < 40.0 and thrown[0].pos.x > 30.0 and abs(thrown[0].pos.z - 16.0) < 0.5;
+    victim.inventory spawn AdjustInventory(kind="slugs", amount=-3, capacity=200);
     # Machine guns, gauntlets and empty weapons stay with the body.
     assert not toss_items(world, victim, "machinegun", collision, 26.0);
     victim.inventory spawn AdjustInventory(kind="slugs", amount=-3, capacity=200);
