@@ -116,6 +116,20 @@ with entry {
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt, contacts=True);
             contest spawn MatchTick(dt=dt);
             app.simulation_time += dt;
+            # A shot is caught on its own tick, while its flash shows (sampling
+            # every few ticks would miss flashes fired in step with them).
+            if "fire" not in taken and "fire" in wanted {
+                for bot in bots {
+                    rig = bot.visual;
+                    if isinstance(rig, PlayerRig) and rig.alive and rig.clock - rig.flash_time < 0.005 {
+                        if capture(app, level.collision, bot, eye, math.pi / 4.0, "qp_bot_" + name + "_fire.png") {
+                            taken.append("fire");
+                            print("  tick", tick, "fire", rig.weapon, "battle", bot.bot_state.battle);
+                            break;
+                        }
+                    }
+                }
+            }
             if tick % 6 != 0 {
                 continue;
             }
@@ -131,9 +145,6 @@ with entry {
                     state = "strafe";
                 } elif rig.alive and rig.legs_anim == ANIM_LEGS_RUN {
                     state = "run";
-                }
-                if rig.alive and rig.clock - rig.flash_time < 0.02 and "fire" not in taken {
-                    state = "fire";
                 }
                 if rig.alive and bot.fighting and bot.pitch > 0.3 and "aim_up" not in taken {
                     state = "aim_up";

@@ -508,12 +508,11 @@ walker BotTactics {
         if not here.fighting {
             here.crouched = False;
         }
-        # Retreating bots with attack skill keep aiming back at the enemy.
-        if here.fighting or mind.attack_skill > 0.3 {
-            look_at(here, here.aim_target);
-        } else {
-            look_ahead(here);
-        }
+        # A visible enemy is always aimed at, retreating or not. (Battle_Retreat
+        # and Battle_NBG only do so above 0.3 attack skill, but G_AddBot's
+        # handicap keeps skill 1-2 bots under BotAggression's health marks, so
+        # they would retreat for good and never face their enemy.)
+        look_at(here, here.aim_target);
         steer_view(here, mind, True, dt);
         rule = rule_for(self.rules, here.weapon_slot);
         if rule is None or not armed_with(here, rule) {

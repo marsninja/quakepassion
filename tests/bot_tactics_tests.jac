@@ -233,3 +233,76 @@ test "unskilled bots stand, mediocre ones only close or open the distance" {
     assert bot.bot_state.battle == "fight";
     assert bot.steering.x > 0.99 and abs(bot.steering.y) < 0.001;
 }
+
+# Ranger's botlib character (botfiles/bots/ranger_c.c), the characteristics
+# that decide whether and how it shoots.
+glob RANGER: str = '''
+skill 1
+{
+	CHARACTERISTIC_NAME							"Ranger"
+	CHARACTERISTIC_ATTACK_SKILL					0.0
+	CHARACTERISTIC_AIM_ACCURACY					0.2
+	CHARACTERISTIC_AIM_SKILL					0.2
+	CHARACTERISTIC_VIEW_FACTOR					0.25
+	CHARACTERISTIC_VIEW_MAXCHANGE				90
+	CHARACTERISTIC_REACTIONTIME					4.0
+	CHARACTERISTIC_AGGRESSION					0.25
+	CHARACTERISTIC_FIRETHROTTLE					0.5
+}
+skill 4
+{
+	CHARACTERISTIC_NAME							"Ranger"
+	CHARACTERISTIC_ATTACK_SKILL					0.75
+	CHARACTERISTIC_AIM_ACCURACY					0.6
+	CHARACTERISTIC_AIM_SKILL					0.6
+	CHARACTERISTIC_VIEW_FACTOR					0.75
+	CHARACTERISTIC_VIEW_MAXCHANGE				120
+	CHARACTERISTIC_REACTIONTIME					2.0
+	CHARACTERISTIC_AGGRESSION					0.45
+	CHARACTERISTIC_FIRETHROTTLE					0.8
+}
+skill 5
+{
+	CHARACTERISTIC_NAME							"Ranger"
+	CHARACTERISTIC_ATTACK_SKILL					1.0
+	CHARACTERISTIC_AIM_ACCURACY					1.0
+	CHARACTERISTIC_AIM_SKILL					1.0
+	CHARACTERISTIC_VIEW_FACTOR					1.0
+	CHARACTERISTIC_VIEW_MAXCHANGE				360
+	CHARACTERISTIC_REACTIONTIME					0.1
+	CHARACTERISTIC_AGGRESSION					0.95
+	CHARACTERISTIC_FIRETHROTTLE					1.0
+}
+''';
+
+test "bots of every skill turn on a visible enemy and shoot, even retreating" {
+    rules = weapon_rules("q3");
+    for level in [1.0, 2.0, 3.0, 4.0, 5.0] {
+        world = World();
+        collision = arena_floor();
+        # Handicapped health and a machine gun only: BotAggression says retreat.
+        bot = Opponent(
+            arena=True, health=bot_handicap(level), max_health=bot_handicap(level), pos=Vec3(z=22.0),
+            yaw=math.pi, grounded=True, character=character_from(RANGER, "", WEIGHTS, level)
+        );
+        arm_bot(bot);
+        # Running away from it, as the route follower would steer.
+        bot.steering = Vec3(x=-1.0);
+        bot.arena_goal = Vec3(x=-600.0, z=22.0);
+        foe = Opponent(arena=True, health=100, pos=Vec3(x=400.0, z=22.0));
+        world +>:HasOpponent:+> bot;
+        world +>:HasOpponent:+> foe;
+        bot.foe = foe;
+        fired_at = -1.0;
+        for tick in range(300) {
+            world spawn BotTactics(player=Player(), collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
+            if fired_at < 0.0 and quantity(bot.inventory, "bullets") < 100 {
+                fired_at = float(tick) * 0.01;
+            }
+        }
+        # (A sharp enough bot may have killed its enemy by now.)
+        assert foe.health <= 0 or bot.bot_state.battle in ["retreat", "nbg"];
+        # Within its reaction time and a turn to face the enemy.
+        assert fired_at >= 0.0 and fired_at <= 3.0;
+    }
+}

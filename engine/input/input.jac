@@ -3,7 +3,8 @@ downstream consumes an Intent.
 
 Mouse-look follows the raylib_shooter's battle-tested pattern for quirky
 platforms (WSLg especially): the cursor starts free and is captured on
-click or Tab; deltas come from absolute position diffs with a warmup
+click or the console key (`), which also releases it (Tab holds the
+scoreboard); deltas come from absolute position diffs with a warmup
 period and a spike clamp, not GetMouseDelta. Arrow keys always work.
 
 Native pathway: raylib bound through the C-FFI by logical name from the

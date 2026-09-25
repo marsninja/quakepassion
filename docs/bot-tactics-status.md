@@ -84,7 +84,11 @@ character and weapon-weight files. Each bot's AI follows `ai_dmq3.c`.
   - **Fight** when well armed. Movement is `BotAttackMove`.
   - **Retreat** when outgunned (`BotWantsToRetreat`), for example holding only
     the machine gun or hurt without armor. The bot follows its item route,
-    shooting back when its attack skill is above 0.3.
+    aiming and shooting back at a visible enemy. Q3 only aims back above 0.3
+    attack skill, but with `G_AddBot`'s handicap a skill 1-2 bot's health stays
+    under `BotAggression`'s 60/80 marks, so it would retreat for good and
+    never shoot (Ranger on q3dm1 at Normal did not). Every skill aims back
+    here.
   - **Nearby goal** (`Battle_NBG`): every second a retreating bot looks for a
     wanted item within 1.5 s of travel and grabs it.
   - **Chase**: an enemy lost from sight is chased to its last position for up
@@ -132,7 +136,11 @@ Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
 
 - `tests/bot_tactics_tests.jac`: character parsing and interpolation, skill
   and handicap, weapon choice, view turning, aggression, battle nodes, attack
-  moves, reaction and fire, projectiles.
+  moves, reaction and fire (a retreating bot of every skill 1-5 turns on a
+  visible enemy and fires within 3 s), projectiles.
+- `scripts/bot_fire_probe.jac` traces each bot's battle node, sight, weapon,
+  aim error and shots per half second on q3dm1 (Ranger against the player)
+  and q3dm7.
 - `tests/item_drop_tests.jac`: item teams, respawn spread, drops and powerup
   shaders.
 - `tests/arena_match_tests.jac`: awards.
