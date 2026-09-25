@@ -103,6 +103,19 @@ def leaf_sweep(cell: HullCell, start: Vec3, finish: Vec3, point: bool, top_drop:
     return Trace();
 }
 
+"""A part of a sweep still to test: the hull cell reached and the stretch of
+the segment [low, high] inside it, entered through `normal`."""
+obj SweepSpan {
+    has cell: HullCell,
+        low: float,
+        high: float,
+        normal: Vec3,
+        depth: int;
+}
+
+"""One swept query through a hull's BSP. A single walker descends the tree,
+visiting the cells the segment passes through front-to-back (a depth-first
+stack of spans), and keeps the earliest hit, as SV_RecursiveHullCheck does."""
 walker Sweep {
     has start: Vec3,
         finish: Vec3,
@@ -112,29 +125,30 @@ walker Sweep {
         high: float = 1.0,
         entry_normal: Vec3 = Vec3(),
         depth: int = 0,
-        result: Trace = Trace();
+        result: Trace = Trace(),
+        pending: list[SweepSpan] = [];
 
-    def follow(targets: list[HullCell], low: float, high: float, normal: Vec3) {
-        if low > high or low >= self.result.fraction {
-            return;
+    def hit(fraction: float, normal: Vec3, start_solid: bool) {
+        self.result.start_solid = self.result.start_solid or start_solid;
+        if fraction < self.result.fraction {
+            self.result.fraction = fraction;
+            self.result.normal = normal;
         }
-        for cell in targets {
-            query = cell spawn Sweep(
-                start=self.start,
-                finish=self.finish,
-                low=low,
-                high=high,
-                entry_normal=normal,
-                top_drop=self.top_drop,
-                point=self.point,
-                depth=self.depth + 1
+    }
+
+    """Queue the cells behind `edges` for [low, high]; the stack pops them in
+    order, after anything queued since (so nearer parts finish first)."""
+    def follow(targets: list[HullCell], low: float, high: float, normal: Vec3) {
+        for i in range(len(targets) - 1, -1, -1) {
+            self.pending.append(
+                SweepSpan(
+                    cell=targets[i],
+                    low=low,
+                    high=high,
+                    normal=normal,
+                    depth=self.depth + 1
+                )
             );
-            self.result.start_solid = self.result.start_solid
-                or query.result.start_solid;
-            if query.result.fraction < self.result.fraction {
-                self.result.fraction = query.result.fraction;
-                self.result.normal = query.result.normal;
-            }
         }
     }
 
@@ -142,43 +156,53 @@ walker Sweep {
         if here.planes or (self.point and here.triangle) or (self.point and not here.point_blocking) {
             leaf = leaf_sweep(here, self.start, self.finish, self.point, self.top_drop);
             if leaf.fraction < 1.0 or leaf.start_solid {
-                self.result.fraction = leaf.fraction;
-                self.result.normal = leaf.normal;
-                self.result.start_solid = leaf.start_solid;
+                self.hit(leaf.fraction, leaf.normal, leaf.start_solid);
             }
-            return;
-        }
-        if self.depth > 256 {
+        } elif self.depth > 256 {
             raise ValueError("Cyclic or excessively deep collision hull");
-        }
-        if here.contents != 0 {
+        } elif here.contents != 0 {
             if here.contents == -2 {
-                self.result.fraction = self.low;
-                self.result.normal = self.entry_normal;
-                self.result.start_solid = self.low == 0.0
-                    and self.entry_normal.length() < 0.00001;
+                self.hit(
+                    self.low,
+                    self.entry_normal,
+                    self.low == 0.0 and self.entry_normal.length() < 0.00001
+                );
             }
-            return;
-        }
-        front = [here->:HullFront:->][?:HullCell];
-        back = [here->:HullBack:->][?:HullCell];
-        a = here.normal.dot(self.start) - here.distance;
-        b = here.normal.dot(self.finish) - here.distance;
-        lo = a + (b - a) * self.low;
-        hi = a + (b - a) * self.high;
-        if lo >= 0.0 and hi >= 0.0 {
-            self.follow(front, self.low, self.high, self.entry_normal);
-        } elif lo < 0.0 and hi < 0.0 {
-            self.follow(back, self.low, self.high, self.entry_normal);
         } else {
-            split = max(self.low, min(self.high, a / (a - b)));
-            if lo >= 0.0 {
-                self.follow(front, self.low, split, self.entry_normal);
-                self.follow(back, split, self.high, here.normal);
+            front = [here->:HullFront:->][?:HullCell];
+            back = [here->:HullBack:->][?:HullCell];
+            a = here.normal.dot(self.start) - here.distance;
+            b = here.normal.dot(self.finish) - here.distance;
+            lo = a + (b - a) * self.low;
+            hi = a + (b - a) * self.high;
+            if lo >= 0.0 and hi >= 0.0 {
+                self.follow(front, self.low, self.high, self.entry_normal);
+            } elif lo < 0.0 and hi < 0.0 {
+                self.follow(back, self.low, self.high, self.entry_normal);
             } else {
-                self.follow(back, self.low, split, self.entry_normal);
-                self.follow(front, split, self.high, here.normal.scale(-1.0));
+                split = max(self.low, min(self.high, a / (a - b)));
+                # Pushed far part first, so the near part is tested first.
+                if lo >= 0.0 {
+                    self.follow(back, split, self.high, here.normal);
+                    self.follow(front, self.low, split, self.entry_normal);
+                } else {
+                    self.follow(front, split, self.high, here.normal.scale(-1.0));
+                    self.follow(back, self.low, split, self.entry_normal);
+                }
             }
+        }
+        # A part starting at or beyond the earliest hit cannot improve on it.
+        while self.pending {
+            span = self.pending.pop();
+            if span.low > span.high or span.low >= self.result.fraction {
+                continue;
+            }
+            self.low = span.low;
+            self.high = span.high;
+            self.entry_normal = span.normal;
+            self.depth = span.depth;
+            visit [span.cell];
+            return;
         }
     }
 }
@@ -401,6 +425,19 @@ obj CollisionMap {
         self.bounds[index] = AABB(mins=offset.sub(extent), maxs=offset.add(extent));
     }
 
+    """Whether `point` lies within `margin` of hull `index`'s broad-phase
+    bounds, which cover a mover's whole travel. True when there are none."""
+    def reaches(index: int, point: Vec3, margin: float) -> bool {
+        if len(self.bounds) != len(self.hulls) { return True; }
+        box = self.bounds[index];
+        return point.x >= box.mins.x - margin
+            and point.x <= box.maxs.x + margin
+            and point.y >= box.mins.y - margin
+            and point.y <= box.maxs.y + margin
+            and point.z >= box.mins.z - margin
+            and point.z <= box.maxs.z + margin;
+    }
+
     def set_disabled(index: int, disabled: bool) {
         if (index in self.disabled) == disabled { return; }
         if disabled { self.disabled.add(index); }
@@ -533,7 +570,19 @@ obj CollisionMap {
     ) -> Trace {
         result = Trace(end=finish);
         indices: list[int] = [];
-        if self.groups {
+        top = self.groups[0] if self.groups else None;
+        if top is not None
+            and (
+                max(start.x, finish.x) < top.bounds.mins.x
+                or min(start.x, finish.x) > top.bounds.maxs.x
+                or max(start.y, finish.y) < top.bounds.mins.y
+                or min(start.y, finish.y) > top.bounds.maxs.y
+                or max(start.z, finish.z) < top.bounds.mins.z
+                or min(start.z, finish.z) > top.bounds.maxs.z
+            ) {
+            # Nothing in this map is near the segment: skip the tree walk.
+            indices = [];
+        } elif self.groups {
             candidates = self.groups[0] spawn FindHulls(
                 start=start,
                 finish=finish,
