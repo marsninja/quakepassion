@@ -22,7 +22,7 @@ import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_co
 import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
-import from .bot_character { BotCharacter, BotState }
+import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
 import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
@@ -1183,6 +1183,14 @@ obj WeaponImpact {
         energy_burst: bool = False;
 }
 
+# A Q3 missile's direct hit is its weapon's means of death (MOD_ROCKET...).
+glob Q3_MISSILE_MEANS: dict[str, str] = {
+    "q3_grenade": "grenadelauncher",
+    "q3_rocket": "rocketlauncher",
+    "q3_plasma": "plasmagun",
+    "q3_bfg": "bfg"
+};
+
 edge HasProjectile: World --> Projectile {}
 node Projectile {
     has pos: Vec3,
@@ -2293,6 +2301,7 @@ walker ProjectileTick {
                 amount=here.damage,
                 source=here.pos.sub(here.velocity.normalized()),
                 attacker=here.owner,
+                means=Q3_MISSILE_MEANS.get(here.effect, ""),
                 energy=self.state.game == "q2" and here.effect in ["q2_bolt", "q2_bfg"]
             );
             projectile_blast(
@@ -2317,6 +2326,7 @@ walker ProjectileTick {
                 self.player.inventory,
                 None if here.hostile else self.state,
                 attacker=here.owner if here.hostile else self.player,
+                means=Q3_MISSILE_MEANS.get(here.effect, ""),
                 tally=self.state if here.hostile else None
             );
         } elif wall.fraction < 1.0
@@ -3220,14 +3230,19 @@ walker CombatTick {
     """Q3 BotFindEnemy: keep a living, visible enemy; otherwise take the
     nearest visible competitor, falling back to the player."""
     def select_foe(bot: Opponent) -> Player {
+        mind = bot.character;
+        memory = bot.bot_state;
+        # BotFindEnemy notes whether the bot's health just fell.
+        hurt = bot.health < memory.last_health;
+        memory.last_health = bot.health;
+        # The current enemy is kept while it is in sight, while the bot is
+        # alerted, or while a battle node (fighting, retreating from or
+        # chasing it) still has it in mind.
         current = bot.foe;
-        if current is not None and current.health > 0 {
-            dormant = isinstance(current, Opponent) and current.dormant;
-            if not dormant {
-                sight = self.collision.trace_point(bot.pos, current.pos);
-                if bot.alert > 0.0 or (not sight.start_solid and sight.fraction == 1.0) {
-                    return current;
-                }
+        kept: Player | None = None;
+        if current is not None and current.health > 0 and not (isinstance(current, Opponent) and current.dormant) {
+            if bot.alert > 0.0 or memory.battle != "" or self.sees(bot, current) {
+                kept = current;
             }
         }
         candidates: list[Player] = [];
@@ -3241,37 +3256,50 @@ walker CombatTick {
                 }
             }
         }
-        # ai_dmq3.c BotFindEnemy: alert characters see further, and a new
-        # enemy must be inside a 90 degree view unless it is close or firing.
-        mind = bot.character;
+        # ai_dmq3.c BotFindEnemy: alert characters see further; only a closer
+        # enemy replaces the current one; a new enemy must be inside the view
+        # (enemy_view) unless the bot was hurt or the enemy is firing.
         reach = 900.0 + mind.alertness * 4000.0 if mind is not None else 1500.0;
-        best: Player = self.player;
-        best_distance = 100000.0;
+        best: Player | None = None;
+        best_distance = kept.pos.sub(bot.pos).length() if kept is not None else 100000.0;
         for candidate in candidates {
+            if candidate is kept {
+                continue;
+            }
             distance = candidate.pos.sub(bot.pos).length();
             if distance >= best_distance or distance > reach {
                 continue;
             }
-            if mind is not None and distance > 100.0 {
+            if mind is not None {
                 firing = candidate.attack_flash > 0.0
                     if isinstance(candidate, Opponent)
                     else self.state.flash > 0.0;
+                view = enemy_view(distance, kept is None and (hurt or firing));
                 toward = candidate.pos.sub(bot.pos);
                 bearing = math.atan2(toward.y, toward.x);
                 off = abs(math.atan2(math.sin(bearing - bot.yaw), math.cos(bearing - bot.yaw)));
-                if not firing and off > math.pi / 4.0 {
+                if off > math.radians(view) * 0.5 {
                     continue;
                 }
             }
-            sight = self.collision.trace_point(bot.pos, candidate.pos);
-            if sight.start_solid or sight.fraction < 1.0 {
+            if not self.sees(bot, candidate) {
                 continue;
             }
             best = candidate;
             best_distance = distance;
         }
-        bot.foe = best if best_distance < 100000.0 else None;
-        return best;
+        if best is not None {
+            bot.foe = best;
+            return best;
+        }
+        bot.foe = kept;
+        return kept if kept is not None else self.player;
+    }
+
+    """BotEntityVisible from a bot's eye to another player's box."""
+    def sees(bot: Opponent, other: Player) -> bool {
+        height = other.eye_height if isinstance(other, Opponent) else self.collision.eye_height;
+        return entity_visible(self.collision, bot.pos, other.pos.sub(Vec3(z=height)));
     }
 
     """A Q3 body follows its bot the way bg_pmove.c animates every player:
