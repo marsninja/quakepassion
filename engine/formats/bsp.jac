@@ -247,6 +247,11 @@ def parse_entities(text: str) -> list[MapEntity] {
         }
         i += 1;
         if have_key {
+            # ED_NewString (Q1/Q2) and G_NewString (Q3) turn a message's
+            # "\n" into a line break at spawn.
+            if key == "message" {
+                value = value.replace("\\n", "\n");
+            }
             current.fields[key] = value;
             have_key = False;
         } else {

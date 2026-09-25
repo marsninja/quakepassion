@@ -116,6 +116,7 @@ import from ..world.drops { toss_items }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
+import from games.q2_layouts { help_computer_layout, unit_summary_layout, q2_inventory_rows }
 import from games.hud_art { load_hud_art, load_q3_models }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
@@ -240,6 +241,7 @@ obj App {
         pending_text: str = "",
         total_monsters: int = 0,
         help_open: bool = False,
+        inventory_open: bool = False,
         entry_save: str = "";
 
     def begin_intermission(text: str);
@@ -250,6 +252,8 @@ obj App {
     def finish_stats();
     def draw_stats();
     def tally_line() -> str;
+    """p_hud.c HelpComputer as a layout program over the view."""
+    def help_layout() -> str;
     """Restart the level from its entry autosave after the player died."""
     def restart_level();
     """Take the level-entry autosave and count the level's monsters."""

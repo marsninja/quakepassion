@@ -79,7 +79,10 @@ def load_q2_art(hud: HudRenderer, library: AssetLibrary) {
     for shown in Q2_PICKUPS.values() {
         names.append(shown[1]);
     }
-    for extra in ["conchars", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier"] {
+    # The help computer and inventory backgrounds, the status bar's damage
+    # flash field, help and power armor icons, and crosshair 1.
+    for extra in ["conchars", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier",
+        "help", "inventory", "field_3", "i_help", "i_powershield", "i_powerscreen", "ch1"] {
         names.append(extra);
     }
     for name in names {

@@ -263,7 +263,8 @@ impl App.render_frame() {
             }
             if self.hud.ready {
                 if not self.finale_active {
-                    self.renderer.draw_aim(self.combat, self.level.bsp.game != "q3", score);
+                    # The status bar layer draws each game's crosshair art.
+                    self.renderer.draw_aim(self.combat, False, score);
                 }
             } else {
                 self.renderer.draw_combat(
@@ -305,7 +306,15 @@ impl App.render_frame() {
             self.renderer.draw_powerups(self.powerup_lines());
             # p_hud.c HelpComputer (F1): skill, level name, the primary and
             # secondary objectives, and kills, goals and secrets so far.
-            if self.level.bsp.game == "q2" and self.help_open and not self.stats_screen {
+            if self.level.bsp.game == "q2"
+                and self.help_open
+                and not self.stats_screen
+                and self.hud.ready
+                and self.hud.has_pic("help") {
+                self.hud.draw_layout(
+                    self.help_layout(), self.renderer.width, self.renderer.height
+                );
+            } elif self.level.bsp.game == "q2" and self.help_open and not self.stats_screen {
                 lines: list[str] = [
                     ["Easy", "Medium", "Hard", "Hard+"][max(0, min(3, self.level.skill))]
                         + " - "
@@ -329,6 +338,25 @@ impl App.render_frame() {
                 lines.append(self.tally_line());
                 self.renderer.draw_scoreboard(
                     "Help computer - " + self.level.name, lines, "F1: close"
+                );
+            }
+            # cl_inv.c CL_DrawInventory: Tab's inventory screen (Cmd_Inven_f).
+            if self.level.bsp.game == "q2"
+                and self.inventory_open
+                and p.health > 0
+                and not self.stats_screen
+                and not self.finale_active
+                and self.hud.ready {
+                stored = owned_items(p.inventory, "q2");
+                self.hud.draw_q2_inventory(
+                    q2_inventory_rows(
+                        p,
+                        self.combat.rules,
+                        stored[self.selected_item % len(stored)] if stored else ""
+                    ),
+                    self.simulation_time,
+                    self.renderer.width,
+                    self.renderer.height
                 );
             }
             if contest is not None
@@ -374,7 +402,9 @@ impl App.render_frame() {
                             if self.walking
                             else "WASD / Space / Shift: fly"
                     )
-                        + " | `: mouse | Tab: scores | F3: overlay",
+                        + " | `: mouse | Tab: "
+                        + ("inventory" if self.level.bsp.game == "q2" else "scores")
+                        + " | F3: overlay",
                     self.movement_status
                 ]
             );
@@ -676,6 +706,7 @@ impl App.load_destination(
         self.stats_wait = 0.0;
         self.pending_text = "";
         self.help_open = False;
+        self.inventory_open = False;
         self.record_entry();
     } except Exception as error {
         next_models.close();
@@ -839,9 +870,21 @@ impl App.step() -> bool {
         intent = scripted;
     }
     self.show_scores = intent.scores;
-    # p_hud.c Cmd_Help_f: F1 opens and closes the Q2 help computer.
+    # p_hud.c Cmd_Help_f: F1 opens and closes the Q2 help computer; opening
+    # it reads the news (pers.helpchanged = 0) and hides the inventory.
     if intent.help and self.level.active and self.level.bsp.game == "q2" {
         self.help_open = not self.help_open;
+        self.inventory_open = False;
+        if self.help_open {
+            for computer in [self.world->:HasHelp:->][?:HelpComputer] {
+                computer.unread = 0;
+            }
+        }
+    }
+    # Cmd_Inven_f: Tab shows and hides the Q2 inventory, closing the help.
+    if intent.inventory and self.level.active and self.level.bsp.game == "q2" {
+        self.inventory_open = not self.inventory_open;
+        self.help_open = False;
     }
     # Q3 respawn: attack or jump after 1.7 s, forced after 20 s (g_forcerespawn).
     if arena_live and self.player.health <= 0 {
@@ -2198,11 +2241,56 @@ impl App.tally_line() -> str {
         + str(progress.total_secrets);
 }
 
-"""The stats screen: Q1's intermission plaque in the original art (a text
-panel without it); Q2's unit summary with the help computer's tallies."""
+impl App.help_layout() -> str {
+    progress = progress_for(self.world);
+    primary = "";
+    secondary = "";
+    for computer in [self.world->:HasHelp:->][?:HelpComputer] {
+        primary = computer.primary;
+        secondary = computer.secondary;
+    }
+    return help_computer_layout(
+        self.level.skill,
+        self.level.bsp.entities[0].fields.get("message", self.level.name)
+            if self.level.bsp.entities
+            else self.level.name,
+        primary,
+        secondary,
+        self.combat.kills,
+        self.total_monsters,
+        progress.goals,
+        progress.total_goals,
+        progress.secrets,
+        progress.total_secrets
+    );
+}
+
+"""The stats screen: Q1's intermission plaque and Q2's unit summary in the
+original art (text panels without it)."""
 impl App.draw_stats() {
     progress = progress_for(self.world);
     seconds = int(self.completed_time);
+    if self.level.bsp.game == "q2" and self.hud.ready and self.hud.has_pic("help") {
+        self.hud.draw_layout(
+            unit_summary_layout(
+                self.level.skill,
+                self.level.bsp.entities[0].fields.get("message", self.level.name)
+                    if self.level.bsp.entities
+                    else self.level.name,
+                seconds,
+                self.combat.kills,
+                self.total_monsters,
+                progress.goals,
+                progress.total_goals,
+                progress.secrets,
+                progress.total_secrets,
+                self.stats_wait <= 0.0
+            ),
+            self.renderer.width,
+            self.renderer.height
+        );
+        return;
+    }
     if self.level.bsp.game == "q1" and self.hud.ready and self.hud.has_pic("inter") {
         self.hud.draw_q1_intermission(
             seconds,
@@ -2250,10 +2338,31 @@ impl App.hud_status() -> HudStatus {
             remaining = max(remaining, left);
         }
     }
+    # G_SetStats: running Q2 power armor shows its cells and i_powershield,
+    # taking turns with worn armor (level.framenum & 8).
+    armor = p.armor;
+    armor_icon = "";
+    cells = quantity(p.inventory, "cells");
+    if game == "q2"
+        and cells > 0
+        and (effect(p, "power_screen") is not None or effect(p, "power_shield") is not None)
+        and (p.armor <= 0 or int(self.simulation_time * 10.0) & 8) {
+        armor = cells;
+        armor_icon = "i_powershield";
+    }
+    unread = False;
+    if game == "q2" {
+        for computer in [self.world->:HasHelp:->][?:HelpComputer] {
+            unread = unread or computer.unread > 0;
+        }
+    }
     return HudStatus(
         game=game,
         health=p.health,
-        armor=p.armor,
+        armor=armor,
+        armor_icon=armor_icon,
+        flashes=self.view.status_flashes() if game == "q2" else 0,
+        help_unread=unread,
         armor_ratio=p.armor_ratio,
         ammo=quantity(p.inventory, rule.ammo) if rule.ammo else -1,
         ammo_kind=rule.ammo,
