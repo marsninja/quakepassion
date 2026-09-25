@@ -24,7 +24,11 @@ models through edges. Walkers drive patrols, gib flight and combat.
   Within melee range, sight alone is enough (Q1 `FindTarget`, Q2 `FindTarget`).
 - Q2 monsters also hear gunfire within 1000 units (`PlayerNoise`), but only from
   clusters in the map's potentially hearable set (PHS), so walls and floors
-  stop it. Closed doors (areaportals) do not yet block it.
+  stop it, and only across open area portals (`gi.AreasConnected`): the map's
+  areas and area portals are parsed, a `func_areaportal` is open while a door
+  that targets it is not shut (`door_use_areaportals`) and toggles with each
+  other use (`Use_Areaportal`), so a closed door stops the sound. A relay-
+  toggled portal's state is not saved (door-held portals follow their doors).
 - Ambush monsters (spawnflag 1) wait for sight.
 - A monster that spots the player wakes others that can see it (Q1
   `sight_entity`, Q2 `sight_client`).

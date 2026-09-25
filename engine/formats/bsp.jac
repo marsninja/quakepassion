@@ -79,6 +79,7 @@ obj Leaf {
         mins: Vec3,
         maxs: Vec3,
         cluster: int = -1,
+        area: int = 0,
         faces: list[int] = [],
         brushes: list[int] = [],
         ambient: list[int] = [];
@@ -97,6 +98,13 @@ obj Model {
 
 obj MapEntity {
     has fields: dict[str, str] = {};
+}
+
+"""One side of a Q2 area: the portal (dareaportal_t portalnum) through which
+it reaches `area`."""
+obj AreaLink {
+    has portal: int,
+        area: int;
 }
 
 obj Brush {
@@ -136,7 +144,8 @@ obj Bsp {
         entities: list[MapEntity] = [],
         lighting: bytes = b"",
         visibility: bytes = b"",
-        fogs: list[FogVolume] = [];
+        fogs: list[FogVolume] = [],
+        areas: list[list[AreaLink]] = [];
 }
 
 def require_range(data: bytes, offset: int, size: int) {

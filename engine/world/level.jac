@@ -17,6 +17,7 @@ import from .rotators { load_rotators }
 import from .shooters { load_shooters }
 import from .targets { load_targets }
 import from .doors { load_doors, connect_targets, pose_doors, flood_doors }
+import from .area_portals { load_area_portals }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
@@ -462,6 +463,7 @@ def prepare_level(world: World, level: Level) {
     load_targets(world, level.bsp);
     load_traversal(world, level.bsp);
     load_fixture_uses(world, level.bsp);
+    load_area_portals(world, level.bsp);
     # Resolve every activation chain once all activatable entities exist.
     connect_targets(world, level.bsp);
     pose_doors(world, level.bsp, level.collision);

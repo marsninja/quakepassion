@@ -1203,16 +1203,20 @@ impl App.step() -> bool {
                 } else {
                     # Shots wake nearby monsters (show_hostile, PlayerNoise).
                     self.combat.noise = 1.0;
-                    # Q2 FindTarget hears a noise only from inside its PHS.
+                    # Q2 FindTarget hears a noise only from inside its PHS,
+                    # and only across open area portals (gi.AreasConnected).
                     if self.level.bsp.game == "q2" {
                         heard = self.level.hearable(self.player.pos);
+                        opened = open_portals(self.world);
+                        source = self.level.bsp.leaves[self.level.locate(self.player.pos)].area;
                         for listener in [self.world->:HasOpponent:->][?:Opponent] {
                             if listener.alert <= 0.0
                                 and listener.health > 0
                                 and not listener.dormant
                                 and listener.pos.sub(self.player.pos).length() < 1000.0 {
-                                leaf = self.level.locate(listener.pos);
-                                listener.heard = self.level.bsp.leaves[leaf].cluster in heard;
+                                leaf = self.level.bsp.leaves[self.level.locate(listener.pos)];
+                                listener.heard = leaf.cluster in heard
+                                    and areas_connected(self.level.bsp, source, leaf.area, opened);
                             }
                         }
                     }
@@ -1238,6 +1242,7 @@ impl App.step() -> bool {
                 self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
             }
             if self.level.bsp.game == "q2" {
+                self.world spawn AreaPortalTick();
                 trail = self.player_trail;
                 if trail is not None {
                     trail spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);

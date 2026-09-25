@@ -2,6 +2,7 @@
 import math;
 import from ..bsp {
     Brush,
+    AreaLink,
     Bsp,
     Texture,
     TexInfo,
@@ -219,6 +220,7 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
             contents=i32_at(lumps[8], p),
             vis_offset=-1,
             cluster=s16_at(lumps[8], p + 4),
+            area=s16_at(lumps[8], p + 6),
             mins=bounds_at(lumps[8], p + 8),
             maxs=bounds_at(lumps[8], p + 14)
         );
@@ -298,6 +300,23 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
     }
     if not bsp.models or not bsp.leaves {
         raise ValueError("BSP has no world model");
+    }
+    # darea_t (numareaportals, firstareaportal) and dareaportal_t (portalnum,
+    # otherarea): each area's portals to its neighbours (CMod_LoadAreas).
+    portal_count = records(lumps[18], 8);
+    for i in range(records(lumps[17], 8)) {
+        count = i32_at(lumps[17], i * 8);
+        first = i32_at(lumps[17], i * 8 + 4);
+        if count < 0 or first < 0 or first + count > portal_count {
+            raise ValueError("Invalid Q2 area portals");
+        }
+        links: list[AreaLink] = [];
+        for j in range(first, first + count) {
+            links.append(
+                AreaLink(portal=i32_at(lumps[18], j * 8), area=i32_at(lumps[18], j * 8 + 4))
+            );
+        }
+        bsp.areas.append(links);
     }
     for model in bsp.models {
         pending = [model.head];
