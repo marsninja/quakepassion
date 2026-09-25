@@ -19,8 +19,8 @@ jobs:
       - name: Install Jac binary
         run: |
           mkdir -p "$HOME/.local/bin"
-          asset=jac-0.37.21-linux-x86_64
-          release=https://github.com/jaseci-labs/jac/releases/download/v0.37.21
+          asset=jac-0.37.23-linux-x86_64
+          release=https://github.com/jaseci-labs/jac/releases/download/v0.37.23
           curl -fsSL "$release/$asset" -o "$RUNNER_TEMP/$asset"
           curl -fsSL "$release/$asset.sha256" -o "$RUNNER_TEMP/$asset.sha256"
           (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
