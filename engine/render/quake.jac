@@ -61,8 +61,29 @@ obj LightRect {
         y: int = 0;
 }
 
+"""How baked light brightens a surface. Q3 stores lightmaps and vertex light
+at a quarter of full range (r_mapOverBrightBits 2) and R_ColorShiftLightingBytes
+shifts them up, scaling an overflowing colour back as a whole rather than
+saturating each channel to white. Q1 and Q2 light is doubled and clamped."""
+def shift_light(overbright: bool, red: int, green: int, blue: int) -> tuple[int, int, int] {
+    if not overbright {
+        return (min(255, red * 2), min(255, green * 2), min(255, blue * 2));
+    }
+    red = red * 4;
+    green = green * 4;
+    blue = blue * 4;
+    brightest = max(red, max(green, blue));
+    if brightest > 255 {
+        red = red * 255 // brightest;
+        green = green * 255 // brightest;
+        blue = blue * 255 // brightest;
+    }
+    return (red, green, blue);
+}
+
 obj QuakeRenderer {
     has lighting: Lighting = Lighting(),
+        overbright: bool = False,
         dynamic_positions: int = -1,
         dynamic_colors: int = -1;
     has textures: list[int] = [],
@@ -165,6 +186,7 @@ obj QuakeRenderer {
             self.fog_image = upload_fog_image();
         }
         self.single_pass = level.bsp.game in ["q3", "passion"];
+        self.overbright = level.bsp.game == "q3";
         if self.single_pass {
             # Baked lighting does not need a geometric normal. The batch's
             # normal attribute transports lightmap UV and an enable flag.
@@ -335,20 +357,22 @@ obj QuakeRenderer {
                     sample = min(max(ly, 0), h - 1) * w + min(max(lx, 0), w - 1);
                     p = ((y + ly) * self.atlas_size + x + lx) * 4;
                     channels = level.bsp.light_channels;
+                    raw = [0, 0, 0];
                     for channel in range(3) {
-                        brightness = 0;
                         for style in range(len(face.styles)) {
-                            brightness += int(
+                            raw[channel] += int(
                                 level.bsp.lighting[
                                     face.light_offset
                                         + (style * w * h + sample) * channels
                                         + (channel if channels == 3 else 0)
                                 ]
-                            )
-                                * 2;
+                            );
                         }
-                        pixels[p + channel] = min(255, brightness);
                     }
+                    shade = shift_light(self.overbright, raw[0], raw[1], raw[2]);
+                    pixels[p] = shade[0];
+                    pixels[p + 1] = shade[1];
+                    pixels[p + 2] = shade[2];
                 }
             }
             x += w + 2;
@@ -1047,9 +1071,15 @@ obj QuakeRenderer {
             blue = tint[2];
             alpha = tint[3];
             if vertex_rgb {
-                red = min(255, face.colors[index * 4] * 2);
-                green = min(255, face.colors[index * 4 + 1] * 2);
-                blue = min(255, face.colors[index * 4 + 2] * 2);
+                lit = shift_light(
+                    self.overbright,
+                    face.colors[index * 4],
+                    face.colors[index * 4 + 1],
+                    face.colors[index * 4 + 2]
+                );
+                red = lit[0];
+                green = lit[1];
+                blue = lit[2];
             }
             if vertex_alpha {
                 alpha = face.colors[index * 4 + 3];
@@ -1199,12 +1229,13 @@ obj QuakeRenderer {
                 }
             }
             if not light and face.light_offset < 0 and len(face.colors) > 0 {
-                rlColor4ub(
-                    u8(min(255, face.colors[index * 4] * 2)),
-                    u8(min(255, face.colors[index * 4 + 1] * 2)),
-                    u8(min(255, face.colors[index * 4 + 2] * 2)),
-                    u8(255)
+                lit = shift_light(
+                    self.overbright,
+                    face.colors[index * 4],
+                    face.colors[index * 4 + 1],
+                    face.colors[index * 4 + 2]
                 );
+                rlColor4ub(u8(lit[0]), u8(lit[1]), u8(lit[2]), u8(255));
             }
             if light {
                 rlTexCoord2f(
