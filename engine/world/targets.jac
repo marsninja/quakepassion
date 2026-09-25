@@ -258,8 +258,14 @@ walker TargetTick {
         }
     }
 
-    # target_laser_think: trace the beam each frame, hurting whatever it meets.
+    # target_laser_think: trace the beam each server frame (10 Hz), hurting
+    # whatever it meets.
     def laser(event: TargetEvent, world: World) {
+        event.clock -= self.dt;
+        if event.clock > 0.0 {
+            return;
+        }
+        event.clock = 0.1;
         finish = event.origin.add(event.direction.scale(2048.0));
         wall = self.collision.trace_point(event.origin, finish);
         reach = wall.fraction;
@@ -281,17 +287,13 @@ walker TargetTick {
                 victim = enemy;
             }
         }
-        event.clock -= self.dt;
-        if event.clock <= 0.0 {
-            event.clock = 0.1;
-            beam_trail(world, event.origin, event.origin.lerp(finish, reach), event.color);
-            target = victim;
-            if target is not None and event.damage > 0 {
-                if isinstance(target, Opponent) {
-                    damage_opponent(target, event.damage);
-                } else {
-                    target spawn Damage(amount=event.damage, source=event.origin);
-                }
+        beam_trail(world, event.origin, event.origin.lerp(finish, reach), event.color);
+        target = victim;
+        if target is not None and event.damage > 0 {
+            if isinstance(target, Opponent) {
+                damage_opponent(target, event.damage);
+            } else {
+                target spawn Damage(amount=event.damage, source=event.origin);
             }
         }
     }
