@@ -71,6 +71,7 @@ obj OpponentRule {
         movement: str = "walk",
         decoration: bool = False,
         passive: bool = False,
+        good_guy: bool = False,
         inert: bool = False,
         pain_duration: float = 0.3,
         pain_interval: float = 1.0,

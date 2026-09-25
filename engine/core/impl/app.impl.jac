@@ -1572,16 +1572,7 @@ impl App.restart_level() {
 }
 
 impl App.record_entry() {
-    self.total_monsters = len(
-        [
-            enemy
-            for enemy in [self.world->:HasOpponent:->][?:Opponent]
-            if not enemy.arena
-                and not enemy.rule.decoration
-                and not enemy.rule.inert
-                and not enemy.rule.script
-        ]
-    );
+    self.total_monsters = monster_total(self.world);
     self.entry_save = "";
     if self.level.bsp.game in ["q1", "q2"] and self.level.active {
         try {

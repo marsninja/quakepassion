@@ -814,8 +814,9 @@ def damage_opponent(
         state.hits += 1;
     }
     if damage.killed {
-        # Q1/Q2 Killed counts every monster death, whoever caused it.
-        if not victim.rule.inert {
+        # Q1/Q2 Killed counts every monster death, whoever caused it; Q2
+        # leaves out its AI_GOOD_GUY figures.
+        if not victim.rule.inert and not victim.rule.good_guy {
             if state is not None {
                 state.kills += 1;
             } elif tally is not None and not victim.arena {

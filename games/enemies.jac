@@ -1764,6 +1764,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     health=100,
                     movement="none",
                     passive=True,
+                    good_guy=True,
                     speed=0.0,
                     idle_frames=["cross" + str(i) for i in range(1, 16)],
                     death_frames=["cross1"],
@@ -1793,7 +1794,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     else ["st_death" + str(i) for i in range(2, 19)],
                 pain_sounds=["sound/insane/insane1.wav", "sound/insane/insane2.wav", "sound/insane/insane3.wav"],
                 idle_sound="sound/insane/insane9.wav",
-                passive=True
+                passive=True,
+                good_guy=True
             );
         }
         if kind == "monster_commander_body" {
