@@ -26,6 +26,131 @@ obj Illumination {
     }
 }
 
+"""How baked light brightens a surface. Q3 stores lightmaps, vertex light
+and its light grid at a quarter of full range (r_mapOverBrightBits 2) and
+R_ColorShiftLightingBytes shifts them up, scaling an overflowing colour back
+as a whole rather than saturating each channel to white. Q1 and Q2 light is
+doubled and clamped."""
+def shift_light(overbright: bool, red: int, green: int, blue: int) -> tuple[int, int, int] {
+    if not overbright {
+        return (min(255, red * 2), min(255, green * 2), min(255, blue * 2));
+    }
+    red = red * 4;
+    green = green * 4;
+    blue = blue * 4;
+    brightest = max(red, max(green, blue));
+    if brightest > 255 {
+        red = red * 255 // brightest;
+        green = green * 255 // brightest;
+        blue = blue * 255 // brightest;
+    }
+    return (red, green, blue);
+}
+
+"""Q3's light grid (tr_bsp.c R_LoadLightGrid): a lattice of `size` cells
+over the world model's bounds, each point holding an ambient and a directed
+colour, shifted like the lightmaps, and the direction the light comes from.
+Models are lit from it as tr_light.c R_SetupEntityLighting does."""
+obj LightGrid {
+    has origin: Vec3 = Vec3(),
+        size: Vec3 = Vec3(x=64.0, y=64.0, z=128.0),
+        bounds: list[int] = [0, 0, 0],
+        ambient: list[Vec3] = [],
+        directed: list[Vec3] = [],
+        directions: list[Vec3] = [];
+
+    """R_SetupEntityLightingGrid: blend the eight surrounding points, leaving
+    out those inside walls (all black), scale ambient light by r_ambientScale
+    0.6, add the minimum light of 32 and keep ambient light in range."""
+    def sample(point: Vec3) -> Illumination {
+        local = point.sub(self.origin);
+        spots = [local.x / self.size.x, local.y / self.size.y, local.z / self.size.z];
+        cell: list[int] = [];
+        fraction: list[float] = [];
+        for axis in range(3) {
+            whole = int(math.floor(spots[axis]));
+            fraction.append(spots[axis] - float(whole));
+            cell.append(max(0, min(self.bounds[axis] - 1, whole)));
+        }
+        ambient = Vec3();
+        directed = Vec3();
+        direction = Vec3();
+        total = 0.0;
+        for corner in range(8) {
+            factor = 1.0;
+            index = [cell[0], cell[1], cell[2]];
+            for axis in range(3) {
+                if corner & (1 << axis) != 0 {
+                    factor *= fraction[axis];
+                    index[axis] += 1;
+                } else {
+                    factor *= 1.0 - fraction[axis];
+                }
+            }
+            if index[0] >= self.bounds[0] or index[1] >= self.bounds[1] or index[2] >= self.bounds[2] {
+                continue;
+            }
+            spot = (index[2] * self.bounds[1] + index[1]) * self.bounds[0] + index[0];
+            light = self.ambient[spot];
+            if light.x + light.y + light.z <= 0.0 {
+                continue;
+            }
+            total += factor;
+            ambient = ambient.add(light.scale(factor));
+            directed = directed.add(self.directed[spot].scale(factor));
+            direction = direction.add(self.directions[spot].scale(factor));
+        }
+        if total > 0.0 and total < 0.99 {
+            ambient = ambient.scale(1.0 / total);
+            directed = directed.scale(1.0 / total);
+        }
+        ambient = ambient.scale(0.6).add(Vec3(x=32.0, y=32.0, z=32.0));
+        ambient = Vec3(x=min(255.0, ambient.x), y=min(255.0, ambient.y), z=min(255.0, ambient.z));
+        return Illumination(
+            enabled=True,
+            ambient=ambient.scale(1.0 / 255.0),
+            directed=directed.scale(1.0 / 255.0),
+            direction=direction.normalized() if direction.length() > 0.00001 else Vec3(z=1.0)
+        );
+    }
+}
+
+"""Read a Q3 light grid lump for a world spanning `mins` to `maxs` with the
+worldspawn `gridsize`. None when the lump does not match the lattice (as
+the original warns and lights models without it)."""
+def load_light_grid(data: bytes, mins: Vec3, maxs: Vec3, size: Vec3 = Vec3(x=64.0, y=64.0, z=128.0)) -> LightGrid | None {
+    grid = LightGrid(size=size);
+    low = [mins.x, mins.y, mins.z];
+    high = [maxs.x, maxs.y, maxs.z];
+    steps = [size.x, size.y, size.z];
+    origin: list[float] = [];
+    for axis in range(3) {
+        start = steps[axis] * math.ceil(low[axis] / steps[axis]);
+        end = steps[axis] * math.floor(high[axis] / steps[axis]);
+        origin.append(start);
+        grid.bounds[axis] = int((end - start) / steps[axis]) + 1;
+    }
+    grid.origin = Vec3(x=origin[0], y=origin[1], z=origin[2]);
+    count = grid.bounds[0] * grid.bounds[1] * grid.bounds[2];
+    if count <= 0 or len(data) != count * 8 {
+        return None;
+    }
+    for spot in range(count) {
+        p = spot * 8;
+        shade = shift_light(True, data[p], data[p + 1], data[p + 2]);
+        grid.ambient.append(Vec3(x=float(shade[0]), y=float(shade[1]), z=float(shade[2])));
+        shade = shift_light(True, data[p + 3], data[p + 4], data[p + 5]);
+        grid.directed.append(Vec3(x=float(shade[0]), y=float(shade[1]), z=float(shade[2])));
+        # The direction as latitude and longitude bytes (256 steps a turn).
+        lat = float(data[p + 7]) * math.pi * 2.0 / 256.0;
+        lng = float(data[p + 6]) * math.pi * 2.0 / 256.0;
+        grid.directions.append(
+            Vec3(x=math.cos(lat) * math.sin(lng), y=math.sin(lat) * math.sin(lng), z=math.cos(lng))
+        );
+    }
+    return grid;
+}
+
 obj FlashLight {
     has origin: Vec3,
         color: Vec3,
@@ -116,7 +241,8 @@ obj Lighting {
         lookup_rows: int = 0,
         lookup_cell: float = 160.0,
         dynamic: list[FlashLight] = [],
-        cache_hit: bool = False;
+        cache_hit: bool = False,
+        grid: LightGrid | None = None;
 
     def region_at(point: Vec3) -> int {
         if not self.lookup {
@@ -132,13 +258,18 @@ obj Lighting {
     }
 
     def sample(point: Vec3, include_dynamic: bool = True) -> Illumination {
-        if not self.regions {
+        grid = self.grid;
+        if not self.regions and grid is None {
             return Illumination();
         }
-        index = self.region_at(point);
         result = Illumination(enabled=True, ambient=Vec3(x=0.12, y=0.12, z=0.12));
-        if 0 <= index < len(self.regions) {
-            result = self.regions[index].sample(point);
+        if grid is not None {
+            result = grid.sample(point);
+        } else {
+            index = self.region_at(point);
+            if 0 <= index < len(self.regions) {
+                result = self.regions[index].sample(point);
+            }
         }
         for flash in (self.dynamic if include_dynamic else []) {
             delta = flash.origin.sub(point);

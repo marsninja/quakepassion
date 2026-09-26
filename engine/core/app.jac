@@ -53,9 +53,12 @@ import from ..world.arena {
     join_match,
     standings,
     credit_impressive,
+    competitor_name,
+    score_rows,
     ordinal
 }
-import from games.arenas { ArenaProgress, load_arenas, next_arena }
+import from games.arenas { ArenaProgress, AwardLog, load_arenas, next_arena, postgame_medals }
+import from ..render.arena_screens { Postgame, BoardLine, draw_scoreboard, draw_postgame, postgame_score_line }
 import from ..world.powerups {
     PowerupTick,
     UseItem,
@@ -104,26 +107,29 @@ import from ..world.fixtures { FixtureTick }
 import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
 import from ..world.bot_tactics { BotTactics }
+import from ..world.bot_character { Q3_SKILL_NAMES }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
 import from ..world.clocks { ClockTick, HasClock }
 import from ..world.flyers { FlyerTick, HasFlyer, HasBomb }
 import from ..world.turrets { TurretTick, HasTurret }
 import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
-import from ..render.hud_models { HudModels }
+import from ..render.hud_models { HudModels, head_view }
 import from ..world.reflection { show_body, follow_body }
-import from ..world.drops { toss_items }
+import from ..world.drops { toss_items, TossTick }
 import from ..world.monster_count { monster_total }
 import from ..world.area_portals { AreaPortalTick, open_portals, areas_connected }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
-import from games.hud_art { load_hud_art, load_q3_models }
+import from games.hud_art { load_hud_art, load_q3_models, load_character_icons }
+import from games.q2_layouts { help_computer_layout, unit_summary_layout, q2_inventory_rows }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
 import from ..render.viewweapon { ViewWeapon }
 import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
+import from ..world.models { PlayerRig, ModelResource, Wears }
 import from ..world.level { Level, load_level, spawn_player }
 import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
@@ -135,6 +141,7 @@ import from ..input.input {
     sample_intent,
     mouse_captured,
     IsKeyPressed,
+    IsMouseButtonPressed,
     _capture,
     _release
 }
@@ -212,6 +219,12 @@ obj App {
         awaiting_respawn: bool = False,
         show_scores: bool = False,
         arena_progress: ArenaProgress = ArenaProgress();
+    # Q3's postgame menu over the podium, its clock, the career award totals
+    # and each character's head placement for the scoreboard.
+    has postgame: Postgame | None = None,
+        postgame_clock: float = 0.0,
+        award_log: AwardLog = AwardLog(),
+        head_views: dict[str, Vec3] = {};
     # Player feedback: view blends and kicks, printed lines, the last pickup
     # shown on the status bar, hits already heard, Q3's ammo warning.
     has view: ViewFeedback = ViewFeedback(),
@@ -242,6 +255,7 @@ obj App {
         pending_text: str = "",
         total_monsters: int = 0,
         help_open: bool = False,
+        inventory_open: bool = False,
         entry_save: str = "";
 
     def begin_intermission(text: str);
@@ -252,6 +266,8 @@ obj App {
     def finish_stats();
     def draw_stats();
     def tally_line() -> str;
+    """p_hud.c HelpComputer as a layout program over the view."""
+    def help_layout() -> str;
     """Restart the level from its entry autosave after the player died."""
     def restart_level();
     """Take the level-entry autosave and count the level's monsters."""
@@ -300,7 +316,12 @@ obj App {
     def draw_powerup_blend();
     def respawn_arena_player();
     def arena_lines(contest: ArenaMatch) -> list[str];
-    def finish_arena(contest: ArenaMatch);
+    """The scoreboard's lines: each competitor's score, rank, awards and head."""
+    def board_lines(contest: ArenaMatch) -> list[BoardLine];
+    """Leave a finished match for the next ladder arena (`advance`) or a rematch."""
+    def finish_arena(contest: ArenaMatch, advance: bool = True);
+    """Act on the postgame menu's key: skip ahead, or a button's action."""
+    def postgame_input(contest: ArenaMatch);
     def powerup_lines() -> list[str];
     """Load the original status bar art and the light styles for the level."""
     def prepare_presentation();

@@ -54,31 +54,11 @@ import from ..world.portals { surface_plane }
 import from ..formats.bsp { Face, Texture, FogVolume }
 import from ..formats.animated { ModelStage, Deform, stage_frame }
 import from ..math.vec3 { Vec3 }
-import from ..world.lighting { Lighting }
+import from ..world.lighting { Lighting, shift_light }
 
 obj LightRect {
     has x: int = 0,
         y: int = 0;
-}
-
-"""How baked light brightens a surface. Q3 stores lightmaps and vertex light
-at a quarter of full range (r_mapOverBrightBits 2) and R_ColorShiftLightingBytes
-shifts them up, scaling an overflowing colour back as a whole rather than
-saturating each channel to white. Q1 and Q2 light is doubled and clamped."""
-def shift_light(overbright: bool, red: int, green: int, blue: int) -> tuple[int, int, int] {
-    if not overbright {
-        return (min(255, red * 2), min(255, green * 2), min(255, blue * 2));
-    }
-    red = red * 4;
-    green = green * 4;
-    blue = blue * 4;
-    brightest = max(red, max(green, blue));
-    if brightest > 255 {
-        red = red * 255 // brightest;
-        green = green * 255 // brightest;
-        blue = blue * 255 // brightest;
-    }
-    return (red, green, blue);
 }
 
 obj QuakeRenderer {
@@ -1202,7 +1182,8 @@ obj QuakeRenderer {
     def polygon(face: Face, rect: LightRect, light: bool) {
         rlBegin(i32(4));
         rlColor4ub(u8(255), u8(255), u8(255), u8(255));
-        if face.moving_light {
+        # Q3 movers keep their baked light; its light grid is for models.
+        if face.moving_light and self.lighting.grid is None {
             center = face.vertices[0].lerp(face.vertices[2], 0.5);
             facing = face.normal;
             turn = face.turn;

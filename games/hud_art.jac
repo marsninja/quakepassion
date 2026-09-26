@@ -2,7 +2,7 @@
 import from engine.render.hud { HudRenderer }
 import from engine.render.hud_models { HudModels }
 import from engine.render.models { ModelRenderer }
-import from .arena_character { player_part }
+import from .arena_character { player_part, animation_settings }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q1.wad { wad_pictures, lump_picture }
 import from engine.formats.q2.model { parse_pcx }
@@ -79,7 +79,10 @@ def load_q2_art(hud: HudRenderer, library: AssetLibrary) {
     for shown in Q2_PICKUPS.values() {
         names.append(shown[1]);
     }
-    for extra in ["conchars", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier"] {
+    # The help computer and inventory backgrounds, the status bar's damage
+    # flash field, help and power armor icons, and crosshair 1.
+    for extra in ["conchars", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier",
+        "help", "inventory", "field_3", "i_help", "i_powershield", "i_powerscreen", "ch1"] {
         names.append(extra);
     }
     for name in names {
@@ -129,7 +132,61 @@ def load_q3_art(hud: HudRenderer, library: AssetLibrary) {
             hud.add(name, art);
         }
     }
+    # The scoreboard's tabs and bot skill marks (cg_main.c), the medals, and
+    # the postgame menu's font and buttons (ui_sppostgame.c).
+    extras: list[tuple[str, str]] = [
+        ("tab_score", "menu/tab/score.tga"),
+        ("tab_time", "menu/tab/time.tga"),
+        ("tab_name", "menu/tab/name.tga"),
+        ("font_prop", "menu/art/font1_prop.tga")
+    ];
+    for level in ["1", "2", "3", "4", "5"] {
+        extras.append(("skill" + level, "menu/art/skill" + level + ".tga"));
+    }
+    for (kind, medal) in Q3_MEDAL_ART.items() {
+        extras.append(("medal_" + kind, "menu/medals/medal_" + medal + ".tga"));
+    }
+    for button in ["menu", "replay", "next"] {
+        for state in ["_0", "_1"] {
+            extras.append(("button_" + button + state, "menu/art/" + button + state + ".tga"));
+        }
+    }
+    for (name, path) in extras {
+        found = encoded(library, path);
+        if found is not None {
+            hud.add(name, found);
+        }
+    }
     hud.ready = hud.has_pic("zero") and hud.has_pic("head");
+}
+
+# The medal art for each award.
+glob Q3_MEDAL_ART: dict[str, str] = {
+    "accuracy": "accuracy",
+    "impressive": "impressive",
+    "excellent": "excellent",
+    "gauntlet": "gauntlet",
+    "frags": "frags",
+    "perfect": "victory"
+};
+
+"""Each character's scoreboard icon (cg_players.c: icon_<skin>.tga, or the
+default skin's), as the pic "icon:<key>" for a body keyed
+"q3:models/players/<model>:<skin>"."""
+def load_character_icons(hud: HudRenderer, library: AssetLibrary, keys: list[str]) {
+    for key in keys {
+        parts = key.split(":");
+        if len(parts) != 3 or hud.has_pic("icon:" + key) {
+            continue;
+        }
+        found = encoded(library, parts[1] + "/icon_" + parts[2] + ".tga");
+        if found is None {
+            found = encoded(library, parts[1] + "/icon_default.tga");
+        }
+        if found is not None {
+            hud.add("icon:" + key, found);
+        }
+    }
 }
 
 """Fill `hud` with the art of `game`; leaves it unready when the art is missing."""
@@ -180,6 +237,7 @@ def load_q3_models(models: HudModels, library: AssetLibrary) {
         part = player_part(library, "head", "sarge", "default");
         head = ModelRenderer();
         head.upload(part.model, part.skins);
-        models.set_head(head);
+        settings = animation_settings(library.read("models/players/sarge/animation.cfg").decode("utf-8"));
+        models.set_head(head, settings.head_offset);
     }
 }

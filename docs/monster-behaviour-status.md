@@ -106,13 +106,31 @@ its target, so fights are spent moving between attacks.
 ## Bodies
 
 - A Q2 monster below half health shows its bloodied skin (`skinnum |= 1`).
-- Hit boxes use each monster's `SP_monster_*` height instead of the player's.
+- Hit boxes use each monster's `SP_monster_*` box instead of the player's.
   For example, Q1 shambler/ogre/fiend/vore boxes rise to 64, the Q2 tank to 72,
   the supertank to 112 and Jorg to 140.
 - Living monsters and bots are solid to the player (`SOLID_SLIDEBOX`): the player
   is pushed back out of them and stopped. A monster cannot step into the player.
-  Corpses stay passable. Movement collision still uses the player's hull for
-  every monster.
+  Corpses stay passable.
+- Monsters move with their own box on their own game's maps
+  (`monster_collision` in `engine/world/combat.jac`):
+  - Q2/Q3 brush hulls are stored expanded by the player's box. A view made by
+    `CollisionMap.for_body(height, drop, mins, maxs)` carries a `BodyBox`, and
+    each brush plane moves by the difference between the two boxes at the
+    corner facing it, as `CM_BoxTrace` does. The broad phase widens every
+    stored bound by the same difference. No extra hulls are built.
+  - Q1 maps load clip hull 2 next to hull 1; a monster wider than 32 units
+    (shambler, ogre, fiend, vore, dog) traces it (`SV_HullForEntity`).
+  - The monster's origin is its real origin. Q2 bosses whose mins z is 0
+    (supertank, Jorg, Makron, Hornet, the chick, flipper) stand with their
+    feet at it. Before, the player's box put the supertank, Jorg and several
+    tanks inside the floor, so they never moved, and the chick floated 24
+    units up.
+  - The ogre, dog, gladiator, flipper and Q2 barrel boxes now match their
+    `setsize`/`VectorSet` values.
+  - Monsters on another game's maps (Passion) keep the player's box; their
+    model is lowered so a Q2 model with mins z 0 stands on the floor.
+  - Navigation caches connections per body box.
 
 ## Patrols and combat points
 
@@ -210,11 +228,23 @@ rocket shot.
   - `tests/trail_tests.jac`: crumb laying and following.
   - `tests/dodge_tests.jac`: duck timing and box, facing checks, soldier
     crouch-fire by skill.
+  - `tests/monster_hull_tests.jac`: a supertank box standing at its feet,
+    stopped by an 80-unit gap a player-sized box passes, and Q1 hull 2 for
+    wide monsters.
+- `scripts/monster_hull_smoke.jac` loads power1 (supertank), boss2 (Jorg),
+  jail2 (tank) and e1m5 (shambler). Each starts clear of the floor and settles
+  with its feet on it (within 0.04 units). The supertank, walked toward an
+  opening a player-sized box crosses, stops after 31 units while a player box
+  could go 574 further; Jorg stops with 215 to spare. Screenshots are saved in
+  `.jac/screenshots/hulls/`.
 - `scripts/monsters_smoke.jac` runs on `e1m1`, `e1m2`, `base1` and `q3dm1`. It
   gibs a monster and renders the flying pieces, walks every patroller along its
   corners, and stages a fight between two monster kinds.
 
 ## Limits
+
+- Mover pushes, platform riding and door blocking still test monsters with the
+  player's box.
 
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.

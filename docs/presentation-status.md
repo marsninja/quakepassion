@@ -19,13 +19,42 @@ loads the art.
   - Owned and selected weapons.
   - All four ammo counts in the small `conchars` digits.
   - Keys, powerups and sigils.
+  - The crosshair: the `conchars` `+` at the centre of the view above the bars.
 
   `engine/formats/q1/wad.jac` reads WAD2 and qpic lumps.
 - **Quake II:** the single-player statusbar layout from `g_spawn.c`.
   - Health, ammo and armor fields in `num_`/`anum_` digits, flashing when low.
   - The health, ammo and armor icons.
-  - The held weapon's icon.
+  - `field_3` behind the health or armor number for a server frame after a
+    hit to it (`STAT_FLASHES`, `P_DamageFeedback`). The armor flash also
+    covers cells spent by power armor.
+  - Running power armor (`G_SetStats`): the cell count with `i_powershield`,
+    taking turns (`level.framenum & 8`) with worn armor. The original shows
+    `i_powershield` for the power screen too.
+  - The held weapon's icon, and `i_help` blinking in its place while the help
+    computer has unread news (`STAT_HELPICON`, `pers.helpchanged`).
   - The seconds left on a running powerup, with its icon.
+  - The crosshair `pics/ch1.pcx` (`SCR_DrawCrosshair`).
+- **Quake II layouts:** `HudRenderer.draw_layout` runs `SCR_ExecuteLayoutString`
+  programs (`xl`/`xr`/`xv`, `yt`/`yb`/`yv`, `picn`, `string`, `string2`,
+  `cstring`, `cstring2`) with the Q2 `conchars`, high-bit characters in the
+  alternate set. `games/q2_layouts.jac` writes the programs.
+  - F1: the help computer, `p_hud.c HelpComputer`'s layout on `help.pcx`
+    (skill, level name, both objectives, kills/goals/secrets). Opening it
+    reads the news; `misc/pc_up.wav` sounds when news arrives and twice more,
+    6.4 s apart, while it stays unread.
+  - The end-of-unit summary uses the same frame: "Unit complete" and the time
+    in the primary slot, the prompt in the secondary slot, the unit's last
+    level's tallies. Single-player Q2 itself shows only the intermission view.
+  - Tab: the inventory (`cl_inv.c CL_DrawInventory`) on `inventory.pcx`, with
+    "hotkey ### item" rows in `itemlist` order, 17 at a time around the
+    selected item. The selected item is plain with a blinking cursor; the
+    rest use the alternate characters. The hotkeys shown are the weapon number
+    keys and `g`, the default binds the engine has. `[` `]` and Enter select
+    and use stored items as before; the selection covers stored items only,
+    not weapons as `invnext` does.
+  - Entity `message` values turn `\n` into line breaks at load, as
+    `ED_NewString`/`G_NewString` do.
 - **Quake III:** `cg_draw.c`'s status bar with the default 3D icons
   (`cg_draw3dIcons 1`, `engine/render/hud_models.jac`).
   - Ammo, health and armor in the 32×48 digits: orange, red and flashing when
@@ -147,6 +176,11 @@ described in [Q3 player bodies](player-bodies-status.md).
 
 ## Validation
 
+- `tests/q2_presentation_tests.jac` covers the layout tokenizer, the help
+  computer and unit summary programs, the inventory rows, the help beeps and
+  the status flashes. `scripts/q2_presentation_smoke.jac` drives base1 through
+  the game loop and saves the help icon, help computer, inventory, power armor
+  bar and unit summary to `.jac/screenshots/q2hud/`.
 - `scripts/presentation_smoke.jac` loads and draws each game's status bar art on
   e1m1, base1 and q3dm1. It also animates light styles on Q1 and Q2 maps and
   uploads every layered Q3 shader.

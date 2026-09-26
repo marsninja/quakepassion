@@ -77,6 +77,10 @@ def add_model(
 
 def build_brush_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
     collision = CollisionMap(eye_height=26.0 if bsp.game == "q3" else 22.0);
+    if bsp.game == "q3" {
+        collision.hull_mins = Vec3(x=-15.0, y=-15.0, z=-24.0);
+        collision.hull_maxs = Vec3(x=15.0, y=15.0, z=32.0);
+    }
     if not triggers {
         add_model(collision, bsp, 0, Vec3());
     }
