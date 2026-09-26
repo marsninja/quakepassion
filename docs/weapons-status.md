@@ -34,7 +34,7 @@ grenade bounce/fuse and deterministic save restoration.
 These are functional arsenal foundations, **not full weapon fidelity**. Remaining
 work includes BFG immunity rules, exact original recoil/animation, exact
 game-specific muzzle offsets and spread sequences, remaining projectile
-materials, impact marks, dropped weapons,
+materials, dropped weapons,
 powerups, and bot use of the arsenal. Original MDL/MD2/MD3 models now cover nails,
 bolts, grenades and rockets. Q2 BFG flight/explosion effects use the original
 animated SP2/PCX assets; Q3 plasma uses its additive rotating sprite and the Q3
@@ -123,8 +123,9 @@ rendering. Model `animMap` stages retain their image sequence and frequency,
 including the grenade's red/green overlay. This follows the original
 [Q3 shader parser](https://github.com/id-Software/Quake-III-Arena/blob/master/code/renderer/tr_shader.c).
 Other unsupported model shader operations still report partial support rather
-than silently claiming fidelity. Q3 BFG autosprite/deformation stages, projectile
-smoke trails and impact marks remain unfinished.
+than silently claiming fidelity. Q3 BFG autosprite/deformation stages and projectile
+smoke trails remain unfinished; impact marks are described in
+[combat feedback](combat-feedback-status.md#impact-marks-and-ricochets).
 
 `scripts/projectile_scene_smoke.jac` loads and draws all 12 configured effects
 and verifies animated grenade stages and additive rocket flare setup. Focused

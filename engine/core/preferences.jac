@@ -29,7 +29,7 @@ obj Preferences {
         }
         row = values(data[1], 8 + versions.index(data[0]));
         self.god_mode = len(row) >= 9 and row[8] != 0.0;
-        self.skill = max(0, min(3, int(row[9]))) if len(row) >= 10 else 1;
+        self.skill = max(0, min(4, int(row[9]))) if len(row) >= 10 else 1;
         self.fov = max(40.0, min(110.0, row[0]));
         self.sensitivity = max(0.00022, min(0.011, row[1]));
         self.invert_y = row[2] != 0.0;

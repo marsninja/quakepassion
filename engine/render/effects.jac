@@ -12,7 +12,17 @@ import from ..formats.q1.sprite { parse_spr }
 import from ..assets.library { AssetLibrary }
 import from ..world.world { World }
 import from ..world.combat { Projectile, HasProjectile }
-import from ..world.particles { Explosion, HasExplosion, ShotTrail, HasTrail }
+import from ..world.particles {
+    Explosion,
+    HasExplosion,
+    ShotTrail,
+    HasTrail,
+    ImpactMark,
+    HasMark,
+    mark_axes,
+    MARK_TOTAL_TIME,
+    MARK_FADE_TIME
+}
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from .quake {
     QuakeRenderer,
@@ -31,7 +41,8 @@ import from .quake {
     rlDisableDepthMask,
     rlEnableDepthMask,
     rlDisableBackfaceCulling,
-    rlEnableBackfaceCulling
+    rlEnableBackfaceCulling,
+    rlSetBlendFactors
 }
 
 obj UploadedSprite {
@@ -239,6 +250,7 @@ obj EffectScene {
     ) {
         side = right_from(yaw);
         up = side.cross(forward_from(yaw, pitch)).normalized();
+        self.draw_marks(world, eye);
         self.draw_trails(world, eye, side, up);
         self.draw_blasts(world, eye, side, up);
         if not self.textures and not self.models {
@@ -382,6 +394,64 @@ obj EffectScene {
             }
         }
         rlDrawRenderBatchActive();
+        rlSetTexture(u32(0));
+        rlEnableDepthMask();
+        rlEnableBackfaceCulling();
+        EndBlendMode();
+    }
+
+    """Q3 cg_marks.c CG_AddMarks: each mark's square on its wall, lifted off
+    it a little (the shaders' polygonOffset) and fading over its last second.
+    The bullet, burn and hole marks darken what is behind them (blendFunc
+    GL_ZERO GL_ONE_MINUS_SRC_COLOR) and fade their colour; energy marks
+    blend by alpha, their glow dying over three seconds."""
+    def draw_marks(world: World, eye: Vec3) {
+        marks = [world->:HasMark:->][?:ImpactMark];
+        if not marks {
+            return;
+        }
+        rlDrawRenderBatchActive();
+        rlDisableDepthMask();
+        rlDisableBackfaceCulling();
+        for mark in marks {
+            art = self.flight.get(mark.shader, []);
+            if not art {
+                continue;
+            }
+            fade = min(1.0, max(0.0, (MARK_TOTAL_TIME - mark.age) / MARK_FADE_TIME));
+            shade = mark.color.scale(fade);
+            alpha = 1.0;
+            if mark.alpha_fade {
+                glow = min(1.0, max(0.0, (450.0 - 450.0 * mark.age / 3.0) / 255.0));
+                shade = mark.color.scale(glow);
+                alpha = fade;
+                BeginBlendMode(i32(0));
+            } else {
+                rlSetBlendFactors(i32(0), i32(769), i32(32774));
+                BeginBlendMode(i32(6));
+            }
+            axes = mark_axes(mark.normal, mark.angle);
+            # Depth precision falls with distance; so does the lift grow.
+            lift = 0.3 + mark.pos.sub(eye).length() * 0.0005;
+            center = mark.pos.add(mark.normal.scale(lift));
+            rlSetTexture(u32(art[0].texture));
+            rlBegin(i32(7));
+            rlColor4ub(
+                u8(int(max(0.0, min(1.0, shade.x)) * 255.0)),
+                u8(int(max(0.0, min(1.0, shade.y)) * 255.0)),
+                u8(int(max(0.0, min(1.0, shade.z)) * 255.0)),
+                u8(int(max(0.0, min(1.0, alpha)) * 255.0))
+            );
+            for corner in [(-1.0, -1.0), (-1.0, 1.0), (1.0, 1.0), (1.0, -1.0)] {
+                point = center.add(axes[0].scale(corner[0] * mark.radius)).add(
+                    axes[1].scale(corner[1] * mark.radius)
+                );
+                rlTexCoord2f(f32(0.5 + 0.5 * corner[0]), f32(0.5 + 0.5 * corner[1]));
+                rlVertex3f(f32(point.x), f32(point.y), f32(point.z));
+            }
+            rlEnd();
+            rlDrawRenderBatchActive();
+        }
         rlSetTexture(u32(0));
         rlEnableDepthMask();
         rlEnableBackfaceCulling();

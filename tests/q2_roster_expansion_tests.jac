@@ -40,7 +40,13 @@ test "gunner chaingun burst refires and grenades need distance" {
     assert choose_attack(enemy, 60.0) == 0;
     world spawn CombatTick(player=player, collision=CollisionMap(), state=state, dt=0.65);
     assert player.health == 100 and enemy.attack_profile == 0;
-    world spawn CombatTick(player=player, collision=CollisionMap(), state=state, dt=0.8);
+    # The player stands still: friction takes each shot's kick away before
+    # the next (GunnerFire leads the target by its velocity from the muzzle,
+    # 35 units ahead of the gunner).
+    for step in range(8) {
+        world spawn CombatTick(player=player, collision=CollisionMap(), state=state, dt=0.1);
+        player.velocity = Vec3();
+    }
     assert player.health <= 76 and player.health >= 70 , str(player.health);
     far = Opponent(rule=rule, attack_wait=0.0, shot_random=30000);
     chosen = choose_attack(far, 400.0);

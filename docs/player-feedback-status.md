@@ -106,7 +106,11 @@ drops and rolls (Q1 80 degrees; Q2/Q3 40 degrees, looking toward the killer).
 `VoiceTick` voices Q1 and Q2 bodies: jump, landing, water entry/exit and
 submerging, surfacing gasps, drowning, lava/slime burns, pain (by health in
 Q2) and death. It keeps its own last health, so liquid damage is voiced too.
-Q3 plays the water events; its model sounds belong to the Q3 player model.
+Q3 plays the water events; its model sounds belong to the Q3 player model. A
+killing blow more than 40 past zero (Q3: 40 or more) gibs the player instead:
+Q1 `GibPlayer` plays `gib` or `udeath` (`teledth1` for a telefrag), Q2
+`player_die` `misc/udeath`, Q3 `EV_GIB_PLAYER` `gibsplt1`, and the death cry is
+not played. The player's body is not thrown as gibs.
 
 Printed lines go where the games put them: Q1/Q2 pickup and weapon prints at
 the top left in the game's character sheet, centre prints a third of the way
@@ -128,6 +132,7 @@ obituaries print at the top left.
   the underwater tint, pickup feedback and the dead view.
 - `scripts/rocket_jump_probe.jac` prints the rocket jump apexes above.
 
-Not done: Q3 scorch/bullet marks and ricochet sounds, the Q2/Q3 view weapon
-lowering during a switch (the view weapon only shows its raise), Q2 PMF_TIME_LAND
-after hard landings, Q1 backpack pickups and gib sounds for the player.
+Q3 marks and ricochets are in [combat feedback](combat-feedback-status.md), the
+weapon switch in [first-person weapons](viewweapons-status.md).
+
+Not done: Q2 PMF_TIME_LAND after hard landings, Q1 backpack pickups.

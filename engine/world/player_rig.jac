@@ -299,6 +299,7 @@ walker PoseRig {
         shots: int = -1,
         gesture: bool = False,
         haste: bool = False,
+        gibbed: bool = False,
         sounds: list[str] = [];
 
     can pose with PlayerRig entry {
@@ -325,7 +326,10 @@ walker PoseRig {
                 self.start_legs(rig, death, True);
                 self.start_torso(rig, death);
                 rig.firing = False;
-                self.sounds.append("death" + str(choice + 1));
+                # A gibbed body (EV_GIB_PLAYER) makes no death cry.
+                if not self.gibbed {
+                    self.sounds.append("death" + str(choice + 1));
+                }
             }
         } else {
             self.animate_legs(rig);
@@ -546,7 +550,8 @@ walker PoseRig {
         rig.torso.pitch = swung[0];
         rig.torso.pitching = swung[1];
         legs = Vec3(y=rig.legs.yaw);
-        torso = Vec3(x=rig.torso.pitch, y=rig.torso.yaw);
+        # animation.cfg fixedtorso: the torso never pitches with the view.
+        torso = Vec3(x=0.0 if rig.fixed_torso else rig.torso.pitch, y=rig.torso.yaw);
         head = Vec3(x=view_pitch, y=view_yaw);
         speed = self.velocity.length();
         if speed > 0.001 and rig.alive {
@@ -554,6 +559,10 @@ walker PoseRig {
             axes = quake_basis(legs);
             legs.z -= speed * 0.05 * heading.dot(axes.left);
             legs.x += speed * 0.05 * heading.dot(axes.forward);
+        }
+        # animation.cfg fixedlegs: the legs follow the torso's yaw, upright.
+        if rig.fixed_legs {
+            legs = Vec3(y=torso.y);
         }
         since = rig.clock - rig.pain_time;
         if since < 0.2 {

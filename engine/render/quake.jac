@@ -54,31 +54,11 @@ import from ..world.portals { surface_plane }
 import from ..formats.bsp { Face, Texture, FogVolume }
 import from ..formats.animated { ModelStage, Deform, stage_frame }
 import from ..math.vec3 { Vec3 }
-import from ..world.lighting { Lighting }
+import from ..world.lighting { Lighting, shift_light }
 
 obj LightRect {
     has x: int = 0,
         y: int = 0;
-}
-
-"""How baked light brightens a surface. Q3 stores lightmaps and vertex light
-at a quarter of full range (r_mapOverBrightBits 2) and R_ColorShiftLightingBytes
-shifts them up, scaling an overflowing colour back as a whole rather than
-saturating each channel to white. Q1 and Q2 light is doubled and clamped."""
-def shift_light(overbright: bool, red: int, green: int, blue: int) -> tuple[int, int, int] {
-    if not overbright {
-        return (min(255, red * 2), min(255, green * 2), min(255, blue * 2));
-    }
-    red = red * 4;
-    green = green * 4;
-    blue = blue * 4;
-    brightest = max(red, max(green, blue));
-    if brightest > 255 {
-        red = red * 255 // brightest;
-        green = green * 255 // brightest;
-        blue = blue * 255 // brightest;
-    }
-    return (red, green, blue);
 }
 
 obj QuakeRenderer {
@@ -124,6 +104,13 @@ obj QuakeRenderer {
         portal_height: float = 1.0,
         portal_shader: Shader = Shader(id=u32(0), locs=u64(0)),
         portal_size: int = -1;
+    # Q1/Q2 dynamic lights (R_AddDynamicLights): an additive pass over the
+    # faces a light reaches, each face's bounds cached for the test.
+    has dlight_shader: Shader = Shader(id=u32(0), locs=u64(0)),
+        dlight_positions: int = -1,
+        dlight_colors: int = -1,
+        face_lows: dict[int, Vec3] = {},
+        face_highs: dict[int, Vec3] = {};
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
@@ -209,6 +196,18 @@ obj QuakeRenderer {
                 GetShaderLocation(self.shader, "flashPosition[0]")
             );
             self.dynamic_colors = int(GetShaderLocation(self.shader, "flashColor[0]"));
+        }
+        if not self.single_pass and level.bsp.game in ["q1", "q2"] {
+            self.dlight_shader = LoadShaderFromMemory(
+                "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;\n"
+                    + "uniform mat4 mvp; out vec2 uv; out vec3 worldPosition;\n"
+                    + "void main(){ uv=vertexTexCoord; worldPosition=vertexPosition; gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
+                "#version 330\nin vec2 uv; in vec3 worldPosition; out vec4 finalColor;\n"
+                    + "uniform sampler2D texture0; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
+                    + "void main(){ vec4 base=texture(texture0,uv); if(base.a<0.5) discard; vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition))); vec3 lighting=vec3(0.0); for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float distance=length(delta); float a=max(0.0,1.0-distance/flashPosition[i].w); lighting+=flashColor[i].rgb*a*a*max(0.0,dot(n,delta/max(distance,0.001))); } finalColor=vec4(base.rgb*lighting,1.0); }\n"
+            );
+            self.dlight_positions = int(GetShaderLocation(self.dlight_shader, "flashPosition[0]"));
+            self.dlight_colors = int(GetShaderLocation(self.dlight_shader, "flashColor[0]"));
         }
         for texture in level.bsp.sky {
             image_id = self.upload_image(texture);
@@ -1183,7 +1182,8 @@ obj QuakeRenderer {
     def polygon(face: Face, rect: LightRect, light: bool) {
         rlBegin(i32(4));
         rlColor4ub(u8(255), u8(255), u8(255), u8(255));
-        if face.moving_light {
+        # Q3 movers keep their baked light; its light grid is for models.
+        if face.moving_light and self.lighting.grid is None {
             center = face.vertices[0].lerp(face.vertices[2], 0.5);
             facing = face.normal;
             turn = face.turn;
@@ -1412,6 +1412,7 @@ obj QuakeRenderer {
         }
         rlDrawRenderBatchActive();
         EndBlendMode();
+        self.draw_dynamic_lights(level, batches);
         # Restore palette fullbrights after lightmap multiplication.
         for t in range(len(batches)) {
             if self.emissive[t] == 0 {
@@ -1439,6 +1440,83 @@ obj QuakeRenderer {
         rlSetTexture(u32(0));
         self.draw_liquids(level, batches);
         return count;
+    }
+
+    """Q1/Q2 R_AddDynamicLights: muzzle flashes, explosions and glowing
+    missiles add their light to the faces within reach, as the originals add
+    it to the lightmaps: each reached face drawn again, additively, as its
+    texture times the lights at each pixel."""
+    def draw_dynamic_lights(level: Level, batches: list[list[int]]) {
+        flashes = level.lighting.dynamic;
+        if not flashes or self.dlight_positions < 0 {
+            return;
+        }
+        positions = bytearray();
+        colors = bytearray();
+        for i in range(8) {
+            if i < len(flashes) {
+                flash = flashes[i];
+                positions.extend(struct.pack("<ffff", flash.origin.x, flash.origin.y, flash.origin.z, flash.radius));
+                colors.extend(struct.pack("<ffff", flash.color.x, flash.color.y, flash.color.z, 0.0));
+            } else {
+                positions.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
+                colors.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
+            }
+        }
+        rlEnableShader(self.dlight_shader.id);
+        rlSetUniform(i32(self.dlight_positions), bytes(positions), i32(3), i32(8));
+        rlSetUniform(i32(self.dlight_colors), bytes(colors), i32(3), i32(8));
+        rlDisableShader();
+        BeginShaderMode(self.dlight_shader);
+        BeginBlendMode(i32(1));
+        rlDisableDepthMask();
+        for t in range(len(batches)) {
+            bound = False;
+            for index in batches[t] {
+                face = level.bsp.faces[index];
+                if face.warp or face.opacity < 1.0 or face.light_offset < 0 {
+                    continue;
+                }
+                if index not in self.face_lows {
+                    lo = face.vertices[0];
+                    hi = face.vertices[0];
+                    for v in face.vertices {
+                        lo = Vec3(x=min(lo.x, v.x), y=min(lo.y, v.y), z=min(lo.z, v.z));
+                        hi = Vec3(x=max(hi.x, v.x), y=max(hi.y, v.y), z=max(hi.z, v.z));
+                    }
+                    self.face_lows[index] = lo;
+                    self.face_highs[index] = hi;
+                }
+                lo = self.face_lows[index].add(face.motion);
+                hi = self.face_highs[index].add(face.motion);
+                reached = False;
+                for flash in flashes[:8] {
+                    p = flash.origin;
+                    gap = Vec3(
+                        x=max(0.0, max(lo.x - p.x, p.x - hi.x)),
+                        y=max(0.0, max(lo.y - p.y, p.y - hi.y)),
+                        z=max(0.0, max(lo.z - p.z, p.z - hi.z))
+                    );
+                    if gap.length() < flash.radius {
+                        reached = True;
+                        break;
+                    }
+                }
+                if not reached {
+                    continue;
+                }
+                if not bound {
+                    rlSetTexture(u32(self.textures[t]));
+                    bound = True;
+                }
+                self.polygon(face, self.rects[index], False);
+            }
+        }
+        rlDrawRenderBatchActive();
+        rlEnableDepthMask();
+        EndBlendMode();
+        EndShaderMode();
+        rlSetTexture(u32(0));
     }
 
     """tr_shade.c RB_FogPass over every opaque surface inside a fog volume, and
@@ -1671,6 +1749,13 @@ obj QuakeRenderer {
         if self.single_pass {
             UnloadShader(self.shader);
         }
+        if self.dlight_positions >= 0 {
+            UnloadShader(self.dlight_shader);
+            self.dlight_positions = -1;
+            self.dlight_colors = -1;
+        }
+        self.face_lows = {};
+        self.face_highs = {};
         self.single_pass = False;
         for id in self.sky {
             rlUnloadTexture(u32(id));

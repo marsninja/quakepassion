@@ -66,7 +66,8 @@ def player_part(
 """A Q3 character as CG_ParseAnimationFile reads it: the three part models,
 the animation table (`animations` rows are [first, count, fps] as listed; the
 clips are the client's, with legs frames shifted past the torso-only ones),
-and its footstep sound type."""
+its footstep sound type, the head icon's `headoffset` and whether the legs
+(`fixedlegs`) or torso (`fixedtorso`) keep still instead of turning."""
 obj CharacterRig {
     has lower: ModelAsset,
         upper: ModelAsset,
@@ -75,7 +76,10 @@ obj CharacterRig {
         clips: list[AnimationClip] = [],
         footsteps: str = "step",
         sex: str = "m",
-        offset: int = 0;
+        offset: int = 0,
+        head_offset: Vec3 = Vec3(),
+        fixed_legs: bool = False,
+        fixed_torso: bool = False;
 }
 
 # cg_main.c footstep sound names by animation.cfg footsteps type.
@@ -91,22 +95,12 @@ glob Q3_FOOTSTEP_NAMES: dict[str, str] = {
 def character_rig(library: AssetLibrary, character: str = "sarge", skin: str = "default") -> CharacterRig {
     animations: list[list[int]] = [];
     rows: list[list[float]] = [];
-    footsteps = "step";
-    sex = "m";
     config = "models/players/" + character + "/animation.cfg";
-    for line in library.read(config).decode("utf-8").splitlines() {
-        fields = line.split("//")[0].split();
-        if not fields {
-            continue;
-        }
-        keyword = fields[0].lower();
-        if keyword == "footsteps" and len(fields) >= 2 {
-            footsteps = Q3_FOOTSTEP_NAMES.get(fields[1].lower(), "step");
-        } elif keyword == "sex" and len(fields) >= 2 {
-            sex = fields[1].lower()[:1];
-        } elif len(fields) >= 4 and fields[0][0] in "0123456789" and len(rows) < 25 {
+    settings = animation_settings(library.read(config).decode("utf-8"));
+    for fields in settings.frames {
+        if len(rows) < 25 {
             animations.append([int(fields[0]), int(fields[1]), int(fields[3])]);
-            rows.append([float(fields[0]), float(fields[1]), float(fields[2]), float(fields[3])]);
+            rows.append(fields);
         }
     }
     if len(rows) < 25 { raise ValueError("Incomplete player animations"); }
@@ -121,10 +115,50 @@ def character_rig(library: AssetLibrary, character: str = "sarge", skin: str = "
         head=player_part(library, "head", character, skin),
         animations=animations,
         clips=rig_clips(rows),
-        footsteps=footsteps,
-        sex=sex,
-        offset=offset
+        footsteps=settings.footsteps,
+        sex=settings.sex,
+        offset=offset,
+        head_offset=settings.head_offset,
+        fixed_legs=settings.fixed_legs,
+        fixed_torso=settings.fixed_torso
     );
+}
+
+"""What CG_ParseAnimationFile reads from animation.cfg: the keywords before
+the frame table (footsteps, headoffset, sex, fixedlegs, fixedtorso) and the
+frame rows as [first, count, looping, fps]."""
+obj AnimationSettings {
+    has frames: list[list[float]] = [],
+        footsteps: str = "step",
+        sex: str = "m",
+        head_offset: Vec3 = Vec3(),
+        fixed_legs: bool = False,
+        fixed_torso: bool = False;
+}
+
+def animation_settings(text: str) -> AnimationSettings {
+    settings = AnimationSettings();
+    for line in text.splitlines() {
+        fields = line.split("//")[0].split();
+        if not fields {
+            continue;
+        }
+        keyword = fields[0].lower();
+        if keyword == "footsteps" and len(fields) >= 2 {
+            settings.footsteps = Q3_FOOTSTEP_NAMES.get(fields[1].lower(), "step");
+        } elif keyword == "sex" and len(fields) >= 2 {
+            settings.sex = fields[1].lower()[:1];
+        } elif keyword == "headoffset" and len(fields) >= 4 {
+            settings.head_offset = Vec3(x=float(fields[1]), y=float(fields[2]), z=float(fields[3]));
+        } elif keyword == "fixedlegs" {
+            settings.fixed_legs = True;
+        } elif keyword == "fixedtorso" {
+            settings.fixed_torso = True;
+        } elif len(fields) >= 4 and fields[0][0] in "0123456789" {
+            settings.frames.append([float(fields[0]), float(fields[1]), float(fields[2]), float(fields[3])]);
+        }
+    }
+    return settings;
 }
 
 """The world's shared model resource for `key`, registered once."""
@@ -155,6 +189,9 @@ def character_body(
     );
     body.character = key;
     body.footsteps = rig.footsteps;
+    body.head_offset = rig.head_offset;
+    body.fixed_legs = rig.fixed_legs;
+    body.fixed_torso = rig.fixed_torso;
     return body;
 }
 

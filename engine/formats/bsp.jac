@@ -79,6 +79,7 @@ obj Leaf {
         mins: Vec3,
         maxs: Vec3,
         cluster: int = -1,
+        area: int = 0,
         faces: list[int] = [],
         brushes: list[int] = [],
         ambient: list[int] = [];
@@ -90,6 +91,7 @@ obj Model {
         face_count: int,
         vis_leaf_count: int = 0,
         player_hull: int = -1,
+        large_hull: int = -1,
         brushes: list[int] = [],
         mins: Vec3 = Vec3(),
         maxs: Vec3 = Vec3();
@@ -99,9 +101,17 @@ obj MapEntity {
     has fields: dict[str, str] = {};
 }
 
+"""One side of a Q2 area: the portal (dareaportal_t portalnum) through which
+it reaches `area`."""
+obj AreaLink {
+    has portal: int,
+        area: int;
+}
+
 obj Brush {
     has planes: list[int] = [],
-        contents: int = 0;
+        contents: int = 0,
+        side_flags: list[int] = [];
 }
 
 """A Q3 fog volume (dfog_t): an axial brush, and the plane of its visible side
@@ -135,7 +145,9 @@ obj Bsp {
         entities: list[MapEntity] = [],
         lighting: bytes = b"",
         visibility: bytes = b"",
-        fogs: list[FogVolume] = [];
+        fogs: list[FogVolume] = [],
+        light_grid: bytes = b"",
+        areas: list[list[AreaLink]] = [];
 }
 
 def require_range(data: bytes, offset: int, size: int) {
@@ -247,6 +259,11 @@ def parse_entities(text: str) -> list[MapEntity] {
         }
         i += 1;
         if have_key {
+            # ED_NewString (Q1/Q2) and G_NewString (Q3) turn a message's
+            # "\n" into a line break at spawn.
+            if key == "message" {
+                value = value.replace("\\n", "\n");
+            }
             current.fields[key] = value;
             have_key = False;
         } else {
