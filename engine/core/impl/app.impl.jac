@@ -609,6 +609,10 @@ impl App.load_destination(
         if departed {
             next_campaign spawn Remember(name=self.level.name, data=departed);
         }
+        last_world = self.world;
+        last_roots = collision_roots(self.level.collision);
+        last_roots.append(self.player);
+        last_roots.append(self.player.inventory);
         self.campaign = next_campaign;
         self.world = world;
         self.arena_contacts = ArenaContactIndex();
@@ -619,6 +623,8 @@ impl App.load_destination(
         self.models = next_models;
         self.effects = next_effects;
         self.viewweapon = next_viewweapon;
+        # The last level's graph lives until it is destroyed.
+        destroy_graph(last_world, last_roots);
         self.prepare_presentation();
         if self.audio.ready {
             self.audio.close();
