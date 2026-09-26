@@ -81,11 +81,13 @@ node Player(Actor) {
         drown_damage: int = 2,
         hazard_wait: float = 0.0;
     # Movement memory: Q3 PMF_TIME_KNOCKBACK, PMF_JUMP_HELD / Q1 FL_JUMPRELEASED,
-    # the last airborne fall speed (Q1 jump_flag) and Q1 FL_WATERJUMP.
+    # the last airborne fall speed (Q1 jump_flag), Q1 FL_WATERJUMP and Q2
+    # PMF_TIME_LAND (no jumping just after a hard landing).
     has knockback_time: float = 0.0,
         jump_held: bool = False,
         fall_speed: float = 0.0,
-        water_jump_time: float = 0.0;
+        water_jump_time: float = 0.0,
+        land_time: float = 0.0;
     # Hits taken since the view last read them (Q1 dmg_take/dmg_save,
     # Q2 damage_blood/damage_armor/damage_from).
     has damage_blood: int = 0,

@@ -546,7 +546,8 @@ walker PoseRig {
         rig.torso.pitch = swung[0];
         rig.torso.pitching = swung[1];
         legs = Vec3(y=rig.legs.yaw);
-        torso = Vec3(x=rig.torso.pitch, y=rig.torso.yaw);
+        # animation.cfg fixedtorso: the torso never pitches with the view.
+        torso = Vec3(x=0.0 if rig.fixed_torso else rig.torso.pitch, y=rig.torso.yaw);
         head = Vec3(x=view_pitch, y=view_yaw);
         speed = self.velocity.length();
         if speed > 0.001 and rig.alive {
@@ -554,6 +555,10 @@ walker PoseRig {
             axes = quake_basis(legs);
             legs.z -= speed * 0.05 * heading.dot(axes.left);
             legs.x += speed * 0.05 * heading.dot(axes.forward);
+        }
+        # animation.cfg fixedlegs: the legs follow the torso's yaw, upright.
+        if rig.fixed_legs {
+            legs = Vec3(y=torso.y);
         }
         since = rig.clock - rig.pain_time;
         if since < 0.2 {

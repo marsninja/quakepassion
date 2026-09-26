@@ -20,7 +20,7 @@ import from .combat {
 import from .weapons { WeaponRule }
 import from .inventory { quantity, AdjustInventory }
 import from .particles { rail_trail, beam_trail, impact_spray }
-import from .bot_character { BotCharacter, BotState }
+import from .bot_character { BotCharacter, BotState, bot_aggression, entity_visible }
 import from .powerups { damage_scale, fire_interval_scale, empowered }
 import from .pickups { Pickup, HasPickup }
 import from .bot_routes { NavMesh, HasNavMesh, reachable }
@@ -28,6 +28,7 @@ import from .arena_navigation { bot_wants }
 import from .powerups { stored_kinds }
 import from .models { PlayerRig, WeaponKit }
 import from .player_rig { hold_kit }
+import from .body_queue { Corpse, damage_corpse }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 
@@ -154,13 +155,31 @@ def aim_point(bot: Opponent, mind: BotCharacter, rule: WeaponRule, foe: Player, 
         }
     }
     miss = 1.0 - accuracy;
-    return target.add(
+    target = target.add(
         Vec3(
             x=20.0 * bot_crandom(bot) * miss,
             y=20.0 * bot_crandom(bot) * miss,
             z=10.0 * bot_crandom(bot) * miss
         )
     );
+    # The view turns toward the aim point with more error: instant-hit
+    # weapons lose accuracy within 150 units, and below 0.8 accuracy the
+    # direction takes up to 0.3 of random error per axis.
+    toward = target.sub(bot.pos);
+    reach = toward.length();
+    if rule.speed <= 0.0 and rule.key != "gauntlet" {
+        accuracy *= 0.6 + min(reach, 150.0) / 150.0 * 0.4;
+    }
+    view = toward.normalized();
+    if accuracy < 0.8 and reach > 0.001 {
+        view = Vec3(
+            x=view.x + 0.3 * bot_crandom(bot) * (1.0 - accuracy),
+            y=view.y + 0.3 * bot_crandom(bot) * (1.0 - accuracy),
+            z=view.z + 0.3 * bot_crandom(bot) * (1.0 - accuracy)
+        );
+    }
+    bot.bot_state.view_target = bot.pos.add(view.normalized().scale(max(reach, 1.0)));
+    return target;
 }
 
 """q_math.c AngleDifference, in degrees folded into [-180, 180)."""
@@ -270,36 +289,6 @@ def look_ahead(bot: Opponent) {
     }
 }
 
-"""ai_dmq3.c BotAggression: how keen the bot is to fight, from its weapons,
-ammo, health and armor and where the enemy stands."""
-def bot_aggression(bot: Opponent, foe: Player, weapon: str) -> float {
-    inventory = bot.inventory;
-    horizontal = Vec3(x=foe.pos.x - bot.pos.x, y=foe.pos.y - bot.pos.y).length();
-    if empowered(bot, "quad") and (weapon != "gauntlet" or horizontal < 80.0) {
-        return 70.0;
-    }
-    if foe.pos.z - bot.pos.z > 200.0 {
-        return 0.0;
-    }
-    if bot.health < 60 or (bot.health < 80 and bot.armor < 40) {
-        return 0.0;
-    }
-    for choice in [
-        ("bfg", "bfg", 7, 100.0),
-        ("railgun", "slugs", 5, 95.0),
-        ("lightning", "lightning", 50, 90.0),
-        ("rocketlauncher", "rockets", 5, 90.0),
-        ("plasmagun", "cells", 40, 85.0),
-        ("grenadelauncher", "grenades", 10, 80.0),
-        ("shotgun", "shells", 10, 50.0)
-    ] {
-        if quantity(inventory, "weapon_" + choice[0]) > 0 and quantity(inventory, choice[1]) > choice[2] {
-            return choice[3];
-        }
-    }
-    return 0.0;
-}
-
 """The view's spread for one hitscan pellet (Q3 spreads bullets in a disc)."""
 def spread_direction(bot: Opponent, forward: Vec3, rule: WeaponRule) -> Vec3 {
     if rule.spread <= 0.0 {
@@ -365,6 +354,8 @@ def bot_fire(
     }
     struck: list[Player] = [];
     totals: list[int] = [];
+    bodies: list[Corpse] = [];
+    wounds: list[int] = [];
     for pellet in range(max(1, rule.pellets)) {
         shot = spread_direction(bot, forward, rule);
         finish = start.add(shot.scale(reach));
@@ -388,9 +379,20 @@ def bot_fire(
                 struck.append(hit.actor);
                 totals.append(rule.damage);
             }
+        } elif hit.corpse is not None {
+            body = hit.corpse;
+            impact_spray(world, endpoint, shot.scale(-1.0), True);
+            if body not in bodies {
+                bodies.append(body);
+                wounds.append(0);
+            }
+            wounds[bodies.index(body)] += int(float(rule.damage) * scale);
         } elif wall.fraction < 1.0 and not wall.start_solid and rule.key != "gauntlet" {
             impact_spray(world, endpoint, wall.normal);
         }
+    }
+    for slot in range(len(bodies)) {
+        damage_corpse(world, bodies[slot], wounds[slot]);
     }
     for slot in range(len(struck)) {
         strike(
@@ -452,8 +454,19 @@ walker BotTactics {
         foe = here.foe;
         visible = False;
         if foe is not None and foe.health > 0 {
-            sight = self.collision.trace_point(here.pos, foe.pos);
-            visible = not sight.start_solid and sight.fraction == 1.0;
+            visible = entity_visible(self.collision, here.pos, foe.pos.sub(Vec3(z=foe_height(foe, self.collision))));
+        }
+        # BotFindEnemy's enemysight_time: the reaction time runs from when an
+        # enemy is found, not from each glimpse of it. An enemy that replaces
+        # a living one counts as seen two seconds ago; one found again after
+        # the bot went back to its goals (lost_sight forgets it) is new.
+        if foe is not memory.enemy {
+            previous = memory.enemy;
+            here.enemy_sight = 2.0 if foe is not None and previous is not None and previous.health > 0 else 0.0;
+            memory.enemy = foe;
+        }
+        if foe is not None {
+            here.enemy_sight += dt;
         }
         here.think_wait -= dt;
         thinking = here.think_wait <= 0.0;
@@ -461,7 +474,6 @@ walker BotTactics {
             here.think_wait += 0.1;
         }
         if foe is None or not visible {
-            here.enemy_sight = 0.0;
             here.fighting = False;
             here.crouched = False;
             if thinking {
@@ -477,7 +489,6 @@ walker BotTactics {
             steer_view(here, mind, chasing, dt);
             return;
         }
-        here.enemy_sight += dt;
         memory.seen_time = memory.clock;
         memory.chase_target = foe.pos.add(Vec3());
         if here.enemy_sample <= 0.0 {
@@ -512,7 +523,7 @@ walker BotTactics {
         # and Battle_NBG only do so above 0.3 attack skill, but G_AddBot's
         # handicap keeps skill 1-2 bots under BotAggression's health marks, so
         # they would retreat for good and never face their enemy.)
-        look_at(here, here.aim_target);
+        look_at(here, memory.view_target);
         steer_view(here, mind, True, dt);
         rule = rule_for(self.rules, here.weapon_slot);
         if rule is None or not armed_with(here, rule) {
@@ -594,6 +605,9 @@ walker BotTactics {
         }
         if memory.battle != "nbg" {
             memory.nearby_goal = None;
+        }
+        if memory.battle == "" {
+            memory.enemy = None;
         }
         if memory.battle != was {
             bot.arena_goal_wait = 0.0;
