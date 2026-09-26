@@ -27,7 +27,7 @@ def combat_lights(
     lighting: Lighting, world: World, player: Player, state: CombatState
 ) {
     lighting.dynamic = [];
-    if not lighting.regions {
+    if not lighting.regions and lighting.grid is None {
         return;
     }
     if state.flash > 0.0 {
