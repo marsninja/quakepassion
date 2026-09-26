@@ -257,7 +257,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 game=source,
                 skill=level.skill,
                 ambush=source in ["q1", "q2"] and flags & 1 != 0 and kind != "arena_bot",
-                kind=kind
+                kind=kind,
+                # Monsters move with their own box on their own game's maps.
+                own_hull=not arena and source == level.bsp.game
             );
             ensure_profiles(enemy);
             if rule.attack_sound {
@@ -342,10 +344,14 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         enemy +>:Bloodied:+> resources[hurt_key];
                     }
                 }
+                # With the player's box (another game's map) the body's feet
+                # are 24 below its origin; a model whose origin is at its
+                # feet (Q2 mins z 0) is lowered to stand there.
                 enemy.visual.offset = Vec3(
                     x=-16.0 if corner else 0.0,
                     y=-16.0 if corner else 0.0,
                     z=-level.collision.eye_height
+                        - (0.0 if enemy.own_hull else -24.0 - rule.hull_bottom)
                 );
                 frames = resources[key].model.surfaces[0].frames;
                 pain_family = "";
@@ -542,7 +548,8 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     walk_speed=follower.speed,
                     health=follower.health,
                     max_health=follower.health,
-                    yaw=enemy.yaw
+                    yaw=enemy.yaw,
+                    own_hull=enemy.own_hull
                 );
                 ensure_profiles(heir);
                 for profile in heir.profiles {
@@ -570,7 +577,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     world +>:HasModelResource:+> heir_resource;
                 }
                 heir.visual = attach_model(heir, resources[heir_key]);
-                heir.visual.offset = Vec3(z=-level.collision.eye_height);
+                heir.visual.offset = Vec3(
+                    z=-level.collision.eye_height
+                        - (0.0 if heir.own_hull else -24.0 - follower.hull_bottom)
+                );
                 heir_frames = resources[heir_key].model.surfaces[0].frames;
                 heir.idle_animation = frame_indices(
                     heir_frames, follower.idle_frames, follower.model, "idle"

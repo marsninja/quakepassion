@@ -90,6 +90,7 @@ obj Model {
         face_count: int,
         vis_leaf_count: int = 0,
         player_hull: int = -1,
+        large_hull: int = -1,
         brushes: list[int] = [],
         mins: Vec3 = Vec3(),
         maxs: Vec3 = Vec3();
@@ -135,7 +136,8 @@ obj Bsp {
         entities: list[MapEntity] = [],
         lighting: bytes = b"",
         visibility: bytes = b"",
-        fogs: list[FogVolume] = [];
+        fogs: list[FogVolume] = [],
+        light_grid: bytes = b"";
 }
 
 def require_range(data: bytes, offset: int, size: int) {
@@ -247,6 +249,11 @@ def parse_entities(text: str) -> list[MapEntity] {
         }
         i += 1;
         if have_key {
+            # ED_NewString (Q1/Q2) and G_NewString (Q3) turn a message's
+            # "\n" into a line break at spawn.
+            if key == "message" {
+                value = value.replace("\\n", "\n");
+            }
             current.fields[key] = value;
             have_key = False;
         } else {

@@ -126,7 +126,8 @@ obj NavigationGraph {
     }
     def probe_key(probe: WalkProbe, collision: CollisionMap) -> str {
         return self.key(probe.start) + ">" + self.key(probe.finish)
-            + ":" + str(probe.match_height) + ":" + str(collision.top_drop);
+            + ":" + str(probe.match_height) + ":" + str(collision.top_drop)
+            + ":" + collision.body_key();
     }
     def remember(probe: WalkProbe, collision: CollisionMap) {
         # Mover bounds include their complete travel. Never cache a connection
