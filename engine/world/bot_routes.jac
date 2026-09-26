@@ -71,10 +71,13 @@ node NavMesh {
     """The area holding an origin. AAS space is expanded by the player box, so
     points nearer the floor than a standing origin (items rest 15 units up) are
     probed a little higher; airborne bots are probed lower, as
-    BotReachabilityArea traces down to the ground."""
+    BotReachabilityArea traces down to the ground. An origin standing exactly
+    on the floor lies on the plane where the grounded area begins (q3dm10's
+    spawn spots do), which the tree sends to the solid below: a quarter unit
+    higher finds the ground area."""
     def locate(origin: Vec3) -> int {
         fallback = 0;
-        drops = [0.0, -10.0, -24.0];
+        drops = [0.0, -0.25, -10.0, -24.0];
         for step in range(1, 65) {
             drops.append(float(step) * 16.0);
         }
