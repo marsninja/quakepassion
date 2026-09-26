@@ -23,7 +23,7 @@ import from engine.render.renderer { Renderer }
 import from engine.input.input { Intent }
 import from engine.world.world { World, Player }
 import from engine.world.exits { LevelExit, HasExit, exit_map, exit_spawn }
-import from engine.world.signals { Signal, Targets }
+import from engine.world.signals { Signal, Targets, Fire }
 import from engine.world.triggers { TouchTrigger, HasTrigger }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
@@ -119,6 +119,24 @@ def follow(app: App, game: str, name: str, spot: str, which: int, frames: int) -
             }
         }
     }
+    # A Q2 TRIGGERED trigger waits to be armed by a use (boss1: buttons
+    # feeding a trigger_counter). Use what feeds it, once per press it still
+    # needs, the way the buttons would.
+    armed = "";
+    if not target.contact {
+        gate = trigger_reaching(app.world, target.activation);
+        if gate is not None
+            and gate.signal is not None
+            and gate.signal.armable
+            and not gate.signal.armed {
+            for feeder in [gate.signal<-:Targets:<-][?:Signal] {
+                for press in range(max(1, feeder.remaining)) {
+                    feeder spawn Fire(emit=False, inventory=app.player.inventory);
+                }
+            }
+            armed = "armed, ";
+        }
+    }
     walking = facing.length() > 0.5;
     if walking {
         app.player.yaw = math.atan2(facing.y, facing.x);
@@ -135,7 +153,7 @@ def follow(app: App, game: str, name: str, spot: str, which: int, frames: int) -
         app.step();
         if app.level.name != name or app.campaign_complete {
             app.scripted = Intent();
-            return ("touched " if placed else "fired ") + (
+            return armed + ("touched " if placed else "fired ") + (
                 "the end" if app.campaign_complete else app.level.name
             );
         }
