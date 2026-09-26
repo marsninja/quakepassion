@@ -4,8 +4,10 @@ import from games.arenas {
     ladder,
     next_arena,
     find_arena,
-    find_bot
+    find_bot,
+    postgame_medals
 }
+import from engine.render.arena_screens { Postgame, prop_width, postgame_score_line }
 import from engine.world.arena {
     ArenaMatch,
     HasMatch,
@@ -16,6 +18,8 @@ import from engine.world.arena {
     ChooseSpawn,
     join_match,
     standings,
+    score_rows,
+    place_string,
     ordinal
 }
 import from engine.world.combat {
@@ -288,4 +292,61 @@ test "quick frags, gauntlet frags and flawless wins earn the original awards" {
     assert last.ended and "sound/player/announce/youwin.wav" in last.cues;
     assert "sound/feedback/perfect.wav" in last.cues;
     assert "sound/feedback/excellent.wav" not in last.cues;
+}
+
+test "the scoreboard ranks by score and marks shared places" {
+    contest = contest_with(["Ranger", "Phobos", "Visor"]);
+    player = Player(health=125);
+    contest +>:Competes:name="You", human=True:+> player;
+    scores = [edge contest->:Competes:->];
+    scores[0].frags = 4;
+    scores[1].frags = 7;
+    scores[2].frags = 4;
+    scores[3].frags = 2;
+    scores[0].excellent = 2;
+    rows = score_rows(contest);
+    assert [row.name for row in rows] == ["Phobos", "Ranger", "Visor", "You"];
+    assert [row.rank for row in rows] == [0, 1, 1, 3];
+    assert not rows[0].tied and rows[1].tied and rows[2].tied and not rows[3].tied;
+    assert rows[1].excellent == 2 and rows[3].human and rows[3].actor is player;
+    assert place_string(1, True) == "Tied for 2nd" and place_string(3, False) == "4th";
+    assert postgame_score_line(1, True, "Ranger", 4) == "(tie) #2: Ranger            4";
+}
+
+test "the postgame awards accuracy, counts, career frags and perfect" {
+    none = postgame_medals(49, 0, 0, 0, 12, False, 10);
+    assert not none;
+    medals = postgame_medals(67, 2, 1, 3, 20, True, 185);
+    assert [medal.kind for medal in medals] == ["accuracy", "impressive", "excellent", "gauntlet", "frags", "perfect"];
+    assert [medal.amount for medal in medals] == [67, 2, 1, 3, 200, 1];
+    # Frags are awarded as the career total passes each hundred.
+    assert not [medal for medal in postgame_medals(0, 0, 0, 0, 14, False, 185) if medal.kind == "frags"];
+}
+
+test "the postgame shows the podium, presents each award, then the buttons" {
+    board = Postgame(ignore_until=1.5, medals=["accuracy", "excellent"], amounts=[60, 2], winner_sound="sound/player/announce/youwin.wav");
+    # Keys are ignored for the first moment and a half.
+    assert board.key(1.0, "enter") == "" and board.phase == 1;
+    assert board.update(1.2) == ["sound/player/announce/youwin.wav"];
+    assert board.update(5.0) == ["sound/feedback/accuracy.wav"] and board.phase == 2;
+    assert board.update(7.1) == ["sound/feedback/excellent_a.wav"];
+    # At least five seconds on the awards, then the buttons.
+    board.update(9.5);
+    assert board.phase == 2;
+    board.update(10.1);
+    assert board.phase == 3 and board.focus == 2;
+    assert board.key(10.2, "enter") == "";
+    assert board.key(10.5, "enter") == "next";
+    board.key(10.6, "left");
+    assert board.key(10.7, "enter") == "replay";
+    board.key(10.8, "left");
+    board.key(10.9, "left");
+    assert board.key(11.0, "enter") == "menu";
+    # A key skips the podium, then the awards.
+    skipped = Postgame(medals=["frags"], amounts=[100]);
+    skipped.key(0.5, "any");
+    assert skipped.phase == 2;
+    skipped.key(1.0, "any");
+    assert skipped.phase == 3;
+    assert prop_width("A") == 18 and prop_width("AB") == 39 and prop_width(" ") == 8;
 }

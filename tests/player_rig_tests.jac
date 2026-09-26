@@ -37,6 +37,7 @@ import from engine.world.player_rig {
     ANIM_BOTH_DEATH1
 }
 import from engine.world.body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse }
+import from games.arena_character { animation_settings }
 import from engine.formats.animated { AnimatedModel, TagFrame, ModelTag }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
@@ -114,6 +115,33 @@ test "lerp frames play each sequence at its own rate, loop its tail and hold the
     shown = run.frame;
     run_lerp_frame(clips, run, ANIM_LEGS_IDLE, 0, 1.3, 1.0);
     assert run.old_frame == shown or run.frame == shown;
+}
+
+test "animation.cfg keywords set the head offset and fix the legs or torso" {
+    settings = animation_settings(
+        "sex\tf\nheadoffset -22 0 -3\nfixedlegs\nfixedtorso // still\nfootsteps boot\n0 30 0 20 // BOTH_DEATH1\n29 1 0 20\n"
+    );
+    assert settings.sex == "f" and settings.footsteps == "boot";
+    assert settings.head_offset.x == -22.0 and settings.head_offset.z == -3.0;
+    assert settings.fixed_legs and settings.fixed_torso;
+    assert len(settings.frames) == 2 and settings.frames[0] == [0.0, 30.0, 0.0, 20.0];
+    plain = animation_settings("sex m\n0 30 0 20\n");
+    assert not plain.fixed_legs and not plain.fixed_torso and plain.head_offset.length() == 0.0;
+    # CG_PlayerAngles: fixed legs keep the torso's yaw with no lean; a fixed
+    # torso takes none of the view's pitch.
+    rig = sarge();
+    pose(rig, 1.0, wish=Vec3(y=1.0), velocity=Vec3(y=320.0));
+    assert abs(rig.legs_angles.y - 45.0) < 1.5 and rig.legs_angles.x != 0.0;
+    fixed = sarge();
+    fixed.fixed_legs = True;
+    fixed.fixed_torso = True;
+    pose(fixed, 1.0, wish=Vec3(y=1.0), velocity=Vec3(y=320.0));
+    assert abs(fixed.legs_angles.y - 11.25) < 1.5 and fixed.legs_angles.x == 0.0 and fixed.legs_angles.z == 0.0;
+    assert abs(fixed.torso_angles.y) < 0.001;
+    for tick in range(100) {
+        fixed spawn PoseRig(dt=0.01, pitch=math.radians(-40.0));
+    }
+    assert abs(fixed.torso_angles.x) < 0.001 and abs(fixed.head_angles.x) > 30.0;
 }
 
 test "swinging angles lag, catch up and never trail by more than the clamp" {

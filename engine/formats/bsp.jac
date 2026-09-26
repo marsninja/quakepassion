@@ -136,7 +136,8 @@ obj Bsp {
         entities: list[MapEntity] = [],
         lighting: bytes = b"",
         visibility: bytes = b"",
-        fogs: list[FogVolume] = [];
+        fogs: list[FogVolume] = [],
+        light_grid: bytes = b"";
 }
 
 def require_range(data: bytes, offset: int, size: int) {
