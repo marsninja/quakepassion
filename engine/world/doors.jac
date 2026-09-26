@@ -21,6 +21,7 @@ import from .speakers { Speaker, HasSpeaker }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis, quake_basis }
+import from .mover_ramp { MoverRamp, q2_mover_ramp, ramp_step, ramp_rest }
 
 edge HasDoor: World --> Door {}
 edge DoorLink: Door --> Door {}
@@ -94,7 +95,8 @@ node Door {
         move_voice: Speaker | None = None,
         stop_voice: Speaker | None = None,
         voice_on_open: bool = False,
-        voiced_state: str = "";
+        voiced_state: str = "",
+        ramp: MoverRamp | None = None;
 }
 
 """The start, moving (looped) and stop sounds of a mover. Q1 doors.qc,
@@ -293,7 +295,8 @@ walker DoorTick {
         player: Player | None = None,
         message: str = "",
         cues: list[str] = [],
-        actors: list[Opponent] = [];
+        actors: list[Opponent] = [],
+        origins: list[Vec3] = [];
 
     """Start the moving loop and the start sound when a mover sets off; stop
     the loop and play the stop sound when it comes to rest."""
@@ -301,6 +304,10 @@ walker DoorTick {
         moving = mover.state in ["opening", "closing"];
         was = mover.voiced_state in ["opening", "closing"];
         mover.voiced_state = mover.state;
+        # A mover at rest neither moves its sounds nor starts or stops them.
+        if not moving and not was {
+            return;
+        }
         centre = mover.bounds.center().add(mover.rest).add(mover.travel.scale(mover.position));
         for speaker in [mover.start_voice, mover.move_voice, mover.stop_voice] {
             if speaker is not None {
@@ -361,6 +368,9 @@ walker DoorTick {
                 for actor in [here->:HasOpponent:->][?:Opponent]
                 if actor.health > 0 and not actor.dormant and not actor.rule.inert
             ];
+            self.origins = [
+                actor.pos.sub(Vec3(z=actor.eye_height)) for actor in self.actors
+            ];
             visit [here->:HasDoor:->];
         }
     }
@@ -411,6 +421,9 @@ walker DoorTick {
             and self.player is not None
             and self.player.velocity.z <= 0.0 {
             for index in here.hulls {
+                if not self.collision.reaches(index, origin, 1.0) {
+                    continue;
+                }
                 local = origin.sub(self.collision.offsets[index]);
                 support = self.collision.hulls[index] spawn Sweep(
                     top_drop=self.collision.top_drop,
@@ -427,21 +440,26 @@ walker DoorTick {
         riders: list[Opponent] = [];
         monster_contact = False;
         if here.automatic and here.monster_touch and (not here.keys or here.unlocked) {
-            for actor in self.actors {
-                actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
-                if here.kind in ["door", "platform"]
-                    and here.trigger.contains(actor_origin) {
-                    monster_contact = True;
+            if here.kind in ["door", "platform"] {
+                for actor_origin in self.origins {
+                    if here.trigger.contains(actor_origin) {
+                        monster_contact = True;
+                        break;
+                    }
                 }
             }
         }
         if here.kind == "platform" {
-            for actor in self.actors {
+            for actor_index in range(len(self.actors)) {
+                actor = self.actors[actor_index];
                 if actor.velocity.z > 0.0 {
                     continue;
                 }
-                actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
+                actor_origin = self.origins[actor_index];
                 for index in here.hulls {
+                    if not self.collision.reaches(index, actor_origin, 1.0) {
+                        continue;
+                    }
                     local = actor_origin.sub(self.collision.offsets[index]);
                     support = self.collision.hulls[index] spawn Sweep(
                         top_drop=0.0, start=local, finish=local.add(Vec3(z=-0.25))
@@ -470,6 +488,9 @@ walker DoorTick {
             contact = False;
             if self.touching and here.automatic {
                 for index in here.hulls {
+                    if not self.collision.reaches(index, origin, 1.0) {
+                        continue;
+                    }
                     for delta in [
                         Vec3(x=0.125),
                         Vec3(x=-0.125),
@@ -598,12 +619,20 @@ walker DoorTick {
             return;
         }
         direction = 1.0 if here.state == "opening" else -1.0;
+        # Q2 Think_AccelMove ramps plats (and doors given accel/decel).
+        travel = here.speed * self.dt;
+        ramp = here.ramp;
+        if ramp is not None {
+            travel = ramp_step(
+                ramp,
+                1 if direction > 0.0 else -1,
+                door_span(here) * (1.0 - here.position if direction > 0.0 else here.position),
+                here.speed,
+                self.dt
+            );
+        }
         next_position = max(
-            0.0,
-            min(
-                1.0,
-                here.position + direction * here.speed * self.dt / door_span(here)
-            )
+            0.0, min(1.0, here.position + direction * travel / door_span(here))
         );
         members = [here];
         members.extend([here->:DoorMember:->][?:Door]);
@@ -619,6 +648,12 @@ walker DoorTick {
         # Validate the whole group before changing any render or collision state.
         for part in members {
             for j in range(len(part.hulls)) {
+                # Bounds cover the mover's whole travel (or turn).
+                if not self.collision.reaches(
+                    part.hulls[j], origin, carried.sub(origin).length() + 1.0
+                ) {
+                    continue;
+                }
                 query = pose_sweep(
                     self.collision,
                     part,
@@ -732,7 +767,14 @@ walker DoorTick {
             self.player.pos = carried.add(Vec3(z=self.collision.eye_height));
             self.player.grounded = True;
         }
-        if next_position == 1.0 {
+        # A ramped move sits still for its first frame, so arrival is judged
+        # in the direction of travel.
+        arrived = (next_position == 1.0 and direction > 0.0)
+            or (next_position == 0.0 and direction < 0.0);
+        if ramp is not None and arrived {
+            ramp_rest(ramp);
+        }
+        if next_position == 1.0 and direction > 0.0 {
             here.state = "open";
             here.remaining = here.hold_time;
             if not here.fire_on_start {
@@ -743,7 +785,7 @@ walker DoorTick {
                     self.message = fired.message;
                 }
             }
-        } elif next_position == 0.0 {
+        } elif next_position == 0.0 and direction < 0.0 {
             here.state = "closed";
         }
     }
@@ -860,8 +902,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             and not (kind in ["func_door", "func_door_rotating"] and bsp.game in ["q1", "q2"]) {
             reason = "shootable " + kind;
         }
-        # killtarget is a Kills edge fired with the mover's targets; Q2 accel and
-        # decel ramps (Think_AccelMove) are approximated by the constant speed.
+        # killtarget is a Kills edge fired with the mover's targets.
         name = fields.get("model", "");
         if not name.startswith("*") {
             continue;
@@ -973,6 +1014,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             travel=direction.scale(distance),
             speed=speed,
             hold_time=hold_time,
+            ramp=q2_mover_ramp(kind, fields, speed)
+                if bsp.game == "q2" and not rotating
+                else None,
             trigger=AABB(
                 mins=bounds.mins.sub(margin).sub(Vec3(z=32.0)),
                 maxs=bounds.maxs.add(margin).add(Vec3(z=24.0))

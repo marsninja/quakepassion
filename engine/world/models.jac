@@ -175,7 +175,10 @@ node PlayerRig(Visual) {
         random: int = 1,
         character: str = "",
         voice: str = "sound/player/sarge/",
-        footsteps: str = "step";
+        footsteps: str = "step",
+        head_offset: Vec3 = Vec3(),
+        fixed_legs: bool = False,
+        fixed_torso: bool = False;
 }
 
 """A rig's part models by role: "lower", "upper" and "head"."""
@@ -242,11 +245,15 @@ walker GatherModels {
         seconds: float = 0.0;
 
     can begin with World entry {
-        visit [here-->[?:Area]];
+        # Only areas holding entities (most BSP leaves hold none).
+        visit [area for area in [here-->[?:Area]] if area.occupants > 0];
     }
 
     can area with Area entry {
-        visit [here<-:In:<-];
+        inside = [here<-:In:<-];
+        # Entities removed without move_to_area leave a stale count; fix it.
+        here.occupants = len(inside);
+        visit inside;
     }
 
     """One model draw per powerup shader."""

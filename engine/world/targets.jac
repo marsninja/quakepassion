@@ -55,12 +55,16 @@ node TargetEvent {
     }
 }
 
-"""The help computer's current objectives (game.helpmessage1/2)."""
+"""The help computer's current objectives (game.helpmessage1/2). `unread`
+is pers.helpchanged: 0 once the player has looked, else 1 plus the reminder
+beeps given so far (no more than three)."""
 edge HasHelp: World --> HelpComputer {}
 node HelpComputer {
     has primary: str = "",
         secondary: str = "",
-        changed: int = 0;
+        changed: int = 0,
+        unread: int = 0,
+        beep_wait: float = 0.0;
 }
 
 def help_for(world: World) -> HelpComputer {
@@ -86,6 +90,21 @@ walker TargetTick {
         if self.dt > 0.0 {
             self.world = here;
             visit [here->:HasTarget:->];
+            visit [here->:HasHelp:->];
+        }
+    }
+
+    """p_view.c G_SetClientSound's help beep: misc/pc_up.wav again every 6.4
+    seconds (level.framenum & 63) while the news is unread, three in all."""
+    can remind with HelpComputer entry {
+        if here.unread <= 0 or here.unread > 3 {
+            return;
+        }
+        here.beep_wait -= self.dt;
+        if here.beep_wait <= 0.0 {
+            here.unread += 1;
+            here.beep_wait = 6.4;
+            self.cues.append("sound/misc/pc_up.wav");
         }
     }
 
@@ -175,6 +194,10 @@ walker TargetTick {
                     computer.secondary = here.message;
                 }
                 computer.changed += 1;
+                # The first beep sounds at once; the status bar's help icon
+                # blinks until the computer is opened.
+                computer.unread = 2;
+                computer.beep_wait = 6.4;
                 self.message = "Help computer updated (F1)";
                 self.cues.append("sound/misc/pc_up.wav");
             }
@@ -258,8 +281,14 @@ walker TargetTick {
         }
     }
 
-    # target_laser_think: trace the beam each frame, hurting whatever it meets.
+    # target_laser_think: trace the beam each server frame (10 Hz), hurting
+    # whatever it meets.
     def laser(event: TargetEvent, world: World) {
+        event.clock -= self.dt;
+        if event.clock > 0.0 {
+            return;
+        }
+        event.clock = 0.1;
         finish = event.origin.add(event.direction.scale(2048.0));
         wall = self.collision.trace_point(event.origin, finish);
         reach = wall.fraction;
@@ -281,17 +310,13 @@ walker TargetTick {
                 victim = enemy;
             }
         }
-        event.clock -= self.dt;
-        if event.clock <= 0.0 {
-            event.clock = 0.1;
-            beam_trail(world, event.origin, event.origin.lerp(finish, reach), event.color);
-            target = victim;
-            if target is not None and event.damage > 0 {
-                if isinstance(target, Opponent) {
-                    damage_opponent(target, event.damage);
-                } else {
-                    target spawn Damage(amount=event.damage, source=event.origin);
-                }
+        beam_trail(world, event.origin, event.origin.lerp(finish, reach), event.color);
+        target = victim;
+        if target is not None and event.damage > 0 {
+            if isinstance(target, Opponent) {
+                damage_opponent(target, event.damage);
+            } else {
+                target spawn Damage(amount=event.damage, source=event.origin);
             }
         }
     }

@@ -71,7 +71,50 @@ obj HudStatus {
         pickup_name: str = "",
         pickup_fade: float = 0.0,
         selected_icon: str = "",
-        ammo_warning: int = 0;
+        ammo_warning: int = 0,
+        armor_icon: str = "",
+        flashes: int = 0,
+        help_unread: bool = False,
+        crosshair: bool = True;
+}
+
+"""One line of Q2's inventory screen (cl_inv.c CL_DrawInventory): the key
+bound to "use <item>", the count and the item's pickup name."""
+obj InventoryRow {
+    has bind: str = "",
+        count: int = 0,
+        name: str = "",
+        selected: bool = False;
+}
+
+"""The tokens of a Q2 layout program (COM_Parse): words split on blanks, with
+double-quoted strings kept whole."""
+def layout_tokens(layout: str) -> list[str] {
+    tokens: list[str] = [];
+    i = 0;
+    while i < len(layout) {
+        c = layout[i];
+        if c in [" ", "\t", "\n", "\r"] {
+            i += 1;
+            continue;
+        }
+        word = "";
+        if c == "\"" {
+            i += 1;
+            while i < len(layout) and layout[i] != "\"" {
+                word += layout[i];
+                i += 1;
+            }
+            i += 1;
+        } else {
+            while i < len(layout) and layout[i] not in [" ", "\t", "\n", "\r"] {
+                word += layout[i];
+                i += 1;
+            }
+        }
+        tokens.append(word);
+    }
+    return tokens;
 }
 
 """A number right-aligned in `digits` columns, as printf's %3i."""
@@ -195,10 +238,17 @@ obj HudRenderer {
 
     """A line in the game's character sheet (Q1/Q2 conchars, Q3 bigchars):
     a 16 by 16 grid of cells, `size` pixels square on screen."""
-    def chars(message: str, x: float, y: float, size: float, tint: list[int] = [255, 255, 255, 255]) {
+    def chars(
+        message: str,
+        x: float,
+        y: float,
+        size: float,
+        tint: list[int] = [255, 255, 255, 255],
+        high: int = 0
+    ) {
         for i in range(len(message)) {
-            code = ord(message[i]) & 255;
-            if code == 32 {
+            code = (ord(message[i]) & 255) ^ high;
+            if code == 32 or code == 160 {
                 continue;
             }
             column = float(code % 16) / 16.0;
@@ -346,6 +396,11 @@ obj HudRenderer {
         if status.ammo >= 0 {
             self.q1_number(status.ammo, 3, left + 248.0 * scale, bar, scale, status.ammo <= 10);
         }
+        # SCR_DrawCrosshair / Draw_Character: the conchars '+' at the centre
+        # of the view above the status bars.
+        if status.crosshair {
+            self.q1_char(43, float(width) * 0.5, (float(height) - 48.0 * scale) * 0.5, scale);
+        }
     }
 
     """Draw_String with the conchars sheet."""
@@ -432,11 +487,123 @@ obj HudRenderer {
         }
     }
 
+    """The whole-number scale of Q2's 320x240 virtual screen."""
+    def q2_scale(height: int) -> float {
+        return float(max(1, int(float(height) / 360.0)));
+    }
+
+    """cl_scrn.c SCR_ExecuteLayoutString: run a layout program (the help
+    computer, the unit summary). xl/xr/xv and yt/yb/yv place the cursor from
+    the left, the right, or the centred 320x240 screen; picn draws a picture;
+    string/cstring draw conchars text, left-aligned or centred in 320 units
+    per line; the "2" forms use the alternate (high-bit) characters."""
+    def draw_layout(layout: str, width: int, height: int) {
+        if not self.ready {
+            return;
+        }
+        scale = self.q2_scale(height);
+        x = 0.0;
+        y = 0.0;
+        tokens = layout_tokens(layout);
+        i = 0;
+        while i < len(tokens) {
+            token = tokens[i];
+            argument = tokens[i + 1] if i + 1 < len(tokens) else "";
+            i += 2;
+            if token == "xl" {
+                x = float(int(argument)) * scale;
+            } elif token == "xr" {
+                x = float(width) + float(int(argument)) * scale;
+            } elif token == "xv" {
+                x = float(width) * 0.5 + float(int(argument) - 160) * scale;
+            } elif token == "yt" {
+                y = float(int(argument)) * scale;
+            } elif token == "yb" {
+                y = float(height) + float(int(argument)) * scale;
+            } elif token == "yv" {
+                y = float(height) * 0.5 + float(int(argument) - 120) * scale;
+            } elif token == "picn" {
+                self.pic(argument, x, y, scale);
+            } elif token in ["string", "string2"] {
+                self.chars(argument, x, y, 8.0 * scale, high=128 if token == "string2" else 0);
+            } elif token in ["cstring", "cstring2"] {
+                self.hud_string(argument, x, y, scale, 128 if token == "cstring2" else 0);
+            } else {
+                i -= 1;
+            }
+        }
+        rlDrawRenderBatchActive();
+    }
+
+    """DrawHUDString: each line centred in 320 virtual units from `x`."""
+    def hud_string(text: str, x: float, y: float, scale: float, high: int) {
+        for line in text.split("\n") {
+            left = x + float((320 - len(line) * 8) // 2) * scale;
+            self.chars(line, left, y, 8.0 * scale, high=high);
+            y += 8.0 * scale;
+        }
+    }
+
+    """cl_inv.c CL_DrawInventory: inventory.pcx over the view with a
+    "hotkey ### item" list of what is carried, scrolled to keep the selected
+    item in view. Other rows use the alternate characters; the selected one
+    is plain with a blinking cursor beside it."""
+    def draw_q2_inventory(rows: list[InventoryRow], clock: float, width: int, height: int) {
+        if not self.ready or self.game != "q2" {
+            return;
+        }
+        scale = self.q2_scale(height);
+        x = float(width) * 0.5 - 128.0 * scale;
+        y = float(height) * 0.5 - 120.0 * scale;
+        self.pic("inventory", x, y + 8.0 * scale, scale);
+        y += 24.0 * scale;
+        x += 24.0 * scale;
+        size = 8.0 * scale;
+        self.chars("hotkey ### item", x, y, size);
+        self.chars("------ --- ----", x, y + size, size);
+        y += 2.0 * size;
+        selected = 0;
+        for i in range(len(rows)) {
+            if rows[i].selected {
+                selected = i;
+            }
+        }
+        # DISPLAY_ITEMS 17.
+        top = selected - 8;
+        if len(rows) - top < 17 {
+            top = len(rows) - 17;
+        }
+        top = max(0, top);
+        for i in range(top, min(len(rows), top + 17)) {
+            row = rows[i];
+            bind = row.bind;
+            while len(bind) < 6 {
+                bind = " " + bind;
+            }
+            line = bind + " " + pad_number(row.count, 3) + " " + row.name;
+            if row.selected {
+                if int(clock * 10.0) & 1 {
+                    self.chars(chr(15), x - size, y, size);
+                }
+                self.chars(line, x, y, size);
+            } else {
+                self.chars(line, x, y, size, high=128);
+            }
+            y += size;
+        }
+        rlDrawRenderBatchActive();
+    }
+
     def draw_q2(status: HudStatus, width: int, height: int) {
-        scale = float(max(1, int(float(height) / 360.0)));
+        scale = self.q2_scale(height);
         left = float(width) * 0.5 - 160.0 * scale;
         low = float(height) - 24.0 * scale;
         blink = int(status.clock * 5.0) % 2 == 1;
+        # STAT_FLASHES (P_DamageFeedback): field_3 behind the health number
+        # after a hit to health, behind the armor number after armor took it.
+        if status.flashes & 1 {
+            self.pic("field_3", left, low, scale);
+        }
         # Health: flashes in the alternate digits at 25 or less.
         self.q2_field(status.health, 3, left, low, scale, status.health <= 25 and blink);
         self.pic("i_health", left + 50.0 * scale, low, scale);
@@ -448,9 +615,17 @@ obj HudRenderer {
             self.q2_field(status.ammo, 3, left + 100.0 * scale, low, scale, status.ammo <= 5 and blink);
             self.pic(ammo_icons[status.ammo_kind], left + 150.0 * scale, low, scale);
         }
+        # G_SetStats: running power armor shows its cells with i_powershield
+        # (armor_icon), taking turns with worn armor.
         if status.armor > 0 {
+            if status.flashes & 2 {
+                self.pic("field_3", left + 200.0 * scale, low, scale);
+            }
             self.q2_field(status.armor, 3, left + 200.0 * scale, low, scale, False);
             armor = "i_bodyarmor" if status.armor_ratio >= 0.8 else ("i_combatarmor" if status.armor_ratio >= 0.6 else "i_jacketarmor");
+            if status.armor_icon {
+                armor = status.armor_icon;
+            }
             self.pic(armor, left + 250.0 * scale, low, scale);
         }
         # STAT_SELECTED_ICON and the picked-up item's icon and name
@@ -464,8 +639,11 @@ obj HudRenderer {
                 self.chars(status.pickup_name, left + 26.0 * scale, float(height) - 42.0 * scale, 8.0 * scale);
             }
         }
-        # The selected weapon's icon sits in the help-icon slot.
-        if status.weapon and self.has_pic("w_" + status.weapon) {
+        # STAT_HELPICON: i_help blinks (level.framenum & 8) while the help
+        # computer has news; otherwise the selected weapon's icon sits there.
+        if status.help_unread and int(status.clock * 10.0) & 8 {
+            self.pic("i_help", left + 148.0 * scale, float(height) - 50.0 * scale, scale);
+        } elif status.weapon and self.has_pic("w_" + status.weapon) {
             self.pic("w_" + status.weapon, left + 148.0 * scale, float(height) - 50.0 * scale, scale);
         }
         # A running powerup shows its seconds left and icon (the timer field).
@@ -479,6 +657,16 @@ obj HudRenderer {
                 self.pic(timers[power], left + 296.0 * scale, float(height) - 50.0 * scale, scale);
                 break;
             }
+        }
+        # SCR_DrawCrosshair: pics/ch1 centred on the view.
+        if status.crosshair and self.has_pic("ch1") {
+            p = self.pics["ch1"];
+            self.pic(
+                "ch1",
+                float(width) * 0.5 - float(p.width) * scale * 0.5,
+                float(height) * 0.5 - float(p.height) * scale * 0.5,
+                scale
+            );
         }
     }
 

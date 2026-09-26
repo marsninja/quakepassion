@@ -18,11 +18,11 @@ import from .arena { ChooseSpawn }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual, ModelResource, UsesModel, PlayerRig }
 import from .player_rig { PoseRig, rig_sound, reset_rig }
-import from .body_queue { CorpseTick, leave_corpse }
+import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_corpse, shootable }
 import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
-import from .bot_character { BotCharacter, BotState }
+import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
 import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
@@ -35,6 +35,9 @@ import from ..math.vec3 { Vec3, forward_from, right_from }
 edge HasOpponent: World --> Opponent {}
 node Opponent(Player) {
     has eye_height: float = 22.0;
+    # Moves with its own box (rule width and hull) rather than the player's:
+    # set for monsters on their own game's maps.
+    has own_hull: bool = False;
     has rule: OpponentRule = OpponentRule(),
         activation: Signal = Signal(),
         dormant: bool = False,
@@ -87,6 +90,8 @@ node Opponent(Player) {
         animation_time: float = 0.0,
         decision_wait: float = 0.0,
         support_wait: float = 0.0,
+        rest_serial: int = -1,
+        rest_pos: Vec3 = Vec3(),
         pursuing: bool = False,
         arena_origin: Vec3 = Vec3(),
         arena_goal: Vec3 | None = None,
@@ -146,6 +151,32 @@ node Opponent(Player) {
         healthy_skin: ModelResource | None = None,
         heard: bool = True,
         foe_wait: float = -1.0;
+}
+
+"""Whether a monster's resting place may have changed: it has moved since it
+settled, or a hull near it (a door, lift or train) has moved or gone since.
+A settled monster runs no movement at all until then; its last move left it
+exactly where it was, so another would too."""
+def rest_disturbed(enemy: Opponent, collision: CollisionMap) -> bool {
+    serial = enemy.rest_serial;
+    if serial < 0
+        or enemy.pos.x != enemy.rest_pos.x
+        or enemy.pos.y != enemy.rest_pos.y
+        or enemy.pos.z != enemy.rest_pos.z {
+        return True;
+    }
+    revision = collision.revision;
+    if revision.serial == serial {
+        return False;
+    }
+    origin = enemy.pos.sub(Vec3(z=enemy.eye_height));
+    for (index, changed) in revision.changes.items() {
+        if changed > serial and collision.reaches(index, origin, 64.0) {
+            return True;
+        }
+    }
+    enemy.rest_serial = revision.serial;
+    return False;
 }
 
 """How far the player's box (at origin `body`) reaches into an actor's box,
@@ -517,7 +548,9 @@ obj CombatState {
         navmesh: NavMesh | None = None,
         navmesh_checked: bool = False,
         rail_streak: int = 0,
-        awards: list[str] = [];
+        awards: list[str] = [],
+        accuracy_shots: int = 0,
+        accuracy_hits: int = 0;
     # Weapon handling state: Q2 chaingun spin frames, BFG wind-up, machinegun
     # climb (machinegun_shots); the firing view punch; sounds and messages
     # for the game to play and print; whether the last shot keeps quiet
@@ -1077,10 +1110,26 @@ walker Aim {
         height: float,
         fraction: float = 1.0,
         target: Opponent | None = None,
-        ignore: Opponent | None = None;
+        ignore: Opponent | None = None,
+        corpse: Corpse | None = None;
 
     can begin with World entry {
         visit [here->:HasOpponent:->];
+        # Q3 bodies left behind (CONTENTS_CORPSE) stop shots too.
+        visit [here->:HasCorpse:->];
+    }
+
+    can test_corpse with Corpse entry {
+        if not shootable(here) {
+            return;
+        }
+        # A dead player's box top is lowered to -8 (player_die).
+        hit = actor_fraction(self.start, self.finish, here.pos, here.eye_height, 40.0);
+        if hit < self.fraction {
+            self.fraction = hit;
+            self.target = None;
+            self.corpse = here;
+        }
     }
 
     can test_target with Opponent entry {
@@ -1107,6 +1156,7 @@ walker Aim {
         if hit < self.fraction {
             self.fraction = hit;
             self.target = here;
+            self.corpse = None;
         }
     }
 }
@@ -1116,7 +1166,8 @@ any monster other than the shooter, as Q1 traceline and Q2 gi.trace hit
 whatever stands in the way."""
 obj LineHit {
     has actor: Player | None = None,
-        fraction: float = 1.0;
+        fraction: float = 1.0,
+        corpse: Corpse | None = None;
 }
 
 def line_of_fire(
@@ -1146,6 +1197,10 @@ def line_of_fire(
     if query.target is not None and query.fraction < result.fraction {
         result.actor = query.target;
         result.fraction = query.fraction;
+    } elif query.corpse is not None and query.fraction < result.fraction {
+        result.actor = None;
+        result.corpse = query.corpse;
+        result.fraction = query.fraction;
     }
     return result;
 }
@@ -1158,6 +1213,14 @@ obj WeaponImpact {
         radius: float = 0.0,
         energy_burst: bool = False;
 }
+
+# A Q3 missile's direct hit is its weapon's means of death (MOD_ROCKET...).
+glob Q3_MISSILE_MEANS: dict[str, str] = {
+    "q3_grenade": "grenadelauncher",
+    "q3_rocket": "rocketlauncher",
+    "q3_plasma": "plasmagun",
+    "q3_bfg": "bfg"
+};
 
 edge HasProjectile: World --> Projectile {}
 node Projectile {
@@ -1298,6 +1361,10 @@ def fire_weapon(
     state.cooldown = rule.interval * fire_interval_scale(player);
     state.flash = 0.08;
     state.shots += 1;
+    # FireWeapon counts every shot but the gauntlet's for accuracy.
+    if state.game == "q3" and rule.key != "gauntlet" {
+        state.accuracy_shots += 1;
+    }
     state.impact_model = -1;
     if rule.punch > 0.0 {
         state.punch = rule.punch;
@@ -1349,6 +1416,8 @@ def fire_weapon(
     victims: list[Opponent] = [];
     amounts: list[int] = [];
     kicks: list[float] = [];
+    bodies: list[Corpse] = [];
+    wounds: list[int] = [];
     for pellet in range(rule.pellets) {
         shot = direction;
         if rule.spread > 0.0 and rule.circular {
@@ -1391,6 +1460,14 @@ def fire_weapon(
             }
         } elif query.target is not None {
             hits.append(query.target);
+        } elif query.corpse is not None {
+            body = query.corpse;
+            impact_spray(world, player.pos.lerp(finish, query.fraction), shot.normalized().scale(-1.0), True);
+            if body not in bodies {
+                bodies.append(body);
+                wounds.append(0);
+            }
+            wounds[bodies.index(body)] += int(float(rule.damage) * scale);
         }
         if rule.key == "lightning" {
             # Q1 TE_LIGHTNING2 (bolt2.mdl) / Q3 CG_LightningBolt, to the hit.
@@ -1423,7 +1500,7 @@ def fire_weapon(
             )
                 * scale;
         }
-        if (not hits or rule.piercing) and wall.fraction < 1.0 {
+        if (not hits or rule.piercing) and query.corpse is None and wall.fraction < 1.0 {
             impact_spray(world, player.pos.lerp(finish, wall.fraction), wall.normal);
             state.impact_model = wall.model;
             state.impacts.append(
@@ -1434,6 +1511,14 @@ def fire_weapon(
                 )
             );
         }
+    }
+    for i in range(len(bodies)) {
+        damage_corpse(world, bodies[i], wounds[i]);
+    }
+    # Bullet_Fire, ShotgunPattern, weapon_railgun_fire and the lightning gun
+    # count a shot that strikes someone alive once toward accuracy.
+    if state.game == "q3" and rule.key != "gauntlet" and any([victim.health > 0 for victim in victims]) {
+        state.accuracy_hits += 1;
     }
     for i in range(len(victims)) {
         # Q2 fire_lead / Q3 Bullet_Fire push along the aim.
@@ -1803,9 +1888,31 @@ def blast_actors(
     state: CombatState,
     direct: Player | None = None,
     attacker: Opponent | None = None
-) {
+) -> bool {
+    hurt = False;
     if splash <= 0 or radius <= 0.0 {
-        return;
+        return hurt;
+    }
+    # G_RadiusDamage reaches the bodies left behind as well.
+    for body in [world->:HasCorpse:->][?:Corpse] {
+        if not shootable(body) {
+            continue;
+        }
+        base = body.pos.sub(Vec3(z=body.eye_height));
+        gap = Vec3(
+            x=max(0.0, abs(origin.x - base.x) - 16.0),
+            y=max(0.0, abs(origin.y - base.y) - 16.0),
+            z=max(0.0, base.z - 24.0 - origin.z, origin.z - base.z + 8.0)
+        );
+        reach = gap.length();
+        if reach >= radius {
+            continue;
+        }
+        sight = collision.trace_point(origin, base.add(Vec3(z=-12.0)));
+        if sight.start_solid or sight.fraction < 1.0 {
+            continue;
+        }
+        damage_corpse(world, body, int(blast_strength(state.game, splash, radius, reach)));
     }
     actors: list[Player] = [player];
     actors.extend(
@@ -1865,7 +1972,8 @@ def blast_actors(
             knock_back(actor, state.game, away, float(int(push)), self_hit);
         }
         if isinstance(actor, Opponent) {
-            damage_opponent(
+            living = actor.health > 0;
+            dealt = damage_opponent(
                 actor,
                 amount,
                 player.inventory,
@@ -1874,6 +1982,7 @@ def blast_actors(
                 means="splash",
                 tally=state if hostile else None
             );
+            hurt = hurt or (living and dealt > 0);
         } else {
             actor spawn Damage(
                 amount=amount,
@@ -1883,6 +1992,7 @@ def blast_actors(
             );
         }
     }
+    return hurt;
 }
 
 """A missile's direct hit pushes along its flight (Q3 G_MissileImpact, Q2
@@ -1913,7 +2023,7 @@ def projectile_blast(
     if projectile.splash <= 0 or projectile.radius <= 0.0 {
         return;
     }
-    blast_actors(
+    hurt = blast_actors(
         world,
         projectile.pos,
         projectile.splash,
@@ -1925,6 +2035,10 @@ def projectile_blast(
         direct,
         projectile.owner
     );
+    # G_MissileImpact: splash that hurts anyone counts toward accuracy.
+    if hurt and not projectile.hostile and state.game == "q3" {
+        state.accuracy_hits += 1;
+    }
     state.impacts.append(
         WeaponImpact(
             origin=projectile.pos, splash=projectile.splash, radius=projectile.radius
@@ -2157,6 +2271,7 @@ walker ProjectileTick {
         finish = here.pos.add(here.velocity.scale(step));
         wall = self.collision.trace_point(here.pos, finish);
         victim: Opponent | None = None;
+        body: Corpse | None = None;
         fraction = wall.fraction;
         player_hit = False;
         if here.hostile {
@@ -2183,6 +2298,10 @@ walker ProjectileTick {
                 victim = query.target;
                 fraction = query.fraction;
                 player_hit = False;
+            } elif query.corpse is not None and query.fraction < fraction {
+                body = query.corpse;
+                fraction = query.fraction;
+                player_hit = False;
             }
         } else {
             query = world spawn Aim(
@@ -2192,7 +2311,16 @@ walker ProjectileTick {
                 fraction=wall.fraction
             );
             victim = query.target;
+            body = query.corpse;
             fraction = query.fraction;
+        }
+        if body is not None {
+            # A missile bursts on a body it strikes (G_MissileImpact).
+            here.pos = here.pos.lerp(finish, fraction);
+            damage_corpse(world, body, here.damage);
+            projectile_blast(world, here, self.player, self.collision, self.state);
+            world del --> here;
+            return;
         }
         here.pos = here.pos.lerp(finish, fraction);
         struck: Player | None = self.player if player_hit else victim;
@@ -2204,6 +2332,7 @@ walker ProjectileTick {
                 amount=here.damage,
                 source=here.pos.sub(here.velocity.normalized()),
                 attacker=here.owner,
+                means=Q3_MISSILE_MEANS.get(here.effect, ""),
                 energy=self.state.game == "q2" and here.effect in ["q2_bolt", "q2_bfg"]
             );
             projectile_blast(
@@ -2218,12 +2347,17 @@ walker ProjectileTick {
             return;
         }
         if victim is not None {
+            # LogAccuracyHit: a player's missile striking someone alive.
+            if not here.hostile and victim.health > 0 and self.state.game == "q3" {
+                self.state.accuracy_hits += 1;
+            }
             damage_opponent(
                 victim,
                 here.damage,
                 self.player.inventory,
                 None if here.hostile else self.state,
                 attacker=here.owner if here.hostile else self.player,
+                means=Q3_MISSILE_MEANS.get(here.effect, ""),
                 tally=self.state if here.hostile else None
             );
         } elif wall.fraction < 1.0
@@ -2604,6 +2738,37 @@ def event_damage(enemy: Opponent, profile: AttackProfile, index: int) -> int {
     return amount;
 }
 
+"""The collision a monster moves with. On its own game's maps that is its
+own box: Q2's mins/maxs (SV_Move's box trace), or Q1's hull 2 for monsters
+wider than 32 units (SV_HullForEntity). Elsewhere, and for bots, it is the
+player's box."""
+def monster_collision(collision: CollisionMap, enemy: Opponent) -> CollisionMap {
+    if not enemy.own_hull {
+        return collision.for_body(enemy.eye_height);
+    }
+    rule = enemy.rule;
+    return collision.for_body(
+        enemy.eye_height,
+        0.0,
+        Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom),
+        Vec3(x=rule.width, y=rule.width, z=rule.hull_top)
+    );
+}
+
+"""Which cached body view a monster shares with others of its size."""
+def monster_body_key(enemy: Opponent) -> str {
+    if not enemy.own_hull {
+        return str(enemy.eye_height);
+    }
+    return str(enemy.eye_height)
+        + ":"
+        + str(enemy.rule.width)
+        + ":"
+        + str(enemy.rule.hull_bottom)
+        + ":"
+        + str(enemy.rule.hull_top);
+}
+
 # Integrate authored charge distances across 10 Hz animation frames, using the
 # same stair/slide collision as walking. Keep a body-width gap to the player.
 def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: float) {
@@ -2625,7 +2790,7 @@ def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: 
     if abs(travel) <= 0.000001 {
         return;
     }
-    collision = collision.for_body(enemy.eye_height);
+    collision = monster_collision(collision, enemy);
     body = enemy.pos.sub(Vec3(z=enemy.eye_height));
     ahead = body.add(goal.normalized().scale(travel));
     support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
@@ -3067,6 +3232,7 @@ walker CombatTick {
         arena_live: bool = False,
         world: World | None = None,
         body_collision: CollisionMap | None = None,
+        bodies: dict[str, CollisionMap] = {},
         navmesh: NavMesh | None = None,
         neighbors: dict[str, list[Opponent]] = {},
         decisions: int = 0;
@@ -3127,14 +3293,19 @@ walker CombatTick {
     """Q3 BotFindEnemy: keep a living, visible enemy; otherwise take the
     nearest visible competitor, falling back to the player."""
     def select_foe(bot: Opponent) -> Player {
+        mind = bot.character;
+        memory = bot.bot_state;
+        # BotFindEnemy notes whether the bot's health just fell.
+        hurt = bot.health < memory.last_health;
+        memory.last_health = bot.health;
+        # The current enemy is kept while it is in sight, while the bot is
+        # alerted, or while a battle node (fighting, retreating from or
+        # chasing it) still has it in mind.
         current = bot.foe;
-        if current is not None and current.health > 0 {
-            dormant = isinstance(current, Opponent) and current.dormant;
-            if not dormant {
-                sight = self.collision.trace_point(bot.pos, current.pos);
-                if bot.alert > 0.0 or (not sight.start_solid and sight.fraction == 1.0) {
-                    return current;
-                }
+        kept: Player | None = None;
+        if current is not None and current.health > 0 and not (isinstance(current, Opponent) and current.dormant) {
+            if bot.alert > 0.0 or memory.battle != "" or self.sees(bot, current) {
+                kept = current;
             }
         }
         candidates: list[Player] = [];
@@ -3148,37 +3319,50 @@ walker CombatTick {
                 }
             }
         }
-        # ai_dmq3.c BotFindEnemy: alert characters see further, and a new
-        # enemy must be inside a 90 degree view unless it is close or firing.
-        mind = bot.character;
+        # ai_dmq3.c BotFindEnemy: alert characters see further; only a closer
+        # enemy replaces the current one; a new enemy must be inside the view
+        # (enemy_view) unless the bot was hurt or the enemy is firing.
         reach = 900.0 + mind.alertness * 4000.0 if mind is not None else 1500.0;
-        best: Player = self.player;
-        best_distance = 100000.0;
+        best: Player | None = None;
+        best_distance = kept.pos.sub(bot.pos).length() if kept is not None else 100000.0;
         for candidate in candidates {
+            if candidate is kept {
+                continue;
+            }
             distance = candidate.pos.sub(bot.pos).length();
             if distance >= best_distance or distance > reach {
                 continue;
             }
-            if mind is not None and distance > 100.0 {
+            if mind is not None {
                 firing = candidate.attack_flash > 0.0
                     if isinstance(candidate, Opponent)
                     else self.state.flash > 0.0;
+                view = enemy_view(distance, kept is None and (hurt or firing));
                 toward = candidate.pos.sub(bot.pos);
                 bearing = math.atan2(toward.y, toward.x);
                 off = abs(math.atan2(math.sin(bearing - bot.yaw), math.cos(bearing - bot.yaw)));
-                if not firing and off > math.pi / 4.0 {
+                if off > math.radians(view) * 0.5 {
                     continue;
                 }
             }
-            sight = self.collision.trace_point(bot.pos, candidate.pos);
-            if sight.start_solid or sight.fraction < 1.0 {
+            if not self.sees(bot, candidate) {
                 continue;
             }
             best = candidate;
             best_distance = distance;
         }
-        bot.foe = best if best_distance < 100000.0 else None;
-        return best;
+        if best is not None {
+            bot.foe = best;
+            return best;
+        }
+        bot.foe = kept;
+        return kept if kept is not None else self.player;
+    }
+
+    """BotEntityVisible from a bot's eye to another player's box."""
+    def sees(bot: Opponent, other: Player) -> bool {
+        height = other.eye_height if isinstance(other, Opponent) else self.collision.eye_height;
+        return entity_visible(self.collision, bot.pos, other.pos.sub(Vec3(z=height)));
     }
 
     """A Q3 body follows its bot the way bg_pmove.c animates every player:
@@ -3318,11 +3502,12 @@ walker CombatTick {
                 );
             }
         }
-        if self.body_collision is None
-            or self.body_collision.eye_height != here.eye_height {
-            self.body_collision = self.collision.for_body(here.eye_height);
+        body_key = monster_body_key(here);
+        if body_key not in self.bodies {
+            self.bodies[body_key] = monster_collision(self.collision, here);
         }
-        body_collision = self.body_collision;
+        self.body_collision = self.bodies[body_key];
+        body_collision = self.bodies[body_key];
         if here.pending_explosion and self.world is not None {
             death_explosion(self.world, here, self.player, self.collision, self.state);
         }
@@ -3432,7 +3617,9 @@ walker CombatTick {
             }
             # CopyToBodyQue: the old body stays where it fell.
             if isinstance(corpse, PlayerRig) and self.world is not None {
-                leave_corpse(self.world, here, corpse);
+                gibs = here.gib_rule;
+                leave_corpse(self.world, here, corpse, here.remains, gibs,
+                    speaker_for(here, gibs.sound) if gibs is not None else None, here.eye_height);
             }
             # g_client.c ClientSpawn: 25 over maximum, empty armor and inventory.
             here.health = here.max_health + 25;
@@ -3972,11 +4159,15 @@ walker CombatTick {
                 here.velocity = Vec3();
             } else {
                 here.support_wait -= self.dt;
-                # Settled actors probe support at 20 Hz; motion and gravity remain 120 Hz.
-                if not here.grounded
-                    or here.velocity.length() > 0.000001
-                    or wish.length() > 0.0
-                    or here.support_wait <= 0.0 {
+                # Motion and gravity run at 120 Hz. Resting actors probe support
+                # at 20 Hz, and a settled one only once its place is disturbed.
+                moving = here.velocity.length() > 0.000001 or wish.length() > 0.0;
+                if moving
+                    or (not here.grounded and here.rest_serial < 0)
+                    or (
+                        here.support_wait <= 0.0
+                        and rest_disturbed(here, body_collision)
+                    ) {
                     before = here.pos.add(Vec3());
                     here spawn MovePlayer(
                         collision=body_collision,
@@ -3985,6 +4176,17 @@ walker CombatTick {
                         steady=strolling
                     );
                     here.support_wait = 0.05;
+                    # A move that went nowhere settles the actor (on the ground,
+                    # or wedged where gravity cannot move it).
+                    here.rest_serial = -1;
+                    if not moving
+                        and here.velocity.length() <= 0.000001
+                        and here.pos.x == before.x
+                        and here.pos.y == before.y
+                        and here.pos.z == before.z {
+                        here.rest_serial = body_collision.revision.serial;
+                        here.rest_pos = here.pos.add(Vec3());
+                    }
                     # SV_movestep: a monster cannot step into the player
                     # (a leap is a toss that lands on it instead).
                     if self.player.health > 0
@@ -4038,10 +4240,15 @@ walker CombatTick {
             here.velocity = here.velocity.add(
                 desired.sub(here.velocity).scale(min(1.0, 8.0 * self.dt))
             );
-            body = here.pos.sub(Vec3(z=here.eye_height));
-            moved = slide(body_collision, body, here.velocity, self.dt);
-            here.velocity = moved.velocity;
-            here.pos = moved.pos.add(Vec3(z=here.eye_height));
+            if wish.length() == 0.0 and here.velocity.length() < 0.01 {
+                # A hovering body whose drift has died away stays put.
+                here.velocity = Vec3();
+            } else {
+                body = here.pos.sub(Vec3(z=here.eye_height));
+                moved = slide(body_collision, body, here.velocity, self.dt);
+                here.velocity = moved.velocity;
+                here.pos = moved.pos.add(Vec3(z=here.eye_height));
+            }
             here.grounded = False;
         }
         if here.leaping {
