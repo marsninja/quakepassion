@@ -6,6 +6,50 @@ renderer it replaced. For models and effects, `QP_RENDER_LEGACY=1` switches
 back to the old CPU and immediate-mode drawing for comparison; the world
 has no such switch.
 
+## All together
+
+`scripts/render_benchmark.jac` on the default maps, the immediate-mode
+renderer against the GPU renderer (world, models and effects together with
+the Q3 frame-spike fixes), run back to back twice on the same machine
+(macOS arm64, free-running, 600 frames turning a full circle). Frame rate at
+the median frame, mean speed-up, and median / 95th percentile frame ms:
+
+| map | fps before → after | speed-up | median ms | p95 ms |
+|---|---|---|---|---|
+| q1 e1m1 | 858–913 → 1832–1852 | 2.1× | 1.14 → 0.55 | 2.9 → 1.3 |
+| q1 e4m7 | 307–311 → 1072–1078 | 3.5× | 3.23 → 0.93 | 7.7 → 4.9 |
+| q2 base1 | 284–299 → 1129–1145 | 3.9× | 3.43 → 0.88 | 5.8 → 2.0 |
+| q2 bunk1 | 200–207 → 617–630 | 3.1× | 4.92 → 1.60 | 11.7 → 3.7 |
+| q2 train | 160–168 → 771–775 | 4.7× | 6.11 → 1.29 | 8.9 → 4.5 |
+| q3 q3dm1 | 268–275 → 1264–1279 | 4.7× | 3.69 → 0.79 | 4.8 → 1.3 |
+| q3 q3dm7 | 130–132 → 848–864 | 6.5× | 7.64 → 1.17 | 13.1 → 2.6 |
+| q3 q3dm11 | 130–131 → 715–741 | 5.6× | 7.67 → 1.38 | 18.3 → 3.3 |
+| q3 q3dm12 | 71 → 668–696 | 9.6× | 14.12 → 1.47 | 19.5 → 4.1 |
+| q3 q3tourney2 | 221–228 → 1193–1218 | 5.4× | 4.46 → 0.83 | 5.8 → 1.4 |
+
+With `QP_BENCH_COMBAT=1` (explosions, trails, sprays, marks and missiles in
+view), same conditions:
+
+| map | fps before → after | speed-up | median ms | p95 ms |
+|---|---|---|---|---|
+| q1 e1m1 | 268–270 → 799–803 | 3.0× | 3.71 → 1.25 | 6.4 → 2.6 |
+| q1 e4m7 | 120–121 → 418–525 | 3.9× | 8.29 → 2.15 | 14.1 → 7.7 |
+| q2 base1 | 134 → 496–504 | 3.7× | 7.46 → 2.00 | 10.6 → 4.1 |
+| q2 bunk1 | 111 → 385–392 | 3.5× | 9.02 → 2.58 | 15.8 → 5.3 |
+| q2 train | 94–98 → 469–472 | 4.9× | 10.46 → 2.12 | 14.6 → 5.8 |
+| q3 q3dm1 | 166–167 → 610–620 | 3.7× | 6.00 → 1.62 | 7.7 → 2.9 |
+| q3 q3dm7 | 94–95 → 458–467 | 4.9× | 10.54 → 2.16 | 17.5 → 5.9 |
+| q3 q3dm11 | 81–84 → 401–402 | 4.9× | 12.12 → 2.49 | 22.0 → 6.5 |
+| q3 q3dm12 | 57–59 → 384–412 | 6.9× | 17.30 → 2.52 | 26.1 → 6.5 |
+| q3 q3tourney2 | 134 → 542–543 | 4.1× | 7.48 → 1.85 | 8.6 → 4.2 |
+
+On q3dm12 the render stages went from about 9.3 ms to 1.3 ms a frame (world
+4.4 → 0.4, models 3.6 → 0.5). The rest of the frame (game logic, bots,
+anything outside the timed stages) shrank on every map too, from about
+4.8 ms to 0.2 ms on q3dm12 and 2.8 ms to 0.1 ms on q2 train; in Q3 the bot
+travel-table and sight changes are part of that, so not all of the gain is
+rendering.
+
 ## World (BSP surfaces) — `engine/render/quake.jac`, `engine/render/world_mesh.jac`
 
 ### On the GPU
