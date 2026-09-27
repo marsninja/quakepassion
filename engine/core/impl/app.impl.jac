@@ -184,6 +184,7 @@ impl App.render_frame() {
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
         self.render_times.models = (time.time() - stamp) * 1000.0;
         stamp = time.time();
+        self.effects.draw_particles(self.world, view_yaw, view_pitch);
         self.effects.draw(
             self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
         );

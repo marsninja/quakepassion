@@ -334,32 +334,7 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             );
         }
     }
-    for particle in [world->:HasParticle:->][?:ImpactParticle] {
-        fade = max(0.0, particle.remaining / particle.lifetime);
-        color = Color(r=170, g=20, b=15, a=u8(int(255.0 * fade)))
-            if particle.blood
-            else Color(r=210, g=185, b=145, a=u8(int(255.0 * fade)));
-        size = f32(0.4 + fade * 0.6);
-        if particle.fire {
-            # Q1 ramp1/ramp2, Q2 0xe0: yellow cooling through orange to red.
-            color = Color(
-                r=255,
-                g=u8(int(60.0 + 180.0 * fade)),
-                b=u8(int(20.0 + 60.0 * fade * fade)),
-                a=u8(int(255.0 * min(1.0, fade * 1.5)))
-            );
-            size = f32(1.2 + fade * 1.2);
-        }
-        DrawCube(
-            Vector3(
-                x=f32(particle.pos.x), y=f32(particle.pos.y), z=f32(particle.pos.z)
-            ),
-            size,
-            size,
-            size,
-            color
-        );
-    }
+    # Impact and explosion particles are drawn by the effect scene.
     for event in [world->:HasLightning:->][?:LightningEvent] {
         doors = [event->:Electrode:->][?:Door];
         if event.remaining > 0.0 and len(doors) == 2 {
