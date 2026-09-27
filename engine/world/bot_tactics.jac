@@ -457,10 +457,22 @@ walker BotTactics {
         here.throttle_shoot = max(0.0, here.throttle_shoot - dt);
         here.enemy_sample -= dt;
         here.jump_wait = max(0.0, here.jump_wait - dt);
+        here.think_wait -= dt;
+        thinking = here.think_wait <= 0.0;
+        if thinking {
+            here.think_wait += 0.1;
+        }
         foe = here.foe;
         visible = False;
         if foe is not None and foe.health > 0 {
-            visible = entity_visible(self.collision, here.pos, foe.pos.sub(Vec3(z=foe_height(foe, self.collision))));
+            # BotAI runs every bot_thinktime (100 ms) and the bot keeps its
+            # input in between: it looks for its enemy when it thinks, and at
+            # once for a new enemy.
+            if thinking or foe is not memory.sight_target {
+                memory.sight = entity_visible(self.collision, here.pos, foe.pos.sub(Vec3(z=foe_height(foe, self.collision))));
+                memory.sight_target = foe;
+            }
+            visible = memory.sight;
         }
         # BotFindEnemy's enemysight_time: the reaction time runs from when an
         # enemy is found, not from each glimpse of it. An enemy that replaces
@@ -473,11 +485,6 @@ walker BotTactics {
         }
         if foe is not None {
             here.enemy_sight += dt;
-        }
-        here.think_wait -= dt;
-        thinking = here.think_wait <= 0.0;
-        if thinking {
-            here.think_wait += 0.1;
         }
         if foe is None or not visible {
             here.fighting = False;
