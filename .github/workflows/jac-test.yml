@@ -56,8 +56,10 @@ jobs:
       - name: Build native viewer
         run: jac build main.jac --native -o qp
 
-      # Discovery is anchored to the project root via jac.toml ([test] directory).
+      # One process per test file: a single run over the whole suite grows
+      # past the runner's memory. Each file runs cold, then again warm.
       - name: Run jac test
+        timeout-minutes: 240
         run: |
-          jac test -j0
-          jac test -j0
+          ls tests/*_tests.jac | xargs -P 3 -I{} sh -c 'jac test {} > "/tmp/$(basename {}).log" 2>&1 || { echo "FAILED {}"; tail -40 "/tmp/$(basename {}).log"; exit 1; }'
+          ls tests/*_tests.jac | xargs -P 3 -I{} sh -c 'jac test {} > "/tmp/$(basename {}).warm.log" 2>&1 || { echo "FAILED (warm) {}"; tail -40 "/tmp/$(basename {}).warm.log"; exit 1; }'
