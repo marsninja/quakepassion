@@ -335,39 +335,10 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             );
         }
     }
-    # Particles and plain projectile markers go to the instanced cube batch.
+    # Impact and explosion particles are drawn by the effect scene; plain
+    # projectile markers go to the instanced cube batch.
     cubes = self.cubes;
     immediate = cubes.immediate();
-    for particle in [world->:HasParticle:->][?:ImpactParticle] {
-        fade = max(0.0, particle.remaining / particle.lifetime);
-        red = 170 if particle.blood else 210;
-        green = 20 if particle.blood else 185;
-        blue = 15 if particle.blood else 145;
-        alpha = int(255.0 * fade);
-        size = 0.4 + fade * 0.6;
-        if particle.fire {
-            # Q1 ramp1/ramp2, Q2 0xe0: yellow cooling through orange to red.
-            red = 255;
-            green = int(60.0 + 180.0 * fade);
-            blue = int(20.0 + 60.0 * fade * fade);
-            alpha = int(255.0 * min(1.0, fade * 1.5));
-            size = 1.2 + fade * 1.2;
-        }
-        if immediate {
-            DrawCube(
-                Vector3(
-                    x=f32(particle.pos.x), y=f32(particle.pos.y), z=f32(particle.pos.z)
-                ),
-                f32(size),
-                f32(size),
-                f32(size),
-                Color(r=u8(red), g=u8(green), b=u8(blue), a=u8(alpha))
-            );
-        } else {
-            cubes.add(particle.pos.x, particle.pos.y, particle.pos.z, float(f32(size)), red, green, blue, alpha);
-        }
-    }
-    cubes.draw();
     for event in [world->:HasLightning:->][?:LightningEvent] {
         doors = [event->:Electrode:->][?:Door];
         if event.remaining > 0.0 and len(doors) == 2 {

@@ -97,7 +97,9 @@ obj BotState {
         crouch_time: float = -10.0,
         enemy: Actor | None = None,
         last_health: int = 0,
-        view_target: Vec3 = Vec3();
+        view_target: Vec3 = Vec3(),
+        sight_target: Actor | None = None,
+        sight: bool = False;
 }
 
 """ai_dmq3.c BotEntityVisible for a player's box: the bot's eye sees the

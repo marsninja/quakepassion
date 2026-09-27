@@ -184,6 +184,7 @@ impl App.render_frame() {
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
         self.render_times.models = (time.time() - stamp) * 1000.0;
         stamp = time.time();
+        self.effects.draw_particles(self.world, view_yaw, view_pitch);
         self.effects.draw(
             self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
         );
@@ -749,6 +750,13 @@ impl App.load_destination(
         self.help_open = False;
         self.inventory_open = False;
         self.record_entry();
+        # Draw the new level once before play: a level's first draw uploads
+        # and prepares what it shows, and a slow first frame would hand the
+        # next one a long simulation step.
+        if not self.smoke {
+            self.render_frame();
+            self.skip_time = True;
+        }
     } except Exception as error {
         next_models.close();
         next_effects.close();

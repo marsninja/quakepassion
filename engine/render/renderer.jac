@@ -56,7 +56,7 @@ import from vendor.raylib {
 
 import math;
 import from .cubes { CubeBatch }
-import from ..world.particles { HasParticle, ImpactParticle, HasTrail, ShotTrail }
+import from ..world.particles { HasTrail, ShotTrail }
 import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
 import from ..world.doors { Door }
 import from ..world.combat {
