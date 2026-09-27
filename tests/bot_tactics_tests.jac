@@ -2,9 +2,9 @@ import math;
 import from games.botfiles { skill_blocks, values_at, weapon_weights, character_from }
 import from games.weapons { weapon_rules }
 import from engine.world.world { World, Player }
-import from engine.world.combat { Opponent, HasOpponent, CombatState, Projectile, HasProjectile, arm_bot }
-import from engine.world.bot_tactics { BotTactics, choose_weapon, change_view, steer_view, look_at, bot_fire, rule_for, bot_aggression }
-import from engine.world.bot_character { BotCharacter, BotState, bot_skill, bot_handicap }
+import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick, Projectile, HasProjectile, arm_bot }
+import from engine.world.bot_tactics { BotTactics, choose_weapon, change_view, steer_view, look_at, bot_fire, rule_for }
+import from engine.world.bot_character { BotCharacter, BotState, bot_skill, bot_handicap, bot_aggression, enemy_view, entity_visible, Q3_SKILL_NAMES }
 import from engine.world.inventory { quantity, AdjustInventory }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
@@ -50,6 +50,12 @@ test "botlib characters load exact skills and interpolate between them" {
     # Normal is Q3's default Bring It On; handicaps from G_AddBot.
     assert bot_skill(0) == 1.0 and bot_skill(1) == 2.0 and bot_skill(3) == 4.0;
     assert bot_handicap(1.0) == 50 and bot_handicap(2.0) == 70 and bot_handicap(3.0) == 90 and bot_handicap(4.0) == 100;
+    # The fifth setting is Nightmare!: the character's own skill 5 block and
+    # no handicap.
+    assert bot_skill(4) == 5.0 and bot_handicap(bot_skill(4)) == 100;
+    assert Q3_SKILL_NAMES[int(bot_skill(4)) - 1] == "Nightmare!" and Q3_SKILL_NAMES[int(bot_skill(2)) - 1] == "Hurt Me Plenty";
+    nightmare = skill_blocks(SAMPLE + "skill 5\n{\n\tCHARACTERISTIC_AIM_ACCURACY\t\t0.95\n}\n");
+    assert values_at(nightmare, 5.0)["CHARACTERISTIC_AIM_ACCURACY"] == "0.95";
 }
 
 test "bots pick their heaviest loaded weapon and shun a distant lightning gun" {
@@ -305,4 +311,67 @@ test "bots of every skill turn on a visible enemy and shoot, even retreating" {
         # Within its reaction time and a turn to face the enemy.
         assert fired_at >= 0.0 and fired_at <= 3.0;
     }
+}
+
+test "bots find enemies as BotFindEnemy does: in view, seen, closer, or when hurt" {
+    # The view widens from 90 degrees up close to 180 at 810 units, and is
+    # all round for a hurt bot or a firing enemy.
+    assert abs(enemy_view(90.0, False) - 91.111) < 0.01;
+    assert enemy_view(810.0, False) == 180.0 and enemy_view(2000.0, False) == 180.0;
+    assert enemy_view(300.0, True) == 360.0;
+    # BotEntityVisible sees the middle, bottom or top of a player's box.
+    collision = arena_floor();
+    collision.add_box(Vec3(x=100.0, y=-100.0, z=0.0), Vec3(x=120.0, y=100.0, z=50.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    assert entity_visible(collision, Vec3(z=50.0), Vec3(x=300.0, z=24.0));
+    assert not entity_visible(collision, Vec3(z=20.0), Vec3(x=300.0, z=24.0));
+    # A bot facing away from a quiet enemy does not notice it, until hurt.
+    world = World();
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=22.0), eye_height=22.0, yaw=0.0,
+        character=BotCharacter(alertness=0.5));
+    behind = Opponent(arena=True, health=100, pos=Vec3(x=-400.0, z=22.0), eye_height=22.0, yaw=0.0);
+    world +>:HasOpponent:+> bot;
+    world +>:HasOpponent:+> behind;
+    far = Player(health=0, pos=Vec3(x=5000.0, z=22.0));
+    world spawn CombatTick(player=far, collision=CollisionMap(), state=CombatState(), dt=0.2, arena_live=True);
+    assert bot.foe is None;
+    bot.health = 80;
+    world spawn CombatTick(player=far, collision=CollisionMap(), state=CombatState(), dt=0.2, arena_live=True);
+    assert bot.foe is behind;
+    # Only a closer enemy replaces the current one.
+    ahead = Opponent(arena=True, health=100, pos=Vec3(x=600.0, z=22.0), eye_height=22.0);
+    world +>:HasOpponent:+> ahead;
+    world spawn CombatTick(player=far, collision=CollisionMap(), state=CombatState(), dt=0.2, arena_live=True);
+    assert bot.foe is behind;
+}
+
+test "the reaction time runs from finding an enemy, not from each glimpse" {
+    rules = weapon_rules("q3");
+    world = World();
+    collision = arena_floor();
+    human = Player(health=100, pos=Vec3(x=-5000.0));
+    shooter = Opponent(arena=True, health=100, pos=Vec3(z=22.0), character=BotCharacter(reaction=0.5, fire_throttle=1.0, weights={"machinegun": 30}));
+    target = Opponent(arena=True, health=100, pos=Vec3(x=300.0, z=22.0));
+    arm_bot(shooter);
+    world +>:HasOpponent:+> shooter;
+    world +>:HasOpponent:+> target;
+    shooter.foe = target;
+    for tick in range(30) {
+        world spawn BotTactics(player=human, collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
+    }
+    assert shooter.bot_state.battle != "" and abs(shooter.enemy_sight - 0.3) < 0.02;
+    # Out of sight for a moment while still fighting it: the clock runs on.
+    wall = arena_floor();
+    wall.add_box(Vec3(x=100.0, y=-100.0, z=0.0), Vec3(x=120.0, y=100.0, z=200.0), Vec3(), Vec3(), Vec3());
+    wall.reindex();
+    for tick in range(5) {
+        world spawn BotTactics(player=human, collision=wall, state=CombatState(game="q3"), rules=rules, dt=0.01);
+    }
+    assert shooter.enemy_sight > 0.34;
+    # A new enemy replacing a living one counts as seen two seconds ago.
+    other = Opponent(arena=True, health=100, pos=Vec3(x=-300.0, z=22.0));
+    world +>:HasOpponent:+> other;
+    shooter.foe = other;
+    world spawn BotTactics(player=human, collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
+    assert shooter.enemy_sight > 2.0;
 }

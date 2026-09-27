@@ -186,3 +186,86 @@ def next_arena(arenas: list[ArenaInfo], name: str) -> str {
     }
     return "";
 }
+
+"""ui_gameinfo.c UI_LogAwardData: the award totals kept across matches
+(accuracy medals, impressives, excellents, gauntlet frags, frags and
+perfects), in ~/.quakepassion-awards.txt."""
+obj AwardLog {
+    has totals: dict[str, int] = {};
+
+    def path() -> str {
+        return os.getenv("HOME", ".") + "/.quakepassion-awards.txt";
+    }
+
+    def load() {
+        self.totals = {};
+        if not os.path.exists(self.path()) {
+            return;
+        }
+        with open(self.path(), "r") as stream {
+            lines = stream.read().splitlines();
+        }
+        if not lines or lines[0] != "QUAKEPASSION AWARDS 1" {
+            raise ValueError("Invalid award log version");
+        }
+        for line in lines[1:] {
+            parts = line.split();
+            if len(parts) == 2 and parts[0] in AWARD_KINDS {
+                self.totals[parts[0]] = max(0, int(parts[1]));
+            }
+        }
+    }
+
+    """Add `amount` to an award's total (UI_LogAwardData) and save."""
+    def log(kind: str, amount: int) {
+        self.totals[kind] = self.totals.get(kind, 0) + max(0, amount);
+        text = "QUAKEPASSION AWARDS 1\n";
+        for key in AWARD_KINDS {
+            if key in self.totals {
+                text += key + " " + str(self.totals[key]) + "\n";
+            }
+        }
+        with open(self.path() + ".tmp", "w") as stream {
+            stream.write(text);
+        }
+        os.replace(self.path() + ".tmp", self.path());
+    }
+}
+
+# ui_sppostgame.c's medals in presentation order.
+glob AWARD_KINDS: list[str] = ["accuracy", "impressive", "excellent", "gauntlet", "frags", "perfect"];
+
+"""One medal of the postgame presentation: its kind and the number shown
+under it (a percentage for accuracy)."""
+obj Medal {
+    has kind: str,
+        amount: int;
+}
+
+"""UI_SPPostgameMenu_f's awards from the match: accuracy of 50% or better,
+any impressives, excellents and gauntlet frags, a frags medal each time the
+career total passes another hundred, and perfect. `career` is the frag
+total before this match."""
+def postgame_medals(accuracy: int, impressive: int, excellent: int, gauntlet: int, frags: int, perfect: bool, career: int) -> list[Medal] {
+    medals: list[Medal] = [];
+    if accuracy >= 50 {
+        medals.append(Medal(kind="accuracy", amount=accuracy));
+    }
+    if impressive > 0 {
+        medals.append(Medal(kind="impressive", amount=impressive));
+    }
+    if excellent > 0 {
+        medals.append(Medal(kind="excellent", amount=excellent));
+    }
+    if gauntlet > 0 {
+        medals.append(Medal(kind="gauntlet", amount=gauntlet));
+    }
+    reached = (career + max(0, frags)) // 100;
+    if reached > career // 100 {
+        medals.append(Medal(kind="frags", amount=reached * 100));
+    }
+    if perfect {
+        medals.append(Medal(kind="perfect", amount=1));
+    }
+    return medals;
+}

@@ -175,7 +175,10 @@ node PlayerRig(Visual) {
         random: int = 1,
         character: str = "",
         voice: str = "sound/player/sarge/",
-        footsteps: str = "step";
+        footsteps: str = "step",
+        head_offset: Vec3 = Vec3(),
+        fixed_legs: bool = False,
+        fixed_torso: bool = False;
 }
 
 """A rig's part models by role: "lower", "upper" and "head"."""

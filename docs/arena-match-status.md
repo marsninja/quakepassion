@@ -27,9 +27,8 @@ spawns.
 - The player respawns with fire or jump after 1.7 s, and automatically after
   20 s, at the furthest spawn with the standard loadout. The match keeps running
   meanwhile.
-- **Tab** (or **F1**) shows the scoreboard, which also appears during the countdown, while
-  dead and at match end. At the end, **Enter** advances a winner to the next
-  ladder arena, or starts a rematch otherwise.
+- **Tab** (or **F1**) shows the scoreboard, which also appears during the
+  countdown and while dead (see [Scoreboard](#scoreboard)).
 - The level menu lists Q3's ladder first (training, tiers, final), with arena
   names and the best finish from `~/.quakepassion-arena.txt`.
 - Bots use their own models and skins as three-part animated bodies (see
@@ -60,6 +59,66 @@ and the top three finishers take the podium (`g_arenas.c`,
   again when the gesture timer runs out.
 
 `tests/podium_tests.jac` covers the placement and the celebration.
+
+## Scoreboard
+
+The scoreboard follows `cg_scoreboard.c` `CG_DrawOldScoreboard`
+(`engine/render/arena_screens.jac`), in Q3's own art:
+- "Fragged by" the killer while dead, and the player's place ("Tied for
+  2nd place with 4", the place in its colour).
+- The score, time and name tabs from `menu/tab`.
+- A 40-unit line per competitor, highest score first, with:
+  - the bot's skill mark (`menu/art/skill1-5`);
+  - its head: the 3D head model facing the viewer (`cg_draw3dIcons`, with
+    the model's `headoffset`), or `icon_<skin>.tga` without 3D icons;
+  - score, minutes played and name;
+  - the player's own line highlighted by rank (blue, red, yellow, grey).
+- A local game has no ping column. Instead, each line lists that competitor's
+  excellent, impressive and gauntlet awards under the name, as counted on
+  its `Competes` edge.
+
+Ranks come from the `RankScores` walker over the `Competes` edges
+(`CalculateRanks`: ranked by how many score higher, ties marked).
+
+## Postgame
+
+After the podium, the single-player postgame menu (`q3_ui/ui_sppostgame.c`)
+plays over it:
+1. The top three names stand over their pads in the proportional font
+   (`menu/art/font1_prop`) for five seconds.
+2. Each award takes the stage for two seconds with its medal
+   (`menu/medals`) and announcer line. The awards stay up for at least five
+   seconds.
+3. The earned medals stay along the top with their counts. The menu, replay
+   and next buttons appear below.
+
+Other details:
+- The score lines roll along the top right every 1.5 s when there are more
+  than three players.
+- Keys are ignored for 1.5 s. Then any key skips the podium, then the
+  awards.
+- Left and Right choose a button, and Enter presses it:
+  - **Next** (the default for a winner) goes to the next ladder arena.
+  - **Replay** (the default otherwise) restarts the arena.
+  - **Menu** opens the level menu.
+- The win or loss music plays when the podium starts.
+- The status bar, view weapon and frag line are hidden.
+
+Awards (`UI_SPPostgameMenu_f`):
+- Accuracy of 50% or better. Shots and hits are counted as `FireWeapon` and
+  `LogAccuracyHit` count them: every shot but the gauntlet's, one hit per
+  shot that strikes a living opponent, and one each for a missile's direct
+  hit and its splash.
+- Impressives, excellents and gauntlet frags.
+- A frags medal each time the career total passes another hundred.
+- Perfect: first place alone without a death.
+
+As `UI_LogAwardData` does, the totals are kept across matches in
+`~/.quakepassion-awards.txt`. Accuracy is not saved in snapshots.
+
+`tests/arena_match_tests.jac` covers the ranking, the award rules and the
+menu's phases and buttons. `scripts/arena_screens_smoke.jac` captures the
+scoreboard and the three postgame phases on q3dm7.
 
 ## Limits
 

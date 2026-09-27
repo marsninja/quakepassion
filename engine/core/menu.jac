@@ -257,7 +257,13 @@ obj LevelMenu {
             white
         );
         if self.settings_open {
-            DrawText("Settings | Esc: resume", i32(310), i32(120), i32(18), white);
+            DrawText(
+                "Settings | Esc: resume | Up/Down: select | Left/Right: change",
+                i32(310),
+                i32(120),
+                i32(18),
+                white
+            );
             for row in range(len(self.settings_labels)) {
                 color = Color(r=99, g=64, b=35, a=255)
                     if row == self.setting_selected
@@ -272,13 +278,6 @@ obj LevelMenu {
                 );
                 DrawText("<     >", i32(830), i32(164 + row * 42), i32(20), amber);
             }
-            DrawText(
-                "Up/Down: select | Left/Right: change",
-                i32(310),
-                i32(580),
-                i32(18),
-                white
-            );
             DrawText(
                 self.message[:75]
                     if self.message

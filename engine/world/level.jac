@@ -41,7 +41,7 @@ import from .fixtures { load_fixture_uses }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
-import from .lighting { Lighting }
+import from .lighting { Lighting, load_light_grid }
 
 node Split {
     has normal: Vec3,
@@ -265,6 +265,16 @@ def load_level(
         assets = Pk3Assets();
         assets.open(directory);
         level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"));
+        # Models are lit from the light grid (worldspawn "gridsize").
+        spacing = Vec3(x=64.0, y=64.0, z=128.0);
+        for entity in level.bsp.entities[:1] {
+            parts = entity.fields.get("gridsize", "").split();
+            if len(parts) == 3 {
+                spacing = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+            }
+        }
+        world_model = level.bsp.models[0];
+        level.lighting.grid = load_light_grid(level.bsp.light_grid, world_model.mins, world_model.maxs, spacing);
         for texture in level.bsp.textures {
             assets.texture(texture);
         }

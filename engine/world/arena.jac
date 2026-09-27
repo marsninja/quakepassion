@@ -46,6 +46,65 @@ obj Standing {
         human: bool;
 }
 
+"""One line of the scoreboard (CG_DrawClientScore): a competitor, its score
+and awards, and its rank counting from 0, `tied` when it shares it
+(RANK_TIED_FLAG)."""
+obj ScoreRow {
+    has actor: Actor,
+        name: str,
+        frags: int,
+        deaths: int,
+        human: bool,
+        excellent: int = 0,
+        impressive: int = 0,
+        humiliation: int = 0,
+        rank: int = 0,
+        tied: bool = False;
+}
+
+"""g_main.c CalculateRanks for a free-for-all: every competitor by score,
+highest first, ranked by how many score higher, with ties marked."""
+walker RankScores {
+    has rows: list[ScoreRow] = [];
+
+    can rank with ArenaMatch entry {
+        entries = [edge here->:Competes:->];
+        actors = [here->:Competes:->];
+        for i in range(min(len(entries), len(actors))) {
+            score = entries[i];
+            row = ScoreRow(
+                actor=actors[i],
+                name=score.name,
+                frags=score.frags,
+                deaths=score.deaths,
+                human=score.human,
+                excellent=score.excellent,
+                impressive=score.impressive,
+                humiliation=score.humiliation
+            );
+            index = 0;
+            while index < len(self.rows) and self.rows[index].frags >= row.frags {
+                index += 1;
+            }
+            self.rows.insert(index, row);
+        }
+        for row in self.rows {
+            row.rank = len([other for other in self.rows if other.frags > row.frags]);
+            row.tied = len([other for other in self.rows if other.frags == row.frags]) > 1;
+        }
+    }
+}
+
+def score_rows(contest: ArenaMatch) -> list[ScoreRow] {
+    return (contest spawn RankScores()).rows;
+}
+
+"""cg_event.c CG_PlaceString: "1st", "Tied for 2nd"... (the scoreboard
+colours the place itself)."""
+def place_string(rank: int, tied: bool) -> str {
+    return ("Tied for " if tied else "") + ordinal(rank + 1);
+}
+
 def match_of(world: World) -> ArenaMatch | None {
     matches = [world->:HasMatch:->][?:ArenaMatch];
     return matches[0] if matches else None;

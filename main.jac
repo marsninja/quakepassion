@@ -46,7 +46,8 @@ with entry {
             game_directory(game),
             os.getenv("QP_MAP", map_name),
             game,
-            skill
+            # Q1 and Q2 play the fifth skill (Q3's Nightmare!) as Nightmare.
+            skill if game == "q3" else min(3, skill)
         );
         player = spawn_player(level);
     } else {

@@ -3,7 +3,10 @@ import from engine.world.lighting {
     Lighting,
     ProbeRegion,
     Illumination,
-    irradiance
+    irradiance,
+    LightGrid,
+    load_light_grid,
+    shift_light
 }
 import from engine.math.vec3 { Vec3 }
 import from engine.physics.collision { CollisionMap }
@@ -85,4 +88,39 @@ test "moving geometry can sample static probes without double counting flashes" 
     lighting.dynamic.append(FlashLight(origin=Vec3(), color=Vec3(x=1.0)));
     assert lighting.sample(Vec3(), False).ambient.x == 0.25;
     assert lighting.sample(Vec3()).ambient.x == 1.25;
+}
+
+test "Q3 models take the light grid, shifted for overbright, around walls" {
+    # A 2x2x2 lattice over a 64x64x128 cell: the lower four points lit, the
+    # upper four inside walls (black).
+    data: list[int] = [];
+    for spot in range(8) {
+        if spot < 4 {
+            # Ambient 20, directed 40 (red only), light from straight above
+            # (longitude 0).
+            data.extend([20, 20, 20, 40, 0, 0, 0, 0]);
+        } else {
+            data.extend([0, 0, 0, 0, 0, 0, 0, 0]);
+        }
+    }
+    grid = load_light_grid(bytes(data), Vec3(x=0.0, y=0.0, z=0.0), Vec3(x=64.0, y=64.0, z=128.0));
+    assert grid is not None and grid.bounds == [2, 2, 2];
+    # R_ColorShiftLightingBytes: four times brighter, whole colours scaled back.
+    assert shift_light(True, 20, 40, 100) == (51, 102, 255);
+    assert shift_light(False, 20, 40, 200) == (40, 80, 255);
+    lit = grid.sample(Vec3(x=32.0, y=32.0, z=64.0));
+    assert lit.enabled;
+    # Ambient 80 scaled by 0.6 plus the minimum 32; the wall points are
+    # left out rather than darkening the blend.
+    assert abs(lit.ambient.x * 255.0 - 80.0) < 0.01;
+    assert abs(lit.directed.x * 255.0 - 160.0) < 0.01 and lit.directed.y == 0.0;
+    assert lit.direction.z > 0.99;
+    # Lit from above: a face turned up takes the directed light, one turned
+    # down only the ambient.
+    assert lit.shade(Vec3(z=1.0)).x > lit.shade(Vec3(z=-1.0)).x;
+    # A lump that does not fit the lattice leaves models without the grid.
+    assert load_light_grid(bytes([1, 2, 3]), Vec3(), Vec3(x=64.0, y=64.0, z=128.0)) is None;
+    lighting = Lighting(grid=grid);
+    assert lighting.sample(Vec3(x=10.0, y=10.0, z=10.0)).enabled;
+    assert not Lighting().sample(Vec3()).enabled;
 }

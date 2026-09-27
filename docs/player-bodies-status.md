@@ -16,7 +16,11 @@ and the player's own mirror body.
   - first frame, count (negative plays backwards), looping frames and fps;
   - legs frames shifted past the torso-only frames;
   - the derived backward walk and crouch sequences;
-  - the footstep type and sex.
+  - the footstep type and sex;
+  - `headoffset`, which moves the head in its 3D icon (`CG_DrawHead`: the
+    status bar and scoreboard heads), and `fixedlegs` and `fixedtorso`.
+    Fixed legs keep the torso's yaw with no lean, and a fixed torso never
+    pitches (`CG_PlayerAngles`). No stock model sets either.
 - The `PoseRig` walker picks the sequences, following `bg_pmove.c`:
   - legs: idle, run, backpedal, walk, crouch, swim, jump and land (forward and
     backward), turn in place, and the land timer;
@@ -37,9 +41,30 @@ and the player's own mirror body.
   - the barrel spins on `tag_barrel` (`CG_MachinegunSpinAngle`);
   - the muzzle flash shows at `tag_flash` for 30 ms after a shot, or all the
     while the lightning gun or gauntlet fires;
-  - every part shares one lighting sample.
+  - every part shares one lighting sample, taken from the map's light grid
+    (below).
 - A muzzle flash also adds a 300-unit light in the weapon's colour
   (`light_effects.jac`).
+
+## Lighting
+
+Q3 bots, items, gibs and the view weapon are lit from the map's light grid
+(`engine/world/lighting.jac`). Before, they were drawn full bright.
+- `R_LoadLightGrid` reads the grid lump over the world model's bounds, at the
+  worldspawn `gridsize` (64×64×128 by default).
+- Its ambient and directed colours are shifted for overbright like the
+  lightmaps (`R_ColorShiftLightingBytes`, ×4, overflowing colours scaled back
+  whole).
+- `R_SetupEntityLightingGrid` blends the eight surrounding points, leaving
+  out those inside walls. Ambient light is scaled by `r_ambientScale` 0.6,
+  with the minimum light add of 32, and kept in range.
+- Muzzle flashes, explosions and glowing missiles add their light as in the
+  other games.
+
+Next to a lightmapped wall a bot now matches the world's brightness. It
+has a lit side and a darker side (`scripts/arena_screens_smoke.jac` captures
+a bot with the grid and full bright). `tests/lighting_tests.jac` covers the
+grid.
 
 ## Bodies, sounds and powerups
 
@@ -47,6 +72,11 @@ and the player's own mirror body.
   copy of its body where it fell (`CopyToBodyQue`). The copy finishes its death
   sequence, sinks after five seconds and goes after 6.5 (`BodySink`). Eight
   bodies are kept at most.
+  - A body keeps the dead player's health and its gib models.
+  - Hitscan shots, missiles and splash from players and bots strike it, as
+    `CONTENTS_CORPSE` does. The shots stop at its lowered box.
+  - At `GIB_HEALTH` (-40) it bursts into gibs with the gib sound (`body_die`).
+  - A body that was gibbed takes no more damage.
 - **Sounds** (`cg_event.c`): each rig names its character's voice and footstep
   type. Its cues are the pain tier (at most two a second), the three deaths,
   jumps, landings (a thud, `pain100`, or `fall1` by impact speed), footsteps
@@ -89,6 +119,5 @@ and the player's own mirror body.
   `isinstance(here, Actor)` in `GatherModels` is false for `Opponent`, whose
   module `models.jac` does not import (a Jac defect with a minimal repro, to be
   fixed upstream). The player's view weapon shows its shells.
-- Bodies are not solid and cannot be gibbed once left behind.
-- Head offsets, `fixedlegs` and `fixedtorso` from `animation.cfg` are ignored.
+- Bodies are not solid to movement.
 - The powerup shaders drop their texture rotation and turbulence.
