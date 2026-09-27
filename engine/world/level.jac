@@ -117,6 +117,7 @@ obj Level {
         visible_game: str = "",
         visible_culling: bool = False,
         visible_faces: list[int] = [],
+        visible_recent: dict[int, list[int]] = {},
         surface_stages: dict[int, list[ModelStage]] = {},
         surface_deforms: dict[int, list[Deform]] = {},
         sky_clouds: list[ModelStage] = [],
@@ -189,6 +190,16 @@ obj Level {
             and self.visible_game == self.bsp.game {
             return self.visible_faces;
         }
+        # A few recent sets are kept, so a portal view and the main view
+        # alternating each frame keep their lists (and the renderer the index
+        # lists it built for them).
+        key = leaf * 2 + (1 if culling else 0);
+        if self.visible_game == self.bsp.game and key in self.visible_recent {
+            self.visible_leaf = leaf;
+            self.visible_culling = culling;
+            self.visible_faces = self.visible_recent[key];
+            return self.visible_faces;
+        }
         targets: list[BspArea] = [];
         if self.bsp.game != "q1" {
             cluster = self.bsp.leaves[leaf].cluster;
@@ -241,10 +252,14 @@ obj Level {
                 gather.seen.add(f);
             }
         }
+        if self.visible_game != self.bsp.game or len(self.visible_recent) >= 4 {
+            self.visible_recent = {};
+        }
         self.visible_leaf = leaf;
         self.visible_culling = culling;
         self.visible_game = self.bsp.game;
         self.visible_faces = gather.faces;
+        self.visible_recent[key] = gather.faces;
         return self.visible_faces;
     }
 }

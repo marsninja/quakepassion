@@ -1,4 +1,7 @@
-"""Quake polygon rendering through raylib's rlgl batch API."""
+"""The BSP world renderer: textures, lightmaps and shader stages uploaded at
+level load, and every frame the visible surfaces drawn from GPU-resident
+vertex chunks by the shaders in world_mesh.jac. The sky box and Q3 portal
+backdrops still go through raylib's rlgl batch."""
 import math;
 import struct;
 import from vendor.raylib {
@@ -47,44 +50,91 @@ import from vendor.raylib {
         mode: i32
     ) -> None;  def EndBlendMode -> None;  def rlSetBlendFactors(
         src: i32, dst: i32, equation: i32
-    ) -> None;
+    ) -> None;  def rlDrawVertexArrayElements(
+        offset: i32, count: i32, buffer: u64
+    ) -> None;  def rlDisableVertexArray -> None;
 }
 import from ..world.level { Level }
 import from ..world.portals { surface_plane }
 import from ..formats.bsp { Face, Texture, FogVolume }
-import from ..formats.animated { ModelStage, Deform, stage_frame }
+import from ..formats.animated { ModelStage, Deform, TexMod, stage_frame }
 import from ..math.vec3 { Vec3 }
 import from ..world.lighting { Lighting, shift_light }
+import from .gpu {
+    GpuMesh,
+    GpuProgram,
+    VertexAttribute,
+    Matrix,
+    GL_FLOAT,
+    GL_UNSIGNED_BYTE,
+    view_projection,
+    pack_floats
+}
+import from .world_mesh {
+    IndexLists,
+    SurfaceBatch,
+    VisibleIndices,
+    ChunkIndices,
+    BrushGroup,
+    BrushModel,
+    WORLD_VERTEX_STRIDE,
+    WORLD_FOG_LIMIT,
+    SURFACE_LIGHTMAP,
+    SURFACE_ALPHA_SHIFT,
+    SURFACE_EMISSION,
+    SURFACE_VERTEX_COLOR,
+    PASS_LIT,
+    PASS_SKY,
+    PASS_LIQUID,
+    PASS_TRANSLUCENT,
+    PASS_BASE,
+    PASS_ADDITIVE,
+    PASS_LAYERED,
+    PASS_FOG,
+    PASS_FOG_TWO_SIDED,
+    LIT_VS,
+    LIT_FS,
+    WARP_VS,
+    WARP_FS,
+    SKY_VS,
+    SKY_FS,
+    BASE_VS,
+    BASE_FS,
+    STAGE_VS,
+    STAGE_FS,
+    FOG_VS,
+    FOG_FS,
+    batch_key,
+    assign_chunks,
+    face_index_bytes,
+    gather_indices,
+    pack_world_face,
+    set_uniform_vec3,
+    set_uniform_vec2,
+    wave_code
+}
 
 obj LightRect {
     has x: int = 0,
-        y: int = 0;
+        y: int = 0,
+        layer: float = 0.0;
 }
 
 obj QuakeRenderer {
     has lighting: Lighting = Lighting(),
-        overbright: bool = False,
-        dynamic_positions: int = -1,
-        dynamic_colors: int = -1;
+        overbright: bool = False;
     has textures: list[int] = [],
-        emissive: list[int] = [],
         sky: list[int] = [],
         single_pass: bool = False,
-        shader: Shader = Shader(id=u32(0), locs=u64(0)),
         atlas: int = 0,
         atlas_size: int = 2048,
         rects: list[LightRect] = [],
-        styled: list[int] = [],
         stage_images: dict[int, list[list[int]]] = {},
         sky_layers: dict[int, list[int]] = {},
         anim_frames: dict[int, list[int]] = {},
         anim_alternates: dict[int, list[int]] = {},
         world_faces: int = 0,
         cloud_images: list[list[int]] = [],
-        warp_shader: Shader = Shader(id=u32(0), locs=u64(0)),
-        warp_time: int = -1,
-        warp_size: int = -1,
-        warp_scroll: int = -1,
         white: int = 0,
         time: float = 0.0,
         fog_image: int = 0,
@@ -94,8 +144,6 @@ obj QuakeRenderer {
         cloud_coords: list[float] = [],
         cloud_height_cached: float = -1.0,
         stage_state: str = "",
-        style_cache: dict[int, list[float]] = {},
-        stage_cache: dict[int, StageGeometry] = {},
         stage_blended: bool = False,
         portal_image: int = 0,
         portal_normal: Vec3 = Vec3(),
@@ -104,13 +152,42 @@ obj QuakeRenderer {
         portal_height: float = 1.0,
         portal_shader: Shader = Shader(id=u32(0), locs=u64(0)),
         portal_size: int = -1;
-    # Q1/Q2 dynamic lights (R_AddDynamicLights): an additive pass over the
-    # faces a light reaches, each face's bounds cached for the test.
-    has dlight_shader: Shader = Shader(id=u32(0), locs=u64(0)),
-        dlight_positions: int = -1,
-        dlight_colors: int = -1,
-        face_lows: dict[int, Vec3] = {},
-        face_highs: dict[int, Vec3] = {};
+    # The world in GPU buffers (world_mesh.jac): vertex chunks, each face's
+    # chunk, batches and index run, the surface batches by pass, the index
+    # lists of recent visible sets, and the brush models' groups.
+    has chunks: list[GpuMesh] = [],
+        face_chunks: list[int] = [],
+        face_batches: list[list[int]] = [],
+        face_runs: list[bytes] = [],
+        brush_face: list[bool] = [],
+        batches: list[SurfaceBatch] = [],
+        batch_ids: dict[int, int] = {},
+        pass_batches: dict[int, list[SurfaceBatch]] = {},
+        views: list[VisibleIndices] = [],
+        view_clock: int = 0,
+        brush_models: list[BrushModel] = [],
+        brush_groups: list[BrushGroup] = [],
+        brush_matrices: list[Matrix] = [],
+        brush_lists: IndexLists = IndexLists(),
+        brush_buffers: ChunkIndices = ChunkIndices(),
+        brush_signature: list[int] = [],
+        brush_batches: dict[int, bool] = {},
+        brush_count: int = 0,
+        cloud_mesh: GpuMesh = GpuMesh(),
+        cloud_vertices: int = 0;
+    # Shader programs, the light style values the lit program reads
+    # (d_lightstylevalue, 1 = 'm'), and what is bound now.
+    has lit_program: GpuProgram = GpuProgram(),
+        warp_program: GpuProgram = GpuProgram(),
+        sky_program: GpuProgram = GpuProgram(),
+        base_program: GpuProgram = GpuProgram(),
+        stage_program: GpuProgram = GpuProgram(),
+        fog_program: GpuProgram = GpuProgram(),
+        style_values: list[float] = [],
+        styles_dirty: bool = True,
+        bound_chunk: int = -1,
+        bound_buffer: int = -1,
+        placed_group: int = -2;
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
@@ -174,41 +251,6 @@ obj QuakeRenderer {
         }
         self.single_pass = level.bsp.game in ["q3", "passion"];
         self.overbright = level.bsp.game == "q3";
-        if self.single_pass {
-            # Baked lighting does not need a geometric normal. The batch's
-            # normal attribute transports lightmap UV and an enable flag.
-            self.shader = LoadShaderFromMemory(
-                "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec3 vertexNormal; in vec4 vertexColor;\n"
-                    + "uniform mat4 mvp; out vec2 uv; out vec3 light; out vec4 color; out vec3 worldPosition;\n"
-                    + "void main(){ uv=vertexTexCoord; light=vertexNormal; color=vertexColor; worldPosition=vertexPosition; gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
-                "#version 330\nin vec2 uv; in vec3 light; in vec4 color; in vec3 worldPosition; out vec4 finalColor;\n"
-                    + "uniform sampler2D texture0; uniform sampler2D bakedLight; uniform vec4 colDiffuse; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
-                    + "void main(){ vec4 base=texture(texture0,uv); float mode=floor(mod(light.z,16.0)*0.5+0.1); if((mode==1.0&&base.a<=0.0)||(mode==2.0&&base.a<0.5)||(mode==3.0&&base.a>=0.5)) discard; vec3 lighting=(mod(light.z,2.0)>0.5?texture(bakedLight,light.xy).rgb:vec3(1.0))*color.rgb; if(light.z<16.0){ vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition))); for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float distance=length(delta); float a=max(0.0,1.0-distance/flashPosition[i].w); lighting+=flashColor[i].rgb*a*a*max(0.0,dot(n,delta/max(distance,0.001))); }} finalColor=vec4(base.rgb*lighting,color.a)*colDiffuse; }\n"
-            );
-            location = GetShaderLocation(self.shader, "bakedLight");
-            if int(location) < 0 {
-                raise RuntimeError("Q3 lightmap shader failed");
-            }
-            rlEnableShader(self.shader.id);
-            rlSetUniform(location, struct.pack("<i", 1), i32(4), i32(1));
-            rlDisableShader();
-            self.dynamic_positions = int(
-                GetShaderLocation(self.shader, "flashPosition[0]")
-            );
-            self.dynamic_colors = int(GetShaderLocation(self.shader, "flashColor[0]"));
-        }
-        if not self.single_pass and level.bsp.game in ["q1", "q2"] {
-            self.dlight_shader = LoadShaderFromMemory(
-                "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;\n"
-                    + "uniform mat4 mvp; out vec2 uv; out vec3 worldPosition;\n"
-                    + "void main(){ uv=vertexTexCoord; worldPosition=vertexPosition; gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
-                "#version 330\nin vec2 uv; in vec3 worldPosition; out vec4 finalColor;\n"
-                    + "uniform sampler2D texture0; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
-                    + "void main(){ vec4 base=texture(texture0,uv); if(base.a<0.5) discard; vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition))); vec3 lighting=vec3(0.0); for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float distance=length(delta); float a=max(0.0,1.0-distance/flashPosition[i].w); lighting+=flashColor[i].rgb*a*a*max(0.0,dot(n,delta/max(distance,0.001))); } finalColor=vec4(base.rgb*lighting,1.0); }\n"
-            );
-            self.dlight_positions = int(GetShaderLocation(self.dlight_shader, "flashPosition[0]"));
-            self.dlight_colors = int(GetShaderLocation(self.dlight_shader, "flashColor[0]"));
-        }
         for texture in level.bsp.sky {
             image_id = self.upload_image(texture);
             self.sky.append(image_id);
@@ -233,7 +275,6 @@ obj QuakeRenderer {
                     raise RuntimeError("Texture upload failed");
                 }
                 self.textures.append(int(gpu));
-                self.emissive.append(0);
                 rlTextureParameters(gpu, i32(10242), i32(10497));
                 rlTextureParameters(gpu, i32(10243), i32(10497));
                 continue;
@@ -241,7 +282,6 @@ obj QuakeRenderer {
             if len(texture.encoded) > 0 {
                 image_id = self.upload_image(texture);
                 self.textures.append(image_id);
-                self.emissive.append(0);
                 rlTextureParameters(u32(image_id), i32(10241), i32(9729));
                 rlTextureParameters(u32(image_id), i32(10240), i32(9729));
                 rlTextureParameters(u32(image_id), i32(10242), i32(10497));
@@ -249,8 +289,6 @@ obj QuakeRenderer {
                 continue;
             }
             rgba = bytearray();
-            glow = bytearray();
-            has_glow = False;
             sky = level.bsp.game == "q1"
                 and texture.name.startswith("sky")
                 and texture.width == texture.height * 2;
@@ -272,14 +310,13 @@ obj QuakeRenderer {
                     }
                 }
                 rgba.extend(level.palette[index * 3:index * 3 + 3]);
-                rgba.append(255);
+                # Q1 palette fullbrights (the last 32 colours) ignore the
+                # lightmap; alpha 0 marks them for the lit shader.
                 lit = level.bsp.game == "q1"
                     and index >= 224
                     and not sky
                     and not texture.name.startswith("*");
-                glow.extend(level.palette[index * 3:index * 3 + 3]);
-                glow.append(255 if lit else 0);
-                has_glow = has_glow or lit;
+                rgba.append(0 if lit else 255);
             }
             id = rlLoadTexture(
                 bytes(rgba), i32(texture.width), i32(texture.height), i32(7), i32(1)
@@ -288,43 +325,31 @@ obj QuakeRenderer {
                 raise RuntimeError("Texture upload failed");
             }
             self.textures.append(int(id));
-            glow_id = 0;
-            if has_glow {
-                glow_id = int(
-                    rlLoadTexture(
-                        bytes(glow),
-                        i32(texture.width),
-                        i32(texture.height),
-                        i32(7),
-                        i32(1)
-                    )
-                );
-                if glow_id == 0 {
-                    raise RuntimeError("Fullbright texture upload failed");
-                }
-                rlTextureParameters(u32(glow_id), i32(10241), i32(9728));
-                rlTextureParameters(u32(glow_id), i32(10240), i32(9728));
-                rlTextureParameters(u32(glow_id), i32(10242), i32(10497));
-                rlTextureParameters(u32(glow_id), i32(10243), i32(10497));
-            }
-            self.emissive.append(glow_id);
             # Nearest sampling preserves the original palette texels; repeat UVs.
             rlTextureParameters(id, i32(10241), i32(9728));
             rlTextureParameters(id, i32(10240), i32(9728));
             rlTextureParameters(id, i32(10242), i32(10497));
             rlTextureParameters(id, i32(10243), i32(10497));
         }
+        self.upload_lightmaps(level);
+        self.upload_stages(level);
+        self.load_programs(level);
+        self.build_world(level);
+    }
+
+    """The lightmap atlas. Q3 stores each lightmap once, shifted for
+    overbright. Q1 and Q2 keep every light style layer of a face side by
+    side, raw, so the lit shader scales each by its style's current value
+    (R_BuildLightMap) and animated or switched lights need no upload."""
+    def upload_lightmaps(level: Level) {
         pixels = bytearray(b"\xff") * (self.atlas_size * self.atlas_size * 4);
         x = 1;
         y = 1;
         row_height = 0;
         shared: dict[int, LightRect] = {};
-        self.styled = [];
-        self.style_cache = {};
-        self.stage_cache = {};
-        face_index = -1;
+        layered = level.bsp.game in ["q1", "q2"];
+        channels = level.bsp.light_channels;
         for face in level.bsp.faces {
-            face_index += 1;
             if level.bsp.game == "q3" and face.light_offset in shared {
                 self.rects.append(shared[face.light_offset]);
                 continue;
@@ -336,7 +361,8 @@ obj QuakeRenderer {
             }
             w = face.light_width;
             h = face.light_height;
-            if x + w + 1 > self.atlas_size {
+            layers = max(1, len(face.styles)) if layered else 1;
+            if x + layers * (w + 2) - 1 > self.atlas_size {
                 x = 1;
                 y += row_height + 2;
                 row_height = 0;
@@ -347,34 +373,46 @@ obj QuakeRenderer {
             shared[face.light_offset] = rect;
             rect.x = x;
             rect.y = y;
-            # Faces lit by an animated or switchable style are relit each frame.
-            if any([style != 0 for style in face.styles]) {
-                self.styled.append(face_index);
-            }
-            for ly in range(-1, h + 1) {
-                for lx in range(-1, w + 1) {
-                    sample = min(max(ly, 0), h - 1) * w + min(max(lx, 0), w - 1);
-                    p = ((y + ly) * self.atlas_size + x + lx) * 4;
-                    channels = level.bsp.light_channels;
-                    raw = [0, 0, 0];
-                    for channel in range(3) {
-                        for style in range(len(face.styles)) {
-                            raw[channel] += int(
-                                level.bsp.lighting[
-                                    face.light_offset
-                                        + (style * w * h + sample) * channels
-                                        + (channel if channels == 3 else 0)
-                                ]
-                            );
+            rect.layer = float(w + 2) / float(self.atlas_size);
+            for layer in range(layers) {
+                left = x + layer * (w + 2);
+                for ly in range(-1, h + 1) {
+                    for lx in range(-1, w + 1) {
+                        sample = min(max(ly, 0), h - 1) * w + min(max(lx, 0), w - 1);
+                        p = ((y + ly) * self.atlas_size + left + lx) * 4;
+                        raw = [0, 0, 0];
+                        for channel in range(3) {
+                            if layered {
+                                raw[channel] = int(
+                                    level.bsp.lighting[
+                                        face.light_offset
+                                            + (layer * w * h + sample) * channels
+                                            + (channel if channels == 3 else 0)
+                                    ]
+                                );
+                                continue;
+                            }
+                            for style in range(len(face.styles)) {
+                                raw[channel] += int(
+                                    level.bsp.lighting[
+                                        face.light_offset
+                                            + (style * w * h + sample) * channels
+                                            + (channel if channels == 3 else 0)
+                                    ]
+                                );
+                            }
                         }
+                        if not layered {
+                            shade = shift_light(self.overbright, raw[0], raw[1], raw[2]);
+                            raw = [shade[0], shade[1], shade[2]];
+                        }
+                        pixels[p] = raw[0];
+                        pixels[p + 1] = raw[1];
+                        pixels[p + 2] = raw[2];
                     }
-                    shade = shift_light(self.overbright, raw[0], raw[1], raw[2]);
-                    pixels[p] = shade[0];
-                    pixels[p + 1] = shade[1];
-                    pixels[p + 2] = shade[2];
                 }
             }
-            x += w + 2;
+            x += layers * (w + 2);
             row_height = max(row_height, h);
         }
         self.atlas = int(
@@ -391,7 +429,350 @@ obj QuakeRenderer {
         }
         rlTextureParameters(u32(self.atlas), i32(10241), i32(9729));
         rlTextureParameters(u32(self.atlas), i32(10240), i32(9729));
-        self.upload_stages(level);
+        self.style_values = [1.0] * 256;
+        self.style_values[255] = 0.0;
+        self.styles_dirty = True;
+    }
+
+    """Compile the programs this game draws with and point their samplers at
+    fixed texture slots."""
+    def load_programs(level: Level) {
+        if self.single_pass {
+            self.base_program.load(BASE_VS, BASE_FS);
+            self.stage_program.load(STAGE_VS, STAGE_FS);
+            self.fog_program.load(FOG_VS, FOG_FS);
+            for program in [self.base_program] {
+                program.begin();
+                program.set_int("colorMap", 0);
+                program.set_int("lightMap", 1);
+                program.end();
+            }
+            self.stage_program.begin();
+            self.stage_program.set_int("stageMap", 0);
+            self.stage_program.end();
+            self.fog_program.begin();
+            self.fog_program.set_int("fogMap", 0);
+            self.fog_program.end();
+            return;
+        }
+        self.lit_program.load(LIT_VS, LIT_FS);
+        self.warp_program.load(WARP_VS, WARP_FS);
+        self.sky_program.load(SKY_VS, SKY_FS);
+        self.lit_program.begin();
+        self.lit_program.set_int("colorMap", 0);
+        self.lit_program.set_int("lightMap", 1);
+        self.lit_program.end();
+        self.warp_program.begin();
+        self.warp_program.set_int("colorMap", 0);
+        self.warp_program.end();
+        self.sky_program.begin();
+        self.sky_program.set_int("skyBack", 0);
+        self.sky_program.set_int("skyFront", 1);
+        self.sky_program.end();
+    }
+
+    """Which surface batches draw face `index` (world_mesh.jac passes): none
+    for faces that never draw, else its pass and texture, plus a Q3 fog
+    batch when its fog volume fogs it."""
+    def face_passes(level: Level, index: int) -> list[int] {
+        face = level.bsp.faces[index];
+        t = face.texture;
+        keys: list[int] = [];
+        if len(face.vertices) < 3 {
+            return keys;
+        }
+        if not self.single_pass {
+            if t in self.sky_layers {
+                keys.append(batch_key(PASS_SKY, t, 0));
+            } elif face.warp or face.opacity < 1.0 {
+                sub = 2 if not face.warp else (1 if face.flowing else 0);
+                keys.append(batch_key(PASS_TRANSLUCENT if face.opacity < 1.0 else PASS_LIQUID, t, sub));
+            } else {
+                keys.append(batch_key(PASS_LIT, t, 0));
+            }
+            return keys;
+        }
+        if not face.fog_only {
+            if t in self.stage_images {
+                keys.append(batch_key(PASS_LAYERED, t, 0));
+            } elif level.bsp.textures[t].additive {
+                keys.append(batch_key(PASS_ADDITIVE, t, 0));
+            } else {
+                keys.append(batch_key(PASS_BASE, t, 0));
+            }
+        }
+        if 0 <= face.fog < min(len(level.bsp.fogs), WORLD_FOG_LIMIT) and self.fog_receiver(level, face) {
+            keys.append(batch_key(PASS_FOG_TWO_SIDED if face.two_sided or face.fog_only else PASS_FOG, 0, 0));
+        }
+        return keys;
+    }
+
+    """Pack every drawable face of the world and its brush models into
+    static vertex chunks, sorted by surface batch, with each face's index
+    run; group the brush models' faces by model."""
+    def build_world(level: Level) {
+        faces = level.bsp.faces;
+        count = len(faces);
+        self.world_faces = level.bsp.models[0].face_count if level.bsp.models else count;
+        brush_set: dict[int, bool] = {};
+        for f in level.brush_faces {
+            brush_set[f] = True;
+        }
+        self.brush_face = [f in brush_set for f in range(count)];
+        keys_of: list[list[int]] = [];
+        drawn: list[int] = [];
+        all_keys: dict[int, bool] = {};
+        for f in range(count) {
+            keys = self.face_passes(level, f) if f < self.world_faces or f in brush_set else [];
+            keys_of.append(keys);
+            if keys {
+                drawn.append(f);
+                for key in keys {
+                    all_keys[key] = True;
+                }
+            }
+        }
+        self.batches = [];
+        self.batch_ids = {};
+        self.pass_batches = {};
+        for key in sorted(all_keys.keys()) {
+            kind = key // 4 // 65536;
+            t = key // 4 % 65536;
+            batch = SurfaceBatch(id=len(self.batches), kind=kind, texture=t, sub=key % 4, two_sided=kind != PASS_FOG_TWO_SIDED and level.bsp.textures[t].two_sided);
+            self.batch_ids[key] = batch.id;
+            self.batches.append(batch);
+            if kind not in self.pass_batches {
+                self.pass_batches[kind] = [];
+            }
+            self.pass_batches[kind].append(batch);
+        }
+        self.face_batches = [[self.batch_ids[key] for key in keys] for keys in keys_of];
+        # Faces sorted by their first batch, so a batch's faces share chunks.
+        drawn = [key % 1048576 for key in sorted([keys_of[f][0] * 1048576 + f for f in drawn])];
+        counts = [len(face.vertices) for face in faces];
+        placed = assign_chunks(counts, drawn);
+        self.face_chunks = placed[0];
+        chunk_count = max(self.face_chunks) + 1 if drawn else 0;
+        buffers: list[bytearray] = [];
+        used: list[int] = [0] * chunk_count;
+        for f in drawn {
+            used[self.face_chunks[f]] += counts[f];
+        }
+        for c in range(chunk_count) {
+            buffers.append(bytearray(used[c] * WORLD_VERTEX_STRIDE));
+        }
+        self.face_runs = [b""] * count;
+        fogs = min(len(level.bsp.fogs), WORLD_FOG_LIMIT);
+        for f in drawn {
+            face = faces[f];
+            rect = self.rects[f];
+            flags = 0;
+            lit = face.light_offset >= 0;
+            if lit {
+                flags = SURFACE_LIGHTMAP;
+            }
+            if self.single_pass {
+                flags = flags | (face.alpha_test << SURFACE_ALPHA_SHIFT);
+                if not lit and face.emission {
+                    flags = flags | SURFACE_EMISSION;
+                }
+                if not lit and len(face.colors) >= len(face.vertices) * 4 {
+                    flags = flags | SURFACE_VERTEX_COLOR;
+                }
+            }
+            base = placed[1][f];
+            pack_world_face(
+                buffers[self.face_chunks[f]],
+                base * WORLD_VERTEX_STRIDE,
+                face,
+                rect.x,
+                rect.y,
+                self.atlas_size,
+                0.0 if self.single_pass else rect.layer,
+                flags,
+                face.fog if 0 <= face.fog < fogs else -1,
+                self.overbright,
+                sprites=self.single_pass,
+                alpha=int(face.opacity * 255.0)
+            );
+            self.face_runs[f] = face_index_bytes(face, base);
+        }
+        self.chunks = [];
+        for c in range(chunk_count) {
+            mesh = GpuMesh();
+            mesh.upload(bytes(buffers[c]), WORLD_VERTEX_STRIDE, world_attributes());
+            self.chunks.append(mesh);
+        }
+        # Brush models: each entity model's drawn faces.
+        self.brush_models = [];
+        for m in range(1, len(level.bsp.models)) {
+            model = level.bsp.models[m];
+            members = [f for f in range(model.first_face, model.first_face + model.face_count) if f in brush_set and self.face_chunks[f] >= 0];
+            if members {
+                self.brush_models.append(BrushModel(faces=members));
+            }
+        }
+        self.brush_signature = [-1];
+        self.brush_lists = IndexLists();
+        self.views = [];
+    }
+
+    """The index lists of a visible face set: reused while the same set comes
+    back (Level.visible keeps its lists while the view stays in a leaf),
+    rebuilt otherwise into the least recently used of three slots."""
+    def visible_indices(level: Level, faces: list[int]) -> VisibleIndices {
+        self.view_clock += 1;
+        for view in self.views {
+            if view.faces is faces {
+                view.used = self.view_clock;
+                return view;
+            }
+        }
+        view = VisibleIndices();
+        if len(self.views) < 3 {
+            self.views.append(view);
+        } else {
+            oldest = 0;
+            for i in range(len(self.views)) {
+                if self.views[i].used < self.views[oldest].used {
+                    oldest = i;
+                }
+            }
+            view = self.views[oldest];
+        }
+        view.faces = faces;
+        view.used = self.view_clock;
+        view.portal_faces = {};
+        lists = IndexLists(chunks=[bytearray() for c in range(len(self.chunks))], spans={});
+        shown: list[int] = [];
+        bsp_faces = level.bsp.faces;
+        for f in faces {
+            if f < len(self.brush_face) and not self.brush_face[f] and not bsp_faces[f].hidden {
+                shown.append(f);
+                t = bsp_faces[f].texture;
+                if t in level.portal_ranges {
+                    if t not in view.portal_faces {
+                        view.portal_faces[t] = [];
+                    }
+                    view.portal_faces[t].append(f);
+                }
+            }
+        }
+        gather_indices(lists, shown, self.face_chunks, self.face_batches, self.face_runs);
+        view.lists = lists;
+        view.buffers.fill(lists);
+        return view;
+    }
+
+    """Group the brush models' faces by placement for this frame (world_mesh
+    BrushGroup): models at rest together by entity frame, each moved model
+    alone, and faces lit per frame or placed apart from their model one by
+    one. The groups' index lists are rebuilt only when that grouping or a
+    face's visibility changes; their placements are refreshed every frame."""
+    def update_brushes(level: Level) {
+        faces = level.bsp.faces;
+        lamp = self.lighting.grid is None;
+        signature: list[int] = [];
+        for m in range(len(self.brush_models)) {
+            members = self.brush_models[m].faces;
+            lead = faces[members[0]];
+            state = 0;
+            hidden = 0;
+            for f in members {
+                face = faces[f];
+                if face.hidden {
+                    hidden += 1;
+                    continue;
+                }
+                if (face.moving_light and lamp) or not same_placement(face, lead) {
+                    state = 2;
+                }
+            }
+            if state == 0 and moved_face(lead) {
+                state = 1;
+            }
+            signature.append(m * 4 + state);
+            signature.append(lead.frame);
+            if hidden > 0 {
+                for f in members {
+                    if faces[f].hidden {
+                        signature.append(-1 - f);
+                    }
+                }
+            }
+        }
+        if signature != self.brush_signature {
+            self.brush_signature = signature;
+            self.group_brushes(level);
+        }
+        # Placements (and per-frame light) follow each group's lead face.
+        self.brush_matrices = [];
+        for group in self.brush_groups {
+            lead = faces[group.lead];
+            self.brush_matrices.append(placement_matrix(lead));
+            if group.lamp {
+                center = lead.vertices[0].lerp(lead.vertices[2], 0.5);
+                facing = lead.normal;
+                turn = lead.turn;
+                if turn is not None {
+                    center = lead.pivot.add(turn.apply(center.sub(lead.pivot)));
+                    facing = turn.apply(facing);
+                }
+                color = self.lighting.sample(center.add(lead.motion), False).shade(facing);
+                group.tint = [
+                    float(int(min(255.0, max(0.0, color.x * 255.0)))) / 255.0,
+                    float(int(min(255.0, max(0.0, color.y * 255.0)))) / 255.0,
+                    float(int(min(255.0, max(0.0, color.z * 255.0)))) / 255.0,
+                    1.0
+                ];
+            }
+        }
+    }
+
+    def group_brushes(level: Level) {
+        faces = level.bsp.faces;
+        lamp = self.lighting.grid is None;
+        groups: list[BrushGroup] = [];
+        resting: dict[int, BrushGroup] = {};
+        for model in self.brush_models {
+            shown = [f for f in model.faces if not faces[f].hidden];
+            if not shown {
+                continue;
+            }
+            lead = faces[shown[0]];
+            apart = False;
+            for f in shown {
+                if (faces[f].moving_light and lamp) or not same_placement(faces[f], lead) {
+                    apart = True;
+                }
+            }
+            if apart {
+                for f in shown {
+                    groups.append(BrushGroup(lead=f, faces=[f], lamp=faces[f].moving_light and lamp));
+                }
+            } elif moved_face(lead) {
+                groups.append(BrushGroup(lead=shown[0], faces=shown));
+            } else {
+                if lead.frame not in resting {
+                    resting[lead.frame] = BrushGroup(lead=shown[0], faces=[]);
+                    groups.append(resting[lead.frame]);
+                }
+                resting[lead.frame].faces.extend(shown);
+            }
+        }
+        lists = IndexLists(chunks=[bytearray() for c in range(len(self.chunks))], spans={});
+        self.brush_batches = {};
+        self.brush_count = 0;
+        for group in groups {
+            group.spans = gather_indices(lists, group.faces, self.face_chunks, self.face_batches, self.face_runs);
+            for batch in group.spans.keys() {
+                self.brush_batches[batch] = True;
+            }
+            self.brush_count += len(group.faces);
+        }
+        self.brush_groups = groups;
+        self.brush_lists = lists;
+        self.brush_buffers.fill(lists);
     }
 
     """Animated textures. Q1 (gl_model.c, R_TextureAnimation): '+0'..'+9'
@@ -462,31 +843,53 @@ obj QuakeRenderer {
         if t not in self.anim_frames {
             return t;
         }
-        face = level.bsp.faces[index];
+        return self.frame_texture(level, t, level.bsp.faces[index].frame, index < self.world_faces);
+    }
+
+    """The texture `t` shows now on world faces or on a brush model at
+    entity frame `frame`."""
+    def frame_texture(level: Level, t: int, frame: int, world: bool) -> int {
+        if t not in self.anim_frames {
+            return t;
+        }
         sequence = self.anim_frames[t];
         if level.bsp.game == "q1" {
-            if face.frame != 0 and t in self.anim_alternates {
+            if frame != 0 and t in self.anim_alternates {
                 sequence = self.anim_alternates[t];
             }
             return sequence[int(self.time * 5.0) % len(sequence)];
         }
-        step = face.frame if index >= self.world_faces else int(self.time * 2.0);
+        step = int(self.time * 2.0) if world else frame;
         return sequence[step % len(sequence)];
     }
 
     """Q3 cloud layers on the sky dome (tr_sky.c): each box vertex's direction
     meets a cloud sphere cloudheight above a 4096-unit world, and s and t are
-    the arccosines of that point's direction, before the stage's tcMods."""
+    the arccosines of that point's direction, before the stage's tcMods,
+    which the stage shader applies (turb at the cloud sphere point)."""
     def draw_clouds(level: Level, eye: Vec3) {
         if not self.cloud_images or not level.sky_clouds {
             return;
         }
-        rlDrawRenderBatchActive();
-        rlDisableDepthMask();
-        rlDisableBackfaceCulling();
         if self.cloud_height_cached != level.cloud_height {
             self.build_cloud_dome(level.cloud_height);
         }
+        program = self.stage_program;
+        program.begin();
+        program.set_matrix("viewProjection", view_projection());
+        program.set_matrix("model", placement_matrix_at(eye));
+        program.set_float("time", self.time);
+        set_uniform_vec3(program, "eye", eye);
+        program.set_int("deformCount", 0);
+        program.set_int("tcGen", 0);
+        program.set_int("turbFromNormal", 1);
+        program.set_int("rgbMode", 0);
+        program.set_int("alphaMode", 0);
+        program.set_int("fogMode", 0);
+        program.set_int("lightmapStage", 0);
+        rlDisableDepthMask();
+        rlDisableBackfaceCulling();
+        self.cloud_mesh.bind();
         for k in range(min(len(level.sky_clouds), len(self.cloud_images))) {
             stage = level.sky_clouds[k];
             ids = self.cloud_images[k];
@@ -505,45 +908,38 @@ obj QuakeRenderer {
                 }
                 rlSetBlendFactors(i32(source), i32(destination), i32(32774));
                 BeginBlendMode(i32(6));
+                self.resume(program);
+                self.cloud_mesh.bind();
             }
-            rlSetTexture(u32(ids[stage_frame(self.time, stage.frequency, len(ids))]));
+            rlActiveTextureSlot(i32(0));
+            rlEnableTexture(u32(ids[stage_frame(self.time, stage.frequency, len(ids))]));
             shade = 255;
             if stage.rgb == "wave" {
                 shade = int(max(0.0, min(1.0, stage.rgb_wave.at(self.time))) * 255.0);
             }
-            affine = stage_affine(stage, self.time);
-            rlBegin(i32(4));
-            rlColor4ub(u8(shade), u8(shade), u8(shade), u8(255));
-            for n in range(len(self.cloud_offsets)) {
-                s = self.cloud_coords[n * 2];
-                t = self.cloud_coords[n * 2 + 1];
-                if len(affine) == 6 {
-                    before = s;
-                    s = affine[0] * before + affine[1] * t + affine[2];
-                    t = affine[3] * before + affine[4] * t + affine[5];
-                } else {
-                    coords = apply_tcmods(stage, s, t, self.cloud_points[n], self.time);
-                    s = coords[0];
-                    t = coords[1];
-                }
-                offset = self.cloud_offsets[n];
-                rlTexCoord2f(f32(s), f32(t));
-                rlVertex3f(f32(eye.x + offset.x), f32(eye.y + offset.y), f32(eye.z + offset.z));
-            }
-            rlEnd();
-            rlDrawRenderBatchActive();
+            level_value = float(shade) / 255.0;
+            program.set_vec4s("tint", pack_floats([level_value, level_value, level_value, 1.0]));
+            self.set_tcmods(program, stage);
+            self.cloud_mesh.draw_vertices(0, self.cloud_vertices);
             if k > 0 or stage.blend != "opaque" {
                 EndBlendMode();
+                self.resume(program);
+                self.cloud_mesh.bind();
             }
         }
+        self.cloud_mesh.unbind();
+        program.set_int("turbFromNormal", 0);
+        rlDisableTexture();
+        program.end();
         rlEnableBackfaceCulling();
         rlEnableDepthMask();
-        rlSetTexture(u32(0));
     }
 
     """The cloud dome's triangles around the eye, and each corner's point on
     the cloud sphere `height` above a 4096-unit world with its arccos texture
-    coordinates (tr_sky.c MakeSkyVec); they only change with the height."""
+    coordinates (tr_sky.c MakeSkyVec); they only change with the height. The
+    dome uploads as a vertex chunk: offsets from the eye, coordinates, and the
+    sphere point in the normal for tcMod turb."""
     def build_cloud_dome(height: float) {
         world_radius = 4096.0;
         steps = 8;
@@ -586,6 +982,30 @@ obj QuakeRenderer {
             }
         }
         self.cloud_height_cached = height;
+        count = len(self.cloud_offsets);
+        vertices = bytearray(count * WORLD_VERTEX_STRIDE);
+        for n in range(count) {
+            offset = self.cloud_offsets[n];
+            point = self.cloud_points[n];
+            struct.pack_into(
+                "<fffffffBBBBfffBBBBBBBBffffffff",
+                vertices,
+                n * WORLD_VERTEX_STRIDE,
+                offset.x, offset.y, offset.z,
+                self.cloud_coords[n * 2], self.cloud_coords[n * 2 + 1],
+                0.0, 0.0,
+                255, 255, 255, 255,
+                point.x, point.y, point.z,
+                0, 0, 0, 0,
+                255, 255, 255, 255,
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0
+            );
+        }
+        self.cloud_mesh.close();
+        self.cloud_mesh = GpuMesh();
+        self.cloud_mesh.upload(bytes(vertices), WORLD_VERTEX_STRIDE, world_attributes());
+        self.cloud_vertices = count;
     }
 
     """Quake's sky textures hold a masked front layer (left half, index 0 clear)
@@ -641,51 +1061,6 @@ obj QuakeRenderer {
         }
     }
 
-    """gl_warp.c EmitSkyPolys: each sky vertex maps by its direction from the
-    eye onto a flattened sphere; the back layer scrolls at 8 units a second and
-    the masked front layer at 16, blended over it."""
-    def draw_q1_sky(level: Level, batches: list[list[int]], eye: Vec3) {
-        for (t, layers) in self.sky_layers.items() {
-            if t >= len(batches) or not batches[t] {
-                continue;
-            }
-            for layer in range(2) {
-                speed = self.time * (8.0 if layer == 0 else 16.0);
-                if layer == 1 {
-                    BeginBlendMode(i32(0));
-                }
-                rlSetTexture(u32(layers[layer]));
-                for index in batches[t] {
-                    face = level.bsp.faces[index];
-                    indices = face.indices;
-                    if len(indices) == 0 {
-                        indices = [];
-                        for triangle in range(1, len(face.vertices) - 1) {
-                            indices.extend([0, triangle + 1, triangle]);
-                        }
-                    }
-                    rlBegin(i32(4));
-                    rlColor4ub(u8(255), u8(255), u8(255), u8(255));
-                    for vertex in indices {
-                        v = face.vertices[vertex].add(face.motion);
-                        direction = v.sub(eye);
-                        direction.z *= 3.0;
-                        length = direction.length();
-                        scale = 6.0 * 63.0 / max(0.001, length);
-                        rlTexCoord2f(f32((speed + direction.x * scale) / 128.0), f32((speed + direction.y * scale) / 128.0));
-                        rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
-                    }
-                    rlEnd();
-                }
-                rlDrawRenderBatchActive();
-                if layer == 1 {
-                    EndBlendMode();
-                }
-            }
-        }
-        rlSetTexture(u32(0));
-    }
-
     """Upload every image of every layered Q3 surface shader stage. A lightmap
     stage records -1 (the atlas) and $whiteimage a shared white texture."""
     def upload_stages(level: Level) {
@@ -739,93 +1114,358 @@ obj QuakeRenderer {
         }
     }
 
-    """Relight faces whose lightmaps use animated or switched styles, as
-    R_AnimateLight and R_BuildLightMap do: each style layer is scaled by its
-    current brightness before the layers are added."""
+    """R_AnimateLight: the current brightness of every animated or switched
+    light style. The lit shader scales each lightmap style layer by it, so
+    nothing is relit on the CPU."""
     def animate_styles(level: Level, values: dict[int, float]) {
-        if self.atlas == 0 {
+        if len(self.style_values) != 256 {
+            self.style_values = [1.0] * 256;
+            self.style_values[255] = 0.0;
+        }
+        for (style, value) in values.items() {
+            if 0 <= style < 255 and self.style_values[style] != value {
+                self.style_values[style] = value;
+                self.styles_dirty = True;
+            }
+        }
+    }
+
+    """Bind chunk `c` with the index buffer of `buffers`, unless bound."""
+    def bind_chunk(c: int, buffers: ChunkIndices) {
+        buffer = buffers.ids[c];
+        if c == self.bound_chunk and buffer == self.bound_buffer {
             return;
         }
-        channels = level.bsp.light_channels;
-        lighting = level.bsp.lighting;
-        for index in self.styled {
-            face = level.bsp.faces[index];
-            scales = [values[style] if style in values else 1.0 for style in face.styles];
-            # R_BuildLightMap: only surfaces whose style values changed.
-            if index in self.style_cache and self.style_cache[index] == scales {
+        self.chunks[c].bind();
+        buffers.bind(c);
+        self.bound_chunk = c;
+        self.bound_buffer = buffer;
+    }
+
+    """Start drawing world batches with `program`: nothing bound yet, the
+    world placement unknown."""
+    def begin_batches(program: GpuProgram) {
+        program.begin();
+        self.bound_chunk = -1;
+        self.bound_buffer = -1;
+        self.placed_group = -2;
+    }
+
+    """raylib's batch flush, run by every blend mode change and by
+    rlDrawRenderBatchActive, unbinds the current program and vertex array:
+    bind `program` again (its uniforms keep their values)."""
+    def resume(program: GpuProgram) {
+        rlEnableShader(u32(program.id));
+        self.bound_chunk = -1;
+        self.bound_buffer = -1;
+    }
+
+    def end_batches(program: GpuProgram) {
+        rlDisableVertexArray();
+        self.bound_chunk = -1;
+        self.bound_buffer = -1;
+        rlActiveTextureSlot(i32(1));
+        rlDisableTexture();
+        rlActiveTextureSlot(i32(0));
+        rlDisableTexture();
+        program.end();
+    }
+
+    """Draw one surface batch: the visible world faces, then each brush group
+    holding some, at its placement. With `textured`, each binds the batch's
+    texture (after animation) to slot 0; `tinted` programs take a group's
+    per-frame light."""
+    def draw_batch(program: GpuProgram, level: Level, batch: SurfaceBatch, view: VisibleIndices, textured: bool, tinted: bool = False) {
+        if batch.id in view.lists.spans {
+            if self.placed_group != -1 {
+                program.set_matrix("model", placement_matrix_at(Vec3()));
+                if tinted {
+                    program.set_vec4s("tint", pack_floats([1.0, 1.0, 1.0, 1.0]));
+                }
+                self.placed_group = -1;
+            }
+            if textured {
+                rlEnableTexture(u32(self.textures[self.frame_texture(level, batch.texture, 0, True)]));
+            }
+            for span in view.lists.spans[batch.id] {
+                self.bind_chunk(span.chunk, view.buffers);
+                rlDrawVertexArrayElements(i32(span.first), i32(span.count), u64(0));
+            }
+        }
+        if batch.id not in self.brush_batches {
+            return;
+        }
+        for g in range(len(self.brush_groups)) {
+            group = self.brush_groups[g];
+            if batch.id not in group.spans {
                 continue;
             }
-            self.style_cache[index] = scales;
-            rect = self.rects[index];
-            w = face.light_width;
-            h = face.light_height;
-            area = w * h;
-            pixels = bytearray(b"\xff") * ((w + 2) * (h + 2) * 4);
-            weights = [scale * 2.0 for scale in scales];
-            layers = len(face.styles);
-            for ly in range(-1, h + 1) {
-                row = min(max(ly, 0), h - 1) * w;
-                for lx in range(-1, w + 1) {
-                    sample = row + min(max(lx, 0), w - 1);
-                    p = ((ly + 1) * (w + 2) + lx + 1) * 4;
-                    base = face.light_offset + sample * channels;
-                    for channel in range(3) {
-                        offset = base + (channel if channels == 3 else 0);
-                        brightness = 0.0;
-                        for style in range(layers) {
-                            brightness += float(lighting[offset + style * area * channels]) * weights[style];
-                        }
-                        pixels[p + channel] = min(255, int(brightness));
-                    }
+            if self.placed_group != g {
+                program.set_matrix("model", self.brush_matrices[g]);
+                if tinted {
+                    program.set_vec4s("tint", pack_floats(group.tint));
+                }
+                self.placed_group = g;
+            }
+            if textured {
+                lead = level.bsp.faces[group.lead];
+                rlEnableTexture(u32(self.textures[self.frame_texture(level, batch.texture, lead.frame, group.lead < self.world_faces)]));
+            }
+            for span in group.spans[batch.id] {
+                self.bind_chunk(span.chunk, self.brush_buffers);
+                rlDrawVertexArrayElements(i32(span.first), i32(span.count), u64(0));
+            }
+        }
+    }
+
+    """Whether a batch has anything to draw this frame."""
+    def batch_shown(batch: SurfaceBatch, view: VisibleIndices) -> bool {
+        return batch.id in view.lists.spans or batch.id in self.brush_batches;
+    }
+
+    """The eight dynamic lights as the lit and base shaders read them."""
+    def set_dynamic_lights(program: GpuProgram, level: Level) {
+        positions: list[float] = [];
+        colors: list[float] = [];
+        for i in range(8) {
+            if i < len(level.lighting.dynamic) {
+                flash = level.lighting.dynamic[i];
+                positions.extend([flash.origin.x, flash.origin.y, flash.origin.z, flash.radius]);
+                colors.extend([flash.color.x, flash.color.y, flash.color.z, 0.0]);
+            } else {
+                positions.extend([0.0, 0.0, 0.0, 0.0]);
+                colors.extend([0.0, 0.0, 0.0, 0.0]);
+            }
+        }
+        program.set_vec4s("flashPosition", pack_floats(positions));
+        program.set_vec4s("flashColor", pack_floats(colors));
+    }
+
+    def draw(level: Level, faces: list[int], eye: Vec3) -> int {
+        self.lighting = level.lighting;
+        self.draw_sky(eye);
+        self.draw_clouds(level, eye);
+        if not self.chunks {
+            return 0;
+        }
+        view = self.visible_indices(level, faces);
+        self.update_brushes(level);
+        if self.single_pass {
+            self.draw_single_pass(level, view, eye);
+            self.draw_layered(level, view, eye);
+            self.draw_fog(level, view, eye);
+        } else {
+            self.draw_lightmapped(level, view);
+            self.draw_q1_sky(level, view, eye);
+            self.draw_liquids(level, view);
+        }
+        return view.lists.faces + self.brush_count;
+    }
+
+    """Q1/Q2 lightmapped surfaces in one pass: texture, light styles, dynamic
+    lights and fullbrights (world_mesh LIT_FS)."""
+    def draw_lightmapped(level: Level, view: VisibleIndices) {
+        if PASS_LIT not in self.pass_batches {
+            return;
+        }
+        program = self.lit_program;
+        self.begin_batches(program);
+        program.set_matrix("viewProjection", view_projection());
+        if self.styles_dirty {
+            program.set_vec4s("lightStyles", pack_floats(self.style_values));
+            self.styles_dirty = False;
+        }
+        self.set_dynamic_lights(program, level);
+        rlActiveTextureSlot(i32(1));
+        rlEnableTexture(u32(self.atlas));
+        rlActiveTextureSlot(i32(0));
+        for batch in self.pass_batches[PASS_LIT] {
+            if not self.batch_shown(batch, view) {
+                continue;
+            }
+            if batch.two_sided {
+                rlDisableBackfaceCulling();
+            }
+            self.draw_batch(program, level, batch, view, True, tinted=True);
+            if batch.two_sided {
+                rlEnableBackfaceCulling();
+            }
+        }
+        self.end_batches(program);
+    }
+
+    """gl_warp.c EmitSkyPolys: both Q1 sky layers in one pass (world_mesh SKY_VS)."""
+    def draw_q1_sky(level: Level, view: VisibleIndices, eye: Vec3) {
+        if PASS_SKY not in self.pass_batches {
+            return;
+        }
+        program = self.sky_program;
+        self.begin_batches(program);
+        program.set_matrix("viewProjection", view_projection());
+        set_uniform_vec3(program, "eye", eye);
+        program.set_float("skyTime", self.time);
+        for batch in self.pass_batches[PASS_SKY] {
+            if not self.batch_shown(batch, view) {
+                continue;
+            }
+            layers = self.sky_layers[batch.texture];
+            rlActiveTextureSlot(i32(1));
+            rlEnableTexture(u32(layers[1]));
+            rlActiveTextureSlot(i32(0));
+            rlEnableTexture(u32(layers[0]));
+            self.draw_batch(program, level, batch, view, False);
+        }
+        self.end_batches(program);
+    }
+
+    """Liquids and Q2's translucent surfaces, unlit as the originals draw them:
+    gl_warp.c EmitWaterPolys turbulence per pixel (8 texels of sine sway at
+    one radian per second), Q2 SURF_FLOWING's scroll, then the 33% and 66%
+    translucent faces blended over the world."""
+    def draw_liquids(level: Level, view: VisibleIndices) {
+        # Q2 flowing surfaces scroll 64 texels every two seconds.
+        drift = -64.0 * (self.time * 0.5 - float(int(self.time * 0.5)));
+        program = self.warp_program;
+        started = False;
+        for kind in [PASS_LIQUID, PASS_TRANSLUCENT] {
+            if kind not in self.pass_batches {
+                continue;
+            }
+            if not started {
+                self.begin_batches(program);
+                program.set_matrix("viewProjection", view_projection());
+                program.set_float("warpTime", self.time);
+                started = True;
+            }
+            if kind == PASS_TRANSLUCENT {
+                BeginBlendMode(i32(0));
+                self.resume(program);
+                rlDisableDepthMask();
+            }
+            for batch in self.pass_batches[kind] {
+                if not self.batch_shown(batch, view) {
+                    continue;
+                }
+                texture = level.bsp.textures[batch.texture];
+                set_uniform_vec2(program, "warpSize", float(texture.width), float(texture.height));
+                program.set_float("warpScroll", drift if batch.sub == 1 else 0.0);
+                program.set_float("warpAmount", 1.0 if batch.sub < 2 else 0.0);
+                self.draw_batch(program, level, batch, view, True);
+            }
+            if kind == PASS_TRANSLUCENT {
+                rlEnableDepthMask();
+                EndBlendMode();
+                self.resume(program);
+            }
+        }
+        if started {
+            self.end_batches(program);
+        }
+    }
+
+    """Q3 single-pass surfaces (lightmap or vertex light, alphaFunc, dynamic
+    lights), then additive shaders over them without depth writes."""
+    def draw_single_pass(level: Level, view: VisibleIndices, eye: Vec3) {
+        program = self.base_program;
+        self.begin_batches(program);
+        program.set_matrix("viewProjection", view_projection());
+        self.set_dynamic_lights(program, level);
+        rlActiveTextureSlot(i32(1));
+        rlEnableTexture(u32(self.atlas));
+        rlActiveTextureSlot(i32(0));
+        for kind in [PASS_BASE, PASS_ADDITIVE] {
+            if kind not in self.pass_batches {
+                continue;
+            }
+            if kind == PASS_ADDITIVE {
+                BeginBlendMode(i32(1));
+                self.resume(program);
+                rlDisableDepthMask();
+            }
+            for batch in self.pass_batches[kind] {
+                if not self.batch_shown(batch, view) {
+                    continue;
+                }
+                if batch.two_sided {
+                    rlDisableBackfaceCulling();
+                }
+                self.draw_batch(program, level, batch, view, True, tinted=True);
+                if batch.two_sided {
+                    rlEnableBackfaceCulling();
                 }
             }
-            rlUpdateTexture(
-                u32(self.atlas),
-                i32(rect.x - 1),
-                i32(rect.y - 1),
-                i32(w + 2),
-                i32(h + 2),
-                i32(7),
-                bytes(pixels)
-            );
+            if kind == PASS_ADDITIVE {
+                rlEnableDepthMask();
+                EndBlendMode();
+                self.resume(program);
+            }
         }
+        self.end_batches(program);
+    }
+
+    """The shared view and fog uniforms of the stage and fog programs."""
+    def set_view_uniforms(program: GpuProgram, level: Level, eye: Vec3) {
+        program.set_matrix("viewProjection", view_projection());
+        set_uniform_vec3(program, "eye", eye);
+        set_uniform_vec3(program, "viewForward", self.view_forward);
+        if not level.bsp.fogs {
+            return;
+        }
+        planes: list[float] = [];
+        colors: list[float] = [];
+        for fog in level.bsp.fogs[:WORLD_FOG_LIMIT] {
+            if fog.has_surface {
+                planes.extend([fog.inward.x, fog.inward.y, fog.inward.z, fog.offset]);
+            } else {
+                planes.extend([0.0, 0.0, 0.0, 1.0e9]);
+            }
+            colors.extend([
+                float(min(255, int(fog.color.x * 255.0))) / 255.0,
+                float(min(255, int(fog.color.y * 255.0))) / 255.0,
+                float(min(255, int(fog.color.z * 255.0))) / 255.0,
+                fog.depth
+            ]);
+        }
+        program.set_vec4s("fogPlane", pack_floats(planes));
+        program.set_vec4s("fogColor", pack_floats(colors));
     }
 
     """Q3 layered surfaces, stage by stage (tr_shade.c RB_StageIteratorGeneric):
     each stage's image or animMap frame, blend, colour and alpha generators,
-    texture modifiers and environment mapping."""
-    def draw_layered(level: Level, batches: list[list[int]], eye: Vec3) {
-        if not self.stage_images {
+    texture modifiers and environment mapping, in the stage shader."""
+    def draw_layered(level: Level, view: VisibleIndices, eye: Vec3) {
+        if not self.stage_images or PASS_LAYERED not in self.pass_batches {
             return;
         }
         shown: list[int] = [];
-        for t in self.stage_images.keys() {
-            if t < len(batches) and batches[t] and t in level.surface_stages {
+        layered: dict[int, SurfaceBatch] = {};
+        for batch in self.pass_batches[PASS_LAYERED] {
+            t = batch.texture;
+            if self.batch_shown(batch, view) and t in level.surface_stages {
                 shown.append(t);
+                layered[t] = batch;
             }
         }
-        # Each face deforms once a frame, whatever its stage count.
-        shapes: dict[int, DeformedShape] = {};
-        for t in shown {
-            if t in level.surface_deforms {
-                for index in batches[t] {
-                    shapes[index] = deform_face(level.bsp.faces[index], level.surface_deforms[t], eye, self.time);
-                }
-            }
+        if not shown {
+            return;
         }
+        program = self.stage_program;
         self.stage_state = "";
         # Portal shaders sort first (SS_PORTAL), over the view rendered through them.
         for t in shown {
             if t in level.portal_ranges {
                 self.use_stage_state("backdrop", False, 1, 0, True, True);
                 deforms = level.surface_deforms[t] if t in level.surface_deforms else [];
-                self.draw_portal_backdrop(level, batches[t], deforms, eye);
+                self.draw_portal_backdrop(level, view.portal_faces[t] if t in view.portal_faces else [], deforms, eye);
                 self.stage_state = "";
+                self.begin_stages(program, level, eye);
                 for k in range(self.stage_count(level, t)) {
-                    self.draw_stage(level, t, k, batches[t], shapes, eye);
+                    self.draw_stage(program, level, t, k, layered[t], view);
                 }
+                self.end_batches(program);
             }
         }
+        self.begin_stages(program, level, eye);
         # Opaque shaders next, stage by stage across all of them and grouped by
         # blend state: each later stage only touches pixels where its own
         # surface won the depth test, so the order between shaders does not
@@ -843,19 +1483,26 @@ obj QuakeRenderer {
                 }
             }
             for pair in sorted(keyed) {
-                self.draw_stage(level, pair[1], k, batches[pair[1]], shapes, eye);
+                self.draw_stage(program, level, pair[1], k, layered[pair[1]], view);
             }
         }
         # Translucent shaders last, each stage in order.
         for t in shown {
             if t not in level.portal_ranges and level.surface_stages[t][0].blend != "opaque" {
                 for k in range(self.stage_count(level, t)) {
-                    self.draw_stage(level, t, k, batches[t], shapes, eye);
+                    self.draw_stage(program, level, t, k, layered[t], view);
                 }
             }
         }
         self.use_stage_state("", False, 1, 0, True, False);
-        rlSetTexture(u32(0));
+        self.end_batches(program);
+    }
+
+    def begin_stages(program: GpuProgram, level: Level, eye: Vec3) {
+        self.begin_batches(program);
+        self.set_view_uniforms(program, level, eye);
+        program.set_float("time", self.time);
+        program.set_int("turbFromNormal", 0);
     }
 
     def stage_count(level: Level, t: int) -> int {
@@ -871,11 +1518,11 @@ obj QuakeRenderer {
         return str(blend[0]) + ":" + str(blend[1]) + ":" + str(blend[2]) + ":" + str(writes) + ":" + str(two_sided);
     }
 
-    """Switch GL state only when it differs from the current one; each switch
-    costs a batch flush."""
-    def use_stage_state(key: str, blended: bool, source: int, destination: int, depth_write: bool, two_sided: bool) {
+    """Switch GL state only when it differs from the current one; returns
+    whether it switched (and so flushed raylib's batch)."""
+    def use_stage_state(key: str, blended: bool, source: int, destination: int, depth_write: bool, two_sided: bool) -> bool {
         if key == self.stage_state {
-            return;
+            return False;
         }
         rlDrawRenderBatchActive();
         if self.stage_blended {
@@ -896,53 +1543,120 @@ obj QuakeRenderer {
             rlDisableBackfaceCulling();
         }
         self.stage_state = key;
+        return True;
+    }
+
+    """A stage's tcMods at this moment as the stage shader's affine steps."""
+    def set_tcmods(program: GpuProgram, stage: ModelStage) {
+        steps = tcmod_steps(stage, self.time);
+        rows_s: list[float] = [];
+        rows_t: list[float] = [];
+        turbs: list[float] = [];
+        for step in steps {
+            rows_s.extend([step[0], step[1], step[2], 0.0]);
+            rows_t.extend([step[3], step[4], step[5], 0.0]);
+            turbs.extend([step[6], step[7], step[8], 0.0]);
+        }
+        program.set_int("tcSteps", len(steps));
+        program.set_vec4s("tcRowS", pack_floats(rows_s));
+        program.set_vec4s("tcRowT", pack_floats(rows_t));
+        program.set_vec4s("tcTurb", pack_floats(turbs));
+    }
+
+    """A shader's deformVertexes as the stage shader reads them: kind,
+    waveform and spread; the wave; and move's push this moment or bulge's
+    width, height and speed."""
+    def set_deforms(program: GpuProgram, deforms: list[Deform]) {
+        kinds = {"wave": 1.0, "move": 2.0, "bulge": 3.0, "autosprite": 4.0, "autosprite2": 5.0};
+        infos: list[float] = [];
+        waves: list[float] = [];
+        vectors: list[float] = [];
+        for deform in deforms {
+            if deform.kind not in kinds or len(infos) >= 16 {
+                continue;
+            }
+            infos.extend([kinds[deform.kind], wave_code(deform.wave.func), deform.spread, 0.0]);
+            waves.extend([deform.wave.base, deform.wave.amplitude, deform.wave.phase, deform.wave.frequency]);
+            if deform.kind == "move" {
+                push = deform.vector.scale(deform.wave.at(self.time));
+                vectors.extend([push.x, push.y, push.z, 0.0]);
+            } else {
+                vectors.extend([deform.width, deform.height, deform.speed, 0.0]);
+            }
+        }
+        program.set_int("deformCount", len(infos) // 4);
+        if infos {
+            program.set_vec4s("deformInfo", pack_floats(infos));
+            program.set_vec4s("deformWave", pack_floats(waves));
+            program.set_vec4s("deformVector", pack_floats(vectors));
+        }
     }
 
     """One stage of one shader over its visible faces."""
-    def draw_stage(level: Level, t: int, k: int, faces: list[int], shapes: dict[int, DeformedShape], eye: Vec3) {
+    def draw_stage(program: GpuProgram, level: Level, t: int, k: int, batch: SurfaceBatch, view: VisibleIndices) {
         stages = level.surface_stages[t];
         stage = stages[k];
         ids = self.stage_images[t][k];
         blend = stage_blend(stage, k);
         two_sided = level.bsp.textures[t].two_sided or t in level.surface_deforms;
-        self.use_stage_state(self.stage_key(level, t, k), blend[0] == 1, blend[1], blend[2], stage.depth_write or blend[0] == 0, two_sided);
-        texture = self.atlas if ids[0] < 0 else ids[stage_frame(self.time, stage.frequency, len(ids))];
-        rlSetTexture(u32(texture));
-        red = 255;
-        green = 255;
-        blue = 255;
+        if self.use_stage_state(self.stage_key(level, t, k), blend[0] == 1, blend[1], blend[2], stage.depth_write or blend[0] == 0, two_sided) {
+            self.resume(program);
+        }
+        light = ids[0] < 0;
+        rlEnableTexture(u32(self.atlas if light else ids[stage_frame(self.time, stage.frequency, len(ids))]));
+        red = 1.0;
+        green = 1.0;
+        blue = 1.0;
         if stage.rgb == "wave" {
-            level_value = int(max(0.0, min(1.0, stage.rgb_wave.at(self.time))) * 255.0);
+            level_value = float(int(max(0.0, min(1.0, stage.rgb_wave.at(self.time))) * 255.0)) / 255.0;
             red = level_value;
             green = level_value;
             blue = level_value;
         } elif stage.rgb == "const" {
-            red = int(max(0.0, min(1.0, stage.rgb_const[0])) * 255.0);
-            green = int(max(0.0, min(1.0, stage.rgb_const[1])) * 255.0);
-            blue = int(max(0.0, min(1.0, stage.rgb_const[2])) * 255.0);
+            red = float(int(max(0.0, min(1.0, stage.rgb_const[0])) * 255.0)) / 255.0;
+            green = float(int(max(0.0, min(1.0, stage.rgb_const[1])) * 255.0)) / 255.0;
+            blue = float(int(max(0.0, min(1.0, stage.rgb_const[2])) * 255.0)) / 255.0;
         }
-        alpha = 255;
+        alpha = 1.0;
         if stage.alpha == "wave" {
-            alpha = int(max(0.0, min(1.0, stage.alpha_wave.at(self.time))) * 255.0);
+            alpha = float(int(max(0.0, min(1.0, stage.alpha_wave.at(self.time))) * 255.0)) / 255.0;
         } elif stage.alpha == "const" {
-            alpha = int(max(0.0, min(1.0, stage.alpha_const)) * 255.0);
+            alpha = float(int(max(0.0, min(1.0, stage.alpha_const)) * 255.0)) / 255.0;
         }
-        fog_mode = fog_adjustment(stages[0], stage);
-        affine = stage_affine(stage, self.time);
-        for index in faces {
-            face = level.bsp.faces[index];
-            if ids[0] < 0 and face.light_offset < 0 {
-                continue;
-            }
-            shape = shapes[index] if index in shapes else None;
-            fog = level.bsp.fogs[face.fog] if fog_mode > 0 and face.fog >= 0 and face.fog < len(level.bsp.fogs) else None;
-            self.stage_polygon(face, self.rects[index], stage, ids[0] < 0, eye, [red, green, blue, alpha], shape, fog, fog_mode, affine, index * 64 + k);
+        program.set_vec4s("tint", pack_floats([red, green, blue, alpha]));
+        program.set_int("rgbMode", 1 if stage.rgb == "vertex" else 0);
+        alpha_mode = 0;
+        if stage.alpha == "vertex" {
+            alpha_mode = 1;
+        } elif stage.alpha == "portal" {
+            alpha_mode = 2;
+            program.set_float("portalRange", max(1.0, stage.alpha_const));
+        } elif stage.alpha == "specular" {
+            alpha_mode = 3;
         }
+        program.set_int("alphaMode", alpha_mode);
+        tc_gen = 0;
+        if light {
+            tc_gen = 1;
+        } elif stage.environment {
+            tc_gen = 2;
+        } elif stage.vectors {
+            tc_gen = 3;
+            set_uniform_vec3(program, "tcVectorS", stage.vectors[0]);
+            set_uniform_vec3(program, "tcVectorT", stage.vectors[1]);
+        }
+        program.set_int("tcGen", tc_gen);
+        program.set_int("lightmapStage", 1 if light else 0);
+        program.set_int("fogMode", fog_adjustment(stages[0], stage) if level.bsp.fogs else 0);
+        self.set_tcmods(program, stage);
+        self.set_deforms(program, level.surface_deforms[t] if t in level.surface_deforms else []);
+        self.draw_batch(program, level, batch, view, False);
     }
 
     """What lies behind a portal surface before its stages blend over it: the
     view rendered through it this frame, sampled in screen space, or black
-    for a portal whose view was not rendered."""
+    for a portal whose view was not rendered. Portal surfaces are few, so
+    they still go through raylib's batch."""
     def draw_portal_backdrop(level: Level, faces: list[int], deforms: list[Deform], eye: Vec3) {
         if self.portal_image != 0 and self.portal_shader.id == u32(0) {
             self.portal_shader = LoadShaderFromMemory(
@@ -994,632 +1708,44 @@ obj QuakeRenderer {
         rlSetTexture(u32(0));
     }
 
-    """One face for one stage: tcGen, then each tcMod in order (tr_shade_calc.c)."""
-    def stage_polygon(face: Face, rect: LightRect, stage: ModelStage, light: bool, eye: Vec3, tint: list[int], shape: DeformedShape | None = None, fog: FogVolume | None = None, fog_mode: int = 0, affine: list[float] = [], key: int = -1) {
-        # Faces that never move, under stages whose colours and coordinates
-        # only depend on time, reuse their positions and base coordinates.
-        fixed = key >= 0
-            and shape is None
-            and fog is None
-            and face.turn is None
-            and face.motion.x == 0.0
-            and face.motion.y == 0.0
-            and face.motion.z == 0.0
-            and (light or not (stage.environment or bool(stage.vectors)))
-            and stage.alpha not in ["portal", "specular", "vertex"]
-            and stage.rgb != "vertex"
-            and (len(affine) == 6 or not stage.mods);
-        if fixed {
-            self.cached_stage_polygon(face, rect, light, tint, affine, key);
-            return;
-        }
-        count = len(face.vertices);
-        vertex_rgb = stage.rgb == "vertex" and len(face.colors) >= count * 4;
-        vertex_alpha = stage.alpha == "vertex" and len(face.colors) >= count * 4;
-        portal = stage.alpha == "portal";
-        specular = stage.alpha == "specular";
-        environment = stage.environment and not light;
-        vectors = bool(stage.vectors) and not light;
-        turn = face.turn if shape is None else None;
-        mx = face.motion.x if shape is None else 0.0;
-        my = face.motion.y if shape is None else 0.0;
-        mz = face.motion.z if shape is None else 0.0;
-        inverse_atlas = 1.0 / float(self.atlas_size);
-        # Each distinct vertex once; triangles then reuse them (RB_StageIteratorGeneric).
-        xs: list[float] = [];
-        ys: list[float] = [];
-        zs: list[float] = [];
-        us: list[float] = [];
-        vs: list[float] = [];
-        packed: list[int] = [];
-        for index in range(count) {
-            v = shape.points[index] if shape is not None else face.vertices[index];
-            s = 0.0;
-            t = 0.0;
-            if light {
-                s = (face.light_uv[index * 2] + float(rect.x) + 0.5) * inverse_atlas;
-                t = (face.light_uv[index * 2 + 1] + float(rect.y) + 0.5) * inverse_atlas;
-            } elif environment {
-                viewer = eye.sub(v).normalized();
-                d = face.normal.dot(viewer);
-                reflected = face.normal.scale(2.0 * d).sub(viewer);
-                s = 0.5 + reflected.y * 0.5;
-                t = 0.5 - reflected.z * 0.5;
-            } elif vectors {
-                # tcGen vector: texture axes projected from world position.
-                s = v.dot(stage.vectors[0]);
-                t = v.dot(stage.vectors[1]);
-            } elif shape is not None {
-                s = shape.coords[index * 2];
-                t = shape.coords[index * 2 + 1];
-            } else {
-                s = face.uv[index * 2];
-                t = face.uv[index * 2 + 1];
-            }
-            if len(affine) == 6 {
-                before = s;
-                s = affine[0] * before + affine[1] * t + affine[2];
-                t = affine[3] * before + affine[4] * t + affine[5];
-            } elif stage.mods {
-                coords = apply_tcmods(stage, s, t, v, self.time);
-                s = coords[0];
-                t = coords[1];
-            }
-            red = tint[0];
-            green = tint[1];
-            blue = tint[2];
-            alpha = tint[3];
-            if vertex_rgb {
-                lit = shift_light(
-                    self.overbright,
-                    face.colors[index * 4],
-                    face.colors[index * 4 + 1],
-                    face.colors[index * 4 + 2]
-                );
-                red = lit[0];
-                green = lit[1];
-                blue = lit[2];
-            }
-            if vertex_alpha {
-                alpha = face.colors[index * 4 + 3];
-            }
-            if portal {
-                # alphaGen portal: the fog of distance, opaque at the range.
-                alpha = int(max(0.0, min(1.0, v.sub(eye).length() / max(1.0, stage.alpha_const))) * 255.0);
-            }
-            if specular {
-                # tr_shade_calc.c RB_CalcSpecularAlpha: a fixed light at
-                # (-960, 1980, 96) reflected toward the viewer, to the 4th power.
-                toward = Vec3(x=-960.0, y=1980.0, z=96.0).sub(v).normalized();
-                reflected = face.normal.scale(2.0 * face.normal.dot(toward)).sub(toward);
-                shine = max(0.0, reflected.dot(eye.sub(v).normalized()));
-                alpha = int(min(255.0, shine * shine * shine * shine * 255.0));
-            }
-            if fog is not None {
-                # RB_CalcModulateColorsByFog: fade by what the fog hides.
-                st = fog_coords(fog, v, eye, self.view_forward);
-                clear = 1.0 - fog_density(st[0], st[1]);
-                if fog_mode != 2 {
-                    red = int(float(red) * clear);
-                    green = int(float(green) * clear);
-                    blue = int(float(blue) * clear);
-                }
-                if fog_mode != 1 {
-                    alpha = int(float(alpha) * clear);
-                }
-            }
-            if turn is not None {
-                v = face.pivot.add(turn.apply(v.sub(face.pivot)));
-            }
-            xs.append(v.x + mx);
-            ys.append(v.y + my);
-            zs.append(v.z + mz);
-            us.append(s);
-            vs.append(t);
-            packed.append(((red * 256 + green) * 256 + blue) * 256 + alpha);
-        }
-        indices = face.indices;
-        if len(indices) == 0 {
-            indices = [];
-            for triangle in range(1, count - 1) {
-                indices.extend([0, triangle + 1, triangle]);
-            }
-        }
-        rlBegin(i32(4));
-        for index in indices {
-            color = packed[index];
-            rlColor4ub(u8((color >> 24) & 255), u8((color >> 16) & 255), u8((color >> 8) & 255), u8(color & 255));
-            rlTexCoord2f(f32(us[index]), f32(vs[index]));
-            rlVertex3f(f32(xs[index]), f32(ys[index]), f32(zs[index]));
-        }
-        rlEnd();
-    }
-
-    def cached_stage_polygon(face: Face, rect: LightRect, light: bool, tint: list[int], affine: list[float], key: int) {
-        if key not in self.stage_cache {
-            geometry = StageGeometry();
-            inverse_atlas = 1.0 / float(self.atlas_size);
-            for index in range(len(face.vertices)) {
-                v = face.vertices[index];
-                geometry.points.extend([v.x, v.y, v.z]);
-                if light {
-                    geometry.coords.append((face.light_uv[index * 2] + float(rect.x) + 0.5) * inverse_atlas);
-                    geometry.coords.append((face.light_uv[index * 2 + 1] + float(rect.y) + 0.5) * inverse_atlas);
-                } else {
-                    geometry.coords.append(face.uv[index * 2]);
-                    geometry.coords.append(face.uv[index * 2 + 1]);
-                }
-            }
-            geometry.indices = face.indices;
-            if not geometry.indices {
-                for corner in range(1, len(face.vertices) - 1) {
-                    geometry.indices.extend([0, corner + 1, corner]);
-                }
-            }
-            self.stage_cache[key] = geometry;
-        }
-        geometry = self.stage_cache[key];
-        moved = len(affine) == 6;
-        a = affine[0] if moved else 1.0;
-        b = affine[1] if moved else 0.0;
-        c = affine[2] if moved else 0.0;
-        d = affine[3] if moved else 0.0;
-        e = affine[4] if moved else 1.0;
-        f = affine[5] if moved else 0.0;
-        points = geometry.points;
-        coords = geometry.coords;
-        rlBegin(i32(4));
-        rlColor4ub(u8(tint[0]), u8(tint[1]), u8(tint[2]), u8(tint[3]));
-        for index in geometry.indices {
-            s = coords[index * 2];
-            t = coords[index * 2 + 1];
-            rlTexCoord2f(f32(a * s + b * t + c), f32(d * s + e * t + f));
-            rlVertex3f(f32(points[index * 3]), f32(points[index * 3 + 1]), f32(points[index * 3 + 2]));
-        }
-        rlEnd();
-    }
-
-    def polygon(face: Face, rect: LightRect, light: bool) {
-        rlBegin(i32(4));
-        rlColor4ub(u8(255), u8(255), u8(255), u8(255));
-        # Q3 movers keep their baked light; its light grid is for models.
-        if face.moving_light and self.lighting.grid is None {
-            center = face.vertices[0].lerp(face.vertices[2], 0.5);
-            facing = face.normal;
-            turn = face.turn;
-            if turn is not None {
-                center = face.pivot.add(turn.apply(center.sub(face.pivot)));
-                facing = turn.apply(facing);
-            }
-            color = self.lighting.sample(center.add(face.motion), False).shade(facing);
-            rlColor4ub(
-                u8(int(min(255.0, max(0.0, color.x * 255.0)))),
-                u8(int(min(255.0, max(0.0, color.y * 255.0)))),
-                u8(int(min(255.0, max(0.0, color.z * 255.0)))),
-                u8(255)
-            );
-        }
-        indices = face.indices;
-        if len(indices) == 0 {
-            indices = [];
-            for triangle in range(1, len(face.vertices) - 1) {
-                indices.extend([0, triangle + 1, triangle]);
-            }
-        }
-        for index in indices {
-            if self.single_pass {
-                if face.light_offset >= 0 {
-                    rlNormal3f(
-                        f32(
-                            (face.light_uv[index * 2] + float(rect.x) + 0.5)
-                                / float(self.atlas_size)
-                        ),
-                        f32(
-                            (face.light_uv[index * 2 + 1] + float(rect.y) + 0.5)
-                                / float(self.atlas_size)
-                        ),
-                        f32(1.0 + float(face.alpha_test * 2))
-                    );
-                } else {
-                    rlNormal3f(
-                        f32(0.0),
-                        f32(0.0),
-                        f32(float(face.alpha_test * 2 + (16 if face.emission else 0)))
-                    );
-                }
-            }
-            if not light and face.light_offset < 0 and len(face.colors) > 0 {
-                lit = shift_light(
-                    self.overbright,
-                    face.colors[index * 4],
-                    face.colors[index * 4 + 1],
-                    face.colors[index * 4 + 2]
-                );
-                rlColor4ub(u8(lit[0]), u8(lit[1]), u8(lit[2]), u8(255));
-            }
-            if light {
-                rlTexCoord2f(
-                    f32(
-                        (face.light_uv[index * 2] + float(rect.x) + 0.5)
-                            / float(self.atlas_size)
-                    ),
-                    f32(
-                        (face.light_uv[index * 2 + 1] + float(rect.y) + 0.5)
-                            / float(self.atlas_size)
-                    )
-                );
-            } else {
-                rlTexCoord2f(f32(face.uv[index * 2]), f32(face.uv[index * 2 + 1]));
-            }
-            v = face.vertices[index];
-            turn = face.turn;
-            if turn is not None {
-                # Rotating brush models turn about their entity origin.
-                v = face.pivot.add(turn.apply(v.sub(face.pivot)));
-            }
-            rlVertex3f(
-                f32(v.x + face.motion.x),
-                f32(v.y + face.motion.y),
-                f32(v.z + face.motion.z)
-            );
-        }
-        rlEnd();
-    }
-
-    def draw(level: Level, faces: list[int], eye: Vec3) -> int {
-        self.lighting = level.lighting;
-        self.draw_sky(eye);
-        self.draw_clouds(level, eye);
-        # BSP winding and normal consistently face the empty side of each plane.
-        batches: list[list[int]] = [];
-        for texture in self.textures {
-            batches.append([]);
-        }
-        count = 0;
-        fogged: list[int] = [];
-        for index in sorted(faces) {
-            face = level.bsp.faces[index];
-            # Turned faces skip plane culling; their stored plane is unrotated.
-            if face.hidden
-                or len(face.vertices) < 3
-                or (
-                    face.planar
-                    and not face.two_sided
-                    and face.turn is None
-                    and face.normal.dot(eye.sub(face.motion)) - face.plane_dist < -0.01
-                ) {
-                continue;
-            }
-            if face.fog_only {
-                fogged.append(index);
-                continue;
-            }
-            batches[face.texture].append(index);
-            if face.fog >= 0 {
-                fogged.append(index);
-            }
-            count += 1;
-        }
-        if self.single_pass {
-            positions = bytearray();
-            colors = bytearray();
-            for i in range(8) {
-                if i < len(level.lighting.dynamic) {
-                    flash = level.lighting.dynamic[i];
-                    positions.extend(
-                        struct.pack(
-                            "<ffff",
-                            flash.origin.x,
-                            flash.origin.y,
-                            flash.origin.z,
-                            flash.radius
-                        )
-                    );
-                    colors.extend(
-                        struct.pack(
-                            "<ffff", flash.color.x, flash.color.y, flash.color.z, 0.0
-                        )
-                    );
-                } else {
-                    positions.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
-                    colors.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
-                }
-            }
-            rlEnableShader(self.shader.id);
-            rlSetUniform(i32(self.dynamic_positions), bytes(positions), i32(3), i32(8));
-            rlSetUniform(i32(self.dynamic_colors), bytes(colors), i32(3), i32(8));
-            rlDisableShader();
-            BeginShaderMode(self.shader);
-            rlActiveTextureSlot(i32(1));
-            rlEnableTexture(u32(self.atlas));
-            rlActiveTextureSlot(i32(0));
-        }
-        for t in range(len(batches)) {
-            if self.single_pass and level.bsp.textures[t].additive {
-                continue;
-            }
-            if t in self.stage_images or t in self.sky_layers {
-                continue;
-            }
-            # Flush only at culling-state boundaries: flushing every texture
-            # serializes small GPU batches and severely reduces frame rate.
-            if level.bsp.textures[t].two_sided {
-                rlDrawRenderBatchActive();
-                rlDisableBackfaceCulling();
-            }
-            rlSetTexture(u32(self.textures[t]));
-            animated = t in self.anim_frames;
-            bound = t;
-            for index in batches[t] {
-                face = level.bsp.faces[index];
-                if face.warp or face.opacity < 1.0 {
-                    continue;
-                }
-                if animated {
-                    shown = self.shown_texture(level, t, index);
-                    if shown != bound {
-                        bound = shown;
-                        rlSetTexture(u32(self.textures[shown]));
-                    }
-                }
-                self.polygon(face, self.rects[index], False);
-            }
-            if level.bsp.textures[t].two_sided {
-                rlDrawRenderBatchActive();
-                rlEnableBackfaceCulling();
-            }
-        }
-        rlDrawRenderBatchActive();
-        if self.single_pass {
-            BeginBlendMode(i32(1));
-            rlDisableDepthMask();
-            for t in range(len(batches)) {
-                if not level.bsp.textures[t].additive or t in self.stage_images {
-                    continue;
-                }
-                if level.bsp.textures[t].two_sided {
-                    rlDisableBackfaceCulling();
-                }
-                rlSetTexture(u32(self.textures[t]));
-                for index in batches[t] {
-                    self.polygon(level.bsp.faces[index], self.rects[index], False);
-                }
-                rlDrawRenderBatchActive();
-                rlEnableBackfaceCulling();
-            }
-            rlEnableDepthMask();
-            EndBlendMode();
-            EndShaderMode();
-            rlActiveTextureSlot(i32(1));
-            rlDisableTexture();
-            rlActiveTextureSlot(i32(0));
-            rlSetTexture(u32(0));
-            self.draw_layered(level, batches, eye);
-            self.draw_fog(level, fogged, eye);
-            return count;
-        }
-        self.draw_q1_sky(level, batches, eye);
-        # raylib BLEND_MULTIPLIED: destination color times lightmap intensity.
-        BeginBlendMode(i32(2));
-        rlSetTexture(u32(self.atlas));
-        for batch in batches {
-            for index in batch {
-                face = level.bsp.faces[index];
-                if face.light_offset >= 0 and not face.warp and face.opacity >= 1.0 {
-                    self.polygon(face, self.rects[index], True);
-                }
-            }
-        }
-        rlDrawRenderBatchActive();
-        EndBlendMode();
-        self.draw_dynamic_lights(level, batches);
-        # Restore palette fullbrights after lightmap multiplication.
-        for t in range(len(batches)) {
-            if self.emissive[t] == 0 {
-                continue;
-            }
-            rlSetTexture(u32(self.emissive[t]));
-            for index in batches[t] {
-                face = level.bsp.faces[index];
-                if not face.warp and face.opacity >= 1.0 {
-                    shown = self.shown_texture(level, t, index);
-                    if shown != t {
-                        if self.emissive[shown] == 0 {
-                            continue;
-                        }
-                        rlSetTexture(u32(self.emissive[shown]));
-                    }
-                    self.polygon(face, self.rects[index], False);
-                    if shown != t {
-                        rlSetTexture(u32(self.emissive[t]));
-                    }
-                }
-            }
-        }
-        rlDrawRenderBatchActive();
-        rlSetTexture(u32(0));
-        self.draw_liquids(level, batches);
-        return count;
-    }
-
-    """Q1/Q2 R_AddDynamicLights: muzzle flashes, explosions and glowing
-    missiles add their light to the faces within reach, as the originals add
-    it to the lightmaps: each reached face drawn again, additively, as its
-    texture times the lights at each pixel."""
-    def draw_dynamic_lights(level: Level, batches: list[list[int]]) {
-        flashes = level.lighting.dynamic;
-        if not flashes or self.dlight_positions < 0 {
-            return;
-        }
-        positions = bytearray();
-        colors = bytearray();
-        for i in range(8) {
-            if i < len(flashes) {
-                flash = flashes[i];
-                positions.extend(struct.pack("<ffff", flash.origin.x, flash.origin.y, flash.origin.z, flash.radius));
-                colors.extend(struct.pack("<ffff", flash.color.x, flash.color.y, flash.color.z, 0.0));
-            } else {
-                positions.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
-                colors.extend(struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0));
-            }
-        }
-        rlEnableShader(self.dlight_shader.id);
-        rlSetUniform(i32(self.dlight_positions), bytes(positions), i32(3), i32(8));
-        rlSetUniform(i32(self.dlight_colors), bytes(colors), i32(3), i32(8));
-        rlDisableShader();
-        BeginShaderMode(self.dlight_shader);
-        BeginBlendMode(i32(1));
-        rlDisableDepthMask();
-        for t in range(len(batches)) {
-            bound = False;
-            for index in batches[t] {
-                face = level.bsp.faces[index];
-                if face.warp or face.opacity < 1.0 or face.light_offset < 0 {
-                    continue;
-                }
-                if index not in self.face_lows {
-                    lo = face.vertices[0];
-                    hi = face.vertices[0];
-                    for v in face.vertices {
-                        lo = Vec3(x=min(lo.x, v.x), y=min(lo.y, v.y), z=min(lo.z, v.z));
-                        hi = Vec3(x=max(hi.x, v.x), y=max(hi.y, v.y), z=max(hi.z, v.z));
-                    }
-                    self.face_lows[index] = lo;
-                    self.face_highs[index] = hi;
-                }
-                lo = self.face_lows[index].add(face.motion);
-                hi = self.face_highs[index].add(face.motion);
-                reached = False;
-                for flash in flashes[:8] {
-                    p = flash.origin;
-                    gap = Vec3(
-                        x=max(0.0, max(lo.x - p.x, p.x - hi.x)),
-                        y=max(0.0, max(lo.y - p.y, p.y - hi.y)),
-                        z=max(0.0, max(lo.z - p.z, p.z - hi.z))
-                    );
-                    if gap.length() < flash.radius {
-                        reached = True;
-                        break;
-                    }
-                }
-                if not reached {
-                    continue;
-                }
-                if not bound {
-                    rlSetTexture(u32(self.textures[t]));
-                    bound = True;
-                }
-                self.polygon(face, self.rects[index], False);
-            }
-        }
-        rlDrawRenderBatchActive();
-        rlEnableDepthMask();
-        EndBlendMode();
-        EndShaderMode();
-        rlSetTexture(u32(0));
-    }
-
     """tr_shade.c RB_FogPass over every opaque surface inside a fog volume, and
     over the fog volumes' own surfaces: the fog colour blended by the fog
-    image's density at RB_CalcFogTexCoords' coordinates. s is the depth along
-    the view scaled by 1 / (8 * distanceToOpaque); t clips the fog at its
-    visible surface, cutting the distance where the eye is outside it."""
-    def draw_fog(level: Level, fogged: list[int], eye: Vec3) {
-        if not fogged or not level.bsp.fogs {
+    image's density at RB_CalcFogTexCoords' coordinates (world_mesh FOG_VS),
+    one-sided surfaces first, then two-sided ones with culling off."""
+    def draw_fog(level: Level, view: VisibleIndices, eye: Vec3) {
+        if not level.bsp.fogs {
+            return;
+        }
+        kinds = [kind for kind in [PASS_FOG, PASS_FOG_TWO_SIDED] if kind in self.pass_batches];
+        if not kinds {
             return;
         }
         if self.fog_image == 0 {
             self.fog_image = upload_fog_image();
         }
-        rlDrawRenderBatchActive();
+        program = self.fog_program;
+        self.begin_batches(program);
+        self.set_view_uniforms(program, level, eye);
         BeginBlendMode(i32(0));
+        self.resume(program);
         rlDisableDepthMask();
-        rlSetTexture(u32(self.fog_image));
-        forward = self.view_forward;
-        eye_depth = forward.dot(eye);
-        # One-sided surfaces first, then the two-sided ones with culling off,
-        # so culling changes once rather than per face.
-        for sided in [False, True] {
-            if sided {
-                rlDrawRenderBatchActive();
+        rlEnableTexture(u32(self.fog_image));
+        for kind in kinds {
+            if kind == PASS_FOG_TWO_SIDED {
                 rlDisableBackfaceCulling();
             }
-            for index in fogged {
-                face = level.bsp.faces[index];
-                if (face.two_sided or face.fog_only) != sided or face.fog < 0 or face.hidden {
-                    continue;
+            for batch in self.pass_batches[kind] {
+                if self.batch_shown(batch, view) {
+                    self.draw_batch(program, level, batch, view, False);
                 }
-                if not self.fog_receiver(level, face) {
-                    continue;
-                }
-                self.fog_polygon(face, level.bsp.fogs[face.fog], eye, forward, eye_depth);
             }
-            if sided {
-                rlDrawRenderBatchActive();
+            if kind == PASS_FOG_TWO_SIDED {
                 rlEnableBackfaceCulling();
             }
         }
-        rlDrawRenderBatchActive();
-        rlSetTexture(u32(0));
         rlEnableDepthMask();
         EndBlendMode();
-    }
-
-    """One face's fog pass: fog_coords worked out once per distinct vertex."""
-    def fog_polygon(face: Face, fog: FogVolume, eye: Vec3, forward: Vec3, eye_depth: float) {
-        count = len(face.vertices);
-        scale = 1.0 / (fog.depth * 8.0);
-        eye_t = fog.inward.dot(eye) + fog.offset if fog.has_surface else 1.0;
-        outside = eye_t < 0.0;
-        turn = face.turn;
-        xs: list[float] = [];
-        ys: list[float] = [];
-        zs: list[float] = [];
-        us: list[float] = [];
-        vs: list[float] = [];
-        for index in range(count) {
-            v = face.vertices[index];
-            if turn is not None {
-                v = face.pivot.add(turn.apply(v.sub(face.pivot)));
-            }
-            x = v.x + face.motion.x;
-            y = v.y + face.motion.y;
-            z = v.z + face.motion.z;
-            s = (forward.x * x + forward.y * y + forward.z * z - eye_depth) * scale + 1.0 / 512.0;
-            t = 31.0 / 32.0;
-            if fog.has_surface {
-                t = fog.inward.x * x + fog.inward.y * y + fog.inward.z * z + fog.offset;
-                if outside {
-                    t = 1.0 / 32.0 if t < 1.0 else 1.0 / 32.0 + 30.0 / 32.0 * t / (t - eye_t);
-                } else {
-                    t = 1.0 / 32.0 if t < 0.0 else 31.0 / 32.0;
-                }
-            }
-            xs.append(x);
-            ys.append(y);
-            zs.append(z);
-            us.append(s);
-            vs.append(t);
-        }
-        indices = face.indices;
-        if not indices {
-            indices = [];
-            for corner in range(1, count - 1) {
-                indices.extend([0, corner + 1, corner]);
-            }
-        }
-        rlBegin(i32(4));
-        rlColor4ub(
-            u8(min(255, int(fog.color.x * 255.0))),
-            u8(min(255, int(fog.color.y * 255.0))),
-            u8(min(255, int(fog.color.z * 255.0))),
-            u8(255)
-        );
-        for corner in indices {
-            rlTexCoord2f(f32(us[corner]), f32(vs[corner]));
-            rlVertex3f(f32(xs[corner]), f32(ys[corner]), f32(zs[corner]));
-        }
-        rlEnd();
+        self.end_batches(program);
     }
 
     """Which surfaces take the fog pass (tr_shader.c FinishShader): opaque ones
@@ -1644,118 +1770,23 @@ obj QuakeRenderer {
         return True;
     }
 
-    """Liquids and Q2's translucent surfaces, unlit as the originals draw them:
-    gl_warp.c EmitWaterPolys turbulence per pixel (8 texels of sine sway at
-    one radian per second), Q2 SURF_FLOWING's scroll, then the 33% and 66%
-    translucent faces blended over the world."""
-    def draw_liquids(level: Level, batches: list[list[int]]) {
-        if level.bsp.game not in ["q1", "q2"] {
-            return;
-        }
-        if self.warp_shader.id == u32(0) {
-            self.warp_shader = LoadShaderFromMemory(
-                "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor; uniform mat4 mvp; out vec2 uv; out vec4 color;\n"
-                    + "void main(){ uv=vertexTexCoord; color=vertexColor; gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
-                "#version 330\nin vec2 uv; in vec4 color; out vec4 finalColor; uniform sampler2D texture0; uniform vec4 colDiffuse; uniform float warpTime; uniform vec2 warpSize; uniform float warpScroll;\n"
-                    + "void main(){ vec2 st=uv*warpSize; vec2 w=vec2(st.x+8.0*sin(st.y*0.125+warpTime)+warpScroll, st.y+8.0*sin(st.x*0.125+warpTime))/warpSize; finalColor=texture(texture0,w)*color*colDiffuse; }\n"
-            );
-            self.warp_time = int(GetShaderLocation(self.warp_shader, "warpTime"));
-            self.warp_size = int(GetShaderLocation(self.warp_shader, "warpSize"));
-            self.warp_scroll = int(GetShaderLocation(self.warp_shader, "warpScroll"));
-        }
-        # Q2 flowing surfaces scroll 64 texels every two seconds.
-        drift = -64.0 * (self.time * 0.5 - float(int(self.time * 0.5)));
-        for pass_index in range(2) {
-            translucent = pass_index == 1;
-            if translucent {
-                BeginBlendMode(i32(0));
-                rlDisableDepthMask();
-            }
-            for t in range(len(batches)) {
-                picked = [
-                    index
-                    for index in batches[t]
-                    if (level.bsp.faces[index].warp or level.bsp.faces[index].opacity < 1.0)
-                        and (level.bsp.faces[index].opacity < 1.0) == translucent
-                ];
-                if not picked {
-                    continue;
-                }
-                texture = level.bsp.textures[t];
-                # Faces sharing a texture share the warp uniforms, so each group
-                # (still water, flowing water, plain) sets them and flushes once.
-                for group in range(3) {
-                    members = [
-                        index
-                        for index in picked
-                        if (2 if not level.bsp.faces[index].warp else (1 if level.bsp.faces[index].flowing else 0)) == group
-                    ];
-                    if not members {
-                        continue;
-                    }
-                    if group < 2 {
-                        # Uniforms go to the program bound now, not at the flush.
-                        rlDrawRenderBatchActive();
-                        rlEnableShader(self.warp_shader.id);
-                        rlSetUniform(i32(self.warp_time), struct.pack("<f", self.time), i32(0), i32(1));
-                        rlSetUniform(i32(self.warp_size), struct.pack("<ff", float(texture.width), float(texture.height)), i32(1), i32(1));
-                        rlSetUniform(i32(self.warp_scroll), struct.pack("<f", drift if group == 1 else 0.0), i32(0), i32(1));
-                        rlDisableShader();
-                        BeginShaderMode(self.warp_shader);
-                    }
-                    rlSetTexture(u32(self.textures[t]));
-                    for index in members {
-                        face = level.bsp.faces[index];
-                        self.plain_polygon(face, int(face.opacity * 255.0));
-                    }
-                    rlDrawRenderBatchActive();
-                    if group < 2 {
-                        EndShaderMode();
-                    }
-                }
-            }
-            if translucent {
-                rlEnableDepthMask();
-                EndBlendMode();
-            }
-        }
-        rlSetTexture(u32(0));
-    }
-
-    """A face with its base texture only, at the given opacity."""
-    def plain_polygon(face: Face, alpha: int) {
-        indices = face.indices;
-        if len(indices) == 0 {
-            indices = [];
-            for triangle in range(1, len(face.vertices) - 1) {
-                indices.extend([0, triangle + 1, triangle]);
-            }
-        }
-        rlBegin(i32(4));
-        rlColor4ub(u8(255), u8(255), u8(255), u8(alpha));
-        for index in indices {
-            rlTexCoord2f(f32(face.uv[index * 2]), f32(face.uv[index * 2 + 1]));
-            v = face.vertices[index];
-            if face.turn is not None {
-                v = face.pivot.add(face.turn.apply(v.sub(face.pivot)));
-            }
-            v = v.add(face.motion);
-            rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
-        }
-        rlEnd();
-    }
-
     def close() {
-        if self.single_pass {
-            UnloadShader(self.shader);
+        for program in [self.lit_program, self.warp_program, self.sky_program, self.base_program, self.stage_program, self.fog_program] {
+            program.close();
         }
-        if self.dlight_positions >= 0 {
-            UnloadShader(self.dlight_shader);
-            self.dlight_positions = -1;
-            self.dlight_colors = -1;
+        for mesh in self.chunks {
+            mesh.close();
         }
-        self.face_lows = {};
-        self.face_highs = {};
+        self.chunks = [];
+        for view in self.views {
+            view.buffers.close();
+        }
+        self.views = [];
+        self.brush_buffers.close();
+        self.brush_groups = [];
+        self.brush_signature = [];
+        self.cloud_mesh.close();
+        self.cloud_height_cached = -1.0;
         self.single_pass = False;
         for id in self.sky {
             rlUnloadTexture(u32(id));
@@ -1763,11 +1794,6 @@ obj QuakeRenderer {
         self.sky = [];
         for id in self.textures {
             rlUnloadTexture(u32(id));
-        }
-        for id in self.emissive {
-            if id != 0 {
-                rlUnloadTexture(u32(id));
-            }
         }
         if self.atlas != 0 {
             rlUnloadTexture(u32(self.atlas));
@@ -1794,10 +1820,6 @@ obj QuakeRenderer {
             }
         }
         self.cloud_images = [];
-        if self.warp_shader.id != u32(0) {
-            UnloadShader(self.warp_shader);
-            self.warp_shader = Shader(id=u32(0), locs=u64(0));
-        }
         if self.fog_image != 0 {
             rlUnloadTexture(u32(self.fog_image));
             self.fog_image = 0;
@@ -1811,10 +1833,79 @@ obj QuakeRenderer {
             self.white = 0;
         }
         self.textures = [];
-        self.emissive = [];
         self.rects = [];
         self.atlas = 0;
     }
+}
+
+"""The vertex attributes of a world chunk (world_mesh WORLD_VERTEX_FORMAT) at
+the shaders' fixed locations."""
+def world_attributes() -> list[VertexAttribute] {
+    return [
+        VertexAttribute(location=0, components=3, kind=GL_FLOAT, offset=0),
+        VertexAttribute(location=1, components=2, kind=GL_FLOAT, offset=12),
+        VertexAttribute(location=2, components=2, kind=GL_FLOAT, offset=20),
+        VertexAttribute(location=3, components=4, kind=GL_UNSIGNED_BYTE, normalized=True, offset=28),
+        VertexAttribute(location=4, components=3, kind=GL_FLOAT, offset=32),
+        VertexAttribute(location=5, components=4, kind=GL_UNSIGNED_BYTE, offset=44),
+        VertexAttribute(location=6, components=4, kind=GL_UNSIGNED_BYTE, offset=48),
+        VertexAttribute(location=7, components=4, kind=GL_FLOAT, offset=52),
+        VertexAttribute(location=8, components=4, kind=GL_FLOAT, offset=68)
+    ];
+}
+
+"""Whether two faces of a brush model share a placement and entity frame."""
+def same_placement(face: Face, lead: Face) -> bool {
+    if face.turn is not lead.turn or face.frame != lead.frame {
+        return False;
+    }
+    if face.motion is not lead.motion
+        and (face.motion.x != lead.motion.x or face.motion.y != lead.motion.y or face.motion.z != lead.motion.z) {
+        return False;
+    }
+    if face.turn is not None and face.pivot is not lead.pivot
+        and (face.pivot.x != lead.pivot.x or face.pivot.y != lead.pivot.y or face.pivot.z != lead.pivot.z) {
+        return False;
+    }
+    return True;
+}
+
+"""Whether a brush face is away from where the map placed it."""
+def moved_face(face: Face) -> bool {
+    return face.turn is not None or face.motion.x != 0.0 or face.motion.y != 0.0 or face.motion.z != 0.0;
+}
+
+"""A brush face's placement as a model matrix: turned about its pivot (the
+entity origin), then moved: pivot + turn(v - pivot) + motion."""
+def placement_matrix(face: Face) -> Matrix {
+    turn = face.turn;
+    if turn is None {
+        return placement_matrix_at(face.motion);
+    }
+    p = face.pivot;
+    turned = turn.apply(p);
+    x = p.x - turned.x + face.motion.x;
+    y = p.y - turned.y + face.motion.y;
+    z = p.z - turned.z + face.motion.z;
+    f = turn.forward;
+    l = turn.left;
+    u = turn.up;
+    return Matrix(
+        m0=f32(f.x), m4=f32(l.x), m8=f32(u.x), m12=f32(x),
+        m1=f32(f.y), m5=f32(l.y), m9=f32(u.y), m13=f32(y),
+        m2=f32(f.z), m6=f32(l.z), m10=f32(u.z), m14=f32(z),
+        m3=f32(0.0), m7=f32(0.0), m11=f32(0.0), m15=f32(1.0)
+    );
+}
+
+"""A translation as a model matrix."""
+def placement_matrix_at(offset: Vec3) -> Matrix {
+    return Matrix(
+        m0=f32(1.0), m4=f32(0.0), m8=f32(0.0), m12=f32(offset.x),
+        m1=f32(0.0), m5=f32(1.0), m9=f32(0.0), m13=f32(offset.y),
+        m2=f32(0.0), m6=f32(0.0), m10=f32(1.0), m14=f32(offset.z),
+        m3=f32(0.0), m7=f32(0.0), m11=f32(0.0), m15=f32(1.0)
+    );
 }
 
 """tr_image.c R_CreateFogImage: 256x32 white texels whose alpha is R_FogFactor,
@@ -1832,12 +1923,6 @@ def fog_density(s: float, t: float) -> float {
     return math.pow(float(int(s * 255.0)) / 255.0, 0.5);
 }
 
-"""A face's fixed vertex positions and base coordinates for one stage."""
-obj StageGeometry {
-    has points: list[float] = [],
-        coords: list[float] = [],
-        indices: list[int] = [];
-}
 
 """A stage's blending as [blended, source factor, destination factor]. The
 first stage of an opaque shader writes without blending."""
@@ -1860,43 +1945,80 @@ def stage_blend(stage: ModelStage, k: int) -> list[int] {
     return [1, 1, 1];
 }
 
+"""One tcMod at time `seconds` as an affine map of (s, t): [a, b, c, d, e, f]
+with s' = a*s + b*t + c and t' = d*s + e*t + f (tr_shade_calc.c
+RB_CalcScrollTexCoords, RB_CalcScaleTexCoords, RB_CalcRotateTexCoords,
+RB_CalcStretchTexCoords, RB_CalcTransformTexCoords). Turb is not affine."""
+def tcmod_affine(mod: TexMod, seconds: float) -> list[float] {
+    if mod.kind == "scroll" {
+        return [1.0, 0.0, mod.a * seconds, 0.0, 1.0, mod.b * seconds];
+    }
+    if mod.kind == "scale" {
+        return [mod.a, 0.0, 0.0, 0.0, mod.b, 0.0];
+    }
+    if mod.kind == "rotate" {
+        angle = -mod.a * seconds * math.pi / 180.0;
+        c = math.cos(angle);
+        n = math.sin(angle);
+        return [c, -n, 0.5 - 0.5 * c + 0.5 * n, n, c, 0.5 - 0.5 * n - 0.5 * c];
+    }
+    if mod.kind == "stretch" {
+        value = mod.wave.at(seconds);
+        if abs(value) > 0.0001 {
+            p = 1.0 / value;
+            return [p, 0.0, 0.5 - 0.5 * p, 0.0, p, 0.5 - 0.5 * p];
+        }
+    } elif mod.kind == "transform" and len(mod.matrix) == 6 {
+        return [mod.matrix[0], mod.matrix[2], mod.matrix[4], mod.matrix[1], mod.matrix[3], mod.matrix[5]];
+    }
+    return [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+}
+
+"""Apply affine `o` after affine `m`."""
+def compose_affine(o: list[float], m: list[float]) -> list[float] {
+    return [
+        o[0] * m[0] + o[1] * m[3],
+        o[0] * m[1] + o[1] * m[4],
+        o[0] * m[2] + o[1] * m[5] + o[2],
+        o[3] * m[0] + o[4] * m[3],
+        o[3] * m[1] + o[4] * m[4],
+        o[3] * m[2] + o[4] * m[5] + o[5]
+    ];
+}
+
 """A stage's tcMods at time `seconds` folded into one affine map of (s, t):
 [a, b, c, d, e, f] with s' = a*s + b*t + c and t' = d*s + e*t + f. Empty
 when a tcMod turb makes the result depend on the vertex position."""
 def stage_affine(stage: ModelStage, seconds: float) -> list[float] {
     m = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     for mod in stage.mods {
-        o = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-        if mod.kind == "scroll" {
-            o = [1.0, 0.0, mod.a * seconds, 0.0, 1.0, mod.b * seconds];
-        } elif mod.kind == "scale" {
-            o = [mod.a, 0.0, 0.0, 0.0, mod.b, 0.0];
-        } elif mod.kind == "rotate" {
-            angle = -mod.a * seconds * math.pi / 180.0;
-            c = math.cos(angle);
-            n = math.sin(angle);
-            o = [c, -n, 0.5 - 0.5 * c + 0.5 * n, n, c, 0.5 - 0.5 * n - 0.5 * c];
-        } elif mod.kind == "stretch" {
-            value = mod.wave.at(seconds);
-            if abs(value) > 0.0001 {
-                p = 1.0 / value;
-                o = [p, 0.0, 0.5 - 0.5 * p, 0.0, p, 0.5 - 0.5 * p];
-            }
-        } elif mod.kind == "transform" and len(mod.matrix) == 6 {
-            o = [mod.matrix[0], mod.matrix[2], mod.matrix[4], mod.matrix[1], mod.matrix[3], mod.matrix[5]];
-        } elif mod.kind == "turb" {
+        if mod.kind == "turb" {
             return [];
         }
-        m = [
-            o[0] * m[0] + o[1] * m[3],
-            o[0] * m[1] + o[1] * m[4],
-            o[0] * m[2] + o[1] * m[5] + o[2],
-            o[3] * m[0] + o[4] * m[3],
-            o[3] * m[1] + o[4] * m[4],
-            o[3] * m[2] + o[4] * m[5] + o[5]
-        ];
+        m = compose_affine(tcmod_affine(mod, seconds), m);
     }
     return m;
+}
+
+"""A stage's tcMods at time `seconds` as the stage shader's steps: each an
+affine map (as stage_affine) followed by a turb or not, as [a, b, c, d, e,
+f, turb, amplitude, phase + time * frequency]. At most four steps; turbs
+beyond the third are dropped."""
+def tcmod_steps(stage: ModelStage, seconds: float) -> list[list[float]] {
+    steps: list[list[float]] = [];
+    m = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    for mod in stage.mods {
+        if mod.kind == "turb" {
+            if len(steps) < 3 {
+                steps.append(m + [1.0, mod.wave.amplitude, mod.wave.phase + seconds * mod.wave.frequency]);
+            }
+            m = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+            continue;
+        }
+        m = compose_affine(tcmod_affine(mod, seconds), m);
+    }
+    steps.append(m + [0.0, 0.0, 0.0]);
+    return steps;
 }
 
 """tr_shader.c FinishShader adjustColorsForFog: for a translucent shader, 1
