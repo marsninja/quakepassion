@@ -750,6 +750,13 @@ impl App.load_destination(
         self.help_open = False;
         self.inventory_open = False;
         self.record_entry();
+        # Draw the new level once before play: a level's first draw uploads
+        # and prepares what it shows, and a slow first frame would hand the
+        # next one a long simulation step.
+        if not self.smoke {
+            self.render_frame();
+            self.skip_time = True;
+        }
     } except Exception as error {
         next_models.close();
         next_effects.close();
