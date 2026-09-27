@@ -112,8 +112,17 @@ obj ViewWeapon {
     }
 
     """`lift` raises the weapon by that fraction of the screen height, so a
-    weapon drawn at the bottom of the view sits above an opaque status bar."""
-    def draw(player: Player, state: CombatState, seconds: float, lighting: Lighting, lift: float = 0.0) {
+    weapon drawn at the bottom of the view sits above an opaque status bar.
+    `sink` lowers it with the eye (a landing dip, a step being eased in), as
+    each game places the gun at the view origin."""
+    def draw(
+        player: Player,
+        state: CombatState,
+        seconds: float,
+        lighting: Lighting,
+        lift: float = 0.0,
+        sink: float = 0.0
+    ) {
         if player.health <= 0 or state.weapon not in self.assets {
             return;
         }
@@ -185,7 +194,7 @@ obj ViewWeapon {
             }
         }
         basis = model_basis(player.yaw, player.pitch);
-        origin = player.pos.add(Vec3());
+        origin = player.pos.sub(Vec3(z=sink));
         speed = min(
             1.0, Vec3(x=player.velocity.x, y=player.velocity.y).length() / 320.0
         );

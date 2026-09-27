@@ -5,7 +5,9 @@ Q1 view.c: V_ParseDamage (cshift_damage, v_dmg_roll/pitch), V_SetContentsColor,
 V_BonusFlash_f, V_CalcRefdef's dead roll. Q2 p_view.c: P_DamageFeedback
 (damage_blend/alpha, kick angles), SV_CalcBlend, P_FallingDamage's fall kick,
 the dead view. Q3 cg_view.c: CG_DamageFeedback / CG_DamageBlendBlob, the
-landing change and CG_OffsetFirstPersonView's dead view."""
+landing change and CG_OffsetFirstPersonView's dead view. Each game also eases
+the eye up a step instead of jumping it there (Q1 V_CalcRefdef's oldz, Q2
+cl.predicted_step, Q3 cg.stepChange)."""
 import math;
 import from ..world.world { Player }
 import from ..math.vec3 { Vec3, forward_from, right_from }
@@ -32,7 +34,11 @@ obj ViewFeedback {
         blob_value: float = 0.0,
         blob_time: float = 0.0,
         flashes: int = 0,
-        flash_time: float = 0.0;
+        flash_time: float = 0.0,
+        step_z: float = 0.0,
+        step_ready: bool = False,
+        step_change: float = 0.0,
+        step_time: float = 0.0;
 
     def reset(game: str) {
         self.game = game;
@@ -43,6 +49,8 @@ obj ViewFeedback {
         self.land_time = 0.0;
         self.blob_time = 0.0;
         self.flash_time = 0.0;
+        self.step_ready = False;
+        self.step_time = 0.0;
     }
 
     """Turn the hits the player took since the last frame into a flash and
@@ -152,6 +160,66 @@ obj ViewFeedback {
         self.land_time = max(0.0, self.land_time - dt);
         self.blob_time = max(0.0, self.blob_time - dt);
         self.flash_time = max(0.0, self.flash_time - dt);
+        self.step_time = max(0.0, self.step_time - dt);
+    }
+
+    """A step up the body just climbed, in units. Q2 CL_PredictMovement keeps
+    one of 8 to 20 units (63 < step < 160 in eighths) and lowers the view by it
+    over 100 ms. Q3 CG_StepEvent rounds it to an EV_STEP_4, 8, 12 or 16, adds
+    what is left of the last one (at most 32) and lowers the view over 200 ms.
+    Q1 needs no event: `climb` watches the eye itself."""
+    def step(rise: float) {
+        if self.game == "q2" {
+            if rise > 7.875 and rise < 20.0 {
+                self.step_change = rise;
+                self.step_time = 0.1;
+            }
+        } elif self.game == "q3" {
+            if rise <= 2.0 {
+                return;
+            }
+            size = 4.0
+                if rise < 7.0
+                else (8.0 if rise < 11.0 else (12.0 if rise < 15.0 else 16.0));
+            left = self.step_change * self.step_time / 0.2;
+            self.step_change = min(32.0, left + size);
+            self.step_time = 0.2;
+        }
+    }
+
+    """A mover (a plat, door, train or rotator) carried the body `rise` units.
+    Q1's V_CalcRefdef eases that like a step too, so a lift faster than 80
+    units a second leaves the eye 12 behind for the whole ride and a step off
+    its top (forward held against the shaft wall steps up to 18 units onto
+    the landing before the lift arrives) then jumps the eye in one frame. The
+    eye rides the lift rigidly instead, keeping the 12 for the steps. Q2 and
+    Q3 ease step events alone, so the ride never touches them."""
+    def ride(rise: float) {
+        if self.game == "q1" and self.step_ready {
+            self.step_z += rise;
+        }
+    }
+
+    """Units the eye sits below the body's eye this frame while it catches up
+    with a step. Q1 V_CalcRefdef ("smooth out stair step ups"): on the ground
+    and rising, the view follows at 80 units a second but never more than 12
+    behind, so a stair or a platform's lip eases in; anything else puts it
+    straight back on the body. Q2 and Q3 lower it by the last `step` as that
+    fades."""
+    def climb(z: float, grounded: bool, dt: float) -> float {
+        if self.game == "q1" {
+            if self.step_ready and grounded and z > self.step_z {
+                self.step_z = max(z - 12.0, min(z, self.step_z + 80.0 * dt));
+            } else {
+                self.step_z = z;
+            }
+            self.step_ready = True;
+            return z - self.step_z;
+        }
+        if self.step_time <= 0.0 {
+            return 0.0;
+        }
+        return self.step_change * self.step_time / (0.1 if self.game == "q2" else 0.2);
     }
 
     """STAT_FLASHES while the last hit's frame lasts."""

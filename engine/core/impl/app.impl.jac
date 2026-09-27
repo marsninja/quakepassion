@@ -145,7 +145,10 @@ impl App.render_frame() {
         game = self.level.bsp.game;
         self.view.take_damage(p);
         self.view.advance(self.frame_dt);
-        eye = p.pos.sub(Vec3(z=self.view.eye_drop()));
+        # Stairs and a platform's lip ease the eye up rather than jump it.
+        sink = self.view.eye_drop()
+            + self.view.climb(p.pos.z, p.grounded and self.walking, self.frame_dt);
+        eye = p.pos.sub(Vec3(z=sink));
         view_yaw = p.yaw;
         view_pitch = p.pitch - math.radians(self.view.pitch());
         view_roll = math.radians(self.view.roll());
@@ -200,7 +203,8 @@ impl App.render_frame() {
                 self.combat,
                 self.simulation_time,
                 self.level.lighting,
-                lift=inset / float(max(1, self.renderer.height))
+                lift=inset / float(max(1, self.renderer.height)),
+                sink=sink
             );
         }
         self.renderer.end_scene();
@@ -1098,6 +1102,10 @@ impl App.step() -> bool {
                 dt=self.physics_clock.tick_rate,
                 player=self.player if self.walking else None
             );
+            # The eye rides a lift rigidly; only steps are eased in.
+            self.view.ride(
+                self.player.pos.z - self.level.collision.eye_height - previous_origin.z
+            );
         }
         if self.walking and not self.finale_active {
             immersed = self.level.immersion(self.player.pos);
@@ -1124,6 +1132,9 @@ impl App.step() -> bool {
             );
             self.jump_pending = False;
             jumped = jumped or moved.jumped;
+            if moved.stepped > 0.0 {
+                self.view.step(moved.stepped);
+            }
             if moved.landed > 0.0 and self.level.active {
                 landing = self.player spawn CrashLand(
                     game=self.level.bsp.game,
