@@ -371,25 +371,30 @@ obj ChunkIndices {
 }
 
 """The index lists of one visible face set, kept while the set is reused (the
-main view's and a portal view's sets alternate each frame)."""
+main view's and a portal view's sets alternate each frame), and the batches
+with faces in it, by pass (`shown`)."""
 obj VisibleIndices {
     has faces: list[int] = [],
         lists: IndexLists = IndexLists(),
         buffers: ChunkIndices = ChunkIndices(),
         portal_faces: dict[int, list[int]] = {},
+        shown: dict[int, list[int]] = {},
         used: int = 0;
 }
 
 """A group of brush model faces that share one placement this frame: static
 models together (by entity frame, for animated textures), each moving
 model alone, and faces lit per frame (`lamp`) one by one. `lead` is a
-member face whose placement, frame and light stand for the group."""
+member face whose placement, frame and light stand for the group; `shown`
+lists its batches by pass."""
 obj BrushGroup {
     has lead: int = 0,
         faces: list[int] = [],
         spans: dict[int, list[IndexSpan]] = {},
+        shown: dict[int, list[int]] = {},
         lamp: bool = False,
-        tint: list[float] = [1.0, 1.0, 1.0, 1.0];
+        tint: list[float] = [1.0, 1.0, 1.0, 1.0],
+        tint_packed: bytes = b"";
 }
 
 """One brush model's faces."""

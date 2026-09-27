@@ -121,6 +121,9 @@ obj LightRect {
         layer: float = 0.0;
 }
 
+# The tint uniform for surfaces not lit per frame.
+glob WHITE_TINT: bytes = b"\x00\x00\x80?\x00\x00\x80?\x00\x00\x80?\x00\x00\x80?";
+
 """One Q3 shader stage prepared at level load for the stage shader: its GL
 state (as a key and its parts), its image frames, and every uniform that
 does not change with time, packed once. Waves, scrolls and moves are
@@ -700,6 +703,7 @@ obj QuakeRenderer {
             }
         }
         gather_indices(lists, shown, self.face_chunks, self.face_batches, self.face_runs);
+        view.shown = self.batches_by_pass(lists.spans);
         view.lists = lists;
         view.buffers.fill(lists);
         return view;
@@ -766,6 +770,7 @@ obj QuakeRenderer {
                     float(int(min(255.0, max(0.0, color.z * 255.0)))) / 255.0,
                     1.0
                 ];
+                group.tint_packed = pack_floats(group.tint);
             }
         }
     }
@@ -806,6 +811,8 @@ obj QuakeRenderer {
         self.brush_count = 0;
         for group in groups {
             group.spans = gather_indices(lists, group.faces, self.face_chunks, self.face_batches, self.face_runs);
+            group.shown = self.batches_by_pass(group.spans);
+            group.tint_packed = pack_floats(group.tint);
             for batch in group.spans.keys() {
                 self.brush_batches[batch] = True;
             }
@@ -1222,12 +1229,12 @@ obj QuakeRenderer {
         if group < 0 {
             program.set_matrix("model", placement_matrix_at(Vec3()));
             if tinted {
-                self.put_vec4s(program, "tint", pack_floats([1.0, 1.0, 1.0, 1.0]));
+                self.put_vec4s(program, "tint", WHITE_TINT);
             }
         } else {
             program.set_matrix("model", self.brush_matrices[group]);
             if tinted {
-                self.put_vec4s(program, "tint", pack_floats(self.brush_groups[group].tint));
+                self.put_vec4s(program, "tint", self.brush_groups[group].tint_packed);
             }
         }
         self.placed_group = group;
@@ -1288,41 +1295,51 @@ obj QuakeRenderer {
     batches of the pass at its placement once, since depth testing makes
     the order free. Two-sided batches draw with culling off."""
     def draw_opaque_pass(program: GpuProgram, level: Level, kind: int, view: VisibleIndices) {
-        if kind not in self.pass_batches {
-            return;
-        }
-        for batch in self.pass_batches[kind] {
-            if batch.id not in view.lists.spans {
-                continue;
-            }
-            self.place(program, -1, True);
-            if batch.two_sided {
-                rlDisableBackfaceCulling();
-            }
-            rlEnableTexture(u32(self.batch_texture(level, batch, -1)));
-            self.draw_spans(view.lists.spans[batch.id], view.buffers);
-            if batch.two_sided {
-                rlEnableBackfaceCulling();
-            }
-        }
-        for g in range(len(self.brush_groups)) {
-            group = self.brush_groups[g];
-            for (id, spans) in group.spans.items() {
+        if kind in view.shown {
+            for id in view.shown[kind] {
                 batch = self.batches[id];
-                if batch.kind != kind {
-                    continue;
-                }
-                self.place(program, g, True);
+                self.place(program, -1, True);
                 if batch.two_sided {
                     rlDisableBackfaceCulling();
                 }
-                rlEnableTexture(u32(self.batch_texture(level, batch, g)));
-                self.draw_spans(spans, self.brush_buffers);
+                rlEnableTexture(u32(self.batch_texture(level, batch, -1)));
+                self.draw_spans(view.lists.spans[id], view.buffers);
                 if batch.two_sided {
                     rlEnableBackfaceCulling();
                 }
             }
         }
+        for g in range(len(self.brush_groups)) {
+            group = self.brush_groups[g];
+            if kind not in group.shown {
+                continue;
+            }
+            for id in group.shown[kind] {
+                batch = self.batches[id];
+                self.place(program, g, True);
+                if batch.two_sided {
+                    rlDisableBackfaceCulling();
+                }
+                rlEnableTexture(u32(self.batch_texture(level, batch, g)));
+                self.draw_spans(group.spans[id], self.brush_buffers);
+                if batch.two_sided {
+                    rlEnableBackfaceCulling();
+                }
+            }
+        }
+    }
+
+    """The batches holding spans, by pass, in batch order."""
+    def batches_by_pass(spans: dict[int, list[IndexSpan]]) -> dict[int, list[int]] {
+        shown: dict[int, list[int]] = {};
+        for id in sorted(spans.keys()) {
+            kind = self.batches[id].kind;
+            if kind not in shown {
+                shown[kind] = [];
+            }
+            shown[kind].append(id);
+        }
+        return shown;
     }
 
     """Set uniforms only when their value changed: a program keeps its
