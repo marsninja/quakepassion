@@ -9,6 +9,7 @@ import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, forward_from }
+import from ..math.aabb { AABB }
 
 edge HasTrigger: World --> TouchTrigger {}
 edge Activates: TouchTrigger --> Door | Signal {}
@@ -355,12 +356,17 @@ edge HasMonsterJump: World --> MonsterJump {}
 node MonsterJump {
     has volume: CollisionMap,
         push: Vec3 = Vec3(),
-        height: float = 200.0;
+        height: float = 200.0,
+        reach: AABB = AABB(
+            mins=Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30),
+            maxs=Vec3(x=1.0e30, y=1.0e30, z=1.0e30)
+        );
 }
 
 walker MonsterJumpTick {
     has launched: int = 0,
-        movers: list[Opponent] = [];
+        movers: list[Opponent] = [],
+        origins: list[Vec3] = [];
 
     can begin with World entry {
         self.movers = [
@@ -373,14 +379,21 @@ walker MonsterJumpTick {
                 and actor.grounded
         ];
         if self.movers {
+            self.origins = [
+                actor.pos.sub(Vec3(z=actor.eye_height)) for actor in self.movers
+            ];
             visit [here->:HasMonsterJump:->];
         }
     }
 
     can launch with MonsterJump entry {
-        for actor in self.movers {
-            origin = actor.pos.sub(Vec3(z=actor.eye_height));
-            if not here.volume.trace(origin, origin, top_drop=0.0).start_solid {
+        box = here.reach;
+        for i in range(len(self.movers)) {
+            actor = self.movers[i];
+            origin = self.origins[i];
+            # Only a monster inside the volume's bounds can be touching it.
+            if not box.contains(origin)
+                or not here.volume.trace(origin, origin, top_drop=0.0).start_solid {
                 continue;
             }
             actor.velocity = Vec3(x=here.push.x, y=here.push.y, z=here.height);
@@ -410,10 +423,14 @@ def load_monster_jumps(world: World, bsp: Bsp) {
         angle = float(fields.get("angle", "0"));
         heading = Vec3() if angle < 0.0 else forward_from(math.radians(angle), 0.0);
         speed = float(fields.get("speed", "0")) or 200.0;
-        world +>:HasMonsterJump:+> MonsterJump(
+        jump = MonsterJump(
             volume=volume,
             push=heading.scale(speed),
             height=float(fields.get("height", "0")) or 200.0
         );
+        if volume.groups {
+            jump.reach = volume.groups[0].bounds;
+        }
+        world +>:HasMonsterJump:+> jump;
     }
 }

@@ -134,6 +134,9 @@ def touching(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, to
     parts = mover.pose(t);
     turn = turn_for(parts[1]);
     for j in range(len(mover.hulls)) {
+        if not collision.reaches(mover.hulls[j], origin, 2.0) {
+            continue;
+        }
         for delta in [
             Vec3(x=1.0),
             Vec3(x=-1.0),
@@ -208,6 +211,18 @@ walker RotatorTick {
             body = bodies[i];
             origin = body.pos.sub(Vec3(z=heights[i]));
             drop = self.collision.top_drop if body is self.player else 0.0;
+            # Bounds cover every pose; a body beyond them neither rides nor blocks.
+            near = False;
+            for index in here.hulls {
+                if self.collision.reaches(index, origin, 2.0) {
+                    near = True;
+                    break;
+                }
+            }
+            if not near {
+                moves.append(origin);
+                continue;
+            }
             riding = standing_on(here, self.collision, origin, here.clock, drop);
             hit = mover_overlaps(here, self.collision, origin, after, drop);
             if not riding and not hit {

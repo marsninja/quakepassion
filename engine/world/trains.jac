@@ -67,6 +67,7 @@ node Train {
         faces: list[int] = [],
         hulls: list[int] = [],
         origins: list[Vec3] = [],
+        extents: list[AABB] = [],
         bounds: AABB = AABB(mins=Vec3(), maxs=Vec3()),
         touch_message: str = "",
         message_wait: float = 0.0,
@@ -225,6 +226,13 @@ def attach_train(world: World, bsp: Bsp, collision: CollisionMap, train: Train) 
             continue;
         }
         original_bounds = collision.bounds[h];
+        # The hull's own reach, relative to its offset, for rider checks.
+        train.extents.append(
+            AABB(
+                mins=original_bounds.mins.sub(collision.offsets[h]),
+                maxs=original_bounds.maxs.sub(collision.offsets[h])
+            )
+        );
         lo = original_bounds.mins;
         hi = original_bounds.maxs;
         for point in route.points {
@@ -250,6 +258,28 @@ def move_train(
 ) -> bool {
     delta = motion.sub(train.motion);
     carried: list[Player] = [];
+    # Broad phase: the hulls' current reach, grown by this step and the
+    # support probe. Only actors inside it can ride or block the train.
+    reach = delta.length() + 1.0;
+    near = len(train.extents) == len(train.hulls);
+    lo = Vec3(x=1.0e30, y=1.0e30, z=1.0e30);
+    hi = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);
+    if near {
+        for i in range(len(train.hulls)) {
+            offset = collision.offsets[train.hulls[i]];
+            box = train.extents[i];
+            lo = Vec3(
+                x=min(lo.x, box.mins.x + offset.x),
+                y=min(lo.y, box.mins.y + offset.y),
+                z=min(lo.z, box.mins.z + offset.z)
+            );
+            hi = Vec3(
+                x=max(hi.x, box.maxs.x + offset.x),
+                y=max(hi.y, box.maxs.y + offset.y),
+                z=max(hi.z, box.maxs.z + offset.z)
+            );
+        }
+    }
     for actor in actors {
         if actor.health <= 0 {
             continue;
@@ -258,11 +288,33 @@ def move_train(
             if isinstance(actor, Opponent)
             else collision.eye_height;
         origin = actor.pos.sub(Vec3(z=height));
+        if near
+            and (
+                origin.x < lo.x - reach
+                or origin.x > hi.x + reach
+                or origin.y < lo.y - reach
+                or origin.y > hi.y + reach
+                or origin.z < lo.z - reach
+                or origin.z > hi.z + reach
+            ) {
+            continue;
+        }
         rider = False;
         intersects = False;
         for i in range(len(train.hulls)) {
             index = train.hulls[i];
             local = origin.sub(collision.offsets[index]);
+            if near {
+                box = train.extents[i];
+                if local.x < box.mins.x - reach
+                    or local.x > box.maxs.x + reach
+                    or local.y < box.mins.y - reach
+                    or local.y > box.maxs.y + reach
+                    or local.z < box.mins.z - reach
+                    or local.z > box.maxs.z + reach {
+                    continue;
+                }
+            }
             support = collision.hulls[index] spawn Sweep(
                 start=local,
                 finish=local.add(Vec3(z=-0.25)),

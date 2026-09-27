@@ -16,7 +16,7 @@ import from engine.world.pickups { Pickup, PickupRule, HasPickup, PickupTick }
 import from engine.world.models { ModelResource, GatherModels, attach_model }
 import from engine.formats.animated { AnimatedModel }
 import from engine.world.combat { CombatState, Opponent, HasOpponent, fire_weapon, CombatTick }
-import from engine.world.world { World, Player, Area, In }
+import from engine.world.world { World, Player, Area, In, move_to_area }
 import from engine.world.level { Level }
 import from engine.world.inventory { AdjustInventory, quantity }
 import from engine.core.savegame { snapshot, restore }
@@ -303,7 +303,7 @@ test "items spin and bob on the world clock per original client rules" {
     area = Area(name="a", bounds=AABB(mins=Vec3(), maxs=Vec3()));
     world ++> area;
     item = Pickup(rule=PickupRule(kind="armor", amount=1, capacity=1, model=""), yaw=0.5);
-    item +>:In:+> area;
+    move_to_area(item, area);
     visual = attach_model(item, ModelResource(name="m", model=AnimatedModel(), skins=[]));
     still = world spawn GatherModels(seconds=1.0);
     assert still.draws[0].yaw == 0.5;

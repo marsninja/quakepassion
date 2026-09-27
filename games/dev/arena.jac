@@ -6,7 +6,7 @@ Function bodies live in impl/arena.impl.jac."""
 
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
-import from engine.world.world { World, Area, Portal, In, Player, Surface }
+import from engine.world.world { World, Area, Portal, In, Player, Surface, move_to_area }
 
 
 def box(cx: float, cy: float, cz: float, sx: float, sy: float, sz: float, color: list[int]) -> Surface;

@@ -32,7 +32,10 @@ phase 1 builds them by hand."""
 node Area {
     has name: str,
         bounds: AABB,
-        surfaces: list[Surface] = [];
+        surfaces: list[Surface] = [],
+        # Entities In this area, kept by move_to_area; ThinkPass skips empty
+        # areas, which are most of a BSP level's leaves.
+        occupants: int = 0;
 }
 
 

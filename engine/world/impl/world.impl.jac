@@ -2,11 +2,14 @@
 query/rewire helpers. Declarations live in world.jac."""
 
 impl ThinkPass.start with World entry {
-    visit [here -->[?:Area]];
+    visit [area for area in [here -->[?:Area]] if area.occupants > 0];
 }
 
 impl ThinkPass.at_area with Area entry {
-    visit [here <-:In:<-];
+    inside = [here <-:In:<-];
+    # Entities removed without move_to_area leave a stale count; fix it.
+    here.occupants = len(inside);
+    visit inside;
 }
 
 impl ThinkPass.at_entity with Entity entry {
@@ -56,9 +59,13 @@ impl area_of(ent: Entity) -> Area | None {
 }
 
 impl move_to_area(ent: Entity, new_area: Area) {
+    for old in [ent ->:In:->[?:Area]] {
+        old.occupants = max(0, old.occupants - 1);
+    }
     olds = [edge ent ->:In:->];
     for e in olds {
         del e;
     }
     ent +>: In :+> new_area;
+    new_area.occupants += 1;
 }
