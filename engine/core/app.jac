@@ -4,6 +4,7 @@ draws only what the flood found.
 
 Method bodies live in impl/app.impl.jac."""
 import math;
+import time;
 import from ..world.doors { BlastMover }
 import from ..world.gates { ApplyGates, rune_summary }
 import from ..world.chthon { ChthonTick }
@@ -164,6 +165,18 @@ glob FLY_SPEED: float = 240.0;
 glob PITCH_LIMIT: float = 1.45;
 
 
+"""The last frame's render cost by stage, in milliseconds."""
+obj RenderTimes {
+    has visible: float = 0.0,
+        portal: float = 0.0,
+        world: float = 0.0,
+        models: float = 0.0,
+        effects: float = 0.0,
+        weapon: float = 0.0,
+        hud: float = 0.0,
+        present: float = 0.0;
+}
+
 obj App {
     has world: World,
         player: Player,
@@ -219,7 +232,8 @@ obj App {
         respawn_wait: float = 0.0,
         awaiting_respawn: bool = False,
         show_scores: bool = False,
-        arena_progress: ArenaProgress = ArenaProgress();
+        arena_progress: ArenaProgress = ArenaProgress(),
+        render_times: RenderTimes = RenderTimes();
     # Q3's postgame menu over the podium, its clock, the career award totals
     # and each character's head placement for the scoreboard.
     has postgame: Postgame | None = None,

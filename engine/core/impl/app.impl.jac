@@ -132,10 +132,15 @@ impl App.render_frame() {
         );
     }
     if self.level.active {
+        # RenderTimes: each stage's cost this frame, in milliseconds.
+        stamp = time.time();
         faces = self.level.visible(self.world, p.pos, self.culling);
         combat_lights(self.level.lighting, self.world, p, self.combat);
         self.quake.time = self.simulation_time;
+        self.render_times.visible = (time.time() - stamp) * 1000.0;
+        stamp = time.time();
         self.render_portal(faces);
+        self.render_times.portal = (time.time() - stamp) * 1000.0;
         # The view: damage and landing kicks, weapon punch, the dead view.
         game = self.level.bsp.game;
         self.view.take_damage(p);
@@ -156,9 +161,12 @@ impl App.render_frame() {
             view_roll = math.radians(dead[2]);
             view_yaw = dead[3];
         }
+        stamp = time.time();
         self.renderer.begin_frame(eye, view_yaw, view_pitch, view_roll);
         self.quake.view_forward = forward_from(view_yaw, view_pitch);
         self.last_drawn = self.quake.draw(self.level, faces, eye);
+        self.render_times.world = (time.time() - stamp) * 1000.0;
+        stamp = time.time();
         self.models.draw(
             self.world,
             eye,
@@ -174,9 +182,13 @@ impl App.render_frame() {
         );
         self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
+        self.render_times.models = (time.time() - stamp) * 1000.0;
+        stamp = time.time();
         self.effects.draw(
             self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
         );
+        self.render_times.effects = (time.time() - stamp) * 1000.0;
+        stamp = time.time();
         podium = self.postgame is not None;
         if not self.smoke and not self.finale_active and not podium {
             inset = self.hud.view_inset(
@@ -191,6 +203,8 @@ impl App.render_frame() {
             );
         }
         self.renderer.end_scene();
+        self.render_times.weapon = (time.time() - stamp) * 1000.0;
+        stamp = time.time();
         if not self.smoke and not self.finale_active {
             self.draw_view_blend();
             self.draw_powerup_blend();
@@ -430,7 +444,10 @@ impl App.render_frame() {
         if self.menu.opened {
             self.menu.draw();
         }
+        self.render_times.hud = (time.time() - stamp) * 1000.0;
+        stamp = time.time();
         self.renderer.end_frame();
+        self.render_times.present = (time.time() - stamp) * 1000.0;
         return;
     }
     facing = forward_from(p.yaw, p.pitch);
