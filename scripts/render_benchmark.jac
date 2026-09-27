@@ -7,7 +7,9 @@ median and 95th percentile frame time, the frame rate at the median, and the
 median cost of each render stage (App.render_times). Run it on a quiet
 machine and compare runs made back to back. With QP_BENCH_SHOTS=1 it also
 saves four views per map, a quarter turn apart, as bench_<map>_<n>.png in the
-working directory, for comparing renderers by eye.
+working directory, for comparing renderers by eye; QP_BENCH_DT fixes each
+frame's time step (e.g. 0.01), so renderers of different speeds show the same
+moment of every animation in each view.
 
     jac build scripts/render_benchmark.jac --native -o .jac/render-benchmark
     DYLD_LIBRARY_PATH=vendor .jac/render-benchmark
@@ -51,6 +53,7 @@ with entry {
         app.audio.volume = 0.0;
         app.smoke = False;
         app.walking = True;
+        app.fixed_dt = float(os.getenv("QP_BENCH_DT", "0"));
         app.player.god_mode = True;
         # Q3: no warmup, so the scoreboard does not cover the view.
         contest = match_of(app.world);

@@ -213,6 +213,9 @@ obj App {
         audio: Feedback = Feedback(),
         menu: LevelMenu = LevelMenu(),
         skip_time: bool = False,
+        # A fixed frame time in seconds (0: the real one), so benchmark runs
+        # at different frame rates reach the same moment in the same frame.
+        fixed_dt: float = 0.0,
         walking: bool = False,
         fly_speed: float = 240.0,
         sensitivity: float = 0.0022,

@@ -761,7 +761,7 @@ impl App.load_destination(
 }
 
 impl App.step() -> bool {
-    dt = 0.0 if self.skip_time else self.renderer.frame_time();
+    dt = 0.0 if self.skip_time else (self.fixed_dt if self.fixed_dt > 0.0 else self.renderer.frame_time());
     self.skip_time = False;
     if not self.smoke and IsKeyPressed(i32(256)) {
         self.menu.opened = not self.menu.opened;
