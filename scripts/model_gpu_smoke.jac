@@ -1,6 +1,7 @@
 """GPU model animation against the immediate path: original Q1, Q2 and Q3
 models drawn mid-blend, lit, faded, and the Q3 torso again with its quad
-damage shell (scrolled, pushed out along the normals), first through the GPU
+damage shell (scrolled, pushed out along the normals) and inside a fog
+volume, first through the GPU
 keyframe shader (model_gpu_smoke_gpu.png) and then through the legacy CPU
 pose (model_gpu_smoke_cpu.png), from the same view. The two pictures should
 match.
@@ -17,6 +18,8 @@ import from games.arena_character { player_part }
 import from engine.world.lighting { Illumination }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.orientation { model_basis }
+import from engine.formats.bsp { FogVolume }
+import from engine.render.quake { upload_fog_image }
 
 with entry {
     home = os.getenv("HOME", "");
@@ -45,6 +48,9 @@ with entry {
     }
     light = Illumination(enabled=True, ambient=Vec3(x=0.35, y=0.3, z=0.3), directed=Vec3(x=0.6, y=0.6, z=0.5), direction=Vec3(x=0.5, y=-0.5, z=0.7).normalized());
     eye = Vec3(x=-170.0);
+    # A fog volume whose surface crosses the Q3 torso on the right.
+    fog_image = upload_fog_image();
+    fog = FogVolume(mins=Vec3(x=-100.0, y=-120.0, z=-100.0), maxs=Vec3(x=100.0, y=-40.0, z=20.0), has_surface=True, inward=Vec3(z=-1.0), offset=-45.0, color=Vec3(x=0.3, y=0.5, z=0.2), depth=60.0);
     yaw = 2.6;
     for name in ["gpu", "cpu"] {
         for frame in range(3) {
@@ -65,9 +71,11 @@ with entry {
             if name == "gpu" {
                 q3.draw(spot, yaw, 110, 111, 0.5, eye=eye, illumination=light);
                 q3.draw(spot, yaw, 110, 111, 0.5, eye=eye, seconds=1.3, illumination=light, overlay=shell, inflate=3.0);
+                q3.draw(spot.add(Vec3(z=-55.0)), yaw, 110, 111, 0.5, eye=eye, illumination=light, fog=fog, fog_image=fog_image);
             } else {
                 q3.draw_immediate(spot, yaw, 110, 111, 0.5, eye=eye, illumination=light);
                 q3.draw_immediate(spot, yaw, 110, 111, 0.5, eye=eye, seconds=1.3, illumination=light, overlay=shell, inflate=3.0);
+                q3.draw_immediate(spot.add(Vec3(z=-55.0)), yaw, 110, 111, 0.5, eye=eye, illumination=light, fog=fog, fog_image=fog_image);
             }
             renderer.end_scene();
             if frame == 2 {
