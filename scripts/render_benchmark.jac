@@ -20,6 +20,7 @@ import from engine.core.clock { Clock }
 import from engine.core.menu { game_directory }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
+import from engine.world.arena { match_of }
 
 glob BENCH_DEFAULT: str = "q1:e1m1,q1:e4m7,q2:base1,q2:bunk1,q2:train,q3:q3dm1,q3:q3dm7,q3:q3dm11,q3:q3dm12,q3:q3tourney2";
 
@@ -51,6 +52,11 @@ with entry {
         app.smoke = False;
         app.walking = True;
         app.player.god_mode = True;
+        # Q3: no warmup, so the scoreboard does not cover the view.
+        contest = match_of(app.world);
+        if contest is not None {
+            contest.warmup = 0.0;
+        }
         start_yaw = app.player.yaw;
         for i in range(60) {
             app.step();
