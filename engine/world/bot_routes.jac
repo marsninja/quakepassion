@@ -41,31 +41,103 @@ node Passage {
 edge Exits: NavArea --> Passage {}
 edge Enters: Passage --> NavArea {}
 
+"""A travel table under construction: the times so far and the areas whose
+entering passages still need relaxing (the next round's frontier)."""
+obj TravelJob {
+    has goal: int,
+        times: list[int],
+        frontier: list[NavArea] = [],
+        queued: set[int] = set();
+}
+
+# Passage relaxations spent per navigation tick on tables built in the
+# background (a full table on the ladder's arenas is some 15-25 thousand).
+glob TABLE_BUDGET: int = 1500;
+
 node NavMesh {
     has aas: Aas,
         areas: list[NavArea] = [],
         tables: dict[int, list[int]] = {},
-        recent: list[int] = [];
+        recent: list[int] = [],
+        jobs: list[TravelJob] = [];
 
     """Travel times (hundredths of a second) from every area to `goal`, cached
-    for the most recently used goals."""
+    for the most recently used goals; built now if not cached."""
     def times_to(goal: int) -> list[int] {
         if goal in self.tables {
             return self.tables[goal];
         }
+        job = self.job_for(goal);
+        while job.frontier {
+            self.relax(job, UNREACHED);
+        }
+        return self.finish(job);
+    }
+
+    """The travel table to `goal` if it is built; otherwise None, with the
+    table queued to be built a budget at a time by advance_tables (botlib
+    builds its routing caches on demand; here the work is spread over
+    ticks instead of stalling one)."""
+    def times_ready(goal: int) -> list[int] | None {
+        if goal in self.tables {
+            return self.tables[goal];
+        }
+        self.job_for(goal);
+        return None;
+    }
+
+    """Spend up to `budget` passage relaxations on queued tables."""
+    def advance_tables(budget: int = TABLE_BUDGET) {
+        spent = 0;
+        while self.jobs and spent < budget {
+            job = self.jobs[0];
+            spent += self.relax(job, budget - spent);
+            if not job.frontier {
+                self.finish(job);
+            }
+        }
+    }
+
+    def job_for(goal: int) -> TravelJob {
+        for queued in self.jobs {
+            if queued.goal == goal {
+                return queued;
+            }
+        }
         times = [UNREACHED for area in self.areas];
         times[goal] = 0;
-        relax = self.areas[goal] spawn TravelTimes(times=times);
-        times = relax.times;
-        self.tables[goal] = times;
-        self.recent.append(goal);
+        job = TravelJob(goal=goal, times=times, frontier=[self.areas[goal]]);
+        self.jobs.append(job);
+        return job;
+    }
+
+    """One pass of the relaxation over the head of the job's frontier,
+    stopping near `budget` relaxations; returns how many it made."""
+    def relax(job: TravelJob, budget: int) -> int {
+        count = min(len(job.frontier), max(1, budget // 2));
+        chunk = job.frontier[0:count];
+        job.frontier = job.frontier[count:];
+        for area in chunk {
+            job.queued.discard(area.index);
+        }
+        relax = self spawn TravelTimes(times=job.times, areas=self.areas, chunk=chunk, queued=job.queued);
+        job.frontier.extend(relax.reached);
+        return relax.relaxed;
+    }
+
+    def finish(job: TravelJob) -> list[int] {
+        if job in self.jobs {
+            self.jobs.remove(job);
+        }
+        self.tables[job.goal] = job.times;
+        self.recent.append(job.goal);
         if len(self.recent) > 256 {
             oldest = self.recent.pop(0);
             if oldest in self.tables {
                 self.tables.pop(oldest);
             }
         }
-        return times;
+        return job.times;
     }
 
     """The area holding an origin. AAS space is expanded by the player box, so
@@ -122,20 +194,34 @@ def bot_travel(kind: int) -> bool {
     ];
 }
 
-"""Backward relaxation: from an area, look at the passages entering it; a
-passage that shortens its source area's time sends the walker on to that area."""
+"""Backward relaxation, a frontier at a time: from each area in `chunk`,
+look at the passages entering it; a passage that shortens its source area's
+time puts that area on the next frontier (`reached`)."""
 walker TravelTimes {
-    has times: list[int];
+    has times: list[int],
+        areas: list[NavArea],
+        chunk: list[NavArea],
+        queued: set[int],
+        reached: list[NavArea] = [],
+        relaxed: int = 0;
+
+    can start with NavMesh entry {
+        visit self.chunk;
+    }
 
     can settle with NavArea entry {
         visit [here<-:Enters:<-];
     }
 
     can relax with Passage entry {
+        self.relaxed += 1;
         candidate = self.times[here.target] + here.cost;
         if candidate < self.times[here.source] {
             self.times[here.source] = candidate;
-            visit [here<-:Exits:<-];
+            if here.source not in self.queued {
+                self.queued.add(here.source);
+                self.reached.append(self.areas[here.source]);
+            }
         }
     }
 }
@@ -196,7 +282,8 @@ obj BotRoute {
     has points: list[Vec3] = [],
         launches: list[Vec3] = [],
         areas: list[int] = [],
-        found: bool = False;
+        found: bool = False,
+        pending: bool = False;
 
     def add(point: Vec3, area: int, launch: Vec3 = Vec3()) {
         self.points.append(point);
@@ -216,7 +303,13 @@ def plan_route(mesh: NavMesh, origin: Vec3, goal: Vec3, limit: int = 32) -> BotR
     if here_area == 0 or goal_area == 0 {
         return route;
     }
-    times = mesh.times_to(goal_area);
+    ready = mesh.times_ready(goal_area);
+    if ready is None {
+        # The goal's travel table is still being built: ask again shortly.
+        route.pending = True;
+        return route;
+    }
+    times: list[int] = ready;
     if times[here_area] >= UNREACHED {
         return route;
     }
@@ -265,12 +358,17 @@ def plan_route(mesh: NavMesh, origin: Vec3, goal: Vec3, limit: int = 32) -> BotR
     return route;
 }
 
-"""Whether the AAS connects two points, from cached travel times."""
+"""Whether the AAS connects two points, from cached travel times. A goal
+whose table is still being built counts as unreachable until it is."""
 def reachable(mesh: NavMesh, origin: Vec3, goal: Vec3) -> bool {
     here_area = mesh.locate(origin);
     goal_area = mesh.locate(goal);
     if here_area == 0 or goal_area == 0 {
         return False;
     }
-    return here_area == goal_area or mesh.times_to(goal_area)[here_area] < UNREACHED;
+    if here_area == goal_area {
+        return True;
+    }
+    times = mesh.times_ready(goal_area);
+    return times is not None and times[here_area] < UNREACHED;
 }

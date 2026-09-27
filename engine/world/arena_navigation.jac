@@ -141,6 +141,16 @@ obj ArenaContactIndex {
 # Build authored directed links once at level load. Jump-pad trajectories are
 # checked against the live hull; actor movement still performs live collision.
 def prepare_arena_links(world: World, collision: CollisionMap) {
+    # Every item is a bot goal from the first tick: build the travel tables to
+    # their areas now, while the level loads, rather than all in one tick.
+    for mesh in [world->:HasNavMesh:->][?:NavMesh] {
+        for pickup in [world->:HasPickup:->][?:Pickup] {
+            goal = mesh.locate(pickup.pos);
+            if goal != 0 {
+                mesh.times_to(goal);
+            }
+        }
+    }
     for portal in [world->:HasTraversal:->][?:Traversal] {
         if not portal.volume.bounds { continue; }
         center = portal.volume.bounds[0].center();
@@ -189,6 +199,11 @@ walker ArenaNavigationTick {
         self.traversals = self.index.portals;
         meshes = [here->:HasNavMesh:->][?:NavMesh];
         self.mesh = meshes[0] if meshes else None;
+        # Tables for new goals (dropped weapons, chased foes) build a budget
+        # at a time, once per tick.
+        if self.mesh is not None and not self.contacts {
+            self.mesh.advance_tables();
+        }
         visit [here->:HasOpponent:->];
     }
 
