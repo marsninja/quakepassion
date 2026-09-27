@@ -63,3 +63,25 @@ renderer pixel for pixel at the same moment (`QP_BENCH_DT`), except:
 - **Environment-mapped and specular stages on moving brush models** reflect
   from where the model is now; before they used its rest position with the
   current eye.
+
+### Measured
+
+`scripts/render_benchmark.jac`, old and new renderer run back to back twice
+on the same machine (macOS arm64); world stage median ms and frame rate:
+
+| map | world ms before → after | fps before → after |
+|---|---|---|
+| q1 e1m1 | 0.32 → 0.08 | 894–909 → 1351–1361 |
+| q1 e4m7 | 0.36 → 0.06 | 256–312 → 375–380 |
+| q2 base1 | 0.94 → 0.20 | 296 → 429–470 |
+| q2 bunk1 | 1.48 → 0.45 | 201–213 → 285–286 |
+| q2 train | 1.63 → 0.37 | 158–166 → 244 |
+| q3 q3dm1 | 1.16 → 0.15 | 255–266 → 481–498 |
+| q3 q3dm7 | 1.51 → 0.20 | 130 → 165–168 |
+| q3 q3dm11 | 2.16 → 0.36 | 125–130 → 171–172 |
+| q3 q3dm12 | 4.43 → 0.43 | 68–71 → 129 |
+| q3 q3tourney2 | 1.41 → 0.12 | 222–226 → 471 |
+
+The world stage includes starting the frame (clearing the screen). What
+remains is mostly one texture bind and draw call per visible batch (Q2 maps
+have many textures) and the brush groups' placements.
