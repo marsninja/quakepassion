@@ -846,7 +846,7 @@ obj ModelRenderer {
     }
 }
 
-import from ..world.world { World }
+import from ..world.world { World, Area }
 import from ..world.models { ModelResource, HasModelResource, GatherModels, ModelDraw }
 
 """tr_main.c R_ComputeFogNum: the first fog volume the model's bounding sphere
@@ -863,11 +863,14 @@ def model_fog(fogs: list[FogVolume], origin: Vec3, radius: float) -> FogVolume |
 }
 
 obj ModelScene {
-    has resources: dict[str, ModelRenderer] = {};
+    has resources: dict[str, ModelRenderer] = {},
+        areas: list[Area] = [];
 
     def upload(world: World) {
         self.close();
         try {
+            # Levels build their areas before their models are uploaded.
+            self.areas = [world-->[?:Area]];
             for resource in [world->:HasModelResource:->][?:ModelResource] {
                 if resource.name in self.resources {
                     continue;
@@ -895,7 +898,7 @@ obj ModelScene {
         fogs: list[FogVolume] = [],
         fog_image: int = 0
     ) {
-        scene = world spawn GatherModels(seconds=seconds);
+        scene = world spawn GatherModels(seconds=seconds, areas=self.areas);
         forward = forward_from(yaw, pitch);
         # One program bind for every model (the legacy path draws immediately).
         gpu_pass = open_model_pass();
@@ -984,6 +987,7 @@ obj ModelScene {
             self.resources[name].close();
         }
         self.resources = {};
+        self.areas = [];
     }
 }
 
