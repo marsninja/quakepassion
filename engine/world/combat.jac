@@ -4094,9 +4094,12 @@ walker CombatTick {
                     # Q3 bots route over the map's AAS, the original bots' own data.
                     plan = plan_route(mesh, origin, target);
                     here.route_wait = 0.25 if plan.found else 1.0;
+                    if plan.pending {
+                        here.route_wait = 0.05;
+                    }
                     here.route_target = target;
                     # botlib avoids goals it cannot route to; pick another.
-                    if not plan.found and here.arena_goal is not None {
+                    if not plan.found and not plan.pending and here.arena_goal is not None {
                         here.roam_goal = None;
                         here.arena_goal = None;
                         here.arena_goal_wait = 0.0;

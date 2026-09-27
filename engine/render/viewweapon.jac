@@ -23,7 +23,7 @@ import from vendor.raylib {
     ) -> None;
 }
 import from .quake { rlDrawRenderBatchActive }
-import from .models { ModelRenderer }
+import from .models { ModelRenderer, open_model_pass, end_model_pass }
 import from ..assets.library { AssetLibrary }
 import from ..formats.animated { AnimatedModel, AnimatedSurface }
 import from ..world.models { powerup_shaders, POWERUP_INFLATE, POWERUP_INVISIBLE }
@@ -246,6 +246,8 @@ obj ViewWeapon {
             y=max(0.1, illumination.ambient.y),
             z=max(0.1, illumination.ambient.z)
         );
+        # One model pass for the gun, its barrel and flash, under this projection.
+        open_model_pass();
         try {
             # CG_AddWeaponWithPowerups: invisible, or plain plus powerup shells.
             powers = [power.kind for power in [player->:Empowered:->][?:Powerup] if power.remaining != 0.0];
@@ -324,6 +326,7 @@ obj ViewWeapon {
             }
             rlDrawRenderBatchActive();
         } finally {
+            end_model_pass();
             rlSetMatrixProjection(projection);
         }
     }

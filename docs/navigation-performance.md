@@ -96,3 +96,28 @@ comprehension storage (`any([item.value > 0.0 for item in items])`). Validation
 uses the proper local compiler fix; the engine keeps the idiom unchanged.
 
 Upstream compiler fix: https://github.com/jaseci-labs/jac/pull/9441.
+
+## Q3 arena frame spikes (September 2026)
+
+The ladder walkthrough showed one-off frames of 250-940 ms on the larger
+arenas. `scripts/frame_spike_probe.jac` plays arenas with the bots fighting
+and prints every frame over 50 ms with its render stages and the remaining
+(simulation) time; timing each walker spawn in `App.step` found three causes:
+
+- AAS travel tables. `NavMesh.times_to` relaxes the whole AAS graph for one
+  goal area (6000 areas and 7600 passages on q3dm11: 15-40 ms each). The
+  first navigation tick asked for every item's table at once (880 ms on
+  q3dm11), and dropped weapons and chased enemies asked for new ones later
+  (130-180 ms ticks on q3dm12). Item tables are now built while the level
+  loads (`prepare_arena_links`); any other table is queued and relaxed a
+  frontier chunk at a time, 1500 passages per navigation tick
+  (`advance_tables`). Until it is ready `reachable` says no and a planned
+  route is `pending`: the bot retries in 50 ms and keeps its goal.
+- Bot sight. `BotTactics` traced three lines to its enemy every 120 Hz tick;
+  on q3dm11 those traces cost several milliseconds per tick, a slow frame
+  ran more ticks, and frames climbed to the 250 ms catch-up limit. Sight is
+  now checked when the bot thinks (10 Hz, BotAI's bot_thinktime) and at once
+  for a new enemy.
+- The first frame of a level (uploads, first draws) took 100-200 ms and the
+  next frame simulated all of it. `load_destination` now draws the level
+  once before play.
