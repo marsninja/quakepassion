@@ -104,6 +104,11 @@ obj HudModels {
             return;
         }
         now = status.clock;
+        # A new level restarts the clock: a hit from the last level would
+        # count as one from the future and swell the head past the bar.
+        if self.damage_time > now {
+            self.damage_time = -100.0;
+        }
         if self.last_health >= 0 and status.health < self.last_health {
             self.damage_time = now;
         }
