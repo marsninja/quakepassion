@@ -229,7 +229,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 origin = origin.add(Vec3(x=16.0, y=16.0));
             }
             # Opponent movement uses the same eye/body contract as the player.
-            position = origin.add(Vec3(z=level.collision.eye_height));
+            # Q3 SelectSpawnPoint lifts a spawn 9 units off its spot (q3dm19's
+            # spots sit that close to the floor), as respawns here do.
+            position = origin.add(Vec3(z=level.collision.eye_height + (9.0 if arena else 0.0)));
             handicap = bot_handicap(bot_skill(level.skill));
             if arena and position.sub(player_start).length() < 80.0 {
                 continue;
