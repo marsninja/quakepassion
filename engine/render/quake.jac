@@ -716,7 +716,9 @@ obj QuakeRenderer {
     face's visibility changes; their placements are refreshed every frame."""
     def update_brushes(level: Level) {
         faces = level.bsp.faces;
-        lamp = self.lighting.grid is None;
+        # Moving faces lit per frame (the passion movers): only the single-pass
+        # shader takes their light; Q1 and Q2 samples are white.
+        lamp = self.lighting.grid is None and self.single_pass;
         signature: list[int] = [];
         for m in range(len(self.brush_models)) {
             members = self.brush_models[m].faces;
@@ -777,7 +779,7 @@ obj QuakeRenderer {
 
     def group_brushes(level: Level) {
         faces = level.bsp.faces;
-        lamp = self.lighting.grid is None;
+        lamp = self.lighting.grid is None and self.single_pass;
         groups: list[BrushGroup] = [];
         resting: dict[int, BrushGroup] = {};
         for model in self.brush_models {
