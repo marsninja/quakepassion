@@ -110,6 +110,59 @@ test "walkable slopes ground the player while steep slopes do not" {
     assert not player.grounded;
 }
 
+"""A 35 degree ramp rising along +x (walkable: normal z 0.82), topped by a
+flat floor at z 40 when `crest` is set."""
+def ramp_map(crest: bool) -> CollisionMap {
+    ramp = HullCell(normal=Vec3(x=-0.573576, z=0.819152), distance=0.0);
+    ramp +>:HullFront:+> HullCell(contents=-1);
+    if crest {
+        ramp +>:HullBack:+> halfspace(Vec3(z=1.0), 40.0);
+    } else {
+        ramp +>:HullBack:+> HullCell(contents=-2);
+    }
+    return CollisionMap(hulls=[ramp], offsets=[Vec3()]);
+}
+
+test "walking up and down a ramp stays on the ground at full speed" {
+    for heading in [1.0, -1.0] {
+        for game in ["q1", "q2", "q3"] {
+            collision = ramp_map(False);
+            player = Player(pos=Vec3(z=22.04));
+            for i in range(240) {
+                player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), game=game);
+                assert player.grounded;
+            }
+            start = player.pos.x;
+            player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), game=game);
+            assert abs(abs(player.pos.x - start) - 320.0 / 120.0) < 0.01;
+        }
+    }
+}
+
+test "a jump still leaves a ramp" {
+    collision = ramp_map(False);
+    player = Player(pos=Vec3(z=22.04));
+    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), jump=True, game="q1");
+    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game="q1");
+    assert not player.grounded and player.velocity.z > 0.0;
+}
+
+test "Q1 and Q2 walk over a ramp's crest while Q3 kicks off it" {
+    for game in ["q1", "q2", "q3"] {
+        collision = ramp_map(True);
+        player = Player(pos=Vec3(x=-40.0, z=-28.0 + 22.04));
+        airborne = 0;
+        for i in range(120) {
+            player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game=game);
+            if not player.grounded {
+                airborne += 1;
+            }
+        }
+        assert player.pos.x > 200.0 and abs(player.pos.z - 62.03125) < 0.001;
+        assert (airborne > 0) == (game == "q3");
+    }
+}
+
 test "cyclic collision graphs report invalid geometry" {
     cycle = HullCell(normal=Vec3(z=1.0));
     empty = HullCell(contents=-1);

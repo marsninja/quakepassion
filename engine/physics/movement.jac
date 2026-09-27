@@ -61,8 +61,9 @@ def step_slide(
 ) -> Motion {
     flat = slide(collision, pos, velocity, dt);
     # Q2/Q3 PM_StepSlideMove also steps while falling, catching ledges; Q1
-    # SV_WalkMove does not stair up while jumping. None step while rising.
-    if velocity.z > 0.0 or (not grounded and not air_step) {
+    # SV_WalkMove does not stair up while jumping. None step while rising
+    # off the ground, but walking up a ramp still climbs a stair at its top.
+    if not grounded and (velocity.z > 0.0 or not air_step) {
         return flat;
     }
     # A step cannot improve an unobstructed horizontal move (including rest).
@@ -176,10 +177,15 @@ walker MovePlayer {
         here.knockback_time = max(0.0, here.knockback_time - self.dt);
         was_grounded = here.grounded;
         ground = self.collision.trace(pos, pos.add(Vec3(z=-0.25)));
+        # Only rising off the ground (a jump or a kick) leaves it, measured
+        # away from the plane so walking up a ramp stays on it: Q3
+        # PM_GroundTrace kicks off above 10 units a second, Q2
+        # PM_CatagorizePosition above 180.
+        rising = here.velocity.dot(ground.normal) > (10.0 if self.game == "q3" else 180.0);
         here.grounded = not ground.start_solid
             and ground.fraction < 1.0
             and ground.normal.z >= 0.7
-            and here.velocity.z <= 0.0;
+            and not (here.velocity.z > 0.0 and rising);
         if here.grounded {
             pos = ground.end;
             if not was_grounded and here.fall_speed < 0.0 {
@@ -212,7 +218,11 @@ walker MovePlayer {
                         max(0.0, speed - max(100.0, speed) * 6.0 * self.dt) / speed
                     );
                 }
-                here.velocity = clip_velocity(here.velocity, ground.normal);
+                # Q2/Q3 PM_ClipVelocity against the ground both ways: the walk
+                # follows the slope down a ramp instead of hopping off it.
+                here.velocity = here.velocity.sub(
+                    ground.normal.scale(here.velocity.dot(ground.normal))
+                );
                 if wants_jump {
                     self.take_off(here);
                 }
@@ -243,8 +253,32 @@ walker MovePlayer {
             here.grounded,
             self.game in ["q2", "q3"]
         );
+        if here.grounded and self.game != "q3" {
+            moved = self.follow_ground(pos, moved);
+        }
         here.velocity = moved.velocity;
         here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
+    }
+
+    """Q2 PM_StepSlideMove traces a walk back down onto the floor, so the
+    body stays on the ground over the crest of a ramp or onto a slope below
+    rather than lifting off it for a hop. Only the gap a walkable slope can
+    open over this move is closed; ledges and stairs are still fallen from.
+    The velocity follows the floor it lands on, as the ramp's climb would
+    otherwise carry on past the crest."""
+    def follow_ground(start: Vec3, moved: Motion) -> Motion {
+        run = Vec3(x=moved.pos.x - start.x, y=moved.pos.y - start.y).length();
+        if run <= 0.0 {
+            return moved;
+        }
+        # Floors are walkable up to 0.7 (about 45.6 degrees): tan = 1.02.
+        drop = self.collision.trace(moved.pos, moved.pos.add(Vec3(z=-(run * 1.02 + 0.25))));
+        if drop.start_solid or drop.fraction == 1.0 or drop.normal.z < 0.7 {
+            return moved;
+        }
+        moved.pos = drop.end;
+        moved.velocity = moved.velocity.sub(drop.normal.scale(moved.velocity.dot(drop.normal)));
+        return moved;
     }
 
     """Q1 PlayerJump / Q2 PM_CheckJump / Q3 PM_CheckJump: 270 units a second
