@@ -72,6 +72,7 @@ import from .gpu {
 }
 import from .world_mesh {
     IndexLists,
+    IndexSpan,
     SurfaceBatch,
     VisibleIndices,
     ChunkIndices,
@@ -118,6 +119,34 @@ obj LightRect {
     has x: int = 0,
         y: int = 0,
         layer: float = 0.0;
+}
+
+"""One Q3 shader stage prepared at level load for the stage shader: its GL
+state (as a key and its parts), its image frames, and every uniform that
+does not change with time, packed once. Waves, scrolls and moves are
+evaluated each frame (`tint`, `tcmods` or `deform_values` left empty)."""
+obj StagePlan {
+    has texture: int = 0,
+        batch: SurfaceBatch = SurfaceBatch(),
+        stage: ModelStage = ModelStage(),
+        deforms: list[Deform] = [],
+        key: str = "",
+        blended: bool = False,
+        source: int = 1,
+        destination: int = 0,
+        depth_write: bool = True,
+        two_sided: bool = False,
+        images: list[int] = [],
+        light: bool = False,
+        rgb_mode: int = 0,
+        alpha_mode: int = 0,
+        tc_gen: int = 0,
+        fog_mode: int = 0,
+        tint: bytes = b"",
+        tcmods: list[bytes] = [],
+        tc_steps: int = 0,
+        deform_values: list[bytes] = [],
+        deform_count: int = 0;
 }
 
 obj QuakeRenderer {
@@ -187,7 +216,16 @@ obj QuakeRenderer {
         styles_dirty: bool = True,
         bound_chunk: int = -1,
         bound_buffer: int = -1,
-        placed_group: int = -2;
+        placed_group: int = -2,
+        uniform_values: dict[int, dict[str, bytes]] = {},
+        uniform_ints: dict[int, dict[str, int]] = {};
+    # Q3 shader stages planned at load: by shader, and the draw orders of
+    # draw_layered (opaque stages by stage number then GL state, translucent
+    # shaders in texture order, portal shaders).
+    has stage_plans: dict[int, list[StagePlan]] = {},
+        opaque_plans: list[list[StagePlan]] = [],
+        translucent_shaders: list[int] = [],
+        portal_shaders: list[int] = [];
 
     def upload_image(texture: Texture) -> int {
         image = LoadImageFromMemory(
@@ -437,6 +475,8 @@ obj QuakeRenderer {
     """Compile the programs this game draws with and point their samplers at
     fixed texture slots."""
     def load_programs(level: Level) {
+        self.uniform_values = {};
+        self.uniform_ints = {};
         if self.single_pass {
             self.base_program.load(BASE_VS, BASE_FS);
             self.stage_program.load(STAGE_VS, STAGE_FS);
@@ -615,6 +655,7 @@ obj QuakeRenderer {
         self.brush_signature = [-1];
         self.brush_lists = IndexLists();
         self.views = [];
+        self.plan_stages(level);
     }
 
     """The index lists of a visible face set: reused while the same set comes
@@ -878,15 +919,15 @@ obj QuakeRenderer {
         program.begin();
         program.set_matrix("viewProjection", view_projection());
         program.set_matrix("model", placement_matrix_at(eye));
-        program.set_float("time", self.time);
+        self.put_float(program, "time", self.time);
         set_uniform_vec3(program, "eye", eye);
-        program.set_int("deformCount", 0);
-        program.set_int("tcGen", 0);
-        program.set_int("turbFromNormal", 1);
-        program.set_int("rgbMode", 0);
-        program.set_int("alphaMode", 0);
-        program.set_int("fogMode", 0);
-        program.set_int("lightmapStage", 0);
+        self.put_int(program, "deformCount", 0);
+        self.put_int(program, "tcGen", 0);
+        self.put_int(program, "turbFromNormal", 1);
+        self.put_int(program, "rgbMode", 0);
+        self.put_int(program, "alphaMode", 0);
+        self.put_int(program, "fogMode", 0);
+        self.put_int(program, "lightmapStage", 0);
         rlDisableDepthMask();
         rlDisableBackfaceCulling();
         self.cloud_mesh.bind();
@@ -918,7 +959,7 @@ obj QuakeRenderer {
                 shade = int(max(0.0, min(1.0, stage.rgb_wave.at(self.time))) * 255.0);
             }
             level_value = float(shade) / 255.0;
-            program.set_vec4s("tint", pack_floats([level_value, level_value, level_value, 1.0]));
+            self.put_vec4s(program, "tint", pack_floats([level_value, level_value, level_value, 1.0]));
             self.set_tcmods(program, stage);
             self.cloud_mesh.draw_vertices(0, self.cloud_vertices);
             if k > 0 or stage.blend != "opaque" {
@@ -928,7 +969,7 @@ obj QuakeRenderer {
             }
         }
         self.cloud_mesh.unbind();
-        program.set_int("turbFromNormal", 0);
+        self.put_int(program, "turbFromNormal", 0);
         rlDisableTexture();
         program.end();
         rlEnableBackfaceCulling();
@@ -1171,26 +1212,61 @@ obj QuakeRenderer {
         program.end();
     }
 
+    """Place what draws next: the world as the map placed it (`group` -1) or
+    brush group `group` at its placement; `tinted` programs also take the
+    group's per-frame light."""
+    def place(program: GpuProgram, group: int, tinted: bool) {
+        if self.placed_group == group {
+            return;
+        }
+        if group < 0 {
+            program.set_matrix("model", placement_matrix_at(Vec3()));
+            if tinted {
+                self.put_vec4s(program, "tint", pack_floats([1.0, 1.0, 1.0, 1.0]));
+            }
+        } else {
+            program.set_matrix("model", self.brush_matrices[group]);
+            if tinted {
+                self.put_vec4s(program, "tint", pack_floats(self.brush_groups[group].tint));
+            }
+        }
+        self.placed_group = group;
+    }
+
+    """Draw index runs from the world's (`buffers` of a view) or the brush
+    models' index buffers."""
+    def draw_spans(spans: list[IndexSpan], buffers: ChunkIndices) {
+        for span in spans {
+            self.bind_chunk(span.chunk, buffers);
+            rlDrawVertexArrayElements(i32(span.first), i32(span.count), u64(0));
+        }
+    }
+
+    """The texture a batch shows for the world (`group` -1) or a brush group,
+    after animation."""
+    def batch_texture(level: Level, batch: SurfaceBatch, group: int) -> int {
+        if batch.texture not in self.anim_frames {
+            return self.textures[batch.texture];
+        }
+        if group < 0 {
+            return self.textures[self.frame_texture(level, batch.texture, 0, True)];
+        }
+        lead = self.brush_groups[group].lead;
+        return self.textures[self.frame_texture(level, batch.texture, level.bsp.faces[lead].frame, lead < self.world_faces)];
+    }
+
     """Draw one surface batch: the visible world faces, then each brush group
     holding some, at its placement. With `textured`, each binds the batch's
     texture (after animation) to slot 0; `tinted` programs take a group's
-    per-frame light."""
+    per-frame light. Passes whose order matters (blended ones, shader
+    stages) draw batch by batch this way."""
     def draw_batch(program: GpuProgram, level: Level, batch: SurfaceBatch, view: VisibleIndices, textured: bool, tinted: bool = False) {
         if batch.id in view.lists.spans {
-            if self.placed_group != -1 {
-                program.set_matrix("model", placement_matrix_at(Vec3()));
-                if tinted {
-                    program.set_vec4s("tint", pack_floats([1.0, 1.0, 1.0, 1.0]));
-                }
-                self.placed_group = -1;
-            }
+            self.place(program, -1, tinted);
             if textured {
-                rlEnableTexture(u32(self.textures[self.frame_texture(level, batch.texture, 0, True)]));
+                rlEnableTexture(u32(self.batch_texture(level, batch, -1)));
             }
-            for span in view.lists.spans[batch.id] {
-                self.bind_chunk(span.chunk, view.buffers);
-                rlDrawVertexArrayElements(i32(span.first), i32(span.count), u64(0));
-            }
+            self.draw_spans(view.lists.spans[batch.id], view.buffers);
         }
         if batch.id not in self.brush_batches {
             return;
@@ -1200,22 +1276,92 @@ obj QuakeRenderer {
             if batch.id not in group.spans {
                 continue;
             }
-            if self.placed_group != g {
-                program.set_matrix("model", self.brush_matrices[g]);
-                if tinted {
-                    program.set_vec4s("tint", pack_floats(group.tint));
-                }
-                self.placed_group = g;
-            }
+            self.place(program, g, tinted);
             if textured {
-                lead = level.bsp.faces[group.lead];
-                rlEnableTexture(u32(self.textures[self.frame_texture(level, batch.texture, lead.frame, group.lead < self.world_faces)]));
+                rlEnableTexture(u32(self.batch_texture(level, batch, g)));
             }
-            for span in group.spans[batch.id] {
-                self.bind_chunk(span.chunk, self.brush_buffers);
-                rlDrawVertexArrayElements(i32(span.first), i32(span.count), u64(0));
+            self.draw_spans(group.spans[batch.id], self.brush_buffers);
+        }
+    }
+
+    """Draw an opaque pass: the world's batches, then each brush group's
+    batches of the pass at its placement once, since depth testing makes
+    the order free. Two-sided batches draw with culling off."""
+    def draw_opaque_pass(program: GpuProgram, level: Level, kind: int, view: VisibleIndices) {
+        if kind not in self.pass_batches {
+            return;
+        }
+        for batch in self.pass_batches[kind] {
+            if batch.id not in view.lists.spans {
+                continue;
+            }
+            self.place(program, -1, True);
+            if batch.two_sided {
+                rlDisableBackfaceCulling();
+            }
+            rlEnableTexture(u32(self.batch_texture(level, batch, -1)));
+            self.draw_spans(view.lists.spans[batch.id], view.buffers);
+            if batch.two_sided {
+                rlEnableBackfaceCulling();
             }
         }
+        for g in range(len(self.brush_groups)) {
+            group = self.brush_groups[g];
+            for (id, spans) in group.spans.items() {
+                batch = self.batches[id];
+                if batch.kind != kind {
+                    continue;
+                }
+                self.place(program, g, True);
+                if batch.two_sided {
+                    rlDisableBackfaceCulling();
+                }
+                rlEnableTexture(u32(self.batch_texture(level, batch, g)));
+                self.draw_spans(spans, self.brush_buffers);
+                if batch.two_sided {
+                    rlEnableBackfaceCulling();
+                }
+            }
+        }
+    }
+
+    """Set uniforms only when their value changed: a program keeps its
+    uniforms, so per-stage values that repeat cost no call."""
+    def put_vec4s(program: GpuProgram, name: str, packed: bytes) {
+        if program.id not in self.uniform_values {
+            self.uniform_values[program.id] = {};
+        }
+        known = self.uniform_values[program.id];
+        if name in known and known[name] == packed {
+            return;
+        }
+        known[name] = packed;
+        program.set_vec4s(name, packed);
+    }
+
+    def put_int(program: GpuProgram, name: str, value: int) {
+        if program.id not in self.uniform_ints {
+            self.uniform_ints[program.id] = {};
+        }
+        known = self.uniform_ints[program.id];
+        if name in known and known[name] == value {
+            return;
+        }
+        known[name] = value;
+        program.set_int(name, value);
+    }
+
+    def put_float(program: GpuProgram, name: str, value: float) {
+        if program.id not in self.uniform_values {
+            self.uniform_values[program.id] = {};
+        }
+        known = self.uniform_values[program.id];
+        packed = struct.pack("<f", value);
+        if name in known and known[name] == packed {
+            return;
+        }
+        known[name] = packed;
+        program.set_float(name, value);
     }
 
     """Whether a batch has anything to draw this frame."""
@@ -1279,18 +1425,7 @@ obj QuakeRenderer {
         rlActiveTextureSlot(i32(1));
         rlEnableTexture(u32(self.atlas));
         rlActiveTextureSlot(i32(0));
-        for batch in self.pass_batches[PASS_LIT] {
-            if not self.batch_shown(batch, view) {
-                continue;
-            }
-            if batch.two_sided {
-                rlDisableBackfaceCulling();
-            }
-            self.draw_batch(program, level, batch, view, True, tinted=True);
-            if batch.two_sided {
-                rlEnableBackfaceCulling();
-            }
-        }
+        self.draw_opaque_pass(program, level, PASS_LIT, view);
         self.end_batches(program);
     }
 
@@ -1348,8 +1483,8 @@ obj QuakeRenderer {
                 }
                 texture = level.bsp.textures[batch.texture];
                 set_uniform_vec2(program, "warpSize", float(texture.width), float(texture.height));
-                program.set_float("warpScroll", drift if batch.sub == 1 else 0.0);
-                program.set_float("warpAmount", 1.0 if batch.sub < 2 else 0.0);
+                self.put_float(program, "warpScroll", drift if batch.sub == 1 else 0.0);
+                self.put_float(program, "warpAmount", 1.0 if batch.sub < 2 else 0.0);
                 self.draw_batch(program, level, batch, view, True);
             }
             if kind == PASS_TRANSLUCENT {
@@ -1373,7 +1508,8 @@ obj QuakeRenderer {
         rlActiveTextureSlot(i32(1));
         rlEnableTexture(u32(self.atlas));
         rlActiveTextureSlot(i32(0));
-        for kind in [PASS_BASE, PASS_ADDITIVE] {
+        self.draw_opaque_pass(program, level, PASS_BASE, view);
+        for kind in [PASS_ADDITIVE] {
             if kind not in self.pass_batches {
                 continue;
             }
@@ -1430,20 +1566,106 @@ obj QuakeRenderer {
         program.set_vec4s("fogColor", pack_floats(colors));
     }
 
-    """Q3 layered surfaces, stage by stage (tr_shade.c RB_StageIteratorGeneric):
-    each stage's image or animMap frame, blend, colour and alpha generators,
-    texture modifiers and environment mapping, in the stage shader."""
-    def draw_layered(level: Level, view: VisibleIndices, eye: Vec3) {
-        if not self.stage_images or PASS_LAYERED not in self.pass_batches {
+    """Plan every Q3 shader stage for the stage shader (StagePlan) and the
+    orders draw_layered walks them in."""
+    def plan_stages(level: Level) {
+        self.stage_plans = {};
+        self.opaque_plans = [];
+        self.translucent_shaders = [];
+        self.portal_shaders = [];
+        if PASS_LAYERED not in self.pass_batches {
             return;
         }
-        shown: list[int] = [];
-        layered: dict[int, SurfaceBatch] = {};
+        keyed: list[list[tuple[str, int]]] = [];
         for batch in self.pass_batches[PASS_LAYERED] {
             t = batch.texture;
-            if self.batch_shown(batch, view) and t in level.surface_stages {
-                shown.append(t);
-                layered[t] = batch;
+            if t not in level.surface_stages or t not in self.stage_images {
+                continue;
+            }
+            stages = level.surface_stages[t];
+            deforms = level.surface_deforms[t] if t in level.surface_deforms else [];
+            plans: list[StagePlan] = [];
+            for k in range(self.stage_count(level, t)) {
+                plans.append(self.plan_stage(level, t, k, batch, stages, deforms));
+            }
+            self.stage_plans[t] = plans;
+            if t in level.portal_ranges {
+                self.portal_shaders.append(t);
+            } elif stages[0].blend == "opaque" {
+                for k in range(len(plans)) {
+                    while len(keyed) <= k {
+                        keyed.append([]);
+                    }
+                    keyed[k].append((plans[k].key, t));
+                }
+            } else {
+                self.translucent_shaders.append(t);
+            }
+        }
+        for k in range(len(keyed)) {
+            self.opaque_plans.append([self.stage_plans[pair[1]][k] for pair in sorted(keyed[k])]);
+        }
+    }
+
+    def plan_stage(level: Level, t: int, k: int, batch: SurfaceBatch, stages: list[ModelStage], deforms: list[Deform]) -> StagePlan {
+        stage = stages[k];
+        blend = stage_blend(stage, k);
+        plan = StagePlan(
+            texture=t,
+            batch=batch,
+            stage=stage,
+            deforms=deforms,
+            key=self.stage_key(level, t, k),
+            blended=blend[0] == 1,
+            source=blend[1],
+            destination=blend[2],
+            depth_write=stage.depth_write or blend[0] == 0,
+            two_sided=level.bsp.textures[t].two_sided or t in level.surface_deforms,
+            images=self.stage_images[t][k],
+            light=self.stage_images[t][k][0] < 0,
+            rgb_mode=1 if stage.rgb == "vertex" else 0,
+            fog_mode=fog_adjustment(stages[0], stage) if level.bsp.fogs else 0
+        );
+        if stage.alpha == "vertex" {
+            plan.alpha_mode = 1;
+        } elif stage.alpha == "portal" {
+            plan.alpha_mode = 2;
+        } elif stage.alpha == "specular" {
+            plan.alpha_mode = 3;
+        }
+        if plan.light {
+            plan.tc_gen = 1;
+        } elif stage.environment {
+            plan.tc_gen = 2;
+        } elif stage.vectors {
+            plan.tc_gen = 3;
+        }
+        if stage.rgb != "wave" and stage.alpha != "wave" {
+            plan.tint = stage_tint(stage, 0.0);
+        }
+        if all([mod.kind in ["scale", "transform"] for mod in stage.mods]) {
+            plan.tcmods = packed_tcmods(stage, 0.0);
+            plan.tc_steps = len(tcmod_steps(stage, 0.0));
+        }
+        if not any([deform.kind == "move" for deform in deforms]) {
+            plan.deform_values = packed_deforms(deforms, 0.0);
+            plan.deform_count = len(plan.deform_values[0]) // 16 if plan.deform_values else 0;
+        }
+        return plan;
+    }
+
+    """Q3 layered surfaces, stage by stage (tr_shade.c RB_StageIteratorGeneric):
+    each stage's image or animMap frame, blend, colour and alpha generators,
+    texture modifiers and environment mapping, in the stage shader, in the
+    orders plan_stages worked out."""
+    def draw_layered(level: Level, view: VisibleIndices, eye: Vec3) {
+        if not self.stage_plans {
+            return;
+        }
+        shown: dict[int, bool] = {};
+        for (t, plans) in self.stage_plans.items() {
+            if self.batch_shown(plans[0].batch, view) {
+                shown[t] = True;
             }
         }
         if not shown {
@@ -1452,15 +1674,15 @@ obj QuakeRenderer {
         program = self.stage_program;
         self.stage_state = "";
         # Portal shaders sort first (SS_PORTAL), over the view rendered through them.
-        for t in shown {
-            if t in level.portal_ranges {
+        for t in self.portal_shaders {
+            if t in shown {
                 self.use_stage_state("backdrop", False, 1, 0, True, True);
                 deforms = level.surface_deforms[t] if t in level.surface_deforms else [];
                 self.draw_portal_backdrop(level, view.portal_faces[t] if t in view.portal_faces else [], deforms, eye);
                 self.stage_state = "";
                 self.begin_stages(program, level, eye);
-                for k in range(self.stage_count(level, t)) {
-                    self.draw_stage(program, level, t, k, layered[t], view);
+                for plan in self.stage_plans[t] {
+                    self.draw_stage(program, level, plan, view);
                 }
                 self.end_batches(program);
             }
@@ -1470,27 +1692,18 @@ obj QuakeRenderer {
         # blend state: each later stage only touches pixels where its own
         # surface won the depth test, so the order between shaders does not
         # matter, and every state change costs a batch flush.
-        opaque = [t for t in shown if t not in level.portal_ranges and level.surface_stages[t][0].blend == "opaque"];
-        deepest = 0;
-        for t in opaque {
-            deepest = max(deepest, self.stage_count(level, t));
-        }
-        for k in range(deepest) {
-            keyed: list[tuple[str, int]] = [];
-            for t in opaque {
-                if k < self.stage_count(level, t) {
-                    keyed.append((self.stage_key(level, t, k), t));
+        for plans in self.opaque_plans {
+            for plan in plans {
+                if plan.texture in shown {
+                    self.draw_stage(program, level, plan, view);
                 }
-            }
-            for pair in sorted(keyed) {
-                self.draw_stage(program, level, pair[1], k, layered[pair[1]], view);
             }
         }
         # Translucent shaders last, each stage in order.
-        for t in shown {
-            if t not in level.portal_ranges and level.surface_stages[t][0].blend != "opaque" {
-                for k in range(self.stage_count(level, t)) {
-                    self.draw_stage(program, level, t, k, layered[t], view);
+        for t in self.translucent_shaders {
+            if t in shown {
+                for plan in self.stage_plans[t] {
+                    self.draw_stage(program, level, plan, view);
                 }
             }
         }
@@ -1501,8 +1714,8 @@ obj QuakeRenderer {
     def begin_stages(program: GpuProgram, level: Level, eye: Vec3) {
         self.begin_batches(program);
         self.set_view_uniforms(program, level, eye);
-        program.set_float("time", self.time);
-        program.set_int("turbFromNormal", 0);
+        self.put_float(program, "time", self.time);
+        self.put_int(program, "turbFromNormal", 0);
     }
 
     def stage_count(level: Level, t: int) -> int {
@@ -1548,109 +1761,54 @@ obj QuakeRenderer {
 
     """A stage's tcMods at this moment as the stage shader's affine steps."""
     def set_tcmods(program: GpuProgram, stage: ModelStage) {
-        steps = tcmod_steps(stage, self.time);
-        rows_s: list[float] = [];
-        rows_t: list[float] = [];
-        turbs: list[float] = [];
-        for step in steps {
-            rows_s.extend([step[0], step[1], step[2], 0.0]);
-            rows_t.extend([step[3], step[4], step[5], 0.0]);
-            turbs.extend([step[6], step[7], step[8], 0.0]);
-        }
-        program.set_int("tcSteps", len(steps));
-        program.set_vec4s("tcRowS", pack_floats(rows_s));
-        program.set_vec4s("tcRowT", pack_floats(rows_t));
-        program.set_vec4s("tcTurb", pack_floats(turbs));
+        packed = packed_tcmods(stage, self.time);
+        self.put_int(program, "tcSteps", len(packed[0]) // 16);
+        self.put_vec4s(program, "tcRowS", packed[0]);
+        self.put_vec4s(program, "tcRowT", packed[1]);
+        self.put_vec4s(program, "tcTurb", packed[2]);
     }
 
-    """A shader's deformVertexes as the stage shader reads them: kind,
-    waveform and spread; the wave; and move's push this moment or bulge's
-    width, height and speed."""
-    def set_deforms(program: GpuProgram, deforms: list[Deform]) {
-        kinds = {"wave": 1.0, "move": 2.0, "bulge": 3.0, "autosprite": 4.0, "autosprite2": 5.0};
-        infos: list[float] = [];
-        waves: list[float] = [];
-        vectors: list[float] = [];
-        for deform in deforms {
-            if deform.kind not in kinds or len(infos) >= 16 {
-                continue;
-            }
-            infos.extend([kinds[deform.kind], wave_code(deform.wave.func), deform.spread, 0.0]);
-            waves.extend([deform.wave.base, deform.wave.amplitude, deform.wave.phase, deform.wave.frequency]);
-            if deform.kind == "move" {
-                push = deform.vector.scale(deform.wave.at(self.time));
-                vectors.extend([push.x, push.y, push.z, 0.0]);
-            } else {
-                vectors.extend([deform.width, deform.height, deform.speed, 0.0]);
-            }
-        }
-        program.set_int("deformCount", len(infos) // 4);
-        if infos {
-            program.set_vec4s("deformInfo", pack_floats(infos));
-            program.set_vec4s("deformWave", pack_floats(waves));
-            program.set_vec4s("deformVector", pack_floats(vectors));
+    """A shader's deformVertexes as the stage shader reads them."""
+    def set_deforms(program: GpuProgram, values: list[bytes]) {
+        self.put_int(program, "deformCount", len(values[0]) // 16 if values else 0);
+        if values and values[0] {
+            self.put_vec4s(program, "deformInfo", values[0]);
+            self.put_vec4s(program, "deformWave", values[1]);
+            self.put_vec4s(program, "deformVector", values[2]);
         }
     }
 
-    """One stage of one shader over its visible faces."""
-    def draw_stage(program: GpuProgram, level: Level, t: int, k: int, batch: SurfaceBatch, view: VisibleIndices) {
-        stages = level.surface_stages[t];
-        stage = stages[k];
-        ids = self.stage_images[t][k];
-        blend = stage_blend(stage, k);
-        two_sided = level.bsp.textures[t].two_sided or t in level.surface_deforms;
-        if self.use_stage_state(self.stage_key(level, t, k), blend[0] == 1, blend[1], blend[2], stage.depth_write or blend[0] == 0, two_sided) {
+    """One planned stage of one shader over its visible faces."""
+    def draw_stage(program: GpuProgram, level: Level, plan: StagePlan, view: VisibleIndices) {
+        if self.use_stage_state(plan.key, plan.blended, plan.source, plan.destination, plan.depth_write, plan.two_sided) {
             self.resume(program);
         }
-        light = ids[0] < 0;
-        rlEnableTexture(u32(self.atlas if light else ids[stage_frame(self.time, stage.frequency, len(ids))]));
-        red = 1.0;
-        green = 1.0;
-        blue = 1.0;
-        if stage.rgb == "wave" {
-            level_value = float(int(max(0.0, min(1.0, stage.rgb_wave.at(self.time))) * 255.0)) / 255.0;
-            red = level_value;
-            green = level_value;
-            blue = level_value;
-        } elif stage.rgb == "const" {
-            red = float(int(max(0.0, min(1.0, stage.rgb_const[0])) * 255.0)) / 255.0;
-            green = float(int(max(0.0, min(1.0, stage.rgb_const[1])) * 255.0)) / 255.0;
-            blue = float(int(max(0.0, min(1.0, stage.rgb_const[2])) * 255.0)) / 255.0;
+        stage = plan.stage;
+        images = plan.images;
+        rlEnableTexture(u32(self.atlas if plan.light else (images[0] if len(images) == 1 else images[stage_frame(self.time, stage.frequency, len(images))])));
+        self.put_vec4s(program, "tint", plan.tint if plan.tint else stage_tint(stage, self.time));
+        self.put_int(program, "rgbMode", plan.rgb_mode);
+        self.put_int(program, "alphaMode", plan.alpha_mode);
+        if plan.alpha_mode == 2 {
+            self.put_float(program, "portalRange", max(1.0, stage.alpha_const));
         }
-        alpha = 1.0;
-        if stage.alpha == "wave" {
-            alpha = float(int(max(0.0, min(1.0, stage.alpha_wave.at(self.time))) * 255.0)) / 255.0;
-        } elif stage.alpha == "const" {
-            alpha = float(int(max(0.0, min(1.0, stage.alpha_const)) * 255.0)) / 255.0;
-        }
-        program.set_vec4s("tint", pack_floats([red, green, blue, alpha]));
-        program.set_int("rgbMode", 1 if stage.rgb == "vertex" else 0);
-        alpha_mode = 0;
-        if stage.alpha == "vertex" {
-            alpha_mode = 1;
-        } elif stage.alpha == "portal" {
-            alpha_mode = 2;
-            program.set_float("portalRange", max(1.0, stage.alpha_const));
-        } elif stage.alpha == "specular" {
-            alpha_mode = 3;
-        }
-        program.set_int("alphaMode", alpha_mode);
-        tc_gen = 0;
-        if light {
-            tc_gen = 1;
-        } elif stage.environment {
-            tc_gen = 2;
-        } elif stage.vectors {
-            tc_gen = 3;
+        self.put_int(program, "tcGen", plan.tc_gen);
+        if plan.tc_gen == 3 {
             set_uniform_vec3(program, "tcVectorS", stage.vectors[0]);
             set_uniform_vec3(program, "tcVectorT", stage.vectors[1]);
         }
-        program.set_int("tcGen", tc_gen);
-        program.set_int("lightmapStage", 1 if light else 0);
-        program.set_int("fogMode", fog_adjustment(stages[0], stage) if level.bsp.fogs else 0);
-        self.set_tcmods(program, stage);
-        self.set_deforms(program, level.surface_deforms[t] if t in level.surface_deforms else []);
-        self.draw_batch(program, level, batch, view, False);
+        self.put_int(program, "lightmapStage", 1 if plan.light else 0);
+        self.put_int(program, "fogMode", plan.fog_mode);
+        if plan.tcmods {
+            self.put_int(program, "tcSteps", plan.tc_steps);
+            self.put_vec4s(program, "tcRowS", plan.tcmods[0]);
+            self.put_vec4s(program, "tcRowT", plan.tcmods[1]);
+            self.put_vec4s(program, "tcTurb", plan.tcmods[2]);
+        } else {
+            self.set_tcmods(program, stage);
+        }
+        self.set_deforms(program, plan.deform_values if plan.deform_values or not plan.deforms else packed_deforms(plan.deforms, self.time));
+        self.draw_batch(program, level, plan.batch, view, False);
     }
 
     """What lies behind a portal surface before its stages blend over it: the
@@ -1779,6 +1937,10 @@ obj QuakeRenderer {
     }
 
     def close() {
+        self.uniform_values = {};
+        self.uniform_ints = {};
+        self.stage_plans = {};
+        self.opaque_plans = [];
         for program in [self.lit_program, self.warp_program, self.sky_program, self.base_program, self.stage_program, self.fog_program] {
             program.close();
         }
@@ -1914,6 +2076,70 @@ def placement_matrix_at(offset: Vec3) -> Matrix {
         m2=f32(0.0), m6=f32(0.0), m10=f32(1.0), m14=f32(offset.z),
         m3=f32(0.0), m7=f32(0.0), m11=f32(0.0), m15=f32(1.0)
     );
+}
+
+"""A stage's rgbGen and alphaGen colour at time `seconds` (identity, wave or
+const; vertex and the per-vertex alphas come from the shader), quantized to
+bytes as the vertex colours were, packed as a vec4."""
+def stage_tint(stage: ModelStage, seconds: float) -> bytes {
+    red = 1.0;
+    green = 1.0;
+    blue = 1.0;
+    if stage.rgb == "wave" {
+        level_value = float(int(max(0.0, min(1.0, stage.rgb_wave.at(seconds))) * 255.0)) / 255.0;
+        red = level_value;
+        green = level_value;
+        blue = level_value;
+    } elif stage.rgb == "const" {
+        red = float(int(max(0.0, min(1.0, stage.rgb_const[0])) * 255.0)) / 255.0;
+        green = float(int(max(0.0, min(1.0, stage.rgb_const[1])) * 255.0)) / 255.0;
+        blue = float(int(max(0.0, min(1.0, stage.rgb_const[2])) * 255.0)) / 255.0;
+    }
+    alpha = 1.0;
+    if stage.alpha == "wave" {
+        alpha = float(int(max(0.0, min(1.0, stage.alpha_wave.at(seconds))) * 255.0)) / 255.0;
+    } elif stage.alpha == "const" {
+        alpha = float(int(max(0.0, min(1.0, stage.alpha_const)) * 255.0)) / 255.0;
+    }
+    return pack_floats([red, green, blue, alpha]);
+}
+
+"""A stage's tcmod_steps packed for the stage shader: the s rows, the t rows
+and the turbs, each a vec4 per step."""
+def packed_tcmods(stage: ModelStage, seconds: float) -> list[bytes] {
+    rows_s: list[float] = [];
+    rows_t: list[float] = [];
+    turbs: list[float] = [];
+    for step in tcmod_steps(stage, seconds) {
+        rows_s.extend([step[0], step[1], step[2], 0.0]);
+        rows_t.extend([step[3], step[4], step[5], 0.0]);
+        turbs.extend([step[6], step[7], step[8], 0.0]);
+    }
+    return [pack_floats(rows_s), pack_floats(rows_t), pack_floats(turbs)];
+}
+
+"""A shader's deformVertexes packed for the stage shader (at most four):
+kind, waveform and spread; the wave; and move's push at time `seconds` or
+bulge's width, height and speed."""
+def packed_deforms(deforms: list[Deform], seconds: float) -> list[bytes] {
+    kinds = {"wave": 1.0, "move": 2.0, "bulge": 3.0, "autosprite": 4.0, "autosprite2": 5.0};
+    infos: list[float] = [];
+    waves: list[float] = [];
+    vectors: list[float] = [];
+    for deform in deforms {
+        if deform.kind not in kinds or len(infos) >= 16 {
+            continue;
+        }
+        infos.extend([kinds[deform.kind], wave_code(deform.wave.func), deform.spread, 0.0]);
+        waves.extend([deform.wave.base, deform.wave.amplitude, deform.wave.phase, deform.wave.frequency]);
+        if deform.kind == "move" {
+            push = deform.vector.scale(deform.wave.at(seconds));
+            vectors.extend([push.x, push.y, push.z, 0.0]);
+        } else {
+            vectors.extend([deform.width, deform.height, deform.speed, 0.0]);
+        }
+    }
+    return [pack_floats(infos), pack_floats(waves), pack_floats(vectors)];
 }
 
 """tr_image.c R_CreateFogImage: 256x32 white texels whose alpha is R_FogFactor,
