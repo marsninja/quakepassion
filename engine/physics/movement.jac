@@ -5,9 +5,12 @@ import from ..math.vec3 { Vec3, forward_from }
 import from ..world.world { Player }
 import from ..world.powerups { empowered, speed_scale }
 
+"""Where a move ends and how fast; `stepped` is how far it climbed a step
+(Q3 PM_StepSlideMove's delta, the height of its EV_STEP_* event)."""
 obj Motion {
     has pos: Vec3,
-        velocity: Vec3;
+        velocity: Vec3,
+        stepped: float = 0.0;
 }
 
 def clip_velocity(velocity: Vec3, normal: Vec3) -> Vec3 {
@@ -86,7 +89,11 @@ def step_slide(
         <= flat_delta.x * flat_delta.x + flat_delta.y * flat_delta.y {
         return flat;
     }
-    return Motion(pos=down.end, velocity=clip_velocity(raised.velocity, down.normal));
+    return Motion(
+        pos=down.end,
+        velocity=clip_velocity(raised.velocity, down.normal),
+        stepped=down.end.z - pos.z
+    );
 }
 
 walker MovePlayer {
@@ -100,7 +107,8 @@ walker MovePlayer {
         dt: float = 1.0 / 120.0,
         jumped: bool = False,
         water_jumped: bool = False,
-        landed: float = 0.0;
+        landed: float = 0.0,
+        stepped: float = 0.0;
 
     can integrate with Player entry {
         if self.dt <= 0.0 or self.dt > 0.05 {
@@ -245,6 +253,8 @@ walker MovePlayer {
         );
         here.velocity = moved.velocity;
         here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
+        # The view eases up the step (ViewFeedback.step) rather than jumping.
+        self.stepped = moved.stepped;
     }
 
     """Q1 PlayerJump / Q2 PM_CheckJump / Q3 PM_CheckJump: 270 units a second
