@@ -458,7 +458,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     [
                         1.0 if trigger.enabled else 0.0,
                         trigger.cooldown,
-                        float(trigger.activations)
+                        float(trigger.activations),
+                        float(trigger.health)
                     ]
                 )
         );
@@ -1143,12 +1144,21 @@ def restore(
                 )
             );
         } elif words[0] == "T" and t < len(triggers) {
-            row = values(" ".join(words[1:]), 3);
+            # Saves from before trigger health leave shootable triggers whole.
+            row = values(" ".join(words[1:]), 4 if len(words) == 5 else 3);
             trigger = triggers[t];
             t += 1;
             trigger.enabled = row[0] != 0.0;
             trigger.cooldown = row[1];
             trigger.activations = int(row[2]);
+            if len(row) == 4 {
+                if row[3] != float(int(row[3]))
+                    or row[3] < 0.0
+                    or row[3] > float(trigger.max_health) {
+                    raise ValueError("Invalid trigger health");
+                }
+                trigger.health = int(row[3]);
+            }
         } elif words[0] == "B" and b < len(brushes) {
             row = values(" ".join(words[1:]), 5);
             brush = brushes[b];

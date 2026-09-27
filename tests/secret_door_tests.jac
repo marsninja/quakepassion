@@ -1,8 +1,8 @@
 import from engine.world.secret_doors { load_secret_doors }
-import from engine.world.trains { Train, HasTrain, TrainTick, ShootMover }
+import from engine.world.trains { Train, HasTrain, TrainTick, ShootMover, BlastMover }
 import from engine.world.doors { connect_targets }
 import from engine.world.signals { Signal, Targets }
-import from engine.world.world { Player }
+import from engine.world.world { World, Player }
 import from engine.world.level { Level }
 import from engine.world.combat { CombatState }
 import from engine.core.savegame { snapshot, restore }
@@ -85,5 +85,67 @@ test "open once and first down secret door flags preserve route shape" {
     assert abs(door.motion.z + 96.0) < 0.001 and abs(door.motion.x - 16.0) < 0.001;
     f.world spawn ShootMover(model=1);
     f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.1);
+    assert not door.running;
+}
+
+test "secret doors step clear by the brush's full extent, not its stored bounds" {
+    # qbsp stores submodel bounds a unit inside the brush; Mod_LoadSubmodels
+    # spreads them back out, so fd_secret_use moves the whole 16 x 64 brush.
+    f = secret_fixture();
+    f.world = World();
+    f.bsp.models[1].mins = Vec3(x=-7.0, y=-31.0, z=1.0);
+    f.bsp.models[1].maxs = Vec3(x=7.0, y=31.0, z=95.0);
+    load_secret_doors(f.world, f.bsp, f.collision);
+    door = [f.world->:HasTrain:->][?:Train][0];
+    door.activation.pending = 1;
+    for i in range(300) {
+        f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
+    }
+    assert abs(door.motion.y + 64.0) < 0.001 and abs(door.motion.x - 16.0) < 0.001;
+}
+
+test "explosions open shootable secret doors in sight but not named or shielded ones" {
+    for named in [False, True] {
+        f = secret_fixture(0, named);
+        door = [f.world->:HasTrain:->][?:Train][0];
+        # Beyond the blast's reach, T_RadiusDamage deals no points.
+        f.world spawn BlastMover(
+            origin=Vec3(x=260.0, z=48.0),
+            amount=120,
+            radius=160.0,
+            game="q1",
+            collision=f.collision,
+            player=Player()
+        );
+        f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
+        assert not door.running;
+        f.world spawn BlastMover(
+            origin=Vec3(x=80.0, z=48.0),
+            amount=120,
+            radius=160.0,
+            game="q1",
+            collision=f.collision,
+            player=Player()
+        );
+        f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
+        assert door.running == (not named);
+    }
+    # CanDamage: a wall between the blast and the door's middle shields it.
+    f = secret_fixture();
+    f.collision.add_box(
+        Vec3(x=40.0, y=-64.0, z=0.0), Vec3(x=48.0, y=64.0, z=128.0), Vec3(), Vec3(), Vec3()
+    );
+    f.collision.models.append(0);
+    f.collision.reindex();
+    door = [f.world->:HasTrain:->][?:Train][0];
+    f.world spawn BlastMover(
+        origin=Vec3(x=80.0, z=48.0),
+        amount=120,
+        radius=160.0,
+        game="q1",
+        collision=f.collision,
+        player=Player()
+    );
+    f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
     assert not door.running;
 }
