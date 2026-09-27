@@ -6,6 +6,7 @@
 .jac_ir/
 *.jac_ir
 /qp
+/qp.layout.json
 /main
 
 # locally built raylib (see scripts/stage_raylib.sh; not committed)
