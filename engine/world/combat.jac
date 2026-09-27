@@ -2,6 +2,7 @@
 import math;
 import from .particles {
     impact_spray,
+    wall_impact,
     ParticleTick,
     rail_trail,
     beam_trail,
@@ -148,7 +149,12 @@ node Opponent(Player) {
         wounded: bool = False,
         healthy_skin: ModelResource | None = None,
         heard: bool = True,
-        foe_wait: float = -1.0;
+        foe_wait: float = -1.0,
+        touch_origin: Vec3 | None = None;
+    # The last muzzle flash: where, its colour and the attack clock it fired at.
+    has flash_origin: Vec3 = Vec3(),
+        flash_color: Vec3 = Vec3(),
+        flash_clock: float = -1.0;
 }
 
 """How far the player's box (at origin `body`) reaches into an actor's box,
@@ -538,6 +544,12 @@ obj CombatState {
         quiet: bool = False,
         firing: bool = False,
         hits: int = 0;
+    # The last weapon change, for the view: the slot put away, how long it
+    # takes to lower and the new one to rise, and a count of changes.
+    has holstered: int = -1,
+        lowering: float = 0.0,
+        raising: float = 0.0,
+        switches: int = 0;
 
     def random() -> float {
         self.random_state = (self.random_state * 48271) % 2147483647;
@@ -819,8 +831,9 @@ def damage_opponent(
         state.hits += 1;
     }
     if damage.killed {
-        # Q1/Q2 Killed counts every monster death, whoever caused it.
-        if not victim.rule.inert {
+        # Q1/Q2 Killed counts every monster death, whoever caused it; Q2
+        # leaves out its AI_GOOD_GUY figures.
+        if not victim.rule.inert and not victim.rule.good_guy {
             if state is not None {
                 state.kills += 1;
             } elif tally is not None and not victim.arena {
@@ -1473,7 +1486,14 @@ def fire_weapon(
                 * scale;
         }
         if (not hits or rule.piercing) and query.corpse is None and wall.fraction < 1.0 {
-            impact_spray(world, player.pos.lerp(finish, wall.fraction), wall.normal);
+            struck_at = player.pos.lerp(finish, wall.fraction);
+            surface = collision.surface_class(wall);
+            if surface < 2 {
+                impact_spray(world, struck_at, wall.normal);
+            }
+            wall_impact(
+                world, state.game, rule.key, struck_at, wall.normal, surface, wall.model, collision
+            );
             state.impact_model = wall.model;
             state.impacts.append(
                 WeaponImpact(
@@ -1648,6 +1668,10 @@ rises: Q1 changes at once, Q2 plays each weapon's deactivate and activate
 frames, Q3 drops for 200 ms and raises for 250 ms (bg_pmove.c)."""
 def swap_weapon(state: CombatState, rule: WeaponRule) {
     old = selected_weapon(state);
+    state.holstered = old.slot;
+    state.lowering = old.lower_time;
+    state.raising = rule.raise_time;
+    state.switches += 1;
     state.weapon = rule.slot;
     state.spin = 0;
     state.climb = 0;
@@ -2362,10 +2386,43 @@ walker ProjectileTick {
             return;
         }
         if victim is None and wall.fraction < 1.0 {
+            surface = self.collision.surface_class(wall);
+            # Q2 rocket_touch / Q3 G_MissileImpact: a missile striking the
+            # sky (SURF_SKY, SURF_NOIMPACT) just vanishes.
+            if surface >= 2 {
+                world del --> here;
+                return;
+            }
             here.pos = here.pos.add(wall.normal.scale(0.1));
             self.state.impacts.append(
                 WeaponImpact(model=wall.model, amount=here.damage, origin=here.pos)
             );
+            wall_impact(
+                world,
+                self.state.game,
+                here.effect,
+                here.pos,
+                wall.normal,
+                surface,
+                wall.model,
+                self.collision
+            );
+        } elif victim is None and here.effect == "q3_grenade" {
+            # G_ExplodeMissile: a grenade bursting at rest marks the floor it
+            # lies on (CG_ImpactMark projects 20 units along the up direction).
+            floor = self.collision.trace_point(here.pos, here.pos.sub(Vec3(z=20.0)));
+            if floor.fraction < 1.0 and not floor.start_solid {
+                wall_impact(
+                    world,
+                    "q3",
+                    here.effect,
+                    here.pos.lerp(here.pos.sub(Vec3(z=20.0)), floor.fraction),
+                    floor.normal,
+                    self.collision.surface_class(floor),
+                    floor.model,
+                    self.collision
+                );
+            }
         }
         # Nonexplosive missiles expire quietly at the end of their lifetime.
         projectile_blast(world, here, self.player, self.collision, self.state, victim);
@@ -2522,11 +2579,63 @@ def rotate_yaw(direction: Vec3, degrees: float) -> Vec3 {
     );
 }
 
-def opponent_aim(enemy: Opponent, player: Player, profile: AttackProfile) -> Vec3 {
+"""Where the `index`th shot of a sequence leaves the monster: Q2
+G_ProjectSource(s.origin, monster_flash_offset[flash], forward, right) (the
+up offset is not turned), QuakeC's origin + v_forward * x + v_right * y + z.
+A wall between the origin and the muzzle stops the shot there, as fire_lead's
+origin-to-start trace does. Without muzzles shots leave the eye."""
+def muzzle_origin(
+    enemy: Opponent, profile: AttackProfile, index: int, collision: CollisionMap | None = None
+) -> Vec3 {
+    if not profile.muzzles {
+        return enemy.pos;
+    }
+    offset = profile.muzzles[index % len(profile.muzzles)];
+    origin = enemy.pos.sub(Vec3(z=enemy.eye_height));
+    point = origin.add(forward_from(enemy.yaw, 0.0).scale(offset.x))
+        .add(right_from(enemy.yaw).scale(offset.y))
+        .add(Vec3(z=offset.z));
+    if collision is not None {
+        wall = collision.trace_point(origin, point);
+        if wall.start_solid {
+            return enemy.pos;
+        }
+        if wall.fraction < 1.0 {
+            return origin.lerp(point, max(0.0, wall.fraction - 0.01));
+        }
+    }
+    return point;
+}
+
+"""A shot's muzzle flash: its light shows for MUZZLE_FLASH_TIME from the
+attack clock it fired at."""
+def flash_muzzle(enemy: Opponent, profile: AttackProfile, origin: Vec3) {
+    if profile.flash.length() > 0.0 {
+        enemy.flash_origin = origin.add(Vec3());
+        enemy.flash_color = profile.flash;
+        enemy.flash_clock = enemy.attack_clock;
+    }
+}
+
+# Q1 EF_MUZZLEFLASH's dlight dies after 0.1 s; a Q2 MZ2 flash lasts a frame.
+glob MUZZLE_FLASH_TIME: float = 0.1;
+
+"""How long ago the monster's last muzzle flash fired, or -1 when none shows."""
+def muzzle_flash_age(enemy: Opponent) -> float {
+    if enemy.flash_clock < 0.0 or enemy.attack_clock < enemy.flash_clock {
+        return -1.0;
+    }
+    age = enemy.attack_clock - enemy.flash_clock;
+    return age if age < MUZZLE_FLASH_TIME else -1.0;
+}
+
+def opponent_aim(
+    enemy: Opponent, player: Player, profile: AttackProfile, start: Vec3 | None = None
+) -> Vec3 {
     target = enemy.attack_target
         if profile.lock_aim
         else player.pos.sub(player.velocity.scale(profile.aim_lag));
-    direction = target.sub(enemy.pos).normalized();
+    direction = target.sub(enemy.pos if start is None else start).normalized();
     if profile.aim_spread > 0.0 or profile.aim_vertical > 0.0 {
         side = right_from(math.atan2(direction.y, direction.x));
         up = side.cross(direction).normalized();
@@ -2550,7 +2659,8 @@ def opponent_shot(
     profile: AttackProfile | None = None,
     yaw_offset: float = 0.0,
     person: Player | None = None,
-    tally: CombatState | None = None
+    tally: CombatState | None = None,
+    event: int = 0
 ) {
     if profile is None {
         profile = current_profile(enemy);
@@ -2558,13 +2668,18 @@ def opponent_shot(
     if person is None and not isinstance(player, Opponent) {
         person = player;
     }
-    direction = rotate_yaw(opponent_aim(enemy, player, profile), yaw_offset);
+    start = muzzle_origin(enemy, profile, event, collision);
+    flash_muzzle(enemy, profile, start);
+    direction = rotate_yaw(opponent_aim(enemy, player, profile, start), yaw_offset);
     side = right_from(math.atan2(direction.y, direction.x));
     up = side.cross(direction).normalized();
     # Q1 multidamage / Q2 fire_lead: pellets add up per actor before applying.
     struck: list[Player] = [];
     totals: list[int] = [];
     for i in range(profile.pellets) {
+        if profile.volley and i > 0 {
+            start = muzzle_origin(enemy, profile, i, collision);
+        }
         shot = direction;
         if profile.spread > 0.0 {
             enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
@@ -2582,12 +2697,12 @@ def opponent_shot(
                 )
             );
         }
-        finish = enemy.pos.add(shot.normalized().scale(8192.0));
-        wall = collision.trace_point(enemy.pos, finish);
+        finish = start.add(shot.normalized().scale(8192.0));
+        wall = collision.trace_point(start, finish);
         if profile.rail {
-            rail_trail(world, enemy.pos, enemy.pos.lerp(finish, wall.fraction));
+            rail_trail(world, start, start.lerp(finish, wall.fraction));
         }
-        hit = line_of_fire(world, enemy, person, enemy.pos, finish, collision, wall.fraction);
+        hit = line_of_fire(world, enemy, person, start, finish, collision, wall.fraction);
         if hit.actor is not None {
             amount = 6 if enemy.arena else profile.damage;
             found = False;
@@ -2602,7 +2717,22 @@ def opponent_shot(
                 totals.append(amount);
             }
         } elif wall.fraction < 1.0 and not wall.start_solid {
-            impact_spray(world, enemy.pos.lerp(finish, wall.fraction), wall.normal);
+            surface = collision.surface_class(wall);
+            if surface < 2 {
+                impact_spray(world, start.lerp(finish, wall.fraction), wall.normal);
+            }
+            # Q2 monster_fire_bullet's TE_GUNSHOT ricochets; the shotgun's
+            # TE_SHOTGUN and Q1's TE_GUNSHOT are silent.
+            wall_impact(
+                world,
+                enemy.game,
+                "railgun" if profile.rail else ("bullet" if profile.pellets == 1 or profile.volley else "shotgun"),
+                start.lerp(finish, wall.fraction),
+                wall.normal,
+                surface,
+                wall.model,
+                collision
+            );
         }
     }
     for slot in range(len(struck)) {
@@ -2610,7 +2740,7 @@ def opponent_shot(
             struck[slot],
             int(float(totals[slot]) * damage_scale(enemy, "q3" if enemy.arena else "")),
             enemy,
-            source=enemy.pos,
+            source=start,
             tally=tally
         );
     }
@@ -2631,6 +2761,7 @@ def opponent_beam(
         person = player;
     }
     origin = enemy.pos.add(Vec3(z=18.0));
+    flash_muzzle(enemy, profile, origin);
     height = player.eye_height if isinstance(player, Opponent) else collision.eye_height;
     target = player.pos.sub(Vec3(z=height - 20.0));
     direction = target.sub(origin).normalized();
@@ -2645,14 +2776,19 @@ def opponent_beam(
 }
 
 def launch_missile(
-    world: World, enemy: Opponent, direction: Vec3, profile: AttackProfile, quarry: Player
+    world: World,
+    enemy: Opponent,
+    direction: Vec3,
+    profile: AttackProfile,
+    quarry: Player,
+    start: Vec3 | None = None
 ) {
     velocity = direction.scale(profile.missile_speed);
     if profile.gravity {
         velocity.z = 200.0;
     }
     world +>:HasProjectile:+> Projectile(
-        pos=enemy.pos,
+        pos=(enemy.pos if start is None else start).add(Vec3()),
         velocity=velocity,
         damage=profile.damage,
         hostile=True,
@@ -2883,7 +3019,9 @@ def advance_attack_segment(
                 tally
             );
         } elif profile.missile_speed > 0.0 {
-            direction = opponent_aim(enemy, player, profile);
+            start = muzzle_origin(enemy, profile, 0 if profile.volley else event_index, collision);
+            flash_muzzle(enemy, profile, start);
+            direction = opponent_aim(enemy, player, profile, start);
             if event_index < len(profile.missile_yaw) {
                 direction = rotate_yaw(direction, profile.missile_yaw[event_index]);
             }
@@ -2894,13 +3032,18 @@ def advance_attack_segment(
                 )
                     if count > 1
                     else direction;
-                launch_missile(world, enemy, aimed, profile, player);
+                if profile.volley and shot > 0 {
+                    start = muzzle_origin(enemy, profile, shot, collision);
+                }
+                launch_missile(world, enemy, aimed, profile, player, start);
             }
         } else {
             offset = profile.missile_yaw[event_index]
                 if event_index < len(profile.missile_yaw)
                 else 0.0;
-            opponent_shot(world, enemy, player, collision, profile, offset, person, tally);
+            opponent_shot(
+                world, enemy, player, collision, profile, offset, person, tally, event_index
+            );
         }
     }
     enemy.attack_flash = max(0.0, attack_duration(enemy) - enemy.attack_clock);
@@ -3141,7 +3284,14 @@ walker Dodge {
                 for profile in here.profiles {
                     if profile.name == rule.duck_grenade {
                         ahead = Vec3(x=math.cos(here.yaw), y=math.sin(here.yaw));
-                        launch_missile(world, here, ahead, profile, self.shooter);
+                        launch_missile(
+                            world,
+                            here,
+                            ahead,
+                            profile,
+                            self.shooter,
+                            muzzle_origin(here, profile, 0)
+                        );
                     }
                 }
             }

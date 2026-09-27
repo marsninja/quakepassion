@@ -976,7 +976,7 @@ impl App.step() -> bool {
         if self.level.bsp.game == "q3" {
             # cg_event.c: the player's own body cues its pain, death, jumps,
             # landings and footsteps in its character's voice.
-            for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots) {
+            for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots, q3_gibbed(self.player)) {
                 self.audio.play_path(cue);
             }
         }
@@ -1271,16 +1271,20 @@ impl App.step() -> bool {
                 } else {
                     # Shots wake nearby monsters (show_hostile, PlayerNoise).
                     self.combat.noise = 1.0;
-                    # Q2 FindTarget hears a noise only from inside its PHS.
+                    # Q2 FindTarget hears a noise only from inside its PHS,
+                    # and only across open area portals (gi.AreasConnected).
                     if self.level.bsp.game == "q2" {
                         heard = self.level.hearable(self.player.pos);
+                        opened = open_portals(self.world);
+                        source = self.level.bsp.leaves[self.level.locate(self.player.pos)].area;
                         for listener in [self.world->:HasOpponent:->][?:Opponent] {
                             if listener.alert <= 0.0
                                 and listener.health > 0
                                 and not listener.dormant
                                 and listener.pos.sub(self.player.pos).length() < 1000.0 {
-                                leaf = self.level.locate(listener.pos);
-                                listener.heard = self.level.bsp.leaves[leaf].cluster in heard;
+                                leaf = self.level.bsp.leaves[self.level.locate(listener.pos)];
+                                listener.heard = leaf.cluster in heard
+                                    and areas_connected(self.level.bsp, source, leaf.area, opened);
                             }
                         }
                     }
@@ -1306,6 +1310,7 @@ impl App.step() -> bool {
                 self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
             }
             if self.level.bsp.game == "q2" {
+                self.world spawn AreaPortalTick();
                 trail = self.player_trail;
                 if trail is not None {
                     trail spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);
@@ -1420,6 +1425,12 @@ impl App.step() -> bool {
                 if not blast.heard {
                     blast.heard = True;
                     self.play_at(blast.sound, blast.pos);
+                }
+            }
+            for struck in [self.world->:HasImpactSound:->][?:ImpactSound] {
+                if not struck.heard {
+                    struck.heard = True;
+                    self.play_at(struck.sound, struck.pos);
                 }
             }
             pickup_result = self.world spawn PickupTick(
@@ -1643,16 +1654,7 @@ impl App.restart_level() {
 }
 
 impl App.record_entry() {
-    self.total_monsters = len(
-        [
-            enemy
-            for enemy in [self.world->:HasOpponent:->][?:Opponent]
-            if not enemy.arena
-                and not enemy.rule.decoration
-                and not enemy.rule.inert
-                and not enemy.rule.script
-        ]
-    );
+    self.total_monsters = monster_total(self.world);
     self.entry_save = "";
     if self.level.bsp.game in ["q1", "q2"] and self.level.active {
         try {

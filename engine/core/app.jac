@@ -96,8 +96,8 @@ import from ..world.combat {
     KillBox,
     ClearActors
 }
-import from ..world.vitals { CrashLand, VoiceTick }
-import from ..world.particles { Explosion, HasExplosion }
+import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
+import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
 import from ..render.view_feedback { ViewFeedback, death_view }
 import from ..world.light_effects { combat_lights }
 import from games.opponents { populate_opponents, populate_finale }
@@ -117,6 +117,8 @@ import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..render.hud_models { HudModels, head_view }
 import from ..world.reflection { show_body, follow_body }
 import from ..world.drops { toss_items, TossTick }
+import from ..world.monster_count { monster_total }
+import from ..world.area_portals { AreaPortalTick, open_portals, areas_connected }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }

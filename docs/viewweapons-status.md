@@ -9,12 +9,23 @@ loads dispose the newly prepared resources and preserve the previous scene.
 The view follows camera pitch/yaw, samples map illumination with minimum ambient
 light, and compresses projection depth for the weapon pass. World projection is
 restored before HUD rendering. Death hides the gun. Cosmetic firing/idle frames
-and a short raise transition use simulation time, so menu pause freezes them.
+and the weapon switch use simulation time, so menu pause freezes them.
 Q2 cooked grenades have explicit priming/holding/throw poses. None of this changes
 weapon damage, cooldowns or ammunition.
 
+A weapon change shows the old weapon lowering, then the new one rising, over
+the same lower and raise times that hold fire (`swap_weapon` records what was
+put away): Q2 plays each weapon's `Weapon_Generic` deactivate frames
+(`FRAME_IDLE_LAST + 1` to `FRAME_DEACTIVATE_LAST`) then its activate frames
+(0 to `FRAME_ACTIVATE_LAST`) at 10 a second, the hand grenade changing at once
+as `Weapon_Grenade` does; Q3 plays the hand model's frames 6-10 and 11-14 at
+20 a second (`CG_MapTorsoToWeaponFrame` following `TORSO_DROP` and
+`TORSO_RAISE`); Q1 changes at once. `scripts/weapon_switch_smoke.jac` captures
+a Q2 blaster-to-shotgun and a Q3 machine gun-to-shotgun change mid-lower,
+mid-raise and ready (inspected).
+
 This is the visible-weapon foundation, not complete original animation fidelity.
-Exact raise/lower timing, Q1 alternate axe swings, Q2 idle pauses and continuous
+Q1 alternate axe swings, Q2 idle pauses and continuous
 fire sequences, Q3 barrel spin, muzzle flashes, recoil, movement bob and several
 weapon shader effects remain open. Q3 arm meshes are not drawn separately: the
 hand MD3 supplies the original attachment animation. Passion is unchanged.

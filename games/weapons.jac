@@ -679,7 +679,12 @@ def weapon_effects(game: str) -> list[EffectRule] {
             ),
             EffectRule(key="q3_railcore", flight="gfx/misc/railcorethin_mono", additive=True),
             EffectRule(key="q3_raildisc", flight="gfx/misc/raildisc_mono2", additive=True),
-            EffectRule(key="q3_lightning", flight="gfx/misc/lightning3", additive=True)
+            EffectRule(key="q3_lightning", flight="gfx/misc/lightning3", additive=True),
+            # cg_main.c CG_RegisterGraphics: the impact mark shaders.
+            EffectRule(key="gfx/damage/bullet_mrk", flight="gfx/damage/bullet_mrk"),
+            EffectRule(key="gfx/damage/burn_med_mrk", flight="gfx/damage/burn_med_mrk"),
+            EffectRule(key="gfx/damage/hole_lg_mrk", flight="gfx/damage/hole_lg_mrk"),
+            EffectRule(key="gfx/damage/plasma_mrk", flight="gfx/damage/plasma_mrk")
         ];
     }
     return [];

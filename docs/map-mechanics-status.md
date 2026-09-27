@@ -47,7 +47,10 @@ activatable entity has a `Signal`, and walkers advance the entities.
   loaded, so chains that end at shooters, targets, movers or teleporters no longer
   disable themselves.
 - `trigger_monsterjump` launches grounded walking monsters at `speed`/`height`.
-- Recipients whose use does nothing here (Q2 area portals, `info_null`,
+- Q2 `func_areaportal`s open and close with their doors and relays; they
+  gate hearing (see [monster behaviour](monster-behaviour-status.md)), not
+  rendering.
+- Recipients whose use does nothing here (`info_null`,
   `info_notnull`, `target_position`, `point_combat`, path corners and teleport
   destinations) accept uses as no-ops, so chains through them stay enabled.
   Switchable Q1/Q2 lights keep a saved on/off state; rendering the switched light

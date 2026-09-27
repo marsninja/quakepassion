@@ -398,6 +398,10 @@ obj CollisionMap {
         hull_maxs: Vec3 = Vec3(x=16.0, y=16.0, z=32.0),
         large_hulls: list[HullCell] = [],
         body: BodyBox | None = None;
+    # Brush sides a shot leaves nothing on, by hull: the sky and Q3
+    # SURF_NOIMPACT take no impact at all, Q3 SURF_NOMARKS no marks.
+    has no_impact: dict[int, list[Vec3]] = {},
+        no_marks: dict[int, list[Vec3]] = {};
 
     # Share live geometry and mover offsets, but keep actor stance independent.
     # With `mins`/`maxs` the view traces that box instead of the player's.
@@ -418,7 +422,9 @@ obj CollisionMap {
             top_drop=drop,
             hull_mins=self.hull_mins,
             hull_maxs=self.hull_maxs,
-            large_hulls=self.large_hulls
+            large_hulls=self.large_hulls,
+            no_impact=self.no_impact,
+            no_marks=self.no_marks
         );
         if mins is not None and maxs is not None {
             view.fit_body(mins, maxs);
@@ -457,6 +463,26 @@ obj CollisionMap {
             return "";
         }
         return str(body.lo.x) + "," + str(body.lo.z) + "," + str(body.hi.x) + "," + str(body.hi.z);
+    }
+
+    """What the surface a point trace ended on takes from a shot: 2 nothing
+    (sky, SURF_NOIMPACT: g_weapon.c and fire_lead skip their impact
+    events), 1 no mark (SURF_NOMARKS), 0 both."""
+    def surface_class(trace: Trace) -> int {
+        if trace.fraction >= 1.0 or trace.hull < 0 {
+            return 0;
+        }
+        for normal in self.no_impact.get(trace.hull, []) {
+            if normal.dot(trace.normal) > 0.99 {
+                return 2;
+            }
+        }
+        for normal in self.no_marks.get(trace.hull, []) {
+            if normal.dot(trace.normal) > 0.99 {
+                return 1;
+            }
+        }
+        return 0;
     }
 
     def set_offset(index: int, offset: Vec3) {

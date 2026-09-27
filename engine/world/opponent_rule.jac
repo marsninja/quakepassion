@@ -1,4 +1,5 @@
 """Game-owned enemy tuning consumed by shared graph combat behavior."""
+import from ..math.vec3 { Vec3 }
 
 # One authored attack sequence. Times are simulation seconds from the start of
 # the sequence; frames advance at 10 Hz. Ranges select which sequences a
@@ -58,6 +59,16 @@ obj AttackProfile {
         crouch_start: float = -1.0,
         crouch_end: float = -1.0,
         revive_at: float = -1.0;
+    # Where shots leave the monster: forward, right and up from its origin
+    # (Q2 m_flash.c monster_flash_offset through G_ProjectSource, the QuakeC
+    # launch origins). Successive shots of a sequence take successive
+    # entries; a volley fires every pellet or missile of one shot from its own
+    # entry (Jorg's and the Hornet's twin guns). Without any, shots leave the
+    # eye. `flash` colours the muzzle-flash light (Q2 CL_ParseMuzzleFlash2,
+    # Q1 EF_MUZZLEFLASH); black shows none.
+    has muzzles: list[Vec3] = [],
+        volley: bool = False,
+        flash: Vec3 = Vec3();
 }
 
 obj OpponentRule {
@@ -71,6 +82,7 @@ obj OpponentRule {
         movement: str = "walk",
         decoration: bool = False,
         passive: bool = False,
+        good_guy: bool = False,
         inert: bool = False,
         pain_duration: float = 0.3,
         pain_interval: float = 1.0,
@@ -168,6 +180,9 @@ obj OpponentRule {
         gravity: bool = False,
         splash: int = 0,
         radius: float = 0.0,
+        muzzles: list[Vec3] = [],
+        crouch_muzzles: list[Vec3] = [],
+        flash: Vec3 = Vec3(),
         attacks: list[AttackProfile] = [];
 }
 
@@ -282,7 +297,9 @@ def rule_profiles(rule: OpponentRule) -> list[AttackProfile] {
                 missile_yaw=rule.missile_yaw,
                 gravity=rule.gravity,
                 splash=rule.splash,
-                radius=rule.radius
+                radius=rule.radius,
+                muzzles=rule.muzzles,
+                flash=rule.flash
             )
         );
         # Q2 soldiers answer some dodges by crouching and firing (attack3).
@@ -310,7 +327,9 @@ def rule_profiles(rule: OpponentRule) -> list[AttackProfile] {
                     missile_speed=rule.missile_speed,
                     missile_effect=rule.missile_effect,
                     crouch_start=rule.crouch_start,
-                    crouch_end=rule.crouch_end
+                    crouch_end=rule.crouch_end,
+                    muzzles=rule.crouch_muzzles,
+                    flash=rule.flash
                 )
             );
         }

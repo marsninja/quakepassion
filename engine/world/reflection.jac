@@ -30,7 +30,7 @@ def player_body(rig: PlayerRig) -> PlayerBody {
 the rig posed from their movement. Returns the sounds its cues play
 (cg_event.c: pain, death, jumps, landings and footsteps). `shots` counts the
 player's shots so the torso plays its attacks."""
-def follow_body(world: World, player: Player, eye_height: float, weapon: str, seconds: float, hurt: bool = False, shots: int = -1) -> list[str] {
+def follow_body(world: World, player: Player, eye_height: float, weapon: str, seconds: float, hurt: bool = False, shots: int = -1, gibbed: bool = False) -> list[str] {
     bodies = [world->:HasBody:->][?:PlayerBody];
     if not bodies {
         return [];
@@ -65,7 +65,8 @@ def follow_body(world: World, player: Player, eye_height: float, weapon: str, se
         alive=player.health > 0,
         health=player.health,
         hurt=hurt,
-        shots=shots
+        shots=shots,
+        gibbed=gibbed
     );
     return [rig_sound(rig, cue) for cue in posed.sounds];
 }

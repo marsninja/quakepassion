@@ -30,6 +30,18 @@ def add_model(
         collision.hulls[-1].point_blocking = brush.contents
             & (1 if bsp.game == "q3" else 3)
             != 0;
+        # Q2/Q3 SURF_SKY (4) and Q3 SURF_NOIMPACT (16) take no impacts, Q3
+        # SURF_NOMARKS (32) no marks. (Q2's 16 and 32 are translucency.)
+        hull = len(collision.hulls) - 1;
+        silent = 20 if bsp.game == "q3" else 4;
+        for side in range(min(len(brush.side_flags), len(normals))) {
+            flags = brush.side_flags[side];
+            if flags & silent != 0 {
+                collision.no_impact.setdefault(hull, []).append(normals[side]);
+            } elif bsp.game == "q3" and flags & 32 != 0 {
+                collision.no_marks.setdefault(hull, []).append(normals[side]);
+            }
+        }
     }
     if bsp.game == "q3" and not volume {
         record = bsp.models[model];

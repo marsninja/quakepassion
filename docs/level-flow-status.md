@@ -84,7 +84,10 @@ teleporters and pushes for the level's monsters:
   (`teleport_use`, whose `force_retouch` catches monsters already waiting
   inside).
 - A monster touches a trigger's bounding box, as in `SV_TouchLinks`. The box
-  has a one-unit margin, and the monster's own size counts.
+  has a one-unit margin, and the monster's own size counts. The box is swept
+  from where the previous check left it, so a leaping or charging monster
+  cannot pass through a thin trigger between ticks; a monster placed more than
+  256 units away (a respawn, another teleport) is tested where it stands.
 - On arrival the monster faces the destination's angle and keeps its alert
   state. A tfog sound (`misc/r_tele1-5`) plays at the destination, with a
   flash of sparks.
@@ -112,7 +115,9 @@ death chains that go through them. In e1m3, the closet fiends feed counter
   with a unit summary (kills, goals and secrets). Other Q2 exits change level
   at once, as `BeginIntermission` does in single player.
 - **Monster tally**: the level's monsters are counted on entry, including
-  closet and trigger-spawned monsters but not bosses driven by scripts.
+  closet and trigger-spawned monsters and Q1's Chthon and Shub-Niggurath (whose
+  QuakeC spawns add them to `total_monsters`), but not Q2's AI_GOOD_GUY
+  `misc_insane` marines, which neither count nor add a kill when they die.
   Holding F1 in Q1 shows `Sbar_SoloScoreboard` (monsters, secrets, time, level
   name) in place of the status bar, and so does death. F1 now toggles the Q2
   help computer, drawn from `help.pcx` with skill, level name, objectives and
@@ -228,12 +233,8 @@ The remaining teleporters are ones the originals can't use either:
 
 ## Limits
 
-- The Q1 monster count leaves out Chthon and Shub-Niggurath, whose deaths
-  don't go through the kill tally.
 - The Q2 unit summary is drawn in the help computer's frame. The
   single-player original shows only the intermission view.
 - The help computer's objectives are not kept in saves or across levels
   (`game.helpmessage1/2` persist in the original).
 - The Q1 intermission time is the level's simulation time.
-- Monsters touch teleporters and pushes by bounding box. They don't sweep
-  through them the way a fast-moving player does.

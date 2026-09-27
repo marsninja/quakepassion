@@ -32,7 +32,7 @@ import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, model_basis }
 import from ..world.world { Player }
 import from ..world.combat { CombatState }
-import from ..world.weapons { ViewWeaponRule, view_frame }
+import from ..world.weapons { ViewWeaponRule, view_frame, switch_frame }
 import from ..world.lighting { Lighting }
 
 obj ViewAsset {
@@ -49,6 +49,10 @@ obj ViewWeapon {
         shots: int = -1,
         fired_at: float = -100.0,
         switched_at: float = -100.0,
+        switches: int = 0,
+        holstered: int = -1,
+        lowering: float = 0.0,
+        raising: float = 0.0,
         shells: dict[str, ModelRenderer] = {},
         barrel_angle: float = 0.0,
         barrel_time: float = 0.0,
@@ -113,11 +117,18 @@ obj ViewWeapon {
         if player.health <= 0 or state.weapon not in self.assets {
             return;
         }
-        if self.selected != state.weapon {
+        if self.selected != state.weapon or self.switches != state.switches {
+            # A change the combat state announced plays its lowering and
+            # raising; any other (a load, a respawn) just shows the weapon.
+            announced = self.switches != state.switches and self.selected >= 0;
             self.selected = state.weapon;
+            self.switches = state.switches;
             self.shots = state.shots;
             self.fired_at = -100.0;
             self.switched_at = seconds;
+            self.holstered = state.holstered if announced else -1;
+            self.lowering = state.lowering if announced else 0.0;
+            self.raising = state.raising if announced else 0.0;
         }
         if self.shots != state.shots {
             self.shots = state.shots;
@@ -139,7 +150,17 @@ obj ViewWeapon {
             self.barrel_angle = spin % 360.0;
             self.barrel_spinning = firing;
         }
-        asset = self.assets[state.weapon];
+        # Q2 WEAPON_DROPPING then WEAPON_ACTIVATING, Q3 WEAPON_DROPPING then
+        # WEAPON_RAISING: the old weapon lowers, then the new one rises; Q1
+        # changes at once.
+        since = seconds - self.switched_at;
+        shown = state.weapon;
+        lowering = since < self.lowering and self.holstered in self.assets;
+        if lowering {
+            shown = self.holstered;
+        }
+        raising = not lowering and since < self.lowering + self.raising;
+        asset = self.assets[shown];
         frames = len(asset.hand.tags)
             if asset.hand.tags
             else len(asset.drawing.model.surfaces[0].frames);
@@ -147,15 +168,24 @@ obj ViewWeapon {
             asset.rule,
             frames,
             seconds - self.fired_at,
-            seconds - self.switched_at,
-            hand_grenade=state.game == "q2" and state.weapon == 11,
+            since - self.lowering - self.raising,
+            hand_grenade=state.game == "q2" and shown == 11,
             grenade_phase=state.grenade_phase,
             grenade_clock=state.grenade_clock
         );
+        if lowering or raising {
+            turning = switch_frame(
+                asset.rule,
+                frames,
+                lowering,
+                since if lowering else since - self.lowering
+            );
+            if turning >= 0 {
+                frame = turning;
+            }
+        }
         basis = model_basis(player.yaw, player.pitch);
-        origin = player.pos.sub(
-            basis.up.scale(10.0 * max(0.0, 1.0 - (seconds - self.switched_at) / 0.2))
-        );
+        origin = player.pos.add(Vec3());
         speed = min(
             1.0, Vec3(x=player.velocity.x, y=player.velocity.y).length() / 320.0
         );
@@ -270,7 +300,7 @@ obj ViewWeapon {
             }
             # The muzzle flash on tag_flash: MUZZLE_FLASH_TIME after a shot,
             # or all the while the lightning gun or gauntlet fires.
-            continuous = state.weapon in [1, 6] and firing;
+            continuous = shown in [1, 6] and firing and not (lowering or raising);
             if asset.flash.stages and asset.drawing.model.tags
                 and (seconds - self.fired_at < 0.03 or continuous) {
                 for tag in asset.drawing.model.tags[0].tags {

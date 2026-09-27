@@ -85,6 +85,9 @@ walker Damage {
             # Match scoring credits the attacker; None means a world death.
             here.killer = self.attacker;
             here.death_means = self.means;
+            # Past the gib health (Q1/Q2 health < -40, Q3 GIB_HEALTH) the
+            # body bursts instead of falling.
+            here.death_overkill = self.overkill;
         }
     }
 }

@@ -187,6 +187,28 @@ test "monsters use named Q1 teleporters just after their use and die on the play
     assert other.health <= 0 and near.health == 100;
 }
 
+test "a fast monster crossing a thin teleporter between ticks still uses it" {
+    world = World();
+    gate = Traversal(volume=flow_box(), kind="teleport", monsters=True, game="q1");
+    gate +>:ArrivesAt:+> Destination(origin=Vec3(y=900.0));
+    world +>:HasTraversal:+> gate;
+    fiend = Opponent(pos=Vec3(x=-60.0, z=22.0), health=100);
+    world +>:HasOpponent:+> fiend;
+    world spawn TeleportMonsters(collision=CollisionMap(), dt=0.01);
+    assert fiend.pos.x == -60.0;
+    # A leap carries it from one side of the 16-unit trigger to the other.
+    fiend.pos = Vec3(x=60.0, z=22.0);
+    moved = world spawn TeleportMonsters(collision=CollisionMap(), dt=0.01);
+    assert moved.arrivals == 1 and fiend.pos.y == 900.0;
+    # Placed far away (a respawn or another teleport) is not a sweep.
+    runner = Opponent(pos=Vec3(x=-600.0, z=22.0), health=100);
+    world +>:HasOpponent:+> runner;
+    world spawn TeleportMonsters(collision=CollisionMap(), dt=0.5);
+    runner.pos = Vec3(x=600.0, z=22.0);
+    placed = world spawn TeleportMonsters(collision=CollisionMap(), dt=0.5);
+    assert placed.arrivals == 0 and runner.pos.x == 600.0;
+}
+
 test "pushes launch monsters and players-only teleporters ignore them" {
     world = World();
     push = Traversal(volume=flow_box(), kind="push", monsters=True, velocity=Vec3(z=800.0));
