@@ -396,10 +396,11 @@ obj HudRenderer {
         if status.ammo >= 0 {
             self.q1_number(status.ammo, 3, left + 248.0 * scale, bar, scale, status.ammo <= 10);
         }
-        # SCR_DrawCrosshair / Draw_Character: the conchars '+' at the centre
-        # of the view above the status bars.
+        # SCR_DrawCrosshair / Draw_Character: the conchars '+'. The 3D view
+        # fills the whole window (not the vrect above the status bars), so
+        # the glyph's own centre, pixel (4, 5) of its cell, sits on the aim.
         if status.crosshair {
-            self.q1_char(43, float(width) * 0.5, (float(height) - 48.0 * scale) * 0.5, scale);
+            self.q1_char(43, float(width) * 0.5 - 4.0 * scale, float(height) * 0.5 - 5.0 * scale, scale);
         }
     }
 
