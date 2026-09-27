@@ -11,8 +11,9 @@ change the asset directory.
   textures, palette conversion, lightmap UVs, and compressed PVS decoding.
 - BSP splits, front/back edges, and leaf nodes; `Locate` and `CollectFaces`
   walkers perform spatial queries and visible-face collection.
-- Correct Quake-to-raylib triangle winding, texture repetition, static baked
-  lightmaps with filtered atlas borders, and a separate fullbright pass.
+- Correct Quake-to-raylib triangle winding, texture repetition, baked
+  lightmaps with filtered atlas borders and fullbrights, drawn from GPU
+  buffers in one shader pass (see rendering-status.md).
 - Static brush geometry at entity origins, excluding invisible trigger models.
   The world model's visibility leaf count excludes appended brush-model leaves.
 - Static sky layers composited without exposing the foreground's black mask.
