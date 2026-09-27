@@ -42,6 +42,7 @@ import from engine.world.combat {
 }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
+import from engine.world.mover_ramp { ramp_rest }
 import from engine.world.rotators { Rotator, HasRotator, place }
 import from engine.world.shooters { Shooter, HasShooter }
 import from engine.world.powerups { Powerup, Empowered }
@@ -368,6 +369,18 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     }
     for door in [world->:HasDoor:->][?:Door] {
         member_health = [float(part.health) for part in [door->:DoorMember:->][?:Door]];
+        # A Q2 accelerated move's moveinfo state follows the members' health.
+        ramp = door.ramp;
+        if ramp is not None {
+            member_health = member_health + [
+                float(ramp.heading),
+                ramp.current_speed,
+                ramp.next_speed,
+                ramp.move_speed,
+                ramp.decel_distance,
+                ramp.frame_left
+            ];
+        }
         lines.append(
             "D "
                 + door.state
@@ -1007,7 +1020,12 @@ def restore(
         } elif words[0] == "D" and d < len(doors) {
             door = doors[d];
             parts = [door->:DoorMember:->][?:Door];
-            row = values(" ".join(words[2:]), 7 + len(parts));
+            # Saves from before accelerated moves have no ramp state.
+            count = 7 + len(parts);
+            if door.ramp is not None and len(words) - 2 == count + 6 {
+                count += 6;
+            }
+            row = values(" ".join(words[2:]), count);
             d += 1;
             if words[1] not in ["closed", "opening", "open", "closing", "locked"]
                 or row[0] < 0.0
@@ -1032,6 +1050,22 @@ def restore(
                     raise ValueError("Invalid saved door member health");
                 }
                 parts[index].health = int(row[7 + index]);
+            }
+            ramp = door.ramp;
+            if ramp is not None {
+                ramp_rest(ramp);
+                if count > 7 + len(parts) {
+                    tail = 7 + len(parts);
+                    if abs(row[tail]) > 1.0 or row[tail + 5] < 0.0 or row[tail + 5] > 0.11 {
+                        raise ValueError("Invalid saved mover ramp");
+                    }
+                    ramp.heading = int(row[tail]);
+                    ramp.current_speed = row[tail + 1];
+                    ramp.next_speed = row[tail + 2];
+                    ramp.move_speed = row[tail + 3];
+                    ramp.decel_distance = row[tail + 4];
+                    ramp.frame_left = row[tail + 5];
+                }
             }
             if door.unlocked and door.keys {
                 door.hold_time = -1.0;

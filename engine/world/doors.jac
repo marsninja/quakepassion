@@ -21,6 +21,7 @@ import from .speakers { Speaker, HasSpeaker }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis, quake_basis }
+import from .mover_ramp { MoverRamp, q2_mover_ramp, ramp_step, ramp_rest }
 
 edge HasDoor: World --> Door {}
 edge DoorLink: Door --> Door {}
@@ -94,7 +95,8 @@ node Door {
         move_voice: Speaker | None = None,
         stop_voice: Speaker | None = None,
         voice_on_open: bool = False,
-        voiced_state: str = "";
+        voiced_state: str = "",
+        ramp: MoverRamp | None = None;
 }
 
 """The start, moving (looped) and stop sounds of a mover. Q1 doors.qc,
@@ -598,12 +600,20 @@ walker DoorTick {
             return;
         }
         direction = 1.0 if here.state == "opening" else -1.0;
+        # Q2 Think_AccelMove ramps plats (and doors given accel/decel).
+        travel = here.speed * self.dt;
+        ramp = here.ramp;
+        if ramp is not None {
+            travel = ramp_step(
+                ramp,
+                1 if direction > 0.0 else -1,
+                door_span(here) * (1.0 - here.position if direction > 0.0 else here.position),
+                here.speed,
+                self.dt
+            );
+        }
         next_position = max(
-            0.0,
-            min(
-                1.0,
-                here.position + direction * here.speed * self.dt / door_span(here)
-            )
+            0.0, min(1.0, here.position + direction * travel / door_span(here))
         );
         members = [here];
         members.extend([here->:DoorMember:->][?:Door]);
@@ -732,7 +742,14 @@ walker DoorTick {
             self.player.pos = carried.add(Vec3(z=self.collision.eye_height));
             self.player.grounded = True;
         }
-        if next_position == 1.0 {
+        # A ramped move sits still for its first frame, so arrival is judged
+        # in the direction of travel.
+        arrived = (next_position == 1.0 and direction > 0.0)
+            or (next_position == 0.0 and direction < 0.0);
+        if ramp is not None and arrived {
+            ramp_rest(ramp);
+        }
+        if next_position == 1.0 and direction > 0.0 {
             here.state = "open";
             here.remaining = here.hold_time;
             if not here.fire_on_start {
@@ -743,7 +760,7 @@ walker DoorTick {
                     self.message = fired.message;
                 }
             }
-        } elif next_position == 0.0 {
+        } elif next_position == 0.0 and direction < 0.0 {
             here.state = "closed";
         }
     }
@@ -860,8 +877,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             and not (kind in ["func_door", "func_door_rotating"] and bsp.game in ["q1", "q2"]) {
             reason = "shootable " + kind;
         }
-        # killtarget is a Kills edge fired with the mover's targets; Q2 accel and
-        # decel ramps (Think_AccelMove) are approximated by the constant speed.
+        # killtarget is a Kills edge fired with the mover's targets.
         name = fields.get("model", "");
         if not name.startswith("*") {
             continue;
@@ -973,6 +989,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             travel=direction.scale(distance),
             speed=speed,
             hold_time=hold_time,
+            ramp=q2_mover_ramp(kind, fields, speed)
+                if bsp.game == "q2" and not rotating
+                else None,
             trigger=AABB(
                 mins=bounds.mins.sub(margin).sub(Vec3(z=32.0)),
                 maxs=bounds.maxs.add(margin).add(Vec3(z=24.0))

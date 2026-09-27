@@ -83,7 +83,8 @@ test "an enemy rides a platform while the player remains crouched elsewhere" {
     fixture.collision.top_drop = 28.0;
     enemy = Opponent(pos=Vec3(z=78.03125));
     fixture.world +>:HasOpponent:+> enemy;
-    for i in range(4) {
+    # The Q2 plat ramps up and down (Think_AccelMove): 1.2 s for 64 units.
+    for i in range(5) {
         fixture.tick(Vec3(x=500.0), 0.25);
     }
     platform = [fixture.world->:HasDoor:->][?:Door][0];

@@ -273,6 +273,13 @@ def parse_bsp(data: bytes) -> Bsp {
         } elif player_hull < -6 {
             raise ValueError("Invalid Q1 player hull");
         }
+        # Hull 2: the 64x64x88 box of shamblers, ogres and fiends.
+        large_hull = i32_at(lumps[14], p + 44);
+        if large_hull >= 0 {
+            check_index(large_hull, len(bsp.clipnodes));
+        } elif large_hull < -6 {
+            raise ValueError("Invalid Q1 large hull");
+        }
         first = i32_at(lumps[14], p + 56);
         count = i32_at(lumps[14], p + 60);
         if first < 0 or count < 0 or first + count > len(bsp.faces) {
@@ -288,6 +295,7 @@ def parse_bsp(data: bytes) -> Bsp {
                 maxs=vec_at(lumps[14], p + 12),
                 head=head,
                 player_hull=player_hull,
+                large_hull=large_hull,
                 first_face=first,
                 face_count=count,
                 vis_leaf_count=vis_count

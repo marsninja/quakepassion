@@ -1,4 +1,5 @@
-"""Adapt BSP29's standing-player hull to the shared collision graph."""
+"""Adapt BSP29's clip hulls to the shared collision graph: the standing
+player's hull, and hull 2 for monsters wider than 32 units."""
 import from ..bsp { Bsp }
 import from ...physics.collision { CollisionMap, HullCell, HullFront, HullBack }
 import from ...math.vec3 { Vec3 }
@@ -80,6 +81,11 @@ def build_collision(bsp: Bsp, triggers: bool = False) -> CollisionMap {
         collision.offsets.append(
             Vec3(x=float(coords[0]), y=float(coords[1]), z=float(coords[2]))
         );
+    }
+    # Hull 2 for the same models, for monsters wider than 32 units.
+    for model in collision.models {
+        head = bsp.models[model].large_hull;
+        collision.large_hulls.append(cells[head] if head >= 0 else terminals[-head - 1]);
     }
     if bsp.leaves {
         point_cells: list[HullCell] = [];

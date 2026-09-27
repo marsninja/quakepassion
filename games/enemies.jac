@@ -40,6 +40,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
     }
     if game == "q2" and kind == "misc_explobox" {
         return OpponentRule(
+            # SP_misc_explobox: -16 -16 0 to 16 16 40.
+            hull_bottom=0.0,
+            hull_top=40.0,
             model="models/objects/barrels/tris.md2",
             health=10,
             inert=True,
@@ -122,6 +125,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
             # rottweiler.qc: DogCheckAttack bites in melee range and otherwise
             # leaps (CheckDogJump, 80 to 150 units) at 300 forward and 200 up.
             return OpponentRule(
+                width=32.0,
+                hull_bottom=-24.0,
+                hull_top=40.0,
                 sight_sound="sound/dog/dsight.wav",
                 pain_sounds=["sound/dog/dpain1.wav"],
                 death_sound="sound/dog/ddeath.wav",
@@ -231,6 +237,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind in ["monster_ogre", "monster_ogre_marksman"] {
             return OpponentRule(
+                # VEC_HULL2_MIN/MAX.
+                width=32.0,
                 hull_bottom=-24.0,
                 hull_top=64.0,
                 sight_sound="sound/ogre/ogwake.wav",
@@ -1293,7 +1301,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_flipper" {
             return OpponentRule(
                 hull_bottom=0.0,
-                hull_top=16.0,
+                hull_top=32.0,
                 model="models/monsters/flipper/tris.md2",
                 health=50,
                 movement="swim",
@@ -1946,6 +1954,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         }
         if kind == "monster_gladiator" {
             return OpponentRule(
+                width=32.0,
                 hull_bottom=-24.0,
                 hull_top=64.0,
                 sight_sound="sound/gladiator/sight.wav",

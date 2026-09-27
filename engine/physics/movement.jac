@@ -111,6 +111,8 @@ walker MovePlayer {
             return;
         }
         pos = here.pos.sub(Vec3(z=self.collision.eye_height));
+        # Q2 Pmove drops pm_time each move; PMF_TIME_LAND ends with it.
+        here.land_time = max(0.0, here.land_time - self.dt);
         haste = speed_scale(here);
         if empowered(here, "flight") and self.water_depth < 2 {
             # Q3 bg_pmove.c PM_FlyMove: view-relative thrust, flight friction 3.
@@ -138,7 +140,10 @@ walker MovePlayer {
             self.water_jump_move(here, pos);
             return;
         }
-        if self.water_depth == 2 and self.check_water_jump(here, pos) {
+        # Q2 PM_CheckSpecialMovement waits out pm_time before a water jump.
+        if self.water_depth == 2
+            and here.land_time <= 0.0
+            and self.check_water_jump(here, pos) {
             self.water_jump_move(here, pos);
             return;
         }
@@ -181,9 +186,19 @@ walker MovePlayer {
                 # The speed the body hit the ground at (Q1 jump_flag, Q2
                 # oldvelocity, Q3 PM_CrashLand's previous velocity).
                 self.landed = -here.fall_speed;
+                # Q2 PM_CatagorizePosition: landing faster than 200 units a
+                # second holds off the next jump for 18 (over 400: 25) pm_time
+                # units of 8 ms.
+                if self.game == "q2" and here.fall_speed < -200.0 {
+                    here.land_time = 0.2 if here.fall_speed < -400.0 else 0.144;
+                }
             }
             here.fall_speed = 0.0;
-            wants_jump = self.jump and not here.jump_held and not here.crouched;
+            # Q2 PM_CheckJump refuses while PMF_TIME_LAND is set.
+            wants_jump = self.jump
+                and not here.jump_held
+                and not here.crouched
+                and here.land_time <= 0.0;
             # Q2/Q3 pmove check the jump before ground friction, so a jump on
             # landing keeps its speed (strafe jumping); Q1 applies friction in
             # SV_ClientThink before PlayerJump.

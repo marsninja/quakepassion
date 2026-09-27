@@ -57,7 +57,8 @@ impl sample_intent(
     }
 
     # capture lifecycle: a click or the console key (`) grabs the mouse, the
-    # console key or Escape's menu releases it; Tab is the scoreboard.
+    # console key or Escape's menu releases it; Tab is the scoreboard (Q2's
+    # inventory).
     if IsKeyPressed(i32(96)) {
         if _mouse.captured {
             _release();
@@ -127,6 +128,7 @@ impl sample_intent(
         next_item=IsKeyPressed(i32(93)),
         prev_item=IsKeyPressed(i32(91)),
         scores=IsKeyDown(KEY_TAB) or IsKeyDown(i32(290)),
-        help=IsKeyPressed(i32(290))
+        help=IsKeyPressed(i32(290)),
+        inventory=IsKeyPressed(KEY_TAB)
     );
 }

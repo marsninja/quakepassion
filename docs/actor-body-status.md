@@ -30,6 +30,7 @@ completed Q1 `e1m1`, Q2 `base1`, and Q3 `q3dm1` startup/render smoke checks.
 These results use the documented local source compiler; they are not full
 campaign playthrough or released-toolchain acceptance.
 
-This does not implement original per-monster hull dimensions, monster duck
+Per-monster movement boxes came later (see
+[monster behaviour](monster-behaviour-status.md#bodies)). This does not implement monster duck
 animations, flying/swimming AI, or global navigation. Those remain part of the
 unfinished original-game scope.

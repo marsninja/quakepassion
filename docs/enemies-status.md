@@ -9,7 +9,7 @@ start at the actor's body origin rather than its eye position.
 
 These are combat foundations, not complete original enemy behavior. Attack-frame
 scheduling, randomized damage, dog leaps, chainsaw sweeps, double-shot enforcers,
-pain/death/gib sequences, drops, infighting, exact actor hull sizes and navigation
+pain/death/gib sequences, drops, infighting and navigation
 remain open. The rest of both original rosters and bosses remain unsupported.
 Enemy missiles currently target the player directly; splash can hurt other
 opponents without granting player kill credit. Direct monster-on-monster missile

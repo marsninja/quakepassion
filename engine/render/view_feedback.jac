@@ -30,7 +30,9 @@ obj ViewFeedback {
         blob_x: float = 0.0,
         blob_y: float = 0.0,
         blob_value: float = 0.0,
-        blob_time: float = 0.0;
+        blob_time: float = 0.0,
+        flashes: int = 0,
+        flash_time: float = 0.0;
 
     def reset(game: str) {
         self.game = game;
@@ -40,6 +42,7 @@ obj ViewFeedback {
         self.fall_time = 0.0;
         self.land_time = 0.0;
         self.blob_time = 0.0;
+        self.flash_time = 0.0;
     }
 
     """Turn the hits the player took since the last frame into a flash and
@@ -54,6 +57,10 @@ obj ViewFeedback {
         if blood + armor <= 0.0 {
             return;
         }
+        # Q2 P_DamageFeedback STAT_FLASHES: 1 after a hit to health, 2 after
+        # armor took one, shown for a server frame.
+        self.flashes = (1 if blood > 0.0 else 0) | (2 if armor > 0.0 else 0);
+        self.flash_time = 0.1;
         ahead = forward_from(player.yaw, 0.0);
         side = right_from(player.yaw);
         toward = Vec3();
@@ -144,6 +151,12 @@ obj ViewFeedback {
         self.fall_time = max(0.0, self.fall_time - dt);
         self.land_time = max(0.0, self.land_time - dt);
         self.blob_time = max(0.0, self.blob_time - dt);
+        self.flash_time = max(0.0, self.flash_time - dt);
+    }
+
+    """STAT_FLASHES while the last hit's frame lasts."""
+    def status_flashes() -> int {
+        return self.flashes if self.flash_time > 0.0 else 0;
     }
 
     """How far the kick has come: Q1/Q2 fade it out over half a second; Q3

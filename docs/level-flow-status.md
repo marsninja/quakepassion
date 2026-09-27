@@ -54,7 +54,19 @@ finish and makes moving between levels behave like the originals.
   accepted, and so is spawnflag 1 on Q1 buttons.
 - Doors, buttons and plats that have `killtarget`, `accel` or `decel` now load.
   Their killtarget is a `Kills` edge that fires with their targets.
-  Acceleration (`Think_AccelMove`) is simplified to the constant `speed`.
+- Q2 accelerated moves (`engine/world/mover_ramp.jac`): every Q2 func_plat,
+  and any func_door or func_water whose `accel` or `decel` differs from its
+  speed, runs `Move_Calc`'s accelerative path. The mover waits one 0.1 s frame,
+  then `Think_AccelMove` picks each frame's distance with
+  `plat_CalcAcceleratedMove` and `plat_Accelerate` (plat defaults: speed 200,
+  accel and decel 5 units per frame per frame; authored plat values are
+  scaled by 0.1). A reversal starts a new move from rest. The frame clock runs
+  on the 120 Hz simulation ticks, so the ramp is the same on every run, and
+  saves keep its state (older saves load and start the ramp from rest).
+  Rotating doors and trains keep a constant speed, as in the original (their
+  accel equals their speed). A door's authored accel/decel use the plat's 0.1
+  scaling; the original feeds doors' unscaled values into the per-frame ramp,
+  and no shipped map sets them.
 - A mover whose lip is as large as its size, or larger, still runs its cycle
   and fires its targets. Before, such movers stayed static, including space's
   arm buttons and many other Q2 buttons. Negative `distance` values reverse a
@@ -103,8 +115,9 @@ death chains that go through them. In e1m3, the closet fiends feed counter
   closet and trigger-spawned monsters but not bosses driven by scripts.
   Holding F1 in Q1 shows `Sbar_SoloScoreboard` (monsters, secrets, time, level
   name) in place of the status bar, and so does death. F1 now toggles the Q2
-  help computer, which shows skill, level name, objectives and
-  kills/goals/secrets, as `HelpComputer` does.
+  help computer, drawn from `help.pcx` with skill, level name, objectives and
+  kills/goals/secrets, as `HelpComputer` does (see
+  [presentation](presentation-status.md)).
 - **Death restart**: each level entry takes an autosave (the campaign envelope
   with a snapshot). Dying and pressing Enter reloads it. This works like Q1's
   `restart` with the level-entry parms and Q2's entry autosave. Before, a death
@@ -215,12 +228,12 @@ The remaining teleporters are ones the originals can't use either:
 
 ## Limits
 
-- Q2 `accel`/`decel` ramps are approximated by the constant speed.
 - The Q1 monster count leaves out Chthon and Shub-Niggurath, whose deaths
   don't go through the kill tally.
-- Q2's help computer is a text panel, not the `help.pcx` art.
-- The Q2 unit summary is a text panel. The single-player original shows only
-  the intermission view.
+- The Q2 unit summary is drawn in the help computer's frame. The
+  single-player original shows only the intermission view.
+- The help computer's objectives are not kept in saves or across levels
+  (`game.helpmessage1/2` persist in the original).
 - The Q1 intermission time is the level's simulation time.
 - Monsters touch teleporters and pushes by bounding box. They don't sweep
   through them the way a fast-moving player does.

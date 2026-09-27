@@ -26,9 +26,35 @@ obj Trace {
         end: Vec3 = Vec3();
 }
 
+"""How a moving body's box differs from the box the hulls were expanded by
+(`lo` = hull mins - body mins, `hi` = hull maxs - body maxs). Q2/Q3 brush
+hulls move each plane by it, as CM_BoxTrace offsets a brush's planes by the
+box corner facing them; Q1's second clip hull is already exact (`planes`
+false) and only needs the wider broad phase."""
+obj BodyBox {
+    has lo: Vec3 = Vec3(),
+        hi: Vec3 = Vec3(),
+        planes: bool = True;
+
+    """How far below and above the stored hull bounds this body's reach."""
+    def reach_low() -> Vec3 {
+        return Vec3(x=min(0.0, self.hi.x), y=min(0.0, self.hi.y), z=min(0.0, self.hi.z));
+    }
+    def reach_high() -> Vec3 {
+        return Vec3(x=max(0.0, self.lo.x), y=max(0.0, self.lo.y), z=max(0.0, self.lo.z));
+    }
+}
+
 """One convex brush (its planes) or, for point traces, one patch triangle:
 the narrow-phase test at a hull leaf, as a plain call rather than a walker."""
-def leaf_sweep(cell: HullCell, start: Vec3, finish: Vec3, point: bool, top_drop: float) -> Trace {
+def leaf_sweep(
+    cell: HullCell,
+    start: Vec3,
+    finish: Vec3,
+    point: bool,
+    top_drop: float,
+    body: BodyBox | None = None
+) -> Trace {
     if point and not cell.point_blocking {
         return Trace();
     }
@@ -72,6 +98,11 @@ def leaf_sweep(cell: HullCell, start: Vec3, finish: Vec3, point: bool, top_drop:
             distance = cell.point_distances[i]
                 if point and cell.point_distances
                 else cell.distances[i] + min(0.0, n.z) * top_drop;
+            if body is not None and not point {
+                distance += n.x * (body.lo.x if n.x >= 0.0 else body.hi.x)
+                    + n.y * (body.lo.y if n.y >= 0.0 else body.hi.y)
+                    + n.z * (body.lo.z if n.z >= 0.0 else body.hi.z);
+            }
             a = n.dot(start) - distance;
             b = n.dot(finish) - distance;
             if a >= 0.0 {
@@ -112,6 +143,7 @@ walker Sweep {
         high: float = 1.0,
         entry_normal: Vec3 = Vec3(),
         depth: int = 0,
+        body: BodyBox | None = None,
         result: Trace = Trace();
 
     def follow(targets: list[HullCell], low: float, high: float, normal: Vec3) {
@@ -127,7 +159,8 @@ walker Sweep {
                 entry_normal=normal,
                 top_drop=self.top_drop,
                 point=self.point,
-                depth=self.depth + 1
+                depth=self.depth + 1,
+                body=self.body
             );
             self.result.start_solid = self.result.start_solid
                 or query.result.start_solid;
@@ -140,7 +173,7 @@ walker Sweep {
 
     can intersect with HullCell entry {
         if here.planes or (self.point and here.triangle) or (self.point and not here.point_blocking) {
-            leaf = leaf_sweep(here, self.start, self.finish, self.point, self.top_drop);
+            leaf = leaf_sweep(here, self.start, self.finish, self.point, self.top_drop, self.body);
             if leaf.fraction < 1.0 or leaf.start_solid {
                 self.result.fraction = leaf.fraction;
                 self.result.normal = leaf.normal;
@@ -193,16 +226,18 @@ edge HullChild: HullGroup --> HullGroup {}
 """Whether the segment from `start` to `finish` passes through `box` (slab
 test), so a long diagonal trace does not collect every hull in its bounding
 box."""
-def segment_meets_box(start: Vec3, finish: Vec3, box: AABB) -> bool {
-    span = slab(start.x, finish.x - start.x, box.mins.x - 1.0, box.maxs.x + 1.0, 0.0, 1.0);
+def segment_meets_box(
+    start: Vec3, finish: Vec3, box: AABB, low: Vec3 = Vec3(), high: Vec3 = Vec3()
+) -> bool {
+    span = slab(start.x, finish.x - start.x, box.mins.x - 1.0 + low.x, box.maxs.x + 1.0 + high.x, 0.0, 1.0);
     if span[0] > span[1] {
         return False;
     }
-    span = slab(start.y, finish.y - start.y, box.mins.y - 1.0, box.maxs.y + 1.0, span[0], span[1]);
+    span = slab(start.y, finish.y - start.y, box.mins.y - 1.0 + low.y, box.maxs.y + 1.0 + high.y, span[0], span[1]);
     if span[0] > span[1] {
         return False;
     }
-    span = slab(start.z, finish.z - start.z, box.mins.z - 1.0, box.maxs.z + 1.0, span[0], span[1]);
+    span = slab(start.z, finish.z - start.z, box.mins.z - 1.0 + low.z, box.maxs.z + 1.0 + high.z, span[0], span[1]);
     return span[0] <= span[1];
 }
 
@@ -226,19 +261,22 @@ walker FindHulls {
         maxs: Vec3,
         start: Vec3 = Vec3(),
         finish: Vec3 = Vec3(),
+        low: Vec3 = Vec3(),
+        high: Vec3 = Vec3(),
         indices: list[int] = [];
 
     can select with HullGroup entry {
         b = here.bounds;
-        if self.maxs.x < b.mins.x
-            or self.mins.x > b.maxs.x
-            or self.maxs.y < b.mins.y
-            or self.mins.y > b.maxs.y
-            or self.maxs.z < b.mins.z
-            or self.mins.z > b.maxs.z {
+        # `low`/`high` widen the stored bounds for a larger body.
+        if self.maxs.x < b.mins.x + self.low.x
+            or self.mins.x > b.maxs.x + self.high.x
+            or self.maxs.y < b.mins.y + self.low.y
+            or self.mins.y > b.maxs.y + self.high.y
+            or self.maxs.z < b.mins.z + self.low.z
+            or self.mins.z > b.maxs.z + self.high.z {
             return;
         }
-        if not segment_meets_box(self.start, self.finish, b) {
+        if not segment_meets_box(self.start, self.finish, b, self.low, self.high) {
             return;
         }
         self.indices.extend(here.indices);
@@ -313,7 +351,8 @@ def hull_sweep(
     offset: Vec3,
     top_drop: float = 0.0,
     point: bool = False,
-    turn: Basis | None = None
+    turn: Basis | None = None,
+    body: BodyBox | None = None
 ) -> Trace {
     local_start = start.sub(offset);
     local_finish = finish.sub(offset);
@@ -324,10 +363,14 @@ def hull_sweep(
     # A brush or triangle leaf is one plain test; only BSP hulls are walked.
     result = Trace();
     if hull.planes or (point and hull.triangle) or (point and not hull.point_blocking) {
-        result = leaf_sweep(hull, local_start, local_finish, point, top_drop);
+        result = leaf_sweep(hull, local_start, local_finish, point, top_drop, body);
     } else {
         query = hull spawn Sweep(
-            start=local_start, finish=local_finish, point=point, top_drop=top_drop
+            start=local_start,
+            finish=local_finish,
+            point=point,
+            top_drop=top_drop,
+            body=body
         );
         result = query.result;
     }
@@ -349,10 +392,19 @@ obj CollisionMap {
         groups: list[HullGroup] = [],
         eye_height: float = 22.0,
         top_drop: float = 0.0;
+    # The box `hulls` are expanded by (the standing player's), Q1's hull 2
+    # for the same models, and a view's own body box when it differs.
+    has hull_mins: Vec3 = Vec3(x=-16.0, y=-16.0, z=-24.0),
+        hull_maxs: Vec3 = Vec3(x=16.0, y=16.0, z=32.0),
+        large_hulls: list[HullCell] = [],
+        body: BodyBox | None = None;
 
     # Share live geometry and mover offsets, but keep actor stance independent.
-    def for_body(height: float, drop: float = 0.0) -> CollisionMap {
-        return CollisionMap(
+    # With `mins`/`maxs` the view traces that box instead of the player's.
+    def for_body(
+        height: float, drop: float = 0.0, mins: Vec3 | None = None, maxs: Vec3 | None = None
+    ) -> CollisionMap {
+        view = CollisionMap(
             revision=self.revision,
             hulls=self.hulls,
             point_hulls=self.point_hulls,
@@ -363,8 +415,48 @@ obj CollisionMap {
             bounds=self.bounds,
             groups=self.groups,
             eye_height=height,
-            top_drop=drop
+            top_drop=drop,
+            hull_mins=self.hull_mins,
+            hull_maxs=self.hull_maxs,
+            large_hulls=self.large_hulls
         );
+        if mins is not None and maxs is not None {
+            view.fit_body(mins, maxs);
+        }
+        return view;
+    }
+
+    """Trace a body box of `mins`..`maxs` about the origin. Brush hulls shift
+    their planes for it; Q1 maps pick a clip hull by the box's width
+    (SV_HullForEntity: wider than 32 units takes hull 2)."""
+    def fit_body(mins: Vec3, maxs: Vec3) {
+        if self.large_hulls {
+            if maxs.x - mins.x > 32.0 and len(self.large_hulls) == len(self.hulls) {
+                self.hulls = self.large_hulls;
+                self.body = BodyBox(
+                    lo=self.hull_mins.sub(Vec3(x=-32.0, y=-32.0, z=-24.0)),
+                    hi=self.hull_maxs.sub(Vec3(x=32.0, y=32.0, z=64.0)),
+                    planes=False
+                );
+            }
+            return;
+        }
+        lo = self.hull_mins.sub(mins);
+        hi = self.hull_maxs.sub(maxs);
+        if lo.length() < 0.000001 and hi.length() < 0.000001 {
+            self.body = None;
+            return;
+        }
+        self.body = BodyBox(lo=lo, hi=hi);
+    }
+
+    """A cache key for what this view's traces can reach: the body box."""
+    def body_key() -> str {
+        body = self.body;
+        if body is None {
+            return "";
+        }
+        return str(body.lo.x) + "," + str(body.lo.z) + "," + str(body.hi.x) + "," + str(body.hi.z);
     }
 
     def set_offset(index: int, offset: Vec3) {
@@ -533,10 +625,19 @@ obj CollisionMap {
     ) -> Trace {
         result = Trace(end=finish);
         indices: list[int] = [];
+        body = self.body if not point else None;
+        low = Vec3();
+        high = Vec3();
+        if body is not None {
+            low = body.reach_low();
+            high = body.reach_high();
+        }
         if self.groups {
             candidates = self.groups[0] spawn FindHulls(
                 start=start,
                 finish=finish,
+                low=low,
+                high=high,
                 mins=Vec3(
                     x=min(start.x, finish.x),
                     y=min(start.y, finish.y),
@@ -560,13 +661,19 @@ obj CollisionMap {
             # before creating its narrow-phase walker. Bounds include mover travel.
             if len(self.bounds) == len(self.hulls) {
                 bounds = self.bounds[i];
-                if (start.x < bounds.mins.x and finish.x < bounds.mins.x)
-                    or (start.x > bounds.maxs.x and finish.x > bounds.maxs.x)
-                    or (start.y < bounds.mins.y and finish.y < bounds.mins.y)
-                    or (start.y > bounds.maxs.y and finish.y > bounds.maxs.y)
-                    or (start.z < bounds.mins.z and finish.z < bounds.mins.z)
-                    or (start.z > bounds.maxs.z and finish.z > bounds.maxs.z)
-                    or not segment_meets_box(start, finish, bounds) {
+                lo = bounds.mins;
+                hi = bounds.maxs;
+                if body is not None {
+                    lo = lo.add(low);
+                    hi = hi.add(high);
+                }
+                if (start.x < lo.x and finish.x < lo.x)
+                    or (start.x > hi.x and finish.x > hi.x)
+                    or (start.y < lo.y and finish.y < lo.y)
+                    or (start.y > hi.y and finish.y > hi.y)
+                    or (start.z < lo.z and finish.z < lo.z)
+                    or (start.z > hi.z and finish.z > hi.z)
+                    or not segment_meets_box(start, finish, bounds, low, high) {
                     continue;
                 }
             }
@@ -578,7 +685,8 @@ obj CollisionMap {
                 self.offsets[i],
                 0.0 if point else (self.top_drop if top_drop < 0.0 else top_drop),
                 point,
-                self.turns.get(i, None)
+                self.turns.get(i, None),
+                body if body is not None and body.planes else None
             );
             result.start_solid = result.start_solid or query.start_solid;
             if query.fraction < result.fraction {

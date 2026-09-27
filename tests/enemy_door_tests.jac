@@ -73,14 +73,19 @@ test "platforms carry enemies up and down without requiring player contact" {
         enemy = Opponent(pos=Vec3(z=56.03125 + fixture.collision.eye_height));
         fixture.world +>:HasOpponent:+> enemy;
         before = enemy.pos.z;
-        for i in range(4) {
-            fixture.tick(Vec3(x=500.0), 0.25);
+        # Q2 plats ramp (Think_AccelMove) and take 1.2 s here.
+        for i in range(6) {
+            if platform.state != "open" {
+                fixture.tick(Vec3(x=500.0), 0.25);
+            }
         }
         assert platform.position == 1.0 and enemy.grounded;
         assert abs(enemy.pos.z - before - 64.0) < 0.00001;
         platform.state = "closing";
-        for i in range(4) {
-            fixture.tick(Vec3(x=500.0), 0.25);
+        for i in range(6) {
+            if platform.state != "closed" {
+                fixture.tick(Vec3(x=500.0), 0.25);
+            }
         }
         assert platform.position == 0.0;
         assert abs(enemy.pos.z - before) < 0.00001;

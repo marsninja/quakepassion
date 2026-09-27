@@ -100,7 +100,7 @@ health doors in the installed campaign maps and checks render/collision motion.
 The older limits above describe the initial milestone: translating platforms,
 trains, buttons, Q1 keys and Q1 two-stage secret doors have since been implemented,
 as have start-open, toggle, rotating and crushing doors, killtarget, Q2
-ANIMATED flags, accel/decel (as constant speed), door messages and mover sounds
+ANIMATED flags, Q2 accel/decel ramps, door messages and mover sounds
 ([level flow](level-flow-status.md)). Q3 shot doors still need work. Only a
 member with spawnflags the original never defines keeps its group static, and
 the chain audit names it.

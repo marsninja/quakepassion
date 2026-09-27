@@ -12,9 +12,9 @@ Q3 platforms start lowered, including named platforms, which require a signal.
 Riders hold a raised platform open until they leave. Platforms descend after the
 wait, carrying any player who steps aboard during descent.
 
-This is initial translating-platform support, not full mover parity. Q2 motion
-currently uses constant speed rather than its original acceleration/deceleration
-curve. Explicit acceleration/deceleration fields, platform teams, trains,
+This is initial translating-platform support, not full mover parity. Q2 plats
+ramp up and down as `Think_AccelMove` does (see [level flow](level-flow-status.md)).
+Platform teams, trains,
 rotating movers, crushing damage, sounds and arbitrary map scripting remain
 unsupported. Unsupported target chains stay disabled. There is no platform
 velocity transfer on jumping off.
