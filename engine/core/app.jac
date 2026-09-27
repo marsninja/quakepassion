@@ -5,7 +5,6 @@ draws only what the flood found.
 Method bodies live in impl/app.impl.jac."""
 import math;
 import time;
-import from ..world.doors { BlastMover }
 import from ..world.gates { ApplyGates, rune_summary }
 import from ..world.chthon { ChthonTick }
 import from ..world.finale {
@@ -17,7 +16,7 @@ import from ..world.finale {
     RUNES_TEXT,
     VICTORY_TEXT
 }
-import from ..world.trains { TrainTick, ShootMover }
+import from ..world.trains { TrainTick, ShootMover, BlastMover }
 import from ..world.signals { SignalTick, progress_summary, progress_for }
 import from ..world.hazards { HazardTick }
 import from ..world.speakers { SpeakerTick }

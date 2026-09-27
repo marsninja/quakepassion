@@ -3,11 +3,10 @@ import math;
 import from .world { World }
 import from .trains { Train, TrackPoint, TrackNext, HasTrack, attach_train, voice_train }
 import from .signals { Signal }
-import from .doors { door_direction, mover_voices }
+import from .doors { door_direction, mover_voices, model_bounds }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, right_from }
-import from ..math.aabb { AABB }
 
 def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
     if bsp.game != "q1" {
@@ -40,7 +39,11 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         tilted_right = right.scale(math.cos(roll)).sub(up.scale(math.sin(roll)));
         up = up.scale(math.cos(roll)).add(right.scale(math.sin(roll)));
         right = tilted_right;
-        size = record.maxs.sub(record.mins);
+        # Mod_LoadSubmodels spreads a brush model's stored bounds by a unit on
+        # each side, so `size` is the brush's full extent: the door steps
+        # clear of its opening instead of leaving a two-unit sliver in it.
+        bounds = model_bounds(bsp, model);
+        size = bounds.maxs.sub(bounds.mins);
         width = float(fields.get("t_width", "0"));
         length = float(fields.get("t_length", "0"));
         if width == 0.0 {
@@ -86,7 +89,7 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
                 and flags & 8 == 0,
             activation=Signal(entities=[index]),
             faces=list(range(record.first_face, record.first_face + record.face_count)),
-            bounds=AABB(mins=record.mins, maxs=record.maxs),
+            bounds=bounds,
             touch_message=fields.get("message", "")
         );
         attach_train(world, bsp, collision, train);

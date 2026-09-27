@@ -4,7 +4,7 @@ import from .speakers { Speaker }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .signals { Signal, HasSignal, Fire, note_chain }
-import from .damage { Damage }
+import from .damage { Damage, blast_strength }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Sweep }
 import from ..math.vec3 { Vec3 }
@@ -604,6 +604,91 @@ walker ShootMover {
     can hit with Train entry {
         if here.model == self.model and here.shootable and not here.running {
             here.activation.pending += 1;
+        }
+    }
+}
+
+"""Splash damage to shootable movers: campaign doors, buttons and secret doors."""
+walker BlastMover {
+    has origin: Vec3,
+        amount: int,
+        radius: float,
+        game: str,
+        collision: CollisionMap,
+        player: Player,
+        energy_burst: bool = False;
+
+    can begin with World entry {
+        visit [here->:HasTrain:->];
+        visit [here->:HasDoor:->];
+    }
+
+    # T_RadiusDamage reaches a shootable secret door like any shot does, and
+    # fd_secret_use opens it on the first point of damage it takes.
+    can train with Train entry {
+        if not here.shootable or here.running or here.activation.killed {
+            return;
+        }
+        center = here.bounds.center().add(here.motion);
+        strength = blast_strength(
+            self.game,
+            self.amount,
+            self.radius,
+            center.sub(self.origin).length(),
+            self.energy_burst
+        );
+        if strength <= 0.0 {
+            return;
+        }
+        # CanDamage: a pusher is hit when the line to its middle is clear.
+        sight = self.collision.trace(
+            self.origin, center, exclude=here.hulls, point=True
+        );
+        if sight.start_solid or sight.fraction < 1.0 {
+            return;
+        }
+        here.activation.pending += 1;
+    }
+
+    can hit with Door entry {
+        if not here.enabled {
+            return;
+        }
+        members = [here];
+        members.extend([here->:DoorMember:->][?:Door]);
+        for part in members {
+            if part.max_health <= 0
+                and not (here.shared_health and here.max_health > 0) {
+                continue;
+            }
+            center = part.bounds.center().add(part.rest).add(
+                part.travel.scale(here.position)
+            );
+            strength = blast_strength(
+                self.game,
+                self.amount,
+                self.radius,
+                center.sub(self.origin).length(),
+                self.energy_burst
+            );
+            if strength <= 0.0 {
+                continue;
+            }
+            sight = self.collision.trace(
+                self.origin, center, exclude=part.hulls, point=True
+            );
+            if sight.start_solid or sight.fraction < 1.0 {
+                continue;
+            }
+            if self.energy_burst {
+                sight = self.collision.trace(
+                    self.player.pos, center, exclude=part.hulls, point=True
+                );
+                if sight.start_solid or sight.fraction < 1.0 {
+                    continue;
+                }
+            }
+            damage_mover(here, part, int(strength));
         }
     }
 }

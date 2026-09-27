@@ -1,7 +1,7 @@
 """Shared translating proximity doors. Unsupported activation stays static."""
 import math;
 import from .combat { Opponent, HasOpponent, damage_opponent }
-import from .damage { Damage, blast_strength }
+import from .damage { Damage }
 import from .inventory { quantity, AdjustInventory }
 import from .world { World, Player }
 import from .signals {
@@ -1686,60 +1686,4 @@ def damage_mover(leader: Door, part: Door, amount: int) -> bool {
     }
     leader.activation.pending += 1;
     return True;
-}
-
-walker BlastMover {
-    has origin: Vec3,
-        amount: int,
-        radius: float,
-        game: str,
-        collision: CollisionMap,
-        player: Player,
-        energy_burst: bool = False;
-
-    can begin with World entry {
-        visit [here->:HasDoor:->];
-    }
-
-    can hit with Door entry {
-        if not here.enabled {
-            return;
-        }
-        members = [here];
-        members.extend([here->:DoorMember:->][?:Door]);
-        for part in members {
-            if part.max_health <= 0
-                and not (here.shared_health and here.max_health > 0) {
-                continue;
-            }
-            center = part.bounds.center().add(part.rest).add(
-                part.travel.scale(here.position)
-            );
-            strength = blast_strength(
-                self.game,
-                self.amount,
-                self.radius,
-                center.sub(self.origin).length(),
-                self.energy_burst
-            );
-            if strength <= 0.0 {
-                continue;
-            }
-            sight = self.collision.trace(
-                self.origin, center, exclude=part.hulls, point=True
-            );
-            if sight.start_solid or sight.fraction < 1.0 {
-                continue;
-            }
-            if self.energy_burst {
-                sight = self.collision.trace(
-                    self.player.pos, center, exclude=part.hulls, point=True
-                );
-                if sight.start_solid or sight.fraction < 1.0 {
-                    continue;
-                }
-            }
-            damage_mover(here, part, int(strength));
-        }
-    }
 }

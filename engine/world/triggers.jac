@@ -95,7 +95,9 @@ walker TriggerTick {
             return;
         }
         here.cooldown = max(0.0, here.cooldown - self.dt);
-        if here.health > 0 and here.cooldown <= 0.0 {
+        # multi_wait: a shot trigger takes damage again once its wait is
+        # over; damage short of killing it stays until then.
+        if here.max_health > 0 and here.health <= 0 and here.cooldown <= 0.0 {
             here.health = here.max_health;
         }
         if not here.touchable or here.cooldown > 0.0 {

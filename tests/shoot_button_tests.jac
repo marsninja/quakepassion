@@ -1,5 +1,5 @@
-import from engine.world.doors { Door, HasDoor, BlastMover }
-import from engine.world.trains { ShootMover }
+import from engine.world.doors { Door, HasDoor }
+import from engine.world.trains { ShootMover, BlastMover }
 import from engine.world.signals { Signal, Targets }
 import from engine.world.world { Player }
 import from engine.world.combat { CombatState }

@@ -24,6 +24,8 @@ import from engine.world.opponent_rule { OpponentRule }
 import from engine.formats.bsp { Bsp, MapEntity }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
+import from engine.world.level { Level }
+import from engine.core.savegame { snapshot, restore }
 import from games.fixtures { fixture_rule }
 import from games.enemies { enemy_rule }
 import from tests.trigger_support { trigger_fixture, touch }
@@ -132,6 +134,54 @@ test "shootable triggers take damage then fire once and stop blocking" {
     assert collision.trace(Vec3(), Vec3()).start_solid == False;
     world spawn ShootTrigger(origin=Vec3(x=10.0), amount=100, radius=120.0, collision=collision);
     assert output.pending == 1;
+}
+
+test "repeatable shootable triggers keep damage and rearm after their wait" {
+    # Q1 e1m1's planet: a health 1 trigger_multiple raises a bridge that sinks
+    # again after three seconds, so it must fire every time it is shot.
+    world = World();
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-8.0, y=-8.0, z=-8.0), Vec3(x=8.0, y=8.0, z=8.0), Vec3(), Vec3(), Vec3());
+    collision.models = [5];
+    collision.reindex();
+    relay = Signal(relay=True);
+    output = Signal();
+    relay +>:Targets:+> output;
+    trigger = TouchTrigger(
+        model=5,
+        volume=box_volume(),
+        interval=0.2,
+        signal=relay,
+        touchable=False,
+        health=10,
+        max_health=10,
+        hulls=[0]
+    );
+    trigger +>:Activates:+> relay;
+    world +>:HasTrigger:+> trigger;
+    far = Vec3(x=500.0);
+    world spawn ShootTrigger(model=5, amount=4, collision=collision);
+    for i in range(30) {
+        world spawn TriggerTick(start=far, finish=far, dt=0.01);
+    }
+    # T_Damage: damage short of a kill is not healed.
+    assert trigger.health == 6 and output.pending == 0;
+    world spawn ShootTrigger(model=5, amount=6, collision=collision);
+    assert output.pending == 1 and trigger.health == 0;
+    # multi_trigger: no damage until multi_wait restores the health.
+    world spawn ShootTrigger(model=5, amount=10, collision=collision);
+    assert output.pending == 1;
+    level = Level(bsp=Bsp(game="q1"), collision=collision, name="fixture");
+    data = snapshot(world, level, Player(), CombatState());
+    for i in range(21) {
+        world spawn TriggerTick(start=far, finish=far, dt=0.01);
+    }
+    assert trigger.health == 10 and trigger.enabled;
+    assert collision.trace(Vec3(), Vec3()).start_solid;
+    world spawn ShootTrigger(model=5, amount=10, collision=collision);
+    assert output.pending == 2 and trigger.activations == 2;
+    restore(world, level, Player(), CombatState(), data);
+    assert trigger.health == 0 and trigger.cooldown > 0.0;
 }
 
 test "monster jump triggers launch grounded walkers along their angle" {
