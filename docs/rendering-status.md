@@ -66,3 +66,9 @@ model stay immediate mode (only used when a monster's model is missing).
 - Particles: the cube batch draws after the loop that queues it, so a
   particle and a trail line drawn in the same frame may overlap in the other
   order; both are depth tested.
+- Q3 status bar head: after a level change the head no longer swells across
+  the view for its first seconds (a hit remembered from the previous level's
+  clock counted as one from the future). The old renderer's benchmark
+  screenshots show it (e.g. `bench_q3tourney2_0`). The head still kicks as
+  the spawn health counts down from 125, which the original only does for
+  real damage (`cg.damageTime`).
