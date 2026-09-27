@@ -128,6 +128,7 @@ impl Renderer.screenshot(path: str) {
 }
 
 impl Renderer.close() {
+    self.cubes.close();
     batch = self.batch;
     if batch is not None {
         rlSetRenderBatchActive(None);
@@ -334,32 +335,39 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             );
         }
     }
+    # Particles and plain projectile markers go to the instanced cube batch.
+    cubes = self.cubes;
+    immediate = cubes.immediate();
     for particle in [world->:HasParticle:->][?:ImpactParticle] {
         fade = max(0.0, particle.remaining / particle.lifetime);
-        color = Color(r=170, g=20, b=15, a=u8(int(255.0 * fade)))
-            if particle.blood
-            else Color(r=210, g=185, b=145, a=u8(int(255.0 * fade)));
-        size = f32(0.4 + fade * 0.6);
+        red = 170 if particle.blood else 210;
+        green = 20 if particle.blood else 185;
+        blue = 15 if particle.blood else 145;
+        alpha = int(255.0 * fade);
+        size = 0.4 + fade * 0.6;
         if particle.fire {
             # Q1 ramp1/ramp2, Q2 0xe0: yellow cooling through orange to red.
-            color = Color(
-                r=255,
-                g=u8(int(60.0 + 180.0 * fade)),
-                b=u8(int(20.0 + 60.0 * fade * fade)),
-                a=u8(int(255.0 * min(1.0, fade * 1.5)))
-            );
-            size = f32(1.2 + fade * 1.2);
+            red = 255;
+            green = int(60.0 + 180.0 * fade);
+            blue = int(20.0 + 60.0 * fade * fade);
+            alpha = int(255.0 * min(1.0, fade * 1.5));
+            size = 1.2 + fade * 1.2;
         }
-        DrawCube(
-            Vector3(
-                x=f32(particle.pos.x), y=f32(particle.pos.y), z=f32(particle.pos.z)
-            ),
-            size,
-            size,
-            size,
-            color
-        );
+        if immediate {
+            DrawCube(
+                Vector3(
+                    x=f32(particle.pos.x), y=f32(particle.pos.y), z=f32(particle.pos.z)
+                ),
+                f32(size),
+                f32(size),
+                f32(size),
+                Color(r=u8(red), g=u8(green), b=u8(blue), a=u8(alpha))
+            );
+        } else {
+            cubes.add(particle.pos.x, particle.pos.y, particle.pos.z, float(f32(size)), red, green, blue, alpha);
+        }
     }
+    cubes.draw();
     for event in [world->:HasLightning:->][?:LightningEvent] {
         doors = [event->:Electrode:->][?:Door];
         if event.remaining > 0.0 and len(doors) == 2 {
@@ -379,11 +387,15 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
         color = Color(r=70, g=255, b=70, a=255)
             if projectile.beam_damage > 0
             else Color(r=255, g=150, b=40, a=255);
-        size = f32(
+        side = f32(
             4.0 if projectile.phase == 0 else 12.0 + (0.5 - projectile.remaining) * 60.0
         );
         if projectile.effect not in hidden_effects {
-            DrawCube(origin, size, size, size, color);
+            if immediate {
+                DrawCube(origin, side, side, side, color);
+            } else {
+                cubes.add(projectile.pos.x, projectile.pos.y, projectile.pos.z, float(side), int(color.r), int(color.g), int(color.b), int(color.a));
+            }
         }
         for finish in projectile.beams {
             DrawLine3D(
@@ -393,6 +405,7 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             );
         }
     }
+    cubes.draw();
 }
 
 impl Renderer.draw_tint(r: int, g: int, b: int, a: int) {

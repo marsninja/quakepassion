@@ -55,6 +55,7 @@ import from vendor.raylib {
 }
 
 import math;
+import from .cubes { CubeBatch }
 import from ..world.particles { HasParticle, ImpactParticle, HasTrail, ShotTrail }
 import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
 import from ..world.doors { Door }
@@ -91,7 +92,8 @@ obj Renderer {
         width: int = 1280,
         height: int = 720,
         title: str = "QuakePassion — Quake level viewer",
-        batch: Pinned[rlRenderBatch] | None = None;
+        batch: Pinned[rlRenderBatch] | None = None,
+        cubes: CubeBatch = CubeBatch();
 
     def set_frame_limit(fps: int);
     def open_window();

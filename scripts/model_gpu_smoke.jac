@@ -1,7 +1,7 @@
 """GPU model animation against the immediate path: original Q1, Q2 and Q3
 models drawn mid-blend, lit, faded, and the Q3 torso again with its quad
 damage shell (scrolled, pushed out along the normals) and inside a fog
-volume, first through the GPU
+volume, and a spray of impact particles, first through the GPU
 keyframe shader (model_gpu_smoke_gpu.png) and then through the legacy CPU
 pose (model_gpu_smoke_cpu.png), from the same view. The two pictures should
 match.
@@ -20,6 +20,8 @@ import from engine.math.vec3 { Vec3 }
 import from engine.math.orientation { model_basis }
 import from engine.formats.bsp { FogVolume }
 import from engine.render.quake { upload_fog_image }
+import from engine.world.world { World }
+import from engine.world.particles { HasParticle, ImpactParticle }
 
 with entry {
     home = os.getenv("HOME", "");
@@ -52,7 +54,18 @@ with entry {
     fog_image = upload_fog_image();
     fog = FogVolume(mins=Vec3(x=-100.0, y=-120.0, z=-100.0), maxs=Vec3(x=100.0, y=-40.0, z=20.0), has_surface=True, inward=Vec3(z=-1.0), offset=-45.0, color=Vec3(x=0.3, y=0.5, z=0.2), depth=60.0);
     yaw = 2.6;
+    # A spray of blood, dust and fire particles (instanced cubes).
+    world = World();
+    for i in range(60) {
+        kind = i % 3;
+        world +>:HasParticle:+> ImpactParticle(
+            pos=Vec3(x=-40.0 + float(i % 7) * 3.0, y=-20.0 + float(i) * 0.8, z=-40.0 + float((i * 5) % 9) * 2.5),
+            velocity=Vec3(), blood=kind == 0, fire=kind == 2, remaining=0.04 + float(i % 10) * 0.035, lifetime=0.4
+        );
+    }
     for name in ["gpu", "cpu"] {
+        renderer.cubes.checked = True;
+        renderer.cubes.legacy = name == "cpu";
         for frame in range(3) {
             renderer.begin_frame(eye, 0.0, 0.0);
             for i in range(len(drawings)) {
@@ -77,6 +90,7 @@ with entry {
                 q3.draw_immediate(spot, yaw, 110, 111, 0.5, eye=eye, seconds=1.3, illumination=light, overlay=shell, inflate=3.0);
                 q3.draw_immediate(spot.add(Vec3(z=-55.0)), yaw, 110, 111, 0.5, eye=eye, illumination=light, fog=fog, fog_image=fog_image);
             }
+            renderer.draw_projectiles(world);
             renderer.end_scene();
             if frame == 2 {
                 renderer.screenshot("model_gpu_smoke_" + name + ".png");

@@ -8,6 +8,7 @@ import from engine.render.models {
     model_normal_decode,
     MODEL_FRAME_ROW
 }
+import from engine.render.cubes { unit_cube_corners }
 
 def texel_at(texels: bytes, index: int) -> list[float] {
     values = struct.unpack_from("<ffff", texels, index * 16);
@@ -92,5 +93,19 @@ test "normals survive the octahedral packing" {
         assert code >= 0.0 and code < 16777216.0 and float(int(code)) == code;
         back = model_normal_decode(code);
         assert back.sub(n).length() < 0.002;
+    }
+}
+
+test "instanced cube corners wind counter-clockwise seen from outside" {
+    corners = unit_cube_corners();
+    assert len(corners) == 36 * 3;
+    for triangle in range(12) {
+        p = [Vec3(x=corners[(triangle * 3 + k) * 3], y=corners[(triangle * 3 + k) * 3 + 1], z=corners[(triangle * 3 + k) * 3 + 2]) for k in range(3)];
+        normal = p[1].sub(p[0]).cross(p[2].sub(p[0]));
+        middle = p[0].add(p[1]).add(p[2]).scale(1.0 / 3.0);
+        assert normal.dot(middle) > 0.0;
+        for point in p {
+            assert abs(point.x) == 0.5 and abs(point.y) == 0.5 and abs(point.z) == 0.5;
+        }
     }
 }
