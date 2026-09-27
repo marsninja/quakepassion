@@ -32,14 +32,17 @@ with entry {
         assert hud.ready;
         styles = [world->:HasLightStyles:->][?:LightStyles];
         if game != "q3" {
-            assert styles and drawing.styled;
+            assert styles;
             before = styles[0].serial;
             for tick in range(12) {
                 world spawn LightStyleTick(dt=0.1);
             }
             assert styles[0].serial > before;
             drawing.animate_styles(level, styles[0].values);
-            print("STYLES", game, name, "styled faces", len(drawing.styled), "serial", styles[0].serial);
+            # The lit shader reads each style's value; animated ones move off 'm'.
+            moving = [style for style in range(255) if drawing.style_values[style] != 1.0];
+            assert moving;
+            print("STYLES", game, name, "animated styles", len(moving), "serial", styles[0].serial);
         } else {
             assert not styles;
             # Layered Q3 shaders: animated, moving, pulsing and blended stages.

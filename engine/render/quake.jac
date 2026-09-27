@@ -1669,6 +1669,14 @@ obj QuakeRenderer {
         }
         for index in faces {
             face = level.bsp.faces[index];
+            # Only the side facing the eye: a mirror's own surface lies on the
+            # clip plane of the view rendered through it.
+            if face.planar
+                and not face.two_sided
+                and face.turn is None
+                and face.normal.dot(eye.sub(face.motion)) - face.plane_dist < -0.01 {
+                continue;
+            }
             plane = surface_plane(face);
             shown = self.portal_image != 0
                 and plane[0].dot(self.portal_normal) > 0.999
