@@ -66,3 +66,20 @@ def change_yaw(current: float, ideal: float, speed: float) -> float {
     move = max(-speed, min(speed, move));
     return math.radians(now + move);
 }
+
+"""`share` of the way from one orientation to another (no turn is the
+identity), re-orthonormalised: a mover's turn between two physics ticks."""
+def blend_basis(start: Basis | None, finish: Basis | None, share: float) -> Basis | None {
+    if share >= 1.0 or (start is None and finish is None) {
+        return finish;
+    }
+    a = start
+        if start is not None
+        else Basis(forward=Vec3(x=1.0), left=Vec3(y=1.0), up=Vec3(z=1.0));
+    b = finish
+        if finish is not None
+        else Basis(forward=Vec3(x=1.0), left=Vec3(y=1.0), up=Vec3(z=1.0));
+    forward = a.forward.lerp(b.forward, share).normalized();
+    up = forward.cross(a.left.lerp(b.left, share)).normalized();
+    return Basis(forward=forward, left=up.cross(forward), up=up);
+}

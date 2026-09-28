@@ -82,8 +82,26 @@ saved. Streams retain their source bytes until unloaded; map changes release
 streams and archive handles. Native audio acceptance passes for Q2 `base1`
 (84 emitters, 79 decoded streams) and Q3 `q3dm7` (20 emitters/streams), including
 pause, toggle and cleanup. These are playback/resource checks, not a listening
-review of original-engine acoustics. Q3 speaker `wait`/`random` auto-repetition
-and the original ambient/occlusion model remain open.
+review of original-engine acoustics.
+
+Speakers now follow each game's `SP_target_speaker`. Q2 loops always play at
+volume 1 with the looping falloff, one-shots keep their `volume` and
+`attenuation` (-1 is heard everywhere), and sexed `*` sounds play at the
+speaker in the male voice. Q3 ignores those keys; its global (4) and
+activator (8) speakers play at full volume. A Q3 speaker with a `random` of a
+tenth or more also sounds by itself every `wait` seconds, give or take
+`random` (`CG_Speaker`, which tests `s.clientNum`, so `wait` alone does
+nothing), over its loop if it has one. Every positioned sound falls off as its
+game mixes it (`sound_falloff`): Q1 `SND_Spatialize` (attenuation/1000 a
+unit), Q2 `S_SpatializeOrigin` (full within 80 units, then 0.0005 per
+attenuation, 0.001 for ATTN_STATIC, 0.003 for loops) and Q3 (full within 80,
+then 0.0008). Q2 and Q3 missiles carry their flight sounds (rockets, blaster
+bolts, BFG, hand grenades, plasma), and the Q2 player's own looping sound
+follows `G_SetClientSound`: frying in slime or lava, the railgun and BFG hums,
+the hyperblaster firing, the chaingun spinning and a cooking grenade. Q1
+teleporters hum (`ambience/hum1.wav` at the trigger's centre unless SILENT),
+`ambient_thunder` rumbles, and Q2 teleporter pads loop `world/amb10.wav`. The
+original occlusion model (PVS-limited sounds) remains open.
 
 Q2 toggle walls now change visibility and collision together. Destructible
 brushes accept shots or authored activation, disappear from world traces and

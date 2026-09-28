@@ -100,8 +100,17 @@ walker CollectFaces {
     }
 }
 
+"""Quake's server clock when a level's first player frame runs: sv.time
+starts at 1 and SV_SpawnServer runs two 0.1 s settling frames. The status
+bar's scoreboard and the intermission plaque read that clock (cl.time,
+cl.completed_time)."""
+glob Q1_SERVER_START: float = 1.2;
+
 obj Level {
     has lighting: Lighting = Lighting();
+    # Seconds the level has run (Q1 sv.time less its start, Q2 level.time),
+    # kept in its saves.
+    has clock: float = 0.0;
     has asset_manifest: str = "",
         briefing: str = "",
         completion: Signal = Signal();

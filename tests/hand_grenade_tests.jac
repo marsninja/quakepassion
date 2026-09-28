@@ -8,8 +8,10 @@ import from engine.world.combat {
     select_weapon,
     CombatTick,
     Opponent,
-    HasOpponent
+    HasOpponent,
+    release_live_grenade
 }
+import from engine.audio.feedback { q2_client_sound }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.inventory { AdjustInventory, quantity }
 import from engine.world.level { Level }
@@ -128,4 +130,56 @@ test "empty weapons fall back to an owned usable weapon" {
         }
         assert weapon_input(world, player, collision, state, True, 0.01);
     }
+}
+
+test "the pin is pulled at gunframe 5 and the grenade ticks while cooking" {
+    world = World();
+    player = Player();
+    state = CombatState();
+    collision = CollisionMap();
+    grenades(player, state);
+    weapon_input(world, player, collision, state, True, 0.01);
+    assert q2_client_sound(player, state) == "";
+    pulled = 0;
+    for i in range(60) {
+        weapon_input(world, player, collision, state, True, 0.01);
+        pulled += state.cues.count("sound/weapons/hgrena1b.wav");
+        state.cues = [];
+    }
+    # Half a second in: one pin sound, still pulling.
+    assert pulled == 1 and state.grenade_phase == 1;
+    for i in range(50) {
+        weapon_input(world, player, collision, state, True, 0.01);
+    }
+    assert state.grenade_phase == 2;
+    assert q2_client_sound(player, state) == "sound/weapons/hgrenc1b.wav";
+    player.water_depth = 1;
+    player.liquid_kind = 3;
+    assert q2_client_sound(player, state) == "sound/player/fry.wav";
+}
+
+test "dying with the pin out lets the grenade burst in the hand" {
+    world = World();
+    player = Player();
+    state = CombatState();
+    collision = CollisionMap();
+    grenades(player, state);
+    for i in range(120) {
+        weapon_input(world, player, collision, state, True, 0.01);
+    }
+    assert state.grenade_phase == 2;
+    player.health = 0;
+    assert not weapon_input(world, player, collision, state, True, 0.01);
+    # ChangeWeapon: weapon_grenade_fire with no time left, once.
+    assert state.grenade_phase == 0 and quantity(player.inventory, "grenades") == 1;
+    assert not [world->:HasProjectile:->][?:Projectile];
+    assert not release_live_grenade(world, player, collision, state);
+    # A grenade still being primed (no grenade_time yet) stays put.
+    other = Player();
+    priming = CombatState();
+    grenades(other, priming);
+    weapon_input(world, other, collision, priming, True, 0.01);
+    other.health = 0;
+    assert not release_live_grenade(world, other, collision, priming);
+    assert quantity(other.inventory, "grenades") == 2;
 }

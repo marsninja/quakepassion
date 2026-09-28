@@ -41,6 +41,11 @@ obj Face {
         colors: list[int] = [],
         planar: bool = True,
         patch: bool = False,
+        # A Q3 patch's control points, rows concatenated, for its collision
+        # facets (CM_GeneratePatchCollide) apart from the rendered tessellation.
+        patch_width: int = 0,
+        patch_height: int = 0,
+        patch_points: list[Vec3] = [],
         alpha_test: int = 0,
         additive: bool = False,
         two_sided: bool = False,

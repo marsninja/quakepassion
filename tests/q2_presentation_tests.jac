@@ -5,7 +5,10 @@ import from engine.render.hud { layout_tokens }
 import from engine.render.view_feedback { ViewFeedback }
 import from engine.world.world { World, Player }
 import from engine.world.inventory { AdjustInventory }
-import from engine.world.targets { TargetEvent, HasTarget, TargetTick, help_for }
+import from engine.world.targets { TargetEvent, HasTarget, TargetTick, help_for, carry_help }
+import from engine.world.level { Level }
+import from engine.core.savegame { snapshot, restore }
+import from engine.formats.bsp { Bsp }
 import from engine.world.combat { CombatState }
 import from engine.physics.collision { CollisionMap }
 import from engine.formats.bsp { parse_entities }
@@ -115,4 +118,35 @@ test "status bar flashes follow the last hit for a server frame" {
     player.damage_armor = 4;
     view.take_damage(player);
     assert view.status_flashes() == 2;
+}
+
+test "the help computer's objectives outlast the level and its saves" {
+    world = World();
+    computer = help_for(world);
+    computer.primary = "Locate base installation\nelevator.";
+    computer.secondary = "Find the data CD";
+    computer.changed = 2;
+    computer.unread = 3;
+    computer.beep_wait = 1.5;
+    # game.helpmessage1/2 go on into the next level of the game.
+    following = World();
+    carry_help(world, following);
+    carried = help_for(following);
+    assert carried.primary == computer.primary and carried.secondary == "Find the data CD";
+    assert carried.changed == 2 and carried.unread == 3 and carried.beep_wait == 1.5;
+    # WriteGame keeps them; loading puts them back.
+    level = Level(bsp=Bsp(game="q2"), name="base1");
+    player = Player();
+    state = CombatState(game="q2");
+    data = snapshot(world, level, player, state);
+    fresh = World();
+    restore(fresh, level, Player(), CombatState(game="q2"), data);
+    restored = help_for(fresh);
+    assert restored.primary == "Locate base installation\nelevator.";
+    assert restored.secondary == "Find the data CD" and restored.unread == 3;
+    empty = World();
+    help_for(empty);
+    blank = snapshot(empty, level, player, state);
+    restore(fresh, level, Player(), CombatState(game="q2"), blank);
+    assert help_for(fresh).primary == "" and help_for(fresh).secondary == "";
 }

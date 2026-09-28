@@ -58,6 +58,11 @@ impl Renderer.begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0
     BeginMode3D(cam);
 }
 
+impl Renderer.begin_screen() {
+    BeginDrawing();
+    ClearBackground(Color(r=0, g=0, b=0, a=255));
+}
+
 impl Renderer.draw_area(area: Area) {
     for s in area.surfaces {
         pos = Vector3(x=f32(s.center.x), y=f32(s.center.y), z=f32(s.center.z));
@@ -153,12 +158,12 @@ impl Renderer.set_frame_limit(fps: int) {
     SetTargetFPS(i32(fps));
 }
 
-impl Renderer.draw_opponents(world: World, height: float) {
+impl Renderer.draw_opponents(world: World, height: float, blend: TickBlend = TickBlend()) {
     for enemy in [world->:HasOpponent:->][?:Opponent] {
         if enemy.health <= 0 or enemy.modeled {
             continue;
         }
-        center = enemy.pos.sub(Vec3(z=height - 4.0));
+        center = blend.place(enemy.tick_pose, enemy.pos).sub(Vec3(z=height - 4.0));
         DrawCube(
             Vector3(x=f32(center.x), y=f32(center.y), z=f32(center.z)),
             f32(28.0),
@@ -291,7 +296,9 @@ impl Renderer.draw_loading(name: str) {
 }
 
 
-impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
+impl Renderer.draw_projectiles(
+    world: World, hidden_effects: list[str] = [], blend: TickBlend = TickBlend()
+) {
     for trail in [world->:HasTrail:->][?:ShotTrail] {
         # Styled rails and beams are drawn by the effect scene.
         if trail.kind in hidden_effects {
@@ -352,9 +359,8 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
         }
     }
     for projectile in [world->:HasProjectile:->][?:Projectile] {
-        origin = Vector3(
-            x=f32(projectile.pos.x), y=f32(projectile.pos.y), z=f32(projectile.pos.z)
-        );
+        at = blend.place(projectile.tick_pose, projectile.pos);
+        origin = Vector3(x=f32(at.x), y=f32(at.y), z=f32(at.z));
         color = Color(r=70, g=255, b=70, a=255)
             if projectile.beam_damage > 0
             else Color(r=255, g=150, b=40, a=255);
@@ -365,7 +371,7 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             if immediate {
                 DrawCube(origin, side, side, side, color);
             } else {
-                cubes.add(projectile.pos.x, projectile.pos.y, projectile.pos.z, float(side), int(color.r), int(color.g), int(color.b), int(color.a));
+                cubes.add(at.x, at.y, at.z, float(side), int(color.r), int(color.g), int(color.b), int(color.a));
             }
         }
         for finish in projectile.beams {
