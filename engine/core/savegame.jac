@@ -196,6 +196,10 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for shooter in [world->:HasShooter:->][?:Shooter] {
         lines.append("SHOOTER " + numbers([shooter.clock, float(shooter.random_state)]));
     }
+    # Shared attack rotations (Q1 hknight_type).
+    for group in combat.turns {
+        lines.append("TURN " + group + " " + str(combat.turns[group]));
+    }
     for mover in [world->:HasRotator:->][?:Rotator] {
         lines.append(
             "MOVER " + numbers([mover.clock, 1.0 if mover.active else 0.0, mover.crush_wait])
@@ -577,6 +581,7 @@ def restore(
     combat.grenade_clock = stats[26];
     combat.grenade_remaining = stats[27];
     combat.impacts = [];
+    combat.turns = {};
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         world del --> projectile;
     }
@@ -732,6 +737,12 @@ def restore(
             shooters[fired].clock = row[0];
             shooters[fired].random_state = int(row[1]);
             fired += 1;
+        } elif words[0] == "TURN" and len(words) == 3 {
+            count = int(words[2]);
+            if count < 0 or count > 64 {
+                raise ValueError("Invalid saved attack rotation");
+            }
+            combat.turns[words[1]] = count;
         } elif words[0] == "MOVER" and len(words) == 4 and spun < len(rotators) {
             row = values(" ".join(words[1:]), 3);
             if row[0] < 0.0 or row[2] < 0.0 {

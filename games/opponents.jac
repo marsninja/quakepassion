@@ -2,10 +2,9 @@
 import math;
 import from .enemies { enemy_rule }
 import from .gibs { gib_rule, link_gibs }
-import from .patrols { patrol_speed }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
-import from engine.world.opponent_rule { OpponentRule }
+import from engine.world.opponent_rule { OpponentRule, Gait }
 import from .arena_character { character_rig, CharacterRig, character_body, weapon_kits, powerup_shells, Q3_HELD_WEAPONS }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
@@ -53,6 +52,14 @@ def frame_indices(
         result.append(found);
     }
     return result;
+}
+
+"""A locomotion cycle's model frames; its distances must cover each frame."""
+def gait_indices(frames: list[AnimationFrame], gait: Gait, path: str, label: str) -> list[int] {
+    if gait.steps and len(gait.steps) != len(gait.frames) {
+        raise ValueError("Mismatched " + label + " distances: " + path);
+    }
+    return frame_indices(frames, gait.frames, path, label);
 }
 
 # One positional speaker per distinct sound file an opponent can request.
@@ -249,7 +256,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 shot_random=1 + count * 7919,
                 arena=level.bsp.game == "q3",
                 rule=rule,
-                walk_speed=rule.speed,
                 # G_AddBot's handicap is the bot's maximum health.
                 health=handicap + 25 if kind == "arena_bot" else rule.health,
                 max_health=handicap if kind == "arena_bot" else rule.health,
@@ -273,6 +279,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             for profile in enemy.profiles {
                 register_speaker(world, enemy, profile.sound);
                 register_speaker(world, enemy, profile.extra_sound);
+                register_speaker(world, enemy, profile.alternate_sound);
             }
             register_speaker(world, enemy, rule.sight_sound);
             for pain_sound in rule.pain_sounds {
@@ -449,8 +456,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         frames, rule.duck_frames, path, "duck"
                     );
                 }
-                if rule.run_frames {
-                    enemy.animation = frame_indices(frames, rule.run_frames, path, "run");
+                if rule.run.frames {
+                    enemy.animation = gait_indices(frames, rule.run, path, "run");
+                }
+                if rule.walk.frames {
+                    enemy.walk_animation = gait_indices(frames, rule.walk, path, "walk");
                 }
                 if rule.idle_frames {
                     enemy.idle_animation = frame_indices(
@@ -494,7 +504,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 }
             }
             if not arena {
-                enemy.patrol_speed = patrol_speed(source, kind);
                 walk_to = fields.get("target", "");
                 if walk_to in corners and not corners[walk_to].combat {
                     enemy +>:Patrols:+> corners[walk_to];
@@ -547,7 +556,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     home=position,
                     shot_random=1 + count * 7919,
                     rule=follower,
-                    walk_speed=follower.speed,
                     health=follower.health,
                     max_health=follower.health,
                     yaw=enemy.yaw,
@@ -557,6 +565,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 for profile in heir.profiles {
                     register_speaker(world, heir, profile.sound);
                     register_speaker(world, heir, profile.extra_sound);
+                    register_speaker(world, heir, profile.alternate_sound);
                 }
                 register_speaker(world, heir, follower.sight_sound);
                 for pain_sound in follower.pain_sounds {
@@ -587,8 +596,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 heir.idle_animation = frame_indices(
                     heir_frames, follower.idle_frames, follower.model, "idle"
                 );
-                heir.animation = frame_indices(
-                    heir_frames, follower.run_frames, follower.model, "run"
+                heir.animation = gait_indices(heir_frames, follower.run, follower.model, "run");
+                heir.walk_animation = gait_indices(
+                    heir_frames, follower.walk, follower.model, "walk"
                 );
                 heir.death_animation = frame_indices(
                     heir_frames, follower.death_frames, follower.model, "death"

@@ -221,7 +221,7 @@ walker MovePlayer {
             } else {
                 speed = here.velocity.length();
                 # Q3 PM_Friction skips ground friction while knocked back.
-                if speed > 0.0 and not self.steady and here.knockback_time <= 0.0 {
+                if speed > 0.0 and here.knockback_time <= 0.0 {
                     here.velocity = here.velocity.scale(
                         max(0.0, speed - max(100.0, speed) * 6.0 * self.dt) / speed
                     );
@@ -238,10 +238,12 @@ walker MovePlayer {
         }
         direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
         wish_speed = here.walk_speed * haste;
+        stride = Vec3();
         if self.steady and here.grounded {
-            # Monster movestep: a fixed stride with no friction or acceleration.
-            here.velocity.x = direction.x * wish_speed;
-            here.velocity.y = direction.y * wish_speed;
+            # Monster movestep (Q1 SV_movestep, Q2 M_walkmove): the frame's
+            # stride moves the body itself, with no acceleration. Its velocity
+            # is only what knocked it (Q2 SV_Physics_Step), under friction.
+            stride = direction.scale(wish_speed);
         } else {
             add = max(0.0, wish_speed - here.velocity.dot(direction));
             acceleration = 10.0 if here.grounded else 1.0;
@@ -253,16 +255,27 @@ walker MovePlayer {
             here.velocity.z -= 800.0 * self.dt;
             here.fall_speed = here.velocity.z;
         }
-        moved = step_slide(
-            self.collision,
-            pos,
-            here.velocity,
-            self.dt,
-            here.grounded,
-            self.game in ["q2", "q3"]
-        );
-        if here.grounded and self.game != "q3" {
-            moved = self.follow_ground(pos, moved);
+        air_step = self.game in ["q2", "q3"];
+        knocked = Vec3(x=here.velocity.x, y=here.velocity.y).length() > 0.0;
+        moved = Motion(pos=pos, velocity=Vec3());
+        if stride.length() > 0.0 {
+            # The stride and any knock slide apart, so neither bends the other.
+            moved = step_slide(self.collision, pos, stride, self.dt, True, air_step);
+            if self.game != "q3" {
+                moved = self.follow_ground(pos, moved);
+            }
+            moved.velocity = Vec3();
+        }
+        if stride.length() == 0.0 or knocked {
+            walked = moved.stepped;
+            origin = moved.pos;
+            moved = step_slide(
+                self.collision, origin, here.velocity, self.dt, here.grounded, air_step
+            );
+            if here.grounded and self.game != "q3" {
+                moved = self.follow_ground(origin, moved);
+            }
+            moved.stepped = max(moved.stepped, walked);
         }
         here.velocity = moved.velocity;
         here.pos = moved.pos.add(Vec3(z=self.collision.eye_height));

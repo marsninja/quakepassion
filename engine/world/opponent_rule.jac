@@ -59,6 +59,23 @@ obj AttackProfile {
         crouch_start: float = -1.0,
         crouch_end: float = -1.0,
         revive_at: float = -1.0;
+    # Sequences sharing a `rotation` are not drawn at random but taken in
+    # turn, on one count kept for every monster (Q1 hknight_melee's global
+    # hknight_type). A "run" `trigger` starts the sequence from the first
+    # frame of the run cycle instead of the attack decision (Q1
+    # hknight_run1's CheckForCharge): with the target in sight, attacks due
+    # and the target no more than `max_rise` above or below. `finished` is the
+    # SUB_AttackFinished a sequence sets when it starts, if its own.
+    has rotation: str = "",
+        trigger: str = "",
+        max_rise: float = -1.0,
+        finished: float = -1.0;
+    # Per-frame aim of a charge's steps: how far to the left of the target
+    # the monster heads (Q1 ai_charge_side's flyby, 30 units); a sideways
+    # stride is a walkmove, which the target's box blocks.
+    has sides: list[float] = [];
+    # Played instead of `sound` half the time (Q1 knight_runatk1's sword2).
+    has alternate_sound: str = "";
     # Where shots leave the monster: forward, right and up from its origin
     # (Q2 m_flash.c monster_flash_offset through G_ProjectSource, the QuakeC
     # launch origins). Successive shots of a sequence take successive
@@ -69,6 +86,16 @@ obj AttackProfile {
     has muzzles: list[Vec3] = [],
         volley: bool = False,
         flash: Vec3 = Vec3();
+}
+
+"""A locomotion cycle: the model frames a monster plays at 10 Hz while it
+moves and the distance each frame carries it (Q1 QuakeC ai_run(dist) /
+ai_walk(dist) on every 0.1 s think; Q2 mframe_t `{ai_run, dist, NULL}`
+entries of an mmove_t, stepped by M_MoveFrame). `steps` line up with
+`frames`; negative distances step backwards, as the originals do."""
+obj Gait {
+    has frames: list[str] = [],
+        steps: list[float] = [];
 }
 
 obj OpponentRule {
@@ -155,7 +182,13 @@ obj OpponentRule {
         burst_max: int = 1,
         hold_frame: int = -1,
         attack_frames: list[str] = [],
-        run_frames: list[str] = [],
+        # The alerted run cycle and the unalerted walk (patrols, Q2 walkers
+        # without a goal). Q2 M_MoveFrame scales every distance by the
+        # model's monsterinfo.scale (MODEL_SCALE in m_*.h). `speed` is only
+        # the pace of bodies with no frame tables (Q3 bots run at g_speed).
+        run: Gait = Gait(),
+        walk: Gait = Gait(),
+        step_scale: float = 1.0,
         attack_steps: list[float] = [],
         attack_range: float = 1500.0,
         stop_range: float = 180.0,
