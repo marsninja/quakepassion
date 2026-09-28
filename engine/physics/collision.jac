@@ -12,6 +12,11 @@ node HullCell {
         point_distances: list[float] = [],
         triangle: list[Vec3] = [],
         point_blocking: bool = True;
+    # What a body touching this brush feels, as its format adapter reads the
+    # brush contents: a ladder to climb (Q2 CONTENTS_LADDER) and a conveyor
+    # push (Q2 CONTENTS_CURRENT_* on a solid brush).
+    has climbable: bool = False,
+        conveyor: Vec3 | None = None;
 }
 
 edge HullFront: HullCell --> HullCell {}
@@ -24,6 +29,9 @@ obj Trace {
         hull: int = -1,
         model: int = -1,
         end: Vec3 = Vec3();
+    # The struck brush's climbable and conveyor (a Q2 trace_t's contents).
+    has climbable: bool = False,
+        conveyor: Vec3 | None = None;
 }
 
 """How a moving body's box differs from the box the hulls were expanded by
@@ -768,6 +776,8 @@ obj CollisionMap {
                 result.model = self.models[i] if i < len(self.models) else -1;
                 result.fraction = query.fraction;
                 result.normal = query.normal;
+                result.climbable = hull.climbable;
+                result.conveyor = hull.conveyor;
             }
         }
         if result.start_solid {

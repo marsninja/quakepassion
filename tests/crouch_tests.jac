@@ -1,5 +1,5 @@
 import from engine.physics.collision { CollisionMap }
-import from engine.physics.movement { SetStance, MovePlayer }
+import from engine.physics.movement { SetStance, MovePlayer, movement_profile }
 import from engine.world.world { Player, World }
 import from engine.world.triggers { TouchTrigger, HasTrigger, TriggerTick }
 import from engine.world.traversal {
@@ -36,16 +36,16 @@ test "crouching clears a low tunnel and cannot stand inside its ceiling" {
         origin = Vec3(x=-40.0, z=24.03125);
         player = Player(pos=origin.add(Vec3(z=collision.eye_height)));
         assert collision.trace(origin, origin.add(Vec3(x=100.0))).fraction < 1.0;
-        player spawn SetStance(collision=collision, game=game, crouch=True, dt=0.01);
+        player spawn SetStance(collision=collision, profile=movement_profile(game), crouch=True, dt=0.01);
         assert player.crouched;
         assert player.pos.sub(Vec3(z=collision.eye_height)).sub(origin).length()
             < 0.00001;
         assert collision.trace(origin, origin.add(Vec3(x=100.0))).fraction == 1.0;
         player.pos.x = 40.0;
-        player spawn SetStance(collision=collision, game=game, crouch=False, dt=0.01);
+        player spawn SetStance(collision=collision, profile=movement_profile(game), crouch=False, dt=0.01);
         assert player.crouched;
         player.pos.x = 200.0;
-        player spawn SetStance(collision=collision, game=game, crouch=False, dt=0.01);
+        player spawn SetStance(collision=collision, profile=movement_profile(game), crouch=False, dt=0.01);
         assert not player.crouched and collision.top_drop == 0.0;
         assert abs(player.pos.z - origin.z - collision.eye_height) < 0.00001;
     }
@@ -54,9 +54,9 @@ test "crouching clears a low tunnel and cannot stand inside its ceiling" {
 test "paused stance and Q1 do not resize the player" {
     collision = corridor("q2");
     player = Player(pos=Vec3(x=-40.0, z=46.03125));
-    player spawn SetStance(collision=collision, game="q2", crouch=True, dt=0.0);
+    player spawn SetStance(collision=collision, profile=movement_profile("q2"), crouch=True, dt=0.0);
     assert not player.crouched and collision.eye_height == 22.0;
-    player spawn SetStance(collision=collision, game="q1", crouch=True, dt=0.01);
+    player spawn SetStance(collision=collision, profile=movement_profile("q1"), crouch=True, dt=0.01);
     assert not player.crouched and collision.top_drop == 0.0;
 }
 
@@ -103,7 +103,7 @@ test "crouched teleport arrival checks the same shortened hull" {
     world = World();
     collision = corridor("q2");
     player = Player(pos=Vec3(x=-40.0, z=46.03125));
-    player spawn SetStance(collision=collision, game="q2", crouch=True, dt=0.01);
+    player spawn SetStance(collision=collision, profile=movement_profile("q2"), crouch=True, dt=0.01);
     volume = CollisionMap();
     volume.add_box(
         Vec3(x=-100.0, y=-100.0, z=-100.0),
@@ -119,6 +119,6 @@ test "crouched teleport arrival checks the same shortened hull" {
         player=player, collision=collision, start=Vec3(x=-40.0, z=24.03125), dt=0.01
     );
     assert portal.activations == 1 and player.pos.x == 40.0;
-    player spawn SetStance(collision=collision, game="q2", crouch=False, dt=0.01);
+    player spawn SetStance(collision=collision, profile=movement_profile("q2"), crouch=False, dt=0.01);
     assert player.crouched;
 }
