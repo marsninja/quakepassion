@@ -3,7 +3,7 @@ import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
 import from ..formats.q1.bsp { parse_bsp }
-import from ..formats.bsp { Bsp, Texture, decode_pvs, i32_at, require_range }
+import from ..formats.bsp { Bsp, Face, Texture, decode_pvs, i32_at, require_range }
 import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
 import from ..formats.q3.bsp { parse_q3 }
 import from ..formats.animated { ModelStage, Deform }
@@ -42,11 +42,13 @@ import from .fixtures { load_fixture_uses }
 import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
-import from .lighting { Lighting, load_light_grid }
+import from .lighting { Lighting, LightPointSource, LightSpot, load_light_grid }
 
 node Split {
     has normal: Vec3,
-        distance: float;
+        distance: float,
+        first_face: int = 0,
+        face_count: int = 0;
 }
 
 node BspArea(Area) {
@@ -75,6 +77,79 @@ walker Locate {
 
     can leaf with BspArea entry {
         self.result = here.index;
+    }
+}
+
+"""RecursiveLightPoint (WinQuake r_light.c, Q2 ref_gl gl_light.c) through
+the BSP graph: follow the segment `start` to `end` down the tree. Where it
+crosses a node's plane, the near side is searched first (a nested trace up
+to the crossing), then the node's own faces at the crossing, then the far
+side on from it. The first face whose lightmap extents hold the crossing
+(skipping surfaces drawn without one) is `spot`, with its sample under the
+point; leaves hold no faces to strike."""
+walker TraceLightPoint {
+    has start: Vec3,
+        end: Vec3,
+        faces: list[Face] = [],
+        spot: LightSpot = LightSpot(),
+        struck: bool = False,
+        remaining: int = 4096;
+
+    can split with Split entry {
+        self.remaining -= 1;
+        if self.remaining <= 0 {
+            raise ValueError("Cyclic BSP tree");
+        }
+        front = here.normal.dot(self.start) - here.distance;
+        back = here.normal.dot(self.end) - here.distance;
+        behind = front < 0.0;
+        near = [here->:Back:->] if behind else [here->:Front:->];
+        if (back < 0.0) == behind {
+            visit near;
+            return;
+        }
+        mid = self.start.lerp(self.end, front / (front - back));
+        probe = near[0] spawn TraceLightPoint(start=self.start, end=mid, faces=self.faces, remaining=self.remaining);
+        if probe.struck {
+            self.spot = probe.spot;
+            self.struck = True;
+            disengage;
+        }
+        for index in range(here.first_face, here.first_face + here.face_count) {
+            face = self.faces[index];
+            info = face.texinfo;
+            if face.tiled or info is None {
+                continue;
+            }
+            # C truncates the texture coordinates to integers.
+            s = int(mid.dot(info.s) + info.soff);
+            t = int(mid.dot(info.t) + info.toff);
+            ds = s - face.light_s * 16;
+            dt = t - face.light_t * 16;
+            if ds < 0 or dt < 0 or ds > (face.light_width - 1) * 16 or dt > (face.light_height - 1) * 16 {
+                continue;
+            }
+            self.spot = LightSpot(face=index, sample=(dt >> 4) * face.light_width + (ds >> 4));
+            self.struck = True;
+            disengage;
+        }
+        self.start = mid;
+        visit ([here->:Front:->] if behind else [here->:Back:->]);
+    }
+}
+
+"""R_LightPoint for a Q1 or Q2 level: the trace runs 2048 units straight
+down from the point through the world model's BSP graph from `head`."""
+obj BspLightPoint(LightPointSource) {
+    has head: Split | None = None;
+
+    def trace(point: Vec3) -> LightSpot {
+        head = self.head;
+        if head is None {
+            return LightSpot();
+        }
+        probe = head spawn TraceLightPoint(start=point, end=point.sub(Vec3(z=2048.0)), faces=self.faces);
+        return probe.spot;
     }
 }
 
@@ -415,7 +490,9 @@ def prepare_level(world: World, level: Level) {
     }
     for branch in level.bsp.branches {
         plane = level.bsp.planes[branch.plane];
-        level.splits.append(Split(normal=plane.normal, distance=plane.distance));
+        level.splits.append(
+            Split(normal=plane.normal, distance=plane.distance, first_face=branch.first_face, face_count=branch.face_count)
+        );
     }
     for i in range(len(level.bsp.branches)) {
         branch = level.bsp.branches[i];
@@ -469,7 +546,22 @@ def prepare_level(world: World, level: Level) {
     load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_trains(world, level.bsp, level.collision);
-    load_light_styles(world, level.bsp);
+    styles = load_light_styles(world, level.bsp);
+    if game in ["q1", "q2"] {
+        # Models take the light of the lightmaps below them (R_LightPoint),
+        # under the same animated styles as the world.
+        head = level.bsp.models[0].head if level.bsp.models else -1;
+        level.lighting.game = game;
+        level.lighting.point = BspLightPoint(
+            faces=level.bsp.faces,
+            lightmaps=level.bsp.lighting,
+            channels=level.bsp.light_channels,
+            head=level.splits[head] if 0 <= head < len(level.splits) else None
+        );
+        if styles is not None {
+            level.lighting.styles = styles.values;
+        }
+    }
     load_clocks(world, level.bsp);
     load_flyers(world, level.bsp);
     load_falling_objects(world, level.bsp, level.collision);

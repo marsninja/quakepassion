@@ -125,9 +125,12 @@ def parse_bsp(data: bytes) -> Bsp {
         info = texinfo[ti];
         face_texture = bsp.textures[info.texture];
         # Textures named '*' are liquids: water, slime, lava and teleporters.
+        # Mod_LoadFaces: sky and liquid ('*') surfaces are SURF_DRAWTILED.
         face = Face(
             texture=info.texture,
             warp=bsp.textures[info.texture].name.startswith("*"),
+            texinfo=info,
+            tiled=face_texture.name.startswith("*") or face_texture.name.startswith("sky"),
             light_offset=i32_at(lumps[7], p + 16),
             normal=bsp.planes[plane].normal,
             plane_dist=bsp.planes[plane].distance
@@ -229,9 +232,19 @@ def parse_bsp(data: bytes) -> Bsp {
         p = i * 24;
         plane = i32_at(lumps[5], p);
         check_index(plane, len(bsp.planes));
+        # dnode_t firstface and numfaces: the faces on this node's plane.
+        first = u16_at(lumps[5], p + 20);
+        count = u16_at(lumps[5], p + 22);
+        if first + count > len(bsp.faces) {
+            raise ValueError("Invalid BSP node face range");
+        }
         bsp.branches.append(
             Branch(
-                plane=plane, front=s16_at(lumps[5], p + 4), back=s16_at(lumps[5], p + 6)
+                plane=plane,
+                front=s16_at(lumps[5], p + 4),
+                back=s16_at(lumps[5], p + 6),
+                first_face=first,
+                face_count=count
             )
         );
     }

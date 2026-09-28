@@ -604,7 +604,7 @@ obj EffectScene {
                 second=model_frame,
                 eye=eye,
                 seconds=projectile.age,
-                illumination=lighting.sample(projectile.pos),
+                illumination=lighting.light_model(projectile.pos, math.degrees(heading)),
                 basis=model_basis(heading, elevation, spin)
             );
         }

@@ -2,6 +2,7 @@
 import math;
 import from ..math.vec3 { Vec3 }
 import from ..physics.collision { CollisionMap }
+import from ..formats.bsp { Face }
 
 node LightRig {}
 node Lamp {
@@ -13,16 +14,108 @@ node Lamp {
 
 edge Emits: LightRig --> Lamp {}
 
+"""How a model is lit: an ambient colour plus a directed colour scaled by
+how squarely a vertex faces `direction`. Faces turned away take `rear` of
+the directed light, times the (negative) cosine: Q2's shadedots darken the
+far side a little (r_avertexnormal_dots, 1 + 13/44 cos there) where Q1 and
+Q3 leave it at the ambient light. A `model_space` direction turns with the
+model (Q2's shadevector), else it is fixed in the world. Colours are in
+the renderer's scale, 1 the texture's own colour."""
 obj Illumination {
     has enabled: bool = False;
     has ambient: Vec3 = Vec3(x=1.0, y=1.0, z=1.0),
         directed: Vec3 = Vec3(),
-        direction: Vec3 = Vec3(z=1.0);
+        direction: Vec3 = Vec3(z=1.0),
+        rear: float = 0.0,
+        model_space: bool = False;
 
+    """The light on a vertex whose normal (in the direction's space) is
+    `normal`."""
     def shade(normal: Vec3) -> Vec3 {
+        facing = normal.dot(self.direction);
         return self.ambient.add(
-            self.directed.scale(max(0.0, normal.dot(self.direction)))
+            self.directed.scale(facing if facing >= 0.0 else facing * self.rear)
         );
+    }
+}
+
+"""Render flags that change how a model takes light: the view weapon (Q1
+R_DrawViewModel lights it at least 24; Q2 marks it RF_MINLIGHT, Q3
+RF_MINLIGHT), Q2 renderfx RF_MINLIGHT, RF_FULLBRIGHT and RF_GLOW (bonus
+items pulse), and Q1 brush pickups whose skins carry their own lightmaps."""
+glob MODEL_LIGHT_VIEW: int = 1,
+     MODEL_LIGHT_MINLIGHT: int = 2,
+     MODEL_LIGHT_FULLBRIGHT: int = 4,
+     MODEL_LIGHT_GLOW: int = 8;
+
+# r_alias.c LIGHT_MIN: no Q1 model vertex is lit below it.
+glob QUAKE_LIGHT_MIN: float = 5.0;
+
+# Q2 r_avertexnormal_dots: a normal facing away from the shade vector keeps
+# 1 + 13/44 cos of the light (the table's far side, as MH's GLSL reproduces it).
+glob QUAKE2_SHADE_REAR: float = 13.0 / 44.0;
+
+"""Where a trace straight down from a point first meets a lit world surface
+(RecursiveLightPoint): the face, and the offset of the lightmap sample under
+the point in each of its style layers. No face (-1): the trace left the
+world without striking one."""
+obj LightSpot {
+    has face: int = -1,
+        sample: int = 0;
+}
+
+"""The light a Q1 or Q2 world's lightmaps give points (r_light.c and
+gl_light.c R_LightPoint): the lightmap sample on the first lit surface
+straight below, each style layer scaled by its style's current value. A
+level supplies the trace through its BSP tree (`trace`, abstract so it
+dispatches to the level module's implementation); traces are cached by
+point, since most models rest where they stand."""
+obj LightPointSource {
+    has faces: list[Face] = [],
+        lightmaps: bytes = b"",
+        channels: int = 1,
+        spots: dict[tuple[float, float, float], LightSpot] = {};
+
+    """The first lit surface straight below `point`."""
+    def trace(point: Vec3) -> LightSpot abst;
+
+    def spot(point: Vec3) -> LightSpot {
+        key = (point.x, point.y, point.z);
+        found = self.spots.get(key, None);
+        if found is not None {
+            return found;
+        }
+        if len(self.spots) >= 4096 {
+            self.spots = {};
+        }
+        found = self.trace(point);
+        self.spots[key] = found;
+        return found;
+    }
+
+    """The raw light at `point` (lightmap bytes times style values, per
+    channel; a mono Q1 lightmap fills all three), or None when the trace
+    strikes nothing. A surface without samples is black."""
+    def light(point: Vec3, styles: dict[int, float]) -> Vec3 | None {
+        found = self.spot(point);
+        if found.face < 0 {
+            return None;
+        }
+        face = self.faces[found.face];
+        if face.light_offset < 0 {
+            return Vec3();
+        }
+        layer = face.light_width * face.light_height * self.channels;
+        offset = face.light_offset + found.sample * self.channels;
+        total = [0.0, 0.0, 0.0];
+        for style in face.styles {
+            value = styles.get(style, 1.0);
+            for channel in range(3) {
+                total[channel] += float(self.lightmaps[offset + (channel if self.channels == 3 else 0)]) * value;
+            }
+            offset += layer;
+        }
+        return Vec3(x=total[0], y=total[1], z=total[2]);
     }
 }
 
@@ -151,10 +244,15 @@ def load_light_grid(data: bytes, mins: Vec3, maxs: Vec3, size: Vec3 = Vec3(x=64.
     return grid;
 }
 
+"""A dynamic light this frame (cl_dlights, Q2 V_AddLight, Q3
+trap_R_AddLightToScene): where it is, its colour (Q1 lights are white), its
+radius (Q2 calls it intensity) and, for Q1, the minimum light it adds to a
+surface before it cuts off (dl->minlight)."""
 obj FlashLight {
     has origin: Vec3,
         color: Vec3,
-        radius: float = 220.0;
+        radius: float = 220.0,
+        minlight: float = 0.0;
 }
 
 walker GatherLamps {
@@ -233,6 +331,10 @@ obj ProbeRegion {
 
 # Probe regions are chosen through a coarse floor-plan grid, so interpolation
 # stays inside one room or corridor and never blends through a wall.
+#
+# Q1/Q2 levels light models from their lightmaps instead (`point`, with the
+# light style values `styles` shared with the world renderer), Q3 levels from
+# their light grid.
 obj Lighting {
     has rig: LightRig = LightRig(),
         regions: list[ProbeRegion] = [],
@@ -242,7 +344,10 @@ obj Lighting {
         lookup_cell: float = 160.0,
         dynamic: list[FlashLight] = [],
         cache_hit: bool = False,
-        grid: LightGrid | None = None;
+        grid: LightGrid | None = None,
+        game: str = "",
+        point: LightPointSource | None = None,
+        styles: dict[int, float] = {};
 
     def region_at(point: Vec3) -> int {
         if not self.lookup {
@@ -257,6 +362,11 @@ obj Lighting {
         return self.lookup[y * self.lookup_columns + x];
     }
 
+    """The light grid or probe light at `point`, with the dynamic lights.
+    Q3 adds each to the directed light (tr_light.c R_SetupEntityLighting:
+    DLIGHT_AT_RADIUS 16 times the radius squared over the distance squared,
+    no nearer than DLIGHT_MINIMUM_RADIUS 16, turning the light's direction
+    toward it); probes add a soft ambient glow."""
     def sample(point: Vec3, include_dynamic: bool = True) -> Illumination {
         grid = self.grid;
         if not self.regions and grid is None {
@@ -265,11 +375,26 @@ obj Lighting {
         result = Illumination(enabled=True, ambient=Vec3(x=0.12, y=0.12, z=0.12));
         if grid is not None {
             result = grid.sample(point);
-        } else {
-            index = self.region_at(point);
-            if 0 <= index < len(self.regions) {
-                result = self.regions[index].sample(point);
+            if include_dynamic and self.dynamic {
+                steer = result.direction.scale(result.directed.length());
+                for flash in self.dynamic {
+                    toward = flash.origin.sub(point);
+                    distance = toward.length();
+                    power = 16.0 * flash.radius * flash.radius / (max(16.0, distance) ** 2) / 255.0;
+                    result.directed = result.directed.add(flash.color.scale(power));
+                    if distance > 0.00001 {
+                        steer = steer.add(toward.scale(power / distance));
+                    }
+                }
+                if steer.length() > 0.00001 {
+                    result.direction = steer.normalized();
+                }
             }
+            return result;
+        }
+        index = self.region_at(point);
+        if 0 <= index < len(self.regions) {
+            result = self.regions[index].sample(point);
         }
         for flash in (self.dynamic if include_dynamic else []) {
             delta = flash.origin.sub(point);
@@ -277,6 +402,112 @@ obj Lighting {
             result.ambient = result.ambient.add(flash.color.scale(factor * factor));
         }
         return result;
+    }
+
+    """How a model at `origin` is lit, turned `yaw` degrees, with MODEL_LIGHT
+    `flags`, at `seconds`: Q1 and Q2 from the lightmaps below it, Q3 from
+    its light grid, Passion from its probes (16 units up)."""
+    def light_model(origin: Vec3, yaw: float = 0.0, flags: int = 0, seconds: float = 0.0) -> Illumination {
+        source = self.point;
+        if source is not None {
+            if self.game == "q1" {
+                return self.quake_model_light(source, origin, flags);
+            }
+            return self.quake2_model_light(source, origin, yaw, flags, seconds);
+        }
+        result = self.sample(origin if self.grid is not None else origin.add(Vec3(z=16.0)));
+        if flags & MODEL_LIGHT_VIEW != 0 and result.enabled {
+            result.ambient = Vec3(
+                x=max(0.1, result.ambient.x), y=max(0.1, result.ambient.y), z=max(0.1, result.ambient.z)
+            );
+        }
+        return result;
+    }
+
+    """Q1 (WinQuake r_main.c R_DrawEntitiesOnList, R_DrawViewModel and
+    r_alias.c R_AliasSetupLighting): ambient and shade light both start at
+    R_LightPoint (the gun at least 24); each dynamic light adds its radius
+    less its distance to the ambient light; ambient is held to 128 and the
+    two together to 192, and nothing falls below LIGHT_MIN. The shade light
+    comes from lightvec (-1, 0, 0): faces turned toward +x brighten. A light
+    level L shows as the colormap row a wall lit L shows, so both use the
+    renderer's scale (2L/255)."""
+    def quake_model_light(source: LightPointSource, origin: Vec3, flags: int) -> Illumination {
+        level = 255.0;
+        if source.lightmaps {
+            light = source.light(origin, self.styles);
+            level = 0.0 if light is None else math.floor(light.x);
+        }
+        if flags & MODEL_LIGHT_VIEW != 0 and level < 24.0 {
+            level = 24.0;
+        }
+        ambient = level;
+        shade = level;
+        for flash in self.dynamic {
+            add = flash.radius - flash.origin.sub(origin).length();
+            if add > 0.0 {
+                ambient += float(int(add));
+            }
+        }
+        ambient = min(128.0, ambient);
+        if ambient + shade > 192.0 {
+            shade = 192.0 - ambient;
+        }
+        ambient = max(QUAKE_LIGHT_MIN, ambient);
+        shade = max(0.0, shade);
+        scale = 2.0 / 255.0;
+        return Illumination(
+            enabled=True,
+            ambient=Vec3(x=ambient * scale, y=ambient * scale, z=ambient * scale),
+            directed=Vec3(x=shade * scale, y=shade * scale, z=shade * scale),
+            direction=Vec3(x=1.0)
+        );
+    }
+
+    """Q2 (ref_gl gl_mesh.c R_DrawAliasModel, gl_light.c R_LightPoint): the
+    coloured lightmap light below (gl_modulate 1), plus each dynamic light's
+    intensity less its distance, over 256, in its colour; RF_FULLBRIGHT is
+    full light, RF_MINLIGHT keeps at least 0.1, RF_GLOW pulses by 0.1 at 7
+    radians a second (never below 80%). Vertices take that light times
+    shadedots: the table row for the yaw in sixteenths of a turn, as the
+    normal faces its shade vector. Light is doubled to the renderer's scale
+    as the lightmaps are."""
+    def quake2_model_light(source: LightPointSource, origin: Vec3, yaw: float, flags: int, seconds: float) -> Illumination {
+        color = Vec3(x=1.0, y=1.0, z=1.0);
+        if flags & MODEL_LIGHT_FULLBRIGHT == 0 and source.lightmaps {
+            light = source.light(origin, self.styles);
+            color = Vec3() if light is None else light.scale(1.0 / 255.0);
+            for flash in self.dynamic {
+                add = (flash.radius - origin.sub(flash.origin).length()) / 256.0;
+                if add > 0.0 {
+                    color = color.add(flash.color.scale(add));
+                }
+            }
+        }
+        if flags & (MODEL_LIGHT_MINLIGHT | MODEL_LIGHT_VIEW) != 0
+            and color.x <= 0.1 and color.y <= 0.1 and color.z <= 0.1 {
+            color = Vec3(x=0.1, y=0.1, z=0.1);
+        }
+        if flags & MODEL_LIGHT_GLOW != 0 {
+            pulse = 0.1 * math.sin(seconds * 7.0);
+            color = Vec3(
+                x=max(color.x * 0.8, color.x + pulse),
+                y=max(color.y * 0.8, color.y + pulse),
+                z=max(color.z * 0.8, color.z + pulse)
+            );
+        }
+        # (int)(angles[1] * SHADEDOT_QUANT / 360) & (SHADEDOT_QUANT - 1).
+        row = int(yaw * 16.0 / 360.0) & 15;
+        turn = float(row) / 16.0 * 2.0 * math.pi;
+        light = color.scale(2.0);
+        return Illumination(
+            enabled=True,
+            ambient=light,
+            directed=light,
+            direction=Vec3(x=math.cos(-turn), y=math.sin(-turn), z=1.0).normalized(),
+            rear=QUAKE2_SHADE_REAR,
+            model_space=True
+        );
     }
 }
 

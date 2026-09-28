@@ -9,6 +9,7 @@ import from ..animated {
 }
 import from ..bsp { Texture, require_range, i32_at, f32_at, vec_at }
 import from ...math.vec3 { Vec3 }
+import from ..anorms { quake_vertex_normal }
 
 
 def intervals(data: bytes, offset: int, count: int) -> list[float] {
@@ -61,20 +62,22 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
             require_range(data, p, width * height);
             pixels: list[int] = [];
             for i in range(width * height) {
-                color = int(data[p + i]) * 3;
+                index = int(data[p + i]);
+                color = index * 3;
+                # The colormap leaves the last 32 colours unlit (alpha 0).
                 pixels.extend(
                     [
                         int(palette[color]),
                         int(palette[color + 1]),
                         int(palette[color + 2]),
-                        255
+                        0 if index >= 224 else 255
                     ]
                 );
             }
             name = "skin" + str(skin) + ":" + str(sub);
             surface.skins.append(name);
             surface.embedded_skins.append(
-                Texture(name=name, width=width, height=height, pixels=bytes(pixels))
+                Texture(name=name, width=width, height=height, pixels=bytes(pixels), fullbright=True)
             );
             p += width * height;
         }
@@ -130,6 +133,7 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
                         z=float(data[p + 2]) * scale.z + origin.z
                     )
                 );
+                frame.normals.append(quake_vertex_normal(int(data[p + 3])));
                 p += 4;
             }
             surface.frames.append(frame);

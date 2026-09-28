@@ -124,10 +124,14 @@ obj AnimatedSurface {
         stages: list[ModelStage] = [];
 }
 
+"""A vertex-animated model. `flags` are the file's own (Q1 MDL EF_ROCKET,
+EF_GIB... choose its trail); `baked_light`: its skins already carry its
+lighting (Q1 brush pickups' own lightmaps), so the world's is not applied."""
 obj AnimatedModel {
     has surfaces: list[AnimatedSurface] = [],
         tags: list[TagFrame] = [],
-        flags: int = 0;
+        flags: int = 0,
+        baked_light: bool = False;
 }
 
 def model_name(data: bytes, offset: int, size: int) -> str {

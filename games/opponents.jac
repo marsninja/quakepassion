@@ -14,7 +14,7 @@ import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
 import from engine.world.combat { Opponent, HasOpponent, Drops, Bloodied, ensure_profiles, arm_bot }
 import from engine.world.pickups { Pickup, HasPickup }
-import from .items { monster_drop, item_spin }
+import from .items { monster_drop, item_spin, item_light_flags }
 import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms, hold_weapon }
 import from engine.world.models { WeaponKit, PlayerRig }
 import from engine.world.player_rig { rig_sound_paths }
@@ -524,6 +524,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 dropped = Pickup(rule=drop, pos=position, active=False);
                 dropped.visual = attach_model(dropped, resources[drop_key]);
                 dropped.visual.spin = item_spin(source, drop, resources[drop_key].model.flags);
+                dropped.visual.light_flags = item_light_flags(source);
                 dropped.visual.visible = False;
                 world +>:HasPickup:+> dropped;
                 enemy +>:Drops:+> dropped;

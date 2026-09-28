@@ -17,7 +17,11 @@ node ModelResource {
         skins: list[Texture];
 }
 
+"""How an entity is drawn: its offset from the entity, animation frames,
+spin and bob, and its MODEL_LIGHT flags (lighting.jac: Q2 RF_GLOW on bonus
+items, RF_FULLBRIGHT...)."""
 node Visual {
+    has light_flags: int = 0;
     has offset: Vec3 = Vec3(),
         first: int = 0,
         second: int = 0,
@@ -41,6 +45,7 @@ obj ModelDraw {
         roll: float = 0.0,
         basis: Basis | None = None,
         light_origin: Vec3 | None = None,
+        light_flags: int = 0,
         shader: str = "",
         inflate: float = 0.0;
 }
@@ -420,7 +425,8 @@ walker GatherModels {
                         second=visual.second,
                         blend=visual.blend,
                         pitch=visual.pitch,
-                        roll=visual.roll
+                        roll=visual.roll,
+                        light_flags=visual.light_flags
                     )
                 );
             }

@@ -43,7 +43,9 @@ import from .quake {
     rlEnableDepthMask,
     rlDisableBackfaceCulling,
     rlEnableBackfaceCulling,
-    fog_coords
+    fog_coords,
+    packed_tcmods,
+    apply_tcmods
 }
 import from ..formats.bsp { FogVolume }
 import from vendor.raylib {
@@ -66,13 +68,18 @@ glob MODEL_NORMAL_STEPS: int = 4095;
 (position, and the normal when the format has one), pushes a shell out along
 the normal and places the result with the model's axes. u_draw: [0..2] the
 forward/left/up axes with the origin in w, [3] frame A, frame B, blend,
-inflate, [4] ambient, [5] directed and opacity, [6] light direction, [7] the
-eye in model space. u_stage: scroll offset, environment mapping, and the
-colour mode (0 white with opacity, 1 lit, 2 fog). u_fog: tr_main.c fog
-texture coordinates as quake.jac fog_coords computes them, and the fog
-colour."""
+inflate, [4] ambient, [5] directed and opacity, [6] light direction (in
+world space) and the share of directed light on faces turned away, [7] the
+eye in model space. u_stage: environment mapping, the colour mode (0 white
+with opacity, 1 lit, 2 fog), whether the skin's alpha marks fullbright
+texels (Q1) rather than opacity, and the number of texture steps. The steps
+are the stage's tcMods at this time folded by quake.jac tcmod_steps: each an
+affine map (u_tcS, u_tcT rows) then maybe a turb (u_turb: on, amplitude,
+phase), which tr_shade_calc.c RB_CalcTurbulentTexCoords takes from the
+model-space position. u_fog: tr_main.c fog texture coordinates as quake.jac
+fog_coords computes them, and the fog colour."""
 glob MODEL_VERTEX_SHADER: str = "#version 330\nin vec4 corner;\n"
-    + "uniform mat4 mvp; uniform sampler2D frames; uniform vec4 u_draw[8]; uniform vec4 u_stage; uniform vec4 u_fog[4];\n"
+    + "uniform mat4 mvp; uniform sampler2D frames; uniform vec4 u_draw[8]; uniform vec4 u_stage; uniform vec4 u_tcS[4]; uniform vec4 u_tcT[4]; uniform vec4 u_turb[4]; uniform vec4 u_fog[4];\n"
     + "out vec2 uv; out vec4 tint;\n"
     + "vec4 keyframe(float texel){ int t=int(texel+0.5); return texelFetch(frames, ivec2(t&4095, t>>12), 0); }\n"
     + "vec3 unpackNormal(float code){ float hi=floor(code/4096.0); vec2 p=vec2(hi, code-hi*4096.0)*(2.0/4095.0)-1.0; vec3 n=vec3(p, 1.0-abs(p.x)-abs(p.y)); float t=max(-n.z,0.0); n.x+=n.x>=0.0?-t:t; n.y+=n.y>=0.0?-t:t; return normalize(n); }\n"
@@ -84,15 +91,25 @@ glob MODEL_VERTEX_SHADER: str = "#version 330\nin vec4 corner;\n"
     + " vec3 world=vec3(u_draw[0].w,u_draw[1].w,u_draw[2].w)+axes*local;\n"
     + " gl_Position=mvp*vec4(world,1.0);\n"
     + " uv=corner.zw;\n"
-    + " if(u_stage.z>0.5){ vec3 viewer=normalize(u_draw[7].xyz-local); vec3 r=n*(2.0*dot(n,viewer))-viewer; uv=vec2(0.5+r.y*0.5,0.5-r.z*0.5); }\n"
-    + " uv+=u_stage.xy; tint=vec4(1.0,1.0,1.0,u_draw[5].w);\n"
-    + " if(u_stage.w>1.5){ float t=31.0/32.0; if(u_fog[2].y>0.5){ float depth=dot(u_fog[1].xyz,world)+u_fog[1].w; float eyeT=u_fog[2].x;\n"
+    + " if(u_stage.x>0.5){ vec3 viewer=normalize(u_draw[7].xyz-local); vec3 r=n*(2.0*dot(n,viewer))-viewer; uv=vec2(0.5+r.y*0.5,0.5-r.z*0.5); }\n"
+    + " int steps=int(u_stage.w+0.5);\n"
+    + " for(int i=0;i<4;i++){ if(i>=steps) break; uv=vec2(dot(u_tcS[i].xyz,vec3(uv,1.0)),dot(u_tcT[i].xyz,vec3(uv,1.0)));\n"
+    + "  if(u_turb[i].x>0.5){ uv.x+=sin(((local.x+local.z)/128.0*0.125+u_turb[i].z)*6.283185307)*u_turb[i].y; uv.y+=sin((local.y/128.0*0.125+u_turb[i].z)*6.283185307)*u_turb[i].y; } }\n"
+    + " tint=vec4(1.0,1.0,1.0,u_draw[5].w);\n"
+    + " if(u_stage.y>1.5){ float t=31.0/32.0; if(u_fog[2].y>0.5){ float depth=dot(u_fog[1].xyz,world)+u_fog[1].w; float eyeT=u_fog[2].x;\n"
     + "   if(eyeT<0.0){ t=depth<1.0?1.0/32.0:1.0/32.0+30.0/32.0*depth/(depth-eyeT); } else { t=depth<0.0?1.0/32.0:31.0/32.0; } }\n"
     + "   uv=vec2(dot(u_fog[0].xyz,world)+u_fog[0].w,t); tint=u_fog[3]; }\n"
-    + " else if(u_stage.w>0.5){ vec3 c=u_draw[4].xyz+u_draw[5].xyz*(shaded?max(0.0,dot(axes*n,u_draw[6].xyz)):0.5); tint=vec4(clamp(c,0.0,1.0),1.0); }\n"
+    + " else if(u_stage.y>0.5){ float d=shaded?dot(axes*n,u_draw[6].xyz):0.5; if(d<0.0) d*=u_draw[6].w; vec3 c=u_draw[4].xyz+u_draw[5].xyz*d; tint=vec4(clamp(c,0.0,1.0),u_draw[5].w); }\n"
     + "}\n",
-     MODEL_FRAGMENT_SHADER: str = "#version 330\nin vec2 uv; in vec4 tint; uniform sampler2D skin; out vec4 finalColor;\n"
-    + "void main(){ finalColor=texture(skin,uv)*tint; }\n";
+     MODEL_FRAGMENT_SHADER: str = "#version 330\nin vec2 uv; in vec4 tint; uniform sampler2D skin; uniform vec4 u_stage; out vec4 finalColor;\n"
+    + "void main(){ vec4 t=texture(skin,uv); finalColor=u_stage.z>0.5?vec4(mix(t.rgb,t.rgb*tint.rgb,t.a),tint.a):t*tint; }\n";
+
+# The texture steps of a stage without tcMods: one identity map.
+glob MODEL_PLAIN_STEPS: list[bytes] = [
+    b"\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    b"\x00\x00\x00\x00\x00\x00\x80?\x00\x00\x00\x00\x00\x00\x00\x00",
+    b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+];
 
 """The shared model program, the pass state while one is open (a scene's
 draws share one program bind) and the uniform scratch buffers."""
@@ -317,14 +334,17 @@ def pack_model_corners(model: AnimatedModel, keyframes: ModelKeyframes) -> Model
     return result;
 }
 
+"""One stage of a model surface on the GPU: its image frames, blending, and
+the stage it came from (its tcMods run per draw). `fullbright`: the skin's
+alpha marks Q1 palette fullbright texels, which light leaves alone."""
 obj UploadedStage {
     has texture: int,
         surface: int,
         environment: bool,
-        scroll_u: float,
-        scroll_v: float,
         blend: str,
+        source: ModelStage = ModelStage(),
         two_sided: bool = False,
+        fullbright: bool = False,
         frames: list[int] = [],
         frequency: float = 0.0;
 }
@@ -385,10 +405,10 @@ obj ModelRenderer {
                             frequency=stage.frequency,
                             surface=s,
                             environment=stage.environment,
-                            scroll_u=stage.scroll_u,
-                            scroll_v=stage.scroll_v,
+                            source=stage,
                             blend=stage.blend,
-                            two_sided=skin.two_sided
+                            two_sided=skin.two_sided,
+                            fullbright=skin.fullbright
                         )
                     );
                 }
@@ -504,8 +524,8 @@ obj ModelRenderer {
             "<ffff", params, 80, light.x, light.y, light.z,
             float(int(max(0.0, min(1.0, alpha)) * 255.0)) / 255.0
         );
-        light = illumination.direction;
-        struct.pack_into("<ffff", params, 96, light.x, light.y, light.z, 0.0);
+        light = axes.apply(illumination.direction) if illumination.model_space else illumination.direction;
+        struct.pack_into("<ffff", params, 96, light.x, light.y, light.z, illumination.rear);
         struct.pack_into("<ffff", params, 112, local_eye.x, local_eye.y, local_eye.z, 0.0);
         program = gpu.program;
         program.set_vec4s("u_draw", bytes(params));
@@ -536,12 +556,17 @@ obj ModelRenderer {
                     model_blend(gpu, 1 if stage.blend == "add" else (2 if stage.blend == "multiply" else 0), self.mesh);
                     rlDisableDepthMask();
                 }
+                steps = packed_tcmods(stage.source, seconds) if stage.source.mods else MODEL_PLAIN_STEPS;
                 struct.pack_into(
-                    "<ffff", gpu.stage, 0, seconds * stage.scroll_u, seconds * stage.scroll_v,
-                    1.0 if stage.environment else 0.0,
-                    1.0 if illumination.enabled and opaque else 0.0
+                    "<ffff", gpu.stage, 0, 1.0 if stage.environment else 0.0,
+                    1.0 if illumination.enabled and opaque else 0.0,
+                    1.0 if stage.fullbright else 0.0,
+                    float(len(steps[0]) // 16)
                 );
                 program.set_vec4s("u_stage", bytes(gpu.stage));
+                program.set_vec4s("u_tcS", steps[0]);
+                program.set_vec4s("u_tcT", steps[1]);
+                program.set_vec4s("u_turb", steps[2]);
                 rlEnableTexture(
                     u32(stage.frames[stage_frame(seconds, stage.frequency, len(stage.frames))])
                 );
@@ -591,7 +616,7 @@ obj ModelRenderer {
             1.0
         );
         gpu.program.set_vec4s("u_fog", bytes(gpu.fog));
-        struct.pack_into("<ffff", gpu.stage, 0, 0.0, 0.0, 0.0, 2.0);
+        struct.pack_into("<ffff", gpu.stage, 0, 0.0, 2.0, 0.0, 0.0);
         gpu.program.set_vec4s("u_stage", bytes(gpu.stage));
     }
 
@@ -690,7 +715,7 @@ obj ModelRenderer {
                             y=n.x * fy + n.y * ly + n.z * uy,
                             z=n.x * fz + n.y * lz + n.z * uz
                         );
-                        color = illumination.shade(normal);
+                        color = illumination.shade(n if illumination.model_space else normal);
                     }
                     colors.append(color);
                 }
@@ -741,7 +766,7 @@ obj ModelRenderer {
                                 u8(int(min(255.0, max(0.0, color.x * 255.0)))),
                                 u8(int(min(255.0, max(0.0, color.y * 255.0)))),
                                 u8(int(min(255.0, max(0.0, color.z * 255.0)))),
-                                u8(255)
+                                opacity
                             );
                         }
                         u = surface.uv[index * 2];
@@ -765,10 +790,8 @@ obj ModelRenderer {
                             u = 0.5 + reflection.y * 0.5;
                             t = 0.5 - reflection.z * 0.5;
                         }
-                        rlTexCoord2f(
-                            f32(u + seconds * stage.scroll_u),
-                            f32(t + seconds * stage.scroll_v)
-                        );
+                        moved = apply_tcmods(stage.source, u, t, v, seconds);
+                        rlTexCoord2f(f32(moved[0]), f32(moved[1]));
                         rlVertex3f(
                             f32(origin.x + v.x * fx + v.y * lx + v.z * ux),
                             f32(origin.y + v.x * fy + v.y * ly + v.z * uy),
@@ -941,11 +964,13 @@ obj ModelScene {
                 }
                 lit_from = draw.light_origin;
                 illumination = shared_light;
-                if lit_from is None {
-                    illumination = lighting.sample(draw.origin.add(Vec3(z=16.0)));
+                if renderer.model.baked_light {
+                    illumination = Illumination();
+                } elif lit_from is None {
+                    illumination = lighting.light_model(draw.origin, math.degrees(draw.yaw), draw.light_flags, seconds);
                 } elif lit_from is not shared_origin {
                     shared_origin = lit_from;
-                    shared_light = lighting.sample(lit_from.add(Vec3(z=16.0)));
+                    shared_light = lighting.light_model(lit_from, math.degrees(draw.yaw), draw.light_flags, seconds);
                     illumination = shared_light;
                 }
                 overlay: ModelRenderer | None = None;
