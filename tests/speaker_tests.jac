@@ -1,4 +1,5 @@
 import from engine.world.speakers { Speaker, HasSpeaker, SpeakerTick, load_speakers }
+import from engine.audio.feedback { sound_falloff }
 import from engine.world.signals { Fire }
 import from engine.world.world { World, Player }
 import from engine.world.level { Level }
@@ -42,7 +43,8 @@ test "authored speaker flags paths and toggle state survive saves" {
             and speakers[0].playing
             and speakers[0].looping;
         assert speakers[1].path == "sound/world/beep.wav" and not speakers[1].looping;
-        assert speakers[2].activator_sound;
+        # Q3 plays sexed sounds on the activator; Q2 at the speaker.
+        assert speakers[2].activator_sound == (game == "q3");
         speakers[0].activation spawn Fire(emit=False);
         speakers[1].activation spawn Fire(emit=False);
         world spawn SpeakerTick();
@@ -60,4 +62,79 @@ test "authored speaker flags paths and toggle state survive saves" {
         world spawn SpeakerTick();
         assert not speakers[0].playing;
     }
+}
+
+test "target_speaker keys follow each game's SP_target_speaker" {
+    entities = [
+        MapEntity(
+            fields={
+                "classname": "target_speaker",
+                "noise": "world/amb1",
+                "spawnflags": "1",
+                "volume": "0.3",
+                "attenuation": "2"
+            }
+        ),
+        MapEntity(
+            fields={
+                "classname": "target_speaker",
+                "noise": "world/voice.wav",
+                "volume": "0.4",
+                "attenuation": "-1"
+            }
+        ),
+        MapEntity(
+            fields={
+                "classname": "target_speaker",
+                "noise": "sound/world/growl3.wav",
+                "wait": "20",
+                "random": "15"
+            }
+        ),
+        MapEntity(
+            fields={
+                "classname": "target_speaker",
+                "noise": "sound/world/drip.wav",
+                "wait": "5",
+                "random": "0.05"
+            }
+        )
+    ];
+    q2 = World();
+    load_speakers(q2, Bsp(game="q2", entities=entities));
+    loud = [q2->:HasSpeaker:->][?:Speaker];
+    # Q2 loops are always volume 1 at the looping falloff; -1 is everywhere.
+    assert loud[0].volume == 1.0 and loud[0].attenuation == 3.0 and loud[0].playing;
+    assert abs(loud[1].volume - 0.4) < 0.0001 and loud[1].attenuation == 0.0;
+    assert loud[2].repeat_spread == 0.0;
+    q3 = World();
+    load_speakers(q3, Bsp(game="q3", entities=entities));
+    heard = [q3->:HasSpeaker:->][?:Speaker];
+    # Q3 ignores volume and attenuation, and repeats speakers with a random.
+    assert heard[0].volume == 1.0 and heard[1].attenuation == 1.0;
+    assert heard[2].repeat_wait == 20.0 and heard[2].repeat_spread == 15.0;
+    # CG_Speaker tests s.clientNum (random in tenths): 0.05 never repeats.
+    assert heard[3].repeat_wait == 5.0 and heard[3].repeat_spread == 0.0;
+    q3 spawn SpeakerTick(dt=0.1);
+    assert heard[2].requests == 1 and heard[3].requests == 0;
+    assert heard[2].repeat_clock >= 5.0 and heard[2].repeat_clock <= 35.0;
+    waited = heard[2].repeat_clock;
+    q3 spawn SpeakerTick(dt=waited - 0.05);
+    assert heard[2].requests == 1;
+    q3 spawn SpeakerTick(dt=0.1);
+    assert heard[2].requests == 2;
+}
+
+test "each game's spatialization falls off at its own rate" {
+    # Quake: attenuation / 1000 a unit from the source.
+    assert abs(sound_falloff("q1", 500.0, 1.0, False) - 0.5) < 0.0001;
+    assert abs(sound_falloff("q1", 100.0, 3.0, True) - 0.7) < 0.0001;
+    # Quake II: full inside 80 units, loops at 0.003, ATTN_NORM at 0.0005.
+    assert sound_falloff("q2", 60.0, 1.0, False) == 1.0;
+    assert abs(sound_falloff("q2", 1080.0, 1.0, False) - 0.5) < 0.0001;
+    assert abs(sound_falloff("q2", 180.0, 1.0, True) - 0.7) < 0.0001;
+    assert abs(sound_falloff("q2", 180.0, 3.0, False) - 0.7) < 0.0001;
+    # Quake III: 0.0008 a unit past 80, whatever the attenuation.
+    assert abs(sound_falloff("q3", 705.0, 3.0, False) - 0.5) < 0.0001;
+    assert sound_falloff("q2", 5000.0, 0.0, False) == 1.0;
 }

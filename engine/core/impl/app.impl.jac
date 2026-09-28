@@ -25,7 +25,8 @@ impl App.run() {
             self.audio.open(
                 self.level.bsp.game,
                 game_directory(self.level.bsp.game),
-                weapon_sounds(self.level.bsp.game)
+                weapon_sounds(self.level.bsp.game),
+                missile_sounds(self.level.bsp.game)
             );
         }
     }
@@ -55,6 +56,13 @@ impl App.run() {
         self.quake.upload(self.level);
         self.prepare_presentation();
         self.record_entry();
+        self.start_level_music();
+        # Q2 newgame: "map *ntro.cin+base1" plays the introduction first.
+        film = exit_cinematic(self.opening);
+        if film and not self.smoke {
+            self.begin_cinematic(film, self.level.name, resume=True);
+        }
+        self.opening = "";
     }
     frame = 0;
     while not self.renderer.should_close() {
@@ -78,6 +86,7 @@ impl App.run() {
         self.viewweapon.close();
         self.quake.close();
     }
+    self.cinematic.close(self.audio);
     self.audio.close();
     self.renderer.close();
 }
@@ -115,8 +124,18 @@ impl App.render_frame() {
     if self.menu.opened {
         self.refresh_settings();
     }
+    if self.cinematic.active {
+        self.draw_cinematic();
+        return;
+    }
     p = self.player;
     self.audio.update(self.world, p.pos, p.yaw, paused=self.menu.opened);
+    self.audio.client_loop(
+        ""
+            if self.finale_active or self.stats_screen
+            else q2_client_sound(p, self.combat),
+        paused=self.menu.opened
+    );
     if self.level.active and self.level.bsp.game == "q1" {
         where = self.level.locate(p.pos);
         levels = [0, 0, 0, 0];
@@ -241,7 +260,7 @@ impl App.render_frame() {
                     self.total_monsters,
                     progress.secrets,
                     progress.total_secrets,
-                    int(self.simulation_time),
+                    int(Q1_SERVER_START + self.simulation_time),
                     self.level.bsp.entities[0].fields.get("message", "")
                         if self.level.bsp.entities
                         else "",
@@ -660,6 +679,10 @@ impl App.load_destination(
                 level.collision.top_drop = top;
             }
         }
+        # Q2's game state outlives each level: the help computer carries on.
+        if carry and game == "q2" and self.level.bsp.game == "q2" {
+            carry_help(self.world, world);
+        }
         if saved {
             restore(world, level, player, combat, saved);
         }
@@ -699,14 +722,17 @@ impl App.load_destination(
         if self.audio.ready {
             self.audio.close();
             try {
-                self.audio.open(game, game_directory(game), weapon_sounds(game));
+                self.audio.open(
+                    game, game_directory(game), weapon_sounds(game), missile_sounds(game)
+                );
             } except Exception as error {
                 self.notice = "Audio: " + str(error);
                 self.notice_wait = 4.0;
                 self.audio.close();
             }
         }
-        self.simulation_time = 0.0;
+        # A restored level goes on from its saved clock.
+        self.simulation_time = self.level.clock;
         self.combat = combat;
         self.expedition_complete = level.completion.pending > 0;
         self.finale_text = "";
@@ -753,7 +779,12 @@ impl App.load_destination(
         self.pending_text = "";
         self.help_open = False;
         self.inventory_open = False;
+        self.cinematic.stop(self.audio);
+        self.cinematic_next = "";
+        self.cinematic_resume = False;
+        self.pending_cinematic = "";
         self.record_entry();
+        self.start_level_music();
         # Draw the new level once before play: a level's first draw uploads
         # and prepares what it shows, and a slow first frame would hand the
         # next one a long simulation step.
@@ -820,6 +851,9 @@ impl App.step() -> bool {
         }
         self.render_frame();
         return True;
+    }
+    if self.cinematic.active {
+        return self.cinematic_step(dt);
     }
     if self.level.active and not self.smoke {
         if IsKeyPressed(i32(294)) {
@@ -891,8 +925,12 @@ impl App.step() -> bool {
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
-        # A death on the last tick of a frame is still voiced.
+        # A death on the last tick of a frame is still voiced, and still
+        # lets a cooking grenade go (Think_Weapon).
         if self.player.health <= 0 and self.level.active {
+            if release_live_grenade(self.world, self.player, self.level.collision, self.combat) {
+                self.combat_feedback();
+            }
             voice = self.player spawn VoiceTick(game=self.level.bsp.game, dt=0.0);
             for cue in voice.cues {
                 self.audio.play_path(cue);
@@ -1035,6 +1073,7 @@ impl App.step() -> bool {
     for i in range(steps) {
         jumped = False;
         self.simulation_time += self.physics_clock.tick_rate;
+        self.level.clock = self.simulation_time;
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
         self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
         self.notify_ages = [age - self.physics_clock.tick_rate for age in self.notify_ages];
@@ -1058,7 +1097,7 @@ impl App.step() -> bool {
             for cue in events.cues {
                 self.audio.play_path(cue);
             }
-            self.world spawn SpeakerTick();
+            self.world spawn SpeakerTick(dt=self.physics_clock.tick_rate);
             self.world spawn BrushTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
@@ -1563,25 +1602,23 @@ impl App.step() -> bool {
                     break;
                 }
                 destination = exit_map(exit_request.request);
-                cinematic = exit_cinematic(exit_request.request);
-                if destination.endswith(".pcx") {
-                    self.finale_text = VICTORY_TEXT;
-                    self.campaign_complete = True;
-                    self.begin_intermission("");
-                    break;
-                }
+                film = exit_cinematic(exit_request.request);
                 text = episode_text(self.level.bsp.game, self.level.name, destination);
                 unit = exit_request.request.split("$")[0].split("+")[-1].startswith("*");
-                if cinematic {
-                    self.notice = "Cinematic " + cinematic + " skipped";
-                    self.notice_wait = 4.0;
-                }
                 # Q1 execute_changelevel shows the stats unless NO_INTERMISSION;
-                # Q2 BeginIntermission pauses only at the end of a unit.
+                # Q2 BeginIntermission pauses only at the end of a unit, and
+                # ExitLevel's "gamemap" then plays the unit's closing film.
                 game = self.level.bsp.game;
                 if (game == "q1" and (exit_request.intermission or text))
                     or (game == "q2" and unit) {
                     self.begin_stats(destination, exit_spawn(exit_request.request), unit, text);
+                    self.pending_cinematic = film;
+                    break;
+                }
+                if film or destination.endswith(".pcx") {
+                    self.begin_cinematic(
+                        film, destination, exit_spawn(exit_request.request), unit
+                    );
                     break;
                 }
                 self.load_destination(
@@ -1648,7 +1685,13 @@ impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
     self.pending_spawn = spawnpoint;
     self.pending_unit = unit;
     self.pending_text = text;
-    self.completed_time = self.simulation_time;
+    # Q1 execute_changelevel: CD track 3 over the intermission.
+    if self.level.bsp.game == "q1" {
+        self.audio.play_cd_track(3);
+    }
+    # Q1 cl.completed_time is the server clock; Q2's is the level's time.
+    self.completed_time = self.simulation_time
+        + (Q1_SERVER_START if self.level.bsp.game == "q1" else 0.0);
     self.begin_intermission("");
     self.stats_screen = True;
     # execute_changelevel: at least two seconds before a key may leave.
@@ -1658,6 +1701,8 @@ impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
 impl App.finish_stats() {
     self.stats_screen = False;
     if self.pending_text {
+        # ExitIntermission: an episode's closing text plays CD track 2.
+        self.audio.play_cd_track(2);
         self.intermission_text = self.pending_text;
         self.pending_text = "";
         return;
@@ -1665,6 +1710,12 @@ impl App.finish_stats() {
     if self.pending_map {
         destination = self.pending_map;
         self.pending_map = "";
+        film = self.pending_cinematic;
+        self.pending_cinematic = "";
+        if film or destination.endswith(".pcx") {
+            self.begin_cinematic(film, destination, self.pending_spawn, self.pending_unit);
+            return;
+        }
         self.load_destination(
             self.level.bsp.game,
             destination,
@@ -1915,7 +1966,9 @@ impl App.notify(message: str) {
 impl App.play_at(path: str, origin: Vec3) {
     if path {
         distance = origin.sub(self.player.pos).length();
-        self.audio.play_path(path, max(0.0, 1.0 - distance / 1000.0));
+        self.audio.play_path(
+            path, sound_falloff(self.level.bsp.game, distance, 1.0, False)
+        );
     }
 }
 
@@ -2262,7 +2315,8 @@ impl App.begin_podium(contest: ArenaMatch) {
         }
         board.won = me.rank == 0;
         board.focus = 2 if board.won else 1;
-        self.audio.play_path("music/win.wav" if board.won else "music/loss.wav");
+        # ui_sppostgame.c: "music music/win" (or loss) plays once.
+        self.audio.start_music("music/win" if board.won else "music/loss", once=True);
     }
     board.places = [row.name for row in rows[:3]];
     board.scores = [postgame_score_line(row.rank, row.tied, row.name, row.frags) for row in rows[:8]];
@@ -2608,4 +2662,132 @@ impl App.selected_icon() -> str {
         "power_shield": "i_powershield"
     };
     return icons.get(stored[self.selected_item % len(stored)], "");
+}
+
+impl App.begin_cinematic(
+    film: str,
+    destination: str,
+    spawnpoint: str = "",
+    unit: bool = False,
+    resume: bool = False
+) {
+    self.cinematic_next = destination;
+    self.cinematic_spawn = spawnpoint;
+    self.cinematic_unit = unit;
+    self.cinematic_resume = resume;
+    self.help_open = False;
+    self.inventory_open = False;
+    self.jump_pending = False;
+    self.physics_clock.accumulator = 0.0;
+    self.skip_time = True;
+    # SCR_PlayCinematic stops the music; a film brings its own sound.
+    self.audio.stop_music();
+    try {
+        if film {
+            self.cinematic.play(film, self.game_asset("video/" + film), self.audio);
+        } elif destination.endswith(".pcx") {
+            # SV_Map's ss_pic: the picture is the end of the chain.
+            self.cinematic_next = "";
+            self.cinematic_resume = False;
+            self.cinematic.show(destination, self.game_asset("pics/" + destination), self.audio);
+        }
+    } except Exception as error {
+        print("Cinematic unavailable:", film if film else destination, str(error));
+        self.cinematic.stop(self.audio);
+    }
+    # A missing film finishes at once (SCR_PlayCinematic).
+    if not self.cinematic.active {
+        self.finish_cinematic();
+    }
+}
+
+impl App.finish_cinematic() {
+    self.cinematic.stop(self.audio);
+    destination = self.cinematic_next;
+    self.cinematic_next = "";
+    self.skip_time = True;
+    if self.cinematic_resume {
+        self.cinematic_resume = False;
+        self.start_level_music();
+        return;
+    }
+    if destination.endswith(".pcx") {
+        self.begin_cinematic("", destination);
+        return;
+    }
+    if not destination {
+        # SV_Nextserver with no next server: killserver, back to the menu.
+        # The game is over; the level stays frozen behind the menu.
+        self.campaign_complete = True;
+        self.begin_intermission("");
+        self.menu.opened = True;
+        self.menu.restore_mouse = mouse_captured();
+        _release();
+        self.menu.scan();
+        return;
+    }
+    self.load_destination(
+        self.level.bsp.game,
+        destination,
+        self.cinematic_spawn,
+        carry=True,
+        new_unit=self.cinematic_unit
+    );
+}
+
+impl App.cinematic_step(dt: float) -> bool {
+    finished = self.cinematic.advance(dt, False, self.audio);
+    script = self.scripted;
+    held = (script is not None and (script.fire or script.jump))
+        or (not self.smoke and any_key_down());
+    if finished or self.cinematic.wants_skip(held) {
+        self.finish_cinematic();
+    }
+    self.render_frame();
+    return True;
+}
+
+impl App.draw_cinematic() {
+    # The level's own emitters hold still behind the film.
+    self.audio.update(self.world, self.player.pos, self.player.yaw, paused=True);
+    self.audio.client_loop("");
+    self.renderer.begin_screen();
+    # SCR_DrawCinematic: a menu blanks the picture.
+    if self.menu.opened {
+        self.menu.draw();
+    } else {
+        self.cinematic.draw(self.renderer.width, self.renderer.height);
+    }
+    self.renderer.end_frame();
+}
+
+impl App.game_asset(path: str) -> bytes {
+    game = self.level.bsp.game;
+    library = self.audio.library;
+    if library is not None and library.game == game {
+        return library.read(path);
+    }
+    fresh = AssetLibrary(game=game);
+    fresh.open(game_directory(game));
+    data = b"";
+    try {
+        data = fresh.read(path);
+    } except Exception as error {
+        fresh.close();
+        raise;
+    }
+    fresh.close();
+    return data;
+}
+
+impl App.start_level_music() {
+    self.audio.stop_music();
+    if not self.level.active {
+        return;
+    }
+    music = level_music(self.level.bsp);
+    if music.intro {
+        self.audio.start_music(music.intro, music.loop);
+    }
+    self.audio.play_cd_track(music.cd_track);
 }
