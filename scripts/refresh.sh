@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Sync the reference jaseci submodule to upstream main.
-# The engine uses the installed jac binary; this does not change its compiler.
+# Sync the jaseci submodule to upstream jac main. The installed jac binary
+# compiles with the submodule's source once scripts/stage_compiler.sh has
+# staged it (CI does; locally, export the variables it prints).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,8 +23,9 @@ fi
 
 if ! command -v jac >/dev/null 2>&1; then
     echo "==> jac binary not found; install it with:"
-    echo "    curl -fsSL https://raw.githubusercontent.com/jaseci-labs/jaseci/main/scripts/install.sh | bash"
+    echo "    curl -fsSL https://raw.githubusercontent.com/jaseci-labs/jac/main/scripts/install.sh | bash"
     exit 1
 fi
 
+bash "$REPO_ROOT/scripts/stage_compiler.sh" >/dev/null
 echo "==> Done. jac version: $(jac --version | head -1)"

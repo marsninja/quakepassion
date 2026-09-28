@@ -1,4 +1,4 @@
 [submodule "jaseci"]
 	path = jaseci
-	url = https://github.com/jaseci-labs/jaseci.git
+	url = https://github.com/jaseci-labs/jac.git
 	branch = main

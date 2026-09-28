@@ -10,12 +10,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (with reference compiler source)
+      - name: Checkout (with pinned compiler source)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # Released compiler includes the upstream native fixes.
+      # The released binary compiles with the jaseci submodule's pinned
+      # compiler source, which carries upstream fixes not yet released.
       - name: Install Jac binary
         run: |
           mkdir -p "$HOME/.local/bin"
@@ -26,6 +27,9 @@ jobs:
           (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
           install -m 755 "$RUNNER_TEMP/$asset" "$HOME/.local/bin/jac"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Stage pinned compiler source
+        run: bash scripts/stage_compiler.sh >> "$GITHUB_ENV"
 
       - name: Show compiler version
         run: jac --version
