@@ -245,10 +245,14 @@ obj QuakeRenderer {
         return int(gpu.id);
     }
 
-    def draw_sky(eye: Vec3) {
+    """The six-sided sky box around the eye (gl_warp.c R_DrawSkyBox), turned
+    `angle` degrees about `axis` when the level rotates its sky (Q2
+    skyrotate: glRotatef by time times the rate)."""
+    def draw_sky(eye: Vec3, angle: float = 0.0, axis: Vec3 = Vec3()) {
         if len(self.sky) != 6 {
             return;
         }
+        spin = axis.length() > 0.0 and angle != 0.0;
         axes = [
             [3, -1, 2],
             [-3, 1, 2],
@@ -269,14 +273,18 @@ obj QuakeRenderer {
                 t = -1.0 if corner == 0 or corner == 3 else 1.0;
                 base = [s * 512.0, t * 512.0, 512.0];
                 coords: list[float] = [];
-                for axis in axes[side] {
-                    coords.append(base[abs(axis) - 1] * (-1.0 if axis < 0 else 1.0));
+                for component in axes[side] {
+                    coords.append(base[abs(component) - 1] * (-1.0 if component < 0 else 1.0));
+                }
+                point = Vec3(x=coords[0], y=coords[1], z=coords[2]);
+                if spin {
+                    point = sky_turn(point, axis, angle);
                 }
                 rlTexCoord2f(f32((s + 1.0) * 0.5), f32((1.0 - t) * 0.5));
                 rlVertex3f(
-                    f32(eye.x + coords[0]),
-                    f32(eye.y + coords[1]),
-                    f32(eye.z + coords[2])
+                    f32(eye.x + point.x),
+                    f32(eye.y + point.y),
+                    f32(eye.z + point.z)
                 );
             }
             rlEnd();
@@ -1411,7 +1419,7 @@ obj QuakeRenderer {
 
     def draw(level: Level, faces: list[int], eye: Vec3) -> int {
         self.lighting = level.lighting;
-        self.draw_sky(eye);
+        self.draw_sky(eye, level.sky_rotate * self.time, level.sky_axis);
         self.draw_clouds(level, eye);
         if not self.chunks {
             return 0;
@@ -2028,6 +2036,15 @@ obj QuakeRenderer {
         self.rects = [];
         self.atlas = 0;
     }
+}
+
+"""glRotatef's turn of `point` by `degrees` counter-clockwise about `axis`
+(Rodrigues' formula), as R_DrawSkyBox turns a rotating sky."""
+def sky_turn(point: Vec3, axis: Vec3, degrees: float) -> Vec3 {
+    k = axis.normalized();
+    c = math.cos(math.radians(degrees));
+    n = math.sin(math.radians(degrees));
+    return point.scale(c).add(k.cross(point).scale(n)).add(k.scale(k.dot(point) * (1.0 - c)));
 }
 
 """The vertex attributes of a world chunk (world_mesh WORLD_VERTEX_FORMAT) at

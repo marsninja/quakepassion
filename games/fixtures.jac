@@ -16,6 +16,8 @@ import from engine.math.vec3 { Vec3 }
 
 obj FixtureRule {
     has model: str = "",
+        skin: int = 0,
+        effect: str = "",
         group: int = -1,
         frames: list[int] = [],
         rate: float = 10.0,
@@ -109,6 +111,16 @@ def fixture_rule(game: str, kind: str, flags: int) -> FixtureRule | None {
         if kind == "misc_eastertank" {
             return FixtureRule(model="models/monsters/tank/tris.md2", frames=list(range(254, 293)));
         }
+        # SP_misc_teleporter: the pad (dmspot, skin 1), its EF_TELEPORTER
+        # sparkle and amb10 hum. The teleport itself is traversal.jac's.
+        if kind == "misc_teleporter" {
+            return FixtureRule(
+                model="models/objects/dmspot/tris.md2",
+                skin=1,
+                effect="teleporter",
+                sound="sound/world/amb10.wav"
+            );
+        }
     }
     return None;
 }
@@ -125,6 +137,10 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
                 source, fields.get("classname", ""), int(fields.get("spawnflags", "0"))
             );
             if rule is None {
+                continue;
+            }
+            # G_FreeEdict: a teleporter pad without a destination is removed.
+            if rule.effect == "teleporter" and not fields.get("target", "") {
                 continue;
             }
             parts = fields.get("origin", "0 0 0").split();
@@ -147,15 +163,16 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
             }
             key = source + ":" + rule.model;
             if key not in resources {
-                loaded = catalog.model(key);
-                resource = ModelResource(name=key, model=loaded.model, skins=loaded.skins);
+                loaded = catalog.model(key, rule.skin);
+                resource = ModelResource(name=key + ("#" + str(rule.skin) if rule.skin else ""), model=loaded.model, skins=loaded.skins);
                 resources[key] = resource;
                 world +>:HasModelResource:+> resource;
             }
             fixture = Fixture(
                 pos=position,
                 yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
-                frames=rule.frames
+                frames=rule.frames,
+                effect=rule.effect
             );
             kind = fields.get("classname", "");
             if kind in FIXTURE_USES and fields.get("targetname", "") {

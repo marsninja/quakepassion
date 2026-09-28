@@ -1,10 +1,10 @@
 # Combat feedback and movement
 
-The shared combat simulation now emits debris at each hitscan wall impact and blood at each actor intersection. Effects use actual pellet endpoints and wall normals, have a 512-particle world budget, expire within half a second, and never consume weapon randomness or alter damage events. They are cosmetic and are not saved.
+The shared combat simulation emits each game's impact particles at every hitscan wall impact and actor intersection: Q1 `TE_GUNSHOT` and `SpawnBlood` (`R_RunParticleEffect`), Q2 `TE_GUNSHOT` and `TE_BLOOD` (`CL_ParticleEffect`), and a short spray of sparks in Q3 and Passion. Effects use actual pellet endpoints and wall normals, never consume weapon randomness (particles draw on their own `rand()` stream) and never alter damage events. They are cosmetic and are not saved. See "Particles, trails and beams" below.
 
 Supported modeled opponents play one original pain/death frame family. Pain briefly interrupts movement and attacks, with a cooldown to prevent permanent stun. Death holds the last frame; restored dead opponents use that pose. Turning is rate limited, steering includes local spacing, and grounded actors check support ahead. Ranged attack animations stop forward movement; authored melee sequences can charge. First-person weapons have small movement bob and shot recoil.
 
-This is not yet original-game behavioral parity. Remaining work includes frame-timed attacks and each monster's authored movement distances, broader enemy rosters, path navigation and Q3 tactical/item decisions, game-specific impact textures, gibs, and varied pain/death sequences (impact marks, ricochets and monster muzzle flashes are covered below). Local spacing is steering, not full actor collision. Particle gravity does not collide with subsequent surfaces. Blood/debris currently share a compact particle renderer across games.
+This is not yet original-game behavioral parity. Remaining work includes frame-timed attacks and each monster's authored movement distances, broader enemy rosters, path navigation and Q3 tactical/item decisions, game-specific impact textures, gibs, and varied pain/death sequences (impact marks, ricochets and monster muzzle flashes are covered below). Local spacing is steering, not full actor collision. Particles pass through surfaces, as the originals' do: neither `R_DrawParticles` (Q1) nor `CL_AddParticles` (Q2) traces them, and Q3's trails are sprites (bouncing gibs and brass are models, see `gibs.jac`).
 
 Validation entry points: `tests/feedback_tests.jac`, existing combat tests, and native `scripts/feedback_render_smoke.jac` (requires Q1 assets in `~/quake-assets/id1` and an active display).
 
@@ -149,9 +149,16 @@ Surfaces: brush sides keep their texture flags. Sky (Q2/Q3 `SURF_SKY`) and Q3
 vanish without exploding (`G_MissileImpact`, `rocket_touch`); Q3 `SURF_NOMARKS`
 sides take no mark.
 
-Limits: Q3 clips a mark to the faces it covers (`CM_MarkFragments`); here a
-mark whose corners would leave its plane shrinks (up to twice, halving) instead,
-so marks near an edge are smaller rather than clipped. Marks are not saved.
+Each mark is cut to the world faces it covers as `R_MarkFragments` cuts it:
+its square's edge planes projected 20 units along the shot, with planes 32
+beyond and 20 before, clip every face of the leaves the box reaches
+(`BoxSurfaces` walks the BSP graph as `R_BoxSurfaces_r`), planar faces within
+60 degrees of the shot and patch triangles; SURF_NOIMPACT, SURF_NOMARKS and
+fog faces and triangle soups take none. A mark near an edge stops at it, a
+mark in a corner wraps onto both walls, and a mark with nothing behind it is
+not left. The pieces keep the square's texture coordinates and are drawn as
+polygons (`ScenePolygons`, `RE_AddPolyToScene`); the pool holds 256 polygons
+(`MAX_MARK_POLYS`). Marks are not saved.
 
 Validation: `tests/impact_tests.jac`; `scripts/impact_marks_smoke.jac` fires
 every Q3 hitscan and missile weapon at a q3dm1 wall and captures the sparks
@@ -178,16 +185,85 @@ shambler and vore). This replaces the glow monsters used to carry for the whole
 of an attack. Beam attacks (the shambler's lightning, parasite drain) keep their
 beam origins.
 
-Dynamic lights now reach the world in every game. `combat_lights` used to
-return nothing outside Passion (it waited for Passion's light probes), so no
-original map showed a muzzle flash, explosion or missile light; now Q3 feeds
-them to its single-pass world shader, and Q1/Q2 draw the faces within a
-light's reach again, additively, as their texture times the lights at each
-pixel (standing in for `R_AddDynamicLights` adding them to the lightmaps).
-Original-game models are still lit without them.
+Dynamic lights reach the world and models in every game (see "Model
+lighting and dynamic lights" below).
 
 Validation: the muzzle and flash tests in `tests/q2_attack_tests.jac`;
 `scripts/muzzle_flash_smoke.jac` makes an e1m1 grunt and a base1 light
 soldier fire and captures each before and during its flash (inspected: the
 walls and floor around each light up, yellow in Q2). It also checks that
 base1's areas and area portals load with a door holding its portal.
+
+## Model lighting and dynamic lights
+
+Q1 and Q2 models are lit from the lightmaps below them (`R_LightPoint`): a
+`TraceLightPoint` walker runs `RecursiveLightPoint` 2048 units down the BSP
+graph (the same `Split` nodes `Locate` walks) to the first surface whose
+lightmap holds the point, and its sample is summed over the surface's light
+styles, animated by the same `LightStyles` values the world uses (Q1's
+`d_lightstylevalue` is now exact: 22/256 a letter). Traces are cached by
+point. Q1 models then follow `R_AliasSetupLighting`: ambient and shade light
+from that level, dynamic lights adding their radius less their distance to
+the ambient, ambient held to 128 and the pair to 192, never below LIGHT_MIN
+5 (the view model at least 24), shaded from `lightvec` (-1, 0, 0). Palette
+fullbright texels (indices 224-255) stay unlit. Q2 models take the coloured
+light (dynamic lights adding `(intensity - distance) / 256` of their
+colour), RF_MINLIGHT on the view weapon, RF_GLOW's pulse on every item, and
+`shadedots` by yaw in sixteenths of a turn (MH's closed form of
+`anorm_dots.h`). MDL and MD2 frames now carry their `anorms.h` normals. Q1
+brush pickups (health, ammo boxes) are drawn with their own lightmaps baked
+into their skins, as `R_DrawBrushModel` lights them. Q3 models sample the
+light grid at their exact origin, dynamic lights adding directed light as
+`R_SetupEntityLighting` does.
+
+Dynamic lights follow each client (`light_effects.jac`): Q1's are white
+(EF_MUZZLEFLASH 200 + rand&31 with minlight 32, EF_ROCKET 200 on
+missile.mdl and lavaball.mdl, the enforcer laser's EF_DIMLIGHT, the quad's
+and pentagram's EF_DIMLIGHT, TE_EXPLOSION 350 shrinking 300 a second); Q2's
+coloured (muzzle flashes by weapon, EF_ROCKET, EF_BLASTER and
+EF_HYPERBLASTER yellow, EF_BFG's `bfg_lightramp`, explosions 350 times their
+alpha); Q3's the weapon flash colour at 300 + rand&31, the rocket's 200 and
+explosions' 300. The eight nearest the viewer are kept. Q1/Q2 world surfaces
+add them as `R_AddDynamicLights` does: the light's radius less its distance
+from the surface's plane, falling off with the distance across it, cut below
+the minimum light (Q2 `DLIGHT_CUTOFF` 64), on either side of a surface.
+
+Validation: `tests/model_lighting_tests.jac` (the light point trace, Q1 and
+Q2 shading rules, vertex normals, fullbright skins, baked pickups, Q3 grid
+dynamic lights) and the dynamic light cases in `tests/particle_field_tests.jac`.
+
+## Particles, trails and beams
+
+Particles are spawned once and never touched again on the CPU
+(`particle_field.jac`): their motion and colour at any time follow in closed
+form from the originals' per-frame rules, evaluated on the GPU from a ring of
+spawn records (`render/particles.jac`). Q1 kinds (`pt_fire`, `pt_explode`,
+`pt_explode2`, `pt_blob`, `pt_blob2`, `pt_grav`, `pt_slowgrav`,
+`pt_static`) integrate `R_DrawParticles`' steps with their colour ramps and
+are drawn as the software renderer drew them; Q2 particles are
+`CL_AddParticles`' `org + vel t + accel t^2` with fading alpha, drawn as
+ref_gl's round dots.
+
+Trails are laid from where each missile or gib was to where it is now
+(`EmitTrails`): Q1 `R_RocketTrail` by the model's flags (rocket and lavaball
+fire, grenade smoke, gib blood, zombie gibs, wizard and hell knight tracers,
+the vore's trail), Q2 `CL_RocketTrail`, `CL_BlasterTrail` (the blaster only:
+the hyperblaster's bolts are EF_HYPERBLASTER, lit but trailless) and
+`CL_DiminishingTrail` (grenades, gibs), and Q3 smoke puffs every 50 ms
+(`CG_RocketTrail`, `CG_GrenadeTrail`) and gib blood (`CG_BloodTrail`).
+Explosions burst as `R_ParticleExplosion` and `CL_ExplosionParticles`;
+teleports as `R_TeleportSplash` and `CL_TeleportParticles`; missiles strike
+walls with `TE_SPIKE`, `TE_SUPERSPIKE`, `TE_WIZSPIKE`, `TE_KNIGHTSPIKE` and
+`TE_BLASTER`. The Q2 railgun is `CL_RailTrail`'s particles. Q2 teleporter
+pads (`misc_teleporter`) show their dmspot model and EF_TELEPORTER sparkle.
+
+Beams: Q1 lightning is bolt models every 30 units (the player's bolt2.mdl,
+the shambler's bolt.mdl, Chthon's bolt3.mdl), lit where they lie; Q2
+target_laser and the BFG's lasers are `R_DrawBeam`'s six-sided tubes in one
+of their four palette colours each frame; the parasite's drain and the
+medic's cable are `CL_AddBeams`' segment models; Q3's lightning gun is
+`lightningBoltNew` on four crossed quads (`RB_SurfaceLightningBolt`) and its
+rail the `railCore` quad of the default `cg_oldRail` (no spiral rings).
+
+Validation: `tests/particle_field_tests.jac`, `tests/lightfx_render_tests.jac`,
+`tests/feedback_tests.jac` and `tests/impact_tests.jac`.

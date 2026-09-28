@@ -368,6 +368,8 @@ obj Level {
         surface_deforms: dict[int, list[Deform]] = {},
         sky_clouds: list[ModelStage] = [],
         cloud_height: float = 128.0,
+        sky_rotate: float = 0.0,
+        sky_axis: Vec3 = Vec3(),
         portal_ranges: dict[int, float] = {};
 
     def locate(eye: Vec3) -> int {
@@ -616,6 +618,13 @@ def load_level(
             for entity in level.bsp.entities {
                 if entity.fields.get("classname", "") == "worldspawn" {
                     sky_name = entity.fields.get("sky", "unit1_");
+                    # SP_worldspawn CS_SKYROTATE and CS_SKYAXIS: the sky box
+                    # turns `skyrotate` degrees a second about `skyaxis`.
+                    level.sky_rotate = float(entity.fields.get("skyrotate", "0") or "0");
+                    axis = entity.fields.get("skyaxis", "").split();
+                    if len(axis) == 3 {
+                        level.sky_axis = Vec3(x=float(axis[0]), y=float(axis[1]), z=float(axis[2]));
+                    }
                 }
             }
             for suffix in ["rt", "lf", "bk", "ft", "up", "dn"] {
