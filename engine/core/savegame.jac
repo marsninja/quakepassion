@@ -3,7 +3,13 @@ import from .save_format { SNAPSHOT_HEADER }
 import from engine.world.gibs { Gib, HasGib }
 import from engine.world.patrols { Patrols, Holds }
 import from engine.world.gates { ApplyGates }
-import from engine.world.chthon { LightningEvent, HasLightning, boss_pose }
+import from engine.world.chthon {
+    LightningEvent,
+    HasLightning,
+    boss_pose,
+    BOSS_DORMANT,
+    BOSS_GONE
+}
 import from engine.world.trains {
     Train,
     HasTrain,
@@ -998,7 +1004,8 @@ def restore(
                 enemy.visual.blend = 0.0;
             }
             if enemy.rule.script == "chthon" {
-                enemy.visual.visible = enemy.boss_phase > 0 and enemy.boss_phase < 7;
+                enemy.visual.visible = enemy.boss_phase != BOSS_DORMANT
+                    and enemy.boss_phase != BOSS_GONE;
                 boss_pose(enemy);
             }
         } elif words[0] == "P" and p < len(pickups) {

@@ -4254,7 +4254,11 @@ walker CombatTick {
                 and here.arena_goal is None
                 and patrol is None
                 and len(here.route) <= 1;
-            stop = here.rule.stop_range if closing else 12.0;
+            # A route waypoint is walked right up to until it counts as
+            # reached; a stride has no coast to carry it the last few units.
+            stop = here.rule.stop_range
+                if closing
+                else (0.0 if here.route else 12.0);
             # ai_run_slide: circle the target instead of standing still, both
             # when sliding and, for every monster, once it has closed in.
             circling = closing

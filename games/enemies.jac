@@ -65,8 +65,21 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
     }
     if game == "q1" {
         if kind == "monster_boss" {
+            # boss.qc: a 256-wide box from 24 below its origin to 256 above;
+            # boss_awake sets its health (1 on Easy, else 3).
             return OpponentRule(
-                model="progs/boss.mdl", script="chthon", health=3, speed=0.0
+                model="progs/boss.mdl",
+                script="chthon",
+                health=3,
+                speed=0.0,
+                width=128.0,
+                hull_bottom=-24.0,
+                hull_top=256.0,
+                sight_sound="sound/boss1/sight1.wav",
+                pain_sounds=["sound/boss1/pain.wav"],
+                death_sound="sound/boss1/death.wav",
+                attack_sound="sound/boss1/throw.wav",
+                sounds=["sound/boss1/out1.wav"]
             );
         }
         if kind == "monster_hell_knight" {

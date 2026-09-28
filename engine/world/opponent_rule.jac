@@ -217,6 +217,8 @@ obj OpponentRule {
         crouch_muzzles: list[Vec3] = [],
         flash: Vec3 = Vec3(),
         attacks: list[AttackProfile] = [];
+    # Further sounds a scripted encounter plays by path (Chthon's out1.wav).
+    has sounds: list[str] = [];
 }
 
 # Definitions written against the single ranged/melee/alternate layout are

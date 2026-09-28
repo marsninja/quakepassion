@@ -286,6 +286,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 register_speaker(world, enemy, pain_sound);
             }
             register_speaker(world, enemy, rule.death_sound);
+            for scripted in rule.sounds {
+                register_speaker(world, enemy, scripted);
+            }
             # Idle mutterings carry only a short way (ATTN_IDLE).
             idle = register_speaker(world, enemy, rule.idle_sound);
             if idle is not None {
