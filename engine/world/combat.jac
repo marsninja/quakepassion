@@ -31,7 +31,7 @@ import from .signals { Signal, HasSignal, Fire }
 import from .pickups { Pickup }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace }
-import from ..physics.movement { MovePlayer, step_slide, slide }
+import from ..physics.movement { MovePlayer, MovementProfile, movement_profile, step_slide, slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 
 edge HasOpponent: World --> Opponent {}
@@ -3379,6 +3379,10 @@ walker CombatTick {
         navmesh: NavMesh | None = None,
         neighbors: dict[str, list[Opponent]] = {},
         decisions: int = 0;
+    # Monsters walk by the shared rules; Q3 bots are players and move by
+    # bg_pmove.c's.
+    has walk_profile: MovementProfile = MovementProfile(),
+        bot_profile: MovementProfile = movement_profile("q3");
 
     def cell(x: int, y: int) -> str { return str(x) + ":" + str(y); }
 
@@ -3709,8 +3713,14 @@ walker CombatTick {
                 here.visual.blend = here.animation_time
                     - float(int(here.animation_time));
             }
-            if here.rule.movement == "fly" and not here.grounded {
-                here spawn MovePlayer(collision=body_collision, wish=Vec3(), dt=self.dt);
+            # A dead player keeps falling (its pmove runs on); so do fliers.
+            if (here.rule.movement == "fly" or here.arena) and not here.grounded {
+                here spawn MovePlayer(
+                    collision=body_collision,
+                    wish=Vec3(),
+                    dt=self.dt,
+                    profile=self.bot_profile if here.arena else self.walk_profile
+                );
             }
             # BossExplode: a settled Q2 boss wreck blows apart.
             if here.rule.explodes
@@ -4336,7 +4346,8 @@ walker CombatTick {
                         collision=body_collision,
                         wish=wish,
                         dt=self.dt,
-                        steady=strolling
+                        steady=strolling,
+                        profile=self.bot_profile if here.character is not None else self.walk_profile
                     );
                     here.support_wait = 0.05;
                     # A move that went nowhere settles the actor (on the ground,

@@ -40,6 +40,7 @@ import from .triggers { load_triggers, load_monster_jumps }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
 import from .fixtures { load_fixture_uses }
+import from .body_queue { load_no_drop }
 import from .liquids {
     LiquidSpace, SampleLiquid, LiquidSample, Immersion, liquid_kind, load_liquids
 }
@@ -491,6 +492,7 @@ def prepare_level(world: World, level: Level) {
         }
     }
     level.liquids = load_liquids(level.bsp);
+    load_no_drop(world, level.bsp);
     load_gates(world, level.bsp, level.collision);
     load_pickup_signals(world, level.bsp);
     load_opponent_signals(world, level.bsp);
