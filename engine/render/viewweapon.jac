@@ -251,7 +251,7 @@ obj ViewWeapon {
         rlSetMatrixProjection(weapon_projection);
         # Lit where the player's view is (the gun entity's origin), as a view
         # weapon: Q1 at least 24, Q2 and Q3 RF_MINLIGHT.
-        illumination = lighting.light_model(player.pos, math.degrees(player.yaw), MODEL_LIGHT_VIEW, seconds);
+        illumination = lighting.light_model(player.pos, math.degrees(player.yaw), MODEL_LIGHT_VIEW);
         # One model pass for the gun, its barrel and flash, under this projection.
         open_model_pass();
         try {

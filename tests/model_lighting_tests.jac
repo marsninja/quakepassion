@@ -17,6 +17,7 @@ import from engine.world.lighting {
 import from engine.world.level { Split, BspArea, Front, Back, BspLightPoint }
 import from engine.formats.bsp { Bsp, Face, TexInfo }
 import from engine.formats.anorms { quake_vertex_normal }
+import from engine.formats.animated { frame_normals }
 import from engine.formats.q1.model { parse_mdl }
 import from engine.formats.q2.model { parse_md2 }
 import from engine.formats.q1.item_model { item_light_at }
@@ -85,6 +86,8 @@ test "Q1 models take R_AliasSetupLighting's clamped ambient and shade light" {
     bright = lighting.light_model(Vec3(x=5.0, y=40.0 - 8.0, z=30.0));
     assert abs(bright.ambient.x - 128.0 * scale) < 0.00001;
     assert abs(bright.directed.x - 64.0 * scale) < 0.00001;
+    # Model light is held while the styles and dynamic lights stand.
+    assert lighting.light_model(Vec3(x=5.0, y=40.0 - 8.0, z=30.0)) is bright;
     # Dark: never below LIGHT_MIN, but the gun is lit at least 24.
     lighting.styles = {0: 0.0, 2: 0.0};
     dark = lighting.light_model(Vec3(x=5.0, y=5.0, z=30.0));
@@ -128,8 +131,10 @@ test "Q2 models take coloured light, render flags and shadedots by yaw" {
     # RF_GLOW: 0.1 sin(7t), never below 80%.
     lighting.styles = {0: 0.0, 2: 1.0};
     base = lighting.light_model(at).ambient.x / 2.0;
-    peak = lighting.light_model(at, 0.0, MODEL_LIGHT_GLOW, math.pi / 14.0).ambient.x / 2.0;
-    trough = lighting.light_model(at, 0.0, MODEL_LIGHT_GLOW, 3.0 * math.pi / 14.0).ambient.x / 2.0;
+    glowing = lighting.light_model(at, 0.0, MODEL_LIGHT_GLOW);
+    assert glowing.glow and not lighting.light_model(at).glow;
+    peak = glowing.at(math.pi / 14.0).ambient.x / 2.0;
+    trough = glowing.at(3.0 * math.pi / 14.0).ambient.x / 2.0;
     assert abs(peak - (base + 0.1)) < 0.00001 and abs(trough - max(base * 0.8, base - 0.1)) < 0.00001;
     # A dynamic light adds (intensity - distance) / 256 of its colour.
     lighting.dynamic = [FlashLight(origin=at.add(Vec3(z=72.0)), color=Vec3(x=1.0), radius=200.0)];
@@ -166,7 +171,7 @@ test "MDL and MD2 frames carry their anorms vertex normals" {
     frame = struct.pack("<i", 0) + bytes(8) + b"idle" + bytes(12) + bytes([0, 0, 0, 5, 2, 0, 0, 161, 0, 2, 0, 6]);
     palette = bytes([(i * 3 + c) % 256 for i in range(256) for c in range(3)]);
     model = parse_mdl(header + skins + coords + triangle + frame, palette);
-    normals = model.surfaces[0].frames[0].normals;
+    normals = frame_normals(model.surfaces[0].frames[0]);
     assert len(normals) == 3 and normals[0].x == quake_vertex_normal(5).x and normals[1].z == quake_vertex_normal(161).z;
     assert abs(normals[2].length() - 1.0) < 0.001;
     # The colormap leaves indices 224-255 unlit: alpha 0 marks them.
@@ -178,9 +183,11 @@ test "MDL and MD2 frames carry their anorms vertex normals" {
         + struct.pack("<6f", 1.0, 1.0, 1.0, 0.0, 0.0, 0.0) + b"first" + bytes(11)
         + bytes([0, 0, 0, 9, 2, 0, 0, 20, 0, 2, 0, 200]);
     frames = parse_md2(md2).surfaces[0].frames;
-    assert frames[0].normals[0].y == quake_vertex_normal(9).y and frames[0].normals[1].x == quake_vertex_normal(20).x;
+    assert frames[0].normal_indices == bytes([9, 20, 200]) and not frames[0].normals;
+    md2_normals = frame_normals(frames[0]);
+    assert md2_normals[0].y == quake_vertex_normal(9).y and md2_normals[1].x == quake_vertex_normal(20).x;
     # Past the table (corrupt files) there is no normal.
-    assert frames[0].normals[2].length() == 0.0;
+    assert md2_normals[2].length() == 0.0;
 }
 
 test "Q1 brush pickups bake their own lightmaps between samples" {

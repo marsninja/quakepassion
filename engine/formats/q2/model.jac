@@ -8,7 +8,6 @@ import from ..animated {
 }
 import from ..bsp { Texture, require_range, i32_at, u16_at, s16_at, vec_at }
 import from ...math.vec3 { Vec3 }
-import from ..anorms { quake_vertex_normal }
 
 
 def parse_md2(data: bytes) -> AnimatedModel {
@@ -72,6 +71,7 @@ def parse_md2(data: bytes) -> AnimatedModel {
         scale = vec_at(body, p);
         origin = vec_at(body, p + 12);
         frame = AnimationFrame(name=model_name(body, p + 24, 16));
+        normals = bytearray(vertices);
         for j in range(vertices) {
             v = p + 40 + j * 4;
             frame.vertices.append(
@@ -81,8 +81,9 @@ def parse_md2(data: bytes) -> AnimatedModel {
                     z=float(body[v + 2]) * scale.z + origin.z
                 )
             );
-            frame.normals.append(quake_vertex_normal(int(body[v + 3])));
+            normals[j] = body[v + 3];
         }
+        frame.normal_indices = bytes(normals);
         surface.frames.append(frame);
     }
     return AnimatedModel(surfaces=[surface]);

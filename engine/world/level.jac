@@ -751,6 +751,7 @@ def prepare_level(world: World, level: Level) {
         );
         if styles is not None {
             level.lighting.styles = styles.values;
+            level.lighting.style_source = styles;
         }
     }
     load_clocks(world, level.bsp);

@@ -248,5 +248,9 @@ def combat_lights(
         order = sorted([(lights[i].origin.sub(player.pos).length() - lights[i].radius, i) for i in range(len(lights))]);
         lights = [lights[ranked[1]] for ranked in order[:DYNAMIC_LIGHT_LIMIT]];
     }
-    lighting.dynamic = lights;
+    # With no lights, keep the same empty list: models keep the light they
+    # were given (Lighting.light_model holds it while the lights stand).
+    if lights or lighting.dynamic {
+        lighting.dynamic = lights;
+    }
 }

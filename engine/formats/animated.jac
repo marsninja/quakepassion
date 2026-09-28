@@ -2,6 +2,7 @@
 import math;
 import from ..math.vec3 { Vec3 }
 import from .bsp { Texture, require_range }
+import from .anorms { quake_vertex_normal }
 
 obj AnimationGroup {
     has first: int,
@@ -19,10 +20,22 @@ obj TagFrame {
     has tags: list[ModelTag] = [];
 }
 
+"""One keyframe: its vertices and their normals, either as vectors (MD3) or
+as Q1/Q2 lightnormalindex bytes into anorms.h (`normal_indices`), kept as
+bytes so a model's thousands of frames hold no normal objects."""
 obj AnimationFrame {
     has name: str = "",
         vertices: list[Vec3] = [],
-        normals: list[Vec3] = [];
+        normals: list[Vec3] = [],
+        normal_indices: bytes = b"";
+}
+
+"""A frame's vertex normals, whichever way the file gave them."""
+def frame_normals(frame: AnimationFrame) -> list[Vec3] {
+    if frame.normals or not frame.normal_indices {
+        return frame.normals;
+    }
+    return [quake_vertex_normal(int(index)) for index in frame.normal_indices];
 }
 
 """A Q3 shader wave (tr_shader.c ParseWaveForm): func(phase + time * freq)

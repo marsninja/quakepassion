@@ -14,7 +14,8 @@ import math;
 import os;
 import struct;
 import from ..math.orientation { Basis, model_basis }
-import from ..formats.animated { AnimatedModel, ModelStage, pose, stage_frame }
+import from ..formats.animated { AnimatedModel, ModelStage, pose, stage_frame, frame_normals }
+import from ..formats.anorms { quake_vertex_normal }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..world.lighting { Lighting, Illumination }
@@ -68,9 +69,10 @@ glob MODEL_NORMAL_STEPS: int = 4095;
 (position, and the normal when the format has one), pushes a shell out along
 the normal and places the result with the model's axes. u_draw: [0..2] the
 forward/left/up axes with the origin in w, [3] frame A, frame B, blend,
-inflate, [4] ambient, [5] directed and opacity, [6] light direction (in
-world space) and the share of directed light on faces turned away, [7] the
-eye in model space. u_stage: environment mapping, the colour mode (0 white
+inflate, [4] ambient and whether it glows (Q2 RF_GLOW, lighting.jac
+glow_pulse, directed light following ambient), [5] directed and opacity,
+[6] light direction (in world space) and the share of directed light on
+faces turned away, [7] the eye in model space and the time. u_stage: environment mapping, the colour mode (0 white
 with opacity, 1 lit, 2 fog), whether the skin's alpha marks fullbright
 texels (Q1) rather than opacity, and the number of texture steps. The steps
 are the stage's tcMods at this time folded by quake.jac tcmod_steps: each an
@@ -99,7 +101,9 @@ glob MODEL_VERTEX_SHADER: str = "#version 330\nin vec4 corner;\n"
     + " if(u_stage.y>1.5){ float t=31.0/32.0; if(u_fog[2].y>0.5){ float depth=dot(u_fog[1].xyz,world)+u_fog[1].w; float eyeT=u_fog[2].x;\n"
     + "   if(eyeT<0.0){ t=depth<1.0?1.0/32.0:1.0/32.0+30.0/32.0*depth/(depth-eyeT); } else { t=depth<0.0?1.0/32.0:31.0/32.0; } }\n"
     + "   uv=vec2(dot(u_fog[0].xyz,world)+u_fog[0].w,t); tint=u_fog[3]; }\n"
-    + " else if(u_stage.y>0.5){ float d=shaded?dot(axes*n,u_draw[6].xyz):0.5; if(d<0.0) d*=u_draw[6].w; vec3 c=u_draw[4].xyz+u_draw[5].xyz*d; tint=vec4(clamp(c,0.0,1.0),u_draw[5].w); }\n"
+    + " else if(u_stage.y>0.5){ float d=shaded?dot(axes*n,u_draw[6].xyz):0.5; if(d<0.0) d*=u_draw[6].w; vec3 amb=u_draw[4].xyz; vec3 dir=u_draw[5].xyz;\n"
+    + "  if(u_draw[4].w>0.5){ amb=max(amb*0.8,amb+0.2*sin(u_draw[7].w*7.0)); dir=amb; }\n"
+    + "  vec3 c=amb+dir*d; tint=vec4(clamp(c,0.0,1.0),u_draw[5].w); }\n"
     + "}\n",
      MODEL_FRAGMENT_SHADER: str = "#version 330\nin vec2 uv; in vec4 tint; uniform sampler2D skin; uniform vec4 u_stage; out vec4 finalColor;\n"
     + "void main(){ vec4 t=texture(skin,uv); finalColor=u_stage.z>0.5?vec4(mix(t.rgb,t.rgb*tint.rgb,t.a),tint.a):t*tint; }\n";
@@ -268,6 +272,8 @@ def pack_model_keyframes(model: AnimatedModel) -> ModelKeyframes {
     result.width = min(total, MODEL_FRAME_ROW);
     result.height = (total + result.width - 1) // result.width;
     out = bytearray(result.width * result.height * 16);
+    # The packed code of each anorms.h normal, for frames that index them.
+    quake_codes = [model_normal_code(quake_vertex_normal(i)) for i in range(162)];
     for s in range(len(model.surfaces)) {
         surface = model.surfaces[s];
         count = result.vertices[s];
@@ -278,12 +284,17 @@ def pack_model_keyframes(model: AnimatedModel) -> ModelKeyframes {
             }
             normals = frame.normals;
             shaded = len(normals) == count;
+            indexed = not shaded and len(frame.normal_indices) == count;
             for i in range(count) {
                 v = frame.vertices[i];
-                struct.pack_into(
-                    "<ffff", out, offset, v.x, v.y, v.z,
-                    model_normal_code(normals[i]) if shaded else -1.0
-                );
+                code = -1.0;
+                if shaded {
+                    code = model_normal_code(normals[i]);
+                } elif indexed {
+                    index = int(frame.normal_indices[i]);
+                    code = quake_codes[index] if index < 162 else -1.0;
+                }
+                struct.pack_into("<ffff", out, offset, v.x, v.y, v.z, code);
                 offset += 16;
             }
         }
@@ -518,15 +529,26 @@ obj ModelRenderer {
             "<ffff", params, 48, float(first), float(second), max(0.0, min(1.0, blend)), inflate
         );
         light = illumination.ambient;
-        struct.pack_into("<ffff", params, 64, light.x, light.y, light.z, 0.0);
+        struct.pack_into("<ffff", params, 64, light.x, light.y, light.z, 1.0 if illumination.glow else 0.0);
         light = illumination.directed;
         struct.pack_into(
             "<ffff", params, 80, light.x, light.y, light.z,
             float(int(max(0.0, min(1.0, alpha)) * 255.0)) / 255.0
         );
-        light = axes.apply(illumination.direction) if illumination.model_space else illumination.direction;
-        struct.pack_into("<ffff", params, 96, light.x, light.y, light.z, illumination.rear);
-        struct.pack_into("<ffff", params, 112, local_eye.x, local_eye.y, local_eye.z, 0.0);
+        # A model-space direction (Q2's shade vector) turns with the model.
+        light = illumination.direction;
+        if illumination.model_space {
+            struct.pack_into(
+                "<ffff", params, 96,
+                axes.forward.x * light.x + axes.left.x * light.y + axes.up.x * light.z,
+                axes.forward.y * light.x + axes.left.y * light.y + axes.up.y * light.z,
+                axes.forward.z * light.x + axes.left.z * light.y + axes.up.z * light.z,
+                illumination.rear
+            );
+        } else {
+            struct.pack_into("<ffff", params, 96, light.x, light.y, light.z, illumination.rear);
+        }
+        struct.pack_into("<ffff", params, 112, local_eye.x, local_eye.y, local_eye.z, seconds);
         program = gpu.program;
         program.set_vec4s("u_draw", bytes(params));
         rlActiveTextureSlot(i32(1));
@@ -643,6 +665,7 @@ obj ModelRenderer {
         if not self.stages {
             return;
         }
+        illumination = illumination.at(seconds);
         # A fading model (Q2 RF_TRANSLUCENT explosions) blends its opaque skins.
         fading = alpha < 0.999;
         opacity = u8(int(max(0.0, min(1.0, alpha)) * 255.0));
@@ -689,8 +712,8 @@ obj ModelRenderer {
             surface = self.model.surfaces[s];
             vertices = pose(surface, first, second, blend);
             if inflate != 0.0 {
-                a = surface.frames[first].normals;
-                b = surface.frames[second].normals;
+                a = frame_normals(surface.frames[first]);
+                b = frame_normals(surface.frames[second]);
                 if len(a) == len(vertices) and len(b) == len(vertices) {
                     fraction = max(0.0, min(1.0, blend));
                     vertices = [
@@ -701,8 +724,8 @@ obj ModelRenderer {
             }
             colors: list[Vec3] = [];
             if illumination.enabled {
-                normals = surface.frames[first].normals;
-                next_normals = surface.frames[second].normals;
+                normals = frame_normals(surface.frames[first]);
+                next_normals = frame_normals(surface.frames[second]);
                 for vertex in range(len(vertices)) {
                     color = illumination.ambient.add(illumination.directed.scale(0.5));
                     if len(normals) == len(vertices)
@@ -773,8 +796,8 @@ obj ModelRenderer {
                         t = surface.uv[index * 2 + 1];
                         if stage.environment {
                             vertex = surface.indices[index];
-                            a = surface.frames[first].normals;
-                            b = surface.frames[second].normals;
+                            a = frame_normals(surface.frames[first]);
+                            b = frame_normals(surface.frames[second]);
                             if len(a) != len(vertices) or len(b) != len(vertices) {
                                 raise ValueError(
                                     "Environment mapping needs model normals"
@@ -967,10 +990,10 @@ obj ModelScene {
                 if renderer.model.baked_light {
                     illumination = Illumination();
                 } elif lit_from is None {
-                    illumination = lighting.light_model(draw.origin, math.degrees(draw.yaw), draw.light_flags, seconds);
+                    illumination = lighting.light_model(draw.origin, math.degrees(draw.yaw), draw.light_flags);
                 } elif lit_from is not shared_origin {
                     shared_origin = lit_from;
-                    shared_light = lighting.light_model(lit_from, math.degrees(draw.yaw), draw.light_flags, seconds);
+                    shared_light = lighting.light_model(lit_from, math.degrees(draw.yaw), draw.light_flags);
                     illumination = shared_light;
                 }
                 overlay: ModelRenderer | None = None;

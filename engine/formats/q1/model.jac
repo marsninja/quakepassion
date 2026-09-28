@@ -9,7 +9,6 @@ import from ..animated {
 }
 import from ..bsp { Texture, require_range, i32_at, f32_at, vec_at }
 import from ...math.vec3 { Vec3 }
-import from ..anorms { quake_vertex_normal }
 
 
 def intervals(data: bytes, offset: int, count: int) -> list[float] {
@@ -125,6 +124,7 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
             require_range(data, p, 24 + vertices * 4);
             frame = AnimationFrame(name=model_name(data, p + 8, 16));
             p += 24;
+            normals = bytearray(vertices);
             for j in range(vertices) {
                 frame.vertices.append(
                     Vec3(
@@ -133,9 +133,10 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
                         z=float(data[p + 2]) * scale.z + origin.z
                     )
                 );
-                frame.normals.append(quake_vertex_normal(int(data[p + 3])));
+                normals[j] = data[p + 3];
                 p += 4;
             }
+            frame.normal_indices = bytes(normals);
             surface.frames.append(frame);
         }
         surface.frame_groups.append(group);

@@ -3,6 +3,7 @@ import math;
 import from ..math.vec3 { Vec3 }
 import from ..physics.collision { CollisionMap }
 import from ..formats.bsp { Face }
+import from .lightstyles { LightStyles }
 
 node LightRig {}
 node Lamp {
@@ -27,7 +28,21 @@ obj Illumination {
         directed: Vec3 = Vec3(),
         direction: Vec3 = Vec3(z=1.0),
         rear: float = 0.0,
-        model_space: bool = False;
+        model_space: bool = False,
+        glow: bool = False;
+
+    """The light at `seconds`: RF_GLOW's pulse (`glow_pulse`) applied to a
+    glowing model's light, which the model shader otherwise applies."""
+    def at(seconds: float) -> Illumination {
+        if not self.glow {
+            return self;
+        }
+        light = glow_pulse(self.ambient, seconds);
+        return Illumination(
+            enabled=self.enabled, ambient=light, directed=light, direction=self.direction,
+            rear=self.rear, model_space=self.model_space
+        );
+    }
 
     """The light on a vertex whose normal (in the direction's space) is
     `normal`."""
@@ -37,6 +52,18 @@ obj Illumination {
             self.directed.scale(facing if facing >= 0.0 else facing * self.rear)
         );
     }
+}
+
+"""Q2 RF_GLOW (gl_mesh.c R_DrawAliasModel): bonus items pulse by 0.1 sin(7t)
+of full light, never below 80% of their own; `light` is in the renderer's
+doubled scale. The model shader applies the same pulse."""
+def glow_pulse(light: Vec3, seconds: float) -> Vec3 {
+    pulse = 0.2 * math.sin(seconds * 7.0);
+    return Vec3(
+        x=max(light.x * 0.8, light.x + pulse),
+        y=max(light.y * 0.8, light.y + pulse),
+        z=max(light.z * 0.8, light.z + pulse)
+    );
 }
 
 """Render flags that change how a model takes light: the view weapon (Q1
@@ -347,7 +374,16 @@ obj Lighting {
         grid: LightGrid | None = None,
         game: str = "",
         point: LightPointSource | None = None,
-        styles: dict[int, float] = {};
+        styles: dict[int, float] = {},
+        style_source: LightStyles | None = None;
+    # Q1/Q2 model light, kept by point, flags and shade row while the light
+    # styles, their values and the dynamic lights stay the same: most models
+    # rest where they stand, and building light every frame for each would
+    # make garbage for every draw.
+    has held: dict[tuple[float, float, float, int, int], Illumination] = {},
+        held_serial: int = -1,
+        held_styles: dict[int, float] | None = None,
+        held_dynamic: list[FlashLight] | None = None;
 
     def region_at(point: Vec3) -> int {
         if not self.lookup {
@@ -405,15 +441,31 @@ obj Lighting {
     }
 
     """How a model at `origin` is lit, turned `yaw` degrees, with MODEL_LIGHT
-    `flags`, at `seconds`: Q1 and Q2 from the lightmaps below it, Q3 from
-    its light grid, Passion from its probes (16 units up)."""
-    def light_model(origin: Vec3, yaw: float = 0.0, flags: int = 0, seconds: float = 0.0) -> Illumination {
+    `flags`: Q1 and Q2 from the lightmaps below it, Q3 from its light grid,
+    Passion from its probes (16 units up)."""
+    def light_model(origin: Vec3, yaw: float = 0.0, flags: int = 0) -> Illumination {
         source = self.point;
         if source is not None {
-            if self.game == "q1" {
-                return self.quake_model_light(source, origin, flags);
+            clock = self.style_source;
+            serial = clock.serial if clock is not None else -1;
+            if serial != self.held_serial or self.styles is not self.held_styles or self.dynamic is not self.held_dynamic {
+                self.held = {};
+                self.held_serial = serial;
+                self.held_styles = self.styles;
+                self.held_dynamic = self.dynamic;
+            } elif len(self.held) >= 4096 {
+                self.held = {};
             }
-            return self.quake2_model_light(source, origin, yaw, flags, seconds);
+            quake = self.game == "q1";
+            # (int)(angles[1] * SHADEDOT_QUANT / 360) & (SHADEDOT_QUANT - 1).
+            row = 0 if quake else int(yaw * 16.0 / 360.0) & 15;
+            key = (origin.x, origin.y, origin.z, flags, row);
+            found = self.held.get(key, None);
+            if found is None {
+                found = self.quake_model_light(source, origin, flags) if quake else self.quake2_model_light(source, origin, row, flags);
+                self.held[key] = found;
+            }
+            return found;
         }
         result = self.sample(origin if self.grid is not None else origin.add(Vec3(z=16.0)));
         if flags & MODEL_LIGHT_VIEW != 0 and result.enabled {
@@ -467,12 +519,11 @@ obj Lighting {
     """Q2 (ref_gl gl_mesh.c R_DrawAliasModel, gl_light.c R_LightPoint): the
     coloured lightmap light below (gl_modulate 1), plus each dynamic light's
     intensity less its distance, over 256, in its colour; RF_FULLBRIGHT is
-    full light, RF_MINLIGHT keeps at least 0.1, RF_GLOW pulses by 0.1 at 7
-    radians a second (never below 80%). Vertices take that light times
-    shadedots: the table row for the yaw in sixteenths of a turn, as the
-    normal faces its shade vector. Light is doubled to the renderer's scale
-    as the lightmaps are."""
-    def quake2_model_light(source: LightPointSource, origin: Vec3, yaw: float, flags: int, seconds: float) -> Illumination {
+    full light, RF_MINLIGHT keeps at least 0.1, RF_GLOW pulses (`glow`, see
+    glow_pulse). Vertices take that light times shadedots: table `row` for
+    the yaw in sixteenths of a turn, as the normal faces its shade vector.
+    Light is doubled to the renderer's scale as the lightmaps are."""
+    def quake2_model_light(source: LightPointSource, origin: Vec3, row: int, flags: int) -> Illumination {
         color = Vec3(x=1.0, y=1.0, z=1.0);
         if flags & MODEL_LIGHT_FULLBRIGHT == 0 and source.lightmaps {
             light = source.light(origin, self.styles);
@@ -488,16 +539,6 @@ obj Lighting {
             and color.x <= 0.1 and color.y <= 0.1 and color.z <= 0.1 {
             color = Vec3(x=0.1, y=0.1, z=0.1);
         }
-        if flags & MODEL_LIGHT_GLOW != 0 {
-            pulse = 0.1 * math.sin(seconds * 7.0);
-            color = Vec3(
-                x=max(color.x * 0.8, color.x + pulse),
-                y=max(color.y * 0.8, color.y + pulse),
-                z=max(color.z * 0.8, color.z + pulse)
-            );
-        }
-        # (int)(angles[1] * SHADEDOT_QUANT / 360) & (SHADEDOT_QUANT - 1).
-        row = int(yaw * 16.0 / 360.0) & 15;
         turn = float(row) / 16.0 * 2.0 * math.pi;
         light = color.scale(2.0);
         return Illumination(
@@ -506,7 +547,8 @@ obj Lighting {
             directed=light,
             direction=Vec3(x=math.cos(-turn), y=math.sin(-turn), z=1.0).normalized(),
             rear=QUAKE2_SHADE_REAR,
-            model_space=True
+            model_space=True,
+            glow=flags & MODEL_LIGHT_GLOW != 0
         );
     }
 }
