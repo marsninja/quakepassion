@@ -8,7 +8,7 @@ import from engine.world.combat {
 }
 import from engine.world.world { World, Player }
 import from engine.physics.collision { CollisionMap }
-import from engine.physics.movement { SetStance }
+import from engine.physics.movement { SetStance, movement_profile }
 import from engine.math.vec3 { Vec3 }
 import from tests.door_support { DoorFixture }
 import from engine.world.doors { Door, HasDoor }
@@ -27,7 +27,7 @@ test "player crouching does not move a grounded enemy vertically" {
     world = World();
     world +>:HasOpponent:+> enemy;
     state = CombatState();
-    player spawn SetStance(collision=collision, game="q2", crouch=True, dt=0.01);
+    player spawn SetStance(collision=collision, profile=movement_profile("q2"), crouch=True, dt=0.01);
     assert collision.eye_height == -2.0;
     for i in range(120) {
         world spawn CombatTick(
