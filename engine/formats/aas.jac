@@ -5,7 +5,8 @@ import from .bsp { i32_at, u16_at, f32_at, vec_at, require_range }
 import from ..math.vec3 { Vec3 }
 
 # botlib aasfile.h travel types.
-glob TRAVEL_WALK: int = 2,
+glob TRAVEL_INVALID: int = 1,
+    TRAVEL_WALK: int = 2,
     TRAVEL_CROUCH: int = 3,
     TRAVEL_BARRIERJUMP: int = 4,
     TRAVEL_JUMP: int = 5,
@@ -16,12 +17,112 @@ glob TRAVEL_WALK: int = 2,
     TRAVEL_TELEPORT: int = 10,
     TRAVEL_ELEVATOR: int = 11,
     TRAVEL_ROCKETJUMP: int = 12,
+    TRAVEL_BFGJUMP: int = 13,
+    TRAVEL_GRAPPLEHOOK: int = 14,
+    TRAVEL_DOUBLEJUMP: int = 15,
+    TRAVEL_RAMPJUMP: int = 16,
+    TRAVEL_STRAFEJUMP: int = 17,
     TRAVEL_JUMPPAD: int = 18,
     TRAVEL_FUNCBOB: int = 19;
 
+# be_aas.h travel flags: which travel types and area contents a route may use.
+glob TFL_INVALID: int = 1,
+    TFL_WALK: int = 2,
+    TFL_CROUCH: int = 4,
+    TFL_BARRIERJUMP: int = 8,
+    TFL_JUMP: int = 16,
+    TFL_LADDER: int = 32,
+    TFL_WALKOFFLEDGE: int = 128,
+    TFL_SWIM: int = 256,
+    TFL_WATERJUMP: int = 512,
+    TFL_TELEPORT: int = 1024,
+    TFL_ELEVATOR: int = 2048,
+    TFL_ROCKETJUMP: int = 4096,
+    TFL_BFGJUMP: int = 8192,
+    TFL_GRAPPLEHOOK: int = 16384,
+    TFL_DOUBLEJUMP: int = 32768,
+    TFL_RAMPJUMP: int = 65536,
+    TFL_STRAFEJUMP: int = 131072,
+    TFL_JUMPPAD: int = 262144,
+    TFL_AIR: int = 524288,
+    TFL_WATER: int = 1048576,
+    TFL_SLIME: int = 2097152,
+    TFL_LAVA: int = 4194304,
+    TFL_DONOTENTER: int = 8388608,
+    TFL_FUNCBOB: int = 16777216;
+
+# be_aas.h TFL_DEFAULT: everything but rocket, BFG and weapon-assisted jumps,
+# the grapple, lava, slime and do-not-enter areas.
+glob TFL_DEFAULT: int = TFL_WALK
+    | TFL_CROUCH
+    | TFL_BARRIERJUMP
+    | TFL_JUMP
+    | TFL_LADDER
+    | TFL_WALKOFFLEDGE
+    | TFL_SWIM
+    | TFL_WATERJUMP
+    | TFL_TELEPORT
+    | TFL_ELEVATOR
+    | TFL_AIR
+    | TFL_WATER
+    | TFL_JUMPPAD
+    | TFL_FUNCBOB;
+
+# aasfile.h area contents.
+glob AREACONTENTS_WATER: int = 1,
+    AREACONTENTS_LAVA: int = 2,
+    AREACONTENTS_SLIME: int = 4,
+    AREACONTENTS_DONOTENTER: int = 256,
+    AREACONTENTS_MOVER: int = 1024;
+
 # aasfile.h area flags.
 glob AREA_GROUNDED: int = 1,
+    AREA_LADDER: int = 2,
+    AREA_LIQUID: int = 4,
     AREA_DISABLED: int = 8;
+
+"""be_aas_route.c AAS_TravelFlagForType: the travel flag a travel type needs."""
+def travel_flag_for_type(kind: int) -> int {
+    flags: dict[int, int] = {
+        TRAVEL_INVALID: TFL_INVALID,
+        TRAVEL_WALK: TFL_WALK,
+        TRAVEL_CROUCH: TFL_CROUCH,
+        TRAVEL_BARRIERJUMP: TFL_BARRIERJUMP,
+        TRAVEL_JUMP: TFL_JUMP,
+        TRAVEL_LADDER: TFL_LADDER,
+        TRAVEL_WALKOFFLEDGE: TFL_WALKOFFLEDGE,
+        TRAVEL_SWIM: TFL_SWIM,
+        TRAVEL_WATERJUMP: TFL_WATERJUMP,
+        TRAVEL_TELEPORT: TFL_TELEPORT,
+        TRAVEL_ELEVATOR: TFL_ELEVATOR,
+        TRAVEL_ROCKETJUMP: TFL_ROCKETJUMP,
+        TRAVEL_BFGJUMP: TFL_BFGJUMP,
+        TRAVEL_GRAPPLEHOOK: TFL_GRAPPLEHOOK,
+        TRAVEL_DOUBLEJUMP: TFL_DOUBLEJUMP,
+        TRAVEL_RAMPJUMP: TFL_RAMPJUMP,
+        TRAVEL_STRAFEJUMP: TFL_STRAFEJUMP,
+        TRAVEL_JUMPPAD: TFL_JUMPPAD,
+        TRAVEL_FUNCBOB: TFL_FUNCBOB
+    };
+    return flags.get(kind, TFL_INVALID);
+}
+
+"""be_aas_route.c AAS_GetAreaContentsTravelFlags: entering an area also
+needs the flag of its liquid (or air) and of do-not-enter contents."""
+def area_contents_travel_flags(contents: int) -> int {
+    flags = TFL_AIR;
+    if contents & AREACONTENTS_WATER {
+        flags = TFL_WATER;
+    } elif contents & AREACONTENTS_SLIME {
+        flags = TFL_SLIME;
+    } elif contents & AREACONTENTS_LAVA {
+        flags = TFL_LAVA;
+    }
+    if contents & AREACONTENTS_DONOTENTER {
+        flags |= TFL_DONOTENTER;
+    }
+    return flags;
+}
 
 obj AasArea {
     has center: Vec3,
@@ -33,12 +134,18 @@ obj AasArea {
         reach_count: int = 0;
 }
 
+"""A reachability. `face_num` and `edge_num` (facenum, edgenum) carry what the travel type needs
+besides its two points: for elevators and bobbing platforms `face_num & 0xFFFF`
+is the mover's BSP model, and a bobbing platform's `face_num >> 16` holds its
+spawnflags and `edge_num` the axis positions of its two ends (be_aas_reach.c)."""
 obj AasReach {
     has area: int,
         start: Vec3,
         finish: Vec3,
         kind: int,
-        time: int;
+        time: int,
+        face_num: int = 0,
+        edge_num: int = 0;
 }
 
 obj Aas {
@@ -151,7 +258,9 @@ def parse_aas(data: bytes) -> Aas {
                 start=vec_at(data, p + 12),
                 finish=vec_at(data, p + 24),
                 kind=i32_at(data, p + 36) & 16777215,
-                time=u16_at(data, p + 40)
+                time=u16_at(data, p + 40),
+                face_num=i32_at(data, p + 4),
+                edge_num=i32_at(data, p + 8)
             )
         );
     }

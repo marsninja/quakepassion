@@ -1,12 +1,14 @@
-"""Arena-specific goals and traversal; campaign monsters retain local pursuit."""
+"""Arena bots' contacts with items and teleporters and jump pads, and the
+level's bot navigation set up at load: the jump pads' throws, the level items
+bots aim for (bot_goals.jac) and their travel tables. Bots choose their goals
+in their AI (bot_ai.jac)."""
 import math;
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent }
-import from .bot_routes { NavMesh, HasNavMesh, reachable }
+import from .bot_routes { NavMesh, HasNavMesh }
+import from .bot_goals { LevelItem, HasLevelItem, bot_items, add_level_item, floating_item, jump_pad_area }
 import from .pickups { Pickup, HasPickup, PickupTick }
-import from .inventory { quantity }
-import from .powerups { stored_kinds }
-import from .traversal { Traversal, HasTraversal, ArrivesAt, Destination, TraversalTick }
+import from .traversal { Traversal, HasTraversal, TraversalTick }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
@@ -24,44 +26,6 @@ glob ARENA_ITEM_KINDS: list[str] = [
     "weapon_machinegun", "bullets", "shells", "grenades", "rockets", "lightning",
     "slugs", "cells", "bfg"
 ];
-
-# Which weapon each Q3 ammo type feeds.
-glob AMMO_WEAPONS: dict[str, str] = {
-    "bullets": "machinegun",
-    "shells": "shotgun",
-    "grenades": "grenadelauncher",
-    "rockets": "rocketlauncher",
-    "lightning": "lightning",
-    "slugs": "railgun",
-    "cells": "plasmagun",
-    "bfg": "bfg"
-};
-
-"""Whether an item is worth a detour to a bot: health and armor it lacks,
-powerups, a holdable when it has none, a weapon it does not own, and ammo for
-a weapon it carries that is running low (the fw_items.c needs, simplified)."""
-def bot_wants(bot: Opponent, kind: str, amount: int, holding: bool) -> bool {
-    if kind == "health" {
-        return bot.health < bot.max_health;
-    }
-    if kind == "armor" {
-        return bot.armor < amount;
-    }
-    if kind == "powerup" {
-        return True;
-    }
-    if kind.startswith("holdable_") {
-        return not holding;
-    }
-    if kind.startswith("weapon_") {
-        return quantity(bot.inventory, kind) <= 0;
-    }
-    if kind in AMMO_WEAPONS {
-        return quantity(bot.inventory, "weapon_" + AMMO_WEAPONS[kind]) > 0
-            and quantity(bot.inventory, kind) < 50;
-    }
-    return False;
-}
 
 # Authored contacts are static; bucket membership is built once for each world.
 # Entries hold live nodes, so pickup respawns and disabled portals remain current.
@@ -138,42 +102,53 @@ obj ArenaContactIndex {
     }
 }
 
-# Build authored directed links once at level load. Jump-pad trajectories are
-# checked against the live hull; actor movement still performs live collision.
+"""Set up the level's bot navigation as it loads: where each teleporter and
+jump pad is entered (the floor under its trigger), the level items bots aim
+for with their goal areas (be_ai_goal.c BotInitLevelItems; a floating item's
+is the jump pad that throws a bot through it, AAS_BestReachableFromJumpPadArea)
+and the travel tables to them, built now rather than in play."""
 def prepare_arena_links(world: World, collision: CollisionMap) {
-    # Every item is a bot goal from the first tick: build the travel tables to
-    # their areas now, while the level loads, rather than all in one tick.
-    for mesh in [world->:HasNavMesh:->][?:NavMesh] {
-        for pickup in [world->:HasPickup:->][?:Pickup] {
-            goal = mesh.locate(pickup.pos);
-            if goal != 0 {
-                mesh.times_to(goal);
-            }
-        }
-    }
     for portal in [world->:HasTraversal:->][?:Traversal] {
         if not portal.volume.bounds { continue; }
         center = portal.volume.bounds[0].center();
         floor = collision.trace(center.add(Vec3(z=48.0)), center.sub(Vec3(z=128.0)));
         if floor.start_solid or floor.fraction == 1.0 or floor.normal.z < 0.7 { continue; }
         portal.nav_entry = floor.end;
-        if portal.kind == "teleport" {
-            destinations = [portal->:ArrivesAt:->][?:Destination];
-            if destinations { portal.nav_exit = destinations[0].origin; }
-        } elif portal.kind == "push" {
-            pos = floor.end;
-            velocity = portal.velocity.add(Vec3());
-            for i in range(360) {
-                velocity.z -= 800.0 / 120.0;
-                next_pos = pos.add(velocity.scale(1.0 / 120.0));
-                hit = collision.trace(pos, next_pos);
-                if hit.start_solid { break; }
-                if hit.fraction < 1.0 {
-                    if velocity.z < 0.0 and hit.normal.z >= 0.7 { portal.nav_exit = hit.end; }
-                    break;
-                }
-                pos = next_pos;
+    }
+    meshes = [world->:HasNavMesh:->][?:NavMesh];
+    items = bot_items(world);
+    if not meshes or items is None or [items->:HasLevelItem:->] {
+        return;
+    }
+    mesh = meshes[0];
+    # AAS_GetJumpPadInfo: where each pad's throw starts, the throw as botlib
+    # estimates it (the horizontal speed a tenth over the game's) and the
+    # pad's area.
+    pads: list[tuple[Vec3, Vec3, int]] = [];
+    for portal in [world->:HasTraversal:->][?:Traversal] {
+        start = portal.nav_entry;
+        if portal.kind == "push" and start is not None {
+            throw = Vec3(x=portal.velocity.x * 1.1, y=portal.velocity.y * 1.1, z=portal.velocity.z);
+            pads.append((start, throw, mesh.locate(start)));
+        }
+    }
+    for pickup in [world->:HasPickup:->][?:Pickup] {
+        info = items.info_for(pickup.rule.classname);
+        if pickup.dropped or info is None {
+            continue;
+        }
+        pad = 0;
+        if floating_item(collision, info, pickup.pos) {
+            pad = jump_pad_area(collision, info, pickup.pos, pads);
+            if pad == 0 {
+                continue;
             }
+        }
+        add_level_item(items, pickup, mesh, collision, pad);
+    }
+    for item in [items->:HasLevelItem:->][?:LevelItem] {
+        if item.goal_area != 0 {
+            mesh.times_to(item.goal_area);
         }
     }
 }
@@ -256,101 +231,5 @@ walker ArenaNavigationTick {
             return;
         }
         here.arena_origin = here.pos.sub(Vec3(z=here.eye_height));
-        here.arena_goal_wait -= self.dt;
-        if here.arena_goal_wait > 0.0 { return; }
-        here.arena_goal_wait = 0.5;
-        here.arena_goal = None;
-        # Battle nodes steer to their own goals: a chase to where the enemy
-        # was last seen, a nearby item grabbed mid-fight (Battle_NBG).
-        battle = here.bot_state.battle;
-        if battle == "chase" {
-            here.arena_goal = here.bot_state.chase_target.add(Vec3());
-            here.alert = max(here.alert, 1.0);
-            return;
-        }
-        grab = here.bot_state.nearby_goal;
-        if battle == "nbg" and grab is not None {
-            here.arena_goal = grab.add(Vec3());
-            here.alert = max(here.alert, 1.0);
-            return;
-        }
-        retreating = battle == "retreat";
-        target = here.last_seen;
-        best = 1500.0;
-        for pickup in self.pickups {
-            if not pickup.active or pickup.waiting_for_use { continue; }
-            kind = pickup.rule.kind;
-            holding = any([quantity(here.inventory, held) > 0 for held in stored_kinds("q3")]);
-            if not bot_wants(here, kind, pickup.rule.amount, holding) { continue; }
-            mesh = self.mesh;
-            if mesh is not None
-                and not reachable(mesh, here.pos.sub(Vec3(z=here.eye_height)), pickup.pos) {
-                continue;
-            }
-            distance = pickup.pos.sub(here.pos).length();
-            # Powerups and new weapons outweigh an ongoing fight, as in the
-            # bots' item weights.
-            if kind == "powerup" { distance *= 0.5; }
-            if kind.startswith("weapon_") { distance *= 0.6; }
-            if distance < best
-                and (
-                    not here.pursuing
-                        or retreating
-                        or kind == "powerup"
-                        or here.health < here.max_health // 2
-                ) {
-                best = distance;
-                target = pickup.pos.add(Vec3(z=here.eye_height));
-                here.arena_goal = target;
-            }
-        }
-        # Like ai_dmq3.c long-term goals: with no enemy and nothing needed, head
-        # for a distant item and pick another on arrival, so bots meet.
-        if here.arena_goal is None and (not here.pursuing or retreating) {
-            roam = here.roam_goal;
-            if roam is not None and roam.sub(here.pos).length() < 96.0 {
-                roam = None;
-            }
-            if roam is None {
-                # With the map's AAS any item is a reachable long-term goal;
-                # bounded ground routing only reaches nearby items, so hopping
-                # between them carries a bot across the map.
-                mesh = self.mesh;
-                reach = 100000.0 if mesh is not None else 900.0;
-                spots = [
-                    pickup.pos.add(Vec3(z=here.eye_height))
-                    for pickup in self.pickups
-                    if not pickup.waiting_for_use
-                        and pickup.pos.sub(here.pos).length() > 256.0
-                        and pickup.pos.sub(here.pos).length() < reach
-                ];
-                if mesh is not None {
-                    origin = here.pos.sub(Vec3(z=here.eye_height));
-                    spots = [spot for spot in spots if reachable(mesh, origin, spot.sub(Vec3(z=here.eye_height)))];
-                }
-                if spots {
-                    here.shot_random = (here.shot_random * 48271) % 2147483647;
-                    roam = spots[here.shot_random % len(spots)];
-                }
-            }
-            here.roam_goal = roam;
-            if roam is not None {
-                target = roam;
-                here.arena_goal = roam;
-            }
-        }
-        # Teleporters are directed connections. Choose one only when it improves
-        # the remaining travel estimate; ground routing still validates its entry.
-        direct = target.sub(here.pos).length();
-        for portal in self.traversals {
-            if not portal.enabled or portal.nav_entry is None or portal.nav_exit is None { continue; }
-            entrance = portal.nav_entry.add(Vec3(z=here.eye_height));
-            cost = entrance.sub(here.pos).length() + portal.nav_exit.add(Vec3(z=here.eye_height)).sub(target).length() + 64.0;
-            if cost < direct {
-                direct = cost;
-                here.arena_goal = entrance;
-            }
-        }
-        if here.arena_goal is not None { here.alert = max(here.alert, 1.0); }
     }
 }

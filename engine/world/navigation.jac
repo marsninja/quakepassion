@@ -8,6 +8,17 @@ import from ..math.vec3 { Vec3 }
 import from ..physics.collision { CollisionMap }
 import from ..physics.movement { step_slide }
 
+"""Whether a walker at `origin` has reached a route waypoint: within 8 units,
+or `loose`ly within 12 units horizontally and 28 vertically (a step or a
+landing away)."""
+def waypoint_reached(point: Vec3, origin: Vec3, loose: bool) -> bool {
+    gap = point.sub(origin);
+    if not loose {
+        return gap.length() < 8.0;
+    }
+    return math.sqrt(gap.x * gap.x + gap.y * gap.y) < 12.0 and abs(gap.z) < 28.0;
+}
+
 node RoutePoint {
     has pos: Vec3,
         cost: float = 0.0,

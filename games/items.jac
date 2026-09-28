@@ -215,6 +215,8 @@ def pickup_rule(
     }
     if rule is not None {
         present_pickup(game, fields.get("classname", ""), rule, worldtype);
+        # The entity's classname, as botlib's item configs know the item.
+        rule.classname = fields.get("classname", "");
     }
     return rule;
 }

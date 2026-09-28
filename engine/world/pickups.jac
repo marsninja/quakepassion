@@ -33,7 +33,8 @@ obj PickupRule {
         message: str = "",
         icon: str = "",
         topup: bool = False,
-        respawn_sound: str = "";
+        respawn_sound: str = "",
+        classname: str = "";
 }
 
 # Raise an ammunition limit without granting ammunition (Q2 bandolier/pack).

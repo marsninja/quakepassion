@@ -6,7 +6,7 @@ import from engine.world.level { load_level }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick }
 import from engine.world.arena { MatchTick, match_of, standings }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.bot_routes { NavMesh, HasNavMesh }
 import from games.opponents { populate_opponents }

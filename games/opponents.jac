@@ -23,7 +23,7 @@ import from engine.world.bot_character { bot_skill, bot_handicap }
 import from engine.world.turrets { link_turret_drivers }
 import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
 import from engine.world.reflection { HasBody, Carries, player_body }
-import from .botfiles { load_bot_character }
+import from .botfiles { BotFiles, load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
@@ -33,6 +33,7 @@ import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
 import from engine.formats.aas { parse_aas }
 import from engine.world.bot_routes { build_navmesh }
+import from engine.world.bot_goals { BotItems, HasBotItems }
 import from engine.math.vec3 { Vec3 }
 
 def frame_indices(
@@ -98,7 +99,7 @@ def populate_finale(world: World, level: Level, directory: str) -> int {
 """Q3 spawn points become graph nodes; the arena's roster and frag limit come
 from scripts/arenas.txt, with a three-bot skirmish for maps outside the ladder."""
 def prepare_arena(
-    world: World, level: Level, library: AssetLibrary, roster: list[BotInfo]
+    world: World, level: Level, library: AssetLibrary, roster: list[BotInfo], botfiles: BotFiles
 ) -> ArenaMatch {
     for entity in level.bsp.entities {
         fields = entity.fields;
@@ -123,7 +124,10 @@ def prepare_arena(
     # The bots' own navigation data (botlib AAS) drives map-wide routing.
     aas_path = "maps/" + level.name + ".aas";
     if library.exists(aas_path) {
-        build_navmesh(world, parse_aas(library.read(aas_path)));
+        build_navmesh(world, parse_aas(library.read(aas_path)), level.bsp);
+        # The items bots know (botfiles/items.c) become their level items
+        # once every item is on the map (prepare_arena_links).
+        world +>:HasBotItems:+> BotItems(infos=botfiles.item_config());
     }
     contest = ArenaMatch(
         fraglimit=arena.fraglimit if arena is not None else 20,
@@ -175,9 +179,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
     entities = level.bsp.entities;
     roster: list[BotInfo] = [];
     contest: ArenaMatch | None = None;
+    botfiles: BotFiles | None = None;
     try {
         if level.bsp.game == "q3" {
-            contest = prepare_arena(world, level, catalog.source("q3"), roster);
+            botfiles = BotFiles(library=catalog.source("q3"));
+            contest = prepare_arena(world, level, catalog.source("q3"), roster, botfiles);
             entities = entities + arena_entities(world, roster, player_start);
         }
         for entity_index in range(len(entities)) {
@@ -485,9 +491,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             if arena {
                 # The bot's own botlib character, at the Q3 skill for this level.
-                enemy.character = load_bot_character(
-                    catalog.source("q3"), bot.aifile, bot_skill(level.skill)
-                );
+                if botfiles is None {
+                    botfiles = BotFiles(library=catalog.source("q3"));
+                }
+                files: BotFiles = botfiles;
+                enemy.character = load_bot_character(files, bot.aifile, bot_skill(level.skill));
                 arm_bot(enemy);
                 for path in Q3_FIRE_SOUNDS {
                     register_speaker(world, enemy, path);
