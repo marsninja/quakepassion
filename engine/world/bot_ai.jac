@@ -1062,6 +1062,11 @@ walker BotTactics {
             return;
         }
         memory = here.bot_state;
+        if memory.clock == 0.0 {
+            # Bots join at different moments, so their thinks fall on
+            # different frames (each keeps its own bot_thinktime phase).
+            here.think_wait = float(here.shot_random % 12) / 120.0;
+        }
         memory.clock += self.dt;
         here.think_wait -= self.dt;
         memory.thought = here.think_wait <= 0.0;

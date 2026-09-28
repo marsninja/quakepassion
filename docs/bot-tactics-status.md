@@ -301,6 +301,21 @@ Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
   floating items' jump pad goals.
 - `scripts/bot_files_smoke.jac`, `scripts/aas_smoke.jac` and
   `scripts/bot_travel_types_smoke.jac` (above).
+- `scripts/bot_rocket_jump_smoke.jac` sets a bot on q3dm17 where only a
+  rocket jump reaches its goal (item_health_mega from a spawn point): it walks
+  to the start, turns its view down, jumps and fires, takes 45 of its own
+  splash, flies and lands in the target area.
+- `scripts/bot_think_profile.jac` times the bots' part of a 120 Hz tick
+  natively (30 s of play at Hurt Me Plenty, ms a tick on average):
+
+  | Map | Bots | Navigation | Doors | Combat (moves, routes, enemy looks) | Bots (AI, view, trigger) | Worst tick |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | q3dm12 | 6 | 0.18 | 0.30 | 11.6 | 3.0 | 57 |
+  | q3dm7 | 4 | 0.62 | 0.12 | 6.7 | 1.2 | 36 |
+
+  Moving bots by Q3's pmove rules costs the same as the shared walk. Bots
+  think on staggered frames (each keeps its own think phase), which halved
+  the worst tick on q3dm12.
 - `scripts/bot_fire_probe.jac` traces each bot's battle node, sight, weapon,
   aim error and shots per half second on q3dm1 (Ranger against the player)
   and q3dm7.
