@@ -336,6 +336,33 @@ obj HudRenderer {
         }
     }
 
+    """Q3 text with its color escapes (CG_DrawStringExt): `^` and a character
+    sets the color from g_color_table by its low three bits and takes no
+    room; `^^` is a caret."""
+    def colored_chars(message: str, x: float, y: float, size: float) {
+        palette: list[list[int]] = [
+            [0, 0, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255], [255, 255, 0, 255],
+            [0, 0, 255, 255], [0, 255, 255, 255], [255, 0, 255, 255], [255, 255, 255, 255]
+        ];
+        tint = palette[7];
+        run = "";
+        start = x;
+        i = 0;
+        while i < len(message) {
+            if message[i] == "^" and i + 1 < len(message) and message[i + 1] != "^" {
+                self.chars(run, start, y, size, tint);
+                start += float(len(run)) * size;
+                run = "";
+                tint = palette[(ord(message[i + 1]) - ord("0")) & 7];
+                i += 2;
+                continue;
+            }
+            run += message[i];
+            i += 1;
+        }
+        self.chars(run, start, y, size, tint);
+    }
+
     """Printed messages where the games put them: the notify lines at the top
     left (Con_DrawNotify, CG_DrawNotify), centre prints a third of the way
     down (SCR_DrawCenterString, CG_DrawCenterString), and Q3's ammo warning
@@ -349,7 +376,11 @@ obj HudRenderer {
         size = (16.0 if big else 8.0) * scale;
         y = 0.0;
         for line in status.notify {
-            self.chars(line, 0.0 if not big else 4.0 * scale, y, size * (0.5 if big else 1.0));
+            if big {
+                self.colored_chars(line, 4.0 * scale, y, size * 0.5);
+            } else {
+                self.chars(line, 0.0, y, size);
+            }
             y += size * (0.5 if big else 1.0);
         }
         if status.center {

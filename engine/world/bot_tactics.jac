@@ -234,6 +234,9 @@ def change_view(state: BotState, mind: BotCharacter, enemy: bool, seconds: float
 # Q3 servers run bots at sv_fps 20; clients draw between the frames.
 glob BOT_VIEW_FRAME: float = 0.05;
 
+# bg_pmove.c PM_UpdateViewAngles clamps the pitch to 16000 short units.
+glob PITCH_CLAMP: float = 16000.0 * 360.0 / 65536.0;
+
 """Turn a bot's view every tick: BotChangeViewAngles steps each 50 ms server
 frame and the drawn view moves smoothly between frames, as cgame interpolates
 entity angles. Anything else that turned the bot (a spawn or teleporter)
@@ -262,7 +265,10 @@ def steer_view(bot: Opponent, mind: BotCharacter, enemy: bool, dt: float) {
     }
     blend = state.view_wait / BOT_VIEW_FRAME;
     bot.yaw = math.radians((state.from_yaw + view_delta(state.yaw, state.from_yaw) * blend) % 360.0);
-    bot.pitch = -math.radians(state.from_pitch + (state.pitch - state.from_pitch) * blend);
+    # The AI's own view may swing past straight down; the player's view is
+    # held within PM_UpdateViewAngles' 16000 (about 87.9 degrees) either way.
+    drawn = state.from_pitch + (state.pitch - state.from_pitch) * blend;
+    bot.pitch = -math.radians(max(-PITCH_CLAMP, min(PITCH_CLAMP, drawn)));
 }
 
 """BotMovementViewTarget: look at the point 300 units along the bot's route
