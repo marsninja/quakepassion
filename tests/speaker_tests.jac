@@ -1,5 +1,6 @@
 import from engine.world.speakers { Speaker, HasSpeaker, SpeakerTick, load_speakers }
 import from engine.audio.feedback { sound_falloff }
+import from games.fixtures { fixture_rule }
 import from engine.world.signals { Fire }
 import from engine.world.world { World, Player }
 import from engine.world.level { Level }
@@ -137,4 +138,16 @@ test "each game's spatialization falls off at its own rate" {
     # Quake III: 0.0008 a unit past 80, whatever the attenuation.
     assert abs(sound_falloff("q3", 705.0, 3.0, False) - 0.5) < 0.0001;
     assert sound_falloff("q2", 5000.0, 0.0, False) == 1.0;
+}
+
+test "teleporters hum as triggers.qc and g_misc.c make them" {
+    hum = fixture_rule("q1", {"classname": "trigger_teleport", "model": "*3"});
+    assert hum is not None and hum.sound == "sound/ambience/hum1.wav";
+    assert hum.volume == 0.5 and hum.attenuation == 3.0 and hum.centered;
+    assert fixture_rule("q1", {"classname": "trigger_teleport", "spawnflags": "2"}) is None;
+    pad = fixture_rule("q2", {"classname": "misc_teleporter", "target": "t1"});
+    assert pad is not None and pad.sound == "sound/world/amb10.wav";
+    assert fixture_rule("q2", {"classname": "misc_teleporter"}) is None;
+    thunder = fixture_rule("q1", {"classname": "ambient_thunder"});
+    assert thunder is not None and thunder.sound == "sound/ambience/thunder1.wav";
 }

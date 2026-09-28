@@ -98,7 +98,9 @@ attenuation, 0.001 for ATTN_STATIC, 0.003 for loops) and Q3 (full within 80,
 then 0.0008). Q2 and Q3 missiles carry their flight sounds (rockets, blaster
 bolts, BFG, hand grenades, plasma), and the Q2 player's own looping sound
 follows `G_SetClientSound`: frying in slime or lava, the railgun and BFG hums,
-the hyperblaster firing, the chaingun spinning and a cooking grenade. The
+the hyperblaster firing, the chaingun spinning and a cooking grenade. Q1
+teleporters hum (`ambience/hum1.wav` at the trigger's centre unless SILENT),
+`ambient_thunder` rumbles, and Q2 teleporter pads loop `world/amb10.wav`. The
 original occlusion model (PVS-limited sounds) remains open.
 
 Q2 toggle walls now change visibility and collision together. Destructible
