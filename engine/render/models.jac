@@ -846,7 +846,7 @@ obj ModelRenderer {
     }
 }
 
-import from ..world.world { World, Area }
+import from ..world.world { World }
 import from ..world.models { ModelResource, HasModelResource, GatherModels, ModelDraw }
 import from ..math.interpolation { TickBlend }
 
@@ -864,14 +864,11 @@ def model_fog(fogs: list[FogVolume], origin: Vec3, radius: float) -> FogVolume |
 }
 
 obj ModelScene {
-    has resources: dict[str, ModelRenderer] = {},
-        areas: list[Area] = [];
+    has resources: dict[str, ModelRenderer] = {};
 
     def upload(world: World) {
         self.close();
         try {
-            # Levels build their areas before their models are uploaded.
-            self.areas = [world-->[?:Area]];
             for resource in [world->:HasModelResource:->][?:ModelResource] {
                 if resource.name in self.resources {
                     continue;
@@ -900,7 +897,7 @@ obj ModelScene {
         fog_image: int = 0,
         blend: TickBlend = TickBlend()
     ) {
-        scene = world spawn GatherModels(seconds=seconds, areas=self.areas, blend=blend);
+        scene = world spawn GatherModels(seconds=seconds, blend=blend);
         forward = forward_from(yaw, pitch);
         # One program bind for every model (the legacy path draws immediately).
         gpu_pass = open_model_pass();
@@ -989,7 +986,6 @@ obj ModelScene {
             self.resources[name].close();
         }
         self.resources = {};
-        self.areas = [];
     }
 }
 

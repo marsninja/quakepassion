@@ -40,6 +40,12 @@ node Area {
 }
 
 
+"""Indexes the areas holding entities (occupants above zero), kept by
+move_to_area: passes over the world's entities visit these few rather than
+every leaf of the level."""
+edge Occupied: World --> Area {}
+
+
 """Connects two Areas through an opening. Visibility floods through these."""
 edge Portal: Area --> Area {
     has rect: AABB;
@@ -151,3 +157,8 @@ def area_of(ent: Entity) -> Area | None;
 
 """Rewire an entity's In edge when it crosses into a new area."""
 def move_to_area(ent: Entity, new_area: Area);
+
+
+"""Bring an area's Occupied edge from its world in line with its count of
+occupants (after a move, or a pass that recounted them)."""
+def index_occupancy(area: Area);

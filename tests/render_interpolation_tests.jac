@@ -6,7 +6,7 @@ import from engine.math.interpolation { TickPose, TickBlend, lerp_radians }
 import from engine.math.orientation { Basis, blend_basis, model_basis }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
-import from engine.world.world { World, Area, Entity, Player, move_to_area }
+import from engine.world.world { World, Area, Entity, Player, Occupied, move_to_area }
 import from engine.world.combat { Projectile, HasProjectile }
 import from engine.world.motion { CaptureMotion }
 import from engine.world.models { Visual, ModelResource, HasVisual, UsesModel, GatherModels }
@@ -83,9 +83,12 @@ test "a tick boundary captures every entity in an occupied area and every projec
     blend = TickBlend(tick=12, alpha=0.5);
     assert blend.place(body.tick_pose, body.pos).x == 6.0;
     assert blend.place(rocket.tick_pose, rocket.pos).x == 3.75;
-    # Only the listed areas are walked when a renderer passes them.
-    world spawn CaptureMotion(tick=13, areas=[empty]);
-    assert body.tick_pose.tick == 12 and rocket.tick_pose.tick == 13;
+    # Only occupied areas are walked: an empty one is not indexed.
+    assert len([world->:Occupied:->]) == 1;
+    move_to_area(body, empty);
+    assert [world->:Occupied:->] == [empty];
+    world spawn CaptureMotion(tick=13);
+    assert body.tick_pose.tick == 13 and rocket.tick_pose.tick == 13;
 }
 
 test "models are gathered where their bodies are between ticks" {

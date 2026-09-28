@@ -1044,7 +1044,7 @@ impl App.step() -> bool {
         # Render interpolation: what each body, mover and the view start
         # this tick from (engine/math/interpolation.jac).
         self.tick_blend.tick += 1;
-        self.world spawn CaptureMotion(tick=self.tick_blend.tick, areas=self.models.areas);
+        self.world spawn CaptureMotion(tick=self.tick_blend.tick);
         if self.level.active {
             self.quake.hold_placements(self.level, self.tick_blend.tick);
         }
