@@ -139,6 +139,8 @@ test "items ride lifts and Q2 doors clear an item in their way" {
         # An item on the floor where the door comes down.
         shells = item(Vec3(z=15.03125) if game == "q2" else Vec3(x=-16.0, y=-16.0, z=0.03125));
         fixture.world +>:HasPickup:+> shells;
+        # Items entering the world at runtime move its item serial on.
+        fixture.world.item_serial += 1;
         door.state = "closing";
         for i in range(40) {
             fixture.tick(Vec3(x=500.0));

@@ -65,7 +65,10 @@ obj Pushable {
     has entity: Entity,
         view: CollisionMap,
         lift: Vec3 = Vec3(),
-        client: bool = False;
+        client: bool = False,
+        # How much further than the player's box its box reaches, plus a
+        # unit of slack (the hull bounds are the player's).
+        margin: float = 1.0;
 
     def origin() -> Vec3 {
         return self.entity.pos.sub(self.lift);
@@ -141,7 +144,7 @@ def reach_margin(view: CollisionMap) -> float {
 """Whether a body's box rests on the hull: a floor within a quarter unit."""
 def stands_on(body: Pushable, step: HullStep) -> bool {
     origin = body.origin();
-    if not step.near(body.view, origin, reach_margin(body.view)) {
+    if not step.near(body.view, origin, body.margin) {
         return False;
     }
     support = hull_contact(body.view, step.index, origin, origin.add(Vec3(z=-0.25)));
@@ -151,7 +154,7 @@ def stands_on(body: Pushable, step: HullStep) -> bool {
 """Whether a body's box is inside the hull where it now stands."""
 def caught_by(body: Pushable, step: HullStep) -> bool {
     origin = body.origin();
-    if not step.near(body.view, origin, reach_margin(body.view)) {
+    if not step.near(body.view, origin, body.margin) {
         return False;
     }
     return hull_contact(body.view, step.index, origin, origin).start_solid;
@@ -197,19 +200,53 @@ def place_steps(collision: CollisionMap, steps: list[HullStep], forward: bool) {
     }
 }
 
+"""The bounds of every hull of a move, in either pose."""
+def steps_extent(collision: CollisionMap, steps: list[HullStep]) -> AABB {
+    lo = Vec3(x=1.0e30, y=1.0e30, z=1.0e30);
+    hi = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);
+    whole = len(collision.bounds) == len(collision.hulls);
+    for step in steps {
+        box = step.bounds;
+        if box is None {
+            if not whole {
+                return AABB(mins=Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30), maxs=Vec3(x=1.0e30, y=1.0e30, z=1.0e30));
+            }
+            box = collision.bounds[step.index];
+        }
+        lo = Vec3(x=min(lo.x, box.mins.x), y=min(lo.y, box.mins.y), z=min(lo.z, box.mins.z));
+        hi = Vec3(x=max(hi.x, box.maxs.x), y=max(hi.y, box.maxs.y), z=max(hi.z, box.maxs.z));
+    }
+    return AABB(mins=lo, maxs=hi);
+}
+
 """Move the mover's hulls by `steps` and push the bodies. Returns None once
 everything has moved, or the body that could not go, with the mover and
 every body back where they were."""
 def push_move(
     collision: CollisionMap, steps: list[HullStep], bodies: list[Pushable], game: str
 ) -> Pushable | None {
-    # Only bodies within reach of a moving hull are looked at further.
+    # Only bodies within reach of a moving hull are looked at further: first
+    # against the bounds of the whole move, then hull by hull.
+    extent = steps_extent(collision, steps);
     nearby: list[Pushable] = [];
     reach: list[list[HullStep]] = [];
     for body in bodies {
-        origin = body.origin();
-        margin = reach_margin(body.view);
-        close = [step for step in steps if step.near(body.view, origin, margin)];
+        spot = body.entity.pos;
+        lift = body.lift;
+        slack = body.margin;
+        x = spot.x - lift.x;
+        y = spot.y - lift.y;
+        z = spot.z - lift.z;
+        if x < extent.mins.x - slack
+            or x > extent.maxs.x + slack
+            or y < extent.mins.y - slack
+            or y > extent.maxs.y + slack
+            or z < extent.mins.z - slack
+            or z > extent.maxs.z + slack {
+            continue;
+        }
+        origin = Vec3(x=x, y=y, z=z);
+        close = [step for step in steps if step.near(body.view, origin, slack)];
         if close and body.present() {
             nearby.append(body);
             reach.append(close);
@@ -308,7 +345,9 @@ def clear_item(world: World, item: Pickup, game: str) {
 }
 
 """Everything movers can push but the player, kept from tick to tick with
-each body's view: rebuilt only when items or monsters come or go."""
+each body's view: rebuilt only when monsters or items come or go (their
+numbers change, or the world's item_serial moves on as drops and removals
+do)."""
 node PushRoster {
     has serial: int = -1,
         monsters: int = -1,
@@ -340,7 +379,8 @@ walker GatherPushables {
                     entity=person,
                     view=self.collision,
                     lift=Vec3(z=self.collision.eye_height),
-                    client=True
+                    client=True,
+                    margin=reach_margin(self.collision)
                 )
             );
         }
@@ -387,7 +427,8 @@ walker GatherPushables {
                 entity=here,
                 view=self.views[key],
                 lift=Vec3(z=here.eye_height),
-                client=here.arena
+                client=here.arena,
+                margin=reach_margin(self.views[key])
             )
         );
     }
@@ -397,7 +438,14 @@ walker GatherPushables {
         if key not in self.views {
             self.views[key] = item_view(self.collision, self.game);
         }
-        self.enlist(Pushable(entity=here, view=self.views[key], lift=item_lift(self.game)));
+        self.enlist(
+            Pushable(
+                entity=here,
+                view=self.views[key],
+                lift=item_lift(self.game),
+                margin=reach_margin(self.views[key])
+            )
+        );
     }
 
     def enlist(body: Pushable) {
