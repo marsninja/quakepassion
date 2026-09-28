@@ -78,5 +78,18 @@ test "scrolling additive energy stages retain independent UV rates" {
     )["energy"];
     assert not material.unsupported;
     assert material.stages[0].blend == "add";
-    assert material.stages[0].scroll_u == 7.4 and material.stages[0].scroll_v == 1.3;
+    mods = material.stages[0].mods;
+    assert len(mods) == 1 and mods[0].kind == "scroll" and mods[0].a == 7.4 and mods[0].b == 1.3;
+}
+
+test "model shaders keep rotating and turbulent stages instead of falling back" {
+    archive = Pk3Assets();
+    archive.parse_shaders(
+        "powerups/quad { deformVertexes wave 100 sin 3 0 0 0 { map textures/effects/quadmap2.tga blendfunc GL_ONE GL_ONE tcGen environment tcmod rotate 30 tcmod scroll 1 .1 } }\n"
+            + "models/flame { { map models/flame.tga blendFunc add tcMod turb 0 0.2 0 1 tcMod scale 2 2 } }"
+    );
+    assert not archive.model_shaders["models/flame"].advanced;
+    assert [mod.kind for mod in archive.model_shaders["powerups/quad"].stages[0].mods] == ["rotate", "scroll"];
+    assert [mod.kind for mod in archive.model_shaders["models/flame"].stages[0].mods] == ["turb", "scale"];
+    archive.close();
 }

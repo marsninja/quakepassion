@@ -37,10 +37,10 @@ with entry {
             level=level,
             renderer=renderer,
             clock=Clock(),
-            walking=True,
-            overlay=False,
-            culling=False
+            walking=True
         );
+        app.renderer.cvars.novis.assign("1");
+        app.host.overlay.assign("0");
         app.quake.upload(level);
         for i in range(120) {
             frame(app);

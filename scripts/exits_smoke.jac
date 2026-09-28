@@ -22,10 +22,10 @@ with entry {
             player=spawn_player(level),
             renderer=renderer,
             clock=Clock(),
-            walking=True,
-            overlay=False,
-            culling=False
+            walking=True
         );
+        app.renderer.cvars.novis.assign("1");
+        app.host.overlay.assign("0");
         app.quake.upload(level);
         app.player.health = 73;
         app.player.armor = 42;

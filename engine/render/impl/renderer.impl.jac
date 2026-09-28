@@ -2,13 +2,32 @@
 RenderPass walker abilities. Declarations (and the raylib import) live in
 renderer.jac."""
 
+impl Renderer.declare(shell: Shell) {
+    cvars = self.cvars;
+    cvars.fov = shell.register(cvars.fov);
+    cvars.maxfps = shell.register(cvars.maxfps);
+    cvars.novis = shell.register(cvars.novis);
+    cvars.width = shell.register(cvars.width);
+    cvars.height = shell.register(cvars.height);
+    cvars.fullscreen = shell.register(cvars.fullscreen);
+    cvars.highdpi = shell.register(cvars.highdpi);
+}
+
 impl Renderer.open_window() {
-    InitWindow(i32(self.width), i32(self.height), self.title);
+    # A resizable window; with vid_highdpi the framebuffers are the display's
+    # pixels while 2D drawing stays in screen units.
+    flags = WINDOW_RESIZABLE_FLAG;
+    if self.cvars.highdpi.on() {
+        flags = flags | WINDOW_HIGHDPI_FLAG;
+    }
+    SetConfigFlags(u32(flags));
+    InitWindow(i32(self.cvars.width.integer), i32(self.cvars.height.integer), self.title);
     if not IsWindowReady() {
         raise RuntimeError(
             "Cannot open the viewer window: an active graphical desktop/display is required."
         );
     }
+    SetWindowMinSize(i32(320), i32(240));
     SetExitKey(i32(0));  # Escape belongs to the level menu.
     # raylib keeps a pointer to the active batch, so it lives in a pin. Each
     # buffer's vertex array enables only the attributes of the shader current
@@ -24,7 +43,48 @@ impl Renderer.open_window() {
     rlSetRenderBatchActive(&mut batch);
     # Default to uncapped rendering; a user-selected limit only paces frames.
     # Simulation keeps its independent fixed timestep.
-    self.set_frame_limit(self.frame_limit);
+    self.cvars.maxfps.modified = True;
+    if self.cvars.fullscreen.on() {
+        self.apply_video();
+    }
+    self.sync();
+}
+
+impl Renderer.sync() {
+    cvars = self.cvars;
+    if IsWindowResized() and not IsWindowFullscreen() {
+        cvars.width.assign(str(int(GetScreenWidth())));
+        cvars.height.assign(str(int(GetScreenHeight())));
+    }
+    self.width = max(1, int(GetScreenWidth()));
+    self.height = max(1, int(GetScreenHeight()));
+    # SCR_CalcRefdef: fov is the horizontal angle of a 4:3 view; the vertical
+    # angle stays and wider windows see more to the sides.
+    self.fov = math.degrees(
+        2.0 * math.atan(math.tan(math.radians(cvars.fov.number) * 0.5) * 0.75)
+    );
+    if cvars.maxfps.modified {
+        cvars.maxfps.modified = False;
+        SetTargetFPS(i32(cvars.maxfps.integer));
+    }
+}
+
+impl Renderer.apply_video() {
+    cvars = self.cvars;
+    if cvars.fullscreen.on() {
+        if not IsWindowFullscreen() {
+            monitor = GetCurrentMonitor();
+            SetWindowSize(GetMonitorWidth(monitor), GetMonitorHeight(monitor));
+            ToggleFullscreen();
+        }
+    } else {
+        if IsWindowFullscreen() {
+            ToggleFullscreen();
+        }
+        SetWindowSize(i32(cvars.width.integer), i32(cvars.height.integer));
+    }
+    self.width = max(1, int(GetScreenWidth()));
+    self.height = max(1, int(GetScreenHeight()));
 }
 
 impl Renderer.should_close() -> bool {
@@ -129,7 +189,17 @@ impl Renderer.draw_aim(state: CombatState, crosshair: bool, score: str) {
 }
 
 impl Renderer.screenshot(path: str) {
-    TakeScreenshot(path);
+    # raylib's TakeScreenshot scales the framebuffer size by the display's
+    # DPI again under FLAG_WINDOW_HIGHDPI, reading past the frame; read the
+    # framebuffer's own size instead.
+    width = GetRenderWidth();
+    height = GetRenderHeight();
+    pixels = rlReadScreenPixels(width, height);
+    if pixels == u64(0) {
+        return;
+    }
+    ExportImage(ScreenImage(data=pixels, width=width, height=height, mipmaps=i32(1), format=i32(7)), path);
+    MemFree(pixels);
 }
 
 impl Renderer.close() {
@@ -154,8 +224,9 @@ impl RenderPass.draw with Area entry {
 }
 
 impl Renderer.set_frame_limit(fps: int) {
-    self.frame_limit = fps;
-    SetTargetFPS(i32(fps));
+    self.cvars.maxfps.assign(str(fps));
+    self.cvars.maxfps.modified = False;
+    SetTargetFPS(i32(self.cvars.maxfps.integer));
 }
 
 impl Renderer.draw_opponents(world: World, height: float, blend: TickBlend = TickBlend()) {
@@ -346,9 +417,10 @@ impl Renderer.draw_projectiles(
     # projectile markers go to the instanced cube batch.
     cubes = self.cubes;
     immediate = cubes.immediate();
+    # Without the effect scene's bolt3.mdl, Chthon's lightning is a line.
     for event in [world->:HasLightning:->][?:LightningEvent] {
         doors = [event->:Electrode:->][?:Door];
-        if event.remaining > 0.0 and len(doors) == 2 {
+        if event.remaining > 0.0 and len(doors) == 2 and "q1_bolt3" not in hidden_effects {
             start = electrode_point(doors[0]);
             finish = electrode_point(doors[1]);
             DrawLine3D(
@@ -374,7 +446,7 @@ impl Renderer.draw_projectiles(
                 cubes.add(at.x, at.y, at.z, float(side), int(color.r), int(color.g), int(color.b), int(color.a));
             }
         }
-        for finish in projectile.beams {
+        for finish in (projectile.beams if projectile.effect not in hidden_effects else []) {
             DrawLine3D(
                 origin,
                 Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),

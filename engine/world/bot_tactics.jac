@@ -397,7 +397,7 @@ def bot_fire(
                 impact_spray(world, endpoint, wall.normal);
             }
             wall_impact(
-                world, "q3", rule.key, endpoint, wall.normal, surface, wall.model, collision
+                world, "q3", rule.key, endpoint, wall.normal, surface, wall.model
             );
         }
     }

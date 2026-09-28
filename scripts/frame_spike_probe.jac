@@ -19,7 +19,8 @@ import from engine.world.arena { match_of }
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     names = os.getenv("QP_SPIKE_MAPS", "q3dm11,q3dm12").split(",");
     frames = int(float(os.getenv("QP_SECONDS", "20")) * 60.0);
     limit = float(os.getenv("QP_SPIKE_MS", "50"));
@@ -27,7 +28,7 @@ with entry {
     if not app.audio.ready {
         app.audio.open("q3", game_directory("q3"));
     }
-    app.audio.volume = 0.0;
+    app.audio.volume.assign("0");
     app.smoke = False;
     app.walking = True;
     for name in names {

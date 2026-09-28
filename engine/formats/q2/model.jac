@@ -71,6 +71,7 @@ def parse_md2(data: bytes) -> AnimatedModel {
         scale = vec_at(body, p);
         origin = vec_at(body, p + 12);
         frame = AnimationFrame(name=model_name(body, p + 24, 16));
+        normals = bytearray(vertices);
         for j in range(vertices) {
             v = p + 40 + j * 4;
             frame.vertices.append(
@@ -80,7 +81,9 @@ def parse_md2(data: bytes) -> AnimatedModel {
                     z=float(body[v + 2]) * scale.z + origin.z
                 )
             );
+            normals[j] = body[v + 3];
         }
+        frame.normal_indices = bytes(normals);
         surface.frames.append(frame);
     }
     return AnimatedModel(surfaces=[surface]);

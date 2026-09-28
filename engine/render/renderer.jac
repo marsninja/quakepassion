@@ -51,11 +51,27 @@ import from vendor.raylib {
         shader: BatchShader
     ) -> None;  def BeginShaderMode(shader: BatchShader) -> None;  def EndShaderMode -> None;  def rlLoadRenderBatch(numBuffers: i32, bufferElements: i32) -> rlRenderBatch;  def rlUnloadRenderBatch(
         batch: rlRenderBatch
-    ) -> None;  def rlSetRenderBatchActive(batch: &mut Pinned[rlRenderBatch] | None) -> None;
+    ) -> None;  def rlSetRenderBatchActive(batch: &mut Pinned[rlRenderBatch] | None) -> None;  def SetConfigFlags(
+        flags: u32
+    ) -> None;  def IsWindowResized -> bool;  def IsWindowFullscreen -> bool;  def ToggleFullscreen -> None;  def GetScreenWidth -> i32;  def GetScreenHeight -> i32;  def SetWindowSize(
+        width: i32, height: i32
+    ) -> None;  def SetWindowMinSize(width: i32, height: i32) -> None;  def GetCurrentMonitor -> i32;  def GetMonitorWidth(
+        monitor: i32
+    ) -> i32;  def GetMonitorHeight(monitor: i32) -> i32;  def GetRenderWidth -> i32;  def GetRenderHeight -> i32;  obj ScreenImage {
+        has data: u64,
+            width: i32,
+            height: i32,
+            mipmaps: i32,
+            format: i32;
+    }  def rlReadScreenPixels(width: i32, height: i32) -> u64;  def ExportImage(
+        image: ScreenImage, fileName: str
+    ) -> bool;  def MemFree(ptr: u64) -> None;
 }
 
 import math;
 import from .cubes { CubeBatch }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell }
 import from ..world.particles { HasTrail, ShotTrail }
 import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
 import from ..world.doors { Door }
@@ -87,17 +103,97 @@ glob BATCH_BUFFERS: int = 64,
 glob BATCH_ATTRIBUTES_VS: str = "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec3 vertexNormal; in vec4 vertexColor; uniform mat4 mvp; out vec4 shade;\nvoid main(){ shade=vertexColor+vec4(vertexNormal,vertexTexCoord.x); gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
      BATCH_ATTRIBUTES_FS: str = "#version 330\nin vec4 shade; out vec4 finalColor;\nvoid main(){ finalColor=shade; }\n";
 
+# raylib ConfigFlags.
+glob WINDOW_RESIZABLE_FLAG: int = 4,
+     WINDOW_HIGHDPI_FLAG: int = 8192;
+
+"""The cvars the renderer owns: the view angle, the frame rate cap, PVS
+culling and the window (Q1/Q2 vid_*, Q3 r_* names)."""
+obj RenderCvars {
+    has fov: Cvar = Cvar(
+            name="fov",
+            reset_text="90",
+            kind="float",
+            low=10.0,
+            high=170.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["cg_fov"],
+            description="horizontal field of view at 4:3; wider screens see more"
+        ),
+        maxfps: Cvar = Cvar(
+            name="host_maxfps",
+            reset_text="0",
+            kind="int",
+            low=0.0,
+            high=1000.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["cl_maxfps", "com_maxfps"],
+            description="frame rate cap (0: uncapped)"
+        ),
+        novis: Cvar = Cvar(
+            name="r_novis",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="draw every area, ignoring the PVS"
+        ),
+        width: Cvar = Cvar(
+            name="vid_width",
+            reset_text="1280",
+            kind="int",
+            low=320.0,
+            high=16384.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["r_customwidth"],
+            description="windowed width"
+        ),
+        height: Cvar = Cvar(
+            name="vid_height",
+            reset_text="720",
+            kind="int",
+            low=240.0,
+            high=16384.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["r_customheight"],
+            description="windowed height"
+        ),
+        fullscreen: Cvar = Cvar(
+            name="vid_fullscreen",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            aliases=["r_fullscreen"],
+            description="fill the monitor (vid_restart or alt+enter applies it)"
+        ),
+        highdpi: Cvar = Cvar(
+            name="vid_highdpi",
+            reset_text="1",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="render at the display's full pixel density (from the next start)"
+        );
+}
+
 obj Renderer {
-    has fov: float = 72.0,
-        frame_limit: int = 0,
+    has cvars: RenderCvars = RenderCvars(),
+        # The live view: refdef.fov_y from the fov cvar, and the window's size
+        # in screen units (2D drawing) and in pixels (framebuffers).
+        fov: float = 73.74,
         width: int = 1280,
         height: int = 720,
         title: str = "QuakePassion — Quake level viewer",
         batch: Pinned[rlRenderBatch] | None = None,
         cubes: CubeBatch = CubeBatch();
 
+    """Register the renderer's cvars."""
+    def declare(shell: Shell);
     def set_frame_limit(fps: int);
     def open_window();
+    """Follow the window each frame: its live size (a resize is remembered in
+    vid_width / vid_height), the view angle and the frame rate cap."""
+    def sync();
+    """vid_restart: apply vid_fullscreen, vid_width and vid_height."""
+    def apply_video();
     def should_close() -> bool;
     def frame_time() -> float;
     """Begin a frame: clear and install a z-up perspective camera. The camera is
@@ -132,6 +228,8 @@ obj Renderer {
     def draw_tint(r: int, g: int, b: int, a: int);
     def draw_powerups(lines: list[str]);
     def end_frame();
+    """Save the frame's pixels (the framebuffer's full resolution) as a PNG
+    at `path`."""
     def screenshot(path: str);
     def close();
 }

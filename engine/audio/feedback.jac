@@ -5,6 +5,8 @@ import from ..world.speakers { Speaker, HasSpeaker }
 import from ..world.combat { CombatState, Projectile, HasProjectile, selected_weapon }
 import from ..math.vec3 { Vec3, right_from }
 import from .streams { RawStream, BackgroundTrack, cd_track_names }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell }
 import from vendor.raylib {
     obj Wave {
         has frameCount: u32,
@@ -125,7 +127,17 @@ def q2_client_sound(player: Player, state: CombatState) -> str {
 obj Feedback {
     has ready: bool = False,
         sounds: list[Sound] = [],
-        volume: float = 0.25,
+        # S_Init's volume (Q3 s_volume).
+        volume: Cvar = Cvar(
+            name="volume",
+            reset_text="0.25",
+            kind="float",
+            low=0.0,
+            high=1.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["s_volume"],
+            description="sound effects volume"
+        ),
         library: AssetLibrary | None = None,
         emitters: dict[int, EmitterAudio] = {},
         missing: set[int] = set(),
@@ -145,10 +157,24 @@ obj Feedback {
         cd: EmitterAudio | None = None,
         cd_track: int = 0,
         # s_musicvolume, and the streamed music and cinematic sound channels.
-        music_volume: float = 0.25,
+        music_volume: Cvar = Cvar(
+            name="bgmvolume",
+            reset_text="0.25",
+            kind="float",
+            low=0.0,
+            high=1.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["s_musicvolume"],
+            description="music volume"
+        ),
         music: BackgroundTrack = BackgroundTrack(),
         music_channel: RawStream = RawStream(),
         cinematic_channel: RawStream = RawStream();
+
+    def declare(shell: Shell) {
+        self.volume = shell.register(self.volume);
+        self.music_volume = shell.register(self.music_volume);
+    }
 
     def open(
         game: str,
@@ -207,7 +233,7 @@ obj Feedback {
             return;
         }
         sound = self.sounds[kind];
-        SetSoundVolume(sound, f32(self.volume * gain));
+        SetSoundVolume(sound, f32(self.volume.number * gain));
         SetSoundPitch(sound, f32(1.8 if kind == 2 else 1.0));
         PlaySound(sound);
     }
@@ -234,7 +260,7 @@ obj Feedback {
             }
         }
         sound = self.named[path];
-        SetSoundVolume(sound, f32(self.volume * max(0.0, min(1.0, gain))));
+        SetSoundVolume(sound, f32(self.volume.number * max(0.0, min(1.0, gain))));
         SetSoundPan(sound, f32(max(-1.0, min(1.0, pan))));
         SetSoundPitch(sound, f32(1.0));
         PlaySound(sound);
@@ -281,7 +307,7 @@ obj Feedback {
             }
             return;
         }
-        SetMusicVolume(voice.music, f32(self.volume * current / 255.0));
+        SetMusicVolume(voice.music, f32(self.volume.number * current / 255.0));
         if voice.paused {
             ResumeMusicStream(voice.music);
             voice.paused = False;
@@ -355,7 +381,7 @@ obj Feedback {
             pan = right_from(yaw).dot(relative.normalized())
                 if spatial and speaker.attenuation > 0.0
                 else 0.0;
-            SetMusicVolume(music, f32(self.volume * speaker.volume * gain));
+            SetMusicVolume(music, f32(self.volume.number * speaker.volume * gain));
             SetMusicPan(music, f32(max(-1.0, min(1.0, pan))));
             if voice.paused {
                 ResumeMusicStream(music);
@@ -415,7 +441,7 @@ obj Feedback {
             }
             return;
         }
-        SetMusicVolume(music, f32(self.volume * max(0.0, min(1.0, gain))));
+        SetMusicVolume(music, f32(self.volume.number * max(0.0, min(1.0, gain))));
         SetMusicPan(music, f32(max(-1.0, min(1.0, pan))));
         if voice.paused {
             ResumeMusicStream(music);
@@ -579,10 +605,10 @@ obj Feedback {
             return;
         }
         # snd_dma.c: the music's level settles at two thirds of s_musicvolume.
-        self.music_channel.gain = self.music_volume * 2.0 / 3.0 * self.volume / Q3_DEFAULT_VOLUME;
+        self.music_channel.gain = self.music_volume.number * 2.0 / 3.0 * self.volume.number / Q3_DEFAULT_VOLUME;
         self.music.update(library, self.music_channel);
         self.music_channel.pump();
-        self.cinematic_channel.gain = self.volume / Q2_DEFAULT_VOLUME;
+        self.cinematic_channel.gain = self.volume.number / Q2_DEFAULT_VOLUME;
         self.cinematic_channel.pump();
         # The CD plays at full volume beside the effects' default level.
         voice = self.cd;

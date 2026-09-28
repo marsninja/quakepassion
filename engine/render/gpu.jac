@@ -190,10 +190,10 @@ obj GpuMesh {
         }
     }
 
-    """Replace the first instance records."""
-    def set_instances(data: bytes) {
+    """Replace the first instance records, or from byte `offset` on."""
+    def set_instances(data: bytes, offset: int = 0) {
         if self.instances != 0 and data {
-            rlUpdateVertexBuffer(u32(self.instances), data, i32(len(data)), i32(0));
+            rlUpdateVertexBuffer(u32(self.instances), data, i32(len(data)), i32(offset));
         }
     }
 

@@ -8,7 +8,8 @@ import from vendor.raylib { def GetTime -> f64; }
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     for game in ["q1", "q2", "q3"] {
       for mode in ["routes", "no_route_search"] {
         app.load_destination(game, "e1m1" if game == "q1" else ("base1" if game == "q2" else "q3dm1"));

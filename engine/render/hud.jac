@@ -36,6 +36,8 @@ import from vendor.raylib {
     ) -> None;  def rlDrawRenderBatchActive -> None;
 }
 import from ..formats.bsp { Texture }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell }
 
 obj HudPic {
     has id: int = 0,
@@ -198,7 +200,27 @@ obj HudRenderer {
     has pics: dict[str, HudPic] = {},
         game: str = "",
         ready: bool = False,
-        three_d: bool = False;
+        three_d: bool = False,
+        crosshair: Cvar = Cvar(
+            name="crosshair",
+            reset_text="1",
+            kind="int",
+            low=0.0,
+            high=10.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["cg_drawCrosshair"],
+            description="draw the crosshair"
+        );
+
+    def declare(shell: Shell) {
+        self.crosshair = shell.register(self.crosshair);
+    }
+
+    """SCR_DrawCrosshair's test: the game asks for one and the crosshair cvar
+    is set."""
+    def shows_crosshair(status: HudStatus) -> bool {
+        return status.crosshair and self.crosshair.integer > 0;
+    }
 
     def add(name: str, texture: Texture) {
         id = 0;
@@ -228,6 +250,11 @@ obj HudRenderer {
 
     def has_pic(name: str) -> bool {
         return name in self.pics;
+    }
+
+    """Draw what is batched before the render state changes."""
+    def flush {
+        rlDrawRenderBatchActive();
     }
 
     def close() {
@@ -305,15 +332,18 @@ obj HudRenderer {
     }
 
     """A line in the game's character sheet (Q1/Q2 conchars, Q3 bigchars):
-    a 16 by 16 grid of cells, `size` pixels square on screen."""
+    a 16 by 16 grid of cells, `size` pixels wide on screen and `tall` pixels
+    high (square when 0; Q3's console draws its 8 by 16 small chars)."""
     def chars(
         message: str,
         x: float,
         y: float,
         size: float,
         tint: list[int] = [255, 255, 255, 255],
-        high: int = 0
+        high: int = 0,
+        tall: float = 0.0
     ) {
+        height = tall if tall > 0.0 else size;
         for i in range(len(message)) {
             code = (ord(message[i]) & 255) ^ high;
             if code == 32 or code == 160 {
@@ -326,7 +356,7 @@ obj HudRenderer {
                 x + float(i) * size,
                 y,
                 size,
-                size,
+                height,
                 tint,
                 column,
                 row,
@@ -498,7 +528,7 @@ obj HudRenderer {
         # SCR_DrawCrosshair / Draw_Character: the conchars '+'. The 3D view
         # fills the whole window (not the vrect above the status bars), so
         # the glyph's own centre, pixel (4, 5) of its cell, sits on the aim.
-        if status.crosshair {
+        if self.shows_crosshair(status) {
             self.q1_char(43, float(width) * 0.5 - 4.0 * scale, float(height) * 0.5 - 5.0 * scale, scale);
         }
     }
@@ -759,7 +789,7 @@ obj HudRenderer {
             }
         }
         # SCR_DrawCrosshair: pics/ch1 centred on the view.
-        if status.crosshair and self.has_pic("ch1") {
+        if self.shows_crosshair(status) and self.has_pic("ch1") {
             p = self.pics["ch1"];
             self.pic(
                 "ch1",
@@ -825,7 +855,7 @@ obj HudRenderer {
             }
         }
         # The default crosshair (cg_drawCrosshair 4), 24 units square.
-        if self.has_pic("crosshair") {
+        if self.shows_crosshair(status) and self.has_pic("crosshair") {
             size = 24.0 * scale;
             self.blit("crosshair", float(width) * 0.5 - size * 0.5, float(height) * 0.5 - size * 0.5, size, size);
         }

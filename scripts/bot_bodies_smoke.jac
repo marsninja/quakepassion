@@ -86,7 +86,8 @@ with entry {
             player.health = 100;
             player.god_mode = True;
         }
-        app = App(world=world, player=camera, level=level, renderer=renderer, clock=Clock(), smoke=True, culling=False);
+        app = App(world=world, player=camera, level=level, renderer=renderer, clock=Clock(), smoke=True);
+        app.renderer.cvars.novis.assign("1");
         equip_player(player, app.combat, "q3");
         app.quake.upload(level);
         app.models.upload(world);

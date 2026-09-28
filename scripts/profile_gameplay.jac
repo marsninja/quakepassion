@@ -15,9 +15,9 @@ with entry {
         player=Player(),
         renderer=renderer,
         clock=Clock(),
-        smoke=True,
-        overlay=False
+        smoke=True
     );
+    app.host.overlay.assign("0");
     for game in ["q1", "q2", "q3", "passion"] {
         app.load_destination(
             game,
@@ -31,7 +31,7 @@ with entry {
         if not app.audio.ready {
             app.audio.open(game, game_directory(game));
         }
-        app.audio.volume = 0.0;
+        app.audio.volume.assign("0");
         resources = app.models.resources;
         for mode in ["full", "without_models", "full_repeat"] {
             if mode == "without_models" {

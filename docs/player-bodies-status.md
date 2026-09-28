@@ -121,7 +121,3 @@ grid.
   | q3dm6 | 5 | 5.18 | 6.74 |
 
   Posing adds up to 0.3 ms per bot, and fewer with culling on.
-
-## Limits
-
-- The powerup shaders drop their texture rotation and turbulence.

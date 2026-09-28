@@ -1,4 +1,4 @@
 [submodule "jaseci"]
 	path = jaseci
-	url = https://github.com/jaseci-labs/jac.git
-	branch = main
+	url = https://github.com/marsninja/jac.git
+	branch = qp-pin

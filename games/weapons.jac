@@ -274,7 +274,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
                 interval=0.1,
                 speed=1000.0,
                 model="models/weapons/g_hyperb/tris.md2",
-                effect="q2_bolt"
+                # fire_blaster(hyper): EF_HYPERBLASTER, lit but trailless.
+                effect="q2_hyperbolt"
             ),
             WeaponRule(
                 slot=9,
@@ -590,7 +591,9 @@ def weapon_effects(game: str) -> list[EffectRule] {
             EffectRule(key="q1_explosion", flight="progs/s_explod.spr", explosion=True),
             # Beam segments: shambler bolt.mdl, the player's bolt2.mdl.
             EffectRule(key="q1_bolt", flight="progs/bolt.mdl"),
-            EffectRule(key="q1_bolt2", flight="progs/bolt2.mdl")
+            EffectRule(key="q1_bolt2", flight="progs/bolt2.mdl"),
+            # Chthon's electrodes (TE_LIGHTNING3).
+            EffectRule(key="q1_bolt3", flight="progs/bolt3.mdl")
         ];
     }
     if game == "q2" {
@@ -605,6 +608,12 @@ def weapon_effects(game: str) -> list[EffectRule] {
             ),
             EffectRule(
                 key="q2_bolt",
+                flight="models/objects/laser/tris.md2",
+                sound="sound/misc/lasfly.wav"
+            ),
+            # fire_blaster(hyper): the same bolt, EF_HYPERBLASTER.
+            EffectRule(
+                key="q2_hyperbolt",
                 flight="models/objects/laser/tris.md2",
                 sound="sound/misc/lasfly.wav"
             ),
@@ -624,6 +633,8 @@ def weapon_effects(game: str) -> list[EffectRule] {
                 flight="models/objects/rocket/tris.md2",
                 sound="sound/weapons/rockfly.wav"
             ),
+            # CL_AddBeams: the parasite's drain and the medic's cable.
+            EffectRule(key="q2_segment", flight="models/monsters/parasite/segment/tris.md2"),
             # cl_tent.c: rocket bursts start on frame 0 or 15, grenades on 30.
             EffectRule(
                 key="q2_explosion",
@@ -715,7 +726,11 @@ def weapon_effects(game: str) -> list[EffectRule] {
             ),
             EffectRule(key="q3_railcore", flight="gfx/misc/railcorethin_mono", additive=True),
             EffectRule(key="q3_raildisc", flight="gfx/misc/raildisc_mono2", additive=True),
-            EffectRule(key="q3_lightning", flight="gfx/misc/lightning3", additive=True),
+            # lightningBoltNew, the 1.32 beam shader.
+            EffectRule(key="q3_lightning", flight="gfx/misc/lightning3new", additive=True),
+            # CG_SmokePuff shaders: the rocket and grenade smoke, gib blood.
+            EffectRule(key="smokePuff", flight="gfx/misc/smokepuff3"),
+            EffectRule(key="bloodTrail", flight="gfx/damage/blood_spurt"),
             # cg_main.c CG_RegisterGraphics: the impact mark shaders.
             EffectRule(key="gfx/damage/bullet_mrk", flight="gfx/damage/bullet_mrk"),
             EffectRule(key="gfx/damage/burn_med_mrk", flight="gfx/damage/burn_med_mrk"),

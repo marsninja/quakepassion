@@ -216,9 +216,9 @@ obj Pk3Assets {
         }
     }
 
-    """A model shader's stages. `deformed` accepts shaders whose vertex
-    deforms the caller applies itself (Q3's powerup shells); their texture
-    rotation and turbulence are dropped, keeping the scroll."""
+    """A model shader's stages, with their tcMods. `deformed` accepts
+    shaders whose vertex deforms the caller applies itself (Q3's powerup
+    shells)."""
     def model_stages(name: str, deformed: bool = False) -> list[ModelStage] {
         key = material_name(name);
         if key not in self.model_shaders {
@@ -230,7 +230,7 @@ obj Pk3Assets {
             return [];
         }
         # Surface-only stage features keep models on their plain skin.
-        if material.advanced and not (deformed and all([feature.startswith("deformvertexes") or feature.startswith("tcmod") for feature in material.advanced])) {
+        if material.advanced and not (deformed and all([feature.startswith("deformvertexes") for feature in material.advanced])) {
             return [];
         }
         result: list[ModelStage] = [];
@@ -247,8 +247,7 @@ obj Pk3Assets {
                     frequency=stage.frequency,
                     environment=stage.environment,
                     blend=stage.blend,
-                    scroll_u=stage.scroll_u,
-                    scroll_v=stage.scroll_v
+                    mods=stage.mods
                 )
             );
         }

@@ -119,9 +119,12 @@ obj PortalTarget {
     }
 
     def finish() {
+        # Leave the framebuffer before EndMode3D: raylib restores the screen's
+        # HiDPI scale only when it ends 3D mode on the window's framebuffer.
+        rlDrawRenderBatchActive();
+        rlDisableFramebuffer();
         EndMode3D();
         rlSetCullFace(i32(1));
-        rlDisableFramebuffer();
     }
 }
 

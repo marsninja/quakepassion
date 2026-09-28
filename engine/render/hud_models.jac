@@ -116,8 +116,11 @@ obj HudModels {
             seconds=seconds,
             basis=model_basis(math.radians(yaw), -math.radians(pitch), 0.0) if pitch != 0.0 else None
         );
-        EndMode3D();
+        # Leave the framebuffer before EndMode3D: raylib restores the screen's
+        # HiDPI scale only when it ends 3D mode on the window's framebuffer.
+        rlDrawRenderBatchActive();
         rlDisableFramebuffer();
+        EndMode3D();
         rlViewport(i32(0), i32(0), GetRenderWidth(), GetRenderHeight());
         hud.pics["icon3d"] = HudPic(id=self.target.color, width=ICON_RESOLUTION, height=ICON_RESOLUTION);
         # Framebuffer images are stored bottom row first.
