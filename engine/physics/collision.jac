@@ -2,7 +2,12 @@
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis }
+import from .patch_collide { PatchCollide }
 
+"""A collision BSP node, or a leaf: a convex brush's planes, or one Q3 patch
+facet's (`facet`, its planes facing out of it; `flipped` marks the borders
+the patch stores the other way round, which only matters for which side a
+point on them counts as)."""
 node HullCell {
     has normal: Vec3 = Vec3(),
         distance: float = 0.0,
@@ -10,17 +15,22 @@ node HullCell {
         planes: list[Vec3] = [],
         distances: list[float] = [],
         point_distances: list[float] = [],
-        triangle: list[Vec3] = [],
+        facet: bool = False,
+        flipped: list[bool] = [],
         point_blocking: bool = True;
 }
 
 edge HullFront: HullCell --> HullCell {}
 edge HullBack: HullCell --> HullCell {}
 
+"""A trace result. `surface_clip` marks a fraction that already stops
+SURFACE_CLIP_EPSILON short of the surface (Q3 patch facets), which the
+map-wide pull-back must not shorten again."""
 obj Trace {
     has fraction: float = 1.0,
         normal: Vec3 = Vec3(),
         start_solid: bool = False,
+        surface_clip: bool = False,
         hull: int = -1,
         model: int = -1,
         end: Vec3 = Vec3();
@@ -45,8 +55,135 @@ obj BodyBox {
     }
 }
 
-"""One convex brush (its planes) or, for point traces, one patch triangle:
-the narrow-phase test at a hull leaf, as a plain call rather than a walker."""
+"""Where leaf `cell`'s plane `i` stands for this query: as stored for a
+point, else expanded by the hull box, lowered for a shorter body (`top_drop`)
+and moved for a different body box, as CM_TraceThroughBrush and
+CM_TraceThroughPatchCollide offset each plane by the box corner facing it."""
+def hull_plane_distance(
+    cell: HullCell, i: int, point: bool, top_drop: float, body: BodyBox | None
+) -> float {
+    n = cell.planes[i];
+    if point and cell.point_distances {
+        return cell.point_distances[i];
+    }
+    distance = cell.distances[i] + min(0.0, n.z) * top_drop;
+    if body is not None and not point {
+        distance += n.x * (body.lo.x if n.x >= 0.0 else body.hi.x)
+            + n.y * (body.lo.y if n.y >= 0.0 else body.hi.y)
+            + n.z * (body.lo.z if n.z >= 0.0 else body.hi.z);
+    }
+    return distance;
+}
+
+"""A plane's crossing along a point trace, as CM_TracePointThroughPatchCollide
+records it: none (99999) when parallel or behind the start."""
+def facet_crossing(d1: float, d2: float) -> float {
+    if d1 == d2 {
+        return 99999.0;
+    }
+    crossing = d1 / (d1 - d2);
+    return 99999.0 if crossing <= 0.0 else crossing;
+}
+
+"""One Q3 patch facet (its surface plane, borders and bevels, the flipped
+surface plane last). Facets are one-sided and have no volume to start in:
+- a point trace (CM_TracePointThroughPatchCollide) hits only from in front
+  of the surface, where it crosses it within all the borders;
+- a box that does not move is inside when behind every expanded plane
+  (CM_PositionTestInPatchCollide);
+- a moving box (CM_TraceThroughPatchCollide, each plane checked as
+  CM_CheckFacetPlane does) hits where it enters all the expanded planes,
+  unless it enters through the back plane, and never starts solid.
+Hits stop SURFACE_CLIP_EPSILON (0.125) short."""
+def facet_sweep(
+    cell: HullCell,
+    start: Vec3,
+    finish: Vec3,
+    point: bool,
+    top_drop: float,
+    body: BodyBox | None
+) -> Trace {
+    count = len(cell.planes);
+    if point {
+        surface = cell.planes[0];
+        d1 = surface.dot(start) - cell.point_distances[0];
+        d2 = surface.dot(finish) - cell.point_distances[0];
+        if d1 <= 0.0 {
+            return Trace();
+        }
+        intersect = facet_crossing(d1, d2);
+        if intersect > 1.0 {
+            return Trace();
+        }
+        for i in range(1, count) {
+            n = cell.planes[i];
+            a = n.dot(start) - cell.point_distances[i];
+            crossing = facet_crossing(a, n.dot(finish) - cell.point_distances[i]);
+            # Outside the border it must be crossed first; inside, after.
+            outside = a >= 0.0 if cell.flipped[i] else a > 0.0;
+            if (outside and crossing > intersect) or (not outside and crossing < intersect) {
+                return Trace();
+            }
+        }
+        return Trace(
+            fraction=max(0.0, (d1 - 0.125) / (d1 - d2)), normal=surface, surface_clip=True
+        );
+    }
+    if start.x == finish.x and start.y == finish.y and start.z == finish.z {
+        for i in range(count) {
+            if cell.planes[i].dot(start) - hull_plane_distance(cell, i, False, top_drop, body) > 0.0 {
+                return Trace();
+            }
+        }
+        return Trace(fraction=0.0, start_solid=True, surface_clip=True);
+    }
+    enter = -1.0;
+    leave = 1.0;
+    hit = -1;
+    for i in range(count) {
+        n = cell.planes[i];
+        distance = hull_plane_distance(cell, i, False, top_drop, body);
+        d1 = n.dot(start) - distance;
+        d2 = n.dot(finish) - distance;
+        # Completely in front of this plane: no intersection with the facet.
+        if d1 > 0.0 and (d2 >= 0.125 or d2 >= d1) {
+            return Trace();
+        }
+        # Not crossing it: the plane is not relevant.
+        if d1 <= 0.0 and d2 <= 0.0 {
+            continue;
+        }
+        if d1 > d2 {
+            # Entering; ties favour earlier planes and so the surface.
+            f = max(0.0, (d1 - 0.125) / (d1 - d2));
+            if f > enter {
+                enter = f;
+                hit = i;
+            }
+        } else {
+            leave = min(leave, min(1.0, (d1 + 0.125) / (d1 - d2)));
+        }
+    }
+    # Never clip against the back side.
+    if hit == count - 1 or enter < 0.0 or enter >= leave {
+        return Trace();
+    }
+    return Trace(fraction=enter, normal=cell.planes[hit], surface_clip=True);
+}
+
+"""A plane pushed out by a box of `mins`..`maxs`: the distance its corner
+facing the plane must stay behind (CM_TraceThroughBrush's offsets[signbits])."""
+def box_plane_distance(normal: Vec3, distance: float, mins: Vec3, maxs: Vec3) -> float {
+    corner = Vec3(
+        x=mins.x if normal.x >= 0.0 else maxs.x,
+        y=mins.y if normal.y >= 0.0 else maxs.y,
+        z=mins.z if normal.z >= 0.0 else maxs.z
+    );
+    return distance - normal.dot(corner);
+}
+
+"""One convex brush (its planes) or one patch facet: the narrow-phase test
+at a hull leaf, as a plain call rather than a walker."""
 def leaf_sweep(
     cell: HullCell,
     start: Vec3,
@@ -58,35 +195,8 @@ def leaf_sweep(
     if point and not cell.point_blocking {
         return Trace();
     }
-    if point and cell.triangle {
-        vertex = cell.triangle[0];
-        edge1 = cell.triangle[1].sub(vertex);
-        edge2 = cell.triangle[2].sub(vertex);
-        direction = finish.sub(start);
-        cross = direction.cross(edge2);
-        determinant = edge1.dot(cross);
-        if abs(determinant) < 0.000000001 {
-            return Trace();
-        }
-        offset = start.sub(vertex);
-        u = offset.dot(cross) / determinant;
-        if u < 0.0 or u > 1.0 {
-            return Trace();
-        }
-        other = offset.cross(edge1);
-        v = direction.dot(other) / determinant;
-        if v < 0.0 or u + v > 1.0 {
-            return Trace();
-        }
-        fraction = edge2.dot(other) / determinant;
-        if fraction < 0.0 or fraction > 1.0 {
-            return Trace();
-        }
-        normal = edge1.cross(edge2).normalized();
-        if normal.dot(direction) > 0.0 {
-            normal = normal.scale(-1.0);
-        }
-        return Trace(fraction=fraction, normal=normal);
+    if cell.facet {
+        return facet_sweep(cell, start, finish, point, top_drop, body);
     }
     if cell.planes {
         enter = 0.0;
@@ -95,14 +205,7 @@ def leaf_sweep(
         inside = True;
         for i in range(len(cell.planes)) {
             n = cell.planes[i];
-            distance = cell.point_distances[i]
-                if point and cell.point_distances
-                else cell.distances[i] + min(0.0, n.z) * top_drop;
-            if body is not None and not point {
-                distance += n.x * (body.lo.x if n.x >= 0.0 else body.hi.x)
-                    + n.y * (body.lo.y if n.y >= 0.0 else body.hi.y)
-                    + n.z * (body.lo.z if n.z >= 0.0 else body.hi.z);
-            }
+            distance = hull_plane_distance(cell, i, point, top_drop, body);
             a = n.dot(start) - distance;
             b = n.dot(finish) - distance;
             if a >= 0.0 {
@@ -185,7 +288,7 @@ walker Sweep {
     }
 
     can intersect with HullCell entry {
-        if here.planes or (self.point and here.triangle) or (self.point and not here.point_blocking) {
+        if here.planes or (self.point and not here.point_blocking) {
             leaf = leaf_sweep(here, self.start, self.finish, self.point, self.top_drop, self.body);
             if leaf.fraction < 1.0 or leaf.start_solid {
                 self.hit(leaf.fraction, leaf.normal, leaf.start_solid);
@@ -383,9 +486,9 @@ def hull_sweep(
         local_start = turn.inverse(local_start);
         local_finish = turn.inverse(local_finish);
     }
-    # A brush or triangle leaf is one plain test; only BSP hulls are walked.
+    # A brush or facet leaf is one plain test; only BSP hulls are walked.
     result = Trace();
-    if hull.planes or (point and hull.triangle) or (point and not hull.point_blocking) {
+    if hull.planes or (point and not hull.point_blocking) {
         result = leaf_sweep(hull, local_start, local_finish, point, top_drop, body);
     } else {
         query = hull spawn Sweep(
@@ -597,12 +700,7 @@ obj CollisionMap {
             if abs(n.length() - 1.0) > 0.01 {
                 raise ValueError("Invalid collision plane normal");
             }
-            corner = Vec3(
-                x=mins.x if n.x >= 0.0 else maxs.x,
-                y=mins.y if n.y >= 0.0 else maxs.y,
-                z=mins.z if n.z >= 0.0 else maxs.z
-            );
-            distance = distances[i] - n.dot(corner);
+            distance = box_plane_distance(n, distances[i], mins, maxs);
             if n.x == 1.0 and n.y == 0.0 and n.z == 0.0 {
                 hi.x = min(hi.x, distance);
             }
@@ -630,45 +728,29 @@ obj CollisionMap {
         self.bounds.append(AABB(mins=lo.add(offset), maxs=hi.add(offset)));
     }
 
-    # Triangle/box separating axes form the exact expanded triangle hull.
-    # Axial planes also give the spatial tree tight, finite bounds.
-    def add_triangle(a: Vec3, b: Vec3, c: Vec3, mins: Vec3, maxs: Vec3, offset: Vec3) {
-        surface = b.sub(a).cross(c.sub(a));
-        if surface.length() < 0.000001 {
-            return;
-        }
-        axes = [Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)];
-        candidates = [surface];
-        candidates.extend(axes);
-        for side in [b.sub(a), c.sub(b), a.sub(c)] {
-            for axis in axes {
-                candidates.append(side.cross(axis));
+    """Add each facet of a Q3 patch (CM_GeneratePatchCollide) as its own hull
+    cell, so the spatial tree culls facets singly. Its planes face out of it,
+    expanded for the hull box as a brush's are; its bounds are the facet
+    winding's grown by the box and the patch bounds' one-unit epsilon."""
+    def add_patch(collide: PatchCollide, mins: Vec3, maxs: Vec3, offset: Vec3) {
+        for facet in collide.facets {
+            cell = HullCell(facet=True, flipped=[False] + facet.inward);
+            for plane in facet.outward(collide.planes) {
+                cell.planes.append(plane.normal);
+                cell.distances.append(box_plane_distance(plane.normal, plane.dist, mins, maxs));
+                cell.point_distances.append(plane.dist);
             }
+            lo = facet.mins if facet.bounded else collide.mins;
+            hi = facet.maxs if facet.bounded else collide.maxs;
+            self.hulls.append(cell);
+            self.offsets.append(offset);
+            self.bounds.append(
+                AABB(
+                    mins=lo.add(mins).add(offset).sub(Vec3(x=1.0, y=1.0, z=1.0)),
+                    maxs=hi.add(maxs).add(offset).add(Vec3(x=1.0, y=1.0, z=1.0))
+                )
+            );
         }
-        normals: list[Vec3] = [];
-        distances: list[float] = [];
-        for candidate in candidates {
-            if candidate.length() < 0.000001 {
-                continue;
-            }
-            unit = candidate.normalized();
-            for n in [unit, unit.scale(-1.0)] {
-                duplicate = False;
-                for prior in normals {
-                    if prior.sub(n).length() < 0.000001 {
-                        duplicate = True;
-                        break;
-                    }
-                }
-                if duplicate {
-                    continue;
-                }
-                normals.append(n);
-                distances.append(max(a.dot(n), max(b.dot(n), c.dot(n))));
-            }
-        }
-        self.add_brush(normals, distances, mins, maxs, offset);
-        self.hulls[-1].triangle = [a, b, c];
     }
 
     def reindex() {
@@ -768,11 +850,12 @@ obj CollisionMap {
                 result.model = self.models[i] if i < len(self.models) else -1;
                 result.fraction = query.fraction;
                 result.normal = query.normal;
+                result.surface_clip = query.surface_clip;
             }
         }
         if result.start_solid {
             result.fraction = 0.0;
-        } elif result.fraction < 1.0 and not point {
+        } elif result.fraction < 1.0 and not point and not result.surface_clip {
             approach = abs(finish.sub(start).dot(result.normal));
             if approach > 0.00001 {
                 result.fraction = max(0.0, result.fraction - 0.03125 / approach);
