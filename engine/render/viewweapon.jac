@@ -34,6 +34,7 @@ import from ..world.world { Player }
 import from ..world.combat { CombatState }
 import from ..world.weapons { ViewWeaponRule, view_frame, switch_frame }
 import from ..world.lighting { Lighting }
+import from .view_sway { ViewPlacement }
 
 obj ViewAsset {
     has rule: ViewWeaponRule,
@@ -111,17 +112,16 @@ obj ViewWeapon {
         }
     }
 
-    """`lift` raises the weapon by that fraction of the screen height, so a
-    weapon drawn at the bottom of the view sits above an opaque status bar.
-    `sink` lowers it with the eye (a landing dip, a step being eased in), as
-    each game places the gun at the view origin."""
+    """`view` places and turns the gun (each game's own rule, view_sway.jac);
+    `lift` raises the weapon by that fraction of the screen height, so a
+    weapon drawn at the bottom of the view sits above an opaque status bar."""
     def draw(
         player: Player,
         state: CombatState,
         seconds: float,
         lighting: Lighting,
-        lift: float = 0.0,
-        sink: float = 0.0
+        view: ViewPlacement,
+        lift: float = 0.0
     ) {
         if player.health <= 0 or state.weapon not in self.assets {
             return;
@@ -193,21 +193,8 @@ obj ViewWeapon {
                 frame = turning;
             }
         }
-        basis = model_basis(player.yaw, player.pitch);
-        origin = player.pos.sub(Vec3(z=sink));
-        speed = min(
-            1.0, Vec3(x=player.velocity.x, y=player.velocity.y).length() / 320.0
-        );
-        if player.grounded {
-            origin = origin.add(
-                basis.left.scale(math.sin(seconds * 8.0) * speed * 0.5)
-            );
-            origin = origin.add(
-                basis.up.scale(abs(math.cos(seconds * 8.0)) * speed * 0.5)
-            );
-        }
-        recoil = max(0.0, 1.0 - (seconds - self.fired_at) / 0.16);
-        origin = origin.sub(basis.forward.scale(recoil * 1.5));
+        basis = model_basis(view.gun_yaw, view.gun_pitch, view.gun_roll);
+        origin = view.gun;
         model_frame = frame;
         if asset.hand.tags {
             for tag in asset.hand.tags[frame].tags {
@@ -268,10 +255,10 @@ obj ViewWeapon {
                 }
                 asset.drawing.draw(
                     origin,
-                    player.yaw,
+                    view.gun_yaw,
                     first=model_frame,
                     second=model_frame,
-                    eye=player.pos,
+                    eye=view.eye,
                     seconds=seconds,
                     illumination=illumination,
                     basis=basis,
@@ -296,8 +283,8 @@ obj ViewWeapon {
                             }
                             asset.barrel.draw(
                                 origin.add(basis.apply(tag.origin)),
-                                player.yaw,
-                                eye=player.pos,
+                                view.gun_yaw,
+                                eye=view.eye,
                                 seconds=seconds,
                                 illumination=illumination,
                                 basis=barrel_basis,
@@ -320,8 +307,8 @@ obj ViewWeapon {
                         mount = Basis(forward=tag.axes[0], left=tag.axes[1], up=tag.axes[2]);
                         asset.flash.draw(
                             origin.add(basis.apply(tag.origin)),
-                            player.yaw,
-                            eye=player.pos,
+                            view.gun_yaw,
+                            eye=view.eye,
                             seconds=seconds,
                             basis=Basis(
                                 forward=basis.apply(mount.apply(turned.forward)),

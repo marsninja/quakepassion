@@ -7,10 +7,12 @@ V_BonusFlash_f, V_CalcRefdef's dead roll. Q2 p_view.c: P_DamageFeedback
 the dead view. Q3 cg_view.c: CG_DamageFeedback / CG_DamageBlendBlob, the
 landing change and CG_OffsetFirstPersonView's dead view. Each game also eases
 the eye up a step instead of jumping it there (Q1 V_CalcRefdef's oldz, Q2
-cl.predicted_step, Q3 cg.stepChange)."""
+cl.predicted_step, Q3 cg.stepChange). `place` puts it together with the
+game's sway (view_sway.jac) into where the eye and the gun are this frame."""
 import math;
 import from ..world.world { Player }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from .view_sway { ViewSway, ViewBase, ViewPlacement, view_sway_for }
 
 """One full-screen colour layer, composed in order as V_CalcBlend does."""
 obj ScreenTint {
@@ -38,10 +40,18 @@ obj ViewFeedback {
         step_z: float = 0.0,
         step_ready: bool = False,
         step_change: float = 0.0,
-        step_time: float = 0.0;
+        step_time: float = 0.0,
+        step_was: float = 0.0,
+        carried: float = 0.0,
+        carried_was: float = 0.0,
+        sway: ViewSway = ViewSway();
 
     def reset(game: str) {
         self.game = game;
+        self.sway = view_sway_for(game);
+        self.step_was = 0.0;
+        self.carried = 0.0;
+        self.carried_was = 0.0;
         self.damage_level = 0.0;
         self.kick_time = 0.0;
         self.bonus = 0.0;
@@ -137,6 +147,7 @@ obj ViewFeedback {
 
     """Q2 fall_value (pitch, fading over 0.3 s) or Q3 landChange (a dip)."""
     def landing(kick: float, drop: float) {
+        self.sway.landed();
         if kick > 0.0 {
             self.fall_pitch = kick;
             self.fall_time = 0.3;
@@ -160,7 +171,17 @@ obj ViewFeedback {
         self.land_time = max(0.0, self.land_time - dt);
         self.blob_time = max(0.0, self.blob_time - dt);
         self.flash_time = max(0.0, self.flash_time - dt);
+    }
+
+    """A physics tick begins: keep the step offset the frames until the next
+    tick blend from, let the step ease on and move the sway along with the
+    body. Steps are events of the simulation, so their easing runs on its
+    ticks and is drawn between them like the body it offsets."""
+    def tick(player: Player, moving: bool, dt: float) {
+        self.step_was = self.step_offset();
+        self.carried_was = self.carried;
         self.step_time = max(0.0, self.step_time - dt);
+        self.sway.tick(player, moving, dt);
     }
 
     """A step up the body just climbed, in units. Q2 CL_PredictMovement keeps
@@ -192,11 +213,13 @@ obj ViewFeedback {
     units a second leaves the eye 12 behind for the whole ride and a step off
     its top (forward held against the shaft wall steps up to 18 units onto
     the landing before the lift arrives) then jumps the eye in one frame. The
-    eye rides the lift rigidly instead, keeping the 12 for the steps. Q2 and
-    Q3 ease step events alone, so the ride never touches them."""
+    eye rides the lift rigidly instead, keeping the 12 for the steps: `climb`
+    eases the body's height less all it has been carried, which moves between
+    ticks with the body. Q2 and Q3 ease step events alone, so the ride never
+    touches them."""
     def ride(rise: float) {
-        if self.game == "q1" and self.step_ready {
-            self.step_z += rise;
+        if self.game == "q1" {
+            self.carried += rise;
         }
     }
 
@@ -204,19 +227,27 @@ obj ViewFeedback {
     with a step. Q1 V_CalcRefdef ("smooth out stair step ups"): on the ground
     and rising, the view follows at 80 units a second but never more than 12
     behind, so a stair or a platform's lip eases in; anything else puts it
-    straight back on the body. Q2 and Q3 lower it by the last `step` as that
-    fades."""
-    def climb(z: float, grounded: bool, dt: float) -> float {
+    straight back on the body (`z` is the body as drawn this frame). Q2 and
+    Q3 lower it by the last `step` as that fades, `share` of the way through
+    the last physics tick."""
+    def climb(z: float, grounded: bool, dt: float, share: float = 1.0) -> float {
         if self.game == "q1" {
-            if self.step_ready and grounded and z > self.step_z {
-                self.step_z = max(z - 12.0, min(z, self.step_z + 80.0 * dt));
+            footing = z - (self.carried_was + (self.carried - self.carried_was) * share);
+            if self.step_ready and grounded and footing > self.step_z {
+                self.step_z = max(footing - 12.0, min(footing, self.step_z + 80.0 * dt));
             } else {
-                self.step_z = z;
+                self.step_z = footing;
             }
             self.step_ready = True;
-            return z - self.step_z;
+            return footing - self.step_z;
         }
-        if self.step_time <= 0.0 {
+        return self.step_was + (self.step_offset() - self.step_was) * share;
+    }
+
+    """Q2 and Q3: how far below the body the eye sits as the last tick left
+    it, the last step fading over 100 or 200 ms."""
+    def step_offset() -> float {
+        if self.game not in ["q2", "q3"] or self.step_time <= 0.0 {
             return 0.0;
         }
         return self.step_change * self.step_time / (0.1 if self.game == "q2" else 0.2);
@@ -252,15 +283,83 @@ obj ViewFeedback {
         return self.kick_share() * self.kick_roll;
     }
 
-    """Units the eye sinks: Q3's landing dip deflects over 150 ms and returns
-    over 300."""
+    """Units the eye sinks: Q2 SV_CalcViewOffset lowers it by 0.4 of the
+    fall kick as that fades; Q3's landing dip deflects over 150 ms and
+    returns over 150 more."""
     def eye_drop() -> float {
+        if self.game == "q2" {
+            return self.fall_pitch * 0.4 * self.fall_time / 0.3;
+        }
         if self.land_time <= 0.0 {
             return 0.0;
         }
         elapsed = 0.3 - self.land_time;
         share = elapsed / 0.15 if elapsed < 0.15 else max(0.0, 1.0 - (elapsed - 0.15) / 0.15);
         return self.land_drop * share;
+    }
+
+    """Where the eye and the gun are this frame. `body` is the body's eye as
+    drawn this frame (between ticks, engine/math/interpolation.jac), `share`
+    how far through the last tick that is, `clock` the simulation time shown
+    and `punch` the weapon punch in degrees (positive looks up). The eye is
+    eased up steps and dipped by landings, then the game's sway bobs and rolls
+    it and places the gun; the dead view replaces it all, and an intermission
+    camera takes none of it (Q2 ClientEndServerFrame and Q3
+    CG_OffsetFirstPersonView skip it), Q1 swaying it gently instead
+    (V_CalcIntermissionRefdef's V_AddIdle at v_idlescale 1)."""
+    def place(
+        player: Player,
+        body: Vec3,
+        grounded: bool,
+        frame_dt: float,
+        clock: float,
+        share: float,
+        punch: float,
+        eye_height: float,
+        dead: bool = False,
+        intermission: bool = False
+    ) -> ViewPlacement {
+        if intermission {
+            yaw = player.yaw;
+            pitch = player.pitch;
+            roll = 0.0;
+            if self.game == "q1" {
+                # v_iroll_cycle 0.5 / level 0.1, v_ipitch 1 / 0.3, v_iyaw 2 / 0.3.
+                roll = math.radians(math.sin(clock * 0.5) * 0.1);
+                pitch -= math.radians(math.sin(clock) * 0.3);
+                yaw += math.radians(math.sin(clock * 2.0) * 0.3);
+            }
+            return ViewPlacement(
+                eye=body, yaw=yaw, pitch=pitch, roll=roll, gun=body,
+                gun_yaw=yaw, gun_pitch=pitch, gun_roll=roll
+            );
+        }
+        dip = self.eye_drop();
+        sink = dip + self.climb(body.z, grounded, frame_dt, share);
+        if dead {
+            fallen = death_view(player, self.game, eye_height);
+            eye = body.sub(Vec3(z=fallen[0]));
+            pitch = math.radians(fallen[1]);
+            roll = math.radians(fallen[2]);
+            return ViewPlacement(
+                eye=eye, yaw=fallen[3], pitch=pitch, roll=roll, gun=eye,
+                gun_yaw=fallen[3], gun_pitch=pitch, gun_roll=roll
+            );
+        }
+        return self.sway.place(
+            player,
+            ViewBase(
+                eye=body.sub(Vec3(z=sink)),
+                yaw=player.yaw,
+                pitch=player.pitch,
+                kick_pitch=self.pitch(),
+                kick_roll=self.roll(),
+                punch=punch,
+                dip=dip
+            ),
+            clock,
+            share
+        );
     }
 
     """The colour layers over the view, in V_CalcBlend order: the liquid the

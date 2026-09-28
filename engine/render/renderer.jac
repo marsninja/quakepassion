@@ -68,6 +68,7 @@ import from ..world.combat {
     selected_weapon
 }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.interpolation { TickBlend }
 import from ..world.world { World, Area, Surface }
 
 
@@ -111,12 +112,14 @@ obj Renderer {
     def end_scene();
 
     def draw_overlay(lines: list[str]);
-    def draw_opponents(world: World, height: float);
+    def draw_opponents(world: World, height: float, blend: TickBlend = TickBlend());
     def draw_message(message: str);
     def draw_loading(name: str);
     def draw_combat(state: CombatState, arena: bool, ammo: int = -1, score: str = "");
     def draw_scoreboard(title: str, lines: list[str], footer: str);
-    def draw_projectiles(world: World, hidden_effects: list[str] = []);
+    def draw_projectiles(
+        world: World, hidden_effects: list[str] = [], blend: TickBlend = TickBlend()
+    );
     def draw_terminal(message: str);
     def draw_finale(text: str, prompt: str);
     def draw_keys(message: str);

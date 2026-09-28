@@ -848,6 +848,7 @@ obj ModelRenderer {
 
 import from ..world.world { World, Area }
 import from ..world.models { ModelResource, HasModelResource, GatherModels, ModelDraw }
+import from ..math.interpolation { TickBlend }
 
 """tr_main.c R_ComputeFogNum: the first fog volume the model's bounding sphere
 overlaps."""
@@ -896,9 +897,10 @@ obj ModelScene {
         aspect: float = 1.7777777778,
         lighting: Lighting = Lighting(),
         fogs: list[FogVolume] = [],
-        fog_image: int = 0
+        fog_image: int = 0,
+        blend: TickBlend = TickBlend()
     ) {
-        scene = world spawn GatherModels(seconds=seconds, areas=self.areas);
+        scene = world spawn GatherModels(seconds=seconds, areas=self.areas, blend=blend);
         forward = forward_from(yaw, pitch);
         # One program bind for every model (the legacy path draws immediately).
         gpu_pass = open_model_pass();

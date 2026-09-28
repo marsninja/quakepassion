@@ -9,6 +9,7 @@ surface."""
 
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from ..math.interpolation { TickPose }
 import from .inventory { Inventory }
 
 
@@ -52,7 +53,10 @@ edge In: Entity --> Area {}
 node Entity {
     has pos: Vec3 = Vec3(),
         yaw: float = 0.0,
-        pitch: float = 0.0;
+        pitch: float = 0.0,
+        # Where it stood when the physics tick in progress began, for drawing
+        # it between ticks (engine/math/interpolation.jac).
+        tick_pose: TickPose = TickPose();
 }
 
 

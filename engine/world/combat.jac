@@ -32,6 +32,7 @@ import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace }
 import from ..physics.movement { MovePlayer, step_slide, slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.interpolation { TickPose }
 
 edge HasOpponent: World --> Opponent {}
 node Opponent(Player) {
@@ -1261,7 +1262,8 @@ node Projectile {
         homing: float = 0.0,
         homing_wait: float = 0.0,
         owner: Opponent | None = None,
-        quarry: Player | None = None;
+        quarry: Player | None = None,
+        tick_pose: TickPose = TickPose();
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {

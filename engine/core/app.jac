@@ -98,7 +98,7 @@ import from ..world.combat {
 }
 import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
 import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
-import from ..render.view_feedback { ViewFeedback, death_view }
+import from ..render.view_feedback { ViewFeedback }
 import from ..world.light_effects { combat_lights }
 import from ..world.teardown { destroy_graph, collision_roots }
 import from games.opponents { populate_opponents, populate_finale }
@@ -136,6 +136,8 @@ import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
+import from ..math.interpolation { TickBlend }
+import from ..world.motion { CaptureMotion }
 import from ..physics.movement { MovePlayer, SetStance }
 import from ..input.input {
     Intent,
@@ -223,6 +225,9 @@ obj App {
         jump_pending: bool = False,
         arena_contacts: ArenaContactIndex = ArenaContactIndex(),
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
+        # The last physics tick run and how far the frame is through the
+        # next: frames draw bodies between their last two ticks.
+        tick_blend: TickBlend = TickBlend(),
         movement_status: str = "F4: walk / fly",
         save_path: str = "",
         notice: str = "",
