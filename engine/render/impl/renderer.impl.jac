@@ -417,9 +417,10 @@ impl Renderer.draw_projectiles(
     # projectile markers go to the instanced cube batch.
     cubes = self.cubes;
     immediate = cubes.immediate();
+    # Without the effect scene's bolt3.mdl, Chthon's lightning is a line.
     for event in [world->:HasLightning:->][?:LightningEvent] {
         doors = [event->:Electrode:->][?:Door];
-        if event.remaining > 0.0 and len(doors) == 2 {
+        if event.remaining > 0.0 and len(doors) == 2 and "q1_bolt3" not in hidden_effects {
             start = electrode_point(doors[0]);
             finish = electrode_point(doors[1]);
             DrawLine3D(
@@ -445,7 +446,7 @@ impl Renderer.draw_projectiles(
                 cubes.add(at.x, at.y, at.z, float(side), int(color.r), int(color.g), int(color.b), int(color.a));
             }
         }
-        for finish in projectile.beams {
+        for finish in (projectile.beams if projectile.effect not in hidden_effects else []) {
             DrawLine3D(
                 origin,
                 Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),

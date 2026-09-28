@@ -34,7 +34,7 @@ import from ..world.world { Player }
 import from ..world.combat { CombatState }
 import from ..world.weapons { ViewWeaponRule, GunAnimation, grenade_frame, switch_frame }
 import from ..world.models { lerp_tag }
-import from ..world.lighting { Lighting }
+import from ..world.lighting { Lighting, MODEL_LIGHT_VIEW }
 import from .view_sway { ViewPlacement }
 
 obj ViewAsset {
@@ -251,12 +251,9 @@ obj ViewWeapon {
             weapon_projection.m13 = f32(float(projection.m13) + shift * float(projection.m15));
         }
         rlSetMatrixProjection(weapon_projection);
-        illumination = lighting.sample(player.pos);
-        illumination.ambient = Vec3(
-            x=max(0.1, illumination.ambient.x),
-            y=max(0.1, illumination.ambient.y),
-            z=max(0.1, illumination.ambient.z)
-        );
+        # Lit where the frame's view is (the gun entity's origin), as a view
+        # weapon: Q1 at least 24, Q2 and Q3 RF_MINLIGHT.
+        illumination = lighting.light_model(view.eye, math.degrees(view.yaw), MODEL_LIGHT_VIEW);
         # One model pass for the gun, its barrel and flash, under this projection.
         open_model_pass();
         try {

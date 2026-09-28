@@ -441,8 +441,13 @@ glob WORLD_INPUTS: str = "#version 330\nlayout(location=0) in vec3 inPosition; l
 
 # Q1/Q2 lightmapped surfaces in one pass (R_BuildLightMap, R_AddDynamicLights,
 # fullbright texels): each light style layer scaled by its current value
-# (d_lightstylevalue) and doubled, clamped as the 8-bit lightmap was; dynamic
-# lights added per pixel; palette fullbrights (texture alpha 0) unlit.
+# (d_lightstylevalue) and doubled, clamped as the 8-bit lightmap was; palette
+# fullbrights (texture alpha 0) unlit. Dynamic lights add to the light before
+# it is doubled, per pixel where the originals add per lightmap sample: a
+# light's radius less its distance from the surface's plane is the most it
+# gives there, falling off one for one with the distance across the plane,
+# and nothing once that is below its minimum light (Q1 dl->minlight, Q2
+# DLIGHT_CUTOFF). They light either side of a surface, as in Quake.
 glob LIT_VS: str = WORLD_INPUTS
     + "uniform vec4 lightStyles[64]; out vec2 uv; out vec2 luv; out vec3 worldPosition; flat out vec4 styleScale; flat out float layerStride; flat out float lit;\n"
     + "float styleValue(float s){ int i=int(s+0.5); return lightStyles[i>>2][i&3]; }\n"
@@ -453,9 +458,10 @@ glob LIT_VS: str = WORLD_INPUTS
     + " if(styleScale.y>0.0) light+=texture(lightMap,luv+vec2(layerStride,0.0)).rgb*styleScale.y;"
     + " if(styleScale.z>0.0) light+=texture(lightMap,luv+vec2(layerStride*2.0,0.0)).rgb*styleScale.z;"
     + " if(styleScale.w>0.0) light+=texture(lightMap,luv+vec2(layerStride*3.0,0.0)).rgb*styleScale.w;"
-    + " c=base.rgb*min(light*2.0,vec3(1.0)); vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition))); vec3 d=vec3(0.0);"
-    + " for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float distance=length(delta); float a=max(0.0,1.0-distance/flashPosition[i].w); d+=flashColor[i].rgb*a*a*max(0.0,dot(n,delta/max(distance,0.001))); }"
-    + " c=min(c+base.rgb*d,vec3(1.0)); } c=mix(c,base.rgb,1.0-base.a); finalColor=vec4(c,1.0); }\n";
+    + " vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition)));"
+    + " for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float plane=dot(delta,n); float rad=flashPosition[i].w-abs(plane); float cut=flashColor[i].w;"
+    + " if(rad<cut) continue; float across=length(delta-n*plane); if(across<rad-cut) light+=flashColor[i].rgb*((rad-across)/255.0); }"
+    + " c=base.rgb*min(light*2.0,vec3(1.0)); } c=mix(c,base.rgb,1.0-base.a); finalColor=vec4(c,1.0); }\n";
 
 # Q1/Q2 liquids and translucent faces, unlit (gl_warp.c EmitWaterPolys: 8
 # texels of sine sway at one radian a second; Q2 SURF_FLOWING scrolls).

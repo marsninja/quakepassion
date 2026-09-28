@@ -120,4 +120,3 @@ grid.
   module `models.jac` does not import (a Jac defect with a minimal repro, to be
   fixed upstream). The player's view weapon shows its shells.
 - Bodies are not solid to movement.
-- The powerup shaders drop their texture rotation and turbulence.

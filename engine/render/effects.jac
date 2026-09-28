@@ -28,12 +28,16 @@ import from ..world.particles {
     HasTrail,
     ImpactMark,
     HasMark,
-    ImpactParticle,
-    HasParticle,
     mark_axes,
     MARK_TOTAL_TIME,
     MARK_FADE_TIME
 }
+import from ..world.particle_field { ParticleField, HasParticles, puff_state }
+import from ..world.missile_trails { EmitTrails }
+import from .particles { ParticleRing }
+import from .polygons { ScenePolygons, POLYGON_BLEND_ALPHA, POLYGON_BLEND_DARKEN }
+import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
+import from ..world.doors { Door }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..math.interpolation { TickBlend }
 import from .quake { QuakeRenderer }
@@ -332,28 +336,28 @@ obj EffectQuads {
 
 """The effects in a world, gathered in one walk over its effect edges."""
 walker GatherEffects {
-    has particles: list[ImpactParticle] = [],
-        marks: list[ImpactMark] = [],
+    has marks: list[ImpactMark] = [],
         trails: list[ShotTrail] = [],
         blasts: list[Explosion] = [],
         projectiles: list[Projectile] = [],
-        with_particles: bool = True,
-        with_sprites: bool = True;
+        lightning: list[LightningEvent] = [],
+        field: ParticleField | None = None;
 
     can begin with World entry {
-        if self.with_particles {
-            visit [here->:HasParticle:->];
-        }
-        if self.with_sprites {
-            visit [here->:HasMark:->];
-            visit [here->:HasTrail:->];
-            visit [here->:HasExplosion:->];
-            visit [here->:HasProjectile:->];
-        }
+        visit [here->:HasParticles:->];
+        visit [here->:HasLightning:->];
+        visit [here->:HasMark:->];
+        visit [here->:HasTrail:->];
+        visit [here->:HasExplosion:->];
+        visit [here->:HasProjectile:->];
     }
 
-    can particle with ImpactParticle entry {
-        self.particles.append(here);
+    can particles with ParticleField entry {
+        self.field = here;
+    }
+
+    can electrodes with LightningEvent entry {
+        self.lightning.append(here);
     }
 
     can mark with ImpactMark entry {
@@ -381,7 +385,29 @@ obj UploadedSprite {
 }
 
 # Trails this scene draws itself; the line renderer leaves them alone.
-glob STYLED_TRAILS: list[str] = ["rail", "q2_rail", "q3_rail", "lightning", "player_lightning"];
+glob STYLED_TRAILS: list[str] = [
+    "rail",
+    "q3_rail",
+    "lightning",
+    "player_lightning",
+    "drain",
+    "laser_red",
+    "laser_green",
+    "laser_blue",
+    "laser_yellow",
+    "laser_orange"
+];
+
+"""Q2 target_laser_start's beam colours: four palette entries each, packed
+in its skinnum (red 0xf2f2f0f0, green 0xd0d1d2d3, blue 0xf3f3f1f1, yellow
+0xdcdddedf, orange 0xe0e1e2e3); the BFG's lasers are green."""
+glob QUAKE2_LASER_COLORS: dict[str, list[int]] = {
+    "laser_red": [240, 240, 242, 242],
+    "laser_green": [211, 210, 209, 208],
+    "laser_blue": [241, 241, 243, 243],
+    "laser_yellow": [223, 222, 221, 220],
+    "laser_orange": [227, 226, 225, 224]
+};
 
 obj EffectScene {
     has flight: dict[str, list[UploadedSprite]] = {},
@@ -393,6 +419,10 @@ obj EffectScene {
         blast_frames: dict[str, list[UploadedSprite]] = {},
         blast_models: dict[str, list[ModelRenderer]] = {},
         quads: EffectQuads = EffectQuads(),
+        polygons: ScenePolygons = ScenePolygons(),
+        particles: ParticleRing = ParticleRing(),
+        palette: bytes = b"",
+        lighting: Lighting = Lighting(),
         game: str = "";
 
     def keys() -> list[str] {
@@ -486,6 +516,17 @@ obj EffectScene {
         library = AssetLibrary(game=game);
         try {
             library.open(directory);
+            # The palette particle colours index: Q1 gfx/palette.lmp, Q2
+            # the one pics/colormap.pcx carries. Q1 particles write depth.
+            palette = b"";
+            if game == "q1" {
+                palette = library.read("gfx/palette.lmp");
+            } elif game == "q2" {
+                colormap = library.read("pics/colormap.pcx");
+                palette = colormap[len(colormap) - 768:] if len(colormap) >= 769 else b"";
+            }
+            self.particles.open(palette, game == "q1");
+            self.palette = palette;
             for rule in rules {
                 self.rules[rule.key] = rule;
                 model_path = rule.flight.lower().endswith((".mdl", ".md2", ".md3"));
@@ -579,10 +620,18 @@ obj EffectScene {
         up = side.cross(forward_from(yaw, pitch)).normalized();
         self.quads.side = side;
         self.quads.up = up;
-        found = world spawn GatherEffects(with_particles=False);
+        self.lighting = lighting;
+        found = world spawn GatherEffects();
+        field = found.field;
+        now = field.clock if field is not None else 0.0;
         self.draw_marks(found.marks, eye);
-        self.draw_trails(found.trails, eye);
+        self.draw_trails(found.trails, eye, now);
+        self.draw_electrodes(found.lightning, eye);
+        self.draw_bfg_lasers(found.projectiles, blend);
         self.draw_blasts(found.blasts, eye);
+        if field is not None {
+            self.draw_puffs(field, eye);
+        }
         if not self.textures and not self.models {
             return;
         }
@@ -607,7 +656,7 @@ obj EffectScene {
                 second=model_frame,
                 eye=eye,
                 seconds=projectile.age,
-                illumination=lighting.sample(at),
+                illumination=lighting.light_model(at, math.degrees(heading)),
                 basis=model_basis(heading, elevation, spin)
             );
         }
@@ -649,61 +698,84 @@ obj EffectScene {
         self.quads.flush();
     }
 
-    """Impact and explosion particles as small camera-facing squares, depth
-    written like the cubes they replace (Q1 R_DrawParticles, Q2
-    R_DrawParticles): blood red or dust fading out, and fire embers cooling
-    from yellow through orange to red (Q1 ramp1/ramp2, Q2 0xe0)."""
-    def draw_particles(world: World, yaw: float, pitch: float) {
-        found = world spawn GatherEffects(with_sprites=False);
-        if not found.particles {
+    """Chthon's lightning (boss.qc lightning_fire, TE_LIGHTNING3): bolt3.mdl
+    from 16 below one electrode toward the other, the far end pulled back
+    100 units for the bolt's length, every tenth of a second it lasts."""
+    def draw_electrodes(events: list[LightningEvent], eye: Vec3) {
+        for event in events {
+            doors = [event->:Electrode:->][?:Door];
+            if event.remaining <= 0.0 or len(doors) != 2 {
+                continue;
+            }
+            start = electrode_point(doors[0]);
+            finish = electrode_point(doors[1]);
+            finish = finish.sub(finish.sub(start).normalized().scale(100.0));
+            if finish.sub(start).length() >= 1.0 {
+                self.draw_segments("q1_bolt3", start, finish, eye, event.remaining, 30.0, False);
+            }
+        }
+    }
+
+    """The BFG ball's lasers to whatever it sees (TE_BFG_LASER): green RF_BEAM
+    tubes four across, redrawn as long as they last."""
+    def draw_bfg_lasers(projectiles: list[Projectile], blend: TickBlend) {
+        drawn = False;
+        for projectile in projectiles {
+            if projectile.effect != "q2_bfg" or not projectile.beams {
+                continue;
+            }
+            at = blend.place(projectile.tick_pose, projectile.pos);
+            for finish in projectile.beams {
+                self.laser_beam(at, finish, QUAKE2_LASER_COLORS["laser_green"], 4.0, projectile.age);
+                drawn = True;
+            }
+        }
+        if drawn {
+            self.quads.flush();
+        }
+    }
+
+    """Lay the missiles' and gibs' trails up to where the frame shows them
+    (`blend`), then draw every Q1/Q2 particle still showing (particles.jac
+    ParticleRing)."""
+    def draw_particles(world: World, yaw: float, pitch: float, blend: TickBlend = TickBlend()) {
+        emitted = world spawn EmitTrails(blend=blend);
+        field = emitted.field;
+        if field is None {
             return;
         }
-        self.quads.open();
-        side = right_from(yaw);
-        self.quads.side = side;
-        self.quads.up = side.cross(forward_from(yaw, pitch)).normalized();
-        origin = Vec3();
-        for particle in found.particles {
-            fade = max(0.0, particle.remaining / particle.lifetime);
-            red = 170;
-            green = 20;
-            blue = 15;
-            alpha = int(255.0 * fade);
-            size = 0.4 + fade * 0.6;
-            if particle.fire {
-                red = 255;
-                green = int(60.0 + 180.0 * fade);
-                blue = int(20.0 + 60.0 * fade * fade);
-                alpha = int(255.0 * min(1.0, fade * 1.5));
-                size = 1.2 + fade * 1.2;
-            } elif not particle.blood {
-                red = 210;
-                green = 185;
-                blue = 145;
+        self.particles.feed(field);
+        self.particles.draw(field.clock, yaw, pitch);
+    }
+
+    """Q3's smoke and blood puffs (cg_localents.c CG_AddScaleFade and
+    CG_AddFallScaleFade): each a turned sprite of its shader, blended by the
+    alpha it fades by."""
+    def draw_puffs(field: ParticleField, eye: Vec3) {
+        if not field.puffs {
+            return;
+        }
+        for puff in field.puffs {
+            art = self.flight.get(puff.shader, []);
+            if not art {
+                continue;
             }
-            # A cube `size` across shows about 1.2 times that edge on screen.
-            half = size * 0.6;
-            self.quads.add(
-                0,
+            state = puff_state(puff, field.clock, eye);
+            if not state.alive {
+                continue;
+            }
+            sprite = art[0];
+            self.billboard(
+                sprite,
+                state.position,
                 EFFECT_BLEND_ALPHA,
-                particle.pos,
-                origin,
-                origin,
-                -half,
-                -half,
-                half,
-                half,
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-                red,
-                green,
-                blue,
-                min(255, alpha)
+                scale=state.radius * 2.0 / float(max(1, sprite.frame.width)),
+                alpha=state.alpha,
+                angle=puff.rotation * math.pi / 180.0,
+                tint=puff.color
             );
         }
-        self.quads.flush(depth_write=True);
+        self.quads.flush();
     }
 
     """Explosions: Q1 s_explod.spr at 10 frames a second; Q2's r_explode
@@ -769,15 +841,18 @@ obj EffectScene {
         self.quads.flush();
     }
 
-    """Q3 cg_marks.c CG_AddMarks: each mark's square on its wall, lifted off
-    it a little (the shaders' polygonOffset) and fading over its last second.
-    The bullet, burn and hole marks darken what is behind them (blendFunc
-    GL_ZERO GL_ONE_MINUS_SRC_COLOR) and fade their colour; energy marks
-    blend by alpha, their glow dying over three seconds."""
+    """Q3 cg_marks.c CG_AddMarks: each mark's pieces on the faces it was cut
+    to (CG_ImpactMark's R_MarkFragments), textured from the mark's own
+    square, lifted off the wall a little (the shaders' polygonOffset) and
+    fading over its last second. The bullet, burn and hole marks darken
+    what is behind them (blendFunc GL_ZERO GL_ONE_MINUS_SRC_COLOR) and fade
+    their colour; energy marks blend by alpha, their glow dying over three
+    seconds."""
     def draw_marks(marks: list[ImpactMark], eye: Vec3) {
         if not marks {
             return;
         }
+        self.polygons.open();
         for mark in marks {
             art = self.flight.get(mark.shader, []);
             if not art {
@@ -786,110 +861,88 @@ obj EffectScene {
             fade = min(1.0, max(0.0, (MARK_TOTAL_TIME - mark.age) / MARK_FADE_TIME));
             shade = mark.color.scale(fade);
             alpha = 1.0;
-            blend = EFFECT_BLEND_DARKEN;
+            blend = POLYGON_BLEND_DARKEN;
             if mark.alpha_fade {
                 glow = min(1.0, max(0.0, (450.0 - 450.0 * mark.age / 3.0) / 255.0));
                 shade = mark.color.scale(glow);
                 alpha = fade;
-                blend = EFFECT_BLEND_ALPHA;
+                blend = POLYGON_BLEND_ALPHA;
             }
             axes = mark_axes(mark.normal, mark.angle);
+            scale = 0.5 / mark.radius;
             # Depth precision falls with distance; so does the lift grow.
-            lift = 0.3 + mark.pos.sub(eye).length() * 0.0005;
-            self.quads.add(
-                art[0].texture,
-                blend,
-                mark.pos.add(mark.normal.scale(lift)),
-                axes[0],
-                axes[1],
-                -mark.radius,
-                -mark.radius,
-                mark.radius,
-                mark.radius,
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-                effect_byte(shade.x),
-                effect_byte(shade.y),
-                effect_byte(shade.z),
-                effect_byte(alpha)
-            );
+            lift = mark.normal.scale(0.3 + mark.pos.sub(eye).length() * 0.0005);
+            for fragment in mark.fragments {
+                points: list[Vec3] = [];
+                st: list[float] = [];
+                for point in fragment {
+                    delta = point.sub(mark.pos);
+                    points.append(point.add(lift));
+                    st.extend([0.5 + delta.dot(axes[1]) * scale, 0.5 + delta.dot(axes[0]) * scale]);
+                }
+                self.polygons.add(
+                    art[0].texture, blend, points, st,
+                    effect_byte(shade.x), effect_byte(shade.y), effect_byte(shade.z), effect_byte(alpha)
+                );
+            }
         }
-        self.quads.flush();
+        self.polygons.flush();
     }
 
-    """A textured ribbon from `start` to `finish`, turned to face the eye;
-    its texture runs `repeat` times along it from `scroll`."""
-    def ribbon(
+    """A quad from `start` to `finish`, `width` across along `across`, its
+    texture running from (u0, v0) at the start's first edge to (u1, v1) at
+    the finish's other edge (tr_surface.c DoRailCore)."""
+    def beam_quad(
         texture: int,
+        blend: int,
         start: Vec3,
         finish: Vec3,
-        eye: Vec3,
+        across: Vec3,
         width: float,
         color: Vec3,
-        scroll: float = 0.0,
-        repeat: float = 1.0
+        u0: float = 0.0,
+        u1: float = 1.0,
+        v0: float = 0.0,
+        v1: float = 1.0,
+        alpha: float = 1.0
     ) {
         along = finish.sub(start);
-        if along.length() < 0.001 {
-            return;
-        }
-        across = along.cross(eye.sub(start)).normalized().scale(width * 0.5);
-        if across.length() < 0.0001 {
+        if along.length() < 0.001 or across.length() < 0.0001 {
             return;
         }
         self.quads.add(
             texture,
-            EFFECT_BLEND_ADD,
+            blend,
             start,
             along,
-            across,
+            across.normalized().scale(width),
             0.0,
             -1.0,
             1.0,
             1.0,
-            scroll,
-            1.0,
-            scroll + repeat,
-            0.0,
+            u0,
+            v0,
+            u1,
+            v1,
             effect_byte(color.x),
             effect_byte(color.y),
             effect_byte(color.z),
-            255
+            effect_byte(alpha)
         );
     }
 
-    """A small untextured additive square, the particle look of Q2 trails."""
-    def speck(center: Vec3, size: float, color: Vec3, fade: float) {
-        self.quads.add(
-            0,
-            EFFECT_BLEND_ADD,
-            center,
-            Vec3(),
-            Vec3(),
-            -size,
-            -size,
-            size,
-            size,
-            0.0,
-            0.0,
-            1.0,
-            1.0,
-            effect_byte(color.x * fade),
-            effect_byte(color.y * fade),
-            effect_byte(color.z * fade),
-            255
-        );
+    """RB_SurfaceRailCore's side vector: square to the beam and both ends'
+    lines of sight."""
+    def beam_side(start: Vec3, finish: Vec3, eye: Vec3) -> Vec3 {
+        return start.sub(eye).normalized().cross(finish.sub(eye).normalized()).normalized();
     }
 
-    """Railgun and lightning trails. Q3 CG_RailTrail: a red railCore ribbon
-    and a spiral of magenta railDisc rings drifting outward (the default
-    color1 4 and color2 5); Q2 CL_RailTrail: a blue particle spiral around
-    a grey core; Q1 CL_UpdateTEnts: bolt models every 30 units; Q3
-    CG_LightningBolt: a scrolling lightning3 ribbon."""
-    def draw_trails(all_trails: list[ShotTrail], eye: Vec3) {
-        trails = [trail for trail in all_trails if trail.kind in STYLED_TRAILS];
+    """Beams and rails. Q1 CL_UpdateTEnts: a beam model every 30 units (the
+    player's bolt2.mdl, monsters' bolt.mdl, Chthon's bolt3.mdl); Q2
+    CL_AddBeams' parasite segments, R_DrawBeam's tubes (target_laser, the
+    BFG's lasers); Q3 CG_LightningBolt and CG_RailTrail (cg_oldRail's core)."""
+    def draw_trails(all_trails: list[ShotTrail], eye: Vec3, now: float) {
+        trails = [trail for trail in all_trails if trail.kind in STYLED_TRAILS or trail.kind.startswith("laser_")];
         if not trails or not self.game {
             return;
         }
@@ -900,117 +953,170 @@ obj EffectScene {
             if length < 1.0 {
                 continue;
             }
-            axis = along.scale(1.0 / length);
-            lightning = trail.kind in ["lightning", "player_lightning"];
-            if lightning and self.game == "q1" {
-                self.draw_bolt(trail, axis, length, eye);
-                continue;
-            }
-            if lightning {
-                bolt = self.flight.get("q3_lightning", []);
-                if bolt {
-                    self.ribbon(
-                        bolt[0].texture,
-                        trail.start,
-                        trail.finish,
-                        eye,
-                        8.0,
-                        Vec3(x=fade, y=fade, z=fade),
-                        -5.0 * trail.age,
-                        length / 128.0
-                    );
+            kind = trail.kind;
+            if kind in ["lightning", "player_lightning"] {
+                if self.game == "q1" {
+                    self.draw_segments("q1_bolt2" if kind == "player_lightning" else "q1_bolt", trail.start, trail.finish, eye, trail.age, 30.0, False);
                 } else {
-                    self.ribbon(0, trail.start, trail.finish, eye, 2.0, Vec3(x=0.6, y=0.7, z=1.0).scale(fade));
+                    self.lightning_bolt(trail.start, trail.finish, eye, now);
                 }
-                continue;
-            }
-            # A perpendicular frame for the spiral (PerpendicularVector).
-            helper = Vec3(z=1.0) if abs(axis.z) < 0.9 else Vec3(x=1.0);
-            ring_x = axis.cross(helper).normalized();
-            ring_y = axis.cross(ring_x).normalized();
-            if self.game == "q2" {
-                spread = (1.0 - fade) * 6.0;
-                speck_color = Vec3(x=0.3, y=0.45, z=1.0);
-                distance = 0.0;
-                while distance < length {
-                    turn = distance * 0.1;
-                    offset = ring_x.scale(math.cos(turn)).add(ring_y.scale(math.sin(turn)));
-                    point = trail.start.add(axis.scale(distance)).add(offset.scale(3.0 + spread));
-                    self.speck(point, 0.6, speck_color, fade);
-                    distance += 2.0;
-                }
-                core = max(0.0, fade * 1.4 - 0.4);
-                if core > 0.0 {
-                    self.ribbon(0, trail.start, trail.finish, eye, 1.2, Vec3(x=0.7, y=0.7, z=0.7).scale(core));
-                }
-                continue;
-            }
-            core_art = self.flight.get("q3_railcore", []);
-            disc_art = self.flight.get("q3_raildisc", []);
-            red = Vec3(x=0.75, y=0.0, z=0.0).scale(fade);
-            if core_art {
-                self.ribbon(core_art[0].texture, trail.start, trail.finish, eye, 6.0, red, -trail.age, length / 64.0);
+            } elif kind == "drain" {
+                self.draw_segments("q2_segment", trail.start, trail.finish, eye, trail.age, 30.0, True);
+            } elif kind.startswith("laser_") {
+                self.laser_beam(trail.start, trail.finish, QUAKE2_LASER_COLORS.get(kind, [242, 242, 240, 240]), trail.width, trail.age);
+            } elif kind == "q3_rail" {
+                self.rail_core(trail.start, trail.finish, eye, fade, trail.age);
             } else {
-                self.ribbon(0, trail.start, trail.finish, eye, 1.5, red);
-            }
-            if not disc_art {
-                continue;
-            }
-            ring = disc_art[0];
-            magenta = Vec3(x=1.0, y=0.0, z=1.0);
-            scale = 2.2 / float(max(1, ring.frame.width));
-            distance = 20.0;
-            step = 0;
-            while distance < length {
-                # Rings live 600 ms plus a millisecond per two units.
-                ring_life = 0.6 + distance * 0.0005;
-                ring_fade = max(0.0, 1.0 - trail.age / ring_life);
-                if ring_fade > 0.0 {
-                    turn = float(18 + step) * 10.0 * math.pi / 180.0;
-                    offset = ring_x.scale(math.cos(turn)).add(ring_y.scale(math.sin(turn)));
-                    point = trail.start.add(axis.scale(distance)).add(
-                        offset.scale(4.0 + 6.0 * trail.age)
-                    );
-                    self.billboard(
-                        ring,
-                        point,
-                        EFFECT_BLEND_ADD,
-                        scale,
-                        ring_fade * 0.75,
-                        tint=magenta
-                    );
-                }
-                distance += 5.0;
-                step += 1;
+                # A plain rail (Passion): a thin red core.
+                self.beam_quad(0, EFFECT_BLEND_ADD, trail.start, trail.finish, self.beam_side(trail.start, trail.finish, eye), 0.75, Vec3(x=0.75).scale(fade));
             }
         }
         self.quads.flush();
     }
 
-    """Q1 CL_UpdateTEnts: a beam model every 30 units, rolled at random;
-    the player's Thunderbolt uses bolt2.mdl, the shambler bolt.mdl."""
-    def draw_bolt(trail: ShotTrail, axis: Vec3, length: float, eye: Vec3) {
-        key = "q1_bolt2" if trail.kind == "player_lightning" else "q1_bolt";
+    """CG_RailTrail with cg_oldRail (the default): the railCore shader's quad
+    12 units across (r_railCoreWidth 6 each side), its texture a quarter
+    repeat per 64 units scrolling back a repeat a second (tcMod scroll -1),
+    lowered 8 units, in the shooter's color1 (red) at three quarters,
+    fading over cg_railTrailTime."""
+    def rail_core(start: Vec3, finish: Vec3, eye: Vec3, fade: float, age: float) {
+        art = self.flight.get("q3_railcore", []);
+        low_start = start.sub(Vec3(z=12.0));
+        low_finish = finish.sub(Vec3(z=8.0));
+        side = self.beam_side(low_start, low_finish, eye);
+        repeat = low_finish.sub(low_start).length() / 256.0;
+        self.beam_quad(
+            art[0].texture if art else 0,
+            EFFECT_BLEND_ADD,
+            low_start,
+            low_finish,
+            side,
+            6.0,
+            Vec3(x=0.75 * fade),
+            -age,
+            repeat - age
+        );
+    }
+
+    """CG_LightningBolt's beam (RB_SurfaceLightningBolt): four quads 16
+    across turned 45 degrees apart about the beam, drawn with each stage of
+    lightningBoltNew: the lightning3new image a repeat per 256 units, scaled
+    by 2 and scrolling -5, then by -1.3 (and flipped across) scrolling
+    -7.2, each added at its wave's brightness (1 + 0.5 sin 7.1 Hz, 1 + 0.8
+    sin 8.1 Hz, held to full)."""
+    def lightning_bolt(start: Vec3, finish: Vec3, eye: Vec3, now: float) {
+        art = self.flight.get("q3_lightning", []);
+        texture = art[0].texture if art else 0;
+        axis = finish.sub(start).normalized();
+        side = self.beam_side(start, finish, eye);
+        span = finish.sub(start).length() / 256.0;
+        stages = [
+            (2.0, 1.0, -5.0, min(1.0, 1.0 + 0.5 * math.sin(now * 7.1 * 2.0 * math.pi))),
+            (-1.3, -1.0, -7.2, min(1.0, 1.0 + 0.8 * math.sin(now * 8.1 * 2.0 * math.pi)))
+        ];
+        for stage in stages {
+            turn = side;
+            for k in range(4) {
+                scroll = stage[2] * now;
+                self.beam_quad(
+                    texture,
+                    EFFECT_BLEND_ADD,
+                    start,
+                    finish,
+                    turn,
+                    8.0,
+                    Vec3(x=stage[3], y=stage[3], z=stage[3]),
+                    scroll,
+                    span * stage[0] + scroll,
+                    0.0,
+                    stage[1]
+                );
+                # RotatePointAroundVector by 45 degrees about the beam.
+                c = math.cos(math.pi / 4.0);
+                n = math.sin(math.pi / 4.0);
+                turn = turn.scale(c).add(axis.cross(turn).scale(n)).add(axis.scale(axis.dot(turn) * (1.0 - c)));
+            }
+        }
+    }
+
+    """R_DrawBeam (RF_BEAM, alpha 0.30): a six-sided tube `diameter` across
+    in one of the four palette colours packed in its skin, picked afresh
+    each frame (CL_AddPacketEntities' rand()%4)."""
+    def laser_beam(start: Vec3, finish: Vec3, colors: list[int], diameter: float, age: float) {
+        axis = finish.sub(start);
+        if axis.length() < 0.001 {
+            return;
+        }
+        normal = axis.normalized();
+        helper = Vec3(z=1.0) if abs(normal.z) < 0.9 else Vec3(x=1.0);
+        perpendicular = normal.cross(helper).normalized().scale(diameter / 2.0);
+        pick = colors[int(age * 97.0 + finish.x) % len(colors)];
+        color = self.palette_color(pick);
+        points: list[Vec3] = [];
+        for i in range(6) {
+            angle = float(i) * math.pi / 3.0;
+            points.append(
+                perpendicular.scale(math.cos(angle)).add(normal.cross(perpendicular).scale(math.sin(angle)))
+            );
+        }
+        for i in range(6) {
+            edge_start = start.add(points[i]);
+            across = points[(i + 1) % 6].sub(points[i]);
+            self.quads.add(
+                0, EFFECT_BLEND_ALPHA, edge_start, across, axis,
+                0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0,
+                int(color.x * 255.0), int(color.y * 255.0), int(color.z * 255.0), 76
+            );
+        }
+    }
+
+    """A palette entry's colour (white without a palette)."""
+    def palette_color(index: int) -> Vec3 {
+        if len(self.palette) < index * 3 + 3 {
+            return Vec3(x=1.0, y=1.0, z=1.0);
+        }
+        return Vec3(
+            x=float(self.palette[index * 3]) / 255.0,
+            y=float(self.palette[index * 3 + 1]) / 255.0,
+            z=float(self.palette[index * 3 + 2]) / 255.0
+        );
+    }
+
+    """Beam models along a beam (Q1 CL_UpdateTEnts, Q2 CL_AddBeams): one
+    every `step` units, pitched and turned along it and rolled at random,
+    lit where each lies. Q2 spaces them evenly over the whole length."""
+    def draw_segments(key: str, start: Vec3, finish: Vec3, eye: Vec3, age: float, step: float, even: bool) {
         renderer = self.models.get(key, None);
         if renderer is None {
             return;
         }
-        rlDrawRenderBatchActive();
-        rlDisableBackfaceCulling();
+        along = finish.sub(start);
+        length = along.length();
+        axis = along.scale(1.0 / length);
         heading = math.atan2(axis.y, axis.x);
         elevation = math.atan2(axis.z, math.sqrt(axis.x * axis.x + axis.y * axis.y));
-        distance = 0.0;
+        spacing = step;
+        if even {
+            count = int(math.ceil(length / step));
+            spacing = (length - step) / float(count - 1) if count > 1 else step;
+        }
+        rlDrawRenderBatchActive();
+        rlDisableBackfaceCulling();
+        seed = int(age * 20.0) * 7 + int(abs(start.x));
+        left = length;
+        point = start.add(Vec3());
         segment = 0;
-        seed = int(trail.age * 20.0) * 7 + int(abs(trail.start.x));
-        while distance < length {
+        while left > 0.0 {
             roll = float((seed + segment * 131) % 360) * math.pi / 180.0;
             renderer.draw(
-                trail.start.add(axis.scale(distance)),
+                point,
                 heading,
                 eye=eye,
+                illumination=self.lighting.light_model(point, math.degrees(heading)),
                 basis=model_basis(heading, elevation, roll)
             );
-            distance += 30.0;
+            point = point.add(axis.scale(spacing));
+            left -= step;
             segment += 1;
         }
         rlDrawRenderBatchActive();
@@ -1037,5 +1143,7 @@ obj EffectScene {
         self.blast_models = {};
         self.game = "";
         self.quads.close();
+        self.polygons.close();
+        self.particles.close();
     }
 }

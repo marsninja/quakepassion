@@ -146,7 +146,7 @@ impl App.render_frame() {
         # RenderTimes: each stage's cost this frame, in milliseconds.
         stamp = time.time();
         faces = self.level.visible(self.world, p.pos, self.culling());
-        combat_lights(self.level.lighting, self.world, p, self.combat);
+        combat_lights(self.level.lighting, self.world, p, self.combat, self.tick_blend);
         self.quake.time = self.simulation_time;
         self.quake.blend = self.tick_blend;
         self.render_times.visible = (time.time() - stamp) * 1000.0;
@@ -205,7 +205,7 @@ impl App.render_frame() {
         self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys(), blend=blend);
         self.render_times.models = (time.time() - stamp) * 1000.0;
         stamp = time.time();
-        self.effects.draw_particles(self.world, view_yaw, view_pitch);
+        self.effects.draw_particles(self.world, view_yaw, view_pitch, blend);
         self.effects.draw(
             self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend
         );

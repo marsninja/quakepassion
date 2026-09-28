@@ -16,7 +16,7 @@ import from .triggers { trigger_volume }
 import from .doors { door_direction }
 import from .signals { Signal, HasSignal, note_chain }
 import from .speakers { Speaker, HasSpeaker }
-import from .particles { ImpactParticle, HasParticle }
+import from .particles { teleport_splash }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
@@ -123,24 +123,10 @@ def monster_touches(volume: CollisionMap, actor: Opponent) -> bool {
     return touches_volume(volume, origin, width, top);
 }
 
-"""A short teleport flash (Q1 R_TeleportSplash, Q2 CL_TeleportParticles, Q3
-CG_SpawnEffect): sparks thrown outward from the arrival point."""
+"""The flash where a teleport lands (Q1 TE_TELEPORT's R_TeleportSplash, Q2
+CL_TeleportParticles; see particles.jac teleport_splash)."""
 def teleport_flash(world: World, origin: Vec3) {
-    count = len([world->:HasParticle:->]);
-    for i in range(min(24, max(0, 512 - count))) {
-        angle = float(i) * 0.785398 + float(i // 8) * 0.39;
-        rise = float(i % 3) - 1.0;
-        velocity = Vec3(
-            x=math.cos(angle) * 60.0, y=math.sin(angle) * 60.0, z=40.0 + rise * 30.0
-        );
-        life = 0.3 + float(i % 5) * 0.04;
-        world +>:HasParticle:+> ImpactParticle(
-            pos=origin.add(Vec3(z=float(i % 4) * 12.0 - 8.0)),
-            velocity=velocity,
-            remaining=life,
-            lifetime=life
-        );
-    }
+    teleport_splash(world, origin);
 }
 
 walker TraversalTick {

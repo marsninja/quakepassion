@@ -21,7 +21,7 @@ import from engine.math.orientation { model_basis }
 import from engine.formats.bsp { FogVolume }
 import from engine.render.quake { upload_fog_image }
 import from engine.world.world { World }
-import from engine.world.particles { HasParticle, ImpactParticle }
+import from engine.world.particle_field { particle_field, spark_spray }
 
 with entry {
     home = os.getenv("HOME", "");
@@ -56,11 +56,15 @@ with entry {
     yaw = 2.6;
     # A spray of blood, dust and fire particles (instanced cubes).
     world = World();
+    sparks = particle_field(world);
     for i in range(60) {
         kind = i % 3;
-        world +>:HasParticle:+> ImpactParticle(
-            pos=Vec3(x=-40.0 + float(i % 7) * 3.0, y=-20.0 + float(i) * 0.8, z=-40.0 + float((i * 5) % 9) * 2.5),
-            velocity=Vec3(), blood=kind == 0, fire=kind == 2, remaining=0.04 + float(i % 10) * 0.035, lifetime=0.4
+        spark_spray(
+            sparks,
+            Vec3(x=-40.0 + float(i % 7) * 3.0, y=-20.0 + float(i) * 0.8, z=-40.0 + float((i * 5) % 9) * 2.5),
+            Vec3(x=1.0),
+            [11146255, 13810065, 16756800][kind],
+            1
         );
     }
     for name in ["gpu", "cpu"] {

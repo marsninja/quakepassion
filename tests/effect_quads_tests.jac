@@ -1,3 +1,4 @@
+"""The effect scene's instanced quads and its one walk over a world's effects."""
 import struct;
 import from engine.render.effects {
     EffectQuads,
@@ -9,9 +10,8 @@ import from engine.render.effects {
     effect_byte
 }
 import from engine.world.world { World }
+import from engine.world.particle_field { particle_field }
 import from engine.world.particles {
-    ImpactParticle,
-    HasParticle,
     ImpactMark,
     HasMark,
     ShotTrail,
@@ -68,18 +68,15 @@ test "effect bytes clamp colour channels as the immediate-mode tint did" {
     assert effect_byte(2.0) == 255;
 }
 
-test "effects are gathered in one walk, particles apart from sprites" {
+test "effects are gathered in one walk with the particle field" {
     world = World();
-    world +>:HasParticle:+> ImpactParticle(pos=Vec3(), velocity=Vec3());
-    world +>:HasParticle:+> ImpactParticle(pos=Vec3(x=1.0), velocity=Vec3());
+    field = particle_field(world, "q1");
     world +>:HasMark:+> ImpactMark(pos=Vec3(), normal=Vec3(z=1.0), shader="gfx/damage/bullet_mrk", radius=8.0);
     world +>:HasTrail:+> ShotTrail(start=Vec3(), finish=Vec3(x=64.0));
     world +>:HasExplosion:+> Explosion(pos=Vec3(), kind="q1_explosion");
     world +>:HasProjectile:+> Projectile(pos=Vec3(), velocity=Vec3(), damage=0, effect="q3_plasma");
-    sprites = world spawn GatherEffects(with_particles=False);
-    assert len(sprites.particles) == 0;
-    assert len(sprites.marks) == 1 and len(sprites.trails) == 1;
-    assert len(sprites.blasts) == 1 and len(sprites.projectiles) == 1;
-    specks = world spawn GatherEffects(with_sprites=False);
-    assert len(specks.particles) == 2 and not specks.marks and not specks.projectiles;
+    found = world spawn GatherEffects();
+    assert found.field is field;
+    assert len(found.marks) == 1 and len(found.trails) == 1;
+    assert len(found.blasts) == 1 and len(found.projectiles) == 1;
 }
