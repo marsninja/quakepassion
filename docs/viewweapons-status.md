@@ -46,9 +46,12 @@ SV_CalcGunOffset's bob angles and a fifth of the last server frame's turn as lag
 Q3 CG_CalculateWeaponPosition adds the bob angles, a quarter more of the landing
 dip and the idle drift. The old generic sway and recoil nudge are gone.
 
-Q3 muzzle flashes, barrel spin and powerup shells are drawn; Q2 kick_origin (the
-view pushed back 2 units for a server frame per shot) and several weapon shader
-effects remain open. Q3 arm meshes are not drawn separately: the
+A Q2 shot also kicks the view for the server frame it is fired in (the fire
+functions' kick_origin and random kick_angles): the blaster, shotguns, launchers,
+hyperblaster and BFG push it 2 units back along the aim, the railgun 3, and the
+machinegun and chaingun shake it 0.35 units and 0.7 degrees; the gun, drawn at
+the view, moves with it. Q3 muzzle flashes, barrel spin and powerup shells are
+drawn; several weapon shader effects remain open. Q3 arm meshes are not drawn separately: the
 hand MD3 supplies the original attachment animation. Passion is unchanged.
 
 The native gallery (`scripts/viewweapon_smoke.jac`) loads and renders 8 Q1,

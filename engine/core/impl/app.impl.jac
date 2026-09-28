@@ -1330,6 +1330,10 @@ impl App.step() -> bool {
                 held=intent.fire,
                 dt=self.physics_clock.tick_rate
             ) {
+                kicked = self.viewweapon.rule_for(self.combat.weapon);
+                if kicked is not None {
+                    self.view.recoil(kicked.kick_back, kicked.kick_shake, kicked.kick_twist);
+                }
                 silencer = effect(self.player, "silencer");
                 gain = 1.0;
                 if silencer is not None and silencer.count > 0 {

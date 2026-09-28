@@ -141,6 +141,12 @@ obj ViewFeedback {
         }
     }
 
+    """The player fired a weapon kicking the view this way (Q2 kick_origin
+    and kick_angles; the others kick by the weapon punch alone)."""
+    def recoil(back: float, shake: float, twist: list[float]) {
+        self.sway.recoil(back, shake, twist);
+    }
+
     """V_BonusFlash_f / Q2 bonus_alpha: a gold flash on picking something up."""
     def pickup() {
         if self.game == "q1" {

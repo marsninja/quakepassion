@@ -343,6 +343,14 @@ obj ViewWeapon {
         }
     }
 
+    """The view rule of the weapon in `slot`, if it has one."""
+    def rule_for(slot: int) -> ViewWeaponRule | None {
+        if slot in self.assets {
+            return self.assets[slot].rule;
+        }
+        return None;
+    }
+
     def close() {
         for asset in self.assets.values() {
             asset.drawing.close();

@@ -178,3 +178,32 @@ test "an intermission camera has no bob or kick; Q1's sways idly" {
     still = q2.place(player, Vec3(z=10.0), True, 0.0, 1.0, 1.0, 2.0, 22.0, intermission=True);
     assert still.pitch == 0.1 and still.roll == 0.0 and still.eye.z == 10.0;
 }
+
+test "a Q2 shot kicks the view back for the server frame it is fired in" {
+    player = Player(grounded=True);
+    sway = Q2ViewSway();
+    for tick in range(12) {
+        sway.tick(player, False, TICK);
+    }
+    sway.recoil(2.0, 0.0, []);
+    for tick in range(24) {
+        sway.tick(player, False, TICK);
+    }
+    # The frame fired in is pushed 2 units back along the aim; the next one
+    # is not.
+    kicked = sway.place(player, ViewBase(eye=Vec3(z=50.0)), 0.0, 1.0);
+    assert abs(kicked.eye.x + 2.0) < 0.00001 and abs(kicked.gun.x + 2.0) < 0.00001;
+    for tick in range(12) {
+        sway.tick(player, False, TICK);
+    }
+    assert sway.place(player, ViewBase(eye=Vec3(z=50.0)), 0.0, 1.0).eye.x == 0.0;
+    # The machinegun shakes and turns it at random instead.
+    sway.recoil(0.0, 0.35, [0.0, 0.7, 0.7]);
+    for tick in range(24) {
+        sway.tick(player, False, TICK);
+    }
+    shaken = sway.place(player, ViewBase(eye=Vec3(z=50.0)), 0.0, 1.0);
+    assert shaken.eye.sub(Vec3(z=50.0)).length() > 0.0;
+    assert abs(shaken.eye.x) <= 0.35 and abs(math.degrees(shaken.yaw)) <= 0.7;
+    assert abs(math.degrees(shaken.pitch)) < 0.00001;
+}

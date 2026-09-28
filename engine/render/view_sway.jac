@@ -66,6 +66,11 @@ obj ViewSway {
     """A new level: every cycle starts over."""
     def reset() {}
 
+    """The player fired: Q2's kick_origin and random kick_angles, pushing
+    the view `back` units against the aim, shaking it up to `shake` units on
+    each axis and turning it up to `twist` degrees ([pitch, yaw, roll])."""
+    def recoil(back: float, shake: float, twist: list[float]) {}
+
     """A physics tick begins: keep what the frames between this tick and the
     next blend from, then follow the body as the last tick left it. `moving`
     is whether the player is trying to move."""
@@ -147,7 +152,9 @@ and velocity angles, SV_CalcGunOffset's gunangles), in Quake degrees."""
 obj Q2ViewFrame {
     has lift: float = 0.0,
         pitch: float = 0.0,
+        yaw: float = 0.0,
         roll: float = 0.0,
+        kick: Vec3 = Vec3(),
         gun_pitch: float = 0.0,
         gun_yaw: float = 0.0,
         gun_roll: float = 0.0;
@@ -156,7 +163,9 @@ obj Q2ViewFrame {
         return Q2ViewFrame(
             lift=self.lift + (other.lift - self.lift) * share,
             pitch=self.pitch + (other.pitch - self.pitch) * share,
+            yaw=self.yaw + (other.yaw - self.yaw) * share,
             roll=self.roll + (other.roll - self.roll) * share,
+            kick=self.kick.lerp(other.kick, share),
             gun_pitch=self.gun_pitch + (other.gun_pitch - self.gun_pitch) * share,
             gun_yaw=self.gun_yaw + (other.gun_yaw - self.gun_yaw) * share,
             gun_roll=self.gun_roll + (other.gun_roll - self.gun_roll) * share
@@ -168,8 +177,14 @@ obj Q2ViewFrame {
 client lerps between the last two (CL_CalcViewValues): bobtime advances by
 bobmove (1/16, 1/8 or 1/4 by speed) each frame on the ground, keeps its
 rate in the air and starts over below 5 units a second; the gun lags a
-turn by a fifth of the last frame's change."""
+turn by a fifth of the last frame's change. A shot's kick_origin and
+kick_angles last the server frame it was fired in (ClientEndServerFrame
+clears them), so the view pushes out and back over two frames."""
 obj Q2ViewSway(ViewSway) {
+    has kick_back: float = 0.0,
+        kick_shake: float = 0.0,
+        kick_twist: list[float] = [],
+        dice: int = 1;
     has bobtime: float = 0.0,
         bobmove: float = 0.0,
         frame_clock: float = 0.0,
@@ -188,6 +203,21 @@ obj Q2ViewSway(ViewSway) {
         self.last = Q2ViewFrame();
         self.current = Q2ViewFrame();
         self.share_was = 0.0;
+        self.kick_back = 0.0;
+        self.kick_shake = 0.0;
+        self.kick_twist = [];
+    }
+
+    def recoil(back: float, shake: float, twist: list[float]) {
+        self.kick_back = back;
+        self.kick_shake = shake;
+        self.kick_twist = twist;
+    }
+
+    """crandom(): a cosmetic stream, not the game's."""
+    def crandom() -> float {
+        self.dice = (self.dice * 48271) % 2147483647;
+        return float(self.dice) / 2147483647.0 * 2.0 - 1.0;
     }
 
     def tick(player: Player, moving: bool, dt: float) {
@@ -260,6 +290,25 @@ obj Q2ViewSway(ViewSway) {
         }
         self.old_yaw = yaw;
         self.old_pitch = pitch;
+        # This frame's weapon kick, then cleared.
+        view.kick = forward.scale(-self.kick_back);
+        if self.kick_shake > 0.0 {
+            view.kick = view.kick.add(
+                Vec3(
+                    x=self.crandom() * self.kick_shake,
+                    y=self.crandom() * self.kick_shake,
+                    z=self.crandom() * self.kick_shake
+                )
+            );
+        }
+        if len(self.kick_twist) == 3 {
+            view.pitch += self.crandom() * self.kick_twist[0];
+            view.yaw += self.crandom() * self.kick_twist[1];
+            view.roll += self.crandom() * self.kick_twist[2];
+        }
+        self.kick_back = 0.0;
+        self.kick_shake = 0.0;
+        self.kick_twist = [];
         return view;
     }
 
@@ -270,8 +319,8 @@ obj Q2ViewSway(ViewSway) {
         # How far the frame shown is through the server frame in progress.
         through = self.share_was + (self.frame_clock / 0.1 - self.share_was) * share;
         view = self.last.blend(self.current, max(0.0, min(1.0, through)));
-        eye = base.eye.add(Vec3(z=view.lift));
-        yaw = base.yaw;
+        eye = base.eye.add(Vec3(z=view.lift)).add(view.kick);
+        yaw = base.yaw + math.radians(view.yaw);
         pitch = base.pitch + up_radians(base.kick_pitch + view.pitch) + math.radians(base.punch);
         roll = math.radians(base.kick_roll + view.roll);
         return ViewPlacement(

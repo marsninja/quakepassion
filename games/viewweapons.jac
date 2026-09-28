@@ -93,16 +93,25 @@ def view_weapons(game: str) -> list[ViewWeaponRule] {
                 raise_first=0 if switching else -1,
                 raise_last=limits[0] if switching else -1
             );
+            # The fire functions' kick_origin: Blaster_Fire, the shotguns and
+            # launchers push back 2 units, the railgun 3; the machinegun and
+            # chaingun shake 0.35 units and 0.7 degrees (the machinegun's
+            # pitch is its climb, the weapon punch).
+            rule.kick_back = 3.0 if names[i] == "rail" else (0.0 if names[i] in ["machn", "chain", "handgr"] else 2.0);
             if names[i] == "machn" {
                 # Machinegun_Fire alternates 4 and 5 while the trigger holds.
                 rule.loop_first = 4;
                 rule.loop_last = 5;
+                rule.kick_shake = 0.35;
+                rule.kick_twist = [0.0, 0.7, 0.7];
             } elif names[i] == "chain" {
                 # Chaingun_Fire spins up to 21, then cycles 15-21; let go, it
                 # jumps from 14 to idle or winds down through 22-31.
                 rule.loop_first = 15;
                 rule.loop_last = 21;
                 rule.release_skip = 14;
+                rule.kick_shake = 0.35;
+                rule.kick_twist = [0.7, 0.7, 0.7];
             } elif names[i] == "hyperb" {
                 # Weapon_HyperBlaster_Fire goes back from 12 to 6.
                 rule.loop_first = 6;

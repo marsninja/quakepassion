@@ -48,7 +48,10 @@ from `release_skip` to them. `swings` offsets alternate attacks, one taken per
 shot (Q1 W_Attack's four axe swings). The idle frames loop, holding at each of
 `pause_frames` fifteen steps in sixteen (Q2's rand()&15 fidget pauses).
 `blend_frames` draws each frame blended from the last over its tenth of a
-second, as Q2's client lerps gun frames and Q3's hand follows the torso."""
+second, as Q2's client lerps gun frames and Q3's hand follows the torso. A
+shot kicks the Q2 view (kick_origin, kick_angles) `kick_back` units against
+the aim, up to `kick_shake` units each way and `kick_twist` degrees
+([pitch, yaw, roll]) at random."""
 obj ViewWeaponRule {
     has slot: int,
         model: str,
@@ -63,7 +66,10 @@ obj ViewWeaponRule {
         release_skip: int = -1,
         swings: list[int] = [],
         pause_frames: list[int] = [],
-        blend_frames: bool = False;
+        blend_frames: bool = False,
+        kick_back: float = 0.0,
+        kick_shake: float = 0.0,
+        kick_twist: list[float] = [];
     # The switch: frames played while the weapon lowers and while it rises,
     # at `switch_rate` frames a second (-1 for none).
     has lower_first: int = -1,
