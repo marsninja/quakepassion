@@ -89,8 +89,6 @@ obj ModelStage {
         frames: list[Texture] = [],
         frequency: float = 0.0,
         environment: bool = False,
-        scroll_u: float = 0.0,
-        scroll_v: float = 0.0,
         blend: str = "opaque",
         lightmap: bool = False,
         white: bool = False,
