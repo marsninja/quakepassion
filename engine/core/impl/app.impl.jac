@@ -2586,7 +2586,10 @@ impl App.hud_status() -> HudStatus {
         pickup_name=self.pickup_name,
         pickup_fade=self.pickup_time,
         selected_icon=self.selected_icon(),
-        ammo_warning=self.ammo_warning if game == "q3" and p.health > 0 else 0
+        ammo_warning=self.ammo_warning if game == "q3" and p.health > 0 else 0,
+        # cg.damageTime and cg.damageX from CG_DamageFeedback (DAMAGE_TIME 0.5 s).
+        damage_age=0.5 - self.view.blob_time if game == "q3" and self.view.blob_time > 0.0 else -1.0,
+        damage_x=self.view.blob_x
     );
 }
 
