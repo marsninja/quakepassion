@@ -1,4 +1,5 @@
 import from engine.physics.collision { CollisionMap }
+import from engine.physics.patch_collide { generate_patch_collide }
 import from engine.physics.movement { SetStance, MovePlayer, movement_profile }
 import from engine.world.world { Player, World }
 import from engine.world.triggers { TouchTrigger, HasTrigger, TriggerTick }
@@ -63,20 +64,37 @@ test "paused stance and Q1 do not resize the player" {
 test "shortened patch sweeps match a directly expanded crouching hull" {
     standing = CollisionMap();
     duck = CollisionMap();
-    a = Vec3(x=-100.0, y=-100.0, z=40.0);
-    b = Vec3(x=100.0, y=-100.0, z=60.0);
-    c = Vec3(y=100.0, z=50.0);
-    mins = Vec3(x=-15.0, y=-15.0, z=-24.0);
-    standing.add_triangle(a, b, c, mins, Vec3(x=15.0, y=15.0, z=32.0), Vec3());
-    duck.add_triangle(a, b, c, mins, Vec3(x=15.0, y=15.0, z=16.0), Vec3());
-    for z in [10.0, 20.0, 30.0, 40.0] {
-        start = Vec3(x=-80.0, z=z);
-        finish = Vec3(x=80.0, z=z);
-        expected = duck.trace(start, finish);
-        actual = standing.trace(start, finish, top_drop=16.0);
-        assert actual.start_solid == expected.start_solid;
-        assert abs(actual.fraction - expected.fraction) < 0.00001;
+    # A sloped ceiling bowed down: rows run -y so its facets face down and
+    # tilt every way.
+    points: list[Vec3] = [];
+    for row in range(3) {
+        for column in range(3) {
+            x = float(column - 1) * 100.0;
+            y = float(1 - row) * 100.0;
+            bow = -30.0 if row == 1 and column == 1 else 0.0;
+            points.append(Vec3(x=x, y=y, z=80.0 + x * 0.1 - y * 0.05 + bow));
+        }
     }
+    patch = generate_patch_collide(3, 3, points);
+    mins = Vec3(x=-15.0, y=-15.0, z=-24.0);
+    standing.add_patch(patch, mins, Vec3(x=15.0, y=15.0, z=32.0), Vec3());
+    duck.add_patch(patch, mins, Vec3(x=15.0, y=15.0, z=16.0), Vec3());
+    standing.reindex();
+    duck.reindex();
+    hits = 0;
+    for z in [10.0, 20.0, 30.0, 40.0] {
+        for finish in [Vec3(x=80.0, z=z), Vec3(x=-10.0, y=5.0, z=z + 60.0)] {
+            start = Vec3(x=-80.0, z=z);
+            expected = duck.trace(start, finish);
+            actual = standing.trace(start, finish, top_drop=16.0);
+            assert actual.start_solid == expected.start_solid;
+            assert abs(actual.fraction - expected.fraction) < 0.00001;
+            if expected.fraction < 1.0 and standing.trace(start, finish).fraction < expected.fraction {
+                hits += 1;
+            }
+        }
+    }
+    assert hits >= 3;
 }
 
 test "overhead touch triggers respect the shorter body" {

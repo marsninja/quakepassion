@@ -57,26 +57,34 @@ clear location first.
 
 ## Q3 curved surfaces
 
-Q3 patch faces retain their surface type. Solid and playerclip patches contribute
-triangle hulls; non-colliding materials and other surface types do not. Hidden
-solid surfaces still collide, and supported inline models apply their translation.
-Degenerate triangles are skipped.
+Q3 patches collide as the original [cm_patch.c](https://github.com/id-Software/Quake-III-Arena/blob/master/code/qcommon/cm_patch.c)
+builds and traces them (`engine/physics/patch_collide.jac`), independent of the
+rendered tessellation. `CM_GeneratePatchCollide` subdivides the control grid
+until every approximating point is within 16 units of the curve, drops
+degenerate columns (both ways, detecting closed tubes), and turns each grid cell
+into one quad facet or two triangle facets. A facet is its surface plane, border
+planes shared with its neighbours or standing on its edges, the axial and
+slanted edge bevels of `CM_AddFacetBevels`, and the flipped surface plane
+closing its back. Only surfaces whose shader contents are solid or playerclip
+collide (shots only stop on solid ones), hidden ones included; supported inline
+models apply their translation, and SURF_NOIMPACT/SURF_NOMARKS keep shots from
+leaving impacts or marks.
 
-Each triangle is expanded for the standing player using its surface normal,
-box axes, and triangle-edge/box-axis cross products. This supplies edge bevels
-as well as the surface plane, so box corners collide correctly without filling
-the triangle's entire rectangular bounds. The existing `Sweep` walker clips
-against the convex planes stored in one `HullCell`; Q1 retains BSP traversal.
-This compact representation also handles Q2/Q3 brushes.
+`CollisionMap.add_patch` stores each facet as its own `HullCell` leaf in the
+shared spatial tree, its planes facing out and expanded for the standing box
+like a brush's (so crouching and other body boxes shift them the same way).
+The narrow phase follows `CM_TraceThroughPatchCollide`: a moving box hits
+where it enters every plane (checked as `CM_CheckFacetPlane` does, stopping
+SURFACE_CLIP_EPSILON short), never through the back plane and never starting
+solid; a box that does not move is inside when behind every plane
+(`CM_PositionTestInPatchCollide`); and a point trace
+(`CM_TracePointThroughPatchCollide`) hits only from in front, within the
+borders. Facets are therefore one-sided, as in Q3.
 
 The spatial tree splits at the median hull center. The previous bounds-midpoint
 split collapsed on large brush bounds: in q3dm1, a spawn query selected 26,338
 of 26,339 hulls. The same query now selects 110. A regression test covers a
 large bound mixed with small facets.
-
-The original [Q3 patch implementation](https://github.com/id-Software/Quake-III-Arena/blob/master/code/qcommon/cm_patch.c)
-uses adaptive subdivision and directional facet rules. This implementation
-instead matches our rendered triangle mesh and blocks from both sides.
 
 ## Validation
 
@@ -96,13 +104,16 @@ jac run scripts/validate_menu.jac
 
 Landing, jumping and four-direction movement pass on six Q1 maps (e1m1, start,
 e1m2, e2m1, e3m1, e4m1), three Q2 maps (base1, base2, base3), and three Q3 maps
-(q3dm1, q3dm7, q3tourney2). Every directional-movement position is checked
+(q3dm1, q3dm7, q3dm17, q3tourney2). Every directional-movement position is checked
 against the standing collision hull. These are representative spawn-area
-checks, not complete map traversal or original-game movement parity. The Q3
-validator also sweeps both sides of 32 solid patch facets per map (96 total).
-Synthetic tests cover curved landing height, fast sweeps, vertical facets, empty
-triangle corners, degenerate triangles, seam traversal, contents masks, and
-translated patch models.
+checks, not complete map traversal or original-game movement parity. On the Q3
+maps the validator also shoots every solid patch from in front of its rendered
+surface (the hit must be a facet within 16 units of it) and drops a player on
+up to 24 walkable patch spots per map, walking off each four ways without
+starting solid. Synthetic tests cover grid subdivision, facet planes, curved
+landing height, the front/back and point/box rules, position tests, a curved
+ramp walked smoothly, a round pillar slid around, seam traversal, crouching,
+contents masks, surface flags, and translated patch models.
 
 The graphical menu harness exercises walking and grounding across all three
 games, pause, flight toggling, level changes, load failure, and quit. Grounded
@@ -114,8 +125,6 @@ culling enabled versus disabled match exactly, across spawn and moved views.
 
 ## Remaining work
 
-- Patch collision uses two-sided triangles from the fixed rendering tessellation,
-  not Q3's original adaptive, directional facet rules; exact parity remains future work.
 - Ordinary linked doors translate; supported touch triggers activate named doors. Other special doors, lifts, trains and
   buttons still need behavior. Rotation and riding movers are not implemented.
 - Initial teleporters and jump pads now work: see [traversal status](traversal-status.md).
