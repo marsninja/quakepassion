@@ -10,8 +10,9 @@ with entry {
     renderer = Renderer();
     renderer.open_window();
     app = App(
-        world=World(), player=Player(), renderer=renderer, clock=Clock(), overlay=False
+        world=World(), player=Player(), renderer=renderer, clock=Clock()
     );
+    app.host.overlay.assign("0");
     for game in ["q1", "q2", "q3"] {
         name = "e1m1" if game == "q1" else ("base1" if game == "q2" else "q3dm1");
         app.load_destination(game, name);

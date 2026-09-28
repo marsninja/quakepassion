@@ -57,10 +57,10 @@ with entry {
             player=player,
             level=level,
             renderer=renderer,
-            clock=Clock(),
-            overlay=False,
-            culling=False
+            clock=Clock()
         );
+        app.renderer.cvars.novis.assign("1");
+        app.host.overlay.assign("0");
         equip_player(player, app.combat, game);
         app.quake.upload(level);
         app.models.upload(world);

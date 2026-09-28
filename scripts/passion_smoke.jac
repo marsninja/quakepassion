@@ -357,8 +357,9 @@ with entry {
     renderer = Renderer();
     renderer.open_window();
     app = App(
-        world=World(), player=Player(), renderer=renderer, clock=Clock(), overlay=False
+        world=World(), player=Player(), renderer=renderer, clock=Clock()
     );
+    app.host.overlay.assign("0");
     try {
         started = time.perf_counter();
         app.load_destination("passion", name);

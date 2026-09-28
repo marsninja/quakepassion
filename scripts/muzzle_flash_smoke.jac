@@ -42,9 +42,9 @@ with entry {
             level=level,
             renderer=renderer,
             clock=Clock(),
-            smoke=True,
-            culling=False
+            smoke=True
         );
+        app.renderer.cvars.novis.assign("1");
         app.quake.upload(level);
         populate_opponents(world, level, game_directory(game));
         app.models.upload(world);

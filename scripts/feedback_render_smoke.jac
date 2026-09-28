@@ -26,9 +26,9 @@ with entry {
         level=level,
         renderer=renderer,
         clock=Clock(),
-        smoke=True,
-        culling=False
+        smoke=True
     );
+    app.renderer.cvars.novis.assign("1");
     app.quake.upload(level);
     equip_player(player, app.combat, "q1");
     assert fire_weapon(world, player, level.collision, app.combat);

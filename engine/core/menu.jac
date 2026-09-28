@@ -53,11 +53,22 @@ def is_q1_level(data: bytes) -> bool {
     return False;
 }
 
+"""The pause menu: the level list, the settings and the controls (Q1/Q2
+Customize Controls). Its 720 by 610 panel is laid out for a 1280 by 720
+window and stays centred in the live one."""
 obj LevelMenu {
     has opened: bool = False,
         settings_open: bool = False,
         setting_selected: int = 0,
         settings_labels: list[str] = [],
+        controls_open: bool = False,
+        controls_selected: int = 0,
+        controls_offset: int = 0,
+        controls_labels: list[str] = [],
+        controls_keys: list[str] = [],
+        grabbing: bool = False,
+        ox: int = 0,
+        oy: int = 0,
         restore_mouse: bool = False,
         game: int = 0,
         selected: int = 0,
@@ -153,18 +164,54 @@ obj LevelMenu {
         self.labels = labels;
     }
 
+    """Where the panel's 1280 by 720 layout sits in a `width` by `height`
+    window."""
+    def place(width: int, height: int) {
+        self.ox = (width - 1280) // 2;
+        self.oy = (height - 720) // 2;
+    }
+
     def hit(x: int, y: int, w: int, h: int) -> bool {
-        mx = int(GetMouseX());
-        my = int(GetMouseY());
+        mx = int(GetMouseX()) - self.ox;
+        my = int(GetMouseY()) - self.oy;
         return mx >= x and mx < x + w and my >= y and my < y + h;
     }
 
-    # Returns load, quit, or an empty string. Escape is handled by the app.
-    def update() -> str {
+    """A rectangle in panel coordinates."""
+    def box(x: int, y: int, w: int, h: int, color: Color) {
+        DrawRectangle(i32(self.ox + x), i32(self.oy + y), i32(w), i32(h), color);
+    }
+
+    """Text in panel coordinates."""
+    def label(text: str, x: int, y: int, size: int, color: Color) {
+        DrawText(text, i32(self.ox + x), i32(self.oy + y), i32(size), color);
+    }
+
+    """Open one page: "levels", "settings" or "controls"."""
+    def show(page: str) {
+        self.settings_open = page == "settings";
+        self.controls_open = page == "controls";
+        self.grabbing = False;
+    }
+
+    # Returns load, quit, a settings or controls action, or an empty string.
+    # Escape is handled by the app.
+    def update(width: int, height: int) -> str {
+        self.place(width, height);
         click = IsMouseButtonPressed(i32(0));
-        if click and self.hit(800, 82, 160, 32) {
-            self.settings_open = not self.settings_open;
+        if self.grabbing {
             return "";
+        }
+        if click and self.hit(800, 82, 160, 32) {
+            self.show("levels" if self.settings_open else "settings");
+            return "";
+        }
+        if click and self.hit(630, 82, 160, 32) {
+            self.show("levels" if self.controls_open else "controls");
+            return "";
+        }
+        if self.controls_open {
+            return self.update_controls(click);
         }
         if self.settings_open {
             if IsKeyPressed(i32(264)) {
@@ -176,10 +223,10 @@ obj LevelMenu {
                 self.setting_selected = max(0, self.setting_selected - 1);
             }
             for row in range(len(self.settings_labels)) {
-                if click and self.hit(310, 155 + row * 42, 650, 36) {
+                if click and self.hit(310, 150 + row * 28, 650, 26) {
                     self.setting_selected = row;
                     return "setting_left"
-                        if self.hit(810, 155 + row * 42, 65, 42)
+                        if self.hit(810, 150 + row * 28, 65, 26)
                         else "setting_right";
                 }
             }
@@ -238,73 +285,104 @@ obj LevelMenu {
         return "";
     }
 
-    def draw() {
+    """M_Keys_Key: Up and Down choose an action, Enter (or a click on the
+    chosen one) waits for the key to bind to it, Backspace and Delete clear
+    its keys."""
+    def update_controls(click: bool) -> str {
+        count = len(self.controls_labels);
+        if IsKeyPressed(i32(264)) {
+            self.controls_selected = min(count - 1, self.controls_selected + 1);
+        }
+        if IsKeyPressed(i32(265)) {
+            self.controls_selected = max(0, self.controls_selected - 1);
+        }
+        self.controls_offset -= int(GetMouseWheelMove()) * 3;
+        if self.controls_selected < self.controls_offset {
+            self.controls_offset = self.controls_selected;
+        }
+        if self.controls_selected >= self.controls_offset + 14 {
+            self.controls_offset = self.controls_selected - 13;
+        }
+        self.controls_offset = max(0, min(self.controls_offset, count - 14));
+        for row in range(14) {
+            index = self.controls_offset + row;
+            if index < count and click and self.hit(310, 150 + row * 30, 650, 28) {
+                if index == self.controls_selected {
+                    self.grabbing = True;
+                    return "";
+                }
+                self.controls_selected = index;
+            }
+        }
+        if IsKeyPressed(i32(257)) and count > 0 {
+            self.grabbing = True;
+            return "";
+        }
+        if IsKeyPressed(i32(259)) or IsKeyPressed(i32(261)) {
+            return "unbind";
+        }
+        if click and self.hit(310, 610, 260, 42) {
+            return "controls_reset";
+        }
+        if click and self.hit(760, 610, 200, 42) {
+            return "quit";
+        }
+        return "";
+    }
+
+    def draw(width: int, height: int) {
+        self.place(width, height);
         white = Color(r=235, g=229, b=215, a=255);
         amber = Color(r=255, g=184, b=107, a=255);
-        DrawRectangle(i32(0), i32(0), i32(1280), i32(720), Color(r=0, g=0, b=0, a=200));
-        DrawRectangle(
-            i32(280), i32(65), i32(720), i32(610), Color(r=27, g=25, b=23, a=255)
-        );
-        DrawText("QUAKEPASSION", i32(310), i32(85), i32(30), amber);
-        DrawRectangle(
-            i32(800), i32(82), i32(160), i32(32), Color(r=99, g=64, b=35, a=255)
-        );
-        DrawText(
-            "Levels" if self.settings_open else "Settings",
-            i32(815),
-            i32(89),
-            i32(20),
-            white
-        );
+        brown = Color(r=99, g=64, b=35, a=255);
+        DrawRectangle(i32(0), i32(0), i32(width), i32(height), Color(r=0, g=0, b=0, a=200));
+        self.box(280, 65, 720, 610, Color(r=27, g=25, b=23, a=255));
+        self.label("QUAKEPASSION", 310, 85, 30, amber);
+        self.box(630, 82, 160, 32, brown);
+        self.label("Levels" if self.controls_open else "Controls", 645, 89, 20, white);
+        self.box(800, 82, 160, 32, brown);
+        self.label("Levels" if self.settings_open else "Settings", 815, 89, 20, white);
+        if self.controls_open {
+            self.draw_controls(white, amber, brown);
+            return;
+        }
         if self.settings_open {
-            DrawText(
+            self.label(
                 "Settings | Esc: resume | Up/Down: select | Left/Right: change",
-                i32(310),
-                i32(120),
-                i32(18),
+                310,
+                120,
+                18,
                 white
             );
             for row in range(len(self.settings_labels)) {
-                color = Color(r=99, g=64, b=35, a=255)
+                color = brown
                     if row == self.setting_selected
                     else Color(r=48, g=45, b=41, a=255);
-                DrawRectangle(i32(310), i32(155 + row * 42), i32(650), i32(36), color);
-                DrawText(
-                    self.settings_labels[row],
-                    i32(322),
-                    i32(164 + row * 42),
-                    i32(20),
-                    white
-                );
-                DrawText("<     >", i32(830), i32(164 + row * 42), i32(20), amber);
+                self.box(310, 150 + row * 28, 650, 26, color);
+                self.label(self.settings_labels[row], 322, 153 + row * 28, 20, white);
+                self.label("<     >", 830, 153 + row * 28, 20, amber);
             }
-            DrawText(
+            self.label(
                 self.message[:75]
                     if self.message
                     else "Changes are saved automatically",
-                i32(310),
-                i32(666),
-                i32(16),
+                310,
+                666,
+                16,
                 white
             );
-            DrawRectangle(
-                i32(310), i32(610), i32(260), i32(42), Color(r=99, g=64, b=35, a=255)
-            );
-            DrawText("Reset defaults", i32(322), i32(622), i32(20), white);
-            DrawRectangle(
-                i32(760), i32(610), i32(200), i32(42), Color(r=75, g=35, b=30, a=255)
-            );
-            DrawText("Quit", i32(825), i32(622), i32(20), white);
+            self.box(310, 610, 260, 42, brown);
+            self.label("Reset defaults", 322, 622, 20, white);
+            self.box(760, 610, 200, 42, Color(r=75, g=35, b=30, a=255));
+            self.label("Quit", 825, 622, 20, white);
             return;
         }
-        DrawText("Choose a level  |  Esc: resume", i32(310), i32(120), i32(18), white);
+        self.label("Choose a level  |  Esc: resume", 310, 120, 18, white);
         titles = ["Quake", "Quake II", "Quake III", "Passion"];
         for i in range(len(self.games)) {
-            color = Color(r=99, g=64, b=35, a=255)
-                if i == self.game
-                else Color(r=48, g=45, b=41, a=255);
-            DrawRectangle(i32(310 + i * 165), i32(145), i32(155), i32(40), color);
-            DrawText(titles[i], i32(325 + i * 165), i32(155), i32(22), white);
+            color = brown if i == self.game else Color(r=48, g=45, b=41, a=255);
+            self.box(310 + i * 165, 145, 155, 40, color);
+            self.label(titles[i], 325 + i * 165, 155, 22, white);
         }
         for row in range(11) {
             index = self.offset + row;
@@ -312,37 +390,60 @@ obj LevelMenu {
                 break;
             }
             if index == self.selected {
-                DrawRectangle(
-                    i32(310),
-                    i32(205 + row * 30),
-                    i32(650),
-                    i32(28),
-                    Color(r=99, g=64, b=35, a=255)
-                );
+                self.box(310, 205 + row * 30, 650, 28, brown);
             }
-            DrawText(
+            self.label(
                 self.labels[index] if index < len(self.labels) else self.maps[index],
-                i32(322),
-                i32(209 + row * 30),
-                i32(20),
+                322,
+                209 + row * 30,
+                20,
                 white
             );
         }
-        DrawText(
+        self.label(
             str(len(self.maps)) + " maps | Scroll / Up / Down | Enter: load",
-            i32(310),
-            i32(550),
-            i32(18),
+            310,
+            550,
+            18,
             white
         );
-        DrawText(self.message[:75], i32(310), i32(580), i32(16), amber);
-        DrawRectangle(
-            i32(310), i32(610), i32(260), i32(42), Color(r=99, g=64, b=35, a=255)
+        self.label(self.message[:75], 310, 580, 16, amber);
+        self.box(310, 610, 260, 42, brown);
+        self.label("Render selected level", 322, 622, 20, white);
+        self.box(760, 610, 200, 42, Color(r=75, g=35, b=30, a=255));
+        self.label("Quit", 825, 622, 20, white);
+    }
+
+    """M_Keys_Draw: each action with the keys bound to it."""
+    def draw_controls(white: Color, amber: Color, brown: Color) {
+        self.label(
+            "Controls | Esc: resume | Enter: change | Backspace: clear",
+            310,
+            120,
+            18,
+            white
         );
-        DrawText("Render selected level", i32(322), i32(622), i32(20), white);
-        DrawRectangle(
-            i32(760), i32(610), i32(200), i32(42), Color(r=75, g=35, b=30, a=255)
-        );
-        DrawText("Quit", i32(825), i32(622), i32(20), white);
+        for row in range(14) {
+            index = self.controls_offset + row;
+            if index >= len(self.controls_labels) {
+                break;
+            }
+            color = brown if index == self.controls_selected else Color(r=48, g=45, b=41, a=255);
+            self.box(310, 150 + row * 30, 650, 28, color);
+            self.label(self.controls_labels[index], 322, 154 + row * 30, 20, white);
+            keys = self.controls_keys[index] if index < len(self.controls_keys) else "";
+            if self.grabbing and index == self.controls_selected {
+                keys = "=";
+            }
+            self.label(keys if keys else "???", 620, 154 + row * 30, 20, amber);
+        }
+        prompt = "Press a key or button for this action | Esc: cancel"
+            if self.grabbing
+            else (self.message[:75] if self.message else "Each game keeps its own bindings");
+        self.label(prompt, 310, 580, 16, amber if self.grabbing else white);
+        self.box(310, 610, 260, 42, brown);
+        self.label("Reset defaults", 322, 622, 20, white);
+        self.box(760, 610, 200, 42, Color(r=75, g=35, b=30, a=255));
+        self.label("Quit", 825, 622, 20, white);
     }
 }
