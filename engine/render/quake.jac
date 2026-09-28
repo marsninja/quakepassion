@@ -1388,15 +1388,18 @@ obj QuakeRenderer {
         return batch.id in view.lists.spans or batch.id in self.brush_batches;
     }
 
-    """The eight dynamic lights as the lit and base shaders read them."""
+    """The eight dynamic lights as the lit and base shaders read them: where,
+    how far and what colour, and the light below which a Q1/Q2 surface takes
+    none of it (Q1 dl->minlight, Q2 DLIGHT_CUTOFF 64)."""
     def set_dynamic_lights(program: GpuProgram, level: Level) {
         positions: list[float] = [];
         colors: list[float] = [];
+        cutoff = level.bsp.game == "q2";
         for i in range(8) {
             if i < len(level.lighting.dynamic) {
                 flash = level.lighting.dynamic[i];
                 positions.extend([flash.origin.x, flash.origin.y, flash.origin.z, flash.radius]);
-                colors.extend([flash.color.x, flash.color.y, flash.color.z, 0.0]);
+                colors.extend([flash.color.x, flash.color.y, flash.color.z, 64.0 if cutoff else flash.minlight]);
             } else {
                 positions.extend([0.0, 0.0, 0.0, 0.0]);
                 colors.extend([0.0, 0.0, 0.0, 0.0]);
