@@ -1062,12 +1062,16 @@ impl App.step() -> bool {
             self.notify_lines.pop(0);
         }
         if self.walking and self.level.active {
+            standing = self.level.collision.eye_height;
             self.player spawn SetStance(
                 collision=self.level.collision,
                 profile=self.level.movement,
                 crouch=intent.crouch,
                 dt=self.physics_clock.tick_rate
             );
+            if self.level.collision.eye_height != standing {
+                self.view.duck(self.level.collision.eye_height - standing);
+            }
         }
         previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
         if self.level.active and not self.smoke {

@@ -44,6 +44,9 @@ obj ViewFeedback {
         step_was: float = 0.0,
         carried: float = 0.0,
         carried_was: float = 0.0,
+        duck_change: float = 0.0,
+        duck_time: float = 0.0,
+        duck_was: float = 0.0,
         sway: ViewSway = ViewSway();
 
     def reset(game: str) {
@@ -52,6 +55,8 @@ obj ViewFeedback {
         self.step_was = 0.0;
         self.carried = 0.0;
         self.carried_was = 0.0;
+        self.duck_time = 0.0;
+        self.duck_was = 0.0;
         self.damage_level = 0.0;
         self.kick_time = 0.0;
         self.bonus = 0.0;
@@ -180,6 +185,8 @@ obj ViewFeedback {
     def tick(player: Player, moving: bool, dt: float) {
         self.step_was = self.step_offset();
         self.carried_was = self.carried;
+        self.duck_was = self.duck_offset();
+        self.duck_time = max(0.0, self.duck_time - dt);
         self.step_time = max(0.0, self.step_time - dt);
         self.sway.tick(player, moving, dt);
     }
@@ -242,6 +249,26 @@ obj ViewFeedback {
             return footing - self.step_z;
         }
         return self.step_was + (self.step_offset() - self.step_was) * share;
+    }
+
+    """The eye height changed by `change` as the body crouched or stood. Q3
+    CG_OffsetFirstPersonView eases it over DUCK_TIME (100 ms) from where it
+    was; Q2's client lerps the view offset over the 100 ms server frame."""
+    def duck(change: float) {
+        if self.game in ["q2", "q3"] {
+            self.duck_change = change;
+            self.duck_time = 0.1;
+        }
+    }
+
+    """Units below the body's eye that the crouch or stand being eased puts the
+    view, as the last tick left it (negative while crouching: the eye is still
+    above the lowered body eye)."""
+    def duck_offset() -> float {
+        if self.duck_time <= 0.0 {
+            return 0.0;
+        }
+        return self.duck_change * self.duck_time / 0.1;
     }
 
     """Q2 and Q3: how far below the body the eye sits as the last tick left
@@ -335,7 +362,10 @@ obj ViewFeedback {
             );
         }
         dip = self.eye_drop();
-        sink = dip + self.climb(body.z, grounded, frame_dt, share);
+        sink = dip
+            + self.climb(body.z, grounded, frame_dt, share)
+            + self.duck_was
+            + (self.duck_offset() - self.duck_was) * share;
         if dead {
             fallen = death_view(player, self.game, eye_height);
             eye = body.sub(Vec3(z=fallen[0]));
