@@ -202,11 +202,11 @@ test "dynamic lights follow each game's client" {
     q3.age = 0.75;
     fading = explosion_light(q3, "q3");
     assert fading is not None and abs(fading.radius - 150.0) < 0.001;
-    rocket = missile_light(Projectile(pos=Vec3(), velocity=Vec3(), damage=0, effect="q1_rocket"));
+    rocket = missile_light(Projectile(pos=Vec3(), velocity=Vec3(), damage=0, effect="q1_rocket"), Vec3());
     assert rocket is not None and rocket.radius == 200.0 and rocket.color.z == 1.0;
-    assert missile_light(Projectile(pos=Vec3(), velocity=Vec3(), damage=0, effect="q3_plasma")) is None;
-    bolt = missile_light(Projectile(pos=Vec3(), velocity=Vec3(), damage=0, effect="q2_bolt"));
-    assert bolt is not None and bolt.color.x == 1.0 and bolt.color.y == 1.0 and bolt.color.z == 0.0;
+    assert missile_light(Projectile(pos=Vec3(), velocity=Vec3(), damage=0, effect="q3_plasma"), Vec3()) is None;
+    bolt = missile_light(Projectile(pos=Vec3(), velocity=Vec3(), damage=0, effect="q2_bolt"), Vec3(x=5.0));
+    assert bolt is not None and bolt.color.x == 1.0 and bolt.color.y == 1.0 and bolt.color.z == 0.0 and bolt.origin.x == 5.0;
     # Only the eight nearest the viewer are kept.
     world = World();
     for i in range(12) {

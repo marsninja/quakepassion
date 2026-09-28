@@ -2,13 +2,32 @@
 RenderPass walker abilities. Declarations (and the raylib import) live in
 renderer.jac."""
 
+impl Renderer.declare(shell: Shell) {
+    cvars = self.cvars;
+    cvars.fov = shell.register(cvars.fov);
+    cvars.maxfps = shell.register(cvars.maxfps);
+    cvars.novis = shell.register(cvars.novis);
+    cvars.width = shell.register(cvars.width);
+    cvars.height = shell.register(cvars.height);
+    cvars.fullscreen = shell.register(cvars.fullscreen);
+    cvars.highdpi = shell.register(cvars.highdpi);
+}
+
 impl Renderer.open_window() {
-    InitWindow(i32(self.width), i32(self.height), self.title);
+    # A resizable window; with vid_highdpi the framebuffers are the display's
+    # pixels while 2D drawing stays in screen units.
+    flags = WINDOW_RESIZABLE_FLAG;
+    if self.cvars.highdpi.on() {
+        flags = flags | WINDOW_HIGHDPI_FLAG;
+    }
+    SetConfigFlags(u32(flags));
+    InitWindow(i32(self.cvars.width.integer), i32(self.cvars.height.integer), self.title);
     if not IsWindowReady() {
         raise RuntimeError(
             "Cannot open the viewer window: an active graphical desktop/display is required."
         );
     }
+    SetWindowMinSize(i32(320), i32(240));
     SetExitKey(i32(0));  # Escape belongs to the level menu.
     # raylib keeps a pointer to the active batch, so it lives in a pin. Each
     # buffer's vertex array enables only the attributes of the shader current
@@ -24,7 +43,48 @@ impl Renderer.open_window() {
     rlSetRenderBatchActive(&mut batch);
     # Default to uncapped rendering; a user-selected limit only paces frames.
     # Simulation keeps its independent fixed timestep.
-    self.set_frame_limit(self.frame_limit);
+    self.cvars.maxfps.modified = True;
+    if self.cvars.fullscreen.on() {
+        self.apply_video();
+    }
+    self.sync();
+}
+
+impl Renderer.sync() {
+    cvars = self.cvars;
+    if IsWindowResized() and not IsWindowFullscreen() {
+        cvars.width.assign(str(int(GetScreenWidth())));
+        cvars.height.assign(str(int(GetScreenHeight())));
+    }
+    self.width = max(1, int(GetScreenWidth()));
+    self.height = max(1, int(GetScreenHeight()));
+    # SCR_CalcRefdef: fov is the horizontal angle of a 4:3 view; the vertical
+    # angle stays and wider windows see more to the sides.
+    self.fov = math.degrees(
+        2.0 * math.atan(math.tan(math.radians(cvars.fov.number) * 0.5) * 0.75)
+    );
+    if cvars.maxfps.modified {
+        cvars.maxfps.modified = False;
+        SetTargetFPS(i32(cvars.maxfps.integer));
+    }
+}
+
+impl Renderer.apply_video() {
+    cvars = self.cvars;
+    if cvars.fullscreen.on() {
+        if not IsWindowFullscreen() {
+            monitor = GetCurrentMonitor();
+            SetWindowSize(GetMonitorWidth(monitor), GetMonitorHeight(monitor));
+            ToggleFullscreen();
+        }
+    } else {
+        if IsWindowFullscreen() {
+            ToggleFullscreen();
+        }
+        SetWindowSize(i32(cvars.width.integer), i32(cvars.height.integer));
+    }
+    self.width = max(1, int(GetScreenWidth()));
+    self.height = max(1, int(GetScreenHeight()));
 }
 
 impl Renderer.should_close() -> bool {
@@ -56,6 +116,11 @@ impl Renderer.begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0
     );
     rlSetClipPlanes(f64(1.0), f64(32768.0));
     BeginMode3D(cam);
+}
+
+impl Renderer.begin_screen() {
+    BeginDrawing();
+    ClearBackground(Color(r=0, g=0, b=0, a=255));
 }
 
 impl Renderer.draw_area(area: Area) {
@@ -124,7 +189,17 @@ impl Renderer.draw_aim(state: CombatState, crosshair: bool, score: str) {
 }
 
 impl Renderer.screenshot(path: str) {
-    TakeScreenshot(path);
+    # raylib's TakeScreenshot scales the framebuffer size by the display's
+    # DPI again under FLAG_WINDOW_HIGHDPI, reading past the frame; read the
+    # framebuffer's own size instead.
+    width = GetRenderWidth();
+    height = GetRenderHeight();
+    pixels = rlReadScreenPixels(width, height);
+    if pixels == u64(0) {
+        return;
+    }
+    ExportImage(ScreenImage(data=pixels, width=width, height=height, mipmaps=i32(1), format=i32(7)), path);
+    MemFree(pixels);
 }
 
 impl Renderer.close() {
@@ -149,16 +224,17 @@ impl RenderPass.draw with Area entry {
 }
 
 impl Renderer.set_frame_limit(fps: int) {
-    self.frame_limit = fps;
-    SetTargetFPS(i32(fps));
+    self.cvars.maxfps.assign(str(fps));
+    self.cvars.maxfps.modified = False;
+    SetTargetFPS(i32(self.cvars.maxfps.integer));
 }
 
-impl Renderer.draw_opponents(world: World, height: float) {
+impl Renderer.draw_opponents(world: World, height: float, blend: TickBlend = TickBlend()) {
     for enemy in [world->:HasOpponent:->][?:Opponent] {
         if enemy.health <= 0 or enemy.modeled {
             continue;
         }
-        center = enemy.pos.sub(Vec3(z=height - 4.0));
+        center = blend.place(enemy.tick_pose, enemy.pos).sub(Vec3(z=height - 4.0));
         DrawCube(
             Vector3(x=f32(center.x), y=f32(center.y), z=f32(center.z)),
             f32(28.0),
@@ -291,7 +367,9 @@ impl Renderer.draw_loading(name: str) {
 }
 
 
-impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
+impl Renderer.draw_projectiles(
+    world: World, hidden_effects: list[str] = [], blend: TickBlend = TickBlend()
+) {
     for trail in [world->:HasTrail:->][?:ShotTrail] {
         # Styled rails and beams are drawn by the effect scene.
         if trail.kind in hidden_effects {
@@ -353,9 +431,8 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
         }
     }
     for projectile in [world->:HasProjectile:->][?:Projectile] {
-        origin = Vector3(
-            x=f32(projectile.pos.x), y=f32(projectile.pos.y), z=f32(projectile.pos.z)
-        );
+        at = blend.place(projectile.tick_pose, projectile.pos);
+        origin = Vector3(x=f32(at.x), y=f32(at.y), z=f32(at.z));
         color = Color(r=70, g=255, b=70, a=255)
             if projectile.beam_damage > 0
             else Color(r=255, g=150, b=40, a=255);
@@ -366,7 +443,7 @@ impl Renderer.draw_projectiles(world: World, hidden_effects: list[str] = []) {
             if immediate {
                 DrawCube(origin, side, side, side, color);
             } else {
-                cubes.add(projectile.pos.x, projectile.pos.y, projectile.pos.z, float(side), int(color.r), int(color.g), int(color.b), int(color.a));
+                cubes.add(at.x, at.y, at.z, float(side), int(color.r), int(color.g), int(color.b), int(color.a));
             }
         }
         for finish in (projectile.beams if projectile.effect not in hidden_effects else []) {

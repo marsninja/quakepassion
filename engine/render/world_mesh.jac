@@ -29,6 +29,8 @@ import from vendor.raylib {
 import from .gpu { MESH_VERTEX_LIMIT, GpuProgram, UNIFORM_VEC2, UNIFORM_VEC3 }
 import from ..formats.bsp { Face }
 import from ..math.vec3 { Vec3 }
+import from ..math.orientation { Basis, blend_basis }
+import from ..math.interpolation { TickPose, TickBlend }
 import from ..world.lighting { shift_light }
 
 # One packed world vertex (WORLD_VERTEX_FORMAT, spelled out where packed:
@@ -395,6 +397,35 @@ obj BrushGroup {
         lamp: bool = False,
         tint: list[float] = [1.0, 1.0, 1.0, 1.0],
         tint_packed: bytes = b"";
+    # The lead face's placement as the physics tick in progress began (its
+    # motion as the pose's position), to draw a moving group between ticks.
+    has was: TickPose = TickPose(),
+        was_turn: Basis | None = None;
+
+    """A physics tick begins: keep the lead face's placement."""
+    def hold(lead: Face, tick: int) {
+        self.was.capture(lead.motion, 0.0, 0.0, tick);
+        self.was_turn = lead.turn;
+    }
+
+    """Where to draw the group: its lead face's placement `blend` of the way
+    through the last physics tick."""
+    def placed(lead: Face, blend: TickBlend) -> BrushPlacement {
+        share = blend.share(self.was, lead.motion);
+        if share >= 1.0 {
+            return BrushPlacement(motion=lead.motion, turn=lead.turn);
+        }
+        return BrushPlacement(
+            motion=self.was.pos.lerp(lead.motion, share),
+            turn=blend_basis(self.was_turn, lead.turn, share)
+        );
+    }
+}
+
+"""A brush group's placement this frame: turned about its pivot, then moved."""
+obj BrushPlacement {
+    has motion: Vec3,
+        turn: Basis | None = None;
 }
 
 """One brush model's faces."""

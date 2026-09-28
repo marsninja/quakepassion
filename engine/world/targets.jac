@@ -56,9 +56,11 @@ node TargetEvent {
     }
 }
 
-"""The help computer's current objectives (game.helpmessage1/2). `unread`
-is pers.helpchanged: 0 once the player has looked, else 1 plus the reminder
-beeps given so far (no more than three)."""
+"""The help computer's current objectives (game.helpmessage1/2) and
+game.helpchanged. `unread` is pers.helpchanged: 0 once the player has
+looked, else 1 plus the reminder beeps given so far (no more than three).
+Both belong to the game, not the level: they carry from level to level
+(carry_help) and are kept in saves."""
 edge HasHelp: World --> HelpComputer {}
 node HelpComputer {
     has primary: str = "",
@@ -76,6 +78,44 @@ def help_for(world: World) -> HelpComputer {
     computer = HelpComputer();
     world +>:HasHelp:+> computer;
     return computer;
+}
+
+"""Hand the help computer's objectives and news to the next level's world."""
+def carry_help(source: World, destination: World) {
+    found = [source->:HasHelp:->][?:HelpComputer];
+    if not found {
+        return;
+    }
+    last = found[0];
+    computer = help_for(destination);
+    computer.primary = last.primary;
+    computer.secondary = last.secondary;
+    computer.changed = last.changed;
+    computer.unread = last.unread;
+    computer.beep_wait = last.beep_wait;
+}
+
+"""A help message as one blank-free save field: its character codes."""
+def help_field(text: str) -> str {
+    if not text {
+        return "-";
+    }
+    return ",".join([str(ord(letter)) for letter in text]);
+}
+
+def help_text(field: str) -> str {
+    if field == "-" {
+        return "";
+    }
+    letters: list[str] = [];
+    for code in field.split(",") {
+        value = int(code);
+        if value < 1 or value > 1114111 {
+            raise ValueError("Invalid saved help message");
+        }
+        letters.append(chr(value));
+    }
+    return "".join(letters);
 }
 
 walker TargetTick {
@@ -199,7 +239,6 @@ walker TargetTick {
                 # blinks until the computer is opened.
                 computer.unread = 2;
                 computer.beep_wait = 6.4;
-                self.message = "Help computer updated (F1)";
                 self.cues.append("sound/misc/pc_up.wav");
             }
             if here.kind == "explosion" {

@@ -32,8 +32,10 @@ import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, model_basis }
 import from ..world.world { Player }
 import from ..world.combat { CombatState }
-import from ..world.weapons { ViewWeaponRule, view_frame, switch_frame }
+import from ..world.weapons { ViewWeaponRule, GunAnimation, grenade_frame, switch_frame }
+import from ..world.models { lerp_tag }
 import from ..world.lighting { Lighting, MODEL_LIGHT_VIEW }
+import from .view_sway { ViewPlacement }
 
 obj ViewAsset {
     has rule: ViewWeaponRule,
@@ -57,7 +59,8 @@ obj ViewWeapon {
         barrel_angle: float = 0.0,
         barrel_time: float = 0.0,
         barrel_spinning: bool = False,
-        flash_roll: float = 0.0;
+        flash_roll: float = 0.0,
+        animation: GunAnimation = GunAnimation();
 
     def upload(game: str, directory: str, rules: list[ViewWeaponRule]) {
         self.close();
@@ -111,17 +114,16 @@ obj ViewWeapon {
         }
     }
 
-    """`lift` raises the weapon by that fraction of the screen height, so a
-    weapon drawn at the bottom of the view sits above an opaque status bar.
-    `sink` lowers it with the eye (a landing dip, a step being eased in), as
-    each game places the gun at the view origin."""
+    """`view` places and turns the gun (each game's own rule, view_sway.jac);
+    `lift` raises the weapon by that fraction of the screen height, so a
+    weapon drawn at the bottom of the view sits above an opaque status bar."""
     def draw(
         player: Player,
         state: CombatState,
         seconds: float,
         lighting: Lighting,
-        lift: float = 0.0,
-        sink: float = 0.0
+        view: ViewPlacement,
+        lift: float = 0.0
     ) {
         if player.health <= 0 or state.weapon not in self.assets {
             return;
@@ -138,10 +140,15 @@ obj ViewWeapon {
             self.holstered = state.holstered if announced else -1;
             self.lowering = state.lowering if announced else 0.0;
             self.raising = state.raising if announced else 0.0;
+            self.animation.ready(
+                self.assets[state.weapon].rule, seconds + self.lowering + self.raising
+            );
         }
+        rule = self.assets[state.weapon].rule;
         if self.shots != state.shots {
             self.shots = state.shots;
             self.fired_at = seconds;
+            self.animation.shot(rule, seconds);
             # CG_AddPlayerWeapon turns each flash a random few degrees.
             self.flash_roll = math.sin(seconds * 7919.0) * 10.0;
         }
@@ -173,15 +180,19 @@ obj ViewWeapon {
         frames = len(asset.hand.tags)
             if asset.hand.tags
             else len(asset.drawing.model.surfaces[0].frames);
-        frame = view_frame(
-            asset.rule,
-            frames,
-            seconds - self.fired_at,
-            since - self.lowering - self.raising,
-            hand_grenade=state.game == "q2" and shown == 11,
-            grenade_phase=state.grenade_phase,
-            grenade_clock=state.grenade_clock
-        );
+        self.animation.advance(rule, seconds, state.firing);
+        frame = self.animation.frame;
+        before = self.animation.previous;
+        share = self.animation.share(rule, seconds);
+        if state.game == "q2" and shown == 11 {
+            cooked = grenade_frame(
+                state.grenade_phase, state.grenade_clock, seconds - self.fired_at
+            );
+            if cooked >= 0 {
+                frame = cooked;
+                share = 1.0;
+            }
+        }
         if lowering or raising {
             turning = switch_frame(
                 asset.rule,
@@ -191,37 +202,28 @@ obj ViewWeapon {
             );
             if turning >= 0 {
                 frame = turning;
+                share = 1.0;
             }
         }
-        basis = model_basis(player.yaw, player.pitch);
-        origin = player.pos.sub(Vec3(z=sink));
-        speed = min(
-            1.0, Vec3(x=player.velocity.x, y=player.velocity.y).length() / 320.0
-        );
-        if player.grounded {
-            origin = origin.add(
-                basis.left.scale(math.sin(seconds * 8.0) * speed * 0.5)
-            );
-            origin = origin.add(
-                basis.up.scale(abs(math.cos(seconds * 8.0)) * speed * 0.5)
-            );
-        }
-        recoil = max(0.0, 1.0 - (seconds - self.fired_at) / 0.16);
-        origin = origin.sub(basis.forward.scale(recoil * 1.5));
+        frame = max(0, min(frames - 1, frame));
+        before = frame if share >= 1.0 else max(0, min(frames - 1, before));
+        basis = model_basis(view.gun_yaw, view.gun_pitch, view.gun_roll);
+        origin = view.gun;
         model_frame = frame;
+        model_before = before;
         if asset.hand.tags {
-            for tag in asset.hand.tags[frame].tags {
-                if tag.name == "tag_weapon" {
-                    origin = origin.add(basis.apply(tag.origin));
-                    basis = Basis(
-                        forward=basis.apply(tag.axes[0]),
-                        left=basis.apply(tag.axes[1]),
-                        up=basis.apply(tag.axes[2])
-                    );
-                    break;
-                }
+            # The Q3 gun rides the hand's tag_weapon, between hand frames.
+            tag = lerp_tag(asset.hand, before, frame, share, "tag_weapon");
+            if tag is not None {
+                origin = origin.add(basis.apply(tag.origin));
+                basis = Basis(
+                    forward=basis.apply(tag.axes[0]),
+                    left=basis.apply(tag.axes[1]),
+                    up=basis.apply(tag.axes[2])
+                );
             }
             model_frame = 0;
+            model_before = 0;
         }
         # Compress clip-space depth to the near 30%, preserving self-occlusion.
         # Flush on both sides so the world and HUD retain their own projection.
@@ -249,9 +251,9 @@ obj ViewWeapon {
             weapon_projection.m13 = f32(float(projection.m13) + shift * float(projection.m15));
         }
         rlSetMatrixProjection(weapon_projection);
-        # Lit where the player's view is (the gun entity's origin), as a view
+        # Lit where the frame's view is (the gun entity's origin), as a view
         # weapon: Q1 at least 24, Q2 and Q3 RF_MINLIGHT.
-        illumination = lighting.light_model(player.pos, math.degrees(player.yaw), MODEL_LIGHT_VIEW);
+        illumination = lighting.light_model(view.eye, math.degrees(view.yaw), MODEL_LIGHT_VIEW);
         # One model pass for the gun, its barrel and flash, under this projection.
         open_model_pass();
         try {
@@ -265,10 +267,11 @@ obj ViewWeapon {
                 }
                 asset.drawing.draw(
                     origin,
-                    player.yaw,
-                    first=model_frame,
+                    view.gun_yaw,
+                    first=model_before,
                     second=model_frame,
-                    eye=player.pos,
+                    blend=share,
+                    eye=view.eye,
                     seconds=seconds,
                     illumination=illumination,
                     basis=basis,
@@ -293,8 +296,8 @@ obj ViewWeapon {
                             }
                             asset.barrel.draw(
                                 origin.add(basis.apply(tag.origin)),
-                                player.yaw,
-                                eye=player.pos,
+                                view.gun_yaw,
+                                eye=view.eye,
                                 seconds=seconds,
                                 illumination=illumination,
                                 basis=barrel_basis,
@@ -317,8 +320,8 @@ obj ViewWeapon {
                         mount = Basis(forward=tag.axes[0], left=tag.axes[1], up=tag.axes[2]);
                         asset.flash.draw(
                             origin.add(basis.apply(tag.origin)),
-                            player.yaw,
-                            eye=player.pos,
+                            view.gun_yaw,
+                            eye=view.eye,
                             seconds=seconds,
                             basis=Basis(
                                 forward=basis.apply(mount.apply(turned.forward)),
@@ -335,6 +338,14 @@ obj ViewWeapon {
             end_model_pass();
             rlSetMatrixProjection(projection);
         }
+    }
+
+    """The view rule of the weapon in `slot`, if it has one."""
+    def rule_for(slot: int) -> ViewWeaponRule | None {
+        if slot in self.assets {
+            return self.assets[slot].rule;
+        }
+        return None;
     }
 
     def close() {

@@ -563,6 +563,17 @@ def weapon_sounds(game: str) -> list[str] {
 }
 
 
+"""Each missile effect's looping flight sound."""
+def missile_sounds(game: str) -> dict[str, str] {
+    sounds: dict[str, str] = {};
+    for rule in weapon_effects(game) {
+        if rule.sound {
+            sounds[rule.key] = rule.sound;
+        }
+    }
+    return sounds;
+}
+
 def weapon_effects(game: str) -> list[EffectRule] {
     if game == "q1" {
         return [
@@ -587,11 +598,25 @@ def weapon_effects(game: str) -> list[EffectRule] {
     }
     if game == "q2" {
         return [
+            # g_weapon.c: fire_bfg, fire_blaster, fire_grenade2 and fire_rocket
+            # give their missiles a looping s.sound.
             EffectRule(
-                key="q2_bfg", flight="sprites/s_bfg1.sp2", burst="sprites/s_bfg3.sp2"
+                key="q2_bfg",
+                flight="sprites/s_bfg1.sp2",
+                burst="sprites/s_bfg3.sp2",
+                sound="sound/weapons/bfg__l1a.wav"
             ),
-            EffectRule(key="q2_bolt", flight="models/objects/laser/tris.md2"),
-            EffectRule(key="q2_hyperbolt", flight="models/objects/laser/tris.md2"),
+            EffectRule(
+                key="q2_bolt",
+                flight="models/objects/laser/tris.md2",
+                sound="sound/misc/lasfly.wav"
+            ),
+            # fire_blaster(hyper): the same bolt, EF_HYPERBLASTER.
+            EffectRule(
+                key="q2_hyperbolt",
+                flight="models/objects/laser/tris.md2",
+                sound="sound/misc/lasfly.wav"
+            ),
             EffectRule(
                 key="q2_grenade",
                 flight="models/objects/grenade/tris.md2",
@@ -600,9 +625,14 @@ def weapon_effects(game: str) -> list[EffectRule] {
             EffectRule(
                 key="q2_handgrenade",
                 flight="models/objects/grenade2/tris.md2",
-                spin=5.235987756
+                spin=5.235987756,
+                sound="sound/weapons/hgrenc1b.wav"
             ),
-            EffectRule(key="q2_rocket", flight="models/objects/rocket/tris.md2"),
+            EffectRule(
+                key="q2_rocket",
+                flight="models/objects/rocket/tris.md2",
+                sound="sound/weapons/rockfly.wav"
+            ),
             # CL_AddBeams: the parasite's drain and the medic's cable.
             EffectRule(key="q2_segment", flight="models/monsters/parasite/segment/tris.md2"),
             # cl_tent.c: rocket bursts start on frame 0 or 15, grenades on 30.
@@ -624,7 +654,12 @@ def weapon_effects(game: str) -> list[EffectRule] {
     }
     if game == "q3" {
         return [
-            EffectRule(key="q3_rocket", flight="models/ammo/rocket/rocket.md3"),
+            # cg_weapons.c CG_RegisterWeapon: each missile's missileSound.
+            EffectRule(
+                key="q3_rocket",
+                flight="models/ammo/rocket/rocket.md3",
+                sound="sound/weapons/rocket/rockfly.wav"
+            ),
             EffectRule(
                 key="q3_grenade", flight="models/ammo/grenade1.md3", spin=4.36332313
             ),
@@ -633,9 +668,15 @@ def weapon_effects(game: str) -> list[EffectRule] {
                 flight="sprites/plasma1",
                 sprite_size=32,
                 additive=True,
-                rotate=931.0
+                rotate=931.0,
+                sound="sound/weapons/plasma/lasfly.wav"
             ),
-            EffectRule(key="q3_bfg", flight="models/weaphits/bfg.md3", spin=6.0),
+            EffectRule(
+                key="q3_bfg",
+                flight="models/weaphits/bfg.md3",
+                spin=6.0,
+                sound="sound/weapons/rocket/rockfly.wav"
+            ),
             # gfx.shader rocketExplosion / grenadeExplosion / bfgExplosion animmaps.
             EffectRule(
                 key="q3_rocket_explosion",

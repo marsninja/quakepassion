@@ -26,6 +26,7 @@ import from .particle_field {
     quake2_teleporter_particles
 }
 import from ..math.vec3 { Vec3 }
+import from ..math.interpolation { TickBlend }
 
 node TrailEmitter {
     has last: Vec3 = Vec3(),
@@ -53,9 +54,12 @@ glob QUAKE_MISSILE_TRAILS: dict[str, int] = {
     "q1_vorepod": 6
 };
 
-"""Lay every missile's and gib's trail up to where it is now."""
+"""Lay every missile's and gib's trail up to where the frame draws it (`blend`
+of the way through the last physics tick, as the clients lay trails to the
+interpolated origin)."""
 walker EmitTrails {
-    has field: ParticleField | None = None;
+    has field: ParticleField | None = None,
+        blend: TickBlend = TickBlend();
 
     can begin with World entry {
         found = [here->:HasParticles:->][?:ParticleField];
@@ -85,13 +89,13 @@ walker EmitTrails {
         if field is None or here.phase != 0 {
             return;
         }
-        emitter = self.emitter_of(here, here.pos);
+        end = self.blend.place(here.tick_pose, here.pos);
+        emitter = self.emitter_of(here, end);
         if emitter is None {
             return;
         }
         effect = here.effect;
         start = emitter.last;
-        end = here.pos;
         if effect in QUAKE_MISSILE_TRAILS {
             quake_rocket_trail(field, start, end, QUAKE_MISSILE_TRAILS[effect]);
         } elif effect == "q2_rocket" {
@@ -118,12 +122,12 @@ walker EmitTrails {
         if field is None {
             return;
         }
-        emitter = self.emitter_of(here, here.pos);
+        end = self.blend.place(here.tick_pose, here.pos);
+        emitter = self.emitter_of(here, end);
         if emitter is None {
             return;
         }
         start = emitter.last;
-        end = here.pos;
         if field.game == "q1" {
             # The gib's model flags choose its trail (EF_GIB blood).
             for resource in [here.visual->:UsesModel:->][?:ModelResource] {

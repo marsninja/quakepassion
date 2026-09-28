@@ -32,6 +32,7 @@ import from .particles { Explosion, HasExplosion, impact_roll }
 import from .models { PlayerRig, WeaponKit, Holds, RIG_FLASH_TIME }
 import from .powerups { Empowered, Powerup }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.interpolation { TickBlend }
 
 # The lights the world and model shaders hold at once.
 glob DYNAMIC_LIGHT_LIMIT: int = 8;
@@ -46,10 +47,10 @@ def light_jitter(origin: Vec3, salt: float = 0.0) -> float {
 """The light a missile carries in flight, or None: Q1 EF_ROCKET models
 (missile.mdl, lavaball.mdl) and the enforcer laser's EF_DIMLIGHT; Q2
 EF_ROCKET, EF_BLASTER and EF_HYPERBLASTER, and EF_BFG (bfg_lightramp over
-its burst, a frame a tenth of a second); Q3 missileDlight (the rocket)."""
-def missile_light(projectile: Projectile) -> FlashLight | None {
+its burst, a frame a tenth of a second); Q3 missileDlight (the rocket).
+`origin` is where the frame draws the missile."""
+def missile_light(projectile: Projectile, origin: Vec3) -> FlashLight | None {
     effect = projectile.effect;
-    origin = projectile.pos;
     if effect in ["q1_rocket", "q1_lavaball"] and projectile.phase == 0 {
         return FlashLight(origin=origin, color=LIGHT_WHITE, radius=200.0);
     }
@@ -108,7 +109,7 @@ def explosion_light(blast: Explosion, game: str) -> FlashLight | None {
 18 ahead of the origin; Q2 CL_ParseMuzzleFlash 18 ahead and 16 right, in its
 weapon's colour (the chaingun's by how many rounds this frame fired); Q3 the
 weapon's flashDlightColor at the flash."""
-def player_flash(player: Player, state: CombatState) -> FlashLight | None {
+def player_flash(player: Player, state: CombatState, at: Vec3) -> FlashLight | None {
     if state.flash <= 0.0 {
         return None;
     }
@@ -117,11 +118,11 @@ def player_flash(player: Player, state: CombatState) -> FlashLight | None {
     weapon = selected_weapon(state).key;
     if game == "q1" {
         # The view is 22 above the origin (view_ofs); the flash 16 above it.
-        origin = player.pos.sub(Vec3(z=6.0)).add(forward.scale(18.0));
+        origin = at.sub(Vec3(z=6.0)).add(forward.scale(18.0));
         return FlashLight(origin=origin, color=LIGHT_WHITE, radius=200.0 + light_jitter(origin), minlight=32.0);
     }
     if game == "q2" {
-        origin = player.pos.sub(Vec3(z=22.0)).add(forward.scale(18.0)).add(right_from(player.yaw).scale(16.0));
+        origin = at.sub(Vec3(z=22.0)).add(forward.scale(18.0)).add(right_from(player.yaw).scale(16.0));
         color = Vec3(x=1.0, y=1.0);
         radius = 200.0;
         if weapon == "chaingun" {
@@ -151,12 +152,12 @@ def player_flash(player: Player, state: CombatState) -> FlashLight | None {
             "railgun": Vec3(x=1.0, y=0.5),
             "bfg": Vec3(x=1.0, y=0.7, z=1.0)
         };
-        origin = player.pos.add(forward_from(player.yaw, player.pitch).scale(18.0));
+        origin = at.add(forward_from(player.yaw, player.pitch).scale(18.0));
         return FlashLight(origin=origin, color=colors.get(weapon, LIGHT_WHITE), radius=300.0 + light_jitter(origin));
     }
     # Passion: a warm flash ahead of the eye.
     return FlashLight(
-        origin=player.pos.add(forward_from(player.yaw, player.pitch).scale(18.0)),
+        origin=at.add(forward_from(player.yaw, player.pitch).scale(18.0)),
         color=Vec3(x=1.0, y=0.65, z=0.25).scale(min(1.0, state.flash / 0.04))
     );
 }
@@ -164,14 +165,14 @@ def player_flash(player: Player, state: CombatState) -> FlashLight | None {
 """A monster's or bot's muzzle flash while it shows: Q1 EF_MUZZLEFLASH
 (white), Q2 CL_ParseMuzzleFlash2 (the flash's colour), both 200 + rand&31
 with minlight 32; a Q3 bot's weapon flash as the player's."""
-def opponent_flash(enemy: Opponent, game: str) -> FlashLight | None {
+def opponent_flash(enemy: Opponent, game: str, at: Vec3) -> FlashLight | None {
     rig = enemy.visual;
     if isinstance(rig, PlayerRig) {
         if rig.clock - rig.flash_time >= RIG_FLASH_TIME * 2.0 {
             return None;
         }
         kits = [rig->:Holds:->][?:WeaponKit];
-        origin = enemy.pos.add(forward_from(enemy.yaw, enemy.pitch).scale(20.0));
+        origin = at.add(forward_from(enemy.yaw, enemy.pitch).scale(20.0));
         return FlashLight(
             origin=origin,
             color=kits[0].light if kits else Vec3(x=1.0, y=1.0),
@@ -191,9 +192,9 @@ def opponent_flash(enemy: Opponent, game: str) -> FlashLight | None {
 """A powered-up actor's own light: Q1 CheckPowerups gives the quad and the
 pentagram EF_DIMLIGHT (at the origin, 200 + rand&31); Q3 the quad a blue
 200 + rand&31."""
-def powerup_light(actor: Player, game: str, eye: float) -> FlashLight | None {
+def powerup_light(actor: Player, game: str, eye: float, at: Vec3) -> FlashLight | None {
     powers = [power.kind for power in [actor->:Empowered:->][?:Powerup] if power.remaining > 0.0];
-    origin = actor.pos.sub(Vec3(z=eye));
+    origin = at.sub(Vec3(z=eye));
     if game == "q1" and ("quad" in powers or "invulnerability" in powers) {
         return FlashLight(origin=origin, color=LIGHT_WHITE, radius=200.0 + light_jitter(origin, 5.0));
     }
@@ -203,16 +204,19 @@ def powerup_light(actor: Player, game: str, eye: float) -> FlashLight | None {
     return None;
 }
 
+"""This frame's dynamic lights, on lit bodies where the frame draws them
+(`blend` of the way through the last physics tick)."""
 def combat_lights(
-    lighting: Lighting, world: World, player: Player, state: CombatState
+    lighting: Lighting, world: World, player: Player, state: CombatState, blend: TickBlend = TickBlend()
 ) {
     game = state.game;
     lights: list[FlashLight] = [];
-    flash = player_flash(player, state);
+    viewer = blend.place(player.tick_pose, player.pos);
+    flash = player_flash(player, state, viewer);
     if flash is not None {
         lights.append(flash);
     }
-    glow = powerup_light(player, game, 26.0 if game == "q3" else 22.0);
+    glow = powerup_light(player, game, 26.0 if game == "q3" else 22.0, viewer);
     if glow is not None and player.health > 0 {
         lights.append(glow);
     }
@@ -223,7 +227,7 @@ def combat_lights(
         }
     }
     for projectile in [world->:HasProjectile:->][?:Projectile] {
-        light = missile_light(projectile);
+        light = missile_light(projectile, blend.place(projectile.tick_pose, projectile.pos));
         if light is not None {
             lights.append(light);
         }
@@ -232,12 +236,13 @@ def combat_lights(
         if enemy.health <= 0 {
             continue;
         }
-        light = opponent_flash(enemy, game);
+        at = blend.place(enemy.tick_pose, enemy.pos);
+        light = opponent_flash(enemy, game, at);
         if light is not None {
             lights.append(light);
         }
         if isinstance(enemy.visual, PlayerRig) {
-            glow = powerup_light(enemy, game, enemy.eye_height);
+            glow = powerup_light(enemy, game, enemy.eye_height, at);
             if glow is not None {
                 lights.append(glow);
             }
@@ -245,7 +250,7 @@ def combat_lights(
     }
     # The shaders hold eight: keep the nearest the viewer.
     if len(lights) > DYNAMIC_LIGHT_LIMIT {
-        order = sorted([(lights[i].origin.sub(player.pos).length() - lights[i].radius, i) for i in range(len(lights))]);
+        order = sorted([(lights[i].origin.sub(viewer).length() - lights[i].radius, i) for i in range(len(lights))]);
         lights = [lights[ranked[1]] for ranked in order[:DYNAMIC_LIGHT_LIMIT]];
     }
     # With no lights, keep the same empty list: models keep the light they

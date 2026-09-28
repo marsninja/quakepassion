@@ -50,6 +50,11 @@ obj Face {
         colors: list[int] = [],
         planar: bool = True,
         patch: bool = False,
+        # A Q3 patch's control points, rows concatenated, for its collision
+        # facets (CM_GeneratePatchCollide) apart from the rendered tessellation.
+        patch_width: int = 0,
+        patch_height: int = 0,
+        patch_points: list[Vec3] = [],
         alpha_test: int = 0,
         additive: bool = False,
         two_sided: bool = False,
@@ -321,4 +326,34 @@ def decode_pvs(data: bytes, offset: int, leaf_count: int) -> list[int] {
         }
     }
     return result;
+}
+
+"""Q2 CONTENTS_LADDER: a brush the player climbs by pressing into it
+(pmove.c PM_CheckSpecialMovement). Q1 has no ladders, and Q3's SURF_LADDER is
+never read by bg_pmove.c."""
+def brush_climbable(contents: int, game: str) -> bool {
+    return game == "q2" and contents & 0x20000000 != 0;
+}
+
+"""A brush's Q2 CONTENTS_CURRENT_0/90/180/270/UP/DOWN bits (MASK_CURRENT);
+none in Q1 (the QUAKE2-only currents never shipped) or Q3, whose bits there
+mean other things."""
+def brush_current_bits(contents: int, game: str) -> int {
+    return contents & 0xFC0000 if game == "q2" else 0;
+}
+
+"""The direction Q2 current bits push along, one unit per bit
+(PM_AddCurrents), or None when there are none."""
+def current_flow(bits: int) -> Vec3 | None {
+    if bits & 0xFC0000 == 0 {
+        return None;
+    }
+    direction = Vec3();
+    if bits & 0x40000 { direction.x += 1.0; }
+    if bits & 0x80000 { direction.y += 1.0; }
+    if bits & 0x100000 { direction.x -= 1.0; }
+    if bits & 0x200000 { direction.y -= 1.0; }
+    if bits & 0x400000 { direction.z += 1.0; }
+    if bits & 0x800000 { direction.z -= 1.0; }
+    return direction;
 }

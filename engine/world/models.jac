@@ -1,11 +1,12 @@
 """Visual components and shared model resources attached to world entities."""
 import math;
-import from .world { World, Area, Entity, In, Actor }
+import from .world { World, Area, Entity, In, Actor, Occupied, index_occupancy }
 import from .powerups { Empowered, Powerup }
 import from ..formats.animated { AnimatedModel, ModelTag }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, quake_basis }
+import from ..math.interpolation { TickBlend }
 
 edge HasVisual: Entity --> Visual {}
 edge UsesModel: Visual --> ModelResource {}
@@ -248,20 +249,21 @@ as every client did (Q1/Q2 autorotate, Q3 cg.autoAngles and item bobbing)."""
 walker GatherModels {
     has draws: list[ModelDraw] = [],
         seconds: float = 0.0,
-        areas: list[Area] = [];
+        # Where between the last two physics ticks the frame falls.
+        blend: TickBlend = TickBlend();
 
     can begin with World entry {
-        # Only areas holding entities (most BSP leaves hold none). A renderer
-        # passes the level's areas it listed once (`areas`), sparing a walk
-        # over every leaf's edge each frame.
-        places = self.areas if self.areas else [here-->[?:Area]];
-        visit [area for area in places if area.occupants > 0];
+        # Only areas holding entities (most BSP leaves hold none).
+        visit [here->:Occupied:->];
     }
 
     can area with Area entry {
         inside = [here<-:In:<-];
         # Entities removed without move_to_area leave a stale count; fix it.
         here.occupants = len(inside);
+        if not inside {
+            index_occupancy(here);
+        }
         visit inside;
     }
 
@@ -394,7 +396,7 @@ walker GatherModels {
             if not visual.visible {
                 continue;
             }
-            origin = here.pos.add(visual.offset);
+            origin = self.blend.place(here.tick_pose, here.pos).add(visual.offset);
             if isinstance(visual, PlayerRig) {
                 powers: list[str] = [];
                 if isinstance(here, Actor) {
@@ -403,7 +405,7 @@ walker GatherModels {
                 self.add_rig(visual, origin, powers);
                 continue;
             }
-            yaw = here.yaw;
+            yaw = self.blend.turn(here.tick_pose, here.pos, here.yaw);
             if visual.spin != 0.0 {
                 yaw = math.radians((visual.spin * self.seconds) % 360.0);
             }

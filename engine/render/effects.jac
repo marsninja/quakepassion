@@ -39,6 +39,7 @@ import from .polygons { ScenePolygons, POLYGON_BLEND_ALPHA, POLYGON_BLEND_DARKEN
 import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
 import from ..world.doors { Door }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.interpolation { TickBlend }
 import from .quake { QuakeRenderer }
 import from .gpu {
     GpuMesh,
@@ -611,7 +612,8 @@ obj EffectScene {
         eye: Vec3,
         yaw: float,
         pitch: float,
-        lighting: Lighting = Lighting()
+        lighting: Lighting = Lighting(),
+        blend: TickBlend = TickBlend()
     ) {
         self.quads.open();
         side = right_from(yaw);
@@ -625,7 +627,7 @@ obj EffectScene {
         self.draw_marks(found.marks, eye);
         self.draw_trails(found.trails, eye, now);
         self.draw_electrodes(found.lightning, eye);
-        self.draw_bfg_lasers(found.projectiles);
+        self.draw_bfg_lasers(found.projectiles, blend);
         self.draw_blasts(found.blasts, eye);
         if field is not None {
             self.draw_puffs(field, eye);
@@ -646,14 +648,15 @@ obj EffectScene {
             renderer = self.models[projectile.effect];
             model_frame = int(projectile.age * 10.0)
                 % len(renderer.model.surfaces[0].frames);
+            at = blend.place(projectile.tick_pose, projectile.pos);
             renderer.draw(
-                projectile.pos,
+                at,
                 heading,
                 first=model_frame,
                 second=model_frame,
                 eye=eye,
                 seconds=projectile.age,
-                illumination=lighting.light_model(projectile.pos, math.degrees(heading)),
+                illumination=lighting.light_model(at, math.degrees(heading)),
                 basis=model_basis(heading, elevation, spin)
             );
         }
@@ -687,7 +690,7 @@ obj EffectScene {
             sprite = frames[frame_index];
             self.billboard(
                 sprite,
-                projectile.pos,
+                blend.place(projectile.tick_pose, projectile.pos),
                 EFFECT_BLEND_ADD if sprite.additive else EFFECT_BLEND_ALPHA,
                 angle=-sprite.rotate * projectile.age * math.pi / 180.0
             );
@@ -715,14 +718,15 @@ obj EffectScene {
 
     """The BFG ball's lasers to whatever it sees (TE_BFG_LASER): green RF_BEAM
     tubes four across, redrawn as long as they last."""
-    def draw_bfg_lasers(projectiles: list[Projectile]) {
+    def draw_bfg_lasers(projectiles: list[Projectile], blend: TickBlend) {
         drawn = False;
         for projectile in projectiles {
             if projectile.effect != "q2_bfg" or not projectile.beams {
                 continue;
             }
+            at = blend.place(projectile.tick_pose, projectile.pos);
             for finish in projectile.beams {
-                self.laser_beam(projectile.pos, finish, QUAKE2_LASER_COLORS["laser_green"], 4.0, projectile.age);
+                self.laser_beam(at, finish, QUAKE2_LASER_COLORS["laser_green"], 4.0, projectile.age);
                 drawn = True;
             }
         }
@@ -731,10 +735,11 @@ obj EffectScene {
         }
     }
 
-    """Lay the missiles' and gibs' trails up to now, then draw every Q1/Q2
-    particle still showing (particles.jac ParticleRing)."""
-    def draw_particles(world: World, yaw: float, pitch: float) {
-        emitted = world spawn EmitTrails();
+    """Lay the missiles' and gibs' trails up to where the frame shows them
+    (`blend`), then draw every Q1/Q2 particle still showing (particles.jac
+    ParticleRing)."""
+    def draw_particles(world: World, yaw: float, pitch: float, blend: TickBlend = TickBlend()) {
+        emitted = world spawn EmitTrails(blend=blend);
         field = emitted.field;
         if field is None {
             return;

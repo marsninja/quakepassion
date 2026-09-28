@@ -6,16 +6,20 @@ map basename; QP_SEED selects Passion's version-1 expedition seed.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
 views and exits. QP_CAPTURE=<frame>:<file.png> plays normally and saves one
 full screenshot (HUD and weapon included) at that frame, then exits. All modes
-require a graphical display.
+require a graphical display. QP_CONFIG_DIR keeps the settings and bindings
+somewhere other than HOME. Arguments starting with "+" run as console commands
+after the configuration (quake.rc's stuffcmds): `./qp +map e1m2 +god`.
 """
 
 import os;
+import sys;
 
 import from engine.world.level { Level, spawn_player }
 import from games.levels { open_level }
 import from engine.core.preferences { Preferences }
 import from engine.core.menu { game_directory }
-import from engine.core.app { App }
+import from engine.core.app { App, HostCvars }
+import from engine.console.shell { Shell, command_line_text }
 import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World }
@@ -26,15 +30,18 @@ with entry {
     world = World();  # unrooted by design: worlds are rebuilt from data
     # every run; root is reserved for save games (phase 7)
     level = Level();
-    # The first level honours the saved skill before the app reads its settings.
-    skill = 1;
+    # The first level honours the saved skill before the app reads the rest
+    # of its settings into the same shell.
+    shell = Shell();
+    shell.boot();
+    host = HostCvars();
+    host.skill = shell.register(host.skill);
     try {
-        settings = Preferences();
-        settings.load();
-        skill = settings.skill;
-    } except Exception {
-        skill = 1;
+        shell.execute_text(Preferences().settings_text());
+    } except Exception as error {
+        shell.print("Settings: " + str(error));
     }
+    skill = host.skill.integer;
     if os.getenv("QP_GRAYBOX", "") == "" {
         game = os.getenv("QP_GAME", "q1");
         map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
@@ -60,8 +67,15 @@ with entry {
         renderer=Renderer(),
         clock=Clock(),
         smoke=(os.getenv("QP_SMOKE", "") != ""),
-        skill=skill
+        shell=shell,
+        host=host
     );
+    # quake.rc's stuffcmds: `./qp +map e1m2 +god`.
+    app.stuffed = command_line_text(sys.argv[1:]);
+    # Quake II's newgame is "map *ntro.cin+base1": the introduction first.
+    if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q2" and os.getenv("QP_MAP", "") == "" {
+        app.opening = "*ntro.cin+base1";
+    }
     capture = os.getenv("QP_CAPTURE", "");
     if ":" in capture {
         app.capture_frame = int(capture.split(":", 1)[0]);

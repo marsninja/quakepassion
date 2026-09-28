@@ -33,10 +33,10 @@ with entry {
             renderer=renderer,
             clock=Clock(),
             level=level,
-            walking=True,
-            overlay=False,
-            culling=False
+            walking=True
         );
+        app.renderer.cvars.novis.assign("1");
+        app.host.overlay.assign("0");
         app.quake.upload(level);
         app.menu.opened = True;
         app.physics_clock.accumulator = app.physics_clock.tick_rate;
