@@ -2,25 +2,9 @@
 steps. Declarations live in app.jac."""
 
 impl App.run() {
+    self.configure();
+    self.player.god_mode = self.host.god.on();
     if not self.smoke {
-        preferences = Preferences();
-        try {
-            preferences.load();
-        } except Exception as error {
-            self.notice = "Settings: " + str(error);
-            self.notice_wait = 5.0;
-        }
-        self.renderer.fov = preferences.fov;
-        self.renderer.frame_limit = preferences.frame_limit;
-        self.sensitivity = preferences.sensitivity;
-        self.invert_y = preferences.invert_y;
-        self.god_mode = preferences.god_mode;
-        self.player.god_mode = self.god_mode;
-        self.skill = preferences.skill;
-        self.fly_speed = preferences.fly_speed;
-        self.culling = preferences.culling;
-        self.overlay = preferences.overlay;
-        self.audio.volume = preferences.volume;
         if self.level.active {
             self.audio.open(
                 self.level.bsp.game,
@@ -72,6 +56,13 @@ impl App.run() {
             break;
         }
     }
+    # Host_WriteConfiguration: keep what the console changed.
+    if not self.smoke {
+        self.save_preferences();
+        if self.keyboard.dirty {
+            self.save_bindings();
+        }
+    }
     if self.level.active {
         self.models.close();
         self.effects.close();
@@ -99,7 +90,7 @@ impl App.fly(intent: Intent, dt: float) {
         Vec3(z=intent.move.z)
     );
     if wish.length() > 0.001 {
-        p.pos = p.pos.add(wish.normalized().scale(self.fly_speed * dt));
+        p.pos = p.pos.add(wish.normalized().scale(self.host.flyspeed.number * dt));
     }
 
     # rewire the In edge when we cross into another area
@@ -114,6 +105,7 @@ impl App.fly(intent: Intent, dt: float) {
 impl App.render_frame() {
     if self.menu.opened {
         self.refresh_settings();
+        self.refresh_controls();
     }
     p = self.player;
     self.audio.update(self.world, p.pos, p.yaw, paused=self.menu.opened);
@@ -134,7 +126,7 @@ impl App.render_frame() {
     if self.level.active {
         # RenderTimes: each stage's cost this frame, in milliseconds.
         stamp = time.time();
-        faces = self.level.visible(self.world, p.pos, self.culling);
+        faces = self.level.visible(self.world, p.pos, self.culling());
         combat_lights(self.level.lighting, self.world, p, self.combat);
         self.quake.time = self.simulation_time;
         self.render_times.visible = (time.time() - stamp) * 1000.0;
@@ -174,7 +166,7 @@ impl App.render_frame() {
             self.world,
             eye,
             self.simulation_time,
-            culling=self.culling,
+            culling=self.culling(),
             yaw=view_yaw,
             pitch=view_pitch,
             fov=self.renderer.fov,
@@ -424,7 +416,7 @@ impl App.render_frame() {
                 }
             }
         }
-        if self.overlay {
+        if self.host.overlay.on() {
             self.renderer.draw_overlay(
                 [
                     self.level.bsp.game.upper() + ": " + self.level.name,
@@ -433,21 +425,24 @@ impl App.render_frame() {
                         + "/"
                         + str(len(self.level.bsp.faces)),
                     "BSP leaf: " + str(self.level.locate(p.pos)),
-                    "PVS [C]: " + ("ON" if self.culling else "OFF"),
+                    "PVS (r_novis): " + ("ON" if self.culling() else "OFF"),
                     (
                         "WASD: walk | Space: jump"
                             if self.walking
-                            else "WASD / Space / Shift: fly"
+                            else "WASD / Space / C: fly"
                     )
-                        + " | `: mouse | Tab: "
+                        + " | `: console | Tab: "
                         + ("inventory" if self.level.bsp.game == "q2" else "scores")
                         + " | F3: overlay",
                     self.movement_status
                 ]
             );
         }
+        self.console.draw(
+            self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+        );
         if self.menu.opened {
-            self.menu.draw();
+            self.menu.draw(self.renderer.width, self.renderer.height);
         }
         self.render_times.hud = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -459,7 +454,7 @@ impl App.render_frame() {
     cur = area_of(p);
     all_areas = [self.world-->[?:Area]];
 
-    if self.culling and cur is not None {
+    if self.culling() and cur is not None {
         vis = cur spawn VisPass(eye=p.pos, facing=facing);
         targets = vis.visible;
     } else {
@@ -471,24 +466,25 @@ impl App.render_frame() {
     self.last_drawn = rp.drawn;
     self.renderer.end_scene();
 
-    if self.overlay {
+    if self.host.overlay.on() {
         cur_name = cur.name if cur is not None else "the void";
-        culling_state = "ON" if self.culling else "OFF";
-        mouse_state = "captured [` releases]"
-            if mouse_captured()
-            else "free - click or ` to look";
+        culling_state = "ON" if self.culling() else "OFF";
+        mouse_state = "captured" if mouse_captured() else "free - click to look";
         self.renderer.draw_overlay(
             [
                 "area: " + cur_name,
                 "visible: " + str(len(targets)) + "/" + str(len(all_areas)) + " areas",
-                "culling [C]: " + culling_state,
+                "culling (r_novis): " + culling_state,
                 "entities thinking: " + str(self.last_think),
                 "mouse: " + mouse_state
             ]
         );
     }
+    self.console.draw(
+        self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+    );
     if self.menu.opened {
-        self.menu.draw();
+        self.menu.draw(self.renderer.width, self.renderer.height);
     }
     self.renderer.end_frame();
 }
@@ -496,7 +492,7 @@ impl App.render_frame() {
 impl App.smoke_step(frame: int) -> bool {
     if self.level.active {
         if frame == 1 {
-            self.overlay = False;
+            self.host.overlay.assign("0");
         }
         if frame == 40 {
             print(
@@ -508,7 +504,7 @@ impl App.smoke_step(frame: int) -> bool {
                 self.last_drawn
             );
             self.renderer.screenshot("qp_quake_pvs.png");
-            self.culling = False;
+            self.renderer.cvars.novis.assign("1");
         } elif frame == 80 {
             print("ALL", self.level.name, "faces", self.last_drawn);
             self.renderer.screenshot("qp_quake_all.png");
@@ -518,7 +514,7 @@ impl App.smoke_step(frame: int) -> bool {
             self.player.yaw -= 1.57079632679;
             # Exercise the same free-flight integration used by WASD.
             self.fly(Intent(move=Vec3(y=1.0)), 2.0);
-            self.culling = True;
+            self.renderer.cvars.novis.assign("0");
         } elif frame == 160 {
             print(
                 "MOVED",
@@ -529,7 +525,7 @@ impl App.smoke_step(frame: int) -> bool {
                 self.last_drawn
             );
             self.renderer.screenshot("qp_quake_moved_pvs.png");
-            self.culling = False;
+            self.renderer.cvars.novis.assign("1");
         } elif frame == 200 {
             self.renderer.screenshot("qp_quake_moved_all.png");
             return True;
@@ -543,7 +539,7 @@ impl App.smoke_step(frame: int) -> bool {
     } elif frame == 80 {
         # facing away: culling should leave only the current room
         self.renderer.screenshot("qp_smoke_away.png");
-        self.culling = False;
+        self.renderer.cvars.novis.assign("1");
     } elif frame == 120 {
         # culling off: everything draws regardless of facing
         self.renderer.screenshot("qp_smoke_off.png");
@@ -577,7 +573,8 @@ impl App.load_destination(
     next_viewweapon = ViewWeapon();
     try {
         world = World();
-        level = open_level(world, game_directory(game), name, game, self.skill if game == "q3" else min(3, self.skill));
+        skill = self.host.skill.integer;
+        level = open_level(world, game_directory(game), name, game, skill if game == "q3" else min(3, skill));
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"
                 and self.level.bsp.game == "q1"
@@ -688,13 +685,16 @@ impl App.load_destination(
         self.arena_contacts = ArenaContactIndex();
         self.level = level;
         self.player = player;
-        self.player.god_mode = self.god_mode;
+        self.player.god_mode = self.host.god.on();
         self.quake = next_renderer;
         self.models = next_models;
         self.effects = next_effects;
         self.viewweapon = next_viewweapon;
         # The last level's graph lives until it is destroyed.
         destroy_graph(last_world, last_roots);
+        if game != self.configured_game {
+            self.configure_game(game);
+        }
         self.prepare_presentation();
         if self.audio.ready {
             self.audio.close();
@@ -775,7 +775,22 @@ impl App.load_destination(
 impl App.step() -> bool {
     dt = 0.0 if self.skip_time else (self.fixed_dt if self.fixed_dt > 0.0 else self.renderer.frame_time());
     self.skip_time = False;
-    if not self.smoke and IsKeyPressed(i32(256)) {
+    self.renderer.sync();
+    self.console.advance(self.renderer.frame_time());
+    escape = False;
+    if not self.smoke {
+        escape = self.handle_keys();
+    }
+    loaded = self.level;
+    if not self.execute_commands() {
+        return False;
+    }
+    if self.level is not loaded {
+        self.render_frame();
+        return True;
+    }
+    if escape or self.menu_requested {
+        self.menu_requested = False;
         self.menu.opened = not self.menu.opened;
         if self.menu.opened {
             self.jump_pending = False;
@@ -805,7 +820,7 @@ impl App.step() -> bool {
         return True;
     }
     if self.menu.opened {
-        action = self.menu.update();
+        action = self.menu.update(self.renderer.width, self.renderer.height);
         if action == "quit" {
             return False;
         }
@@ -815,21 +830,20 @@ impl App.step() -> bool {
         if action == "settings_reset" {
             self.reset_settings();
         }
+        if action == "unbind" or action == "controls_reset" {
+            self.control_action(action);
+        }
         if action == "load" {
             self.switch_level();
         }
         self.render_frame();
         return True;
     }
-    if self.level.active and not self.smoke {
-        if IsKeyPressed(i32(294)) {
-            self.quicksave();
-        }
-        if IsKeyPressed(i32(298)) {
-            self.quickload();
-            self.render_frame();
-            return True;
-        }
+    # Q2 and Q3 pause single-player games while the console is down.
+    if self.console.active and self.level.active and self.level.bsp.game in ["q2", "q3"] {
+        self.physics_clock.accumulator = 0.0;
+        self.render_frame();
+        return True;
     }
     if self.level.active
         and (self.intermission_text or self.campaign_complete or self.stats_screen) {
@@ -840,7 +854,7 @@ impl App.step() -> bool {
         script = self.scripted;
         scripted_press = script is not None and (script.fire or script.jump);
         pressed = scripted_press
-            or (not self.smoke and (IsKeyPressed(i32(257)) or IsKeyPressed(i32(32))));
+            or (not self.smoke and (self.prompt_key(257) or self.prompt_key(32)));
         if self.stats_screen {
             self.stats_wait = max(0.0, self.stats_wait - dt);
             if pressed and self.stats_wait <= 0.0 {
@@ -910,7 +924,7 @@ impl App.step() -> bool {
                 return True;
             }
         }
-        if IsKeyPressed(i32(257)) {
+        if self.prompt_key(257) {
             if contest is not None and contest.finished {
                 rows = standings(contest);
                 self.finish_arena(contest, bool(rows) and rows[0].human);
@@ -923,9 +937,8 @@ impl App.step() -> bool {
     }
     # Acceptance bots drive the real game loop through a scripted intent.
     scripted = self.scripted;
-    intent = Intent()
-        if self.smoke or self.finale_active
-        else sample_intent(dt, self.sensitivity, self.invert_y);
+    sampled = self.controls.sample(dt);
+    intent = Intent() if self.smoke or self.finale_active else sampled;
     if scripted is not None and not self.finale_active {
         intent = scripted;
     }
@@ -977,18 +990,15 @@ impl App.step() -> bool {
             self.show_notice(item_label(stored[self.selected_item]));
         }
         if intent.use_item {
-            self.use_item();
+            self.use_item(intent.use_kind);
+        }
+        if intent.impulse > 0 {
+            self.impulse(intent.impulse);
         }
     }
-    if intent.toggle_culling {
-        self.culling = not self.culling;
-    }
-    if intent.toggle_overlay {
-        self.overlay = not self.overlay;
-    }
-
-    if intent.toggle_walk {
-        self.toggle_movement();
+    # Q2/Q3 IN_CenterView: level the view.
+    if intent.center_view {
+        self.player.pitch = 0.0;
     }
     self.frame_dt = dt;
     if self.level.active and not self.menu.opened {
@@ -1066,8 +1076,7 @@ impl App.step() -> bool {
                 state=self.combat
             );
             if events.message {
-                self.notice = events.message;
-                self.notice_wait = 3.0;
+                self.show_notice(events.message);
             }
             trains = self.world spawn TrainTick(
                 bsp=self.level.bsp,
@@ -1090,8 +1099,7 @@ impl App.step() -> bool {
                 player=self.player if self.walking else None
             );
             if doors.message {
-                self.notice = doors.message;
-                self.notice_wait = 3.0;
+                self.show_notice(doors.message);
             }
             for cue in doors.cues {
                 self.audio.play_path(cue);
@@ -1526,14 +1534,13 @@ impl App.step() -> bool {
             for cue in triggers.cues {
                 self.audio.play_path(cue);
             }
-            if triggers.skill >= 0 and triggers.skill != self.skill {
+            if triggers.skill >= 0 and triggers.skill != self.host.skill.integer {
                 # Q1 start map halls select the skill for the next level.
-                self.skill = min(3, triggers.skill);
+                self.host.skill.assign(str(min(3, triggers.skill)));
                 self.save_preferences();
             }
             if triggers.message {
-                self.notice = triggers.message;
-                self.notice_wait = 3.0;
+                self.show_notice(triggers.message);
             }
             self.world spawn HazardTick(
                 player=self.player,
@@ -1731,106 +1738,119 @@ impl App.toggle_movement() {
 }
 
 impl App.refresh_settings() {
+    render = self.renderer.cvars;
+    look = self.controls.cvars;
+    skill = self.host.skill.integer;
     self.menu.settings_labels = [
         "Movement: " + ("Walk" if self.walking else "Fly"),
-        "Field of view (vertical): " + str(int(self.renderer.fov)),
-        "Mouse sensitivity: " + str(int(self.sensitivity / 0.0022 * 100.0 + 0.5)) + "%",
-        "Invert mouse Y: " + ("On" if self.invert_y else "Off"),
-        "Fly speed: " + str(int(self.fly_speed)),
-        "Frame limit: "
-            + (
-                str(self.renderer.frame_limit)
-                    if self.renderer.frame_limit > 0
-                    else "Uncapped"
-            ),
-        "Visibility culling: " + ("On" if self.culling else "Off"),
-        "Diagnostic overlay: " + ("On" if self.overlay else "Off"),
-        "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%",
-        "God mode: " + ("On" if self.god_mode else "Off"),
-        "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare", "Nightmare"][max(0, min(4, self.skill))]
-            + " (Q3: " + Q3_SKILL_NAMES[max(0, min(4, self.skill))] + ")"
+        "Field of view: " + render.fov.text,
+        "Mouse sensitivity: " + look.sensitivity.text,
+        "Invert mouse: " + ("On" if look.m_pitch.number < 0.0 else "Off"),
+        "Always run: " + ("On" if look.run.on() else "Off"),
+        "Fly speed: " + self.host.flyspeed.text,
+        "Frame limit: " + (render.maxfps.text if render.maxfps.integer > 0 else "Uncapped"),
+        "Fullscreen: " + ("On" if render.fullscreen.on() else "Off"),
+        "Window size: " + render.width.text + " x " + render.height.text,
+        "Visibility culling: " + ("Off" if render.novis.on() else "On"),
+        "Diagnostic overlay: " + ("On" if self.host.overlay.on() else "Off"),
+        "Crosshair: " + ("On" if self.hud.crosshair.on() else "Off"),
+        "Sound volume: " + str(int(self.audio.volume.number * 100.0 + 0.5)) + "%",
+        "God mode: " + ("On" if self.host.god.on() else "Off"),
+        "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare", "Nightmare"][skill]
+            + " (Q3: " + Q3_SKILL_NAMES[skill] + ")"
     ];
 }
 
+"""M_AdjustSliders: the selected settings row one step left or right; every
+row but Movement is a cvar."""
 impl App.adjust_setting(direction: int) {
     row = self.menu.setting_selected;
+    render = self.renderer.cvars;
+    look = self.controls.cvars;
+    step = float(direction);
     self.menu.message = "";
     if row == 0 {
         self.toggle_movement();
         self.menu.message = self.movement_status;
     } elif row == 1 {
-        self.renderer.fov = max(
-            40.0, min(110.0, self.renderer.fov + float(direction) * 2.0)
-        );
+        render.fov.assign(str(max(50.0, min(130.0, render.fov.number + step * 5.0))));
     } elif row == 2 {
-        self.sensitivity = max(
-            0.00022, min(0.011, self.sensitivity + float(direction) * 0.00022)
-        );
+        look.sensitivity.assign(str(max(0.5, min(30.0, look.sensitivity.number + step * 0.5))));
     } elif row == 3 {
-        self.invert_y = not self.invert_y;
+        look.m_pitch.assign(str(-look.m_pitch.number));
     } elif row == 4 {
-        self.fly_speed = max(
-            60.0, min(1920.0, self.fly_speed + float(direction) * 60.0)
-        );
+        look.run.assign("0" if look.run.on() else "1");
     } elif row == 5 {
+        self.host.flyspeed.assign(str(self.host.flyspeed.number + step * 60.0));
+    } elif row == 6 {
         limits = [0, 30, 60, 120, 144, 240];
         index = 0;
         for i in range(len(limits)) {
-            if limits[i] == self.renderer.frame_limit {
+            if limits[i] == render.maxfps.integer {
                 index = i;
             }
         }
-        self.renderer.set_frame_limit(
-            limits[(index + direction + len(limits)) % len(limits)]
-        );
-    } elif row == 6 {
-        self.culling = not self.culling;
+        render.maxfps.assign(str(limits[(index + direction + len(limits)) % len(limits)]));
     } elif row == 7 {
-        self.overlay = not self.overlay;
+        render.fullscreen.assign("0" if render.fullscreen.on() else "1");
+        self.renderer.apply_video();
     } elif row == 8 {
-        self.audio.volume = max(
-            0.0, min(1.0, self.audio.volume + float(direction) * 0.05)
-        );
+        # The window sizes the video menu offers (vid_width x vid_height).
+        modes = [[800, 600], [1024, 768], [1280, 720], [1280, 960], [1600, 900], [1920, 1080], [2560, 1440]];
+        index = -1;
+        for i in range(len(modes)) {
+            if modes[i][0] == render.width.integer and modes[i][1] == render.height.integer {
+                index = i;
+            }
+        }
+        if index < 0 {
+            index = 2 if direction > 0 else 3;
+        }
+        mode = modes[(index + direction + len(modes)) % len(modes)];
+        render.width.assign(str(mode[0]));
+        render.height.assign(str(mode[1]));
+        self.renderer.apply_video();
     } elif row == 9 {
-        self.god_mode = not self.god_mode;
-        self.player.god_mode = self.god_mode;
+        render.novis.assign("0" if render.novis.on() else "1");
     } elif row == 10 {
+        self.host.overlay.assign("0" if self.host.overlay.on() else "1");
+    } elif row == 11 {
+        self.hud.crosshair.assign("0" if self.hud.crosshair.on() else "1");
+    } elif row == 12 {
+        self.audio.volume.assign(str(max(0.0, min(1.0, self.audio.volume.number + step * 0.05))));
+    } elif row == 13 {
+        self.host.god.assign("0" if self.host.god.on() else "1");
+        self.player.god_mode = self.host.god.on();
+    } elif row == 14 {
         # Q1 and Q2 have four skills; the fifth is Q3's Nightmare!, which
         # they play as Nightmare. ui_spskill.c announces it.
-        self.skill = (self.skill + direction + 5) % 5;
-        if self.skill == 4 and self.level.bsp.game == "q3" {
+        self.host.skill.assign(str((self.host.skill.integer + direction + 5) % 5));
+        if self.host.skill.integer == 4 and self.level.bsp.game == "q3" {
             self.audio.play_path("sound/misc/nightmare.wav");
         }
     }
     self.save_preferences();
 }
 
+"""Every archived cvar back to its default (Cvar_Restart_f), walking again."""
 impl App.reset_settings() {
     self.menu.message = "";
     if not self.walking {
         self.toggle_movement();
     }
-    self.renderer.fov = 72.0;
-    self.renderer.set_frame_limit(0);
-    self.sensitivity = 0.0022;
-    self.invert_y = False;
-    self.god_mode = False;
-    self.player.god_mode = False;
-    self.skill = 1;
-    self.fly_speed = 240.0;
-    self.culling = True;
-    self.overlay = True;
-    self.audio.volume = 0.25;
+    self.shell spawn ResetCvars(archived_only=True);
+    self.player.god_mode = self.host.god.on();
+    self.renderer.apply_video();
     self.save_preferences();
 }
 
-impl App.quicksave() {
+impl App.quicksave(slot: str = "") {
     if self.player.health <= 0 or not self.walking {
         self.notice = "Save while alive in walk mode";
     } else {
         try {
             write_save(
-                (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt"),
+                self.save_file(slot),
                 pack_campaign(
                     self.campaign,
                     snapshot(self.world, self.level, self.player, self.combat)
@@ -1844,10 +1864,10 @@ impl App.quicksave() {
     self.notice_wait = 4.0;
 }
 
-impl App.quickload() {
+impl App.quickload(slot: str = "") {
     try {
         data = read_save(
-            (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt")
+            self.save_file(slot)
         );
         session = unpack_campaign(data);
         data = session.active;
@@ -1859,7 +1879,7 @@ impl App.quickload() {
         }
         for line in lines {
             if line.startswith("SKILL ") {
-                self.skill = max(0, min(4, int(line[6:])));
+                self.host.skill.assign(str(max(0, min(4, int(line[6:])))));
             }
         }
         self.load_destination(
@@ -1874,18 +1894,7 @@ impl App.quickload() {
 
 impl App.save_preferences() {
     try {
-        Preferences(
-            fov=self.renderer.fov,
-            sensitivity=self.sensitivity,
-            invert_y=self.invert_y,
-            fly_speed=self.fly_speed,
-            frame_limit=self.renderer.frame_limit,
-            culling=self.culling,
-            overlay=self.overlay,
-            volume=self.audio.volume,
-            god_mode=self.god_mode,
-            skill=self.skill
-        ).save();
+        Preferences().save(self.shell.archive_lines());
         self.menu.message = "Settings saved";
     } except Exception as error {
         self.menu.message = "Settings save failed: " + str(error);
@@ -1896,6 +1905,8 @@ impl App.show_notice(message: str) {
     if message {
         self.notice = message;
         self.notice_wait = 3.0;
+        # Q2 SCR_CenterPrint: centred messages go to the console too.
+        self.shell.print(message);
     }
 }
 
@@ -1903,9 +1914,11 @@ impl App.notify(message: str) {
     if not message {
         return;
     }
-    # con_notifytime 3 seconds, NUM_CON_TIMES 4 lines.
+    # Con_Printf: the console keeps the line; the view shows it for
+    # con_notifytime seconds, NUM_CON_TIMES 4 lines.
+    self.shell.print(message);
     self.notify_lines.append(message);
-    self.notify_ages.append(3.0);
+    self.notify_ages.append(self.console.cvars.notify_time.number);
     while len(self.notify_lines) > 4 {
         self.notify_lines.pop(0);
         self.notify_ages.pop(0);
@@ -2280,13 +2293,13 @@ impl App.postgame_input(contest: ArenaMatch) {
         self.audio.play_path(cue);
     }
     pressed = "";
-    if IsKeyPressed(i32(257)) or IsKeyPressed(i32(335)) {
+    if self.prompt_key(257) or self.prompt_key(335) {
         pressed = "enter";
-    } elif IsKeyPressed(i32(263)) {
+    } elif self.prompt_key(263) {
         pressed = "left";
-    } elif IsKeyPressed(i32(262)) {
+    } elif self.prompt_key(262) {
         pressed = "right";
-    } elif IsKeyPressed(i32(32)) or IsMouseButtonPressed(i32(0)) {
+    } elif self.prompt_key(32) or (not self.console.active and IsMouseButtonPressed(i32(0))) {
         pressed = "any";
     }
     if not pressed {

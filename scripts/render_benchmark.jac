@@ -103,7 +103,8 @@ def combat_effects(app: App, game: str, i: int) {
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     frames = int(os.getenv("QP_BENCH_FRAMES", "600"));
     shots = os.getenv("QP_BENCH_SHOTS", "") != "";
     combat = os.getenv("QP_BENCH_COMBAT", "") != "";
@@ -119,7 +120,7 @@ with entry {
             app.audio.open(game, game_directory(game));
             opened.append(game);
         }
-        app.audio.volume = 0.0;
+        app.audio.volume.assign("0");
         app.smoke = False;
         app.walking = True;
         app.fixed_dt = float(os.getenv("QP_BENCH_DT", "0"));

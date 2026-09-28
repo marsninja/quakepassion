@@ -67,12 +67,15 @@ OpenGL/X11 development dependencies. Graphical validation is performed on macOS.
 The old `.jac/compiler` directory is no longer selected by this project and can
 be removed. Compiler patches and the Python staging helper have been retired.
 
-Controls: **WASD** moves, **Space/Shift** moves vertically, a click or the
-console key (**`**) captures the mouse (**`** or Escape releases it), arrow keys
-also turn, and holding **Tab** (or **F1**) shows the arena scoreboard. **C** toggles PVS culling, **F3**
-toggles the overlay, and **Escape** opens/closes the level menu. Walking is the default
-in all three games. **F4** toggles free flight through walls and **Space** jumps
-while walking; `QP_WALK=0 ./qp` starts in fly mode. Ordinary proximity doors and supported touch-triggered doors open (including linked pairs); supported buttons and translating lifts now move, and lifts carry the player. Switching
+Controls are each game's own: its `default.cfg` binds the keys, then
+QuakePassion adds **WASD**, the mouse wheel for weapons, **F3** (overlay) and
+**F4** (free flight through walls, `noclip`). A click captures the mouse; the
+console key (**`**, or **Shift+Escape**) drops the console, where `bind`,
+`unbind`, `bindlist`, `set`, `cvarlist`, `cmdlist`, `map`, `exec`, `god`,
+`noclip`, `give`, `screenshot` and `vid_restart` work as in the originals and
+**Tab** completes names. **Escape** opens/closes the level menu; **Alt+Enter**
+toggles fullscreen, and the window can be resized. Walking is the default
+in all three games; `QP_WALK=0 ./qp` starts in fly mode. Ordinary proximity doors and supported touch-triggered doors open (including linked pairs); supported buttons and translating lifts now move, and lifts carry the player. Switching
 levels returns to walking. See [movement status](docs/player-movement-status.md).
 
 In the menu, choose **Quake**, **Quake II**, or **Quake III**, scroll or use
@@ -82,14 +85,19 @@ seeds. Collect both keys and reach extraction to complete a run. **Quit** closes
 the viewer; Escape resumes the current level. Movement
 pauses while the menu is open, and mouse capture is restored when it closes.
 
-The **Settings** button switches to movement mode, vertical field of view, mouse
-sensitivity, inverted mouse Y, fly speed, frame limit, volume, visibility culling, and
-the diagnostic overlay, and **God mode**. God mode prevents player health and armor
-damage from combat and hazards in all four games; it does not revive a dead player.
-Click the arrows or use **Up/Down** and **Left/Right**.
-Changes apply immediately and persist across sessions;
-movement mode resets to walking on level load. **Reset defaults** restores
-the original controls and uncapped rendering.
+The **Settings** button changes movement mode, field of view (`fov`, 4:3
+horizontal), mouse sensitivity, inverted mouse, always run, fly speed, frame
+limit, fullscreen, window size, visibility culling, the diagnostic overlay, the
+crosshair, volume, **God mode** and skill; each is a cvar. God mode prevents
+player health and armor damage from combat and hazards in all four games; it
+does not revive a dead player. Click the arrows or use **Up/Down** and
+**Left/Right**. Changes apply immediately and persist across sessions in
+`~/.quakepassion-settings.txt` (`QP_CONFIG_DIR` moves it); movement mode resets
+to walking on level load. **Reset defaults** restores every setting.
+The **Controls** button lists the game's actions (its Customize Controls):
+Enter then a key binds one, Backspace clears it, and **Reset defaults** returns
+to the game's own bindings. Each game keeps its bindings in
+`~/.quakepassion-<game>-bindings.cfg`.
 Maps are discovered from your installed archives; Q1 brush-model BSPs are excluded.
 `QP_ASSETS` applies to the game selected by `QP_GAME`; the other games use their
 normal directories under `~/quake-assets`.
@@ -157,15 +165,15 @@ Platforms and carrying: [validation and limits](docs/platforms-status.md).
 
 Teleporters and jump pads: [validation and limits](docs/traversal-status.md).
 
-Swimming: Space ascends and Left Shift descends when submerged; forward follows
+Swimming: jump (Space) ascends and **C** descends when submerged; forward follows
 the view direction. See [liquid detection and swimming limits](docs/swimming-status.md).
 
-Hold **Left Control** to crouch in Q2/Q3. Health, armor and shells are shown at the bottom
+Hold **C** to crouch in Q2/Q3. Health, armor and shells are shown at the bottom
 of the screen; liquid hazards and drowning can kill the player. **Enter** restarts
 the level after death. **1–9/0** selects owned weapons in the original games
 (**1/2** in Passion); **G** selects Q2 hand grenades. Hold fire to cook, release
-to throw. **Left mouse** fires, **F5/F9**
-saves/loads. Supported Q1/Q2 exits change maps and preserve player state; Q2 hub
+to throw. **Left mouse** or **Ctrl** fires, **F6/F9**
+save/load. Supported Q1/Q2 exits change maps and preserve player state; Q2 hub
 returns restore visited worlds. Ten Q3 frags wins; Enter starts a rematch.
 Older version-1 and version-2 saves are rejected after the campaign state format change.
 See [weapon integration and remaining fidelity work](docs/weapons-status.md).

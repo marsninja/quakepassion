@@ -140,7 +140,8 @@ def pose_marks(app: App) {
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     for spec in GALLERY_MAPS {
         game = spec.split(":")[0];
         name = spec.split(":")[1];

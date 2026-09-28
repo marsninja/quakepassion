@@ -68,6 +68,7 @@ import from ..world.powerups {
     powerup_left,
     powerup_rule,
     owned_items,
+    stored_kinds,
     item_label,
     effect
 }
@@ -137,15 +138,13 @@ import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
 import from ..physics.movement { MovePlayer, SetStance }
-import from ..input.input {
-    Intent,
-    sample_intent,
-    mouse_captured,
-    IsKeyPressed,
-    IsMouseButtonPressed,
-    _capture,
-    _release
-}
+import from ..input.input { Intent, Controls, mouse_captured, IsKeyPressed, IsMouseButtonPressed, _capture, _release }
+import from ..input.keys { Keyboard, KeyEvent, key_event_commands }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell, ResetCvars }
+import from ..console.console { Console }
+import from games.controls { binding_layer, control_actions }
+import from ..world.damage { Damage }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..render.renderer { Renderer, RenderPass }
 import from ..world.world {
@@ -160,8 +159,66 @@ import from ..world.world {
 }
 
 
-glob FLY_SPEED: float = 240.0;
 glob PITCH_LIMIT: float = 1.45;
+
+"""The commands the host runs (Host_InitCommands, CL_InitLocal, Q2/Q3
+ClientCommand's cheats): name, usage, description."""
+glob HOST_COMMANDS: list[tuple[str, str, str]] = [
+    ("map", "map <name>", "start a level of the current game"),
+    ("quit", "quit", "leave QuakePassion"),
+    ("god", "god", "toggle god mode"),
+    ("noclip", "noclip", "toggle flying through walls"),
+    ("give", "give <item> [count]", "give all, health, weapons, ammo, armor or an item"),
+    ("kill", "kill", "suicide"),
+    ("use", "use <item>", "use a weapon or item by name (Q2)"),
+    ("cmd", "cmd <command>", "run a game command (Q2's forward to the server)"),
+    ("exec", "exec <file>", "run a config file from the game's directory or archives"),
+    ("writeconfig", "writeconfig <file>", "write the settings and bindings to a file"),
+    ("save", "save [name]", "save the game (quick without a name)"),
+    ("load", "load [name]", "load a saved game"),
+    ("screenshot", "screenshot [name]", "save the screen as a PNG"),
+    ("vid_restart", "vid_restart", "apply vid_fullscreen, vid_width and vid_height"),
+    ("toggleconsole", "toggleconsole", "drop or raise the console"),
+    ("togglemenu", "togglemenu", "open or close the menu")
+];
+
+"""The cvars the game loop owns: the skill of the next level, the engine's
+god mode, fly (noclip) speed and diagnostic overlay."""
+obj HostCvars {
+    has skill: Cvar = Cvar(
+            name="skill",
+            reset_text="1",
+            kind="int",
+            low=0.0,
+            high=4.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["g_spSkill"],
+            description="0 easy to 3 nightmare (4: Q3's Nightmare!), from the next level"
+        ),
+        god: Cvar = Cvar(
+            name="qp_god",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="god mode for every level (the god command toggles it)"
+        ),
+        flyspeed: Cvar = Cvar(
+            name="qp_flyspeed",
+            reset_text="240",
+            kind="float",
+            low=60.0,
+            high=1920.0,
+            flags=CVAR_ARCHIVE,
+            description="speed flying (noclip)"
+        ),
+        overlay: Cvar = Cvar(
+            name="qp_overlay",
+            reset_text="1",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="the diagnostic overlay"
+        );
+}
 
 
 """The last frame's render cost by stage, in milliseconds."""
@@ -181,8 +238,6 @@ obj App {
         player: Player,
         renderer: Renderer,
         clock: Clock,
-        culling: bool = True,
-        overlay: bool = True,
         smoke: bool = False,
         capture_frame: int = 0,
         capture_path: str = "",
@@ -216,10 +271,6 @@ obj App {
         # at different frame rates reach the same moment in the same frame.
         fixed_dt: float = 0.0,
         walking: bool = False,
-        fly_speed: float = 240.0,
-        sensitivity: float = 0.0022,
-        invert_y: bool = False,
-        god_mode: bool = False,
         jump_pending: bool = False,
         arena_contacts: ArenaContactIndex = ArenaContactIndex(),
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
@@ -229,7 +280,6 @@ obj App {
         notice_wait: float = 0.0,
         selected_item: int = 0,
         frame_dt: float = 0.0,
-        skill: int = 1,
         quad_sound_wait: float = 0.0,
         respawn_wait: float = 0.0,
         awaiting_respawn: bool = False,
@@ -252,6 +302,20 @@ obj App {
         pickup_time: float = 0.0,
         heard_hits: int = 0,
         ammo_warning: int = 0;
+
+    # The console and its shell, the keys and their bindings, the input
+    # layer's buttons, and the game whose bindings are loaded.
+    has shell: Shell = Shell(),
+        console: Console = Console(),
+        keyboard: Keyboard = Keyboard(),
+        controls: Controls = Controls(),
+        host: HostCvars = HostCvars(),
+        configured_game: str = "",
+        # The command line's +commands, run once the configuration has.
+        stuffed: str = "",
+        console_restore_mouse: bool = False,
+        menu_requested: bool = False,
+        quitting: bool = False;
 
     has expedition_complete: bool = False;
     has finale_text: str = "",
@@ -309,9 +373,51 @@ obj App {
         preserve_progress: bool = False
     );
 
+    """Host_Init / quake.rc: declare every cvar and command, then run the
+    game's default.cfg, QuakePassion's bindings and the user's configuration.
+    Called by run(); harnesses that drive step() call it themselves."""
+    def configure();
+    """The game's configuration: its default.cfg (from its archives), the
+    bindings QuakePassion adds, the user's settings and that game's saved
+    bindings. Runs again when a level of another game loads."""
+    def configure_game(game: str);
+    """Cbuf_Execute: run the buffered commands, each through the subsystem
+    that owns it. False once `quit` ran."""
+    def execute_commands() -> bool;
+    """Run one command the host owns (map, quit, god, give, exec, ...)."""
+    def host_command(args: list[str]);
+    """Key_Event for this frame's keys: the console key, Escape, alt+enter,
+    the console's editing keys, and the bindings of the rest."""
+    def handle_keys() -> bool;
+    def toggle_console();
+    """The text of a config file: a loose file in the game's directory, else
+    one in its archives."""
+    def read_config(name: str) -> str;
+    """give <item> [count] (Host_Give_f, Q2/Q3 Cmd_Give_f)."""
+    def give(args: list[str]);
+    """Q2 `use <item>`: a weapon by name, else a stored item."""
+    def use_named(name: str);
+    """Q1 ImpulseCommands' cheats: 9 all weapons and ammo, 255 quad."""
+    def impulse(number: int);
+    """Whether a raylib key was pressed for a prompt (Enter to continue and
+    the like); the console keeps its keys to itself."""
+    def prompt_key(code: int) -> bool;
+    def culling() -> bool;
+    """M_Keys_Draw's rows: each action of the game and the keys bound to it."""
+    def refresh_controls();
+    """The controls menu's unbind (M_UnbindCommand) and reset to defaults."""
+    def control_action(action: str);
+    """A key pressed while the controls menu waits for one (M_Keys_Key's
+    bind_grab)."""
+    def grab_key(name: str);
+    def save_bindings();
     def save_preferences();
-    def quicksave();
-    def quickload();
+    """save <name>: the quick save, or another slot beside it."""
+    def quicksave(slot: str = "");
+    """load <name>."""
+    def quickload(slot: str = "");
+    """A save slot's file: "quick" (or none) is the quick save."""
+    def save_file(slot: str) -> str;
     def fly(intent: Intent, dt: float);
     def toggle_movement();
     def use_item(kind: str = "");

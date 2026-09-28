@@ -53,7 +53,8 @@ def bot_frags(contest: ArenaMatch) -> int {
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     names = ladder_names();
     only = os.getenv("QP_LADDER_ONLY", "");
     if only {
@@ -65,7 +66,7 @@ with entry {
     if not app.audio.ready {
         app.audio.open("q3", game_directory("q3"));
     }
-    app.audio.volume = 0.0;
+    app.audio.volume.assign("0");
     app.smoke = False;
     app.walking = True;
     for name in names {

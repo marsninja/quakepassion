@@ -3,6 +3,8 @@ import from ..assets.library { AssetLibrary }
 import from ..world.world { World }
 import from ..world.speakers { Speaker, HasSpeaker }
 import from ..math.vec3 { Vec3, right_from }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell }
 import from vendor.raylib {
     obj Wave {
         has frameCount: u32,
@@ -57,7 +59,27 @@ obj EmitterAudio {
 obj Feedback {
     has ready: bool = False,
         sounds: list[Sound] = [],
-        volume: float = 0.25,
+        # S_Init's volume and bgmvolume (Q3 s_volume, s_musicvolume).
+        volume: Cvar = Cvar(
+            name="volume",
+            reset_text="0.25",
+            kind="float",
+            low=0.0,
+            high=1.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["s_volume"],
+            description="sound effects volume"
+        ),
+        music_volume: Cvar = Cvar(
+            name="bgmvolume",
+            reset_text="1",
+            kind="float",
+            low=0.0,
+            high=1.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["s_musicvolume"],
+            description="music volume"
+        ),
         library: AssetLibrary | None = None,
         emitters: dict[int, EmitterAudio] = {},
         missing: set[int] = set(),
@@ -66,6 +88,11 @@ obj Feedback {
         clips: dict[str, bytes] = {},
         ambience: dict[str, EmitterAudio] = {},
         ambient_levels: dict[str, float] = {};
+
+    def declare(shell: Shell) {
+        self.volume = shell.register(self.volume);
+        self.music_volume = shell.register(self.music_volume);
+    }
 
     def open(game: str, directory: str, weapons: list[str] = []) {
         InitAudioDevice();
@@ -117,7 +144,7 @@ obj Feedback {
             return;
         }
         sound = self.sounds[kind];
-        SetSoundVolume(sound, f32(self.volume * gain));
+        SetSoundVolume(sound, f32(self.volume.number * gain));
         SetSoundPitch(sound, f32(1.8 if kind == 2 else 1.0));
         PlaySound(sound);
     }
@@ -144,7 +171,7 @@ obj Feedback {
             }
         }
         sound = self.named[path];
-        SetSoundVolume(sound, f32(self.volume * max(0.0, min(1.0, gain))));
+        SetSoundVolume(sound, f32(self.volume.number * max(0.0, min(1.0, gain))));
         SetSoundPitch(sound, f32(1.0));
         PlaySound(sound);
     }
@@ -190,7 +217,7 @@ obj Feedback {
             }
             return;
         }
-        SetMusicVolume(voice.music, f32(self.volume * current / 255.0));
+        SetMusicVolume(voice.music, f32(self.volume.number * current / 255.0));
         if voice.paused {
             ResumeMusicStream(voice.music);
             voice.paused = False;
@@ -264,7 +291,7 @@ obj Feedback {
                 if spatial
                 else 1.0;
             pan = right_from(yaw).dot(relative.normalized()) if spatial else 0.0;
-            SetMusicVolume(music, f32(self.volume * speaker.volume * gain));
+            SetMusicVolume(music, f32(self.volume.number * speaker.volume * gain));
             SetMusicPan(music, f32(max(-1.0, min(1.0, pan))));
             if voice.paused {
                 ResumeMusicStream(music);

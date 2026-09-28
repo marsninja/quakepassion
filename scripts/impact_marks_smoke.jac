@@ -76,9 +76,9 @@ with entry {
         level=level,
         renderer=renderer,
         clock=Clock(),
-        smoke=True,
-        culling=False
+        smoke=True
     );
+    app.renderer.cvars.novis.assign("1");
     app.quake.upload(level);
     app.effects.upload("q3", game_directory("q3"), weapon_effects("q3"));
     state = app.combat;

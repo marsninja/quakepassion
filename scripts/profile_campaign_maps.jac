@@ -144,9 +144,9 @@ with entry {
         renderer=renderer,
         clock=Clock(),
         save_path=".jac/profile-campaign-save.txt",
-        smoke=True,
-        overlay=False
+        smoke=True
     );
+    app.host.overlay.assign("0");
     for spec in os.getenv("QP_PROFILE_MAPS", PROFILE_DEFAULT_MAPS).split(",") {
         parts = spec.strip().split(":");
         game = parts[0];
@@ -161,7 +161,7 @@ with entry {
         if not app.audio.ready {
             app.audio.open(game, game_directory(game));
         }
-        app.audio.volume = 0.0;
+        app.audio.volume.assign("0");
         app.smoke = False;
         app.walking = True;
         app.player.god_mode = True;

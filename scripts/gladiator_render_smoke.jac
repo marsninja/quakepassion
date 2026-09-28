@@ -63,9 +63,9 @@ with entry {
         level=level,
         renderer=renderer,
         clock=Clock(),
-        smoke=True,
-        culling=False
+        smoke=True
     );
+    app.renderer.cvars.novis.assign("1");
     app.quake.upload(level);
     app.models.upload(world);
     world spawn CombatTick(
