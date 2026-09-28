@@ -24,10 +24,31 @@ as `Weapon_Grenade` does; Q3 plays the hand model's frames 6-10 and 11-14 at
 a Q2 blaster-to-shotgun and a Q3 machine gun-to-shotgun change mid-lower,
 mid-raise and ready (inspected).
 
-This is the visible-weapon foundation, not complete original animation fidelity.
-Q1 alternate axe swings, Q2 idle pauses and continuous
-fire sequences, Q3 barrel spin, muzzle flashes, recoil, movement bob and several
-weapon shader effects remain open. Q3 arm meshes are not drawn separately: the
+Firing and idle frames follow each game's own rules (`ViewWeaponRule`,
+`GunAnimation` in `engine/world/weapons.jac`, tables in `games/viewweapons.jac`),
+stepped ten a second of simulation time. Q1 plays player.qc's weaponframes: the
+axe swings 1-4 or 5-8 (W_Attack's four swings), shotguns and launchers 1-6, the
+nailguns cycle 1-8 and the thunderbolt 1-4 while the trigger holds and drop to
+frame 0 when it is let go (player_run); Q1 draws each frame as it is. Q2 follows
+Weapon_Generic: a shot shows FRAME_FIRE_FIRST + 1 (the fire function steps past
+the frame it fired on), the machinegun alternates 5 and 4, the chaingun spins up
+6-21, cycles 15-21 and winds down through 31 (or jumps from 14 to idle when let go
+early), the hyperblaster turns 6-11 and winds down, and the idle frames loop with
+the per-weapon pause_frames holding fifteen steps in sixteen (Weapon_Grenade's
+own 16-48 idle included); frames blend over each 100 ms as the client lerps them.
+Q3's hand frames blend too, and the gun rides the blended tag_weapon.
+
+The gun is placed by each game's view rule (`engine/render/view_sway.jac`): Q1
+V_CalcRefdef lifts it with the bob, pushes it forward 0.4 of the bob and 2 units
+up (viewsize 100), turned with the aim and the damage kick's pitch but not the
+strafe roll or punch; Q2 draws it at the bobbing, kicking view with
+SV_CalcGunOffset's bob angles and a fifth of the last server frame's turn as lag;
+Q3 CG_CalculateWeaponPosition adds the bob angles, a quarter more of the landing
+dip and the idle drift. The old generic sway and recoil nudge are gone.
+
+Q3 muzzle flashes, barrel spin and powerup shells are drawn; Q2 kick_origin (the
+view pushed back 2 units for a server frame per shot) and several weapon shader
+effects remain open. Q3 arm meshes are not drawn separately: the
 hand MD3 supplies the original attachment animation. Passion is unchanged.
 
 The native gallery (`scripts/viewweapon_smoke.jac`) loads and renders 8 Q1,

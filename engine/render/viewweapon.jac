@@ -32,7 +32,8 @@ import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, model_basis }
 import from ..world.world { Player }
 import from ..world.combat { CombatState }
-import from ..world.weapons { ViewWeaponRule, view_frame, switch_frame }
+import from ..world.weapons { ViewWeaponRule, GunAnimation, grenade_frame, switch_frame }
+import from ..world.models { lerp_tag }
 import from ..world.lighting { Lighting }
 import from .view_sway { ViewPlacement }
 
@@ -58,7 +59,8 @@ obj ViewWeapon {
         barrel_angle: float = 0.0,
         barrel_time: float = 0.0,
         barrel_spinning: bool = False,
-        flash_roll: float = 0.0;
+        flash_roll: float = 0.0,
+        animation: GunAnimation = GunAnimation();
 
     def upload(game: str, directory: str, rules: list[ViewWeaponRule]) {
         self.close();
@@ -138,10 +140,15 @@ obj ViewWeapon {
             self.holstered = state.holstered if announced else -1;
             self.lowering = state.lowering if announced else 0.0;
             self.raising = state.raising if announced else 0.0;
+            self.animation.ready(
+                self.assets[state.weapon].rule, seconds + self.lowering + self.raising
+            );
         }
+        rule = self.assets[state.weapon].rule;
         if self.shots != state.shots {
             self.shots = state.shots;
             self.fired_at = seconds;
+            self.animation.shot(rule, seconds);
             # CG_AddPlayerWeapon turns each flash a random few degrees.
             self.flash_roll = math.sin(seconds * 7919.0) * 10.0;
         }
@@ -173,15 +180,19 @@ obj ViewWeapon {
         frames = len(asset.hand.tags)
             if asset.hand.tags
             else len(asset.drawing.model.surfaces[0].frames);
-        frame = view_frame(
-            asset.rule,
-            frames,
-            seconds - self.fired_at,
-            since - self.lowering - self.raising,
-            hand_grenade=state.game == "q2" and shown == 11,
-            grenade_phase=state.grenade_phase,
-            grenade_clock=state.grenade_clock
-        );
+        self.animation.advance(rule, seconds, state.firing);
+        frame = self.animation.frame;
+        before = self.animation.previous;
+        share = self.animation.share(rule, seconds);
+        if state.game == "q2" and shown == 11 {
+            cooked = grenade_frame(
+                state.grenade_phase, state.grenade_clock, seconds - self.fired_at
+            );
+            if cooked >= 0 {
+                frame = cooked;
+                share = 1.0;
+            }
+        }
         if lowering or raising {
             turning = switch_frame(
                 asset.rule,
@@ -191,24 +202,28 @@ obj ViewWeapon {
             );
             if turning >= 0 {
                 frame = turning;
+                share = 1.0;
             }
         }
+        frame = max(0, min(frames - 1, frame));
+        before = frame if share >= 1.0 else max(0, min(frames - 1, before));
         basis = model_basis(view.gun_yaw, view.gun_pitch, view.gun_roll);
         origin = view.gun;
         model_frame = frame;
+        model_before = before;
         if asset.hand.tags {
-            for tag in asset.hand.tags[frame].tags {
-                if tag.name == "tag_weapon" {
-                    origin = origin.add(basis.apply(tag.origin));
-                    basis = Basis(
-                        forward=basis.apply(tag.axes[0]),
-                        left=basis.apply(tag.axes[1]),
-                        up=basis.apply(tag.axes[2])
-                    );
-                    break;
-                }
+            # The Q3 gun rides the hand's tag_weapon, between hand frames.
+            tag = lerp_tag(asset.hand, before, frame, share, "tag_weapon");
+            if tag is not None {
+                origin = origin.add(basis.apply(tag.origin));
+                basis = Basis(
+                    forward=basis.apply(tag.axes[0]),
+                    left=basis.apply(tag.axes[1]),
+                    up=basis.apply(tag.axes[2])
+                );
             }
             model_frame = 0;
+            model_before = 0;
         }
         # Compress clip-space depth to the near 30%, preserving self-occlusion.
         # Flush on both sides so the world and HUD retain their own projection.
@@ -256,8 +271,9 @@ obj ViewWeapon {
                 asset.drawing.draw(
                     origin,
                     view.gun_yaw,
-                    first=model_frame,
+                    first=model_before,
                     second=model_frame,
+                    blend=share,
                     eye=view.eye,
                     seconds=seconds,
                     illumination=illumination,
