@@ -103,6 +103,32 @@ the view when the eye is under (Q1 `V_SetContentsColor`, Q2 `SV_CalcBlend`),
 pickups flash gold (Q1 `V_BonusFlash_f`, Q2 bonus_alpha), and the dead view
 drops and rolls (Q1 80 degrees; Q2/Q3 40 degrees, looking toward the killer).
 
+Moving sways the view per game (engine/render/view_sway.jac): Q1 `V_CalcBob`
+(cl_bob 0.02 over a 0.6 s cycle, held between -7 and 4) and `V_CalcRoll` (up to
+2 degrees at 200 units a second strafing); Q2 `SV_CalcViewOffset` (bobtime
+stepping by bobmove each 100 ms server frame on the ground, bob_up/pitch/roll,
+run_pitch 0.002 and run_roll 0.005, crouching bobbing six times as hard, the
+fall kick lowering the eye 0.4 of itself) lerped between server frames as the
+client does; Q3 `CG_OffsetFirstPersonView` on `PM_Footsteps`' bobCycle (only on
+the ground while trying to move; landing starts it over). `ViewFeedback.place`
+composes the eye from the body as drawn between physics ticks, the step ease
+(Q2/Q3 steps ease on the simulation's ticks and are drawn between them like the
+body, so the eye stays level while the body climbs; Q1 eases the body's height
+net of what movers carried it), the landing dip, kicks, punch and sway, and the
+gun per game (see [first-person weapons](viewweapons-status.md)).
+
+Frames draw every body between its last two physics ticks
+(engine/math/interpolation.jac): at each 120 Hz tick `CaptureMotion`
+(engine/world/motion.jac) records every entity in an occupied area and every
+projectile, and the renderer keeps each moving brush group's placement; a frame
+`alpha` of the way into the next tick draws the eye, models, monster boxes,
+projectile markers, sprites and models, and doors, plats, trains and rotators
+that far between (Q1 `CL_RelinkEntities`, Q2 `CL_AddPacketEntities`, Q3
+`CG_InterpolateEntityPosition`). View angles are the latest input, never lagged.
+A body that moved more than 100 units on an axis in one tick teleported and is
+drawn where it is (Q1's rule), as is one made during the tick; noclip flight,
+teleports, respawns and the intermission camera settle the player's pose.
+
 `VoiceTick` voices Q1 and Q2 bodies: jump, landing, water entry/exit and
 submerging, surfacing gasps, drowning, lava/slime burns, pain (by health in
 Q2) and death. It keeps its own last health, so liquid damage is voiced too.

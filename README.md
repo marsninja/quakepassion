@@ -88,7 +88,7 @@ pauses while the menu is open, and mouse capture is restored when it closes.
 The **Settings** button changes movement mode, field of view (`fov`, 4:3
 horizontal), mouse sensitivity, inverted mouse, always run, fly speed, frame
 limit, fullscreen, window size, visibility culling, the diagnostic overlay, the
-crosshair, volume, **God mode** and skill; each is a cvar. God mode prevents
+crosshair, sound and music volume, **God mode** and skill; each is a cvar. God mode prevents
 player health and armor damage from combat and hazards in all four games; it
 does not revive a dead player. Click the arrows or use **Up/Down** and
 **Left/Right**. Changes apply immediately and persist across sessions in
@@ -135,8 +135,8 @@ These checks establish representative rendering and culling consistency, not
 pixel parity with the original games.
 
 This is a level viewer with shared walking and brush collision across Q1/Q2/Q3.
-Q3 curved patches now collide using the rendered tessellation and the shared
-standing-box hull queries. Initial campaign exits, health/armor, liquid damage and
+Q3 curved patches collide as cm_patch.c does: one-sided facets from their own
+adaptively subdivided control grid, traced through the shared hull queries. Initial campaign exits, health/armor, liquid damage and
 health/armor/shell pickups work through shared gameplay systems. A small hitscan
 combat roster, local arena bots, save/load, and persistent settings are implemented.
 Key gates, objective counters, Q2 hub persistence and animated Q3 characters are

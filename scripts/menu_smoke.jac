@@ -33,7 +33,7 @@ def select_map(app: App, name: str) {
 
 """Click a settings row's right (or left) arrow where the centred menu is."""
 def setting(app: App, row: int, right: bool = True) {
-    click(app, (915 if right else 840) + app.menu.ox, 164 + row * 30 + app.menu.oy);
+    click(app, (915 if right else 840) + app.menu.ox, 163 + row * 28 + app.menu.oy);
 }
 
 with entry {
@@ -108,6 +108,8 @@ with entry {
         setting(app, 12);
         assert app.audio.volume.number > 0.25;
         setting(app, 13);
+        assert app.audio.music_volume.number > 0.25;
+        setting(app, 14);
         assert app.host.god.on() and app.player.god_mode;
         assert "seta qp_god \"1\"" in read_save(Preferences().path());
         health = app.player.health;

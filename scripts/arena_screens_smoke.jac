@@ -168,7 +168,7 @@ with entry {
     app.host.skill.assign("4");
     app.menu.opened = True;
     app.menu.settings_open = True;
-    app.menu.setting_selected = 14;
+    app.menu.setting_selected = 15;
     shoot(app, "qp_arena_skill_menu.png");
     app.menu.opened = False;
 

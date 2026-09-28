@@ -28,6 +28,7 @@ import from ..world.world { World }
 import from ..world.level { Level }
 import from ..world.portals { portal_view, surface_plane }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.interpolation { TickBlend }
 import math;
 
 obj PortalTarget {
@@ -170,7 +171,8 @@ def draw_portal_view(
     yaw: float,
     pitch: float,
     fov: float,
-    seconds: float
+    seconds: float,
+    blend: TickBlend = TickBlend()
 ) -> bool {
     quake.portal_image = 0;
     if level.bsp.game != "q3" or not level.portal_ranges {
@@ -215,8 +217,8 @@ def draw_portal_view(
         quake.draw(level, through, view.origin);
         view_yaw = math.atan2(view.forward.y, view.forward.x);
         view_pitch = math.asin(max(-1.0, min(1.0, view.forward.z)));
-        models.draw(world, view.origin, seconds, culling=False, yaw=view_yaw, pitch=view_pitch, lighting=level.lighting, fogs=level.bsp.fogs, fog_image=quake.fog_image);
-        effects.draw(world, view.origin, view_yaw, view_pitch, lighting=level.lighting);
+        models.draw(world, view.origin, seconds, culling=False, yaw=view_yaw, pitch=view_pitch, lighting=level.lighting, fogs=level.bsp.fogs, fog_image=quake.fog_image, blend=blend);
+        effects.draw(world, view.origin, view_yaw, view_pitch, lighting=level.lighting, blend=blend);
         target.finish();
         quake.portal_image = target.color;
         quake.portal_normal = plane[0];

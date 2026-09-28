@@ -64,13 +64,17 @@ walker ExitTick {
     }
 }
 
-# A leading cinematic ("name.cin+") is skipped; "victory.pcx" ends the campaign.
+"""The film a request plays first (sv_init.c SV_Map: "name.cin+next" plays
+video/name.cin, then goes on to the rest as the next server)."""
 def exit_cinematic(request: str) -> str {
     name = request.split("$")[0];
     if "+" in name {
         prefix = name.split("+")[0];
-        if prefix.endswith(".cin") {
-            return prefix[:-4];
+        if prefix.startswith("*") {
+            prefix = prefix[1:];
+        }
+        if prefix.endswith(".cin") and "/" not in prefix and "\\" not in prefix {
+            return prefix;
         }
     }
     return "";

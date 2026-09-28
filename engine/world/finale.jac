@@ -82,8 +82,6 @@ glob RUNES_TEXT: str = "Now, you have all four Runes. You sense\ntremendous invi
 
 glob SHUB_TEXT: str = "Congratulations and well done! You have\nbeaten the hideous Shub-Niggurath, and\nher hundreds of ugly changelings and\nmonsters. You have proven that your\nskill and your cunning are greater than\nall the powers of Quake. You are the\nmaster now. Id Software salutes you.";
 
-glob VICTORY_TEXT: str = "The Makron is dead and the Big Gun is\nsilent. Stroggos has lost its leader,\nand the war for Earth has turned.\nOperation Alien Overlord is complete.";
-
 def episode_text(game: str, map_name: str, destination: str) -> str {
     if game == "q1" and destination == "start" and map_name in EPISODE_TEXTS {
         return EPISODE_TEXTS[map_name];

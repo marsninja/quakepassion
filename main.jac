@@ -72,6 +72,10 @@ with entry {
     );
     # quake.rc's stuffcmds: `./qp +map e1m2 +god`.
     app.stuffed = command_line_text(sys.argv[1:]);
+    # Quake II's newgame is "map *ntro.cin+base1": the introduction first.
+    if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q2" and os.getenv("QP_MAP", "") == "" {
+        app.opening = "*ntro.cin+base1";
+    }
     capture = os.getenv("QP_CAPTURE", "");
     if ":" in capture {
         app.capture_frame = int(capture.split(":", 1)[0]);

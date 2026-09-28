@@ -223,10 +223,10 @@ obj LevelMenu {
                 self.setting_selected = max(0, self.setting_selected - 1);
             }
             for row in range(len(self.settings_labels)) {
-                if click and self.hit(310, 150 + row * 30, 650, 28) {
+                if click and self.hit(310, 150 + row * 28, 650, 26) {
                     self.setting_selected = row;
                     return "setting_left"
-                        if self.hit(810, 150 + row * 30, 65, 28)
+                        if self.hit(810, 150 + row * 28, 65, 26)
                         else "setting_right";
                 }
             }
@@ -358,9 +358,9 @@ obj LevelMenu {
                 color = brown
                     if row == self.setting_selected
                     else Color(r=48, g=45, b=41, a=255);
-                self.box(310, 150 + row * 30, 650, 28, color);
-                self.label(self.settings_labels[row], 322, 154 + row * 30, 20, white);
-                self.label("<     >", 830, 154 + row * 30, 20, amber);
+                self.box(310, 150 + row * 28, 650, 26, color);
+                self.label(self.settings_labels[row], 322, 153 + row * 28, 20, white);
+                self.label("<     >", 830, 153 + row * 28, 20, amber);
             }
             self.label(
                 self.message[:75]

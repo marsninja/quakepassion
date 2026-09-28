@@ -135,6 +135,44 @@ death chains that go through them. In e1m3, the closet fiends feed counter
   - Q2 keeps keys between units in single player (only coop strips them).
     A new unit still clears the cross-level trigger flags.
 
+## Cinematics, end pictures and music
+
+- **Q2 films** (`engine/formats/q2/cin.jac`, `engine/core/cinematic.jac`):
+  `.cin` files are read as `client/cl_cin.c` reads them: the header, the 256
+  order-1 Huffman trees (`Huff1TableInit`), then each frame's optional
+  palette, Huffman-coded picture (`Huff1Decompress`) and its slice of sound.
+  The film runs on the real clock at 14 frames a second. Like
+  `SCR_RunCinematic` it reads one frame ahead, so the picture trails the
+  sound by a frame, and a slow frame stretches the film instead of dropping
+  frames. The picture is stretched over the whole window. The menu pauses
+  and blanks it. Any held key or button finishes it after its first second
+  (`BUTTON_ANY`); keys already held when it started must be let go first.
+  Natively a 320×240 frame decodes and converts in under 1 ms.
+- **Where they play**: the new-game intro (`newgame`'s
+  `map *ntro.cin+base1`, when `QP_GAME=q2` starts without `QP_MAP`); each
+  unit's closing film (`eou1_.cin`–`eou8_.cin`) after the unit summary; and
+  boss2's `end.cin`, then the still `victory.pcx` (`SCR_PlayCinematic`'s
+  static picture) until a key, after which the game is over and the menu
+  opens. A missing film goes straight on, as `SCR_PlayCinematic` does. The
+  films are loose files in `baseq2/video/`; the asset library now searches a
+  Q1/Q2 game directory's loose files after its paks, as `FS_FOpenFile` does.
+- **Film sound** goes through `RawStream` (`engine/audio/streams.jac`), the
+  counterpart of `S_RawSamples`: samples queue in their own format (22 kHz
+  16-bit stereo for ntro and end, 11 kHz 8-bit mono for the unit films) and
+  are handed to a raylib audio stream a whole sub-buffer at a time.
+- **Q3 music**: `CG_StartMusic` reads worldspawn's `music` (an intro track and
+  an optional loop track, either slash). `BackgroundTrack` streams the intro
+  into its own raw channel and goes on to the loop track, with no gap
+  (`S_UpdateBackgroundTrack`). The postgame plays `music/win` or
+  `music/loss` once, replacing the level's music (`music music/win`). The
+  level is `s_musicvolume` (0.25), settled at two thirds, scaled against
+  Q3's default master volume.
+- **Q1/Q2 music** came off the CD: worldspawn `sounds` names the track
+  (`svc_cdtrack`, `CS_CDTRACK`), Q1 plays track 3 over the intermission and
+  track 2 under an episode's closing text. A `music/trackNN.ogg` or `.wav`
+  file (as the re-releases ship) stands in for the disc. The original
+  assets used here have none, so those levels are silent, as without a CD.
+
 ## Messages and sounds
 
 - Door messages ("This door opens elsewhere...", "You must press the three
@@ -231,10 +269,22 @@ The remaining teleporters are ones the originals can't use either:
   - a Q2 unit exit that keeps keys and clears unit flags
 - `jac run scripts/chain_audit.jac` gives the totals above.
 
+- **Help computer**: its objectives, news count and unread reminders
+  (`game.helpmessage1/2`, `helpchanged`, `pers.helpchanged`) belong to the
+  game. They carry from level to level, across units, and are kept in saves
+  and in the level-entry autosave. The help computer no longer prints a
+  message of its own when it changes; the beep and the blinking status-bar
+  icon announce it, as in the original.
+- **Level clock**: each level's clock (Q1 `sv.time`, Q2 `level.time`) is
+  kept in its saves and in a Q2 unit's remembered levels, so a loaded or
+  revisited level goes on from its own time. The Q1 scoreboard and
+  intermission plaque show the server clock, which starts at 1.2 s
+  (`SV_SpawnServer`'s start at 1 and two settling frames).
+
 ## Limits
 
 - The Q2 unit summary is drawn in the help computer's frame. The
   single-player original shows only the intermission view.
-- The help computer's objectives are not kept in saves or across levels
-  (`game.helpmessage1/2` persist in the original).
-- The Q1 intermission time is the level's simulation time.
+- Q3's RoQ cinematics (`video/intro.RoQ`, the tier films) are not played.
+- The help computer's reminder beeps start when the news arrives rather than
+  at the next `level.framenum & 63`.

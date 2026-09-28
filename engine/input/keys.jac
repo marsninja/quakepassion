@@ -150,6 +150,12 @@ node Keyboard {
         return found;
     }
 
+    """Q2 anykeydown (CL_FinishMove's BUTTON_ANY): any key or button held."""
+    def any_down -> bool {
+        search = self spawn HeldKeys();
+        return search.held > 0;
+    }
+
     def is_down(name: str) -> bool {
         found = self.key(name);
         return found is not None and found.down;
@@ -369,6 +375,20 @@ walker BoundKeys {
         }
         self.names.append(here.name);
         self.bindings.append(here.binding);
+    }
+}
+
+walker HeldKeys {
+    has held: int = 0;
+
+    can start with Keyboard entry {
+        visit [here->:HasKey:->];
+    }
+
+    can count with Key entry {
+        if here.down {
+            self.held += 1;
+        }
     }
 }
 
