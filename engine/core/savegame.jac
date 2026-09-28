@@ -50,6 +50,7 @@ import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
 import from engine.world.mover_ramp { ramp_rest }
 import from engine.world.rotators { Rotator, HasRotator, place }
+import from engine.world.turrets { Turret, HasTurret, Mans, pose_turret }
 import from engine.world.shooters { Shooter, HasShooter }
 import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.arena { Competes, match_of }
@@ -209,6 +210,27 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for mover in [world->:HasRotator:->][?:Rotator] {
         lines.append(
             "MOVER " + numbers([mover.clock, 1.0 if mover.active else 0.0, mover.crush_wait])
+        );
+    }
+    # Each turret's aim (its angles and the ones asked of it) and, while it
+    # is manned, its driver's targeting (turret_driver_think).
+    for breach in [world->:HasTurret:->][?:Turret] {
+        seat = [0.0, 0.0, 0.0, 0.0, 0.0];
+        for crew in [edge breach<-:Mans:<-] {
+            seat = [
+                1.0,
+                1.0 if crew.spotted else 0.0,
+                1.0 if crew.lost_sight else 0.0,
+                crew.trail_time,
+                crew.attack_finished
+            ];
+        }
+        lines.append(
+            "TURRET "
+                + numbers(
+                    [breach.pitch, breach.yaw, breach.aim_pitch, breach.aim_yaw, breach.crush_wait]
+                        + seat
+                )
         );
     }
     contest = match_of(world);
@@ -607,6 +629,8 @@ def restore(
     ranked = 0;
     rotators = [world->:HasRotator:->][?:Rotator];
     spun = 0;
+    turrets = [world->:HasTurret:->][?:Turret];
+    aimed = 0;
     shooters = [world->:HasShooter:->][?:Shooter];
     fired = 0;
     lightning = [world->:HasLightning:->][?:LightningEvent];
@@ -749,6 +773,24 @@ def restore(
                 raise ValueError("Invalid saved attack rotation");
             }
             combat.turns[words[1]] = count;
+        } elif words[0] == "TURRET" and len(words) == 11 and aimed < len(turrets) {
+            row = values(" ".join(words[1:]), 10);
+            breach = turrets[aimed];
+            breach.pitch = row[0];
+            breach.yaw = row[1];
+            breach.aim_pitch = row[2];
+            breach.aim_yaw = row[3];
+            breach.crush_wait = max(0.0, row[4]);
+            for crew in [edge breach<-:Mans:<-] {
+                if row[5] != 0.0 {
+                    crew.spotted = row[6] != 0.0;
+                    crew.lost_sight = row[7] != 0.0;
+                    crew.trail_time = row[8];
+                    crew.attack_finished = row[9];
+                }
+            }
+            pose_turret(breach, level.bsp, level.collision);
+            aimed += 1;
         } elif words[0] == "MOVER" and len(words) == 4 and spun < len(rotators) {
             row = values(" ".join(words[1:]), 3);
             if row[0] < 0.0 or row[2] < 0.0 {
@@ -1252,6 +1294,7 @@ def restore(
         or k != len(teleport_trains)
         or ranked != len(scores)
         or spun != len(rotators)
+        or (aimed != 0 and aimed != len(turrets))
         or fired != len(shooters) {
         raise ValueError("Save does not match this map's entities");
     }

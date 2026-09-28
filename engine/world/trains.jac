@@ -6,7 +6,9 @@ import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .signals { Signal, HasSignal, Fire, note_chain }
 import from .damage { Damage, blast_strength }
 import from ..formats.bsp { Bsp }
-import from ..physics.collision { CollisionMap, Sweep }
+import from ..physics.collision { CollisionMap }
+import from .pickups { Pickup }
+import from .pusher { Pushable, HullStep, GatherPushables, push_move, clear_item }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
@@ -252,116 +254,58 @@ def attach_train(world: World, bsp: Bsp, collision: CollisionMap, train: Train) 
     world +>:HasSignal:+> train.activation;
 }
 
-# Validate all affected actors before committing any mover or actor transform.
+"""Step a train to `motion`, taking along or pushing everyone in its way
+(SV_PushMove, SV_Push, G_MoverPush), or not moving at all. A blocked train
+waits; Q1 and Q2 trains and secret doors hurt what blocks them at most every
+half second (train_blocked, secret_blocked, door_secret_blocked), and Q2's
+clear an item out of the way instead."""
 def move_train(
-    train: Train, motion: Vec3, bsp: Bsp, collision: CollisionMap, actors: list[Player]
+    train: Train,
+    motion: Vec3,
+    bsp: Bsp,
+    collision: CollisionMap,
+    bodies: list[Pushable],
+    world: World | None = None
 ) -> bool {
-    delta = motion.sub(train.motion);
-    carried: list[Player] = [];
-    # Broad phase: the hulls' current reach, grown by this step and the
-    # support probe. Only actors inside it can ride or block the train.
-    reach = delta.length() + 1.0;
-    near = len(train.extents) == len(train.hulls);
-    lo = Vec3(x=1.0e30, y=1.0e30, z=1.0e30);
-    hi = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);
-    if near {
-        for i in range(len(train.hulls)) {
-            offset = collision.offsets[train.hulls[i]];
-            box = train.extents[i];
-            lo = Vec3(
-                x=min(lo.x, box.mins.x + offset.x),
-                y=min(lo.y, box.mins.y + offset.y),
-                z=min(lo.z, box.mins.z + offset.z)
-            );
-            hi = Vec3(
-                x=max(hi.x, box.maxs.x + offset.x),
-                y=max(hi.y, box.maxs.y + offset.y),
-                z=max(hi.z, box.maxs.z + offset.z)
+    steps: list[HullStep] = [];
+    for i in range(len(train.hulls)) {
+        before = train.origins[i].add(train.motion);
+        after = train.origins[i].add(motion);
+        step = HullStep(index=train.hulls[i], offset_from=before, offset_to=after);
+        # The hull's own reach over this step, not its whole route's.
+        if len(train.extents) == len(train.hulls) {
+            low = Vec3(x=min(before.x, after.x), y=min(before.y, after.y), z=min(before.z, after.z));
+            high = Vec3(x=max(before.x, after.x), y=max(before.y, after.y), z=max(before.z, after.z));
+            step.bounds = AABB(
+                mins=train.extents[i].mins.add(low), maxs=train.extents[i].maxs.add(high)
             );
         }
+        steps.append(step);
     }
-    for actor in actors {
-        if actor.health <= 0 {
-            continue;
-        }
-        height = actor.eye_height
-            if isinstance(actor, Opponent)
-            else collision.eye_height;
-        origin = actor.pos.sub(Vec3(z=height));
-        if near
-            and (
-                origin.x < lo.x - reach
-                or origin.x > hi.x + reach
-                or origin.y < lo.y - reach
-                or origin.y > hi.y + reach
-                or origin.z < lo.z - reach
-                or origin.z > hi.z + reach
-            ) {
-            continue;
-        }
-        rider = False;
-        intersects = False;
-        for i in range(len(train.hulls)) {
-            index = train.hulls[i];
-            local = origin.sub(collision.offsets[index]);
-            if near {
-                box = train.extents[i];
-                if local.x < box.mins.x - reach
-                    or local.x > box.maxs.x + reach
-                    or local.y < box.mins.y - reach
-                    or local.y > box.maxs.y + reach
-                    or local.z < box.mins.z - reach
-                    or local.z > box.maxs.z + reach {
-                    continue;
-                }
-            }
-            support = collision.hulls[index] spawn Sweep(
-                start=local,
-                finish=local.add(Vec3(z=-0.25)),
-                top_drop=collision.top_drop if actor.crouched else 0.0
-            );
-            if actor.velocity.z <= 0.0
-                and not support.result.start_solid
-                and support.result.fraction < 1.0
-                and support.result.normal.z >= 0.7 {
-                rider = True;
-            }
-            hit = collision.hulls[index] spawn Sweep(
-                start=local,
-                finish=local.sub(delta),
-                top_drop=collision.top_drop if actor.crouched else 0.0
-            );
-            if hit.result.start_solid or hit.result.fraction < 1.0 {
-                intersects = True;
-            }
-        }
-        if not rider and not intersects {
-            continue;
-        }
-        path = collision.trace(
-            origin,
-            origin.add(delta),
-            exclude=train.hulls,
-            top_drop=collision.top_drop if actor.crouched else 0.0
-        );
-        if path.start_solid or path.fraction < 1.0 {
-            if train.damage > 0 and train.damage_wait <= 0.0 {
-                if isinstance(actor, Opponent) {
-                    damage_opponent(actor, train.damage);
-                } else {
-                    actor spawn Damage(amount=train.damage);
-                }
-                train.damage_wait = 0.5;
-            }
-            return False;
-        }
-        carried.append(actor);
+    obstacle = push_move(collision, steps, bodies, train.game);
+    if obstacle is None {
+        train_position(train, motion, bsp, collision);
+        return True;
     }
-    train_position(train, motion, bsp, collision);
-    for actor in carried {
-        actor.pos = actor.pos.add(delta);
+    victim = obstacle.entity;
+    if isinstance(victim, Pickup) {
+        if world is not None and train.game == "q2" {
+            clear_item(world, victim, train.game);
+        }
+        return False;
     }
-    return True;
+    if isinstance(victim, Player)
+        and train.game != "q3"
+        and train.damage > 0
+        and train.damage_wait <= 0.0 {
+        if isinstance(victim, Opponent) {
+            damage_opponent(victim, train.damage);
+        } else {
+            victim spawn Damage(amount=train.damage);
+        }
+        train.damage_wait = 0.5;
+    }
+    return False;
 }
 
 walker TrainTick {
@@ -369,10 +313,25 @@ walker TrainTick {
         collision: CollisionMap,
         dt: float,
         player: Player | None = None,
-        actors: list[Player] = [],
         tracks: list[TrackPoint] = [],
         message: str = "",
-        cues: list[str] = [];
+        cues: list[str] = [],
+        world: World | None = None,
+        bodies: list[Pushable] = [],
+        gathered: bool = False;
+
+    """Everything a train could push this tick, gathered once when needed."""
+    def pushables() -> list[Pushable] {
+        world = self.world;
+        if not self.gathered and world is not None {
+            self.gathered = True;
+            found = world spawn GatherPushables(
+                collision=self.collision, game=self.bsp.game, player=self.player
+            );
+            self.bodies = found.bodies;
+        }
+        return self.bodies;
+    }
 
     """Q1 train_next/train_wait and Q2 train_next/train_wait: the moving loop
     runs while the train travels and the stop sound marks each pause. Secret
@@ -435,14 +394,7 @@ walker TrainTick {
         if self.dt <= 0.0 {
             return;
         }
-        if self.player is not None {
-            self.actors.append(self.player);
-        }
-        for enemy in [here->:HasOpponent:->][?:Opponent] {
-            if not enemy.dormant {
-                self.actors.append(enemy);
-            }
-        }
+        self.world = here;
         self.tracks = [here->:HasTrack:->][?:TrackPoint];
         visit [here->:HasElevator:->];
         visit [here->:HasTrain:->];
@@ -554,7 +506,9 @@ walker TrainTick {
         motion = goal
             if distance <= speed * self.dt
             else here.motion.add(delta.scale(speed * self.dt / distance));
-        if not move_train(here, motion, self.bsp, self.collision, self.actors) {
+        if not move_train(
+            here, motion, self.bsp, self.collision, self.pushables(), self.world
+        ) {
             return;
         }
         if distance <= speed * self.dt {

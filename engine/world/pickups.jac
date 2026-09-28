@@ -6,6 +6,7 @@ import from .models { Visual }
 import from .damage { Heal }
 import from .inventory { Inventory, AdjustInventory, InventorySlot, ItemStack, quantity }
 import from .powerups { GrantPowerup, Powerup, Empowered, effect, stored_kinds }
+import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
 obj PickupRule {
@@ -108,6 +109,66 @@ def respawn_wait(item: Pickup) -> float {
     item.seed = (item.seed * 48271) % 2147483647;
     spread = (float(item.seed) / 2147483647.0 * 2.0 - 1.0) * item.jitter;
     return max(1.0, item.respawn + spread);
+}
+
+"""The view that traces an item's own box. Q1 items.qc gives every item
+setsize('0 0 0', '32 32 56'), the player hull's size with its origin at the
+box's low corner; Q2 droptofloor and Q3 ITEM_RADIUS make it 15 each way."""
+def item_view(collision: CollisionMap, game: str) -> CollisionMap {
+    if game == "q1" {
+        return collision.for_body(0.0);
+    }
+    return collision.for_body(
+        0.0, 0.0, Vec3(x=-15.0, y=-15.0, z=-15.0), Vec3(x=15.0, y=15.0, z=15.0)
+    );
+}
+
+"""An item's position less the origin of the box its view traces: a Q1
+item's box starts at its origin, so the player-sized hull sits 16, 16 and 24
+on from it; Q2 and Q3 boxes are centred."""
+def item_lift(game: str) -> Vec3 {
+    if game == "q1" {
+        return Vec3(x=-16.0, y=-16.0, z=-24.0);
+    }
+    return Vec3();
+}
+
+"""Where a newly spawned item ends up."""
+obj Landing {
+    has kept: bool = True,
+        falls: bool = False;
+}
+
+"""Put a newly spawned item down as its game does. Q1 PlaceItem lifts it 6
+units and droptofloor traces its box 256 down; an item with no floor there
+(or wholly in solid) fell out of the level and goes. Q2 droptofloor traces
+128 down and leaves the item wherever that ends, to fall on from there
+(MOVETYPE_TOSS); one starting in solid goes. Q3 FinishSpawningItem traces
+4096 down unless the item is SUSPENDED; starting in solid, it goes."""
+def drop_to_floor(item: Pickup, view: CollisionMap, game: str, suspended: bool) -> Landing {
+    lift = item_lift(game);
+    if game == "q1" {
+        item.pos = item.pos.add(Vec3(z=6.0));
+    }
+    if game == "q3" and suspended {
+        return Landing();
+    }
+    reach = 256.0 if game == "q1" else (128.0 if game == "q2" else 4096.0);
+    origin = item.pos.sub(lift);
+    bottom = origin.sub(Vec3(z=reach));
+    trace = view.trace(origin, bottom);
+    if trace.start_solid {
+        # Q1 only gives up on an item whose whole drop is in solid.
+        if game == "q1" and not view.trace(bottom, bottom).start_solid {
+            return Landing();
+        }
+        return Landing(kept=False);
+    }
+    if game == "q1" and trace.fraction >= 1.0 {
+        return Landing(kept=False);
+    }
+    item.pos = trace.end.add(lift);
+    return Landing(falls=game == "q2" and trace.fraction >= 1.0);
 }
 
 """Take a dropped item out of the world."""

@@ -101,6 +101,8 @@ test "reverse and axis flags pick the swing and start-open doors begin swung" {
 test "blocked movers crush what stops them and crushers keep pushing" {
     fixture = DoorFixture();
     fixture.setup("q2", {"dmg": "7"});
+    # The player below stands on a floor the door cannot push it through.
+    fixture.add_floor();
     door = [fixture.world->:HasDoor:->][?:Door][0];
     player = Player(health=100, pos=Vec3(x=60.0, z=46.0));
     for i in range(25) {

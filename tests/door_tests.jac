@@ -42,9 +42,11 @@ test "door opens, holds near player, waits and closes without transform drift" {
     }
 }
 
-test "door pauses at zero time and reverses when closing sweep crosses player" {
+test "door pauses at zero time and reverses closing onto a player it cannot push" {
     fixture = DoorFixture();
     fixture.setup();
+    # SV_Push pushes whoever is in the way; the floor pins this player.
+    fixture.add_floor();
     door = [fixture.world->:HasDoor:->][?:Door][0];
     fixture.tick(Vec3(x=60.0, z=24.0), 0.0);
     assert door.state == "closed";
@@ -60,13 +62,21 @@ test "door pauses at zero time and reverses when closing sweep crosses player" {
     assert fixture.bsp.faces[0].motion.z == 88.0;
 }
 
-test "negative wait stays open and opening cannot sweep through player" {
+test "negative wait stays open and opening cannot push a pinned player" {
     fixture = DoorFixture();
     fixture.setup(fields={"wait": "-1"});
     door = [fixture.world->:HasDoor:->][?:Door][0];
+    # A rising door lifts a player standing above it.
+    door.state = "opening";
+    fixture.tick(Vec3(z=150.0), 0.5);
+    assert door.position == 0.5 and fixture.player.pos.z > 150.0 + 44.0;
+    door.state = "closing";
+    fixture.tick(Vec3(x=500.0), 2.0);
+    # With a ceiling above, it cannot, and a negative wait keeps pushing.
+    fixture.add_ceiling(190.0);
     door.state = "opening";
     fixture.tick(Vec3(z=150.0), 2.0);
-    assert door.position == 0.0;
+    assert door.position == 0.0 and door.state == "opening";
     fixture.tick(Vec3(x=60.0, z=24.0), 2.0);
     fixture.tick(Vec3(x=500.0), 20.0);
     assert door.state == "open";
@@ -143,6 +153,8 @@ test "one blocked member prevents the whole door group from moving" {
     fixture = pair_fixture("q3");
     leader = [fixture.world->:HasDoor:->][?:Door][0];
     leader.state = "opening";
+    # The player under the lowering member stands on a floor.
+    fixture.add_floor(-104.0);
     fixture.tick(Vec3(y=64.0, z=-80.0), 2.0);
     assert leader.position == 0.0;
     assert fixture.bsp.faces[0].motion.length() == 0.0;

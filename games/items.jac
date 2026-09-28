@@ -2,8 +2,17 @@
 import math;
 import from .weapons { weapon_rules }
 import from engine.world.signals { Signal, HasSignal }
-import from engine.world.pickups { PickupRule, Pickup, HasPickup, ItemTeam, TeamMember, InTeam }
-import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs }
+import from engine.world.pickups {
+    PickupRule,
+    Pickup,
+    HasPickup,
+    ItemTeam,
+    TeamMember,
+    InTeam,
+    item_view,
+    drop_to_floor
+}
+import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, let_fall }
 import from engine.world.powerups { powerup_rule }
 import from engine.world.models {
     ModelResource,
@@ -694,6 +703,7 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
     resources: dict[str, ModelResource] = {};
     teams: dict[str, ItemTeam] = {};
     count = 0;
+    item_box = item_view(level.collision, level.bsp.game);
     try {
         for index in range(len(level.bsp.entities)) {
             fields = level.bsp.entities[index].fields;
@@ -792,6 +802,11 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 activate_on_use=waiting_for_use or level.bsp.game == "q3",
                 reusable_use=level.bsp.game == "q3"
             );
+            # Q1 PlaceItem, Q2 droptofloor, Q3 FinishSpawningItem.
+            landing = drop_to_floor(pickup, item_box, level.bsp.game, flags & 1 != 0);
+            if not landing.kept {
+                continue;
+            }
             for signal in [world->:HasSignal:->][?:Signal] {
                 if index in signal.entities {
                     pickup.activation = signal;
@@ -826,8 +841,11 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 pickup +>:InTeam:+> teams[team_name];
             }
             pickup.visual.visible = pickup.active;
-            move_to_area(pickup, level.areas[level.locate(position)]);
+            move_to_area(pickup, level.areas[level.locate(pickup.pos)]);
             world +>:HasPickup:+> pickup;
+            if landing.falls {
+                let_fall(world, pickup);
+            }
             count += 1;
         }
         if level.bsp.game == "q3" {

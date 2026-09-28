@@ -4,9 +4,11 @@ clock, so saves only need that clock and the on/off state.
 
 Poses follow the originals: func_rotating turns at `speed` degrees a second
 (g_func.c SP_func_rotating), bobbing and pendulum motion are TR_SINE
-trajectories (g_mover.c SP_func_bobbing / SP_func_pendulum). Blocking actors are
-pushed along with the mover when there is room, as SV_Push/G_MoverPush do, and
-otherwise take `dmg` damage while the mover waits."""
+trajectories (g_mover.c SP_func_bobbing / SP_func_pendulum). Riders and what
+the mover swings into are carried round its origin in their own boxes (SV_Push,
+G_MoverPush, engine/world/pusher.jac). A blocked Q2 func_rotating hurts the
+obstacle by `dmg` and waits, a Q3 one only waits, and bobbing and pendulum
+movers kill what they meet and never stop."""
 import math;
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
@@ -14,6 +16,7 @@ import from .damage { Damage }
 import from .signals { Signal, HasSignal }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace, hull_sweep }
+import from .pusher { Pushable, HullStep, GatherPushables, push_move }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, quake_basis }
 import from ..math.aabb { AABB }
@@ -74,62 +77,6 @@ def place(mover: Rotator, t: float, bsp: Bsp, collision: CollisionMap) {
     }
 }
 
-"""Where a point riding the mover goes when its pose changes from t0 to t1."""
-def carry(mover: Rotator, point: Vec3, t0: float, t1: float) -> Vec3 {
-    before = mover.pose(t0);
-    after = mover.pose(t1);
-    local = point.sub(mover.pivot.add(before[0]));
-    old_turn = turn_for(before[1]);
-    new_turn = turn_for(after[1]);
-    if old_turn is not None {
-        local = old_turn.inverse(local);
-    }
-    if new_turn is not None {
-        local = new_turn.apply(local);
-    }
-    return mover.pivot.add(after[0]).add(local);
-}
-
-def mover_overlaps(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, top_drop: float) -> bool {
-    parts = mover.pose(t);
-    turn = turn_for(parts[1]);
-    for j in range(len(mover.hulls)) {
-        hit = hull_sweep(
-            collision.hulls[mover.hulls[j]],
-            origin,
-            origin,
-            mover.origins[j].add(parts[0]),
-            top_drop,
-            False,
-            turn
-        );
-        if hit.start_solid {
-            return True;
-        }
-    }
-    return False;
-}
-
-def standing_on(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, top_drop: float) -> bool {
-    parts = mover.pose(t);
-    turn = turn_for(parts[1]);
-    for j in range(len(mover.hulls)) {
-        hit = hull_sweep(
-            collision.hulls[mover.hulls[j]],
-            origin,
-            origin.add(Vec3(z=-1.0)),
-            mover.origins[j].add(parts[0]),
-            top_drop,
-            False,
-            turn
-        );
-        if not hit.start_solid and hit.fraction < 1.0 and hit.normal.z >= 0.7 {
-            return True;
-        }
-    }
-    return False;
-}
-
 def touching(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, top_drop: float) -> bool {
     parts = mover.pose(t);
     turn = turn_for(parts[1]);
@@ -162,23 +109,40 @@ def touching(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, to
     return False;
 }
 
+"""The turn of a pose about the vertical, in degrees, from `a` to `b`, the
+short way round (SV_Push's amove[YAW])."""
+def yaw_step(a: Vec3, b: Vec3) -> float {
+    delta = b.y - a.y;
+    while delta > 180.0 {
+        delta -= 360.0;
+    }
+    while delta < -180.0 {
+        delta += 360.0;
+    }
+    return delta;
+}
+
 walker RotatorTick {
     has bsp: Bsp,
         collision: CollisionMap,
         dt: float,
         player: Player | None = None,
-        actors: list[Opponent] = [];
+        world: World | None = None,
+        bodies: list[Pushable] = [];
 
     can start with World entry {
         if self.dt <= 0.0 {
             return;
         }
-        self.actors = [
-            actor
-            for actor in [here->:HasOpponent:->][?:Opponent]
-            if actor.health > 0 and not actor.dormant
-        ];
-        visit [here->:HasRotator:->];
+        self.world = here;
+        movers = [here->:HasRotator:->][?:Rotator];
+        if movers {
+            found = here spawn GatherPushables(
+                collision=self.collision, game=self.bsp.game, player=self.player
+            );
+            self.bodies = found.bodies;
+        }
+        visit movers;
     }
 
     can advance with Rotator entry {
@@ -196,59 +160,44 @@ walker RotatorTick {
             return;
         }
         after = here.clock + self.dt;
-        bodies: list[Player] = [];
-        heights: list[float] = [];
-        if self.player is not None and self.player.health > 0 {
-            bodies.append(self.player);
-            heights.append(self.collision.eye_height);
+        before_pose = here.pose(here.clock);
+        after_pose = here.pose(after);
+        steps: list[HullStep] = [];
+        for j in range(len(here.hulls)) {
+            steps.append(
+                HullStep(
+                    index=here.hulls[j],
+                    offset_from=here.origins[j].add(before_pose[0]),
+                    offset_to=here.origins[j].add(after_pose[0]),
+                    turn_from=turn_for(before_pose[1]),
+                    turn_to=turn_for(after_pose[1]),
+                    yaw=yaw_step(before_pose[1], after_pose[1])
+                )
+            );
         }
-        for actor in self.actors {
-            bodies.append(actor);
-            heights.append(actor.eye_height);
+        bodies = list(self.bodies);
+        obstacle = push_move(self.collision, steps, bodies, self.bsp.game);
+        # G_MoverPush: bobbing and pendulum movers (TR_SINE) kill what they
+        # meet and are never blocked.
+        while obstacle is not None and here.kind in ["bob", "pendulum"] {
+            victim = obstacle.entity;
+            if isinstance(victim, Player) {
+                self.hurt(victim, 99999);
+            }
+            bodies = [body for body in bodies if body is not obstacle];
+            obstacle = push_move(self.collision, steps, bodies, self.bsp.game);
         }
-        moves: list[Vec3] = [];
-        for i in range(len(bodies)) {
-            body = bodies[i];
-            origin = body.pos.sub(Vec3(z=heights[i]));
-            drop = self.collision.top_drop if body is self.player else 0.0;
-            # Bounds cover every pose; a body beyond them neither rides nor blocks.
-            near = False;
-            for index in here.hulls {
-                if self.collision.reaches(index, origin, 2.0) {
-                    near = True;
-                    break;
-                }
+        if obstacle is not None {
+            # Q2 rotating_blocked hurts what stops it; Q3's func_rotating has
+            # no blocked function and only waits.
+            victim = obstacle.entity;
+            if self.bsp.game == "q2" and isinstance(victim, Player) {
+                self.crush(here, victim);
             }
-            if not near {
-                moves.append(origin);
-                continue;
-            }
-            riding = standing_on(here, self.collision, origin, here.clock, drop);
-            hit = mover_overlaps(here, self.collision, origin, after, drop);
-            if not riding and not hit {
-                moves.append(origin);
-                continue;
-            }
-            pushed = carry(here, origin, here.clock, after);
-            # The pushed spot must be free of the world and of the new pose.
-            clear = not mover_overlaps(here, self.collision, pushed, after, drop)
-                and not self.collision.trace(
-                    pushed, pushed, exclude=here.hulls, top_drop=drop
-                ).start_solid;
-            if not clear {
-                if hit {
-                    self.crush(here, body);
-                    return;
-                }
-                pushed = origin;
-            }
-            moves.append(pushed);
+            return;
         }
         here.clock = after;
         place(here, here.clock, self.bsp, self.collision);
-        for i in range(len(bodies)) {
-            bodies[i].pos = moves[i].add(Vec3(z=heights[i]));
-        }
         # Q2 TOUCH_PAIN: any contact with a turning blade hurts.
         if here.touch_pain and self.player is not None and self.player.health > 0 {
             origin = self.player.pos.sub(Vec3(z=self.collision.eye_height));
@@ -263,10 +212,17 @@ walker RotatorTick {
             return;
         }
         mover.crush_wait = 0.1;
+        self.hurt(victim, mover.damage);
+    }
+
+    def hurt(victim: Player, amount: int) {
+        if victim.health <= 0 {
+            return;
+        }
         if isinstance(victim, Opponent) {
-            damage_opponent(victim, mover.damage, means="crush");
+            damage_opponent(victim, amount, means="crush");
         } else {
-            victim spawn Damage(amount=mover.damage, means="crush");
+            victim spawn Damage(amount=amount, means="crush");
         }
     }
 }
