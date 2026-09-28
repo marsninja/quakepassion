@@ -310,6 +310,7 @@ obj App {
         keyboard: Keyboard = Keyboard(),
         controls: Controls = Controls(),
         host: HostCvars = HostCvars(),
+        configured: bool = False,
         configured_game: str = "",
         # The command line's +commands, run once the configuration has.
         stuffed: str = "",

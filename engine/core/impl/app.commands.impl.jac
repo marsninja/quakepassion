@@ -3,9 +3,10 @@ command buffer's dispatch (Cbuf_Execute), the frame's key events (Key_Event)
 and the commands the host runs. Declarations live in app.jac."""
 
 impl App.configure() {
-    if self.configured_game {
+    if self.configured {
         return;
     }
+    self.configured = True;
     self.shell.boot();
     self.keyboard.declare(self.shell);
     self.controls.declare(self.shell);
@@ -43,6 +44,11 @@ impl App.configure() {
 }
 
 impl App.configure_game(game: str) {
+    if not self.configured {
+        # Everything is declared first; that ends by configuring the level's game.
+        self.configure();
+        return;
+    }
     self.configured_game = game;
     defaults = self.read_config("default.cfg");
     script = defaults + "\n" + binding_layer(game, bool(defaults.strip())) + "\n";
