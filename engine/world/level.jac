@@ -3,12 +3,13 @@ import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
 import from ..formats.q1.bsp { parse_bsp }
-import from ..formats.bsp { Bsp, Texture, decode_pvs, i32_at, require_range }
+import from ..formats.bsp { Bsp, Texture, decode_pvs, i32_at, require_range, current_flow }
 import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
 import from ..formats.q3.bsp { parse_q3 }
 import from ..formats.animated { ModelStage, Deform }
 import from ..assets.pk3 { Pk3Assets }
 import from ..physics.collision { CollisionMap }
+import from ..physics.movement { MovementProfile, movement_profile }
 import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
 import from ..math.vec3 { Vec3 }
@@ -39,7 +40,9 @@ import from .triggers { load_triggers, load_monster_jumps }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
 import from .fixtures { load_fixture_uses }
-import from .liquids { LiquidSpace, SampleLiquid, Immersion, liquid_kind, load_liquids }
+import from .liquids {
+    LiquidSpace, SampleLiquid, LiquidSample, Immersion, liquid_kind, load_liquids
+}
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
 import from .lighting { Lighting, load_light_grid }
@@ -106,6 +109,7 @@ obj Level {
     has active: bool = False,
         skill: int = 1,
         collision: CollisionMap = CollisionMap(),
+        movement: MovementProfile = MovementProfile(),
         name: str = "",
         bsp: Bsp = Bsp(),
         brush_faces: list[int] = [],
@@ -134,29 +138,51 @@ obj Level {
     }
 
     def liquid_at(point: Vec3) -> int {
-        if not self.active {
-            return 0;
-        }
-        if self.bsp.game == "q1" {
-            return liquid_kind(self.bsp.leaves[self.locate(point)].contents, "q1");
-        }
-        sample = self.liquids spawn SampleLiquid(point=point);
-        return sample.result;
+        return self.sample_liquid(point).kind;
     }
 
+    """The liquid at a point and its Q2 current bits (CM_PointContents)."""
+    def sample_liquid(point: Vec3) -> LiquidSample {
+        if not self.active {
+            return LiquidSample();
+        }
+        if self.bsp.game == "q1" {
+            return LiquidSample(
+                kind=liquid_kind(self.bsp.leaves[self.locate(point)].contents, "q1")
+            );
+        }
+        sample = self.liquids spawn SampleLiquid(point=point);
+        return LiquidSample(kind=sample.result, currents=sample.currents);
+    }
+
+    """Sample the feet, the waist and the eye (the player's own view height
+    unless another body's is given). Q2 PM_CatagorizePosition and Q3
+    PM_SetWaterLevel take the waist at half the view height; Q1
+    SV_CheckWater at the middle of the box, 4 units up the player's -24..32.
+    The current is the feet's (pm->watertype)."""
     def immersion(eye: Vec3, eye_height: float = -1.0) -> Immersion {
         result = Immersion();
-        if eye_height < 0.0 {
+        player = eye_height < 0.0;
+        if player {
             eye_height = self.collision.eye_height;
         }
         origin = eye.sub(Vec3(z=eye_height));
-        for height in [-23.0, (eye_height - 24.0) * 0.5, eye_height] {
-            kind = self.liquid_at(origin.add(Vec3(z=height)));
-            if kind == 0 {
+        waist = 4.0
+            if player and self.bsp.game == "q1"
+            else (eye_height - 24.0) * 0.5;
+        for height in [-23.0, waist, eye_height] {
+            sample = self.sample_liquid(origin.add(Vec3(z=height)));
+            if sample.kind == 0 {
                 break;
             }
+            if result.depth == 0 {
+                direction = current_flow(sample.currents);
+                if direction is not None {
+                    result.current = direction;
+                }
+            }
             result.depth += 1;
-            result.kind = max(result.kind, kind);
+            result.kind = max(result.kind, sample.kind);
         }
         return result;
     }
@@ -399,6 +425,7 @@ def load_level(
 
 def prepare_level(world: World, level: Level) {
     game = level.bsp.game;
+    level.movement = movement_profile(game);
     level.bsp.entities = active_entities(game, level.bsp.entities, level.skill);
     for i in range(len(level.bsp.leaves)) {
         leaf = level.bsp.leaves[i];
