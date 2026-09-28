@@ -372,7 +372,7 @@ walker MovePlayer {
             return;
         }
         if self.water_depth >= 2 {
-            self.climbing = False;
+            # A swimmer at a Q2 ladder only takes its ground friction.
             self.swim(here, pos, haste);
             return;
         }
