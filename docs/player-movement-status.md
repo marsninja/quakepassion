@@ -129,5 +129,5 @@ culling enabled versus disabled match exactly, across spawn and moved views.
   buttons still need behavior. Rotation and riding movers are not implemented.
 - Initial teleporters and jump pads now work: see [traversal status](traversal-status.md).
 - Initial swimming now works: see [swimming status](swimming-status.md). Crouching, water ledge exits and further trigger actions remain.
-- Per-game movement tuning, render interpolation and full-map traversal checks.
+- Per-game movement tuning and full-map traversal checks. Render interpolation between physics ticks is in place (see [player feedback](player-feedback-status.md)).
 - Exact original-game movement fidelity is not claimed.

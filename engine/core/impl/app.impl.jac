@@ -137,33 +137,39 @@ impl App.render_frame() {
         faces = self.level.visible(self.world, p.pos, self.culling);
         combat_lights(self.level.lighting, self.world, p, self.combat);
         self.quake.time = self.simulation_time;
+        self.quake.blend = self.tick_blend;
         self.render_times.visible = (time.time() - stamp) * 1000.0;
         stamp = time.time();
         self.render_portal(faces);
         self.render_times.portal = (time.time() - stamp) * 1000.0;
-        # The view: damage and landing kicks, weapon punch, the dead view.
+        # The view from the body between its last two physics ticks: eased
+        # up steps, kicked, bobbed and rolled per game, or the dead view.
         game = self.level.bsp.game;
         self.view.take_damage(p);
         self.view.advance(self.frame_dt);
-        # Stairs and a platform's lip ease the eye up rather than jump it.
-        sink = self.view.eye_drop()
-            + self.view.climb(p.pos.z, p.grounded and self.walking, self.frame_dt);
-        eye = p.pos.sub(Vec3(z=sink));
-        view_yaw = p.yaw;
-        view_pitch = p.pitch - math.radians(self.view.pitch());
-        view_roll = math.radians(self.view.roll());
+        punch = 0.0;
         if self.combat.punch_time > 0.0 and self.combat.punch_left > 0.0 {
-            view_pitch += math.radians(
-                self.combat.punch * self.combat.punch_left / self.combat.punch_time
-            );
+            punch = self.combat.punch * self.combat.punch_left / self.combat.punch_time;
         }
-        if p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active {
-            dead = death_view(p, game, self.level.collision.eye_height);
-            eye = p.pos.sub(Vec3(z=dead[0]));
-            view_pitch = math.radians(dead[1]);
-            view_roll = math.radians(dead[2]);
-            view_yaw = dead[3];
-        }
+        blend = self.tick_blend;
+        # The simulation time the frame shows, a fraction of a tick behind.
+        shown_time = self.simulation_time - (1.0 - blend.alpha) * self.physics_clock.tick_rate;
+        placed = self.view.place(
+            p,
+            blend.place(p.tick_pose, p.pos),
+            p.grounded and self.walking,
+            self.frame_dt,
+            shown_time,
+            blend.alpha,
+            punch,
+            self.level.collision.eye_height,
+            dead=p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active,
+            intermission=self.finale_active
+        );
+        eye = placed.eye;
+        view_yaw = placed.yaw;
+        view_pitch = placed.pitch;
+        view_roll = placed.roll;
         stamp = time.time();
         self.renderer.begin_frame(eye, view_yaw, view_pitch, view_roll);
         self.quake.view_forward = forward_from(view_yaw, view_pitch);
@@ -181,15 +187,16 @@ impl App.render_frame() {
             aspect=float(self.renderer.width) / float(self.renderer.height),
             lighting=self.level.lighting,
             fogs=self.level.bsp.fogs,
-            fog_image=self.quake.fog_image
+            fog_image=self.quake.fog_image,
+            blend=blend
         );
-        self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
-        self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
+        self.renderer.draw_opponents(self.world, self.level.collision.eye_height, blend);
+        self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys(), blend=blend);
         self.render_times.models = (time.time() - stamp) * 1000.0;
         stamp = time.time();
         self.effects.draw_particles(self.world, view_yaw, view_pitch);
         self.effects.draw(
-            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
+            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend
         );
         self.render_times.effects = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -201,10 +208,10 @@ impl App.render_frame() {
             self.viewweapon.draw(
                 p,
                 self.combat,
-                self.simulation_time,
+                shown_time,
                 self.level.lighting,
-                lift=inset / float(max(1, self.renderer.height)),
-                sink=sink
+                placed,
+                lift=inset / float(max(1, self.renderer.height))
             );
         }
         self.renderer.end_scene();
@@ -1034,6 +1041,18 @@ impl App.step() -> bool {
     );
     for i in range(steps) {
         jumped = False;
+        # Render interpolation: what each body, mover and the view start
+        # this tick from (engine/math/interpolation.jac).
+        self.tick_blend.tick += 1;
+        self.world spawn CaptureMotion(tick=self.tick_blend.tick);
+        if self.level.active {
+            self.quake.hold_placements(self.level, self.tick_blend.tick);
+        }
+        self.view.tick(
+            self.player,
+            intent.move.x != 0.0 or intent.move.y != 0.0,
+            self.physics_clock.tick_rate
+        );
         self.simulation_time += self.physics_clock.tick_rate;
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
         self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
@@ -1043,12 +1062,16 @@ impl App.step() -> bool {
             self.notify_lines.pop(0);
         }
         if self.walking and self.level.active {
+            standing = self.level.collision.eye_height;
             self.player spawn SetStance(
                 collision=self.level.collision,
                 profile=self.level.movement,
                 crouch=intent.crouch,
                 dt=self.physics_clock.tick_rate
             );
+            if self.level.collision.eye_height != standing {
+                self.view.duck(self.level.collision.eye_height - standing);
+            }
         }
         previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
         if self.level.active and not self.smoke {
@@ -1307,6 +1330,10 @@ impl App.step() -> bool {
                 held=intent.fire,
                 dt=self.physics_clock.tick_rate
             ) {
+                kicked = self.viewweapon.rule_for(self.combat.weapon);
+                if kicked is not None {
+                    self.view.recoil(kicked.kick_back, kicked.kick_shake, kicked.kick_twist);
+                }
                 silencer = effect(self.player, "silencer");
                 gain = 1.0;
                 if silencer is not None and silencer.count > 0 {
@@ -1623,8 +1650,11 @@ impl App.step() -> bool {
         self.player.liquid_kind = immersed.kind;
         self.fly(Intent(), 0.0);
     } else {
+        # Flight moves the body every frame, not on ticks.
         self.fly(intent, dt);
+        self.player.tick_pose.settle();
     }
+    self.tick_blend.alpha = self.physics_clock.alpha();
     self.render_frame();
     return True;
 }
@@ -1642,6 +1672,7 @@ impl App.begin_intermission(text: str) {
         self.player.pos = view.origin.add(Vec3());
         self.player.yaw = view.yaw;
         self.player.pitch = view.pitch;
+        self.player.tick_pose.settle();
     }
 }
 
@@ -2044,6 +2075,7 @@ impl App.teleport_actor(actor: Player) {
     actor.velocity = forward_from(spot.yaw, 0.0).scale(400.0);
     actor.grounded = False;
     actor.teleport_hold = 0.16;
+    actor.tick_pose.settle();
     move_to_area(actor, self.level.areas[self.level.locate(actor.pos)]);
     self.world spawn KillBox(
         mover=actor,
@@ -2160,6 +2192,7 @@ impl App.respawn_arena_player() {
     if spot is not None {
         player.pos = spot.pos.add(Vec3(z=self.level.collision.eye_height + 1.0));
         player.yaw = spot.yaw;
+        player.tick_pose.settle();
     }
     move_to_area(player, self.level.areas[self.level.locate(player.pos)]);
     # g_client.c ClientSpawn: G_KillBox telefrags a bot standing on the spot.
@@ -2210,11 +2243,12 @@ impl App.render_portal(faces: list[int]) {
         self.models,
         self.effects,
         faces,
-        p.pos,
+        self.tick_blend.place(p.tick_pose, p.pos),
         p.yaw,
         p.pitch,
         self.renderer.fov,
-        self.simulation_time
+        self.simulation_time,
+        self.tick_blend
     );
     show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, False);
 }

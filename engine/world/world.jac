@@ -9,6 +9,7 @@ surface."""
 
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from ..math.interpolation { TickPose }
 import from .inventory { Inventory }
 
 
@@ -39,6 +40,12 @@ node Area {
 }
 
 
+"""Indexes the areas holding entities (occupants above zero), kept by
+move_to_area: passes over the world's entities visit these few rather than
+every leaf of the level."""
+edge Occupied: World --> Area {}
+
+
 """Connects two Areas through an opening. Visibility floods through these."""
 edge Portal: Area --> Area {
     has rect: AABB;
@@ -52,7 +59,10 @@ edge In: Entity --> Area {}
 node Entity {
     has pos: Vec3 = Vec3(),
         yaw: float = 0.0,
-        pitch: float = 0.0;
+        pitch: float = 0.0,
+        # Where it stood when the physics tick in progress began, for drawing
+        # it between ticks (engine/math/interpolation.jac).
+        tick_pose: TickPose = TickPose();
 }
 
 
@@ -147,3 +157,8 @@ def area_of(ent: Entity) -> Area | None;
 
 """Rewire an entity's In edge when it crosses into a new area."""
 def move_to_area(ent: Entity, new_area: Area);
+
+
+"""Bring an area's Occupied edge from its world in line with its count of
+occupants (after a move, or a pass that recounted them)."""
+def index_occupancy(area: Area);
