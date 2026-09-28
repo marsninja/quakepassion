@@ -1064,7 +1064,7 @@ impl App.step() -> bool {
         if self.walking and self.level.active {
             self.player spawn SetStance(
                 collision=self.level.collision,
-                game=self.level.bsp.game,
+                profile=self.level.movement,
                 crouch=intent.crouch,
                 dt=self.physics_clock.tick_rate
             );
@@ -1143,7 +1143,9 @@ impl App.step() -> bool {
                 jump=self.jump_pending or intent.jump_held,
                 water_depth=immersed.depth,
                 swim_wish=swim,
-                game=self.level.bsp.game,
+                upmove=intent.move.z - (1.0 if intent.crouch else 0.0),
+                current=immersed.current,
+                profile=self.level.movement,
                 dt=self.physics_clock.tick_rate
             );
             self.world spawn ClearActors(

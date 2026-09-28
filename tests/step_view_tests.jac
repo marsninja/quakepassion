@@ -4,7 +4,7 @@ import from engine.world.doors { Door, HasDoor, DoorTick }
 import from engine.world.world { Player }
 import from engine.render.view_feedback { ViewFeedback }
 import from engine.physics.collision { HullCell, HullFront, HullBack, CollisionMap }
-import from engine.physics.movement { MovePlayer }
+import from engine.physics.movement { MovePlayer, movement_profile }
 import from engine.math.vec3 { Vec3 }
 import from tests.door_support { DoorFixture }
 
@@ -26,10 +26,10 @@ test "a move reports the height of the step it climbed" {
     ledge +>:HullBack:+> top;
     collision = CollisionMap(hulls=[floor, ledge], offsets=[Vec3(), Vec3()]);
     player = Player(pos=Vec3(x=-20.0, z=24.03125 + collision.eye_height));
-    player spawn MovePlayer(collision=collision, game="q1");
+    player spawn MovePlayer(collision=collision, profile=movement_profile("q1"));
     steps: list[float] = [];
     for tick in range(60) {
-        moved = player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game="q1");
+        moved = player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), profile=movement_profile("q1"));
         if moved.stepped > 0.0 {
             steps.append(moved.stepped);
         }
@@ -82,7 +82,7 @@ test "walking onto a Q1 plat eases the eye up its lip and the ride" {
             collision=fixture.collision,
             wish=Vec3(x=1.0) if player.pos.x < 0.0 else Vec3(),
             steady=True,
-            game="q1",
+            profile=movement_profile("q1"),
             dt=dt
         );
         view.step(moved.stepped);
