@@ -40,6 +40,7 @@ node TargetEvent {
         primary: bool = False,
         on: bool = False,
         color: str = "laser_red",
+        diameter: float = 4.0,
         remaining: float = 0.0,
         clock: float = 0.0,
         random_state: int = 1,
@@ -310,7 +311,7 @@ walker TargetTick {
                 victim = enemy;
             }
         }
-        beam_trail(world, event.origin, event.origin.lerp(finish, reach), event.color);
+        beam_trail(world, event.origin, event.origin.lerp(finish, reach), event.color, event.diameter);
         target = victim;
         if target is not None and event.damage > 0 {
             if isinstance(target, Opponent) {
@@ -416,6 +417,8 @@ def load_targets(world: World, bsp: Bsp) {
                     event.color = pair[1];
                 }
             }
+            # The beam's diameter (s.frame): 16 when FAT, else 4.
+            event.diameter = 16.0 if flags & 64 != 0 else 4.0;
             target = fields.get("target", "");
             if target and target in origins {
                 event.direction = origins[target].sub(event.origin).normalized();

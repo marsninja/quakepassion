@@ -7,12 +7,8 @@ import from engine.world.combat {
     fire_weapon,
     damage_opponent
 }
-import from engine.world.particles {
-    HasParticle,
-    ImpactParticle,
-    ParticleTick,
-    impact_spray
-}
+import from engine.world.particles { ParticleTick, impact_spray }
+import from engine.world.particle_field { particle_field, particle_state, PARTICLE_LIMIT }
 import from engine.world.weapons { WeaponRule }
 import from engine.world.inventory { AdjustInventory }
 import from engine.physics.collision { CollisionMap }
@@ -45,28 +41,30 @@ test "shotgun wall feedback preserves pellet damage events and expires" {
     );
     assert fire_weapon(world, player, collision, state);
     assert len(state.impacts) == 6;
-    particles = [world->:HasParticle:->][?:ImpactParticle];
+    field = particle_field(world);
+    particles = field.fresh;
     assert len(particles) == 48;
     for particle in particles {
-        assert particle.pos.x < 100.0 and particle.velocity.x <= 0.0;
-        assert not particle.blood;
+        assert particle.origin.x < 100.0 and particle.velocity.x <= 0.0;
+        assert particle_state(particle, field.clock).alive;
     }
     world spawn ParticleTick(dt=1.0);
-    assert len([world->:HasParticle:->]) == 0;
+    assert not any([particle_state(particle, field.clock).alive for particle in particles]);
 }
 
 test "cosmetic saturation does not suppress damage or consume spread random state" {
     world = World();
-    for i in range(100) {
+    for i in range(600) {
         impact_spray(world, Vec3(), Vec3(x=-1.0));
     }
-    assert len([world->:HasParticle:->]) == 512;
+    saturated = len(particle_field(world).fresh);
+    assert 0 < saturated <= PARTICLE_LIMIT;
     victim = Opponent(pos=Vec3(x=100.0), health=60);
     world +>:HasOpponent:+> victim;
     state = CombatState();
     assert fire_weapon(world, Player(), CollisionMap(), state);
     assert victim.health == 45 and state.random_state == 1;
-    assert len([world->:HasParticle:->]) == 512;
+    assert 0 < len(particle_field(world).fresh) <= PARTICLE_LIMIT;
 }
 
 test "pain interrupts movement with cooldown and death holds the final pose" {

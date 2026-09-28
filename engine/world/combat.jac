@@ -1419,7 +1419,7 @@ def fire_weapon(
             burst_radius=rule.burst_radius,
             kick=int(float(rule.kick) * scale) if rule.kick >= 0 else -1
         );
-        if state.game == "q2" and rule.effect in ["q2_bolt", "q2_rocket"] {
+        if state.game == "q2" and rule.effect in ["q2_bolt", "q2_hyperbolt", "q2_rocket"] {
             check_dodge(world, player, direction, collision, state);
         }
         state.target = player.pos;
@@ -1520,7 +1520,7 @@ def fire_weapon(
                 impact_spray(world, struck_at, wall.normal);
             }
             wall_impact(
-                world, state.game, rule.key, struck_at, wall.normal, surface, wall.model, collision
+                world, state.game, rule.key, struck_at, wall.normal, surface, wall.model
             );
             state.impact_model = wall.model;
             state.impacts.append(
@@ -2357,7 +2357,7 @@ walker ProjectileTick {
                 source=here.pos.sub(here.velocity.normalized()),
                 attacker=here.owner,
                 means=Q3_MISSILE_MEANS.get(here.effect, ""),
-                energy=self.state.game == "q2" and here.effect in ["q2_bolt", "q2_bfg"]
+                energy=self.state.game == "q2" and here.effect in ["q2_bolt", "q2_hyperbolt", "q2_bfg"]
             );
             projectile_blast(
                 world,
@@ -2432,8 +2432,7 @@ walker ProjectileTick {
                 here.pos,
                 wall.normal,
                 surface,
-                wall.model,
-                self.collision
+                wall.model
             );
         } elif victim is None and here.effect == "q3_grenade" {
             # G_ExplodeMissile: a grenade bursting at rest marks the floor it
@@ -2447,8 +2446,7 @@ walker ProjectileTick {
                     here.pos.lerp(here.pos.sub(Vec3(z=20.0)), floor.fraction),
                     floor.normal,
                     self.collision.surface_class(floor),
-                    floor.model,
-                    self.collision
+                    floor.model
                 );
             }
         }
@@ -2758,8 +2756,7 @@ def opponent_shot(
                 start.lerp(finish, wall.fraction),
                 wall.normal,
                 surface,
-                wall.model,
-                collision
+                wall.model
             );
         }
     }

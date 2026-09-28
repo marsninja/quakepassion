@@ -22,6 +22,8 @@ import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
 import from .lightstyles { load_light_styles }
+import from .particle_field { particle_field }
+import from .particles { MarkSurfaces, HasMarkSurfaces }
 import from .clocks { load_clocks }
 import from .flyers { load_flyers }
 import from .falling { load_falling_objects }
@@ -151,6 +153,175 @@ obj BspLightPoint(LightPointSource) {
         probe = head spawn TraceLightPoint(start=point, end=point.sub(Vec3(z=2048.0)), faces=self.faces);
         return probe.spot;
     }
+}
+
+"""R_BoxSurfaces_r through the BSP graph: every leaf a box between `mins`
+and `maxs` reaches, down each side of the planes it straddles; `faces` are
+the faces those leaves list."""
+walker BoxSurfaces {
+    has mins: Vec3,
+        maxs: Vec3,
+        faces: list[int] = [],
+        seen: set[int] = set();
+
+    can split with Split entry {
+        n = here.normal;
+        # BoxOnPlaneSide: the box's nearest and farthest corners.
+        far = (n.x * (self.maxs.x if n.x >= 0.0 else self.mins.x))
+            + (n.y * (self.maxs.y if n.y >= 0.0 else self.mins.y))
+            + (n.z * (self.maxs.z if n.z >= 0.0 else self.mins.z));
+        near = (n.x * (self.mins.x if n.x >= 0.0 else self.maxs.x))
+            + (n.y * (self.mins.y if n.y >= 0.0 else self.maxs.y))
+            + (n.z * (self.mins.z if n.z >= 0.0 else self.maxs.z));
+        if far >= here.distance {
+            visit [here->:Front:->];
+        }
+        if near < here.distance {
+            visit [here->:Back:->];
+        }
+    }
+
+    can leaf with BspArea entry {
+        for face in here.faces {
+            if face not in self.seen {
+                self.seen.add(face);
+                self.faces.append(face);
+            }
+        }
+    }
+}
+
+"""Q3 R_MarkFragments over a level's world faces: the polygon's edge planes
+along the projection, and planes 32 units beyond and 20 before it, cut each
+face that faces the projection (planar faces within 60 degrees of it,
+patch triangles steeper than 0.1 or 0.05), leaving out SURF_NOIMPACT,
+SURF_NOMARKS and fog surfaces and triangle soups."""
+node BspMarkSurfaces(MarkSurfaces) {
+    has head: Split | None = None,
+        faces: list[Face] = [],
+        textures: list[Texture] = [];
+
+    def fragments(points: list[Vec3], projection: Vec3) -> list[list[Vec3]] {
+        head = self.head;
+        if head is None or len(points) < 3 {
+            return [];
+        }
+        direction = projection.normalized();
+        low = points[0].add(Vec3());
+        high = points[0].add(Vec3());
+        for point in points {
+            for corner in [point, point.add(projection), point.sub(direction.scale(20.0))] {
+                low = Vec3(x=min(low.x, corner.x), y=min(low.y, corner.y), z=min(low.z, corner.z));
+                high = Vec3(x=max(high.x, corner.x), y=max(high.y, corner.y), z=max(high.z, corner.z));
+            }
+        }
+        normals: list[Vec3] = [];
+        dists: list[float] = [];
+        for i in range(len(points)) {
+            side = points[(i + 1) % len(points)].sub(points[i]);
+            normal = side.cross(projection.scale(-1.0)).normalized();
+            normals.append(normal);
+            dists.append(normal.dot(points[i]));
+        }
+        normals.append(direction);
+        dists.append(direction.dot(points[0]) - 32.0);
+        normals.append(direction.scale(-1.0));
+        dists.append(direction.scale(-1.0).dot(points[0]) - 20.0);
+        found = head spawn BoxSurfaces(mins=low, maxs=high);
+        result: list[list[Vec3]] = [];
+        for index in found.faces {
+            face = self.faces[index];
+            material = self.textures[face.texture] if face.texture < len(self.textures) else Texture();
+            # SURF_NOIMPACT (0x10), SURF_NOMARKS (0x20), CONTENTS_FOG (64).
+            if material.flags & 48 != 0 or material.contents & 64 != 0 {
+                continue;
+            }
+            if face.planar {
+                if face.normal.dot(direction) > -0.5 or not mark_plane_crosses(face.normal, face.plane_dist, low, high) {
+                    continue;
+                }
+            } elif not face.patch {
+                continue;
+            }
+            for t in range(len(face.indices) // 3) {
+                triangle = [face.vertices[face.indices[t * 3 + k]] for k in range(3)];
+                if face.patch {
+                    normal = triangle[0].sub(triangle[1]).cross(triangle[2].sub(triangle[1])).normalized();
+                    if normal.dot(direction) >= -0.1 and normal.scale(-1.0).dot(direction) >= -0.1 {
+                        continue;
+                    }
+                }
+                piece = triangle;
+                for p in range(len(normals)) {
+                    piece = chop_behind_plane(piece, normals[p], dists[p], 0.5);
+                    if not piece {
+                        break;
+                    }
+                }
+                if len(piece) >= 3 {
+                    result.append(piece);
+                }
+            }
+        }
+        return result;
+    }
+}
+
+"""Whether a plane passes through the box (BoxOnPlaneSide answers 3)."""
+def mark_plane_crosses(normal: Vec3, distance: float, mins: Vec3, maxs: Vec3) -> bool {
+    far = (normal.x * (maxs.x if normal.x >= 0.0 else mins.x))
+        + (normal.y * (maxs.y if normal.y >= 0.0 else mins.y))
+        + (normal.z * (maxs.z if normal.z >= 0.0 else mins.z));
+    near = (normal.x * (mins.x if normal.x >= 0.0 else maxs.x))
+        + (normal.y * (mins.y if normal.y >= 0.0 else maxs.y))
+        + (normal.z * (mins.z if normal.z >= 0.0 else maxs.z));
+    return far >= distance and near < distance;
+}
+
+"""R_ChopPolyBehindPlane: the part of `points` in front of the plane, points
+within `epsilon` of it counting as on it; nothing when all are behind."""
+def chop_behind_plane(points: list[Vec3], normal: Vec3, distance: float, epsilon: float) -> list[Vec3] {
+    count = len(points);
+    dists: list[float] = [];
+    sides: list[int] = [];
+    fronts = 0;
+    backs = 0;
+    for point in points {
+        d = point.dot(normal) - distance;
+        dists.append(d);
+        side = 0 if d > epsilon else (1 if d < -epsilon else 2);
+        sides.append(side);
+        if side == 0 {
+            fronts += 1;
+        } elif side == 1 {
+            backs += 1;
+        }
+    }
+    if fronts == 0 {
+        return [];
+    }
+    if backs == 0 {
+        return points;
+    }
+    out: list[Vec3] = [];
+    for i in range(count) {
+        point = points[i];
+        if sides[i] == 2 {
+            out.append(point);
+            continue;
+        }
+        if sides[i] == 0 {
+            out.append(point);
+        }
+        following = sides[(i + 1) % count];
+        if following == 2 or following == sides[i] {
+            continue;
+        }
+        span = dists[i] - dists[(i + 1) % count];
+        share = 0.0 if span == 0.0 else dists[i] / span;
+        out.append(point.lerp(points[(i + 1) % count], share));
+    }
+    return out;
 }
 
 walker CollectFaces {
@@ -546,6 +717,17 @@ def prepare_level(world: World, level: Level) {
     load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_trains(world, level.bsp, level.collision);
+    # The particles and puffs the level's effects spawn, in this game's kinds.
+    particle_field(world, game);
+    # Q3 marks are cut to the world's faces (R_MarkFragments).
+    if game == "q3" {
+        head = level.bsp.models[0].head if level.bsp.models else -1;
+        world +>:HasMarkSurfaces:+> BspMarkSurfaces(
+            head=level.splits[head] if 0 <= head < len(level.splits) else None,
+            faces=level.bsp.faces,
+            textures=level.bsp.textures
+        );
+    }
     styles = load_light_styles(world, level.bsp);
     if game in ["q1", "q2"] {
         # Models take the light of the lightmaps below them (R_LightPoint),
