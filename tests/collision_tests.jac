@@ -1,5 +1,5 @@
 import from engine.physics.collision { HullCell, HullFront, HullBack, CollisionMap }
-import from engine.physics.movement { slide, step_slide, MovePlayer }
+import from engine.physics.movement { slide, step_slide, MovePlayer, movement_profile }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.world { Player }
 
@@ -129,11 +129,11 @@ test "walking up and down a ramp stays on the ground at full speed" {
             collision = ramp_map(False);
             player = Player(pos=Vec3(z=22.04));
             for i in range(240) {
-                player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), game=game);
+                player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), profile=movement_profile(game));
                 assert player.grounded;
             }
             start = player.pos.x;
-            player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), game=game);
+            player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), profile=movement_profile(game));
             assert abs(abs(player.pos.x - start) - 320.0 / 120.0) < 0.01;
         }
     }
@@ -142,8 +142,8 @@ test "walking up and down a ramp stays on the ground at full speed" {
 test "a jump still leaves a ramp" {
     collision = ramp_map(False);
     player = Player(pos=Vec3(z=22.04));
-    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), jump=True, game="q1");
-    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game="q1");
+    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), jump=True, profile=movement_profile("q1"));
+    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), profile=movement_profile("q1"));
     assert not player.grounded and player.velocity.z > 0.0;
 }
 
@@ -153,7 +153,7 @@ test "Q1 and Q2 walk over a ramp's crest while Q3 kicks off it" {
         player = Player(pos=Vec3(x=-40.0, z=-28.0 + 22.04));
         airborne = 0;
         for i in range(120) {
-            player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game=game);
+            player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), profile=movement_profile(game));
             if not player.grounded {
                 airborne += 1;
             }
