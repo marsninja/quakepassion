@@ -60,14 +60,11 @@ obj HullStep {
 }
 
 """Something a mover may push: the entity, the collision view that traces its
-own box, and its `lift`, the entity's position less its box origin. `solid`
-bodies block a mover they cannot be pushed out of; the rest (Q1 items and
-corpses, SOLID_TRIGGER and SOLID_NOT) are left where they were pushed."""
+own box, and its `lift`, the entity's position less its box origin."""
 obj Pushable {
     has entity: Entity,
         view: CollisionMap,
         lift: Vec3 = Vec3(),
-        solid: bool = True,
         client: bool = False;
 
     def origin() -> Vec3 {
@@ -81,6 +78,35 @@ obj Pushable {
             return body.velocity.z <= 0.0;
         }
         return True;
+    }
+
+    """Whether it is in the world to be pushed: a monster awake, or its
+    corpse still lying there; an item neither still carried by a monster
+    nor in the air."""
+    def present() -> bool {
+        body = self.entity;
+        if isinstance(body, Opponent) {
+            return not body.dormant
+                and (body.health > 0 or (not body.gibbed and body.visual.visible));
+        }
+        if isinstance(body, Pickup) {
+            return not in_flight(body) and not [body<-:Drops:<-];
+        }
+        return True;
+    }
+
+    """Whether it blocks a mover it cannot be pushed out of: the living, and
+    Q2/Q3 items in the world (which their movers clear away). Q1 items and
+    corpses (SOLID_TRIGGER, SOLID_NOT) are left where they were pushed."""
+    def blocks(game: str) -> bool {
+        body = self.entity;
+        if isinstance(body, Player) {
+            return body.health > 0;
+        }
+        if isinstance(body, Pickup) {
+            return game != "q1" and body.active;
+        }
+        return False;
     }
 }
 
@@ -153,7 +179,11 @@ def held_by(body: Pushable, steps: list[HullStep]) -> HullStep | None {
 """The bodies standing on any of these hulls."""
 def riders_of(hulls: list[int], bodies: list[Pushable]) -> list[Pushable] {
     steps = [HullStep(index=index, offset_from=Vec3(), offset_to=Vec3()) for index in hulls];
-    return [body for body in bodies if held_by(body, steps) is not None];
+    return [
+        body
+        for body in bodies
+        if held_by(body, steps) is not None and body.present()
+    ];
 }
 
 """Put the hulls in their `to` pose (or back in their `from` pose)."""
@@ -173,18 +203,30 @@ every body back where they were."""
 def push_move(
     collision: CollisionMap, steps: list[HullStep], bodies: list[Pushable], game: str
 ) -> Pushable | None {
-    holds = [held_by(body, steps) for body in bodies];
+    # Only bodies within reach of a moving hull are looked at further.
+    nearby: list[Pushable] = [];
+    reach: list[list[HullStep]] = [];
+    for body in bodies {
+        origin = body.origin();
+        margin = reach_margin(body.view);
+        close = [step for step in steps if step.near(body.view, origin, margin)];
+        if close and body.present() {
+            nearby.append(body);
+            reach.append(close);
+        }
+    }
+    holds = [held_by(nearby[i], reach[i]) for i in range(len(nearby))];
     place_steps(collision, steps, True);
     moved: list[Pushable] = [];
     places: list[Vec3] = [];
     carriers: list[HullStep] = [];
     indices = [step.index for step in steps];
-    for i in range(len(bodies)) {
-        body = bodies[i];
+    for i in range(len(nearby)) {
+        body = nearby[i];
         step = holds[i];
         rider = step is not None;
         if step is None {
-            for candidate in steps {
+            for candidate in reach[i] {
                 if caught_by(body, candidate) {
                     step = candidate;
                     break;
@@ -214,7 +256,7 @@ def push_move(
             continue;
         }
         # Q1 SV_PushMove: a trigger or corpse is squashed where it was pushed.
-        if not body.solid {
+        if not body.blocks(game) {
             moved.append(body);
             places.append(destination);
             carriers.append(step);
@@ -230,7 +272,7 @@ def push_move(
         if not isinstance(entity, Player) {
             continue;
         }
-        if held_step(body, bodies, holds) is not None {
+        if held_step(body, nearby, holds) is not None {
             entity.grounded = True;
         }
         # Q2 delta_angles / Q3 ps.delta_angles: a player's view turns with
@@ -265,17 +307,30 @@ def clear_item(world: World, item: Pickup, game: str) {
     remove_pickup(world, item);
 }
 
-"""Gather everything a mover can push this tick, each with the view that
-traces its own box: the player; living monsters and corpses (Q1's and
-Q2's MOVETYPE_STEP bodies; bosses and figures that never move stay put);
-and items (MOVETYPE_TOSS in Q1/Q2, riding movers by groundEntityNum in
-Q3), except those still carried or thrown."""
+"""Everything movers can push but the player, kept from tick to tick with
+each body's view: rebuilt only when items or monsters come or go."""
+node PushRoster {
+    has serial: int = -1,
+        monsters: int = -1,
+        items: int = -1,
+        game: str = "",
+        bodies: list[Pushable] = [];
+}
+
+edge HasPushRoster: World --> PushRoster {}
+
+"""Gather everything a mover can push, each with the view that traces its
+own box: the player; monsters and their corpses (Q1's and Q2's
+MOVETYPE_STEP bodies; bosses and figures that never move stay put); and
+items (MOVETYPE_TOSS in Q1/Q2, riding movers by groundEntityNum in Q3).
+Whether each is in the world to be pushed is judged as it is pushed."""
 walker GatherPushables {
     has collision: CollisionMap,
         game: str = "",
         player: Player | None = None,
         bodies: list[Pushable] = [],
-        views: dict[str, CollisionMap] = {};
+        views: dict[str, CollisionMap] = {},
+        roster: PushRoster | None = None;
 
     can begin with World entry {
         person = self.player;
@@ -285,55 +340,71 @@ walker GatherPushables {
                     entity=person,
                     view=self.collision,
                     lift=Vec3(z=self.collision.eye_height),
-                    solid=person.health > 0,
                     client=True
                 )
             );
         }
-        visit [here->:HasOpponent:->];
-        visit [here->:HasPickup:->];
+        rosters = [here->:HasPushRoster:->][?:PushRoster];
+        if not rosters {
+            fresh = PushRoster();
+            here +>:HasPushRoster:+> fresh;
+            rosters = [fresh];
+        }
+        roster = rosters[0];
+        monsters = [here->:HasOpponent:->];
+        items = [here->:HasPickup:->];
+        if roster.serial == here.item_serial
+            and roster.monsters == len(monsters)
+            and roster.items == len(items)
+            and roster.game == self.game {
+            self.bodies.extend(roster.bodies);
+            return;
+        }
+        roster.serial = here.item_serial;
+        roster.monsters = len(monsters);
+        roster.items = len(items);
+        roster.game = self.game;
+        roster.bodies = [];
+        self.roster = roster;
+        visit monsters;
+        visit items;
     }
 
     can monster with Opponent entry {
         rule = here.rule;
-        if here.dormant
-            or rule.script
+        if rule.script
             or rule.decoration
             or rule.movement == "none"
-            or (rule.inert and self.game == "q1")
-            or (here.health <= 0 and (here.gibbed or not here.visual.visible)) {
+            or (rule.inert and self.game == "q1") {
             return;
         }
         key = "monster:" + monster_body_key(here);
         if key not in self.views {
             self.views[key] = monster_collision(self.collision, here);
         }
-        self.bodies.append(
+        self.enlist(
             Pushable(
                 entity=here,
                 view=self.views[key],
                 lift=Vec3(z=here.eye_height),
-                solid=here.health > 0,
                 client=here.arena
             )
         );
     }
 
     can item with Pickup entry {
-        if [here<-:Drops:<-] or in_flight(here) {
-            return;
-        }
         key = "item:" + self.game;
         if key not in self.views {
             self.views[key] = item_view(self.collision, self.game);
         }
-        self.bodies.append(
-            Pushable(
-                entity=here,
-                view=self.views[key],
-                lift=item_lift(self.game),
-                solid=self.game != "q1" and here.active
-            )
-        );
+        self.enlist(Pushable(entity=here, view=self.views[key], lift=item_lift(self.game)));
+    }
+
+    def enlist(body: Pushable) {
+        self.bodies.append(body);
+        roster = self.roster;
+        if roster is not None {
+            roster.bodies.append(body);
+        }
     }
 }
