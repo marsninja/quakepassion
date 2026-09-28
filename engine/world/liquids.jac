@@ -1,20 +1,26 @@
 """Exact point-content queries for Q2/Q3 liquid brushes."""
-import from ..formats.bsp { Bsp }
+import from ..formats.bsp { Bsp, brush_current_bits }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
 edge HasLiquid: LiquidSpace --> LiquidVolume {}
 node LiquidSpace {}
+"""The liquid brushes of one kind (and, in Q2, one current) in one model."""
 node LiquidVolume {
     has kind: int,
         volume: CollisionMap,
         model: int = 0,
-        offset: Vec3 = Vec3();
+        offset: Vec3 = Vec3(),
+        currents: int = 0;
 }
 
+"""Point contents over the liquid volumes: the thickest liquid at the point
+and the current bits of every volume holding it (Q2 CM_PointContents ORs
+the contents of each brush the point lies in)."""
 walker SampleLiquid {
     has point: Vec3,
-        result: int = 0;
+        result: int = 0,
+        currents: int = 0;
 
     can begin with LiquidSpace entry {
         visit [here->:HasLiquid:->];
@@ -24,18 +30,34 @@ walker SampleLiquid {
         local = self.point.sub(here.offset);
         if here.volume.trace(local, local).start_solid {
             self.result = max(self.result, here.kind);
+            self.currents = self.currents | here.currents;
         }
     }
 }
 
-obj Immersion {
-    has depth: int = 0,
-        kind: int = 0;
+"""What one point lies in: its liquid kind and Q2 current bits."""
+obj LiquidSample {
+    has kind: int = 0,
+        currents: int = 0;
 }
 
-# Canonical contents: 0 dry, 1 water, 2 slime, 3 lava.
+"""How deep a body stands in liquid (Q1 SV_CheckWater, Q2
+PM_CatagorizePosition, Q3 PM_SetWaterLevel waterlevel), the worst liquid
+it touches, and the current pushing at its feet (Q2 pm->watertype's
+CONTENTS_CURRENT_* as a direction, zero without one)."""
+obj Immersion {
+    has depth: int = 0,
+        kind: int = 0,
+        current: Vec3 = Vec3();
+}
+
+# Canonical contents: 0 dry, 1 water, 2 slime, 3 lava. Q1 SV_PointContents
+# counts the CONTENTS_CURRENT_* leaves (-9 to -14) as water.
 def liquid_kind(contents: int, game: str) -> int {
     if game == "q1" {
+        if contents <= -9 and contents >= -14 {
+            return 1;
+        }
         return -contents - 2 if contents >= -5 and contents <= -3 else 0;
     }
     if contents & 8 {
@@ -47,31 +69,44 @@ def liquid_kind(contents: int, game: str) -> int {
     return 1 if contents & 32 else 0;
 }
 
+"""Link one volume per liquid kind and current among `model`'s brushes."""
+def add_liquid_volumes(space: LiquidSpace, bsp: Bsp, model: int) {
+    groups: dict[int, CollisionMap] = {};
+    order: list[int] = [];
+    for index in bsp.models[model].brushes {
+        brush = bsp.brushes[index];
+        kind = liquid_kind(brush.contents, bsp.game);
+        if kind == 0 or not brush.planes {
+            continue;
+        }
+        key = kind | brush_current_bits(brush.contents, bsp.game);
+        if key not in groups {
+            groups[key] = CollisionMap();
+            order.append(key);
+        }
+        normals: list[Vec3] = [];
+        distances: list[float] = [];
+        for plane in brush.planes {
+            normals.append(bsp.planes[plane].normal);
+            distances.append(bsp.planes[plane].distance);
+        }
+        groups[key].add_brush(normals, distances, Vec3(), Vec3(), Vec3());
+    }
+    for key in order {
+        volume = groups[key];
+        volume.reindex();
+        space +>:HasLiquid:+> LiquidVolume(
+            kind=key & 3, volume=volume, model=model, currents=key & 0xFC0000
+        );
+    }
+}
+
 def load_liquids(bsp: Bsp) -> LiquidSpace {
     space = LiquidSpace();
     if bsp.game == "q1" or not bsp.models {
         return space;
     }
-    for kind in [1, 2, 3] {
-        volume = CollisionMap();
-        for index in bsp.models[0].brushes {
-            brush = bsp.brushes[index];
-            if liquid_kind(brush.contents, bsp.game) != kind or not brush.planes {
-                continue;
-            }
-            normals: list[Vec3] = [];
-            distances: list[float] = [];
-            for index in brush.planes {
-                normals.append(bsp.planes[index].normal);
-                distances.append(bsp.planes[index].distance);
-            }
-            volume.add_brush(normals, distances, Vec3(), Vec3(), Vec3());
-        }
-        if volume.hulls {
-            volume.reindex();
-            space +>:HasLiquid:+> LiquidVolume(kind=kind, volume=volume);
-        }
-    }
+    add_liquid_volumes(space, bsp, 0);
     # Q2 func_water: a door-like mover whose brushes are liquid.
     for entity in bsp.entities {
         reference = entity.fields.get("model", "");
@@ -82,26 +117,7 @@ def load_liquids(bsp: Bsp) -> LiquidSpace {
         if model <= 0 or model >= len(bsp.models) {
             continue;
         }
-        for kind in [1, 2, 3] {
-            volume = CollisionMap();
-            for index in bsp.models[model].brushes {
-                brush = bsp.brushes[index];
-                if liquid_kind(brush.contents, bsp.game) != kind or not brush.planes {
-                    continue;
-                }
-                normals: list[Vec3] = [];
-                distances: list[float] = [];
-                for plane in brush.planes {
-                    normals.append(bsp.planes[plane].normal);
-                    distances.append(bsp.planes[plane].distance);
-                }
-                volume.add_brush(normals, distances, Vec3(), Vec3(), Vec3());
-            }
-            if volume.hulls {
-                volume.reindex();
-                space +>:HasLiquid:+> LiquidVolume(kind=kind, volume=volume, model=model);
-            }
-        }
+        add_liquid_volumes(space, bsp, model);
     }
     return space;
 }
