@@ -13,6 +13,7 @@ import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactInd
 import from engine.world.bot_ai { BotTactics }
 import from engine.world.pickups { PickupTick }
 import from engine.world.doors { DoorTick }
+import from engine.world.rotators { RotatorTick }
 import from engine.world.models { PlayerRig }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
@@ -71,6 +72,8 @@ with entry {
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt);
             # Bots open doors by walking into their trigger fields (Touch_DoorTrigger).
             world spawn DoorTick(bsp=level.bsp, collision=level.collision, player_origin=player.pos, dt=dt, touching=False);
+            # Bobbing platforms carry bots across (q3dm19, q3tourney6).
+            world spawn RotatorTick(bsp=level.bsp, collision=level.collision, dt=dt);
             world spawn CombatTick(player=player, collision=level.collision, state=state, dt=dt, arena_live=True);
             world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=dt);
             world spawn ProjectileTick(player=player, collision=level.collision, state=state, dt=dt);

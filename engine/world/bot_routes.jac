@@ -474,6 +474,17 @@ def plan_route(
 hundredths of a second to the goal area with the travel `flags` (1 within
 it), or 0 when it cannot be reached or its table is still being built."""
 def area_travel_time(mesh: NavMesh, area: int, origin: Vec3, goal_area: int, flags: int = TFL_DEFAULT) -> int {
+    if area == 0 {
+        return 0;
+    }
+    return exits_travel_time(mesh, area, [mesh.areas[area]->:Exits:->][?:Passage], origin, goal_area, flags);
+}
+
+"""area_travel_time with the passages out of `area` already gathered (a
+goal choice rates many items from one spot)."""
+def exits_travel_time(
+    mesh: NavMesh, area: int, exits: list[Passage], origin: Vec3, goal_area: int, flags: int = TFL_DEFAULT
+) -> int {
     if area == 0 or goal_area == 0 {
         return 0;
     }
@@ -486,7 +497,7 @@ def area_travel_time(mesh: NavMesh, area: int, origin: Vec3, goal_area: int, fla
     }
     # The table runs from the area's centre; the bot starts at its origin.
     best = UNREACHED;
-    for passage in [mesh.areas[area]->:Exits:->][?:Passage] {
+    for passage in exits {
         if times[passage.target] >= UNREACHED or passage.flags & ~flags {
             continue;
         }

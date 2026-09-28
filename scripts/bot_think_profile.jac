@@ -1,6 +1,6 @@
 """How long the bots' part of a frame takes: QP_SECONDS (default 30) of play
 on each map in QP_MAPS (default q3dm12, the heaviest ladder arena, and q3dm7),
-timing the navigation, combat (movement and routes) and bot (AI and aim)
+timing the navigation, doors, combat (movement and routes) and bot (AI and aim)
 walkers per 120 Hz tick."""
 import os;
 import time;
@@ -36,6 +36,7 @@ with entry {
         contacts = ArenaContactIndex();
         spent_nav = 0.0;
         spent_combat = 0.0;
+        spent_doors = 0.0;
         spent_bots = 0.0;
         worst = 0.0;
         ticks = int(seconds / dt);
@@ -44,6 +45,7 @@ with entry {
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt);
             navigated = time.perf_counter();
             world spawn DoorTick(bsp=level.bsp, collision=level.collision, player_origin=player.pos, dt=dt, touching=False);
+            opened = time.perf_counter();
             world spawn CombatTick(player=player, collision=level.collision, state=state, dt=dt, arena_live=True);
             fought = time.perf_counter();
             world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=dt);
@@ -54,13 +56,15 @@ with entry {
             state.messages = [];
             state.cues = [];
             spent_nav += navigated - began;
-            spent_combat += fought - navigated;
+            spent_doors += opened - navigated;
+            spent_combat += fought - opened;
             spent_bots += thought - fought;
             worst = max(worst, thought - began);
         }
         bots = len([bot for bot in [world->:HasOpponent:->][?:Opponent] if bot.arena]);
         print("PROFILE " + name + " bots " + str(bots) + " ms/tick navigation "
-            + str(round(1000.0 * spent_nav / float(ticks), 3)) + " combat "
+            + str(round(1000.0 * spent_nav / float(ticks), 3)) + " doors "
+            + str(round(1000.0 * spent_doors / float(ticks), 3)) + " combat "
             + str(round(1000.0 * spent_combat / float(ticks), 3)) + " bots "
             + str(round(1000.0 * spent_bots / float(ticks), 3)) + " worst tick "
             + str(round(1000.0 * worst, 2)));

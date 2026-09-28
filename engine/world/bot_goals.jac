@@ -13,7 +13,7 @@ import math;
 import from .world { World, Actor }
 import from .pickups { Pickup, HasPickup }
 import from .drops { in_flight }
-import from .bot_routes { NavMesh, area_travel_time }
+import from .bot_routes { NavMesh, Passage, Exits, area_travel_time, exits_travel_time }
 import from ..formats.aas { AREACONTENTS_WATER }
 import from ..formats.botconfig { ItemInfo, WeightConfig, WeightDice }
 import from ..physics.collision { CollisionMap }
@@ -273,9 +273,11 @@ walker ChooseItemGoal {
         ltg: BotGoal | None = None,
         ltg_time: int = 99999,
         best: LevelItem | None = None,
-        best_weight: float = 0.0;
+        best_weight: float = 0.0,
+        exits: list[Passage] = [];
 
     can survey with BotItems entry {
+        self.exits = [self.mesh.areas[self.area]->:Exits:->][?:Passage];
         ltg = self.ltg;
         if self.max_time > 0.0 and ltg is not None {
             self.ltg_time = area_travel_time(self.mesh, self.area, self.origin, ltg.area, self.flags);
@@ -298,7 +300,7 @@ walker ChooseItemGoal {
         if weight <= 0.0 {
             return;
         }
-        t = area_travel_time(self.mesh, self.area, self.origin, here.goal_area, self.flags);
+        t = exits_travel_time(self.mesh, self.area, self.exits, self.origin, here.goal_area, self.flags);
         if t <= 0 or (self.max_time > 0.0 and float(t) >= self.max_time) {
             return;
         }
