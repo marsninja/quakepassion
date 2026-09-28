@@ -2791,7 +2791,7 @@ impl App.cinematic_step(dt: float) -> bool {
     finished = self.cinematic.advance(dt, False, self.audio);
     script = self.scripted;
     held = (script is not None and (script.fire or script.jump))
-        or (not self.smoke and self.keyboard.any_down());
+        or (not self.smoke and not self.console.active and self.keyboard.any_down());
     if finished or self.cinematic.wants_skip(held) {
         self.finish_cinematic();
     }
