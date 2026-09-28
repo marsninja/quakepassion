@@ -1,5 +1,6 @@
 """Weapon-sized queries preserve geometry independently of player hull expansion."""
 import from engine.physics.collision { CollisionMap }
+import from engine.physics.patch_collide { generate_patch_collide }
 import from engine.math.vec3 { Vec3 }
 import from engine.formats.bsp { Bsp, Branch, Leaf, Model, Plane, MapEntity }
 import from engine.formats.q1.collision { build_collision }
@@ -58,29 +59,36 @@ test "nearest translated submodel wins regardless of hull insertion order" {
     assert hit.model == 1 and abs(hit.end.x - 90.0) < 0.000001;
 }
 
-test "point traces cross triangles from either side without triangle box false positives" {
+test "point traces cross patch facets from behind without facet box false positives" {
     collision = CollisionMap();
-    collision.add_triangle(
-        Vec3(),
-        Vec3(x=10.0),
-        Vec3(y=10.0),
+    points: list[Vec3] = [];
+    for row in range(3) {
+        for column in range(3) {
+            points.append(Vec3(x=float(column) * 5.0, y=float(row) * 5.0));
+        }
+    }
+    collision.add_patch(
+        generate_patch_collide(3, 3, points),
         Vec3(x=-16.0, y=-16.0, z=-24.0),
         Vec3(x=16.0, y=16.0, z=32.0),
         Vec3()
     );
     collision.reindex();
-    for sign in [-1.0, 1.0] {
-        hit = collision.trace_point(
-            Vec3(x=2.0, y=2.0, z=sign * 10.0), Vec3(x=2.0, y=2.0, z=-sign * 10.0)
-        );
-        assert abs(hit.fraction - 0.5) < 0.000001;
-        assert hit.normal.z == sign and not hit.start_solid;
-        miss = collision.trace_point(
-            Vec3(x=9.0, y=9.0, z=sign * 10.0), Vec3(x=9.0, y=9.0, z=-sign * 10.0)
-        );
-        assert miss.fraction == 1.0;
-    }
-    assert collision.trace_point(Vec3(z=1.0), Vec3(x=8.0, z=1.0)).fraction == 1.0;
+    # CM_TracePointThroughPatchCollide: the front side stops the point
+    # SURFACE_CLIP_EPSILON short; the back side does not stop it at all.
+    hit = collision.trace_point(Vec3(x=2.0, y=3.0, z=10.0), Vec3(x=2.0, y=3.0, z=-10.0));
+    assert abs(hit.end.z - 0.125) < 0.000001 and hit.normal.z == 1.0 and not hit.start_solid;
+    assert collision.trace_point(
+        Vec3(x=2.0, y=3.0, z=-10.0), Vec3(x=2.0, y=3.0, z=10.0)
+    ).fraction
+        == 1.0;
+    # Within the box-expanded bounds but past the facet's edge.
+    assert collision.trace_point(
+        Vec3(x=12.0, y=3.0, z=10.0), Vec3(x=12.0, y=3.0, z=-10.0)
+    ).fraction
+        == 1.0;
+    assert collision.trace_point(Vec3(x=-5.0, y=3.0, z=1.0), Vec3(x=15.0, y=3.0, z=1.0)).fraction
+        == 1.0;
 }
 
 test "Quake one point queries use render BSP leaves and share mover offsets" {

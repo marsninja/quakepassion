@@ -103,8 +103,13 @@ arsenal and audio acceptance now cover **28 weapons**. The original-map campaign
 smoke additionally carries a cooking grenade from Q2 `base1` to `base2`, saves,
 reloads and revisits the hub while preserving its state. That harness uses an
 explicit test save path instead of changing HOME or overwriting the user's save.
-Pin/cooking sound loops, exact first-person animation timing, dropped live grenades on death,
-and exact weapon-raise/lower timing remain open.
+The Q2 hand grenade now pulls its pin with `weapons/hgrena1b.wav` as
+gunframe 5 passes, ticks (`weapons/hgrenc1b.wav`, the player's
+`weapon_sound`) from the pin's release until the throw, and a thrown grenade
+keeps ticking in flight. A player who dies with the pin out lets it go with no
+time left, so it bursts in the hand (`Think_Weapon` → `ChangeWeapon` →
+`weapon_grenade_fire`). Exact first-person animation timing and exact
+weapon-raise/lower timing remain open.
 
 Original first-person gun models and basic firing/idle/raise poses are now
 integrated for all 28 weapons. See [viewweapon status](viewweapons-status.md)

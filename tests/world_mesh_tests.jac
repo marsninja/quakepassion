@@ -15,7 +15,7 @@ import from engine.render.world_mesh {
     PASS_BASE,
     PASS_FOG
 }
-import from engine.render.quake { tcmod_steps, apply_tcmods, stage_affine, placement_matrix, same_placement, moved_face }
+import from engine.render.quake { tcmod_steps, apply_tcmods, stage_affine, placed_matrix, same_placement, moved_face }
 import from engine.formats.bsp { Face }
 import from engine.formats.animated { ModelStage, TexMod, ShaderWave }
 import from engine.math.vec3 { Vec3 }
@@ -159,7 +159,7 @@ test "brush placements become model matrices about the pivot" {
     face.pivot = Vec3(x=10.0, y=5.0);
     face.motion = Vec3(z=32.0);
     assert moved_face(face);
-    m = placement_matrix(face);
+    m = placed_matrix(face.pivot, face.motion, face.turn);
     v = Vec3(x=20.0, y=5.0, z=3.0);
     placed = face.pivot.add(face.turn.apply(v.sub(face.pivot))).add(face.motion);
     x = float(m.m0) * v.x + float(m.m4) * v.y + float(m.m8) * v.z + float(m.m12);

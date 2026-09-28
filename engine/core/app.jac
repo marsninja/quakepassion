@@ -13,8 +13,7 @@ import from ..world.finale {
     HasFinale,
     intermission_camera,
     episode_text,
-    RUNES_TEXT,
-    VICTORY_TEXT
+    RUNES_TEXT
 }
 import from ..world.trains { TrainTick, ShootMover, BlastMover }
 import from ..world.signals { SignalTick, progress_summary, progress_for }
@@ -23,15 +22,17 @@ import from ..world.speakers { SpeakerTick }
 import from ..world.brushes { BrushTick, ShootBrush, BlastBrush }
 
 import os;
-import from games.weapons { equip_player, weapon_sounds, weapon_effects }
+import from games.weapons { equip_player, weapon_sounds, weapon_effects, missile_sounds }
 import from .campaign { Campaign, Remember, Recall, pack_campaign, unpack_campaign }
 import from .preferences { Preferences }
-import from ..audio.feedback { Feedback }
+import from ..audio.feedback { Feedback, sound_falloff, q2_client_sound }
+import from ..audio.streams { level_music }
+import from .cinematic { CinematicPlayer }
 import from .savegame { snapshot, restore, write_save, read_save }
 import from ..world.doors { DoorTick }
 import from ..world.rotators { RotatorTick }
 import from ..world.shooters { ShooterTick }
-import from ..world.targets { TargetTick, HasHelp, HelpComputer }
+import from ..world.targets { TargetTick, HasHelp, HelpComputer, carry_help }
 import from ..world.triggers { TriggerTick, ShootTrigger, MonsterJumpTick }
 import from ..world.traversal { TraversalTick, TeleportMonsters }
 import from ..world.arena_navigation {
@@ -93,12 +94,13 @@ import from ..world.combat {
     pickup_switch,
     selected_weapon,
     owns_weapon,
+    release_live_grenade,
     KillBox,
     ClearActors
 }
 import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
 import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
-import from ..render.view_feedback { ViewFeedback, death_view }
+import from ..render.view_feedback { ViewFeedback }
 import from ..world.light_effects { combat_lights }
 import from ..world.teardown { destroy_graph, collision_roots }
 import from games.opponents { populate_opponents, populate_finale }
@@ -131,11 +133,13 @@ import from ..render.viewweapon { ViewWeapon }
 import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
 import from ..world.models { PlayerRig, ModelResource, Wears }
-import from ..world.level { Level, load_level, spawn_player }
+import from ..world.level { Level, load_level, spawn_player, Q1_SERVER_START }
 import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
+import from ..math.interpolation { TickBlend }
+import from ..world.motion { CaptureMotion }
 import from ..physics.movement { MovePlayer, SetStance }
 import from ..input.input {
     Intent,
@@ -143,6 +147,7 @@ import from ..input.input {
     mouse_captured,
     IsKeyPressed,
     IsMouseButtonPressed,
+    any_key_down,
     _capture,
     _release
 }
@@ -223,6 +228,9 @@ obj App {
         jump_pending: bool = False,
         arena_contacts: ArenaContactIndex = ArenaContactIndex(),
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
+        # The last physics tick run and how far the frame is through the
+        # next: frames draw bodies between their last two ticks.
+        tick_blend: TickBlend = TickBlend(),
         movement_status: str = "F4: walk / fly",
         save_path: str = "",
         notice: str = "",
@@ -274,6 +282,18 @@ obj App {
         help_open: bool = False,
         inventory_open: bool = False,
         entry_save: str = "";
+    # Q2 films and end pictures (cl_cin.c), and where the game goes when one
+    # finishes (sv_init.c SV_Map's nextserver): a map with its spawnpoint and
+    # unit flag, a .pcx picture, nothing (the game is over), or back to the
+    # level already loaded (`cinematic_resume`, newgame's ntro.cin). `opening`
+    # is a map request whose film plays before the first level.
+    has cinematic: CinematicPlayer = CinematicPlayer(),
+        cinematic_next: str = "",
+        cinematic_spawn: str = "",
+        cinematic_unit: bool = False,
+        cinematic_resume: bool = False,
+        pending_cinematic: str = "",
+        opening: str = "";
 
     def begin_intermission(text: str);
     """Show the end-of-level stats at the intermission camera, then go on to
@@ -289,6 +309,25 @@ obj App {
     def restart_level();
     """Take the level-entry autosave and count the level's monsters."""
     def record_entry();
+    """SV_Map's film or picture step: play `film` (or show `destination`
+    when it is a .pcx), then go on to `destination`."""
+    def begin_cinematic(
+        film: str,
+        destination: str,
+        spawnpoint: str = "",
+        unit: bool = False,
+        resume: bool = False
+    );
+    """SCR_FinishCinematic and SV_Nextserver: leave the film or picture for
+    what follows it."""
+    def finish_cinematic();
+    """A frame while a film or picture is up: its clock, skipping, drawing."""
+    def cinematic_step(dt: float) -> bool;
+    def draw_cinematic();
+    """Read one of the current game's files (paks first, then loose files)."""
+    def game_asset(path: str) -> bytes;
+    """CG_StartMusic: the level's intro and loop music tracks."""
+    def start_level_music();
     def begin_podium(contest: ArenaMatch);
     def render_portal(faces: list[int]);
     def survey_level();

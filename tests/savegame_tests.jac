@@ -59,3 +59,16 @@ test "snapshots reject mismatched versions maps and incomplete graph records" {
     }
     assert rejected;
 }
+
+test "a level's clock is kept in its saves" {
+    world = World();
+    level = Level();
+    level.name = "test";
+    level.clock = 83.25;
+    player = Player();
+    combat = CombatState();
+    data = snapshot(world, level, player, combat);
+    level.clock = 0.0;
+    restore(world, level, player, combat, data);
+    assert level.clock == 83.25;
+}

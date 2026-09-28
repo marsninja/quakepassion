@@ -35,6 +35,7 @@ import from ..world.particles {
     MARK_FADE_TIME
 }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.interpolation { TickBlend }
 import from .quake { QuakeRenderer }
 import from .gpu {
     GpuMesh,
@@ -570,7 +571,8 @@ obj EffectScene {
         eye: Vec3,
         yaw: float,
         pitch: float,
-        lighting: Lighting = Lighting()
+        lighting: Lighting = Lighting(),
+        blend: TickBlend = TickBlend()
     ) {
         self.quads.open();
         side = right_from(yaw);
@@ -597,14 +599,15 @@ obj EffectScene {
             renderer = self.models[projectile.effect];
             model_frame = int(projectile.age * 10.0)
                 % len(renderer.model.surfaces[0].frames);
+            at = blend.place(projectile.tick_pose, projectile.pos);
             renderer.draw(
-                projectile.pos,
+                at,
                 heading,
                 first=model_frame,
                 second=model_frame,
                 eye=eye,
                 seconds=projectile.age,
-                illumination=lighting.sample(projectile.pos),
+                illumination=lighting.sample(at),
                 basis=model_basis(heading, elevation, spin)
             );
         }
@@ -638,7 +641,7 @@ obj EffectScene {
             sprite = frames[frame_index];
             self.billboard(
                 sprite,
-                projectile.pos,
+                blend.place(projectile.tick_pose, projectile.pos),
                 EFFECT_BLEND_ADD if sprite.additive else EFFECT_BLEND_ALPHA,
                 angle=-sprite.rotate * projectile.age * math.pi / 180.0
             );

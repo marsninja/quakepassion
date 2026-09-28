@@ -132,3 +132,23 @@ impl sample_intent(
         inventory=IsKeyPressed(KEY_TAB)
     );
 }
+
+impl any_key_down() -> bool {
+    # raylib's key codes: the printable range, then the function keys.
+    for key in range(32, 97) {
+        if IsKeyDown(i32(key)) {
+            return True;
+        }
+    }
+    for key in range(256, 349) {
+        if IsKeyDown(i32(key)) {
+            return True;
+        }
+    }
+    for button in range(7) {
+        if IsMouseButtonDown(i32(button)) {
+            return True;
+        }
+    }
+    return False;
+}

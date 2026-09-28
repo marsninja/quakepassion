@@ -59,6 +59,8 @@ import from ..world.portals { surface_plane }
 import from ..formats.bsp { Face, Texture, FogVolume }
 import from ..formats.animated { ModelStage, Deform, TexMod, stage_frame }
 import from ..math.vec3 { Vec3 }
+import from ..math.orientation { Basis }
+import from ..math.interpolation { TickBlend }
 import from ..world.lighting { Lighting, shift_light }
 import from .gpu {
     GpuMesh,
@@ -171,6 +173,8 @@ obj QuakeRenderer {
         time: float = 0.0,
         fog_image: int = 0,
         view_forward: Vec3 = Vec3(x=1.0),
+        # Where between the last two physics ticks this frame falls.
+        blend: TickBlend = TickBlend(),
         cloud_offsets: list[Vec3] = [],
         cloud_points: list[Vec3] = [],
         cloud_coords: list[float] = [],
@@ -752,20 +756,23 @@ obj QuakeRenderer {
             self.brush_signature = signature;
             self.group_brushes(level);
         }
-        # Placements (and per-frame light) follow each group's lead face.
+        # Placements (and per-frame light) follow each group's lead face,
+        # drawn between where the last two physics ticks left it.
         self.brush_matrices = [];
         for group in self.brush_groups {
             lead = faces[group.lead];
-            self.brush_matrices.append(placement_matrix(lead));
+            placed = group.placed(lead, self.blend);
+            motion = placed.motion;
+            turn = placed.turn;
+            self.brush_matrices.append(placed_matrix(lead.pivot, motion, turn));
             if group.lamp {
                 center = lead.vertices[0].lerp(lead.vertices[2], 0.5);
                 facing = lead.normal;
-                turn = lead.turn;
                 if turn is not None {
                     center = lead.pivot.add(turn.apply(center.sub(lead.pivot)));
                     facing = turn.apply(facing);
                 }
-                color = self.lighting.sample(center.add(lead.motion), False).shade(facing);
+                color = self.lighting.sample(center.add(motion), False).shade(facing);
                 group.tint = [
                     float(int(min(255.0, max(0.0, color.x * 255.0)))) / 255.0,
                     float(int(min(255.0, max(0.0, color.y * 255.0)))) / 255.0,
@@ -774,6 +781,15 @@ obj QuakeRenderer {
                 ];
                 group.tint_packed = pack_floats(group.tint);
             }
+        }
+    }
+
+    """A physics tick begins: keep each brush group's placement, which the
+    frames until the next tick blend from."""
+    def hold_placements(level: Level, tick: int) {
+        faces = level.bsp.faces;
+        for group in self.brush_groups {
+            group.hold(faces[group.lead], tick);
         }
     }
 
@@ -2064,18 +2080,16 @@ def moved_face(face: Face) -> bool {
     return face.turn is not None or face.motion.x != 0.0 or face.motion.y != 0.0 or face.motion.z != 0.0;
 }
 
-"""A brush face's placement as a model matrix: turned about its pivot (the
-entity origin), then moved: pivot + turn(v - pivot) + motion."""
-def placement_matrix(face: Face) -> Matrix {
-    turn = face.turn;
+"""A brush face's placement as a model matrix: turned by `turn` about its
+pivot `p` (the entity origin), then moved: p + turn(v - p) + motion."""
+def placed_matrix(p: Vec3, motion: Vec3, turn: Basis | None) -> Matrix {
     if turn is None {
-        return placement_matrix_at(face.motion);
+        return placement_matrix_at(motion);
     }
-    p = face.pivot;
     turned = turn.apply(p);
-    x = p.x - turned.x + face.motion.x;
-    y = p.y - turned.y + face.motion.y;
-    z = p.z - turned.z + face.motion.z;
+    x = p.x - turned.x + motion.x;
+    y = p.y - turned.y + motion.y;
+    z = p.z - turned.z + motion.z;
     f = turn.forward;
     l = turn.left;
     u = turn.up;

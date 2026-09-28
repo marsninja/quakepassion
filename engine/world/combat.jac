@@ -33,6 +33,7 @@ import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace }
 import from ..physics.movement { MovePlayer, MovementProfile, movement_profile, step_slide, slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.interpolation { TickPose }
 
 edge HasOpponent: World --> Opponent {}
 node Opponent(Player) {
@@ -1254,7 +1255,8 @@ node Projectile {
         homing: float = 0.0,
         homing_wait: float = 0.0,
         owner: Opponent | None = None,
-        quarry: Player | None = None;
+        quarry: Player | None = None,
+        tick_pose: TickPose = TickPose();
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {
@@ -1595,6 +1597,26 @@ def throw_hand_grenade(
     return True;
 }
 
+"""p_weapon.c Think_Weapon: a dead player's weapon is put away, and
+ChangeWeapon lets a grenade whose pin is out (grenade_time set) go with no
+time left, so it bursts in the hand (weapon_grenade_fire, fire_grenade2
+with a zero timer)."""
+def release_live_grenade(
+    world: World, player: Player, collision: CollisionMap, state: CombatState
+) -> bool {
+    if state.game != "q2" or state.grenade_phase not in [2, 3] {
+        return False;
+    }
+    rule = selected_weapon(state);
+    if not rule.hand_thrown {
+        return False;
+    }
+    state.grenade_remaining = 0.0;
+    released = throw_hand_grenade(world, player, collision, state, rule, True);
+    state.grenade_phase = 0;
+    return released;
+}
+
 """The BFG's wind-up: when it ends the cells are checked again, since power
 armor may have spent them, and the orb leaves."""
 def bfg_wind_up(
@@ -1806,7 +1828,11 @@ def weapon_input(
     held: bool,
     dt: float
 ) -> bool {
-    if player.health <= 0 or dt <= 0.0 {
+    if player.health <= 0 {
+        release_live_grenade(world, player, collision, state);
+        return False;
+    }
+    if dt <= 0.0 {
         return False;
     }
     rule = selected_weapon(state);
@@ -1864,7 +1890,12 @@ def weapon_input(
         return False;
     }
     if state.grenade_phase == 1 {
+        pulling = state.grenade_clock;
         state.grenade_clock = max(0.0, state.grenade_clock - dt);
+        # Weapon_Grenade: the pin comes out as gunframe 5 passes.
+        if state.game == "q2" and pulling > 0.5 and state.grenade_clock <= 0.5 {
+            state.cues.append("sound/weapons/hgrena1b.wav");
+        }
         if state.grenade_clock > 0.000001 {
             return False;
         }
