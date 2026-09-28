@@ -1,7 +1,7 @@
 """Quake III patch collision: cm_patch.c facets from the control grid."""
 import from engine.physics.collision { CollisionMap }
 import from engine.physics.patch_collide { generate_patch_collide, PatchCollide }
-import from engine.physics.movement { MovePlayer }
+import from engine.physics.movement { MovePlayer, MovementProfile, movement_profile }
 import from engine.formats.bsp { Bsp, Face, Texture, Model, MapEntity }
 import from engine.formats.q3.bsp { Vertex, tessellate }
 import from engine.formats.brush_collision { build_brush_collision }
@@ -9,7 +9,8 @@ import from engine.math.vec3 { Vec3 }
 import from engine.world.world { Player }
 
 glob PATCH_TEST_MINS: Vec3 = Vec3(x=-15.0, y=-15.0, z=-24.0),
-     PATCH_TEST_MAXS: Vec3 = Vec3(x=15.0, y=15.0, z=32.0);
+     PATCH_TEST_MAXS: Vec3 = Vec3(x=15.0, y=15.0, z=32.0),
+     Q3_PROFILE: MovementProfile = movement_profile("q3");
 
 """Control points for a patch: column x, row y, height zs[row][column]."""
 def grid_points(xs: list[float], ys: list[float], zs: list[list[float]]) -> list[Vec3] {
@@ -182,7 +183,7 @@ test "a curved ramp is walked up smoothly" {
     );
     player = Player(pos=Vec3(x=-200.0, z=26.0 + 24.5));
     for i in range(60) {
-        player spawn MovePlayer(collision=collision, game="q3");
+        player spawn MovePlayer(collision=collision, profile=Q3_PROFILE);
     }
     assert player.grounded;
     # The curve bows 16 units at its middle, so its collision grid is two
@@ -190,7 +191,7 @@ test "a curved ramp is walked up smoothly" {
     assert len(ramp.facets) == 2;
     last = player.pos.z;
     while player.pos.x < 224.0 {
-        player spawn MovePlayer(collision=collision, game="q3", wish=Vec3(x=1.0));
+        player spawn MovePlayer(collision=collision, profile=Q3_PROFILE, wish=Vec3(x=1.0));
         origin = player.pos.sub(Vec3(z=26.0));
         foot = origin.z - 24.0;
         x = origin.x;
@@ -206,7 +207,7 @@ test "a curved ramp is walked up smoothly" {
     }
     # Over the crest (where Q3 kicks a fast walker off the ground) onto the landing.
     for i in range(120) {
-        player spawn MovePlayer(collision=collision, game="q3", wish=Vec3(x=1.0));
+        player spawn MovePlayer(collision=collision, profile=Q3_PROFILE, wish=Vec3(x=1.0));
     }
     assert player.grounded and player.pos.x > 500.0;
     assert abs(player.pos.z - 26.0 - 24.0 - 64.0) < 0.2;
@@ -255,7 +256,7 @@ test "a round pillar is slid around rather than stuck on" {
     # Off to the side of the facet corner ahead, so the box meets a facet.
     player = Player(pos=Vec3(x=-250.0, y=30.0, z=24.5 + 26.0));
     for i in range(360) {
-        player spawn MovePlayer(collision=collision, game="q3", wish=Vec3(x=1.0));
+        player spawn MovePlayer(collision=collision, profile=Q3_PROFILE, wish=Vec3(x=1.0));
         origin = player.pos.sub(Vec3(z=26.0));
         assert not collision.trace(origin, origin).start_solid;
         assert Vec3(x=origin.x, y=origin.y).length() > 64.0 + 14.0;
@@ -267,11 +268,11 @@ test "walking crosses patch facet seams without sinking or sticking" {
     collision = build_brush_collision(patch_map());
     player = Player(pos=Vec3(x=-100.0, z=100.0));
     for i in range(240) {
-        player spawn MovePlayer(collision=collision);
+        player spawn MovePlayer(collision=collision, profile=Q3_PROFILE);
     }
     assert player.grounded and abs(player.pos.z - 50.125) < 0.001;
     for i in range(70) {
-        player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0));
+        player spawn MovePlayer(collision=collision, profile=Q3_PROFILE, wish=Vec3(x=1.0));
         assert player.grounded and abs(player.pos.z - 50.125) < 0.001;
     }
     assert player.pos.x > 50.0;

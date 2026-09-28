@@ -5,7 +5,7 @@ import from engine.world.level { Level, load_level, spawn_player }
 import from engine.world.world { World, Player }
 import from engine.physics.collision { CollisionMap }
 import from engine.formats.bsp { Face }
-import from engine.physics.movement { MovePlayer }
+import from engine.physics.movement { MovePlayer, movement_profile }
 import from engine.math.vec3 { Vec3 }
 
 """Whether `point` lies within `reach` of a patch's rendered outline (the
@@ -53,6 +53,7 @@ start solid (sink into a facet) or stall with open space ahead (stick on a
 seam)."""
 def check_patches(level: Level, name: str) {
     collision = level.collision;
+    profile = movement_profile("q3");
     probes = 0;
     chorded = 0;
     behind = 0;
@@ -110,14 +111,14 @@ def check_patches(level: Level, name: str) {
             for turn in range(4) {
                 player = Player(pos=origin.add(Vec3(z=collision.eye_height)));
                 for step in range(48) {
-                    player spawn MovePlayer(collision=collision, game="q3");
+                    player spawn MovePlayer(collision=collision, profile=profile);
                 }
                 assert player.grounded;
                 angle = float(turn) * math.pi / 2.0 + 0.3;
                 wish = Vec3(x=math.cos(angle), y=math.sin(angle));
                 for step in range(60) {
                     before = player.pos;
-                    player spawn MovePlayer(collision=collision, game="q3", wish=wish);
+                    player spawn MovePlayer(collision=collision, profile=profile, wish=wish);
                     body = player.pos.sub(Vec3(z=collision.eye_height));
                     assert not collision.trace(body, body).start_solid;
                     if step > 20 and player.grounded {

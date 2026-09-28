@@ -1,5 +1,5 @@
 """Q2/Q3 brush records adapted to shared expanded collision hulls."""
-import from .bsp { Bsp }
+import from .bsp { Bsp, brush_climbable, brush_current_bits, current_flow }
 import from ..physics.collision { CollisionMap }
 import from ..physics.patch_collide { generate_patch_collide }
 import from ..math.vec3 { Vec3 }
@@ -31,6 +31,8 @@ def add_model(
         collision.hulls[-1].point_blocking = brush.contents
             & (1 if bsp.game == "q3" else 3)
             != 0;
+        collision.hulls[-1].climbable = brush_climbable(brush.contents, bsp.game);
+        collision.hulls[-1].conveyor = current_flow(brush_current_bits(brush.contents, bsp.game));
         # Q2/Q3 SURF_SKY (4) and Q3 SURF_NOIMPACT (16) take no impacts, Q3
         # SURF_NOMARKS (32) no marks. (Q2's 16 and 32 are translucency.)
         hull = len(collision.hulls) - 1;
@@ -74,6 +76,10 @@ def add_patch_facets(collision: CollisionMap, bsp: Bsp, model: int, offset: Vec3
         );
         for hull in range(first, len(collision.hulls)) {
             collision.hulls[hull].point_blocking = material.contents & 1 != 0;
+            collision.hulls[hull].climbable = brush_climbable(material.contents, bsp.game);
+            collision.hulls[hull].conveyor = current_flow(
+                brush_current_bits(material.contents, bsp.game)
+            );
             # SURF_SKY (4) and SURF_NOIMPACT (16) take no impacts, SURF_NOMARKS (32) no marks.
             if material.flags & 20 != 0 {
                 collision.no_impact[hull] = list(collision.hulls[hull].planes);
