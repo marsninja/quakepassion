@@ -20,5 +20,7 @@ obj EffectRule {
         grow: float = 0.0,
         skins: int = 1,
         frames: list[int] = [],
-        explosion: bool = False;
+        explosion: bool = False,
+        # The looping sound it makes in flight (Q2 s.sound, Q3 missileSound).
+        sound: str = "";
 }

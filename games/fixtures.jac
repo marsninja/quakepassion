@@ -1,9 +1,10 @@
 """Original decorative models and ambient emitters from map entities.
 
 Q1 torches and flames (misc.qc) carry their model, frame group and the
-ambientsound call each makes; Q1 ambient_* entities and fluorescent lights are
-static looping sounds at ATTN_STATIC. Q2 dead bodies, mine lights, banners and
-novelty models follow g_misc.c."""
+ambientsound call each makes; Q1 ambient_* entities, fluorescent lights and
+teleporters (the hum at the trigger's centre, unless SILENT) are static
+looping sounds at ATTN_STATIC. Q2 dead bodies, mine lights, banners and
+novelty models follow g_misc.c, and a Q2 teleporter pad hums world/amb10."""
 import math;
 import from engine.world.fixtures { Fixture, HasFixture, FIXTURE_USES, fixture_signal }
 import from engine.world.speakers { Speaker, HasSpeaker }
@@ -21,10 +22,14 @@ obj FixtureRule {
         rate: float = 10.0,
         sound: str = "",
         volume: float = 1.0,
-        attenuation: float = 3.0;
+        attenuation: float = 3.0,
+        # The sound sits at the centre of the entity's brush model.
+        centered: bool = False;
 }
 
-def fixture_rule(game: str, kind: str, flags: int) -> FixtureRule | None {
+def fixture_rule(game: str, fields: dict[str, str]) -> FixtureRule | None {
+    kind = fields.get("classname", "");
+    flags = int(fields.get("spawnflags", "0"));
     if game == "q1" {
         flame = "sound/ambience/fire1.wav";
         if kind == "light_torch_small_walltorch" {
@@ -60,9 +65,20 @@ def fixture_rule(game: str, kind: str, flags: int) -> FixtureRule | None {
         if kind in ["ambient_swamp1", "ambient_swamp2"] {
             return FixtureRule(sound="sound/ambience/" + kind[8:] + ".wav", volume=0.5);
         }
+        if kind == "ambient_thunder" {
+            return FixtureRule(sound="sound/ambience/thunder1.wav", volume=0.5);
+        }
+        # triggers.qc trigger_teleport: the hum unless SILENT (2).
+        if kind == "trigger_teleport" and flags & 2 == 0 {
+            return FixtureRule(sound="sound/ambience/hum1.wav", volume=0.5, centered=True);
+        }
         return None;
     }
     if game == "q2" {
+        # SP_misc_teleporter: a pad without a target is removed.
+        if kind == "misc_teleporter" and fields.get("target", "") {
+            return FixtureRule(sound="sound/world/amb10.wav");
+        }
         if kind == "misc_deadsoldier" {
             pose = 0;
             for bit in range(1, 6) {
@@ -121,9 +137,7 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
         for index in range(len(level.bsp.entities)) {
             fields = level.bsp.entities[index].fields;
             source = fields.get("asset_game", level.bsp.game);
-            rule = fixture_rule(
-                source, fields.get("classname", ""), int(fields.get("spawnflags", "0"))
-            );
+            rule = fixture_rule(source, fields);
             if rule is None {
                 continue;
             }
@@ -132,6 +146,15 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
                 raise ValueError("Invalid fixture origin");
             }
             position = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+            model_name = fields.get("model", "");
+            if rule.centered and model_name.startswith("*") {
+                brush = int(model_name[1:]);
+                if brush <= 0 or brush >= len(level.bsp.models) {
+                    continue;
+                }
+                bounds = level.bsp.models[brush];
+                position = position.add(bounds.mins.add(bounds.maxs).scale(0.5));
+            }
             if rule.sound {
                 world +>:HasSpeaker:+> Speaker(
                     path=rule.sound,

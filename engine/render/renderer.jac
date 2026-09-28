@@ -104,6 +104,8 @@ obj Renderer {
     raylib's own `Camera3D` with up = +Z (Quake's convention) and a target one
     forward-vector ahead of the eye — exactly the view the @sv renderer built."""
     def begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0);
+    """Begin a frame of screen-space drawing only, over black (cinematics)."""
+    def begin_screen();
 
     """Draw an area's graybox surfaces as solid cubes with wireframe edges."""
     def draw_area(area: Area);

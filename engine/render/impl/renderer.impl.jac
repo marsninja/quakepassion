@@ -58,6 +58,11 @@ impl Renderer.begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0
     BeginMode3D(cam);
 }
 
+impl Renderer.begin_screen() {
+    BeginDrawing();
+    ClearBackground(Color(r=0, g=0, b=0, a=255));
+}
+
 impl Renderer.draw_area(area: Area) {
     for s in area.surfaces {
         pos = Vector3(x=f32(s.center.x), y=f32(s.center.y), z=f32(s.center.z));

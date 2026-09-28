@@ -80,3 +80,7 @@ def _release();
 def sample_intent(
     dt: float, sensitivity: float = 0.0022, invert_y: bool = False
 ) -> Intent;
+
+"""Any keyboard key or mouse button held down (Quake II CL_FinishMove's
+anykeydown, which sets BUTTON_ANY)."""
+def any_key_down() -> bool;
