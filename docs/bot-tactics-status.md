@@ -337,6 +337,13 @@ Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
   | Bring It On (Normal) | 4 | 13.0 → 16.3 | 10.8 → 14.0 | 9.8 → 14.3 | 33.5 → 44.5 |
   | Hurt Me Plenty (Hard) | 7 | 15.4 → 18.1 | 17.0 → 20.9 | 13.7 → 12.4 | 46.1 → 51.4 |
 
+  With the botlib AI (fuzzy goals and weapons, the `ai_dmnet.c` nodes), one
+  run at Hurt Me Plenty made 19 frags on q3dm7, 29 on q3dm6 and 20 on q3dm12
+  (68 in all), and the bots said 36 lines between them. They spend about half
+  their time seeking goals, a fifth to a third retreating (the handicap keeps
+  their health under `BotAggression`'s marks), and the rest fighting and
+  chasing.
+
   Single runs vary widely (q3dm6 at Hurt Me Plenty ranged from 3 to 28).
   Without doors ticking, q3dm12's bots had been shut in behind closed doors.
   At the lower skills most of that time is spent retreating: `G_AddBot`'s
