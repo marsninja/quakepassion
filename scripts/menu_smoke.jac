@@ -1,6 +1,6 @@
 """Graphical menu, console and bindings regression using raylib input events;
-requires original assets. Set QP_CONFIG_DIR to a disposable directory: the
-run writes settings and bindings there."""
+requires original assets. It writes settings and bindings: run it through
+validate_menu.jac (a disposable HOME) or with QP_CONFIG_DIR set."""
 import os;
 import from engine.core.app { App }
 import from engine.core.preferences { Preferences }
@@ -31,13 +31,12 @@ def select_map(app: App, name: str) {
     click(app, 400, 219 + (target - app.menu.offset) * 30);
 }
 
-"""Click a settings row's right (or left) arrow."""
+"""Click a settings row's right (or left) arrow where the centred menu is."""
 def setting(app: App, row: int, right: bool = True) {
-    click(app, 915 if right else 840, 164 + row * 30);
+    click(app, (915 if right else 840) + app.menu.ox, 164 + row * 30 + app.menu.oy);
 }
 
 with entry {
-    assert os.getenv("QP_CONFIG_DIR", "") != "", "Set QP_CONFIG_DIR to a disposable directory";
     world = World();
     level = load_level(world, game_directory("q1"), "e1m1", "q1");
     app = App(

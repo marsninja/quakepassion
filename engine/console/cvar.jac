@@ -70,15 +70,7 @@ node Cvar(ConsoleName) {
             if self.kind == "int" {
                 bounded = float(int(bounded));
             }
-            exact = True;
-            try {
-                float(shown);
-            } except Exception {
-                exact = False;
-            }
-            if bounded != parsed or not exact or self.kind == "int" {
-                shown = cvar_number_text(bounded);
-            }
+            shown = cvar_number_text(bounded);
             parsed = bounded;
         }
         changed = shown != self.text;
