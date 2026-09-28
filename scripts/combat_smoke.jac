@@ -38,9 +38,9 @@ with entry {
             player=player,
             level=level,
             renderer=renderer,
-            clock=Clock(),
-            overlay=False
+            clock=Clock()
         );
+        app.host.overlay.assign("0");
         equip_player(player, app.combat, game);
         populate_pickups(world, level, game_directory(game));
         app.audio.open(game, game_directory(game), weapon_sounds(game));

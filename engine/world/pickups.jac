@@ -34,7 +34,8 @@ obj PickupRule {
         message: str = "",
         icon: str = "",
         topup: bool = False,
-        respawn_sound: str = "";
+        respawn_sound: str = "",
+        classname: str = "";
     # The low corner of a Q1 item's box about its origin (items.qc setsize:
     # health and ammo '0 0 0', armor and weapons '-16 -16 0', keys, sigils
     # and artifacts '-16 -16 -24'); every one is the player hull's size. Q2

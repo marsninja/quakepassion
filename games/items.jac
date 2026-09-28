@@ -21,6 +21,7 @@ import from engine.world.models {
     attach_model
 }
 import from engine.world.world { World, move_to_area }
+import from engine.world.lighting { MODEL_LIGHT_GLOW }
 import from engine.world.level { Level }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.math.vec3 { Vec3 }
@@ -238,6 +239,8 @@ def pickup_rule(
     }
     if rule is not None {
         present_pickup(game, fields.get("classname", ""), rule, worldtype);
+        # The entity's classname, as botlib's item configs know the item.
+        rule.classname = fields.get("classname", "");
     }
     return rule;
 }
@@ -713,6 +716,15 @@ def item_spin(game: str, rule: PickupRule, flags: int) -> float {
     return 0.0;
 }
 
+"""How an item's model takes light: Q2 SpawnItem and Drop_Item give every
+item RF_GLOW, so bonus items pulse (ITEM_NO_TOUCH items do not)."""
+def item_light_flags(game: str, spawnflags: int = 0) -> int {
+    if game == "q2" and spawnflags & 1 == 0 {
+        return MODEL_LIGHT_GLOW;
+    }
+    return 0;
+}
+
 def populate_pickups(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
@@ -836,6 +848,7 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 pickup.visual +>:UsesModel:+> resources[extra];
             }
             pickup.visual.spin = item_spin(source, rule, resources[key].model.flags);
+            pickup.visual.light_flags = item_light_flags(source, flags);
             if source == "q3" {
                 # cg_ents.c CG_Item: bob 4 +/- 4 units at a per-entity rate.
                 pickup.visual.bob = 4.0;

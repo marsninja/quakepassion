@@ -3,7 +3,7 @@ import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
 import from ..formats.q1.bsp { parse_bsp }
-import from ..formats.bsp { Bsp, Texture, decode_pvs, i32_at, require_range, current_flow }
+import from ..formats.bsp { Bsp, Face, Texture, decode_pvs, i32_at, require_range, current_flow }
 import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
 import from ..formats.q3.bsp { parse_q3 }
 import from ..formats.animated { ModelStage, Deform }
@@ -23,6 +23,8 @@ import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
 import from .lightstyles { load_light_styles }
+import from .particle_field { particle_field }
+import from .particles { MarkSurfaces, HasMarkSurfaces }
 import from .clocks { load_clocks }
 import from .flyers { load_flyers }
 import from .falling { load_falling_objects }
@@ -40,16 +42,19 @@ import from .triggers { load_triggers, load_monster_jumps }
 import from .traversal { load_traversal }
 import from .exits { load_exits }
 import from .fixtures { load_fixture_uses }
+import from .body_queue { load_no_drop }
 import from .liquids {
     LiquidSpace, SampleLiquid, LiquidSample, Immersion, liquid_kind, load_liquids
 }
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
-import from .lighting { Lighting, load_light_grid }
+import from .lighting { Lighting, LightPointSource, LightSpot, load_light_grid }
 
 node Split {
     has normal: Vec3,
-        distance: float;
+        distance: float,
+        first_face: int = 0,
+        face_count: int = 0;
 }
 
 node BspArea(Area) {
@@ -79,6 +84,248 @@ walker Locate {
     can leaf with BspArea entry {
         self.result = here.index;
     }
+}
+
+"""RecursiveLightPoint (WinQuake r_light.c, Q2 ref_gl gl_light.c) through
+the BSP graph: follow the segment `start` to `end` down the tree. Where it
+crosses a node's plane, the near side is searched first (a nested trace up
+to the crossing), then the node's own faces at the crossing, then the far
+side on from it. The first face whose lightmap extents hold the crossing
+(skipping surfaces drawn without one) is `spot`, with its sample under the
+point; leaves hold no faces to strike."""
+walker TraceLightPoint {
+    has start: Vec3,
+        end: Vec3,
+        faces: list[Face] = [],
+        spot: LightSpot = LightSpot(),
+        struck: bool = False,
+        remaining: int = 4096;
+
+    can split with Split entry {
+        self.remaining -= 1;
+        if self.remaining <= 0 {
+            raise ValueError("Cyclic BSP tree");
+        }
+        front = here.normal.dot(self.start) - here.distance;
+        back = here.normal.dot(self.end) - here.distance;
+        behind = front < 0.0;
+        near = [here->:Back:->] if behind else [here->:Front:->];
+        if (back < 0.0) == behind {
+            visit near;
+            return;
+        }
+        mid = self.start.lerp(self.end, front / (front - back));
+        probe = near[0] spawn TraceLightPoint(start=self.start, end=mid, faces=self.faces, remaining=self.remaining);
+        if probe.struck {
+            self.spot = probe.spot;
+            self.struck = True;
+            disengage;
+        }
+        for index in range(here.first_face, here.first_face + here.face_count) {
+            face = self.faces[index];
+            info = face.texinfo;
+            if face.tiled or info is None {
+                continue;
+            }
+            # C truncates the texture coordinates to integers.
+            s = int(mid.dot(info.s) + info.soff);
+            t = int(mid.dot(info.t) + info.toff);
+            ds = s - face.light_s * 16;
+            dt = t - face.light_t * 16;
+            if ds < 0 or dt < 0 or ds > (face.light_width - 1) * 16 or dt > (face.light_height - 1) * 16 {
+                continue;
+            }
+            self.spot = LightSpot(face=index, sample=(dt >> 4) * face.light_width + (ds >> 4));
+            self.struck = True;
+            disengage;
+        }
+        self.start = mid;
+        visit ([here->:Front:->] if behind else [here->:Back:->]);
+    }
+}
+
+"""R_LightPoint for a Q1 or Q2 level: the trace runs 2048 units straight
+down from the point through the world model's BSP graph from `head`."""
+obj BspLightPoint(LightPointSource) {
+    has head: Split | None = None;
+
+    def trace(point: Vec3) -> LightSpot {
+        head = self.head;
+        if head is None {
+            return LightSpot();
+        }
+        probe = head spawn TraceLightPoint(start=point, end=point.sub(Vec3(z=2048.0)), faces=self.faces);
+        return probe.spot;
+    }
+}
+
+"""R_BoxSurfaces_r through the BSP graph: every leaf a box between `mins`
+and `maxs` reaches, down each side of the planes it straddles; `faces` are
+the faces those leaves list."""
+walker BoxSurfaces {
+    has mins: Vec3,
+        maxs: Vec3,
+        faces: list[int] = [],
+        seen: set[int] = set();
+
+    can split with Split entry {
+        n = here.normal;
+        # BoxOnPlaneSide: the box's nearest and farthest corners.
+        far = (n.x * (self.maxs.x if n.x >= 0.0 else self.mins.x))
+            + (n.y * (self.maxs.y if n.y >= 0.0 else self.mins.y))
+            + (n.z * (self.maxs.z if n.z >= 0.0 else self.mins.z));
+        near = (n.x * (self.mins.x if n.x >= 0.0 else self.maxs.x))
+            + (n.y * (self.mins.y if n.y >= 0.0 else self.maxs.y))
+            + (n.z * (self.mins.z if n.z >= 0.0 else self.maxs.z));
+        if far >= here.distance {
+            visit [here->:Front:->];
+        }
+        if near < here.distance {
+            visit [here->:Back:->];
+        }
+    }
+
+    can leaf with BspArea entry {
+        for face in here.faces {
+            if face not in self.seen {
+                self.seen.add(face);
+                self.faces.append(face);
+            }
+        }
+    }
+}
+
+"""Q3 R_MarkFragments over a level's world faces: the polygon's edge planes
+along the projection, and planes 32 units beyond and 20 before it, cut each
+face that faces the projection (planar faces within 60 degrees of it,
+patch triangles steeper than 0.1 or 0.05), leaving out SURF_NOIMPACT,
+SURF_NOMARKS and fog surfaces and triangle soups."""
+node BspMarkSurfaces(MarkSurfaces) {
+    has head: Split | None = None,
+        faces: list[Face] = [],
+        textures: list[Texture] = [];
+
+    def fragments(points: list[Vec3], projection: Vec3) -> list[list[Vec3]] {
+        head = self.head;
+        if head is None or len(points) < 3 {
+            return [];
+        }
+        direction = projection.normalized();
+        low = points[0].add(Vec3());
+        high = points[0].add(Vec3());
+        for point in points {
+            for corner in [point, point.add(projection), point.sub(direction.scale(20.0))] {
+                low = Vec3(x=min(low.x, corner.x), y=min(low.y, corner.y), z=min(low.z, corner.z));
+                high = Vec3(x=max(high.x, corner.x), y=max(high.y, corner.y), z=max(high.z, corner.z));
+            }
+        }
+        normals: list[Vec3] = [];
+        dists: list[float] = [];
+        for i in range(len(points)) {
+            side = points[(i + 1) % len(points)].sub(points[i]);
+            normal = side.cross(projection.scale(-1.0)).normalized();
+            normals.append(normal);
+            dists.append(normal.dot(points[i]));
+        }
+        normals.append(direction);
+        dists.append(direction.dot(points[0]) - 32.0);
+        normals.append(direction.scale(-1.0));
+        dists.append(direction.scale(-1.0).dot(points[0]) - 20.0);
+        found = head spawn BoxSurfaces(mins=low, maxs=high);
+        result: list[list[Vec3]] = [];
+        for index in found.faces {
+            face = self.faces[index];
+            material = self.textures[face.texture] if face.texture < len(self.textures) else Texture();
+            # SURF_NOIMPACT (0x10), SURF_NOMARKS (0x20), CONTENTS_FOG (64).
+            if material.flags & 48 != 0 or material.contents & 64 != 0 {
+                continue;
+            }
+            if face.planar {
+                if face.normal.dot(direction) > -0.5 or not mark_plane_crosses(face.normal, face.plane_dist, low, high) {
+                    continue;
+                }
+            } elif not face.patch {
+                continue;
+            }
+            for t in range(len(face.indices) // 3) {
+                triangle = [face.vertices[face.indices[t * 3 + k]] for k in range(3)];
+                if face.patch {
+                    normal = triangle[0].sub(triangle[1]).cross(triangle[2].sub(triangle[1])).normalized();
+                    if normal.dot(direction) >= -0.1 and normal.scale(-1.0).dot(direction) >= -0.1 {
+                        continue;
+                    }
+                }
+                piece = triangle;
+                for p in range(len(normals)) {
+                    piece = chop_behind_plane(piece, normals[p], dists[p], 0.5);
+                    if not piece {
+                        break;
+                    }
+                }
+                if len(piece) >= 3 {
+                    result.append(piece);
+                }
+            }
+        }
+        return result;
+    }
+}
+
+"""Whether a plane passes through the box (BoxOnPlaneSide answers 3)."""
+def mark_plane_crosses(normal: Vec3, distance: float, mins: Vec3, maxs: Vec3) -> bool {
+    far = (normal.x * (maxs.x if normal.x >= 0.0 else mins.x))
+        + (normal.y * (maxs.y if normal.y >= 0.0 else mins.y))
+        + (normal.z * (maxs.z if normal.z >= 0.0 else mins.z));
+    near = (normal.x * (mins.x if normal.x >= 0.0 else maxs.x))
+        + (normal.y * (mins.y if normal.y >= 0.0 else maxs.y))
+        + (normal.z * (mins.z if normal.z >= 0.0 else maxs.z));
+    return far >= distance and near < distance;
+}
+
+"""R_ChopPolyBehindPlane: the part of `points` in front of the plane, points
+within `epsilon` of it counting as on it; nothing when all are behind."""
+def chop_behind_plane(points: list[Vec3], normal: Vec3, distance: float, epsilon: float) -> list[Vec3] {
+    count = len(points);
+    dists: list[float] = [];
+    sides: list[int] = [];
+    fronts = 0;
+    backs = 0;
+    for point in points {
+        d = point.dot(normal) - distance;
+        dists.append(d);
+        side = 0 if d > epsilon else (1 if d < -epsilon else 2);
+        sides.append(side);
+        if side == 0 {
+            fronts += 1;
+        } elif side == 1 {
+            backs += 1;
+        }
+    }
+    if fronts == 0 {
+        return [];
+    }
+    if backs == 0 {
+        return points;
+    }
+    out: list[Vec3] = [];
+    for i in range(count) {
+        point = points[i];
+        if sides[i] == 2 {
+            out.append(point);
+            continue;
+        }
+        if sides[i] == 0 {
+            out.append(point);
+        }
+        following = sides[(i + 1) % count];
+        if following == 2 or following == sides[i] {
+            continue;
+        }
+        span = dists[i] - dists[(i + 1) % count];
+        share = 0.0 if span == 0.0 else dists[i] / span;
+        out.append(point.lerp(points[(i + 1) % count], share));
+    }
+    return out;
 }
 
 walker CollectFaces {
@@ -135,6 +382,8 @@ obj Level {
         surface_deforms: dict[int, list[Deform]] = {},
         sky_clouds: list[ModelStage] = [],
         cloud_height: float = 128.0,
+        sky_rotate: float = 0.0,
+        sky_axis: Vec3 = Vec3(),
         portal_ranges: dict[int, float] = {};
 
     def locate(eye: Vec3) -> int {
@@ -405,6 +654,13 @@ def load_level(
             for entity in level.bsp.entities {
                 if entity.fields.get("classname", "") == "worldspawn" {
                     sky_name = entity.fields.get("sky", "unit1_");
+                    # SP_worldspawn CS_SKYROTATE and CS_SKYAXIS: the sky box
+                    # turns `skyrotate` degrees a second about `skyaxis`.
+                    level.sky_rotate = float(entity.fields.get("skyrotate", "0") or "0");
+                    axis = entity.fields.get("skyaxis", "").split();
+                    if len(axis) == 3 {
+                        level.sky_axis = Vec3(x=float(axis[0]), y=float(axis[1]), z=float(axis[2]));
+                    }
                 }
             }
             for suffix in ["rt", "lf", "bk", "ft", "up", "dn"] {
@@ -451,7 +707,9 @@ def prepare_level(world: World, level: Level) {
     }
     for branch in level.bsp.branches {
         plane = level.bsp.planes[branch.plane];
-        level.splits.append(Split(normal=plane.normal, distance=plane.distance));
+        level.splits.append(
+            Split(normal=plane.normal, distance=plane.distance, first_face=branch.first_face, face_count=branch.face_count)
+        );
     }
     for i in range(len(level.bsp.branches)) {
         branch = level.bsp.branches[i];
@@ -500,12 +758,40 @@ def prepare_level(world: World, level: Level) {
         }
     }
     level.liquids = load_liquids(level.bsp);
+    load_no_drop(world, level.bsp);
     load_gates(world, level.bsp, level.collision);
     load_pickup_signals(world, level.bsp);
     load_opponent_signals(world, level.bsp);
     load_exits(world, level.bsp);
     load_trains(world, level.bsp, level.collision);
-    load_light_styles(world, level.bsp);
+    # The particles and puffs the level's effects spawn, in this game's kinds.
+    particle_field(world, game);
+    # Q3 marks are cut to the world's faces (R_MarkFragments).
+    if game == "q3" {
+        head = level.bsp.models[0].head if level.bsp.models else -1;
+        world +>:HasMarkSurfaces:+> BspMarkSurfaces(
+            head=level.splits[head] if 0 <= head < len(level.splits) else None,
+            faces=level.bsp.faces,
+            textures=level.bsp.textures
+        );
+    }
+    styles = load_light_styles(world, level.bsp);
+    if game in ["q1", "q2"] {
+        # Models take the light of the lightmaps below them (R_LightPoint),
+        # under the same animated styles as the world.
+        head = level.bsp.models[0].head if level.bsp.models else -1;
+        level.lighting.game = game;
+        level.lighting.point = BspLightPoint(
+            faces=level.bsp.faces,
+            lightmaps=level.bsp.lighting,
+            channels=level.bsp.light_channels,
+            head=level.splits[head] if 0 <= head < len(level.splits) else None
+        );
+        if styles is not None {
+            level.lighting.styles = styles.values;
+            level.lighting.style_source = styles;
+        }
+    }
     load_clocks(world, level.bsp);
     load_flyers(world, level.bsp);
     load_falling_objects(world, level.bsp, level.collision);

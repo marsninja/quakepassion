@@ -10,7 +10,7 @@ import from engine.world.signals { Signal, HasSignal, Fire, SignalTick }
 import from engine.world.trains { Train, HasTrain, TrainTick }
 import from engine.world.doors { DoorTick }
 import from engine.world.targets { TargetTick }
-import from engine.world.particles { ImpactParticle, HasParticle }
+import from engine.world.particle_field { particle_field }
 import from engine.world.traversal { TraversalTick, TeleportMonsters }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, damage_opponent }
 import from games.opponents { populate_opponents }
@@ -108,7 +108,7 @@ with entry {
     world spawn TargetTick(
         player=player, collision=level.collision, state=CombatState(game="q2"), dt=0.01
     );
-    sparks = len([world->:HasParticle:->][?:ImpactParticle]);
+    sparks = len(particle_field(world).fresh);
     assert sparks > 0;
     run(world, level, player, 1.2);
     request = exit_request(world);

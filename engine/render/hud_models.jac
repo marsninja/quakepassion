@@ -9,7 +9,7 @@ import from .portal { PortalTarget, rlEnableFramebuffer, rlDisableFramebuffer, r
 import from .viewweapon { Matrix, rlSetMatrixProjection }
 import from .quake { rlDrawRenderBatchActive }
 import from .renderer { Camera3D, Vector3, BeginMode3D, EndMode3D }
-import from .hud { HudRenderer, HudPic, HudStatus }
+import from .hud { HudRenderer, HudPic, HudStatus, StatusHead }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { model_basis }
 
@@ -51,23 +51,10 @@ obj HudModels {
         head: ModelRenderer | None = None,
         head_origin: Vec3 = Vec3(),
         target: PortalTarget = PortalTarget(),
-        random_state: int = 1,
-        head_start_yaw: float = 180.0,
-        head_end_yaw: float = 180.0,
-        head_start_pitch: float = 0.0,
-        head_end_pitch: float = 0.0,
-        head_start_time: float = 0.0,
-        head_end_time: float = 0.0,
-        last_health: int = -1,
-        damage_time: float = -100.0;
+        status_head: StatusHead = StatusHead();
 
     def ready() -> bool {
         return self.head is not None;
-    }
-
-    def random() -> float {
-        self.random_state = (self.random_state * 48271) % 2147483647;
-        return float(self.random_state) / 2147483647.0;
     }
 
     """The status bar's head (the player's), placed as CG_DrawHead does."""
@@ -96,51 +83,13 @@ obj HudModels {
         }
     }
 
-    """CG_DrawStatusBarHead: glance to a new angle every 0.1-2.1 s, easing
-    there, and kick toward the damage when hurt, growing for a moment."""
     def draw_head(hud: HudRenderer, status: HudStatus, x: float, scale: float, width: int, height: int) {
         head = self.head;
         if head is None {
             return;
         }
-        now = status.clock;
-        # A new level restarts the clock: a hit from the last level would
-        # count as one from the future and swell the head past the bar.
-        if self.damage_time > now {
-            self.damage_time = -100.0;
-        }
-        if self.last_health >= 0 and status.health < self.last_health {
-            self.damage_time = now;
-        }
-        self.last_health = status.health;
-        size = 48.0 * 1.25;
-        if now - self.damage_time < 0.5 {
-            frac = (now - self.damage_time) / 0.5;
-            size = 48.0 * 1.25 * (1.5 - frac * 0.5);
-            stretch = size - 48.0 * 1.25;
-            x -= stretch * 0.5 * scale;
-            self.head_start_yaw = 180.0;
-            self.head_end_yaw = 180.0 + 20.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
-            self.head_end_pitch = 5.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
-            self.head_start_time = now;
-            self.head_end_time = now + 0.1 + self.random() * 2.0;
-        } elif now >= self.head_end_time {
-            self.head_start_yaw = self.head_end_yaw;
-            self.head_start_pitch = self.head_end_pitch;
-            self.head_start_time = self.head_end_time;
-            self.head_end_time = now + 0.1 + self.random() * 2.0;
-            self.head_end_yaw = 180.0 + 20.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
-            self.head_end_pitch = 5.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
-        }
-        if self.head_start_time > now {
-            self.head_start_time = now;
-        }
-        span = max(0.001, self.head_end_time - self.head_start_time);
-        frac = max(0.0, min(1.0, (now - self.head_start_time) / span));
-        frac = frac * frac * (3.0 - 2.0 * frac);
-        yaw = self.head_start_yaw + (self.head_end_yaw - self.head_start_yaw) * frac;
-        pitch = self.head_start_pitch + (self.head_end_pitch - self.head_start_pitch) * frac;
-        self.icon(hud, head, self.head_origin, yaw, pitch, x, float(height) - size * scale, size * scale, width, height, now);
+        pose = self.status_head.pose(status);
+        self.icon(hud, head, self.head_origin, pose.yaw, pose.pitch, x - pose.shift * scale, float(height) - pose.size * scale, pose.size * scale, width, height, status.clock);
     }
 
     """CG_Draw3DModel: render `model` at `origin` turned by (yaw, pitch)
@@ -167,8 +116,11 @@ obj HudModels {
             seconds=seconds,
             basis=model_basis(math.radians(yaw), -math.radians(pitch), 0.0) if pitch != 0.0 else None
         );
-        EndMode3D();
+        # Leave the framebuffer before EndMode3D: raylib restores the screen's
+        # HiDPI scale only when it ends 3D mode on the window's framebuffer.
+        rlDrawRenderBatchActive();
         rlDisableFramebuffer();
+        EndMode3D();
         rlViewport(i32(0), i32(0), GetRenderWidth(), GetRenderHeight());
         hud.pics["icon3d"] = HudPic(id=self.target.color, width=ICON_RESOLUTION, height=ICON_RESOLUTION);
         # Framebuffer images are stored bottom row first.

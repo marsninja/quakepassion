@@ -131,6 +131,10 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
             flowing=(info.flags & 64) != 0,
             opacity=0.33 if (info.flags & 16) != 0 else (0.66 if (info.flags & 32) != 0 else 1.0),
             hidden=(info.flags & 132) != 0,
+            texinfo=info,
+            # Mod_LoadFaces: SURF_SKY (4) and SURF_WARP (8) surfaces take
+            # SURF_DRAWSKY and SURF_DRAWTURB and have no lightmap.
+            tiled=(info.flags & 12) != 0,
             light_offset=i32_at(lumps[6], p + 16),
             normal=bsp.planes[plane].normal,
             plane_dist=bsp.planes[plane].distance
@@ -255,9 +259,19 @@ def parse_q2(data: bytes, textures: list[Texture]) -> Bsp {
         p = i * 28;
         plane = i32_at(lumps[4], p);
         check_index(plane, len(bsp.planes));
+        # dnode_t firstface and numfaces: the faces on this node's plane.
+        first = u16_at(lumps[4], p + 24);
+        count = u16_at(lumps[4], p + 26);
+        if first + count > len(bsp.faces) {
+            raise ValueError("Invalid BSP node face range");
+        }
         bsp.branches.append(
             Branch(
-                plane=plane, front=i32_at(lumps[4], p + 4), back=i32_at(lumps[4], p + 8)
+                plane=plane,
+                front=i32_at(lumps[4], p + 4),
+                back=i32_at(lumps[4], p + 8),
+                first_face=first,
+                face_count=count
             )
         );
     }

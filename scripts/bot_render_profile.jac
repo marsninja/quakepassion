@@ -6,17 +6,18 @@ import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from vendor.raylib { def GetTime -> f64;  }
 
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     for name in ["q3dm7", "q3dm6"] {
         app.load_destination("q3", name);
         assert not app.menu.opened , app.menu.message;
-        app.culling = False;
+        app.renderer.cvars.novis.assign("1");
         bots = len([bot for bot in [app.world->:HasOpponent:->][?:Opponent] if bot.arena]);
         app.player.health = 100000;
         app.player.god_mode = True;

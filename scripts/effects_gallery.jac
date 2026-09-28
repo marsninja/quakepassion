@@ -14,12 +14,11 @@ import from engine.world.world { World, Player }
 import from engine.world.arena { match_of }
 import from engine.world.combat { Projectile, HasProjectile }
 import from engine.world.particles {
+    ParticleTick,
     Explosion,
     HasExplosion,
     ShotTrail,
     HasTrail,
-    ImpactParticle,
-    HasParticle,
     explode,
     rail_trail,
     beam_trail,
@@ -64,11 +63,8 @@ def pose_effects(app: App, game: str) {
     for blast in [world->:HasExplosion:->][?:Explosion] {
         blast.age = blast.lifetime * 0.4;
     }
-    # Fire embers already flying, and blood and dust sprays.
-    for particle in [world->:HasParticle:->][?:ImpactParticle] {
-        particle.pos = particle.pos.add(particle.velocity.scale(0.12));
-        particle.remaining = particle.lifetime * 0.6;
-    }
+    # Let the bursts fly a moment before the blood and dust sprays.
+    world spawn ParticleTick(dt=0.12);
     impact_spray(world, near.add(side.scale(40.0)).sub(Vec3(z=10.0)), ahead.scale(-1.0), blood=True);
     impact_spray(world, near.add(side.scale(60.0)).sub(Vec3(z=10.0)), ahead.scale(-1.0));
     # Trails from beside the view to the far wall.
@@ -140,7 +136,8 @@ def pose_marks(app: App) {
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     for spec in GALLERY_MAPS {
         game = spec.split(":")[0];
         name = spec.split(":")[1];

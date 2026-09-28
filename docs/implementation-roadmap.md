@@ -237,6 +237,9 @@ infighting by the Q1/Q2 rules, and gibbing into the original models with
 shootable Q2/Q3 corpses. Snapshot format 21.
 
 [Q3 bot tactics](bot-tactics-status.md): map-wide routing over the maps' own AAS
-data, botlib characters and weapon weights, original weapon choice, aim, view
-turning, reaction and fire throttle, combat movement, real weapon fire, and the
-Excellent, Impressive, Humiliation and Perfect awards.
+data with botlib's travel flags, rocket jumps and rides on elevators and
+bobbing platforms, botlib characters with their fuzzy item and weapon weights
+read through botlib's precompiler, goals by item weight over travel time, the
+ai_dmnet.c node graph, chat and taunts, original aim, view turning, reaction
+and fire throttle, combat movement, real weapon fire, and the Excellent,
+Impressive, Humiliation and Perfect awards.

@@ -118,6 +118,37 @@ obj MovementProfile {
     # Q3 flight (PM_FlyMove): pm_flightfriction and pm_flyaccelerate.
     has flight_friction: float = 3.0,
         fly_accelerate: float = 8.0;
+    # How a move command sets the wished speed. Q1 SV_ClientThink and Q2
+    # PM_AirMove take the length of forward*fmove + right*smove (walking at
+    # cl_forwardspeed, running at twice it, a diagonal faster until the cap);
+    # Q3 PM_CmdScale gives the top speed times the command's largest axis.
+    has scaled_command: bool = False;
+
+    """The speed a move command wishes for, capped at `top`: `forward`,
+    `side` and `up` are its axes in fractions of a full (run speed) command
+    worth `full` units a second, and `vertical` says whether the up axis
+    moves the body too (swimming) or only enters Q3's scale (walking). A
+    `full` of 0 marks a bare direction (monsters and bots), which always
+    goes at `top`."""
+    def command_speed(
+        forward: float, side: float, up: float, vertical: bool, full: float, top: float
+    ) -> float {
+        if full <= 0.0 {
+            return top;
+        }
+        moved = math.sqrt(forward * forward + side * side + (up * up if vertical else 0.0));
+        if moved <= 0.0 {
+            return 0.0;
+        }
+        if self.scaled_command {
+            # PM_CmdScale: speed * max(|axis|) / |command|, the up axis
+            # (a held jump) always counted.
+            total = math.sqrt(forward * forward + side * side + up * up);
+            largest = max(abs(forward), abs(side), abs(up));
+            return top * min(1.0, largest) / total * moved;
+        }
+        return min(moved * full, top);
+    }
 }
 
 """The movement rules `game` plays by; "" is the monster and bot walk."""
@@ -189,7 +220,8 @@ def movement_profile(game: str) -> MovementProfile {
             air_step=True,
             rise_needs_ground=True,
             water_jump_push=200.0,
-            water_jump_pitched=True
+            water_jump_pitched=True,
+            scaled_command=True
         );
     }
     return MovementProfile();
@@ -317,8 +349,11 @@ def step_slide(
 """One fixed step of a body's own movement: flight, a water jump, swimming,
 climbing a ladder or walking, as its profile's game moves (Q1 SV_ClientThink
 and SV_Physics_Client, Q2 Pmove, Q3 PmoveSingle). `wish` is the level
-walking direction and `swim_wish` the view-relative one, `upmove` the
-jump/crouch axis (Q2 cmd.upmove) and `current` the water current at the
+walking direction and `swim_wish` the view-relative one; `command` is the
+move command they came from (x side, y forward, z the jump/crouch axis, Q2
+cmd.upmove) in fractions of a full command worth `command_full` units a
+second (Intent.move; a `command_full` of 0 moves a bare direction at full
+speed, as monsters and bots do), and `current` the water current at the
 feet (Immersion.current)."""
 walker MovePlayer {
     has collision: CollisionMap,
@@ -326,8 +361,9 @@ walker MovePlayer {
         jump: bool = False,
         water_depth: int = 0,
         swim_wish: Vec3 = Vec3(),
-        upmove: float = 0.0,
+        command: Vec3 = Vec3(),
         current: Vec3 = Vec3(),
+        command_full: float = 0.0,
         steady: bool = False,
         profile: MovementProfile = MovementProfile(),
         dt: float = 1.0 / 120.0,
@@ -433,7 +469,16 @@ walker MovePlayer {
         }
         speed = body.walk_speed * haste;
         direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
-        wish = direction.scale(speed);
+        wish = direction.scale(
+            rules.command_speed(
+                self.command.y,
+                self.command.x,
+                self.command.z,
+                False,
+                self.command_full,
+                speed
+            )
+        );
         if self.climbing {
             wish = self.ladder_wish(body, wish);
         }
@@ -570,7 +615,16 @@ walker MovePlayer {
         speed = body.walk_speed * haste;
         wish = Vec3(z=-60.0);
         if self.swim_wish.length() > 0.0 {
-            wish = self.swim_wish.normalized().scale(speed);
+            wish = self.swim_wish.normalized().scale(
+                rules.command_speed(
+                    self.command.y,
+                    self.command.x,
+                    self.command.z,
+                    True,
+                    self.command_full,
+                    speed
+                )
+            );
         }
         if rules.current_speed > 0.0 {
             wish = wish.add(self.current.scale(rules.current_speed));
@@ -726,9 +780,9 @@ walker MovePlayer {
             climb = rules.ladder_speed;
         } elif forward and body.pitch <= -tilt {
             climb = -rules.ladder_speed;
-        } elif self.upmove > 0.0 {
+        } elif self.command.z > 0.0 {
             climb = rules.ladder_speed;
-        } elif self.upmove < 0.0 {
+        } elif self.command.z < 0.0 {
             climb = -rules.ladder_speed;
         }
         side = rules.ladder_side_speed;

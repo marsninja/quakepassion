@@ -76,6 +76,12 @@ node Actor(Entity) {
         killer: Actor | None = None,
         death_means: str = "",
         death_overkill: int = 0;
+    # Q3 G_Damage's bookkeeping: who last hurt this actor and how
+    # (client->lasthurt_client, lasthurt_mod), and how many hits it has
+    # landed on others (PERS_HITS).
+    has hurt_by: Actor | None = None,
+        hurt_means: str = "",
+        hits_landed: int = 0;
 }
 
 node Player(Actor) {

@@ -13,7 +13,7 @@ import from engine.world.world { World, Player, Entity }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileTick }
 import from engine.world.arena { MatchTick, match_of }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from engine.world.pickups { PickupTick, Pickup, HasPickup }
 import from engine.world.powerups { GrantPowerup }
 import from engine.world.models { PlayerRig }
@@ -86,7 +86,8 @@ with entry {
             player.health = 100;
             player.god_mode = True;
         }
-        app = App(world=world, player=camera, level=level, renderer=renderer, clock=Clock(), smoke=True, culling=False);
+        app = App(world=world, player=camera, level=level, renderer=renderer, clock=Clock(), smoke=True);
+        app.renderer.cvars.novis.assign("1");
         equip_player(player, app.combat, "q3");
         app.quake.upload(level);
         app.models.upload(world);

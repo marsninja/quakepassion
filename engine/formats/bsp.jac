@@ -4,6 +4,9 @@ import struct;
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis }
 
+"""An image. `fullbright`: an RGBA skin whose alpha marks the palette's
+fullbright texels (Q1 indices 224-255, which light never darkens) rather
+than opacity."""
 obj Texture {
     has name: str = "missing",
         width: int = 16,
@@ -16,7 +19,8 @@ obj Texture {
         flags: int = 0,
         alpha_test: int = 0,
         additive: bool = False,
-        two_sided: bool = False;
+        two_sided: bool = False,
+        fullbright: bool = False;
 }
 
 obj TexInfo {
@@ -31,6 +35,11 @@ obj TexInfo {
 obj Face {
     has emission: bool = False,
         moving_light: bool = False;
+    # Q1/Q2: the texture axes the lightmap is laid out on, and whether the
+    # surface has no lightmap by design (Q1 SURF_DRAWTILED, Q2 SURF_DRAWTURB
+    # and SURF_DRAWSKY), as R_LightPoint reads them.
+    has texinfo: TexInfo | None = None,
+        tiled: bool = False;
     has motion: Vec3 = Vec3(),
         turn: Basis | None = None,
         pivot: Vec3 = Vec3(),
@@ -75,7 +84,9 @@ obj Plane {
 obj Branch {
     has plane: int,
         front: int,
-        back: int;
+        back: int,
+        first_face: int = 0,
+        face_count: int = 0;
 }
 
 obj Leaf {

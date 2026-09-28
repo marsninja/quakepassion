@@ -74,7 +74,12 @@ grid.
   bodies are kept at most.
   - A body keeps the dead player's health and its gib models.
   - Hitscan shots, missiles and splash from players and bots strike it, as
-    `CONTENTS_CORPSE` does. The shots stop at its lowered box.
+    `CONTENTS_CORPSE` does. The shots stop at its lowered box. Movement does
+    not: `CONTENTS_CORPSE` is not in `MASK_PLAYERSOLID`, so players and bots
+    walk through bodies, as they do through the dead in Q3.
+  - A dead bot keeps falling until it lands (its pmove runs on), so the copy
+    is left where the body came to rest; none is left in a `CONTENTS_NODROP`
+    void, such as the one around q3dm17 (`tests/gib_tests.jac`).
   - At `GIB_HEALTH` (-40) it bursts into gibs with the gib sound (`body_die`).
   - A body that was gibbed takes no more damage.
 - **Sounds** (`cg_event.c`): each rig names its character's voice and footstep
@@ -86,7 +91,11 @@ grid.
   only with the invisibility shader. Quad, battle suit and regeneration
   (flashing) add shells pushed out along the normals by their shaders'
   `deformVertexes` amount. Weapons, the view weapon included, use the weapon
-  shells.
+  shells. Bots show theirs too: `repros/native_bot_powerup_shells.jac`
+  checks natively that `GatherModels` sees a bot as an `Actor` (fixed in
+  jaseci-labs/jac#9562).
+- **Taunts:** a bot that just killed now and then gestures
+  (`TORSO_GESTURE`) with its model's `taunt.wav` (`EV_TAUNT`).
 - Q3 players no longer stop to flinch when hit.
 - The Q3 view weapon has its muzzle flash and a spinning barrel.
 
@@ -112,12 +121,3 @@ grid.
   | q3dm6 | 5 | 5.18 | 6.74 |
 
   Posing adds up to 0.3 ms per bot, and fewer with culling on.
-
-## Limits
-
-- Bots' powerup shells and invisibility are not drawn yet: native
-  `isinstance(here, Actor)` in `GatherModels` is false for `Opponent`, whose
-  module `models.jac` does not import (a Jac defect with a minimal repro, to be
-  fixed upstream). The player's view weapon shows its shells.
-- Bodies are not solid to movement.
-- The powerup shaders drop their texture rotation and turbulence.

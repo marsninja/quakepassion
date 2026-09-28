@@ -1,3 +1,4 @@
+import math;
 import from engine.physics.collision { CollisionMap }
 import from engine.physics.movement { MovePlayer, SetStance, MovementProfile, movement_profile }
 import from engine.formats.bsp { Bsp, Model, Brush, Plane }
@@ -199,7 +200,7 @@ test "Q2 ladders climb looking up or down while pressing forward" {
     }
     assert player.velocity.z == 0.0 and abs(player.pos.z - height) < 0.001;
     # Crouch (upmove down) and looking down climb down.
-    player spawn MovePlayer(collision=collision, upmove=-1.0, profile=rules);
+    player spawn MovePlayer(collision=collision, command=Vec3(z=-1.0), profile=rules);
     assert player.velocity.z < 0.0;
     player.pitch = -0.5;
     for i in range(60) {
@@ -341,4 +342,26 @@ test "monsters keep the shared walk" {
         strider spawn MovePlayer(collision=mp_floor(), wish=Vec3(x=1.0), profile=MovementProfile());
     }
     assert abs(strider.velocity.x - 320.0) < 0.01;
+}
+
+test "move commands wish each game's walk and run speeds" {
+    # Q1 SV_ClientThink / Q2 PM_AirMove: the command's length, capped.
+    for (game, top) in [("q1", 320.0), ("q2", 300.0)] {
+        rules = movement_profile(game);
+        assert rules.command_speed(0.5, 0.0, 0.0, False, 400.0, top) == 200.0;
+        assert rules.command_speed(1.0, 0.0, 0.0, False, 400.0, top) == top;
+        # Walking diagonally goes faster than straight, up to the cap.
+        diagonal = rules.command_speed(0.5, 0.5, 0.0, False, 400.0, top);
+        assert abs(diagonal - min(top, 200.0 * math.sqrt(2.0))) < 0.001;
+        # The jump axis only moves a swimmer.
+        assert rules.command_speed(0.5, 0.0, 1.0, False, 400.0, top) == 200.0;
+    }
+    # Q3 PM_CmdScale: g_speed times the largest axis over the command's length.
+    q3 = movement_profile("q3");
+    assert q3.command_speed(0.5, 0.0, 0.0, False, 400.0, 320.0) == 160.0;
+    assert q3.command_speed(1.0, 1.0, 0.0, False, 400.0, 320.0) == 320.0;
+    held = q3.command_speed(1.0, 0.0, 1.0, False, 400.0, 320.0);
+    assert abs(held - 320.0 / math.sqrt(2.0)) < 0.001;
+    # A bare direction (monsters, bots) always goes at the top speed.
+    assert movement_profile("").command_speed(0.2, 0.0, 0.0, False, 0.0, 320.0) == 320.0;
 }

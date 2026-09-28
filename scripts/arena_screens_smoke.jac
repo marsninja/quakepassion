@@ -15,7 +15,7 @@ import from engine.world.world { World, Player, Entity, Area, move_to_area }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileTick, damage_opponent }
 import from engine.world.arena { MatchTick, Competes, match_of, join_match }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from engine.world.pickups { PickupTick, Pickup, HasPickup }
 import from engine.world.powerups { GrantPowerup }
 import from engine.world.inventory { AdjustInventory }
@@ -101,7 +101,9 @@ with entry {
     contest.fraglimit = 1000;
     human = spawn_player(level);
     human.god_mode = True;
-    app = App(world=world, player=human, level=level, renderer=renderer, clock=Clock(), culling=False, overlay=False, walking=True);
+    app = App(world=world, player=human, level=level, renderer=renderer, clock=Clock(), walking=True);
+    app.renderer.cvars.novis.assign("1");
+    app.host.overlay.assign("0");
     join_match(world, human);
     equip_player(human, app.combat, "q3");
     app.quake.upload(level);
@@ -163,10 +165,10 @@ with entry {
     }
 
     # The skill row at its fifth step.
-    app.skill = 4;
+    app.host.skill.assign("4");
     app.menu.opened = True;
     app.menu.settings_open = True;
-    app.menu.setting_selected = 10;
+    app.menu.setting_selected = 15;
     shoot(app, "qp_arena_skill_menu.png");
     app.menu.opened = False;
 

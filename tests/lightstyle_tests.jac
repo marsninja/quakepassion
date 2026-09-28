@@ -17,6 +17,9 @@ import from engine.formats.q1.wad { wad_lumps, wad_pictures }
 test "style letters scale brightness around normal" {
     assert letter_scale("a") == 0.0 and letter_scale("m") == 1.0;
     assert letter_scale("z") > 2.0;
+    # Q1 d_lightstylevalue: 22 per letter over 256.
+    assert letter_scale("m", "q1") == 264.0 / 256.0;
+    assert letter_scale("z", "q1") == 550.0 / 256.0 and letter_scale("a", "q1") == 0.0;
 }
 
 test "animated styles play at ten frames a second and switches toggle" {
@@ -30,8 +33,9 @@ test "animated styles play at ten frames a second and switches toggle" {
     styles = load_light_styles(world, bsp);
     assert styles is not None;
     # Style 4 is the fast strobe "mamamamamama".
-    assert styles.values[4] == 1.0 and styles.values[0] == 1.0;
-    assert styles.values[32] == 1.0 and styles.values[33] == 0.0;
+    normal = letter_scale("m", "q1");
+    assert styles.values[4] == normal and styles.values[0] == normal;
+    assert styles.values[32] == normal and styles.values[33] == 0.0;
     world spawn LightStyleTick(dt=0.1);
     assert styles.values[4] == 0.0;
     before = styles.serial;
@@ -40,7 +44,7 @@ test "animated styles play at ten frames a second and switches toggle" {
     switches[0].activation.pending = 1;
     switches[1].activation.pending = 1;
     world spawn LightStyleTick(dt=0.01);
-    assert styles.values[32] == 0.0 and styles.values[33] == 1.0 and styles.serial > before;
+    assert styles.values[32] == 0.0 and styles.values[33] == normal and styles.serial > before;
     # Q3 lighting has no styles.
     assert load_light_styles(World(), Bsp(game="q3")) is None;
 }

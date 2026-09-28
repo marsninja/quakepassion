@@ -165,7 +165,8 @@ def follow(app: App, game: str, name: str, spot: str, which: int, frames: int) -
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     games = os.getenv("QP_WALK_GAMES", "q1,q2").split(",");
     problems: list[str] = [];
     for game in games {
@@ -181,7 +182,7 @@ with entry {
         if not app.audio.ready {
             app.audio.open(game, game_directory(game));
         }
-        app.audio.volume = 0.0;
+        app.audio.volume.assign("0");
         app.smoke = False;
         app.walking = True;
         while queue {
