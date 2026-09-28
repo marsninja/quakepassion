@@ -1194,8 +1194,13 @@ impl App.step() -> bool {
                 jump=self.jump_pending or intent.jump_held,
                 water_depth=immersed.depth,
                 swim_wish=swim,
-                upmove=intent.move.z - (1.0 if intent.crouch else 0.0),
+                command=Vec3(
+                    x=intent.move.x,
+                    y=intent.move.y,
+                    z=intent.move.z - (1.0 if intent.crouch else 0.0)
+                ),
                 current=immersed.current,
+                command_full=self.controls.full_move_speed(),
                 profile=self.level.movement,
                 dt=self.physics_clock.tick_rate
             );

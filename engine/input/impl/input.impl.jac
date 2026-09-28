@@ -234,6 +234,10 @@ impl Controls.command(shell: Shell, args: list[str]) {
     }
 }
 
+impl Controls.full_move_speed -> float {
+    return max(1.0, self.cvars.forward_speed.number * self.cvars.speed_key.number);
+}
+
 impl Controls.release_all {
     self spawn ReleaseButtons();
 }
@@ -288,7 +292,7 @@ impl Controls.sample(dt: float) -> Intent {
     } else {
         ahead -= cvars.m_forward.number * mouse_y;
     }
-    full = max(1.0, cvars.forward_speed.number * cvars.speed_key.number);
+    full = self.full_move_speed();
     intent.move = Vec3(
         x=max(-1.0, min(1.0, side / full)),
         y=max(-1.0, min(1.0, ahead / full)),

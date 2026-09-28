@@ -204,6 +204,9 @@ node Controls {
     """This frame's Intent from the buttons, the mouse and the pending
     requests; the frame's impulses and requests are then cleared."""
     def sample(dt: float) -> Intent;
+    """Units a second of a full (run speed) move command: cl_forwardspeed
+    times cl_movespeedkey. Intent.move is a fraction of it."""
+    def full_move_speed -> float;
     """Let go of every button."""
     def release_all;
 }
