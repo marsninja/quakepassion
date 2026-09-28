@@ -1208,7 +1208,8 @@ impl App.step() -> bool {
                         collision=self.level.collision,
                         state=self.combat,
                         rules=self.combat.rules,
-                        dt=self.physics_clock.tick_rate
+                        dt=self.physics_clock.tick_rate,
+                        map_name=self.level.name
                     );
                 }
             }

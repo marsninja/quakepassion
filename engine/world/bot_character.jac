@@ -1,7 +1,35 @@
 """A Q3 bot's personality: the botlib characteristics (botfiles/bots/*_c.c)
-and weapon weights (*_w.c) that drive its aim, reactions and tactics, already
-resolved for the match's skill level."""
-import from .world { Actor }
+that drive its aim, reactions and tactics, resolved for the match's skill
+level, with the fuzzy item and weapon weights (*_i.c, *_w.c) it chooses
+goals and weapons by and the chats (*_t.c) it says."""
+import from .world { Actor, Player }
+import from .bot_routes { BotRoute }
+import from .bot_travel { TravelResult }
+import from ..formats.aas { TFL_DEFAULT, TFL_LAVA, TFL_SLIME, TFL_ROCKETJUMP }
+import from ..formats.botconfig { WeightConfig, ChatMessage, WeightDice }
+import from .bot_goals { GoalState, BotGoal }
+import from .bot_chat { BotChatState }
+import from .bot_weights {
+    INVENTORY_QUAD,
+    INVENTORY_HEALTH,
+    INVENTORY_ARMOR,
+    INVENTORY_BFG10K,
+    INVENTORY_BFGAMMO,
+    INVENTORY_RAILGUN,
+    INVENTORY_SLUGS,
+    INVENTORY_LIGHTNING,
+    INVENTORY_LIGHTNINGAMMO,
+    INVENTORY_ROCKETLAUNCHER,
+    INVENTORY_ROCKETS,
+    INVENTORY_PLASMAGUN,
+    INVENTORY_CELLS,
+    INVENTORY_GRENADELAUNCHER,
+    INVENTORY_GRENADES,
+    INVENTORY_SHOTGUN,
+    INVENTORY_SHELLS,
+    ENEMY_HEIGHT,
+    ENEMY_HORIZONTAL_DIST
+}
 import from .inventory { quantity }
 import from .powerups { empowered }
 import from ..physics.collision { CollisionMap }
@@ -9,6 +37,7 @@ import from ..math.vec3 { Vec3 }
 
 obj BotCharacter {
     has name: str = "",
+        gender: str = "male",
         skill: float = 3.0,
         aim_skill: float = 0.5,
         aim_accuracy: float = 0.5,
@@ -23,8 +52,31 @@ obj BotCharacter {
         self_preservation: float = 0.5,
         jumper: float = 0.0,
         croucher: float = 0.0,
-        alertness: float = 0.5,
-        weights: dict[str, int] = {};
+        weapon_jumping: float = 0.0,
+        alertness: float = 0.5;
+    # The fuzzy weights and, for each item classname and weapon number, the
+    # weight that rates it (be_ai_goal.c ItemWeightIndex, be_ai_weap.c
+    # WeaponWeightIndex; -1 when the character has none).
+    has item_weights: WeightConfig = WeightConfig(),
+        item_numbers: dict[str, int] = {},
+        weapon_weights: WeightConfig = WeightConfig(),
+        weapon_numbers: dict[int, int] = {};
+    # Chatting (ai_chat.c): the character's initial chats by type, rnd.c's
+    # random strings and its tendencies to chat (CHARACTERISTIC_CHAT_*).
+    has chats: dict[str, list[ChatMessage]] = {},
+        random_strings: dict[str, list[ChatMessage]] = {},
+        chat_insult: float = 0.0,
+        chat_misc: float = 0.0,
+        chat_start_end_level: float = 0.0,
+        chat_enter_exit_game: float = 0.0,
+        chat_kill: float = 0.0,
+        chat_death: float = 0.0,
+        chat_enemy_suicide: float = 0.0,
+        chat_hit_talking: float = 0.0,
+        chat_hit_no_death: float = 0.0,
+        chat_hit_no_kill: float = 0.0,
+        chat_random: float = 0.0,
+        chat_state: BotChatState = BotChatState();
 
     """Per-weapon accuracy, falling back to the general characteristic."""
     def accuracy_for(weapon: str) -> float {
@@ -36,9 +88,6 @@ obj BotCharacter {
         return self.leading[weapon] if weapon in self.leading else self.aim_skill;
     }
 
-    def weight_for(weapon: str) -> int {
-        return self.weights[weapon] if weapon in self.weights else 0;
-    }
 }
 
 # ui_spskill.c's names for g_spSkill 1-5.
@@ -68,11 +117,15 @@ def bot_handicap(skill: float) -> int {
     return 100;
 }
 
-"""What a Q3 bot is doing moment to moment beyond its character: its view as
-BotChangeViewAngles turns it (Quake degrees, stepped every 50 ms server frame
-and drawn between frames), its battle node (ai_dmnet.c: "fight", "retreat",
-"nbg", "chase", or "" while seeking goals) and BotAttackMove's strafe, jump
-and crouch timers."""
+"""What a Q3 bot is doing moment to moment beyond its character (the
+bot_state_t of ai_main.h). Its view as BotChangeViewAngles turns it (Quake
+degrees, stepped every 50 ms server frame and drawn between frames);
+BotAttackMove's strafe, jump and crouch timers; and its AI: the ai_dmnet.c
+node it is in (`ainode`), that node's timers on the level clock, its enemy
+(`enemy`, bs->enemy) and what it remembers of it, its goals, what it last
+killed and what killed it, and the route and travel it moves by. A bot gets a
+fresh state each time it respawns, as botlib resets its move and goal
+states."""
 obj BotState {
     has clock: float = 0.0,
         view_ready: bool = False,
@@ -85,21 +138,61 @@ obj BotState {
         pitch: float = 0.0,
         yaw_speed: float = 0.0,
         pitch_speed: float = 0.0,
-        battle: str = "",
-        battle_time: float = 0.0,
-        check_time: float = 0.0,
-        seen_time: float = 0.0,
-        chase_target: Vec3 = Vec3(),
-        nearby_goal: Vec3 | None = None,
         strafe_right: bool = False,
         strafe_time: float = 0.0,
         jump_time: float = -10.0,
         crouch_time: float = -10.0,
-        enemy: Actor | None = None,
         last_health: int = 0,
         view_target: Vec3 = Vec3(),
         sight_target: Actor | None = None,
-        sight: bool = False;
+        sight: bool = False,
+        thought: bool = False,
+        gesture: bool = False;
+    # ai_dmnet.c: the node, and the battle node's name ("fight", "chase",
+    # "retreat", "nbg", or "" in the other nodes) for what reads it.
+    has ainode: str = "seek_ltg",
+        battle: str = "",
+        suicidal: bool = False,
+        inventory: list[int] = [],
+        goals: GoalState = GoalState(),
+        dice: WeightDice = WeightDice(),
+        ltg_time: float = 0.0,
+        nbg_time: float = 0.0,
+        check_time: float = 0.0,
+        chase_time: float = 0.0,
+        stand_time: float = 0.0,
+        stand_find_enemy_time: float = 0.0,
+        respawn_time: float = 0.0,
+        respawn_chat_time: float = 0.0,
+        respawn_waiting: bool = False,
+        respawn_minimum: float = 0.0,
+        last_frame_health: int = -1,
+        last_hit_count: int = 0;
+    # The enemy (bs->enemy) and what the bot keeps of it.
+    has enemy: Player | None = None,
+        enemy_visible_time: float = 0.0,
+        enemy_death_time: float = 0.0,
+        enemy_suicide: bool = False,
+        last_enemy_origin: Vec3 = Vec3(),
+        last_enemy_area: int = 0;
+    # BotCheckSnapshot's obituaries: the last seen, and what they said.
+    has obituary_serial: int = 0,
+        last_killed_player: Player | None = None,
+        last_killed_by: Player | None = None,
+        bot_death_means: str = "",
+        bot_suicide: bool = False,
+        enemy_death_means: str = "",
+        killed_enemy_time: float = -100.0;
+    # What the AI asks of the body this think: a goal to move to (and its
+    # AAS area), whether to fight in place (BotAttackMove), and where to
+    # look ("movement", "enemy" or "chase").
+    has move_goal: BotGoal | None = None,
+        goal_area: int = 0,
+        view_mode: str = "movement",
+        talking: bool = False;
+    has travel_flags: int = TFL_DEFAULT,
+        route: BotRoute = BotRoute(),
+        travel: TravelResult = TravelResult();
 }
 
 """ai_dmq3.c BotEntityVisible for a player's box: the bot's eye sees the
@@ -125,32 +218,75 @@ def enemy_view(distance: float, alarmed: bool) -> float {
     return 90.0 + near / (810.0 * 9.0);
 }
 
-"""ai_dmq3.c BotAggression: how keen the bot is to fight, from its weapons,
-ammo, health and armor and where the enemy stands."""
-def bot_aggression(bot: Actor, foe: Actor, weapon: str) -> float {
-    inventory = bot.inventory;
-    horizontal = Vec3(x=foe.pos.x - bot.pos.x, y=foe.pos.y - bot.pos.y).length();
-    if empowered(bot, "quad") and (weapon != "gauntlet" or horizontal < 80.0) {
+"""ai_dmq3.c BotAggression: how keen the bot is to fight, from its inventory
+(with the enemy's height and distance, BotUpdateBattleInventory) and the
+weapon it holds (`weapon`, a weapon number)."""
+def bot_aggression(inventory: list[int], weapon: int) -> float {
+    if inventory[INVENTORY_QUAD] > 0 and (weapon != 1 or inventory[ENEMY_HORIZONTAL_DIST] < 80) {
         return 70.0;
     }
-    if foe.pos.z - bot.pos.z > 200.0 {
+    if inventory[ENEMY_HEIGHT] > 200 {
         return 0.0;
     }
-    if bot.health < 60 or (bot.health < 80 and bot.armor < 40) {
+    if inventory[INVENTORY_HEALTH] < 60 {
+        return 0.0;
+    }
+    if inventory[INVENTORY_HEALTH] < 80 and inventory[INVENTORY_ARMOR] < 40 {
         return 0.0;
     }
     for choice in [
-        ("bfg", "bfg", 7, 100.0),
-        ("railgun", "slugs", 5, 95.0),
-        ("lightning", "lightning", 50, 90.0),
-        ("rocketlauncher", "rockets", 5, 90.0),
-        ("plasmagun", "cells", 40, 85.0),
-        ("grenadelauncher", "grenades", 10, 80.0),
-        ("shotgun", "shells", 10, 50.0)
+        (INVENTORY_BFG10K, INVENTORY_BFGAMMO, 7, 100.0),
+        (INVENTORY_RAILGUN, INVENTORY_SLUGS, 5, 95.0),
+        (INVENTORY_LIGHTNING, INVENTORY_LIGHTNINGAMMO, 50, 90.0),
+        (INVENTORY_ROCKETLAUNCHER, INVENTORY_ROCKETS, 5, 90.0),
+        (INVENTORY_PLASMAGUN, INVENTORY_CELLS, 40, 85.0),
+        (INVENTORY_GRENADELAUNCHER, INVENTORY_GRENADES, 10, 80.0),
+        (INVENTORY_SHOTGUN, INVENTORY_SHELLS, 10, 50.0)
     ] {
-        if quantity(inventory, "weapon_" + choice[0]) > 0 and quantity(inventory, choice[1]) > choice[2] {
+        if inventory[choice[0]] > 0 and inventory[choice[1]] > choice[2] {
             return choice[3];
         }
     }
     return 0.0;
+}
+
+"""ai_dmq3.c BotWantsToRetreat (free for all): when not keen to fight."""
+def wants_to_retreat(inventory: list[int], weapon: int) -> bool {
+    return bot_aggression(inventory, weapon) < 50.0;
+}
+
+"""ai_dmq3.c BotWantsToChase (free for all): when keen to fight."""
+def wants_to_chase(inventory: list[int], weapon: int) -> bool {
+    return bot_aggression(inventory, weapon) > 50.0;
+}
+
+"""ai_dmq3.c BotCanAndWantsToRocketJump: a rocket launcher with three
+rockets, no quad, 60 health (90, or 40 armor with less) and a character that
+likes weapon jumping (at least 0.5)."""
+def can_rocket_jump(bot: Actor, mind: BotCharacter) -> bool {
+    inventory = bot.inventory;
+    if quantity(inventory, "weapon_rocketlauncher") <= 0 or quantity(inventory, "rockets") < 3 {
+        return False;
+    }
+    if empowered(bot, "quad") or bot.health < 60 {
+        return False;
+    }
+    if bot.health < 90 and bot.armor < 40 {
+        return False;
+    }
+    return mind.weapon_jumping >= 0.5;
+}
+
+"""The travel flags a bot routes with this think (ai_dmnet.c's bs->tfl):
+TFL_DEFAULT, lava and slime while in them (BotInLavaOrSlime) and rocket
+jumps when it can and wants to."""
+def bot_travel_flags(bot: Actor, mind: BotCharacter, liquid: int, rocket_jumps: bool = True) -> int {
+    flags = TFL_DEFAULT;
+    if liquid in [2, 3] {
+        flags |= TFL_LAVA | TFL_SLIME;
+    }
+    if rocket_jumps and can_rocket_jump(bot, mind) {
+        flags |= TFL_ROCKETJUMP;
+    }
+    return flags;
 }

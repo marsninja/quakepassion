@@ -10,7 +10,7 @@ import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick, ProjectileTick }
 import from engine.world.arena { MatchTick, Competes, match_of, standings }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from engine.world.pickups { PickupTick }
 import from engine.world.doors { DoorTick }
 import from engine.world.models { PlayerRig }
@@ -103,7 +103,7 @@ with entry {
                         cells[key].append(spot);
                     }
                 }
-                phase = bot.bot_state.battle or "seek";
+                phase = bot.bot_state.ainode;
                 nodes[key][phase] = nodes[key].get(phase, 0.0) + dt;
                 foe = bot.foe;
                 if foe is not None and foe.health > 0 and tick % 12 == 0 {

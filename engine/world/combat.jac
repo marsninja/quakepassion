@@ -9,7 +9,7 @@ import from .particles {
     explode,
     blast_kind
 }
-import from .navigation { RouteSearch, RouteQueue, walk_edge }
+import from .navigation { RouteSearch, RouteQueue, walk_edge, waypoint_reached }
 import from .opponent_rule { OpponentRule, AttackProfile, rule_profiles }
 import from .weapons { WeaponRule }
 import from .world { World, Player, area_of, move_to_area }
@@ -23,6 +23,7 @@ import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_co
 import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
+import from .bot_travel { FollowRoute, TravelResult, TRAVEL_JUMP_SPEED }
 import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
 import from .trail { next_crumb, trail_clock }
 import from .speakers { Speaker }
@@ -638,14 +639,6 @@ def opponent_fraction(start: Vec3, finish: Vec3, enemy: Opponent) -> float {
 
 """Whether a route waypoint is reached. Arena routes come from the AAS, whose
 points sit at standing-origin height, so height gets a step's slack."""
-def waypoint_reached(point: Vec3, origin: Vec3, loose: bool) -> bool {
-    gap = point.sub(origin);
-    if not loose {
-        return gap.length() < 8.0;
-    }
-    return math.sqrt(gap.x * gap.x + gap.y * gap.y) < 12.0 and abs(gap.z) < 28.0;
-}
-
 # Profiles derive from the rule once per opponent; rules are immutable data.
 def ensure_profiles(enemy: Opponent) {
     if not enemy.profiles {
@@ -3544,8 +3537,10 @@ walker CombatTick {
             switching=switching,
             ready=bot.weapon_wait <= 0.0,
             shots=rig.shots,
-            haste=empowered(bot, "haste")
+            haste=empowered(bot, "haste"),
+            gesture=bot.bot_state.gesture
         );
+        bot.bot_state.gesture = False;
         for cue in pose.sounds {
             request_sound(bot, rig_sound(rig, cue));
         }
@@ -4092,7 +4087,9 @@ walker CombatTick {
                 mesh = self.navmesh;
                 if wants_route and here.arena and mesh is not None {
                     # Q3 bots route over the map's AAS, the original bots' own data.
-                    plan = plan_route(mesh, origin, target);
+                    plan = plan_route(
+                        mesh, origin, target, flags=here.bot_state.travel_flags, goal_area=here.bot_state.goal_area
+                    );
                     here.route_wait = 0.25 if plan.found else 1.0;
                     if plan.pending {
                         here.route_wait = 0.05;
@@ -4106,6 +4103,9 @@ walker CombatTick {
                         here.route_wait = 0.1;
                     }
                     if plan.found {
+                        # The bot's travel follows the plan itself (its
+                        # passages); the waypoint lists are the same lists.
+                        here.bot_state.route = plan;
                         here.route = plan.points;
                         here.route_launches = plan.launches;
                         here.route_areas = plan.areas;
@@ -4231,42 +4231,42 @@ walker CombatTick {
                 }
             }
         }
-        # Bots steer every frame: an AAS waypoint is done on reaching it or on
-        # entering its target area, and takeoffs launch from the ground.
+        # Bots travel their AAS route every frame (be_ai_move.c BotMoveToGoal).
         mesh = self.navmesh;
+        here.bot_state.travel = TravelResult();
         if here.arena
             and mesh is not None
             and not here.fighting
             and here.route
             and len(here.route_areas) == len(here.route)
+            and len(here.bot_state.route.points) == len(here.route)
             and here.attack_clock < 0.0 {
-            standing_origin = here.pos.sub(Vec3(z=here.eye_height));
-            standing = mesh.locate(standing_origin);
-            while here.route {
-                done = waypoint_reached(here.route[0], standing_origin, True)
-                    or (here.route_areas[0] > 0 and standing == here.route_areas[0]);
-                if not done {
-                    break;
-                }
-                if here.route_launches and here.route_launches[0].z > 0.0 {
-                    if not here.grounded {
-                        break;
-                    }
-                    here.velocity = here.route_launches[0];
+            memory = here.bot_state;
+            travel = here spawn FollowRoute(
+                mesh=mesh,
+                collision=body_collision,
+                route=memory.route,
+                eye_height=here.eye_height,
+                clock=memory.clock,
+                view_yaw=memory.yaw,
+                view_pitch=memory.pitch
+            );
+            memory.travel = travel.result;
+            launch = travel.launch;
+            if launch is not None {
+                here.velocity = launch;
+                here.grounded = False;
+            }
+            if travel.result.failure {
+                here.route = [];
+                here.route_areas = [];
+                here.route_launches = [];
+            } else {
+                if travel.result.jump and here.grounded {
+                    here.velocity.z = TRAVEL_JUMP_SPEED;
                     here.grounded = False;
                 }
-                here.route.pop(0);
-                here.route_areas.pop(0);
-                if here.route_launches {
-                    here.route_launches.pop(0);
-                }
-            }
-            if here.route {
-                ahead = here.route[0].sub(standing_origin);
-                ahead.z = 0.0;
-                if ahead.length() > 0.001 {
-                    here.steering = ahead.normalized();
-                }
+                here.steering = Vec3(x=travel.result.direction.x, y=travel.result.direction.y).normalized();
             }
         }
         if self.world is not None and here.character is None {
@@ -4281,19 +4281,29 @@ walker CombatTick {
         if here.crouched and here.character is not None {
             here.walk_speed *= 0.25;
         }
+        # Travel slows a bot onto a mover or a rocket jump's takeoff.
+        if here.character is not None {
+            here.walk_speed *= here.bot_state.travel.speed_scale();
+        }
         if strolling {
             here.walk_speed = here.patrol_speed
                 if here.patrol_speed > 0.0
                 else here.rule.speed * 0.4;
         }
         # Bots keep steering over stair steps and drops, but not while a jump or
-        # pad launch is still carrying them upward.
+        # pad launch is still carrying them upward (weapon jumps steer through
+        # the air, BotFinishTravel_WeaponJump).
         wish = Vec3()
             if here.pain_wait > 0.0
                 or here.duck_wait > 0.0
                 or (here.attack_flash > 0.0 and here.character is None)
                 or here.leaping
-                or (here.arena and not here.grounded and here.velocity.z > 100.0)
+                or (
+                    here.arena
+                        and not here.grounded
+                        and here.velocity.z > 100.0
+                        and not here.bot_state.travel.air_control
+                )
             else here.steering;
         facing = here.patrol_goal;
         if facing is None and here.alert > 0.0 {

@@ -67,6 +67,13 @@ walker Damage {
             );
             here.armor -= self.absorbed;
         }
+        # None for the world (lasthurt_client ENTITYNUM_WORLD).
+        attacker = self.attacker;
+        here.hurt_by = attacker;
+        here.hurt_means = self.means;
+        if attacker is not None and attacker is not here {
+            attacker.hits_landed += 1;
+        }
         self.dealt = min(here.health, self.amount - self.absorbed);
         # Health stops at zero; how far past it the hit went decides gibbing.
         self.overkill = self.amount - self.absorbed - self.dealt;
