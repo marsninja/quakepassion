@@ -442,7 +442,7 @@ walker GatherPushables {
             Pushable(
                 entity=here,
                 view=self.views[key],
-                lift=item_lift(self.game),
+                lift=item_lift(self.game, here.rule),
                 margin=reach_margin(self.views[key])
             )
         );

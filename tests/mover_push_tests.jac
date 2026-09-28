@@ -92,6 +92,30 @@ test "items settle as each game spawns them" {
     # Nothing within 256 below: the item fell out of the level.
     high = item(Vec3(z=400.0));
     assert not drop_to_floor(high, item_view(collision, "q1"), "q1", False).kept;
+    # Armor and weapons reach from '-16 -16 0', keys and artifacts from
+    # '-16 -16 -24': each lands with its own box's bottom on the floor.
+    armor = item(Vec3(z=40.0));
+    armor.rule.mins = Vec3(x=-16.0, y=-16.0);
+    assert drop_to_floor(armor, item_view(collision, "q1"), "q1", False).kept;
+    assert abs(armor.pos.z) < 0.05;
+    key = item(Vec3(z=40.0));
+    key.rule.mins = Vec3(x=-16.0, y=-16.0, z=-24.0);
+    assert drop_to_floor(key, item_view(collision, "q1"), "q1", False).kept;
+    assert abs(key.pos.z - 24.0) < 0.05;
+    # Against a wall, only the item's own box decides whether it fits.
+    walled = floor_map(0.0);
+    walled.add_brush(
+        [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(z=1.0), Vec3(z=-1.0)],
+        [100.0, -20.0, 1000.0, 1000.0, 200.0, 0.0],
+        Vec3(x=-16.0, y=-16.0, z=-24.0),
+        Vec3(x=16.0, y=16.0, z=32.0),
+        Vec3()
+    );
+    walled.models.append(0);
+    walled.reindex();
+    beside = item(Vec3(x=0.0, z=40.0));
+    beside.rule.mins = Vec3(x=-16.0, y=-16.0);
+    assert drop_to_floor(beside, item_view(walled, "q1"), "q1", False).kept;
     # Q2 droptofloor: the 15-unit box, 128 down, or left hanging to fall.
     q2 = item(Vec3(z=40.0));
     landing = drop_to_floor(q2, item_view(collision, "q2"), "q2", False);

@@ -176,6 +176,20 @@ glob Q1_NAMES: dict[str, str] = {
     "item_artifact_super_damage": "Quad Damage"
 };
 
+"""items.qc setsize: health and ammo boxes (and item_weapon) reach from their
+origin to '32 32 56', armor and weapons from '-16 -16 0', and keys, sigils
+and artifacts from '-16 -16 -24'; all are the player hull's size."""
+def q1_item_mins(kind: str) -> Vec3 {
+    if kind.startswith("item_armor") or kind.startswith("weapon_") {
+        return Vec3(x=-16.0, y=-16.0);
+    }
+    if kind in ["item_key1", "item_key2", "item_sigil"]
+        or kind.startswith("item_artifact_") {
+        return Vec3(x=-16.0, y=-16.0, z=-24.0);
+    }
+    return Vec3();
+}
+
 """What picking the item up says and shows: Q1 sprints ("You got the Rocket
 Launcher", "You receive 25 health", "You got armor", centerprinted "You got
 the rune!"); Q2 and Q3 put the item's icon and name on the status bar
@@ -183,6 +197,7 @@ the rune!"); Q2 and Q3 put the item's icon and name on the status bar
 (Pickup_Weapon) and items announce their respawn."""
 def present_pickup(game: str, kind: str, rule: PickupRule, worldtype: int) {
     if game == "q1" {
+        rule.mins = q1_item_mins(kind);
         if kind == "item_health" {
             rule.message = "You receive " + str(rule.amount) + " health";
         } elif kind.startswith("item_armor") {

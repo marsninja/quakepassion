@@ -35,6 +35,11 @@ obj PickupRule {
         icon: str = "",
         topup: bool = False,
         respawn_sound: str = "";
+    # The low corner of a Q1 item's box about its origin (items.qc setsize:
+    # health and ammo '0 0 0', armor and weapons '-16 -16 0', keys, sigils
+    # and artifacts '-16 -16 -24'); every one is the player hull's size. Q2
+    # and Q3 items are 15 each way about their origin.
+    has mins: Vec3 = Vec3();
 }
 
 # Raise an ammunition limit without granting ammunition (Q2 bandolier/pack).
@@ -123,12 +128,13 @@ def item_view(collision: CollisionMap, game: str) -> CollisionMap {
     );
 }
 
-"""An item's position less the origin of the box its view traces: a Q1
-item's box starts at its origin, so the player-sized hull sits 16, 16 and 24
-on from it; Q2 and Q3 boxes are centred."""
-def item_lift(game: str) -> Vec3 {
+"""An item's position less the origin of the box its view traces. A Q1
+item is traced in the player hull (SV_HullForEntity), whose origin sits at
+the item's origin plus the hull's reach below it past its own low corner;
+Q2 and Q3 boxes are centred."""
+def item_lift(game: str, rule: PickupRule) -> Vec3 {
     if game == "q1" {
-        return Vec3(x=-16.0, y=-16.0, z=-24.0);
+        return Vec3(x=-16.0 - rule.mins.x, y=-16.0 - rule.mins.y, z=-24.0 - rule.mins.z);
     }
     return Vec3();
 }
@@ -146,7 +152,7 @@ units and droptofloor traces its box 256 down; an item with no floor there
 (MOVETYPE_TOSS); one starting in solid goes. Q3 FinishSpawningItem traces
 4096 down unless the item is SUSPENDED; starting in solid, it goes."""
 def drop_to_floor(item: Pickup, view: CollisionMap, game: str, suspended: bool) -> Landing {
-    lift = item_lift(game);
+    lift = item_lift(game, item.rule);
     if game == "q1" {
         item.pos = item.pos.add(Vec3(z=6.0));
     }
