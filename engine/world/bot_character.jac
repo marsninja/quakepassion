@@ -188,6 +188,7 @@ obj BotState {
     # look ("movement", "enemy" or "chase").
     has move_goal: BotGoal | None = None,
         goal_area: int = 0,
+        move_failed: bool = False,
         view_mode: str = "movement",
         talking: bool = False;
     has travel_flags: int = TFL_DEFAULT,

@@ -370,6 +370,14 @@ walker BotThink {
         self.memory.view_mode = "movement";
     }
 
+    """Whether the bot's movement failed since the last think (no route to
+    its goal, or a passage timed out): moveresult.failure, taken once."""
+    def movement_failed() -> bool {
+        failed = self.memory.move_failed;
+        self.memory.move_failed = False;
+        return failed;
+    }
+
     """BotAttackMove."""
     def attack_move() {
         enemy = self.memory.enemy;
@@ -672,6 +680,10 @@ walker BotThink {
         if goal is None {
             return;
         }
+        # "if the movement failed": a new long-term goal next think.
+        if self.movement_failed() {
+            memory.ltg_time = 0.0;
+        }
         if memory.check_time < self.now {
             memory.check_time = self.now + 0.5;
             if self.nearby_goal(goal, 150.0) {
@@ -708,6 +720,9 @@ walker BotThink {
         }
         if goal is not None {
             self.move_to(goal);
+        }
+        if self.movement_failed() {
+            memory.nbg_time = 0.0;
         }
         if self.find_enemy(None) {
             if wants_to_retreat(memory.inventory, self.bot.weapon_slot) {
@@ -889,6 +904,9 @@ walker BotThink {
             }
         }
         self.move_to(goal);
+        if self.movement_failed() {
+            memory.ltg_time = 0.0;
+        }
         self.choose_weapon();
         if self.mind.attack_skill > 0.3 {
             self.aim();
@@ -927,6 +945,9 @@ walker BotThink {
         }
         if goal is not None {
             self.move_to(goal);
+        }
+        if self.movement_failed() {
+            memory.nbg_time = 0.0;
         }
         self.battle_inventory();
         self.choose_weapon();

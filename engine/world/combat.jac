@@ -4142,6 +4142,8 @@ walker CombatTick {
                         here.arena_goal = None;
                         here.arena_goal_wait = 0.0;
                         here.route_wait = 0.1;
+                        # moveresult.failure: the AI gives the goal up.
+                        here.bot_state.move_failed = True;
                     }
                     if plan.found {
                         # The bot's travel follows the plan itself (its
@@ -4302,6 +4304,7 @@ walker CombatTick {
                 here.route = [];
                 here.route_areas = [];
                 here.route_launches = [];
+                memory.move_failed = True;
             } else {
                 if travel.result.jump and here.grounded {
                     here.velocity.z = TRAVEL_JUMP_SPEED;
