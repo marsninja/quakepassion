@@ -21,6 +21,7 @@ import from engine.world.finale {
 }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.brushes { BrushObject, HasBrush, show_brush }
+import from engine.world.targets { HelpComputer, HasHelp, help_for, help_field, help_text }
 import math;
 import os;
 import from engine.world.world { World, Player, In, move_to_area }
@@ -188,6 +189,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     }
     # Loading must rebuild the entity set of the skill that was saved.
     lines.append("SKILL " + str(level.skill));
+    lines.append("CLOCK " + numbers([level.clock]));
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
@@ -485,6 +487,17 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     }
     for progress in [world->:HasProgress:->][?:Progress] {
         lines.append("O " + numbers([float(progress.secrets), float(progress.goals)]));
+    }
+    # Q2 WriteGame keeps game.helpmessage1/2 and the client's helpchanged.
+    for computer in [world->:HasHelp:->][?:HelpComputer] {
+        lines.append(
+            "HELP "
+                + numbers([float(computer.changed), float(computer.unread), computer.beep_wait])
+                + " "
+                + help_field(computer.primary)
+                + " "
+                + help_field(computer.secondary)
+        );
     }
     for hazard in [world->:HasHazard:->][?:Hazard] {
         lines.append("H " + numbers([1.0 if hazard.enabled else 0.0, hazard.cooldown]));
@@ -1186,6 +1199,23 @@ def restore(
             speakers[a].playing = row[0] != 0.0;
             speakers[a].requests = int(row[1]);
             a += 1;
+        } elif words[0] == "CLOCK" and len(words) == 2 {
+            clock = values(words[1], 1)[0];
+            if clock < 0.0 {
+                raise ValueError("Invalid saved level clock");
+            }
+            level.clock = clock;
+        } elif words[0] == "HELP" and len(words) == 6 {
+            row = values(" ".join(words[1:4]), 3);
+            if row[0] < 0.0 or row[1] < 0.0 or row[1] > 4.0 or row[2] < 0.0 {
+                raise ValueError("Invalid saved help computer");
+            }
+            computer = help_for(world);
+            computer.changed = int(row[0]);
+            computer.unread = int(row[1]);
+            computer.beep_wait = row[2];
+            computer.primary = help_text(words[4]);
+            computer.secondary = help_text(words[5]);
         } elif words[0] == "O" and o < len(progress_records) {
             row = values(" ".join(words[1:]), 2);
             record = progress_records[o];
