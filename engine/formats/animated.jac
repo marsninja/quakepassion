@@ -116,7 +116,8 @@ obj ModelStage {
         mods: list[TexMod] = [],
         alpha_test: int = 0,
         depth_write: bool = False,
-        vectors: list[Vec3] = [];
+        vectors: list[Vec3] = [],
+        clamp: bool = False;
 }
 
 def stage_frame(seconds: float, frequency: float, count: int) -> int {

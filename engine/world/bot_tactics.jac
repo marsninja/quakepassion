@@ -372,6 +372,11 @@ def bot_fire(
             beam_trail(world, start, endpoint, "lightning");
         }
         if hit.actor is not None {
+            # EV_BULLET_HIT_FLESH / EV_MISSILE_HIT: CG_Bleed, unseen on the
+            # viewer's own body.
+            if hit.actor is not human {
+                impact_spray(world, endpoint, shot.scale(-1.0), True, rule.key);
+            }
             found = False;
             for slot in range(len(struck)) {
                 if struck[slot] is hit.actor {
@@ -385,7 +390,7 @@ def bot_fire(
             }
         } elif hit.corpse is not None {
             body = hit.corpse;
-            impact_spray(world, endpoint, shot.scale(-1.0), True);
+            impact_spray(world, endpoint, shot.scale(-1.0), True, rule.key);
             if body not in bodies {
                 bodies.append(body);
                 wounds.append(0);

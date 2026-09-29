@@ -19,6 +19,7 @@ random numbers)."""
 import math;
 import from .world { World }
 import from ..math.vec3 { Vec3 }
+import from ..formats.anorms { quake_vertex_normal }
 
 # Q1 ptype_t, then Q2's single particle model and a plain coloured spark
 # (Q3 and Passion impacts, which have no palette).
@@ -99,14 +100,16 @@ obj PuffState {
 """A world's particles and puffs. `fresh` are the particles spawned since the
 renderer last took them into its ring; `clock` the effect time they are born
 on (it runs with the simulation); `seed` the rand() stream; `tracers`
-R_RocketTrail's static tracercount."""
+R_RocketTrail's static tracercount; `avelocities` cl_fx.c's static spin
+rates for the NUMVERTEXNORMALS directions, rolled on first use."""
 node ParticleField {
     has game: str = "",
         clock: float = 0.0,
         seed: int = 1,
         tracers: int = 0,
         fresh: list[Particle] = [],
-        puffs: list[Puff] = [];
+        puffs: list[Puff] = [],
+        avelocities: list[float] = [];
 
     """Q1/Q2 rand(): 0 to 32767."""
     def rand() -> int {
@@ -520,6 +523,42 @@ def quake2_teleporter_particles(field: ParticleField, origin: Vec3) {
         );
         velocity = Vec3(x=field.crand() * 14.0, y=field.crand() * 14.0, z=80.0 + float(field.rand() & 7));
         field.add(quake2_particle(field, start, velocity, Vec3(z=-QUAKE2_PARTICLE_GRAVITY), 219, -0.5));
+    }
+}
+
+# cl_fx.c NUMVERTEXNORMALS (the anorms.h directions, bytedirs) and
+# CL_BfgParticles' BEAMLENGTH.
+glob QUAKE2_VERTEX_NORMALS: int = 162,
+     QUAKE2_BFG_BEAM_LENGTH: float = 16.0;
+
+"""CL_BfgParticles (EF_BFG with EF_ANIM_ALLFAST, the flying ball), one client
+frame's worth at `origin`: a speck for each of the 162 anorms.h directions,
+out along it by sin(ltime + i) * 64 and 16 further along a spin whose angles
+are ltime times its avelocities (rolled once, (rand()&255) * 0.01), green
+(0xd0) toward white and fading with distance from the ball. Each lives only
+its own frame (alphavel -100): the client lays a fresh set every frame."""
+def quake2_bfg_particles(field: ParticleField, origin: Vec3) {
+    if not field.avelocities {
+        field.avelocities = [
+            float(field.rand() & 255) * 0.01 for i in range(QUAKE2_VERTEX_NORMALS * 3)
+        ];
+    }
+    ltime = field.clock;
+    spins = field.avelocities;
+    for i in range(QUAKE2_VERTEX_NORMALS) {
+        yaw = ltime * spins[i * 3];
+        pitch = ltime * spins[i * 3 + 1];
+        forward = Vec3(
+            x=math.cos(pitch) * math.cos(yaw), y=math.cos(pitch) * math.sin(yaw), z=-math.sin(pitch)
+        );
+        out = quake_vertex_normal(i).scale(math.sin(ltime + float(i)) * 64.0);
+        offset = out.add(forward.scale(QUAKE2_BFG_BEAM_LENGTH));
+        dist = offset.length() / 90.0;
+        speck = quake2_particle(
+            field, origin.add(offset), Vec3(), Vec3(), int(math.floor(208.0 + dist * 7.0)), -100.0
+        );
+        speck.alpha = 1.0 - dist;
+        field.add(speck);
     }
 }
 

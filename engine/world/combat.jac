@@ -7,7 +7,8 @@ import from .particles {
     rail_trail,
     beam_trail,
     explode,
-    blast_kind
+    blast_kind,
+    missile_hit_flesh
 }
 import from .navigation { RouteSearch, RouteQueue, walk_edge, waypoint_reached }
 import from .opponent_rule { OpponentRule, AttackProfile, rule_profiles }
@@ -1471,7 +1472,7 @@ def fire_weapon(
             hits.append(query.target);
         } elif query.corpse is not None {
             body = query.corpse;
-            impact_spray(world, player.pos.lerp(finish, query.fraction), shot.normalized().scale(-1.0), True);
+            impact_spray(world, player.pos.lerp(finish, query.fraction), shot.normalized().scale(-1.0), True, rule.key);
             if body not in bodies {
                 bodies.append(body);
                 wounds.append(0);
@@ -1493,7 +1494,8 @@ def fire_weapon(
                 world,
                 player.pos.lerp(finish, fraction),
                 shot.normalized().scale(-1.0),
-                True
+                True,
+                rule.key
             );
             victim.last_seen = player.pos;
             victim.last_seen_height = collision.eye_height;
@@ -2367,6 +2369,7 @@ walker ProjectileTick {
             # A missile bursts on a body it strikes (G_MissileImpact).
             here.pos = here.pos.lerp(finish, fraction);
             damage_corpse(world, body, here.damage);
+            missile_hit_flesh(world, self.state.game, here.effect, here.pos, here.velocity.normalized().scale(-1.0));
             projectile_blast(world, here, self.player, self.collision, self.state);
             world del --> here;
             return;
@@ -2383,6 +2386,9 @@ walker ProjectileTick {
                 attacker=here.owner,
                 means=Q3_MISSILE_MEANS.get(here.effect, ""),
                 energy=self.state.game == "q2" and here.effect in ["q2_bolt", "q2_hyperbolt", "q2_bfg"]
+            );
+            missile_hit_flesh(
+                world, self.state.game, here.effect, here.pos, here.velocity.normalized().scale(-1.0), viewer=True
             );
             projectile_blast(
                 world,
@@ -2409,6 +2415,7 @@ walker ProjectileTick {
                 means=Q3_MISSILE_MEANS.get(here.effect, ""),
                 tally=self.state if here.hostile else None
             );
+            missile_hit_flesh(world, self.state.game, here.effect, here.pos, here.velocity.normalized().scale(-1.0));
         } elif wall.fraction < 1.0
             and here.gravity
             and here.remaining > 0.0
@@ -2459,21 +2466,11 @@ walker ProjectileTick {
                 surface,
                 wall.model
             );
-        } elif victim is None and here.effect == "q3_grenade" {
-            # G_ExplodeMissile: a grenade bursting at rest marks the floor it
-            # lies on (CG_ImpactMark projects 20 units along the up direction).
-            floor = self.collision.trace_point(here.pos, here.pos.sub(Vec3(z=20.0)));
-            if floor.fraction < 1.0 and not floor.start_solid {
-                wall_impact(
-                    world,
-                    "q3",
-                    here.effect,
-                    here.pos.lerp(here.pos.sub(Vec3(z=20.0)), floor.fraction),
-                    floor.normal,
-                    self.collision.surface_class(floor),
-                    floor.model
-                );
-            }
+        } elif victim is None and self.state.game == "q3" {
+            # G_ExplodeMissile: a missile bursting in its own time (a grenade's
+            # fuse, the others' lifetime) sends EV_MISSILE_MISS facing up;
+            # its mark lands on a floor within 20 units below (CG_ImpactMark).
+            wall_impact(world, "q3", here.effect, here.pos, Vec3(z=1.0));
         }
         # Nonexplosive missiles expire quietly at the end of their lifetime.
         projectile_blast(world, here, self.player, self.collision, self.state, victim);

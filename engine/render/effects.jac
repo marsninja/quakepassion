@@ -11,7 +11,8 @@ of the same texture and blend."""
 import math;
 import struct;
 import from .models { ModelRenderer }
-import from ..math.orientation { model_basis }
+import from ..math.orientation { Basis, model_basis }
+import from ..formats.animated { AnimatedModel, AnimatedSurface, ModelStage, stage_frame }
 import from ..world.lighting { Lighting }
 import from ..formats.bsp { Texture }
 import from ..formats.sprite { SpriteFrame, EffectRule }
@@ -36,11 +37,9 @@ import from ..world.particle_field { ParticleField, HasParticles, puff_state }
 import from ..world.missile_trails { EmitTrails }
 import from .particles { ParticleRing }
 import from .polygons { ScenePolygons, POLYGON_BLEND_ALPHA, POLYGON_BLEND_DARKEN }
-import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
-import from ..world.doors { Door }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..math.interpolation { TickBlend }
-import from .quake { QuakeRenderer }
+import from .quake { QuakeRenderer, stage_color }
 import from .gpu {
     GpuMesh,
     GpuProgram,
@@ -340,12 +339,10 @@ walker GatherEffects {
         trails: list[ShotTrail] = [],
         blasts: list[Explosion] = [],
         projectiles: list[Projectile] = [],
-        lightning: list[LightningEvent] = [],
         field: ParticleField | None = None;
 
     can begin with World entry {
         visit [here->:HasParticles:->];
-        visit [here->:HasLightning:->];
         visit [here->:HasMark:->];
         visit [here->:HasTrail:->];
         visit [here->:HasExplosion:->];
@@ -354,10 +351,6 @@ walker GatherEffects {
 
     can particles with ParticleField entry {
         self.field = here;
-    }
-
-    can electrodes with LightningEvent entry {
-        self.lightning.append(here);
     }
 
     can mark with ImpactMark entry {
@@ -384,12 +377,20 @@ obj UploadedSprite {
         rotate: float = 0.0;
 }
 
+"""One stage of a Q3 shader drawn as a sprite: its image frames on the GPU
+and the stage (animMap rate, rgbGen, alphaGen, blend)."""
+obj ShaderSprite {
+    has source: ModelStage,
+        frames: list[int] = [];
+}
+
 # Trails this scene draws itself; the line renderer leaves them alone.
 glob STYLED_TRAILS: list[str] = [
     "rail",
     "q3_rail",
     "lightning",
     "player_lightning",
+    "q1_lightning3",
     "drain",
     "laser_red",
     "laser_green",
@@ -418,6 +419,8 @@ obj EffectScene {
         rules: dict[str, EffectRule] = {},
         blast_frames: dict[str, list[UploadedSprite]] = {},
         blast_models: dict[str, list[ModelRenderer]] = {},
+        blast_shaders: dict[str, ModelRenderer] = {},
+        blast_stages: dict[str, list[ShaderSprite]] = {},
         quads: EffectQuads = EffectQuads(),
         polygons: ScenePolygons = ScenePolygons(),
         particles: ParticleRing = ParticleRing(),
@@ -530,6 +533,10 @@ obj EffectScene {
             for rule in rules {
                 self.rules[rule.key] = rule;
                 model_path = rule.flight.lower().endswith((".mdl", ".md2", ".md3"));
+                if rule.explosion and rule.shader {
+                    self.upload_shader_blast(library, rule, model_path);
+                    continue;
+                }
                 if rule.explosion {
                     if model_path {
                         # Q2 explosions change skin as they burn (CL_AddExplosions).
@@ -543,11 +550,7 @@ obj EffectScene {
                         }
                         self.blast_models[rule.key] = variants;
                     } else {
-                        pictures: list[UploadedSprite] = [];
-                        for image in (rule.images if rule.images else [rule.flight]) {
-                            pictures.extend(self.frames(library, image, rule));
-                        }
-                        self.blast_frames[rule.key] = pictures;
+                        self.blast_frames[rule.key] = self.frames(library, rule.flight, rule);
                     }
                     continue;
                 }
@@ -570,6 +573,44 @@ obj EffectScene {
         } finally {
             library.close();
         }
+    }
+
+    """A Q3 explosion drawn with its shader (cg_weapons.c CG_MissileHitWall's
+    customShader): the shader's stages over `rule.flight`'s model (the
+    bullet, plasma and rail hits' LE_EXPLOSION), or as sprite stages (the
+    rocket, grenade and BFG's LE_SPRITE_EXPLOSION, CG_Bleed's blood)."""
+    def upload_shader_blast(library: AssetLibrary, rule: EffectRule, model_path: bool) {
+        stages = library.pk3.model_stages(rule.shader);
+        if not stages {
+            raise ValueError("Missing effect shader: " + rule.shader);
+        }
+        if model_path {
+            renderer = ModelRenderer();
+            self.renderers[rule.flight] = renderer;
+            loaded = library.model(rule.flight);
+            renderer.upload(loaded.model, loaded.skins);
+            self.blast_models[rule.key] = [renderer];
+            shader = ModelRenderer();
+            self.renderers["shader:" + rule.shader] = shader;
+            shader.upload(AnimatedModel(surfaces=[AnimatedSurface(name=rule.shader, stages=stages)]), [stages[0].texture]);
+            self.blast_shaders[rule.key] = shader;
+            return;
+        }
+        sprites: list[ShaderSprite] = [];
+        for stage in stages {
+            textures: list[int] = [];
+            for image in (stage.frames if stage.frames else [stage.texture]) {
+                texture = QuakeRenderer().upload_image(image);
+                self.textures.append(texture);
+                if stage.clamp {
+                    rlTextureParameters(u32(texture), i32(10242), i32(33071));
+                    rlTextureParameters(u32(texture), i32(10243), i32(33071));
+                }
+                textures.append(texture);
+            }
+            sprites.append(ShaderSprite(source=stage, frames=textures));
+        }
+        self.blast_stages[rule.key] = sprites;
     }
 
     """One camera-facing quad of `sprite` at `center`, scaled and tinted,
@@ -626,7 +667,6 @@ obj EffectScene {
         now = field.clock if field is not None else 0.0;
         self.draw_marks(found.marks, eye);
         self.draw_trails(found.trails, eye, now);
-        self.draw_electrodes(found.lightning, eye);
         self.draw_bfg_lasers(found.projectiles, blend);
         self.draw_blasts(found.blasts, eye);
         if field is not None {
@@ -698,24 +738,6 @@ obj EffectScene {
         self.quads.flush();
     }
 
-    """Chthon's lightning (boss.qc lightning_fire, TE_LIGHTNING3): bolt3.mdl
-    from 16 below one electrode toward the other, the far end pulled back
-    100 units for the bolt's length, every tenth of a second it lasts."""
-    def draw_electrodes(events: list[LightningEvent], eye: Vec3) {
-        for event in events {
-            doors = [event->:Electrode:->][?:Door];
-            if event.remaining <= 0.0 or len(doors) != 2 {
-                continue;
-            }
-            start = electrode_point(doors[0]);
-            finish = electrode_point(doors[1]);
-            finish = finish.sub(finish.sub(start).normalized().scale(100.0));
-            if finish.sub(start).length() >= 1.0 {
-                self.draw_segments("q1_bolt3", start, finish, eye, event.remaining, 30.0, False);
-            }
-        }
-    }
-
     """The BFG ball's lasers to whatever it sees (TE_BFG_LASER): green RF_BEAM
     tubes four across, redrawn as long as they last."""
     def draw_bfg_lasers(projectiles: list[Projectile], blend: TickBlend) {
@@ -780,8 +802,11 @@ obj EffectScene {
 
     """Explosions: Q1 s_explod.spr at 10 frames a second; Q2's r_explode
     model, full bright, changing skin and fading after its tenth frame
-    (CL_AddExplosions); Q3's animated shader sprites cross-fading frame to
-    frame while the sprite grows from 30 to 72 units (CG_AddSpriteExplosion)."""
+    (CL_AddExplosions); Q3's local entities drawn with their shaders at the
+    time since they began (refEntity shaderTime): a model facing the wall
+    turned about it (CG_AddExplosion), or a sprite turned in the view, a
+    blast growing from 30 to 72 units over its life (CG_AddSpriteExplosion)
+    and blood 24 across (CG_Bleed)."""
     def draw_blasts(blasts: list[Explosion], eye: Vec3) {
         if not blasts {
             return;
@@ -790,6 +815,19 @@ obj EffectScene {
             variants = self.blast_models.get(blast.kind, []);
             rule = self.rules.get(blast.kind, None);
             if not variants or rule is None {
+                continue;
+            }
+            shader = self.blast_shaders.get(blast.kind, None);
+            if shader is not None {
+                axes = mark_axes(blast.direction, blast.rotation * math.pi / 180.0);
+                variants[0].draw(
+                    blast.pos,
+                    0.0,
+                    eye=eye,
+                    seconds=blast.age,
+                    basis=Basis(forward=blast.direction, left=axes[0], up=axes[1]),
+                    overlay=shader
+                );
                 continue;
             }
             step = int(blast.age * rule.fps);
@@ -815,30 +853,62 @@ obj EffectScene {
         );
         for ranked in order {
             blast = blasts[ranked[1]];
-            frames = self.blast_frames.get(blast.kind, []);
             rule = self.rules.get(blast.kind, None);
-            if not frames or rule is None {
+            if rule is None {
                 continue;
             }
-            progress = blast.age * rule.fps;
-            index = min(len(frames) - 1, int(progress));
-            blend = EFFECT_BLEND_ADD if rule.additive else EFFECT_BLEND_ALPHA;
-            if rule.grow > 0.0 {
-                # Q3: radius 30 growing by 42 over the life; each animmap
-                # frame fades out as the next fades in.
-                life = max(0.001, blast.lifetime);
-                radius = float(rule.sprite_size) + rule.grow * min(1.0, blast.age / life);
-                scale = radius * 2.0 / float(max(1, frames[index].frame.width));
-                fraction = progress - float(int(progress));
-                self.billboard(frames[index], blast.pos, blend, scale, 1.0 - fraction);
-                if index + 1 < len(frames) {
-                    self.billboard(frames[index + 1], blast.pos, blend, scale, fraction);
-                }
-            } else {
-                self.billboard(frames[index], blast.pos, blend);
+            stages = self.blast_stages.get(blast.kind, []);
+            if stages {
+                self.shader_sprite(stages, rule, blast);
+                continue;
+            }
+            frames = self.blast_frames.get(blast.kind, []);
+            if frames {
+                index = min(len(frames) - 1, int(blast.age * rule.fps));
+                self.billboard(frames[index], blast.pos, EFFECT_BLEND_ADD if rule.additive else EFFECT_BLEND_ALPHA);
             }
         }
         self.quads.flush();
+    }
+
+    """A Q3 sprite local entity (tr_surface.c RB_SurfaceSprite): each stage of
+    its shader at the time since it began, a square `radius` from its centre
+    turned `rotation` degrees in the view; a growing blast's radius is 30
+    plus 42 of its life gone (CG_AddSpriteExplosion)."""
+    def shader_sprite(stages: list[ShaderSprite], rule: EffectRule, blast: Explosion) {
+        radius = float(rule.sprite_size);
+        if rule.grow > 0.0 {
+            left = min(1.0, (blast.lifetime - blast.age) / max(0.001, blast.lifetime));
+            radius += rule.grow * (1.0 - left);
+        }
+        turn = blast.rotation * math.pi / 180.0;
+        side = self.quads.side;
+        up = self.quads.up;
+        across = side.scale(math.cos(turn)).add(up.scale(math.sin(turn)));
+        along = up.scale(math.cos(turn)).sub(side.scale(math.sin(turn)));
+        for sprite in stages {
+            stage = sprite.source;
+            color = stage_color(stage, blast.age);
+            self.quads.add(
+                sprite.frames[stage_frame(blast.age, stage.frequency, len(sprite.frames))],
+                EFFECT_BLEND_ADD if stage.blend == "add" else EFFECT_BLEND_ALPHA,
+                blast.pos,
+                across,
+                along,
+                -radius,
+                -radius,
+                radius,
+                radius,
+                0.0,
+                1.0,
+                1.0,
+                0.0,
+                effect_byte(color[0]),
+                effect_byte(color[1]),
+                effect_byte(color[2]),
+                effect_byte(color[3])
+            );
+        }
     }
 
     """Q3 cg_marks.c CG_AddMarks: each mark's pieces on the faces it was cut
@@ -960,6 +1030,9 @@ obj EffectScene {
                 } else {
                     self.lightning_bolt(trail.start, trail.finish, eye, now);
                 }
+            } elif kind == "q1_lightning3" {
+                # Chthon's TE_LIGHTNING3 (CL_ParseBeam): bolt3.mdl every 30 units.
+                self.draw_segments("q1_bolt3", trail.start, trail.finish, eye, trail.age, 30.0, False);
             } elif kind == "drain" {
                 self.draw_segments("q2_segment", trail.start, trail.finish, eye, trail.age, 30.0, True);
             } elif kind.startswith("laser_") {
@@ -1141,6 +1214,8 @@ obj EffectScene {
         self.burst = {};
         self.blast_frames = {};
         self.blast_models = {};
+        self.blast_shaders = {};
+        self.blast_stages = {};
         self.game = "";
         self.quads.close();
         self.polygons.close();

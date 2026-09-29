@@ -31,6 +31,7 @@ import from .quake {
     QuakeRenderer,
     rlLoadTexture,
     rlUnloadTexture,
+    rlTextureParameters,
     rlSetTexture,
     rlBegin,
     rlEnd,
@@ -46,7 +47,9 @@ import from .quake {
     rlEnableBackfaceCulling,
     fog_coords,
     packed_tcmods,
-    apply_tcmods
+    apply_tcmods,
+    stage_color,
+    stage_tint
 }
 import from ..formats.bsp { FogVolume }
 import from vendor.raylib {
@@ -72,16 +75,18 @@ forward/left/up axes with the origin in w, [3] frame A, frame B, blend,
 inflate, [4] ambient and whether it glows (Q2 RF_GLOW, lighting.jac
 glow_pulse, directed light following ambient), [5] directed and opacity,
 [6] light direction (in world space) and the share of directed light on
-faces turned away, [7] the eye in model space and the time. u_stage: environment mapping, the colour mode (0 white
-with opacity, 1 lit, 2 fog), whether the skin's alpha marks fullbright
-texels (Q1) rather than opacity, and the number of texture steps. The steps
+faces turned away, [7] the eye in model space and the time. u_stage:
+environment mapping, the colour mode (0 the stage's colour, u_color, its
+rgbGen and alphaGen at this time, with the opacity; 1 lit; 2 fog), whether
+the skin's alpha marks fullbright texels (Q1) rather than opacity, and the
+number of texture steps. The steps
 are the stage's tcMods at this time folded by quake.jac tcmod_steps: each an
 affine map (u_tcS, u_tcT rows) then maybe a turb (u_turb: on, amplitude,
 phase), which tr_shade_calc.c RB_CalcTurbulentTexCoords takes from the
 model-space position. u_fog: tr_main.c fog texture coordinates as quake.jac
 fog_coords computes them, and the fog colour."""
 glob MODEL_VERTEX_SHADER: str = "#version 330\nin vec4 corner;\n"
-    + "uniform mat4 mvp; uniform sampler2D frames; uniform vec4 u_draw[8]; uniform vec4 u_stage; uniform vec4 u_tcS[4]; uniform vec4 u_tcT[4]; uniform vec4 u_turb[4]; uniform vec4 u_fog[4];\n"
+    + "uniform mat4 mvp; uniform sampler2D frames; uniform vec4 u_draw[8]; uniform vec4 u_stage; uniform vec4 u_color; uniform vec4 u_tcS[4]; uniform vec4 u_tcT[4]; uniform vec4 u_turb[4]; uniform vec4 u_fog[4];\n"
     + "out vec2 uv; out vec4 tint;\n"
     + "vec4 keyframe(float texel){ int t=int(texel+0.5); return texelFetch(frames, ivec2(t&4095, t>>12), 0); }\n"
     + "vec3 unpackNormal(float code){ float hi=floor(code/4096.0); vec2 p=vec2(hi, code-hi*4096.0)*(2.0/4095.0)-1.0; vec3 n=vec3(p, 1.0-abs(p.x)-abs(p.y)); float t=max(-n.z,0.0); n.x+=n.x>=0.0?-t:t; n.y+=n.y>=0.0?-t:t; return normalize(n); }\n"
@@ -97,7 +102,7 @@ glob MODEL_VERTEX_SHADER: str = "#version 330\nin vec4 corner;\n"
     + " int steps=int(u_stage.w+0.5);\n"
     + " for(int i=0;i<4;i++){ if(i>=steps) break; uv=vec2(dot(u_tcS[i].xyz,vec3(uv,1.0)),dot(u_tcT[i].xyz,vec3(uv,1.0)));\n"
     + "  if(u_turb[i].x>0.5){ uv.x+=sin(((local.x+local.z)/128.0*0.125+u_turb[i].z)*6.283185307)*u_turb[i].y; uv.y+=sin((local.y/128.0*0.125+u_turb[i].z)*6.283185307)*u_turb[i].y; } }\n"
-    + " tint=vec4(1.0,1.0,1.0,u_draw[5].w);\n"
+    + " tint=vec4(u_color.rgb,u_color.a*u_draw[5].w);\n"
     + " if(u_stage.y>1.5){ float t=31.0/32.0; if(u_fog[2].y>0.5){ float depth=dot(u_fog[1].xyz,world)+u_fog[1].w; float eyeT=u_fog[2].x;\n"
     + "   if(eyeT<0.0){ t=depth<1.0?1.0/32.0:1.0/32.0+30.0/32.0*depth/(depth-eyeT); } else { t=depth<0.0?1.0/32.0:31.0/32.0; } }\n"
     + "   uv=vec2(dot(u_fog[0].xyz,world)+u_fog[0].w,t); tint=u_fog[3]; }\n"
@@ -406,6 +411,11 @@ obj ModelRenderer {
                         if texture == 0 {
                             raise RuntimeError("Model skin upload failed");
                         }
+                        if stage.clamp {
+                            # clampMap: GL_TEXTURE_WRAP_S/T to GL_CLAMP_TO_EDGE.
+                            rlTextureParameters(u32(texture), i32(10242), i32(33071));
+                            rlTextureParameters(u32(texture), i32(10243), i32(33071));
+                        }
                         self.textures.append(texture);
                         uploaded.append(texture);
                     }
@@ -586,6 +596,7 @@ obj ModelRenderer {
                     float(len(steps[0]) // 16)
                 );
                 program.set_vec4s("u_stage", bytes(gpu.stage));
+                program.set_vec4s("u_color", stage_tint(stage.source, seconds));
                 program.set_vec4s("u_tcS", steps[0]);
                 program.set_vec4s("u_tcT", steps[1]);
                 program.set_vec4s("u_turb", steps[2]);
@@ -777,7 +788,13 @@ obj ModelRenderer {
                     )
                 );
                 rlBegin(i32(4));
-                rlColor4ub(u8(255), u8(255), u8(255), opacity);
+                shade = stage_color(stage.source, seconds);
+                rlColor4ub(
+                    u8(int(shade[0] * 255.0)),
+                    u8(int(shade[1] * 255.0)),
+                    u8(int(shade[2] * 255.0)),
+                    u8(int(shade[3] * float(int(opacity))))
+                );
                 for triangle in range(len(surface.indices) // 3) {
                     # Alias model file triangles wind clockwise; rlgl expects CCW.
                     for corner in [0, 2, 1] {

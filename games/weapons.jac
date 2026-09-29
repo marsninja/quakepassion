@@ -677,53 +677,32 @@ def weapon_effects(game: str) -> list[EffectRule] {
                 spin=6.0,
                 sound="sound/weapons/rocket/rockfly.wav"
             ),
-            # gfx.shader rocketExplosion / grenadeExplosion / bfgExplosion animmaps.
+            # cg_weapons.c CG_MissileHitWall's explosions, drawn with their
+            # gfx.shader shaders: the bullet, plasma and rail hits over their
+            # models, the rocket, grenade and BFG blasts as sprites, and
+            # CG_Bleed's blood.
             EffectRule(
-                key="q3_rocket_explosion",
-                flight="",
-                images=[
-                    "models/weaphits/rlboom/rlboom_" + str(i)
-                    for i in range(1, 9)
-                ],
-                fps=8.0,
-                sprite_size=30,
-                grow=42.0,
-                additive=True,
-                explosion=True
-            ),
-            EffectRule(
-                key="q3_grenade_explosion",
-                flight="",
-                images=[
-                    "models/weaphits/glboom/glboom_" + str(i)
-                    for i in range(1, 4)
-                ],
-                fps=5.0,
-                sprite_size=30,
-                grow=42.0,
-                additive=True,
-                explosion=True
-            ),
-            EffectRule(
-                key="q3_bfg_explosion",
-                flight="",
-                images=[
-                    "models/weaphits/bfgboom/bfgboom_" + str(i)
-                    for i in range(1, 4)
-                ],
-                fps=5.0,
-                sprite_size=30,
-                grow=42.0,
-                additive=True,
+                key="q3_bullet_explosion",
+                flight="models/weaphits/bullet.md3",
+                shader="bulletExplosion",
                 explosion=True
             ),
             EffectRule(
                 key="q3_plasma_explosion",
-                flight="models/weaphits/plasmaboom",
-                sprite_size=24,
-                additive=True,
+                flight="models/weaphits/ring02.md3",
+                shader="plasmaExplosion",
                 explosion=True
             ),
+            EffectRule(
+                key="q3_rail_explosion",
+                flight="models/weaphits/ring02.md3",
+                shader="railExplosion",
+                explosion=True
+            ),
+            EffectRule(key="q3_rocket_explosion", flight="", shader="rocketExplosion", sprite_size=30, grow=42.0, explosion=True),
+            EffectRule(key="q3_grenade_explosion", flight="", shader="grenadeExplosion", sprite_size=30, grow=42.0, explosion=True),
+            EffectRule(key="q3_bfg_explosion", flight="", shader="bfgExplosion", sprite_size=30, grow=42.0, explosion=True),
+            EffectRule(key="q3_blood", flight="", shader="bloodExplosion", sprite_size=24, explosion=True),
             EffectRule(key="q3_railcore", flight="gfx/misc/railcorethin_mono", additive=True),
             EffectRule(key="q3_raildisc", flight="gfx/misc/raildisc_mono2", additive=True),
             # lightningBoltNew, the 1.32 beam shader.

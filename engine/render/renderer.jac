@@ -73,8 +73,6 @@ import from .cubes { CubeBatch }
 import from ..console.cvar { Cvar, CVAR_ARCHIVE }
 import from ..console.shell { Shell }
 import from ..world.particles { HasTrail, ShotTrail }
-import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
-import from ..world.doors { Door }
 import from ..world.combat {
     CombatState,
     Opponent,

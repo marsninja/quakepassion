@@ -92,6 +92,7 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
             material.advanced.append("white");
         }
         if token == "clampmap" {
+            stage.clamp = True;
             material.advanced.append("clampmap");
         }
         return i + 1;

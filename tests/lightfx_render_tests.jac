@@ -7,7 +7,7 @@ import from engine.render.models { MODEL_PLAIN_STEPS }
 import from engine.render.particles { pack_particle, PARTICLE_STRIDE }
 import from engine.formats.animated { ModelStage, TexMod, ShaderWave }
 import from engine.world.particle_field { Particle, particle_field, PARTICLE_QUAKE2 }
-import from engine.world.missile_trails { EmitTrails, TELEPORTER_SPARKLE_RATE }
+import from engine.world.missile_trails { EmitTrails }
 import from engine.world.particles { ParticleTick }
 import from engine.world.fixtures { Fixture, HasFixture }
 import from engine.world.world { World }
@@ -65,10 +65,14 @@ test "a teleporter pad sparkles eight green specks a client frame" {
     pad = Fixture(pos=Vec3(x=64.0, z=16.0), effect="teleporter");
     world +>:HasFixture:+> pad;
     world spawn EmitTrails();
-    assert not field.fresh;
-    world spawn ParticleTick(dt=3.0 / TELEPORTER_SPARKLE_RATE + 0.001);
+    assert len(field.fresh) == 8;
+    # A frame drawn again at the same effect time is the same client frame.
     world spawn EmitTrails();
-    assert len(field.fresh) == 24;
+    assert len(field.fresh) == 8;
+    # However far the clock moved, one drawn frame is one client frame.
+    world spawn ParticleTick(dt=0.1);
+    world spawn EmitTrails();
+    assert len(field.fresh) == 16;
     for speck in field.fresh {
         assert speck.color == 219 and speck.velocity.z >= 80.0 and abs(speck.origin.x - 64.0) <= 16.0;
     }

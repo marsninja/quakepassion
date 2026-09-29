@@ -100,3 +100,46 @@ this Mac at 1280×720. These short samples do not cover every map or encounter.
 The three original-game screenshots were inspected with visible view weapons.
 This run uses `qp-lighting-validation/jac` and the patches listed in
 [native compiler dependencies](native-lighting-validation-blockers.md).
+
+## Model lighting and the cycle collector (2026-09-28)
+
+Lighting Q1/Q2 models from the lightmaps (engine/world/lighting.jac
+`TraceLightPoint`, `Lighting.light_model`) seemed to cost about 1 ms a frame
+on e1m1 and 1.5-3.6 ms on base1. The lighting itself costs almost nothing.
+`scripts/profile_model_lighting.jac` renders a map's start view in
+alternating lit and unlit blocks and prints each render stage's mean. The
+extra time appeared in the world and visibility stages, not the model
+stage, and it did not go away when the computed light was thrown away.
+
+The native binaries had no symbols for internal functions, so `sample`
+attributed their time to the nearest exported symbol. Once the linker kept
+those names (jaseci-labs/jac#9635), `sample` showed 85-90% of the main
+thread in the native runtime's cycle collector:
+
+- vectors, lists of ints and graph rows were buffered as candidate cycle
+  roots;
+- every thousand of them started a collection that retraced the level's
+  live graph;
+- each traced object's trace function was found by a linear search.
+
+Lighting released a few more shared objects each frame, so collections came
+sooner. The fix belongs to the collector (jaseci-labs/jac#9636): objects
+with nothing to trace are never roots, collections are paced by the live
+graph they traced, and the trace lookup probes the shared registry first.
+
+Measured back to back with `scripts/profile_model_lighting.jac` (1280x720,
+3 blocks of 240 frames, ms per rendered frame; "after" is this branch built
+with jaseci-labs/jac#9635, #9636 and #9638, the `rc` column an earlier run of the same
+view):
+
+| Map | Before, lit | Before, unlit | After, lit | After, unlit | `rc` profile (no collector) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Q1 e1m1 | 2.56 | 2.12 | 0.45 | 0.43 | 0.46 |
+| Q2 base1 | 9.96 | 8.12 | 0.87 | 0.88 | 0.79 |
+
+Model lighting now costs at most 0.02 ms a frame. Whole frames are 5-10x
+faster, about as fast as the `rc` profile, which has no cycle collector.
+
+To profile a native build by function name, build with the linker fix, hold
+one mode (`QP_PROFILE_HOLD=lit QP_PROFILE_SECONDS=30`) and run
+`sample <pid> 8`.
