@@ -2,12 +2,21 @@
 laid to where it is now, as the clients do every frame: Q1
 CL_RelinkEntities (R_RocketTrail by the model's flags), Q2
 CL_AddPacketEntities (by the entity's effects: EF_ROCKET, EF_BLASTER,
-EF_GRENADE, EF_GIB), Q3 CG_Missile's missileTrailFunc (the rocket's and
+EF_GRENADE, EF_GIB, and EF_BFG's and EF_TELEPORTER's particles laid anew
+each client frame), Q3 CG_Missile's missileTrailFunc (the rocket's and
 grenade's smoke) and a gib's LETT_BLOOD trail.
 
 Each missile or gib keeps its trail state on a TrailEmitter node: where the
 trail last reached, Q2's diminishing trail count (centity_t trailcount,
-1024 when the entity first appears) and Q3's trailTime."""
+1024 when the entity first appears), Q3's trailTime, and the client frame
+(the effect time) it last laid particles on.
+
+A client frame is a drawn frame at a new effect time. The Q2 client runs a
+frame at most cl_maxfps times a second and lays EF_BFG's and EF_TELEPORTER's
+particles once in each; here the effect clock moves on with the physics
+tick (120 a second, as if cl_maxfps were 120), so a frame drawn at a time
+already laid lays nothing, and a slower drawing rate lays fewer, just as a
+slower client does."""
 import from .world { World }
 import from .combat { Projectile, HasProjectile }
 import from .gibs { Gib, HasGib }
@@ -23,7 +32,8 @@ import from .particle_field {
     quake2_diminishing_trail,
     quake3_smoke_trail,
     quake3_blood_trail,
-    quake2_teleporter_particles
+    quake2_teleporter_particles,
+    quake2_bfg_particles
 }
 import from ..math.vec3 { Vec3 }
 import from ..math.interpolation { TickBlend }
@@ -31,14 +41,21 @@ import from ..math.interpolation { TickBlend }
 node TrailEmitter {
     has last: Vec3 = Vec3(),
         count: int = 1024,
-        since: float = 0.0;
+        since: float = 0.0,
+        framed: float = -1.0;
+
+    """Whether this draw is a new client frame for the emitter (its effect
+    time moved on since it last laid a frame's particles), noting it so."""
+    def new_frame(clock: float) -> bool {
+        if clock <= self.framed {
+            return False;
+        }
+        self.framed = clock;
+        return True;
+    }
 }
 
 edge LeavesTrail: Projectile | Gib | Fixture --> TrailEmitter {}
-
-# How often a teleporter pad sparkles: CL_TeleporterParticles runs every
-# client frame, so a rate stands in for the frame rate (30 frames a second).
-glob TELEPORTER_SPARKLE_RATE: float = 30.0;
 
 """Q1 R_RocketTrail types of the missiles whose models carry trail flags
 (missile.mdl and lavaball.mdl EF_ROCKET, grenade.mdl EF_GRENADE, w_spike.mdl
@@ -72,8 +89,9 @@ walker EmitTrails {
         visit [here->:HasFixture:->];
     }
 
-    """The emitter of a missile, gib or fixture, made where it first shows."""
-    def emitter_of(owner: Projectile | Gib | Fixture, at: Vec3) -> TrailEmitter | None {
+    """The emitter of a missile, gib or fixture, made where it first shows
+    (its first trail runs from there, so it lays nothing)."""
+    def emitter_of(owner: Projectile | Gib | Fixture, at: Vec3) -> TrailEmitter {
         emitters = [owner->:LeavesTrail:->][?:TrailEmitter];
         if emitters {
             return emitters[0];
@@ -81,7 +99,7 @@ walker EmitTrails {
         field = self.field;
         emitter = TrailEmitter(last=at.add(Vec3()), since=field.clock if field is not None else 0.0);
         owner +>:LeavesTrail:+> emitter;
-        return None;
+        return emitter;
     }
 
     can missile with Projectile entry {
@@ -91,9 +109,6 @@ walker EmitTrails {
         }
         end = self.blend.place(here.tick_pose, here.pos);
         emitter = self.emitter_of(here, end);
-        if emitter is None {
-            return;
-        }
         effect = here.effect;
         start = emitter.last;
         if effect in QUAKE_MISSILE_TRAILS {
@@ -104,6 +119,10 @@ walker EmitTrails {
             quake2_blaster_trail(field, start, end);
         } elif effect in ["q2_grenade", "q2_handgrenade"] {
             emitter.count = quake2_diminishing_trail(field, start, end, emitter.count, False);
+        } elif effect == "q2_bfg" {
+            if emitter.new_frame(field.clock) {
+                quake2_bfg_particles(field, end);
+            }
         } elif effect in ["q3_rocket", "q3_grenade"] {
             # CG_RocketTrail: a stationary missile tosses up no smoke.
             if here.velocity.length() > 0.0 {
@@ -124,9 +143,6 @@ walker EmitTrails {
         }
         end = self.blend.place(here.tick_pose, here.pos);
         emitter = self.emitter_of(here, end);
-        if emitter is None {
-            return;
-        }
         start = emitter.last;
         if field.game == "q1" {
             # The gib's model flags choose its trail (EF_GIB blood).
@@ -155,12 +171,7 @@ walker EmitTrails {
         if field is None or here.effect != "teleporter" {
             return;
         }
-        emitter = self.emitter_of(here, here.pos);
-        if emitter is None {
-            return;
-        }
-        while field.clock - emitter.since >= 1.0 / TELEPORTER_SPARKLE_RATE {
-            emitter.since += 1.0 / TELEPORTER_SPARKLE_RATE;
+        if self.emitter_of(here, here.pos).new_frame(field.clock) {
             quake2_teleporter_particles(field, here.pos);
         }
     }

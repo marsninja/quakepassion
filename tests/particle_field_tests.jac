@@ -14,6 +14,7 @@ import from engine.world.particle_field {
     quake_particle_explosion,
     quake2_diminishing_trail,
     quake2_particle,
+    quake2_bfg_particles,
     quake3_smoke_trail,
     quake_trail_kind,
     PARTICLE_FIRE,
@@ -30,6 +31,7 @@ import from engine.world.missile_trails { EmitTrails }
 import from engine.world.light_effects { combat_lights, explosion_light, missile_light, DYNAMIC_LIGHT_LIMIT }
 import from engine.world.lighting { Lighting }
 import from engine.math.vec3 { Vec3 }
+import from engine.formats.anorms { quake_vertex_normal }
 
 test "Q1 rocket trails drop fire every 3 units that rises and burns through ramp3" {
     world = World();
@@ -153,6 +155,45 @@ test "missiles lay their trails as they move, from where they first showed" {
     rocket.pos = Vec3(x=33.0);
     world spawn EmitTrails();
     assert len(field.fresh) == 1;
+}
+
+test "the flying BFG ball wears CL_BfgParticles' sphere, laid anew each client frame" {
+    world = World();
+    field = particle_field(world, "q2");
+    field.clock = 2.5;
+    quake2_bfg_particles(field, Vec3(x=100.0));
+    assert len(field.fresh) == 162 and len(field.avelocities) == 486;
+    assert all([0.0 <= spin <= 2.55 for spin in field.avelocities]);
+    for i in [0, 57, 161] {
+        speck = field.fresh[i];
+        spins = field.avelocities[i * 3:i * 3 + 3];
+        yaw = 2.5 * spins[0];
+        pitch = 2.5 * spins[1];
+        forward = Vec3(x=math.cos(pitch) * math.cos(yaw), y=math.cos(pitch) * math.sin(yaw), z=-math.sin(pitch));
+        offset = quake_vertex_normal(i).scale(math.sin(2.5 + float(i)) * 64.0).add(forward.scale(16.0));
+        assert speck.origin.sub(Vec3(x=100.0).add(offset)).length() < 0.001;
+        dist = offset.length() / 90.0;
+        assert speck.color == int(math.floor(208.0 + dist * 7.0));
+        assert abs(speck.alpha - (1.0 - dist)) < 0.00001 and speck.fade == -100.0;
+        assert speck.velocity.length() == 0.0 and speck.kind == PARTICLE_QUAKE2;
+    }
+    # The spin rates are rolled once; each client frame lays a fresh sphere.
+    spins = list(field.avelocities);
+    ball = Projectile(pos=Vec3(), velocity=Vec3(x=400.0), damage=200, effect="q2_bfg");
+    world +>:HasProjectile:+> ball;
+    field.fresh = [];
+    world spawn EmitTrails();
+    assert len(field.fresh) == 162;
+    world spawn EmitTrails();
+    assert len(field.fresh) == 162;
+    world spawn ParticleTick(dt=1.0 / 120.0);
+    world spawn EmitTrails();
+    assert len(field.fresh) == 324 and field.avelocities == spins;
+    # Bursting, it lays none.
+    ball.phase = 1;
+    world spawn ParticleTick(dt=1.0 / 120.0);
+    world spawn EmitTrails();
+    assert len(field.fresh) == 324;
 }
 
 test "explosions burst as each game does and impacts spray their counts" {
