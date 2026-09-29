@@ -499,6 +499,8 @@ walker PoseRig {
         if self.gesture and rig.torso_timer <= 0.0 {
             self.start_torso(rig, ANIM_TORSO_GESTURE);
             rig.torso_timer = RIG_TIMER_GESTURE;
+            # bg_pmove.c PM_Weapon's gesture adds EV_TAUNT.
+            self.sounds.append("taunt");
         }
         if self.ready and not fired and not self.switching {
             self.continue_torso(rig, stand);
@@ -602,6 +604,9 @@ def rig_sound(rig: PlayerRig, cue: str) -> str {
     if cue == "gasp" {
         return voice + "gasp.wav";
     }
+    if cue == "taunt" {
+        return voice + "taunt.wav";
+    }
     if cue == "land" {
         return "sound/player/land1.wav";
     }
@@ -621,7 +626,7 @@ def rig_sound_paths(rig: PlayerRig) -> list[str] {
     for index in ["1", "2", "3"] {
         paths.append(rig.voice + "death" + index + ".wav");
     }
-    for name in ["jump1.wav", "fall1.wav", "gasp.wav"] {
+    for name in ["jump1.wav", "fall1.wav", "gasp.wav", "taunt.wav"] {
         paths.append(rig.voice + name);
     }
     paths.append("sound/player/land1.wav");

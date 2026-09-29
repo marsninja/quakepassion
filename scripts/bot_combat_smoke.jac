@@ -6,7 +6,7 @@ import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick, ProjectileTick }
 import from engine.world.arena { MatchTick, match_of, standings }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from engine.world.pickups { PickupTick }
 import from engine.world.doors { DoorTick }
 import from engine.world.inventory { quantity }
@@ -30,9 +30,9 @@ with entry {
         bots = [bot for bot in [world->:HasOpponent:->][?:Opponent] if bot.arena];
         for bot in bots {
             mind = bot.character;
-            assert mind is not None and mind.weights;
+            assert mind is not None and mind.weapon_numbers and mind.item_numbers;
             print("BOT", name, mind.name, "skill", mind.skill, "accuracy", round(mind.aim_accuracy, 2),
-                "reaction", round(mind.reaction, 2), "weights", len(mind.weights));
+                "reaction", round(mind.reaction, 2), "weights", len(mind.weapon_weights.names), len(mind.item_weights.names));
             assert quantity(bot.inventory, "weapon_machinegun") == 1 and quantity(bot.inventory, "bullets") == 100;
         }
         player = Player(health=0, pos=Vec3(z=-100000.0));

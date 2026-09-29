@@ -1,5 +1,7 @@
 """g_client.c's body queue. When a Q3 player respawns, CopyToBodyQue leaves a
-copy of its body where it died, still finishing its death sequence; five
+copy of its body where it lies (none in a CONTENTS_NODROP void), still
+finishing its death sequence. Like the dead player it copies, a body is
+CONTENTS_CORPSE: players walk through it and shots hit it. Five
 seconds later BodySink lowers it into the floor a unit every tenth of a second
 and removes it after a second and a half. Eight bodies are kept at most. A body
 still takes damage, and bursts into gibs once its health reaches GIB_HEALTH
@@ -9,6 +11,8 @@ import from .models { PlayerRig, LerpFrame, ModelResource, Wears, HasVisual }
 import from .player_rig { PoseRig }
 import from .gibs { GibRule, GibsInto, throw_gibs, gibs_at }
 import from .speakers { Speaker }
+import from ..formats.bsp { Bsp }
+import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
 # g_local.h BODY_QUEUE_SIZE.
@@ -29,6 +33,52 @@ node Corpse(Entity) {
 }
 
 edge HasCorpse: World --> Corpse {}
+
+# Q3 CONTENTS_NODROP (0x80000000).
+glob CONTENTS_NODROP: int = 2147483648;
+
+"""The map's CONTENTS_NODROP brushes (the void around q3dm17 and the like):
+CopyToBodyQue leaves no body there."""
+node NoDropSpace {
+    has volume: CollisionMap = CollisionMap();
+}
+
+edge HasNoDrop: World --> NoDropSpace {}
+
+"""Gather a Q3 map's world brushes with CONTENTS_NODROP."""
+def load_no_drop(world: World, bsp: Bsp) {
+    if bsp.game != "q3" or not bsp.models {
+        return;
+    }
+    space = NoDropSpace();
+    for index in bsp.models[0].brushes {
+        brush = bsp.brushes[index];
+        if brush.contents & CONTENTS_NODROP == 0 or not brush.planes {
+            continue;
+        }
+        normals: list[Vec3] = [];
+        distances: list[float] = [];
+        for plane in brush.planes {
+            normals.append(bsp.planes[plane].normal);
+            distances.append(bsp.planes[plane].distance);
+        }
+        space.volume.add_brush(normals, distances, Vec3(), Vec3(), Vec3());
+    }
+    if space.volume.hulls {
+        space.volume.reindex();
+        world +>:HasNoDrop:+> space;
+    }
+}
+
+"""trap_PointContents(point) & CONTENTS_NODROP."""
+def in_no_drop(world: World, point: Vec3) -> bool {
+    for space in [world->:HasNoDrop:->][?:NoDropSpace] {
+        if space.volume.trace(point, point).start_solid {
+            return True;
+        }
+    }
+    return False;
+}
 
 def copy_lerp_frame(frame: LerpFrame) -> LerpFrame {
     return LerpFrame(
@@ -65,6 +115,10 @@ def leave_corpse(
     }
     areas = [actor->:In:->][?:Area];
     if not areas {
+        return None;
+    }
+    # "if client is in a nodrop area, don't leave the body"
+    if in_no_drop(world, actor.pos.sub(Vec3(z=eye_height))) {
         return None;
     }
     copy = PlayerRig(

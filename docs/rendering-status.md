@@ -194,9 +194,11 @@ model stay immediate mode (only used when a monster's model is missing).
 - Q3 status bar head: after a level change the head no longer swells across
   the view for its first seconds (a hit remembered from the previous level's
   clock counted as one from the future). The old renderer's benchmark
-  screenshots show it (e.g. `bench_q3tourney2_0`). The head still kicks as
-  the spawn health counts down from 125, which the original only does for
-  real damage (`cg.damageTime`).
+  screenshots show it (e.g. `bench_q3tourney2_0`). The head kicks only for
+  real damage (`cg.damageTime` from `CG_DamageFeedback`), not as the spawn
+  health counts down from 125, and toward the side the hit came from
+  (`cg.damageX`): it swells from 1.5 times its size over half a second and
+  turns 45 degrees that way (`tests/hud_head_tests.jac`).
 
 ## Effects (engine/render/effects.jac)
 

@@ -10,9 +10,10 @@ import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick, ProjectileTick }
 import from engine.world.arena { MatchTick, Competes, match_of, standings }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from engine.world.pickups { PickupTick }
 import from engine.world.doors { DoorTick }
+import from engine.world.rotators { RotatorTick }
 import from engine.world.models { PlayerRig }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
@@ -53,6 +54,7 @@ with entry {
         down: dict[str, bool] = {};
         health: dict[str, int] = {};
         cells: dict[str, list[str]] = {};
+        jumps: dict[str, int] = {};
         damage = 0;
         for bot in bots {
             key = bot.character.name if bot.character is not None else "?";
@@ -62,6 +64,7 @@ with entry {
             down[key] = False;
             health[key] = bot.health;
             cells[key] = [];
+            jumps[key] = 0;
         }
         ticks = int(seconds / dt);
         for tick in range(ticks) {
@@ -69,11 +72,19 @@ with entry {
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt);
             # Bots open doors by walking into their trigger fields (Touch_DoorTrigger).
             world spawn DoorTick(bsp=level.bsp, collision=level.collision, player_origin=player.pos, dt=dt, touching=False);
+            # Bobbing platforms carry bots across (q3dm19, q3tourney6).
+            world spawn RotatorTick(bsp=level.bsp, collision=level.collision, dt=dt);
             world spawn CombatTick(player=player, collision=level.collision, state=state, dt=dt, arena_live=True);
             world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=dt);
             world spawn ProjectileTick(player=player, collision=level.collision, state=state, dt=dt);
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt, contacts=True);
             contest spawn MatchTick(dt=dt);
+            # What the bots say (ai_chat.c), as it would show.
+            for line in state.messages {
+                print("SAY " + name + " " + str(int(float(tick) * dt)) + "s " + line);
+            }
+            state.messages = [];
+            state.cues = [];
             for bot in bots {
                 mind = bot.character;
                 if mind is None {
@@ -97,13 +108,16 @@ with entry {
                 }
                 down[key] = False;
                 alive[key] += dt;
+                if bot.bot_state.travel.jump and bot.bot_state.travel.weapon {
+                    jumps[key] += 1;
+                }
                 if tick % 60 == 0 {
                     spot = str(int(bot.pos.x // 256.0)) + ":" + str(int(bot.pos.y // 256.0)) + ":" + str(int(bot.pos.z // 128.0));
                     if spot not in cells[key] {
                         cells[key].append(spot);
                     }
                 }
-                phase = bot.bot_state.battle or "seek";
+                phase = bot.bot_state.ainode;
                 nodes[key][phase] = nodes[key].get(phase, 0.0) + dt;
                 foe = bot.foe;
                 if foe is not None and foe.health > 0 and tick % 12 == 0 {
@@ -133,12 +147,16 @@ with entry {
                 phase + " " + str(int(100.0 * value / max(0.001, alive[key]))) + "%"
                 for (phase, value) in nodes[key].items()
             ];
-            print("BOT", name, key, "skill", bot.character.skill, "frags", score.frags, "deaths", score.deaths,
-                "shots", shots, "cells", len(cells[key]), "at", [int(bot.pos.x), int(bot.pos.y), int(bot.pos.z)], "sighted", str(int(100.0 * sighted[key] / max(0.001, alive[key]))) + "%", shares);
+            print(
+                "BOT " + name + " " + key + " skill " + str(bot.character.skill) + " frags " + str(score.frags)
+                    + " deaths " + str(score.deaths) + " shots " + str(shots) + " weapon jumps " + str(jumps[key])
+                    + " cells " + str(len(cells[key])) + " sighted " + str(int(100.0 * sighted[key] / max(0.001, alive[key])))
+                    + "% " + ", ".join(shares)
+            );
         }
         print("MEANS", name, means, "damage taken", damage);
-        print("FRAGS", name, "skill", skill, "seconds", int(seconds), "total", frags,
-            "per minute", round(float(frags) * 60.0 / seconds, 2));
+        print("FRAGS " + name + " skill " + str(skill) + " seconds " + str(int(seconds)) + " total " + str(frags)
+            + " per minute " + str(round(float(frags) * 60.0 / seconds, 2)));
         grand += frags;
     }
     print("FRAG RUN DONE", grand);

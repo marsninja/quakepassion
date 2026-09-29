@@ -7,7 +7,9 @@ rocket from the muzzle point the breach targets. A dead driver levels the gun
 and leaves it idle."""
 import math;
 import from .world { World, Player }
-import from .combat { Opponent, HasOpponent, Projectile, HasProjectile, notices, request_sound }
+import from .combat { Opponent, HasOpponent, Projectile, HasProjectile, notices, request_sound, damage_opponent }
+import from .damage { Damage }
+import from .pusher { Pushable, HullStep, GatherPushables, push_move }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
@@ -37,7 +39,9 @@ node Turret {
         max_yaw: float = 360.0,
         muzzle: Vec3 = Vec3(),
         driver_spawn: Vec3 | None = None,
-        fire: bool = False;
+        fire: bool = False,
+        damage: int = 10,
+        crush_wait: float = 0.0;
 }
 
 """A driver riding a breach: its offset from the breach as distance, bearing
@@ -174,7 +178,8 @@ def load_turrets(world: World, bsp: Bsp, collision: CollisionMap) {
             down_limit=-turret_field(fields, "minpitch", -30.0),
             up_limit=-turret_field(fields, "maxpitch", 30.0),
             min_yaw=float(fields.get("minyaw", "0")),
-            max_yaw=turret_field(fields, "maxyaw", 360.0)
+            max_yaw=turret_field(fields, "maxyaw", 360.0),
+            damage=int(turret_field(fields, "dmg", 10.0))
         );
         for hull in breach.hulls {
             breach.origins.append(collision.offsets[hull]);
@@ -260,12 +265,20 @@ walker TurretTick {
         player: Player,
         dt: float,
         clock: float = 0.0,
-        world: World | None = None;
+        world: World | None = None,
+        bodies: list[Pushable] = [];
 
     can begin with World entry {
         self.world = here;
         if self.dt > 0.0 {
-            visit [here->:HasTurret:->];
+            turrets = [here->:HasTurret:->][?:Turret];
+            if turrets {
+                found = here spawn GatherPushables(
+                    collision=self.collision, game=self.bsp.game, player=self.player
+                );
+                self.bodies = found.bodies;
+            }
+            visit turrets;
         }
     }
 
@@ -280,14 +293,75 @@ walker TurretTick {
         }
         seats = [edge here<-:Mans:<-];
         riders = [here<-:Mans:<-][?:Opponent];
+        here.crush_wait = max(0.0, here.crush_wait - self.dt);
         if seats and riders {
             self.think(riders[0], seats[0], here);
         }
+        pitch = here.pitch;
+        yaw = here.yaw;
         self.turn(here);
+        if not self.swing_clear(here, pitch, yaw) {
+            here.pitch = pitch;
+            here.yaw = yaw;
+        }
         if seats and riders {
             self.carry(riders[0], seats[0], here);
         }
         pose_turret(here, self.bsp, self.collision);
+    }
+
+    """SV_Push for the breach and its base as they turn from `pitch` and
+    `yaw`: riders and what they swing into turn with them, or the turret
+    stays put and turret_blocked hurts the obstacle by the breach's dmg."""
+    def swing_clear(breach: Turret, pitch: float, yaw: float) -> bool {
+        if pitch == breach.pitch and yaw == breach.yaw {
+            return True;
+        }
+        turn = wrap_delta(breach.yaw - yaw);
+        steps: list[HullStep] = [];
+        for hull in breach.hulls {
+            steps.append(
+                HullStep(
+                    index=hull,
+                    offset_from=self.collision.offsets[hull],
+                    offset_to=self.collision.offsets[hull],
+                    turn_from=quake_basis(Vec3(x=pitch, y=yaw)),
+                    turn_to=quake_basis(Vec3(x=breach.pitch, y=breach.yaw)),
+                    yaw=turn
+                )
+            );
+        }
+        for base in [breach->:Mounts:->][?:TurretBase] {
+            for hull in base.hulls {
+                steps.append(
+                    HullStep(
+                        index=hull,
+                        offset_from=self.collision.offsets[hull],
+                        offset_to=self.collision.offsets[hull],
+                        turn_from=quake_basis(Vec3(y=yaw)),
+                        turn_to=quake_basis(Vec3(y=breach.yaw)),
+                        yaw=turn
+                    )
+                );
+            }
+        }
+        obstacle = push_move(self.collision, steps, self.bodies, self.bsp.game);
+        if obstacle is None {
+            return True;
+        }
+        victim = obstacle.entity;
+        if isinstance(victim, Player)
+            and victim.health > 0
+            and breach.damage > 0
+            and breach.crush_wait <= 0.0 {
+            breach.crush_wait = 0.1;
+            if isinstance(victim, Opponent) {
+                damage_opponent(victim, breach.damage, means="crush");
+            } else {
+                victim spawn Damage(amount=breach.damage, means="crush");
+            }
+        }
+        return False;
     }
 
     """turret_driver_think: find the player, aim the breach at their eyes and

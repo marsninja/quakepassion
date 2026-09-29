@@ -77,7 +77,75 @@ obj HudStatus {
         armor_icon: str = "",
         flashes: int = 0,
         help_unread: bool = False,
-        crosshair: bool = True;
+        crosshair: bool = True,
+        damage_age: float = -1.0,
+        damage_x: float = 0.0;
+}
+
+"""The status bar head's box and angles for one frame: its size in
+virtual-screen units, how far left of its slot a damage kick moves it, and
+its yaw and pitch in degrees."""
+obj HeadPose {
+    has size: float = 60.0,
+        shift: float = 0.0,
+        yaw: float = 180.0,
+        pitch: float = 0.0;
+}
+
+"""CG_DrawStatusBarHead's glancing state (cg.headStartYaw and the rest)."""
+obj StatusHead {
+    has random_state: int = 1,
+        head_start_yaw: float = 180.0,
+        head_end_yaw: float = 180.0,
+        head_start_pitch: float = 0.0,
+        head_end_pitch: float = 0.0,
+        head_start_time: float = 0.0,
+        head_end_time: float = 0.0;
+
+    def random() -> float {
+        self.random_state = (self.random_state * 48271) % 2147483647;
+        return float(self.random_state) / 2147483647.0;
+    }
+
+    """CG_DrawStatusBarHead's pose for this frame: glance to a new angle
+    every 0.1-2.1 s, easing there. For half a second after real damage
+    (cg.damageTime, which CG_DamageFeedback sets and the spawn health's
+    count down never does) the head swells from 1.5 times its size and
+    kicks toward the side the hit came from (cg.damageX)."""
+    def pose(status: HudStatus) -> HeadPose {
+        now = status.clock;
+        pose = HeadPose(size=48.0 * 1.25);
+        if status.damage_age >= 0.0 and status.damage_age < 0.5 {
+            frac = status.damage_age / 0.5;
+            pose.size = 48.0 * 1.25 * (1.5 - frac * 0.5);
+            stretch = pose.size - 48.0 * 1.25;
+            pose.shift = stretch * 0.5 + status.damage_x * stretch * 0.5;
+            self.head_start_yaw = 180.0 + status.damage_x * 45.0;
+            self.head_end_yaw = 180.0 + 20.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+            self.head_end_pitch = 5.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+            self.head_start_time = now;
+            self.head_end_time = now + 0.1 + self.random() * 2.0;
+        } elif now >= self.head_end_time {
+            self.head_start_yaw = self.head_end_yaw;
+            self.head_start_pitch = self.head_end_pitch;
+            self.head_start_time = self.head_end_time;
+            self.head_end_time = now + 0.1 + self.random() * 2.0;
+            self.head_end_yaw = 180.0 + 20.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+            self.head_end_pitch = 5.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+        }
+        # "if the server was frozen for a while we may have a bad head start
+        # time" (and a new level restarts the clock).
+        if self.head_start_time > now {
+            self.head_start_time = now;
+        }
+        span = max(0.001, self.head_end_time - self.head_start_time);
+        frac = max(0.0, min(1.0, (now - self.head_start_time) / span));
+        frac = frac * frac * (3.0 - 2.0 * frac);
+        pose.yaw = self.head_start_yaw + (self.head_end_yaw - self.head_start_yaw) * frac;
+        pose.pitch = self.head_start_pitch + (self.head_end_pitch - self.head_start_pitch) * frac;
+        return pose;
+    }
+
 }
 
 """One line of Q2's inventory screen (cl_inv.c CL_DrawInventory): the key
@@ -298,6 +366,33 @@ obj HudRenderer {
         }
     }
 
+    """Q3 text with its color escapes (CG_DrawStringExt): `^` and a character
+    sets the color from g_color_table by its low three bits and takes no
+    room; `^^` is a caret."""
+    def colored_chars(message: str, x: float, y: float, size: float) {
+        palette: list[list[int]] = [
+            [0, 0, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255], [255, 255, 0, 255],
+            [0, 0, 255, 255], [0, 255, 255, 255], [255, 0, 255, 255], [255, 255, 255, 255]
+        ];
+        tint = palette[7];
+        run = "";
+        start = x;
+        i = 0;
+        while i < len(message) {
+            if message[i] == "^" and i + 1 < len(message) and message[i + 1] != "^" {
+                self.chars(run, start, y, size, tint);
+                start += float(len(run)) * size;
+                run = "";
+                tint = palette[(ord(message[i + 1]) - ord("0")) & 7];
+                i += 2;
+                continue;
+            }
+            run += message[i];
+            i += 1;
+        }
+        self.chars(run, start, y, size, tint);
+    }
+
     """Printed messages where the games put them: the notify lines at the top
     left (Con_DrawNotify, CG_DrawNotify), centre prints a third of the way
     down (SCR_DrawCenterString, CG_DrawCenterString), and Q3's ammo warning
@@ -311,7 +406,11 @@ obj HudRenderer {
         size = (16.0 if big else 8.0) * scale;
         y = 0.0;
         for line in status.notify {
-            self.chars(line, 0.0 if not big else 4.0 * scale, y, size * (0.5 if big else 1.0));
+            if big {
+                self.colored_chars(line, 4.0 * scale, y, size * 0.5);
+            } else {
+                self.chars(line, 0.0, y, size);
+            }
             y += size * (0.5 if big else 1.0);
         }
         if status.center {

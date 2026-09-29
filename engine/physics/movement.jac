@@ -506,10 +506,12 @@ walker MovePlayer {
             );
         }
         skidding = rules.knockback_skid and body.knockback_time > 0.0;
+        stride = Vec3();
         if self.steady and body.grounded {
-            # Monster movestep: a fixed stride with no friction or acceleration.
-            body.velocity.x = direction.x * speed;
-            body.velocity.y = direction.y * speed;
+            # Monster movestep (Q1 SV_movestep, Q2 M_walkmove): the frame's
+            # stride moves the body itself, with no acceleration. Its velocity
+            # is only what knocked it (Q2 SV_Physics_Step), under friction.
+            stride = direction.scale(speed);
         } elif self.climbing {
             # Q2 PM_AirMove on a ladder: no gravity; with no climb wished the
             # vertical speed settles by gravity's worth each second.
@@ -545,21 +547,46 @@ walker MovePlayer {
             }
             body.fall_speed = body.velocity.z;
         }
-        moved = step_slide(
-            self.collision,
-            pos,
-            body.velocity,
-            self.dt,
-            body.grounded,
-            rules.air_step or (rules.wet_step and self.water_depth > 0),
-            rules.rise_needs_ground,
-            rules.prefer_step
-        );
-        if rules.wall_friction {
-            self.rub_wall(body, moved);
+        air_step = rules.air_step or (rules.wet_step and self.water_depth > 0);
+        knocked = Vec3(x=body.velocity.x, y=body.velocity.y).length() > 0.0;
+        moved = Motion(pos=pos, velocity=Vec3());
+        if stride.length() > 0.0 {
+            # The stride and any knock slide apart, so neither bends the other.
+            moved = step_slide(
+                self.collision,
+                pos,
+                stride,
+                self.dt,
+                True,
+                air_step,
+                rules.rise_needs_ground,
+                rules.prefer_step
+            );
+            if rules.follow_ground {
+                moved = self.follow_ground(pos, moved);
+            }
+            moved.velocity = Vec3();
         }
-        if body.grounded and rules.follow_ground and not self.climbing {
-            moved = self.follow_ground(pos, moved);
+        if stride.length() == 0.0 or knocked {
+            walked = moved.stepped;
+            origin = moved.pos;
+            moved = step_slide(
+                self.collision,
+                origin,
+                body.velocity,
+                self.dt,
+                body.grounded,
+                air_step,
+                rules.rise_needs_ground,
+                rules.prefer_step
+            );
+            if rules.wall_friction {
+                self.rub_wall(body, moved);
+            }
+            if body.grounded and rules.follow_ground and not self.climbing {
+                moved = self.follow_ground(origin, moved);
+            }
+            moved.stepped = max(moved.stepped, walked);
         }
         body.velocity = moved.velocity;
         body.pos = moved.pos.add(Vec3(z=self.collision.eye_height));
@@ -685,7 +712,6 @@ walker MovePlayer {
         }
         drop = 0.0;
         if (grounded or self.climbing)
-            and not self.steady
             and not (rules.knockback_skid and body.knockback_time > 0.0) {
             friction = rules.friction;
             if rules.edge_friction != 1.0 and self.at_edge(pos, velocity) {

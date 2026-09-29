@@ -6,7 +6,7 @@ import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
 import from vendor.raylib { def GetTime -> f64;  }
 
 with entry {

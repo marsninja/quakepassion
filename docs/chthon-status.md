@@ -24,9 +24,19 @@ saved shocks. The native `scripts/chthon_smoke.jac` passes the original `e1m7`
 model/door/event sequence with save restoration after every strike. The separate
 render harness captures the original model in its arena; that image was inspected.
 
-This does not establish complete encounter fidelity. Remaining details include
-original sounds and lava splash effects, yaw rate, damage randomness, wide actor
-collision/hit bounds, and a player-driven fight through the authored buttons.
+The boss now plays boss.qc frame by frame at 10 Hz: `boss_rise` with out1 and
+sight1, `boss_missile` turning 20 degrees a frame toward the player
+(`boss_face`/`ChangeYaw`, `yaw_speed` 20) and throwing a lava ball on attack9 and
+attack20 from `makevectors(vectoangles(...))` offsets (leading the player's ground
+speed above Normal, 100 to 120 damage, throw.wav), `boss_idle` while the player
+is dead, the shock families with pain.wav, and death with death.wav, out1 and a
+lava splash before `boss_death10` counts it and fires its targets. `boss_awake`
+sets health by skill (one strike on Easy) and the boss has its 256-unit box.
+`lightning_use` plays misc/power.wav, ignores only uses made as a bolt starts,
+and `lightning_fire` emits a `q1_lightning3` beam every tenth of a second, its far
+end 100 units short. The lava splash uses the explosion event kind
+`q1_lavasplash`, whose look belongs to the particle work.
+
 The native harness drives target requests and does not claim an uninterrupted
-human boss fight. Easy difficulty and the final Shub-Niggurath encounter remain
-outside this implemented increment.
+human boss fight. The final Shub-Niggurath encounter remains outside this
+increment.

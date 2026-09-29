@@ -51,9 +51,10 @@ test "enemy contact cannot unlock a key door" {
     assert not door.unlocked and door.state == "closed";
 }
 
-test "closing doors reverse before sweeping through a living enemy" {
+test "closing doors reverse on a living enemy they cannot push" {
     fixture = DoorFixture();
     fixture.setup();
+    fixture.add_floor();
     door = [fixture.world->:HasDoor:->][?:Door][0];
     fixture.tick(Vec3(x=40.0, z=24.0), 2.0);
     assert door.position == 1.0;

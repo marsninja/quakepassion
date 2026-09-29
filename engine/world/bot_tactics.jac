@@ -1,9 +1,10 @@
-"""Q3 bot combat after ai_dmq3.c. Every arena bot carries its original
-character; this walker gives each one BotChooseWeapon's weighted weapon choice,
-BotAimAtEnemy's leading and accuracy error, BotChangeViewAngles' limited turn
-speed, BotCheckAttack's reaction time, fire throttle and field-of-fire test,
-and BotAttackMove's strafing, range keeping and jumping. Shots use the real
-weapon rules: hitscan, rails, lightning and live projectiles."""
+"""Q3 bot combat after ai_dmq3.c: BotChooseWeapon's choice by the
+character's fuzzy weapon weights, BotAimAtEnemy's leading and accuracy error,
+BotChangeViewAngles' limited turn speed, BotCheckAttack's reaction time, fire
+throttle and field-of-fire test, and BotAttackMove's strafing, range keeping
+and jumping. Shots use the real weapon rules: hitscan, rails, lightning and
+live projectiles. The AI that decides what to do (bot_ai.jac) uses these, and
+act_bot turns the view and pulls the trigger every frame."""
 import math;
 import from .world { World, Player }
 import from .combat {
@@ -20,12 +21,9 @@ import from .combat {
 import from .weapons { WeaponRule }
 import from .inventory { quantity, AdjustInventory }
 import from .particles { rail_trail, beam_trail, impact_spray, wall_impact }
-import from .bot_character { BotCharacter, BotState, bot_aggression, entity_visible }
+import from .bot_character { BotCharacter, BotState }
+import from .bot_weights { best_fight_weapon }
 import from .powerups { damage_scale, fire_interval_scale, empowered }
-import from .pickups { Pickup, HasPickup }
-import from .bot_routes { NavMesh, HasNavMesh, reachable }
-import from .arena_navigation { bot_wants }
-import from .powerups { stored_kinds }
 import from .models { PlayerRig, WeaponKit }
 import from .player_rig { hold_kit }
 import from .body_queue { Corpse, damage_corpse }
@@ -86,25 +84,25 @@ def armed_with(bot: Opponent, rule: WeaponRule) -> bool {
     return not rule.ammo or quantity(bot.inventory, rule.ammo) >= rule.cost;
 }
 
-"""BotChooseBestFightWeapon over fw_weap.c: the owned, loaded weapon with the
-highest character weight; the lightning gun counts a tenth beyond 768 units."""
-def choose_weapon(bot: Opponent, mind: BotCharacter, rules: list[WeaponRule], reach: float) -> int {
-    best = 1;
-    best_weight = -1;
+"""ai_dmq3.c BotChooseWeapon: the weapon BotChooseBestFightWeapon rates
+highest over the bot's `inventory` (BotUpdateInventory, with the enemy's
+distance and height in a fight), or the current one while a weapon is still
+being raised or lowered or when none rates above zero."""
+def choose_weapon(bot: Opponent, mind: BotCharacter, inventory: list[int]) -> int {
+    if bot.weapon_change < WEAPON_SWITCH_TIME {
+        return bot.weapon_slot;
+    }
+    best = best_fight_weapon(mind.weapon_weights, mind.weapon_numbers, inventory);
+    return best if best > 0 else bot.weapon_slot;
+}
+
+def rule_named(rules: list[WeaponRule], key: str) -> WeaponRule | None {
     for rule in rules {
-        if not armed_with(bot, rule) {
-            continue;
-        }
-        weight = mind.weight_for(rule.key);
-        if rule.key == "lightning" and reach > 768.0 {
-            weight = int(float(weight) * 0.1);
-        }
-        if weight > best_weight {
-            best_weight = weight;
-            best = rule.slot;
+        if rule.key == key {
+            return rule;
         }
     }
-    return best;
+    return None;
 }
 
 def rule_for(rules: list[WeaponRule], slot: int) -> WeaponRule | None {
@@ -236,6 +234,9 @@ def change_view(state: BotState, mind: BotCharacter, enemy: bool, seconds: float
 # Q3 servers run bots at sv_fps 20; clients draw between the frames.
 glob BOT_VIEW_FRAME: float = 0.05;
 
+# bg_pmove.c PM_UpdateViewAngles clamps the pitch to 16000 short units.
+glob PITCH_CLAMP: float = 16000.0 * 360.0 / 65536.0;
+
 """Turn a bot's view every tick: BotChangeViewAngles steps each 50 ms server
 frame and the drawn view moves smoothly between frames, as cgame interpolates
 entity angles. Anything else that turned the bot (a spawn or teleporter)
@@ -264,7 +265,10 @@ def steer_view(bot: Opponent, mind: BotCharacter, enemy: bool, dt: float) {
     }
     blend = state.view_wait / BOT_VIEW_FRAME;
     bot.yaw = math.radians((state.from_yaw + view_delta(state.yaw, state.from_yaw) * blend) % 360.0);
-    bot.pitch = -math.radians(state.from_pitch + (state.pitch - state.from_pitch) * blend);
+    # The AI's own view may swing past straight down; the player's view is
+    # held within PM_UpdateViewAngles' 16000 (about 87.9 degrees) either way.
+    drawn = state.from_pitch + (state.pitch - state.from_pitch) * blend;
+    bot.pitch = -math.radians(max(-PITCH_CLAMP, min(PITCH_CLAMP, drawn)));
 }
 
 """BotMovementViewTarget: look at the point 300 units along the bot's route
@@ -417,381 +421,215 @@ def bot_fire(
     }
 }
 
-"""The ai_dmnet.c battle nodes, simplified. A bot that sees its enemy fights
-it with BotAttackMove, or retreats along its item route while shooting back
-when it feels outgunned (BotWantsToRetreat), grabbing nearby items on the way
-(Battle_NBG); when the enemy slips out of sight a keen bot chases its last
-position (BotWantsToChase) and a reluctant one returns to its goals. Views
-turn every tick (BotChangeViewAngles): at the aim point in battle, and along
-the route otherwise (BotMovementViewTarget)."""
-walker BotTactics {
-    has player: Player,
-        collision: CollisionMap,
-        state: CombatState,
-        rules: list[WeaponRule],
-        dt: float,
-        world: World | None = None,
-        pickups: list[Pickup] = [],
-        mesh: NavMesh | None = None,
-        surveyed: bool = False;
-
-    can begin with World entry {
-        self.world = here;
-        if self.dt > 0.0 and self.rules {
-            visit [here->:HasOpponent:->];
-        }
+"""ai_dmq3.c BotCheckAttack: whether the bot fires its `rule` weapon now at
+its enemy. It waits out its reaction time (clamped to a second), a weapon
+change and the fire throttle, fires the gauntlet only within 60 units, needs
+the aim point inside its field of fire (120 degrees up close, 50 further)
+and in sight, and holds a splash weapon whose shot would burst on something
+within its radius short of the enemy."""
+def ready_to_fire(bot: Opponent, mind: BotCharacter, rule: WeaponRule, foe: Player, collision: CollisionMap) -> bool {
+    if bot.weapon_wait > 0.0
+        or bot.enemy_sight < mind.reaction
+        or bot.weapon_change < WEAPON_SWITCH_TIME
+        or bot.throttle_wait > 0.0 {
+        return False;
     }
-
-    can fight with Opponent entry {
-        mind = here.character;
-        world = self.world;
-        if not here.arena or here.health <= 0 or here.dormant or mind is None or world is None {
-            return;
-        }
-        dt = self.dt;
-        memory = here.bot_state;
-        memory.clock += dt;
-        held = rule_for(self.rules, here.weapon_slot);
-        # PM_FinishWeaponChange: the new weapon appears once the old one is down.
-        if held is not None and held.key != here.shown_weapon and here.weapon_change >= 0.2 {
-            hold_weapon(here, held.key);
-        }
-        here.weapon_wait = max(0.0, here.weapon_wait - dt);
-        here.weapon_change += dt;
-        here.throttle_wait = max(0.0, here.throttle_wait - dt);
-        here.throttle_shoot = max(0.0, here.throttle_shoot - dt);
-        here.enemy_sample -= dt;
-        here.jump_wait = max(0.0, here.jump_wait - dt);
-        here.think_wait -= dt;
-        thinking = here.think_wait <= 0.0;
-        if thinking {
-            here.think_wait += 0.1;
-        }
-        foe = here.foe;
-        visible = False;
-        if foe is not None and foe.health > 0 {
-            # BotAI runs every bot_thinktime (100 ms) and the bot keeps its
-            # input in between: it looks for its enemy when it thinks, and at
-            # once for a new enemy.
-            if thinking or foe is not memory.sight_target {
-                memory.sight = entity_visible(self.collision, here.pos, foe.pos.sub(Vec3(z=foe_height(foe, self.collision))));
-                memory.sight_target = foe;
-            }
-            visible = memory.sight;
-        }
-        # BotFindEnemy's enemysight_time: the reaction time runs from when an
-        # enemy is found, not from each glimpse of it. An enemy that replaces
-        # a living one counts as seen two seconds ago; one found again after
-        # the bot went back to its goals (lost_sight forgets it) is new.
-        if foe is not memory.enemy {
-            previous = memory.enemy;
-            here.enemy_sight = 2.0 if foe is not None and previous is not None and previous.health > 0 else 0.0;
-            memory.enemy = foe;
-        }
-        if foe is not None {
-            here.enemy_sight += dt;
-        }
-        if foe is None or not visible {
-            here.fighting = False;
-            here.crouched = False;
-            if thinking {
-                self.lost_sight(here, foe);
-            }
-            chasing = memory.battle == "chase" and foe is not None;
-            if chasing and memory.clock - memory.seen_time < 2.0 {
-                # Battle_Chase keeps aiming where the enemy went for two seconds.
-                look_at(here, memory.chase_target);
-            } else {
-                look_ahead(here);
-            }
-            steer_view(here, mind, chasing, dt);
-            return;
-        }
-        memory.seen_time = memory.clock;
-        memory.chase_target = foe.pos.add(Vec3());
-        if here.enemy_sample <= 0.0 {
-            # The enemy's motion is remembered every half second.
-            here.enemy_sample = 0.5;
-            here.enemy_velocity = foe.velocity.add(Vec3());
-            here.enemy_origin = foe.pos.sub(Vec3(z=foe_height(foe, self.collision)));
-        }
-        gap = foe.pos.sub(here.pos);
-        horizontal = math.sqrt(gap.x * gap.x + gap.y * gap.y);
-        # Bots think at 10 Hz: battle node, weapon choice, aim point and moves.
-        if thinking {
-            chosen = choose_weapon(here, mind, self.rules, horizontal);
-            if chosen != here.weapon_slot {
-                here.weapon_slot = chosen;
-                here.weapon_change = 0.0;
-            }
-            current = rule_for(self.rules, here.weapon_slot);
-            if current is not None {
-                here.aim_target = aim_point(here, mind, current, foe, self.collision);
-            }
-            self.choose_battle(here, foe);
-            if memory.battle == "fight" {
-                self.move_in_combat(here, mind, gap, horizontal);
-            }
-        }
-        here.fighting = memory.battle == "fight";
-        if not here.fighting {
-            here.crouched = False;
-        }
-        # A visible enemy is always aimed at, retreating or not. (Battle_Retreat
-        # and Battle_NBG only do so above 0.3 attack skill, but G_AddBot's
-        # handicap keeps skill 1-2 bots under BotAggression's health marks, so
-        # they would retreat for good and never face their enemy.)
-        look_at(here, memory.view_target);
-        steer_view(here, mind, True, dt);
-        rule = rule_for(self.rules, here.weapon_slot);
-        if rule is None or not armed_with(here, rule) {
-            return;
-        }
-        if self.ready_to_fire(here, mind, rule) {
-            bot_fire(world, here, rule, self.player, self.collision, self.state);
-        }
-    }
-
-    """Seek_LTG, Battle_Fight, Battle_Retreat and Battle_NBG deciding what to
-    do about a visible enemy."""
-    def choose_battle(bot: Opponent, foe: Player) {
-        memory = bot.bot_state;
-        was = memory.battle;
-        keen = bot_aggression(bot, foe, bot.shown_weapon);
-        if memory.battle in ["", "chase"] {
-            memory.battle = "retreat" if keen < 50.0 else "fight";
-        } elif memory.battle == "fight" {
-            if keen < 50.0 {
-                memory.battle = "retreat";
-            }
-        } elif memory.battle == "retreat" {
-            if keen > 50.0 {
-                memory.battle = "fight";
-            } elif bot.arena_goal is None and bot.roam_goal is None {
-                # "battle retreat: no way out" fights it out.
-                memory.battle = "fight";
-            } elif memory.clock >= memory.check_time {
-                memory.check_time = memory.clock + 1.0;
-                nearby = self.nearby_goal(bot, 150.0);
-                if nearby is not None {
-                    memory.battle = "nbg";
-                    memory.nearby_goal = nearby;
-                    memory.battle_time = memory.clock + 150.0 / 100.0 + 1.0;
-                }
-            }
-        } elif memory.battle == "nbg" {
-            goal = memory.nearby_goal;
-            if goal is None
-                or memory.clock > memory.battle_time
-                or goal.sub(bot.pos).length() < 40.0 {
-                memory.nearby_goal = None;
-                memory.battle = "retreat" if keen < 50.0 else "fight";
-            }
-        }
-        if memory.battle != was {
-            # A new node picks its goal at once.
-            bot.arena_goal_wait = 0.0;
-            bot.route = [];
-            bot.route_areas = [];
-        }
-    }
-
-    """Enemy out of sight: Battle_Fight chases when the bot wants to, retreats
-    give up after four seconds, chases after ten or on reaching the spot."""
-    def lost_sight(bot: Opponent, foe: Player | None) {
-        memory = bot.bot_state;
-        was = memory.battle;
-        if foe is None or foe.health <= 0 {
-            memory.battle = "";
-        } elif memory.battle == "fight" {
-            keen = bot_aggression(bot, foe, bot.shown_weapon);
-            if keen > 50.0 {
-                memory.battle = "chase";
-                memory.battle_time = memory.clock + 10.0;
-            } else {
-                memory.battle = "";
-            }
-        } elif memory.battle in ["retreat", "nbg"] {
-            if memory.clock - memory.seen_time > 4.0 {
-                memory.battle = "";
-            }
-        } elif memory.battle == "chase" {
-            reached = memory.chase_target.sub(bot.pos).length() < 48.0;
-            if memory.clock > memory.battle_time or reached {
-                memory.battle = "";
-            }
-        }
-        if memory.battle != "nbg" {
-            memory.nearby_goal = None;
-        }
-        if memory.battle == "" {
-            memory.enemy = None;
-        }
-        if memory.battle != was {
-            bot.arena_goal_wait = 0.0;
-            bot.route = [];
-            bot.route_areas = [];
-        }
-    }
-
-    """BotNearbyGoal: the closest item the bot wants within `range` hundredths
-    of a second of travel (straight-line at run speed), reachable over the
-    AAS."""
-    def nearby_goal(bot: Opponent, range: float) -> Vec3 | None {
-        world = self.world;
-        if world is None {
-            return None;
-        }
-        if not self.surveyed {
-            self.surveyed = True;
-            self.pickups = [world->:HasPickup:->][?:Pickup];
-            meshes = [world->:HasNavMesh:->][?:NavMesh];
-            self.mesh = meshes[0] if meshes else None;
-        }
-        reach = range / 100.0 * 320.0;
-        holding = any([quantity(bot.inventory, held) > 0 for held in stored_kinds("q3")]);
-        best: Vec3 | None = None;
-        best_distance = reach;
-        origin = bot.pos.sub(Vec3(z=bot.eye_height));
-        for pickup in self.pickups {
-            if not pickup.active or pickup.waiting_for_use {
-                continue;
-            }
-            distance = pickup.pos.sub(origin).length();
-            if distance >= best_distance or not bot_wants(bot, pickup.rule.kind, pickup.rule.amount, holding) {
-                continue;
-            }
-            mesh = self.mesh;
-            if mesh is not None and not reachable(mesh, origin, pickup.pos) {
-                continue;
-            }
-            best_distance = distance;
-            best = pickup.pos.add(Vec3(z=bot.eye_height));
-        }
-        return best;
-    }
-
-    """ai_dmq3.c BotCheckAttack."""
-    def ready_to_fire(bot: Opponent, mind: BotCharacter, rule: WeaponRule) -> bool {
-        if bot.weapon_wait > 0.0
-            or bot.enemy_sight < mind.reaction
-            or bot.weapon_change < WEAPON_SWITCH_TIME
-            or bot.throttle_wait > 0.0 {
+    if bot.throttle_shoot <= 0.0 {
+        if bot_random(bot) > mind.fire_throttle {
+            bot.throttle_wait = mind.fire_throttle;
             return False;
         }
-        if bot.throttle_shoot <= 0.0 {
-            if bot_random(bot) > mind.fire_throttle {
-                bot.throttle_wait = mind.fire_throttle;
-                return False;
-            }
-            bot.throttle_shoot = 1.0 - mind.fire_throttle;
-        }
-        toward = bot.aim_target.sub(bot.pos);
-        distance = toward.length();
-        if rule.key == "gauntlet" and distance > 60.0 {
+        bot.throttle_shoot = 1.0 - mind.fire_throttle;
+    }
+    toward = bot.aim_target.sub(bot.pos);
+    distance = toward.length();
+    if rule.key == "gauntlet" and distance > 60.0 {
+        return False;
+    }
+    fov = math.radians(120.0 if distance < 100.0 else 50.0) * 0.5;
+    wanted_yaw = math.atan2(toward.y, toward.x);
+    wanted_pitch = math.atan2(toward.z, math.sqrt(toward.x * toward.x + toward.y * toward.y));
+    if abs(turn_between(bot.yaw, wanted_yaw)) > fov or abs(turn_between(bot.pitch, wanted_pitch)) > fov {
+        return False;
+    }
+    sight = collision.trace_point(bot.pos, bot.aim_target);
+    if sight.start_solid or sight.fraction < 1.0 {
+        return False;
+    }
+    # "if won't hit the enemy" a splash shot must not burst close by.
+    if rule.splash > 0 and rule.radius > 0.0 {
+        forward = forward_from(bot.yaw, bot.pitch);
+        start = bot.pos.sub(forward.scale(12.0));
+        shot = collision.trace_point(start, start.add(forward.scale(1000.0)));
+        reach = shot.fraction * 1000.0;
+        enemy_reach = foe.pos.sub(start).length();
+        if reach < enemy_reach - 32.0 and reach < rule.radius and float(rule.splash) - 0.5 * reach * 0.5 > 0.0 {
             return False;
         }
-        fov = math.radians(120.0 if distance < 100.0 else 50.0) * 0.5;
-        wanted_yaw = math.atan2(toward.y, toward.x);
-        wanted_pitch = math.atan2(toward.z, math.sqrt(toward.x * toward.x + toward.y * toward.y));
-        return abs(turn_between(bot.yaw, wanted_yaw)) <= fov
-            and abs(turn_between(bot.pitch, wanted_pitch)) <= fov;
     }
+    return True;
+}
 
-    """Whether the bot can take a step along `direction` (BotMoveInDirection
-    refuses to walk into a wall or off a ledge)."""
-    def can_step(bot: Opponent, direction: Vec3) -> bool {
-        origin = bot.pos.sub(Vec3(z=bot.eye_height));
-        ahead = direction.normalized().scale(40.0);
-        wall = self.collision.trace_point(origin.add(Vec3(z=8.0)), origin.add(ahead).add(Vec3(z=8.0)));
-        if wall.start_solid or wall.fraction < 1.0 {
-            return False;
-        }
-        probe = origin.add(ahead);
-        floor = self.collision.trace_point(probe, probe.sub(Vec3(z=64.0)));
-        return floor.fraction < 1.0;
+"""Whether the bot can take a step along `direction` (BotMoveInDirection
+refuses to walk into a wall or off a ledge)."""
+def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap) -> bool {
+    origin = bot.pos.sub(Vec3(z=bot.eye_height));
+    ahead = direction.normalized().scale(40.0);
+    wall = collision.trace_point(origin.add(Vec3(z=8.0)), origin.add(ahead).add(Vec3(z=8.0)));
+    if wall.start_solid or wall.fraction < 1.0 {
+        return False;
     }
+    probe = origin.add(ahead);
+    floor = collision.trace_point(probe, probe.sub(Vec3(z=64.0)));
+    return floor.fraction < 1.0;
+}
 
-    """ai_dmq3.c BotAttackMove. Below 0.2 attack skill the bot stands; up to
-    0.4 it only closes or opens the distance; above that it strafes, flipping
-    now and then after 0.4-0.6 s and whenever blocked, backs off at random,
-    and keeps the ideal distance. It jumps as its jumper characteristic likes
-    (at most once a second) and crouches as its croucher one does."""
-    def move_in_combat(bot: Opponent, mind: BotCharacter, gap: Vec3, horizontal: float) {
-        memory = bot.bot_state;
-        now = memory.clock;
-        bot.steering = Vec3();
-        if mind.attack_skill < 0.2 {
-            bot.crouched = False;
-            return;
+"""ai_dmq3.c BotAttackMove. Below 0.2 attack skill the bot stands; up to
+0.4 it only closes or opens the distance; above that it strafes, flipping
+now and then after 0.4-0.6 s and whenever blocked, backs off at random,
+and keeps the ideal distance. It jumps as its jumper characteristic likes
+(at most once a second) and crouches as its croucher one does."""
+def attack_move(bot: Opponent, mind: BotCharacter, foe: Player, collision: CollisionMap) {
+    memory = bot.bot_state;
+    now = memory.clock;
+    bot.steering = Vec3();
+    gap = foe.pos.sub(bot.pos);
+    horizontal = math.sqrt(gap.x * gap.x + gap.y * gap.y);
+    if mind.attack_skill < 0.2 {
+        bot.crouched = False;
+        return;
+    }
+    distance = gap.length();
+    if horizontal < 0.001 {
+        return;
+    }
+    forward = Vec3(x=gap.x / horizontal, y=gap.y / horizontal);
+    backward = forward.scale(-1.0);
+    jump = False;
+    if memory.crouch_time < now - 1.0 {
+        if bot_random(bot) < mind.jumper {
+            jump = True;
+        } elif bot_random(bot) < mind.croucher {
+            memory.crouch_time = now + mind.croucher * 5.0;
         }
-        distance = gap.length();
-        if horizontal < 0.001 {
-            return;
-        }
-        forward = Vec3(x=gap.x / horizontal, y=gap.y / horizontal);
-        backward = forward.scale(-1.0);
+    }
+    bot.crouched = memory.crouch_time > now;
+    if bot.crouched {
         jump = False;
-        if memory.crouch_time < now - 1.0 {
-            if bot_random(bot) < mind.jumper {
-                jump = True;
-            } elif bot_random(bot) < mind.croucher {
-                memory.crouch_time = now + mind.croucher * 5.0;
-            }
-        }
-        bot.crouched = memory.crouch_time > now;
-        if bot.crouched {
+    }
+    if jump {
+        if memory.jump_time > now {
             jump = False;
-        }
-        if jump {
-            if memory.jump_time > now {
-                jump = False;
-            } else {
-                memory.jump_time = now + 1.0;
-            }
-        }
-        ideal = 0.0 if bot.weapon_slot == 1 else IDEAL_ATTACKDIST;
-        span = 0.0 if bot.weapon_slot == 1 else ATTACK_RANGE;
-        if mind.attack_skill <= 0.4 {
-            if distance > ideal + span and self.can_step(bot, forward) {
-                bot.steering = forward;
-            } elif distance < ideal - span and self.can_step(bot, backward) {
-                bot.steering = backward;
-            }
         } else {
-            memory.strafe_time += 0.1;
-            change = 0.4 + (1.0 - mind.attack_skill) * 0.2;
-            if mind.attack_skill > 0.7 {
-                change += bot_crandom(bot) * 0.2;
-            }
-            # "some magic number": a 6.5% chance per think once due.
-            if memory.strafe_time > change and bot_random(bot) > 0.935 {
-                memory.strafe_right = not memory.strafe_right;
-                memory.strafe_time = 0.0;
-            }
-            for attempt in range(2) {
-                side = Vec3(x=forward.y, y=-forward.x);
-                if memory.strafe_right {
-                    side = side.scale(-1.0);
-                }
-                if bot_random(bot) > 0.9 {
-                    side = side.add(backward);
-                } elif distance > ideal + span {
-                    side = side.add(forward);
-                } elif distance < ideal - span {
-                    side = side.add(backward);
-                }
-                if self.can_step(bot, side) {
-                    bot.steering = side.normalized();
-                    break;
-                }
-                memory.strafe_right = not memory.strafe_right;
-                memory.strafe_time = 0.0;
-            }
+            memory.jump_time = now + 1.0;
         }
-        if jump and bot.grounded {
-            bot.velocity.z = 270.0;
-            bot.grounded = False;
+    }
+    ideal = 0.0 if bot.weapon_slot == 1 else IDEAL_ATTACKDIST;
+    span = 0.0 if bot.weapon_slot == 1 else ATTACK_RANGE;
+    if mind.attack_skill <= 0.4 {
+        if distance > ideal + span and can_step(bot, forward, collision) {
+            bot.steering = forward;
+        } elif distance < ideal - span and can_step(bot, backward, collision) {
+            bot.steering = backward;
         }
+    } else {
+        memory.strafe_time += 0.1;
+        change = 0.4 + (1.0 - mind.attack_skill) * 0.2;
+        if mind.attack_skill > 0.7 {
+            change += bot_crandom(bot) * 0.2;
+        }
+        # "some magic number": a 6.5% chance per think once due.
+        if memory.strafe_time > change and bot_random(bot) > 0.935 {
+            memory.strafe_right = not memory.strafe_right;
+            memory.strafe_time = 0.0;
+        }
+        for attempt in range(2) {
+            side = Vec3(x=forward.y, y=-forward.x);
+            if memory.strafe_right {
+                side = side.scale(-1.0);
+            }
+            if bot_random(bot) > 0.9 {
+                side = side.add(backward);
+            } elif distance > ideal + span {
+                side = side.add(forward);
+            } elif distance < ideal - span {
+                side = side.add(backward);
+            }
+            if can_step(bot, side, collision) {
+                bot.steering = side.normalized();
+                break;
+            }
+            memory.strafe_right = not memory.strafe_right;
+            memory.strafe_time = 0.0;
+        }
+    }
+    if jump and bot.grounded {
+        bot.velocity.z = 270.0;
+        bot.grounded = False;
+    }
+}
+
+"""What a Q3 bot does every frame between its thinks (bot_ai.jac thinks at
+10 Hz): its weapon and fire timers, its view turned toward what its AI node
+looks at (BotChangeViewAngles), and its trigger (BotCheckAttack in the
+battle nodes that attack, or the movement's own shot for a rocket jump)."""
+def act_bot(
+    world: World,
+    bot: Opponent,
+    mind: BotCharacter,
+    human: Player,
+    collision: CollisionMap,
+    state: CombatState,
+    rules: list[WeaponRule],
+    dt: float
+) {
+    memory = bot.bot_state;
+    held = rule_for(rules, bot.weapon_slot);
+    # PM_FinishWeaponChange: the new weapon appears once the old one is down.
+    if held is not None and held.key != bot.shown_weapon and bot.weapon_change >= 0.2 {
+        hold_weapon(bot, held.key);
+    }
+    bot.weapon_wait = max(0.0, bot.weapon_wait - dt);
+    bot.weapon_change += dt;
+    bot.throttle_wait = max(0.0, bot.throttle_wait - dt);
+    bot.throttle_shoot = max(0.0, bot.throttle_shoot - dt);
+    bot.enemy_sample -= dt;
+    bot.jump_wait = max(0.0, bot.jump_wait - dt);
+    foe = memory.enemy;
+    if foe is not None {
+        bot.enemy_sight += dt;
+    }
+    visible = foe is not None and foe.health > 0 and memory.sight;
+    travel = memory.travel;
+    # BotChangeViewAngles turns toward the node's ideal view: the aim point,
+    # the enemy's last position in a chase, or the movement's.
+    if memory.view_mode == "enemy" and visible {
+        look_at(bot, memory.view_target);
+    } elif memory.view_mode == "chase" {
+        look_at(bot, memory.last_enemy_origin.add(Vec3(z=bot.eye_height)));
+    } elif travel.view_set {
+        # MOVERESULT_MOVEMENTVIEWSET: the movement needs this view.
+        memory.ideal_yaw = travel.yaw;
+        memory.ideal_pitch = travel.pitch;
+    } elif memory.view_mode != "enemy" {
+        look_ahead(bot);
+    }
+    steer_view(bot, mind, foe is not None, dt);
+    rule = rule_for(rules, bot.weapon_slot);
+    if rule is None or not armed_with(bot, rule) {
+        return;
+    }
+    # A rocket jump fires as it jumps (EA_Attack from the movement).
+    if travel.attack and rule.key == travel.weapon {
+        if bot.weapon_wait <= 0.0 and bot.weapon_change >= WEAPON_SWITCH_TIME {
+            bot_fire(world, bot, rule, human, collision, state);
+        }
+        return;
+    }
+    if memory.ainode in ["battle_fight", "battle_retreat", "battle_nbg"]
+        and visible
+        and foe is not None
+        and ready_to_fire(bot, mind, rule, foe, collision) {
+        bot_fire(world, bot, rule, human, collision, state);
     }
 }

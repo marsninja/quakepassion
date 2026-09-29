@@ -243,8 +243,5 @@ rocket shot.
 
 ## Limits
 
-- Mover pushes, platform riding and door blocking still test monsters with the
-  player's box.
-
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.

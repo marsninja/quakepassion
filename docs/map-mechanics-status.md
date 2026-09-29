@@ -134,9 +134,13 @@ Snapshot format **20** stores mover clocks, shooter timing and trap projectiles.
 
 ## Limits
 
-Rotating-mover collision uses Q2's approximation, which keeps the player's box
-unrotated. Pushing actors along a rotation checks their destination, not the
-swept arc. A turning turret does not push or crush what it swings into
-(`turret_blocked`), and a save does not keep a turret's current aim.
+All brush movers push through one shared pusher (`engine/world/pusher.jac`):
+riders and whatever a mover's new pose catches are carried by its translation
+and its turn about the model origin, each in its own box, or the whole move is
+undone and the mover's blocked function runs (Q1 `SV_PushMove`, Q2 `SV_Push`,
+Q3 `G_MoverPush`). As in the originals, rotating hulls trace boxes unrotated in
+the model's frame (Q2/Q3 `CM_TransformedBoxTrace`) and pushes test the
+destination, not the swept arc. Turrets push and crush (`turret_blocked`, `dmg`
+10), and saves keep a turret's aim and its driver's targeting.
 `target_actor` is not implemented: the only one in the shipped maps (biggun) has
 no `misc_actor` to drive. Q3 portal surfaces are not rendered.

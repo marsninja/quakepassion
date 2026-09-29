@@ -10,7 +10,8 @@ import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick, ProjectileTick, WEAPON_SWITCH_TIME }
 import from engine.world.arena { MatchTick, match_of }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.bot_tactics { BotTactics, turn_between }
+import from engine.world.bot_ai { BotTactics }
+import from engine.world.bot_tactics { turn_between }
 import from engine.world.pickups { PickupTick }
 import from engine.world.models { PlayerRig }
 import from games.opponents { populate_opponents }

@@ -21,7 +21,7 @@ def monster(game: str, kind: str, pos: Vec3) -> Opponent {
     assert rule is not None;
     return Opponent(
         rule=rule, kind=kind, game=game, pos=pos, health=rule.health, max_health=rule.health,
-        walk_speed=rule.speed, patrol_speed=31.0, grounded=True, walk_animation=[1, 2, 3]
+        grounded=True, walk_animation=list(range(len(rule.walk.frames)))
     );
 }
 
@@ -52,7 +52,10 @@ test "idle monsters walk their path corner loop at walking pace" {
     knight +>:Patrols:+> a;
     run(world, player, collision, state, 1.0);
     assert knight.pos.x > 10.0 and knight.pos.x < 60.0;
-    assert knight.walk_speed == 31.0 and knight.pose_name == "walk";
+    # knight_walk1-14: the pace is the shown frame's ai_walk distance.
+    shown = int(knight.animation_time) % len(knight.rule.walk.steps);
+    assert knight.pose_name == "walk";
+    assert knight.walk_speed == knight.rule.walk.steps[shown] * 10.0;
     run(world, player, collision, state, 4.0);
     assert [knight->:Patrols:->][?:TrackPoint][0] is b;
     run(world, player, collision, state, 4.0);

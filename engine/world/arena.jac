@@ -8,6 +8,15 @@ announcer rules."""
 import from .world { World, Actor }
 import from ..math.vec3 { Vec3 }
 
+"""EV_OBITUARY, as every client hears it: who died, who killed them (None
+for the world) and how, numbered in order."""
+obj Obituary {
+    has victim: Actor,
+        killer: Actor | None,
+        means: str,
+        serial: int;
+}
+
 edge HasMatch: World --> ArenaMatch {}
 node ArenaMatch {
     has fraglimit: int = 20,
@@ -18,7 +27,18 @@ node ArenaMatch {
         winner: str = "",
         lead: int = 2,
         frags_called: int = 0,
-        prepared: bool = False;
+        prepared: bool = False,
+        obituaries: list[Obituary] = [],
+        obituary_serial: int = 0;
+
+    """Announce a death to everyone listening (bots read these)."""
+    def announce_death(victim: Actor, killer: Actor | None, means: str) {
+        self.obituary_serial += 1;
+        self.obituaries.append(Obituary(victim=victim, killer=killer, means=means, serial=self.obituary_serial));
+        if len(self.obituaries) > 64 {
+            self.obituaries.pop(0);
+        }
+    }
 }
 
 edge Competes: ArenaMatch --> Actor {
@@ -227,6 +247,7 @@ walker MatchTick {
             score.deaths += 1;
             changed = True;
             killer = actor.killer;
+            here.announce_death(actor, killer, actor.death_means);
             credited = -1;
             for j in range(len(actors)) {
                 if killer is not None and actors[j] is killer and j != i {

@@ -39,8 +39,9 @@ powerups, and bot use of the arsenal. Original MDL/MD2/MD3 models now cover nail
 bolts, grenades and rockets. Q2 BFG flight/explosion effects use the original
 animated SP2/PCX assets; Q3 plasma uses its additive rotating sprite and the Q3
 BFG flies as `models/weaphits/bfg.md3`. Q3 model materials still report partial support for several animated
-shader stages. Team-linked pickups, Q2 no-touch items, floor placement/riding
-movers, and Q3 randomized respawn timing also remain open.
+shader stages. Items settle as their game spawns them (Q1 `PlaceItem`/`droptofloor`, Q2
+`droptofloor`, Q3 `FinishSpawningItem`) and ride movers. Team-linked pickups,
+Q2 no-touch items and Q3 randomized respawn timing also remain open.
 
 Weapon parameters are adapted from the original
 [Q1 weapon logic](https://github.com/id-Software/Quake/blob/master/QW/progs/weapons.qc),

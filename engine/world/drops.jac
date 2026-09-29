@@ -36,7 +36,10 @@ glob ITEM_RADIUS: float = 15.0;
 """A dropped item in flight (LaunchItem's TR_GRAVITY trajectory), carrying
 the item it throws."""
 node Flight {
-    has velocity: Vec3 = Vec3();
+    has velocity: Vec3 = Vec3(),
+        # G_BounceItem leaves a landed Q3 item a unit off the floor along
+        # its normal; a Q2 MOVETYPE_TOSS item stops on it.
+        rest_lift: float = 1.0;
 }
 
 edge HasFlight: World --> Flight {}
@@ -115,8 +118,8 @@ walker TossTick {
             return;
         }
         if trace.normal.z > 0.0 {
-            # Off the ground by a unit and at rest.
-            item.pos = item.pos.add(Vec3(z=1.0));
+            # At rest on the floor (Q3: off it by a unit).
+            item.pos = item.pos.add(Vec3(z=here.rest_lift));
             self.settle(world, here);
             return;
         }
@@ -132,6 +135,14 @@ walker TossTick {
         }
         world del --> flight;
     }
+}
+
+"""Let an item with nothing under it fall (Q2 MOVETYPE_TOSS after
+droptofloor found no floor within reach), landing flat on what it meets."""
+def let_fall(world: World, item: Pickup) {
+    flight = Flight(rest_lift=0.0);
+    world +>:HasFlight:+> flight;
+    flight +>:Carries:+> item;
 }
 
 """Whether an item is still being thrown."""
