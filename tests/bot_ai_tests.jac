@@ -40,6 +40,10 @@ chat "tester"
 	type "death_praise" { "You got me, ", 0, "."; }
 	type "death_insult" { "You got me, ", 0, "."; }
 	type "death_rail" { "You got me, ", 0, "."; }
+	type "level_start" { "Here we go, ", 0, "."; }
+	type "level_end_victory" { "Too easy, ", 3, "."; }
+	type "level_end_lose" { "Well played, ", 2, "."; }
+	type "level_end" { "Close one."; }
 }
 """;
 
@@ -103,8 +107,10 @@ test "the ai_dmnet.c nodes are a graph of the switches between them" {
     brain = build_bot_brain();
     fight = brain.nodes["battle_fight"];
     targets = [node.name for node in [fight->:Leads:->][?:AINode]];
-    assert sorted(targets) == ["battle_chase", "battle_retreat", "respawn", "seek_ltg", "stand"];
+    assert sorted(targets) == ["battle_chase", "battle_retreat", "intermission", "respawn", "seek_ltg", "stand"];
     assert [node.name for node in [brain.nodes["respawn"]->:Leads:->][?:AINode]] == ["seek_ltg"];
+    assert [node.name for node in [brain.nodes["intermission"]->:Leads:->][?:AINode]] == ["stand"];
+    assert "intermission" not in [node.name for node in [brain.nodes["stand"]->:Leads:->][?:AINode]];
 }
 
 """A bot and a rival on an open floor, in a match that names them."""
@@ -278,6 +284,56 @@ test "a keen bot chases an enemy out of sight to where it was last seen" {
     assert memory.ainode == "battle_chase" and memory.view_mode == "chase";
     goal = memory.move_goal;
     assert goal is not None and goal.area == 5 and memory.goal_area == 5;
+}
+
+test "at the match's end each bot says how it went, the leader its victory" {
+    for (mine, theirs, said) in [(20, 7, "Tester^7: ^2Too easy, rival."), (3, 20, "Tester^7: ^2Well played, rival.")] {
+        collision = floor_collision();
+        state = CombatState(game="q3");
+        mind = tester();
+        mind.chat_start_end_level = 1.0;
+        parts = arena_pair(mind);
+        world = parts[0];
+        bot = parts[1];
+        contest = parts[3];
+        scores = [edge contest->:Competes:->];
+        scores[0].frags = mine;
+        scores[1].frags = theirs;
+        think(world, collision, state, 0.1);
+        assert bot.bot_state.ainode == "seek_ltg" and not state.messages;
+        # BotIntermission: the next think enters the intermission and the
+        # end-level line goes out at once (BotChat_EndLevel, BotEnterChat).
+        contest.finished = True;
+        world spawn BotTactics(player=Player(health=0, pos=Vec3(x=9000.0)), collision=collision, state=state, rules=weapon_rules("q3"), dt=0.1, intermission=True);
+        assert bot.bot_state.ainode == "intermission";
+        assert state.messages == [said] and "sound/player/talk.wav" in state.cues;
+        assert not bot.bot_state.talking;
+        # It stays there, silent, while the intermission lasts.
+        for i in range(30) {
+            world spawn BotTactics(player=Player(health=0, pos=Vec3(x=9000.0)), collision=collision, state=state, rules=weapon_rules("q3"), dt=0.1, intermission=True);
+        }
+        assert bot.bot_state.ainode == "intermission" and len(state.messages) == 1;
+    }
+}
+
+test "a match begun after its warmup wakes its bots with the level's opening line" {
+    collision = floor_collision();
+    state = CombatState(game="q3");
+    mind = tester();
+    mind.chat_start_end_level = 1.0;
+    parts = arena_pair(mind);
+    world = parts[0];
+    bot = parts[1];
+    contest = parts[3];
+    contest.prepared = True;
+    # Leaving the intermission it types BotChat_StartLevel's line, standing
+    # with its talk balloon up.
+    think(world, collision, state, 0.2);
+    memory = bot.bot_state;
+    assert memory.ainode == "stand" and memory.talking and not state.messages;
+    think(world, collision, state, 2.0);
+    assert state.messages == ["Tester^7: ^2Here we go, tester."];
+    assert memory.ainode == "seek_ltg" and not memory.talking;
 }
 
 """A pool of water over the whole strip, its surface at z = -40 and its

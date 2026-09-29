@@ -1,8 +1,9 @@
 """Q3 arena presentation captures on q3dm7: the scoreboard with heads, skill
-marks and awards; a bot beside a wall lit from the light grid and, for
-comparison, full bright as before; a body left behind and its gibs once shot
-apart; items thrown from a dying bot in flight and landed; the five-skill
-settings row; and the postgame menu's three phases over the podium. Run
+marks and awards; a bot typing with its talk balloon up; a bot beside a wall
+lit from the light grid and, for comparison, full bright as before; a body
+left behind and its gibs once shot apart; items thrown from a dying bot in
+flight and landed; the five-skill settings row; and the postgame menu's
+three phases over the podium, with the bots' end-of-level lines. Run
 with HOME pointing somewhere disposable (the postgame logs career awards
 there) and QP_GAME=q3 QP_ASSETS=<baseq3>."""
 import math;
@@ -194,6 +195,21 @@ with entry {
     app.begin_podium(contest);
     board = app.postgame;
     assert board is not None;
+    # The intermission: every bot that wants to says how the match went, over
+    # the podium (BotChat_EndLevel, Con_DrawNotify).
+    for bot in bots {
+        mind = bot.character;
+        if mind is not None {
+            mind.chat_start_end_level = 1.0;
+            mind.chat_state.last_chat = -1000.0;
+        }
+    }
+    for step in range(3) {
+        world spawn BotTactics(player=human, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=0.1, map_name="q3dm7", level=level, intermission=True);
+    }
+    app.combat_feedback();
+    print("END LINES", app.notify_lines);
+    assert [line for line in app.notify_lines if "^7: ^2" in line];
     print("MEDALS", board.medals, board.amounts);
     app.postgame_clock = 2.0;
     board.update(app.postgame_clock);

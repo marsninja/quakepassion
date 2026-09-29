@@ -466,6 +466,8 @@ obj App {
     def show_notice(message: str);
     """A printed line at the top left (sprint / cprintf), kept three seconds."""
     def notify(message: str);
+    """Let the notify lines age by `seconds` (con_notifytime)."""
+    def age_notify(seconds: float);
     """Play an archive sound heard from `origin` (ATTN_NORM falloff)."""
     def play_at(path: str, origin: Vec3);
     """Sounds and prints the combat simulation asked for this tick."""

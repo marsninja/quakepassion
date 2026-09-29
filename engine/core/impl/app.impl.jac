@@ -422,6 +422,9 @@ impl App.render_frame() {
                 board = self.postgame;
                 if contest.finished and board is not None and self.hud.ready {
                     draw_postgame(self.hud, board, self.postgame_clock, self.renderer.width, self.renderer.height);
+                    # The intermission's chat (the bots' end-of-level lines)
+                    # over the podium and its menu (Con_DrawNotify).
+                    self.hud.draw_notify(self.notify_lines, self.level.bsp.game, self.renderer.width, self.renderer.height);
                 } elif self.hud.ready and not contest.finished {
                     killer = p.killer;
                     draw_scoreboard(
@@ -962,6 +965,21 @@ impl App.step() -> bool {
             for cue in celebration.cues {
                 self.audio.play_path(cue);
             }
+            # The intermission: bots think on (BotIntermission) and may say
+            # how the match went, which shows over the podium as it does in
+            # Q3 (Con_DrawNotify keeps drawing during PM_INTERMISSION).
+            self.world spawn BotTactics(
+                player=self.player,
+                collision=self.level.collision,
+                state=self.combat,
+                rules=self.combat.rules,
+                dt=dt,
+                map_name=self.level.name,
+                level=self.level,
+                intermission=True
+            );
+            self.combat_feedback();
+            self.age_notify(dt);
             self.postgame_clock += dt;
             if self.postgame is not None {
                 self.postgame_input(contest);
@@ -1105,11 +1123,7 @@ impl App.step() -> bool {
         self.level.clock = self.simulation_time;
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
         self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
-        self.notify_ages = [age - self.physics_clock.tick_rate for age in self.notify_ages];
-        while self.notify_ages and self.notify_ages[0] <= 0.0 {
-            self.notify_ages.pop(0);
-            self.notify_lines.pop(0);
-        }
+        self.age_notify(self.physics_clock.tick_rate);
         if self.walking and self.level.active {
             standing = self.level.collision.eye_height;
             self.player spawn SetStance(
@@ -2016,6 +2030,14 @@ impl App.notify(message: str) {
     while len(self.notify_lines) > 4 {
         self.notify_lines.pop(0);
         self.notify_ages.pop(0);
+    }
+}
+
+impl App.age_notify(seconds: float) {
+    self.notify_ages = [age - seconds for age in self.notify_ages];
+    while self.notify_ages and self.notify_ages[0] <= 0.0 {
+        self.notify_ages.pop(0);
+        self.notify_lines.pop(0);
     }
 }
 

@@ -393,6 +393,27 @@ obj HudRenderer {
         self.chars(run, start, y, size, tint);
     }
 
+    """The notify lines at the top left (Con_DrawNotify, CG_DrawNotify): Q3's
+    in its console's small characters with their colour codes. Q3 draws them
+    over the intermission's menus too."""
+    def draw_notify(lines: list[str], game: str, width: int, height: int) {
+        if not self.has_pic("conchars") {
+            return;
+        }
+        big = game == "q3";
+        scale = float(height) / 480.0 if big else float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        size = (16.0 if big else 8.0) * scale;
+        y = 0.0;
+        for line in lines {
+            if big {
+                self.colored_chars(line, 4.0 * scale, y, size * 0.5);
+            } else {
+                self.chars(line, 0.0, y, size);
+            }
+            y += size * (0.5 if big else 1.0);
+        }
+    }
+
     """Printed messages where the games put them: the notify lines at the top
     left (Con_DrawNotify, CG_DrawNotify), centre prints a third of the way
     down (SCR_DrawCenterString, CG_DrawCenterString), and Q3's ammo warning
@@ -404,15 +425,7 @@ obj HudRenderer {
         big = status.game == "q3";
         scale = float(height) / 480.0 if big else float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
         size = (16.0 if big else 8.0) * scale;
-        y = 0.0;
-        for line in status.notify {
-            if big {
-                self.colored_chars(line, 4.0 * scale, y, size * 0.5);
-            } else {
-                self.chars(line, 0.0, y, size);
-            }
-            y += size * (0.5 if big else 1.0);
-        }
+        self.draw_notify(status.notify, status.game, width, height);
         if status.center {
             lines = status.center.split("\n");
             top = float(height) * (0.30 if big else 0.35);
