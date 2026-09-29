@@ -16,7 +16,7 @@ import from engine.render.world_mesh {
     PASS_FOG
 }
 import from engine.render.quake { tcmod_steps, apply_tcmods, stage_affine, placed_matrix, same_placement, moved_face }
-import from engine.formats.bsp { Face }
+import from engine.formats.bsp { Face, TexInfo }
 import from engine.formats.animated { ModelStage, TexMod, ShaderWave }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.orientation { quake_basis }
@@ -109,6 +109,20 @@ test "world vertices pack position, coordinates, light, styles and sprite data" 
     assert v[11] == 1.0 and v[14] == 1 and v[16] == 4;
     assert v[18] == 0 and v[19] == 5 and v[20] == 255 and v[21] == 255;
     assert v[22] == 0.25;
+    # A face without texture axes (Q3) leaves them out.
+    assert v[23] == 0.0 and v[26] == 0.0 and v[29] == 0.0 and v[15] == 0 and v[17] == 0;
+    # A Q1/Q2 face also carries its texture axes in lightmap samples, where
+    # its block starts in the atlas and its last sample column and row, for
+    # R_AddDynamicLights per sample.
+    face.texinfo = TexInfo(s=Vec3(y=1.0), t=Vec3(z=-2.0), soff=0.0, toff=0.0, texture=0, flags=0);
+    face.light_width = 3;
+    face.light_height = 2;
+    pack_world_face(out, 0, face, 10, 20, 64, 0.25, 1, face.fog, False, alpha=84);
+    q = struct.unpack_from("<fffffffBBBBfffBBBBBBBBffffffff", bytes(out), 2 * WORLD_VERTEX_STRIDE);
+    assert q[22] == 0.25 and q[23] == 0.0 and q[24] == 1.0 / 16.0 and q[25] == 0.0;
+    assert q[26] == 0.0 and q[27] == 0.0 and q[28] == -2.0 / 16.0;
+    assert q[29] == float(10 * 4096 + 20);
+    assert q[15] == 2 and q[17] == 1 and q[14] == 1 and q[16] == 4;
     # Q3 quads also carry their centre, radius and short-edge midpoints.
     wide = Face(vertices=[Vec3(), Vec3(y=64.0), Vec3(y=64.0, z=8.0), Vec3(z=8.0)], uv=[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0], colors=[10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40]);
     sprite = bytearray(4 * WORLD_VERTEX_STRIDE);
