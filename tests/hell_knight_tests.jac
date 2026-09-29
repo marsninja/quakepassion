@@ -11,7 +11,9 @@ import from engine.world.combat {
     damage_opponent,
     choose_attack,
     begin_attack,
-    current_profile
+    current_profile,
+    attack_duration,
+    skips_attack_waits
 }
 import from engine.physics.collision { CollisionMap }
 import from engine.world.opponent_rule { OpponentRule }
@@ -203,6 +205,43 @@ test "hell knight charges from its run cycle only level with the target" {
     raised.pos.z = 42.0;
     tick.run_start(high, raised);
     assert current_profile(high).name == "charge";
+}
+
+test "on Nightmare a hell knight's charge leaves no wait to attack again" {
+    # Q1 subs.qc SUB_AttackFinished sets no attack_finished on skill 3.
+    assert skips_attack_waits(Opponent(game="q1", skill=3));
+    assert not skips_attack_waits(Opponent(game="q1", skill=2));
+    assert not skips_attack_waits(Opponent(game="q2", skill=3));
+    collision = knight_floor();
+    world = World();
+    player = Player(pos=Vec3(x=300.0, z=22.0));
+    caster = q1_rule("monster_hell_knight");
+    caster.near_chance = 0.0;
+    knight = Opponent(
+        rule=caster,
+        game="q1",
+        skill=3,
+        pos=Vec3(z=22.0),
+        grounded=True,
+        attack_wait=0.0,
+        alert=8.0,
+        health=250,
+        animation=list(range(8)),
+        walk_animation=list(range(20))
+    );
+    world +>:HasOpponent:+> knight;
+    state = CombatState(game="q1");
+    started = "";
+    held = -1.0;
+    for tick in range(60) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+        if knight.attack_clock >= 0.0 and not started {
+            started = current_profile(knight).name;
+            held = knight.attack_wait;
+        }
+    }
+    # Only the charge itself holds the next attack, not CheckForCharge's 2 s.
+    assert started == "charge" and held <= attack_duration(knight) + 0.011;
 }
 
 test "a knight swings close by and slashes past from further out" {

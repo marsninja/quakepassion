@@ -454,12 +454,18 @@ def notices(watcher: Opponent, target: Vec3, distance: float, hostile: bool) -> 
     return facing;
 }
 
+"""Q1 subs.qc SUB_AttackFinished: on Nightmare (skill 3) a monster's
+attack_finished is never set, so none of its waits to attack apply."""
+def skips_attack_waits(enemy: Opponent) -> bool {
+    return enemy.game == "q1" and enemy.skill >= 3;
+}
+
 """The wait after an attack before the next may start (attack_finished).
 Q1 SUB_AttackFinished and Q2 M_CheckAttack wait a random time after a ranged
-attack (0-2 seconds unless the monster sets its own), and none after melee;
-Q1 Nightmare skips the wait."""
+attack (0-2 seconds unless the monster sets its own), and none after melee
+or on Q1 Nightmare."""
 def attack_pause(enemy: Opponent, melee: bool = False) -> float {
-    if melee or (enemy.game == "q1" and enemy.skill >= 3) {
+    if melee or skips_attack_waits(enemy) {
         return 0.0;
     }
     # Drawn beside the monster's stream (another multiplier) rather than from
@@ -2607,7 +2613,7 @@ def begin_attack(enemy: Opponent, index: int, target: Vec3) {
     }
     enemy.attack_wait = attack_duration(enemy)
         + attack_pause(enemy, melee=profile.kind == "melee");
-    if profile.finished >= 0.0 {
+    if profile.finished >= 0.0 and not skips_attack_waits(enemy) {
         enemy.attack_wait = max(attack_duration(enemy), profile.finished);
     }
     enemy.attack_flash = attack_duration(enemy);
@@ -4190,7 +4196,7 @@ walker CombatTick {
                     if not was_alert and not here.sighted {
                         # Q1 ai.qc HuntTarget: SUB_AttackFinished(1), a moment
                         # to react before a newly woken monster first fires.
-                        if here.game == "q1" and not here.arena {
+                        if here.game == "q1" and not here.arena and not skips_attack_waits(here) {
                             here.attack_wait = max(here.attack_wait, 1.0);
                         }
                         request_sound(here, here.rule.sight_sound);
