@@ -7,6 +7,8 @@ import from engine.formats.aas {
     AREA_GROUNDED,
     AREACONTENTS_LAVA,
     TRAVEL_WALK,
+    TRAVEL_SWIM,
+    TRAVEL_WATERJUMP,
     TRAVEL_ROCKETJUMP,
     TRAVEL_FUNCBOB,
     TFL_DEFAULT,
@@ -19,6 +21,7 @@ import from engine.world.bot_travel {
     TravelResult,
     travel_weapon_jump,
     travel_funcbob,
+    travel_water_jump,
     air_control,
     mover_box
 }
@@ -169,4 +172,40 @@ test "bobbing platforms are waited for, boarded, ridden and left" {
     collision.set_offset(0, Vec3(z=200.0));
     leaving = travel_funcbob(mesh, collision, Vec3(x=128.0, z=208.25), True, passage);
     assert leaving.direction.x > 0.99 and leaving.speed == 400.0;
+}
+
+test "a swimming bot swims straight for its waypoint and water jumps out" {
+    aas = strip_aas(3, [(1, 2, TRAVEL_SWIM), (2, 3, TRAVEL_WATERJUMP)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    # A water jump is a passage of its own to follow, not a launch.
+    route = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0), 32);
+    assert route.found and len(route.points) == 3 and route.launches[1].z == 0.0;
+    passage = route.passages[1];
+    assert passage is not None and passage.kind == TRAVEL_WATERJUMP and route.areas[1] == 3;
+    # Waist deep (MFL_SWIMMING): straight at the point, up too, looking there.
+    bot = Opponent(arena=True, pos=Vec3(x=64.0, z=-74.0), eye_height=26.0, water_depth=2);
+    swim = BotRoute();
+    swim.add(Vec3(x=124.0, z=-20.0), 2, passage=route.passages[0]);
+    follow = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=swim, eye_height=26.0, clock=0.0);
+    heading = follow.result.direction;
+    assert abs(heading.x - 0.6) < 0.001 and abs(heading.z - 0.8) < 0.001;
+    assert follow.result.view_set and abs(follow.result.pitch + 53.13) < 0.01;
+    # Out of the water the same leg is walked on the level.
+    bot.water_depth = 0;
+    walk = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=swim, eye_height=26.0, clock=0.0);
+    assert walk.result.direction.z == 0.0 and walk.result.direction.x > 0.99 and not walk.result.view_set;
+    # BotTravel_WaterJump: forward for the far end looking above it, and up
+    # as well once within 40 units of it.
+    far = travel_water_jump(Vec3(x=passage.finish.x - 100.0, z=passage.finish.z), passage);
+    assert far.view_set and far.pitch < 0.0 and far.direction.x > 0.98;
+    near = travel_water_jump(Vec3(x=passage.finish.x - 30.0, z=passage.finish.z), passage);
+    assert near.direction.z > 0.7 and near.direction.x > 0.3;
+    # The route follower hands the leg to the water jump until area 3.
+    bot.pos = Vec3(x=150.0, z=26.0);
+    bot.water_depth = 2;
+    jump = BotRoute();
+    jump.add(passage.finish, 3, passage=passage);
+    out = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=jump, eye_height=26.0, clock=0.0);
+    assert out.result.view_set and len(jump.points) == 1 and out.result.direction.x > 0.0;
 }

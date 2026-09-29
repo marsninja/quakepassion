@@ -5,7 +5,8 @@ term goal, seek a nearby goal, battle (fight, chase, retreat, nearby goal),
 stand (while typing a chat line) and respawn. Every think (10 Hz,
 bot_thinktime) a `BotThink` walker enters the bot's current node and runs it;
 a node that switches walks on to the next and runs it at once, as AINode_*
-returning qfalse does, up to MAX_NODESWITCHES.
+returning qfalse does, up to MAX_NODESWITCHES. At the match's end every bot
+goes to the intermission node, saying how the match went.
 
 Before the nodes run, the think updates the bot's inventory for its fuzzy
 weights (BotUpdateInventory) and reads the obituaries every client hears
@@ -28,7 +29,8 @@ import from .bot_goals {
     bot_items,
     choose_item_goal,
     reached_goal,
-    touching_goal
+    touching_goal,
+    air_goal
 }
 import from .bot_chat {
     BotChatState,
@@ -41,6 +43,7 @@ import from .bot_chat {
     random_weapon_name
 }
 import from .bot_routes { NavMesh, HasNavMesh }
+import from .level { Level }
 import from .powerups { empowered }
 import from ..formats.aas { TFL_DEFAULT }
 import from ..physics.collision { CollisionMap }
@@ -63,6 +66,7 @@ node BattleRetreat(AINode) {}
 node BattleNearbyGoal(AINode) {}
 node Stand(AINode) {}
 node Respawn(AINode) {}
+node Intermission(AINode) {}
 
 """A switch ai_dmnet.c makes from one node to another."""
 edge Leads: AINode --> AINode {}
@@ -86,7 +90,8 @@ def build_bot_brain() -> BotBrain {
         BattleRetreat(name="battle_retreat"),
         BattleNearbyGoal(name="battle_nbg"),
         Stand(name="stand"),
-        Respawn(name="respawn")
+        Respawn(name="respawn"),
+        Intermission(name="intermission")
     ];
     for state in made {
         brain.nodes[state.name] = state;
@@ -100,12 +105,18 @@ def build_bot_brain() -> BotBrain {
         "battle_retreat": ["seek_ltg", "battle_chase", "battle_fight", "battle_nbg"],
         "battle_nbg": ["seek_nbg", "battle_retreat", "battle_fight"],
         "stand": ["battle_fight", "seek_ltg"],
-        "respawn": ["seek_ltg"]
+        "respawn": ["seek_ltg"],
+        "intermission": ["stand"]
     };
     for (name, targets) in links.items() {
-        # A dead bot goes to respawn from any node (AIEnter_Respawn).
-        if name != "respawn" {
+        # A dead bot goes to respawn from any node (AIEnter_Respawn), and
+        # the seek and battle nodes to the intermission when the match ends
+        # (AIEnter_Intermission).
+        if name not in ["respawn", "intermission"] {
             targets.append("respawn");
+        }
+        if name.startswith("seek_") or name.startswith("battle_") {
+            targets.append("intermission");
         }
         for target in targets {
             brain.nodes[name] +>:Leads:+> brain.nodes[target];
@@ -139,6 +150,8 @@ walker BotThink {
         items: BotItems | None = None,
         contest: ArenaMatch | None = None,
         map_name: str = "",
+        level: Level | None = None,
+        intermission: bool = False,
         switches: int = 0;
 
     can start with BotBrain entry {
@@ -159,6 +172,8 @@ walker BotThink {
             memory.chase_time = self.now;
         } elif name == "respawn" {
             self.enter_respawn();
+        } elif name == "intermission" {
+            self.enter_intermission();
         }
         if name != "battle_fight" {
             memory.suicidal = False;
@@ -189,6 +204,20 @@ walker BotThink {
         # bot respawns once it is done (EA_Respawn in AINode_Respawn).
         memory.respawn_minimum = self.now + self.bot.respawn_wait;
         self.bot.respawn_wait = 1000.0;
+    }
+
+    """AIEnter_Intermission: the bot's goals and enemy are forgotten
+    (BotResetState) and it may say how the match went, at once (BotChat_EndLevel,
+    then BotEnterChat without typing)."""
+    def enter_intermission() {
+        memory = self.memory;
+        memory.goals.empty();
+        memory.goals.reset_avoid();
+        memory.move_goal = None;
+        memory.enemy = None;
+        if self.chat_end_level() {
+            self.enter_chat();
+        }
     }
 
     def random() -> float {
@@ -306,7 +335,16 @@ walker BotThink {
     """ai_dmnet.c BotReachedGoal."""
     def reached(goal: BotGoal) -> bool {
         swimming = self.bot.water_depth >= 2;
-        return reached_goal(goal, self.memory.goals, self.origin(), self.bot.pos, self.area(), swimming, self.collision, self.now);
+        return reached_goal(
+            goal, self.memory.goals, self.origin(), self.bot.pos, self.area(), swimming, self.collision, self.now, self.memory.last_air_time
+        );
+    }
+
+    """The liquid at a point (AAS_PointContents' water, slime and lava), none
+    without a level to sample."""
+    def liquid_at(point: Vec3) -> int {
+        level = self.level;
+        return level.sample_liquid(point).kind if level is not None else 0;
     }
 
     """BotChooseLTGItem / BotChooseNBGItem through the level items."""
@@ -357,10 +395,42 @@ walker BotThink {
         return goals.top();
     }
 
-    """ai_dmnet.c BotNearbyGoal: an item worth a detour of `range` hundredths
-    of a second, pushed over the long-term goal."""
+    """ai_dmnet.c BotNearbyGoal: air when the bot needs it (BotGoForAir), or
+    an item worth a detour of `range` hundredths of a second, pushed over the
+    long-term goal."""
     def nearby_goal(ltg: BotGoal | None, range: float) -> bool {
+        if self.go_for_air(ltg, range) {
+            return True;
+        }
         return self.choose_item(range, ltg);
+    }
+
+    """ai_dmnet.c BotGoForAir: a bot six seconds without air heads for the
+    surface above it (BotGetAirGoal), or else for the nearest worthwhile item
+    out of the liquid, passing over those in it."""
+    def go_for_air(ltg: BotGoal | None, range: float) -> bool {
+        memory = self.memory;
+        if memory.last_air_time >= self.now - 6.0 {
+            return False;
+        }
+        level = self.level;
+        mesh = self.mesh;
+        if level is not None and mesh is not None {
+            goal = air_goal(self.collision, level.liquids, mesh, self.origin());
+            if goal is not None {
+                memory.goals.push(goal);
+                return True;
+            }
+        }
+        while self.choose_item(range, ltg) {
+            top = memory.goals.top();
+            if top is not None and self.liquid_at(top.origin) == 0 {
+                return True;
+            }
+            memory.goals.pop();
+        }
+        memory.goals.reset_avoid();
+        return False;
     }
 
     """Move toward a goal this think (BotMoveToGoal): the combat tick routes
@@ -457,8 +527,9 @@ walker BotThink {
         return False;
     }
 
-    """BotValidChatPosition: no powerup running and standing on the world
-    (not a mover or another player)."""
+    """BotValidChatPosition: no powerup running, no lava or slime at the feet
+    and no liquid over the head, and standing on the world (not a mover or
+    another player)."""
     def valid_chat_position() -> bool {
         bot = self.bot;
         if self.dead() {
@@ -470,6 +541,9 @@ walker BotThink {
             }
         }
         origin = self.origin();
+        if self.liquid_at(origin.sub(Vec3(z=24.0))) in [2, 3] or self.liquid_at(origin.add(Vec3(z=32.0))) > 0 {
+            return False;
+        }
         floor = self.collision.trace(origin.add(Vec3(z=1.0)), origin.sub(Vec3(z=10.0)));
         return not floor.start_solid and floor.fraction < 1.0 and floor.model <= 0;
     }
@@ -510,6 +584,76 @@ walker BotThink {
         }
         mine = easy_client_name(self.name_of(self.bot));
         return self.say("game_enter", [mine, self.random_opponent_name(), "[invalid var]", "[invalid var]", self.map_name]);
+    }
+
+    """The competitors' names and scores, the bot's own included, in the
+    match's order (the clients BotIsFirstInRankings and the rest look at)."""
+    def rankings() -> list[tuple[Player, str, int]] {
+        found: list[tuple[Player, str, int]] = [];
+        contest = self.contest;
+        if contest is None {
+            return found;
+        }
+        entries = [edge contest->:Competes:->];
+        actors = [contest->:Competes:->];
+        for i in range(min(len(entries), len(actors))) {
+            actor = actors[i];
+            if isinstance(actor, Player) {
+                found.append((actor, entries[i].name, entries[i].frags));
+            }
+        }
+        return found;
+    }
+
+    """The bot's score (PERS_SCORE)."""
+    def score() -> int {
+        for ranked in self.rankings() {
+            if ranked[0] is self.bot {
+                return ranked[2];
+            }
+        }
+        return 0;
+    }
+
+    """BotFirstClientInRankings / BotLastClientInRankings: the first player
+    with the best (or worst) score, as bots write names."""
+    def ranked_name(best: bool) -> str {
+        chosen = "";
+        mark = -999999 if best else 999999;
+        for ranked in self.rankings() {
+            if (best and ranked[2] > mark) or (not best and ranked[2] < mark) {
+                mark = ranked[2];
+                chosen = ranked[1];
+            }
+        }
+        return easy_client_name(chosen);
+    }
+
+    """BotChat_StartLevel: as likely as the character's start and end level
+    tendency, with someone to hear it."""
+    def chat_start_level() -> bool {
+        if not self.may_chat(self.mind.chat_start_end_level) {
+            return False;
+        }
+        return self.say("level_start", [easy_client_name(self.name_of(self.bot))]);
+    }
+
+    """BotChat_EndLevel: victory for the leader (no one scored more), defeat
+    for the last (no one scored less), and otherwise a word on the match."""
+    def chat_end_level() -> bool {
+        if not self.may_chat(self.mind.chat_start_end_level) {
+            return False;
+        }
+        mine = easy_client_name(self.name_of(self.bot));
+        score = self.score();
+        others = [ranked[2] for ranked in self.rankings() if ranked[0] is not self.bot];
+        if all([other <= score for other in others]) {
+            return self.say("level_end_victory", [mine, self.random_opponent_name(), "[invalid var]", self.ranked_name(False), self.map_name]);
+        }
+        if all([other >= score for other in others]) {
+            return self.say("level_end_lose", [mine, self.random_opponent_name(), self.ranked_name(True), "[invalid var]", self.map_name]);
+        }
+        return self.say("level_end", [mine, self.random_opponent_name(), self.ranked_name(True), self.ranked_name(False), self.map_name]);
     }
 
     """BotChat_Random (in Seek_LTG)."""
@@ -652,6 +796,10 @@ walker BotThink {
     """AINode_Seek_LTG."""
     can seek_long_term_goal with SeekLongTermGoal entry {
         memory = self.memory;
+        if self.intermission {
+            visit self.enter(here, "intermission");
+            return;
+        }
         if self.dead() {
             visit self.enter(here, "respawn");
             return;
@@ -698,6 +846,10 @@ walker BotThink {
     """AINode_Seek_NBG."""
     can seek_nearby_goal with SeekNearbyGoal entry {
         memory = self.memory;
+        if self.intermission {
+            visit self.enter(here, "intermission");
+            return;
+        }
         if self.dead() {
             visit self.enter(here, "respawn");
             return;
@@ -737,6 +889,10 @@ walker BotThink {
     """AINode_Battle_Fight."""
     can battle_fight with BattleFight entry {
         memory = self.memory;
+        if self.intermission {
+            visit self.enter(here, "intermission");
+            return;
+        }
         if self.dead() {
             visit self.enter(here, "respawn");
             return;
@@ -806,6 +962,10 @@ walker BotThink {
     """AINode_Battle_Chase."""
     can battle_chase with BattleChase entry {
         memory = self.memory;
+        if self.intermission {
+            visit self.enter(here, "intermission");
+            return;
+        }
         if self.dead() {
             visit self.enter(here, "respawn");
             return;
@@ -860,6 +1020,10 @@ walker BotThink {
     """AINode_Battle_Retreat."""
     can battle_retreat with BattleRetreat entry {
         memory = self.memory;
+        if self.intermission {
+            visit self.enter(here, "intermission");
+            return;
+        }
         if self.dead() {
             visit self.enter(here, "respawn");
             return;
@@ -916,6 +1080,10 @@ walker BotThink {
     """AINode_Battle_NBG."""
     can battle_nearby_goal with BattleNearbyGoal entry {
         memory = self.memory;
+        if self.intermission {
+            visit self.enter(here, "intermission");
+            return;
+        }
         if self.dead() {
             visit self.enter(here, "respawn");
             return;
@@ -982,7 +1150,8 @@ walker BotThink {
     can respawn with Respawn entry {
         memory = self.memory;
         if memory.respawn_waiting {
-            if not self.dead() {
+            # The intermission brings the dead back (BeginIntermission).
+            if not self.dead() or self.intermission {
                 visit self.enter(here, "seek_ltg");
             }
         } elif memory.respawn_time < self.now {
@@ -995,6 +1164,25 @@ walker BotThink {
             }
         }
         memory.talking = memory.respawn_chat_time > 0.0 and memory.respawn_chat_time < self.now - 0.5 and not memory.respawn_waiting;
+    }
+
+    """AINode_Intermission: waiting out the intermission, then standing a
+    moment, typing the level's opening line if it has one
+    (BotChat_StartLevel). As in Q3, a level's start never gets here: a new
+    level (or map_restart) sets its bots up afresh in Seek_LTG
+    (BotAISetupClient, BotResetState), so only an intermission that ends
+    within the level does."""
+    can intermission with Intermission entry {
+        memory = self.memory;
+        if self.intermission {
+            return;
+        }
+        if self.chat_start_level() {
+            memory.stand_time = self.now + chat_time();
+        } else {
+            memory.stand_time = self.now + 2.0;
+        }
+        self.enter(here, "stand", False);
     }
 }
 
@@ -1024,7 +1212,9 @@ def read_obituaries(bot: Opponent, memory: BotState, contest: ArenaMatch, now: f
 """Every Q3 bot, every frame (ai_main.c BotAIStartFrame): BotDeathmatchAI
 when its think is due, then what it does between thinks (act_bot: its view
 and trigger). It also keeps the level items current (BotUpdateEntityItems) on
-the level clock the AI runs by."""
+the level clock the AI runs by. `level` answers what liquid is where (air
+goals, chat positions); `intermission` is BotIntermission, the podium after
+the match, when bots think but neither move nor act."""
 walker BotTactics {
     has player: Player,
         collision: CollisionMap,
@@ -1032,6 +1222,8 @@ walker BotTactics {
         rules: list[WeaponRule],
         dt: float,
         map_name: str = "",
+        level: Level | None = None,
+        intermission: bool = False,
         world: World | None = None,
         brain: BotBrain | None = None,
         mesh: NavMesh | None = None,
@@ -1091,10 +1283,15 @@ walker BotTactics {
         if chatter.entered < 0.0 {
             chatter.entered = now;
         }
-        # BotUpdateInventory and BotCheckSnapshot.
-        memory.inventory = bot_inventory(here);
-        if contest is not None {
-            read_obituaries(here, memory, contest, now);
+        if not self.intermission {
+            # BotUpdateInventory, BotCheckSnapshot and BotCheckAir.
+            memory.inventory = bot_inventory(here);
+            if contest is not None {
+                read_obituaries(here, memory, contest, now);
+            }
+            if here.water_depth < 3 or empowered(here, "battlesuit") {
+                memory.last_air_time = now;
+            }
         }
         memory.move_goal = None;
         memory.view_mode = "movement";
@@ -1112,7 +1309,9 @@ walker BotTactics {
             mesh=self.mesh,
             items=items,
             contest=contest,
-            map_name=self.map_name
+            map_name=self.map_name,
+            level=self.level,
+            intermission=self.intermission
         );
         # "if the bot entered the game less than 8 seconds ago"
         if not chatter.entered_chat and chatter.entered > now - 8.0 and here.health > 0 {
@@ -1127,13 +1326,17 @@ walker BotTactics {
         brain spawn thinker;
         memory.last_frame_health = here.health;
         memory.last_hit_count = here.hits_landed;
+        # ClientIntermissionThink clears the talk balloon (EF_TALK).
+        if self.intermission {
+            memory.talking = False;
+        }
         self.apply(here, memory);
     }
 
     can act with Opponent entry {
         mind = here.character;
         world = self.world;
-        if not here.arena or here.health <= 0 or here.dormant or mind is None or world is None {
+        if self.intermission or not here.arena or here.health <= 0 or here.dormant or mind is None or world is None {
             return;
         }
         act_bot(world, here, mind, self.player, self.collision, self.state, self.rules, self.dt);

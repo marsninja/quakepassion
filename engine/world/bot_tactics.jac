@@ -471,8 +471,12 @@ def ready_to_fire(bot: Opponent, mind: BotCharacter, rule: WeaponRule, foe: Play
 }
 
 """Whether the bot can take a step along `direction` (BotMoveInDirection
-refuses to walk into a wall or off a ledge)."""
+refuses to walk into a wall or off a ledge; a swimming bot goes any way,
+BotSwimInDirection)."""
 def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap) -> bool {
+    if bot.water_depth >= 2 {
+        return True;
+    }
     origin = bot.pos.sub(Vec3(z=bot.eye_height));
     ahead = direction.normalized().scale(40.0);
     wall = collision.trace_point(origin.add(Vec3(z=8.0)), origin.add(ahead).add(Vec3(z=8.0)));
@@ -504,6 +508,11 @@ def attack_move(bot: Opponent, mind: BotCharacter, foe: Player, collision: Colli
         return;
     }
     forward = Vec3(x=gap.x / horizontal, y=gap.y / horizontal);
+    # Swimming, the bot closes and opens the distance up and down too
+    # (BotMoveInDirection swims along the whole direction).
+    if bot.water_depth >= 2 {
+        forward = gap.normalized();
+    }
     backward = forward.scale(-1.0);
     jump = False;
     if memory.crouch_time < now - 1.0 {

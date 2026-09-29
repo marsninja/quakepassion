@@ -86,3 +86,14 @@ test "command line +commands run as console lines (stuffcmds)" {
     assert command_line_text(["ignored", "+echo", "two words"]) == "echo \"two words\"";
     assert command_line_text([]) == "";
 }
+
+test "a cvar holds its reset value before any shell registers it" {
+    # Scripts that open a Renderer without a shell read these: an fov of 0
+    # made every 3D view empty.
+    fov = Cvar(name="fov", reset_text="90", kind="float", low=10.0, high=170.0);
+    assert fov.number == 90.0 and fov.text == "90" and not fov.modified;
+    width = Cvar(name="vid_width", reset_text="1280", kind="int");
+    assert width.integer == 1280;
+    typed = Cvar(name="made_up", text="7", flags=CVAR_USER_CREATED);
+    assert typed.text == "7";
+}

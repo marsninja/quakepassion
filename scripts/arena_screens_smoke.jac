@@ -1,8 +1,9 @@
 """Q3 arena presentation captures on q3dm7: the scoreboard with heads, skill
-marks and awards; a bot beside a wall lit from the light grid and, for
-comparison, full bright as before; a body left behind and its gibs once shot
-apart; items thrown from a dying bot in flight and landed; the five-skill
-settings row; and the postgame menu's three phases over the podium. Run
+marks and awards; a bot typing with its talk balloon up; a bot beside a wall
+lit from the light grid and, for comparison, full bright as before; a body
+left behind and its gibs once shot apart; items thrown from a dying bot in
+flight and landed; the five-skill settings row; and the postgame menu's
+three phases over the podium, with the bots' end-of-level lines. Run
 with HOME pointing somewhere disposable (the postgame logs career awards
 there) and QP_GAME=q3 QP_ASSETS=<baseq3>."""
 import math;
@@ -16,6 +17,7 @@ import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileT
 import from engine.world.arena { MatchTick, Competes, match_of, join_match }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.bot_ai { BotTactics }
+import from engine.world.wading { ImmerseBots }
 import from engine.world.pickups { PickupTick, Pickup, HasPickup }
 import from engine.world.powerups { GrantPowerup }
 import from engine.world.inventory { AdjustInventory }
@@ -25,7 +27,7 @@ import from engine.world.drops { TossTick, in_flight }
 import from engine.world.gibs { Gib, HasGib, GibTick }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
-import from games.weapons { equip_player }
+import from games.weapons { equip_player, weapon_effects }
 import from engine.math.vec3 { Vec3 }
 import from engine.physics.collision { CollisionMap }
 
@@ -74,8 +76,9 @@ def tick_world(app: App, player: Player, contacts: ArenaContactIndex, seconds: f
     for tick in range(int(seconds * 120.0)) {
         world spawn PickupTick(player=player, start=player.pos, finish=player.pos, dt=dt);
         world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt);
+        world spawn ImmerseBots(level=level, dt=dt);
         world spawn CombatTick(player=player, collision=level.collision, state=app.combat, dt=dt, arena_live=True);
-        world spawn BotTactics(player=player, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=dt);
+        world spawn BotTactics(player=player, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=dt, level=level);
         world spawn ProjectileTick(player=player, collision=level.collision, state=app.combat, dt=dt);
         world spawn TossTick(collision=level.collision, dt=dt);
         world spawn GibTick(collision=level.collision, dt=dt);
@@ -108,6 +111,8 @@ with entry {
     equip_player(human, app.combat, "q3");
     app.quake.upload(level);
     app.models.upload(world);
+    # The effect scene's art, the talk balloon's among it.
+    app.effects.upload("q3", game_directory("q3"), weapon_effects("q3"));
     app.prepare_presentation();
     assert app.hud.ready and app.hud.has_pic("tab_score") and app.hud.has_pic("font_prop");
     bots = [bot for bot in [world->:HasOpponent:->][?:Opponent] if bot.arena];
@@ -133,6 +138,10 @@ with entry {
             subject = bot;
         }
     }
+    # A bot typing a chat line (BUTTON_TALK): the balloon over its head.
+    subject.bot_state.talking = True;
+    look(app, level.collision, subject.pos.sub(Vec3(z=subject.eye_height)).add(Vec3(z=24.0)), subject.yaw, 110.0, "qp_arena_talk_balloon.png");
+    subject.bot_state.talking = False;
     # A bot dies holding a railgun and a quad: its drops are thrown.
     victim = subject;
     victim.inventory spawn AdjustInventory(kind="weapon_railgun", amount=1, capacity=1);
@@ -188,6 +197,21 @@ with entry {
     app.begin_podium(contest);
     board = app.postgame;
     assert board is not None;
+    # The intermission: every bot that wants to says how the match went, over
+    # the podium (BotChat_EndLevel, Con_DrawNotify).
+    for bot in bots {
+        mind = bot.character;
+        if mind is not None {
+            mind.chat_start_end_level = 1.0;
+            mind.chat_state.last_chat = -1000.0;
+        }
+    }
+    for step in range(3) {
+        world spawn BotTactics(player=human, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=0.1, map_name="q3dm7", level=level, intermission=True);
+    }
+    app.combat_feedback();
+    print("END LINES", app.notify_lines);
+    assert [line for line in app.notify_lines if "^7: ^2" in line];
     print("MEDALS", board.medals, board.amounts);
     app.postgame_clock = 2.0;
     board.update(app.postgame_clock);
@@ -218,6 +242,7 @@ with entry {
         shoot(app, "qp_arena_bot_fullbright.png");
     }
     app.models.close();
+    app.effects.close();
     app.quake.close();
     renderer.close();
     print("ARENA SCREENS PASS");

@@ -2,7 +2,10 @@
 import struct;
 import from engine.render.effects {
     EffectQuads,
+    EffectScene,
+    UploadedSprite,
     GatherEffects,
+    BALLOON_SHADER,
     EFFECT_STRIDE,
     EFFECT_BLEND_ALPHA,
     EFFECT_BLEND_ADD,
@@ -19,7 +22,9 @@ import from engine.world.particles {
     Explosion,
     HasExplosion
 }
-import from engine.world.combat { Projectile, HasProjectile }
+import from engine.world.combat { Projectile, HasProjectile, Opponent, HasOpponent }
+import from engine.formats.sprite { SpriteFrame }
+import from engine.math.interpolation { TickBlend }
 import from engine.math.vec3 { Vec3 }
 
 def quad(queue: EffectQuads, texture: int, blend: int, x: float) {
@@ -79,4 +84,30 @@ test "effects are gathered in one walk with the particle field" {
     assert found.field is field;
     assert len(found.marks) == 1 and len(found.trails) == 1;
     assert len(found.blasts) == 1 and len(found.projectiles) == 1;
+}
+
+test "a bot typing a chat line wears the talk balloon over its head" {
+    world = World();
+    typing = Opponent(arena=True, health=100, pos=Vec3(x=10.0, z=26.0), eye_height=26.0);
+    typing.visual.visible = True;
+    typing.bot_state.talking = True;
+    idle = Opponent(arena=True, health=100, pos=Vec3(x=90.0, z=26.0), eye_height=26.0);
+    idle.visual.visible = True;
+    world +>:HasOpponent:+> typing;
+    world +>:HasOpponent:+> idle;
+    # Without the balloon's art the players are not looked at.
+    assert not (world spawn GatherEffects()).talkers;
+    found = world spawn GatherEffects(balloons=True);
+    assert found.talkers == [typing];
+    # CG_PlayerFloatSprite: 48 over the origin, 10 units in radius.
+    scene = EffectScene();
+    scene.flight[BALLOON_SHADER] = [
+        UploadedSprite(frame=SpriteFrame(width=32, height=32, origin_x=16, origin_y=16, image=BALLOON_SHADER), texture=7)
+    ];
+    assert scene.add_balloons(found.talkers, TickBlend());
+    assert scene.quads.count == 1 and scene.quads.runs[0].texture == 7 and scene.quads.runs[0].blend == EFFECT_BLEND_ALPHA;
+    record = struct.unpack_from("<17f4Bf", scene.quads.packed, 0);
+    assert record[0] == 10.0 and record[2] == 48.0;
+    assert abs(record[9] + 10.0) < 0.001 and abs(record[11] - 10.0) < 0.001;
+    assert not EffectScene().add_balloons(found.talkers, TickBlend());
 }

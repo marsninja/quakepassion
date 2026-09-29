@@ -167,7 +167,9 @@ obj BotState {
         respawn_waiting: bool = False,
         respawn_minimum: float = 0.0,
         last_frame_health: int = -1,
-        last_hit_count: int = 0;
+        last_hit_count: int = 0,
+        # The last think the bot had air (lastair_time, BotCheckAir).
+        last_air_time: float = 0.0;
     # The enemy (bs->enemy) and what the bot keeps of it.
     has enemy: Player | None = None,
         enemy_visible_time: float = 0.0,

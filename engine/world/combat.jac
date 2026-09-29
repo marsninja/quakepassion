@@ -3864,6 +3864,8 @@ walker CombatTick {
                 here spawn MovePlayer(
                     collision=body_collision,
                     wish=Vec3(),
+                    water_depth=here.water_depth,
+                    current=here.water_current,
                     dt=self.dt,
                     profile=self.bot_profile if here.arena else self.walk_profile
                 );
@@ -4429,7 +4431,12 @@ walker CombatTick {
                     here.velocity.z = TRAVEL_JUMP_SPEED;
                     here.grounded = False;
                 }
-                here.steering = Vec3(x=travel.result.direction.x, y=travel.result.direction.y).normalized();
+                # Swimming, the bot heads straight for the point, up or down
+                # (be_ai_move.c MFL_SWIMMING keeps the direction's height).
+                heading = travel.result.direction;
+                here.steering = heading.normalized()
+                    if here.water_depth >= 2
+                    else Vec3(x=heading.x, y=heading.y).normalized();
             }
         }
         if self.world is not None and here.character is None {
@@ -4458,6 +4465,7 @@ walker CombatTick {
                 or (
                     here.arena
                         and not here.grounded
+                        and here.water_depth < 2
                         and here.velocity.z > 100.0
                         and not here.bot_state.travel.air_control
                 )
@@ -4489,9 +4497,14 @@ walker CombatTick {
                         and rest_disturbed(here, body_collision)
                     ) {
                     before = here.pos.add(Vec3());
+                    # A Q3 bot swims by its steering, up and down too (its
+                    # water level is sampled like the player's, ImmerseBots).
                     here spawn MovePlayer(
                         collision=body_collision,
                         wish=wish,
+                        water_depth=here.water_depth,
+                        swim_wish=wish,
+                        current=here.water_current,
                         dt=self.dt,
                         steady=striding(here),
                         profile=self.bot_profile if here.character is not None else self.walk_profile

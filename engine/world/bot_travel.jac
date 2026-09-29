@@ -1,8 +1,9 @@
 """How a Q3 bot travels its AAS route, travel type by travel type, after
 be_ai_move.c. Most passages only need the bot to head for the next waypoint
-(a jump's launch is applied at its takeoff point); rocket and BFG jumps,
-ladders, elevators and bobbing platforms each have their own BotTravel_* and
-BotFinishTravel_* rules, followed here every frame. The result is botlib's
+(a jump's launch is applied at its takeoff point), and a swimming bot swims
+straight for it; rocket and BFG jumps, ladders, water jumps, elevators and
+bobbing platforms each have their own BotTravel_* and BotFinishTravel_*
+rules, followed here every frame. The result is botlib's
 bot_moveresult_t: the direction and speed to move (EA_Move), a jump, an
 attack and the weapon it needs, a view the movement sets, and whether the bot
 is waiting for a mover."""
@@ -89,7 +90,7 @@ def reachability_time(kind: int) -> float {
 
 """Passages that need more than heading for their waypoint."""
 def special_travel(kind: int) -> bool {
-    return kind in [TRAVEL_LADDER, TRAVEL_ELEVATOR, TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_FUNCBOB];
+    return kind in [TRAVEL_LADDER, TRAVEL_ELEVATOR, TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_FUNCBOB, TRAVEL_WATERJUMP];
 }
 
 """Horizontal unit direction and distance from `origin` to `point`."""
@@ -111,6 +112,34 @@ def angle_gap(a: float, b: float) -> float {
 """Vector2Angles' yaw of a horizontal direction, in degrees."""
 def yaw_of(direction: Vec3) -> float {
     return math.degrees(math.atan2(direction.y, direction.x)) % 360.0;
+}
+
+"""Vector2Angles' pitch of a direction, in Quake degrees (down positive)."""
+def pitch_of(direction: Vec3) -> float {
+    flat = math.sqrt(direction.x * direction.x + direction.y * direction.y);
+    return -math.degrees(math.atan2(direction.z, flat));
+}
+
+"""Swimming toward `point` (BotTravel_Swim, and walking or moving in the
+goal area with MFL_SWIMMING): straight at it, up or down, looking along the
+way (MOVERESULT_SWIMVIEW)."""
+def travel_swim(origin: Vec3, point: Vec3) -> TravelResult {
+    direction = point.sub(origin).normalized();
+    return TravelResult(direction=direction, speed=400.0, view_set=True, yaw=yaw_of(direction), pitch=pitch_of(direction));
+}
+
+"""BotTravel_WaterJump: swim forward for the far end looking 15 units above
+it (botlib tilts the view by up to 40 more at random), and move up too once
+within 40 units of it, so the pmove's water jump (PM_CheckWaterJump) lifts
+the bot out once it faces the ledge at waist depth."""
+def travel_water_jump(origin: Vec3, passage: Passage) -> TravelResult {
+    look = passage.finish.sub(origin).add(Vec3(z=15.0));
+    forward = look.normalized();
+    direction = forward;
+    if flat_toward(origin, passage.finish)[1] < 40.0 {
+        direction = forward.add(Vec3(z=1.0)).normalized();
+    }
+    return TravelResult(direction=direction, speed=400.0, view_set=True, yaw=yaw_of(look), pitch=pitch_of(look));
 }
 
 """be_ai_move.c BotAirControl: predict the fall in tenths of a second; once
@@ -402,6 +431,10 @@ walker FollowRoute {
             self.result = travel_ladder(origin, passage);
             return;
         }
+        if passage is not None and passage.kind == TRAVEL_WATERJUMP {
+            self.result = travel_water_jump(origin, passage);
+            return;
+        }
         if passage is not None and passage.kind in [TRAVEL_ELEVATOR, TRAVEL_FUNCBOB] {
             if passage.kind == TRAVEL_ELEVATOR {
                 self.result = travel_elevator(self.mesh, self.collision, origin, here.grounded, passage);
@@ -414,6 +447,11 @@ walker FollowRoute {
             if box is not None and on_mover(self.collision, box, passage.model, origin) {
                 route.leg_started = max(route.leg_started, self.clock - reachability_time(passage.kind) + 5.0);
             }
+            return;
+        }
+        # MFL_SWIMMING: the bot swims (AAS_Swimming, its waist in liquid).
+        if here.water_depth >= 2 {
+            self.result = travel_swim(origin, route.points[0]);
             return;
         }
         toward = flat_toward(origin, route.points[0]);

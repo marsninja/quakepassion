@@ -15,6 +15,7 @@ import from .pickups { Pickup, HasPickup }
 import from .drops { in_flight }
 import from .bot_routes { NavMesh, Passage, Exits, area_travel_time, exits_travel_time }
 import from ..formats.aas { AREACONTENTS_WATER }
+import from .liquids { LiquidSpace, TraceLiquid }
 import from ..formats.botconfig { ItemInfo, WeightConfig, WeightDice }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
@@ -27,10 +28,11 @@ glob AVOID_MINIMUM_TIME: float = 10.0,
     DROPPED_WEIGHT: float = 1000.0,
     DROPPED_TIMEOUT: float = 30.0;
 
-# be_ai_goal.h goal flags.
+# be_ai_goal.h goal flags, and ai_dmnet.c's own for air.
 glob GFL_ITEM: int = 1,
     GFL_ROAM: int = 2,
-    GFL_DROPPED: int = 4;
+    GFL_DROPPED: int = 4,
+    GFL_AIR: int = 128;
 
 # aasfile.h AREACONTENTS_JUMPPAD: dropped items there are never goals.
 glob AREACONTENTS_JUMPPAD_AREA: int = 128;
@@ -384,10 +386,11 @@ def touching_goal(origin: Vec3, goal: BotGoal) -> bool {
         and origin.z >= low.z and origin.z <= high.z;
 }
 
-"""ai_dmnet.c BotReachedGoal for an item goal: touching it (then avoided
-until it respawns), its spot in sight with the item gone
+"""ai_dmnet.c BotReachedGoal. An item goal: touching it (then avoided until
+it respawns), its spot in sight with the item gone
 (BotItemGoalInVisButNotVisible), or standing within its box's width in its
-area when not swimming."""
+area when not swimming. An air goal: touching it, or air taken within the
+last second (`air_time`, lastair_time). Any other goal: touching it."""
 def reached_goal(
     goal: BotGoal,
     goals: GoalState,
@@ -396,8 +399,12 @@ def reached_goal(
     area: int,
     swimming: bool,
     collision: CollisionMap,
-    now: float
+    now: float,
+    air_time: float = -1000.0
 ) -> bool {
+    if goal.flags & GFL_AIR {
+        return touching_goal(origin, goal) or air_time > now - 1.0;
+    }
     item = goal.item;
     if goal.flags & GFL_ITEM == 0 or item is None {
         return touching_goal(origin, goal);
@@ -423,6 +430,37 @@ def reached_goal(
         return True;
     }
     return False;
+}
+
+"""ai_dmnet.c BotGetAirGoal for a bot under liquid at `origin`: a box 30
+units across and 4 high rises until it meets something solid (at most 1000
+units), then drops back until it meets the liquid's surface. The goal is 2
+units under the surface, in the AAS area there (BotPointAreaNum: or 10
+units up). None when the box starts in liquid up there too (no surface) or
+the surface lies in no area."""
+def air_goal(collision: CollisionMap, liquids: LiquidSpace, mesh: NavMesh, origin: Vec3) -> BotGoal | None {
+    mins = Vec3(x=-15.0, y=-15.0, z=-2.0);
+    maxs = Vec3(x=15.0, y=15.0, z=2.0);
+    rise = collision.for_body(collision.eye_height, 0.0, mins, maxs).trace(origin, origin.add(Vec3(z=1000.0)));
+    drop = liquids spawn TraceLiquid(start=rise.end, finish=origin, mins=mins, maxs=maxs);
+    surface = drop.result;
+    if surface.fraction <= 0.0 {
+        return None;
+    }
+    area = mesh.locate(surface.end);
+    if area == 0 {
+        area = mesh.locate(surface.end.add(Vec3(z=10.0)));
+    }
+    if area == 0 {
+        return None;
+    }
+    return BotGoal(
+        origin=surface.end.sub(Vec3(z=2.0)),
+        area=area,
+        mins=Vec3(x=-15.0, y=-15.0, z=-1.0),
+        maxs=Vec3(x=15.0, y=15.0, z=1.0),
+        flags=GFL_AIR
+    );
 }
 
 """AAS_BestReachableFromJumpPadArea for a floating item: the jump pad whose

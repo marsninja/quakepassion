@@ -175,7 +175,9 @@ impl App.render_frame() {
             punch,
             self.level.collision.eye_height,
             dead=p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active,
-            intermission=self.finale_active
+            # Q3's podium is its intermission (PM_INTERMISSION): the view is
+            # the intermission point's, without bob, kick or the dead roll.
+            intermission=self.finale_active or self.postgame is not None
         );
         eye = placed.eye;
         view_yaw = placed.yaw;
@@ -422,6 +424,9 @@ impl App.render_frame() {
                 board = self.postgame;
                 if contest.finished and board is not None and self.hud.ready {
                     draw_postgame(self.hud, board, self.postgame_clock, self.renderer.width, self.renderer.height);
+                    # The intermission's chat (the bots' end-of-level lines)
+                    # over the podium and its menu (Con_DrawNotify).
+                    self.hud.draw_notify(self.notify_lines, self.level.bsp.game, self.renderer.width, self.renderer.height);
                 } elif self.hud.ready and not contest.finished {
                     killer = p.killer;
                     draw_scoreboard(
@@ -962,6 +967,21 @@ impl App.step() -> bool {
             for cue in celebration.cues {
                 self.audio.play_path(cue);
             }
+            # The intermission: bots think on (BotIntermission) and may say
+            # how the match went, which shows over the podium as it does in
+            # Q3 (Con_DrawNotify keeps drawing during PM_INTERMISSION).
+            self.world spawn BotTactics(
+                player=self.player,
+                collision=self.level.collision,
+                state=self.combat,
+                rules=self.combat.rules,
+                dt=dt,
+                map_name=self.level.name,
+                level=self.level,
+                intermission=True
+            );
+            self.combat_feedback();
+            self.age_notify(dt);
             self.postgame_clock += dt;
             if self.postgame is not None {
                 self.postgame_input(contest);
@@ -1105,11 +1125,7 @@ impl App.step() -> bool {
         self.level.clock = self.simulation_time;
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
         self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
-        self.notify_ages = [age - self.physics_clock.tick_rate for age in self.notify_ages];
-        while self.notify_ages and self.notify_ages[0] <= 0.0 {
-            self.notify_ages.pop(0);
-            self.notify_lines.pop(0);
-        }
+        self.age_notify(self.physics_clock.tick_rate);
         if self.walking and self.level.active {
             standing = self.level.collision.eye_height;
             self.player spawn SetStance(
@@ -1179,8 +1195,7 @@ impl App.step() -> bool {
         }
         if self.walking and not self.finale_active {
             immersed = self.level.immersion(self.player.pos);
-            self.player.water_depth = immersed.depth;
-            self.player.liquid_kind = immersed.kind;
+            self.player.immerse(immersed);
             swim = forward_from(self.player.yaw, self.player.pitch).scale(
                 intent.move.y
             ).add(
@@ -1224,8 +1239,7 @@ impl App.step() -> bool {
         }
         if self.level.active and not self.smoke {
             immersed = self.level.immersion(self.player.pos);
-            self.player.water_depth = immersed.depth;
-            self.player.liquid_kind = immersed.kind;
+            self.player.immerse(immersed);
             old_health = self.player.health;
             self.player spawn EnvironmentTick(
                 game=self.level.bsp.game,
@@ -1271,6 +1285,9 @@ impl App.step() -> bool {
                 if self.walking {
                     self.world spawn PatrolTick(dt=self.physics_clock.tick_rate);
                 }
+                if contest is not None {
+                    self.world spawn ImmerseBots(level=self.level, dt=self.physics_clock.tick_rate);
+                }
                 self.world spawn CombatTick(
                     player=self.player,
                     collision=self.level.collision,
@@ -1286,7 +1303,8 @@ impl App.step() -> bool {
                         state=self.combat,
                         rules=self.combat.rules,
                         dt=self.physics_clock.tick_rate,
-                        map_name=self.level.name
+                        map_name=self.level.name,
+                        level=self.level
                     );
                 }
             }
@@ -1696,8 +1714,7 @@ impl App.step() -> bool {
     }
     if self.walking {
         immersed = self.level.immersion(self.player.pos);
-        self.player.water_depth = immersed.depth;
-        self.player.liquid_kind = immersed.kind;
+        self.player.immerse(immersed);
         self.fly(Intent(), 0.0);
     } else {
         # Flight moves the body every frame, not on ticks.
@@ -2015,6 +2032,14 @@ impl App.notify(message: str) {
     while len(self.notify_lines) > 4 {
         self.notify_lines.pop(0);
         self.notify_ages.pop(0);
+    }
+}
+
+impl App.age_notify(seconds: float) {
+    self.notify_ages = [age - seconds for age in self.notify_ages];
+    while self.notify_ages and self.notify_ages[0] <= 0.0 {
+        self.notify_ages.pop(0);
+        self.notify_lines.pop(0);
     }
 }
 
@@ -2337,6 +2362,14 @@ impl App.begin_podium(contest: ArenaMatch) {
     self.player.pitch = -math.radians(view[1].x);
     self.player.velocity = Vec3();
     self.player.god_mode = True;
+    # BeginIntermission respawns the dead before moving them to the
+    # intermission point (ClientSpawn: the maximum health plus 25).
+    if self.player.health <= 0 {
+        self.player.health = self.player.max_health + 25;
+        self.player.killer = None;
+        self.awaiting_respawn = False;
+        self.respawn_wait = 0.0;
+    }
     move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
     raise_podium(self.world, contest, self.level, view[0], view[1], selected_weapon(self.combat).key);
     # UI_SPPostgameMenu_f: the player's awards for the match, logged to the
