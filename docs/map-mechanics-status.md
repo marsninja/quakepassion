@@ -5,10 +5,9 @@ activation graph (targets, killtargets, relays, delays, timers, counters),
 touch and shot triggers, trains, rotating and bobbing movers, the shared
 pusher, Q1 secret doors, damage volumes, secrets and goals, traps, targets,
 destructible and toggle walls, Q2 turrets and fly-bys, fixtures and sound
-emitters. Doors, buttons and plats are in [doors](doors-status.md) and
-[platforms](platforms-status.md); teleporters and pushes in
-[traversal](traversal-status.md); exits and campaign flow in
-[level flow](level-flow-status.md).
+emitters. Doors, buttons and plats are in [doors](doors-status.md);
+teleporters and pushes in [traversal](traversal-status.md); exits and
+campaign flow in [level flow](level-flow-status.md).
 
 ## Activation graph
 

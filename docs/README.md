@@ -18,8 +18,7 @@ covers building, running and the architecture.
 ## World and campaigns
 - [level-flow-status.md](level-flow-status.md): exits, units and hubs, saves, intermissions, runes, finales
 - [map-mechanics-status.md](map-mechanics-status.md): the activation graph, triggers, trains, rotators, the shared pusher, traps and fixtures
-- [doors-status.md](doors-status.md): doors, buttons and plats
-- [platforms-status.md](platforms-status.md): translating platforms and carrying
+- [doors-status.md](doors-status.md): doors, buttons, plats and riding them
 - [spawn-rules-status.md](spawn-rules-status.md): skill and mode spawn filtering
 
 ## Combat
@@ -29,10 +28,9 @@ covers building, running and the architecture.
 - [combat-feedback-status.md](combat-feedback-status.md): impacts, particles, trails, beams, marks and dynamic lights
 
 ## Monsters
-- [monster-behaviour-status.md](monster-behaviour-status.md): noticing, skill, patrols, infighting and gibs
+- [monster-behaviour-status.md](monster-behaviour-status.md): noticing, skill, attacking, patrols, infighting, missile owners and gibs
 - [q1-roster-status.md](q1-roster-status.md): the Quake roster, Chthon and Shub-Niggurath
 - [q2-roster-status.md](q2-roster-status.md): the Quake II roster through Jorg and Makron
-- [enemies-status.md](enemies-status.md): the original campaign enemy expansion notes
 - [navigation-status.md](navigation-status.md): monster movement, bodies, navigation and movers
 - [navigation-performance.md](navigation-performance.md): navigation cost and frame pacing measurements
 
