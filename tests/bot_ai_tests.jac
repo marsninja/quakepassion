@@ -316,7 +316,7 @@ test "at the match's end each bot says how it went, the leader its victory" {
     }
 }
 
-test "a match begun after its warmup wakes its bots with the level's opening line" {
+test "a match begun after its warmup has its bots seek at once, as Q3's fresh bots do" {
     collision = floor_collision();
     state = CombatState(game="q3");
     mind = tester();
@@ -326,13 +326,34 @@ test "a match begun after its warmup wakes its bots with the level's opening lin
     bot = parts[1];
     contest = parts[3];
     contest.prepared = True;
-    # Leaving the intermission it types BotChat_StartLevel's line, standing
-    # with its talk balloon up.
+    # BotAISetupClient: no ai node, so AIEnter_Seek_LTG; no level_start line
+    # and no standing about when the fight starts.
     think(world, collision, state, 0.2);
     memory = bot.bot_state;
-    assert memory.ainode == "stand" and memory.talking and not state.messages;
+    assert memory.ainode == "seek_ltg" and not memory.talking and not state.messages;
+}
+
+test "an intermission that ends within the level stands its bots to type the level's opening line" {
+    collision = floor_collision();
+    state = CombatState(game="q3");
+    mind = tester();
+    mind.chat_start_end_level = 1.0;
+    parts = arena_pair(mind);
+    world = parts[0];
+    bot = parts[1];
+    think(world, collision, state, 0.1);
+    mind.chat_state.last_chat = -1000.0;
+    world spawn BotTactics(player=Player(health=0, pos=Vec3(x=9000.0)), collision=collision, state=state, rules=weapon_rules("q3"), dt=0.1, intermission=True);
+    memory = bot.bot_state;
+    assert memory.ainode == "intermission" and len(state.messages) == 1;
+    # AINode_Intermission once it is over: BotChat_StartLevel (the 25 s
+    # since the end-level line cleared here), typed while standing with the
+    # talk balloon up.
+    mind.chat_state.last_chat = -1000.0;
+    think(world, collision, state, 0.2);
+    assert memory.ainode == "stand" and memory.talking and len(state.messages) == 1;
     think(world, collision, state, 2.0);
-    assert state.messages == ["Tester^7: ^2Here we go, tester."];
+    assert state.messages[-1] == "Tester^7: ^2Here we go, tester.";
     assert memory.ainode == "seek_ltg" and not memory.talking;
 }
 

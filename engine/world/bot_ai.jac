@@ -6,8 +6,7 @@ stand (while typing a chat line) and respawn. Every think (10 Hz,
 bot_thinktime) a `BotThink` walker enters the bot's current node and runs it;
 a node that switches walks on to the next and runs it at once, as AINode_*
 returning qfalse does, up to MAX_NODESWITCHES. At the match's end every bot
-goes to the intermission node, saying how the match went, and a match that
-began after a warmup wakes its bots in it (BotChat_StartLevel).
+goes to the intermission node, saying how the match went.
 
 Before the nodes run, the think updates the bot's inventory for its fuzzy
 weights (BotUpdateInventory) and reads the obituaries every client hears
@@ -1169,7 +1168,10 @@ walker BotThink {
 
     """AINode_Intermission: waiting out the intermission, then standing a
     moment, typing the level's opening line if it has one
-    (BotChat_StartLevel)."""
+    (BotChat_StartLevel). As in Q3, a level's start never gets here: a new
+    level (or map_restart) sets its bots up afresh in Seek_LTG
+    (BotAISetupClient, BotResetState), so only an intermission that ends
+    within the level does."""
     can intermission with Intermission entry {
         memory = self.memory;
         if self.intermission {
@@ -1280,12 +1282,6 @@ walker BotTactics {
         chatter = mind.chat_state;
         if chatter.entered < 0.0 {
             chatter.entered = now;
-            # A match that began after a warmup wakes its bots from that
-            # freeze as from an intermission (AINode_Intermission).
-            if contest is not None and contest.prepared {
-                memory.ainode = "intermission";
-                memory.battle = "";
-            }
         }
         if not self.intermission {
             # BotUpdateInventory, BotCheckSnapshot and BotCheckAir.

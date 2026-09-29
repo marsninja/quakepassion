@@ -209,10 +209,11 @@ follows `ai_dmnet.c` and `ai_dmq3.c`, travel `be_ai_move.c`, goals
   but neither move nor act, and their talk balloons are down
   (`ClientIntermissionThink`). A dead bot comes back for it, as
   `BeginIntermission` respawns the dead.
-  - A match that began after its warmup wakes its bots in the intermission
-    node, as though from the freeze (`BotIntermission`'s `PM_FREEZE`). Leaving
-    it a bot types its level-start line, or stands two seconds without one
-    (`AINode_Intermission`), unless it greets the game first.
+  - Leaving an intermission a bot types its level-start line, or stands two
+    seconds without one (`AINode_Intermission`). As in Q3 that never happens
+    at a level's start: a new level (or the warmup's `map_restart`) sets its
+    bots up afresh (`BotAISetupClient`, `BotResetState`), so they start
+    seeking at once, and may greet the game (`game_enter`) within 8 s.
 - Enemies are found by the combat tick's `BotFindEnemy` look (below), which
   the nodes take as their enemy.
 
@@ -231,11 +232,12 @@ follows `ai_dmnet.c` and `ai_dmq3.c`, travel `be_ai_move.c`, goals
   writes them: lower case, no spaces, clan tags or "Mr") and `rnd.c`'s random
   strings, expanded up to ten deep; a line said in the last 20 s is not
   chosen again while others are fresh.
-- `level_start` when a match begins after its warmup (`BotChat_StartLevel`),
-  and at its end (`BotChat_EndLevel`) `level_end_victory` for the leader (no
-  one scored more), `level_end_lose` for the last (no one scored less), and
-  `level_end` for the rest, with the first and last in the rankings named.
-  Both follow the character's start and end level tendency.
+- At the match's end (`BotChat_EndLevel`) `level_end_victory` for the leader
+  (no one scored more), `level_end_lose` for the last (no one scored less),
+  and `level_end` for the rest, with the first and last in the rankings
+  named; `level_start` only when an intermission ends within a level
+  (`BotChat_StartLevel`, see Intermission). Both follow the character's
+  start and end level tendency.
 - A bot types for two seconds (`BotChatTime`), then the line is said:
   "Name: text" with the text in green (`G_Say`), shown in the notify lines
   with Q3's colour codes, with `sound/player/talk.wav`. End-of-level lines
@@ -351,8 +353,8 @@ Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
   times and nearby goals, the node graph, fighting, suicidal fights,
   retreating (aiming back only above 0.3 attack skill), chasing, the kill
   chat after standing to type, the death chat before respawning, the
-  end-of-level victory and defeat lines, the level-start line after a
-  warmup, and going for air six seconds under water (and no chatting
+  end-of-level victory and defeat lines, bots seeking at once after the
+  warmup, the level-start line when an intermission ends, and going for air six seconds under water (and no chatting
   there).
 - `tests/liquid_tests.jac`: `TraceLiquid`'s box meeting a surface, and bots
   immersed as the player is, swimming by it and burning in lava.
