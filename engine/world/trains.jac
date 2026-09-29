@@ -1,11 +1,11 @@
 """Authored path graphs and translating train movers shared by the Quake games."""
-import from .doors { Door, HasDoor, DoorMember, damage_mover, mover_voices, mover_voice, model_bounds }
+import from .doors { Door, HasDoor, DoorMember, damage_mover, mover_voices, mover_voice }
 import from .speakers { Speaker }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .signals { Signal, HasSignal, Fire, note_chain }
 import from .damage { Damage, blast_strength }
-import from ..formats.bsp { Bsp }
+import from ..formats.bsp { Bsp, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap }
 import from .pickups { Pickup }
 import from .pusher { Pushable, HullStep, GatherPushables, push_move, clear_item }
@@ -148,11 +148,7 @@ def load_trains(world: World, bsp: Bsp, collision: CollisionMap) {
             raise ValueError("Invalid train model");
         }
         record = bsp.models[model];
-        parts = f.get("origin", "0 0 0").split();
-        if len(parts) != 3 {
-            raise ValueError("Invalid train origin");
-        }
-        original = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+        original = mover_origin(f);
         flags = int(f.get("spawnflags", "0"));
         speed = float(f.get("speed", "0"));
         if speed <= 0.0 {

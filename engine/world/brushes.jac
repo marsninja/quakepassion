@@ -3,9 +3,7 @@ import from .world { World, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
 import from .damage { Damage, blast_strength }
-import from .rotators { mover_origin }
-import from .doors { model_bounds }
-import from ..formats.bsp { Bsp }
+import from ..formats.bsp { Bsp, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap, Sweep }
 import from ..math.vec3 { Vec3 }
 

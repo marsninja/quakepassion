@@ -14,7 +14,7 @@ import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .damage { Damage }
 import from .signals { Signal, HasSignal }
-import from ..formats.bsp { Bsp }
+import from ..formats.bsp { Bsp, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap, Trace, hull_sweep }
 import from .pusher { Pushable, HullStep, GatherPushables, push_move }
 import from ..math.vec3 { Vec3 }
@@ -227,14 +227,6 @@ walker RotatorTick {
     }
 }
 
-def mover_origin(fields: dict[str, str]) -> Vec3 {
-    parts = fields.get("origin", "0 0 0").split();
-    if len(parts) != 3 {
-        raise ValueError("Invalid mover origin");
-    }
-    return Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
-}
-
 def load_rotators(world: World, bsp: Bsp, collision: CollisionMap) {
     if bsp.game not in ["q2", "q3"] {
         return;
@@ -287,9 +279,9 @@ def load_rotators(world: World, bsp: Bsp, collision: CollisionMap) {
             mover.axis = Vec3(z=1.0);
             mover.speed = float(fields.get("speed", "30"));
             mover.phase = float(fields.get("phase", "0"));
-            record = bsp.models[model];
-            # Models with an origin brush store bounds relative to that origin.
-            length = max(8.0, abs(record.mins.z));
+            # SP_func_pendulum: fabs(r.mins[2]), at least 8. A model with an
+            # origin brush stores its bounds relative to that origin.
+            length = max(8.0, abs(model_bounds(bsp, model).mins.z));
             frequency = 1.0 / (math.pi * 2.0) * math.sqrt(800.0 / (3.0 * length));
             mover.period = 1.0 / frequency;
         }
