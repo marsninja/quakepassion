@@ -6,6 +6,16 @@ or downward. A jump detaches the player. The entire move is checked before any
 player, rendered face or collision offset changes; an obstruction reverses the
 platform without leaving a partially moved rider. Escape pauses the simulation.
 
+A plat's travel (and a door's or button's) comes from the brush model's box as
+the game sees it: the BSP model's stored bounds spread a unit each way
+(`Mod_LoadSubmodels`, `CMod_LoadSubmodels`, `CM_LoadSubmodels`), which counts
+brushes without faces too. Q2 `base3`'s cage lift has lip 132 on a model
+reaching 320 units below its 144-unit car, so it rises 190 units; face bounds
+gave it 12. Q2 and Q3 movers travel 2 units further than before; Q1's stored
+bounds sit a unit inside the brush, so Q1 travel is unchanged. Trains put
+these bounds' mins at each corner (`train_next`, `train_resume`). A probe of
+both `base3` lifts with a gunner aboard carried it the full 190 and 154 units.
+
 Q1/Q2 unnamed platforms start lowered and rise on contact. Named platforms start
 at the authored upper position; their first signal lowers and unlocks them.
 Q3 platforms start lowered, including named platforms, which require a signal.
@@ -28,7 +38,7 @@ velocity transfer on jumping off.
   clear standing point among the sampled positions; those cover transforms only.
 - The supplied Q3 map archives contain no `func_plat` entities. Q3 semantics are
   unit-tested; no Q3 asset-backed lift or graphical lift pass is claimed.
-- Desktop app checks: Q1 `e1m1` and Q2 `base3`, both a 152-unit rise under the
+- Desktop app checks (before model-bounds travel): Q1 `e1m1` and Q2 `base3`, both a 152-unit rise under the
   fixed-step walking simulation. Escape pause and final nonpenetration pass.
   Bottom/top screenshots were visually inspected and are local artifacts under
   `.jac/screenshots/platforms/`.

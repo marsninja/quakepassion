@@ -3,6 +3,7 @@ import math;
 import from .world { World }
 import from .trains { Train, TrackPoint, TrackNext, HasTrack, attach_train, voice_train }
 import from .signals { Signal }
+import from .rotators { mover_origin }
 import from .doors { door_direction, mover_voices, model_bounds }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
@@ -42,7 +43,7 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         # Mod_LoadSubmodels spreads a brush model's stored bounds by a unit on
         # each side, so `size` is the brush's full extent: the door steps
         # clear of its opening instead of leaving a two-unit sliver in it.
-        bounds = model_bounds(bsp, model);
+        bounds = model_bounds(bsp, model, mover_origin(fields));
         size = bounds.maxs.sub(bounds.mins);
         width = float(fields.get("t_width", "0"));
         length = float(fields.get("t_length", "0"));

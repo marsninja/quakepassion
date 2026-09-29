@@ -462,8 +462,12 @@ def origin_text(x: float, y: float, z: float) -> str {
     return str(x) + " " + str(y) + " " + str(z);
 }
 
-def:priv add_model(bsp: Bsp) -> int {
-    bsp.models.append(Model(head=0, first_face=len(bsp.faces), face_count=0));
+"""A brush entity's model, recording its brush's bounds as qbsp does (the
+engines spread them by a unit as they load)."""
+def:priv add_model(bsp: Bsp, low: Vec3, high: Vec3) -> int {
+    bsp.models.append(
+        Model(head=0, first_face=len(bsp.faces), face_count=0, mins=low, maxs=high)
+    );
     return len(bsp.models) - 1;
 }
 
@@ -510,7 +514,7 @@ def build_movers(ctx: Context) -> list[float] {
         } elif door.kind in ["remote", "guardian"] {
             texture = material(door.material, TRIM);
         }
-        model = add_model(bsp);
+        model = add_model(bsp, low, high);
         leaf = ctx.leaf_at(xs[0], ys[0]);
         ctx.builder.owner = leaf;
         ctx.builder.block_shared(
@@ -550,7 +554,7 @@ def build_movers(ctx: Context) -> list[float] {
             exit_box = volume.low + volume.high;
             continue;
         }
-        model = add_model(bsp);
+        model = add_model(bsp, low, high);
         leaf = ctx.leaf_at(int(volume.low[0] / UNIT), int(volume.low[1] / UNIT));
         ctx.builder.owner = leaf;
         fields: dict[str, str] = {"model": "*" + str(model)};
@@ -686,7 +690,7 @@ def compile_blueprint(bp: Blueprint, site: Site) -> Compiled {
     build_entities(ctx);
     if len(bsp.models) < 2 {
         # Lighting treats faces from models[1] onward as moving; keep one sentinel.
-        add_model(bsp);
+        add_model(bsp, Vec3(), Vec3());
     }
     result = Compiled(
         bsp=bsp,

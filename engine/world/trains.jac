@@ -1,5 +1,5 @@
 """Authored path graphs and translating train movers shared by the Quake games."""
-import from .doors { Door, HasDoor, DoorMember, damage_mover, mover_voices, mover_voice }
+import from .doors { Door, HasDoor, DoorMember, damage_mover, mover_voices, mover_voice, model_bounds }
 import from .speakers { Speaker }
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
@@ -158,12 +158,15 @@ def load_trains(world: World, bsp: Bsp, collision: CollisionMap) {
         if speed <= 0.0 {
             speed = 100.0;
         }
+        # Q1 train_next / Q2 train_resume put the train's mins (SetModel's
+        # spread bounds) at each corner; Q3 its origin.
+        placed = model_bounds(bsp, model, original);
         train = Train(
             model=model,
             game=bsp.game,
             current=points[target],
             speed=speed,
-            anchor=original if bsp.game == "q3" else record.mins.add(original),
+            anchor=original if bsp.game == "q3" else placed.mins,
             running=bsp.game == "q3"
                 or not f.get("targetname", "")
                 or (bsp.game == "q2" and flags & 1 != 0),
@@ -173,7 +176,7 @@ def load_trains(world: World, bsp: Bsp, collision: CollisionMap) {
                 else int(f.get("dmg", "100" if bsp.game == "q2" else "2")),
             activation=Signal(entities=[i]),
             faces=list(range(record.first_face, record.first_face + record.face_count)),
-            bounds=AABB(mins=record.mins.add(original), maxs=record.maxs.add(original))
+            bounds=placed
         );
         attach_train(world, bsp, collision, train);
         voice_train(world, train, mover_voices(bsp.game, "func_train", f));

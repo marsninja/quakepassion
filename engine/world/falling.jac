@@ -6,6 +6,7 @@ import from .world { World, Player }
 import from .signals { Signal, HasSignal }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
 import from .damage { Damage }
+import from .rotators { mover_origin }
 import from .doors { model_bounds }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
@@ -48,7 +49,7 @@ def load_falling_objects(world: World, bsp: Bsp, collision: CollisionMap) {
         piece = FallingObject(
             model=model,
             faces=list(range(record.first_face, record.first_face + record.face_count)),
-            bounds=model_bounds(bsp, model),
+            bounds=model_bounds(bsp, model, mover_origin(fields)),
             damage=int(float(fields.get("dmg", "0"))) or 100,
             hidden=int(fields.get("spawnflags", "0")) & 1 != 0,
             activation=Signal(entities=[index])
