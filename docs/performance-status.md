@@ -128,14 +128,16 @@ with nothing to trace are never roots, collections are paced by the live
 graph they traced, and the trace lookup probes the shared registry first.
 
 Measured back to back with `scripts/profile_model_lighting.jac` (1280x720,
-3 blocks of 240 frames, ms per rendered frame):
+3 blocks of 240 frames, ms per rendered frame; "after" is this branch built
+with jaseci-labs/jac#9635, #9636 and #9638, the `rc` column an earlier run of the same
+view):
 
 | Map | Before, lit | Before, unlit | After, lit | After, unlit | `rc` profile (no collector) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Q1 e1m1 | 2.40 | 1.98 | 0.50 | 0.49 | 0.46 |
-| Q2 base1 | 8.06 | 6.51 | 0.77 | 0.75 | 0.79 |
+| Q1 e1m1 | 2.56 | 2.12 | 0.45 | 0.43 | 0.46 |
+| Q2 base1 | 9.96 | 8.12 | 0.87 | 0.88 | 0.79 |
 
-Model lighting now costs 0.01-0.03 ms a frame. Whole frames are 5-10x
+Model lighting now costs at most 0.02 ms a frame. Whole frames are 5-10x
 faster, about as fast as the `rc` profile, which has no cycle collector.
 
 To profile a native build by function name, build with the linker fix, hold
