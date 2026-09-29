@@ -6,9 +6,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push to a pull request supersedes its running check; main keeps
+# every run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      JAC_CACHE_HOME: ${{ github.workspace }}/../jac-cache
     steps:
       - name: Checkout (with pinned compiler source)
         uses: actions/checkout@v4
@@ -29,7 +37,29 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Stage pinned compiler source
-        run: bash scripts/stage_compiler.sh >> "$GITHUB_ENV"
+        id: pin
+        run: |
+          bash scripts/stage_compiler.sh >> "$GITHUB_ENV"
+          echo "sha=$(git rev-parse HEAD:jaseci)" >> "$GITHUB_OUTPUT"
+
+      # The pinned source compiles into a native compiler kernel on first use
+      # (about 45 minutes and 13 GB at peak); later runs reuse it, and the
+      # tests then run several times faster and leaner than with the
+      # compiler interpreted.
+      - name: Restore the compiler kernel and module cache
+        id: jaccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.JAC_CACHE_HOME }}
+          key: jac-${{ runner.os }}-${{ steps.pin.outputs.sha }}
+
+      - name: Add swap for the kernel build
+        if: steps.jaccache.outputs.cache-hit != 'true'
+        run: |
+          sudo fallocate -l 8G /extra-swap
+          sudo chmod 600 /extra-swap
+          sudo mkswap /extra-swap
+          sudo swapon /extra-swap
 
       - name: Show compiler version
         run: jac --version
@@ -59,6 +89,13 @@ jobs:
 
       - name: Build native viewer
         run: jac build main.jac --native -o qp
+
+      - name: Save the compiler kernel and module cache
+        if: steps.jaccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.JAC_CACHE_HOME }}
+          key: jac-${{ runner.os }}-${{ steps.pin.outputs.sha }}
 
       # One process per test file: a single run over the whole suite grows
       # past the runner's memory. Each file runs cold, then again warm.

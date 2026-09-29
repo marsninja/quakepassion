@@ -4,7 +4,9 @@
 # fixes that no jac release carries yet. The launcher silently falls back to
 # its bundled compiler unless the typeshed stdlib stubs are present, so this
 # fetches the commit the compiler pins (jac's own `zig build fetch-typeshed`).
-# Prints the environment to export.
+# Prints the environment to export. The first compile then builds the native
+# compiler kernel from this source (long, once per pin and cache); add
+# JAC_COMPILER_LIB=off to run the compiler interpreted instead.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,4 +36,3 @@ if [[ "$(cat "$TYPESHED/stdlib/.typeshed-sha" 2>/dev/null)" != "$commit" ]]; the
 fi
 
 echo "JAC_DEV_SOURCE=$SOURCE"
-echo "JAC_COMPILER_LIB=off"
