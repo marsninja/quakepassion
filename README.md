@@ -1,10 +1,10 @@
 # QuakePassion
 
-A heartfelt attempt to build a beautiful 3D engine in pure [Jac](https://github.com/jaseci-labs/jaseci) and raylib — one engine that delivers a Quake-like experience capable of loading the assets of all three Quake games (Quake, Quake II, and Quake III Arena) and making them playable.
+A heartfelt attempt to build a beautiful 3D engine in pure [Jac](https://github.com/jaseci-labs/jaseci) and raylib — one engine that loads the original assets of all three Quake games (Quake, Quake II, and Quake III Arena) and plays them.
 
 ## The Idea
 
-QuakePassion is not a source port. It is a single, coherent engine with its own architecture, its own physics, and its own internal file formats. Because of that, it will naturally *feel* different from each of the original games — and that's by design. What it promises instead is compatibility where it matters: it will load all the relevant original asset formats (maps, models, textures, sounds) so that everything from Quake 1, 2, and 3 is playable inside one unified world.
+QuakePassion is not a source port. It is a single, coherent engine with its own architecture and its own internal data model. Each game's assets load into one shared world graph, and each game's rules — movement, weapons, monsters, bots, triggers — are reproduced from the originals' behaviour, citing the original functions they follow (`PM_Friction`, `SV_Physics_Pusher`, `ai_run`, `BotAI`, ...), so each game plays like itself inside one engine.
 
 Most importantly, this project is a showcase for Jac's **Object-Spatial Programming** paradigm. Everywhere it makes sense — the scene graph, entities, game logic, the structure of the engine itself — computation moves to data through walkers, nodes, and edges rather than the other way around.
 
@@ -12,170 +12,163 @@ Most importantly, this project is a showcase for Jac's **Object-Spatial Programm
 
 Quake (and games in general) is the thing that got me into programming. This project celebrates that passion, and my admiration for the true GOAT, John Carmack, the man... the coder... the ninja who invented 3D games as we know it.
 
-## Getting Started
+## What plays
 
-The native level viewer renders maps from Quake, Quake II, and Quake III Arena.
-The current gameplay branch uses the local Jac launcher with compiler source
-from upstream main plus [Jac #9388](https://github.com/jaseci-labs/jac/pull/9388)
-for settings reload. The current local checkout is
-`/Users/marsninja/repos/jaseci-wt/qp-merged-validation/jac`; select it with
-`JAC_DEV_SOURCE` and set `JAC_COMPILER_LIB=off` when building/testing.
+- **Quake**: the full campaign, 32 maps (start, four episodes, end), with its monsters and bosses (Chthon, Shub-Niggurath), runes, secrets, intermissions and episode text.
+- **Quake II**: the full campaign, 39 maps across its units, with hub returns, the help computer, cinematics, the monster roster and the final bosses.
+- **Quake III Arena**: the single-player ladder from `arenas.txt`: free-for-all matches against botlib-driven bots (AAS routing, fuzzy item and weapon weights, chat), scoring, awards and the podium.
+- **Passion**: a fourth mode that generates seeded expeditions from all three games' assets. See [docs/passion.md](docs/passion.md).
 
-Place your original game archives in these directories (assets are not included):
+Save/load, per-game key bindings, the console and settings work in all modes. Network multiplayer, mods and an editor are out of scope. Known gaps are tracked per area in [docs/](docs/README.md).
 
-- `~/quake-assets/id1`: Quake PAK files.
-- `~/quake-assets/baseq2`: Quake II PAK files.
-- `~/quake-assets/baseq3`: Quake III PK3 files.
+## Setup
 
-After installing Jac and staging raylib (see below), build and run:
+Assets are not included. Put your own archives here:
+
+| Directory | Contents |
+| --- | --- |
+| `~/quake-assets/id1` | Quake `pak0.pak`, `pak1.pak` |
+| `~/quake-assets/baseq2` | Quake II `pak*.pak` (plus loose `video/`, `music/` if you have them) |
+| `~/quake-assets/baseq3` | Quake III `pak*.pk3` |
+
+### Compiler
+
+QuakePassion builds with the released [Jac 0.37.23](https://github.com/jaseci-labs/jac/releases/tag/v0.37.23)
+binary, compiling with newer compiler source pinned in the `jaseci` submodule.
+The pin carries upstream fixes no release has yet (see
+[docs/jac-native-fixes.md](docs/jac-native-fixes.md)).
 
 ```bash
+jac --version                                  # 0.37.23
+export $(./scripts/stage_compiler.sh)          # inits the submodule, prints JAC_DEV_SOURCE
+```
+
+`stage_compiler.sh` initialises the submodule, fetches the typeshed stubs the
+compiler needs (without them the launcher silently falls back to its bundled
+compiler) and prints `JAC_DEV_SOURCE=<repo>/jaseci/jac`. The first compile
+builds a native compiler kernel from that source: it is slow and memory-hungry
+(about 45 minutes and 13 GB on CI) and is cached per pin afterwards. Setting
+`JAC_COMPILER_LIB=off` runs the compiler interpreted instead. CI
+(`.github/workflows/jac-test.yml`) follows the same steps.
+
+### raylib and the build
+
+```bash
+./scripts/stage_raylib.sh                      # builds raylib 6.0 with JPG/TGA into vendor/
 jac build main.jac --native -o qp
+./qp
+```
+
+raylib's prebuilt libraries lack the JPG and TGA decoders the Q2/Q3 assets need,
+so the script builds pinned sources; it needs a C compiler and `make` (Linux
+also needs the X11/OpenGL development packages). If the loader cannot find
+raylib, run with `DYLD_LIBRARY_PATH=vendor ./qp` (Linux: `LD_LIBRARY_PATH`).
+Development and graphical validation happen on macOS; CI builds and tests on Linux.
+
+## Running
+
+```bash
 ./qp                                # Quake: e1m1
-QP_GAME=q2 ./qp                     # Quake II: base1
-QP_GAME=q3 ./qp                     # Quake III: q3dm1
-QP_GAME=q3 QP_MAP=q3dm7 ./qp         # another map, without maps/ or .bsp
-QP_GAME=passion QP_SEED=42 ./qp      # seeded mixed-asset expedition
-QP_GAME=q2 QP_ASSETS=/path/to/baseq2 ./qp
-QP_GRAYBOX=1 ./qp                   # original two-room development scene
-QP_CAPTURE=300:shot.png ./qp        # play 300 frames, save a full screenshot, exit
+QP_GAME=q2 ./qp                     # Quake II: the intro cinematic, then base1
+QP_GAME=q3 QP_MAP=q3dm7 ./qp        # a Quake III arena
+QP_GAME=passion QP_SEED=42 ./qp     # a seeded Passion expedition
+./qp +map e1m3 +god                 # console commands after the configuration
 ```
 
-For a fresh checkout, install [Jac 0.37.23](https://github.com/jaseci-labs/jac/releases/tag/v0.37.23)
-for your platform, then stage raylib and build:
+| Variable | Effect |
+| --- | --- |
+| `QP_GAME` | `q1` (default), `q2`, `q3` or `passion` |
+| `QP_MAP` | Starting map basename (default `e1m1`, `base1`, `q3dm1`) |
+| `QP_ASSETS` | Asset directory for the selected game (for Passion, the parent of all three) |
+| `QP_SEED` | Passion expedition seed |
+| `QP_WALK=0` | Start in free flight instead of walking |
+| `QP_CONFIG_DIR` | Where settings and bindings live (default `$HOME`) |
+| `QP_CAPTURE=<frame>:<file.png>` | Play normally, save one full screenshot at that frame, exit |
+| `QP_SMOKE=1` | Capture a fixed set of views and exit (validation) |
+| `QP_GRAYBOX=1` | The two-room development arena instead of a level |
+| `QP_RENDER_LEGACY=1` | Draw models and effect cubes through the old CPU/immediate-mode path, for comparison |
+| `QP_LIGHT_CACHE` | Passion's baked-lighting cache (default `~/.cache/quakepassion/lighting`) |
+
+Validation scripts read further `QP_*` variables of their own; each documents
+them in its header.
+
+## Controls, console and settings
+
+Each game binds keys from its own `default.cfg`. QuakePassion adds a layer on
+top (`games/controls.jac`): **WASD** and the mouse wheel for weapons in Q1/Q2,
+**F3** for the diagnostic overlay (`qp_overlay`), **F4** for free flight
+(`noclip`), and quick save/load on **F6**/**F9** in Q3 (Q1 and Q2 bind their own).
+A click captures the mouse.
+
+- **Console**: **`** (or **Shift+Escape**). It is the originals' command
+  shell (`engine/console/`): cvars, commands and aliases are nodes in a graph
+  the shell searches. `bind`, `unbind`, `bindlist`, `set`, `seta`, `toggle`,
+  `reset`, `cvarlist`, `cmdlist`, `alias`, `exec`, `vstr`, `map`, `god`,
+  `noclip`, `give`, `impulse`, `save`, `load`, `screenshot`, `vid_restart` and
+  `quit` work as in the originals; **Tab** completes names.
+- **Menu**: **Escape** opens the level menu: pick a game tab and a map, or open
+  **Settings** (field of view, sensitivity, volume, skill, God mode and more,
+  each a cvar) or **Controls** (the game's Customize Controls: Enter then a key
+  binds, Backspace clears).
+- **Window**: **Alt+Enter** toggles fullscreen; the window can be resized.
+- **Files**: settings (archived cvars) are written as a console script to
+  `~/.quakepassion-settings.txt`, and each game's bindings to
+  `~/.quakepassion-<game>-bindings.cfg`; `QP_CONFIG_DIR` moves both. Saves
+  (`~/.quakepassion-save*.txt`) and Q3 ladder progress and awards stay in `$HOME`.
+
+More detail: [menu, console and bindings](docs/menu-console-status.md).
+
+## Architecture
+
+```
+main.jac        entry: reads QP_*, runs the settings through the shell, opens the level, runs App
+engine/         the game-agnostic engine
+  core/         App loop, fixed-step clocks, menu, campaign state, saves, preferences, cinematics
+  console/      console, cvars and command shell
+  input/        keys, bindings, move commands
+  assets/       PAK/PK3 archives, asset catalog, materials
+  formats/      BSP29/38/46, MDL/MD2/MD3, sprites, WAL/WAD, CIN, WAV, AAS and bot files
+  physics/      hull and patch collision, per-game movement (pmove)
+  world/        the world graph: areas, entities, movers, triggers, combat, monsters, bots
+  render/       GPU world meshes, models, particles, HUDs, view weapons, effects
+  audio/        positional sounds and music streams
+games/          per-game data and rules: weapons, items, enemies, arenas, bot files, controls
+  passion/      the Passion generator
+scripts/        native validation harnesses and audits (validate_*, *_smoke, walkthroughs)
+tests/          jac test suites (one file per area)
+repros/         minimal programs for jac compiler defects
+```
+
+The world is a Jac graph (`engine/world/world.jac`). A level's BSP tree becomes
+`Split` and `BspArea` (leaf) nodes joined by `Front`/`Back` edges, and walkers
+query it: `Locate` finds the camera's leaf, `CollectFaces` gathers the faces of
+the visible leaves, `TraceLightPoint` samples the lightmap under a model
+(`engine/world/level.jac`). Entities, movers, triggers, monsters, items and
+lights are nodes linked into the world, and their relationships are typed
+edges: a signal's `Targets` and `Kills`, a monster's `Patrols` to its path
+corners, a train's `TrackNext` route, the bots' AAS areas joined through
+`Exits`/`Enters` passages, the console's `Declares` to its names. Engine systems are walkers: each 120 Hz physics tick spawns
+passes such as `SignalTick`, `TrainTick` and `CombatTick` over the graph, and
+frames draw bodies interpolated between their last two ticks. `engine/` holds mechanisms
+shared by all three games; where the games differ, a per-game profile or table
+(`MovementProfile`, `games/weapons.jac`, `games/enemies.jac`) selects the
+original rule.
+
+## Testing and validation
 
 ```bash
-jac --version
-./scripts/stage_raylib.sh
-jac build main.jac --native -o qp
+ls tests/*_tests.jac | xargs -P 4 -n 1 jac test          # the unit suites, one process per file
+jac build scripts/campaign_walkthrough.jac --native -o .jac/walkthrough && DYLD_LIBRARY_PATH=vendor .jac/walkthrough
+jac build scripts/arena_ladder_walkthrough.jac --native -o .jac/ladder && DYLD_LIBRARY_PATH=vendor .jac/ladder
+jac run scripts/validate_quake.jac --game q1              # graphical checks (needs a desktop and assets)
 ```
 
-The released launcher alone is not yet the validated gameplay compiler. Until a
-release includes the upstream fixes, select a Jac checkout containing #9388:
+One `jac test` process over the whole suite needs far more memory than one per
+file, which is why CI and the command above split it. The walkthroughs play
+every Q1/Q2 campaign exit and every Q3 ladder arena through the real game loop.
+See [validation tooling](docs/validation-tooling-status.md) for the full set.
 
-```bash
-export JAC_DEV_SOURCE=/path/to/jac-checkout/jac
-export JAC_COMPILER_LIB=off
-```
+## Documentation
 
-Build and test with these variables set. On macOS, if the loader cannot locate
-raylib, run with `DYLD_LIBRARY_PATH="$PWD/vendor" ./qp` (Linux: `LD_LIBRARY_PATH`).
-
-Raylib setup builds pinned 6.0 sources with JPG/TGA support, which its prebuilt
-libraries lack. It requires a C compiler and `make`; Linux also needs the desktop
-OpenGL/X11 development dependencies. Graphical validation is performed on macOS.
-The old `.jac/compiler` directory is no longer selected by this project and can
-be removed. Compiler patches and the Python staging helper have been retired.
-
-Controls are each game's own: its `default.cfg` binds the keys, then
-QuakePassion adds **WASD**, the mouse wheel for weapons, **F3** (overlay) and
-**F4** (free flight through walls, `noclip`). A click captures the mouse; the
-console key (**`**, or **Shift+Escape**) drops the console, where `bind`,
-`unbind`, `bindlist`, `set`, `cvarlist`, `cmdlist`, `map`, `exec`, `god`,
-`noclip`, `give`, `screenshot` and `vid_restart` work as in the originals and
-**Tab** completes names. **Escape** opens/closes the level menu; **Alt+Enter**
-toggles fullscreen, and the window can be resized. Walking is the default
-in all three games; `QP_WALK=0 ./qp` starts in fly mode. Ordinary proximity doors and supported touch-triggered doors open (including linked pairs); supported buttons and translating lifts now move, and lifts carry the player. Switching
-levels returns to walking. See [movement status](docs/player-movement-status.md).
-
-In the menu, choose **Quake**, **Quake II**, or **Quake III**, scroll or use
-**Up/Down** to select a map, then click **Render selected level** or press
-**Enter**. **Passion** lists generated expeditions; click its tab again for new
-seeds. Collect both keys and reach extraction to complete a run. **Quit** closes
-the viewer; Escape resumes the current level. Movement
-pauses while the menu is open, and mouse capture is restored when it closes.
-
-The **Settings** button changes movement mode, field of view (`fov`, 4:3
-horizontal), mouse sensitivity, inverted mouse, always run, fly speed, frame
-limit, fullscreen, window size, visibility culling, the diagnostic overlay, the
-crosshair, sound and music volume, **God mode** and skill; each is a cvar. God mode prevents
-player health and armor damage from combat and hazards in all four games; it
-does not revive a dead player. Click the arrows or use **Up/Down** and
-**Left/Right**. Changes apply immediately and persist across sessions in
-`~/.quakepassion-settings.txt` (`QP_CONFIG_DIR` moves it); movement mode resets
-to walking on level load. **Reset defaults** restores every setting.
-The **Controls** button lists the game's actions (its Customize Controls):
-Enter then a key binds one, Backspace clears it, and **Reset defaults** returns
-to the game's own bindings. Each game keeps its bindings in
-`~/.quakepassion-<game>-bindings.cfg`.
-Maps are discovered from your installed archives; Q1 brush-model BSPs are excluded.
-`QP_ASSETS` applies to the game selected by `QP_GAME`; the other games use their
-normal directories under `~/quake-assets`.
-
-## Status and validation
-
-All three formats use Jac nodes, edges, and walkers for BSP spatial queries and
-visible-face collection. Q1 includes palette textures, baked lighting, fullbright
-texels, and static sky. Q2 adds WAL textures, RGB lightmaps, and environment skyboxes.
-Q3 includes PK3 archives, indexed meshes, curved patches, baked lighting, and static
-shader texture selection with alpha tests, additive blending, and two-sided surfaces.
-
-```bash
-jac test -j0
-jac run scripts/validate_quake.jac --game q1
-jac run scripts/validate_quake.jac --game q2
-jac run scripts/validate_quake.jac --game q3
-jac run scripts/validate_menu.jac       # exercises real menu input and game switching
-jac run scripts/validate_gameplay.jac   # persistence, input, campaigns and combat
-jac run scripts/validate_passion.jac    # generated route, mixed assets, saves and menu
-```
-
-The validation runners are Jac scripts. `scripts/menu_smoke.jac` is the native
-input-event harness built by the menu runner; `scripts/png_checks.jac` decodes
-screenshots and counts changed pixels. Unit fixtures cover RGB/RGBA PNG filters,
-blank-image rejection, and pixel comparison.
-
-The expanded test suite uses the source compiler described above.
-Graphical validation requires an active desktop and original assets. Twelve maps
-passed: six Q1, three Q2, and three Q3. Each check captures two positions and a
-camera turn, rejects blank images, and compares culling on/off at both positions.
-All 24 pairs matched exactly in the latest run. Captures and logs are ignored
-under `.jac/screenshots/<game>/<map>/`. `QP_SMOKE=1` runs one capture sequence.
-These checks establish representative rendering and culling consistency, not
-pixel parity with the original games.
-
-This is a level viewer with shared walking and brush collision across Q1/Q2/Q3.
-Q3 curved patches collide as cm_patch.c does: one-sided facets from their own
-adaptively subdivided control grid, traced through the shared hull queries. Initial campaign exits, health/armor, liquid damage and
-health/armor/shell pickups work through shared gameplay systems. A small hitscan
-combat roster, local arena bots, save/load, and persistent settings are implemented.
-Key gates, objective counters, Q2 hub persistence and animated Q3 characters are
-connected. Full campaign endings, larger rosters, trains and rotating/crushing
-movers remain beyond this prototype. Q3 material support is partial; see
-[combat acceptance and limits](docs/combat-prototype-status.md).
-
-See [Q1 results](docs/quake1-rendering-status.md) and
-[Q2/Q3 results, compiler fixes, and limitations](docs/quake2-quake3-rendering-status.md).
-
-[Passion](docs/passion.md) is the fourth mode: seeded expeditions built from
-original assets of all three games. A cyclic mission grammar (keys, switches,
-guardians, valves, shortcuts, secrets) is embedded as rooms and A*-routed stair
-corridors, dressed by recipe interiors and wave-function-collapse cover, paced
-by an encounter director, and chosen from several candidates by quality and
-diversity. Every expedition is proven completable in its own geometry before it
-is played. The versioned seed is saved with the world and its asset manifest.
-
-Shared moving doors: [behavior, limits and validation](docs/doors-status.md).
-
-Shared touch triggers: [behavior, limits and validation](docs/triggers-status.md).
-
-Buttons and activation relays: [current validation and limits](docs/buttons-status.md).
-
-Platforms and carrying: [validation and limits](docs/platforms-status.md).
-
-Teleporters and jump pads: [validation and limits](docs/traversal-status.md).
-
-Swimming: jump (Space) ascends and **C** descends when submerged; forward follows
-the view direction. See [liquid detection and swimming limits](docs/swimming-status.md).
-
-Hold **C** to crouch in Q2/Q3. Health, armor and shells are shown at the bottom
-of the screen; liquid hazards and drowning can kill the player. **Enter** restarts
-the level after death. **1–9/0** selects owned weapons in the original games
-(**1/2** in Passion); **G** selects Q2 hand grenades. Hold fire to cook, release
-to throw. **Left mouse** or **Ctrl** fires, **F6/F9**
-save/load. Supported Q1/Q2 exits change maps and preserve player state; Q2 hub
-returns restore visited worlds. Ten Q3 frags wins; Enter starts a rematch.
-Older version-1 and version-2 saves are rejected after the campaign state format change.
-See [weapon integration and remaining fidelity work](docs/weapons-status.md).
-See [campaign/gameplay progress and remaining scope](docs/campaign-gameplay-status.md)
-and [animated model validation](docs/models-status.md).
+[docs/README.md](docs/README.md) indexes the status docs: what each area does,
+how it is validated, and what remains.

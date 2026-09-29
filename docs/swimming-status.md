@@ -1,56 +1,61 @@
-# Shared liquid detection and initial swimming
+# Liquids and swimming
 
-The fixed-step walking loop now samples the player's feet, body and eyes to
-classify immersion from dry (0) to fully submerged (3). Q1 reuses the BSP spatial
-graph and leaf contents. Q2/Q3 use graph-connected water/slime/lava volumes built
-from exact world brush planes, with point queries rather than expanded standing
-hulls. Oblique brush boundaries are retained. Overlapping liquid contents prefer
-lava, then slime, then water.
+Bodies know how deep they stand in water, slime or lava, swim by each game's
+water movement, and take each game's drowning and burning damage. The
+per-game swim rules live in `MovementProfile` (see
+[player movement](player-movement-status.md)).
 
-At body-depth immersion, the shared movement walker uses three-dimensional
-input, liquid drag, slower acceleration and collision-aware sliding instead of
-air gravity. Forward swimming follows the camera pitch; Space ascends and Left
-Shift descends. No input gently sinks the player. Feet-only immersion retains
-walking with additional drag. Leaving the water restores ordinary gravity.
-Escape pauses movement; teleport arrival holds still apply.
+## How it works
 
-This is initial shared swimming, not exact per-game physics parity. The current
-160-unit input speed cap, water acceleration and drag are shared across games.
-Water jumps out of pools, the underwater view tints and the water sounds follow
-each game (see [player-feedback-status.md](player-feedback-status.md)); drowning
-and lava/slime damage live in `EnvironmentTick`. Currents and per-game swimming
-speeds remain unfinished.
+- Immersion (`Level.immersion`, `engine/world/level.jac`; `Immersion` in
+  `engine/world/liquids.jac`) samples the feet, waist and eye for a depth of 0
+  to 3 (Q1 `SV_CheckWater`, Q2 `PM_CatagorizePosition`, Q3
+  `PM_SetWaterLevel`). The waist is half the view height (Q2/Q3) or 4 units up
+  the box (Q1). The worst liquid touched wins (lava over slime over water), and
+  the Q2 current at the feet is kept as a direction.
+- Q1 reads the BSP leaf contents (its `CONTENTS_CURRENT_*` leaves count as
+  water). Q2/Q3 build `LiquidVolume` nodes, one per liquid kind and current in
+  each model, linked from a `LiquidSpace` by `HasLiquid` edges, from the exact
+  brush planes; the `SampleLiquid` walker tests a point against them and
+  `TraceLiquid` sweeps a box into them. A Q2 `func_water` carries its volumes
+  with its brush, so pools fill and drain.
+- `MovePlayer.swim` (`engine/physics/movement.jac`) runs at waist depth or
+  deeper: view-relative thrust, sinking at 60 with no input, no gravity, water
+  friction, per-game speed (Q1 0.7, Q2 0.5 of max speed, Q3 capped at
+  `pm_swimScale`) and acceleration. Q1/Q2 swim with the stair-stepping move,
+  Q3 slides. Q1/Q2 jumping lifts a swimmer at 100 (80 in slime, 50 in lava);
+  Q2 currents push at 400 (half for a wader on the ground). Q3 slows waders
+  by depth.
+  Up and down come from `+moveup`/`+jump` and `+movedown`.
+- Water jumps (`check_water_jump`): see the per-game table in
+  [player movement](player-movement-status.md).
+- `EnvironmentTick` (`engine/world/environment.jac`) drowns a submerged body
+  after 12 seconds of air (2 more damage each second, capped at Q1 10 / Q2-Q3
+  15; Q2/Q3 through armor), and burns it in slime and lava by depth (Q1 4 or
+  10, Q2 1 or 3 each 0.1 s, Q3 10 or 30). The suit, breather, enviro suit and
+  battlesuit protect as each game's `P_WorldEffects`/`WaterMove` does.
+- `ImmerseBots` (`engine/world/wading.jac`) samples Q3 bots the same way, so
+  they swim, drown and burn.
+- Entry, exit and underwater sounds and the underwater tint are in
+  [player feedback](player-feedback-status.md).
 
 ## Validation
 
-The full suite passes 100 tests. New fixtures cover all immersion depths, Q1
-content mapping, oblique Q2/Q3 liquid brushes, overlapping liquid priority,
-ascent/descent, drag, input speed limits, solid collision, pause and restored
-gravity outside water.
+- `tests/liquid_tests.jac`: depths, Q1 leaf contents, oblique Q2/Q3 liquid
+  brushes and priority, ascent/descent, drag, bounded speed, collision and
+  pause while swimming, gravity restored on exit, box sweeps into liquid, bots.
+- `tests/movement_profile_tests.jac`: per-game swim speeds and drift, swim
+  jumps, Q2 currents at the feet.
+- `scripts/validate_swimming.jac` (`QP_GAME=q1|q2|q3`): samples clear
+  submerged standing spots on five Q1, five Q2 and six Q3 maps, swims up for
+  30 ticks and checks displacement and nonpenetration. Maps without a clear
+  sample report as skipped.
+- `scripts/swimming_smoke.jac`: held ascent and pause through the app loop on
+  e1m2, base1 and q3dm12. `scripts/validate_ladders.jac` also feels each Q2
+  current volume.
 
-The asset validator samples clear submerged standing hulls and swims upward for
-30 ticks, then checks displacement and nonpenetration. Maps without a clear
-submerged sample are explicitly reported as skipped. This is representative
-coverage, not an exhaustive map or water-exit traversal test.
+## Limitations
 
-Build with the local compiler described in
-[native-cache-section-merge-blocker.md](native-cache-section-merge-blocker.md):
-
-```sh
-export JAC_DEV_SOURCE=/Users/marsninja/repos/jaseci-wt/qp-cache-sections/jac
-export JAC_COMPILER_LIB=off
-jac test
-jac build scripts/validate_swimming.jac --native -o .jac/qp-swim-check
-QP_GAME=q1 DYLD_LIBRARY_PATH="$PWD/vendor" .jac/qp-swim-check
-QP_GAME=q2 DYLD_LIBRARY_PATH="$PWD/vendor" .jac/qp-swim-check
-QP_GAME=q3 DYLD_LIBRARY_PATH="$PWD/vendor" .jac/qp-swim-check
-jac build scripts/swimming_smoke.jac --native -o .jac/qp-swim-smoke
-DYLD_LIBRARY_PATH="$PWD/vendor" .jac/qp-swim-smoke
-```
-
-Asset checks pass on ten maps: Q1 `start`, `e1m1`, `e1m2`, `e1m3`, `e2m1`;
-Q2 `base1`, `base3`, `jail1`, `waste1`; Q3 `q3dm12`.
-Desktop held-Space ascent and Escape pause checks pass on Q1 `e1m2`, Q2 `base1`
-and Q3 `q3dm12`. The after-movement captures were inspected. Screenshots and
-logs are local artifacts in `.jac/screenshots/swimming/`. These establish input,
-movement and continued rendering, not complete underwater presentation.
+- Burn intervals are approximations where the original ties them to other
+  timers: Q3's 0.7 s stands in for the `pain_debounce_time` that
+  `P_WorldEffects` checks.
