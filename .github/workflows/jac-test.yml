@@ -15,8 +15,6 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      JAC_CACHE_HOME: ${{ github.workspace }}/../jac-cache
     steps:
       - name: Checkout (with pinned compiler source)
         uses: actions/checkout@v4
@@ -40,6 +38,7 @@ jobs:
         id: pin
         run: |
           bash scripts/stage_compiler.sh >> "$GITHUB_ENV"
+          echo "JAC_CACHE_HOME=$HOME/.cache/jac-qp" >> "$GITHUB_ENV"
           echo "sha=$(git rev-parse HEAD:jaseci)" >> "$GITHUB_OUTPUT"
 
       # The pinned source compiles into a native compiler kernel on first use
@@ -50,7 +49,7 @@ jobs:
         id: jaccache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.JAC_CACHE_HOME }}
+          path: ~/.cache/jac-qp
           key: jac-${{ runner.os }}-${{ steps.pin.outputs.sha }}
 
       - name: Add swap for the kernel build
@@ -94,7 +93,7 @@ jobs:
         if: steps.jaccache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.JAC_CACHE_HOME }}
+          path: ~/.cache/jac-qp
           key: jac-${{ runner.os }}-${{ steps.pin.outputs.sha }}
 
       # One process per test file: a single run over the whole suite grows
