@@ -94,6 +94,10 @@ grid.
   shells. Bots show theirs too: `repros/native_bot_powerup_shells.jac`
   checks natively that `GatherModels` sees a bot as an `Actor` (fixed in
   jaseci-labs/jac#9562).
+- **Talk balloon** (`CG_PlayerSprites`): a bot typing a chat line has
+  `sprites/balloon3` floating 48 units over its origin (`EF_TALK`).
+- **Swimming:** a bot's water level is sampled like the player's, so its
+  legs swim and its splash and surfacing sounds play.
 - **Taunts:** a bot that just killed now and then gestures
   (`TORSO_GESTURE`) with its model's `taunt.wav` (`EV_TAUNT`).
 - Q3 players no longer stop to flinch when hit.

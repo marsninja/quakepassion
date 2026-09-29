@@ -28,9 +28,16 @@ follows `ai_dmnet.c` and `ai_dmq3.c`, travel `be_ai_move.c`, goals
     rocket-jump table is ready a bot routes without rocket jumps.
 - Bots travel their routes every frame (`engine/world/bot_travel.jac`, after
   `be_ai_move.c` `BotMoveToGoal`), returning a `bot_moveresult_t`:
-  - Walking, crouching, barrier jumps, jumps, ledges, swimming, water jumps,
-    teleporters and jump pads head for the passage's points; a jump launches
-    from its takeoff with Q3's 270 units/s jump.
+  - Walking, crouching, barrier jumps, jumps, ledges, teleporters and jump
+    pads head for the passage's points; a jump launches from its takeoff with
+    Q3's 270 units/s jump.
+  - **Swimming** (`BotTravel_Swim`, `MFL_SWIMMING`): with its waist under
+    (water level 2) a bot swims straight for its waypoint, up or down, and
+    looks where it swims (`MOVERESULT_SWIMVIEW`). In a fight it closes and
+    opens the distance in three dimensions too (`BotMoveInDirection`).
+  - **Water jumps** (`BotTravel_WaterJump`): the bot swims for the far end
+    looking 15 units above it, moving up as well within 40 units of it, and
+    the pmove's own water jump (`PM_CheckWaterJump`) lifts it out.
   - **Rocket jumps** (`BotTravel_RocketJump`): the bot selects the rocket
     launcher, walks to the start looking straight down (slowing within 80
     units), and within 5 units and 5 degrees of the view jumps, fires and runs
@@ -139,11 +146,34 @@ follows `ai_dmnet.c` and `ai_dmq3.c`, travel `be_ai_move.c`, goals
     20 s, when reached, or when there is none (with no goal left, the avoid
     times are reset).
 
+## Liquids (`engine/world/wading.jac`)
+
+- Every tick the `ImmerseBots` walker samples each bot's immersion through
+  the player's own `Level.immersion` (`PM_SetWaterLevel`): its water level,
+  the worst liquid it touches and the current at its feet. Its movement swims
+  by them (`MovePlayer`), its body swims (`LEGS_SWIM`), and the liquid acts on
+  it as on the player (`P_WorldEffects`): it drowns once its 12 seconds of air
+  are out, and lava and slime burn it (30 and 10 a water level every 0.7 s).
+- The AI reads the same state:
+  - `BotInLavaOrSlime`: in lava or slime a bot routes through them
+    (`TFL_LAVA`, `TFL_SLIME`).
+  - `BotCheckAir`: each think out of the water (or in a battle suit) is the
+    bot's last air.
+  - `BotGoForAir`, first in `BotNearbyGoal`: six seconds without air, a bot
+    goes for the surface above it (`BotGetAirGoal`: a 30 by 4 box rises
+    until it meets something solid, then drops back to the liquid's surface,
+    `TraceLiquid`; the goal is 2 units under it). With no surface there, it
+    takes the nearby item that is out of the liquid. An air goal is reached
+    on touching it or on taking air.
+  - `BotValidChatPosition`: no chatting with lava or slime at the feet or
+    liquid over the head.
+
 ## AI (`engine/world/bot_ai.jac`, `ai_dmnet.c`)
 
 - The AI's states are nodes of a graph under the world's `BotBrain`, linked by
   `Leads` edges wherever `ai_dmnet.c` switches: Seek_LTG, Seek_NBG,
-  Battle_Fight, Battle_Chase, Battle_Retreat, Battle_NBG, Stand and Respawn.
+  Battle_Fight, Battle_Chase, Battle_Retreat, Battle_NBG, Stand, Respawn and
+  Intermission.
   Each think (10 Hz) a `BotThink` walker enters the bot's node and runs it; a
   node that switches walks on and runs the next at once, up to 50 switches.
 - Before the nodes run, the think updates the bot's inventory for its fuzzy
@@ -172,6 +202,17 @@ follows `ai_dmnet.c` and `ai_dmq3.c`, travel `be_ai_move.c`, goals
 - **Stand**: standing still while typing a chat line, then saying it.
 - **Respawn**: the death chat (typed while dead), then back in once the game
   lets the bot respawn (1.7 s after death at the soonest).
+- **Intermission** (`BotIntermission`): when the match ends the seek and
+  battle nodes go to the intermission. Entering it the bot forgets its goals
+  and enemy and may say its end-of-level line at once. While the podium
+  shows, the bots think on (the app runs `BotTactics` with `intermission`)
+  but neither move nor act, and their talk balloons are down
+  (`ClientIntermissionThink`). A dead bot comes back for it, as
+  `BeginIntermission` respawns the dead.
+  - A match that began after its warmup wakes its bots in the intermission
+    node, as though from the freeze (`BotIntermission`'s `PM_FREEZE`). Leaving
+    it a bot types its level-start line, or stands two seconds without one
+    (`AINode_Intermission`), unless it greets the game first.
 - Enemies are found by the combat tick's `BotFindEnemy` look (below), which
   the nodes take as their enemy.
 
@@ -190,9 +231,22 @@ follows `ai_dmnet.c` and `ai_dmq3.c`, travel `be_ai_move.c`, goals
   writes them: lower case, no spaces, clan tags or "Mr") and `rnd.c`'s random
   strings, expanded up to ten deep; a line said in the last 20 s is not
   chosen again while others are fresh.
+- `level_start` when a match begins after its warmup (`BotChat_StartLevel`),
+  and at its end (`BotChat_EndLevel`) `level_end_victory` for the leader (no
+  one scored more), `level_end_lose` for the last (no one scored less), and
+  `level_end` for the rest, with the first and last in the rankings named.
+  Both follow the character's start and end level tendency.
 - A bot types for two seconds (`BotChatTime`), then the line is said:
   "Name: text" with the text in green (`G_Say`), shown in the notify lines
-  with Q3's colour codes, with `sound/player/talk.wav`.
+  with Q3's colour codes, with `sound/player/talk.wav`. End-of-level lines
+  go out at once.
+- While a bot types (its talk button, `BUTTON_TALK`, held in Stand and while
+  typing its death chat) the talk balloon floats over it (`EF_TALK`,
+  `CG_PlayerSprites`): `sprites/balloon3`, a sprite 10 units in radius 48
+  units over its origin, drawn by the effect scene.
+- The notify lines stay up over the podium and its menu, as
+  `Con_DrawNotify` draws them during `PM_INTERMISSION`, so the end-of-level
+  chat shows there.
 
 ## Combat (`engine/world/bot_tactics.jac`)
 
@@ -292,11 +346,17 @@ Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
   loading their bot files.
 - `tests/bot_travel_tests.jac`: travel flags in the tables (rocket jumps,
   lava), rocket jump travel and air control, bobbing platforms waited for,
-  boarded, ridden and left, and leg timeouts.
+  boarded, ridden and left, leg timeouts, and swimming and water jumps.
 - `tests/bot_ai_tests.jac`: goals by fuzzy weight over travel time with avoid
   times and nearby goals, the node graph, fighting, suicidal fights,
   retreating (aiming back only above 0.3 attack skill), chasing, the kill
-  chat after standing to type, and the death chat before respawning.
+  chat after standing to type, the death chat before respawning, the
+  end-of-level victory and defeat lines, the level-start line after a
+  warmup, and going for air six seconds under water (and no chatting
+  there).
+- `tests/liquid_tests.jac`: `TraceLiquid`'s box meeting a surface, and bots
+  immersed as the player is, swimming by it and burning in lava.
+- `tests/effect_quads_tests.jac`: the talk balloon over a typing bot.
 - `tests/arena_navigation_tests.jac`: item and teleporter contacts, and
   floating items' jump pad goals.
 - `scripts/bot_files_smoke.jac`, `scripts/aas_smoke.jac` and
@@ -353,15 +413,13 @@ Saves keep each bot's weapon, ammo and holdables (`BOTARM`/`BOTITEM`).
 
 - Bodies are covered in [Q3 player bodies](player-bodies-status.md).
 - Team play (team goals, team chat and voice chat), camping (`BotWantsToCamp`:
-  Q3's maps have no camp spots), air goals (`BotGoForAir`), reply chats
-  (`BotReplyChat`), the avoid-reachability list (`BotAddToAvoidReach`) and
-  obstacle handling (`BotAIPredictObstacles`, `BotAIBlocked`) are not
-  modelled. Bots route around blocked doors as the combat tick steers.
-- Bots do not know when they are in water, lava or slime (their liquid
-  state is not sampled), so `BotInLavaOrSlime` and the chat position's
-  liquid tests do not apply.
-- The chat balloon over a typing bot (`EF_TALK`, `sprites/balloon3`) is not
-  drawn.
-- The end-of-match and level-start chats (`BotChat_EndLevel`,
-  `BotChat_StartLevel`) are not said: the match ends into the podium.
+  Q3's maps have no camp spots), reply chats (`BotReplyChat`), the
+  avoid-reachability list (`BotAddToAvoidReach`) and obstacle handling
+  (`BotAIPredictObstacles`, `BotAIBlocked`) are not modelled. Bots route
+  around blocked doors as the combat tick steers.
+- Q3 keeps its bots quiet in tournament games (`GT_TOURNAMENT`, the
+  single-player tier finals); here every arena is a free for all, so they
+  chat there too.
+- `BotTravel_WaterJump` tilts its view by up to 40 more units at random;
+  here the view is always 15 units above the far end.
 - Dropped items fly as `Drop_Item` throws them (see Items).
