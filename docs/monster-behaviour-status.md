@@ -71,6 +71,21 @@ its target, so fights are spent moving between attacks.
 
   Before, most monsters never moved at all.
 
+## Turning and walking
+
+- A monster turns toward where it is going, or toward its target, by its own
+  `yaw_speed` each 0.1 s frame, the short way round (Q1 `ChangeYaw`, Q2
+  `M_ChangeYaw`, through the shared `change_yaw`). The speed is data on each
+  rule: 20 degrees for walking monsters (`walkmonster_start`), 10 for fliers
+  and swimmers (`flymonster_start`, `swimmonster_start`) and 20 for Chthon
+  (`boss_awake`). Like the strides, each frame's turn is spread over its
+  ticks.
+- Q2 soldiers set off walking on `walk1` or `walk2`, half the time each
+  (`soldier_walk`). `walk1` goes back from walk110 to walk101 nine times in
+  ten; otherwise the soldier stands through walk111-133
+  (`soldier_walk1_random`). A `Gait` can branch this way, and a rule can list
+  other walks to choose among.
+
 ## Waking and hunting
 
 - Any hit from the player wakes a monster and turns it on the player, even
@@ -225,6 +240,8 @@ rocket shot.
   - `tests/patrol_tests.jac`: corner loops, Q2 waits and pathtargets, combat
     points, saves.
   - `tests/combat_tests.jac`: awareness and skill.
+  - `tests/monster_gait_tests.jac`: per-frame strides, yaw speeds and the
+    soldier's two walks.
   - `tests/trail_tests.jac`: crumb laying and following.
   - `tests/dodge_tests.jac`: duck timing and box, facing checks, soldier
     crouch-fire by skill.
@@ -242,6 +259,10 @@ rocket shot.
   corners, and stages a fight between two monster kinds.
 
 ## Limits
+
+- Attacks do not wait for the monster to face its target. The originals turn
+  in place first and fire only once within 45 degrees (`ai_run_missile`,
+  `ai_run_melee`, `FacingIdeal`).
 
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.

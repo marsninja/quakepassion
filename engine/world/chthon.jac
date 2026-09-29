@@ -36,9 +36,6 @@ glob BOSS_DEATH: int = 6;
 glob BOSS_GONE: int = 7;
 glob BOSS_IDLE: int = 8;
 
-# boss_awake: yaw_speed 20, degrees a frame.
-glob BOSS_YAW_SPEED: float = 20.0;
-
 """How many 0.1 s frames each family runs before it moves on."""
 def boss_frames(phase: int) -> int {
     if phase == BOSS_RISE {
@@ -318,13 +315,13 @@ walker ChthonTick {
         }
     }
 
-    """boss_face (ai_face): turn toward the enemy at the yaw speed."""
+    """boss_face (ai_face): turn toward the enemy by its yaw speed a frame."""
     def face(boss: Opponent) {
         toward = self.player.pos.sub(boss.pos);
         if abs(toward.x) < 0.000001 and abs(toward.y) < 0.000001 {
             return;
         }
-        boss.yaw = change_yaw(boss.yaw, math.atan2(toward.y, toward.x), BOSS_YAW_SPEED);
+        boss.yaw = change_yaw(boss.yaw, math.atan2(toward.y, toward.x), boss.rule.yaw_speed);
     }
 
     """boss_missile: a lava ball from `offset` (forward, right, up) along

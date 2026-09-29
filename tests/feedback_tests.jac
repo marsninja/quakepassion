@@ -1,3 +1,4 @@
+import math;
 import from engine.world.world { World, Player }
 import from engine.world.combat {
     CombatState,
@@ -89,12 +90,15 @@ test "pain interrupts movement with cooldown and death holds the final pose" {
     assert victim.visual.first == 5 and victim.visual.second == 5;
 }
 
-test "turning follows the shortest arc with a bounded angular speed" {
+test "turning follows the shortest arc at the monster's yaw speed" {
     world = World();
     enemy = Opponent(pos=Vec3(x=100.0), yaw=0.0, attack_wait=5.0);
     world +>:HasOpponent:+> enemy;
     world spawn CombatTick(
         player=Player(), collision=CollisionMap(), state=CombatState(), dt=0.01
     );
-    assert abs(enemy.yaw) <= 0.060001 and abs(enemy.yaw) > 0.0;
+    # Facing away, it turns the short way (either way round at 180 degrees
+    # goes negative, as ChangeYaw's move -= 360 does): 20 degrees a 0.1 s
+    # frame is 2 in a hundredth of a second.
+    assert abs(math.degrees(enemy.yaw) + 2.0) < 0.000001;
 }
