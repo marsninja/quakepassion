@@ -4,7 +4,7 @@ import from engine.world.doors { Door, HasDoor, DoorTick }
 import from engine.world.world { Player }
 import from engine.render.view_feedback { ViewFeedback }
 import from engine.physics.collision { HullCell, HullFront, HullBack, CollisionMap }
-import from engine.physics.movement { MovePlayer }
+import from engine.physics.movement { MovePlayer, movement_profile }
 import from engine.math.vec3 { Vec3 }
 import from tests.door_support { DoorFixture }
 
@@ -26,10 +26,10 @@ test "a move reports the height of the step it climbed" {
     ledge +>:HullBack:+> top;
     collision = CollisionMap(hulls=[floor, ledge], offsets=[Vec3(), Vec3()]);
     player = Player(pos=Vec3(x=-20.0, z=24.03125 + collision.eye_height));
-    player spawn MovePlayer(collision=collision, game="q1");
+    player spawn MovePlayer(collision=collision, profile=movement_profile("q1"));
     steps: list[float] = [];
     for tick in range(60) {
-        moved = player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game="q1");
+        moved = player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), profile=movement_profile("q1"));
         if moved.stepped > 0.0 {
             steps.append(moved.stepped);
         }
@@ -82,7 +82,7 @@ test "walking onto a Q1 plat eases the eye up its lip and the ride" {
             collision=fixture.collision,
             wish=Vec3(x=1.0) if player.pos.x < 0.0 else Vec3(),
             steady=True,
-            game="q1",
+            profile=movement_profile("q1"),
             dt=dt
         );
         view.step(moved.stepped);
@@ -143,13 +143,16 @@ test "a Q1 lift carries the eye rigidly, keeping the ease for a step off it" {
 }
 
 test "Q2 eases 8 to 20 unit steps over 100 ms; Q3 rounds and stacks over 200" {
+    body = Player();
     q2 = ViewFeedback();
     q2.reset("q2");
     q2.step(8.0);
     assert abs(q2.climb(0.0, True, 0.0) - 8.0) < 0.00001;
-    q2.advance(0.05);
+    q2.tick(body, False, 0.05);
     assert abs(q2.climb(0.0, True, 0.05) - 4.0) < 0.00001;
-    q2.advance(0.05);
+    # Between the two ticks, halfway.
+    assert abs(q2.climb(0.0, True, 0.0, 0.5) - 6.0) < 0.00001;
+    q2.tick(body, False, 0.05);
     assert q2.climb(0.0, True, 0.05) == 0.0;
     q2.step(7.0);
     q2.step(20.0);
@@ -160,7 +163,7 @@ test "Q2 eases 8 to 20 unit steps over 100 ms; Q3 rounds and stacks over 200" {
     assert q3.climb(0.0, True, 0.0) == 0.0;
     q3.step(9.0);
     assert abs(q3.climb(0.0, True, 0.0) - 8.0) < 0.00001;
-    q3.advance(0.1);
+    q3.tick(body, False, 0.1);
     assert abs(q3.climb(0.0, True, 0.1) - 4.0) < 0.00001;
     # CG_StepEvent adds what is left of the last step, up to 32.
     q3.step(5.0);
@@ -169,6 +172,71 @@ test "Q2 eases 8 to 20 unit steps over 100 ms; Q3 rounds and stacks over 200" {
     q3.step(18.0);
     q3.step(18.0);
     assert abs(q3.climb(0.0, True, 0.0) - 32.0) < 0.00001;
-    q3.advance(0.2);
+    q3.tick(body, False, 0.2);
     assert q3.climb(0.0, True, 0.2) == 0.0;
+}
+
+test "a Q2 step drawn between ticks keeps the eye level until the ease" {
+    # The body climbs 16 units in one tick; frames between that tick's
+    # start and end draw the body partway up and the eye lowered as far.
+    body = Player();
+    view = ViewFeedback();
+    view.reset("q2");
+    dt = 1.0 / 120.0;
+    view.tick(body, False, dt);
+    view.step(16.0);
+    for share in [0.0, 0.25, 0.5, 1.0] {
+        drawn = 100.0 + 16.0 * share;
+        assert abs(drawn - view.climb(drawn, True, 0.0, share) - 100.0) < 0.00001;
+    }
+    # Then it rises smoothly: a tick's worth of the 100 ms ease at a time.
+    view.tick(body, False, dt);
+    assert abs(116.0 - view.climb(116.0, True, 0.0, 0.0) - 100.0) < 0.00001;
+    assert abs(116.0 - view.climb(116.0, True, 0.0, 1.0) - (100.0 + 16.0 * dt / 0.1)) < 0.00001;
+}
+
+test "a Q1 lift drawn between ticks carries the eye without judder" {
+    body = Player();
+    view = ViewFeedback();
+    view.reset("q1");
+    z = 0.0;
+    view.climb(z, True, 0.0);
+    for tick in range(60) {
+        view.tick(body, False, 1.0 / 120.0);
+        was = z;
+        z += 1.25;
+        view.ride(1.25);
+        # Frames at 180 a second fall part way through each tick.
+        for share in [0.3, 0.8] {
+            drawn = was + (z - was) * share;
+            assert abs(view.climb(drawn, True, 1.0 / 180.0, share)) < 0.00001;
+        }
+    }
+    # A step off the top still eases.
+    view.tick(body, False, 1.0 / 120.0);
+    assert abs(view.climb(z + 16.0, True, 0.0, 1.0) - 12.0) < 0.00001;
+}
+
+test "Q2 and Q3 ease the eye down a crouch and up a stand over 100 ms" {
+    body = Player();
+    view = ViewFeedback();
+    view.reset("q3");
+    dt = 1.0 / 120.0;
+    view.tick(body, False, dt);
+    # The body's eye drops 14 units in the tick; the view starts where it was.
+    view.duck(-14.0);
+    placed = view.place(body, Vec3(z=86.0), True, 0.0, 0.0, 1.0, 0.0, 12.0);
+    assert abs(placed.eye.z - 100.0) < 0.00001;
+    # Between that tick's start (eye at 100) and end the eye stays at 100.
+    halfway = view.place(body, Vec3(z=93.0), True, 0.0, 0.0, 0.5, 0.0, 12.0);
+    assert abs(halfway.eye.z - 100.0) < 0.00001;
+    for tick in range(6) {
+        view.tick(body, False, dt);
+    }
+    eased = view.place(body, Vec3(z=86.0), True, 0.0, 0.0, 1.0, 0.0, 12.0);
+    assert abs(eased.eye.z - (86.0 + 14.0 * (0.1 - 6.0 * dt) / 0.1)) < 0.0001;
+    q1 = ViewFeedback();
+    q1.reset("q1");
+    q1.duck(-14.0);
+    assert q1.duck_offset() == 0.0;
 }

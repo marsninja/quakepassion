@@ -1,13 +1,18 @@
-"""PK3 archive precedence and static representatives of Q3 shader materials.
-
-The viewer uses one image per material. Animated stages, blend stages, vertex
-animation, fog, and skyboxes require the later material renderer.
+"""Q3's PK3 archives in precedence order, and the shader scripts in them: the
+stages, deforms, fog, portal ranges and sky parts the world and model
+renderers draw each material with.
 """
 import os;
 import from zipfile { ZipFile }
 import from ..formats.bsp { Texture }
 import from .materials { ModelMaterial, model_materials, material_name }
 import from ..formats.animated { ModelStage, Deform }
+
+# The stage features beyond a plain map that models draw (render/models.jac):
+# rgbGen and alphaGen waves and constants, and clamped maps.
+glob MODEL_STAGE_FEATURES: list[str] = [
+    "rgbgen wave", "rgbgen const", "alphagen wave", "alphagen const", "clampmap"
+];
 
 obj Pk3Assets {
     has archives: list[ZipFile] = [],
@@ -216,9 +221,9 @@ obj Pk3Assets {
         }
     }
 
-    """A model shader's stages. `deformed` accepts shaders whose vertex
-    deforms the caller applies itself (Q3's powerup shells); their texture
-    rotation and turbulence are dropped, keeping the scroll."""
+    """A model shader's stages, with their tcMods. `deformed` accepts
+    shaders whose vertex deforms the caller applies itself (Q3's powerup
+    shells)."""
     def model_stages(name: str, deformed: bool = False) -> list[ModelStage] {
         key = material_name(name);
         if key not in self.model_shaders {
@@ -229,9 +234,12 @@ obj Pk3Assets {
             print("Partial model material:", name, material.unsupported);
             return [];
         }
-        # Surface-only stage features keep models on their plain skin.
-        if material.advanced and not (deformed and all([feature.startswith("deformvertexes") or feature.startswith("tcmod") for feature in material.advanced])) {
-            return [];
+        # Surface-only stage features keep models on their plain skin; the
+        # model renderer draws waved and constant colours and clamped maps.
+        for feature in material.advanced {
+            if feature not in MODEL_STAGE_FEATURES and not (deformed and feature.startswith("deformvertexes")) {
+                return [];
+            }
         }
         result: list[ModelStage] = [];
         for stage in material.stages {
@@ -247,8 +255,14 @@ obj Pk3Assets {
                     frequency=stage.frequency,
                     environment=stage.environment,
                     blend=stage.blend,
-                    scroll_u=stage.scroll_u,
-                    scroll_v=stage.scroll_v
+                    rgb=stage.rgb,
+                    rgb_wave=stage.rgb_wave,
+                    rgb_const=stage.rgb_const,
+                    alpha=stage.alpha,
+                    alpha_wave=stage.alpha_wave,
+                    alpha_const=stage.alpha_const,
+                    mods=stage.mods,
+                    clamp=stage.clamp
                 )
             );
         }

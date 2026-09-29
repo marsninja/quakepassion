@@ -13,7 +13,7 @@ import from engine.world.combat {
     select_weapon
 }
 import from engine.world.inventory { AdjustInventory }
-import from engine.physics.movement { MovePlayer }
+import from engine.physics.movement { MovePlayer, movement_profile }
 import from games.weapons { equip_player }
 import from engine.math.vec3 { Vec3 }
 
@@ -57,7 +57,7 @@ with entry {
         }
         tick = 1.0 / 120.0;
         for settle in range(240) {
-            player spawn MovePlayer(collision=level.collision, game=game, dt=tick);
+            player spawn MovePlayer(collision=level.collision, profile=movement_profile(game), dt=tick);
         }
         assert player.grounded;
         start = player.pos.z;
@@ -65,7 +65,7 @@ with entry {
         apex = 0.0;
         for step in range(240) {
             player spawn MovePlayer(
-                collision=level.collision, jump=step == 0, game=game, dt=tick
+                collision=level.collision, jump=step == 0, profile=movement_profile(game), dt=tick
             );
             weapon_input(world, player, level.collision, state, step == 0, tick);
             world spawn ProjectileTick(

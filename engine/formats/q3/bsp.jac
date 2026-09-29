@@ -50,6 +50,10 @@ def tessellate(
         or steps > 32 {
         raise ValueError("Invalid quadratic patch grid");
     }
+    # The control grid itself is what collision subdivides.
+    face.patch_width = width;
+    face.patch_height = height;
+    face.patch_points = [c.pos for c in controls];
     for py in range(0, height - 2, 2) {
         for px in range(0, width - 2, 2) {
             base = len(face.vertices);

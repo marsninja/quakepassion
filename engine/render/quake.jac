@@ -59,6 +59,8 @@ import from ..world.portals { surface_plane }
 import from ..formats.bsp { Face, Texture, FogVolume }
 import from ..formats.animated { ModelStage, Deform, TexMod, stage_frame }
 import from ..math.vec3 { Vec3 }
+import from ..math.orientation { Basis }
+import from ..math.interpolation { TickBlend }
 import from ..world.lighting { Lighting, shift_light }
 import from .gpu {
     GpuMesh,
@@ -171,6 +173,8 @@ obj QuakeRenderer {
         time: float = 0.0,
         fog_image: int = 0,
         view_forward: Vec3 = Vec3(x=1.0),
+        # Where between the last two physics ticks this frame falls.
+        blend: TickBlend = TickBlend(),
         cloud_offsets: list[Vec3] = [],
         cloud_points: list[Vec3] = [],
         cloud_coords: list[float] = [],
@@ -245,10 +249,14 @@ obj QuakeRenderer {
         return int(gpu.id);
     }
 
-    def draw_sky(eye: Vec3) {
+    """The six-sided sky box around the eye (gl_warp.c R_DrawSkyBox), turned
+    `angle` degrees about `axis` when the level rotates its sky (Q2
+    skyrotate: glRotatef by time times the rate)."""
+    def draw_sky(eye: Vec3, angle: float = 0.0, axis: Vec3 = Vec3()) {
         if len(self.sky) != 6 {
             return;
         }
+        spin = axis.length() > 0.0 and angle != 0.0;
         axes = [
             [3, -1, 2],
             [-3, 1, 2],
@@ -269,14 +277,18 @@ obj QuakeRenderer {
                 t = -1.0 if corner == 0 or corner == 3 else 1.0;
                 base = [s * 512.0, t * 512.0, 512.0];
                 coords: list[float] = [];
-                for axis in axes[side] {
-                    coords.append(base[abs(axis) - 1] * (-1.0 if axis < 0 else 1.0));
+                for component in axes[side] {
+                    coords.append(base[abs(component) - 1] * (-1.0 if component < 0 else 1.0));
+                }
+                point = Vec3(x=coords[0], y=coords[1], z=coords[2]);
+                if spin {
+                    point = sky_turn(point, axis, angle);
                 }
                 rlTexCoord2f(f32((s + 1.0) * 0.5), f32((1.0 - t) * 0.5));
                 rlVertex3f(
-                    f32(eye.x + coords[0]),
-                    f32(eye.y + coords[1]),
-                    f32(eye.z + coords[2])
+                    f32(eye.x + point.x),
+                    f32(eye.y + point.y),
+                    f32(eye.z + point.z)
                 );
             }
             rlEnd();
@@ -752,20 +764,23 @@ obj QuakeRenderer {
             self.brush_signature = signature;
             self.group_brushes(level);
         }
-        # Placements (and per-frame light) follow each group's lead face.
+        # Placements (and per-frame light) follow each group's lead face,
+        # drawn between where the last two physics ticks left it.
         self.brush_matrices = [];
         for group in self.brush_groups {
             lead = faces[group.lead];
-            self.brush_matrices.append(placement_matrix(lead));
+            placed = group.placed(lead, self.blend);
+            motion = placed.motion;
+            turn = placed.turn;
+            self.brush_matrices.append(placed_matrix(lead.pivot, motion, turn));
             if group.lamp {
                 center = lead.vertices[0].lerp(lead.vertices[2], 0.5);
                 facing = lead.normal;
-                turn = lead.turn;
                 if turn is not None {
                     center = lead.pivot.add(turn.apply(center.sub(lead.pivot)));
                     facing = turn.apply(facing);
                 }
-                color = self.lighting.sample(center.add(lead.motion), False).shade(facing);
+                color = self.lighting.sample(center.add(motion), False).shade(facing);
                 group.tint = [
                     float(int(min(255.0, max(0.0, color.x * 255.0)))) / 255.0,
                     float(int(min(255.0, max(0.0, color.y * 255.0)))) / 255.0,
@@ -774,6 +789,15 @@ obj QuakeRenderer {
                 ];
                 group.tint_packed = pack_floats(group.tint);
             }
+        }
+    }
+
+    """A physics tick begins: keep each brush group's placement, which the
+    frames until the next tick blend from."""
+    def hold_placements(level: Level, tick: int) {
+        faces = level.bsp.faces;
+        for group in self.brush_groups {
+            group.hold(faces[group.lead], tick);
         }
     }
 
@@ -1388,15 +1412,18 @@ obj QuakeRenderer {
         return batch.id in view.lists.spans or batch.id in self.brush_batches;
     }
 
-    """The eight dynamic lights as the lit and base shaders read them."""
+    """The eight dynamic lights as the lit and base shaders read them: where,
+    how far and what colour, and the light below which a Q1/Q2 surface takes
+    none of it (Q1 dl->minlight, Q2 DLIGHT_CUTOFF 64)."""
     def set_dynamic_lights(program: GpuProgram, level: Level) {
         positions: list[float] = [];
         colors: list[float] = [];
+        cutoff = level.bsp.game == "q2";
         for i in range(8) {
             if i < len(level.lighting.dynamic) {
                 flash = level.lighting.dynamic[i];
                 positions.extend([flash.origin.x, flash.origin.y, flash.origin.z, flash.radius]);
-                colors.extend([flash.color.x, flash.color.y, flash.color.z, 0.0]);
+                colors.extend([flash.color.x, flash.color.y, flash.color.z, 64.0 if cutoff else flash.minlight]);
             } else {
                 positions.extend([0.0, 0.0, 0.0, 0.0]);
                 colors.extend([0.0, 0.0, 0.0, 0.0]);
@@ -1408,7 +1435,7 @@ obj QuakeRenderer {
 
     def draw(level: Level, faces: list[int], eye: Vec3) -> int {
         self.lighting = level.lighting;
-        self.draw_sky(eye);
+        self.draw_sky(eye, level.sky_rotate * self.time, level.sky_axis);
         self.draw_clouds(level, eye);
         if not self.chunks {
             return 0;
@@ -2027,6 +2054,15 @@ obj QuakeRenderer {
     }
 }
 
+"""glRotatef's turn of `point` by `degrees` counter-clockwise about `axis`
+(Rodrigues' formula), as R_DrawSkyBox turns a rotating sky."""
+def sky_turn(point: Vec3, axis: Vec3, degrees: float) -> Vec3 {
+    k = axis.normalized();
+    c = math.cos(math.radians(degrees));
+    n = math.sin(math.radians(degrees));
+    return point.scale(c).add(k.cross(point).scale(n)).add(k.scale(k.dot(point) * (1.0 - c)));
+}
+
 """The vertex attributes of a world chunk (world_mesh WORLD_VERTEX_FORMAT) at
 the shaders' fixed locations."""
 def world_attributes() -> list[VertexAttribute] {
@@ -2064,18 +2100,16 @@ def moved_face(face: Face) -> bool {
     return face.turn is not None or face.motion.x != 0.0 or face.motion.y != 0.0 or face.motion.z != 0.0;
 }
 
-"""A brush face's placement as a model matrix: turned about its pivot (the
-entity origin), then moved: pivot + turn(v - pivot) + motion."""
-def placement_matrix(face: Face) -> Matrix {
-    turn = face.turn;
+"""A brush face's placement as a model matrix: turned by `turn` about its
+pivot `p` (the entity origin), then moved: p + turn(v - p) + motion."""
+def placed_matrix(p: Vec3, motion: Vec3, turn: Basis | None) -> Matrix {
     if turn is None {
-        return placement_matrix_at(face.motion);
+        return placement_matrix_at(motion);
     }
-    p = face.pivot;
     turned = turn.apply(p);
-    x = p.x - turned.x + face.motion.x;
-    y = p.y - turned.y + face.motion.y;
-    z = p.z - turned.z + face.motion.z;
+    x = p.x - turned.x + motion.x;
+    y = p.y - turned.y + motion.y;
+    z = p.z - turned.z + motion.z;
     f = turn.forward;
     l = turn.left;
     u = turn.up;
@@ -2099,8 +2133,9 @@ def placement_matrix_at(offset: Vec3) -> Matrix {
 
 """A stage's rgbGen and alphaGen colour at time `seconds` (identity, wave or
 const; vertex and the per-vertex alphas come from the shader), quantized to
-bytes as the vertex colours were, packed as a vec4."""
-def stage_tint(stage: ModelStage, seconds: float) -> bytes {
+bytes as the vertex colours were (tr_shade_calc.c RB_CalcWaveColor and
+RB_CalcWaveAlpha clamp the wave to 0..1), as red, green, blue and alpha."""
+def stage_color(stage: ModelStage, seconds: float) -> list[float] {
     red = 1.0;
     green = 1.0;
     blue = 1.0;
@@ -2120,7 +2155,12 @@ def stage_tint(stage: ModelStage, seconds: float) -> bytes {
     } elif stage.alpha == "const" {
         alpha = float(int(max(0.0, min(1.0, stage.alpha_const)) * 255.0)) / 255.0;
     }
-    return pack_floats([red, green, blue, alpha]);
+    return [red, green, blue, alpha];
+}
+
+"""stage_color packed as a vec4."""
+def stage_tint(stage: ModelStage, seconds: float) -> bytes {
+    return pack_floats(stage_color(stage, seconds));
 }
 
 """A stage's tcmod_steps packed for the stage shader: the s rows, the t rows

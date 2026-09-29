@@ -5,11 +5,26 @@ import from .weapons { weapon_rules }
 def view_weapons(game: str) -> list[ViewWeaponRule] {
     result: list[ViewWeaponRule] = [];
     if game == "q1" {
+        # player.qc's weaponframes: the axe swings through 1-4 (player_axe,
+        # player_axec) or 5-8 (player_axeb, player_axed), W_Attack choosing
+        # one of the four at random; the shotguns (player_shot) and the
+        # launchers (player_rocket) run 1-6; the nailguns (player_nail) cycle
+        # 1-8 and the thunderbolt (player_light) 1-4 while the trigger holds,
+        # player_run putting the weapon back to frame 0 once it is let go.
         names = ["axe", "shot", "shot2", "nail", "nail2", "rock", "rock2", "light"];
+        lasts = [4, 6, 6, 8, 8, 6, 6, 4];
         for i in range(len(names)) {
+            looping = names[i] in ["nail", "nail2", "light"];
             result.append(
                 ViewWeaponRule(
-                    slot=i + 1, model="progs/v_" + names[i] + ".mdl", fire_first=1
+                    slot=i + 1,
+                    model="progs/v_" + names[i] + ".mdl",
+                    fire_first=1,
+                    fire_last=lasts[i],
+                    loop_first=1 if looping else -1,
+                    loop_last=lasts[i] if looping else -1,
+                    release_idle=looping,
+                    swings=[0, 4, 0, 4] if names[i] == "axe" else []
                 )
             );
         }
@@ -43,23 +58,66 @@ def view_weapons(game: str) -> list[ViewWeaponRule] {
             (8, 32, 55, 58),
             (0, 15, 48, 48)
         ];
+        # Each weapon's pause_frames; one on FRAME_IDLE_LAST never holds, as
+        # Weapon_Generic wraps to FRAME_IDLE_FIRST first. Weapon_Grenade
+        # pauses on 48 before wrapping.
+        pauses = [
+            [19, 32],
+            [22, 28, 34],
+            [29, 42],
+            [23],
+            [38, 43, 51],
+            [34, 51],
+            [25, 33, 42],
+            [],
+            [],
+            [39, 45, 50],
+            [29, 34, 39, 48]
+        ];
         for i in range(len(names)) {
             limits = ranges[i];
             switching = limits[3] > limits[2];
-            result.append(
-                ViewWeaponRule(
-                    slot=i + 1,
-                    model="models/weapons/v_" + names[i] + "/tris.md2",
-                    fire_first=limits[0] + 1,
-                    fire_last=limits[1],
-                    idle_first=limits[1] + 1,
-                    idle_last=limits[2],
-                    lower_first=limits[2] + 1 if switching else -1,
-                    lower_last=limits[3] if switching else -1,
-                    raise_first=0 if switching else -1,
-                    raise_last=limits[0] if switching else -1
-                )
+            rule = ViewWeaponRule(
+                slot=i + 1,
+                model="models/weapons/v_" + names[i] + "/tris.md2",
+                # A shot shows FRAME_FIRE_FIRST + 1: the fire function steps
+                # past the frame it fired on.
+                fire_first=limits[0] + 2,
+                fire_last=limits[1],
+                idle_first=limits[1] + 1,
+                idle_last=limits[2],
+                pause_frames=pauses[i],
+                blend_frames=True,
+                lower_first=limits[2] + 1 if switching else -1,
+                lower_last=limits[3] if switching else -1,
+                raise_first=0 if switching else -1,
+                raise_last=limits[0] if switching else -1
             );
+            # The fire functions' kick_origin: Blaster_Fire, the shotguns and
+            # launchers push back 2 units, the railgun 3; the machinegun and
+            # chaingun shake 0.35 units and 0.7 degrees (the machinegun's
+            # pitch is its climb, the weapon punch).
+            rule.kick_back = 3.0 if names[i] == "rail" else (0.0 if names[i] in ["machn", "chain", "handgr"] else 2.0);
+            if names[i] == "machn" {
+                # Machinegun_Fire alternates 4 and 5 while the trigger holds.
+                rule.loop_first = 4;
+                rule.loop_last = 5;
+                rule.kick_shake = 0.35;
+                rule.kick_twist = [0.0, 0.7, 0.7];
+            } elif names[i] == "chain" {
+                # Chaingun_Fire spins up to 21, then cycles 15-21; let go, it
+                # jumps from 14 to idle or winds down through 22-31.
+                rule.loop_first = 15;
+                rule.loop_last = 21;
+                rule.release_skip = 14;
+                rule.kick_shake = 0.35;
+                rule.kick_twist = [0.7, 0.7, 0.7];
+            } elif names[i] == "hyperb" {
+                # Weapon_HyperBlaster_Fire goes back from 12 to 6.
+                rule.loop_first = 6;
+                rule.loop_last = 11;
+            }
+            result.append(rule);
         }
     } elif game == "q3" {
         for weapon in weapon_rules(game) {
@@ -79,7 +137,8 @@ def view_weapons(game: str) -> list[ViewWeaponRule] {
                     lower_last=10,
                     raise_first=11,
                     raise_last=14,
-                    switch_rate=20.0
+                    switch_rate=20.0,
+                    blend_frames=True
                 )
             );
         }

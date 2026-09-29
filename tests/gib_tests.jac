@@ -2,7 +2,7 @@ import from games.enemies { enemy_rule }
 import from games.gibs { gib_rule }
 import from engine.world.world { World, Area, move_to_area }
 import from engine.world.combat { Opponent, HasOpponent, Aim, CombatState, damage_opponent, fire_weapon, blast_actors }
-import from engine.world.body_queue { Corpse, HasCorpse, leave_corpse, damage_corpse }
+import from engine.world.body_queue { Corpse, HasCorpse, NoDropSpace, HasNoDrop, leave_corpse, damage_corpse, in_no_drop }
 import from engine.world.models { PlayerRig }
 import from engine.world.speakers { Speaker }
 import from engine.world.world { Player }
@@ -11,6 +11,7 @@ import from engine.world.gibs { Gib, HasGib, GibsInto, GibTick, throw_gibs }
 import from engine.world.models { ModelResource, GatherModels }
 import from engine.formats.animated { AnimatedModel }
 import from engine.physics.collision { CollisionMap }
+import from engine.physics.movement { MovePlayer }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
 
@@ -149,4 +150,30 @@ test "Q3 bodies left behind soak shots and splash until they gib" {
     assert blasted is not None and blasted.remains <= -40 and blasted not in [world->:HasCorpse:->][?:Corpse];
     # The body that was already past GIB_HEALTH is still lying there.
     assert [world->:HasCorpse:->][?:Corpse] == [spent];
+}
+
+test "no body is left in a nodrop void, and bodies do not block movement" {
+    world = World();
+    area = Area(name="0", bounds=AABB(mins=Vec3(), maxs=Vec3()));
+    world ++> area;
+    # CONTENTS_NODROP below z=-500 (as the void around q3dm17).
+    void = NoDropSpace();
+    void.volume.add_box(Vec3(x=-5000.0, y=-5000.0, z=-9000.0), Vec3(x=5000.0, y=5000.0, z=-500.0), Vec3(), Vec3(), Vec3());
+    void.volume.reindex();
+    world +>:HasNoDrop:+> void;
+    bot = Opponent(arena=True, game="q3", kind="arena_bot", pos=Vec3(z=-700.0), eye_height=26.0, health=0);
+    move_to_area(bot, area);
+    assert in_no_drop(world, Vec3(z=-726.0)) and not in_no_drop(world, Vec3());
+    assert leave_corpse(world, bot, PlayerRig(alive=False), -10, None, None, 26.0) is None;
+    bot.pos = Vec3(z=26.0);
+    body = leave_corpse(world, bot, PlayerRig(alive=False), -10, None, None, 26.0);
+    assert body is not None;
+    # CONTENTS_CORPSE is not in MASK_PLAYERSOLID: a player walks through.
+    runner = Player(pos=Vec3(x=-100.0, z=26.0), health=100);
+    collision = CollisionMap(eye_height=26.0);
+    runner.velocity = Vec3(x=320.0);
+    for tick in range(60) {
+        runner spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), dt=1.0 / 120.0);
+    }
+    assert runner.pos.x > 50.0;
 }

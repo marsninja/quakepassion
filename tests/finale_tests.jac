@@ -117,7 +117,7 @@ test "teleport train position survives a save" {
     assert train.destination is not None and train.destination.entity == 2;
 }
 
-test "episode exits carry their closing texts and cinematic exits are skipped" {
+test "episode exits carry their closing texts and name their cinematics" {
     assert episode_text("q1", "e1m7", "start");
     assert episode_text("q1", "e2m6", "start");
     assert episode_text("q1", "e3m6", "start");
@@ -126,8 +126,10 @@ test "episode exits carry their closing texts and cinematic exits are skipped" {
     assert not episode_text("q2", "e1m7", "start");
     assert exit_map("eou1_.cin+*bunk1$start") == "bunk1";
     assert exit_spawn("eou1_.cin+*bunk1$start") == "start";
-    assert exit_cinematic("eou1_.cin+*bunk1$start") == "eou1_";
+    assert exit_cinematic("eou1_.cin+*bunk1$start") == "eou1_.cin";
     assert exit_map("end.cin+victory.pcx") == "victory.pcx";
+    assert exit_cinematic("end.cin+victory.pcx") == "end.cin";
+    assert exit_cinematic("*ntro.cin+base1") == "ntro.cin";
     assert exit_cinematic("base2$base1") == "";
     assert exit_map("*bunk1") == "bunk1";
     failed = False;

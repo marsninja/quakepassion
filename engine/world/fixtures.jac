@@ -6,7 +6,10 @@ import from .signals { Signal, HasSignal }
 import from ..formats.bsp { Bsp }
 
 edge HasFixture: World --> Fixture {}
+"""A decorative model. `effect` is an entity effect it shows (Q2
+EF_TELEPORTER: "teleporter")."""
 node Fixture(Entity) {
+    has effect: str = "";
     has visual: Visual = Visual(),
         frames: list[int] = [],
         rate: float = 10.0,

@@ -1,19 +1,24 @@
 # Monster behaviour
 
-Campaign monsters now follow the originals' rules for noticing the player,
+Campaign monsters follow the originals' rules for noticing the player,
 difficulty, idle patrols, fighting each other and dying messily. All of this runs
 on the world graph. Monsters link to their path corners, combat points and gib
-models through edges. Walkers drive patrols, gib flight and combat.
+models through edges. Walkers drive patrols, gib flight and combat. The
+per-game rosters are in [q1-roster-status.md](q1-roster-status.md) and
+[q2-roster-status.md](q2-roster-status.md).
 
 ## Skill
 
-- The menu's **Skill (next level)** row selects Easy, Normal, Hard or Nightmare.
-  The choice is saved in the preferences and applies from the next level load.
+- The menu's **Skill (next level)** row cycles five settings: Easy, Normal,
+  Hard, Nightmare, and Q3's fifth, Nightmare!, which Q1 and Q2 play as
+  Nightmare (choosing it on a Q3 map plays `sound/misc/nightmare.wav`, as
+  `ui_spskill.c` does). The row also shows the Q3 name of each setting. The
+  choice is saved in the preferences and applies from the next level load.
   `trigger_setskill` changes it too, as Q1's start map does.
 - Spawn filtering drops entities flagged "not in easy/normal/hard" (spawnflags
   256/512/1024) for the current skill.
-- Q1 Nightmare removes the wait after an attack, and pain animations can replay
-  no sooner than every 5 s. Q2 Easy halves the attack chances below, and Hard or
+- Q1 Nightmare removes the wait after an attack (two waits it keeps are
+  under Limits), and pain animations can replay no sooner than every 5 s. Q2 Easy halves the attack chances below, and Hard or
   above doubles them. On Nightmare, Q2 monsters cry out but skip pain animations.
 - Saves record the skill; loading a save made at another skill is refused.
 
@@ -36,9 +41,9 @@ models through edges. Walkers drive patrols, gib flight and combat.
 
 ## Fighting on the move
 
-Monsters no longer attack the moment they are able to. Each 10 Hz decision rolls
-the originals' attack chance, and a monster that holds its fire keeps running at
-its target, so fights are spent moving between attacks.
+Each 10 Hz decision rolls the originals' attack chance, and a monster that
+holds its fire keeps running at its target, so fights are spent moving between
+attacks.
 
 - Chances by range (Q1 `CheckAttack`, Q2 `M_CheckAttack`):
 
@@ -54,7 +59,9 @@ its target, so fights are spent moving between attacks.
 - Melee reach always attacks (Q2 Easy: one time in four).
 - After a ranged attack a monster waits a random 0–2 s before the next
   (`SUB_AttackFinished`, `attack_finished`). Soldiers wait 1–2 s, ogres 1–3 s,
-  shamblers 2–4 s, the Scrag and hell knight at least 2 s.
+  shamblers 2–4 s and the Scrag exactly 2 s. A Hell Knight's charge holds off
+  its next attack until 2 s after the charge began (`SUB_AttackFinished(2)`);
+  its spike volley takes the ordinary 0–2 s wait.
 - A newly woken Q1 monster waits one second before first firing (`HuntTarget`).
 - Ranged attacks wait for a clear shot. Another monster in the way holds fire.
 - Fliers and the Scrag slide sideways about a third of the times they hold fire
@@ -62,14 +69,33 @@ its target, so fights are spent moving between attacks.
   its target instead of standing still, and turns back when blocked.
 - The Q1 dog leaps between 100 and 150 units (`CheckDogJump`).
 - `scripts/engagement_probe.jac` fights 25 monsters on e1m1, e1m2, e2m1, base1 and
-  base2 for 10 s each against a standing player:
+  base2 for 10 s each against a standing player. On 2026-09-24, before
+  monsters held attacks until facing their enemy (below), they spent 51% of
+  the fight moving and attacked 4.4 times per 10 s.
 
-  | | Share of fight spent moving | Attacks per 10 s |
-  | --- | --- | --- |
-  | Before | 6% | 6.8 |
-  | Now | 51% | 4.4 |
+## Turning and walking
 
-  Before, most monsters never moved at all.
+- A monster turns toward where it is going, or toward its target, by its own
+  `yaw_speed` each 0.1 s frame, the short way round (Q1 `ChangeYaw`, Q2
+  `M_ChangeYaw`, through the shared `change_yaw`). The speed is data on each
+  rule: 20 degrees for walking monsters (`walkmonster_start`), 10 for fliers
+  and swimmers (`flymonster_start`, `swimmonster_start`) and 20 for Chthon
+  (`boss_awake`). Like the strides, each frame's turn is spread over its
+  ticks.
+- A monster whose check chooses an attack state holds the attack it picked
+  and turns in place on its run frames until it faces its enemy within 45
+  degrees, then launches it (`ai_run_missile`, `ai_run_melee`,
+  `FacingIdeal`). That is every Q2 monster (`M_CheckAttack` and the bosses'
+  own checks) and Q1's ogre, shambler, fiend, dog and Scrag. Q1's plain
+  `CheckAttack` and `SoldierCheckAttack` launch at once, and their attack
+  frames turn them as they go (`ai_face`); the marksman ogre keeps its own
+  classname and takes the plain check. A held attack outlives a change of
+  enemy and waits out pain.
+- Q2 soldiers set off walking on `walk1` or `walk2`, half the time each
+  (`soldier_walk`). `walk1` goes back from walk110 to walk101 nine times in
+  ten; otherwise the soldier stands through walk111-133
+  (`soldier_walk1_random`). A `Gait` can branch this way, and a rule can list
+  other walks to choose among.
 
 ## Waking and hunting
 
@@ -80,10 +106,9 @@ its target, so fights are spent moving between attacks.
   the player's current position (`movetogoal`), so it follows the player through
   the level. Q2 monsters follow the player trail (below).
 - Unalerted monsters mutter their idle sound every 15–30 s.
-- Common monsters that were silent now have their sight, pain, death, idle and
-  weapon sounds: Q1 soldier, dog, knight, enforcer, ogre and hell knight; Q2
-  soldiers, infantry, berserker, gladiator, iron maiden and medic. Burst fire
-  sounds on every shot.
+- Monsters play the sight, pain, death, idle and weapon sounds their
+  originals have (`scripts/roster_smoke.jac` checks each against the
+  archives). Burst fire sounds on every shot.
 
 ## Medics, power screens and drops
 
@@ -120,14 +145,13 @@ its target, so fights are spent moving between attacks.
     corner facing it, as `CM_BoxTrace` does. The broad phase widens every
     stored bound by the same difference. No extra hulls are built.
   - Q1 maps load clip hull 2 next to hull 1; a monster wider than 32 units
-    (shambler, ogre, fiend, vore, dog) traces it (`SV_HullForEntity`).
+    (shambler, ogre, fiend, vore, dog, Chthon and Shub-Niggurath) traces it
+    (`SV_HullForEntity`, `CollisionMap.fit_body`).
   - The monster's origin is its real origin. Q2 bosses whose mins z is 0
     (supertank, Jorg, Makron, Hornet, the chick, flipper) stand with their
-    feet at it. Before, the player's box put the supertank, Jorg and several
-    tanks inside the floor, so they never moved, and the chick floated 24
-    units up.
-  - The ogre, dog, gladiator, flipper and Q2 barrel boxes now match their
-    `setsize`/`VectorSet` values.
+    feet at it.
+  - Boxes follow each monster's `setsize`/`VectorSet` values, including the
+    ogre, dog, gladiator, flipper and Q2 barrel.
   - Monsters on another game's maps (Passion) keep the player's box; their
     model is lowered so a Q2 model with mins z 0 stands on the floor.
   - Navigation caches connections per body box.
@@ -135,8 +159,9 @@ its target, so fights are spent moving between attacks.
 ## Patrols and combat points
 
 - A monster whose `target` names a `path_corner` walks the corner chain while
-  idle. It uses the original walk cycle (Q1 `walk`/`prowl_`, Q2 `walk1`) at
-  walk-cycle speed, summed from each monster's `ai_walk` distances.
+  idle. It uses the original walk cycle (Q1 `walk`/`prowl_`, Q2 `walk1`; Q2
+  soldiers choose `walk1` or `walk2`, above) and each frame strides that
+  frame's own `ai_walk` distance (`gait_speed`), as the run cycle does.
 - Corners are reached by the original box touch.
 - Q2 corners fire their `pathtarget` and pause for their `wait`.
 - A Q2 monster with a `combattarget` runs its `point_combat` chain once alerted,
@@ -148,8 +173,12 @@ its target, so fights are spent moving between attacks.
 
 ## Infighting
 
-- Monster hitscan, beams, missiles and splash damage now hit whatever is in the
+- Monster hitscan, beams, missiles and splash damage hit whatever is in the
   way, including other monsters. Only the shooter itself is ever skipped.
+- A monster's missile carries its `owner` through flight and saves (as an
+  opponent index), so a direct hit or its splash is credited to the monster
+  that fired it: a monster it hurts turns on that monster, and a player it
+  kills records it as the killer (Q3 match scoring and obituaries).
 - A monster hurt by another monster turns on it by the original rules:
   - Q1 `T_Damage`: any other class, and soldiers even at their own kind.
   - Q2 `M_ReactToDamage`: another class with the same walk, fly or swim
@@ -176,7 +205,7 @@ its target, so fights are spent moving between attacks.
   - Q1 `VelocityForDamage` and bounce clipping.
   - Q2 toss, `ClipGibVelocity` and the victim's momentum.
   - Q3 0.6 reflection.
-  - Q1/Q2 gibs tumble in all three axes; visuals now carry pitch and roll.
+  - Q1/Q2 gibs tumble in all three axes, drawn with their pitch and roll.
 - Q1 heads stay where they land. Other pieces fade after 10–20 s (Q3: 5–8 s).
 - Q2 and Q3 corpses remain shootable with a lowered box and keep taking damage
   until they gib. Q1 monster corpses take no damage, as in the original.
@@ -225,6 +254,9 @@ rocket shot.
   - `tests/patrol_tests.jac`: corner loops, Q2 waits and pathtargets, combat
     points, saves.
   - `tests/combat_tests.jac`: awareness and skill.
+  - `tests/monster_gait_tests.jac`: per-frame strides, yaw speeds, the
+    soldier's two walks, and turning to face before attacking (Q2, and Q1's
+    ogre check against the plain `CheckAttack`).
   - `tests/trail_tests.jac`: crumb laying and following.
   - `tests/dodge_tests.jac`: duck timing and box, facing checks, soldier
     crouch-fire by skill.
@@ -232,10 +264,10 @@ rocket shot.
     stopped by an 80-unit gap a player-sized box passes, and Q1 hull 2 for
     wide monsters.
 - `scripts/monster_hull_smoke.jac` loads power1 (supertank), boss2 (Jorg),
-  jail2 (tank) and e1m5 (shambler). Each starts clear of the floor and settles
+  jail2 (tank) and e1m5 (shambler). On 2026-09-25 each started clear of the floor and settled
   with its feet on it (within 0.04 units). The supertank, walked toward an
-  opening a player-sized box crosses, stops after 31 units while a player box
-  could go 574 further; Jorg stops with 215 to spare. Screenshots are saved in
+  opening a player-sized box crosses, stopped after 31 units while a player box
+  could go 574 further; Jorg stopped with 215 to spare. Screenshots are saved in
   `.jac/screenshots/hulls/`.
 - `scripts/monsters_smoke.jac` runs on `e1m1`, `e1m2`, `base1` and `q3dm1`. It
   gibs a monster and renders the flying pieces, walks every patroller along its
@@ -243,8 +275,9 @@ rocket shot.
 
 ## Limits
 
-- Mover pushes, platform riding and door blocking still test monsters with the
-  player's box.
-
+- A held attack is not saved; a monster loaded mid-turn decides afresh.
+- On Q1 Nightmare the second a newly woken monster waits before firing
+  (`HuntTarget`) and a Hell Knight charge's 2 s still apply;
+  `SUB_AttackFinished` skips both on skill 3.
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.

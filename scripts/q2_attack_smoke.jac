@@ -34,7 +34,8 @@ with entry {
             for name in rule.attack_frames
                 + rule.melee_frames
                 + rule.alternate_melee_frames
-                + rule.run_frames
+                + rule.run.frames
+                + rule.walk.frames
                 + rule.pain_frames {
                 assert name in names , kind + ":" + name;
             }

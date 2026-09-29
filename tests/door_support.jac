@@ -1,19 +1,28 @@
 import from engine.world.doors { load_doors, DoorTick }
-import from engine.world.world { World }
+import from engine.world.world { World, Player }
 import from engine.formats.bsp { Bsp, Face, Model, MapEntity }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 obj DoorFixture {
     has world: World = World(),
         bsp: Bsp = Bsp(),
-        collision: CollisionMap = CollisionMap();
+        collision: CollisionMap = CollisionMap(),
+        player: Player = Player();
 
     def setup(game: str = "q2", fields: dict[str, str] = {}) {
         self.bsp = Bsp(
             game=game,
             models=[
                 Model(head=0, first_face=0, face_count=0),
-                Model(head=0, first_face=0, face_count=1)
+                # qbsp stores a model's bounds a unit inside its brush, as
+                # Q1's does; loading spreads them back out.
+                Model(
+                    head=0,
+                    first_face=0,
+                    face_count=1,
+                    mins=Vec3(x=-7.0, y=-31.0, z=1.0),
+                    maxs=Vec3(x=7.0, y=31.0, z=95.0)
+                )
             ],
             faces=[
                 Face(
@@ -53,10 +62,58 @@ obj DoorFixture {
         load_doors(self.world, self.bsp, self.collision);
     }
 
+    """A tick with the fixture's player standing (its box's origin) at `origin`."""
     def tick(origin: Vec3, dt: float = 0.05) {
+        self.player.pos = origin.add(Vec3(z=self.collision.eye_height));
+        self.player.velocity = Vec3();
         self.world spawn DoorTick(
-            bsp=self.bsp, collision=self.collision, player_origin=origin, dt=dt
+            bsp=self.bsp,
+            collision=self.collision,
+            player_origin=origin,
+            dt=dt,
+            player=self.player
         );
+    }
+
+    """World floor (model 0) whose top is at `top`, for bodies to be pinned
+    against: a mover cannot push them through it."""
+    def add_floor(top: float = 0.0) {
+        self.collision.add_brush(
+            [
+                Vec3(x=1.0),
+                Vec3(x=-1.0),
+                Vec3(y=1.0),
+                Vec3(y=-1.0),
+                Vec3(z=1.0),
+                Vec3(z=-1.0)
+            ],
+            [1000.0, 1000.0, 1000.0, 1000.0, top, 64.0 - top],
+            Vec3(x=-16.0, y=-16.0, z=-24.0),
+            Vec3(x=16.0, y=16.0, z=32.0),
+            Vec3()
+        );
+        self.collision.models.append(0);
+        self.collision.reindex();
+    }
+
+    """The same, as a ceiling whose underside is at `bottom`."""
+    def add_ceiling(bottom: float) {
+        self.collision.add_brush(
+            [
+                Vec3(x=1.0),
+                Vec3(x=-1.0),
+                Vec3(y=1.0),
+                Vec3(y=-1.0),
+                Vec3(z=1.0),
+                Vec3(z=-1.0)
+            ],
+            [1000.0, 1000.0, 1000.0, 1000.0, bottom + 64.0, -bottom],
+            Vec3(x=-16.0, y=-16.0, z=-24.0),
+            Vec3(x=16.0, y=16.0, z=32.0),
+            Vec3()
+        );
+        self.collision.models.append(0);
+        self.collision.reindex();
     }
 }
 
@@ -64,7 +121,15 @@ def pair_fixture(game: str, locked: bool = False) -> DoorFixture {
     fixture = DoorFixture();
     fixture.setup(game);
     fixture.world = World();
-    fixture.bsp.models.append(Model(head=0, first_face=1, face_count=1));
+    fixture.bsp.models.append(
+        Model(
+            head=0,
+            first_face=1,
+            face_count=1,
+            mins=Vec3(x=-7.0, y=33.0, z=1.0),
+            maxs=Vec3(x=7.0, y=95.0, z=95.0)
+        )
+    );
     fixture.bsp.faces.append(
         Face(vertices=[Vec3(x=-8.0, y=32.0), Vec3(x=8.0, y=96.0, z=96.0)])
     );

@@ -22,9 +22,9 @@ with entry {
         player=Player(),
         renderer=renderer,
         clock=Clock(),
-        smoke=True,
-        overlay=False
+        smoke=True
     );
+    app.host.overlay.assign("0");
     frames = int(os.getenv("QP_FRAMES", "240"));
     specs = os.getenv(
         "QP_MAPS", "q2:base1,q2:base1,q2:base1,q2:base1,q2:base1"
@@ -42,7 +42,7 @@ with entry {
         if not app.audio.ready {
             app.audio.open(game, game_directory(game));
         }
-        app.audio.volume = 0.0;
+        app.audio.volume.assign("0");
         app.smoke = False;
         app.walking = True;
         app.player.god_mode = True;

@@ -4,7 +4,8 @@ import from engine.world.level { load_level }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick }
 import from engine.world.arena { MatchTick, SpawnPoint, HasSpawn, match_of, standings }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
+import from engine.world.wading { ImmerseBots }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.models { ModelResource, PlayerRig, Wears, Holds, WeaponKit }
 import from games.opponents { populate_opponents }
@@ -45,6 +46,7 @@ with entry {
         # Twenty simulated seconds of bots-only play must run without faults.
         for tick in range(120 * 20) {
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=1.0 / 120.0);
+            world spawn ImmerseBots(level=level, dt=1.0 / 120.0);
             world spawn CombatTick(
                 player=player,
                 collision=level.collision,
@@ -52,7 +54,7 @@ with entry {
                 dt=1.0 / 120.0,
                 arena_live=True
             );
-            world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=1.0 / 120.0);
+            world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=1.0 / 120.0, level=level);
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=1.0 / 120.0, contacts=True);
             contest spawn MatchTick(dt=1.0 / 120.0);
             if contest.finished {

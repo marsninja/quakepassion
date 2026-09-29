@@ -2,7 +2,7 @@
 import from engine.world.combat { Opponent, HasOpponent, CombatTick, CombatState, Aim }
 import from engine.world.world { World, Player }
 import from engine.physics.collision { CollisionMap }
-import from engine.physics.movement { SetStance }
+import from engine.physics.movement { SetStance, movement_profile }
 import from engine.math.vec3 { Vec3 }
 
 with entry {
@@ -26,7 +26,7 @@ with entry {
         world = World();
         world +>:HasOpponent:+> enemy;
         state = CombatState();
-        player spawn SetStance(collision=collision, game=game, crouch=True, dt=0.01);
+        player spawn SetStance(collision=collision, profile=movement_profile(game), crouch=True, dt=0.01);
         for i in range(120) {
             world spawn CombatTick(
                 player=player, collision=collision, state=state, dt=1.0 / 120.0

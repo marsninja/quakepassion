@@ -230,12 +230,12 @@ test "trap shooters launch world projectiles that hurt players and monsters" {
 }
 
 test "fixtures animate their original frames and barrels explode on death" {
-    torch = fixture_rule("q1", "light_torch_small_walltorch", 0);
+    torch = fixture_rule("q1", {"classname": "light_torch_small_walltorch"});
     assert torch is not None and torch.model == "progs/flame.mdl" and torch.group == 0;
     assert torch.sound == "sound/ambience/fire1.wav" and torch.volume == 0.5;
-    body = fixture_rule("q2", "misc_deadsoldier", 8);
+    body = fixture_rule("q2", {"classname": "misc_deadsoldier", "spawnflags": "8"});
     assert body is not None and body.frames == [3];
-    swamp = fixture_rule("q1", "ambient_swamp2", 0);
+    swamp = fixture_rule("q1", {"classname": "ambient_swamp2"});
     assert swamp is not None and swamp.sound == "sound/ambience/swamp2.wav";
     world = World();
     banner = Fixture(frames=[4, 5, 6]);
@@ -282,7 +282,7 @@ test "Q2 targets explode, quake, update the help computer and fire lasers" {
     result = world spawn TargetTick(player=player, collision=CollisionMap(), state=state, dt=0.05);
     assert player.health < 100 and player.health > 50;
     assert state.impacts and state.impacts[0].splash == 50;
-    assert result.message == "Help computer updated (F1)" and "sound/misc/pc_up.wav" in result.cues;
+    assert not result.message and "sound/misc/pc_up.wav" in result.cues;
     computers = [world->:HasHelp:->][?:HelpComputer];
     assert computers[0].primary == "Find the data CD";
     assert beam.on and quake.remaining > 0.0 and not player.grounded;

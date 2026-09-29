@@ -13,8 +13,7 @@ import from ..world.finale {
     HasFinale,
     intermission_camera,
     episode_text,
-    RUNES_TEXT,
-    VICTORY_TEXT
+    RUNES_TEXT
 }
 import from ..world.trains { TrainTick, ShootMover, BlastMover }
 import from ..world.signals { SignalTick, progress_summary, progress_for }
@@ -23,15 +22,17 @@ import from ..world.speakers { SpeakerTick }
 import from ..world.brushes { BrushTick, ShootBrush, BlastBrush }
 
 import os;
-import from games.weapons { equip_player, weapon_sounds, weapon_effects }
+import from games.weapons { equip_player, weapon_sounds, weapon_effects, missile_sounds }
 import from .campaign { Campaign, Remember, Recall, pack_campaign, unpack_campaign }
 import from .preferences { Preferences }
-import from ..audio.feedback { Feedback }
+import from ..audio.feedback { Feedback, sound_falloff, q2_client_sound }
+import from ..audio.streams { level_music }
+import from .cinematic { CinematicPlayer }
 import from .savegame { snapshot, restore, write_save, read_save }
 import from ..world.doors { DoorTick }
 import from ..world.rotators { RotatorTick }
 import from ..world.shooters { ShooterTick }
-import from ..world.targets { TargetTick, HasHelp, HelpComputer }
+import from ..world.targets { TargetTick, HasHelp, HelpComputer, carry_help }
 import from ..world.triggers { TriggerTick, ShootTrigger, MonsterJumpTick }
 import from ..world.traversal { TraversalTick, TeleportMonsters }
 import from ..world.arena_navigation {
@@ -68,6 +69,7 @@ import from ..world.powerups {
     powerup_left,
     powerup_rule,
     owned_items,
+    stored_kinds,
     item_label,
     effect
 }
@@ -93,12 +95,13 @@ import from ..world.combat {
     pickup_switch,
     selected_weapon,
     owns_weapon,
+    release_live_grenade,
     KillBox,
     ClearActors
 }
 import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
 import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
-import from ..render.view_feedback { ViewFeedback, death_view }
+import from ..render.view_feedback { ViewFeedback }
 import from ..world.light_effects { combat_lights }
 import from ..world.teardown { destroy_graph, collision_roots }
 import from games.opponents { populate_opponents, populate_finale }
@@ -107,7 +110,8 @@ import from games.fixtures { populate_fixtures }
 import from ..world.fixtures { FixtureTick }
 import from ..world.gibs { GibTick }
 import from ..world.patrols { PatrolTick }
-import from ..world.bot_tactics { BotTactics }
+import from ..world.bot_ai { BotTactics }
+import from ..world.wading { ImmerseBots }
 import from ..world.bot_character { Q3_SKILL_NAMES }
 import from ..world.lightstyles { LightStyles, HasLightStyles, LightStyleTick }
 import from ..world.clocks { ClockTick, HasClock }
@@ -131,21 +135,21 @@ import from ..render.viewweapon { ViewWeapon }
 import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
 import from ..world.models { PlayerRig, ModelResource, Wears }
-import from ..world.level { Level, load_level, spawn_player }
+import from ..world.level { Level, load_level, spawn_player, Q1_SERVER_START }
 import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
+import from ..math.interpolation { TickBlend }
+import from ..world.motion { CaptureMotion }
 import from ..physics.movement { MovePlayer, SetStance }
-import from ..input.input {
-    Intent,
-    sample_intent,
-    mouse_captured,
-    IsKeyPressed,
-    IsMouseButtonPressed,
-    _capture,
-    _release
-}
+import from ..input.input { Intent, Controls, mouse_captured, IsKeyPressed, IsMouseButtonPressed, _capture, _release }
+import from ..input.keys { Keyboard, KeyEvent, key_event_commands }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell, ResetCvars }
+import from ..console.console { Console }
+import from games.controls { binding_layer, control_actions }
+import from ..world.damage { Damage }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..render.renderer { Renderer, RenderPass }
 import from ..world.world {
@@ -160,8 +164,66 @@ import from ..world.world {
 }
 
 
-glob FLY_SPEED: float = 240.0;
 glob PITCH_LIMIT: float = 1.45;
+
+"""The commands the host runs (Host_InitCommands, CL_InitLocal, Q2/Q3
+ClientCommand's cheats): name, usage, description."""
+glob HOST_COMMANDS: list[tuple[str, str, str]] = [
+    ("map", "map <name>", "start a level of the current game"),
+    ("quit", "quit", "leave QuakePassion"),
+    ("god", "god", "toggle god mode"),
+    ("noclip", "noclip", "toggle flying through walls"),
+    ("give", "give <item> [count]", "give all, health, weapons, ammo, armor or an item"),
+    ("kill", "kill", "suicide"),
+    ("use", "use <item>", "use a weapon or item by name (Q2)"),
+    ("cmd", "cmd <command>", "run a game command (Q2's forward to the server)"),
+    ("exec", "exec <file>", "run a config file from the game's directory or archives"),
+    ("writeconfig", "writeconfig <file>", "write the settings and bindings to a file"),
+    ("save", "save [name]", "save the game (quick without a name)"),
+    ("load", "load [name]", "load a saved game"),
+    ("screenshot", "screenshot [name]", "save the screen as a PNG"),
+    ("vid_restart", "vid_restart", "apply vid_fullscreen, vid_width and vid_height"),
+    ("toggleconsole", "toggleconsole", "drop or raise the console"),
+    ("togglemenu", "togglemenu", "open or close the menu")
+];
+
+"""The cvars the game loop owns: the skill of the next level, the engine's
+god mode, fly (noclip) speed and diagnostic overlay."""
+obj HostCvars {
+    has skill: Cvar = Cvar(
+            name="skill",
+            reset_text="1",
+            kind="int",
+            low=0.0,
+            high=4.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["g_spSkill"],
+            description="0 easy to 3 nightmare (4: Q3's Nightmare!), from the next level"
+        ),
+        god: Cvar = Cvar(
+            name="qp_god",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="god mode for every level (the god command toggles it)"
+        ),
+        flyspeed: Cvar = Cvar(
+            name="qp_flyspeed",
+            reset_text="240",
+            kind="float",
+            low=60.0,
+            high=1920.0,
+            flags=CVAR_ARCHIVE,
+            description="speed flying (noclip)"
+        ),
+        overlay: Cvar = Cvar(
+            name="qp_overlay",
+            reset_text="1",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="the diagnostic overlay"
+        );
+}
 
 
 """The last frame's render cost by stage, in milliseconds."""
@@ -181,8 +243,6 @@ obj App {
         player: Player,
         renderer: Renderer,
         clock: Clock,
-        culling: bool = True,
-        overlay: bool = True,
         smoke: bool = False,
         capture_frame: int = 0,
         capture_path: str = "",
@@ -216,20 +276,18 @@ obj App {
         # at different frame rates reach the same moment in the same frame.
         fixed_dt: float = 0.0,
         walking: bool = False,
-        fly_speed: float = 240.0,
-        sensitivity: float = 0.0022,
-        invert_y: bool = False,
-        god_mode: bool = False,
         jump_pending: bool = False,
         arena_contacts: ArenaContactIndex = ArenaContactIndex(),
         physics_clock: Clock = Clock(tick_rate=1.0 / 120.0, max_ticks_per_frame=30),
+        # The last physics tick run and how far the frame is through the
+        # next: frames draw bodies between their last two ticks.
+        tick_blend: TickBlend = TickBlend(),
         movement_status: str = "F4: walk / fly",
         save_path: str = "",
         notice: str = "",
         notice_wait: float = 0.0,
         selected_item: int = 0,
         frame_dt: float = 0.0,
-        skill: int = 1,
         quad_sound_wait: float = 0.0,
         respawn_wait: float = 0.0,
         awaiting_respawn: bool = False,
@@ -253,6 +311,21 @@ obj App {
         heard_hits: int = 0,
         ammo_warning: int = 0;
 
+    # The console and its shell, the keys and their bindings, the input
+    # layer's buttons, and the game whose bindings are loaded.
+    has shell: Shell = Shell(),
+        console: Console = Console(),
+        keyboard: Keyboard = Keyboard(),
+        controls: Controls = Controls(),
+        host: HostCvars = HostCvars(),
+        configured: bool = False,
+        configured_game: str = "",
+        # The command line's +commands, run once the configuration has.
+        stuffed: str = "",
+        console_restore_mouse: bool = False,
+        menu_requested: bool = False,
+        quitting: bool = False;
+
     has expedition_complete: bool = False;
     has finale_text: str = "",
         finale_active: bool = False,
@@ -274,6 +347,18 @@ obj App {
         help_open: bool = False,
         inventory_open: bool = False,
         entry_save: str = "";
+    # Q2 films and end pictures (cl_cin.c), and where the game goes when one
+    # finishes (sv_init.c SV_Map's nextserver): a map with its spawnpoint and
+    # unit flag, a .pcx picture, nothing (the game is over), or back to the
+    # level already loaded (`cinematic_resume`, newgame's ntro.cin). `opening`
+    # is a map request whose film plays before the first level.
+    has cinematic: CinematicPlayer = CinematicPlayer(),
+        cinematic_next: str = "",
+        cinematic_spawn: str = "",
+        cinematic_unit: bool = False,
+        cinematic_resume: bool = False,
+        pending_cinematic: str = "",
+        opening: str = "";
 
     def begin_intermission(text: str);
     """Show the end-of-level stats at the intermission camera, then go on to
@@ -289,6 +374,25 @@ obj App {
     def restart_level();
     """Take the level-entry autosave and count the level's monsters."""
     def record_entry();
+    """SV_Map's film or picture step: play `film` (or show `destination`
+    when it is a .pcx), then go on to `destination`."""
+    def begin_cinematic(
+        film: str,
+        destination: str,
+        spawnpoint: str = "",
+        unit: bool = False,
+        resume: bool = False
+    );
+    """SCR_FinishCinematic and SV_Nextserver: leave the film or picture for
+    what follows it."""
+    def finish_cinematic();
+    """A frame while a film or picture is up: its clock, skipping, drawing."""
+    def cinematic_step(dt: float) -> bool;
+    def draw_cinematic();
+    """Read one of the current game's files (paks first, then loose files)."""
+    def game_asset(path: str) -> bytes;
+    """CG_StartMusic: the level's intro and loop music tracks."""
+    def start_level_music();
     def begin_podium(contest: ArenaMatch);
     def render_portal(faces: list[int]);
     def survey_level();
@@ -309,9 +413,51 @@ obj App {
         preserve_progress: bool = False
     );
 
+    """Host_Init / quake.rc: declare every cvar and command, then run the
+    game's default.cfg, QuakePassion's bindings and the user's configuration.
+    Called by run(); harnesses that drive step() call it themselves."""
+    def configure();
+    """The game's configuration: its default.cfg (from its archives), the
+    bindings QuakePassion adds, the user's settings and that game's saved
+    bindings. Runs again when a level of another game loads."""
+    def configure_game(game: str);
+    """Cbuf_Execute: run the buffered commands, each through the subsystem
+    that owns it. False once `quit` ran."""
+    def execute_commands() -> bool;
+    """Run one command the host owns (map, quit, god, give, exec, ...)."""
+    def host_command(args: list[str]);
+    """Key_Event for this frame's keys: the console key, Escape, alt+enter,
+    the console's editing keys, and the bindings of the rest."""
+    def handle_keys() -> bool;
+    def toggle_console();
+    """The text of a config file: a loose file in the game's directory, else
+    one in its archives."""
+    def read_config(name: str) -> str;
+    """give <item> [count] (Host_Give_f, Q2/Q3 Cmd_Give_f)."""
+    def give(args: list[str]);
+    """Q2 `use <item>`: a weapon by name, else a stored item."""
+    def use_named(name: str);
+    """Q1 ImpulseCommands' cheats: 9 all weapons and ammo, 255 quad."""
+    def impulse(number: int);
+    """Whether a raylib key was pressed for a prompt (Enter to continue and
+    the like); the console keeps its keys to itself."""
+    def prompt_key(code: int) -> bool;
+    def culling() -> bool;
+    """M_Keys_Draw's rows: each action of the game and the keys bound to it."""
+    def refresh_controls();
+    """The controls menu's unbind (M_UnbindCommand) and reset to defaults."""
+    def control_action(action: str);
+    """A key pressed while the controls menu waits for one (M_Keys_Key's
+    bind_grab)."""
+    def grab_key(name: str);
+    def save_bindings();
     def save_preferences();
-    def quicksave();
-    def quickload();
+    """save <name>: the quick save, or another slot beside it."""
+    def quicksave(slot: str = "");
+    """load <name>."""
+    def quickload(slot: str = "");
+    """A save slot's file: "quick" (or none) is the quick save."""
+    def save_file(slot: str) -> str;
     def fly(intent: Intent, dt: float);
     def toggle_movement();
     def use_item(kind: str = "");
@@ -320,6 +466,8 @@ obj App {
     def show_notice(message: str);
     """A printed line at the top left (sprint / cprintf), kept three seconds."""
     def notify(message: str);
+    """Let the notify lines age by `seconds` (con_notifytime)."""
+    def age_notify(seconds: float);
     """Play an archive sound heard from `origin` (ATTN_NORM falloff)."""
     def play_at(path: str, origin: Vec3);
     """Sounds and prints the combat simulation asked for this tick."""

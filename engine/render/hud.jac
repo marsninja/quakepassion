@@ -36,6 +36,8 @@ import from vendor.raylib {
     ) -> None;  def rlDrawRenderBatchActive -> None;
 }
 import from ..formats.bsp { Texture }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell }
 
 obj HudPic {
     has id: int = 0,
@@ -75,7 +77,75 @@ obj HudStatus {
         armor_icon: str = "",
         flashes: int = 0,
         help_unread: bool = False,
-        crosshair: bool = True;
+        crosshair: bool = True,
+        damage_age: float = -1.0,
+        damage_x: float = 0.0;
+}
+
+"""The status bar head's box and angles for one frame: its size in
+virtual-screen units, how far left of its slot a damage kick moves it, and
+its yaw and pitch in degrees."""
+obj HeadPose {
+    has size: float = 60.0,
+        shift: float = 0.0,
+        yaw: float = 180.0,
+        pitch: float = 0.0;
+}
+
+"""CG_DrawStatusBarHead's glancing state (cg.headStartYaw and the rest)."""
+obj StatusHead {
+    has random_state: int = 1,
+        head_start_yaw: float = 180.0,
+        head_end_yaw: float = 180.0,
+        head_start_pitch: float = 0.0,
+        head_end_pitch: float = 0.0,
+        head_start_time: float = 0.0,
+        head_end_time: float = 0.0;
+
+    def random() -> float {
+        self.random_state = (self.random_state * 48271) % 2147483647;
+        return float(self.random_state) / 2147483647.0;
+    }
+
+    """CG_DrawStatusBarHead's pose for this frame: glance to a new angle
+    every 0.1-2.1 s, easing there. For half a second after real damage
+    (cg.damageTime, which CG_DamageFeedback sets and the spawn health's
+    count down never does) the head swells from 1.5 times its size and
+    kicks toward the side the hit came from (cg.damageX)."""
+    def pose(status: HudStatus) -> HeadPose {
+        now = status.clock;
+        pose = HeadPose(size=48.0 * 1.25);
+        if status.damage_age >= 0.0 and status.damage_age < 0.5 {
+            frac = status.damage_age / 0.5;
+            pose.size = 48.0 * 1.25 * (1.5 - frac * 0.5);
+            stretch = pose.size - 48.0 * 1.25;
+            pose.shift = stretch * 0.5 + status.damage_x * stretch * 0.5;
+            self.head_start_yaw = 180.0 + status.damage_x * 45.0;
+            self.head_end_yaw = 180.0 + 20.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+            self.head_end_pitch = 5.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+            self.head_start_time = now;
+            self.head_end_time = now + 0.1 + self.random() * 2.0;
+        } elif now >= self.head_end_time {
+            self.head_start_yaw = self.head_end_yaw;
+            self.head_start_pitch = self.head_end_pitch;
+            self.head_start_time = self.head_end_time;
+            self.head_end_time = now + 0.1 + self.random() * 2.0;
+            self.head_end_yaw = 180.0 + 20.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+            self.head_end_pitch = 5.0 * math.cos((self.random() * 2.0 - 1.0) * math.pi);
+        }
+        # "if the server was frozen for a while we may have a bad head start
+        # time" (and a new level restarts the clock).
+        if self.head_start_time > now {
+            self.head_start_time = now;
+        }
+        span = max(0.001, self.head_end_time - self.head_start_time);
+        frac = max(0.0, min(1.0, (now - self.head_start_time) / span));
+        frac = frac * frac * (3.0 - 2.0 * frac);
+        pose.yaw = self.head_start_yaw + (self.head_end_yaw - self.head_start_yaw) * frac;
+        pose.pitch = self.head_start_pitch + (self.head_end_pitch - self.head_start_pitch) * frac;
+        return pose;
+    }
+
 }
 
 """One line of Q2's inventory screen (cl_inv.c CL_DrawInventory): the key
@@ -130,7 +200,27 @@ obj HudRenderer {
     has pics: dict[str, HudPic] = {},
         game: str = "",
         ready: bool = False,
-        three_d: bool = False;
+        three_d: bool = False,
+        crosshair: Cvar = Cvar(
+            name="crosshair",
+            reset_text="1",
+            kind="int",
+            low=0.0,
+            high=10.0,
+            flags=CVAR_ARCHIVE,
+            aliases=["cg_drawCrosshair"],
+            description="draw the crosshair"
+        );
+
+    def declare(shell: Shell) {
+        self.crosshair = shell.register(self.crosshair);
+    }
+
+    """SCR_DrawCrosshair's test: the game asks for one and the crosshair cvar
+    is set."""
+    def shows_crosshair(status: HudStatus) -> bool {
+        return status.crosshair and self.crosshair.integer > 0;
+    }
 
     def add(name: str, texture: Texture) {
         id = 0;
@@ -160,6 +250,11 @@ obj HudRenderer {
 
     def has_pic(name: str) -> bool {
         return name in self.pics;
+    }
+
+    """Draw what is batched before the render state changes."""
+    def flush {
+        rlDrawRenderBatchActive();
     }
 
     def close() {
@@ -237,15 +332,18 @@ obj HudRenderer {
     }
 
     """A line in the game's character sheet (Q1/Q2 conchars, Q3 bigchars):
-    a 16 by 16 grid of cells, `size` pixels square on screen."""
+    a 16 by 16 grid of cells, `size` pixels wide on screen and `tall` pixels
+    high (square when 0; Q3's console draws its 8 by 16 small chars)."""
     def chars(
         message: str,
         x: float,
         y: float,
         size: float,
         tint: list[int] = [255, 255, 255, 255],
-        high: int = 0
+        high: int = 0,
+        tall: float = 0.0
     ) {
+        height = tall if tall > 0.0 else size;
         for i in range(len(message)) {
             code = (ord(message[i]) & 255) ^ high;
             if code == 32 or code == 160 {
@@ -258,13 +356,61 @@ obj HudRenderer {
                 x + float(i) * size,
                 y,
                 size,
-                size,
+                height,
                 tint,
                 column,
                 row,
                 column + 1.0 / 16.0,
                 row + 1.0 / 16.0
             );
+        }
+    }
+
+    """Q3 text with its color escapes (CG_DrawStringExt): `^` and a character
+    sets the color from g_color_table by its low three bits and takes no
+    room; `^^` is a caret."""
+    def colored_chars(message: str, x: float, y: float, size: float) {
+        palette: list[list[int]] = [
+            [0, 0, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255], [255, 255, 0, 255],
+            [0, 0, 255, 255], [0, 255, 255, 255], [255, 0, 255, 255], [255, 255, 255, 255]
+        ];
+        tint = palette[7];
+        run = "";
+        start = x;
+        i = 0;
+        while i < len(message) {
+            if message[i] == "^" and i + 1 < len(message) and message[i + 1] != "^" {
+                self.chars(run, start, y, size, tint);
+                start += float(len(run)) * size;
+                run = "";
+                tint = palette[(ord(message[i + 1]) - ord("0")) & 7];
+                i += 2;
+                continue;
+            }
+            run += message[i];
+            i += 1;
+        }
+        self.chars(run, start, y, size, tint);
+    }
+
+    """The notify lines at the top left (Con_DrawNotify, CG_DrawNotify): Q3's
+    in its console's small characters with their colour codes. Q3 draws them
+    over the intermission's menus too."""
+    def draw_notify(lines: list[str], game: str, width: int, height: int) {
+        if not self.has_pic("conchars") {
+            return;
+        }
+        big = game == "q3";
+        scale = float(height) / 480.0 if big else float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        size = (16.0 if big else 8.0) * scale;
+        y = 0.0;
+        for line in lines {
+            if big {
+                self.colored_chars(line, 4.0 * scale, y, size * 0.5);
+            } else {
+                self.chars(line, 0.0, y, size);
+            }
+            y += size * (0.5 if big else 1.0);
         }
     }
 
@@ -279,11 +425,7 @@ obj HudRenderer {
         big = status.game == "q3";
         scale = float(height) / 480.0 if big else float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
         size = (16.0 if big else 8.0) * scale;
-        y = 0.0;
-        for line in status.notify {
-            self.chars(line, 0.0 if not big else 4.0 * scale, y, size * (0.5 if big else 1.0));
-            y += size * (0.5 if big else 1.0);
-        }
+        self.draw_notify(status.notify, status.game, width, height);
         if status.center {
             lines = status.center.split("\n");
             top = float(height) * (0.30 if big else 0.35);
@@ -399,7 +541,7 @@ obj HudRenderer {
         # SCR_DrawCrosshair / Draw_Character: the conchars '+'. The 3D view
         # fills the whole window (not the vrect above the status bars), so
         # the glyph's own centre, pixel (4, 5) of its cell, sits on the aim.
-        if status.crosshair {
+        if self.shows_crosshair(status) {
             self.q1_char(43, float(width) * 0.5 - 4.0 * scale, float(height) * 0.5 - 5.0 * scale, scale);
         }
     }
@@ -660,7 +802,7 @@ obj HudRenderer {
             }
         }
         # SCR_DrawCrosshair: pics/ch1 centred on the view.
-        if status.crosshair and self.has_pic("ch1") {
+        if self.shows_crosshair(status) and self.has_pic("ch1") {
             p = self.pics["ch1"];
             self.pic(
                 "ch1",
@@ -726,7 +868,7 @@ obj HudRenderer {
             }
         }
         # The default crosshair (cg_drawCrosshair 4), 24 units square.
-        if self.has_pic("crosshair") {
+        if self.shows_crosshair(status) and self.has_pic("crosshair") {
             size = 24.0 * scale;
             self.blit("crosshair", float(width) * 0.5 - size * 0.5, float(height) * 0.5 - size * 0.5, size, size);
         }

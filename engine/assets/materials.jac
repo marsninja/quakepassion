@@ -92,6 +92,7 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
             material.advanced.append("white");
         }
         if token == "clampmap" {
+            stage.clamp = True;
             material.advanced.append("clampmap");
         }
         return i + 1;
@@ -190,13 +191,12 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
         return i + 1;
     }
     if token == "tcmod" {
+        # Models and surfaces both run every tcMod below (quake.jac
+        # tcmod_steps), so none is advanced.
         if argument == "scroll" {
-            stage.scroll_u += number_at(tokens, i + 2);
-            stage.scroll_v += number_at(tokens, i + 3);
             stage.mods.append(TexMod(kind="scroll", a=number_at(tokens, i + 2), b=number_at(tokens, i + 3)));
             return i + 3;
         }
-        material.advanced.append("tcmod " + argument);
         if argument == "scale" {
             stage.mods.append(TexMod(kind="scale", a=number_at(tokens, i + 2), b=number_at(tokens, i + 3)));
             return i + 3;

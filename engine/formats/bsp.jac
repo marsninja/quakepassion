@@ -3,7 +3,11 @@ import math;
 import struct;
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis }
+import from ..math.aabb { AABB }
 
+"""An image. `fullbright`: an RGBA skin whose alpha marks the palette's
+fullbright texels (Q1 indices 224-255, which light never darkens) rather
+than opacity."""
 obj Texture {
     has name: str = "missing",
         width: int = 16,
@@ -16,7 +20,8 @@ obj Texture {
         flags: int = 0,
         alpha_test: int = 0,
         additive: bool = False,
-        two_sided: bool = False;
+        two_sided: bool = False,
+        fullbright: bool = False;
 }
 
 obj TexInfo {
@@ -31,6 +36,11 @@ obj TexInfo {
 obj Face {
     has emission: bool = False,
         moving_light: bool = False;
+    # Q1/Q2: the texture axes the lightmap is laid out on, and whether the
+    # surface has no lightmap by design (Q1 SURF_DRAWTILED, Q2 SURF_DRAWTURB
+    # and SURF_DRAWSKY), as R_LightPoint reads them.
+    has texinfo: TexInfo | None = None,
+        tiled: bool = False;
     has motion: Vec3 = Vec3(),
         turn: Basis | None = None,
         pivot: Vec3 = Vec3(),
@@ -41,6 +51,11 @@ obj Face {
         colors: list[int] = [],
         planar: bool = True,
         patch: bool = False,
+        # A Q3 patch's control points, rows concatenated, for its collision
+        # facets (CM_GeneratePatchCollide) apart from the rendered tessellation.
+        patch_width: int = 0,
+        patch_height: int = 0,
+        patch_points: list[Vec3] = [],
         alpha_test: int = 0,
         additive: bool = False,
         two_sided: bool = False,
@@ -70,7 +85,9 @@ obj Plane {
 obj Branch {
     has plane: int,
         front: int,
-        back: int;
+        back: int,
+        first_face: int = 0,
+        face_count: int = 0;
 }
 
 obj Leaf {
@@ -148,6 +165,29 @@ obj Bsp {
         fogs: list[FogVolume] = [],
         light_grid: bytes = b"",
         areas: list[list[AreaLink]] = [];
+}
+
+"""A brush entity's `origin` key (none is the world origin)."""
+def mover_origin(fields: dict[str, str]) -> Vec3 {
+    parts = fields.get("origin", "0 0 0").split();
+    if len(parts) != 3 {
+        raise ValueError("Invalid mover origin");
+    }
+    return Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+}
+
+"""A brush entity's box as its game sees it, placed at the entity's
+`origin`: the BSP model's stored bounds spread by a unit on each side, as Q1
+Mod_LoadSubmodels, Q2 CMod_LoadSubmodels and Q3 CM_LoadSubmodels load them
+for SetModel. Every brush of the model counts, whether it has faces or not
+(base3's lift cage reaches far below the floor it shows)."""
+def model_bounds(bsp: Bsp, model: int, origin: Vec3 | None = None) -> AABB {
+    record = bsp.models[model];
+    spread = Vec3(x=1.0, y=1.0, z=1.0);
+    placed = origin if origin is not None else Vec3();
+    return AABB(
+        mins=record.mins.sub(spread).add(placed), maxs=record.maxs.add(spread).add(placed)
+    );
 }
 
 def require_range(data: bytes, offset: int, size: int) {
@@ -310,4 +350,34 @@ def decode_pvs(data: bytes, offset: int, leaf_count: int) -> list[int] {
         }
     }
     return result;
+}
+
+"""Q2 CONTENTS_LADDER: a brush the player climbs by pressing into it
+(pmove.c PM_CheckSpecialMovement). Q1 has no ladders, and Q3's SURF_LADDER is
+never read by bg_pmove.c."""
+def brush_climbable(contents: int, game: str) -> bool {
+    return game == "q2" and contents & 0x20000000 != 0;
+}
+
+"""A brush's Q2 CONTENTS_CURRENT_0/90/180/270/UP/DOWN bits (MASK_CURRENT);
+none in Q1 (the QUAKE2-only currents never shipped) or Q3, whose bits there
+mean other things."""
+def brush_current_bits(contents: int, game: str) -> int {
+    return contents & 0xFC0000 if game == "q2" else 0;
+}
+
+"""The direction Q2 current bits push along, one unit per bit
+(PM_AddCurrents), or None when there are none."""
+def current_flow(bits: int) -> Vec3 | None {
+    if bits & 0xFC0000 == 0 {
+        return None;
+    }
+    direction = Vec3();
+    if bits & 0x40000 { direction.x += 1.0; }
+    if bits & 0x80000 { direction.y += 1.0; }
+    if bits & 0x100000 { direction.x -= 1.0; }
+    if bits & 0x200000 { direction.y -= 1.0; }
+    if bits & 0x400000 { direction.z += 1.0; }
+    if bits & 0x800000 { direction.z -= 1.0; }
+    return direction;
 }

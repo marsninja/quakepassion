@@ -3,7 +3,13 @@ import from .save_format { SNAPSHOT_HEADER }
 import from engine.world.gibs { Gib, HasGib }
 import from engine.world.patrols { Patrols, Holds }
 import from engine.world.gates { ApplyGates }
-import from engine.world.chthon { LightningEvent, HasLightning, boss_pose }
+import from engine.world.chthon {
+    LightningEvent,
+    HasLightning,
+    boss_pose,
+    BOSS_DORMANT,
+    BOSS_GONE
+}
 import from engine.world.trains {
     Train,
     HasTrain,
@@ -21,6 +27,7 @@ import from engine.world.finale {
 }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.brushes { BrushObject, HasBrush, show_brush }
+import from engine.world.targets { HelpComputer, HasHelp, help_for, help_field, help_text }
 import math;
 import os;
 import from engine.world.world { World, Player, In, move_to_area }
@@ -41,9 +48,11 @@ import from engine.world.combat {
     HasProjectile
 }
 import from engine.world.pickups { Pickup, HasPickup }
+import from engine.world.drops { Flight, HasFlight, Carries, let_fall, end_flight, in_flight }
 import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
 import from engine.world.mover_ramp { ramp_rest }
 import from engine.world.rotators { Rotator, HasRotator, place }
+import from engine.world.turrets { Turret, HasTurret, Mans, pose_turret }
 import from engine.world.shooters { Shooter, HasShooter }
 import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.arena { Competes, match_of }
@@ -188,6 +197,7 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     }
     # Loading must rebuild the entity set of the skill that was saved.
     lines.append("SKILL " + str(level.skill));
+    lines.append("CLOCK " + numbers([level.clock]));
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(
             "I " + item.kind + " " + str(item.quantity) + " " + str(item.capacity)
@@ -196,9 +206,34 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for shooter in [world->:HasShooter:->][?:Shooter] {
         lines.append("SHOOTER " + numbers([shooter.clock, float(shooter.random_state)]));
     }
+    # Shared attack rotations (Q1 hknight_type).
+    for group in combat.turns {
+        lines.append("TURN " + group + " " + str(combat.turns[group]));
+    }
     for mover in [world->:HasRotator:->][?:Rotator] {
         lines.append(
             "MOVER " + numbers([mover.clock, 1.0 if mover.active else 0.0, mover.crush_wait])
+        );
+    }
+    # Each turret's aim (its angles and the ones asked of it) and, while it
+    # is manned, its driver's targeting (turret_driver_think).
+    for breach in [world->:HasTurret:->][?:Turret] {
+        seat = [0.0, 0.0, 0.0, 0.0, 0.0];
+        for crew in [edge breach<-:Mans:<-] {
+            seat = [
+                1.0,
+                1.0 if crew.spotted else 0.0,
+                1.0 if crew.lost_sight else 0.0,
+                crew.trail_time,
+                crew.attack_finished
+            ];
+        }
+        lines.append(
+            "TURRET "
+                + numbers(
+                    [breach.pitch, breach.yaw, breach.aim_pitch, breach.aim_yaw, breach.crush_wait]
+                        + seat
+                )
         );
     }
     contest = match_of(world);
@@ -346,10 +381,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
         }
     }
     # Dropped items are transient and not saved; a benched team member is.
-    for pickup in [world->:HasPickup:->][?:Pickup] {
-        if pickup.dropped {
-            continue;
-        }
+    placed = [pickup for pickup in [world->:HasPickup:->][?:Pickup] if not pickup.dropped];
+    for pickup in placed {
         lines.append(
             "P "
                 + numbers(
@@ -366,6 +399,20 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     ]
                 )
         );
+    }
+    # A Q2 item still falling from where droptofloor left it: which item and
+    # how fast it is falling.
+    for flight in [world->:HasFlight:->][?:Flight] {
+        for carried in [flight->:Carries:->][?:Pickup] {
+            if carried in placed {
+                lines.append(
+                    "FALL "
+                        + str(placed.index(carried))
+                        + " "
+                        + numbers([flight.velocity.x, flight.velocity.y, flight.velocity.z])
+                );
+            }
+        }
     }
     for door in [world->:HasDoor:->][?:Door] {
         member_health = [float(part.health) for part in [door->:DoorMember:->][?:Door]];
@@ -486,6 +533,17 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for progress in [world->:HasProgress:->][?:Progress] {
         lines.append("O " + numbers([float(progress.secrets), float(progress.goals)]));
     }
+    # Q2 WriteGame keeps game.helpmessage1/2 and the client's helpchanged.
+    for computer in [world->:HasHelp:->][?:HelpComputer] {
+        lines.append(
+            "HELP "
+                + numbers([float(computer.changed), float(computer.unread), computer.beep_wait])
+                + " "
+                + help_field(computer.primary)
+                + " "
+                + help_field(computer.secondary)
+        );
+    }
     for hazard in [world->:HasHazard:->][?:Hazard] {
         lines.append("H " + numbers([1.0 if hazard.enabled else 0.0, hazard.cooldown]));
     }
@@ -577,12 +635,17 @@ def restore(
     combat.grenade_clock = stats[26];
     combat.grenade_remaining = stats[27];
     combat.impacts = [];
+    combat.turns = {};
     for projectile in [world->:HasProjectile:->][?:Projectile] {
         world del --> projectile;
     }
     player.inventory = Inventory();
     for power in [player->:Empowered:->][?:Powerup] {
         player del --> power;
+    }
+    # Items falling as the level loaded fall on from where the save has them.
+    for flight in [world->:HasFlight:->][?:Flight] {
+        end_flight(world, flight);
     }
     # Flying gibs belong to the moment that was left; the saved one has none.
     for gib in [world->:HasGib:->][?:Gib] {
@@ -596,6 +659,8 @@ def restore(
     ranked = 0;
     rotators = [world->:HasRotator:->][?:Rotator];
     spun = 0;
+    turrets = [world->:HasTurret:->][?:Turret];
+    aimed = 0;
     shooters = [world->:HasShooter:->][?:Shooter];
     fired = 0;
     lightning = [world->:HasLightning:->][?:LightningEvent];
@@ -732,6 +797,30 @@ def restore(
             shooters[fired].clock = row[0];
             shooters[fired].random_state = int(row[1]);
             fired += 1;
+        } elif words[0] == "TURN" and len(words) == 3 {
+            count = int(words[2]);
+            if count < 0 or count > 64 {
+                raise ValueError("Invalid saved attack rotation");
+            }
+            combat.turns[words[1]] = count;
+        } elif words[0] == "TURRET" and len(words) == 11 and aimed < len(turrets) {
+            row = values(" ".join(words[1:]), 10);
+            breach = turrets[aimed];
+            breach.pitch = row[0];
+            breach.yaw = row[1];
+            breach.aim_pitch = row[2];
+            breach.aim_yaw = row[3];
+            breach.crush_wait = max(0.0, row[4]);
+            for crew in [edge breach<-:Mans:<-] {
+                if row[5] != 0.0 {
+                    crew.spotted = row[6] != 0.0;
+                    crew.lost_sight = row[7] != 0.0;
+                    crew.trail_time = row[8];
+                    crew.attack_finished = row[9];
+                }
+            }
+            pose_turret(breach, level.bsp, level.collision);
+            aimed += 1;
         } elif words[0] == "MOVER" and len(words) == 4 and spun < len(rotators) {
             row = values(" ".join(words[1:]), 3);
             if row[0] < 0.0 or row[2] < 0.0 {
@@ -987,7 +1076,8 @@ def restore(
                 enemy.visual.blend = 0.0;
             }
             if enemy.rule.script == "chthon" {
-                enemy.visual.visible = enemy.boss_phase > 0 and enemy.boss_phase < 7;
+                enemy.visual.visible = enemy.boss_phase != BOSS_DORMANT
+                    and enemy.boss_phase != BOSS_GONE;
                 boss_pose(enemy);
             }
         } elif words[0] == "P" and p < len(pickups) {
@@ -1009,15 +1099,27 @@ def restore(
             item.activate_on_use = row[3] != 0.0;
             item.benched = row[4] != 0.0;
             item.visual.visible = item.active;
-            # An item a dead monster already dropped stays where it fell.
+            # Items stay where they had fallen or ridden to; one a dead
+            # monster already dropped is its own again.
+            place = Vec3(x=row[6], y=row[7], z=row[8]);
+            if place.sub(item.pos).length() > 0.0 {
+                item.pos = place;
+                move_to_area(item, level.areas[level.locate(item.pos)]);
+                world.item_serial += 1;
+            }
             if row[5] != 0.0 {
                 item.released = True;
-                item.pos = Vec3(x=row[6], y=row[7], z=row[8]);
                 for owner in [item<-:Drops:<-][?:Opponent] {
                     owner del --> item;
                 }
-                move_to_area(item, level.areas[level.locate(item.pos)]);
             }
+        } elif words[0] == "FALL" and len(words) == 5 {
+            row = values(" ".join(words[2:]), 3);
+            index = int(words[1]) if words[1].isdigit() else -1;
+            if index < 0 or index >= len(pickups) or in_flight(pickups[index]) {
+                raise ValueError("Invalid saved item fall");
+            }
+            let_fall(world, pickups[index], Vec3(x=row[0], y=row[1], z=row[2]));
         } elif words[0] == "D" and d < len(doors) {
             door = doors[d];
             parts = [door->:DoorMember:->][?:Door];
@@ -1186,6 +1288,23 @@ def restore(
             speakers[a].playing = row[0] != 0.0;
             speakers[a].requests = int(row[1]);
             a += 1;
+        } elif words[0] == "CLOCK" and len(words) == 2 {
+            clock = values(words[1], 1)[0];
+            if clock < 0.0 {
+                raise ValueError("Invalid saved level clock");
+            }
+            level.clock = clock;
+        } elif words[0] == "HELP" and len(words) == 6 {
+            row = values(" ".join(words[1:4]), 3);
+            if row[0] < 0.0 or row[1] < 0.0 or row[1] > 4.0 or row[2] < 0.0 {
+                raise ValueError("Invalid saved help computer");
+            }
+            computer = help_for(world);
+            computer.changed = int(row[0]);
+            computer.unread = int(row[1]);
+            computer.beep_wait = row[2];
+            computer.primary = help_text(words[4]);
+            computer.secondary = help_text(words[5]);
         } elif words[0] == "O" and o < len(progress_records) {
             row = values(" ".join(words[1:]), 2);
             record = progress_records[o];
@@ -1234,6 +1353,7 @@ def restore(
         or k != len(teleport_trains)
         or ranked != len(scores)
         or spun != len(rotators)
+        or (aimed != 0 and aimed != len(turrets))
         or fired != len(shooters) {
         raise ValueError("Save does not match this map's entities");
     }

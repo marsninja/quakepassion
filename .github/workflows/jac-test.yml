@@ -6,16 +6,23 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push to a pull request supersedes its running check; main keeps
+# every run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (with reference compiler source)
+      - name: Checkout (with pinned compiler source)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # Released compiler includes the upstream native fixes.
+      # The released binary compiles with the jaseci submodule's pinned
+      # compiler source, which carries upstream fixes not yet released.
       - name: Install Jac binary
         run: |
           mkdir -p "$HOME/.local/bin"
@@ -26,6 +33,32 @@ jobs:
           (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
           install -m 755 "$RUNNER_TEMP/$asset" "$HOME/.local/bin/jac"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Stage pinned compiler source
+        id: pin
+        run: |
+          bash scripts/stage_compiler.sh >> "$GITHUB_ENV"
+          echo "JAC_CACHE_HOME=$HOME/.cache/jac-qp" >> "$GITHUB_ENV"
+          echo "sha=$(git rev-parse HEAD:jaseci)" >> "$GITHUB_OUTPUT"
+
+      # The pinned source compiles into a native compiler kernel on first use
+      # (about 45 minutes and 13 GB at peak); later runs reuse it, and the
+      # tests then run several times faster and leaner than with the
+      # compiler interpreted.
+      - name: Restore the compiler kernel and module cache
+        id: jaccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/jac-qp
+          key: jac-${{ runner.os }}-${{ steps.pin.outputs.sha }}
+
+      - name: Add swap for the kernel build
+        if: steps.jaccache.outputs.cache-hit != 'true'
+        run: |
+          sudo fallocate -l 8G /extra-swap
+          sudo chmod 600 /extra-swap
+          sudo mkswap /extra-swap
+          sudo swapon /extra-swap
 
       - name: Show compiler version
         run: jac --version
@@ -55,6 +88,13 @@ jobs:
 
       - name: Build native viewer
         run: jac build main.jac --native -o qp
+
+      - name: Save the compiler kernel and module cache
+        if: steps.jaccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/jac-qp
+          key: jac-${{ runner.os }}-${{ steps.pin.outputs.sha }}
 
       # One process per test file: a single run over the whole suite grows
       # past the runner's memory. Each file runs cold, then again warm.

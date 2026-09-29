@@ -2,10 +2,9 @@
 import math;
 import from .enemies { enemy_rule }
 import from .gibs { gib_rule, link_gibs }
-import from .patrols { patrol_speed }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
-import from engine.world.opponent_rule { OpponentRule }
+import from engine.world.opponent_rule { OpponentRule, Gait }
 import from .arena_character { character_rig, CharacterRig, character_body, weapon_kits, powerup_shells, Q3_HELD_WEAPONS }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
@@ -14,7 +13,7 @@ import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
 import from engine.world.combat { Opponent, HasOpponent, Drops, Bloodied, ensure_profiles, arm_bot }
 import from engine.world.pickups { Pickup, HasPickup }
-import from .items { monster_drop, item_spin }
+import from .items { monster_drop, item_spin, item_light_flags }
 import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms, hold_weapon }
 import from engine.world.models { WeaponKit, PlayerRig }
 import from engine.world.player_rig { rig_sound_paths }
@@ -23,7 +22,7 @@ import from engine.world.bot_character { bot_skill, bot_handicap }
 import from engine.world.turrets { link_turret_drivers }
 import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
 import from engine.world.reflection { HasBody, Carries, player_body }
-import from .botfiles { load_bot_character }
+import from .botfiles { BotFiles, load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
@@ -33,6 +32,7 @@ import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
 import from engine.formats.aas { parse_aas }
 import from engine.world.bot_routes { build_navmesh }
+import from engine.world.bot_goals { BotItems, HasBotItems }
 import from engine.math.vec3 { Vec3 }
 
 def frame_indices(
@@ -53,6 +53,14 @@ def frame_indices(
         result.append(found);
     }
     return result;
+}
+
+"""A locomotion cycle's model frames; its distances must cover each frame."""
+def gait_indices(frames: list[AnimationFrame], gait: Gait, path: str, label: str) -> list[int] {
+    if gait.steps and len(gait.steps) != len(gait.frames) {
+        raise ValueError("Mismatched " + label + " distances: " + path);
+    }
+    return frame_indices(frames, gait.frames, path, label);
 }
 
 # One positional speaker per distinct sound file an opponent can request.
@@ -98,7 +106,7 @@ def populate_finale(world: World, level: Level, directory: str) -> int {
 """Q3 spawn points become graph nodes; the arena's roster and frag limit come
 from scripts/arenas.txt, with a three-bot skirmish for maps outside the ladder."""
 def prepare_arena(
-    world: World, level: Level, library: AssetLibrary, roster: list[BotInfo]
+    world: World, level: Level, library: AssetLibrary, roster: list[BotInfo], botfiles: BotFiles
 ) -> ArenaMatch {
     for entity in level.bsp.entities {
         fields = entity.fields;
@@ -123,7 +131,10 @@ def prepare_arena(
     # The bots' own navigation data (botlib AAS) drives map-wide routing.
     aas_path = "maps/" + level.name + ".aas";
     if library.exists(aas_path) {
-        build_navmesh(world, parse_aas(library.read(aas_path)));
+        build_navmesh(world, parse_aas(library.read(aas_path)), level.bsp);
+        # The items bots know (botfiles/items.c) become their level items
+        # once every item is on the map (prepare_arena_links).
+        world +>:HasBotItems:+> BotItems(infos=botfiles.item_config());
     }
     contest = ArenaMatch(
         fraglimit=arena.fraglimit if arena is not None else 20,
@@ -175,9 +186,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
     entities = level.bsp.entities;
     roster: list[BotInfo] = [];
     contest: ArenaMatch | None = None;
+    botfiles: BotFiles | None = None;
     try {
         if level.bsp.game == "q3" {
-            contest = prepare_arena(world, level, catalog.source("q3"), roster);
+            botfiles = BotFiles(library=catalog.source("q3"));
+            contest = prepare_arena(world, level, catalog.source("q3"), roster, botfiles);
             entities = entities + arena_entities(world, roster, player_start);
         }
         for entity_index in range(len(entities)) {
@@ -249,7 +262,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 shot_random=1 + count * 7919,
                 arena=level.bsp.game == "q3",
                 rule=rule,
-                walk_speed=rule.speed,
                 # G_AddBot's handicap is the bot's maximum health.
                 health=handicap + 25 if kind == "arena_bot" else rule.health,
                 max_health=handicap if kind == "arena_bot" else rule.health,
@@ -273,12 +285,16 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             for profile in enemy.profiles {
                 register_speaker(world, enemy, profile.sound);
                 register_speaker(world, enemy, profile.extra_sound);
+                register_speaker(world, enemy, profile.alternate_sound);
             }
             register_speaker(world, enemy, rule.sight_sound);
             for pain_sound in rule.pain_sounds {
                 register_speaker(world, enemy, pain_sound);
             }
             register_speaker(world, enemy, rule.death_sound);
+            for scripted in rule.sounds {
+                register_speaker(world, enemy, scripted);
+            }
             # Idle mutterings carry only a short way (ATTN_IDLE).
             idle = register_speaker(world, enemy, rule.idle_sound);
             if idle is not None {
@@ -449,9 +465,15 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         frames, rule.duck_frames, path, "duck"
                     );
                 }
-                if rule.run_frames {
-                    enemy.animation = frame_indices(frames, rule.run_frames, path, "run");
+                if rule.run.frames {
+                    enemy.animation = gait_indices(frames, rule.run, path, "run");
                 }
+                if rule.walk.frames {
+                    enemy.walk_animation = gait_indices(frames, rule.walk, path, "walk");
+                }
+                enemy.walk_animations = [
+                    gait_indices(frames, other, path, "walk") for other in rule.other_walks
+                ];
                 if rule.idle_frames {
                     enemy.idle_animation = frame_indices(
                         frames, rule.idle_frames, path, "idle"
@@ -485,16 +507,17 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             if arena {
                 # The bot's own botlib character, at the Q3 skill for this level.
-                enemy.character = load_bot_character(
-                    catalog.source("q3"), bot.aifile, bot_skill(level.skill)
-                );
+                if botfiles is None {
+                    botfiles = BotFiles(library=catalog.source("q3"));
+                }
+                files: BotFiles = botfiles;
+                enemy.character = load_bot_character(files, bot.aifile, bot_skill(level.skill));
                 arm_bot(enemy);
                 for path in Q3_FIRE_SOUNDS {
                     register_speaker(world, enemy, path);
                 }
             }
             if not arena {
-                enemy.patrol_speed = patrol_speed(source, kind);
                 walk_to = fields.get("target", "");
                 if walk_to in corners and not corners[walk_to].combat {
                     enemy +>:Patrols:+> corners[walk_to];
@@ -524,6 +547,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 dropped = Pickup(rule=drop, pos=position, active=False);
                 dropped.visual = attach_model(dropped, resources[drop_key]);
                 dropped.visual.spin = item_spin(source, drop, resources[drop_key].model.flags);
+                dropped.visual.light_flags = item_light_flags(source);
                 dropped.visual.visible = False;
                 world +>:HasPickup:+> dropped;
                 enemy +>:Drops:+> dropped;
@@ -547,7 +571,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     home=position,
                     shot_random=1 + count * 7919,
                     rule=follower,
-                    walk_speed=follower.speed,
                     health=follower.health,
                     max_health=follower.health,
                     yaw=enemy.yaw,
@@ -557,6 +580,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 for profile in heir.profiles {
                     register_speaker(world, heir, profile.sound);
                     register_speaker(world, heir, profile.extra_sound);
+                    register_speaker(world, heir, profile.alternate_sound);
                 }
                 register_speaker(world, heir, follower.sight_sound);
                 for pain_sound in follower.pain_sounds {
@@ -587,9 +611,14 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 heir.idle_animation = frame_indices(
                     heir_frames, follower.idle_frames, follower.model, "idle"
                 );
-                heir.animation = frame_indices(
-                    heir_frames, follower.run_frames, follower.model, "run"
+                heir.animation = gait_indices(heir_frames, follower.run, follower.model, "run");
+                heir.walk_animation = gait_indices(
+                    heir_frames, follower.walk, follower.model, "walk"
                 );
+                heir.walk_animations = [
+                    gait_indices(heir_frames, other, follower.model, "walk")
+                    for other in follower.other_walks
+                ];
                 heir.death_animation = frame_indices(
                     heir_frames, follower.death_frames, follower.model, "death"
                 );

@@ -14,7 +14,7 @@ import from .signals {
     progress_for,
     note_chain
 }
-import from ..formats.bsp { Bsp, MapEntity }
+import from ..formats.bsp { Bsp, MapEntity, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap, Sweep, Trace }
 import from .liquids { LiquidSpace, LiquidVolume, HasLiquid }
 import from .speakers { Speaker, HasSpeaker }
@@ -22,6 +22,15 @@ import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis, quake_basis }
 import from .mover_ramp { MoverRamp, q2_mover_ramp, ramp_step, ramp_rest }
+import from .pickups { Pickup }
+import from .pusher {
+    Pushable,
+    HullStep,
+    GatherPushables,
+    push_move,
+    riders_of,
+    clear_item
+}
 
 edge HasDoor: World --> Door {}
 edge DoorLink: Door --> Door {}
@@ -256,36 +265,6 @@ def apply_pose(part: Door, position: float, bsp: Bsp, collision: CollisionMap) {
     }
 }
 
-"""Sweep an actor from `start` against a mover's old pose to `finish` against its
-new pose, in the mover's own frame, so moving and turning hulls both block."""
-def pose_sweep(
-    collision: CollisionMap,
-    part: Door,
-    j: int,
-    start: Vec3,
-    finish: Vec3,
-    before: float,
-    after: float,
-    top_drop: float
-) -> Trace {
-    old_base = part.origins[j].add(part.rest.add(part.travel.scale(before)));
-    new_base = part.origins[j].add(part.rest.add(part.travel.scale(after)));
-    local_start = start.sub(old_base);
-    local_finish = finish.sub(new_base);
-    old_turn = door_turn(part, before);
-    new_turn = door_turn(part, after);
-    if old_turn is not None {
-        local_start = old_turn.inverse(local_start);
-    }
-    if new_turn is not None {
-        local_finish = new_turn.inverse(local_finish);
-    }
-    query = collision.hulls[part.hulls[j]] spawn Sweep(
-        top_drop=top_drop, start=local_start, finish=local_finish
-    );
-    return query.result;
-}
-
 walker DoorTick {
     has bsp: Bsp,
         collision: CollisionMap,
@@ -296,7 +275,42 @@ walker DoorTick {
         message: str = "",
         cues: list[str] = [],
         actors: list[Opponent] = [],
-        origins: list[Vec3] = [];
+        origins: list[Vec3] = [],
+        world: World | None = None,
+        bodies: list[Pushable] = [],
+        gathered: bool = False;
+
+    """Everything a mover could push this tick, gathered once when needed."""
+    def pushables() -> list[Pushable] {
+        world = self.world;
+        if not self.gathered and world is not None {
+            self.gathered = True;
+            found = world spawn GatherPushables(
+                collision=self.collision, game=self.bsp.game, player=self.player
+            );
+            self.bodies = found.bodies;
+        }
+        return self.bodies;
+    }
+
+    """A mover stopped by `obstacle`: Q2 and Q3 doors and plats clear an item
+    out of the way (door_blocked, plat_blocked, Blocked_Door) and try again
+    next frame; anyone else is crushed and the mover reverses unless it is a
+    crusher (door_blocked, plat_crush)."""
+    def obstruct(mover: Door, obstacle: Pushable) {
+        victim = obstacle.entity;
+        if isinstance(victim, Pickup) {
+            world = self.world;
+            if world is not None {
+                clear_item(world, victim, self.bsp.game);
+            }
+            return;
+        }
+        if isinstance(victim, Player) {
+            self.crush(mover, victim);
+        }
+        self.blocked(mover);
+    }
 
     """Start the moving loop and the start sound when a mover sets off; stop
     the loop and play the stop sound when it comes to rest."""
@@ -362,6 +376,7 @@ walker DoorTick {
     }
 
     can start with World entry {
+        self.world = here;
         if self.dt > 0.0 {
             self.actors = [
                 actor
@@ -416,58 +431,26 @@ walker DoorTick {
             }
             here.message_wait = 2.0 if here.talk == "sound/misc/talk.wav" else 5.0;
         }
+        # Who stands on a raised platform, each in its own box
+        # (plat_center_touch keeps it up while someone rides it).
         rider = False;
-        if here.kind == "platform"
-            and self.player is not None
-            and self.player.velocity.z <= 0.0 {
-            for index in here.hulls {
-                if not self.collision.reaches(index, origin, 1.0) {
-                    continue;
-                }
-                local = origin.sub(self.collision.offsets[index]);
-                support = self.collision.hulls[index] spawn Sweep(
-                    top_drop=self.collision.top_drop,
-                    start=local,
-                    finish=local.add(Vec3(z=-0.25))
-                );
-                if not support.result.start_solid
-                    and support.result.fraction < 1.0
-                    and support.result.normal.z >= 0.7 {
+        riders: list[Opponent] = [];
+        if here.kind == "platform" and here.state == "open" {
+            for body in riders_of(here.hulls, self.pushables()) {
+                standing = body.entity;
+                if standing is self.player {
                     rider = True;
+                } elif isinstance(standing, Opponent) and standing.health > 0 {
+                    riders.append(standing);
                 }
             }
         }
-        riders: list[Opponent] = [];
         monster_contact = False;
         if here.automatic and here.monster_touch and (not here.keys or here.unlocked) {
             if here.kind in ["door", "platform"] {
                 for actor_origin in self.origins {
                     if here.trigger.contains(actor_origin) {
                         monster_contact = True;
-                        break;
-                    }
-                }
-            }
-        }
-        if here.kind == "platform" {
-            for actor_index in range(len(self.actors)) {
-                actor = self.actors[actor_index];
-                if actor.velocity.z > 0.0 {
-                    continue;
-                }
-                actor_origin = self.origins[actor_index];
-                for index in here.hulls {
-                    if not self.collision.reaches(index, actor_origin, 1.0) {
-                        continue;
-                    }
-                    local = actor_origin.sub(self.collision.offsets[index]);
-                    support = self.collision.hulls[index] spawn Sweep(
-                        top_drop=0.0, start=local, finish=local.add(Vec3(z=-0.25))
-                    );
-                    if not support.result.start_solid
-                        and support.result.fraction < 1.0
-                        and support.result.normal.z >= 0.7 {
-                        riders.append(actor);
                         break;
                     }
                 }
@@ -619,153 +602,53 @@ walker DoorTick {
             return;
         }
         direction = 1.0 if here.state == "opening" else -1.0;
+        left = door_span(here) * (1.0 - here.position if direction > 0.0 else here.position);
         # Q2 Think_AccelMove ramps plats (and doors given accel/decel).
         travel = here.speed * self.dt;
         ramp = here.ramp;
         if ramp is not None {
-            travel = ramp_step(
-                ramp,
-                1 if direction > 0.0 else -1,
-                door_span(here) * (1.0 - here.position if direction > 0.0 else here.position),
-                here.speed,
-                self.dt
-            );
+            travel = ramp_step(ramp, 1 if direction > 0.0 else -1, left, here.speed, self.dt);
         }
+        # A step covering what is left ends the move exactly (Move_Final);
+        # so does one leaving less than a millionth of a unit, which the
+        # position fraction may not be able to take another step through.
         next_position = max(
             0.0, min(1.0, here.position + direction * travel / door_span(here))
         );
+        if left - travel <= 0.000001 {
+            next_position = 1.0 if direction > 0.0 else 0.0;
+        }
         members = [here];
         members.extend([here->:DoorMember:->][?:Door]);
-        carried = origin;
-        if rider {
-            carried = origin.add(here.travel.scale(next_position - here.position));
-            path = self.collision.trace(origin, carried, exclude=here.hulls);
-            if path.start_solid or path.fraction < 1.0 {
-                here.state = "closing" if here.state == "opening" else "opening";
-                return;
-            }
-        }
-        # Validate the whole group before changing any render or collision state.
+        # SV_PushMove / SV_Push: the whole group moves, taking along or
+        # pushing everyone in its way, or none of it does.
+        steps: list[HullStep] = [];
         for part in members {
+            before = part.rest.add(part.travel.scale(here.position));
+            after = part.rest.add(part.travel.scale(next_position));
+            turn_from = door_turn(part, here.position);
+            turn_to = door_turn(part, next_position);
             for j in range(len(part.hulls)) {
-                # Bounds cover the mover's whole travel (or turn).
-                if not self.collision.reaches(
-                    part.hulls[j], origin, carried.sub(origin).length() + 1.0
-                ) {
-                    continue;
-                }
-                query = pose_sweep(
-                    self.collision,
-                    part,
-                    j,
-                    origin,
-                    carried,
-                    here.position,
-                    next_position,
-                    self.collision.top_drop
+                steps.append(
+                    HullStep(
+                        index=part.hulls[j],
+                        offset_from=part.origins[j].add(before),
+                        offset_to=part.origins[j].add(after),
+                        turn_from=turn_from,
+                        turn_to=turn_to,
+                        yaw=part.rotation.y * (next_position - here.position)
+                    )
                 );
-                if query.start_solid or query.fraction < 1.0 {
-                    if self.player is not None and self.touching {
-                        self.crush(here, self.player);
-                    }
-                    self.blocked(here);
-                    return;
-                }
             }
         }
-        actor_destinations: list[Vec3] = [];
-        for actor in self.actors {
-            actor_origin = actor.pos.sub(Vec3(z=actor.eye_height));
-            destination = actor_origin;
-            if actor in riders {
-                destination = actor_origin.add(
-                    here.travel.scale(next_position - here.position)
-                );
-                path = self.collision.trace(
-                    actor_origin, destination, exclude=here.hulls, top_drop=0.0
-                );
-                if path.start_solid or path.fraction < 1.0 {
-                    here.state = "closing" if here.state == "opening" else "opening";
-                    return;
-                }
-            }
-            actor_destinations.append(destination);
-        }
-        # Living opponents obstruct the same swept mover volume as the player.
-        # Validate everyone before committing any member of a linked door group.
-        for actor_index in range(len(self.actors)) {
-            actor_origin = self.actors[actor_index].pos.sub(
-                Vec3(z=self.actors[actor_index].eye_height)
-            );
-            destination = actor_destinations[actor_index];
-            for part in members {
-                for j in range(len(part.hulls)) {
-                    index = part.hulls[j];
-                    if len(self.collision.bounds) == len(self.collision.hulls) {
-                        bounds = self.collision.bounds[index];
-                        if (
-                            actor_origin.x < bounds.mins.x
-                            and destination.x < bounds.mins.x
-                        )
-                            or (
-                                actor_origin.x > bounds.maxs.x
-                                and destination.x > bounds.maxs.x
-                            )
-                            or (
-                                actor_origin.y < bounds.mins.y
-                                and destination.y < bounds.mins.y
-                            )
-                            or (
-                                actor_origin.y > bounds.maxs.y
-                                and destination.y > bounds.maxs.y
-                            )
-                            or (
-                                actor_origin.z < bounds.mins.z
-                                and destination.z < bounds.mins.z
-                            )
-                            or (
-                                actor_origin.z > bounds.maxs.z
-                                and destination.z > bounds.maxs.z
-                            ) {
-                            continue;
-                        }
-                    }
-                    query = pose_sweep(
-                        self.collision,
-                        part,
-                        j,
-                        actor_origin,
-                        destination,
-                        here.position,
-                        next_position,
-                        0.0
-                    );
-                    if query.start_solid or query.fraction < 1.0 {
-                        self.crush(here, self.actors[actor_index]);
-                        self.blocked(here);
-                        return;
-                    }
-                }
-            }
+        obstacle = push_move(self.collision, steps, self.pushables(), self.bsp.game);
+        if obstacle is not None {
+            self.obstruct(here, obstacle);
+            return;
         }
         for part in members {
             part.position = next_position;
             apply_pose(part, next_position, self.bsp, self.collision);
-        }
-        for actor_index in range(len(self.actors)) {
-            actor = self.actors[actor_index];
-            if actor in riders {
-                actor.pos = actor_destinations[actor_index].add(
-                    Vec3(z=actor.eye_height)
-                );
-                actor.grounded = True;
-                actor.route = [];
-                actor.route_wait = 0.0;
-            }
-        }
-        if rider and self.player is not None {
-            self.player.pos = carried.add(Vec3(z=self.collision.eye_height));
-            self.player.grounded = True;
         }
         # A ramped move sits still for its first frame, so arrival is judged
         # in the direction of travel.
@@ -789,19 +672,6 @@ walker DoorTick {
             here.state = "closed";
         }
     }
-}
-
-def model_bounds(bsp: Bsp, model: int) -> AABB {
-    record = bsp.models[model];
-    lo = Vec3(x=1.0e30, y=1.0e30, z=1.0e30);
-    hi = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);
-    for i in range(record.first_face, record.first_face + record.face_count) {
-        for v in bsp.faces[i].vertices {
-            lo = Vec3(x=min(lo.x, v.x), y=min(lo.y, v.y), z=min(lo.z, v.z));
-            hi = Vec3(x=max(hi.x, v.x), y=max(hi.y, v.y), z=max(hi.z, v.z));
-        }
-    }
-    return AABB(mins=lo, maxs=hi);
 }
 
 def overlaps(a: AABB, b: AABB) -> bool {
@@ -911,7 +781,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         if model <= 0 or model >= len(bsp.models) {
             raise ValueError("Invalid door model");
         }
-        bounds = model_bounds(bsp, model);
+        bounds = model_bounds(bsp, model, mover_origin(fields));
         direction = door_direction(entity);
         size = bounds.size();
         lip = float(fields.get("lip", "4" if kind == "func_button" else "8"));

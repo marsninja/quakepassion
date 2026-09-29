@@ -12,9 +12,9 @@ import from engine.world.doors {
     HasDoor,
     DoorMember,
     DoorTick,
-    union_bounds,
-    model_bounds
+    union_bounds
 }
+import from engine.formats.bsp { model_bounds }
 import from engine.world.signals { Signal }
 import from engine.world.triggers { TouchTrigger, HasTrigger, Activates }
 import from engine.physics.collision { Sweep }
@@ -112,10 +112,10 @@ with entry {
             renderer=renderer,
             clock=Clock(),
             level=level,
-            overlay=False,
-            culling=False,
             smoke=True
         );
+        app.renderer.cvars.novis.assign("1");
+        app.host.overlay.assign("0");
         app.quake.upload(level);
         for i in range(3) {
             app.render_frame();

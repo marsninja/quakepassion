@@ -22,14 +22,20 @@ glob STYLE_PATTERNS: list[str] = [
     "abcdefghijklmnopqrrqponmlkjihgfedcba"
 ];
 
-"""A style letter's brightness relative to normal ('m'), as d_lightstylevalue
-scales ('a' is 0, 'm' is 1, 'z' a little over 2)."""
-def letter_scale(letter: str) -> float {
-    return float(max(0, ord(letter) - 97)) / 12.0;
+"""A style letter's brightness relative to a raw lightmap sample. Q1
+R_AnimateLight gives each letter 22/256 ('m' is 264/256, 'z' 550/256); Q2
+CL_RunLightStyles scales so 'm' is exactly 1 ('a' is 0 in both)."""
+def letter_scale(letter: str, game: str = "q2") -> float {
+    step = max(0, ord(letter) - 97);
+    if game == "q1" {
+        return float(step * 22) / 256.0;
+    }
+    return float(step) / 12.0;
 }
 
 node LightStyles {
-    has patterns: dict[int, str] = {},
+    has game: str = "q2",
+        patterns: dict[int, str] = {},
         values: dict[int, float] = {},
         clock: float = 0.0,
         frame: int = -1,
@@ -39,7 +45,7 @@ node LightStyles {
     def refresh() {
         changed = False;
         for (style, pattern) in self.patterns.items() {
-            value = letter_scale(pattern[self.frame % len(pattern)]) if pattern else 1.0;
+            value = letter_scale(pattern[self.frame % len(pattern)], self.game) if pattern else 1.0;
             if style not in self.values or self.values[style] != value {
                 self.values[style] = value;
                 changed = True;
@@ -132,7 +138,7 @@ def load_light_styles(world: World, bsp: Bsp) -> LightStyles | None {
     if bsp.game not in ["q1", "q2"] {
         return None;
     }
-    styles = LightStyles();
+    styles = LightStyles(game=bsp.game);
     for index in range(len(STYLE_PATTERNS)) {
         styles.patterns[index] = STYLE_PATTERNS[index];
     }

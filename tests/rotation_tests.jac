@@ -101,6 +101,8 @@ test "reverse and axis flags pick the swing and start-open doors begin swung" {
 test "blocked movers crush what stops them and crushers keep pushing" {
     fixture = DoorFixture();
     fixture.setup("q2", {"dmg": "7"});
+    # The player below stands on a floor the door cannot push it through.
+    fixture.add_floor();
     door = [fixture.world->:HasDoor:->][?:Door][0];
     player = Player(health=100, pos=Vec3(x=60.0, z=46.0));
     for i in range(25) {
@@ -173,7 +175,9 @@ test "pendulums swing on their gravity period and mover clocks survive saves" {
     slab(collision);
     load_rotators(world, bsp, collision);
     swing = [world->:HasRotator:->][?:Rotator][0];
-    assert swing.kind == "pendulum" and abs(swing.period - 4.3531) < 0.01;
+    # SP_func_pendulum's length is fabs(r.mins[2]): the stored -128 spread
+    # to -129 as CM_LoadSubmodels loads it, so 2 pi sqrt(3 * 129 / 800).
+    assert swing.kind == "pendulum" and abs(swing.period - 4.37006) < 0.0001;
     quarter = swing.period / 4.0;
     world spawn RotatorTick(bsp=bsp, collision=collision, dt=quarter);
     peak = bsp.faces[0].turn;

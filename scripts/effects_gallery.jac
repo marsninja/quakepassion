@@ -14,13 +14,13 @@ import from engine.world.world { World, Player }
 import from engine.world.arena { match_of }
 import from engine.world.combat { Projectile, HasProjectile }
 import from engine.world.particles {
+    ParticleTick,
     Explosion,
     HasExplosion,
     ShotTrail,
     HasTrail,
-    ImpactParticle,
-    HasParticle,
     explode,
+    quake3_missile_hit_wall,
     rail_trail,
     beam_trail,
     impact_spray,
@@ -53,29 +53,32 @@ def pose_effects(app: App, game: str) {
     hit = app.level.collision.trace_point(eye, eye.add(ahead.scale(1024.0)));
     near = eye.add(ahead.scale(min(220.0, reach * 0.5)));
     # Explosions: left of centre, half way through their animations.
-    kinds = {
-        "q1": ["q1_explosion"],
-        "q2": ["q2_explosion", "q2_grenade_explosion"],
-        "q3": ["q3_rocket_explosion", "q3_grenade_explosion", "q3_plasma_explosion"]
-    }.get(game, []);
+    kinds = {"q1": ["q1_explosion", "q1_lavasplash"], "q2": ["q2_explosion", "q2_grenade_explosion"]}.get(game, []);
     for i in range(len(kinds)) {
         explode(world, near.add(side.scale(-70.0 + float(i) * 45.0)).add(Vec3(z=30.0)), kinds[i]);
+    }
+    # Q3: each weapon's CG_MissileHitWall burst, facing the viewer.
+    if game == "q3" {
+        weapons = ["q3_rocket", "q3_grenade", "q3_bfg", "q3_plasma", "railgun", "machinegun"];
+        for i in range(len(weapons)) {
+            quake3_missile_hit_wall(
+                world, weapons[i], near.add(side.scale(-100.0 + float(i) * 40.0)).add(Vec3(z=30.0)), ahead.scale(-1.0), False
+            );
+        }
     }
     for blast in [world->:HasExplosion:->][?:Explosion] {
         blast.age = blast.lifetime * 0.4;
     }
-    # Fire embers already flying, and blood and dust sprays.
-    for particle in [world->:HasParticle:->][?:ImpactParticle] {
-        particle.pos = particle.pos.add(particle.velocity.scale(0.12));
-        particle.remaining = particle.lifetime * 0.6;
-    }
-    impact_spray(world, near.add(side.scale(40.0)).sub(Vec3(z=10.0)), ahead.scale(-1.0), blood=True);
+    # Let the bursts fly a moment before the blood and dust sprays.
+    world spawn ParticleTick(dt=0.12);
+    impact_spray(world, near.add(side.scale(40.0)).sub(Vec3(z=10.0)), ahead.scale(-1.0), blood=True, weapon="machinegun");
     impact_spray(world, near.add(side.scale(60.0)).sub(Vec3(z=10.0)), ahead.scale(-1.0));
     # Trails from beside the view to the far wall.
     muzzle = eye.add(side.scale(12.0)).sub(Vec3(z=12.0));
     finish = hit.end if hit.fraction < 1.0 else eye.add(ahead.scale(1024.0));
     if game == "q1" {
         beam_trail(world, muzzle, near.add(side.scale(90.0)), "player_lightning");
+        beam_trail(world, near.add(side.scale(-120.0)).add(Vec3(z=60.0)), near.add(side.scale(120.0)).add(Vec3(z=60.0)), "q1_lightning3");
     } elif game == "q2" {
         rail_trail(world, muzzle, finish.add(side.scale(40.0)), "q2_rail");
     } elif game == "q3" {
@@ -135,12 +138,25 @@ def pose_marks(app: App) {
         spot = hit.end.add(side.scale(-100.0 + float(i) * 50.0)).add(Vec3(z=float(i % 2) * 20.0 - 10.0));
         impact_mark(world=app.world, shader=shaders[i], origin=spot, normal=hit.normal, radius=radii[i], alpha_fade=i >= 3, color=Vec3(x=1.0, y=0.0, z=1.0) if i == 4 else Vec3(x=1.0, y=1.0, z=1.0));
     }
+    # The bullet, plasma and rail hits' models under their shaders, a tenth
+    # of a second in, where they struck the wall.
+    weapons = ["machinegun", "q3_plasma", "railgun"];
+    for i in range(3) {
+        spot = hit.end.add(side.scale(-60.0 + float(i) * 60.0)).add(Vec3(z=30.0));
+        quake3_missile_hit_wall(app.world, weapons[i], spot, hit.normal, False);
+    }
+    for blast in [app.world->:HasExplosion:->][?:Explosion] {
+        if blast.kind in ["q3_bullet_explosion", "q3_plasma_explosion", "q3_rail_explosion"] {
+            blast.age = 0.1;
+        }
+    }
 }
 
 with entry {
     renderer = Renderer();
     renderer.open_window();
-    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True, overlay=False);
+    app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
+    app.host.overlay.assign("0");
     for spec in GALLERY_MAPS {
         game = spec.split(":")[0];
         name = spec.split(":")[1];

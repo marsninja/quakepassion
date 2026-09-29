@@ -61,20 +61,22 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
             require_range(data, p, width * height);
             pixels: list[int] = [];
             for i in range(width * height) {
-                color = int(data[p + i]) * 3;
+                index = int(data[p + i]);
+                color = index * 3;
+                # The colormap leaves the last 32 colours unlit (alpha 0).
                 pixels.extend(
                     [
                         int(palette[color]),
                         int(palette[color + 1]),
                         int(palette[color + 2]),
-                        255
+                        0 if index >= 224 else 255
                     ]
                 );
             }
             name = "skin" + str(skin) + ":" + str(sub);
             surface.skins.append(name);
             surface.embedded_skins.append(
-                Texture(name=name, width=width, height=height, pixels=bytes(pixels))
+                Texture(name=name, width=width, height=height, pixels=bytes(pixels), fullbright=True)
             );
             p += width * height;
         }
@@ -122,6 +124,7 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
             require_range(data, p, 24 + vertices * 4);
             frame = AnimationFrame(name=model_name(data, p + 8, 16));
             p += 24;
+            normals = bytearray(vertices);
             for j in range(vertices) {
                 frame.vertices.append(
                     Vec3(
@@ -130,8 +133,10 @@ def parse_mdl(data: bytes, palette: bytes) -> AnimatedModel {
                         z=float(data[p + 2]) * scale.z + origin.z
                     )
                 );
+                normals[j] = data[p + 3];
                 p += 4;
             }
+            frame.normal_indices = bytes(normals);
             surface.frames.append(frame);
         }
         surface.frame_groups.append(group);

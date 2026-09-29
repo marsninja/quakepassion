@@ -64,16 +64,17 @@ with entry {
         assert app.level.bsp.game == game and app.player.health == 57;
         print("PERSISTENCE PASS", game);
     }
-    app.renderer.fov = 85.0;
-    app.audio.volume = 0.4;
+    app.configure();
+    app.shell.execute_text("fov 85; volume 0.4");
     app.save_preferences();
     assert app.menu.message == "Settings saved", app.menu.message;
     preferences = Preferences();
-    preferences.load();
-    assert preferences.fov == 85.0 and abs(preferences.volume - 0.4) < 0.0001;
+    assert preferences.current();
+    text = preferences.settings_text();
+    assert "seta fov \"85\"" in text and "seta volume \"0.4\"" in text;
     app.reset_settings();
-    preferences.load();
-    assert preferences.fov == 72.0 and preferences.volume == 0.25;
+    text = preferences.settings_text();
+    assert "seta fov \"90\"" in text and "seta volume \"0.25\"" in text;
     print("PREFERENCES PASS");
     app.audio.close();
     app.models.close();

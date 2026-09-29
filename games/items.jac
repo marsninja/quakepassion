@@ -2,8 +2,17 @@
 import math;
 import from .weapons { weapon_rules }
 import from engine.world.signals { Signal, HasSignal }
-import from engine.world.pickups { PickupRule, Pickup, HasPickup, ItemTeam, TeamMember, InTeam }
-import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs }
+import from engine.world.pickups {
+    PickupRule,
+    Pickup,
+    HasPickup,
+    ItemTeam,
+    TeamMember,
+    InTeam,
+    item_view,
+    drop_to_floor
+}
+import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, let_fall }
 import from engine.world.powerups { powerup_rule }
 import from engine.world.models {
     ModelResource,
@@ -12,6 +21,7 @@ import from engine.world.models {
     attach_model
 }
 import from engine.world.world { World, move_to_area }
+import from engine.world.lighting { MODEL_LIGHT_GLOW }
 import from engine.world.level { Level }
 import from engine.assets.catalog { AssetCatalog }
 import from engine.math.vec3 { Vec3 }
@@ -167,6 +177,20 @@ glob Q1_NAMES: dict[str, str] = {
     "item_artifact_super_damage": "Quad Damage"
 };
 
+"""items.qc setsize: health and ammo boxes (and item_weapon) reach from their
+origin to '32 32 56', armor and weapons from '-16 -16 0', and keys, sigils
+and artifacts from '-16 -16 -24'; all are the player hull's size."""
+def q1_item_mins(kind: str) -> Vec3 {
+    if kind.startswith("item_armor") or kind.startswith("weapon_") {
+        return Vec3(x=-16.0, y=-16.0);
+    }
+    if kind in ["item_key1", "item_key2", "item_sigil"]
+        or kind.startswith("item_artifact_") {
+        return Vec3(x=-16.0, y=-16.0, z=-24.0);
+    }
+    return Vec3();
+}
+
 """What picking the item up says and shows: Q1 sprints ("You got the Rocket
 Launcher", "You receive 25 health", "You got armor", centerprinted "You got
 the rune!"); Q2 and Q3 put the item's icon and name on the status bar
@@ -174,6 +198,7 @@ the rune!"); Q2 and Q3 put the item's icon and name on the status bar
 (Pickup_Weapon) and items announce their respawn."""
 def present_pickup(game: str, kind: str, rule: PickupRule, worldtype: int) {
     if game == "q1" {
+        rule.mins = q1_item_mins(kind);
         if kind == "item_health" {
             rule.message = "You receive " + str(rule.amount) + " health";
         } elif kind.startswith("item_armor") {
@@ -214,6 +239,8 @@ def pickup_rule(
     }
     if rule is not None {
         present_pickup(game, fields.get("classname", ""), rule, worldtype);
+        # The entity's classname, as botlib's item configs know the item.
+        rule.classname = fields.get("classname", "");
     }
     return rule;
 }
@@ -689,11 +716,21 @@ def item_spin(game: str, rule: PickupRule, flags: int) -> float {
     return 0.0;
 }
 
+"""How an item's model takes light: Q2 SpawnItem and Drop_Item give every
+item RF_GLOW, so bonus items pulse (ITEM_NO_TOUCH items do not)."""
+def item_light_flags(game: str, spawnflags: int = 0) -> int {
+    if game == "q2" and spawnflags & 1 == 0 {
+        return MODEL_LIGHT_GLOW;
+    }
+    return 0;
+}
+
 def populate_pickups(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
     teams: dict[str, ItemTeam] = {};
     count = 0;
+    item_box = item_view(level.collision, level.bsp.game);
     try {
         for index in range(len(level.bsp.entities)) {
             fields = level.bsp.entities[index].fields;
@@ -792,6 +829,11 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 activate_on_use=waiting_for_use or level.bsp.game == "q3",
                 reusable_use=level.bsp.game == "q3"
             );
+            # Q1 PlaceItem, Q2 droptofloor, Q3 FinishSpawningItem.
+            landing = drop_to_floor(pickup, item_box, level.bsp.game, flags & 1 != 0);
+            if not landing.kept {
+                continue;
+            }
             for signal in [world->:HasSignal:->][?:Signal] {
                 if index in signal.entities {
                     pickup.activation = signal;
@@ -806,6 +848,7 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 pickup.visual +>:UsesModel:+> resources[extra];
             }
             pickup.visual.spin = item_spin(source, rule, resources[key].model.flags);
+            pickup.visual.light_flags = item_light_flags(source, flags);
             if source == "q3" {
                 # cg_ents.c CG_Item: bob 4 +/- 4 units at a per-entity rate.
                 pickup.visual.bob = 4.0;
@@ -826,8 +869,11 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 pickup +>:InTeam:+> teams[team_name];
             }
             pickup.visual.visible = pickup.active;
-            move_to_area(pickup, level.areas[level.locate(position)]);
+            move_to_area(pickup, level.areas[level.locate(pickup.pos)]);
             world +>:HasPickup:+> pickup;
+            if landing.falls {
+                let_fall(world, pickup);
+            }
             count += 1;
         }
         if level.bsp.game == "q3" {

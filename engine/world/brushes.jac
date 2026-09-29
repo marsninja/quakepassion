@@ -3,8 +3,7 @@ import from .world { World, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
 import from .damage { Damage, blast_strength }
-import from .doors { model_bounds }
-import from ..formats.bsp { Bsp }
+import from ..formats.bsp { Bsp, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap, Sweep }
 import from ..math.vec3 { Vec3 }
 
@@ -73,7 +72,7 @@ def load_brushes(world: World, bsp: Bsp, collision: CollisionMap) {
         brush = BrushObject(
             model=model,
             kind=kind,
-            center=model_bounds(bsp, model).center(),
+            center=model_bounds(bsp, model, mover_origin(fields)).center(),
             active=(plain or flags & 4 != 0) if kind == "func_wall" else flags & 1 == 0,
             toggle=kind == "func_wall" and not plain and flags & 6 != 0,
             usable=not plain or bsp.game == "q1",

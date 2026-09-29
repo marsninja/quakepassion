@@ -7,7 +7,8 @@ import from engine.render.renderer { Renderer }
 import from engine.world.world { World }
 import from engine.world.level { load_level, spawn_player }
 import from engine.world.combat { fire_weapon, Opponent, HasOpponent, CombatTick }
-import from engine.world.particles { HasParticle, ParticleTick }
+import from engine.world.particles { ParticleTick }
+import from engine.world.particle_field { particle_field }
 import from games.opponents { populate_opponents }
 import from engine.math.vec3 { Vec3 }
 import from games.weapons { equip_player }
@@ -26,13 +27,13 @@ with entry {
         level=level,
         renderer=renderer,
         clock=Clock(),
-        smoke=True,
-        culling=False
+        smoke=True
     );
+    app.renderer.cvars.novis.assign("1");
     app.quake.upload(level);
     equip_player(player, app.combat, "q1");
     assert fire_weapon(world, player, level.collision, app.combat);
-    assert len([world->:HasParticle:->]) > 0;
+    assert len(particle_field(world).fresh) > 0;
     world spawn ParticleTick(dt=0.08);
     for i in range(3) {
         app.render_frame();

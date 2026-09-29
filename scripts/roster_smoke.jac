@@ -64,12 +64,13 @@ with entry {
                 rule.pain_frames,
                 rule.knockdown_frames,
                 rule.idle_frames,
-                rule.run_frames,
+                rule.run.frames,
+                rule.walk.frames,
                 rule.death_frames,
                 rule.attack_frames,
                 rule.melee_frames,
                 rule.alternate_melee_frames
-            ] + rule.pain_variants {
+            ] + rule.pain_variants + [other.frames for other in rule.other_walks] {
                 for name in group {
                     assert name in names , kind + ":" + name;
                     checked += 1;

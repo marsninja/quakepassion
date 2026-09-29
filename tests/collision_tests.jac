@@ -1,5 +1,5 @@
 import from engine.physics.collision { HullCell, HullFront, HullBack, CollisionMap }
-import from engine.physics.movement { slide, step_slide, MovePlayer }
+import from engine.physics.movement { slide, step_slide, MovePlayer, movement_profile }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.world { Player }
 
@@ -129,11 +129,11 @@ test "walking up and down a ramp stays on the ground at full speed" {
             collision = ramp_map(False);
             player = Player(pos=Vec3(z=22.04));
             for i in range(240) {
-                player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), game=game);
+                player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), profile=movement_profile(game));
                 assert player.grounded;
             }
             start = player.pos.x;
-            player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), game=game);
+            player spawn MovePlayer(collision=collision, wish=Vec3(x=heading), profile=movement_profile(game));
             assert abs(abs(player.pos.x - start) - 320.0 / 120.0) < 0.01;
         }
     }
@@ -142,8 +142,8 @@ test "walking up and down a ramp stays on the ground at full speed" {
 test "a jump still leaves a ramp" {
     collision = ramp_map(False);
     player = Player(pos=Vec3(z=22.04));
-    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), jump=True, game="q1");
-    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game="q1");
+    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), jump=True, profile=movement_profile("q1"));
+    player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), profile=movement_profile("q1"));
     assert not player.grounded and player.velocity.z > 0.0;
 }
 
@@ -153,7 +153,7 @@ test "Q1 and Q2 walk over a ramp's crest while Q3 kicks off it" {
         player = Player(pos=Vec3(x=-40.0, z=-28.0 + 22.04));
         airborne = 0;
         for i in range(120) {
-            player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), game=game);
+            player spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), profile=movement_profile(game));
             if not player.grounded {
                 airborne += 1;
             }
@@ -176,4 +176,68 @@ test "cyclic collision graphs report invalid geometry" {
         failed = True;
     }
     assert failed;
+}
+
+"""A Q1-style clip hull, top down: open above z=60, a slab from 50 to 60
+(split at 55 into two solid leaves when `split`), open from 0 to 50 and
+solid below the floor at 0."""
+def slab_map(split: bool) -> CollisionMap {
+    top = HullCell(normal=Vec3(z=1.0), distance=60.0);
+    slab = HullCell(normal=Vec3(z=1.0), distance=50.0);
+    ground = halfspace(Vec3(z=1.0), 0.0);
+    top +>:HullFront:+> HullCell(contents=-1);
+    top +>:HullBack:+> slab;
+    if split {
+        halves = HullCell(normal=Vec3(z=1.0), distance=55.0);
+        halves +>:HullFront:+> HullCell(contents=-2);
+        halves +>:HullBack:+> HullCell(contents=-2);
+        slab +>:HullFront:+> halves;
+    } else {
+        slab +>:HullFront:+> HullCell(contents=-2);
+    }
+    slab +>:HullBack:+> ground;
+    return CollisionMap(hulls=[top], offsets=[Vec3()]);
+}
+
+test "an escaping trace leaves the solid it starts in as SV_RecursiveHullCheck does" {
+    collision = slab_map(False);
+    # Normally a start in solid is where the trace ends.
+    stuck = collision.trace(Vec3(z=55.0), Vec3(z=-45.0));
+    assert stuck.start_solid and stuck.fraction == 0.0;
+    # Escaping, it runs on out of the slab and stops on the floor below.
+    out = collision.trace(Vec3(z=55.0), Vec3(z=-45.0), escape=True);
+    assert out.start_solid and not out.all_solid;
+    assert abs(out.end.z - 0.03125) < 0.0001 and out.normal.z == 1.0;
+    # Out of the slab with nothing below: no floor, fraction 1.
+    open = collision.trace(Vec3(z=55.0), Vec3(z=20.0), escape=True);
+    assert open.start_solid and not open.all_solid and open.fraction == 1.0;
+    # Never out of it: all solid.
+    buried = collision.trace(Vec3(z=58.0), Vec3(z=52.0), escape=True);
+    assert buried.all_solid and buried.fraction == 1.0;
+    # From open space an escaping trace is an ordinary one.
+    above = collision.trace(Vec3(z=100.0), Vec3(z=0.0), escape=True);
+    assert not above.start_solid and abs(above.end.z - 60.03125) < 0.0001;
+    # Solid meeting solid before any open space gives up all solid, even
+    # though open space lies beyond ("never got out of the solid area").
+    halves = slab_map(True).trace(Vec3(z=57.0), Vec3(z=-43.0), escape=True);
+    assert halves.all_solid and halves.fraction == 1.0;
+}
+
+test "an escaping trace leaves a brush it starts in" {
+    collision = CollisionMap();
+    for bounds in [(50.0, 60.0), (-64.0, 0.0)] {
+        collision.add_brush(
+            [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(z=1.0), Vec3(z=-1.0)],
+            [1000.0, 1000.0, 1000.0, 1000.0, bounds[1], -bounds[0]],
+            Vec3(),
+            Vec3(),
+            Vec3()
+        );
+    }
+    collision.models = [0, 0];
+    collision.reindex();
+    out = collision.trace(Vec3(z=55.0), Vec3(z=-45.0), escape=True, point=True);
+    assert out.start_solid and not out.all_solid and abs(out.end.z) < 0.0001;
+    buried = collision.trace(Vec3(z=58.0), Vec3(z=52.0), escape=True, point=True);
+    assert buried.all_solid;
 }

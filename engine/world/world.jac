@@ -9,7 +9,9 @@ surface."""
 
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
+import from ..math.interpolation { TickPose }
 import from .inventory { Inventory }
+import from .liquids { Immersion }
 
 
 """A single axis-aligned box of world geometry (phase 1 graybox)."""
@@ -39,6 +41,12 @@ node Area {
 }
 
 
+"""Indexes the areas holding entities (occupants above zero), kept by
+move_to_area: passes over the world's entities visit these few rather than
+every leaf of the level."""
+edge Occupied: World --> Area {}
+
+
 """Connects two Areas through an opening. Visibility floods through these."""
 edge Portal: Area --> Area {
     has rect: AABB;
@@ -52,7 +60,10 @@ edge In: Entity --> Area {}
 node Entity {
     has pos: Vec3 = Vec3(),
         yaw: float = 0.0,
-        pitch: float = 0.0;
+        pitch: float = 0.0,
+        # Where it stood when the physics tick in progress began, for drawing
+        # it between ticks (engine/math/interpolation.jac).
+        tick_pose: TickPose = TickPose();
 }
 
 
@@ -66,6 +77,12 @@ node Actor(Entity) {
         killer: Actor | None = None,
         death_means: str = "",
         death_overkill: int = 0;
+    # Q3 G_Damage's bookkeeping: who last hurt this actor and how
+    # (client->lasthurt_client, lasthurt_mod), and how many hits it has
+    # landed on others (PERS_HITS).
+    has hurt_by: Actor | None = None,
+        hurt_means: str = "",
+        hits_landed: int = 0;
 }
 
 node Player(Actor) {
@@ -78,6 +95,8 @@ node Player(Actor) {
         walk_speed: float = 320.0,
         water_depth: int = 0,
         liquid_kind: int = 0,
+        # The current pushing at its feet (Immersion.current).
+        water_current: Vec3 = Vec3(),
         air_remaining: float = 12.0,
         drown_damage: int = 2,
         hazard_wait: float = 0.0;
@@ -94,6 +113,14 @@ node Player(Actor) {
     has damage_blood: int = 0,
         damage_armor: int = 0,
         damage_from: Vec3 | None = None;
+
+    """Stand as deep in liquid as `immersed` says (Level.immersion): the
+    water level, the worst liquid touched and the current at the feet."""
+    def immerse(immersed: Immersion) {
+        self.water_depth = immersed.depth;
+        self.liquid_kind = immersed.kind;
+        self.water_current = immersed.current;
+    }
 }
 
 
@@ -147,3 +174,8 @@ def area_of(ent: Entity) -> Area | None;
 
 """Rewire an entity's In edge when it crosses into a new area."""
 def move_to_area(ent: Entity, new_area: Area);
+
+
+"""Bring an area's Occupied edge from its world in line with its count of
+occupants (after a move, or a pass that recounted them)."""
+def index_occupancy(area: Area);

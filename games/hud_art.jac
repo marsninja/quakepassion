@@ -51,8 +51,9 @@ def load_q1_art(hud: HudRenderer, library: AssetLibrary) {
     for (name, picture) in pictures.items() {
         hud.add(name, picture);
     }
-    # Sbar_IntermissionOverlay's plaques live outside the WAD.
-    for name in ["complete", "inter"] {
+    # Sbar_IntermissionOverlay's plaques and the console background
+    # (Draw_ConsoleBackground) live outside the WAD.
+    for name in ["complete", "inter", "conback"] {
         path = "gfx/" + name + ".lmp";
         if library.exists(path) {
             hud.add(name, lump_picture(library.read(path), palette, name));
@@ -81,7 +82,7 @@ def load_q2_art(hud: HudRenderer, library: AssetLibrary) {
     }
     # The help computer and inventory backgrounds, the status bar's damage
     # flash field, help and power armor icons, and crosshair 1.
-    for extra in ["conchars", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier",
+    for extra in ["conchars", "conback", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier",
         "help", "inventory", "field_3", "i_help", "i_powershield", "i_powerscreen", "ch1"] {
         names.append(extra);
     }
@@ -118,6 +119,17 @@ def load_q3_art(hud: HudRenderer, library: AssetLibrary) {
         art = encoded(library, shown[1] + ".tga");
         if art is not None {
             hud.add(shown[1], art);
+        }
+    }
+    # The console shader's two stages (a missing .tga loads as .jpg, as
+    # R_FindImageFile does).
+    for (name, stem) in [("conback", "gfx/misc/console01"), ("conback2", "gfx/misc/console02")] {
+        art = encoded(library, stem + ".tga");
+        if art is None {
+            art = encoded(library, stem + ".jpg");
+        }
+        if art is not None {
+            hud.add(name, art);
         }
     }
     for (name, path) in [

@@ -3,7 +3,8 @@ import os;
 import from engine.world.level { load_level }
 import from engine.world.world { World }
 import from engine.world.triggers { TouchTrigger, HasTrigger, Activates, TriggerTick }
-import from engine.world.doors { Door, HasDoor, DoorTick, model_bounds }
+import from engine.world.doors { Door, HasDoor, DoorTick }
+import from engine.formats.bsp { model_bounds }
 import from engine.math.vec3 { Vec3 }
 
 with entry {

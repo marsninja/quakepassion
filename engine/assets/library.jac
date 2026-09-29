@@ -16,12 +16,14 @@ obj ModelAsset {
 
 obj AssetLibrary {
     has game: str,
+        directory: str = "",
         paks: list[PakArchive] = [],
         pk3: Pk3Assets = Pk3Assets(),
         cache: dict[str, ModelAsset] = {};
 
     def open(directory: str) {
         self.close();
+        self.directory = directory;
         if self.game == "q3" {
             self.pk3.open(directory);
         } elif self.game == "q1" or self.game == "q2" {
@@ -39,7 +41,19 @@ obj AssetLibrary {
         if self.game == "q3" {
             return self.pk3.exists(name);
         }
-        return any([archive.has_file(name) for archive in self.paks]);
+        return any([archive.has_file(name) for archive in self.paks])
+            or self.loose_path(name) != "";
+    }
+
+    """A file lying loose in the game directory (Quake II keeps its
+    cinematics in video/ there). The directory is searched after its paks,
+    as FS_FOpenFile searches a game directory's paks before its files."""
+    def loose_path(name: str) -> str {
+        if not self.directory or not name or name.startswith("/") or ".." in name {
+            return "";
+        }
+        path = self.directory + "/" + name.replace("\\", "/");
+        return path if os.path.exists(path) else "";
     }
 
     def read(name: str) -> bytes {
@@ -49,6 +63,12 @@ obj AssetLibrary {
         for archive in reversed(self.paks) {
             if archive.has_file(name) {
                 return archive.read_file(name);
+            }
+        }
+        path = self.loose_path(name);
+        if path {
+            with open(path, "rb") as handle {
+                return handle.read();
             }
         }
         raise ValueError("Missing game asset: " + name);
@@ -112,6 +132,7 @@ obj AssetLibrary {
 
     def close() {
         self.pk3.close();
+        self.directory = "";
         self.paks = [];
         self.cache = {};
     }

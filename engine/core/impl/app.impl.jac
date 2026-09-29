@@ -2,30 +2,15 @@
 steps. Declarations live in app.jac."""
 
 impl App.run() {
+    self.configure();
+    self.player.god_mode = self.host.god.on();
     if not self.smoke {
-        preferences = Preferences();
-        try {
-            preferences.load();
-        } except Exception as error {
-            self.notice = "Settings: " + str(error);
-            self.notice_wait = 5.0;
-        }
-        self.renderer.fov = preferences.fov;
-        self.renderer.frame_limit = preferences.frame_limit;
-        self.sensitivity = preferences.sensitivity;
-        self.invert_y = preferences.invert_y;
-        self.god_mode = preferences.god_mode;
-        self.player.god_mode = self.god_mode;
-        self.skill = preferences.skill;
-        self.fly_speed = preferences.fly_speed;
-        self.culling = preferences.culling;
-        self.overlay = preferences.overlay;
-        self.audio.volume = preferences.volume;
         if self.level.active {
             self.audio.open(
                 self.level.bsp.game,
                 game_directory(self.level.bsp.game),
-                weapon_sounds(self.level.bsp.game)
+                weapon_sounds(self.level.bsp.game),
+                missile_sounds(self.level.bsp.game)
             );
         }
     }
@@ -55,6 +40,13 @@ impl App.run() {
         self.quake.upload(self.level);
         self.prepare_presentation();
         self.record_entry();
+        self.start_level_music();
+        # Q2 newgame: "map *ntro.cin+base1" plays the introduction first.
+        film = exit_cinematic(self.opening);
+        if film and not self.smoke {
+            self.begin_cinematic(film, self.level.name, resume=True);
+        }
+        self.opening = "";
     }
     frame = 0;
     while not self.renderer.should_close() {
@@ -72,12 +64,20 @@ impl App.run() {
             break;
         }
     }
+    # Host_WriteConfiguration: keep what the console changed.
+    if not self.smoke {
+        self.save_preferences();
+        if self.keyboard.dirty {
+            self.save_bindings();
+        }
+    }
     if self.level.active {
         self.models.close();
         self.effects.close();
         self.viewweapon.close();
         self.quake.close();
     }
+    self.cinematic.close(self.audio);
     self.audio.close();
     self.renderer.close();
 }
@@ -99,7 +99,7 @@ impl App.fly(intent: Intent, dt: float) {
         Vec3(z=intent.move.z)
     );
     if wish.length() > 0.001 {
-        p.pos = p.pos.add(wish.normalized().scale(self.fly_speed * dt));
+        p.pos = p.pos.add(wish.normalized().scale(self.host.flyspeed.number * dt));
     }
 
     # rewire the In edge when we cross into another area
@@ -114,9 +114,20 @@ impl App.fly(intent: Intent, dt: float) {
 impl App.render_frame() {
     if self.menu.opened {
         self.refresh_settings();
+        self.refresh_controls();
+    }
+    if self.cinematic.active {
+        self.draw_cinematic();
+        return;
     }
     p = self.player;
     self.audio.update(self.world, p.pos, p.yaw, paused=self.menu.opened);
+    self.audio.client_loop(
+        ""
+            if self.finale_active or self.stats_screen
+            else q2_client_sound(p, self.combat),
+        paused=self.menu.opened
+    );
     if self.level.active and self.level.bsp.game == "q1" {
         where = self.level.locate(p.pos);
         levels = [0, 0, 0, 0];
@@ -134,36 +145,44 @@ impl App.render_frame() {
     if self.level.active {
         # RenderTimes: each stage's cost this frame, in milliseconds.
         stamp = time.time();
-        faces = self.level.visible(self.world, p.pos, self.culling);
-        combat_lights(self.level.lighting, self.world, p, self.combat);
+        faces = self.level.visible(self.world, p.pos, self.culling());
+        combat_lights(self.level.lighting, self.world, p, self.combat, self.tick_blend);
         self.quake.time = self.simulation_time;
+        self.quake.blend = self.tick_blend;
         self.render_times.visible = (time.time() - stamp) * 1000.0;
         stamp = time.time();
         self.render_portal(faces);
         self.render_times.portal = (time.time() - stamp) * 1000.0;
-        # The view: damage and landing kicks, weapon punch, the dead view.
+        # The view from the body between its last two physics ticks: eased
+        # up steps, kicked, bobbed and rolled per game, or the dead view.
         game = self.level.bsp.game;
         self.view.take_damage(p);
         self.view.advance(self.frame_dt);
-        # Stairs and a platform's lip ease the eye up rather than jump it.
-        sink = self.view.eye_drop()
-            + self.view.climb(p.pos.z, p.grounded and self.walking, self.frame_dt);
-        eye = p.pos.sub(Vec3(z=sink));
-        view_yaw = p.yaw;
-        view_pitch = p.pitch - math.radians(self.view.pitch());
-        view_roll = math.radians(self.view.roll());
+        punch = 0.0;
         if self.combat.punch_time > 0.0 and self.combat.punch_left > 0.0 {
-            view_pitch += math.radians(
-                self.combat.punch * self.combat.punch_left / self.combat.punch_time
-            );
+            punch = self.combat.punch * self.combat.punch_left / self.combat.punch_time;
         }
-        if p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active {
-            dead = death_view(p, game, self.level.collision.eye_height);
-            eye = p.pos.sub(Vec3(z=dead[0]));
-            view_pitch = math.radians(dead[1]);
-            view_roll = math.radians(dead[2]);
-            view_yaw = dead[3];
-        }
+        blend = self.tick_blend;
+        # The simulation time the frame shows, a fraction of a tick behind.
+        shown_time = self.simulation_time - (1.0 - blend.alpha) * self.physics_clock.tick_rate;
+        placed = self.view.place(
+            p,
+            blend.place(p.tick_pose, p.pos),
+            p.grounded and self.walking,
+            self.frame_dt,
+            shown_time,
+            blend.alpha,
+            punch,
+            self.level.collision.eye_height,
+            dead=p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active,
+            # Q3's podium is its intermission (PM_INTERMISSION): the view is
+            # the intermission point's, without bob, kick or the dead roll.
+            intermission=self.finale_active or self.postgame is not None
+        );
+        eye = placed.eye;
+        view_yaw = placed.yaw;
+        view_pitch = placed.pitch;
+        view_roll = placed.roll;
         stamp = time.time();
         self.renderer.begin_frame(eye, view_yaw, view_pitch, view_roll);
         self.quake.view_forward = forward_from(view_yaw, view_pitch);
@@ -174,22 +193,23 @@ impl App.render_frame() {
             self.world,
             eye,
             self.simulation_time,
-            culling=self.culling,
+            culling=self.culling(),
             yaw=view_yaw,
             pitch=view_pitch,
             fov=self.renderer.fov,
             aspect=float(self.renderer.width) / float(self.renderer.height),
             lighting=self.level.lighting,
             fogs=self.level.bsp.fogs,
-            fog_image=self.quake.fog_image
+            fog_image=self.quake.fog_image,
+            blend=blend
         );
-        self.renderer.draw_opponents(self.world, self.level.collision.eye_height);
-        self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys());
+        self.renderer.draw_opponents(self.world, self.level.collision.eye_height, blend);
+        self.renderer.draw_projectiles(self.world, hidden_effects=self.effects.keys(), blend=blend);
         self.render_times.models = (time.time() - stamp) * 1000.0;
         stamp = time.time();
-        self.effects.draw_particles(self.world, view_yaw, view_pitch);
+        self.effects.draw_particles(self.world, view_yaw, view_pitch, blend);
         self.effects.draw(
-            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting
+            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend
         );
         self.render_times.effects = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -201,10 +221,10 @@ impl App.render_frame() {
             self.viewweapon.draw(
                 p,
                 self.combat,
-                self.simulation_time,
+                shown_time,
                 self.level.lighting,
-                lift=inset / float(max(1, self.renderer.height)),
-                sink=sink
+                placed,
+                lift=inset / float(max(1, self.renderer.height))
             );
         }
         self.renderer.end_scene();
@@ -241,7 +261,7 @@ impl App.render_frame() {
                     self.total_monsters,
                     progress.secrets,
                     progress.total_secrets,
-                    int(self.simulation_time),
+                    int(Q1_SERVER_START + self.simulation_time),
                     self.level.bsp.entities[0].fields.get("message", "")
                         if self.level.bsp.entities
                         else "",
@@ -404,6 +424,9 @@ impl App.render_frame() {
                 board = self.postgame;
                 if contest.finished and board is not None and self.hud.ready {
                     draw_postgame(self.hud, board, self.postgame_clock, self.renderer.width, self.renderer.height);
+                    # The intermission's chat (the bots' end-of-level lines)
+                    # over the podium and its menu (Con_DrawNotify).
+                    self.hud.draw_notify(self.notify_lines, self.level.bsp.game, self.renderer.width, self.renderer.height);
                 } elif self.hud.ready and not contest.finished {
                     killer = p.killer;
                     draw_scoreboard(
@@ -424,7 +447,7 @@ impl App.render_frame() {
                 }
             }
         }
-        if self.overlay {
+        if self.host.overlay.on() {
             self.renderer.draw_overlay(
                 [
                     self.level.bsp.game.upper() + ": " + self.level.name,
@@ -433,21 +456,24 @@ impl App.render_frame() {
                         + "/"
                         + str(len(self.level.bsp.faces)),
                     "BSP leaf: " + str(self.level.locate(p.pos)),
-                    "PVS [C]: " + ("ON" if self.culling else "OFF"),
+                    "PVS (r_novis): " + ("ON" if self.culling() else "OFF"),
                     (
                         "WASD: walk | Space: jump"
                             if self.walking
-                            else "WASD / Space / Shift: fly"
+                            else "WASD / Space / C: fly"
                     )
-                        + " | `: mouse | Tab: "
+                        + " | `: console | Tab: "
                         + ("inventory" if self.level.bsp.game == "q2" else "scores")
                         + " | F3: overlay",
                     self.movement_status
                 ]
             );
         }
+        self.console.draw(
+            self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+        );
         if self.menu.opened {
-            self.menu.draw();
+            self.menu.draw(self.renderer.width, self.renderer.height);
         }
         self.render_times.hud = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -459,7 +485,7 @@ impl App.render_frame() {
     cur = area_of(p);
     all_areas = [self.world-->[?:Area]];
 
-    if self.culling and cur is not None {
+    if self.culling() and cur is not None {
         vis = cur spawn VisPass(eye=p.pos, facing=facing);
         targets = vis.visible;
     } else {
@@ -471,24 +497,25 @@ impl App.render_frame() {
     self.last_drawn = rp.drawn;
     self.renderer.end_scene();
 
-    if self.overlay {
+    if self.host.overlay.on() {
         cur_name = cur.name if cur is not None else "the void";
-        culling_state = "ON" if self.culling else "OFF";
-        mouse_state = "captured [` releases]"
-            if mouse_captured()
-            else "free - click or ` to look";
+        culling_state = "ON" if self.culling() else "OFF";
+        mouse_state = "captured" if mouse_captured() else "free - click to look";
         self.renderer.draw_overlay(
             [
                 "area: " + cur_name,
                 "visible: " + str(len(targets)) + "/" + str(len(all_areas)) + " areas",
-                "culling [C]: " + culling_state,
+                "culling (r_novis): " + culling_state,
                 "entities thinking: " + str(self.last_think),
                 "mouse: " + mouse_state
             ]
         );
     }
+    self.console.draw(
+        self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+    );
     if self.menu.opened {
-        self.menu.draw();
+        self.menu.draw(self.renderer.width, self.renderer.height);
     }
     self.renderer.end_frame();
 }
@@ -496,7 +523,7 @@ impl App.render_frame() {
 impl App.smoke_step(frame: int) -> bool {
     if self.level.active {
         if frame == 1 {
-            self.overlay = False;
+            self.host.overlay.assign("0");
         }
         if frame == 40 {
             print(
@@ -508,7 +535,7 @@ impl App.smoke_step(frame: int) -> bool {
                 self.last_drawn
             );
             self.renderer.screenshot("qp_quake_pvs.png");
-            self.culling = False;
+            self.renderer.cvars.novis.assign("1");
         } elif frame == 80 {
             print("ALL", self.level.name, "faces", self.last_drawn);
             self.renderer.screenshot("qp_quake_all.png");
@@ -518,7 +545,7 @@ impl App.smoke_step(frame: int) -> bool {
             self.player.yaw -= 1.57079632679;
             # Exercise the same free-flight integration used by WASD.
             self.fly(Intent(move=Vec3(y=1.0)), 2.0);
-            self.culling = True;
+            self.renderer.cvars.novis.assign("0");
         } elif frame == 160 {
             print(
                 "MOVED",
@@ -529,7 +556,7 @@ impl App.smoke_step(frame: int) -> bool {
                 self.last_drawn
             );
             self.renderer.screenshot("qp_quake_moved_pvs.png");
-            self.culling = False;
+            self.renderer.cvars.novis.assign("1");
         } elif frame == 200 {
             self.renderer.screenshot("qp_quake_moved_all.png");
             return True;
@@ -543,7 +570,7 @@ impl App.smoke_step(frame: int) -> bool {
     } elif frame == 80 {
         # facing away: culling should leave only the current room
         self.renderer.screenshot("qp_smoke_away.png");
-        self.culling = False;
+        self.renderer.cvars.novis.assign("1");
     } elif frame == 120 {
         # culling off: everything draws regardless of facing
         self.renderer.screenshot("qp_smoke_off.png");
@@ -577,7 +604,8 @@ impl App.load_destination(
     next_viewweapon = ViewWeapon();
     try {
         world = World();
-        level = open_level(world, game_directory(game), name, game, self.skill if game == "q3" else min(3, self.skill));
+        skill = self.host.skill.integer;
+        level = open_level(world, game_directory(game), name, game, skill if game == "q3" else min(3, skill));
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"
                 and self.level.bsp.game == "q1"
@@ -660,6 +688,10 @@ impl App.load_destination(
                 level.collision.top_drop = top;
             }
         }
+        # Q2's game state outlives each level: the help computer carries on.
+        if carry and game == "q2" and self.level.bsp.game == "q2" {
+            carry_help(self.world, world);
+        }
         if saved {
             restore(world, level, player, combat, saved);
         }
@@ -688,25 +720,31 @@ impl App.load_destination(
         self.arena_contacts = ArenaContactIndex();
         self.level = level;
         self.player = player;
-        self.player.god_mode = self.god_mode;
+        self.player.god_mode = self.host.god.on();
         self.quake = next_renderer;
         self.models = next_models;
         self.effects = next_effects;
         self.viewweapon = next_viewweapon;
         # The last level's graph lives until it is destroyed.
         destroy_graph(last_world, last_roots);
+        if game != self.configured_game {
+            self.configure_game(game);
+        }
         self.prepare_presentation();
         if self.audio.ready {
             self.audio.close();
             try {
-                self.audio.open(game, game_directory(game), weapon_sounds(game));
+                self.audio.open(
+                    game, game_directory(game), weapon_sounds(game), missile_sounds(game)
+                );
             } except Exception as error {
                 self.notice = "Audio: " + str(error);
                 self.notice_wait = 4.0;
                 self.audio.close();
             }
         }
-        self.simulation_time = 0.0;
+        # A restored level goes on from its saved clock.
+        self.simulation_time = self.level.clock;
         self.combat = combat;
         self.expedition_complete = level.completion.pending > 0;
         self.finale_text = "";
@@ -753,7 +791,12 @@ impl App.load_destination(
         self.pending_text = "";
         self.help_open = False;
         self.inventory_open = False;
+        self.cinematic.stop(self.audio);
+        self.cinematic_next = "";
+        self.cinematic_resume = False;
+        self.pending_cinematic = "";
         self.record_entry();
+        self.start_level_music();
         # Draw the new level once before play: a level's first draw uploads
         # and prepares what it shows, and a slow first frame would hand the
         # next one a long simulation step.
@@ -775,7 +818,22 @@ impl App.load_destination(
 impl App.step() -> bool {
     dt = 0.0 if self.skip_time else (self.fixed_dt if self.fixed_dt > 0.0 else self.renderer.frame_time());
     self.skip_time = False;
-    if not self.smoke and IsKeyPressed(i32(256)) {
+    self.renderer.sync();
+    self.console.advance(self.renderer.frame_time());
+    escape = False;
+    if not self.smoke {
+        escape = self.handle_keys();
+    }
+    loaded = self.level;
+    if not self.execute_commands() {
+        return False;
+    }
+    if self.level is not loaded {
+        self.render_frame();
+        return True;
+    }
+    if escape or self.menu_requested {
+        self.menu_requested = False;
         self.menu.opened = not self.menu.opened;
         if self.menu.opened {
             self.jump_pending = False;
@@ -805,7 +863,7 @@ impl App.step() -> bool {
         return True;
     }
     if self.menu.opened {
-        action = self.menu.update();
+        action = self.menu.update(self.renderer.width, self.renderer.height);
         if action == "quit" {
             return False;
         }
@@ -815,21 +873,23 @@ impl App.step() -> bool {
         if action == "settings_reset" {
             self.reset_settings();
         }
+        if action == "unbind" or action == "controls_reset" {
+            self.control_action(action);
+        }
         if action == "load" {
             self.switch_level();
         }
         self.render_frame();
         return True;
     }
-    if self.level.active and not self.smoke {
-        if IsKeyPressed(i32(294)) {
-            self.quicksave();
-        }
-        if IsKeyPressed(i32(298)) {
-            self.quickload();
-            self.render_frame();
-            return True;
-        }
+    if self.cinematic.active {
+        return self.cinematic_step(dt);
+    }
+    # Q2 and Q3 pause single-player games while the console is down.
+    if self.console.active and self.level.active and self.level.bsp.game in ["q2", "q3"] {
+        self.physics_clock.accumulator = 0.0;
+        self.render_frame();
+        return True;
     }
     if self.level.active
         and (self.intermission_text or self.campaign_complete or self.stats_screen) {
@@ -840,7 +900,7 @@ impl App.step() -> bool {
         script = self.scripted;
         scripted_press = script is not None and (script.fire or script.jump);
         pressed = scripted_press
-            or (not self.smoke and (IsKeyPressed(i32(257)) or IsKeyPressed(i32(32))));
+            or (not self.smoke and (self.prompt_key(257) or self.prompt_key(32)));
         if self.stats_screen {
             self.stats_wait = max(0.0, self.stats_wait - dt);
             if pressed and self.stats_wait <= 0.0 {
@@ -891,8 +951,12 @@ impl App.step() -> bool {
         ) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
-        # A death on the last tick of a frame is still voiced.
+        # A death on the last tick of a frame is still voiced, and still
+        # lets a cooking grenade go (Think_Weapon).
         if self.player.health <= 0 and self.level.active {
+            if release_live_grenade(self.world, self.player, self.level.collision, self.combat) {
+                self.combat_feedback();
+            }
             voice = self.player spawn VoiceTick(game=self.level.bsp.game, dt=0.0);
             for cue in voice.cues {
                 self.audio.play_path(cue);
@@ -903,6 +967,21 @@ impl App.step() -> bool {
             for cue in celebration.cues {
                 self.audio.play_path(cue);
             }
+            # The intermission: bots think on (BotIntermission) and may say
+            # how the match went, which shows over the podium as it does in
+            # Q3 (Con_DrawNotify keeps drawing during PM_INTERMISSION).
+            self.world spawn BotTactics(
+                player=self.player,
+                collision=self.level.collision,
+                state=self.combat,
+                rules=self.combat.rules,
+                dt=dt,
+                map_name=self.level.name,
+                level=self.level,
+                intermission=True
+            );
+            self.combat_feedback();
+            self.age_notify(dt);
             self.postgame_clock += dt;
             if self.postgame is not None {
                 self.postgame_input(contest);
@@ -910,7 +989,7 @@ impl App.step() -> bool {
                 return True;
             }
         }
-        if IsKeyPressed(i32(257)) {
+        if self.prompt_key(257) {
             if contest is not None and contest.finished {
                 rows = standings(contest);
                 self.finish_arena(contest, bool(rows) and rows[0].human);
@@ -923,9 +1002,8 @@ impl App.step() -> bool {
     }
     # Acceptance bots drive the real game loop through a scripted intent.
     scripted = self.scripted;
-    intent = Intent()
-        if self.smoke or self.finale_active
-        else sample_intent(dt, self.sensitivity, self.invert_y);
+    sampled = self.controls.sample(dt);
+    intent = Intent() if self.smoke or self.finale_active else sampled;
     if scripted is not None and not self.finale_active {
         intent = scripted;
     }
@@ -977,18 +1055,15 @@ impl App.step() -> bool {
             self.show_notice(item_label(stored[self.selected_item]));
         }
         if intent.use_item {
-            self.use_item();
+            self.use_item(intent.use_kind);
+        }
+        if intent.impulse > 0 {
+            self.impulse(intent.impulse);
         }
     }
-    if intent.toggle_culling {
-        self.culling = not self.culling;
-    }
-    if intent.toggle_overlay {
-        self.overlay = not self.overlay;
-    }
-
-    if intent.toggle_walk {
-        self.toggle_movement();
+    # Q2/Q3 IN_CenterView: level the view.
+    if intent.center_view {
+        self.player.pitch = 0.0;
     }
     self.frame_dt = dt;
     if self.level.active and not self.menu.opened {
@@ -1034,21 +1109,34 @@ impl App.step() -> bool {
     );
     for i in range(steps) {
         jumped = False;
+        # Render interpolation: what each body, mover and the view start
+        # this tick from (engine/math/interpolation.jac).
+        self.tick_blend.tick += 1;
+        self.world spawn CaptureMotion(tick=self.tick_blend.tick);
+        if self.level.active {
+            self.quake.hold_placements(self.level, self.tick_blend.tick);
+        }
+        self.view.tick(
+            self.player,
+            intent.move.x != 0.0 or intent.move.y != 0.0,
+            self.physics_clock.tick_rate
+        );
         self.simulation_time += self.physics_clock.tick_rate;
+        self.level.clock = self.simulation_time;
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
         self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
-        self.notify_ages = [age - self.physics_clock.tick_rate for age in self.notify_ages];
-        while self.notify_ages and self.notify_ages[0] <= 0.0 {
-            self.notify_ages.pop(0);
-            self.notify_lines.pop(0);
-        }
+        self.age_notify(self.physics_clock.tick_rate);
         if self.walking and self.level.active {
+            standing = self.level.collision.eye_height;
             self.player spawn SetStance(
                 collision=self.level.collision,
-                game=self.level.bsp.game,
+                profile=self.level.movement,
                 crouch=intent.crouch,
                 dt=self.physics_clock.tick_rate
             );
+            if self.level.collision.eye_height != standing {
+                self.view.duck(self.level.collision.eye_height - standing);
+            }
         }
         previous_origin = self.player.pos.sub(Vec3(z=self.level.collision.eye_height));
         if self.level.active and not self.smoke {
@@ -1058,7 +1146,7 @@ impl App.step() -> bool {
             for cue in events.cues {
                 self.audio.play_path(cue);
             }
-            self.world spawn SpeakerTick();
+            self.world spawn SpeakerTick(dt=self.physics_clock.tick_rate);
             self.world spawn BrushTick(
                 bsp=self.level.bsp,
                 collision=self.level.collision,
@@ -1066,8 +1154,7 @@ impl App.step() -> bool {
                 state=self.combat
             );
             if events.message {
-                self.notice = events.message;
-                self.notice_wait = 3.0;
+                self.show_notice(events.message);
             }
             trains = self.world spawn TrainTick(
                 bsp=self.level.bsp,
@@ -1090,8 +1177,7 @@ impl App.step() -> bool {
                 player=self.player if self.walking else None
             );
             if doors.message {
-                self.notice = doors.message;
-                self.notice_wait = 3.0;
+                self.show_notice(doors.message);
             }
             for cue in doors.cues {
                 self.audio.play_path(cue);
@@ -1109,8 +1195,7 @@ impl App.step() -> bool {
         }
         if self.walking and not self.finale_active {
             immersed = self.level.immersion(self.player.pos);
-            self.player.water_depth = immersed.depth;
-            self.player.liquid_kind = immersed.kind;
+            self.player.immerse(immersed);
             swim = forward_from(self.player.yaw, self.player.pitch).scale(
                 intent.move.y
             ).add(
@@ -1124,7 +1209,14 @@ impl App.step() -> bool {
                 jump=self.jump_pending or intent.jump_held,
                 water_depth=immersed.depth,
                 swim_wish=swim,
-                game=self.level.bsp.game,
+                command=Vec3(
+                    x=intent.move.x,
+                    y=intent.move.y,
+                    z=intent.move.z - (1.0 if intent.crouch else 0.0)
+                ),
+                current=immersed.current,
+                command_full=self.controls.full_move_speed(),
+                profile=self.level.movement,
                 dt=self.physics_clock.tick_rate
             );
             self.world spawn ClearActors(
@@ -1147,8 +1239,7 @@ impl App.step() -> bool {
         }
         if self.level.active and not self.smoke {
             immersed = self.level.immersion(self.player.pos);
-            self.player.water_depth = immersed.depth;
-            self.player.liquid_kind = immersed.kind;
+            self.player.immerse(immersed);
             old_health = self.player.health;
             self.player spawn EnvironmentTick(
                 game=self.level.bsp.game,
@@ -1194,6 +1285,9 @@ impl App.step() -> bool {
                 if self.walking {
                     self.world spawn PatrolTick(dt=self.physics_clock.tick_rate);
                 }
+                if contest is not None {
+                    self.world spawn ImmerseBots(level=self.level, dt=self.physics_clock.tick_rate);
+                }
                 self.world spawn CombatTick(
                     player=self.player,
                     collision=self.level.collision,
@@ -1208,7 +1302,9 @@ impl App.step() -> bool {
                         collision=self.level.collision,
                         state=self.combat,
                         rules=self.combat.rules,
-                        dt=self.physics_clock.tick_rate
+                        dt=self.physics_clock.tick_rate,
+                        map_name=self.level.name,
+                        level=self.level
                     );
                 }
             }
@@ -1305,6 +1401,10 @@ impl App.step() -> bool {
                 held=intent.fire,
                 dt=self.physics_clock.tick_rate
             ) {
+                kicked = self.viewweapon.rule_for(self.combat.weapon);
+                if kicked is not None {
+                    self.view.recoil(kicked.kick_back, kicked.kick_shake, kicked.kick_twist);
+                }
                 silencer = effect(self.player, "silencer");
                 gain = 1.0;
                 if silencer is not None and silencer.count > 0 {
@@ -1480,6 +1580,9 @@ impl App.step() -> bool {
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
+                game=self.level.bsp.game,
+                body_mins=self.level.collision.hull_mins,
+                body_maxs=self.level.collision.hull_maxs,
                 top_drop=self.level.collision.top_drop,
                 touching=self.walking and not self.finale_active
             );
@@ -1526,14 +1629,13 @@ impl App.step() -> bool {
             for cue in triggers.cues {
                 self.audio.play_path(cue);
             }
-            if triggers.skill >= 0 and triggers.skill != self.skill {
+            if triggers.skill >= 0 and triggers.skill != self.host.skill.integer {
                 # Q1 start map halls select the skill for the next level.
-                self.skill = min(3, triggers.skill);
+                self.host.skill.assign(str(min(3, triggers.skill)));
                 self.save_preferences();
             }
             if triggers.message {
-                self.notice = triggers.message;
-                self.notice_wait = 3.0;
+                self.show_notice(triggers.message);
             }
             self.world spawn HazardTick(
                 player=self.player,
@@ -1563,25 +1665,23 @@ impl App.step() -> bool {
                     break;
                 }
                 destination = exit_map(exit_request.request);
-                cinematic = exit_cinematic(exit_request.request);
-                if destination.endswith(".pcx") {
-                    self.finale_text = VICTORY_TEXT;
-                    self.campaign_complete = True;
-                    self.begin_intermission("");
-                    break;
-                }
+                film = exit_cinematic(exit_request.request);
                 text = episode_text(self.level.bsp.game, self.level.name, destination);
                 unit = exit_request.request.split("$")[0].split("+")[-1].startswith("*");
-                if cinematic {
-                    self.notice = "Cinematic " + cinematic + " skipped";
-                    self.notice_wait = 4.0;
-                }
                 # Q1 execute_changelevel shows the stats unless NO_INTERMISSION;
-                # Q2 BeginIntermission pauses only at the end of a unit.
+                # Q2 BeginIntermission pauses only at the end of a unit, and
+                # ExitLevel's "gamemap" then plays the unit's closing film.
                 game = self.level.bsp.game;
                 if (game == "q1" and (exit_request.intermission or text))
                     or (game == "q2" and unit) {
                     self.begin_stats(destination, exit_spawn(exit_request.request), unit, text);
+                    self.pending_cinematic = film;
+                    break;
+                }
+                if film or destination.endswith(".pcx") {
+                    self.begin_cinematic(
+                        film, destination, exit_spawn(exit_request.request), unit
+                    );
                     break;
                 }
                 self.load_destination(
@@ -1617,12 +1717,14 @@ impl App.step() -> bool {
     }
     if self.walking {
         immersed = self.level.immersion(self.player.pos);
-        self.player.water_depth = immersed.depth;
-        self.player.liquid_kind = immersed.kind;
+        self.player.immerse(immersed);
         self.fly(Intent(), 0.0);
     } else {
+        # Flight moves the body every frame, not on ticks.
         self.fly(intent, dt);
+        self.player.tick_pose.settle();
     }
+    self.tick_blend.alpha = self.physics_clock.alpha();
     self.render_frame();
     return True;
 }
@@ -1640,6 +1742,7 @@ impl App.begin_intermission(text: str) {
         self.player.pos = view.origin.add(Vec3());
         self.player.yaw = view.yaw;
         self.player.pitch = view.pitch;
+        self.player.tick_pose.settle();
     }
 }
 
@@ -1648,7 +1751,13 @@ impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
     self.pending_spawn = spawnpoint;
     self.pending_unit = unit;
     self.pending_text = text;
-    self.completed_time = self.simulation_time;
+    # Q1 execute_changelevel: CD track 3 over the intermission.
+    if self.level.bsp.game == "q1" {
+        self.audio.play_cd_track(3);
+    }
+    # Q1 cl.completed_time is the server clock; Q2's is the level's time.
+    self.completed_time = self.simulation_time
+        + (Q1_SERVER_START if self.level.bsp.game == "q1" else 0.0);
     self.begin_intermission("");
     self.stats_screen = True;
     # execute_changelevel: at least two seconds before a key may leave.
@@ -1658,6 +1767,8 @@ impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
 impl App.finish_stats() {
     self.stats_screen = False;
     if self.pending_text {
+        # ExitIntermission: an episode's closing text plays CD track 2.
+        self.audio.play_cd_track(2);
         self.intermission_text = self.pending_text;
         self.pending_text = "";
         return;
@@ -1665,6 +1776,12 @@ impl App.finish_stats() {
     if self.pending_map {
         destination = self.pending_map;
         self.pending_map = "";
+        film = self.pending_cinematic;
+        self.pending_cinematic = "";
+        if film or destination.endswith(".pcx") {
+            self.begin_cinematic(film, destination, self.pending_spawn, self.pending_unit);
+            return;
+        }
         self.load_destination(
             self.level.bsp.game,
             destination,
@@ -1731,106 +1848,122 @@ impl App.toggle_movement() {
 }
 
 impl App.refresh_settings() {
+    render = self.renderer.cvars;
+    look = self.controls.cvars;
+    skill = self.host.skill.integer;
     self.menu.settings_labels = [
         "Movement: " + ("Walk" if self.walking else "Fly"),
-        "Field of view (vertical): " + str(int(self.renderer.fov)),
-        "Mouse sensitivity: " + str(int(self.sensitivity / 0.0022 * 100.0 + 0.5)) + "%",
-        "Invert mouse Y: " + ("On" if self.invert_y else "Off"),
-        "Fly speed: " + str(int(self.fly_speed)),
-        "Frame limit: "
-            + (
-                str(self.renderer.frame_limit)
-                    if self.renderer.frame_limit > 0
-                    else "Uncapped"
-            ),
-        "Visibility culling: " + ("On" if self.culling else "Off"),
-        "Diagnostic overlay: " + ("On" if self.overlay else "Off"),
-        "Sound volume: " + str(int(self.audio.volume * 100.0)) + "%",
-        "God mode: " + ("On" if self.god_mode else "Off"),
-        "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare", "Nightmare"][max(0, min(4, self.skill))]
-            + " (Q3: " + Q3_SKILL_NAMES[max(0, min(4, self.skill))] + ")"
+        "Field of view: " + render.fov.text,
+        "Mouse sensitivity: " + look.sensitivity.text,
+        "Invert mouse: " + ("On" if look.m_pitch.number < 0.0 else "Off"),
+        "Always run: " + ("On" if look.run.on() else "Off"),
+        "Fly speed: " + self.host.flyspeed.text,
+        "Frame limit: " + (render.maxfps.text if render.maxfps.integer > 0 else "Uncapped"),
+        "Fullscreen: " + ("On" if render.fullscreen.on() else "Off"),
+        "Window size: " + render.width.text + " x " + render.height.text,
+        "Visibility culling: " + ("Off" if render.novis.on() else "On"),
+        "Diagnostic overlay: " + ("On" if self.host.overlay.on() else "Off"),
+        "Crosshair: " + ("On" if self.hud.crosshair.on() else "Off"),
+        "Sound volume: " + str(int(self.audio.volume.number * 100.0 + 0.5)) + "%",
+        "Music volume: " + str(int(self.audio.music_volume.number * 100.0 + 0.5)) + "%",
+        "God mode: " + ("On" if self.host.god.on() else "Off"),
+        "Skill (next level): " + ["Easy", "Normal", "Hard", "Nightmare", "Nightmare"][skill]
+            + " (Q3: " + Q3_SKILL_NAMES[skill] + ")"
     ];
 }
 
+"""M_AdjustSliders: the selected settings row one step left or right; every
+row but Movement is a cvar."""
 impl App.adjust_setting(direction: int) {
     row = self.menu.setting_selected;
+    render = self.renderer.cvars;
+    look = self.controls.cvars;
+    step = float(direction);
     self.menu.message = "";
     if row == 0 {
         self.toggle_movement();
         self.menu.message = self.movement_status;
     } elif row == 1 {
-        self.renderer.fov = max(
-            40.0, min(110.0, self.renderer.fov + float(direction) * 2.0)
-        );
+        render.fov.assign(str(max(50.0, min(130.0, render.fov.number + step * 5.0))));
     } elif row == 2 {
-        self.sensitivity = max(
-            0.00022, min(0.011, self.sensitivity + float(direction) * 0.00022)
-        );
+        look.sensitivity.assign(str(max(0.5, min(30.0, look.sensitivity.number + step * 0.5))));
     } elif row == 3 {
-        self.invert_y = not self.invert_y;
+        look.m_pitch.assign(str(-look.m_pitch.number));
     } elif row == 4 {
-        self.fly_speed = max(
-            60.0, min(1920.0, self.fly_speed + float(direction) * 60.0)
-        );
+        look.run.assign("0" if look.run.on() else "1");
     } elif row == 5 {
+        self.host.flyspeed.assign(str(self.host.flyspeed.number + step * 60.0));
+    } elif row == 6 {
         limits = [0, 30, 60, 120, 144, 240];
         index = 0;
         for i in range(len(limits)) {
-            if limits[i] == self.renderer.frame_limit {
+            if limits[i] == render.maxfps.integer {
                 index = i;
             }
         }
-        self.renderer.set_frame_limit(
-            limits[(index + direction + len(limits)) % len(limits)]
-        );
-    } elif row == 6 {
-        self.culling = not self.culling;
+        render.maxfps.assign(str(limits[(index + direction + len(limits)) % len(limits)]));
     } elif row == 7 {
-        self.overlay = not self.overlay;
+        render.fullscreen.assign("0" if render.fullscreen.on() else "1");
+        self.renderer.apply_video();
     } elif row == 8 {
-        self.audio.volume = max(
-            0.0, min(1.0, self.audio.volume + float(direction) * 0.05)
-        );
+        # The window sizes the video menu offers (vid_width x vid_height).
+        modes = [[800, 600], [1024, 768], [1280, 720], [1280, 960], [1600, 900], [1920, 1080], [2560, 1440]];
+        index = -1;
+        for i in range(len(modes)) {
+            if modes[i][0] == render.width.integer and modes[i][1] == render.height.integer {
+                index = i;
+            }
+        }
+        if index < 0 {
+            index = 2 if direction > 0 else 3;
+        }
+        mode = modes[(index + direction + len(modes)) % len(modes)];
+        render.width.assign(str(mode[0]));
+        render.height.assign(str(mode[1]));
+        self.renderer.apply_video();
     } elif row == 9 {
-        self.god_mode = not self.god_mode;
-        self.player.god_mode = self.god_mode;
+        render.novis.assign("0" if render.novis.on() else "1");
     } elif row == 10 {
+        self.host.overlay.assign("0" if self.host.overlay.on() else "1");
+    } elif row == 11 {
+        self.hud.crosshair.assign("0" if self.hud.crosshair.on() else "1");
+    } elif row == 12 {
+        self.audio.volume.assign(str(max(0.0, min(1.0, self.audio.volume.number + step * 0.05))));
+    } elif row == 13 {
+        self.audio.music_volume.assign(str(max(0.0, min(1.0, self.audio.music_volume.number + step * 0.05))));
+    } elif row == 14 {
+        self.host.god.assign("0" if self.host.god.on() else "1");
+        self.player.god_mode = self.host.god.on();
+    } elif row == 15 {
         # Q1 and Q2 have four skills; the fifth is Q3's Nightmare!, which
         # they play as Nightmare. ui_spskill.c announces it.
-        self.skill = (self.skill + direction + 5) % 5;
-        if self.skill == 4 and self.level.bsp.game == "q3" {
+        self.host.skill.assign(str((self.host.skill.integer + direction + 5) % 5));
+        if self.host.skill.integer == 4 and self.level.bsp.game == "q3" {
             self.audio.play_path("sound/misc/nightmare.wav");
         }
     }
     self.save_preferences();
 }
 
+"""Every archived cvar back to its default (Cvar_Restart_f), walking again."""
 impl App.reset_settings() {
     self.menu.message = "";
     if not self.walking {
         self.toggle_movement();
     }
-    self.renderer.fov = 72.0;
-    self.renderer.set_frame_limit(0);
-    self.sensitivity = 0.0022;
-    self.invert_y = False;
-    self.god_mode = False;
-    self.player.god_mode = False;
-    self.skill = 1;
-    self.fly_speed = 240.0;
-    self.culling = True;
-    self.overlay = True;
-    self.audio.volume = 0.25;
+    self.shell spawn ResetCvars(archived_only=True);
+    self.player.god_mode = self.host.god.on();
+    self.renderer.apply_video();
     self.save_preferences();
 }
 
-impl App.quicksave() {
+impl App.quicksave(slot: str = "") {
     if self.player.health <= 0 or not self.walking {
         self.notice = "Save while alive in walk mode";
     } else {
         try {
             write_save(
-                (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt"),
+                self.save_file(slot),
                 pack_campaign(
                     self.campaign,
                     snapshot(self.world, self.level, self.player, self.combat)
@@ -1844,10 +1977,10 @@ impl App.quicksave() {
     self.notice_wait = 4.0;
 }
 
-impl App.quickload() {
+impl App.quickload(slot: str = "") {
     try {
         data = read_save(
-            (self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt")
+            self.save_file(slot)
         );
         session = unpack_campaign(data);
         data = session.active;
@@ -1859,7 +1992,7 @@ impl App.quickload() {
         }
         for line in lines {
             if line.startswith("SKILL ") {
-                self.skill = max(0, min(4, int(line[6:])));
+                self.host.skill.assign(str(max(0, min(4, int(line[6:])))));
             }
         }
         self.load_destination(
@@ -1874,18 +2007,7 @@ impl App.quickload() {
 
 impl App.save_preferences() {
     try {
-        Preferences(
-            fov=self.renderer.fov,
-            sensitivity=self.sensitivity,
-            invert_y=self.invert_y,
-            fly_speed=self.fly_speed,
-            frame_limit=self.renderer.frame_limit,
-            culling=self.culling,
-            overlay=self.overlay,
-            volume=self.audio.volume,
-            god_mode=self.god_mode,
-            skill=self.skill
-        ).save();
+        Preferences().save(self.shell.archive_lines());
         self.menu.message = "Settings saved";
     } except Exception as error {
         self.menu.message = "Settings save failed: " + str(error);
@@ -1896,6 +2018,8 @@ impl App.show_notice(message: str) {
     if message {
         self.notice = message;
         self.notice_wait = 3.0;
+        # Q2 SCR_CenterPrint: centred messages go to the console too.
+        self.shell.print(message);
     }
 }
 
@@ -1903,19 +2027,31 @@ impl App.notify(message: str) {
     if not message {
         return;
     }
-    # con_notifytime 3 seconds, NUM_CON_TIMES 4 lines.
+    # Con_Printf: the console keeps the line; the view shows it for
+    # con_notifytime seconds, NUM_CON_TIMES 4 lines.
+    self.shell.print(message);
     self.notify_lines.append(message);
-    self.notify_ages.append(3.0);
+    self.notify_ages.append(self.console.cvars.notify_time.number);
     while len(self.notify_lines) > 4 {
         self.notify_lines.pop(0);
         self.notify_ages.pop(0);
     }
 }
 
+impl App.age_notify(seconds: float) {
+    self.notify_ages = [age - seconds for age in self.notify_ages];
+    while self.notify_ages and self.notify_ages[0] <= 0.0 {
+        self.notify_ages.pop(0);
+        self.notify_lines.pop(0);
+    }
+}
+
 impl App.play_at(path: str, origin: Vec3) {
     if path {
         distance = origin.sub(self.player.pos).length();
-        self.audio.play_path(path, max(0.0, 1.0 - distance / 1000.0));
+        self.audio.play_path(
+            path, sound_falloff(self.level.bsp.game, distance, 1.0, False)
+        );
     }
 }
 
@@ -2042,6 +2178,7 @@ impl App.teleport_actor(actor: Player) {
     actor.velocity = forward_from(spot.yaw, 0.0).scale(400.0);
     actor.grounded = False;
     actor.teleport_hold = 0.16;
+    actor.tick_pose.settle();
     move_to_area(actor, self.level.areas[self.level.locate(actor.pos)]);
     self.world spawn KillBox(
         mover=actor,
@@ -2158,6 +2295,7 @@ impl App.respawn_arena_player() {
     if spot is not None {
         player.pos = spot.pos.add(Vec3(z=self.level.collision.eye_height + 1.0));
         player.yaw = spot.yaw;
+        player.tick_pose.settle();
     }
     move_to_area(player, self.level.areas[self.level.locate(player.pos)]);
     # g_client.c ClientSpawn: G_KillBox telefrags a bot standing on the spot.
@@ -2208,11 +2346,12 @@ impl App.render_portal(faces: list[int]) {
         self.models,
         self.effects,
         faces,
-        p.pos,
+        self.tick_blend.place(p.tick_pose, p.pos),
         p.yaw,
         p.pitch,
         self.renderer.fov,
-        self.simulation_time
+        self.simulation_time,
+        self.tick_blend
     );
     show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, False);
 }
@@ -2226,6 +2365,14 @@ impl App.begin_podium(contest: ArenaMatch) {
     self.player.pitch = -math.radians(view[1].x);
     self.player.velocity = Vec3();
     self.player.god_mode = True;
+    # BeginIntermission respawns the dead before moving them to the
+    # intermission point (ClientSpawn: the maximum health plus 25).
+    if self.player.health <= 0 {
+        self.player.health = self.player.max_health + 25;
+        self.player.killer = None;
+        self.awaiting_respawn = False;
+        self.respawn_wait = 0.0;
+    }
     move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
     raise_podium(self.world, contest, self.level, view[0], view[1], selected_weapon(self.combat).key);
     # UI_SPPostgameMenu_f: the player's awards for the match, logged to the
@@ -2262,7 +2409,8 @@ impl App.begin_podium(contest: ArenaMatch) {
         }
         board.won = me.rank == 0;
         board.focus = 2 if board.won else 1;
-        self.audio.play_path("music/win.wav" if board.won else "music/loss.wav");
+        # ui_sppostgame.c: "music music/win" (or loss) plays once.
+        self.audio.start_music("music/win" if board.won else "music/loss", once=True);
     }
     board.places = [row.name for row in rows[:3]];
     board.scores = [postgame_score_line(row.rank, row.tied, row.name, row.frags) for row in rows[:8]];
@@ -2280,13 +2428,13 @@ impl App.postgame_input(contest: ArenaMatch) {
         self.audio.play_path(cue);
     }
     pressed = "";
-    if IsKeyPressed(i32(257)) or IsKeyPressed(i32(335)) {
+    if self.prompt_key(257) or self.prompt_key(335) {
         pressed = "enter";
-    } elif IsKeyPressed(i32(263)) {
+    } elif self.prompt_key(263) {
         pressed = "left";
-    } elif IsKeyPressed(i32(262)) {
+    } elif self.prompt_key(262) {
         pressed = "right";
-    } elif IsKeyPressed(i32(32)) or IsMouseButtonPressed(i32(0)) {
+    } elif self.prompt_key(32) or (not self.console.active and IsMouseButtonPressed(i32(0))) {
         pressed = "any";
     }
     if not pressed {
@@ -2586,7 +2734,10 @@ impl App.hud_status() -> HudStatus {
         pickup_name=self.pickup_name,
         pickup_fade=self.pickup_time,
         selected_icon=self.selected_icon(),
-        ammo_warning=self.ammo_warning if game == "q3" and p.health > 0 else 0
+        ammo_warning=self.ammo_warning if game == "q3" and p.health > 0 else 0,
+        # cg.damageTime and cg.damageX from CG_DamageFeedback (DAMAGE_TIME 0.5 s).
+        damage_age=0.5 - self.view.blob_time if game == "q3" and self.view.blob_time > 0.0 else -1.0,
+        damage_x=self.view.blob_x
     );
 }
 
@@ -2608,4 +2759,135 @@ impl App.selected_icon() -> str {
         "power_shield": "i_powershield"
     };
     return icons.get(stored[self.selected_item % len(stored)], "");
+}
+
+impl App.begin_cinematic(
+    film: str,
+    destination: str,
+    spawnpoint: str = "",
+    unit: bool = False,
+    resume: bool = False
+) {
+    self.cinematic_next = destination;
+    self.cinematic_spawn = spawnpoint;
+    self.cinematic_unit = unit;
+    self.cinematic_resume = resume;
+    self.help_open = False;
+    self.inventory_open = False;
+    self.jump_pending = False;
+    self.physics_clock.accumulator = 0.0;
+    self.skip_time = True;
+    # SCR_PlayCinematic stops the music; a film brings its own sound.
+    self.audio.stop_music();
+    try {
+        if film {
+            self.cinematic.play(film, self.game_asset("video/" + film), self.audio);
+        } elif destination.endswith(".pcx") {
+            # SV_Map's ss_pic: the picture is the end of the chain.
+            self.cinematic_next = "";
+            self.cinematic_resume = False;
+            self.cinematic.show(destination, self.game_asset("pics/" + destination), self.audio);
+        }
+    } except Exception as error {
+        print("Cinematic unavailable:", film if film else destination, str(error));
+        self.cinematic.stop(self.audio);
+    }
+    # A missing film finishes at once (SCR_PlayCinematic).
+    if not self.cinematic.active {
+        self.finish_cinematic();
+    }
+}
+
+impl App.finish_cinematic() {
+    self.cinematic.stop(self.audio);
+    destination = self.cinematic_next;
+    self.cinematic_next = "";
+    self.skip_time = True;
+    if self.cinematic_resume {
+        self.cinematic_resume = False;
+        self.start_level_music();
+        return;
+    }
+    if destination.endswith(".pcx") {
+        self.begin_cinematic("", destination);
+        return;
+    }
+    if not destination {
+        # SV_Nextserver with no next server: killserver, back to the menu.
+        # The game is over; the level stays frozen behind the menu.
+        self.campaign_complete = True;
+        self.begin_intermission("");
+        self.menu.opened = True;
+        self.menu.restore_mouse = mouse_captured();
+        _release();
+        self.menu.scan();
+        return;
+    }
+    self.load_destination(
+        self.level.bsp.game,
+        destination,
+        self.cinematic_spawn,
+        carry=True,
+        new_unit=self.cinematic_unit
+    );
+}
+
+impl App.cinematic_step(dt: float) -> bool {
+    finished = self.cinematic.advance(dt, False, self.audio);
+    script = self.scripted;
+    held = (script is not None and (script.fire or script.jump))
+        or (not self.smoke and not self.console.active and self.keyboard.any_down());
+    if finished or self.cinematic.wants_skip(held) {
+        self.finish_cinematic();
+    }
+    self.render_frame();
+    return True;
+}
+
+impl App.draw_cinematic() {
+    # The level's own emitters hold still behind the film.
+    self.audio.update(self.world, self.player.pos, self.player.yaw, paused=True);
+    self.audio.client_loop("");
+    self.renderer.begin_screen();
+    # SCR_DrawCinematic: a menu blanks the picture; the console drops over it.
+    if self.menu.opened {
+        self.menu.draw(self.renderer.width, self.renderer.height);
+    } else {
+        self.cinematic.draw(self.renderer.width, self.renderer.height);
+    }
+    self.console.draw(
+        self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+    );
+    self.renderer.end_frame();
+}
+
+impl App.game_asset(path: str) -> bytes {
+    game = self.level.bsp.game;
+    library = self.audio.library;
+    if library is not None and library.game == game {
+        return library.read(path);
+    }
+    fresh = AssetLibrary(game=game);
+    fresh.open(game_directory(game));
+    data = b"";
+    try {
+        data = fresh.read(path);
+    } except Exception as error {
+        fresh.close();
+        raise;
+    }
+    fresh.close();
+    return data;
+}
+
+impl App.start_level_music() {
+    self.audio.stop_music();
+    if not self.level.active {
+        return;
+    }
+    music = level_music(self.level.bsp);
+    if music.intro {
+        self.audio.start_music(music.intro, music.loop);
+    }
+    self.audio.play_cd_track(music.cd_track);
 }

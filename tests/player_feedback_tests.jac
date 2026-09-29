@@ -22,12 +22,13 @@ import from engine.world.combat {
 import from engine.world.world { World, Player }
 import from engine.world.inventory { AdjustInventory, quantity }
 import from engine.world.pickups { Pickup, HasPickup, PickupTick }
-import from engine.world.particles { ShotTrail, HasTrail, Explosion, HasExplosion }
+import from engine.world.particle_field { particle_field }
+import from engine.world.particles { ShotTrail, HasTrail, Explosion, HasExplosion, ImpactSound, HasImpactSound }
 import from engine.world.vitals { CrashLand, VoiceTick }
 import from engine.world.damage { Damage, Heal }
 import from engine.render.view_feedback { ViewFeedback }
 import from engine.physics.collision { HullCell, HullFront, HullBack, CollisionMap }
-import from engine.physics.movement { MovePlayer }
+import from engine.physics.movement { MovePlayer, movement_profile }
 import from engine.math.vec3 { Vec3 }
 
 def pf_floor() -> CollisionMap {
@@ -105,7 +106,7 @@ test "own rockets launch the player: Q2 1600 per mass, Q3 before halving" {
 test "Q2 and Q3 jump before friction; Q1 rubs speed off first; jumps need a release" {
     for game in ["q1", "q2", "q3"] {
         player = Player(pos=Vec3(z=46.03125), velocity=Vec3(x=400.0), grounded=True);
-        player spawn MovePlayer(collision=pf_floor(), jump=True, game=game);
+        player spawn MovePlayer(collision=pf_floor(), jump=True, profile=movement_profile(game));
         assert player.velocity.z > 200.0;
         if game == "q1" {
             assert player.velocity.x < 390.0;
@@ -115,14 +116,14 @@ test "Q2 and Q3 jump before friction; Q1 rubs speed off first; jumps need a rele
     }
     player = Player(pos=Vec3(z=46.03125), grounded=True);
     floor = pf_floor();
-    first = player spawn MovePlayer(collision=floor, jump=True, game="q3");
+    first = player spawn MovePlayer(collision=floor, jump=True, profile=movement_profile("q3"));
     assert first.jumped;
     for i in range(120) {
-        player spawn MovePlayer(collision=floor, jump=True, game="q3");
+        player spawn MovePlayer(collision=floor, jump=True, profile=movement_profile("q3"));
     }
     assert player.grounded and player.velocity.z <= 0.0;
-    player spawn MovePlayer(collision=floor, jump=False, game="q3");
-    again = player spawn MovePlayer(collision=floor, jump=True, game="q3");
+    player spawn MovePlayer(collision=floor, jump=False, profile=movement_profile("q3"));
+    again = player spawn MovePlayer(collision=floor, jump=True, profile=movement_profile("q3"));
     assert again.jumped;
 }
 
@@ -132,7 +133,7 @@ test "Q2 PMF_TIME_LAND holds off a jump just after a hard landing" {
         player = Player(pos=Vec3(z=50.0), velocity=Vec3(z=row[0]));
         landed = 0.0;
         for i in range(60) {
-            moved = player spawn MovePlayer(collision=floor, game=row[2]);
+            moved = player spawn MovePlayer(collision=floor, profile=movement_profile(row[2]));
             landed = max(landed, moved.landed);
             if landed > 0.0 {
                 break;
@@ -140,12 +141,12 @@ test "Q2 PMF_TIME_LAND holds off a jump just after a hard landing" {
         }
         assert player.grounded and abs(player.land_time - row[1]) < 0.0001;
         if row[1] > 0.0 {
-            refused = player spawn MovePlayer(collision=floor, jump=True, game="q2");
+            refused = player spawn MovePlayer(collision=floor, jump=True, profile=movement_profile("q2"));
             assert not refused.jumped and player.grounded;
             # Holding jump through the wait jumps once it runs out.
             jumped = False;
             for i in range(30) {
-                step = player spawn MovePlayer(collision=floor, jump=True, game="q2");
+                step = player spawn MovePlayer(collision=floor, jump=True, profile=movement_profile("q2"));
                 jumped = jumped or step.jumped;
             }
             assert jumped;
@@ -158,7 +159,7 @@ test "landing reports its speed and falling hurts by each game's thresholds" {
     floor = pf_floor();
     landed = 0.0;
     for i in range(60) {
-        moved = player spawn MovePlayer(collision=floor, game="q1");
+        moved = player spawn MovePlayer(collision=floor, profile=movement_profile("q1"));
         landed = max(landed, moved.landed);
     }
     assert landed > 690.0;
@@ -287,7 +288,12 @@ test "Q1 Thunderbolt discharges under water; beams and rails leave trails" {
         assert select_weapon(player, state, slot);
         assert fire_weapon(world, player, CollisionMap(), state);
         trails = [world->:HasTrail:->][?:ShotTrail];
-        assert len(trails) == 1 and trails[0].kind == game + "_rail";
+        if game == "q2" {
+            # CL_RailTrail is particles: the blue spiral round a grey core.
+            assert not trails and particle_field(world).fresh;
+        } else {
+            assert len(trails) == 1 and trails[0].kind == "q3_rail";
+        }
     }
 }
 
@@ -308,7 +314,9 @@ test "missiles burst into each game's explosion" {
         blasts = [world->:HasExplosion:->][?:Explosion];
         assert len(blasts) == 1;
         expected = {"q1": "q1_explosion", "q2": "q2_explosion", "q3": "q3_rocket_explosion"}[game];
-        assert blasts[0].kind == expected and blasts[0].sound;
+        # Q3's burst sounds with CG_MissileHitWall's hit, not the explosion.
+        heard = blasts[0].sound if game != "q3" else [world->:HasImpactSound:->][?:ImpactSound][0].sound;
+        assert blasts[0].kind == expected and heard;
         world spawn CombatTick(player=player, collision=collision, state=state, dt=2.0, active=False);
         assert not [world->:HasExplosion:->];
     }

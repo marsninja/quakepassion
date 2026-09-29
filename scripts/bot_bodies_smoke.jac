@@ -13,7 +13,8 @@ import from engine.world.world { World, Player, Entity }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileTick }
 import from engine.world.arena { MatchTick, match_of }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
-import from engine.world.bot_tactics { BotTactics }
+import from engine.world.bot_ai { BotTactics }
+import from engine.world.wading { ImmerseBots }
 import from engine.world.pickups { PickupTick, Pickup, HasPickup }
 import from engine.world.powerups { GrantPowerup }
 import from engine.world.models { PlayerRig }
@@ -86,7 +87,8 @@ with entry {
             player.health = 100;
             player.god_mode = True;
         }
-        app = App(world=world, player=camera, level=level, renderer=renderer, clock=Clock(), smoke=True, culling=False);
+        app = App(world=world, player=camera, level=level, renderer=renderer, clock=Clock(), smoke=True);
+        app.renderer.cvars.novis.assign("1");
         equip_player(player, app.combat, "q3");
         app.quake.upload(level);
         app.models.upload(world);
@@ -110,8 +112,9 @@ with entry {
             tick += 1;
             world spawn PickupTick(player=player, start=player.pos, finish=player.pos, dt=dt);
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt);
+            world spawn ImmerseBots(level=level, dt=dt);
             world spawn CombatTick(player=player, collision=level.collision, state=app.combat, dt=dt, arena_live=True);
-            world spawn BotTactics(player=player, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=dt);
+            world spawn BotTactics(player=player, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=dt, level=level);
             world spawn ProjectileTick(player=player, collision=level.collision, state=app.combat, dt=dt);
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt, contacts=True);
             contest spawn MatchTick(dt=dt);

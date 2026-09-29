@@ -2,6 +2,7 @@
 import math;
 import from ..math.vec3 { Vec3 }
 import from .bsp { Texture, require_range }
+import from .anorms { quake_vertex_normal }
 
 obj AnimationGroup {
     has first: int,
@@ -19,10 +20,22 @@ obj TagFrame {
     has tags: list[ModelTag] = [];
 }
 
+"""One keyframe: its vertices and their normals, either as vectors (MD3) or
+as Q1/Q2 lightnormalindex bytes into anorms.h (`normal_indices`), kept as
+bytes so a model's thousands of frames hold no normal objects."""
 obj AnimationFrame {
     has name: str = "",
         vertices: list[Vec3] = [],
-        normals: list[Vec3] = [];
+        normals: list[Vec3] = [],
+        normal_indices: bytes = b"";
+}
+
+"""A frame's vertex normals, whichever way the file gave them."""
+def frame_normals(frame: AnimationFrame) -> list[Vec3] {
+    if frame.normals or not frame.normal_indices {
+        return frame.normals;
+    }
+    return [quake_vertex_normal(int(index)) for index in frame.normal_indices];
 }
 
 """A Q3 shader wave (tr_shader.c ParseWaveForm): func(phase + time * freq)
@@ -89,8 +102,6 @@ obj ModelStage {
         frames: list[Texture] = [],
         frequency: float = 0.0,
         environment: bool = False,
-        scroll_u: float = 0.0,
-        scroll_v: float = 0.0,
         blend: str = "opaque",
         lightmap: bool = False,
         white: bool = False,
@@ -105,7 +116,8 @@ obj ModelStage {
         mods: list[TexMod] = [],
         alpha_test: int = 0,
         depth_write: bool = False,
-        vectors: list[Vec3] = [];
+        vectors: list[Vec3] = [],
+        clamp: bool = False;
 }
 
 def stage_frame(seconds: float, frequency: float, count: int) -> int {
@@ -124,10 +136,14 @@ obj AnimatedSurface {
         stages: list[ModelStage] = [];
 }
 
+"""A vertex-animated model. `flags` are the file's own (Q1 MDL EF_ROCKET,
+EF_GIB... choose its trail); `baked_light`: its skins already carry its
+lighting (Q1 brush pickups' own lightmaps), so the world's is not applied."""
 obj AnimatedModel {
     has surfaces: list[AnimatedSurface] = [],
         tags: list[TagFrame] = [],
-        flags: int = 0;
+        flags: int = 0,
+        baked_light: bool = False;
 }
 
 def model_name(data: bytes, offset: int, size: int) -> str {

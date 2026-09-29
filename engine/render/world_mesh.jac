@@ -29,6 +29,8 @@ import from vendor.raylib {
 import from .gpu { MESH_VERTEX_LIMIT, GpuProgram, UNIFORM_VEC2, UNIFORM_VEC3 }
 import from ..formats.bsp { Face }
 import from ..math.vec3 { Vec3 }
+import from ..math.orientation { Basis, blend_basis }
+import from ..math.interpolation { TickPose, TickBlend }
 import from ..world.lighting { shift_light }
 
 # One packed world vertex (WORLD_VERTEX_FORMAT, spelled out where packed:
@@ -38,9 +40,12 @@ import from ..world.lighting { shift_light }
 #  44 info (4 bytes: flags, autosprite corner, fog + 1, autosprite2 edge)
 #  48 light styles (4 bytes, 255 = none)
 #  52 aux A (4 floats)          68 aux B (4 floats)
-# Aux A holds the Q1/Q2 light style layer stride, or an autosprite quad's
-# centre and radius, or an autosprite2 vertex's own short-edge midpoint and
-# half length; aux B the other short edge's midpoint.
+# Aux A holds the Q1/Q2 light style layer stride and the face's s texture
+# axis in lightmap samples (a sixteenth of texinfo s), aux B its t axis and
+# where its lightmap block starts in the atlas (4096 x + y), and info's
+# autosprite bytes its lightmap's last sample column and row. Or aux A holds an autosprite quad's centre and radius, or an
+# autosprite2 vertex's own short-edge midpoint and half length, and aux B
+# the other short edge's midpoint.
 glob WORLD_VERTEX_STRIDE: int = 84,
      WORLD_VERTEX_FORMAT: str = "<fffffffBBBBfffBBBBBBBBffffffff";
 
@@ -281,9 +286,10 @@ def pack_world_face(
             blue = shade[2];
             opacity = face.colors[i * 4 + 3];
         }
-        # Aux A: the style layer stride, or the quad's centre and radius.
-        # Aux B: this vertex's short-edge midpoint and half length (the
-        # other midpoint is the centre's mirror of it).
+        # Aux A: the style layer stride and s axis, or the quad's centre and
+        # radius. Aux B: the t axis and last sample, or this vertex's
+        # short-edge midpoint and half length (the other midpoint is the
+        # centre's mirror of it).
         ax = layer;
         ay = 0.0;
         az = 0.0;
@@ -294,6 +300,18 @@ def pack_world_face(
         mw = 0.0;
         corner = 0;
         edge_code = 0;
+        info = face.texinfo;
+        if lit and info is not None and not quad {
+            ay = info.s.x / 16.0;
+            az = info.s.y / 16.0;
+            aw = info.s.z / 16.0;
+            mx = info.t.x / 16.0;
+            my = info.t.y / 16.0;
+            mz = info.t.z / 16.0;
+            mw = float(light_x * 4096 + light_y);
+            corner = max(0, min(255, face.light_width - 1));
+            edge_code = max(0, min(255, face.light_height - 1));
+        }
         if quad {
             end = ends[edge_of[i]];
             ax = middle.x;
@@ -395,6 +413,35 @@ obj BrushGroup {
         lamp: bool = False,
         tint: list[float] = [1.0, 1.0, 1.0, 1.0],
         tint_packed: bytes = b"";
+    # The lead face's placement as the physics tick in progress began (its
+    # motion as the pose's position), to draw a moving group between ticks.
+    has was: TickPose = TickPose(),
+        was_turn: Basis | None = None;
+
+    """A physics tick begins: keep the lead face's placement."""
+    def hold(lead: Face, tick: int) {
+        self.was.capture(lead.motion, 0.0, 0.0, tick);
+        self.was_turn = lead.turn;
+    }
+
+    """Where to draw the group: its lead face's placement `blend` of the way
+    through the last physics tick."""
+    def placed(lead: Face, blend: TickBlend) -> BrushPlacement {
+        share = blend.share(self.was, lead.motion);
+        if share >= 1.0 {
+            return BrushPlacement(motion=lead.motion, turn=lead.turn);
+        }
+        return BrushPlacement(
+            motion=self.was.pos.lerp(lead.motion, share),
+            turn=blend_basis(self.was_turn, lead.turn, share)
+        );
+    }
+}
+
+"""A brush group's placement this frame: turned about its pivot, then moved."""
+obj BrushPlacement {
+    has motion: Vec3,
+        turn: Basis | None = None;
 }
 
 """One brush model's faces."""
@@ -410,21 +457,42 @@ glob WORLD_INPUTS: str = "#version 330\nlayout(location=0) in vec3 inPosition; l
 
 # Q1/Q2 lightmapped surfaces in one pass (R_BuildLightMap, R_AddDynamicLights,
 # fullbright texels): each light style layer scaled by its current value
-# (d_lightstylevalue) and doubled, clamped as the 8-bit lightmap was; dynamic
-# lights added per pixel; palette fullbrights (texture alpha 0) unlit.
+# (d_lightstylevalue) and doubled, clamped as the 8-bit lightmap was; palette
+# fullbrights (texture alpha 0) unlit. Dynamic lights add to the light before
+# it is doubled at the lightmap's own samples, as R_AddDynamicLights does
+# (Q1 r_light.c / gl_rsurf.c, Q2 gl_light.c), and the sampled light is then
+# filtered between samples as the lightmap texture is: a light's radius less
+# its distance from the face's plane is the most it gives, falling off one
+# for one with the octagonal distance (the longer of the whole-texel s and t
+# distances plus half the shorter) from where it meets the plane to the
+# sample, across the face's texture axes, and nothing once that is below its
+# minimum light (Q1 dl->minlight, Q2 DLIGHT_CUTOFF). They light either side
+# of a surface, as in Quake. `lux` is where the pixel lies among the face's
+# samples (the sample k at k), `axisS`/`axisT` the texture axes in samples
+# and `lastSample` the face's last sample column and row.
 glob LIT_VS: str = WORLD_INPUTS
-    + "uniform vec4 lightStyles[64]; out vec2 uv; out vec2 luv; out vec3 worldPosition; flat out vec4 styleScale; flat out float layerStride; flat out float lit;\n"
+    + "uniform vec4 lightStyles[64]; out vec2 uv; out vec2 luv; out vec3 worldPosition; out vec2 lux; flat out vec4 styleScale; flat out float layerStride; flat out float lit;\n"
+    + "uniform sampler2D lightMap; flat out vec3 plane; flat out vec3 axisS; flat out vec3 axisT; flat out vec2 lastSample;\n"
     + "float styleValue(float s){ int i=int(s+0.5); return lightStyles[i>>2][i&3]; }\n"
-    + "void main(){ vec4 w=model*vec4(inPosition,1.0); worldPosition=w.xyz; uv=inTexCoord; luv=inLightCoord; styleScale=vec4(styleValue(inStyles.x),styleValue(inStyles.y),styleValue(inStyles.z),styleValue(inStyles.w)); layerStride=inAuxA.x; lit=mod(floor(inInfo.x+0.5),2.0); gl_Position=viewProjection*w; }\n",
-     LIT_FS: str = "#version 330\nin vec2 uv; in vec2 luv; in vec3 worldPosition; flat in vec4 styleScale; flat in float layerStride; flat in float lit; out vec4 finalColor;\n"
+    + "void main(){ vec4 w=model*vec4(inPosition,1.0); worldPosition=w.xyz; uv=inTexCoord; luv=inLightCoord; styleScale=vec4(styleValue(inStyles.x),styleValue(inStyles.y),styleValue(inStyles.z),styleValue(inStyles.w)); layerStride=inAuxA.x; lit=mod(floor(inInfo.x+0.5),2.0);\n"
+    + " mat3 turn=mat3(model); plane=normalize(turn*inNormal); axisS=turn*inAuxA.yzw; axisT=turn*inAuxB.xyz; lastSample=inInfo.yw;\n"
+    + " float block=floor(inAuxB.w+0.5); lux=inLightCoord*vec2(textureSize(lightMap,0))-vec2(floor(block/4096.0),mod(block,4096.0))-0.5; gl_Position=viewProjection*w; }\n",
+     LIT_FS: str = "#version 330\nin vec2 uv; in vec2 luv; in vec3 worldPosition; in vec2 lux; flat in vec4 styleScale; flat in float layerStride; flat in float lit;\n"
+    + "flat in vec3 plane; flat in vec3 axisS; flat in vec3 axisT; flat in vec2 lastSample; out vec4 finalColor;\n"
     + "uniform sampler2D colorMap; uniform sampler2D lightMap; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
+    + "float flashAt(vec2 impact, vec2 sample, float rad, float reach){ float sd=floor(abs(impact.x-sample.x*16.0)); float td=floor(abs(impact.y-sample.y*16.0));"
+    + " float d=sd>td?sd+floor(td*0.5):td+floor(sd*0.5); return d<reach?rad-d:0.0; }\n"
     + "void main(){ vec4 base=texture(colorMap,uv); vec3 c=base.rgb; if(lit>0.5){ vec3 light=texture(lightMap,luv).rgb*styleScale.x;"
     + " if(styleScale.y>0.0) light+=texture(lightMap,luv+vec2(layerStride,0.0)).rgb*styleScale.y;"
     + " if(styleScale.z>0.0) light+=texture(lightMap,luv+vec2(layerStride*2.0,0.0)).rgb*styleScale.z;"
     + " if(styleScale.w>0.0) light+=texture(lightMap,luv+vec2(layerStride*3.0,0.0)).rgb*styleScale.w;"
-    + " c=base.rgb*min(light*2.0,vec3(1.0)); vec3 n=normalize(cross(dFdx(worldPosition),dFdy(worldPosition))); vec3 d=vec3(0.0);"
-    + " for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; vec3 delta=flashPosition[i].xyz-worldPosition; float distance=length(delta); float a=max(0.0,1.0-distance/flashPosition[i].w); d+=flashColor[i].rgb*a*a*max(0.0,dot(n,delta/max(distance,0.001))); }"
-    + " c=min(c+base.rgb*d,vec3(1.0)); } c=mix(c,base.rgb,1.0-base.a); finalColor=vec4(c,1.0); }\n";
+    + " vec2 here=lux; vec2 cell=floor(here); vec2 f=here-cell;"
+    + " vec2 s0=clamp(cell,vec2(0.0),lastSample); vec2 s1=clamp(cell+1.0,vec2(0.0),lastSample);"
+    + " for(int i=0;i<8;i++){ if(flashPosition[i].w<=0.0) continue; float dist=dot(flashPosition[i].xyz-worldPosition,plane); float rad=flashPosition[i].w-abs(dist); float cut=flashColor[i].w;"
+    + " if(rad<cut) continue; vec3 meet=flashPosition[i].xyz-plane*dist; vec2 impact=(here+vec2(dot(meet-worldPosition,axisS),dot(meet-worldPosition,axisT)))*16.0; float reach=rad-cut;"
+    + " float a=mix(flashAt(impact,vec2(s0.x,s0.y),rad,reach),flashAt(impact,vec2(s1.x,s0.y),rad,reach),f.x); float b=mix(flashAt(impact,vec2(s0.x,s1.y),rad,reach),flashAt(impact,vec2(s1.x,s1.y),rad,reach),f.x);"
+    + " light+=flashColor[i].rgb*(mix(a,b,f.y)/255.0); }"
+    + " c=base.rgb*min(light*2.0,vec3(1.0)); } c=mix(c,base.rgb,1.0-base.a); finalColor=vec4(c,1.0); }\n";
 
 # Q1/Q2 liquids and translucent faces, unlit (gl_warp.c EmitWaterPolys: 8
 # texels of sine sway at one radian a second; Q2 SURF_FLOWING scrolls).
