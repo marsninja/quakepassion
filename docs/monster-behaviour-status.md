@@ -80,6 +80,15 @@ its target, so fights are spent moving between attacks.
   and swimmers (`flymonster_start`, `swimmonster_start`) and 20 for Chthon
   (`boss_awake`). Like the strides, each frame's turn is spread over its
   ticks.
+- A monster whose check chooses an attack state holds the attack it picked
+  and turns in place on its run frames until it faces its enemy within 45
+  degrees, then launches it (`ai_run_missile`, `ai_run_melee`,
+  `FacingIdeal`). That is every Q2 monster (`M_CheckAttack` and the bosses'
+  own checks) and Q1's ogre, shambler, fiend, dog and Scrag. Q1's plain
+  `CheckAttack` and `SoldierCheckAttack` launch at once, and their attack
+  frames turn them as they go (`ai_face`); the marksman ogre keeps its own
+  classname and takes the plain check. A held attack outlives a change of
+  enemy and waits out pain.
 - Q2 soldiers set off walking on `walk1` or `walk2`, half the time each
   (`soldier_walk`). `walk1` goes back from walk110 to walk101 nine times in
   ten; otherwise the soldier stands through walk111-133
@@ -260,9 +269,7 @@ rocket shot.
 
 ## Limits
 
-- Attacks do not wait for the monster to face its target. The originals turn
-  in place first and fire only once within 45 degrees (`ai_run_missile`,
-  `ai_run_melee`, `FacingIdeal`).
+- A held attack is not saved; a monster loaded mid-turn decides afresh.
 
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.

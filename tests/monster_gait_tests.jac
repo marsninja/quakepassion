@@ -11,7 +11,9 @@ import from engine.world.combat {
     gait_speed,
     striding,
     choose_walk,
-    walk_frames
+    walk_frames,
+    faces_to_attack,
+    facing_ideal
 }
 import from engine.physics.collision { CollisionMap }
 import from engine.physics.movement { MovePlayer }
@@ -251,4 +253,75 @@ test "a Q2 soldier sets off on either walk and walk1 mostly loops at walk110" {
     # than it stands.
     assert walks[0] > 70 and walks[1] > 70;
     assert loops > stands * 4 and stands > 0;
+}
+
+"""A monster on open ground with its enemy square behind it, ready to attack."""
+def turning_fight(game: str, kind: str) -> tuple[World, Opponent, Player, CombatState] {
+    world = World();
+    player = Player(pos=Vec3(x=-200.0, z=22.0), health=100000, god_mode=True);
+    enemy = gaited(game, kind);
+    enemy.pos = Vec3(z=22.0);
+    enemy.grounded = True;
+    enemy.alert = 8.0;
+    enemy.sighted = True;
+    enemy.attack_wait = 0.0;
+    enemy.last_seen = player.pos;
+    world +>:HasOpponent:+> enemy;
+    return (world, enemy, player, CombatState(game=game));
+}
+
+test "a Q2 monster turns in place to face its enemy before it attacks" {
+    (world, enemy, player, state) = turning_fight("q2", "monster_gunner");
+    # Always take the shot when it rolls for one.
+    enemy.rule.near_chance = 1.0;
+    assert faces_to_attack(enemy) and not facing_ideal(enemy, player.pos);
+    started = -1;
+    readied_at = -1;
+    for tick in range(240) {
+        world spawn CombatTick(player=player, collision=gait_floor(), state=state, dt=1.0 / 120.0);
+        if readied_at < 0 and enemy.readied >= 0 {
+            readied_at = tick;
+        }
+        if enemy.readied >= 0 {
+            # Held: it stays where it is, turning toward its enemy.
+            assert abs(enemy.pos.x) < 0.000001 and abs(enemy.pos.y) < 0.000001;
+        }
+        if enemy.attack_clock >= 0.0 {
+            started = tick;
+            break;
+        }
+    }
+    assert readied_at >= 0 and started > readied_at;
+    # ai_run_missile launched it only once within 45 degrees: 135 degrees
+    # at 20 a frame takes the turn into its seventh frame.
+    assert facing_ideal(enemy, player.pos) and enemy.readied < 0;
+    assert started - readied_at >= 66;
+}
+
+test "Q1 CheckAttack launches at once while the ogre's check waits to face" {
+    (world, grunt, player, state) = turning_fight("q1", "monster_army");
+    assert not faces_to_attack(grunt);
+    ogre = gaited("q1", "monster_ogre");
+    assert faces_to_attack(ogre);
+    marksman = gaited("q1", "monster_ogre_marksman");
+    assert not faces_to_attack(marksman);
+    # FacingIdeal's 45 degrees either way round.
+    ogre.pos = Vec3();
+    ogre.yaw = math.radians(44.0);
+    assert facing_ideal(ogre, Vec3(x=100.0));
+    ogre.yaw = math.radians(-46.0);
+    assert not facing_ideal(ogre, Vec3(x=100.0));
+    ogre.yaw = math.radians(316.0);
+    assert facing_ideal(ogre, Vec3(x=100.0));
+    # A monster in pain holds its attack until the pain is over.
+    (world, held, player, state) = turning_fight("q2", "monster_gunner");
+    held.yaw = math.pi;
+    held.readied = 0;
+    held.pain_wait = 0.05;
+    world spawn CombatTick(player=player, collision=gait_floor(), state=state, dt=1.0 / 120.0);
+    assert held.readied == 0 and held.attack_clock < 0.0;
+    for tick in range(12) {
+        world spawn CombatTick(player=player, collision=gait_floor(), state=state, dt=1.0 / 120.0);
+    }
+    assert held.readied < 0 and held.attack_clock >= 0.0;
 }

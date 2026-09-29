@@ -159,7 +159,10 @@ node Opponent(Player) {
         healthy_skin: ModelResource | None = None,
         heard: bool = True,
         foe_wait: float = -1.0,
-        touch_origin: Vec3 | None = None;
+        touch_origin: Vec3 | None = None,
+        # An attack chosen but held until the monster faces its target (Q1/Q2
+        # attack_state AS_MISSILE or AS_MELEE): its profile index, else -1.
+        readied: int = -1;
     # The last muzzle flash: where, its colour and the attack clock it fired at.
     has flash_origin: Vec3 = Vec3(),
         flash_color: Vec3 = Vec3(),
@@ -362,6 +365,7 @@ def raise_patient(patient: Opponent, medic: Opponent, hunted: Player | None) {
     patient.pose_name = "";
     patient.animation_time = 0.0;
     patient.attack_clock = -1.0;
+    patient.readied = -1;
     patient.attack_flash = 0.0;
     patient.attack_wait = 1.0;
     patient.attack_profile = -1;
@@ -2549,6 +2553,46 @@ def attack_event_time(enemy: Opponent) -> float {
     return attack_times(enemy)[enemy.attack_event];
 }
 
+# Q1 CheckAnyAttack's own checks that choose an attack state rather than
+# launching the attack (OgreCheckAttack, ShamCheckAttack, DemonCheckAttack,
+# DogCheckAttack, WizardCheckAttack). The marksman keeps its own classname
+# and so takes the plain CheckAttack.
+glob Q1_ATTACK_STATE_CHECKS: list[str] = [
+    "monster_ogre", "monster_shambler", "monster_demon1", "monster_dog", "monster_wizard"
+];
+
+"""Whether a chosen attack waits for the monster to face its target. Every
+Q2 M_CheckAttack sets attack_state, and so do the Q1 checks above; Q1's
+CheckAttack and SoldierCheckAttack call th_missile/th_melee at once."""
+def faces_to_attack(enemy: Opponent) -> bool {
+    if enemy.game == "q2" {
+        return True;
+    }
+    return enemy.game == "q1" and enemy.kind in Q1_ATTACK_STATE_CHECKS;
+}
+
+"""Q1/Q2 FacingIdeal: the monster's yaw is within 45 degrees of the yaw
+toward `target` (anglemod(angles_y - ideal_yaw) outside 45..315)."""
+def facing_ideal(enemy: Opponent, target: Vec3) -> bool {
+    toward = target.sub(enemy.pos);
+    if abs(toward.x) < 0.000001 and abs(toward.y) < 0.000001 {
+        return True;
+    }
+    delta = math.degrees(enemy.yaw - math.atan2(toward.y, toward.x)) % 360.0;
+    return delta <= 45.0 or delta >= 315.0;
+}
+
+"""Start the chosen attack, or, for a monster that faces its target first,
+hold it (ai_run_missile / ai_run_melee turn it in place by ChangeYaw and
+launch once FacingIdeal)."""
+def ready_attack(enemy: Opponent, index: int, target: Vec3) {
+    if faces_to_attack(enemy) and not facing_ideal(enemy, target) {
+        enemy.readied = index;
+        return;
+    }
+    begin_attack(enemy, index, target);
+}
+
 def begin_attack(enemy: Opponent, index: int, target: Vec3) {
     select_profile(enemy, index);
     profile = enemy.profiles[index];
@@ -3599,6 +3643,7 @@ walker CombatTick {
     def run_start(enemy: Opponent, foe: Player) {
         if enemy.attack_clock >= 0.0
             or enemy.attack_wait > 0.0
+            or enemy.readied >= 0
             or not enemy.pursuing
             or foe.health <= 0
             or enemy.character is not None {
@@ -4164,6 +4209,7 @@ walker CombatTick {
                     and here.pain_wait <= 0.0
                     and here.duck_wait <= 0.0
                     and here.attack_clock < 0.0
+                    and here.readied < 0
                     and not here.leaping {
                     selected = choose_attack(here, distance, self.state.turns);
                     if patient is not None {
@@ -4175,7 +4221,7 @@ walker CombatTick {
                             }
                         }
                         if selected >= 0 {
-                            begin_attack(here, selected, foe.pos);
+                            ready_attack(here, selected, foe.pos);
                             selected = -1;
                         }
                     }
@@ -4184,7 +4230,7 @@ walker CombatTick {
                             here, distance, here.profiles[selected].kind == "melee"
                         )
                         and self.clear_shot(here, foe, here.profiles[selected]) {
-                        begin_attack(here, selected, foe.pos);
+                        ready_attack(here, selected, foe.pos);
                     } elif here.rule.slides and here.slide_wait <= 0.0 {
                         # Q2 M_CheckAttack / Q1 WizardCheckAttack: a flier that
                         # holds its fire side-steps (AS_SLIDING) about a third
@@ -4501,6 +4547,7 @@ walker CombatTick {
             if here.pain_wait > 0.0
                 or here.duck_wait > 0.0
                 or (here.attack_flash > 0.0 and here.character is None)
+                or here.readied >= 0
                 or here.leaping
                 or (
                     here.arena
@@ -4514,6 +4561,10 @@ walker CombatTick {
         if facing is None and here.alert > 0.0 {
             facing = here.last_seen;
         }
+        # A held attack turns the monster in place toward its enemy.
+        if here.readied >= 0 {
+            facing = foe.pos;
+        }
         # Q1 ai_face/ChangeYaw, Q2 M_ChangeYaw: toward the goal by the
         # monster's yaw speed each 0.1 s frame, spread over the frame's ticks
         # as its strides are.
@@ -4525,6 +4576,21 @@ walker CombatTick {
                     math.atan2(goal.y, goal.x),
                     here.rule.yaw_speed * self.dt * 10.0
                 );
+            }
+        }
+        # Once it faces its enemy the held attack starts. The attack state
+        # outlives a change of enemy (HuntTarget leaves it), so it turns on
+        # the enemy it now has.
+        if here.readied >= 0 {
+            if here.readied >= len(here.profiles) {
+                here.readied = -1;
+            } elif here.pain_wait <= 0.0
+                and here.duck_wait <= 0.0
+                and here.attack_clock < 0.0
+                and facing_ideal(here, foe.pos) {
+                held_attack = here.readied;
+                here.readied = -1;
+                begin_attack(here, held_attack, foe.pos);
             }
         }
         if here.rule.movement == "walk" or here.rule.movement == "none" {
@@ -4657,9 +4723,11 @@ walker CombatTick {
             self.pose_body(here, rig, wish);
             return;
         }
+        # A monster turning to a held attack stays on its run frames (their
+        # ai_run calls ai_run_missile / ai_run_melee), without moving.
         pose_name = "attack"
             if here.attack_flash > 0.0
-            else ("run" if wish.length() > 0.0 else "stand");
+            else ("run" if wish.length() > 0.0 or here.readied >= 0 else "stand");
         if here.pain_wait > 0.0 {
             pose_name = "pain";
         }
