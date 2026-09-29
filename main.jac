@@ -2,7 +2,7 @@
 
 QP_GAME selects q1 (default), q2, q3 or passion. QP_ASSETS overrides the game's
 asset directory (the common parent for Passion). QP_MAP overrides its default
-map basename; QP_SEED selects Passion's version-1 expedition seed.
+map basename; QP_SEED selects Passion's expedition seed.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
 views and exits. QP_CAPTURE=<frame>:<file.png> plays normally and saves one
 full screenshot (HUD and weapon included) at that frame, then exits. All modes

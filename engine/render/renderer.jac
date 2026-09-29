@@ -179,7 +179,7 @@ obj Renderer {
         fov: float = 73.74,
         width: int = 1280,
         height: int = 720,
-        title: str = "QuakePassion — Quake level viewer",
+        title: str = "QuakePassion",
         batch: Pinned[rlRenderBatch] | None = None,
         cubes: CubeBatch = CubeBatch();
 

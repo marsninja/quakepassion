@@ -1,7 +1,6 @@
-"""PK3 archive precedence and static representatives of Q3 shader materials.
-
-The viewer uses one image per material. Animated stages, blend stages, vertex
-animation, fog, and skyboxes require the later material renderer.
+"""Q3's PK3 archives in precedence order, and the shader scripts in them: the
+stages, deforms, fog, portal ranges and sky parts the world and model
+renderers draw each material with.
 """
 import os;
 import from zipfile { ZipFile }
