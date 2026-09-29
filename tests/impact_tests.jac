@@ -19,6 +19,7 @@ import from engine.world.particles {
     HasMarkSurfaces,
     mark_axes
 }
+import from engine.world.particle_field { particle_field }
 import from engine.world.level { Split, BspArea, Front, Back, BspMarkSurfaces }
 import from engine.formats.bsp { Face, Texture }
 import from engine.math.aabb { AABB }
@@ -125,6 +126,7 @@ test "Q3 hits burst as CG_MissileHitWall makes each weapon's" {
 
 test "Q3 blood spurts from bodies, never the rail's or the viewer's own" {
     world = World();
+    particle_field(world, "q3");
     impact_spray(world, Vec3(x=5.0), Vec3(x=-1.0), True, "machinegun");
     blood = [world->:HasExplosion:->][?:Explosion];
     assert len(blood) == 1 and blood[0].kind == "q3_blood" and blood[0].lifetime == 0.5 and blood[0].age == 0.0;
@@ -139,9 +141,9 @@ test "Q3 blood spurts from bodies, never the rail's or the viewer's own" {
     plasma = World();
     missile_hit_flesh(plasma, "q3", "q3_plasma", Vec3(), Vec3(x=-1.0));
     assert [blast.kind for blast in [plasma->:HasExplosion:->][?:Explosion]] == ["q3_blood"];
-    own = World();
-    missile_hit_flesh(own, "q3", "q3_rocket", Vec3(), Vec3(x=-1.0), viewer=True);
-    assert [blast.kind for blast in [own->:HasExplosion:->][?:Explosion]] == ["q3_rocket_explosion"];
+    viewer = World();
+    missile_hit_flesh(viewer, "q3", "q3_rocket", Vec3(), Vec3(x=-1.0), viewer=True);
+    assert [blast.kind for blast in [viewer->:HasExplosion:->][?:Explosion]] == ["q3_rocket_explosion"];
     other = World();
     missile_hit_flesh(other, "q2", "q2_rocket", Vec3(), Vec3(x=-1.0));
     assert not [other->:HasExplosion:->];

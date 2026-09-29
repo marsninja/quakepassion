@@ -22,6 +22,7 @@ import from engine.world.combat {
 import from engine.world.world { World, Player }
 import from engine.world.inventory { AdjustInventory, quantity }
 import from engine.world.pickups { Pickup, HasPickup, PickupTick }
+import from engine.world.particle_field { particle_field }
 import from engine.world.particles { ShotTrail, HasTrail, Explosion, HasExplosion, ImpactSound, HasImpactSound }
 import from engine.world.vitals { CrashLand, VoiceTick }
 import from engine.world.damage { Damage, Heal }
@@ -287,7 +288,12 @@ test "Q1 Thunderbolt discharges under water; beams and rails leave trails" {
         assert select_weapon(player, state, slot);
         assert fire_weapon(world, player, CollisionMap(), state);
         trails = [world->:HasTrail:->][?:ShotTrail];
-        assert len(trails) == 1 and trails[0].kind == game + "_rail";
+        if game == "q2" {
+            # CL_RailTrail is particles: the blue spiral round a grey core.
+            assert not trails and particle_field(world).fresh;
+        } else {
+            assert len(trails) == 1 and trails[0].kind == "q3_rail";
+        }
     }
 }
 

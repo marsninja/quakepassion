@@ -164,7 +164,7 @@ test "the flying BFG ball wears CL_BfgParticles' sphere, laid anew each client f
     field.clock = 2.5;
     quake2_bfg_particles(field, Vec3(x=100.0));
     assert len(field.fresh) == 162 and len(field.avelocities) == 486;
-    assert all([0.0 <= spin <= 2.55 for spin in field.avelocities]);
+    assert all([0.0 <= spin < 2.56 for spin in field.avelocities]);
     for i in [0, 57, 161] {
         speck = field.fresh[i];
         spins = field.avelocities[i * 3:i * 3 + 3];

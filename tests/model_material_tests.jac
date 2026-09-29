@@ -97,7 +97,7 @@ test "model shaders keep rotating and turbulent stages instead of falling back" 
 test "explosion shaders keep their waved colours and clamped maps, which models draw" {
     materials = model_materials(
         "plasmaExplosion { cull disable { clampmap models/weaphits/plasmaboom.tga blendfunc add tcMod stretch triangle .6 0.1 0 8 tcmod rotate 999 rgbGen wave inversesawtooth 0 1 0 1.5 } }\n"
-            + "railExplosion { cull disable { animmap 5 a.tga b.tga alphaGen wave inversesawtooth 0 1 0 5 blendfunc blend } }"
+            + "railExplosion { cull disable {\n animmap 5 a.tga b.tga\n alphaGen wave inversesawtooth 0 1 0 5\n blendfunc blend\n } }"
     );
     plasma = materials["plasmaexplosion"];
     stage = plasma.stages[0];
