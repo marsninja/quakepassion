@@ -10,6 +10,7 @@ import from .particle_field {
     particle_field,
     quake_particle_explosion,
     quake_particle_effect,
+    quake_lava_splash,
     quake_teleport_splash,
     quake2_particle_effect,
     quake2_explosion_particles,
@@ -558,9 +559,15 @@ node Explosion {
 }
 
 """Start an explosion at `origin`: its look, light and sound, and its burst of
-particles (Q1 TE_EXPLOSION's R_ParticleExplosion, Q2 CL_ExplosionParticles)."""
+particles (Q1 TE_EXPLOSION's R_ParticleExplosion, Q2 CL_ExplosionParticles).
+Q1 TE_LAVASPLASH (Chthon rising and dying) is R_LavaSplash's particles
+alone: no sprite, sound or light."""
 def explode(world: World, origin: Vec3, kind: str) {
     if not kind {
+        return;
+    }
+    if kind == "q1_lavasplash" {
+        quake_lava_splash(particle_field(world), origin);
         return;
     }
     blasts = [world->:HasExplosion:->];

@@ -23,6 +23,7 @@ import from engine.world.particle_field {
     PARTICLE_BLOB2,
     PARTICLE_GRAV,
     PARTICLE_STATIC,
+    PARTICLE_SLOWGRAV,
     PARTICLE_QUAKE2,
     QUAKE_RAMP1,
     QUAKE_RAMP3
@@ -209,6 +210,12 @@ test "explosions burst as each game does and impacts spray their counts" {
     field.fresh = [];
     impact_spray(world, Vec3(), Vec3(x=1.0), True);
     assert len(field.fresh) == 8 and all([72 <= p.color <= 79 for p in field.fresh]);
+    # Chthon's TE_LAVASPLASH: R_LavaSplash's 32 by 32 specks, and nothing else.
+    field.fresh = [];
+    before = len([world->:HasExplosion:->]);
+    explode(world, Vec3(z=-64.0), "q1_lavasplash");
+    assert len(field.fresh) == 1024 and len([world->:HasExplosion:->]) == before;
+    assert all([224 <= p.color <= 231 and p.kind == PARTICLE_SLOWGRAV and p.velocity.z > 0.0 for p in field.fresh]);
     # A wizard spike striking a wall: TE_WIZSPIKE, 30 of colour 20's row.
     field.fresh = [];
     wall_impact(world, "q1", "q1_wizspike", Vec3(), Vec3(x=1.0));

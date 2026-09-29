@@ -37,8 +37,6 @@ import from ..world.particle_field { ParticleField, HasParticles, puff_state }
 import from ..world.missile_trails { EmitTrails }
 import from .particles { ParticleRing }
 import from .polygons { ScenePolygons, POLYGON_BLEND_ALPHA, POLYGON_BLEND_DARKEN }
-import from ..world.chthon { LightningEvent, HasLightning, Electrode, electrode_point }
-import from ..world.doors { Door }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..math.interpolation { TickBlend }
 import from .quake { QuakeRenderer, stage_color }
@@ -341,12 +339,10 @@ walker GatherEffects {
         trails: list[ShotTrail] = [],
         blasts: list[Explosion] = [],
         projectiles: list[Projectile] = [],
-        lightning: list[LightningEvent] = [],
         field: ParticleField | None = None;
 
     can begin with World entry {
         visit [here->:HasParticles:->];
-        visit [here->:HasLightning:->];
         visit [here->:HasMark:->];
         visit [here->:HasTrail:->];
         visit [here->:HasExplosion:->];
@@ -355,10 +351,6 @@ walker GatherEffects {
 
     can particles with ParticleField entry {
         self.field = here;
-    }
-
-    can electrodes with LightningEvent entry {
-        self.lightning.append(here);
     }
 
     can mark with ImpactMark entry {
@@ -398,6 +390,7 @@ glob STYLED_TRAILS: list[str] = [
     "q3_rail",
     "lightning",
     "player_lightning",
+    "q1_lightning3",
     "drain",
     "laser_red",
     "laser_green",
@@ -674,7 +667,6 @@ obj EffectScene {
         now = field.clock if field is not None else 0.0;
         self.draw_marks(found.marks, eye);
         self.draw_trails(found.trails, eye, now);
-        self.draw_electrodes(found.lightning, eye);
         self.draw_bfg_lasers(found.projectiles, blend);
         self.draw_blasts(found.blasts, eye);
         if field is not None {
@@ -744,24 +736,6 @@ obj EffectScene {
             );
         }
         self.quads.flush();
-    }
-
-    """Chthon's lightning (boss.qc lightning_fire, TE_LIGHTNING3): bolt3.mdl
-    from 16 below one electrode toward the other, the far end pulled back
-    100 units for the bolt's length, every tenth of a second it lasts."""
-    def draw_electrodes(events: list[LightningEvent], eye: Vec3) {
-        for event in events {
-            doors = [event->:Electrode:->][?:Door];
-            if event.remaining <= 0.0 or len(doors) != 2 {
-                continue;
-            }
-            start = electrode_point(doors[0]);
-            finish = electrode_point(doors[1]);
-            finish = finish.sub(finish.sub(start).normalized().scale(100.0));
-            if finish.sub(start).length() >= 1.0 {
-                self.draw_segments("q1_bolt3", start, finish, eye, event.remaining, 30.0, False);
-            }
-        }
     }
 
     """The BFG ball's lasers to whatever it sees (TE_BFG_LASER): green RF_BEAM
@@ -1056,6 +1030,9 @@ obj EffectScene {
                 } else {
                     self.lightning_bolt(trail.start, trail.finish, eye, now);
                 }
+            } elif kind == "q1_lightning3" {
+                # Chthon's TE_LIGHTNING3 (CL_ParseBeam): bolt3.mdl every 30 units.
+                self.draw_segments("q1_bolt3", trail.start, trail.finish, eye, trail.age, 30.0, False);
             } elif kind == "drain" {
                 self.draw_segments("q2_segment", trail.start, trail.finish, eye, trail.age, 30.0, True);
             } elif kind.startswith("laser_") {
