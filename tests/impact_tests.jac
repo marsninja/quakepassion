@@ -7,7 +7,11 @@ import from engine.world.particles {
     HasMark,
     ImpactSound,
     HasImpactSound,
+    Explosion,
+    HasExplosion,
     ParticleTick,
+    impact_spray,
+    missile_hit_flesh,
     ricochet_sound,
     wall_impact,
     impact_mark,
@@ -62,17 +66,85 @@ test "Q3 shots mark the world, never movers or the sky, and other games leave no
     wall_impact(world, "q3", "q3_plasma", Vec3(x=100.0, y=40.0), Vec3(x=-1.0));
     plasma = [mark for mark in [world->:HasMark:->][?:ImpactMark] if mark.shader == "gfx/damage/plasma_mrk"];
     assert len(plasma) == 1 and plasma[0].alpha_fade and plasma[0].radius == 16.0;
-    # A door (brush model 3), SURF_NOMARKS, the sky.
+    # A door (brush model 3) and SURF_NOMARKS take the burst but no mark;
+    # the sky takes nothing at all.
     wall_impact(world, "q3", "q3_rocket", Vec3(x=100.0, y=80.0), Vec3(x=-1.0), model=3);
     wall_impact(world, "q3", "q3_rocket", Vec3(x=100.0, y=80.0), Vec3(x=-1.0), surface=1);
     wall_impact(world, "q3", "machinegun", Vec3(x=100.0, y=80.0), Vec3(x=-1.0), surface=2);
     assert len([world->:HasMark:->]) == 2;
-    assert len([world->:HasImpactSound:->]) == 1;
+    assert len([world->:HasImpactSound:->]) == 4;
+    assert len([blast for blast in [world->:HasExplosion:->][?:Explosion] if blast.kind == "q3_rocket_explosion"]) == 2;
     for game in ["q1", "q2"] {
         quiet = World();
         wall_impact(quiet, game, "machinegun", Vec3(x=100.0), Vec3(x=-1.0));
         assert not [quiet->:HasMark:->];
     }
+}
+
+test "Q3 hits burst as CG_MissileHitWall makes each weapon's" {
+    wall = Vec3(x=-1.0);
+    # weapon: explosion, sprite (16 out from the wall), life, light, sound, mark.
+    expected = {
+        "machinegun": ("q3_bullet_explosion", False, 0.6, 0.0, "sound/weapons/machinegun/ric", "gfx/damage/bullet_mrk"),
+        "shotgun": ("q3_bullet_explosion", False, 0.6, 0.0, "", "gfx/damage/bullet_mrk"),
+        "lightning": ("", False, 0.0, 0.0, "sound/weapons/lightning/lg_hit", "gfx/damage/hole_lg_mrk"),
+        "railgun": ("q3_rail_explosion", False, 0.6, 0.0, "sound/weapons/plasma/plasmx1a.wav", "gfx/damage/plasma_mrk"),
+        "q3_plasma": ("q3_plasma_explosion", False, 0.6, 0.0, "sound/weapons/plasma/plasmx1a.wav", "gfx/damage/plasma_mrk"),
+        "q3_grenade": ("q3_grenade_explosion", True, 0.6, 300.0, "sound/weapons/rocket/rocklx1a.wav", "gfx/damage/burn_med_mrk"),
+        "q3_rocket": ("q3_rocket_explosion", True, 1.0, 300.0, "sound/weapons/rocket/rocklx1a.wav", "gfx/damage/burn_med_mrk"),
+        "q3_bfg": ("q3_bfg_explosion", True, 0.6, 0.0, "sound/weapons/rocket/rocklx1a.wav", "gfx/damage/burn_med_mrk")
+    };
+    for (weapon, look) in expected.items() {
+        world = World();
+        wall_impact(world, "q3", weapon, Vec3(x=100.0, y=7.0, z=3.0), wall);
+        blasts = [world->:HasExplosion:->][?:Explosion];
+        if look[0] {
+            assert len(blasts) == 1 and blasts[0].kind == look[0] , weapon;
+            blast = blasts[0];
+            assert blast.pos.x == (84.0 if look[1] else 100.0) and blast.lifetime == look[2] , weapon;
+            assert blast.light_radius == look[3] and blast.direction.x == -1.0 and not blast.sound , weapon;
+            # CG_MakeExplosion skews its start back by up to 63 ms.
+            assert 0.0 <= blast.age < 0.064 and 0.0 <= blast.rotation < 360.0 , weapon;
+        } else {
+            assert not blasts , weapon;
+        }
+        sounds = [world->:HasImpactSound:->][?:ImpactSound];
+        if look[4] {
+            assert len(sounds) == 1 and sounds[0].sound.startswith(look[4]) , weapon;
+        } else {
+            assert not sounds , weapon;
+        }
+        marks = [world->:HasMark:->][?:ImpactMark];
+        assert len(marks) == 1 and marks[0].shader == look[5] , weapon;
+    }
+    rocket = World();
+    wall_impact(rocket, "q3", "q3_rocket", Vec3(x=100.0), wall);
+    light = [rocket->:HasExplosion:->][?:Explosion][0].light;
+    assert light.x == 1.0 and light.y == 0.75 and light.z == 0.0;
+}
+
+test "Q3 blood spurts from bodies, never the rail's or the viewer's own" {
+    world = World();
+    impact_spray(world, Vec3(x=5.0), Vec3(x=-1.0), True, "machinegun");
+    blood = [world->:HasExplosion:->][?:Explosion];
+    assert len(blood) == 1 and blood[0].kind == "q3_blood" and blood[0].lifetime == 0.5 and blood[0].age == 0.0;
+    impact_spray(world, Vec3(x=5.0), Vec3(x=-1.0), True, "railgun");
+    impact_spray(world, Vec3(x=5.0), Vec3(x=-1.0), False, "machinegun");
+    assert len([world->:HasExplosion:->]) == 1;
+    # A rocket striking someone bleeds and bursts; a plasma bolt only bleeds.
+    struck = World();
+    missile_hit_flesh(struck, "q3", "q3_rocket", Vec3(), Vec3(x=-1.0));
+    kinds = sorted([blast.kind for blast in [struck->:HasExplosion:->][?:Explosion]]);
+    assert kinds == ["q3_blood", "q3_rocket_explosion"];
+    plasma = World();
+    missile_hit_flesh(plasma, "q3", "q3_plasma", Vec3(), Vec3(x=-1.0));
+    assert [blast.kind for blast in [plasma->:HasExplosion:->][?:Explosion]] == ["q3_blood"];
+    own = World();
+    missile_hit_flesh(own, "q3", "q3_rocket", Vec3(), Vec3(x=-1.0), viewer=True);
+    assert [blast.kind for blast in [own->:HasExplosion:->][?:Explosion]] == ["q3_rocket_explosion"];
+    other = World();
+    missile_hit_flesh(other, "q2", "q2_rocket", Vec3(), Vec3(x=-1.0));
+    assert not [other->:HasExplosion:->];
 }
 
 test "marks wear away after ten seconds and the oldest gives way to a new one" {

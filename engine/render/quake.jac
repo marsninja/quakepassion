@@ -2133,8 +2133,9 @@ def placement_matrix_at(offset: Vec3) -> Matrix {
 
 """A stage's rgbGen and alphaGen colour at time `seconds` (identity, wave or
 const; vertex and the per-vertex alphas come from the shader), quantized to
-bytes as the vertex colours were, packed as a vec4."""
-def stage_tint(stage: ModelStage, seconds: float) -> bytes {
+bytes as the vertex colours were (tr_shade_calc.c RB_CalcWaveColor and
+RB_CalcWaveAlpha clamp the wave to 0..1), as red, green, blue and alpha."""
+def stage_color(stage: ModelStage, seconds: float) -> list[float] {
     red = 1.0;
     green = 1.0;
     blue = 1.0;
@@ -2154,7 +2155,12 @@ def stage_tint(stage: ModelStage, seconds: float) -> bytes {
     } elif stage.alpha == "const" {
         alpha = float(int(max(0.0, min(1.0, stage.alpha_const)) * 255.0)) / 255.0;
     }
-    return pack_floats([red, green, blue, alpha]);
+    return [red, green, blue, alpha];
+}
+
+"""stage_color packed as a vec4."""
+def stage_tint(stage: ModelStage, seconds: float) -> bytes {
+    return pack_floats(stage_color(stage, seconds));
 }
 
 """A stage's tcmod_steps packed for the stage shader: the s rows, the t rows

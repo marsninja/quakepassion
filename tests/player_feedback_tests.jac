@@ -22,7 +22,7 @@ import from engine.world.combat {
 import from engine.world.world { World, Player }
 import from engine.world.inventory { AdjustInventory, quantity }
 import from engine.world.pickups { Pickup, HasPickup, PickupTick }
-import from engine.world.particles { ShotTrail, HasTrail, Explosion, HasExplosion }
+import from engine.world.particles { ShotTrail, HasTrail, Explosion, HasExplosion, ImpactSound, HasImpactSound }
 import from engine.world.vitals { CrashLand, VoiceTick }
 import from engine.world.damage { Damage, Heal }
 import from engine.render.view_feedback { ViewFeedback }
@@ -308,7 +308,9 @@ test "missiles burst into each game's explosion" {
         blasts = [world->:HasExplosion:->][?:Explosion];
         assert len(blasts) == 1;
         expected = {"q1": "q1_explosion", "q2": "q2_explosion", "q3": "q3_rocket_explosion"}[game];
-        assert blasts[0].kind == expected and blasts[0].sound;
+        # Q3's burst sounds with CG_MissileHitWall's hit, not the explosion.
+        heard = blasts[0].sound if game != "q3" else [world->:HasImpactSound:->][?:ImpactSound][0].sound;
+        assert blasts[0].kind == expected and heard;
         world spawn CombatTick(player=player, collision=collision, state=state, dt=2.0, active=False);
         assert not [world->:HasExplosion:->];
     }

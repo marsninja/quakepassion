@@ -3,7 +3,7 @@ them (r_part.c, cl_fx.c, cg_weapons.c, cl_main.c, cl_tent.c)."""
 import math;
 import from engine.world.world { World, Player }
 import from engine.world.combat { Projectile, HasProjectile, CombatState }
-import from engine.world.particles { Explosion, HasExplosion, ParticleTick, explode, impact_spray, wall_impact }
+import from engine.world.particles { Explosion, HasExplosion, ParticleTick, explode, impact_spray, wall_impact, blast_kind }
 import from engine.world.particle_field {
     Particle,
     Puff,
@@ -220,8 +220,11 @@ test "explosions burst as each game does and impacts spray their counts" {
     q2_field.fresh = [];
     impact_spray(q2, Vec3(), Vec3(x=1.0), True);
     assert len(q2_field.fresh) == 60;
+    # Q3 missiles burst through their hit events (impact_tests), with no
+    # explosion of their own and no particles.
+    assert blast_kind("q3", "q3_rocket") == "";
     q3 = World();
-    explode(q3, Vec3(), "q3_rocket_explosion");
+    wall_impact(q3, "q3", "q3_rocket", Vec3(), Vec3(x=1.0));
     assert not particle_field(q3, "q3").fresh;
     # The particle clock runs with the world.
     world spawn ParticleTick(dt=0.25);

@@ -57,16 +57,23 @@ def beam_trail(world: World, start: Vec3, finish: Vec3, kind: str, width: float 
     }
 }
 
-"""A hitscan shot striking a wall or a body at `origin` on a surface facing
-`normal`: Q1 TE_GUNSHOT (R_RunParticleEffect, 20 specks of grey) or
-SpawnBlood (73, twice a pellet's 4 damage); Q2 TE_GUNSHOT (grey, 40) or
-TE_BLOOD (0xe8, 60); Q3 and Passion a small spray of dust or blood."""
-def impact_spray(world: World, origin: Vec3, normal: Vec3, blood: bool = False) {
+"""A hitscan shot of `weapon` striking a wall or a body at `origin` on a
+surface facing `normal`: Q1 TE_GUNSHOT (R_RunParticleEffect, 20 specks of
+grey) or SpawnBlood (73, twice a pellet's 4 damage); Q2 TE_GUNSHOT (grey,
+40) or TE_BLOOD (0xe8, 60); Q3 CG_Bleed on a body (the rail draws none, its
+hits send no EV_MISSILE_HIT) and nothing on a wall, where the shot's
+CG_MissileHitWall (wall_impact) makes its whole impact; Passion a small
+spray of dust or blood."""
+def impact_spray(world: World, origin: Vec3, normal: Vec3, blood: bool = False, weapon: str = "") {
     field = particle_field(world);
     if field.game == "q1" {
         quake_particle_effect(field, origin, normal.scale(4.0) if blood else Vec3(), 73 if blood else 0, 8 if blood else 20);
     } elif field.game == "q2" {
         quake2_particle_effect(field, origin, normal, 232 if blood else 0, 60 if blood else 40);
+    } elif field.game == "q3" {
+        if blood and weapon != "railgun" {
+            quake3_bleed(world, origin);
+        }
     } else {
         spark_spray(field, origin, normal, 11146255 if blood else 13810065, 8);
     }
@@ -236,7 +243,9 @@ Q1 CL_ParseTEnt TE_SPIKE/TE_SUPERSPIKE (tink1 four times in five, else ric1,
 ric2 or ric3), TE_WIZSPIKE, TE_KNIGHTSPIKE and Laser_Touch's enfstop; Q2
 TE_GUNSHOT (ric1-3 three times in sixteen; TE_SHOTGUN is silent) and
 TE_BLASTER's lashit; Q3 CG_MissileHitWall (the machine gun always
-ricochets, the lightning gun hits)."""
+ricochets, the lightning gun hits, the rocket, grenade and BFG explode
+with sfx_rockexp and the plasma and rail with sfx_plasmaexp; the shotgun
+is silent). `roll` stands for rand()&3 in Q3."""
 def ricochet_sound(game: str, weapon: str, roll: float) -> str {
     if game == "q1" {
         if weapon in ["q1_nail", "q1_supernail"] {
@@ -266,6 +275,12 @@ def ricochet_sound(game: str, weapon: str, roll: float) -> str {
         }
         if weapon == "lightning" {
             return "sound/weapons/lightning/lg_hit" + ("2" if pick < 2 else ("" if pick == 2 else "3")) + ".wav";
+        }
+        if weapon in ["q3_rocket", "q3_grenade", "q3_bfg"] {
+            return "sound/weapons/rocket/rocklx1a.wav";
+        }
+        if weapon in ["q3_plasma", "railgun"] {
+            return "sound/weapons/plasma/plasmx1a.wav";
         }
     }
     return "";
@@ -311,10 +326,11 @@ def mark_look(game: str, weapon: str) -> MarkLook {
 glob RAIL_MARK_COLOR: Vec3 = Vec3(x=1.0, y=0.0, z=1.0);
 
 """A shot striking the world at `origin` on a surface facing `normal`: its
-ricochet sound, a missile's own impact particles, and in Q3 its mark on the
-world's own surfaces. `surface` is CollisionMap.surface_class: the sky takes
-nothing, SURF_NOMARKS no mark. `model` is the brush model struck; movers
-take no marks, as Q3 marks only the world."""
+ricochet sound and a missile's own impact particles, or in Q3 the whole of
+CG_MissileHitWall (quake3_missile_hit_wall). `surface` is
+CollisionMap.surface_class: the sky takes nothing, SURF_NOMARKS no mark.
+`model` is the brush model struck; movers take no marks, as Q3 marks only
+the world."""
 def wall_impact(
     world: World,
     game: str,
@@ -327,15 +343,108 @@ def wall_impact(
     if surface >= 2 {
         return;
     }
+    if game == "q3" {
+        quake3_missile_hit_wall(world, weapon, origin, normal, surface == 0 and model <= 0);
+        return;
+    }
     impact_sound(world, origin, ricochet_sound(game, weapon, impact_roll(origin)));
     missile_impact_particles(world, game, weapon, origin, normal);
-    look = mark_look(game, weapon);
-    if look.shader and surface == 0 and model <= 0 {
+}
+
+"""Q3 CG_MissileHitWall's explosion for each weapon (cg_weapons.c; with
+cg_oldRocket's default of 1 the rocket adds no particle explosion): the
+effect it is drawn as (a model under a shader, or a shader sprite 16 units
+out from the wall), how long it lasts, and its dynamic light and colour."""
+obj Quake3Blast {
+    has kind: str = "",
+        sprite: bool = False,
+        duration: float = 0.6,
+        light: float = 0.0,
+        light_color: Vec3 = Vec3(x=1.0, y=1.0);
+}
+
+def quake3_blast(weapon: str) -> Quake3Blast {
+    if weapon in ["machinegun", "shotgun"] {
+        return Quake3Blast(kind="q3_bullet_explosion");
+    }
+    if weapon == "q3_plasma" {
+        return Quake3Blast(kind="q3_plasma_explosion");
+    }
+    if weapon == "railgun" {
+        return Quake3Blast(kind="q3_rail_explosion");
+    }
+    if weapon == "q3_grenade" {
+        return Quake3Blast(kind="q3_grenade_explosion", sprite=True, light=300.0);
+    }
+    if weapon == "q3_rocket" {
+        return Quake3Blast(
+            kind="q3_rocket_explosion", sprite=True, duration=1.0, light=300.0, light_color=Vec3(x=1.0, y=0.75)
+        );
+    }
+    if weapon == "q3_bfg" {
+        return Quake3Blast(kind="q3_bfg_explosion", sprite=True);
+    }
+    # The lightning gun's hit is drawn with its beam.
+    return Quake3Blast();
+}
+
+# cg_localents.c MAX_LOCAL_ENTITIES: the oldest local entity gives way.
+glob QUAKE3_LOCAL_ENTITIES: int = 512;
+
+"""A Q3 local entity for an explosion (cg_effects.c CG_MakeExplosion, or
+CG_Bleed's): its time skewed back by rand()&63 ms so bursts are not in
+step, turned rand()%360 degrees (a sprite about the view, a model about
+`direction`)."""
+def quake3_local_explosion(
+    world: World,
+    kind: str,
+    origin: Vec3,
+    direction: Vec3,
+    duration: float,
+    skew: bool = True,
+    light: float = 0.0,
+    light_color: Vec3 = Vec3()
+) {
+    blasts = [world->:HasExplosion:->][?:Explosion];
+    if len(blasts) >= QUAKE3_LOCAL_ENTITIES {
+        oldest = blasts[0];
+        for blast in blasts {
+            if blast.lifetime - blast.age < oldest.lifetime - oldest.age {
+                oldest = blast;
+            }
+        }
+        world del --> oldest;
+    }
+    world +>:HasExplosion:+> Explosion(
+        pos=origin.add(Vec3()),
+        kind=kind,
+        lifetime=duration,
+        age=float(int(impact_roll(origin, 5.0) * 64.0)) / 1000.0 if skew else 0.0,
+        light=light_color,
+        light_radius=light,
+        direction=direction.normalized(),
+        rotation=float(int(impact_roll(origin, 7.0) * 360.0))
+    );
+}
+
+"""Q3 CG_MissileHitWall: a shot of `weapon` striking the world at `origin`
+facing `direction`: its sound, its explosion (CG_MakeExplosion: a sprite
+explosion sits 16 units out from the wall) and, when `marked`, its mark
+(CG_ImpactMark; the rail's in its colour)."""
+def quake3_missile_hit_wall(world: World, weapon: str, origin: Vec3, direction: Vec3, marked: bool = True) {
+    impact_sound(world, origin, ricochet_sound("q3", weapon, impact_roll(origin)));
+    blast = quake3_blast(weapon);
+    if blast.kind {
+        at = origin.add(direction.normalized().scale(16.0)) if blast.sprite else origin;
+        quake3_local_explosion(world, blast.kind, at, direction, blast.duration, light=blast.light, light_color=blast.light_color);
+    }
+    look = mark_look("q3", weapon);
+    if look.shader and marked {
         impact_mark(
             world,
             look.shader,
             origin,
-            normal,
+            direction,
             look.radius,
             RAIL_MARK_COLOR if weapon == "railgun" else Vec3(x=1.0, y=1.0, z=1.0),
             look.alpha_fade
@@ -343,10 +452,38 @@ def wall_impact(
     }
 }
 
+"""Q3 CG_MissileHitPlayer: blood where a missile strikes someone (not drawn
+for the viewer's own body, CG_Bleed's RF_THIRD_PERSON), and for the
+grenade and the rocket the explosion of CG_MissileHitWall too."""
+def quake3_missile_hit_player(world: World, weapon: str, origin: Vec3, direction: Vec3, viewer: bool = False) {
+    if not viewer {
+        quake3_bleed(world, origin);
+    }
+    if weapon in ["q3_grenade", "q3_rocket"] {
+        quake3_missile_hit_wall(world, weapon, origin, direction);
+    }
+}
+
+"""Q3 CG_Bleed: a spurt of blood, the bloodExplosion shader as a sprite 24
+units across turned at random, for half a second."""
+def quake3_bleed(world: World, origin: Vec3) {
+    quake3_local_explosion(world, "q3_blood", origin, Vec3(z=1.0), 0.5, skew=False);
+}
+
+"""A missile striking flesh at `origin` facing `direction` (a body, a monster
+or a player; `viewer` the one whose eyes the view is): Q3 sends
+EV_MISSILE_HIT (CG_MissileHitPlayer); the other games burst as they do
+anywhere (explode)."""
+def missile_hit_flesh(world: World, game: str, weapon: str, origin: Vec3, direction: Vec3, viewer: bool = False) {
+    if game == "q3" {
+        quake3_missile_hit_player(world, weapon, origin, direction, viewer);
+    }
+}
+
 """How each game's explosion looks and sounds, and its dynamic light: Q1
 BecomeExplosion (s_explod.spr, TE_EXPLOSION particles and light, r_exp3.wav),
-Q2 CL_ParseTEnt (r_explode model, 350 light, rocket or grenade sound), Q3
-CG_MissileHitWall (animated sprite, 300 light, rocket or plasma sound)."""
+Q2 CL_ParseTEnt (r_explode model, 350 light, rocket or grenade sound). Q3's
+come with the missile's hit (quake3_missile_hit_wall)."""
 obj BlastLook {
     has lifetime: float = 0.6,
         light: Vec3 = Vec3(),
@@ -383,32 +520,12 @@ def blast_look(kind: str) -> BlastLook {
             sparks=32
         );
     }
-    if kind == "q3_rocket_explosion" {
-        return BlastLook(
-            lifetime=1.0,
-            light=Vec3(x=1.0, y=0.75, z=0.0),
-            light_radius=300.0,
-            sound="sound/weapons/rocket/rocklx1a.wav"
-        );
-    }
-    if kind == "q3_grenade_explosion" {
-        return BlastLook(
-            lifetime=0.6,
-            light=Vec3(x=1.0, y=1.0, z=0.0),
-            light_radius=300.0,
-            sound="sound/weapons/rocket/rocklx1a.wav"
-        );
-    }
-    if kind == "q3_plasma_explosion" {
-        return BlastLook(lifetime=0.6, sound="sound/weapons/plasma/plasmx1a.wav");
-    }
-    if kind == "q3_bfg_explosion" {
-        return BlastLook(lifetime=0.6, sound="sound/weapons/rocket/rocklx1a.wav");
-    }
     return BlastLook(lifetime=0.5, sparks=24);
 }
 
-"""Which explosion a missile makes on bursting, by game and missile effect."""
+"""Which explosion a missile makes on bursting, by game and missile effect;
+none in Q3, whose missiles burst through their hit events
+(quake3_missile_hit_wall, quake3_missile_hit_player)."""
 def blast_kind(game: str, effect: str) -> str {
     if game == "q2" {
         if effect == "q2_bfg" {
@@ -417,14 +534,14 @@ def blast_kind(game: str, effect: str) -> str {
         return "q2_grenade_explosion" if "grenade" in effect else "q2_explosion";
     }
     if game == "q3" {
-        if effect in ["q3_grenade", "q3_plasma", "q3_bfg"] {
-            return effect + "_explosion";
-        }
-        return "q3_rocket_explosion";
+        return "";
     }
     return "q1_explosion" if game == "q1" else "blast";
 }
 
+"""An explosion showing: where, which effect draws it, how long it lasts and
+how far in, its light and sound, a variant (Q2's starting frame), and for
+Q3 the direction it faces and its turn in degrees."""
 edge HasExplosion: World --> Explosion {}
 node Explosion {
     has pos: Vec3,
@@ -435,12 +552,13 @@ node Explosion {
         light_radius: float = 0.0,
         sound: str = "",
         heard: bool = False,
-        variant: int = 0;
+        variant: int = 0,
+        direction: Vec3 = Vec3(z=1.0),
+        rotation: float = 0.0;
 }
 
 """Start an explosion at `origin`: its look, light and sound, and its burst of
-particles (Q1 TE_EXPLOSION's R_ParticleExplosion, Q2 CL_ExplosionParticles;
-Q3's explosions are sprites alone)."""
+particles (Q1 TE_EXPLOSION's R_ParticleExplosion, Q2 CL_ExplosionParticles)."""
 def explode(world: World, origin: Vec3, kind: str) {
     if not kind {
         return;
