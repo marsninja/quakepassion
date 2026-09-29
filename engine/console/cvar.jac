@@ -41,6 +41,16 @@ node Cvar(ConsoleName) {
         integer: int = 0,
         modified: bool = False;
 
+    """Cvar_Get: a cvar holds its reset value from the start, before any
+    shell registers it (Shell.register may then adopt a value typed before
+    it existed)."""
+    def postinit {
+        if self.reset_text and not self.text {
+            self.assign(self.reset_text);
+            self.modified = False;
+        }
+    }
+
     def answers(word: str) -> bool {
         lowered = word.lower();
         if self.name.lower() == lowered {

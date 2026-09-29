@@ -27,7 +27,7 @@ import from engine.world.drops { TossTick, in_flight }
 import from engine.world.gibs { Gib, HasGib, GibTick }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
-import from games.weapons { equip_player }
+import from games.weapons { equip_player, weapon_effects }
 import from engine.math.vec3 { Vec3 }
 import from engine.physics.collision { CollisionMap }
 
@@ -111,6 +111,8 @@ with entry {
     equip_player(human, app.combat, "q3");
     app.quake.upload(level);
     app.models.upload(world);
+    # The effect scene's art, the talk balloon's among it.
+    app.effects.upload("q3", game_directory("q3"), weapon_effects("q3"));
     app.prepare_presentation();
     assert app.hud.ready and app.hud.has_pic("tab_score") and app.hud.has_pic("font_prop");
     bots = [bot for bot in [world->:HasOpponent:->][?:Opponent] if bot.arena];
@@ -240,6 +242,7 @@ with entry {
         shoot(app, "qp_arena_bot_fullbright.png");
     }
     app.models.close();
+    app.effects.close();
     app.quake.close();
     renderer.close();
     print("ARENA SCREENS PASS");
