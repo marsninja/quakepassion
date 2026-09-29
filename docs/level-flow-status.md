@@ -1,290 +1,166 @@
 # Campaign level flow
 
-This milestone makes the Quake and Quake II campaigns completable from start to
-finish and makes moving between levels behave like the originals.
-
-## Activation chains
-
-- **Targets without a use are skipped.** Q1 `SUB_UseTargets` and Q2
-  `G_UseTargets` only call a recipient's `use` when it has one; the rest of
-  the chain still fires. Before, `connect_targets` switched off any signal that
-  had an unsupported recipient, and that switch-off spread up the chain. Now an
-  unsupported recipient only gets a `ChainNote` saying why it was skipped.
-- `worldspawn`, `misc_explobox` and `trigger_monsterjump` take uses as no-ops,
-  as they have no `use` in the originals. The same goes for the passive markers
-  listed in [map mechanics](map-mechanics-status.md).
-- Plain walls now have a signal of their own: every named Q1 `func_wall`, and Q2
-  walls without TRIGGER_SPAWN, TOGGLE or START_ON. This lets a `killtarget`
-  remove them (base2 `block`, city2 `pylon`, cool1 `prevent`, the Q1 start
-  map's registered-only wall). Q1 `func_wall_use` switches the wall to its
-  alternate textures.
-- Every `trigger_hurt` can now be killtargeted (space `killme1`/`killme2`,
-  boss1, power2). Only TOGGLE hurts respond to a use.
-- `target_temp_entity` shows its client effect when used. TE_BOSSTPORT (style
-  22) gets a larger burst and `misc/bigtele.wav`, as on the boss1 exit.
-- `misc_blackhole` disappears when used (`misc_blackhole_use`), as command's
-  exit force field does. `misc_satellite_dish` plays its 38 frames once
-  (base3).
-- Q1 `misc_teleporttrain` waits for its first use when it has a targetname
-  (`func_train_find`), as in end.bsp.
-- Q1 and Q2 touch triggers no longer drop spawnflag bits that the originals
-  never read (command's `wheel2` trigger).
+The Quake and Quake II campaigns play from their first map to their endings:
+exits load as the originals' do, intermissions and unit summaries show, what
+the player carries follows each game's rules, Q2 units remember their levels,
+Q2 films play between them, and saves keep the whole session. Q1's runes open
+the start map's gates.
 
 ## Exits
 
-- Every `trigger_changelevel` and `target_changelevel` loads.
-  - Q1 `changelevel_touch` runs `SUB_UseTargets` before the level changes. This
-    fixes e1m7's exit, which targets relay `t18`; without it, episode 1 could
-    not be finished.
-  - Q2 `use_target_changelevel` ignores the exit's own `target`, `killtarget`,
-    `delay` and spawnflags. Before, these kept the exits of base2, jail1, mine3,
-    power2, city3 (two), jail2 and jail3 from loading, including the ends of
-    units 1, 4 and 6 and jail1's only exit.
-- Q2 `trigger_elevator` (lab ×3, mine2): a use from a caller that has a
-  `pathtarget` sends the idle `func_train` straight to that path corner. This
-  follows `trigger_elevator_use` and `train_resume`. The caller's pathtarget
-  goes along the `Targets` edge to the elevator's signal. A train that is busy
-  moving or waiting ignores the call.
+`engine/world/exits.jac` and `engine/core/impl/app.impl.jac`:
 
-## Movers
-
-- Q2 func_door ANIMATED (16) and ANIMATED_FAST (64) only animate the door's
-  textures, so these doors now move. This covers the key doors in base3,
-  jail4, power1, power2, lab and command. Q2 func_door's unused bit 2 is
-  accepted, and so is spawnflag 1 on Q1 buttons.
-- Doors, buttons and plats that have `killtarget`, `accel` or `decel` now load.
-  Their killtarget is a `Kills` edge that fires with their targets.
-- Q2 accelerated moves (`engine/world/mover_ramp.jac`): every Q2 func_plat,
-  and any func_door or func_water whose `accel` or `decel` differs from its
-  speed, runs `Move_Calc`'s accelerative path. The mover waits one 0.1 s frame,
-  then `Think_AccelMove` picks each frame's distance with
-  `plat_CalcAcceleratedMove` and `plat_Accelerate` (plat defaults: speed 200,
-  accel and decel 5 units per frame per frame; authored plat values are
-  scaled by 0.1). A reversal starts a new move from rest. The frame clock runs
-  on the 120 Hz simulation ticks, so the ramp is the same on every run, and
-  saves keep its state (older saves load and start the ramp from rest).
-  Rotating doors and trains keep a constant speed, as in the original (their
-  accel equals their speed). A door's authored accel/decel use the plat's 0.1
-  scaling; the original feeds doors' unscaled values into the per-frame ramp,
-  and no shipped map sets them.
-- A mover whose lip is as large as its size, or larger, still runs its cycle
-  and fires its targets. Before, such movers stayed static, including space's
-  arm buttons and many other Q2 buttons. Negative `distance` values reverse a
-  rotating door. A member that has no clip
-  hull still moves on screen (mine4's gears).
-- Shootable Q2 rotating doors load.
-
-## Monsters in teleporters and pushes
-
-`TeleportMonsters` in `engine/world/traversal.jac` walks the level's
-teleporters and pushes for the level's monsters:
-
-- Q1 `teleport_touch` takes any living monster unless the teleporter is
-  PLAYER_ONLY. A named teleporter only works for 0.2 s after it is used
-  (`teleport_use`, whose `force_retouch` catches monsters already waiting
-  inside).
-- A monster touches a trigger's bounding box, as in `SV_TouchLinks`. The box
-  has a one-unit margin, and the monster's own size counts. The box is swept
-  from where the previous check left it, so a leaping or charging monster
-  cannot pass through a thin trigger between ticks; a monster placed more than
-  256 units away (a respawn, another teleport) is tested where it stands.
-- On arrival the monster faces the destination's angle and keeps its alert
-  state. A tfog sound (`misc/r_tele1-5`) plays at the destination, with a
-  flash of sparks.
-- `spawn_tdeath`: a monster that arrives on top of the player dies itself. Any
-  other monster standing there is telefragged.
-- `trigger_push` launches monsters and Q1/Q2 grenades as well as players
-  (`trigger_push_touch`).
-- A teleporter's `delay` only delays its own targets, so e2m7's `t117` now
-  loads.
-
-This unblocks the closet monsters that wait in named Q1 teleporters, and the
-death chains that go through them. In e1m3, the closet fiends feed counter
-`t175`, which teleports in a shambler.
-
-## Level flow
-
+- Every `trigger_changelevel` and `target_changelevel` loads. Q1
+  `changelevel_touch` runs `SUB_UseTargets` before the change (e1m7's exit
+  fires relay `t18`). Q2 `use_target_changelevel` ignores the exit's own
+  `target`, `killtarget`, `delay` and spawnflags. A map request of the form
+  `name.cin+next` plays `video/name.cin` first (`SV_Map`), and a `.pcx`
+  destination shows a still.
 - **Q1 intermission** (`execute_changelevel`, `IntermissionThink`): a normal
   exit moves the view to a random `info_intermission` and shows
-  `Sbar_IntermissionOverlay`. That is the `complete.lmp` and `inter.lmp`
-  plaques, with the time, secrets and kills in the big status-bar digits. A key
-  (fire, jump, Enter) continues once 2 s have passed. At the end of an episode,
-  the episode text follows. `NO_INTERMISSION` exits (the start map's) change
-  level at once.
-- **Q2 units**: an exit to a new unit (`*`) pauses at `info_player_intermission`
-  with a unit summary (kills, goals and secrets). Other Q2 exits change level
-  at once, as `BeginIntermission` does in single player.
-- **Monster tally**: the level's monsters are counted on entry, including
-  closet and trigger-spawned monsters and Q1's Chthon and Shub-Niggurath (whose
-  QuakeC spawns add them to `total_monsters`), but not Q2's AI_GOOD_GUY
-  `misc_insane` marines, which neither count nor add a kill when they die.
-  Holding F1 in Q1 shows `Sbar_SoloScoreboard` (monsters, secrets, time, level
-  name) in place of the status bar, and so does death. F1 now toggles the Q2
-  help computer, drawn from `help.pcx` with skill, level name, objectives and
-  kills/goals/secrets, as `HelpComputer` does (see
-  [presentation](presentation-status.md)).
-- **Death restart**: each level entry takes an autosave (the campaign envelope
-  with a snapshot). Dying and pressing Enter reloads it. This works like Q1's
-  `restart` with the level-entry parms and Q2's entry autosave. Before, a death
-  restart gave the player a fresh starting loadout, and in Q2 lost keys, power
-  cubes and unit flags.
-- **Carry rules**:
-  - Q1 `SetChangeParms` drops keys and gives at least 25 shells.
-  - Q1 `DecodeLevelParms` resets the loadout when you return to start with a
-    rune held; the runes stay.
-  - Q2 keeps keys between units in single player (only coop strips them).
-    A new unit still clears the cross-level trigger flags.
+  `Sbar_IntermissionOverlay` (the `complete.lmp` and `inter.lmp` plaques, time,
+  secrets and kills in the big digits). A key continues after 2 s; an
+  episode's end shows its text. `NO_INTERMISSION` exits (the start map's)
+  change level at once. The scoreboard and plaque show the server clock, which
+  starts at 1.2 s (`SV_SpawnServer`).
+- **Q1 end**: `engine/world/finale.jac` runs the end map's spiked
+  `misc_teleporttrain`, the telefrag into Shub-Niggurath, the finale timeline
+  and its cameras and texts.
+- **Q2 units**: an exit to a new unit (`*`) pauses at
+  `info_player_intermission` with a unit summary (kills, goals, secrets), then
+  plays the unit's closing film (`eou1_.cin` to `eou8_.cin`). Other Q2 exits
+  change level at once, as `BeginIntermission` does in single player. boss2's
+  exit plays `end.cin` and shows `victory.pcx` until a key, then the menu.
+- **Monster tally**: counted on entry, including closet, trigger-spawned and
+  boss monsters (Chthon and Shub-Niggurath add to `total_monsters`), but not
+  Q2's `AI_GOOD_GUY` `misc_insane` marines. F1 in Q1 shows
+  `Sbar_SoloScoreboard` (as does death); in Q2 it toggles the help computer
+  (see [presentation](presentation-status.md)).
 
-## Cinematics, end pictures and music
+## What carries between levels
+
+- Q1 `SetChangeParms`: keys are dropped, health is clamped to 50-100 and at
+  least 25 shells carry. `DecodeLevelParms` resets the loadout on return to
+  start with a rune held; the runes stay.
+- Q2: health, armor and inventory carry. Keys carry between units in single
+  player (only coop strips them). A new unit clears the hub and the
+  cross-level trigger flags (`target_crosslevel_trigger`).
+- Q2 hubs (`engine/core/campaign.jac`): each visited level of the unit is kept
+  as a snapshot in a `MapState` node linked to the `Campaign` by `Visited`
+  edges (`Remember`/`Recall` walkers). Returning restores its items, monsters,
+  movers, triggers, signals and its own clock (`level.time`); the player
+  arrives at the destination's authored spot.
+- The Q2 help computer (`HelpComputer` in `engine/world/targets.jac`) belongs
+  to the game, not the level: its objectives (`game.helpmessage1/2`), news
+  count and unread reminders carry from level to level and across units, and
+  are saved. News beeps `misc/pc_up.wav` and blinks the status-bar icon; the
+  reminder repeats every 6.4 s, three times.
+- A failed load leaves the current level and hub intact. Choosing a map from
+  the menu starts a fresh session.
+
+## Death restart and saves
+
+- Each level entry takes an autosave (a campaign envelope with a snapshot).
+  Dying and pressing Enter reloads it, as Q1's `restart` with the entry parms
+  and Q2's entry autosave do: the inventory, keys, unit flags and help
+  computer as they entered, with the Q2 hub as it was.
+- The `save`/`load` commands (quick save when unnamed) write
+  `~/.quakepassion-save.txt` or `~/.quakepassion-save-<name>.txt`: a
+  `QUAKEPASSION CAMPAIGN 1` envelope holding the active snapshot and the Q2
+  hub's visited snapshots. Snapshots carry the header in
+  `engine/core/save_format.jac` (currently `QUAKEPASSION 22`); a snapshot with
+  another header is rejected, since positional entity records change between
+  formats. Saving needs a living player in walk mode.
+
+## Q1 runes and gates
+
+- The four sigils (`item_sigil`, `progs/end1.mdl` to `end4.mdl`) add their
+  rune bits to the inventory, fire their targets and say "You got the rune!"
+  with `misc/runekey.wav`. The status bar shows the held sigils (`sb_sigil`).
+- `engine/world/gates.jac`: `CampaignGate` nodes for the start map's
+  `func_episodegate` (solid and visible once its episode is done) and
+  `func_bossgate` (solid until all four runes are held). `ApplyGates` sets
+  faces and collision from the inventory on load and after a restore.
+- With a rune held, the start map uses `info_player_start2`
+  (`SelectSpawnPoint`).
+
+## Films and music
 
 - **Q2 films** (`engine/formats/q2/cin.jac`, `engine/core/cinematic.jac`):
-  `.cin` files are read as `client/cl_cin.c` reads them: the header, the 256
-  order-1 Huffman trees (`Huff1TableInit`), then each frame's optional
-  palette, Huffman-coded picture (`Huff1Decompress`) and its slice of sound.
-  The film runs on the real clock at 14 frames a second. Like
-  `SCR_RunCinematic` it reads one frame ahead, so the picture trails the
-  sound by a frame, and a slow frame stretches the film instead of dropping
-  frames. The picture is stretched over the whole window. The menu pauses
-  and blanks it. Any held key or button finishes it after its first second
-  (`BUTTON_ANY`); keys already held when it started must be let go first.
-  Natively a 320×240 frame decodes and converts in under 1 ms.
-- **Where they play**: the new-game intro (`newgame`'s
-  `map *ntro.cin+base1`, when `QP_GAME=q2` starts without `QP_MAP`); each
-  unit's closing film (`eou1_.cin`–`eou8_.cin`) after the unit summary; and
-  boss2's `end.cin`, then the still `victory.pcx` (`SCR_PlayCinematic`'s
-  static picture) until a key, after which the game is over and the menu
-  opens. A missing film goes straight on, as `SCR_PlayCinematic` does. The
-  films are loose files in `baseq2/video/`; the asset library now searches a
-  Q1/Q2 game directory's loose files after its paks, as `FS_FOpenFile` does.
-- **Film sound** goes through `RawStream` (`engine/audio/streams.jac`), the
-  counterpart of `S_RawSamples`: samples queue in their own format (22 kHz
-  16-bit stereo for ntro and end, 11 kHz 8-bit mono for the unit films) and
-  are handed to a raylib audio stream a whole sub-buffer at a time.
-- **Q3 music**: `CG_StartMusic` reads worldspawn's `music` (an intro track and
-  an optional loop track, either slash). `BackgroundTrack` streams the intro
-  into its own raw channel and goes on to the loop track, with no gap
-  (`S_UpdateBackgroundTrack`). The postgame plays `music/win` or
-  `music/loss` once, replacing the level's music (`music music/win`). The
-  level is `s_musicvolume` (0.25), settled at two thirds, scaled against
-  Q3's default master volume.
-- **Q1/Q2 music** came off the CD: worldspawn `sounds` names the track
-  (`svc_cdtrack`, `CS_CDTRACK`), Q1 plays track 3 over the intermission and
-  track 2 under an episode's closing text. A `music/trackNN.ogg` or `.wav`
-  file (as the re-releases ship) stands in for the disc. The original
-  assets used here have none, so those levels are silent, as without a CD.
-
-## Messages and sounds
-
-- Door messages ("This door opens elsewhere...", "You must press the three
-  buttons...") show when the player touches the door, until its first use. Q1
-  `door_touch` does this for any door's message, every 2 s, with
-  `misc/talk.wav`. Q2 `door_touch` does it for named doors that can't be shot,
-  every 5 s, with `misc/talk1.wav`. Q1 secret doors do the same
-  (`secret_touch`: "Shoot this secret door...").
-- A button's message is printed when the button fires. Q1 messages without a
-  `noise` play `misc/talk.wav`.
-- Q1 key doors say "You need the silver key/runekey/keycard" depending on
-  `worldtype`, and play `med/rune/base` `try` and `use` sounds.
-- Q2 `trigger_key` says "You need the Data CD" (the item's pickup name) with
-  `misc/keytry.wav` at most every 5 s, and plays `misc/keyuse.wav` when the key
-  is used.
-- Doors, plats, buttons, trains, func_water and Q1 secret doors play their
-  start, moving and stop sounds as positional speakers:
-  - Q1: the `sounds` tables in doors.qc, plats.qc, buttons.qc and func_train.
-    The moving sound loops by its cue point until the stop sound replaces it.
-  - Q2: `dr1_*`, `pt1_*` and `butn2` unless `sounds` is 1, a train's `noise`
-    loop, and func_water's `mov_watr`/`stp_watr`.
-- Teleport sounds and flashes:
-  - Q1: `misc/r_tele1-5` at the destination.
-  - Q2: `misc/tele1.wav`.
-  - Q3: `world/teleout.wav` and `world/telein.wav`.
-  - A spark flash appears at every destination.
-- Q3 jump pads play `world/jumppad.wav` and the jump grunt once per contact.
-  Q1/Q2 pushes play windfly at most every 1.5 s.
+  `.cin` files are read as `client/cl_cin.c` does (the header, the 256
+  order-1 Huffman trees of `Huff1TableInit`, then each frame's palette,
+  `Huff1Decompress`ed picture and sound). The film runs on the real clock at
+  14 frames a second, one frame ahead as `SCR_RunCinematic` reads, stretched
+  over the window; the menu pauses and blanks it. Any key finishes it after its
+  first second (`BUTTON_ANY`). A missing film goes straight on. New Q2 games
+  (`QP_GAME=q2` without `QP_MAP`) start with `ntro.cin`. Films are loose files
+  in `baseq2/video/`; Q1/Q2 loose files are searched after the paks
+  (`FS_FOpenFile`).
+- Film sound goes through `RawStream` (`engine/audio/streams.jac`,
+  `S_RawSamples`).
+- **Q3 music**: `CG_StartMusic` reads worldspawn `music` (an intro and an
+  optional loop track); `BackgroundTrack` streams the intro and goes on to the
+  loop with no gap (`S_UpdateBackgroundTrack`). The postgame plays `music/win`
+  or `music/loss` once. The level is `s_musicvolume` (0.25).
+- **Q1/Q2 CD music**: worldspawn `sounds` names the track (`svc_cdtrack`,
+  `CS_CDTRACK`); Q1 plays track 3 over the intermission and track 2 under an
+  episode's closing text. A `music/trackNN.ogg` or `.wav` file stands in for
+  the disc; without one the levels are silent, as without a CD.
 
 ## Chain audit
 
-`scripts/chain_audit.jac` loads every Q1 and Q2 map without rendering. For
-each map it reports:
+`scripts/chain_audit.jac` loads every Q1 and Q2 map without rendering and
+reports exits loaded against the entity lump's changelevels, movers, touch
+triggers, teleporters and trains that did not load (and why), signals left
+disabled, and targeted entities with no activation. `QP_AUDIT_MAPS=e1m7,jail1`
+narrows the run; `QP_AUDIT_VERBOSE=0` hides per-entity lines.
 
-- exits loaded against changelevels in the entity lump
-- movers, touch triggers, teleporters and trains that did not load, and why
-- signals left disabled
-- targeted entities that have no activation
+Totals on 2026-09-24:
 
-`QP_AUDIT_MAPS=e1m7,jail1` narrows the run, and `QP_AUDIT_VERBOSE=0` hides the
-per-entity lines. A full run takes about a minute.
-
-| | before (main) | after |
+| | Q1 | Q2 |
 |---|---|---|
-| Q1 exits | 45/46 (e1m7 missing) | 46/46 |
-| Q1 movers | 1036/1044 | 1044/1044 |
-| Q1 touch triggers | 624/627 | 627/627 |
-| Q1 teleporters | 294/298 | 295/298 |
-| Q1 disabled signals | 5 | 0 |
-| Q2 exits | 77/85 | 85/85 |
-| Q2 movers | 1105/1226 | 1226/1226 |
-| Q2 touch triggers | 742/785 | 785/785 |
-| Q2 trains | not counted | 195/195 (Q1 39/39) |
-| Q2 disabled signals | 120 | 0 |
-| targeted entities with no activation | Q1 4, Q2 123 | 0 |
+| Exits | 46/46 | 85/85 |
+| Movers | 1044/1044 | 1226/1226 |
+| Touch triggers | 627/627 | 785/785 |
+| Teleporters | 295/298 | |
+| Trains | 39/39 | 195/195 |
+| Disabled signals | 0 | 0 |
+| Targeted entities with no activation | 0 | 0 |
 
-The remaining teleporters are ones the originals can't use either:
-
-- Q1 e4m5, e4m8 and start have one teleporter each that targets an
-  `info_null`. `info_null` removes itself, so `teleport_touch` finds no
-  destination.
-- Q2 city1 and cool1 each have a `misc_teleporter` whose destination only
-  spawns in deathmatch.
+The audit's mover count covers `func_door`, `func_button`, `func_plat`, Q2
+`func_door_rotating` and `func_water`; it does not count Q2
+`func_door_secret` (see [doors](doors-status.md)). The three Q1 teleporters
+that do not load target an `info_null`, which removes itself, so the originals
+cannot use them either ([traversal](traversal-status.md)).
 
 ## Validation
 
-- `jac test tests/campaign_flow_tests.jac` covers:
-  - chains skipping a target that has no use
-  - Q2 exits with targets, delays and flags
-  - Q1 exits firing their targets, and NO_INTERMISSION
-  - trigger_elevator
-  - gated monster teleports, including dying on the player
-  - pushes on monsters, and teleporters that only take players
-  - killtargeted plain walls
-  - door touch messages, key wording and mover sounds
-  - Q2 trigger_key wording and debounce
-- `jac run scripts/campaign_flow_smoke.jac` runs on the original maps:
-  - the e1m7 exit fires relay `t18` and asks for start
-  - the exits of jail1, base2 (after its relay's 1 s delay) and boss1 (after
-    arming and touching its TRIGGERED trigger) fire; boss1 also shows the
-    teleport sparks
-  - the elevators in lab (e2 → e1) and mine2 (p1 → p3, called by a button that
-    used to be static) reach their called corners
-  - on hard skill in e1m3, the closet fiends arrive at their destinations
-    after the guards die, and the shambler teleports in after the closet
-    fiends die
-- `jac run scripts/level_flow_smoke.jac` goes through the real game loop and
-  saves captures to `.jac/screenshots/flow/`:
-  - the Q1 scoreboard
-  - e1m7's intermission plaque, then the episode text, then start
-  - Q1 and Q2 death restarts that keep the entry inventory, keys and unit
-    flags
-  - the Q2 help computer
-  - a Q2 unit exit that keeps keys and clears unit flags
-- `jac run scripts/chain_audit.jac` gives the totals above.
+- Tests: `tests/campaign_flow_tests.jac` (chains skipping targets with no use,
+  Q2 exits with targets/delays/flags, Q1 exits and NO_INTERMISSION,
+  `trigger_elevator`, gated monster teleports, killtargeted walls, door
+  messages, key wording, mover sounds, `trigger_key`), `tests/campaign_tests.jac`,
+  `tests/exit_tests.jac`, `tests/finale_tests.jac`, `tests/rune_tests.jac`,
+  `tests/savegame_tests.jac`, `tests/savegame_tags_tests.jac`,
+  `tests/cinematic_tests.jac`, `tests/level_teardown_tests.jac`.
+- `scripts/campaign_walkthrough.jac` follows every Q1 and Q2 campaign exit
+  through the real game loop.
+- `scripts/campaign_flow_smoke.jac`: e1m7's exit, jail1/base2/boss1 exits,
+  the lab and mine2 elevators, and e1m3's closet teleport-ins on hard skill.
+- `scripts/level_flow_smoke.jac` (captures in `.jac/screenshots/flow/`): the
+  Q1 scoreboard, e1m7's plaque then episode text then start, Q1 and Q2 death
+  restarts that keep the entry inventory, the Q2 help computer, and a Q2 unit
+  exit that keeps keys and clears unit flags.
+- `scripts/campaign_smoke.jac` (Q1 key gates, Q2 hub revisits and saves),
+  `scripts/exits_smoke.jac` (transitions and failed-load rollback),
+  `scripts/persistence_smoke.jac`, `scripts/validate_gameplay.jac`,
+  `scripts/validate_exits.jac`, `scripts/finale_smoke.jac`,
+  `scripts/rune_smoke.jac` (each sigil in e1m7, e2m6, e3m6 and e4m7, then the
+  five gates in start and a save round-trip), `scripts/chain_audit.jac`.
 
-- **Help computer**: its objectives, news count and unread reminders
-  (`game.helpmessage1/2`, `helpchanged`, `pers.helpchanged`) belong to the
-  game. They carry from level to level, across units, and are kept in saves
-  and in the level-entry autosave. The help computer no longer prints a
-  message of its own when it changes; the beep and the blinking status-bar
-  icon announce it, as in the original.
-- **Level clock**: each level's clock (Q1 `sv.time`, Q2 `level.time`) is
-  kept in its saves and in a Q2 unit's remembered levels, so a loaded or
-  revisited level goes on from its own time. The Q1 scoreboard and
-  intermission plaque show the server clock, which starts at 1.2 s
-  (`SV_SpawnServer`'s start at 1 and two settling frames).
+## Limitations
 
-## Limits
-
-- The Q2 unit summary is drawn in the help computer's frame. The
-  single-player original shows only the intermission view.
+- The Q2 unit summary is drawn in the help computer's frame; single-player Q2
+  shows only the intermission view.
 - Q3's RoQ cinematics (`video/intro.RoQ`, the tier films) are not played.
-- The help computer's reminder beeps start when the news arrives rather than
-  at the next `level.framenum & 63`.
+- The help computer's reminder beeps count from when the news arrives rather
+  than from the next `level.framenum & 63`.
