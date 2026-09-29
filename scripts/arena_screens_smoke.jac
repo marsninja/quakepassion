@@ -135,6 +135,10 @@ with entry {
             subject = bot;
         }
     }
+    # A bot typing a chat line (BUTTON_TALK): the balloon over its head.
+    subject.bot_state.talking = True;
+    look(app, level.collision, subject.pos.sub(Vec3(z=subject.eye_height)).add(Vec3(z=24.0)), subject.yaw, 110.0, "qp_arena_talk_balloon.png");
+    subject.bot_state.talking = False;
     # A bot dies holding a railgun and a quad: its drops are thrown.
     victim = subject;
     victim.inventory spawn AdjustInventory(kind="weapon_railgun", amount=1, capacity=1);

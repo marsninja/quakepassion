@@ -20,7 +20,7 @@ import from ..formats.q2.model { parse_pcx }
 import from ..formats.q1.sprite { parse_spr }
 import from ..assets.library { AssetLibrary }
 import from ..world.world { World }
-import from ..world.combat { Projectile, HasProjectile }
+import from ..world.combat { Projectile, HasProjectile, Opponent, HasOpponent }
 import from ..world.particles {
     Explosion,
     HasExplosion,
@@ -334,14 +334,20 @@ obj EffectQuads {
     }
 }
 
-"""The effects in a world, gathered in one walk over its effect edges."""
+# cg_main.c's balloonShader, floated over a player typing a message.
+glob BALLOON_SHADER: str = "sprites/balloon3";
+
+"""The effects in a world, gathered in one walk over its effect edges, and,
+with `balloons`, the Q3 players typing a message (EF_TALK)."""
 walker GatherEffects {
     has marks: list[ImpactMark] = [],
         trails: list[ShotTrail] = [],
         blasts: list[Explosion] = [],
         projectiles: list[Projectile] = [],
         lightning: list[LightningEvent] = [],
-        field: ParticleField | None = None;
+        field: ParticleField | None = None,
+        balloons: bool = False,
+        talkers: list[Opponent] = [];
 
     can begin with World entry {
         visit [here->:HasParticles:->];
@@ -350,6 +356,17 @@ walker GatherEffects {
         visit [here->:HasTrail:->];
         visit [here->:HasExplosion:->];
         visit [here->:HasProjectile:->];
+        if self.balloons {
+            visit [here->:HasOpponent:->];
+        }
+    }
+
+    """A bot holding its talk button while it types a chat line (the
+    BUTTON_TALK that bg_pmove.c turns into EF_TALK)."""
+    can talker with Opponent entry {
+        if here.arena and not here.dormant and here.visual.visible and here.bot_state.talking {
+            self.talkers.append(here);
+        }
     }
 
     can particles with ParticleField entry {
@@ -621,7 +638,7 @@ obj EffectScene {
         self.quads.side = side;
         self.quads.up = up;
         self.lighting = lighting;
-        found = world spawn GatherEffects();
+        found = world spawn GatherEffects(balloons=BALLOON_SHADER in self.flight);
         field = found.field;
         now = field.clock if field is not None else 0.0;
         self.draw_marks(found.marks, eye);
@@ -631,6 +648,9 @@ obj EffectScene {
         self.draw_blasts(found.blasts, eye);
         if field is not None {
             self.draw_puffs(field, eye);
+        }
+        if self.add_balloons(found.talkers, blend) {
+            self.quads.flush();
         }
         if not self.textures and not self.models {
             return;
@@ -746,6 +766,27 @@ obj EffectScene {
         }
         self.particles.feed(field);
         self.particles.draw(field.clock, yaw, pitch);
+    }
+
+    """cg_players.c CG_PlayerSprites and CG_PlayerFloatSprite: over each
+    player typing a message, the talk balloon, a sprite 10 units in radius
+    48 units above its origin. True when any was added to the quads."""
+    def add_balloons(talkers: list[Opponent], blend: TickBlend) -> bool {
+        art = self.flight.get(BALLOON_SHADER, []);
+        if not talkers or not art {
+            return False;
+        }
+        sprite = art[0];
+        for talker in talkers {
+            origin = blend.place(talker.tick_pose, talker.pos).sub(Vec3(z=talker.eye_height));
+            self.billboard(
+                sprite,
+                origin.add(Vec3(z=48.0)),
+                EFFECT_BLEND_ALPHA,
+                scale=20.0 / float(max(1, sprite.frame.width))
+            );
+        }
+        return True;
     }
 
     """Q3's smoke and blood puffs (cg_localents.c CG_AddScaleFade and
