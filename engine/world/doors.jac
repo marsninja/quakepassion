@@ -22,6 +22,7 @@ import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis, quake_basis }
 import from .mover_ramp { MoverRamp, q2_mover_ramp, ramp_step, ramp_rest }
+import from .rotators { mover_origin }
 import from .pickups { Pickup }
 import from .pusher {
     Pushable,
@@ -602,21 +603,22 @@ walker DoorTick {
             return;
         }
         direction = 1.0 if here.state == "opening" else -1.0;
+        left = door_span(here) * (1.0 - here.position if direction > 0.0 else here.position);
         # Q2 Think_AccelMove ramps plats (and doors given accel/decel).
         travel = here.speed * self.dt;
         ramp = here.ramp;
         if ramp is not None {
-            travel = ramp_step(
-                ramp,
-                1 if direction > 0.0 else -1,
-                door_span(here) * (1.0 - here.position if direction > 0.0 else here.position),
-                here.speed,
-                self.dt
-            );
+            travel = ramp_step(ramp, 1 if direction > 0.0 else -1, left, here.speed, self.dt);
         }
+        # A step covering what is left ends the move exactly (Move_Final);
+        # so does one leaving less than a millionth of a unit, which the
+        # position fraction may not be able to take another step through.
         next_position = max(
             0.0, min(1.0, here.position + direction * travel / door_span(here))
         );
+        if left - travel <= 0.000001 {
+            next_position = 1.0 if direction > 0.0 else 0.0;
+        }
         members = [here];
         members.extend([here->:DoorMember:->][?:Door]);
         # SV_PushMove / SV_Push: the whole group moves, taking along or
@@ -673,17 +675,18 @@ walker DoorTick {
     }
 }
 
-def model_bounds(bsp: Bsp, model: int) -> AABB {
+"""A brush entity's box as its game sees it, placed at the entity's
+`origin`: the BSP model's stored bounds spread by a unit on each side, as Q1
+Mod_LoadSubmodels, Q2 CMod_LoadSubmodels and Q3 CM_LoadSubmodels load them
+for SetModel. Every brush of the model counts, whether it has faces or not
+(base3's lift cage reaches far below the floor it shows)."""
+def model_bounds(bsp: Bsp, model: int, origin: Vec3 | None = None) -> AABB {
     record = bsp.models[model];
-    lo = Vec3(x=1.0e30, y=1.0e30, z=1.0e30);
-    hi = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);
-    for i in range(record.first_face, record.first_face + record.face_count) {
-        for v in bsp.faces[i].vertices {
-            lo = Vec3(x=min(lo.x, v.x), y=min(lo.y, v.y), z=min(lo.z, v.z));
-            hi = Vec3(x=max(hi.x, v.x), y=max(hi.y, v.y), z=max(hi.z, v.z));
-        }
-    }
-    return AABB(mins=lo, maxs=hi);
+    spread = Vec3(x=1.0, y=1.0, z=1.0);
+    placed = origin if origin is not None else Vec3();
+    return AABB(
+        mins=record.mins.sub(spread).add(placed), maxs=record.maxs.add(spread).add(placed)
+    );
 }
 
 def overlaps(a: AABB, b: AABB) -> bool {
@@ -793,7 +796,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         if model <= 0 or model >= len(bsp.models) {
             raise ValueError("Invalid door model");
         }
-        bounds = model_bounds(bsp, model);
+        bounds = model_bounds(bsp, model, mover_origin(fields));
         direction = door_direction(entity);
         size = bounds.size();
         lip = float(fields.get("lip", "4" if kind == "func_button" else "8"));

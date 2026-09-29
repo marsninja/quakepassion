@@ -471,6 +471,9 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 if rule.walk.frames {
                     enemy.walk_animation = gait_indices(frames, rule.walk, path, "walk");
                 }
+                enemy.walk_animations = [
+                    gait_indices(frames, other, path, "walk") for other in rule.other_walks
+                ];
                 if rule.idle_frames {
                     enemy.idle_animation = frame_indices(
                         frames, rule.idle_frames, path, "idle"
@@ -612,6 +615,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 heir.walk_animation = gait_indices(
                     heir_frames, follower.walk, follower.model, "walk"
                 );
+                heir.walk_animations = [
+                    gait_indices(heir_frames, other, follower.model, "walk")
+                    for other in follower.other_walks
+                ];
                 heir.death_animation = frame_indices(
                     heir_frames, follower.death_frames, follower.model, "death"
                 );

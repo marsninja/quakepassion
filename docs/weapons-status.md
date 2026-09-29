@@ -40,8 +40,15 @@ bolts, grenades and rockets. Q2 BFG flight/explosion effects use the original
 animated SP2/PCX assets; Q3 plasma uses its additive rotating sprite and the Q3
 BFG flies as `models/weaphits/bfg.md3`. Q3 model materials still report partial support for several animated
 shader stages. Items settle as their game spawns them (Q1 `PlaceItem`/`droptofloor`, Q2
-`droptofloor`, Q3 `FinishSpawningItem`) and ride movers. Team-linked pickups,
-Q2 no-touch items and Q3 randomized respawn timing also remain open.
+`droptofloor`, Q3 `FinishSpawningItem`) and ride movers. A Q1 item whose box
+starts partly in solid is carried on out of it to the floor, as `SV_Move`
+does; one never getting out of the solid goes. A Q2 item still falling from
+where `droptofloor` left it, and every item's place, survive a save. Items are
+touched where each game's boxes meet: Q1 the item's own box widened 15 units
+across (`FL_ITEM`) against the player's (`SV_TouchLinks`), Q2 both boxes a
+unit bigger (`G_TouchTriggers`), Q3 `BG_PlayerTouchesItem`'s 44/50/36-unit
+reach. Team-linked pickups, Q2 no-touch items and Q3 randomized respawn timing
+also remain open.
 
 Weapon parameters are adapted from the original
 [Q1 weapon logic](https://github.com/id-Software/Quake/blob/master/QW/progs/weapons.qc),

@@ -1,5 +1,5 @@
-import from engine.world.doors { Door, HasDoor, DoorTick }
-import from engine.world.world { Player }
+import from engine.world.doors { Door, HasDoor, DoorTick, load_doors }
+import from engine.world.world { World, Player }
 import from engine.math.vec3 { Vec3 }
 import from tests.door_support { DoorFixture }
 
@@ -133,4 +133,27 @@ test "a crouched rider follows the same platform displacement" {
     }
     assert abs(player.pos.z - before - 64.0) < 0.00001;
     assert player.crouched and fixture.collision.top_drop == 28.0;
+}
+
+test "a plat's travel counts every brush of its model and the loading spread" {
+    # Q2 SP_func_plat: pos2 is (maxs - mins) - lip below, from SetModel's
+    # bounds: the stored model bounds spread a unit each way. base3's lift
+    # cage has a faceless shaft 320 units deep under a 144-unit car, so with
+    # lip 132 it travels 190, not the 12 its faces would give.
+    fixture = DoorFixture();
+    fixture.setup("q2", {"classname": "func_plat", "lip": "132"});
+    fixture.world = World();
+    fixture.bsp.models[1].mins.z = -225.0;
+    load_doors(fixture.world, fixture.bsp, fixture.collision);
+    cage = [fixture.world->:HasDoor:->][?:Door][0];
+    assert cage.travel.z == 190.0 and cage.rest.z == -190.0;
+    # Q2's qbsp stores a 96-unit brush's bounds as they are; spread, they
+    # are 98 high, less the default lip of 8.
+    plain = DoorFixture();
+    plain.setup("q2", {"classname": "func_plat"});
+    plain.world = World();
+    plain.bsp.models[1].mins.z = 0.0;
+    plain.bsp.models[1].maxs.z = 96.0;
+    load_doors(plain.world, plain.bsp, plain.collision);
+    assert [plain.world->:HasDoor:->][?:Door][0].travel.z == 90.0;
 }

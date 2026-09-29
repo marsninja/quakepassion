@@ -14,7 +14,15 @@ obj DoorFixture {
             game=game,
             models=[
                 Model(head=0, first_face=0, face_count=0),
-                Model(head=0, first_face=0, face_count=1)
+                # qbsp stores a model's bounds a unit inside its brush, as
+                # Q1's does; loading spreads them back out.
+                Model(
+                    head=0,
+                    first_face=0,
+                    face_count=1,
+                    mins=Vec3(x=-7.0, y=-31.0, z=1.0),
+                    maxs=Vec3(x=7.0, y=31.0, z=95.0)
+                )
             ],
             faces=[
                 Face(
@@ -113,7 +121,15 @@ def pair_fixture(game: str, locked: bool = False) -> DoorFixture {
     fixture = DoorFixture();
     fixture.setup(game);
     fixture.world = World();
-    fixture.bsp.models.append(Model(head=0, first_face=1, face_count=1));
+    fixture.bsp.models.append(
+        Model(
+            head=0,
+            first_face=1,
+            face_count=1,
+            mins=Vec3(x=-7.0, y=33.0, z=1.0),
+            maxs=Vec3(x=7.0, y=95.0, z=95.0)
+        )
+    );
     fixture.bsp.faces.append(
         Face(vertices=[Vec3(x=-8.0, y=32.0), Vec3(x=8.0, y=96.0, z=96.0)])
     );

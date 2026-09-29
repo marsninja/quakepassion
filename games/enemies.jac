@@ -71,6 +71,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 model="progs/boss.mdl",
                 script="chthon",
                 health=3,
+                # boss_awake: yaw_speed 20.
+                yaw_speed=20.0,
                 speed=0.0,
                 width=128.0,
                 hull_bottom=-24.0,
@@ -517,6 +519,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=80,
                 movement="fly",
+                # flymonster_start_go: yaw_speed 10.
+                yaw_speed=10.0,
                 slides=True,
                 near_chance=0.6,
                 mid_chance=0.2,
@@ -955,6 +959,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=25,
                 movement="swim",
+                # swimmonster_start_go: yaw_speed 10.
+                yaw_speed=10.0,
                 stop_range=40.0,
                 idle_frames=["swim" + str(i) for i in range(1, 19)],
                 pain_frames=["pain" + str(i) for i in range(1, 10)],
@@ -1102,6 +1108,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=50,
                 movement="fly",
+                # flymonster_start_go: yaw_speed 10.
+                yaw_speed=10.0,
                 slides=True,
                 idle_frames=["stand" + two(i) for i in range(1, 46)],
                 pain_variants=[
@@ -1167,6 +1175,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=200,
                 width=24.0,
                 movement="fly",
+                # flymonster_start_go: yaw_speed 10.
+                yaw_speed=10.0,
                 slides=True,
                 idle_frames=["stand1" + two(i) for i in range(1, 53)],
                 pain_variants=[
@@ -1243,6 +1253,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=240,
                 width=24.0,
                 movement="fly",
+                # flymonster_start_go: yaw_speed 10.
+                yaw_speed=10.0,
                 slides=True,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 pain_variants=[
@@ -1631,6 +1643,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=50,
                 movement="swim",
+                # swimmonster_start_go: yaw_speed 10.
+                yaw_speed=10.0,
                 stop_range=48.0,
                 idle_frames=["flphor" + two(i) for i in range(1, 25)],
                 pain_variants=[
@@ -1912,6 +1926,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=2000,
                 width=56.0,
                 movement="fly",
+                # flymonster_start_go: yaw_speed 10.
+                yaw_speed=10.0,
                 slides=True,
                 stop_range=160.0,
                 idle_frames=["stand" + str(i) for i in range(30, 51)],
@@ -2531,15 +2547,28 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 attack_sound_times=[0.2],
                 idle_sound="sound/soldier/solidle1.wav",
                 model="models/monsters/soldier/tris.md2",
-                # m_soldier.c soldier_move_run and soldier_move_walk1, which soldier_walk1_random loops at walk110 nine times in ten; MODEL_SCALE 1.2.
+                # m_soldier.c soldier_move_run; MODEL_SCALE 1.2.
                 run=Gait(
                     frames=["run" + two(i) for i in range(3, 9)],
                     steps=[10.0, 11.0, 11.0, 16.0, 10.0, 15.0]
                 ),
+                # soldier_walk: soldier_move_walk1 or soldier_move_walk2 at
+                # random. walk1's soldier_walk1_random goes back from walk110
+                # to walk101 nine times in ten, else it stands through
+                # walk111-133.
                 walk=Gait(
-                    frames=["walk1" + two(i) for i in range(1, 11)],
-                    steps=[3.0, 6.0, 2.0, 2.0, 2.0, 1.0, 6.0, 5.0, 3.0, -1.0]
+                    frames=["walk1" + two(i) for i in range(1, 34)],
+                    steps=[3.0, 6.0, 2.0, 2.0, 2.0, 1.0, 6.0, 5.0, 3.0, -1.0] + [0.0] * 23,
+                    branch=9,
+                    branch_to=0,
+                    branch_chance=0.9
                 ),
+                other_walks=[
+                    Gait(
+                        frames=["walk2" + two(i) for i in range(9, 19)],
+                        steps=[4.0, 4.0, 9.0, 8.0, 5.0, 1.0, 3.0, 7.0, 6.0, 7.0]
+                    )
+                ],
                 step_scale=1.2,
                 duck_frames=["duck" + two(i) for i in range(1, 6)],
                 duck_down=0,

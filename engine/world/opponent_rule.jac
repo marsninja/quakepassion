@@ -96,6 +96,13 @@ entries of an mmove_t, stepped by M_MoveFrame). `steps` line up with
 obj Gait {
     has frames: list[str] = [],
         steps: list[float] = [];
+    # A frame whose think may turn the cycle back: once frame `branch` has
+    # played, the next is `branch_to` with `branch_chance`, else the one after
+    # (Q2 soldier_walk1_random at walk110 goes back to walk101 nine times in
+    # ten, and otherwise stands through walk111-133).
+    has branch: int = -1,
+        branch_to: int = 0,
+        branch_chance: float = 0.0;
 }
 
 obj OpponentRule {
@@ -188,7 +195,16 @@ obj OpponentRule {
         # the pace of bodies with no frame tables (Q3 bots run at g_speed).
         run: Gait = Gait(),
         walk: Gait = Gait(),
+        # Walk cycles taken instead of `walk`: each time the monster sets off
+        # walking it picks `walk` or one of these, all equally likely (Q2
+        # soldier_walk: walk1 or walk2, half the time each).
+        other_walks: list[Gait] = [],
         step_scale: float = 1.0,
+        # How far, in degrees, the monster turns toward its ideal yaw each
+        # 0.1 s frame (Q1 PF_changeyaw / Q2 M_ChangeYaw by `yaw_speed`):
+        # walkmonster_start gives 20, flymonster_start and swimmonster_start
+        # 10, unless the spawn function set its own (Q1 boss_awake's 20).
+        yaw_speed: float = 20.0,
         attack_steps: list[float] = [],
         attack_range: float = 1500.0,
         stop_range: float = 180.0,

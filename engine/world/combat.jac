@@ -11,7 +11,7 @@ import from .particles {
     missile_hit_flesh
 }
 import from .navigation { RouteSearch, RouteQueue, walk_edge, waypoint_reached }
-import from .opponent_rule { OpponentRule, AttackProfile, rule_profiles }
+import from .opponent_rule { OpponentRule, AttackProfile, Gait, rule_profiles }
 import from .weapons { WeaponRule }
 import from .world { World, Player, area_of, move_to_area }
 import from .damage { Damage, blast_strength }
@@ -34,6 +34,7 @@ import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace }
 import from ..physics.movement { MovePlayer, MovementProfile, movement_profile, step_slide, slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.orientation { change_yaw }
 import from ..math.interpolation { TickPose }
 
 edge HasOpponent: World --> Opponent {}
@@ -124,6 +125,10 @@ node Opponent(Player) {
         holding: bool = False,
         patrol_wait: float = 0.0,
         walk_animation: list[int] = [],
+        # Frames of the rule's `other_walks`, and which walk cycle the monster
+        # took when it last set off walking (0 its `walk`, n other walk n).
+        walk_animations: list[list[int]] = [],
+        walk_cycle: int = 0,
         character: BotCharacter | None = None,
         bot_state: BotState = BotState(),
         weapon_slot: int = 2,
@@ -2940,6 +2945,40 @@ def striding(enemy: Opponent) -> bool {
     return not enemy.arena and enemy.character is None;
 }
 
+"""A roll in [0, 1) from the monster's own random stream."""
+def monster_random(enemy: Opponent) -> float {
+    enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+    return float(enemy.shot_random) / 2147483647.0;
+}
+
+"""The walk cycle a monster is on: its rule's `walk`, or the other walk it
+took when it set off."""
+def walk_gait(enemy: Opponent) -> Gait {
+    others = enemy.rule.other_walks;
+    if enemy.walk_cycle > 0 and enemy.walk_cycle <= len(others) {
+        return others[enemy.walk_cycle - 1];
+    }
+    return enemy.rule.walk;
+}
+
+"""The model frames of the walk cycle a monster is on."""
+def walk_frames(enemy: Opponent) -> list[int] {
+    if enemy.walk_cycle > 0 and enemy.walk_cycle <= len(enemy.walk_animations) {
+        return enemy.walk_animations[enemy.walk_cycle - 1];
+    }
+    return enemy.walk_animation;
+}
+
+"""Setting off walking, a monster with several walks takes one of them, all
+equally likely (Q2 soldier_walk)."""
+def choose_walk(enemy: Opponent) {
+    count = len(enemy.walk_animations);
+    enemy.walk_cycle = 0;
+    if count > 0 {
+        enemy.walk_cycle = min(count, int(monster_random(enemy) * float(count + 1)));
+    }
+}
+
 """The pace, in units a second, of the frame a monster is showing in its
 locomotion cycle: the run cycle, or unalerted the walk (Q1 ai_run(dist) /
 ai_walk(dist) each 0.1 s think; Q2 M_MoveFrame's dist times the model's
@@ -2947,7 +2986,8 @@ monsterinfo.scale). A body without frame tables keeps its rule's speed."""
 def gait_speed(enemy: Opponent) -> float {
     rule = enemy.rule;
     walking = enemy.alert <= 0.0 and bool(enemy.walk_animation);
-    gait = rule.walk if walking and rule.walk.steps else rule.run;
+    walk = walk_gait(enemy);
+    gait = walk if walking and walk.steps else rule.run;
     if not gait.steps {
         return rule.speed;
     }
@@ -4474,13 +4514,18 @@ walker CombatTick {
         if facing is None and here.alert > 0.0 {
             facing = here.last_seen;
         }
+        # Q1 ai_face/ChangeYaw, Q2 M_ChangeYaw: toward the goal by the
+        # monster's yaw speed each 0.1 s frame, spread over the frame's ticks
+        # as its strides are.
         if facing is not None and not here.fighting and here.character is None {
             goal = facing.sub(here.pos);
-            target_yaw = math.atan2(goal.y, goal.x);
-            turn = math.atan2(
-                math.sin(target_yaw - here.yaw), math.cos(target_yaw - here.yaw)
-            );
-            here.yaw += max(-6.0 * self.dt, min(6.0 * self.dt, turn));
+            if abs(goal.x) > 0.000001 or abs(goal.y) > 0.000001 {
+                here.yaw = change_yaw(
+                    here.yaw,
+                    math.atan2(goal.y, goal.x),
+                    here.rule.yaw_speed * self.dt * 10.0
+                );
+            }
         }
         if here.rule.movement == "walk" or here.rule.movement == "none" {
             if here.rule.movement == "none" {
@@ -4624,10 +4669,13 @@ walker CombatTick {
         # Idle patrols use the walk cycle (Q1 prowl/walk, Q2 walk) at 10 Hz.
         if pose_name == "run" and here.alert <= 0.0 and here.walk_animation {
             pose_name = "walk";
+            if here.pose_name != "walk" {
+                choose_walk(here);
+            }
         }
         frames = here.animation if pose_name == "run" else here.idle_animation;
         if pose_name == "walk" {
-            frames = here.walk_animation;
+            frames = walk_frames(here);
         }
         if pose_name == "attack" {
             frames = profile_frames(here, here.attack_profile);
@@ -4667,6 +4715,15 @@ walker CombatTick {
                 # functions, Q2 FRAMETIME).
                 shown = int(here.animation_time) % len(frames);
                 here.animation_time += self.dt * 10.0;
+                # A branching frame's think may send the cycle back (Q2
+                # soldier_walk1_random) once the frame has played.
+                gait = walk_gait(here) if pose_name == "walk" else here.rule.run;
+                if pose_name in ["walk", "run"]
+                    and gait.branch == shown
+                    and int(here.animation_time) % len(frames) != shown
+                    and monster_random(here) < gait.branch_chance {
+                    here.animation_time -= float(gait.branch + 1 - gait.branch_to);
+                }
                 entered = entered
                     or (shown != 0 and int(here.animation_time) % len(frames) == 0);
             }

@@ -7,7 +7,7 @@ import from .world { World, Player }
 import from .combat { Opponent, HasOpponent }
 import from .bot_routes { NavMesh, HasNavMesh }
 import from .bot_goals { LevelItem, HasLevelItem, bot_items, add_level_item, floating_item, jump_pad_area }
-import from .pickups { Pickup, HasPickup, PickupTick }
+import from .pickups { Pickup, HasPickup, PickupTick, touch_reach }
 import from .traversal { Traversal, HasTraversal, TraversalTick }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
@@ -57,7 +57,9 @@ obj ArenaContactIndex {
         self.travels = {};
         for pickup in self.pickups {
             if pickup.rule.kind not in ARENA_ITEM_KINDS { continue; }
-            for key in self.cells(pickup.pos.sub(Vec3(x=32.0, y=32.0)), pickup.pos.add(Vec3(x=32.0, y=32.0))) {
+            # Every cell a touching body's origin can be in (touch_reach
+            # spans at most 64 either way across, Q1 health and ammo).
+            for key in self.cells(pickup.pos.sub(Vec3(x=64.0, y=64.0)), pickup.pos.add(Vec3(x=64.0, y=64.0))) {
                 if key not in self.items { self.items[key] = []; }
                 self.items[key].append(pickup);
             }
@@ -216,17 +218,20 @@ walker ArenaNavigationTick {
             finish = here.pos.sub(Vec3(z=here.eye_height));
             if traversal.relocated { before = finish; }
             items: list[Pickup] = [];
+            body_mins = self.collision.hull_mins;
+            body_maxs = self.collision.hull_maxs;
             for pickup in self.index.near_items(before, finish) {
                 if not pickup.active or pickup.rule.kind not in ARENA_ITEM_KINDS { continue; }
+                reach = touch_reach(here.game, pickup.rule, body_mins, body_maxs);
                 if contact_bounds(before, finish, AABB(
-                    mins=pickup.pos.sub(Vec3(x=32.0, y=32.0, z=48.0)),
-                    maxs=pickup.pos.add(Vec3(x=32.0, y=32.0, z=40.0))
+                    mins=pickup.pos.add(reach.mins), maxs=pickup.pos.add(reach.maxs)
                 )) { items.append(pickup); }
             }
             if items {
                 self.world spawn PickupTick(player=here, start=before, finish=finish,
-                    dt=self.dt, advance_time=False, kinds=ARENA_ITEM_KINDS,
-                    targets=items, selected_only=True);
+                    dt=self.dt, game=here.game, body_mins=body_mins, body_maxs=body_maxs,
+                    advance_time=False, kinds=ARENA_ITEM_KINDS, targets=items,
+                    selected_only=True);
             }
             return;
         }

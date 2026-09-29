@@ -21,8 +21,6 @@ def secret_fixture(flags: int = 0, named: bool = False) -> DoorFixture {
             "targetname": "remote" if named else ""
         }
     );
-    f.bsp.models[1].mins = Vec3(x=-8.0, y=-32.0, z=0.0);
-    f.bsp.models[1].maxs = Vec3(x=8.0, y=32.0, z=96.0);
     load_secret_doors(f.world, f.bsp, f.collision);
     connect_targets(f.world, f.bsp);
     return f;
