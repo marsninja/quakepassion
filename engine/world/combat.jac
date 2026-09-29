@@ -122,7 +122,6 @@ node Opponent(Player) {
         patrol_goal: Vec3 | None = None,
         holding: bool = False,
         patrol_wait: float = 0.0,
-        patrol_speed: float = 0.0,
         walk_animation: list[int] = [],
         character: BotCharacter | None = None,
         bot_state: BotState = BotState(),
@@ -558,7 +557,9 @@ obj CombatState {
         rail_streak: int = 0,
         awards: list[str] = [],
         accuracy_shots: int = 0,
-        accuracy_hits: int = 0;
+        accuracy_hits: int = 0,
+        # Attack rotations taken in turn, by name (Q1's global hknight_type).
+        turns: dict[str, int] = {};
     # Weapon handling state: Q2 chaingun spin frames, BFG wind-up, machinegun
     # climb (machinegun_shots); the firing view punch; sounds and messages
     # for the game to play and print; whether the last shot keeps quiet
@@ -2560,6 +2561,9 @@ def begin_attack(enemy: Opponent, index: int, target: Vec3) {
     }
     enemy.attack_wait = attack_duration(enemy)
         + attack_pause(enemy, melee=profile.kind == "melee");
+    if profile.finished >= 0.0 {
+        enemy.attack_wait = max(attack_duration(enemy), profile.finished);
+    }
     enemy.attack_flash = attack_duration(enemy);
 }
 
@@ -2577,20 +2581,24 @@ def attack_pose_time(enemy: Opponent) -> float {
 # Weighted choice among sequences whose range brackets contain the target.
 # Close attacks take priority, as in the original decision tables. Randomness
 # is consumed only when more than one sequence qualifies.
-def choose_attack(enemy: Opponent, distance: float) -> int {
+def choose_attack(
+    enemy: Opponent, distance: float, turns: dict[str, int] | None = None
+) -> int {
     ensure_profiles(enemy);
     close: list[int] = [];
     far: list[int] = [];
     for i in range(len(enemy.profiles)) {
         profile = enemy.profiles[i];
-        if profile.dodge_only or profile.kind == "revive" {
+        # Triggered sequences (a run-cycle charge) are not decisions.
+        if profile.dodge_only or profile.kind == "revive" or profile.trigger {
+            continue;
+        }
+        if distance < profile.min_range or distance > profile.max_range {
             continue;
         }
         if profile.kind == "melee" {
-            if distance <= profile.max_range {
-                close.append(i);
-            }
-        } elif distance >= profile.min_range and distance <= profile.max_range {
+            close.append(i);
+        } else {
             far.append(i);
         }
     }
@@ -2600,6 +2608,22 @@ def choose_attack(enemy: Opponent, distance: float) -> int {
     }
     if len(pool) == 1 {
         return pool[0];
+    }
+    # A rotation is taken in turn on its shared count (hknight_type).
+    group = enemy.profiles[pool[0]].rotation;
+    in_turn = bool(group);
+    for i in pool {
+        if enemy.profiles[i].rotation != group {
+            in_turn = False;
+        }
+    }
+    if in_turn {
+        count = 0;
+        if turns is not None {
+            count = turns.get(group, 0) % len(pool);
+            turns[group] = (count + 1) % len(pool);
+        }
+        return pool[count];
     }
     total = 0.0;
     for i in pool {
@@ -2912,6 +2936,31 @@ def monster_collision(collision: CollisionMap, enemy: Opponent) -> CollisionMap 
     );
 }
 
+"""Whether a body moves by monster movestep (Q1 SV_movestep / Q2
+M_walkmove): each frame's stride directly, rather than accelerating and
+braking like a player. Arena bots move as players do."""
+def striding(enemy: Opponent) -> bool {
+    return not enemy.arena and enemy.character is None;
+}
+
+"""The pace, in units a second, of the frame a monster is showing in its
+locomotion cycle: the run cycle, or unalerted the walk (Q1 ai_run(dist) /
+ai_walk(dist) each 0.1 s think; Q2 M_MoveFrame's dist times the model's
+monsterinfo.scale). A body without frame tables keeps its rule's speed."""
+def gait_speed(enemy: Opponent) -> float {
+    rule = enemy.rule;
+    walking = enemy.alert <= 0.0 and bool(enemy.walk_animation);
+    gait = rule.walk if walking and rule.walk.steps else rule.run;
+    if not gait.steps {
+        return rule.speed;
+    }
+    # The cycle starts over from its first frame whenever the pose changes.
+    frame = int(enemy.animation_time)
+        if enemy.pose_name == ("walk" if walking else "run")
+        else 0;
+    return gait.steps[frame % len(gait.steps)] * rule.step_scale * 10.0;
+}
+
 """Which cached body view a monster shares with others of its size."""
 def monster_body_key(enemy: Opponent) -> str {
     if not enemy.own_hull {
@@ -2926,35 +2975,68 @@ def monster_body_key(enemy: Opponent) -> str {
         + str(enemy.rule.hull_top);
 }
 
+"""Whether a monster standing at `origin` would be inside `target`'s box
+(the player's, or another monster's own), which SV_movestep refuses."""
+def inside_target(target: Player, height: float, origin: Vec3, mover: Opponent) -> bool {
+    if target.health <= 0 {
+        return False;
+    }
+    width = 16.0;
+    bottom = -24.0;
+    top = 32.0;
+    if isinstance(target, Opponent) {
+        width = target.rule.width;
+        bottom = target.rule.hull_bottom;
+        top = target.rule.hull_top;
+    }
+    feet = target.pos.sub(Vec3(z=height));
+    rule = mover.rule;
+    return abs(feet.x - origin.x) < width + rule.width
+        and abs(feet.y - origin.y) < width + rule.width
+        and origin.z + rule.hull_bottom < feet.z + top
+        and origin.z + rule.hull_top > feet.z + bottom;
+}
+
 # Integrate authored charge distances across 10 Hz animation frames, using the
-# same stair/slide collision as walking. Keep a body-width gap to the player.
+# same stair/slide collision as walking. A charge heads at the target (Q1/Q2
+# ai_charge's movetogoal), or for a flyby stride at a point `side` to its
+# left (Q1 ai_charge_side's walkmove); either way SV_movestep refuses a step
+# into the target's box.
 def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: float) {
-    steps = current_profile(enemy).steps;
+    profile = current_profile(enemy);
+    steps = profile.steps;
     if not enemy.grounded or not steps or dt <= 0.0 or dt > 0.05 {
         return;
     }
-    travel = 0.0;
+    height = player.eye_height
+        if isinstance(player, Opponent)
+        else collision.eye_height;
+    goal = player.pos.sub(enemy.pos);
+    goal.z = 0.0;
+    left = Vec3(x=-math.sin(enemy.yaw), y=math.cos(enemy.yaw));
+    motion = Vec3();
     for frame in range(len(steps)) {
         start = max(enemy.attack_clock, float(frame) * 0.1);
         finish = min(enemy.attack_clock + dt, float(frame + 1) * 0.1);
-        travel += max(0.0, finish - start) * 10.0 * steps[frame];
+        share = max(0.0, finish - start) * 10.0 * steps[frame];
+        side = profile.sides[frame] if frame < len(profile.sides) else 0.0;
+        motion = motion.add(goal.add(left.scale(side)).normalized().scale(share));
     }
-    goal = player.pos.sub(enemy.pos);
-    goal.z = 0.0;
-    if travel > 0.0 {
-        travel = min(travel, max(0.0, goal.length() - 32.0));
-    }
-    if abs(travel) <= 0.000001 {
+    if motion.length() <= 0.000001 {
         return;
     }
     collision = monster_collision(collision, enemy);
     body = enemy.pos.sub(Vec3(z=enemy.eye_height));
-    ahead = body.add(goal.normalized().scale(travel));
+    ahead = body.add(motion);
     support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
     if support.fraction == 1.0 or support.normal.z < 0.7 {
         return;
     }
-    moved = step_slide(collision, body, goal.normalized().scale(travel / dt), dt, True);
+    if inside_target(player, height, ahead, enemy)
+        and not inside_target(player, height, body, enemy) {
+        return;
+    }
+    moved = step_slide(collision, body, motion.scale(1.0 / dt), dt, True);
     enemy.pos = moved.pos.add(Vec3(z=enemy.eye_height));
     enemy.velocity.x = 0.0;
     enemy.velocity.y = 0.0;
@@ -2984,7 +3066,16 @@ def advance_attack_segment(
                 and enemy.attack_clock + dt + 0.000001 >= at
             )
                 or (at == 0.0 and enemy.attack_clock == 0.0) {
-                speaker.requests += 1;
+                cue = speaker;
+                # knight_runatk1: sword2 when random() > 0.5, drawn beside
+                # the monster's stream so its own choices keep their order.
+                other = speaker_for(enemy, profile.alternate_sound);
+                if other is not None
+                    and float((enemy.shot_random * 69621) % 2147483647) / 2147483647.0 > 0.5 {
+                    cue = other;
+                    cue.origin = enemy.pos.add(Vec3());
+                }
+                cue.requests += 1;
             }
         }
     }
@@ -3463,6 +3554,36 @@ walker CombatTick {
             ignore=shooter
         );
         return query.target is None or query.target is target;
+    }
+
+    """Start a sequence the run cycle begins itself on its first frame (Q1
+    hknight_run1's CheckForCharge): with the target in sight, attacks due,
+    the target in range and, if the sequence asks, nearly level with it."""
+    def run_start(enemy: Opponent, foe: Player) {
+        if enemy.attack_clock >= 0.0
+            or enemy.attack_wait > 0.0
+            or not enemy.pursuing
+            or foe.health <= 0
+            or enemy.character is not None {
+            return;
+        }
+        height = foe.eye_height
+            if isinstance(foe, Opponent)
+            else self.collision.eye_height;
+        distance = foe.pos.sub(enemy.pos).length();
+        rise = (foe.pos.z - height) - (enemy.pos.z - enemy.eye_height);
+        ensure_profiles(enemy);
+        for i in range(len(enemy.profiles)) {
+            profile = enemy.profiles[i];
+            if profile.trigger != "run"
+                or distance < profile.min_range
+                or distance > profile.max_range
+                or (profile.max_rise >= 0.0 and abs(rise) > profile.max_rise) {
+                continue;
+            }
+            begin_attack(enemy, i, foe.pos);
+            return;
+        }
     }
 
     """Q3 BotFindEnemy: keep a living, visible enemy; otherwise take the
@@ -4005,7 +4126,7 @@ walker CombatTick {
                     and here.duck_wait <= 0.0
                     and here.attack_clock < 0.0
                     and not here.leaping {
-                    selected = choose_attack(here, distance);
+                    selected = choose_attack(here, distance, self.state.turns);
                     if patient is not None {
                         selected = -1;
                         for i in range(len(here.profiles)) {
@@ -4173,7 +4294,11 @@ walker CombatTick {
                 and here.arena_goal is None
                 and patrol is None
                 and len(here.route) <= 1;
-            stop = here.rule.stop_range if closing else 12.0;
+            # A route waypoint is walked right up to until it counts as
+            # reached; a stride has no coast to carry it the last few units.
+            stop = here.rule.stop_range
+                if closing
+                else (0.0 if here.route else 12.0);
             # ai_run_slide: circle the target instead of standing still, both
             # when sliding and, for every monster, once it has closed in.
             circling = closing
@@ -4315,9 +4440,8 @@ walker CombatTick {
                 self.world, here, foe, self.collision, self.dt, self.player, self.state
             );
         }
-        # Idle patrols walk at the original walk-cycle pace; anything else runs.
-        strolling = here.patrol_goal is not None and here.alert <= 0.0;
-        here.walk_speed = here.rule.speed;
+        # Monsters stride their current frame's distance; bots run at speed.
+        here.walk_speed = gait_speed(here);
         # bg_pmove.c pm_duckScale: crouching Q3 bots move at a quarter speed.
         if here.crouched and here.character is not None {
             here.walk_speed *= 0.25;
@@ -4325,11 +4449,6 @@ walker CombatTick {
         # Travel slows a bot onto a mover or a rocket jump's takeoff.
         if here.character is not None {
             here.walk_speed *= here.bot_state.travel.speed_scale();
-        }
-        if strolling {
-            here.walk_speed = here.patrol_speed
-                if here.patrol_speed > 0.0
-                else here.rule.speed * 0.4;
         }
         # Bots keep steering over stair steps and drops, but not while a jump or
         # pad launch is still carrying them upward (weapon jumps steer through
@@ -4377,7 +4496,7 @@ walker CombatTick {
                         collision=body_collision,
                         wish=wish,
                         dt=self.dt,
-                        steady=strolling,
+                        steady=striding(here),
                         profile=self.bot_profile if here.character is not None else self.walk_profile
                     );
                     here.support_wait = 0.05;
@@ -4519,9 +4638,12 @@ walker CombatTick {
         if not frames {
             frames = here.animation;
         }
+        # Whether the cycle has just come round to its first frame.
+        entered = False;
         if pose_name != here.pose_name {
             here.animation_time = 0.0;
             here.pose_name = pose_name;
+            entered = True;
         }
         if frames {
             if pose_name == "attack" and here.attack_clock >= 0.0 {
@@ -4531,9 +4653,12 @@ walker CombatTick {
             } elif pose_name == "duck" {
                 here.animation_time = duck_pose_time(here);
             } else {
-                here.animation_time += self.dt * (
-                    10.0 if pose_name == "walk" else (8.0 if pose_name != "stand" else 2.0)
-                );
+                # Every monster frame is a 0.1 s think (Q1 QuakeC frame
+                # functions, Q2 FRAMETIME).
+                shown = int(here.animation_time) % len(frames);
+                here.animation_time += self.dt * 10.0;
+                entered = entered
+                    or (shown != 0 and int(here.animation_time) % len(frames) == 0);
             }
             index = int(here.animation_time) % len(frames);
             if pose_name in ["attack", "pain", "duck"] {
@@ -4544,6 +4669,9 @@ walker CombatTick {
                 if pose_name in ["attack", "pain", "duck"]
                 else frames[(index + 1) % len(frames)];
             here.visual.blend = here.animation_time - float(int(here.animation_time));
+        }
+        if entered and pose_name == "run" {
+            self.run_start(here, foe);
         }
         # A bot's held weapon is baked along its body's poses, frame for frame.
         held = here.weapon_visual;

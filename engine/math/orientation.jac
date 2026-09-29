@@ -38,6 +38,35 @@ def quake_basis(angles: Vec3) -> Basis {
     );
 }
 
+"""Q1 PF_changeyaw / Q2 M_ChangeYaw: turn from `current` toward `ideal`
+(radians) by at most `speed` degrees, the short way round."""
+def change_yaw(current: float, ideal: float, speed: float) -> float {
+    now = math.degrees(current);
+    while now >= 360.0 {
+        now -= 360.0;
+    }
+    while now < 0.0 {
+        now += 360.0;
+    }
+    goal = math.degrees(ideal);
+    while goal >= 360.0 {
+        goal -= 360.0;
+    }
+    while goal < 0.0 {
+        goal += 360.0;
+    }
+    move = goal - now;
+    if goal > now {
+        if move >= 180.0 {
+            move -= 360.0;
+        }
+    } elif move <= -180.0 {
+        move += 360.0;
+    }
+    move = max(-speed, min(speed, move));
+    return math.radians(now + move);
+}
+
 """`share` of the way from one orientation to another (no turn is the
 identity), re-orthonormalised: a mover's turn between two physics ticks."""
 def blend_basis(start: Basis | None, finish: Basis | None, share: float) -> Basis | None {

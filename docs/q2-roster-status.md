@@ -21,8 +21,10 @@ cover all named poses in `scripts/q2_attack_smoke.jac`.
 This is roster expansion, not full original behavior. Original muzzle offsets,
 rail penetration through other monsters, directional melee contact impulses,
 pain/death sounds, wounded skins, randomized pain/death selections, gibs and drops remain
-open. Shared local steering is still not global navigation. The average original
-run speed is used rather than per-frame locomotion distances.
+open. Shared local steering is still not global navigation. Every Q1 and Q2
+monster steps its original per-frame run and walk distances (Q1 `ai_run`/`ai_walk`,
+Q2 `mframe_t` tables scaled by `MODEL_SCALE`) as `Gait` data on its rule, at 10 Hz
+(`tests/monster_gait_tests.jac`).
 
 
 Original railgun charge, berserker swing, and gladiator cleaver-swing sounds

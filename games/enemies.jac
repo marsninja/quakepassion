@@ -1,5 +1,5 @@
 """Campaign enemy definitions; behavioral special cases remain explicit work."""
-import from engine.world.opponent_rule { OpponentRule, AttackProfile }
+import from engine.world.opponent_rule { OpponentRule, AttackProfile, Gait }
 import from engine.math.vec3 { Vec3 }
 
 # Muzzle-flash light colours: Q1 EF_MUZZLEFLASH (the engine's orange flash)
@@ -65,8 +65,21 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
     }
     if game == "q1" {
         if kind == "monster_boss" {
+            # boss.qc: a 256-wide box from 24 below its origin to 256 above;
+            # boss_awake sets its health (1 on Easy, else 3).
             return OpponentRule(
-                model="progs/boss.mdl", script="chthon", health=3, speed=0.0
+                model="progs/boss.mdl",
+                script="chthon",
+                health=3,
+                speed=0.0,
+                width=128.0,
+                hull_bottom=-24.0,
+                hull_top=256.0,
+                sight_sound="sound/boss1/sight1.wav",
+                pain_sounds=["sound/boss1/pain.wav"],
+                death_sound="sound/boss1/death.wav",
+                attack_sound="sound/boss1/throw.wav",
+                sounds=["sound/boss1/out1.wav"]
             );
         }
         if kind == "monster_hell_knight" {
@@ -76,29 +89,104 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/hknight/death1.wav",
                 idle_sound="sound/hknight/idle.wav",
                 model="progs/hknight.mdl",
+                # hellknight.qc hknight_run1-8 ai_run, hknight_walk1-20 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 9)],
+                    steps=[20.0, 25.0, 18.0, 16.0, 14.0, 25.0, 21.0, 13.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 21)],
+                    steps=[2.0, 5.0, 5.0, 4.0, 4.0, 2.0, 2.0, 3.0, 3.0, 4.0, 3.0, 4.0, 6.0, 2.0, 2.0, 4.0, 3.0, 3.0, 3.0, 2.0]
+                ),
                 health=250,
-                speed=190.0,
-                damage=9,
-                missile_speed=300.0,
-                missile_effect="q1_knightspike",
-                missile_yaw=[-12.0, -6.0, 0.0, 6.0, 12.0, 18.0],
-                # hknight_shot: the box centre, 20 ahead.
-                muzzles=[Vec3(x=20.0, z=8.0)],
-                aim_vertical=0.05,
-                attack_times=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-                attack_duration=1.1,
-                attack_frames=["magicc" + str(i) for i in range(1, 12)],
-                attack_sound="sound/hknight/attack1.wav",
-                attack_sound_times=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-                melee_random_scale=3.0,
-                melee_range=60.0,
-                melee_times=[0.4, 0.5, 0.6, 0.7, 0.8],
-                melee_duration=1.0,
-                melee_frames=["slice" + str(i) for i in range(1, 11)],
-                melee_steps=[9.0, 6.0, 13.0, 4.0, 7.0, 15.0, 8.0, 2.0, 0.0, 3.0],
-                melee_sound="sound/hknight/slash1.wav",
-                rest_min=2.0,
-                rest_random=1.0
+                attacks=[
+                    # th_missile hknight_magicc1-11: six spikes from magicc6,
+                    # each 6 degrees further round (hknight_shot(-2..3)).
+                    AttackProfile(
+                        name="magic",
+                        kind="ranged",
+                        times=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                        duration=1.1,
+                        frames=["magicc" + str(i) for i in range(1, 12)],
+                        sound="sound/hknight/attack1.wav",
+                        sound_times=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                        damage=9,
+                        missile_speed=300.0,
+                        missile_effect="q1_knightspike",
+                        missile_yaw=[-12.0, -6.0, 0.0, 6.0, 12.0, 18.0],
+                        # hknight_shot: the box centre, 20 ahead.
+                        muzzles=[Vec3(x=20.0, z=8.0)],
+                        aim_vertical=0.05
+                    ),
+                    # th_melee hknight_melee: in melee range (CheckAttack's
+                    # RANGE_MELEE, 120) the slice, the smash and the wide
+                    # attack in turn (the global hknight_type), each slash1
+                    # at its start and ai_melee hits within 60.
+                    AttackProfile(
+                        name="slice",
+                        kind="melee",
+                        rotation="hknight_type",
+                        max_range=120.0,
+                        reach=60.0,
+                        times=[0.4, 0.5, 0.6, 0.7, 0.8],
+                        duration=1.0,
+                        frames=["slice" + str(i) for i in range(1, 11)],
+                        steps=[9.0, 6.0, 13.0, 4.0, 7.0, 15.0, 8.0, 2.0, 0.0, 3.0],
+                        sound="sound/hknight/slash1.wav",
+                        random_scale=3.0
+                    ),
+                    AttackProfile(
+                        name="smash",
+                        kind="melee",
+                        rotation="hknight_type",
+                        max_range=120.0,
+                        reach=60.0,
+                        times=[0.4, 0.5, 0.6, 0.7, 0.8],
+                        duration=1.1,
+                        frames=["smash" + str(i) for i in range(1, 12)],
+                        steps=[1.0, 13.0, 9.0, 11.0, 10.0, 7.0, 12.0, 2.0, 3.0, 0.0, 0.0],
+                        sound="sound/hknight/slash1.wav",
+                        random_scale=3.0
+                    ),
+                    AttackProfile(
+                        name="watk",
+                        kind="melee",
+                        rotation="hknight_type",
+                        max_range=120.0,
+                        reach=60.0,
+                        times=[0.3, 0.4, 0.5, 0.9, 1.0, 1.1, 1.6, 1.7, 1.8],
+                        duration=2.2,
+                        frames=["w_attack" + str(i) for i in range(1, 23)],
+                        steps=[
+                            2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 3.0, 2.0,
+                            2.0, 0.0, 0.0, 0.0, 1.0, 1.0, 3.0, 4.0, 6.0, 7.0, 3.0
+                        ],
+                        sound="sound/hknight/slash1.wav",
+                        random_scale=3.0
+                    ),
+                    # CheckForCharge from hknight_run1: a visible target at
+                    # least 80 away and within 20 in height, once attacks
+                    # are due, draws the charge (hknight_char_a1-16) with
+                    # SUB_AttackFinished(2); ai_melee hits on char_a6-11.
+                    AttackProfile(
+                        name="charge",
+                        kind="melee",
+                        trigger="run",
+                        min_range=80.0,
+                        max_range=100000.0,
+                        max_rise=20.0,
+                        finished=2.0,
+                        reach=60.0,
+                        times=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                        duration=1.6,
+                        frames=["char_a" + str(i) for i in range(1, 17)],
+                        steps=[
+                            20.0, 25.0, 18.0, 16.0, 14.0, 20.0, 21.0, 13.0,
+                            20.0, 20.0, 18.0, 16.0, 14.0, 25.0, 21.0, 13.0
+                        ],
+                        random_scale=3.0
+                    )
+                ]
             );
         }
         if kind == "monster_army" {
@@ -110,6 +198,15 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 attack_sound_times=[0.4],
                 idle_sound="sound/soldier/idle.wav",
                 model="progs/soldier.mdl",
+                # grunt.qc army_run1-8 ai_run, army_walk1-24 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 9)],
+                    steps=[11.0, 15.0, 10.0, 10.0, 8.0, 15.0, 10.0, 8.0]
+                ),
+                walk=Gait(
+                    frames=["prowl_" + str(i) for i in range(1, 25)],
+                    steps=[1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 4.0, 2.0, 2.0, 2.0, 1.0, 0.0, 1.0, 1.0, 1.0, 3.0, 3.0, 3.0, 3.0, 2.0, 1.0, 1.0, 1.0]
+                ),
                 health=30,
                 attack_times=[0.4],
                 attack_duration=0.9,
@@ -148,8 +245,16 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/dog/ddeath.wav",
                 idle_sound="sound/dog/idle.wav",
                 model="progs/dog.mdl",
+                # rottweiler.qc dog_run1-12 ai_run, dog_walk1-8 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 13)],
+                    steps=[16.0, 32.0, 32.0, 20.0, 64.0, 32.0, 16.0, 32.0, 32.0, 20.0, 64.0, 32.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 9)],
+                    steps=[8.0 for i in range(8)]
+                ),
                 health=25,
-                speed=180.0,
                 near_chance=1.0,
                 rest_random=0.0,
                 stop_range=48.0,
@@ -192,29 +297,57 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/knight/kdeath.wav",
                 idle_sound="sound/knight/idle.wav",
                 model="progs/knight.mdl",
-                melee_sound="sound/knight/sword1.wav",
-                attack_steps=[0.0, 7.0, 4.0, 0.0, 3.0, 4.0, 1.0, 3.0, 1.0, 5.0],
-                attack_times=[0.5, 0.6, 0.7],
-                attack_duration=1.0,
-                attack_frames=[
-                    "attackb1",
-                    "attackb2",
-                    "attackb3",
-                    "attackb4",
-                    "attackb5",
-                    "attackb6",
-                    "attackb7",
-                    "attackb8",
-                    "attackb9",
-                    "attackb10"
-                ],
+                # knight.qc knight_run1-8 ai_run, knight_walk1-14 ai_walk.
+                run=Gait(
+                    frames=["runb" + str(i) for i in range(1, 9)],
+                    steps=[16.0, 20.0, 13.0, 7.0, 16.0, 20.0, 14.0, 6.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 15)],
+                    steps=[3.0, 2.0, 3.0, 4.0, 3.0, 3.0, 3.0, 4.0, 3.0, 3.0, 2.0, 3.0, 4.0, 3.0]
+                ),
                 health=75,
-                speed=160.0,
-                melee=9,
-                melee_random_scale=3.0,
-                melee_range=60.0,
-                attack_range=64.0,
-                stop_range=40.0
+                stop_range=40.0,
+                # th_melee knight_attack: in melee range (CheckAttack's
+                # RANGE_MELEE, 120) a standing swing when closer than 80,
+                # otherwise the running attack.
+                attacks=[
+                    # knight_atk1-10: ai_charge steps, ai_melee on atk6-8.
+                    AttackProfile(
+                        name="swing",
+                        kind="melee",
+                        max_range=80.0,
+                        reach=60.0,
+                        times=[0.5, 0.6, 0.7],
+                        duration=1.0,
+                        frames=["attackb" + str(i) for i in range(1, 11)],
+                        steps=[0.0, 7.0, 4.0, 0.0, 3.0, 4.0, 1.0, 3.0, 1.0, 5.0],
+                        sound="sound/knight/sword1.wav",
+                        random_scale=3.0
+                    ),
+                    # knight_runatk1-11: ai_charge(20), then 20-unit strides
+                    # at a point 30 left of the target (ai_charge_side) that
+                    # bring it up alongside, ai_melee_side on runatk5-9, and
+                    # ai_charge(10).
+                    AttackProfile(
+                        name="runattack",
+                        kind="melee",
+                        min_range=80.0,
+                        max_range=120.0,
+                        reach=60.0,
+                        times=[0.4, 0.5, 0.6, 0.7, 0.8],
+                        duration=1.1,
+                        frames=["runattack" + str(i) for i in range(1, 12)],
+                        steps=[
+                            20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0,
+                            20.0, 10.0
+                        ],
+                        sides=[0.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 0.0],
+                        sound="sound/knight/sword1.wav",
+                        alternate_sound="sound/knight/sword2.wav",
+                        random_scale=3.0
+                    )
+                ]
             );
         }
         if kind == "monster_enforcer" {
@@ -224,6 +357,15 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/enforcer/death1.wav",
                 idle_sound="sound/enforcer/idle1.wav",
                 model="progs/enforcer.mdl",
+                # enforcer.qc enf_run1-8 ai_run, enf_walk1-16 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 9)],
+                    steps=[18.0, 14.0, 7.0, 12.0, 14.0, 14.0, 7.0, 11.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 17)],
+                    steps=[2.0, 4.0, 4.0, 3.0, 1.0, 2.0, 2.0, 1.0, 2.0, 4.0, 4.0, 1.0, 2.0, 3.0, 4.0, 2.0]
+                ),
                 attack_sound="sound/enforcer/enfire.wav",
                 attack_sound_times=[0.5, 0.9],
                 attack_times=[0.5, 0.9],
@@ -264,11 +406,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/ogre/ogdth.wav",
                 idle_sound="sound/ogre/ogidle.wav",
                 model="progs/ogre.mdl",
+                # ogre.qc ogre_run1-8 ai_run, ogre_walk1-16 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 9)],
+                    steps=[9.0, 12.0, 8.0, 22.0, 16.0, 4.0, 13.0, 24.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 17)],
+                    steps=[3.0, 2.0, 2.0, 2.0, 2.0, 5.0, 3.0, 2.0, 3.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0, 4.0]
+                ),
                 attack_sound="sound/weapons/grenade.wav",
                 attack_sound_times=[0.3],
                 melee_sound="sound/ogre/ogsawatk.wav",
                 health=200,
-                speed=120.0,
                 damage=0,
                 melee=0,
                 melee_random_scale=4.0,
@@ -356,16 +506,23 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-24.0,
                 hull_top=40.0,
                 model="progs/wizard.mdl",
+                # scrag.qc wiz_run1-14 ai_run, wiz_walk1-8 ai_walk.
+                run=Gait(
+                    frames=["fly" + str(i) for i in range(1, 15)],
+                    steps=[16.0 for i in range(14)]
+                ),
+                walk=Gait(
+                    frames=["hover" + str(i) for i in range(1, 9)],
+                    steps=[8.0 for i in range(8)]
+                ),
                 health=80,
                 movement="fly",
                 slides=True,
-                speed=160.0,
                 near_chance=0.6,
                 mid_chance=0.2,
                 rest_min=2.0,
                 rest_random=0.0,
                 idle_frames=["hover" + str(i) for i in range(1, 9)],
-                run_frames=["fly" + str(i) for i in range(1, 15)],
                 pain_frames=["pain" + str(i) for i in range(1, 5)],
                 pain_duration=0.4,
                 pain_interval=0.4,
@@ -412,9 +569,17 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-24.0,
                 hull_top=64.0,
                 model="progs/demon.mdl",
+                # fiend.qc demon1_run1-6 ai_run, demon1_walk1-8 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 7)],
+                    steps=[20.0, 15.0, 36.0, 20.0, 15.0, 36.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 9)],
+                    steps=[8.0, 6.0, 6.0, 7.0, 4.0, 6.0, 10.0, 10.0]
+                ),
                 health=300,
                 width=32.0,
-                speed=237.0,
                 near_chance=1.0,
                 rest_random=0.0,
                 stop_range=60.0,
@@ -479,9 +644,17 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-24.0,
                 hull_top=64.0,
                 model="progs/shambler.mdl",
+                # shambler.qc sham_run1-6 ai_run, sham_walk1-12 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 7)],
+                    steps=[20.0, 24.0, 20.0, 20.0, 24.0, 20.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 13)],
+                    steps=[10.0, 9.0, 9.0, 5.0, 6.0, 12.0, 8.0, 3.0, 13.0, 9.0, 7.0, 7.0]
+                ),
                 health=600,
                 width=32.0,
-                speed=213.0,
                 near_chance=1.0,
                 mid_chance=1.0,
                 rest_min=2.0,
@@ -589,11 +762,18 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
             }
             return OpponentRule(
                 model="progs/zombie.mdl",
+                # zombie.qc zombie_run1-18 ai_run, zombie_walk1-19 ai_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 19)],
+                    steps=[1.0, 1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0, 2.0, 0.0, 0.0, 0.0, 2.0, 4.0, 6.0, 7.0, 3.0, 8.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 20)],
+                    steps=[0.0, 2.0, 3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                ),
                 health=60,
-                speed=27.0,
                 stop_range=64.0,
                 idle_frames=["stand" + str(i) for i in range(1, 16)],
-                run_frames=["run" + str(i) for i in range(1, 19)],
                 pain_threshold=9,
                 pain_health_reset=60,
                 pain_interval=0.5,
@@ -672,12 +852,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-24.0,
                 hull_top=64.0,
                 model="progs/shalrath.mdl",
+                # vore.qc shal_run1-12 ai_run and shal_walk1-12 ai_walk (frames walk2-12, walk1).
+                run=Gait(
+                    frames=["walk" + str(i) for i in range(2, 13)] + ["walk1"],
+                    steps=[6.0, 4.0, 0.0, 0.0, 0.0, 0.0, 5.0, 6.0, 5.0, 0.0, 4.0, 5.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(2, 13)] + ["walk1"],
+                    steps=[6.0, 4.0, 0.0, 0.0, 0.0, 0.0, 5.0, 6.0, 5.0, 0.0, 4.0, 5.0]
+                ),
                 health=400,
                 width=32.0,
-                speed=29.0,
                 stop_range=120.0,
                 idle_frames=["walk1"],
-                run_frames=["walk" + str(i) for i in range(2, 13)] + ["walk1"],
                 pain_frames=["pain" + str(i) for i in range(1, 6)],
                 pain_duration=0.5,
                 pain_interval=3.0,
@@ -712,13 +899,20 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_tarbaby" {
             return OpponentRule(
                 model="progs/tarbaby.mdl",
+                # spawn.qc tbaby_run1-25: ten ai_face frames, then ai_run(2); tbaby_walk1-25 likewise.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 26)],
+                    steps=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 26)],
+                    steps=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+                ),
                 health=80,
-                speed=20.0,
                 near_chance=1.0,
                 rest_random=0.0,
                 stop_range=48.0,
                 idle_frames=["walk1"],
-                run_frames=["run" + str(i) for i in range(11, 26)],
                 pain_threshold=1000000,
                 death_splash=120,
                 death_radius=240.0,
@@ -750,12 +944,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-24.0,
                 hull_top=24.0,
                 model="progs/fish.mdl",
+                # rotfish.qc f_run1-9 ai_run over the odd swim frames, f_walk1-18 ai_walk.
+                run=Gait(
+                    frames=["swim" + str(i) for i in range(1, 19, 2)],
+                    steps=[12.0 for i in range(9)]
+                ),
+                walk=Gait(
+                    frames=["swim" + str(i) for i in range(1, 19)],
+                    steps=[8.0 for i in range(18)]
+                ),
                 health=25,
                 movement="swim",
-                speed=120.0,
                 stop_range=40.0,
                 idle_frames=["swim" + str(i) for i in range(1, 19)],
-                run_frames=["swim" + str(i) for i in range(1, 19, 2)],
                 pain_frames=["pain" + str(i) for i in range(1, 10)],
                 pain_duration=0.9,
                 pain_interval=0.5,
@@ -802,15 +1003,23 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_gunner" {
             return OpponentRule(
                 model="models/monsters/gunner/tris.md2",
+                # m_gunner.c gunner_move_run / gunner_move_walk, MODEL_SCALE 1.15.
+                run=Gait(
+                    frames=["run" + two(i) for i in range(1, 9)],
+                    steps=[26.0, 9.0, 9.0, 9.0, 15.0, 10.0, 13.0, 6.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + two(i) for i in range(7, 20)],
+                    steps=[0.0, 3.0, 4.0, 5.0, 7.0, 2.0, 6.0, 4.0, 2.0, 7.0, 5.0, 7.0, 4.0]
+                ),
+                step_scale=1.15,
                 duck_frames=["duck" + two(i) for i in range(1, 9)],
                 duck_down=0,
                 duck_hold=2,
                 duck_up=6,
                 duck_grenade="grenades",
                 health=175,
-                speed=121.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
-                run_frames=["run" + two(i) for i in range(1, 9)],
                 pain_variants=[
                     ["pain30" + str(i) for i in range(1, 6)],
                     ["pain20" + str(i) for i in range(1, 9)],
@@ -882,12 +1091,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_flyer" {
             return OpponentRule(
                 model="models/monsters/flyer/tris.md2",
+                # m_flyer.c flyer_move_run / flyer_move_walk.
+                run=Gait(
+                    frames=["stand" + two(i) for i in range(1, 46)],
+                    steps=[10.0 for i in range(45)]
+                ),
+                walk=Gait(
+                    frames=["stand" + two(i) for i in range(1, 46)],
+                    steps=[5.0 for i in range(45)]
+                ),
                 health=50,
                 movement="fly",
                 slides=True,
-                speed=100.0,
                 idle_frames=["stand" + two(i) for i in range(1, 46)],
-                run_frames=["stand" + two(i) for i in range(1, 46)],
                 pain_variants=[
                     ["pain1" + two(i) for i in range(1, 10)],
                     ["pain20" + str(i) for i in range(1, 5)],
@@ -939,13 +1155,20 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_floater" {
             return OpponentRule(
                 model="models/monsters/float/tris.md2",
+                # m_float.c floater_move_run / floater_move_walk.
+                run=Gait(
+                    frames=["stand1" + two(i) for i in range(1, 53)],
+                    steps=[13.0 for i in range(52)]
+                ),
+                walk=Gait(
+                    frames=["stand1" + two(i) for i in range(1, 53)],
+                    steps=[5.0 for i in range(52)]
+                ),
                 health=200,
                 width=24.0,
                 movement="fly",
                 slides=True,
-                speed=130.0,
                 idle_frames=["stand1" + two(i) for i in range(1, 53)],
-                run_frames=["stand1" + two(i) for i in range(1, 53)],
                 pain_variants=[
                     ["pain10" + str(i) for i in range(1, 8)],
                     ["pain20" + str(i) for i in range(1, 9)]
@@ -1008,13 +1231,20 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_hover" {
             return OpponentRule(
                 model="models/monsters/hover/tris.md2",
+                # m_hover.c hover_move_run / hover_move_walk.
+                run=Gait(
+                    frames=["forwrd" + two(i) for i in range(1, 36)],
+                    steps=[10.0 for i in range(35)]
+                ),
+                walk=Gait(
+                    frames=["forwrd" + two(i) for i in range(1, 36)],
+                    steps=[4.0 for i in range(35)]
+                ),
                 health=240,
                 width=24.0,
                 movement="fly",
                 slides=True,
-                speed=100.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
-                run_frames=["forwrd" + two(i) for i in range(1, 36)],
                 pain_variants=[
                     ["pain2" + two(i) for i in range(1, 13)],
                     ["pain1" + two(i) for i in range(1, 29)]
@@ -1053,12 +1283,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-24.0,
                 hull_top=48.0,
                 model="models/monsters/mutant/tris.md2",
+                # m_mutant.c mutant_move_run / mutant_move_walk.
+                run=Gait(
+                    frames=["run" + two(i) for i in range(3, 9)],
+                    steps=[40.0, 40.0, 24.0, 5.0, 17.0, 10.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + two(i) for i in range(5, 17)],
+                    steps=[3.0, 1.0, 5.0, 10.0, 13.0, 10.0, 0.0, 5.0, 6.0, 16.0, 15.0, 6.0]
+                ),
                 health=300,
                 width=32.0,
-                speed=227.0,
                 stop_range=60.0,
                 idle_frames=["stand1" + two(i) for i in range(1, 52)],
-                run_frames=["run" + two(i) for i in range(3, 9)],
                 pain_variants=[
                     ["pain10" + str(i) for i in range(1, 6)],
                     ["pain20" + str(i) for i in range(1, 7)],
@@ -1111,11 +1348,18 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-24.0,
                 hull_top=24.0,
                 model="models/monsters/parasite/tris.md2",
+                # m_parasite.c parasite_move_run / parasite_move_walk.
+                run=Gait(
+                    frames=["run" + two(i) for i in range(3, 10)],
+                    steps=[30.0, 30.0, 22.0, 19.0, 24.0, 28.0, 25.0]
+                ),
+                walk=Gait(
+                    frames=["run" + two(i) for i in range(3, 10)],
+                    steps=[30.0, 30.0, 22.0, 19.0, 24.0, 28.0, 25.0]
+                ),
                 health=175,
-                speed=254.0,
                 stop_range=120.0,
                 idle_frames=["stand" + two(i) for i in range(1, 18)],
-                run_frames=["run" + two(i) for i in range(3, 10)],
                 pain_frames=["pain1" + two(i) for i in range(1, 12)],
                 pain_duration=1.1,
                 pain_interval=3.0,
@@ -1166,15 +1410,22 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
             return OpponentRule(
                 power_screen=100,
                 model="models/monsters/brain/tris.md2",
+                # m_brain.c brain_move_run / brain_move_walk1.
+                run=Gait(
+                    frames=["walk1" + two(i) for i in range(1, 12)],
+                    steps=[9.0, 2.0, 3.0, 3.0, 1.0, 0.0, 0.0, 10.0, -4.0, -1.0, 2.0]
+                ),
+                walk=Gait(
+                    frames=["walk1" + two(i) for i in range(1, 12)],
+                    steps=[7.0, 2.0, 3.0, 3.0, 1.0, 0.0, 0.0, 9.0, -4.0, -1.0, 2.0]
+                ),
                 duck_frames=["duck" + two(i) for i in range(1, 9)],
                 duck_down=1,
                 duck_hold=2,
                 duck_up=4,
                 health=300,
-                speed=40.0,
                 stop_range=60.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
-                run_frames=["walk1" + two(i) for i in range(1, 12)],
                 pain_variants=[
                     ["pain1" + two(i) for i in range(1, 22)],
                     ["pain20" + str(i) for i in range(1, 9)],
@@ -1266,15 +1517,22 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
         if kind == "monster_medic" {
             return OpponentRule(
                 model="models/monsters/medic/tris.md2",
+                # m_medic.c medic_move_run / medic_move_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 7)],
+                    steps=[18.0, 22.5, 25.4, 23.4, 24.0, 35.6]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 13)],
+                    steps=[6.2, 18.1, 1.0, 9.0, 10.0, 9.0, 11.0, 11.6, 2.0, 9.9, 14.0, 9.3]
+                ),
                 duck_frames=["duck" + str(i) for i in range(1, 17)],
                 duck_down=2,
                 duck_hold=3,
                 duck_up=6,
                 health=300,
                 width=24.0,
-                speed=248.0,
                 idle_frames=["wait" + str(i) for i in range(1, 91)],
-                run_frames=["run" + str(i) for i in range(1, 7)],
                 pain_variants=[
                     ["paina" + str(i) for i in range(1, 9)],
                     ["painb" + str(i) for i in range(1, 16)]
@@ -1362,12 +1620,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=0.0,
                 hull_top=32.0,
                 model="models/monsters/flipper/tris.md2",
+                # m_flipper.c flipper_move_run_loop (FLIPPER_RUN_SPEED) / flipper_move_walk.
+                run=Gait(
+                    frames=["flpver" + two(i) for i in range(6, 30)],
+                    steps=[24.0 for i in range(24)]
+                ),
+                walk=Gait(
+                    frames=["flphor" + two(i) for i in range(1, 25)],
+                    steps=[4.0 for i in range(24)]
+                ),
                 health=50,
                 movement="swim",
-                speed=240.0,
                 stop_range=48.0,
                 idle_frames=["flphor" + two(i) for i in range(1, 25)],
-                run_frames=["flpver" + two(i) for i in range(6, 30)],
                 pain_variants=[
                     ["flppn10" + str(i) for i in range(1, 6)],
                     ["flppn20" + str(i) for i in range(1, 6)]
@@ -1401,13 +1666,20 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=-16.0,
                 hull_top=72.0,
                 model="models/monsters/tank/tris.md2",
+                # m_tank.c tank_move_run / tank_move_walk.
+                run=Gait(
+                    frames=["walk" + two(i) for i in range(5, 21)],
+                    steps=[4.0, 5.0, 3.0, 2.0, 5.0, 5.0, 4.0, 4.0, 3.0, 5.0, 4.0, 5.0, 7.0, 7.0, 6.0, 6.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + two(i) for i in range(5, 21)],
+                    steps=[4.0, 5.0, 3.0, 2.0, 5.0, 5.0, 4.0, 4.0, 3.0, 5.0, 4.0, 5.0, 7.0, 7.0, 6.0, 6.0]
+                ),
                 skin=2 if kind == "monster_tank_commander" else 0,
                 health=1000 if kind == "monster_tank_commander" else 750,
                 width=32.0,
-                speed=47.0,
                 stop_range=100.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
-                run_frames=["walk" + two(i) for i in range(5, 21)],
                 pain_threshold=11,
                 pain_variants=[
                     ["pain10" + str(i) for i in range(1, 5)],
@@ -1552,12 +1824,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=0.0,
                 hull_top=112.0,
                 model="models/monsters/boss1/tris.md2",
+                # m_supertank.c supertank_move_run / supertank_move_forward.
+                run=Gait(
+                    frames=["forwrd" + str(i) for i in range(1, 19)],
+                    steps=[12.0 for i in range(18)]
+                ),
+                walk=Gait(
+                    frames=["forwrd" + str(i) for i in range(1, 19)],
+                    steps=[4.0 for i in range(18)]
+                ),
                 health=1500,
                 width=64.0,
-                speed=120.0,
                 stop_range=160.0,
                 idle_frames=["stand" + str(i) for i in range(1, 61)],
-                run_frames=["forwrd" + str(i) for i in range(1, 19)],
                 pain_variants=[
                     ["paina" + str(i) for i in range(1, 5)],
                     ["painb" + str(i) for i in range(5, 9)],
@@ -1621,14 +1900,21 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=0.0,
                 hull_top=80.0,
                 model="models/monsters/boss2/tris.md2",
+                # m_boss2.c boss2_move_run / boss2_move_walk.
+                run=Gait(
+                    frames=["walk" + str(i) for i in range(1, 21)],
+                    steps=[8.0 for i in range(20)]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 21)],
+                    steps=[8.0 for i in range(20)]
+                ),
                 health=2000,
                 width=56.0,
                 movement="fly",
                 slides=True,
-                speed=80.0,
                 stop_range=160.0,
                 idle_frames=["stand" + str(i) for i in range(30, 51)],
-                run_frames=["walk" + str(i) for i in range(1, 21)],
                 pain_variants=[
                     ["pain" + str(i) for i in range(20, 24)],
                     ["pain" + str(i) for i in range(2, 20)]
@@ -1699,12 +1985,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=0.0,
                 hull_top=140.0,
                 model="models/monsters/boss3/jorg/tris.md2",
+                # m_boss31.c jorg_move_run / jorg_move_walk.
+                run=Gait(
+                    frames=["walk" + two(i) for i in range(6, 20)],
+                    steps=[17.0, 0.0, 0.0, 0.0, 12.0, 8.0, 10.0, 33.0, 0.0, 0.0, 0.0, 9.0, 9.0, 9.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + two(i) for i in range(6, 20)],
+                    steps=[17.0, 0.0, 0.0, 0.0, 12.0, 8.0, 10.0, 33.0, 0.0, 0.0, 0.0, 9.0, 9.0, 9.0]
+                ),
                 health=3000,
                 width=80.0,
-                speed=76.0,
                 stop_range=200.0,
                 idle_frames=["stand" + two(i) for i in range(1, 52)],
-                run_frames=["walk" + two(i) for i in range(6, 20)],
                 pain_variants=[
                     ["pain10" + str(i) for i in range(1, 4)],
                     ["pain20" + str(i) for i in range(1, 4)],
@@ -1774,12 +2067,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 hull_bottom=0.0,
                 hull_top=90.0,
                 model="models/monsters/boss3/rider/tris.md2",
+                # m_boss32.c makron_move_run / makron_move_walk.
+                run=Gait(
+                    frames=["walk2" + two(i) for i in range(4, 14)],
+                    steps=[3.0, 12.0, 8.0, 8.0, 8.0, 6.0, 12.0, 9.0, 6.0, 12.0]
+                ),
+                walk=Gait(
+                    frames=["walk2" + two(i) for i in range(4, 14)],
+                    steps=[3.0, 12.0, 8.0, 8.0, 8.0, 6.0, 12.0, 9.0, 6.0, 12.0]
+                ),
                 health=3000,
                 width=30.0,
-                speed=84.0,
                 stop_range=160.0,
                 idle_frames=["stand2" + two(i) for i in range(1, 61)],
-                run_frames=["walk2" + two(i) for i in range(4, 14)],
                 pain_variants=[
                     ["pain40" + str(i) for i in range(1, 5)],
                     ["pain50" + str(i) for i in range(1, 5)],
@@ -1927,17 +2227,27 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 );
             }
             crawls = flags & 4 != 0;
+            # insane_run / insane_walk: the crawl (insane_move_runcrawl) or the
+            # normal walk (insane_move_run_normal), both stepping with ai_walk.
+            gait = Gait(
+                frames=["walk" + str(i) for i in range(27, 40)],
+                steps=[0.0, 2.5, 3.5, 1.7, 2.3, 2.4, 2.2, 4.2, 5.6, 3.3, 2.4, 0.9, 0.0]
+            );
+            if crawls {
+                gait = Gait(
+                    frames=["crawl" + str(i) for i in range(1, 10)],
+                    steps=[0.0, 1.5, 2.1, 3.6, 2.0, 0.9, 3.0, 3.4, 2.4]
+                );
+            }
             return OpponentRule(
                 model="models/monsters/insane/tris.md2",
+                run=gait,
+                walk=gait,
                 health=100,
-                speed=30.0,
                 stop_range=120.0,
                 idle_frames=["crawl" + str(i) for i in range(1, 10)]
                     if crawls
                     else ["stand" + str(i) for i in range(60, 66)],
-                run_frames=["crawl" + str(i) for i in range(1, 10)]
-                    if crawls
-                    else ["walk" + str(i) for i in range(27, 40)],
                 pain_frames=["cr_pain" + str(i) for i in range(2, 11)]
                     if crawls
                     else ["st_pain" + str(i) for i in range(2, 13)],
@@ -1981,6 +2291,15 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/chick/chkdeth1.wav",
                 idle_sound="sound/chick/chkidle1.wav",
                 model="models/monsters/bitch/tris.md2",
+                # m_chick.c chick_move_run / chick_move_walk.
+                run=Gait(
+                    frames=["walk" + two(i) for i in range(11, 21)],
+                    steps=[6.0, 8.0, 13.0, 5.0, 7.0, 4.0, 11.0, 5.0, 9.0, 7.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + two(i) for i in range(11, 21)],
+                    steps=[6.0, 8.0, 13.0, 5.0, 7.0, 4.0, 11.0, 5.0, 9.0, 7.0]
+                ),
                 duck_frames=["duck" + two(i) for i in range(1, 8)],
                 duck_down=0,
                 duck_hold=2,
@@ -1995,8 +2314,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 melee_repeat_end=1.2,
                 melee_repeat_chance=0.9,
                 health=175,
-                speed=75.0,
-                run_frames=["walk" + str(i) for i in range(11, 21)],
                 damage=50,
                 missile_speed=500.0,
                 missile_effect="q2_rocket",
@@ -2078,6 +2395,15 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/berserk/berdeth2.wav",
                 idle_sound="sound/berserk/beridle1.wav",
                 model="models/monsters/berserk/tris.md2",
+                # m_berserk.c berserk_move_run1 / berserk_move_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 7)],
+                    steps=[21.0, 11.0, 21.0, 25.0, 18.0, 19.0]
+                ),
+                walk=Gait(
+                    frames=["walkc" + str(i) for i in range(1, 12)],
+                    steps=[9.1, 6.3, 4.9, 6.7, 6.0, 8.2, 7.2, 6.1, 4.9, 4.7, 4.7]
+                ),
                 pain_duration=0.4,
                 pain_interval=3.0,
                 pain_frames=["painc" + str(i) for i in range(1, 5)],
@@ -2085,7 +2411,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 melee_sound_times=[0.2],
                 alternate_melee_sound_times=[0.4],
                 health=240,
-                speed=191.666667,
                 stop_range=60.0,
                 attack_range=80.0,
                 melee_range=80.0,
@@ -2112,6 +2437,15 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/gladiator/glddeth2.wav",
                 idle_sound="sound/gladiator/gldidle1.wav",
                 model="models/monsters/gladiatr/tris.md2",
+                # m_gladiator.c gladiator_move_run / gladiator_move_walk.
+                run=Gait(
+                    frames=["run" + str(i) for i in range(1, 7)],
+                    steps=[23.0, 14.0, 14.0, 21.0, 12.0, 13.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + str(i) for i in range(1, 17)],
+                    steps=[15.0, 7.0, 6.0, 5.0, 2.0, 0.0, 2.0, 8.0, 12.0, 8.0, 5.0, 5.0, 2.0, 2.0, 1.0, 8.0]
+                ),
                 pain_duration=0.6,
                 pain_interval=3.0,
                 pain_frames=["pain" + str(i) for i in range(1, 7)],
@@ -2119,7 +2453,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 melee_sound="sound/gladiator/melee1.wav",
                 melee_sound_times=[0.4, 1.0],
                 health=400,
-                speed=161.666667,
                 damage=50,
                 lock_aim=True,
                 rail=True,
@@ -2146,6 +2479,15 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_sound="sound/infantry/infdeth1.wav",
                 idle_sound="sound/infantry/infidle1.wav",
                 model="models/monsters/infantry/tris.md2",
+                # m_infantry.c infantry_move_run / infantry_move_walk.
+                run=Gait(
+                    frames=["run" + two(i) for i in range(1, 9)],
+                    steps=[10.0, 20.0, 5.0, 7.0, 30.0, 35.0, 2.0, 6.0]
+                ),
+                walk=Gait(
+                    frames=["walk" + two(i) for i in range(3, 15)],
+                    steps=[5.0, 4.0, 4.0, 5.0, 4.0, 5.0, 6.0, 4.0, 4.0, 4.0, 4.0, 5.0]
+                ),
                 duck_frames=["duck" + two(i) for i in range(1, 6)],
                 duck_down=0,
                 duck_hold=1,
@@ -2188,8 +2530,17 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 attack_sound="sound/soldier/solatck2.wav",
                 attack_sound_times=[0.2],
                 idle_sound="sound/soldier/solidle1.wav",
-                run_frames=["run0" + str(i) for i in range(3, 9)],
                 model="models/monsters/soldier/tris.md2",
+                # m_soldier.c soldier_move_run and soldier_move_walk1, which soldier_walk1_random loops at walk110 nine times in ten; MODEL_SCALE 1.2.
+                run=Gait(
+                    frames=["run" + two(i) for i in range(3, 9)],
+                    steps=[10.0, 11.0, 11.0, 16.0, 10.0, 15.0]
+                ),
+                walk=Gait(
+                    frames=["walk1" + two(i) for i in range(1, 11)],
+                    steps=[3.0, 6.0, 2.0, 2.0, 2.0, 1.0, 6.0, 5.0, 3.0, -1.0]
+                ),
+                step_scale=1.2,
                 duck_frames=["duck" + two(i) for i in range(1, 6)],
                 duck_down=0,
                 duck_hold=1,

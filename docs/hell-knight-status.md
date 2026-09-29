@@ -7,11 +7,17 @@ original attack audio and a registered original spike model. The shared engine
 now accepts per-event projectile yaw offsets. Mid-volley saves preserve the event
 cursor and random stream.
 
-The close-range slice uses five timed damage events, randomized damage and
-original forward movement distances. Range/cover and interruption checks are
-shared with other opponents. This is the canonical slice and ranged volley, not
-the full Hell Knight repertoire: charging behavior, the rotating three-style
-melee selection, exact muzzle position, pain/death variations and gibs remain open.
+In melee range (CheckAttack's `RANGE_MELEE`, 120 units) the Hell Knight takes
+the slice, the smash and the wide swing in turn, on one count shared by every
+Hell Knight as QuakeC's global `hknight_type` is (kept in saves); each strike
+lands with `ai_melee` within 60 units. From the first frame of its run cycle it
+charges (`CheckForCharge`: target visible, attacks due, at least 80 away and
+within 20 in height), running `char_a1-16` with `SUB_AttackFinished(2)`.
+`char_b` has no caller in the QuakeC and is not used. Ordinary knights swing
+close by (`knight_atk1`) and from 80 to 120 units make their running attack
+(`knight_runatk`), striding at a point 30 units left of the target
+(`ai_charge_side`) with sword1 or sword2. Charges refuse steps into the
+target's box as `SV_movestep` does. Pain/death variations and gibs remain open.
 
 Reference: id Software's [Hell Knight source](https://github.com/id-Software/Quake-Tools/blob/master/qcc/v101qc/hknight.qc).
 Tests: `tests/hell_knight_tests.jac`, `scripts/attack_timing_smoke.jac`, and
