@@ -33,26 +33,30 @@ They are scripted runs, not human playthroughs; see
 
 ## Open issues
 
-- **Native crash with Q3 bots**: an intermittent SIGBUS/SIGSEGV in arenas with
-  bots (seen on q3dm12, q3dm7, q3dm1, q3dm17). No cause isolated yet; if it is a
-  jac runtime defect it goes upstream per AGENTS.md §3.
-- **One jac defect without an upstream fix**: native `bytes.decode(errors=...)`,
-  which only two audit scripts use. See [jac-native-fixes.md](jac-native-fixes.md).
+- **Jac fixes in review**: the pinned compiler carries six upstream PRs not
+  yet merged, among them the two runtime fixes (jac #9634, #9639) behind the
+  intermittent native SIGBUS/SIGSEGV in Q3 arenas with bots. With the pin,
+  q3dm12 ran to frame 3000 clean 3 times out of 3, q3dm7, q3dm1 and q3dm17 to
+  frame 1500 clean, and the headless q3dm12 soak
+  (`scripts/q3dm12_live_player_crash_repro.jac`) 5400 ticks clean 3 times out
+  of 3 (2026-09-29). One known jac defect has no upstream fix yet (an abort
+  under the `nogc` memory mode, which QuakePassion does not use). See
+  [jac-native-fixes.md](jac-native-fixes.md).
 
 ## Remaining fidelity gaps
 
 Each is verified against the code; the linked doc has the detail.
 
-Monsters ([navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
+Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
 - Steering is five fixed headings plus bounded ground detours, not
   `SV_StepDirection`/`SV_NewChaseDir`; fliers and swimmers only steer.
 - Monsters do not plan through elevators or trains, press switches, or use
   jump/swim links, and are not solid to each other.
-- Attacks do not wait to face the target (no `FacingIdeal` check).
 - One death sequence per monster; several monsters have one pain sequence; pain
   frames carry no movement.
 - Light and shotgun Q2 soldiers never use `attack2`.
-- Q1 Nightmare still applies `SUB_AttackFinished` waits the original skips.
+- Q1 Nightmare still applies the `SUB_AttackFinished` waits of `HuntTarget` and
+  the Hell Knight's charge, which the original skips.
 - Shub-Niggurath's finale is a timed hold and shake, not `finale_1`-`finale_4`
   frame by frame.
 

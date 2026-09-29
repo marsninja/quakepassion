@@ -256,6 +256,17 @@ Scripts (native, need the Q3 assets):
   | --- | ---: | ---: | ---: | ---: | ---: | ---: |
   | q3dm12 | 6 | 0.18 | 0.30 | 11.6 | 3.0 | 57 |
   | q3dm7 | 4 | 0.62 | 0.12 | 6.7 | 1.2 | 36 |
+- `scripts/q3dm12_live_player_crash_repro.jac` (`QP_MAPS`, `QP_SECONDS`):
+  a headless soak of arenas with bots and a live player, timing the walkers.
+  It is the repro for the intermittent native SIGBUS/SIGSEGV once seen in
+  arenas with bots (q3dm12, q3dm7, q3dm1, q3dm17). The crash was two jac
+  runtime defects: the item pickup walker's suffix string views stored in a
+  list, which the cycle collector then wrote into (jaseci-labs/jac#9634), and
+  a collection started inside a destructor when the asset library closed
+  (#9639); see [jac-native-fixes.md](jac-native-fixes.md). With the pinned
+  compiler (2026-09-29) q3dm12 ran to frame 3000 clean 3 times out of 3,
+  q3dm7, q3dm1 and q3dm17 to frame 1500 clean, and the soak ran q3dm12 for
+  5400 ticks clean 3 times out of 3.
 
 ## Limitations
 
@@ -267,6 +278,3 @@ Scripts (native, need the Q3 assets):
   them quiet in `GT_TOURNAMENT`.
 - `BotTravel_WaterJump` looks a fixed 15 units above the far end; Q3 adds up
   to ±40 units at random.
-- Open issue: an intermittent native SIGBUS/SIGSEGV in Q3 arenas with bots,
-  reported on q3dm12, q3dm7, q3dm1 and q3dm17. It is unresolved in the PR #69
-  checklist and its cause has not been isolated.
