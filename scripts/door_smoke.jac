@@ -12,9 +12,9 @@ import from engine.world.doors {
     HasDoor,
     DoorMember,
     DoorTick,
-    union_bounds,
-    model_bounds
+    union_bounds
 }
+import from engine.formats.bsp { model_bounds }
 import from engine.world.signals { Signal }
 import from engine.world.triggers { TouchTrigger, HasTrigger, Activates }
 import from engine.physics.collision { Sweep }

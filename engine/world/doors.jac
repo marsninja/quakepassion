@@ -14,7 +14,7 @@ import from .signals {
     progress_for,
     note_chain
 }
-import from ..formats.bsp { Bsp, MapEntity }
+import from ..formats.bsp { Bsp, MapEntity, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap, Sweep, Trace }
 import from .liquids { LiquidSpace, LiquidVolume, HasLiquid }
 import from .speakers { Speaker, HasSpeaker }
@@ -22,7 +22,6 @@ import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 import from ..math.orientation { Basis, quake_basis }
 import from .mover_ramp { MoverRamp, q2_mover_ramp, ramp_step, ramp_rest }
-import from .rotators { mover_origin }
 import from .pickups { Pickup }
 import from .pusher {
     Pushable,
@@ -673,20 +672,6 @@ walker DoorTick {
             here.state = "closed";
         }
     }
-}
-
-"""A brush entity's box as its game sees it, placed at the entity's
-`origin`: the BSP model's stored bounds spread by a unit on each side, as Q1
-Mod_LoadSubmodels, Q2 CMod_LoadSubmodels and Q3 CM_LoadSubmodels load them
-for SetModel. Every brush of the model counts, whether it has faces or not
-(base3's lift cage reaches far below the floor it shows)."""
-def model_bounds(bsp: Bsp, model: int, origin: Vec3 | None = None) -> AABB {
-    record = bsp.models[model];
-    spread = Vec3(x=1.0, y=1.0, z=1.0);
-    placed = origin if origin is not None else Vec3();
-    return AABB(
-        mins=record.mins.sub(spread).add(placed), maxs=record.maxs.add(spread).add(placed)
-    );
 }
 
 def overlaps(a: AABB, b: AABB) -> bool {

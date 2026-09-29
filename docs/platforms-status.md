@@ -13,7 +13,10 @@ brushes without faces too. Q2 `base3`'s cage lift has lip 132 on a model
 reaching 320 units below its 144-unit car, so it rises 190 units; face bounds
 gave it 12. Q2 and Q3 movers travel 2 units further than before; Q1's stored
 bounds sit a unit inside the brush, so Q1 travel is unchanged. Trains put
-these bounds' mins at each corner (`train_next`, `train_resume`). A probe of
+these bounds' mins at each corner (`train_next`, `train_resume`), and a Q3
+pendulum's length is their depth below its origin (`SP_func_pendulum`).
+`model_bounds` and `mover_origin` live with the BSP records
+(`engine/formats/bsp.jac`) for every mover to share. A probe of
 both `base3` lifts with a gunner aboard carried it the full 190 and 154 units.
 
 Q1/Q2 unnamed platforms start lowered and rise on contact. Named platforms start

@@ -3,9 +3,8 @@ import math;
 import from .world { World }
 import from .trains { Train, TrackPoint, TrackNext, HasTrack, attach_train, voice_train }
 import from .signals { Signal }
-import from .rotators { mover_origin }
-import from .doors { door_direction, mover_voices, model_bounds }
-import from ..formats.bsp { Bsp }
+import from .doors { door_direction, mover_voices }
+import from ..formats.bsp { Bsp, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, right_from }
 

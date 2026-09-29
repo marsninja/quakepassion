@@ -6,9 +6,7 @@ import from .world { World, Player }
 import from .signals { Signal, HasSignal }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
 import from .damage { Damage }
-import from .rotators { mover_origin }
-import from .doors { model_bounds }
-import from ..formats.bsp { Bsp }
+import from ..formats.bsp { Bsp, model_bounds, mover_origin }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }

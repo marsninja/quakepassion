@@ -175,7 +175,9 @@ test "pendulums swing on their gravity period and mover clocks survive saves" {
     slab(collision);
     load_rotators(world, bsp, collision);
     swing = [world->:HasRotator:->][?:Rotator][0];
-    assert swing.kind == "pendulum" and abs(swing.period - 4.3531) < 0.01;
+    # SP_func_pendulum's length is fabs(r.mins[2]): the stored -128 spread
+    # to -129 as CM_LoadSubmodels loads it, so 2 pi sqrt(3 * 129 / 800).
+    assert swing.kind == "pendulum" and abs(swing.period - 4.37006) < 0.0001;
     quarter = swing.period / 4.0;
     world spawn RotatorTick(bsp=bsp, collision=collision, dt=quarter);
     peak = bsp.faces[0].turn;

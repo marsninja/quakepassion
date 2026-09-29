@@ -3,6 +3,7 @@ import math;
 import struct;
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis }
+import from ..math.aabb { AABB }
 
 """An image. `fullbright`: an RGBA skin whose alpha marks the palette's
 fullbright texels (Q1 indices 224-255, which light never darkens) rather
@@ -164,6 +165,29 @@ obj Bsp {
         fogs: list[FogVolume] = [],
         light_grid: bytes = b"",
         areas: list[list[AreaLink]] = [];
+}
+
+"""A brush entity's `origin` key (none is the world origin)."""
+def mover_origin(fields: dict[str, str]) -> Vec3 {
+    parts = fields.get("origin", "0 0 0").split();
+    if len(parts) != 3 {
+        raise ValueError("Invalid mover origin");
+    }
+    return Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+}
+
+"""A brush entity's box as its game sees it, placed at the entity's
+`origin`: the BSP model's stored bounds spread by a unit on each side, as Q1
+Mod_LoadSubmodels, Q2 CMod_LoadSubmodels and Q3 CM_LoadSubmodels load them
+for SetModel. Every brush of the model counts, whether it has faces or not
+(base3's lift cage reaches far below the floor it shows)."""
+def model_bounds(bsp: Bsp, model: int, origin: Vec3 | None = None) -> AABB {
+    record = bsp.models[model];
+    spread = Vec3(x=1.0, y=1.0, z=1.0);
+    placed = origin if origin is not None else Vec3();
+    return AABB(
+        mins=record.mins.sub(spread).add(placed), maxs=record.maxs.add(spread).add(placed)
+    );
 }
 
 def require_range(data: bytes, offset: int, size: int) {
