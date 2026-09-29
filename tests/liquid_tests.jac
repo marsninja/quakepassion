@@ -3,11 +3,15 @@ import from engine.world.liquids {
     LiquidVolume,
     HasLiquid,
     SampleLiquid,
+    TraceLiquid,
     liquid_kind,
     load_liquids
 }
 import from engine.world.level { Level }
-import from engine.world.world { Player }
+import from engine.world.world { World, Player }
+import from engine.world.combat { Opponent, HasOpponent }
+import from engine.world.wading { ImmerseBots }
+import from engine.physics.movement { movement_profile }
 import from engine.formats.bsp { Bsp, Model, Leaf, Brush, Plane }
 import from engine.physics.collision { CollisionMap }
 import from engine.physics.movement { MovePlayer }
@@ -129,4 +133,57 @@ test "swimming keeps solid collision and pause while exiting restores gravity" {
     player.velocity = Vec3();
     player spawn MovePlayer(collision=CollisionMap(), water_depth=0, dt=0.05);
     assert player.velocity.z == -40.0;
+}
+
+"""A pool of `kind` whose volume is its brush for points (as load_liquids
+builds them), 200 across with its surface at z = 0."""
+def brush_pool(kind: int) -> Level {
+    volume = CollisionMap(hull_mins=Vec3(), hull_maxs=Vec3());
+    volume.add_box(Vec3(x=-100.0, y=-100.0, z=-100.0), Vec3(x=100.0, y=100.0, z=0.0), Vec3(), Vec3(), Vec3());
+    volume.reindex();
+    space = LiquidSpace();
+    space +>:HasLiquid:+> LiquidVolume(kind=kind, volume=volume);
+    return Level(active=True, bsp=Bsp(game="q3"), liquids=space);
+}
+
+test "a box swept down into a liquid meets its surface" {
+    level = brush_pool(1);
+    # BotGetAirGoal's box, 4 high: it meets the surface 2 units above it.
+    drop = level.liquids spawn TraceLiquid(
+        start=Vec3(z=100.0), finish=Vec3(z=-50.0), mins=Vec3(x=-15.0, y=-15.0, z=-2.0), maxs=Vec3(x=15.0, y=15.0, z=2.0)
+    );
+    assert not drop.result.start_solid and abs(drop.result.end.z - 2.0) < 0.05;
+    # Its edge reaches the pool from beside it, where a point would miss.
+    beside = level.liquids spawn TraceLiquid(
+        start=Vec3(x=110.0, z=100.0), finish=Vec3(x=110.0, z=-50.0), mins=Vec3(x=-15.0, y=-15.0, z=-2.0), maxs=Vec3(x=15.0, y=15.0, z=2.0)
+    );
+    assert beside.result.fraction < 1.0;
+    point = level.liquids spawn TraceLiquid(start=Vec3(x=110.0, z=100.0), finish=Vec3(x=110.0, z=-50.0));
+    assert point.result.fraction == 1.0;
+    # A box starting in the liquid has no surface to find.
+    under = level.liquids spawn TraceLiquid(start=Vec3(z=-50.0), finish=Vec3(z=-90.0), mins=Vec3(x=-15.0, y=-15.0, z=-2.0), maxs=Vec3(x=15.0, y=15.0, z=2.0));
+    assert under.result.start_solid;
+}
+
+test "bots are immersed as the player is, swim by it and burn in lava" {
+    world = World();
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=-50.0), eye_height=26.0);
+    monster = Opponent(health=100, pos=Vec3(z=-50.0), eye_height=26.0);
+    world +>:HasOpponent:+> bot;
+    world +>:HasOpponent:+> monster;
+    world spawn ImmerseBots(level=brush_pool(1), dt=0.1);
+    assert bot.water_depth == 3 and bot.liquid_kind == 1 and bot.air_remaining < 12.0;
+    # Monsters keep their own rules.
+    assert monster.water_depth == 0;
+    # Swimming straight up by its steering, it rises instead of sinking.
+    for i in range(30) {
+        bot spawn MovePlayer(
+            collision=CollisionMap(eye_height=26.0), wish=Vec3(z=1.0), water_depth=bot.water_depth, swim_wish=Vec3(z=1.0), profile=movement_profile("q3")
+        );
+    }
+    assert bot.pos.z > -50.0 and bot.velocity.z > 0.0;
+    # P_WorldEffects: lava burns 30 a water level every 0.7 s.
+    bot.pos = Vec3(z=-50.0);
+    world spawn ImmerseBots(level=brush_pool(3), dt=0.1);
+    assert bot.liquid_kind == 3 and bot.health == 10 and bot.hurt_means == "environment";
 }

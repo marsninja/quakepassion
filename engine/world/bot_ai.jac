@@ -28,7 +28,8 @@ import from .bot_goals {
     bot_items,
     choose_item_goal,
     reached_goal,
-    touching_goal
+    touching_goal,
+    air_goal
 }
 import from .bot_chat {
     BotChatState,
@@ -41,6 +42,7 @@ import from .bot_chat {
     random_weapon_name
 }
 import from .bot_routes { NavMesh, HasNavMesh }
+import from .level { Level }
 import from .powerups { empowered }
 import from ..formats.aas { TFL_DEFAULT }
 import from ..physics.collision { CollisionMap }
@@ -139,6 +141,8 @@ walker BotThink {
         items: BotItems | None = None,
         contest: ArenaMatch | None = None,
         map_name: str = "",
+        level: Level | None = None,
+        intermission: bool = False,
         switches: int = 0;
 
     can start with BotBrain entry {
@@ -306,7 +310,16 @@ walker BotThink {
     """ai_dmnet.c BotReachedGoal."""
     def reached(goal: BotGoal) -> bool {
         swimming = self.bot.water_depth >= 2;
-        return reached_goal(goal, self.memory.goals, self.origin(), self.bot.pos, self.area(), swimming, self.collision, self.now);
+        return reached_goal(
+            goal, self.memory.goals, self.origin(), self.bot.pos, self.area(), swimming, self.collision, self.now, self.memory.last_air_time
+        );
+    }
+
+    """The liquid at a point (AAS_PointContents' water, slime and lava), none
+    without a level to sample."""
+    def liquid_at(point: Vec3) -> int {
+        level = self.level;
+        return level.sample_liquid(point).kind if level is not None else 0;
     }
 
     """BotChooseLTGItem / BotChooseNBGItem through the level items."""
@@ -357,10 +370,42 @@ walker BotThink {
         return goals.top();
     }
 
-    """ai_dmnet.c BotNearbyGoal: an item worth a detour of `range` hundredths
-    of a second, pushed over the long-term goal."""
+    """ai_dmnet.c BotNearbyGoal: air when the bot needs it (BotGoForAir), or
+    an item worth a detour of `range` hundredths of a second, pushed over the
+    long-term goal."""
     def nearby_goal(ltg: BotGoal | None, range: float) -> bool {
+        if self.go_for_air(ltg, range) {
+            return True;
+        }
         return self.choose_item(range, ltg);
+    }
+
+    """ai_dmnet.c BotGoForAir: a bot six seconds without air heads for the
+    surface above it (BotGetAirGoal), or else for the nearest worthwhile item
+    out of the liquid, passing over those in it."""
+    def go_for_air(ltg: BotGoal | None, range: float) -> bool {
+        memory = self.memory;
+        if memory.last_air_time >= self.now - 6.0 {
+            return False;
+        }
+        level = self.level;
+        mesh = self.mesh;
+        if level is not None and mesh is not None {
+            goal = air_goal(self.collision, level.liquids, mesh, self.origin());
+            if goal is not None {
+                memory.goals.push(goal);
+                return True;
+            }
+        }
+        while self.choose_item(range, ltg) {
+            top = memory.goals.top();
+            if top is not None and self.liquid_at(top.origin) == 0 {
+                return True;
+            }
+            memory.goals.pop();
+        }
+        memory.goals.reset_avoid();
+        return False;
     }
 
     """Move toward a goal this think (BotMoveToGoal): the combat tick routes
@@ -457,8 +502,9 @@ walker BotThink {
         return False;
     }
 
-    """BotValidChatPosition: no powerup running and standing on the world
-    (not a mover or another player)."""
+    """BotValidChatPosition: no powerup running, no lava or slime at the feet
+    and no liquid over the head, and standing on the world (not a mover or
+    another player)."""
     def valid_chat_position() -> bool {
         bot = self.bot;
         if self.dead() {
@@ -470,6 +516,9 @@ walker BotThink {
             }
         }
         origin = self.origin();
+        if self.liquid_at(origin.sub(Vec3(z=24.0))) in [2, 3] or self.liquid_at(origin.add(Vec3(z=32.0))) > 0 {
+            return False;
+        }
         floor = self.collision.trace(origin.add(Vec3(z=1.0)), origin.sub(Vec3(z=10.0)));
         return not floor.start_solid and floor.fraction < 1.0 and floor.model <= 0;
     }
@@ -1024,7 +1073,9 @@ def read_obituaries(bot: Opponent, memory: BotState, contest: ArenaMatch, now: f
 """Every Q3 bot, every frame (ai_main.c BotAIStartFrame): BotDeathmatchAI
 when its think is due, then what it does between thinks (act_bot: its view
 and trigger). It also keeps the level items current (BotUpdateEntityItems) on
-the level clock the AI runs by."""
+the level clock the AI runs by. `level` answers what liquid is where (air
+goals, chat positions); `intermission` is BotIntermission, the podium after
+the match, when bots think but neither move nor act."""
 walker BotTactics {
     has player: Player,
         collision: CollisionMap,
@@ -1032,6 +1083,8 @@ walker BotTactics {
         rules: list[WeaponRule],
         dt: float,
         map_name: str = "",
+        level: Level | None = None,
+        intermission: bool = False,
         world: World | None = None,
         brain: BotBrain | None = None,
         mesh: NavMesh | None = None,
@@ -1091,10 +1144,15 @@ walker BotTactics {
         if chatter.entered < 0.0 {
             chatter.entered = now;
         }
-        # BotUpdateInventory and BotCheckSnapshot.
-        memory.inventory = bot_inventory(here);
-        if contest is not None {
-            read_obituaries(here, memory, contest, now);
+        if not self.intermission {
+            # BotUpdateInventory, BotCheckSnapshot and BotCheckAir.
+            memory.inventory = bot_inventory(here);
+            if contest is not None {
+                read_obituaries(here, memory, contest, now);
+            }
+            if here.water_depth < 3 or empowered(here, "battlesuit") {
+                memory.last_air_time = now;
+            }
         }
         memory.move_goal = None;
         memory.view_mode = "movement";
@@ -1112,7 +1170,9 @@ walker BotTactics {
             mesh=self.mesh,
             items=items,
             contest=contest,
-            map_name=self.map_name
+            map_name=self.map_name,
+            level=self.level,
+            intermission=self.intermission
         );
         # "if the bot entered the game less than 8 seconds ago"
         if not chatter.entered_chat and chatter.entered > now - 8.0 and here.health > 0 {

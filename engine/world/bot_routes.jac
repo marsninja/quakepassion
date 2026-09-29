@@ -359,7 +359,8 @@ def jump_launch(start: Vec3, finish: Vec3) -> Vec3 {
 reaching each one, the AAS area whose entry completes it (0 when only
 reaching the point itself counts, as for a jump's takeoff), and the passage a
 waypoint travels when that takes more than heading for it (rocket jumps,
-ladders, elevators and bobbing platforms; be_ai_move.c BotTravel_*)."""
+ladders, water jumps, elevators and bobbing platforms; be_ai_move.c
+BotTravel_*)."""
 obj BotRoute {
     has points: list[Vec3] = [],
         launches: list[Vec3] = [],
@@ -399,7 +400,8 @@ the goal's travel times one passage at a time, up to `limit` passages, then
 finish at the goal itself. Like botlib, a passage is done once the bot stands
 in its target area; jumps, ledges, pads and teleporters first need their
 takeoff point, and the passages that need more than a heading (rocket jumps,
-ladders and movers) carry their passage for the bot's travel to follow."""
+ladders, water jumps and movers) carry their passage for the bot's travel to
+follow."""
 def plan_route(
     mesh: NavMesh, origin: Vec3, goal: Vec3, limit: int = 32, flags: int = TFL_DEFAULT, goal_area: int = 0
 ) -> BotRoute {
@@ -449,10 +451,10 @@ def plan_route(
             route.found = True;
             return route;
         }
-        if best.kind in [TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_LADDER, TRAVEL_ELEVATOR, TRAVEL_FUNCBOB] {
+        if best.kind in [TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_LADDER, TRAVEL_WATERJUMP, TRAVEL_ELEVATOR, TRAVEL_FUNCBOB] {
             route.add(best.finish, best.target, passage=best);
         } else {
-            if best.kind in [TRAVEL_BARRIERJUMP, TRAVEL_JUMP, TRAVEL_WATERJUMP] {
+            if best.kind in [TRAVEL_BARRIERJUMP, TRAVEL_JUMP] {
                 route.add(best.start, 0, jump_launch(best.start, best.finish), best);
             } elif best.kind == TRAVEL_WALKOFFLEDGE {
                 route.add(best.start, 0, passage=best);

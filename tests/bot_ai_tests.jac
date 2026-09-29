@@ -9,10 +9,14 @@ import from engine.world.arena { ArenaMatch, HasMatch, Competes }
 import from engine.world.pickups { Pickup, PickupRule, HasPickup }
 import from engine.world.inventory { AdjustInventory }
 import from engine.world.bot_routes { build_navmesh }
-import from engine.world.bot_goals { BotItems, HasBotItems, GoalState, LevelItem, add_level_item, choose_item_goal }
+import from engine.world.bot_goals { BotItems, HasBotItems, GoalState, LevelItem, GFL_AIR, add_level_item, choose_item_goal }
 import from engine.world.bot_weights { bot_inventory }
 import from engine.world.bot_character { BotCharacter, bot_travel_flags }
-import from engine.world.bot_ai { BotTactics, AINode, Leads, build_bot_brain }
+import from engine.world.bot_ai { BotTactics, BotThink, AINode, Leads, build_bot_brain }
+import from engine.world.wading { ImmerseBots }
+import from engine.world.level { Level }
+import from engine.world.liquids { LiquidSpace, LiquidVolume, HasLiquid }
+import from engine.formats.bsp { Bsp }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 import from games.weapons { weapon_rules }
@@ -274,4 +278,59 @@ test "a keen bot chases an enemy out of sight to where it was last seen" {
     assert memory.ainode == "battle_chase" and memory.view_mode == "chase";
     goal = memory.move_goal;
     assert goal is not None and goal.area == 5 and memory.goal_area == 5;
+}
+
+"""A pool of water over the whole strip, its surface at z = -40 and its
+floor at -400."""
+def pool_level() -> Level {
+    water = CollisionMap(hull_mins=Vec3(), hull_maxs=Vec3());
+    water.add_box(Vec3(x=-2000.0, y=-2000.0, z=-400.0), Vec3(x=2000.0, y=2000.0, z=-40.0), Vec3(), Vec3(), Vec3());
+    water.reindex();
+    space = LiquidSpace();
+    space +>:HasLiquid:+> LiquidVolume(kind=1, volume=water);
+    return Level(active=True, bsp=Bsp(game="q3"), liquids=space);
+}
+
+def wet_think(world: World, level: Level, collision: CollisionMap, state: CombatState, seconds: float) {
+    rules = weapon_rules("q3");
+    for i in range(int(seconds / 0.1 + 0.5)) {
+        world spawn ImmerseBots(level=level, dt=0.1);
+        world spawn BotTactics(player=Player(health=0, pos=Vec3(x=9000.0)), collision=collision, state=state, rules=rules, dt=0.1, level=level);
+    }
+}
+
+test "a bot six seconds under water heads for the surface above it" {
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-2000.0, y=-2000.0, z=-464.0), Vec3(x=2000.0, y=2000.0, z=-400.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    state = CombatState(game="q3");
+    level = pool_level();
+    parts = arena_pair(tester());
+    world = parts[0];
+    bot = parts[1];
+    item = strip_world(world);
+    bot.pos = Vec3(x=64.0, z=-274.0);
+    bot.grounded = False;
+    wet_think(world, level, collision, state, 0.1);
+    memory = bot.bot_state;
+    assert bot.water_depth == 3 and bot.liquid_kind == 1;
+    goal = memory.goals.top();
+    assert memory.ainode == "seek_ltg" and goal is not None and goal.item is item;
+    # No chatting with liquid over the head (BotValidChatPosition).
+    mind = bot.character;
+    assert mind is not None;
+    typist = BotThink(bot=bot, mind=mind, memory=memory, collision=collision, rules=weapon_rules("q3"), now=1.0, human=Player(), state=state, level=level);
+    assert not typist.valid_chat_position();
+    # BotGoForAir: after six seconds without air, the surface is the goal.
+    wet_think(world, level, collision, state, 6.5);
+    air = memory.goals.top();
+    assert memory.ainode == "seek_nbg" and air is not None and air.flags & GFL_AIR;
+    assert abs(air.origin.x - 64.0) < 0.001 and abs(air.origin.z + 40.0) < 0.1 and air.area == 1;
+    assert memory.move_goal is air;
+    # Its head out of the water, it has air: back to the long-term goal.
+    bot.pos = Vec3(x=64.0, z=-19.0);
+    wet_think(world, level, collision, state, 0.1);
+    assert bot.water_depth == 2 and memory.ainode == "seek_ltg";
+    top = memory.goals.top();
+    assert top is not None and top.item is item;
 }

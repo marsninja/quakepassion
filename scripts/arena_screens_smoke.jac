@@ -16,6 +16,7 @@ import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileT
 import from engine.world.arena { MatchTick, Competes, match_of, join_match }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.bot_ai { BotTactics }
+import from engine.world.wading { ImmerseBots }
 import from engine.world.pickups { PickupTick, Pickup, HasPickup }
 import from engine.world.powerups { GrantPowerup }
 import from engine.world.inventory { AdjustInventory }
@@ -74,8 +75,9 @@ def tick_world(app: App, player: Player, contacts: ArenaContactIndex, seconds: f
     for tick in range(int(seconds * 120.0)) {
         world spawn PickupTick(player=player, start=player.pos, finish=player.pos, dt=dt);
         world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt);
+        world spawn ImmerseBots(level=level, dt=dt);
         world spawn CombatTick(player=player, collision=level.collision, state=app.combat, dt=dt, arena_live=True);
-        world spawn BotTactics(player=player, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=dt);
+        world spawn BotTactics(player=player, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=dt, level=level);
         world spawn ProjectileTick(player=player, collision=level.collision, state=app.combat, dt=dt);
         world spawn TossTick(collision=level.collision, dt=dt);
         world spawn GibTick(collision=level.collision, dt=dt);

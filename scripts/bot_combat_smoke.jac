@@ -7,6 +7,7 @@ import from engine.world.combat { Opponent, HasOpponent, CombatState, CombatTick
 import from engine.world.arena { MatchTick, match_of, standings }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.bot_ai { BotTactics }
+import from engine.world.wading { ImmerseBots }
 import from engine.world.pickups { PickupTick }
 import from engine.world.doors { DoorTick }
 import from engine.world.inventory { quantity }
@@ -45,8 +46,9 @@ with entry {
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt);
             # Bots open doors by walking into their trigger fields (Touch_DoorTrigger).
             world spawn DoorTick(bsp=level.bsp, collision=level.collision, player_origin=player.pos, dt=dt, touching=False);
+            world spawn ImmerseBots(level=level, dt=dt);
             world spawn CombatTick(player=player, collision=level.collision, state=state, dt=dt, arena_live=True);
-            world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=dt);
+            world spawn BotTactics(player=player, collision=level.collision, state=state, rules=state.rules, dt=dt, level=level);
             world spawn ProjectileTick(player=player, collision=level.collision, state=state, dt=dt);
             world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt, contacts=True);
             contest spawn MatchTick(dt=dt);

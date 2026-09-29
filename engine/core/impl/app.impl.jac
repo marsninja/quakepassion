@@ -1179,8 +1179,7 @@ impl App.step() -> bool {
         }
         if self.walking and not self.finale_active {
             immersed = self.level.immersion(self.player.pos);
-            self.player.water_depth = immersed.depth;
-            self.player.liquid_kind = immersed.kind;
+            self.player.immerse(immersed);
             swim = forward_from(self.player.yaw, self.player.pitch).scale(
                 intent.move.y
             ).add(
@@ -1224,8 +1223,7 @@ impl App.step() -> bool {
         }
         if self.level.active and not self.smoke {
             immersed = self.level.immersion(self.player.pos);
-            self.player.water_depth = immersed.depth;
-            self.player.liquid_kind = immersed.kind;
+            self.player.immerse(immersed);
             old_health = self.player.health;
             self.player spawn EnvironmentTick(
                 game=self.level.bsp.game,
@@ -1271,6 +1269,9 @@ impl App.step() -> bool {
                 if self.walking {
                     self.world spawn PatrolTick(dt=self.physics_clock.tick_rate);
                 }
+                if contest is not None {
+                    self.world spawn ImmerseBots(level=self.level, dt=self.physics_clock.tick_rate);
+                }
                 self.world spawn CombatTick(
                     player=self.player,
                     collision=self.level.collision,
@@ -1286,7 +1287,8 @@ impl App.step() -> bool {
                         state=self.combat,
                         rules=self.combat.rules,
                         dt=self.physics_clock.tick_rate,
-                        map_name=self.level.name
+                        map_name=self.level.name,
+                        level=self.level
                     );
                 }
             }
@@ -1696,8 +1698,7 @@ impl App.step() -> bool {
     }
     if self.walking {
         immersed = self.level.immersion(self.player.pos);
-        self.player.water_depth = immersed.depth;
-        self.player.liquid_kind = immersed.kind;
+        self.player.immerse(immersed);
         self.fly(Intent(), 0.0);
     } else {
         # Flight moves the body every frame, not on ticks.

@@ -1,6 +1,6 @@
 """Exact point-content queries for Q2/Q3 liquid brushes."""
 import from ..formats.bsp { Bsp, brush_current_bits }
-import from ..physics.collision { CollisionMap }
+import from ..physics.collision { CollisionMap, Trace }
 import from ..math.vec3 { Vec3 }
 
 edge HasLiquid: LiquidSpace --> LiquidVolume {}
@@ -31,6 +31,37 @@ walker SampleLiquid {
         if here.volume.trace(local, local).start_solid {
             self.result = max(self.result, here.kind);
             self.currents = self.currents | here.currents;
+        }
+    }
+}
+
+"""A box of `mins`..`maxs` swept from `start` to `finish` through the liquid
+volumes, as CM_BoxTrace does with a CONTENTS_WATER|CONTENTS_SLIME|
+CONTENTS_LAVA mask: `result` is the nearest entry into any liquid (starting
+solid when the box starts in one)."""
+walker TraceLiquid {
+    has start: Vec3,
+        finish: Vec3,
+        mins: Vec3 = Vec3(),
+        maxs: Vec3 = Vec3(),
+        result: Trace = Trace();
+
+    can begin with LiquidSpace entry {
+        self.result = Trace(end=self.finish);
+        visit [here->:HasLiquid:->];
+    }
+
+    can sweep with LiquidVolume entry {
+        # The volumes are brushes for a point; the box moves their planes.
+        body = here.volume.for_body(0.0, 0.0, self.mins, self.maxs);
+        hit = body.trace(self.start.sub(here.offset), self.finish.sub(here.offset));
+        if hit.start_solid {
+            self.result.start_solid = True;
+        }
+        if hit.fraction < self.result.fraction {
+            self.result.fraction = hit.fraction;
+            self.result.normal = hit.normal;
+            self.result.end = self.start.lerp(self.finish, hit.fraction);
         }
     }
 }
@@ -81,7 +112,8 @@ def add_liquid_volumes(space: LiquidSpace, bsp: Bsp, model: int) {
         }
         key = kind | brush_current_bits(brush.contents, bsp.game);
         if key not in groups {
-            groups[key] = CollisionMap();
+            # Brushes as they are, for points (and boxes by TraceLiquid).
+            groups[key] = CollisionMap(hull_mins=Vec3(), hull_maxs=Vec3());
             order.append(key);
         }
         normals: list[Vec3] = [];
