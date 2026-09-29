@@ -175,7 +175,9 @@ impl App.render_frame() {
             punch,
             self.level.collision.eye_height,
             dead=p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active,
-            intermission=self.finale_active
+            # Q3's podium is its intermission (PM_INTERMISSION): the view is
+            # the intermission point's, without bob, kick or the dead roll.
+            intermission=self.finale_active or self.postgame is not None
         );
         eye = placed.eye;
         view_yaw = placed.yaw;
@@ -2360,6 +2362,14 @@ impl App.begin_podium(contest: ArenaMatch) {
     self.player.pitch = -math.radians(view[1].x);
     self.player.velocity = Vec3();
     self.player.god_mode = True;
+    # BeginIntermission respawns the dead before moving them to the
+    # intermission point (ClientSpawn: the maximum health plus 25).
+    if self.player.health <= 0 {
+        self.player.health = self.player.max_health + 25;
+        self.player.killer = None;
+        self.awaiting_respawn = False;
+        self.respawn_wait = 0.0;
+    }
     move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
     raise_podium(self.world, contest, self.level, view[0], view[1], selected_weapon(self.combat).key);
     # UI_SPPostgameMenu_f: the player's awards for the match, logged to the
