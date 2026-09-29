@@ -1562,6 +1562,9 @@ impl App.step() -> bool {
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
+                game=self.level.bsp.game,
+                body_mins=self.level.collision.hull_mins,
+                body_maxs=self.level.collision.hull_maxs,
                 top_drop=self.level.collision.top_drop,
                 touching=self.walking and not self.finale_active
             );

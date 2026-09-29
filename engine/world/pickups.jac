@@ -8,6 +8,7 @@ import from .inventory { Inventory, AdjustInventory, InventorySlot, ItemStack, q
 import from .powerups { GrantPowerup, Powerup, Empowered, effect, stored_kinds }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
+import from ..math.aabb { AABB }
 
 obj PickupRule {
     has kind: str,
@@ -147,11 +148,13 @@ obj Landing {
 }
 
 """Put a newly spawned item down as its game does. Q1 PlaceItem lifts it 6
-units and droptofloor traces its box 256 down; an item with no floor there
-(or wholly in solid) fell out of the level and goes. Q2 droptofloor traces
-128 down and leaves the item wherever that ends, to fall on from there
-(MOVETYPE_TOSS); one starting in solid goes. Q3 FinishSpawningItem traces
-4096 down unless the item is SUSPENDED; starting in solid, it goes."""
+units and droptofloor traces its box 256 down (SV_Move, which carries a box
+starting partly in solid on out of it to the floor below); an item that
+finds no floor there, or never gets out of the solid, fell out of the level
+and goes. Q2 droptofloor traces 128 down and leaves the item wherever that
+ends, to fall on from there (MOVETYPE_TOSS); one starting in solid goes. Q3
+FinishSpawningItem traces 4096 down unless the item is SUSPENDED; starting
+in solid, it goes."""
 def drop_to_floor(item: Pickup, view: CollisionMap, game: str, suspended: bool) -> Landing {
     lift = item_lift(game, item.rule);
     if game == "q1" {
@@ -163,15 +166,17 @@ def drop_to_floor(item: Pickup, view: CollisionMap, game: str, suspended: bool) 
     reach = 256.0 if game == "q1" else (128.0 if game == "q2" else 4096.0);
     origin = item.pos.sub(lift);
     bottom = origin.sub(Vec3(z=reach));
+    if game == "q1" {
+        # PF_droptofloor: fraction 1 or allsolid fails; else the end.
+        fall = view.trace(origin, bottom, escape=True);
+        if fall.fraction >= 1.0 or fall.all_solid {
+            return Landing(kept=False);
+        }
+        item.pos = fall.end.add(lift);
+        return Landing();
+    }
     trace = view.trace(origin, bottom);
     if trace.start_solid {
-        # Q1 only gives up on an item whose whole drop is in solid.
-        if game == "q1" and not view.trace(bottom, bottom).start_solid {
-            return Landing();
-        }
-        return Landing(kept=False);
-    }
-    if game == "q1" and trace.fraction >= 1.0 {
         return Landing(kept=False);
     }
     item.pos = trace.end.add(lift);
@@ -189,14 +194,37 @@ def remove_pickup(world: World, item: Pickup) {
     world.item_serial += 1;
 }
 
-# Segment against an item box expanded by the player body; preserves fast crossings.
-def pickup_contact(start: Vec3, finish: Vec3, origin: Vec3, top_drop: float) -> bool {
-    low = origin.sub(Vec3(x=32.0, y=32.0, z=48.0 - top_drop));
-    high = origin.add(Vec3(x=32.0, y=32.0, z=40.0));
+"""Where a player's origin can be, less an item's origin, for the player to
+touch the item, by game (the player's box is `body_mins`..`body_maxs`):
+- Q1 SV_TouchLinks: the player's box, a unit bigger all round (SV_LinkEdict),
+  meets the item's (items.qc setsize from `mins`, 32 by 32 by 56), which
+  FL_ITEM widens by 15 each way across so items come off shelves.
+- Q2 G_TouchTriggers: both boxes, each a unit bigger all round, meet; the
+  item's reaches 15 each way (droptofloor).
+- Q3 G_TouchTriggers' BG_PlayerTouchesItem: the origins are within 44
+  ahead and 50 behind across x, 36 either way across y and z, ducked or not.
+Passion items touch as Q2's do."""
+def touch_reach(game: str, rule: PickupRule, body_mins: Vec3, body_maxs: Vec3) -> AABB {
+    if game == "q3" {
+        return AABB(mins=Vec3(x=-50.0, y=-36.0, z=-36.0), maxs=Vec3(x=44.0, y=36.0, z=36.0));
+    }
+    low = Vec3(x=-16.0, y=-16.0, z=-16.0);
+    high = Vec3(x=16.0, y=16.0, z=16.0);
+    if game == "q1" {
+        low = rule.mins.sub(Vec3(x=15.0, y=15.0));
+        high = rule.mins.add(Vec3(x=47.0, y=47.0, z=56.0));
+    }
+    pad = Vec3(x=1.0, y=1.0, z=1.0);
+    return AABB(mins=low.sub(body_maxs).sub(pad), maxs=high.sub(body_mins).add(pad));
+}
+
+"""Whether a player's origin moving from `start` to `finish` passes through
+`reach` (a touch_reach placed at the item); a fast crossing still counts."""
+def pickup_contact(start: Vec3, finish: Vec3, reach: AABB) -> bool {
     a = [start.x, start.y, start.z];
     b = [finish.x, finish.y, finish.z];
-    mins = [low.x, low.y, low.z];
-    maxs = [high.x, high.y, high.z];
+    mins = [reach.mins.x, reach.mins.y, reach.mins.z];
+    maxs = [reach.maxs.x, reach.maxs.y, reach.maxs.z];
     enter = 0.0;
     leave = 1.0;
     for axis in range(3) {
@@ -218,11 +246,17 @@ def pickup_contact(start: Vec3, finish: Vec3, origin: Vec3, top_drop: float) -> 
     return True;
 }
 
+"""Items touched, taken, respawned and timed out this tick. `start` and
+`finish` are the player's origin (its box's) before and after its move;
+`body_mins`/`body_maxs` its standing box, `top_drop` lower when crouched."""
 walker PickupTick {
     has player: Player,
         start: Vec3,
         finish: Vec3,
         dt: float,
+        game: str = "",
+        body_mins: Vec3 = Vec3(x=-16.0, y=-16.0, z=-24.0),
+        body_maxs: Vec3 = Vec3(x=16.0, y=16.0, z=32.0),
         top_drop: float = 0.0,
         touching: bool = True,
         advance_time: bool = True,
@@ -237,6 +271,18 @@ walker PickupTick {
         fresh_weapons: list[str] = [],
         collected: int = 0,
         world: World | None = None;
+
+    """Whether the player's move touches the item, in its game's way."""
+    def touches(item: Pickup) -> bool {
+        reach = touch_reach(
+            self.game, item.rule, self.body_mins, self.body_maxs.sub(Vec3(z=self.top_drop))
+        );
+        return pickup_contact(
+            self.start,
+            self.finish,
+            AABB(mins=item.pos.add(reach.mins), maxs=item.pos.add(reach.maxs))
+        );
+    }
 
     can begin with World entry {
         self.world = here;
@@ -310,7 +356,7 @@ walker PickupTick {
             and (
                 not self.touching
                     or self.player.health <= 0
-                    or not pickup_contact(self.start, self.finish, here.pos, self.top_drop)
+                    or not self.touches(here)
             ) {
             return;
         }

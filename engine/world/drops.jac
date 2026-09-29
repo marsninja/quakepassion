@@ -130,17 +130,23 @@ walker TossTick {
 
     """The throw is over: the flight lets go of its item and leaves."""
     def settle(world: World, flight: Flight) {
-        for link in [edge flight->:Carries:->] {
-            del link;
-        }
-        world del --> flight;
+        end_flight(world, flight);
     }
 }
 
+"""A flight is over: it lets go of its item and leaves the world."""
+def end_flight(world: World, flight: Flight) {
+    for link in [edge flight->:Carries:->] {
+        del link;
+    }
+    world del --> flight;
+}
+
 """Let an item with nothing under it fall (Q2 MOVETYPE_TOSS after
-droptofloor found no floor within reach), landing flat on what it meets."""
-def let_fall(world: World, item: Pickup) {
-    flight = Flight(rest_lift=0.0);
+droptofloor found no floor within reach), landing flat on what it meets;
+`velocity` is how fast it is already falling."""
+def let_fall(world: World, item: Pickup, velocity: Vec3 | None = None) {
+    flight = Flight(velocity=velocity if velocity is not None else Vec3(), rest_lift=0.0);
     world +>:HasFlight:+> flight;
     flight +>:Carries:+> item;
 }

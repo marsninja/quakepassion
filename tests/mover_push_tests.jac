@@ -116,6 +116,37 @@ test "items settle as each game spawns them" {
     beside = item(Vec3(x=0.0, z=40.0));
     beside.rule.mins = Vec3(x=-16.0, y=-16.0);
     assert drop_to_floor(beside, item_view(walled, "q1"), "q1", False).kept;
+    # PF_droptofloor's SV_Move carries a box starting partly in a ledge on
+    # out of it, down to the floor.
+    ledged = floor_map(0.0);
+    ledged.add_brush(
+        [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(z=1.0), Vec3(z=-1.0)],
+        [1000.0, 1000.0, 1000.0, 1000.0, 80.0, -70.0],
+        Vec3(x=-16.0, y=-16.0, z=-24.0),
+        Vec3(x=16.0, y=16.0, z=32.0),
+        Vec3()
+    );
+    ledged.models.append(0);
+    ledged.reindex();
+    under = item(Vec3(z=40.0));
+    assert drop_to_floor(under, item_view(ledged, "q1"), "q1", False).kept;
+    assert abs(under.pos.z) < 0.05;
+    # One never getting out of the solid it starts in goes (allsolid).
+    deep = CollisionMap();
+    deep.add_brush(
+        [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(z=1.0), Vec3(z=-1.0)],
+        [1000.0, 1000.0, 1000.0, 1000.0, 0.0, 600.0],
+        Vec3(x=-16.0, y=-16.0, z=-24.0),
+        Vec3(x=16.0, y=16.0, z=32.0),
+        Vec3()
+    );
+    deep.models = [0];
+    deep.reindex();
+    sunk = item(Vec3(z=-40.0));
+    assert not drop_to_floor(sunk, item_view(deep, "q1"), "q1", False).kept;
+    # Out of the floor it starts in with nothing further below: no floor.
+    through = item(Vec3(z=-40.0));
+    assert not drop_to_floor(through, item_view(collision, "q1"), "q1", False).kept;
     # Q2 droptofloor: the 15-unit box, 128 down, or left hanging to fall.
     q2 = item(Vec3(z=40.0));
     landing = drop_to_floor(q2, item_view(collision, "q2"), "q2", False);

@@ -42,6 +42,9 @@ obj Trace {
     # The struck brush's climbable and conveyor (a Q2 trace_t's contents).
     has climbable: bool = False,
         conveyor: Vec3 | None = None;
+    # An escaping trace (Q1 SV_Move) that never got out of the solid it
+    # started in.
+    has all_solid: bool = False;
 }
 
 """How a moving body's box differs from the box the hulls were expanded by
@@ -257,19 +260,24 @@ obj SweepSpan {
 
 """One swept query through a hull's BSP. A single walker descends the tree,
 visiting the cells the segment passes through front-to-back (a depth-first
-stack of spans), and keeps the earliest hit, as SV_RecursiveHullCheck does."""
+stack of spans), and keeps the earliest hit, as SV_RecursiveHullCheck does.
+An `escape` sweep treats a start in solid as that function does: the trace
+runs on out of it and stops where it next enters solid, unless it meets
+solid again before reaching open space, when it gives up all solid."""
 walker Sweep {
     has start: Vec3,
         finish: Vec3,
         top_drop: float = 0.0,
         point: bool = False,
+        escape: bool = False,
         low: float = 0.0,
         high: float = 1.0,
         entry_normal: Vec3 = Vec3(),
         depth: int = 0,
         body: BodyBox | None = None,
         result: Trace = Trace(),
-        pending: list[SweepSpan] = [];
+        pending: list[SweepSpan] = [],
+        opened: bool = False;
 
     def hit(fraction: float, normal: Vec3, start_solid: bool) {
         self.result.start_solid = self.result.start_solid or start_solid;
@@ -304,12 +312,23 @@ walker Sweep {
         } elif self.depth > 256 {
             raise ValueError("Cyclic or excessively deep collision hull");
         } elif here.contents != 0 {
-            if here.contents == -2 {
+            if here.contents != -2 {
+                self.opened = True;
+            } elif not self.escape {
                 self.hit(
                     self.low,
                     self.entry_normal,
                     self.low == 0.0 and self.entry_normal.length() < 0.00001
                 );
+            } elif self.opened {
+                self.hit(self.low, self.entry_normal, False);
+            } elif self.low == 0.0 {
+                self.result.start_solid = True;
+            } else {
+                # Solid meets solid before any open space: "never got out
+                # of the solid area".
+                self.result.all_solid = True;
+                self.pending = [];
             }
         } else {
             front = [here->:HullFront:->][?:HullCell];
@@ -486,7 +505,8 @@ def hull_sweep(
     top_drop: float = 0.0,
     point: bool = False,
     turn: Basis | None = None,
-    body: BodyBox | None = None
+    body: BodyBox | None = None,
+    escape: bool = False
 ) -> Trace {
     local_start = start.sub(offset);
     local_finish = finish.sub(offset);
@@ -498,15 +518,29 @@ def hull_sweep(
     result = Trace();
     if hull.planes or (point and not hull.point_blocking) {
         result = leaf_sweep(hull, local_start, local_finish, point, top_drop, body);
+        # Escaping a brush it starts in (CM_ClipBoxToBrush): no hit, and all
+        # solid if it ends in it too.
+        if escape and result.start_solid {
+            result = Trace(
+                start_solid=True,
+                all_solid=leaf_sweep(
+                    hull, local_finish, local_finish, point, top_drop, body
+                ).start_solid
+            );
+        }
     } else {
         query = hull spawn Sweep(
             start=local_start,
             finish=local_finish,
             point=point,
+            escape=escape,
             top_drop=top_drop,
             body=body
         );
         result = query.result;
+        if escape and not query.opened {
+            result.all_solid = result.start_solid or result.all_solid;
+        }
     }
     if turn is not None and result.fraction < 1.0 {
         result.normal = turn.apply(result.normal);
@@ -768,12 +802,17 @@ obj CollisionMap {
         }
     }
 
+    """Sweep the view's box (or a point) from `start` to `finish`. A trace
+    starting in solid stops there, unless it may `escape`: then, as Q1
+    SV_Move does, it runs on out of the solid and ends where it next enters
+    one, `all_solid` if it never got out."""
     def trace(
         start: Vec3,
         finish: Vec3,
         exclude: list[int] = [],
         top_drop: float = -1.0,
-        point: bool = False
+        point: bool = False,
+        escape: bool = False
     ) -> Trace {
         result = Trace(end=finish);
         indices: list[int] = [];
@@ -850,9 +889,11 @@ obj CollisionMap {
                 0.0 if point else (self.top_drop if top_drop < 0.0 else top_drop),
                 point,
                 self.turns.get(i, None),
-                body if body is not None and body.planes else None
+                body if body is not None and body.planes else None,
+                escape
             );
             result.start_solid = result.start_solid or query.start_solid;
+            result.all_solid = result.all_solid or query.all_solid;
             if query.fraction < result.fraction {
                 result.hull = i;
                 result.model = self.models[i] if i < len(self.models) else -1;
@@ -863,7 +904,7 @@ obj CollisionMap {
                 result.conveyor = hull.conveyor;
             }
         }
-        if result.start_solid {
+        if result.start_solid and not escape {
             result.fraction = 0.0;
         } elif result.fraction < 1.0 and not point and not result.surface_clip {
             approach = abs(finish.sub(start).dot(result.normal));

@@ -48,6 +48,7 @@ import from engine.world.combat {
     HasProjectile
 }
 import from engine.world.pickups { Pickup, HasPickup }
+import from engine.world.drops { Flight, HasFlight, Carries, let_fall, end_flight, in_flight }
 import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
 import from engine.world.mover_ramp { ramp_rest }
 import from engine.world.rotators { Rotator, HasRotator, place }
@@ -380,10 +381,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
         }
     }
     # Dropped items are transient and not saved; a benched team member is.
-    for pickup in [world->:HasPickup:->][?:Pickup] {
-        if pickup.dropped {
-            continue;
-        }
+    placed = [pickup for pickup in [world->:HasPickup:->][?:Pickup] if not pickup.dropped];
+    for pickup in placed {
         lines.append(
             "P "
                 + numbers(
@@ -400,6 +399,20 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     ]
                 )
         );
+    }
+    # A Q2 item still falling from where droptofloor left it: which item and
+    # how fast it is falling.
+    for flight in [world->:HasFlight:->][?:Flight] {
+        for carried in [flight->:Carries:->][?:Pickup] {
+            if carried in placed {
+                lines.append(
+                    "FALL "
+                        + str(placed.index(carried))
+                        + " "
+                        + numbers([flight.velocity.x, flight.velocity.y, flight.velocity.z])
+                );
+            }
+        }
     }
     for door in [world->:HasDoor:->][?:Door] {
         member_health = [float(part.health) for part in [door->:DoorMember:->][?:Door]];
@@ -629,6 +642,10 @@ def restore(
     player.inventory = Inventory();
     for power in [player->:Empowered:->][?:Powerup] {
         player del --> power;
+    }
+    # Items falling as the level loaded fall on from where the save has them.
+    for flight in [world->:HasFlight:->][?:Flight] {
+        end_flight(world, flight);
     }
     # Flying gibs belong to the moment that was left; the saved one has none.
     for gib in [world->:HasGib:->][?:Gib] {
@@ -1082,15 +1099,27 @@ def restore(
             item.activate_on_use = row[3] != 0.0;
             item.benched = row[4] != 0.0;
             item.visual.visible = item.active;
-            # An item a dead monster already dropped stays where it fell.
+            # Items stay where they had fallen or ridden to; one a dead
+            # monster already dropped is its own again.
+            place = Vec3(x=row[6], y=row[7], z=row[8]);
+            if place.sub(item.pos).length() > 0.0 {
+                item.pos = place;
+                move_to_area(item, level.areas[level.locate(item.pos)]);
+                world.item_serial += 1;
+            }
             if row[5] != 0.0 {
                 item.released = True;
-                item.pos = Vec3(x=row[6], y=row[7], z=row[8]);
                 for owner in [item<-:Drops:<-][?:Opponent] {
                     owner del --> item;
                 }
-                move_to_area(item, level.areas[level.locate(item.pos)]);
             }
+        } elif words[0] == "FALL" and len(words) == 5 {
+            row = values(" ".join(words[2:]), 3);
+            index = int(words[1]) if words[1].isdigit() else -1;
+            if index < 0 or index >= len(pickups) or in_flight(pickups[index]) {
+                raise ValueError("Invalid saved item fall");
+            }
+            let_fall(world, pickups[index], Vec3(x=row[0], y=row[1], z=row[2]));
         } elif words[0] == "D" and d < len(doors) {
             door = doors[d];
             parts = [door->:DoorMember:->][?:Door];
