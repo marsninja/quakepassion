@@ -44,6 +44,16 @@ with entry {
     skill = host.skill.integer;
     if os.getenv("QP_GRAYBOX", "") == "" {
         game = os.getenv("QP_GAME", "q1");
+        # A mistyped game is a usage error, reported before anything loads;
+        # left to load_level it would end the run as an uncaught exception.
+        if game not in ["q1", "q2", "q3", "passion"] {
+            print(
+                "quakepassion: QP_GAME must be q1, q2, q3 or passion, not "
+                    + repr(game),
+                file=sys.stderr
+            );
+            sys.exit(2);
+        }
         map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
         if game == "passion" {
             map_name = "v2-" + os.getenv("QP_SEED", "1");
