@@ -7,6 +7,7 @@ import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, quake_basis }
 import from ..math.interpolation { TickBlend }
+import from .lighting { ModelLight }
 
 edge HasVisual: Entity --> Visual {}
 edge UsesModel: Visual --> ModelResource {}
@@ -22,7 +23,9 @@ node ModelResource {
 spin and bob, and its MODEL_LIGHT flags (lighting.jac: Q2 RF_GLOW on bonus
 items, RF_FULLBRIGHT...)."""
 node Visual {
-    has light_flags: int = 0;
+    has light_flags: int = 0,
+        # The model light last built for this visual (Lighting.light_model).
+        light: ModelLight = ModelLight();
     has offset: Vec3 = Vec3(),
         first: int = 0,
         second: int = 0,
@@ -47,6 +50,7 @@ obj ModelDraw {
         basis: Basis | None = None,
         light_origin: Vec3 | None = None,
         light_flags: int = 0,
+        light: ModelLight | None = None,
         shader: str = "",
         inflate: float = 0.0;
 }
@@ -276,7 +280,7 @@ walker GatherModels {
             }
             self.draws.append(
                 ModelDraw(resource=draw.resource, origin=draw.origin, yaw=draw.yaw, first=draw.first,
-                    second=draw.second, blend=draw.blend, basis=draw.basis, light_origin=draw.light_origin,
+                    second=draw.second, blend=draw.blend, basis=draw.basis, light_origin=draw.light_origin, light=draw.light,
                     shader="shader:" + shader, inflate=POWERUP_INFLATE.get(shader, 0.0))
             );
         }
@@ -310,7 +314,7 @@ walker GatherModels {
         torso_blend = 1.0 - rig.torso.backlerp;
         self.add_part(
             ModelDraw(resource=lower, origin=legs.origin, yaw=0.0, first=rig.legs.old_frame,
-                second=rig.legs.frame, blend=legs_blend, basis=legs.basis, light_origin=origin),
+                second=rig.legs.frame, blend=legs_blend, basis=legs.basis, light_origin=origin, light=rig.light),
             body
         );
         mount = lerp_tag(lower.model, rig.legs.old_frame, rig.legs.frame, legs_blend, "tag_torso");
@@ -320,7 +324,7 @@ walker GatherModels {
         torso = legs.on_tag(mount, quake_basis(rig.torso_angles));
         self.add_part(
             ModelDraw(resource=upper, origin=torso.origin, yaw=0.0, first=rig.torso.old_frame,
-                second=rig.torso.frame, blend=torso_blend, basis=torso.basis, light_origin=origin),
+                second=rig.torso.frame, blend=torso_blend, basis=torso.basis, light_origin=origin, light=rig.light),
             body
         );
         if head is not None {
@@ -329,7 +333,7 @@ walker GatherModels {
                 top = torso.on_tag(neck, quake_basis(rig.head_angles));
                 self.add_part(
                     ModelDraw(resource=head, origin=top.origin, yaw=0.0, first=0, second=0,
-                        blend=0.0, basis=top.basis, light_origin=origin),
+                        blend=0.0, basis=top.basis, light_origin=origin, light=rig.light),
                     body
                 );
             }
@@ -363,7 +367,7 @@ walker GatherModels {
         held = torso.on_tag(hand);
         self.add_part(
             ModelDraw(resource=gun, origin=held.origin, yaw=0.0, first=0, second=0, blend=0.0,
-                basis=held.basis, light_origin=origin),
+                basis=held.basis, light_origin=origin, light=rig.light),
             arms
         );
         if barrel is not None {
@@ -372,7 +376,7 @@ walker GatherModels {
                 spun = held.on_tag(spindle, quake_basis(Vec3(z=rig.barrel_roll)));
                 self.add_part(
                     ModelDraw(resource=barrel, origin=spun.origin, yaw=0.0, first=0, second=0,
-                        blend=0.0, basis=spun.basis, light_origin=origin),
+                        blend=0.0, basis=spun.basis, light_origin=origin, light=rig.light),
                     arms
                 );
             }
@@ -385,7 +389,7 @@ walker GatherModels {
                 lit = held.on_tag(muzzle, quake_basis(Vec3(z=rig.flash_roll)));
                 self.draws.append(
                     ModelDraw(resource=flash, origin=lit.origin, yaw=0.0, first=0, second=0,
-                        blend=0.0, basis=lit.basis, light_origin=origin)
+                        blend=0.0, basis=lit.basis, light_origin=origin, light=rig.light)
                 );
             }
         }
@@ -405,6 +409,12 @@ walker GatherModels {
                 self.add_rig(visual, origin, powers);
                 continue;
             }
+            # Lit from where the simulation holds it, which changes at most once
+            # a tick, rather than from the drawn (interpolated, bobbing) origin
+            # that changes every frame and would retrace its light each time.
+            lit_from = here.pos
+                if visual.offset.x == 0.0 and visual.offset.y == 0.0 and visual.offset.z == 0.0
+                else here.pos.add(visual.offset);
             yaw = self.blend.turn(here.tick_pose, here.pos, here.yaw);
             if visual.spin != 0.0 {
                 yaw = math.radians((visual.spin * self.seconds) % 360.0);
@@ -428,7 +438,9 @@ walker GatherModels {
                         blend=visual.blend,
                         pitch=visual.pitch,
                         roll=visual.roll,
-                        light_flags=visual.light_flags
+                        light_origin=lit_from,
+                        light_flags=visual.light_flags,
+                        light=visual.light
                     )
                 );
             }

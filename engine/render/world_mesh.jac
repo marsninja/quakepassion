@@ -26,7 +26,7 @@ import from vendor.raylib {
         locIndex: i32, value: bytes, uniformType: i32, count: i32
     ) -> None;
 }
-import from .gpu { MESH_VERTEX_LIMIT, GpuProgram, UNIFORM_VEC2, UNIFORM_VEC3 }
+import from .gpu { MESH_VERTEX_LIMIT, GpuProgram }
 import from ..formats.bsp { Face }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, blend_basis }
@@ -572,22 +572,6 @@ glob FOG_VS: str = WORLD_INPUTS
     + "void main(){ vec3 p=(model*vec4(inPosition,1.0)).xyz; int fi=int(inInfo.z+0.5)-1; if(fi<0||fi>=16){ st=vec2(0.0); shade=vec4(0.0); gl_Position=vec4(0.0,0.0,-2.0,1.0); return; }"
     + " st=fogCoords(fi,p); shade=vec4(fogColor[fi].rgb,1.0); gl_Position=viewProjection*vec4(p,1.0); }\n",
      FOG_FS: str = "#version 330\nin vec2 st; in vec4 shade; out vec4 finalColor; uniform sampler2D fogMap;\nvoid main(){ finalColor=texture(fogMap,st)*shade; }\n";
-
-"""Set a vec3 uniform of `program`."""
-def set_uniform_vec3(program: GpuProgram, name: str, value: Vec3) {
-    location = program.uniform(name);
-    if location >= 0 {
-        rlSetUniform(i32(location), struct.pack("<fff", value.x, value.y, value.z), i32(UNIFORM_VEC3), i32(1));
-    }
-}
-
-"""Set a vec2 uniform of `program`."""
-def set_uniform_vec2(program: GpuProgram, name: str, x: float, y: float) {
-    location = program.uniform(name);
-    if location >= 0 {
-        rlSetUniform(i32(location), struct.pack("<ff", x, y), i32(UNIFORM_VEC2), i32(1));
-    }
-}
 
 """A Q3 waveform's function as the shaders number it."""
 def wave_code(func: str) -> float {

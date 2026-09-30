@@ -34,7 +34,7 @@ import from ..world.world { Player }
 import from ..world.combat { CombatState }
 import from ..world.weapons { ViewWeaponRule, GunAnimation, grenade_frame, switch_frame }
 import from ..world.models { lerp_tag }
-import from ..world.lighting { Lighting, MODEL_LIGHT_VIEW }
+import from ..world.lighting { Lighting, ModelLight, MODEL_LIGHT_VIEW }
 import from .view_sway { ViewPlacement }
 
 obj ViewAsset {
@@ -47,6 +47,8 @@ obj ViewAsset {
 
 obj ViewWeapon {
     has assets: dict[int, ViewAsset] = {},
+        # The gun's model light, held between frames (Lighting.light_model).
+        light: ModelLight = ModelLight(),
         selected: int = -1,
         shots: int = -1,
         fired_at: float = -100.0,
@@ -253,7 +255,7 @@ obj ViewWeapon {
         rlSetMatrixProjection(weapon_projection);
         # Lit where the frame's view is (the gun entity's origin), as a view
         # weapon: Q1 at least 24, Q2 and Q3 RF_MINLIGHT.
-        illumination = lighting.light_model(view.eye, math.degrees(view.yaw), MODEL_LIGHT_VIEW);
+        illumination = lighting.light_model(view.eye, math.degrees(view.yaw), MODEL_LIGHT_VIEW, self.light);
         # One model pass for the gun, its barrel and flash, under this projection.
         open_model_pass();
         try {

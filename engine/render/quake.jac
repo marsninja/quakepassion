@@ -112,8 +112,6 @@ import from .world_mesh {
     face_index_bytes,
     gather_indices,
     pack_world_face,
-    set_uniform_vec3,
-    set_uniform_vec2,
     wave_code
 }
 
@@ -953,7 +951,7 @@ obj QuakeRenderer {
         program.set_matrix("viewProjection", view_projection());
         program.set_matrix("model", placement_matrix_at(eye));
         self.put_float(program, "time", self.time);
-        set_uniform_vec3(program, "eye", eye);
+        program.set_vec3("eye", eye);
         self.put_int(program, "deformCount", 0);
         self.put_int(program, "tcGen", 0);
         self.put_int(program, "turbFromNormal", 1);
@@ -1483,7 +1481,7 @@ obj QuakeRenderer {
         program = self.sky_program;
         self.begin_batches(program);
         program.set_matrix("viewProjection", view_projection());
-        set_uniform_vec3(program, "eye", eye);
+        program.set_vec3("eye", eye);
         program.set_float("skyTime", self.time);
         for batch in self.pass_batches[PASS_SKY] {
             if not self.batch_shown(batch, view) {
@@ -1528,7 +1526,7 @@ obj QuakeRenderer {
                     continue;
                 }
                 texture = level.bsp.textures[batch.texture];
-                set_uniform_vec2(program, "warpSize", float(texture.width), float(texture.height));
+                program.set_vec2("warpSize", float(texture.width), float(texture.height));
                 self.put_float(program, "warpScroll", drift if batch.sub == 1 else 0.0);
                 self.put_float(program, "warpAmount", 1.0 if batch.sub < 2 else 0.0);
                 self.draw_batch(program, level, batch, view, True);
@@ -1588,8 +1586,8 @@ obj QuakeRenderer {
     """The shared view and fog uniforms of the stage and fog programs."""
     def set_view_uniforms(program: GpuProgram, level: Level, eye: Vec3) {
         program.set_matrix("viewProjection", view_projection());
-        set_uniform_vec3(program, "eye", eye);
-        set_uniform_vec3(program, "viewForward", self.view_forward);
+        program.set_vec3("eye", eye);
+        program.set_vec3("viewForward", self.view_forward);
         if not level.bsp.fogs {
             return;
         }
@@ -1840,8 +1838,8 @@ obj QuakeRenderer {
         }
         self.put_int(program, "tcGen", plan.tc_gen);
         if plan.tc_gen == 3 {
-            set_uniform_vec3(program, "tcVectorS", stage.vectors[0]);
-            set_uniform_vec3(program, "tcVectorT", stage.vectors[1]);
+            program.set_vec3("tcVectorS", stage.vectors[0]);
+            program.set_vec3("tcVectorT", stage.vectors[1]);
         }
         self.put_int(program, "lightmapStage", 1 if plan.light else 0);
         self.put_int(program, "fogMode", plan.fog_mode);

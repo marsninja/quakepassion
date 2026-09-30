@@ -33,7 +33,6 @@ import from ..world.particle_field {
     QUAKE_RAMP3
 }
 import from ..math.vec3 { Vec3, forward_from, right_from }
-import from .world_mesh { set_uniform_vec3 }
 import from vendor.raylib {
     def rlLoadTexture(data: bytes, width: i32, height: i32, format: i32, mipmapCount: i32) -> u32;  def rlUnloadTexture(
         id: u32
@@ -260,9 +259,8 @@ obj ParticleRing {
         self.program.set_matrix("mvp", view_projection());
         self.program.set_float("now", now);
         self.program.set_vec4s("ramps", pack_floats(ramps));
-        # vec3 uniforms take the first three floats of a vec4 upload.
-        self.set_vec3("side", side);
-        self.set_vec3("up", up);
+        self.program.set_vec3("side", side);
+        self.program.set_vec3("up", up);
         self.program.set_texture("palette", 0, self.palette);
         self.mesh.bind();
         self.mesh.draw_instances(0, 6, self.filled);
@@ -271,10 +269,6 @@ obj ParticleRing {
         rlEnableBackfaceCulling();
         rlEnableDepthMask();
         EndBlendMode();
-    }
-
-    def set_vec3(name: str, value: Vec3) {
-        set_uniform_vec3(self.program, name, value);
     }
 
     def close() {

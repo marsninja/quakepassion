@@ -100,31 +100,20 @@ point, since most models rest where they stand."""
 obj LightPointSource {
     has faces: list[Face] = [],
         lightmaps: bytes = b"",
-        channels: int = 1,
-        spots: dict[tuple[float, float, float], LightSpot] = {};
+        channels: int = 1;
 
     """The first lit surface straight below `point`."""
     def trace(point: Vec3) -> LightSpot abst;
-
-    def spot(point: Vec3) -> LightSpot {
-        key = (point.x, point.y, point.z);
-        found = self.spots.get(key, None);
-        if found is not None {
-            return found;
-        }
-        if len(self.spots) >= 4096 {
-            self.spots = {};
-        }
-        found = self.trace(point);
-        self.spots[key] = found;
-        return found;
-    }
 
     """The raw light at `point` (lightmap bytes times style values, per
     channel; a mono Q1 lightmap fills all three), or None when the trace
     strikes nothing. A surface without samples is black."""
     def light(point: Vec3, styles: dict[int, float]) -> Vec3 | None {
-        found = self.spot(point);
+        return self.light_at(self.trace(point), styles);
+    }
+
+    """The raw light of a traced `found` spot under the style values."""
+    def light_at(found: LightSpot, styles: dict[int, float]) -> Vec3 | None {
         if found.face < 0 {
             return None;
         }
@@ -359,6 +348,25 @@ obj ProbeRegion {
 # Probe regions are chosen through a coarse floor-plan grid, so interpolation
 # stays inside one room or corridor and never blends through a wall.
 #
+"""One drawable's model light, reused while nothing it depends on changes:
+where it stands, its shade row and flags, the light style values (their
+table and serial) and the dynamic lights (their version). It lives with the
+thing drawn, so a model standing still is lit once per change of light
+instead of being looked up by position every frame."""
+obj ModelLight {
+    has origin: Vec3 = Vec3(),
+        # The lightmap sample traced below `spot_origin` (R_LightPoint): a
+        # change of light styles or dynamic lights recombines it untraced.
+        spot_origin: Vec3 = Vec3(),
+        spot: LightSpot | None = None,
+        row: int = -1,
+        flags: int = -1,
+        serial: int = -1,
+        dynamic: int = -1,
+        styles: dict[int, float] | None = None,
+        result: Illumination = Illumination();
+}
+
 # Q1/Q2 levels light models from their lightmaps instead (`point`, with the
 # light style values `styles` shared with the world renderer), Q3 levels from
 # their light grid.
@@ -375,15 +383,15 @@ obj Lighting {
         game: str = "",
         point: LightPointSource | None = None,
         styles: dict[int, float] = {},
-        style_source: LightStyles | None = None;
-    # Q1/Q2 model light, kept by point, flags and shade row while the light
-    # styles, their values and the dynamic lights stay the same: most models
-    # rest where they stand, and building light every frame for each would
-    # make garbage for every draw.
-    has held: dict[tuple[float, float, float, int, int], Illumination] = {},
-        held_serial: int = -1,
-        held_styles: dict[int, float] | None = None,
-        held_dynamic: list[FlashLight] | None = None;
+        style_source: LightStyles | None = None,
+        # Counts replacements of `dynamic`, so held model light knows it.
+        dynamic_version: int = 0;
+
+    """Replace the dynamic lights."""
+    def set_dynamic(lights: list[FlashLight]) {
+        self.dynamic = lights;
+        self.dynamic_version += 1;
+    }
 
     def region_at(point: Vec3) -> int {
         if not self.lookup {
@@ -442,30 +450,46 @@ obj Lighting {
 
     """How a model at `origin` is lit, turned `yaw` degrees, with MODEL_LIGHT
     `flags`: Q1 and Q2 from the lightmaps below it, Q3 from its light grid,
-    Passion from its probes (16 units up)."""
-    def light_model(origin: Vec3, yaw: float = 0.0, flags: int = 0) -> Illumination {
+    Passion from its probes (16 units up). With `held`, the drawable's own
+    ModelLight, the light is reused until something it depends on changes."""
+    def light_model(
+        origin: Vec3, yaw: float = 0.0, flags: int = 0, held: ModelLight | None = None
+    ) -> Illumination {
+        # Q2 R_LightPoint's shadedots row, (int)(angles[1] * SHADEDOT_QUANT /
+        # 360) & (SHADEDOT_QUANT - 1); only Q2 shades by it.
+        row = int(yaw * 16.0 / 360.0) & 15 if self.point is not None and self.game != "q1" else 0;
+        clock = self.style_source;
+        serial = clock.serial if clock is not None else -1;
+        if held is not None
+            and held.serial == serial
+            and held.dynamic == self.dynamic_version
+            and held.styles is self.styles
+            and held.row == row
+            and held.flags == flags
+            and held.origin.x == origin.x
+            and held.origin.y == origin.y
+            and held.origin.z == origin.z {
+            return held.result;
+        }
+        result = self.build_model_light(origin, row, flags, held);
+        if held is not None {
+            held.origin = Vec3(x=origin.x, y=origin.y, z=origin.z);
+            held.row = row;
+            held.flags = flags;
+            held.serial = serial;
+            held.dynamic = self.dynamic_version;
+            held.styles = self.styles;
+            held.result = result;
+        }
+        return result;
+    }
+
+    def build_model_light(origin: Vec3, row: int, flags: int, held: ModelLight | None) -> Illumination {
         source = self.point;
         if source is not None {
-            clock = self.style_source;
-            serial = clock.serial if clock is not None else -1;
-            if serial != self.held_serial or self.styles is not self.held_styles or self.dynamic is not self.held_dynamic {
-                self.held = {};
-                self.held_serial = serial;
-                self.held_styles = self.styles;
-                self.held_dynamic = self.dynamic;
-            } elif len(self.held) >= 4096 {
-                self.held = {};
-            }
-            quake = self.game == "q1";
-            # (int)(angles[1] * SHADEDOT_QUANT / 360) & (SHADEDOT_QUANT - 1).
-            row = 0 if quake else int(yaw * 16.0 / 360.0) & 15;
-            key = (origin.x, origin.y, origin.z, flags, row);
-            found = self.held.get(key, None);
-            if found is None {
-                found = self.quake_model_light(source, origin, flags) if quake else self.quake2_model_light(source, origin, row, flags);
-                self.held[key] = found;
-            }
-            return found;
+            return self.quake_model_light(source, origin, flags, held)
+                if self.game == "q1"
+                else self.quake2_model_light(source, origin, row, flags, held);
         }
         result = self.sample(origin if self.grid is not None else origin.add(Vec3(z=16.0)));
         if flags & MODEL_LIGHT_VIEW != 0 and result.enabled {
@@ -476,6 +500,24 @@ obj Lighting {
         return result;
     }
 
+    """R_LightPoint below `origin` under the current styles, tracing only
+    when the drawable has moved since its held spot was traced."""
+    def point_light(source: LightPointSource, origin: Vec3, held: ModelLight | None) -> Vec3 | None {
+        if held is None {
+            return source.light(origin, self.styles);
+        }
+        spot = held.spot;
+        if spot is None
+            or held.spot_origin.x != origin.x
+            or held.spot_origin.y != origin.y
+            or held.spot_origin.z != origin.z {
+            spot = source.trace(origin);
+            held.spot = spot;
+            held.spot_origin = Vec3(x=origin.x, y=origin.y, z=origin.z);
+        }
+        return source.light_at(spot, self.styles);
+    }
+
     """Q1 (WinQuake r_main.c R_DrawEntitiesOnList, R_DrawViewModel and
     r_alias.c R_AliasSetupLighting): ambient and shade light both start at
     R_LightPoint (the gun at least 24); each dynamic light adds its radius
@@ -484,10 +526,12 @@ obj Lighting {
     comes from lightvec (-1, 0, 0): faces turned toward +x brighten. A light
     level L shows as the colormap row a wall lit L shows, so both use the
     renderer's scale (2L/255)."""
-    def quake_model_light(source: LightPointSource, origin: Vec3, flags: int) -> Illumination {
+    def quake_model_light(
+        source: LightPointSource, origin: Vec3, flags: int, held: ModelLight | None = None
+    ) -> Illumination {
         level = 255.0;
         if source.lightmaps {
-            light = source.light(origin, self.styles);
+            light = self.point_light(source, origin, held);
             level = 0.0 if light is None else math.floor(light.x);
         }
         if flags & MODEL_LIGHT_VIEW != 0 and level < 24.0 {
@@ -523,10 +567,12 @@ obj Lighting {
     glow_pulse). Vertices take that light times shadedots: table `row` for
     the yaw in sixteenths of a turn, as the normal faces its shade vector.
     Light is doubled to the renderer's scale as the lightmaps are."""
-    def quake2_model_light(source: LightPointSource, origin: Vec3, row: int, flags: int) -> Illumination {
+    def quake2_model_light(
+        source: LightPointSource, origin: Vec3, row: int, flags: int, held: ModelLight | None = None
+    ) -> Illumination {
         color = Vec3(x=1.0, y=1.0, z=1.0);
         if flags & MODEL_LIGHT_FULLBRIGHT == 0 and source.lightmaps {
-            light = source.light(origin, self.styles);
+            light = self.point_light(source, origin, held);
             color = Vec3() if light is None else light.scale(1.0 / 255.0);
             for flash in self.dynamic {
                 add = (flash.radius - origin.sub(flash.origin).length()) / 256.0;

@@ -989,7 +989,8 @@ obj ModelScene {
         fog_image: int,
         forward: Vec3
     ) {
-        # A rig's parts share one lighting origin (RF_LIGHTING_ORIGIN).
+        # Draws are lit from their light_origin: an entity's simulation position,
+        # or the one a rig's parts share (RF_LIGHTING_ORIGIN), lit once for all.
         shared_origin: Vec3 | None = None;
         shared_light = Illumination();
         for draw in draws {
@@ -1006,10 +1007,10 @@ obj ModelScene {
                 if renderer.model.baked_light {
                     illumination = Illumination();
                 } elif lit_from is None {
-                    illumination = lighting.light_model(draw.origin, math.degrees(draw.yaw), draw.light_flags);
+                    illumination = lighting.light_model(draw.origin, math.degrees(draw.yaw), draw.light_flags, draw.light);
                 } elif lit_from is not shared_origin {
                     shared_origin = lit_from;
-                    shared_light = lighting.light_model(lit_from, math.degrees(draw.yaw), draw.light_flags);
+                    shared_light = lighting.light_model(lit_from, math.degrees(draw.yaw), draw.light_flags, draw.light);
                     illumination = shared_light;
                 }
                 overlay: ModelRenderer | None = None;

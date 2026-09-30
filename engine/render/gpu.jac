@@ -10,6 +10,7 @@ Every raylib call stays behind the render layer; this module is the shared
 foundation the world, model and effect renderers build on.
 """
 import struct;
+import from ..math.vec3 { Vec3 }
 import from vendor.raylib {
     obj Matrix {
         has m0: f32,
@@ -243,10 +244,13 @@ obj GpuMesh {
 }
 
 """A linked shader program and its uniform locations, looked up by name
-once and cached."""
+once and cached. GL keeps each program's uniform values between draws, so
+an upload identical to the last one sent to that location is skipped: most
+draws repeat most of their uniforms."""
 obj GpuProgram {
     has id: int = 0,
-        locations: dict[str, int] = {};
+        locations: dict[str, int] = {},
+        sent: dict[int, bytes] = {};
 
     """Compile and link `vertex` and `fragment` GLSL."""
     def load(vertex: str, fragment: str) {
@@ -255,6 +259,7 @@ obj GpuProgram {
             raise RuntimeError("GPU shader failed to compile or link");
         }
         self.locations = {};
+        self.sent = {};
     }
 
     def uniform(name: str) -> int {
@@ -286,34 +291,41 @@ obj GpuProgram {
         }
     }
 
-    def set_float(name: str, value: float) {
+    """Upload `count` values of `kind` packed in `packed` to uniform `name`,
+    unless the program already holds exactly them."""
+    def send(name: str, packed: bytes, kind: int, count: int) {
         location = self.uniform(name);
-        if location >= 0 {
-            rlSetUniform(i32(location), struct.pack("<f", value), i32(UNIFORM_FLOAT), i32(1));
+        if location < 0 or not packed or self.sent.get(location, b"") == packed {
+            return;
         }
+        self.sent[location] = packed;
+        rlSetUniform(i32(location), packed, i32(kind), i32(count));
+    }
+
+    def set_float(name: str, value: float) {
+        self.send(name, struct.pack("<f", value), UNIFORM_FLOAT, 1);
     }
 
     def set_int(name: str, value: int) {
-        location = self.uniform(name);
-        if location >= 0 {
-            rlSetUniform(i32(location), struct.pack("<i", value), i32(UNIFORM_INT), i32(1));
-        }
+        self.send(name, struct.pack("<i", value), UNIFORM_INT, 1);
+    }
+
+    def set_vec2(name: str, x: float, y: float) {
+        self.send(name, struct.pack("<ff", x, y), UNIFORM_VEC2, 1);
+    }
+
+    def set_vec3(name: str, value: Vec3) {
+        self.send(name, struct.pack("<fff", value.x, value.y, value.z), UNIFORM_VEC3, 1);
     }
 
     """Set a vec4 array (or one vec4) from packed little-endian floats."""
     def set_vec4s(name: str, packed: bytes) {
-        location = self.uniform(name);
-        if location >= 0 and packed {
-            rlSetUniform(i32(location), packed, i32(UNIFORM_VEC4), i32(len(packed) // 16));
-        }
+        self.send(name, packed, UNIFORM_VEC4, len(packed) // 16);
     }
 
     """Set a float array from packed little-endian floats."""
     def set_floats(name: str, packed: bytes) {
-        location = self.uniform(name);
-        if location >= 0 and packed {
-            rlSetUniform(i32(location), packed, i32(UNIFORM_FLOAT), i32(len(packed) // 4));
-        }
+        self.send(name, packed, UNIFORM_FLOAT, len(packed) // 4);
     }
 
     """Bind `texture` to `slot` and point sampler `name` at that slot."""
