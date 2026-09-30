@@ -28,8 +28,11 @@ obj TickPose {
         tick: int = -1;
 
     def capture(pos: Vec3, yaw: float, pitch: float, tick: int) {
-        # A copy: nothing then moves the pose along with the body.
-        self.pos = Vec3(x=pos.x, y=pos.y, z=pos.z);
+        # Copied into the pose's own vector (every body, every tick): nothing
+        # then moves the pose along with the body.
+        self.pos.x = pos.x;
+        self.pos.y = pos.y;
+        self.pos.z = pos.z;
         self.yaw = yaw;
         self.pitch = pitch;
         self.tick = tick;
@@ -66,7 +69,9 @@ obj TickBlend {
     """Where to draw a body now at `now`."""
     def place(pose: TickPose, now: Vec3) -> Vec3 {
         share = self.share(pose, now);
-        if share >= 1.0 {
+        # A body that stood still through the tick is where it is.
+        if share >= 1.0
+            or (pose.pos.x == now.x and pose.pos.y == now.y and pose.pos.z == now.z) {
             return now;
         }
         return pose.pos.lerp(now, share);

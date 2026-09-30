@@ -165,13 +165,14 @@ def player_flash(player: Player, state: CombatState, at: Vec3) -> FlashLight | N
 """A monster's or bot's muzzle flash while it shows: Q1 EF_MUZZLEFLASH
 (white), Q2 CL_ParseMuzzleFlash2 (the flash's colour), both 200 + rand&31
 with minlight 32; a Q3 bot's weapon flash as the player's."""
-def opponent_flash(enemy: Opponent, game: str, at: Vec3) -> FlashLight | None {
+def opponent_flash(enemy: Opponent, game: str, blend: TickBlend) -> FlashLight | None {
     rig = enemy.visual;
     if isinstance(rig, PlayerRig) {
         if rig.clock - rig.flash_time >= RIG_FLASH_TIME * 2.0 {
             return None;
         }
         kits = [rig->:Holds:->][?:WeaponKit];
+        at = blend.place(enemy.tick_pose, enemy.pos);
         origin = at.add(forward_from(enemy.yaw, enemy.pitch).scale(20.0));
         return FlashLight(
             origin=origin,
@@ -236,13 +237,12 @@ def combat_lights(
         if enemy.health <= 0 {
             continue;
         }
-        at = blend.place(enemy.tick_pose, enemy.pos);
-        light = opponent_flash(enemy, game, at);
+        light = opponent_flash(enemy, game, blend);
         if light is not None {
             lights.append(light);
         }
         if isinstance(enemy.visual, PlayerRig) {
-            glow = powerup_light(enemy, game, enemy.eye_height, at);
+            glow = powerup_light(enemy, game, enemy.eye_height, blend.place(enemy.tick_pose, enemy.pos));
             if glow is not None {
                 lights.append(glow);
             }
@@ -256,6 +256,6 @@ def combat_lights(
     # With no lights, keep the same empty list: models keep the light they
     # were given (Lighting.light_model holds it while the lights stand).
     if lights or lighting.dynamic {
-        lighting.dynamic = lights;
+        lighting.set_dynamic(lights);
     }
 }

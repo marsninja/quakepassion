@@ -8,6 +8,7 @@ import from engine.world.lighting {
     Illumination,
     LightSpot,
     FlashLight,
+    ModelLight,
     MODEL_LIGHT_VIEW,
     MODEL_LIGHT_MINLIGHT,
     MODEL_LIGHT_FULLBRIGHT,
@@ -20,7 +21,7 @@ import from engine.formats.anorms { quake_vertex_normal }
 import from engine.formats.animated { frame_normals }
 import from engine.formats.q1.model { parse_mdl }
 import from engine.formats.q2.model { parse_md2 }
-import from engine.formats.q1.item_model { item_light_at }
+import from engine.formats.q1.item_model { item_light_at, ItemFaceBake, pack_item_faces, ITEM_BAKE_BORDER }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
 
@@ -58,12 +59,12 @@ def floor_source(tiled: bool = False, channels: int = 1) -> BspLightPoint {
 test "R_LightPoint finds the lightmap sample straight below and sums its styles" {
     source = floor_source();
     # (20, 5): s 20 and t 5 are in sample column 1, row 0.
-    spot = source.spot(Vec3(x=20.0, y=5.0, z=40.0));
+    spot = source.trace(Vec3(x=20.0, y=5.0, z=40.0));
     assert spot.face == 0 and spot.sample == 1;
     light = source.light(Vec3(x=20.0, y=5.0, z=40.0), {0: 1.0, 2: 0.5});
     assert light is not None and light.x == 20.0 + 50.0;
     # Row 2, column 2 at the far edge (s 33 lies past the 32-unit extent).
-    assert source.spot(Vec3(x=32.0, y=32.0, z=8.0)).sample == 8;
+    assert source.trace(Vec3(x=32.0, y=32.0, z=8.0)).sample == 8;
     assert source.light(Vec3(x=33.0, y=5.0, z=8.0), {}) is None;
     # A point already below the floor traces nothing lit.
     assert source.light(Vec3(x=20.0, y=5.0, z=-4.0), {}) is None;
@@ -83,11 +84,17 @@ test "Q1 models take R_AliasSetupLighting's clamped ambient and shade light" {
     assert lit.shade(Vec3(x=-1.0)).x == lit.ambient.x;
     # Bright: ambient held to 128, the two together to 192.
     lighting.styles = {0: 1.0, 2: 2.0};
-    bright = lighting.light_model(Vec3(x=5.0, y=40.0 - 8.0, z=30.0));
+    held = ModelLight();
+    bright = lighting.light_model(Vec3(x=5.0, y=40.0 - 8.0, z=30.0), held=held);
     assert abs(bright.ambient.x - 128.0 * scale) < 0.00001;
     assert abs(bright.directed.x - 64.0 * scale) < 0.00001;
-    # Model light is held while the styles and dynamic lights stand.
-    assert lighting.light_model(Vec3(x=5.0, y=40.0 - 8.0, z=30.0)) is bright;
+    # A drawable's light is held while it stands and the light does not change,
+    assert lighting.light_model(Vec3(x=5.0, y=40.0 - 8.0, z=30.0), held=held) is bright;
+    # and rebuilt when it moves, the styles change or the dynamic lights do.
+    assert lighting.light_model(Vec3(x=5.0, y=40.0 - 9.0, z=30.0), held=held) is not bright;
+    moved = held.result;
+    lighting.set_dynamic([]);
+    assert lighting.light_model(Vec3(x=5.0, y=40.0 - 9.0, z=30.0), held=held) is not moved;
     # Dark: never below LIGHT_MIN, but the gun is lit at least 24.
     lighting.styles = {0: 0.0, 2: 0.0};
     dark = lighting.light_model(Vec3(x=5.0, y=5.0, z=30.0));
@@ -95,7 +102,7 @@ test "Q1 models take R_AliasSetupLighting's clamped ambient and shade light" {
     gun = lighting.light_model(Vec3(x=5.0, y=5.0, z=30.0), 0.0, MODEL_LIGHT_VIEW);
     assert abs(gun.ambient.x - 24.0 * scale) < 0.00001 and abs(gun.directed.x - 24.0 * scale) < 0.00001;
     # A dynamic light adds its radius less its distance to the ambient light.
-    lighting.dynamic = [FlashLight(origin=Vec3(x=5.0, y=5.0, z=130.0), color=Vec3(x=1.0, y=1.0, z=1.0), radius=150.0)];
+    lighting.set_dynamic([FlashLight(origin=Vec3(x=5.0, y=5.0, z=130.0), color=Vec3(x=1.0, y=1.0, z=1.0), radius=150.0)]);
     flashed = lighting.light_model(Vec3(x=5.0, y=5.0, z=30.0));
     assert abs(flashed.ambient.x - 50.0 * scale) < 0.00001 and flashed.directed.x == 0.0;
     # A map without light data lights everything fully (255: clamped).
@@ -137,7 +144,7 @@ test "Q2 models take coloured light, render flags and shadedots by yaw" {
     trough = glowing.at(3.0 * math.pi / 14.0).ambient.x / 2.0;
     assert abs(peak - (base + 0.1)) < 0.00001 and abs(trough - max(base * 0.8, base - 0.1)) < 0.00001;
     # A dynamic light adds (intensity - distance) / 256 of its colour.
-    lighting.dynamic = [FlashLight(origin=at.add(Vec3(z=72.0)), color=Vec3(x=1.0), radius=200.0)];
+    lighting.set_dynamic([FlashLight(origin=at.add(Vec3(z=72.0)), color=Vec3(x=1.0), radius=200.0)]);
     flashed = lighting.light_model(at);
     assert abs(flashed.ambient.x / 2.0 - (base + 128.0 / 256.0)) < 0.00001;
     assert abs(flashed.ambient.y / 2.0 - base) < 0.00001;
@@ -153,7 +160,7 @@ test "Q3 dynamic lights add directed light and turn it toward them" {
     lighting = Lighting(grid=grid);
     point = Vec3(x=32.0, y=32.0, z=64.0);
     plain = lighting.sample(point);
-    lighting.dynamic = [FlashLight(origin=point.add(Vec3(x=64.0)), color=Vec3(x=1.0), radius=300.0)];
+    lighting.set_dynamic([FlashLight(origin=point.add(Vec3(x=64.0)), color=Vec3(x=1.0), radius=300.0)]);
     flashed = lighting.sample(point);
     # DLIGHT_AT_RADIUS 16 * 300^2 / 64^2 of red.
     assert abs((flashed.directed.x - plain.directed.x) * 255.0 - 16.0 * 90000.0 / 4096.0) < 0.01;
@@ -198,4 +205,44 @@ test "Q1 brush pickups bake their own lightmaps between samples" {
     # Past the last sample it holds the edge.
     assert abs(item_light_at(bsp, face, 40.0, 40.0) - 2.0 * 192.0 * 264.0 / 256.0) < 0.001;
     assert item_light_at(bsp, Face(), 0.0, 0.0) == 0.0;
+}
+
+"""A bake `width` x `height` whose every texel is `shade`."""
+def:priv solid_bake(width: int, height: int, shade: int) -> ItemFaceBake {
+    pixels = bytearray(width * height * 4);
+    for i in range(width * height) {
+        pixels[i * 4] = shade;
+        pixels[i * 4 + 3] = 255;
+    }
+    return ItemFaceBake(
+        face=Face(), width=width, height=height, pixels=pixels,
+        first_s=0, first_t=0, texture_width=width, texture_height=height
+    );
+}
+
+test "a brush pickup's baked faces share one skin, bordered and apart" {
+    bakes = [solid_bake(16, 8, 10), solid_bake(24, 16, 20), solid_bake(8, 8, 30)];
+    atlas = pack_item_faces(bakes);
+    border = ITEM_BAKE_BORDER;
+    # Every face sits inside the skin with its border, and no two overlap.
+    for i in range(len(bakes)) {
+        a = bakes[i];
+        assert a.x >= border and a.y >= border;
+        assert a.x + a.width + border <= atlas.width and a.y + a.height + border <= atlas.height;
+        for j in range(i + 1, len(bakes)) {
+            b = bakes[j];
+            apart = a.x + a.width + border <= b.x - border
+                or b.x + b.width + border <= a.x - border
+                or a.y + a.height + border <= b.y - border
+                or b.y + b.height + border <= a.y - border;
+            assert apart;
+        }
+    }
+    # A face's texels, and the border around it, carry its own image.
+    for bake in bakes {
+        shade = bake.pixels[0];
+        for (x, y) in [(bake.x - border, bake.y - border), (bake.x + bake.width, bake.y + bake.height - 1), (bake.x, bake.y)] {
+            assert atlas.pixels[(y * atlas.width + x) * 4] == shade;
+        }
+    }
 }
