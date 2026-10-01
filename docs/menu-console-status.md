@@ -156,9 +156,15 @@ before base1, as its `newgame` does.
 
 ## Window
 
-The window is resizable (`vid_width`/`vid_height` follow a manual resize);
-`vid_fullscreen` fills the monitor, and `vid_restart` or Alt+Enter applies
-the video cvars. `vid_highdpi` renders at the display's full pixel density
+The window is resizable (`vid_width`/`vid_height` follow a manual resize).
+`vid_fullscreen` (the settings menu's Fullscreen row, or Alt+Enter) makes it
+a window without decorations covering its monitor at the desktop resolution,
+switching no video mode; turning it off restores the windowed size, centred.
+Exclusive fullscreen is not used: on macOS, GLFW's monitor modes omit the
+desktop's HiDPI mode, so putting the window on the monitor switched the
+display to the nearest other mode (1920x1200 on a 16" MacBook Pro). The
+macOS menu bar stays over the top strip of the screen; the system's own
+fullscreen (Ctrl+Cmd+F) hides it. `vid_restart` applies the video cvars. `vid_highdpi` renders at the display's full pixel density
 from the next start. The field of view is the horizontal angle of a 4:3 view
 (`SCR_CalcRefdef`), so wider windows see more to the sides.
 

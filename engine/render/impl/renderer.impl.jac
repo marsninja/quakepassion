@@ -52,7 +52,9 @@ impl Renderer.open_window() {
 
 impl Renderer.sync() {
     cvars = self.cvars;
-    if IsWindowResized() and not IsWindowFullscreen() {
+    # A window the player resizes keeps its size; a fullscreen one covers the
+    # monitor and leaves the windowed size alone.
+    if IsWindowResized() and not cvars.fullscreen.on() {
         cvars.width.assign(str(int(GetScreenWidth())));
         cvars.height.assign(str(int(GetScreenHeight())));
     }
@@ -71,17 +73,23 @@ impl Renderer.sync() {
 
 impl Renderer.apply_video() {
     cvars = self.cvars;
+    # Fullscreen is a window without decorations covering its monitor at the
+    # desktop resolution. Putting the window on the monitor itself (exclusive
+    # or GLFW "borderless" fullscreen) makes macOS switch the display to the
+    # nearest video mode, which loses the desktop resolution and HiDPI.
+    monitor = GetCurrentMonitor();
+    corner = GetMonitorPosition(monitor);
     if cvars.fullscreen.on() {
-        if not IsWindowFullscreen() {
-            monitor = GetCurrentMonitor();
-            SetWindowSize(GetMonitorWidth(monitor), GetMonitorHeight(monitor));
-            ToggleFullscreen();
-        }
+        SetWindowState(u32(WINDOW_UNDECORATED_FLAG));
+        SetWindowPosition(i32(int(corner.x)), i32(int(corner.y)));
+        SetWindowSize(GetMonitorWidth(monitor), GetMonitorHeight(monitor));
     } else {
-        if IsWindowFullscreen() {
-            ToggleFullscreen();
-        }
+        ClearWindowState(u32(WINDOW_UNDECORATED_FLAG));
         SetWindowSize(i32(cvars.width.integer), i32(cvars.height.integer));
+        SetWindowPosition(
+            i32(int(corner.x) + max(0, (int(GetMonitorWidth(monitor)) - cvars.width.integer) // 2)),
+            i32(int(corner.y) + max(0, (int(GetMonitorHeight(monitor)) - cvars.height.integer) // 2))
+        );
     }
     self.width = max(1, int(GetScreenWidth()));
     self.height = max(1, int(GetScreenHeight()));
