@@ -53,7 +53,10 @@ import from vendor.raylib {
         batch: rlRenderBatch
     ) -> None;  def rlSetRenderBatchActive(batch: &mut Pinned[rlRenderBatch] | None) -> None;  def SetConfigFlags(
         flags: u32
-    ) -> None;  def IsWindowResized -> bool;  def IsWindowFullscreen -> bool;  def ToggleFullscreen -> None;  def GetScreenWidth -> i32;  def GetScreenHeight -> i32;  def SetWindowSize(
+    ) -> None;  def IsWindowResized -> bool;  obj Vector2 {
+        has x: f32,
+            y: f32;
+    }  def SetWindowState(flags: u32) -> None;  def ClearWindowState(flags: u32) -> None;  def SetWindowPosition(x: i32, y: i32) -> None;  def GetMonitorPosition(monitor: i32) -> Vector2;  def GetScreenWidth -> i32;  def GetScreenHeight -> i32;  def SetWindowSize(
         width: i32, height: i32
     ) -> None;  def SetWindowMinSize(width: i32, height: i32) -> None;  def GetCurrentMonitor -> i32;  def GetMonitorWidth(
         monitor: i32
@@ -103,7 +106,8 @@ glob BATCH_ATTRIBUTES_VS: str = "#version 330\nin vec3 vertexPosition; in vec2 v
 
 # raylib ConfigFlags.
 glob WINDOW_RESIZABLE_FLAG: int = 4,
-     WINDOW_HIGHDPI_FLAG: int = 8192;
+     WINDOW_HIGHDPI_FLAG: int = 8192,
+     WINDOW_UNDECORATED_FLAG: int = 8;
 
 """The cvars the renderer owns: the view angle, the frame rate cap, PVS
 culling and the window (Q1/Q2 vid_*, Q3 r_* names)."""
@@ -161,7 +165,7 @@ obj RenderCvars {
             kind="bool",
             flags=CVAR_ARCHIVE,
             aliases=["r_fullscreen"],
-            description="fill the monitor (vid_restart or alt+enter applies it)"
+            description="fill the monitor at its desktop resolution (vid_restart or alt+enter applies it)"
         ),
         highdpi: Cvar = Cvar(
             name="vid_highdpi",
