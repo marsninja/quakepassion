@@ -35,7 +35,7 @@ Assets are not included. Put your own archives here:
 
 QuakePassion builds with the released [Jac 0.37.23](https://github.com/jaseci-labs/jac/releases/tag/v0.37.23)
 binary, compiling with newer compiler source pinned in the `jaseci` submodule.
-The pin carries upstream fixes no release has yet (see
+The pin carries upstream fixes that 0.37.23 lacks (see
 [docs/jac-native-fixes.md](docs/jac-native-fixes.md)).
 
 ```bash

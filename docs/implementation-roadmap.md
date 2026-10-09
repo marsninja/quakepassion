@@ -33,13 +33,10 @@ They are scripted runs, not human playthroughs; see
 
 ## Open issues
 
-- **Jac fixes in review**: the pinned compiler carries six upstream PRs not
-  yet merged, among them the two runtime fixes (jac #9634, #9639) behind the
-  intermittent native SIGBUS/SIGSEGV in Q3 arenas with bots. With the pin,
-  q3dm12 ran to frame 3000 clean 3 times out of 3, q3dm7, q3dm1 and q3dm17 to
-  frame 1500 clean, and the headless q3dm12 soak
-  (`scripts/q3dm12_live_player_crash_repro.jac`) 5400 ticks clean 3 times out
-  of 3 (2026-09-29). One known jac defect has no upstream fix yet (an abort
+- **Jac**: every compiler and runtime fix the pinned compiler carries has
+  merged upstream and shipped in jac 0.37.25, among them the two runtime
+  fixes (jac #9634, #9639) behind the intermittent native SIGBUS/SIGSEGV in
+  Q3 arenas with bots. One known jac defect has no upstream fix yet (an abort
   under the `nogc` memory mode, which QuakePassion does not use). See
   [jac-native-fixes.md](jac-native-fixes.md).
 
@@ -55,8 +52,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
 - One death sequence per monster; several monsters have one pain sequence; pain
   frames carry no movement.
 - Light and shotgun Q2 soldiers never use `attack2`.
-- Q1 Nightmare still applies the `SUB_AttackFinished` waits of `HuntTarget` and
-  the Hell Knight's charge, which the original skips.
 - Shub-Niggurath's finale is a timed hold and shake, not `finale_1`-`finale_4`
   frame by frame.
 

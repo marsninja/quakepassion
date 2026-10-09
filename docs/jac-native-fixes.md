@@ -9,27 +9,18 @@ tracked the local patch stacks used while each fix was in review.
 ## Current compiler
 
 The `jaseci` submodule pins the compiler source. It points at the `qp-pin`
-branch of `marsninja/jac`: upstream main `842dbbc05`, plus two fixes merged
-upstream after it (#9565, #9633) and six still in review (#9634, #9635, #9636,
-#9638, #9639, #9640; below). `scripts/stage_compiler.sh` prepares that source
-(and the typeshed stubs it needs) and prints the `JAC_DEV_SOURCE` to export,
-so the released `jac` 0.37.23 binary compiles QuakePassion with the pinned
-source. CI (`.github/workflows/jac-test.yml`) does the same and caches the
-native compiler kernel per pin. No local patch stacks or compiler worktrees
-are needed.
+branch of `marsninja/jac`: upstream main `842dbbc05` plus eight fixes that
+have all since merged upstream (#9565, #9633, #9634, #9635, #9636, #9638,
+#9639, #9640) and shipped in jac 0.37.25. `scripts/stage_compiler.sh`
+prepares that source (and the typeshed stubs it needs) and prints the
+`JAC_DEV_SOURCE` to export, so the released `jac` 0.37.23 binary compiles
+QuakePassion with the pinned source. CI (`.github/workflows/jac-test.yml`)
+does the same and caches the native compiler kernel per pin. No local patch
+stacks or compiler worktrees are needed. Nothing the pin carries is still in
+review, so the submodule can return to `jaseci-labs/jac` main (or the build to
+a plain 0.37.25 or later) at the next pin change.
 
 ## Open upstream
-
-In the pin:
-
-| Defect | Upstream PR | Found by |
-| --- | --- | --- |
-| A suffix string view (`s[k:]`) escaped as an interior pointer into its source into lists, sets, dicts and tuples; with no refcount header below it, the cycle collector wrote into the source (a string literal: SIGBUS) | [#9634](https://github.com/jaseci-labs/jac/pull/9634) | The Q3 arena SIGBUS/SIGSEGV: the item pickup walker's `rule.kind[7:]`; `scripts/q3dm12_live_player_crash_repro.jac` |
-| Mach-O binaries dropped internal function names, so crash reports and `sample` profiles showed no frames | [#9635](https://github.com/jaseci-labs/jac/pull/9635) | Profiling model lighting |
-| The native cycle collector's cost followed the live graph, not the garbage: acyclic objects were buffered as roots and every collection retraced the live graph, making frames 5-10x slower than without it (base1 rendered in 8.1 ms against 0.8 ms under the `rc` profile; model lighting e1m1 2.56 to 0.45 ms, base1 9.96 to 0.87 ms with the fix) | [#9636](https://github.com/jaseci-labs/jac/pull/9636) | `scripts/profile_model_lighting.jac` |
-| A native module's Python side did not bind the C declarations it names (`Matrix` imports failed) | [#9638](https://github.com/jaseci-labs/jac/pull/9638) (supersedes the closed #9627) | `tests/effect_quads_tests.jac` |
-| A cycle collection could start inside a destructor, while the dying container was still reachable, and trace elements already freed (heap corruption when a large list was dropped) | [#9639](https://github.com/jaseci-labs/jac/pull/9639) | The Q3 arena SIGBUS/SIGSEGV: closing the asset library (`self.archives = []`) |
-| Native `bytes.decode` ignored its encoding and `errors` arguments (`errors=` was rejected with E5092) and raised no `UnicodeDecodeError` | [#9640](https://github.com/jaseci-labs/jac/pull/9640) | `scripts/audit_campaigns.jac`, `scripts/shoot_door_smoke.jac`; repro `repros/native_decode_errors.jac` |
 
 Found in QuakePassion work but not needed by it (not in the pin):
 
@@ -105,6 +96,12 @@ and exits with SIGABRT under `--memory nogc`.
 | Graph nodes and edges were immortal (never reclaimed) | [#9577](https://github.com/jaseci-labs/jac/pull/9577) | `tests/level_teardown_tests.jac`, level-change leak |
 | Python-side imports of native-only modules; tuples in variadic slots | [#9593](https://github.com/jaseci-labs/jac/pull/9593) | |
 | A C-anchored module lost its Python side under `jac run`'s server default (#9375 with #9593) | [#9633](https://github.com/jaseci-labs/jac/pull/9633) | Upstream main CI |
+| A suffix string view (`s[k:]`) escaped as an interior pointer into its source into lists, sets, dicts and tuples; with no refcount header below it, the cycle collector wrote into the source (a string literal: SIGBUS) | [#9634](https://github.com/jaseci-labs/jac/pull/9634) | The Q3 arena SIGBUS/SIGSEGV: the item pickup walker's `rule.kind[7:]`; `scripts/q3dm12_live_player_crash_repro.jac` |
+| Mach-O binaries dropped internal function names, so crash reports and `sample` profiles showed no frames | [#9635](https://github.com/jaseci-labs/jac/pull/9635) | Profiling model lighting |
+| The native cycle collector's cost followed the live graph, not the garbage: acyclic objects were buffered as roots and every collection retraced the live graph, making frames 5-10x slower than without it (base1 rendered in 8.1 ms against 0.8 ms under the `rc` profile; model lighting e1m1 2.56 to 0.45 ms, base1 9.96 to 0.87 ms with the fix) | [#9636](https://github.com/jaseci-labs/jac/pull/9636) | `scripts/profile_model_lighting.jac` |
+| A native module's Python side did not bind the C declarations it names (`Matrix` imports failed) | [#9638](https://github.com/jaseci-labs/jac/pull/9638) (supersedes the closed #9627) | `tests/effect_quads_tests.jac` |
+| A cycle collection could start inside a destructor, while the dying container was still reachable, and trace elements already freed (heap corruption when a large list was dropped) | [#9639](https://github.com/jaseci-labs/jac/pull/9639) | The Q3 arena SIGBUS/SIGSEGV: closing the asset library (`self.archives = []`) |
+| Native `bytes.decode` ignored its encoding and `errors` arguments (`errors=` was rejected with E5092) and raised no `UnicodeDecodeError` | [#9640](https://github.com/jaseci-labs/jac/pull/9640) | `scripts/audit_campaigns.jac`, `scripts/shoot_door_smoke.jac`; repro `repros/native_decode_errors.jac` |
 
 Three PRs closed unmerged: #9323 (an alternative stdlib approach, not needed),
 #9627 (replaced by #9638) and #9533 (a guard against calling an extern no unit defines, from a

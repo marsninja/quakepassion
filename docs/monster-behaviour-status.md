@@ -17,8 +17,10 @@ per-game rosters are in [q1-roster-status.md](q1-roster-status.md) and
   `trigger_setskill` changes it too, as Q1's start map does.
 - Spawn filtering drops entities flagged "not in easy/normal/hard" (spawnflags
   256/512/1024) for the current skill.
-- Q1 Nightmare removes the wait after an attack (two waits it keeps are
-  under Limits), and pain animations can replay no sooner than every 5 s. Q2 Easy halves the attack chances below, and Hard or
+- Q1 Nightmare removes every wait to attack, as `SUB_AttackFinished` sets none
+  on skill 3: the wait after an attack, the second a newly woken monster
+  waits before firing (`HuntTarget`) and the Hell Knight charge's 2 s. Pain
+  animations can replay no sooner than every 5 s. Q2 Easy halves the attack chances below, and Hard or
   above doubles them. On Nightmare, Q2 monsters cry out but skip pain animations.
 - Saves record the skill; loading a save made at another skill is refused.
 
@@ -276,8 +278,5 @@ rocket shot.
 ## Limits
 
 - A held attack is not saved; a monster loaded mid-turn decides afresh.
-- On Q1 Nightmare the second a newly woken monster waits before firing
-  (`HuntTarget`) and a Hell Knight charge's 2 s still apply;
-  `SUB_AttackFinished` skips both on skill 3.
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.
