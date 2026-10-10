@@ -19,7 +19,9 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
 - **Four views**: View > Four views (`ed_layout 4`) splits the level view
   into 3D, top (x/y), front (x/z) and side (y/z). The axis views slide with
   the right or middle button and zoom with the wheel; picking, dragging and
-  side handles work in every view, and Look at (F) centres all of them.
+  side handles work in every view, and Look at (F) centres all of them. Each
+  axis view draws a grid behind the level that coarsens as the view zooms
+  out (16 units, then 64, 256, ...), every fourth line brighter.
 - **Scene** (left): the map's entities by class. A click selects, a click on
   a class selects all of it, a double click looks at the entity, and the
   filter narrows the list by class, `targetname` or `target`.
@@ -161,11 +163,9 @@ Milestones 1 (the shell) and 2 (blockout) of #73 are what this page
 describes. Left over from milestone 2: the clipper is a command (no plane
 drawn in the view), there is no scaling or free rotation about other axes,
 the materials list has no thumbnails, a shipped map cannot take new brushes,
-and
-Quake III's `brushDef` and `patchDef2` blocks are skipped on open. Not yet
-built: display modes (the axis views are textured, not wireframe, and draw
-no grid), texturing tools, the entity class
-registry behind typed inspector fields, the logic graph panel, prefabs, the
+and Quake III's `brushDef` and `patchDef2` blocks are skipped on open. Not
+yet built: display modes (the axis views are textured, not wireframe),
+texturing tools, the entity class registry behind typed inspector fields, the logic graph panel, prefabs, the
 bake, patches and duplicators, the asset studio, the model editor, terrain,
 the Passion tools and user walkers. Within the shell: entity previews are
 boxes rather than the entity's model, generated (Passion) levels can be

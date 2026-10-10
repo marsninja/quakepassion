@@ -15,7 +15,7 @@ import from engine.core.workbench { Workbench, SceneView }
 import from engine.core.app { App }
 import from engine.console.shell { Shell, quote_command_word }
 import from engine.formats.bsp { Model, Bsp, MapEntity }
-import from engine.math.vec3 { Vec3 }
+import from engine.math.vec3 { Vec3, forward_from, right_from }
 import from engine.input.input { _capture, _release, mouse_captured }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
@@ -1272,10 +1272,54 @@ obj Studio(Workbench) {
         return seen;
     }
 
+    """The grid behind an axis view: lines far down its line of sight, so
+    the level covers them. They are 16 units apart when that reads, else 64,
+    256 or 1024, and every fourth is brighter."""
+    def draw_grid(view: SceneView) {
+        ahead = forward_from(view.yaw, view.pitch);
+        across = right_from(view.yaw);
+        up = across.cross(ahead);
+        tall = view.span * 0.5;
+        wide = tall * float(max(1, view.width)) / float(max(1, view.height));
+        step = 16.0;
+        while view.span / step > 40.0 {
+            step *= 4.0;
+        }
+        back = view.eye.add(ahead.scale(30000.0));
+        faint = ink(0x2a2723);
+        strong = ink(0x3d3832);
+        middle_x = view.eye.dot(across);
+        middle_y = view.eye.dot(up);
+        base = back.sub(across.scale(middle_x)).sub(up.scale(middle_y));
+        first = int(math.floor((middle_x - wide) / step));
+        last = int(math.ceil((middle_x + wide) / step));
+        for i in range(first, last + 1) {
+            at = float(i) * step;
+            wire_line(
+                base.add(across.scale(at)).add(up.scale(middle_y - tall)),
+                base.add(across.scale(at)).add(up.scale(middle_y + tall)),
+                strong if i % 4 == 0 else faint
+            );
+        }
+        first = int(math.floor((middle_y - tall) / step));
+        last = int(math.ceil((middle_y + tall) / step));
+        for i in range(first, last + 1) {
+            at = float(i) * step;
+            wire_line(
+                base.add(up.scale(at)).add(across.scale(middle_x - wide)),
+                base.add(up.scale(at)).add(across.scale(middle_x + wide)),
+                strong if i % 4 == 0 else faint
+            );
+        }
+    }
+
     def draw_scene(view: SceneView) {
         scene = self.scene;
         if scene is None {
             return;
+        }
+        if view.span > 0.0 {
+            self.draw_grid(view);
         }
         chosen: list[Shape] = [];
         for shape in self.shapes {
