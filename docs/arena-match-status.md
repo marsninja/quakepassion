@@ -141,6 +141,8 @@ When a match ends (`g_arenas.c`):
 
 ## Limitations
 
-- Only free-for-all: no tournament rules (`GT_TOURNAMENT`), team modes or CTF.
+- Only the single-player ladder's game type (`GT_SINGLE_PLAYER`, played by
+  the free-for-all rules): no `GT_TOURNAMENT` queue of spectators, team modes
+  or CTF.
 - The original single-player arenas set no time limit, and none is
   implemented.

@@ -215,6 +215,11 @@ weapon the movement needs, a movement view, waiting and failure.
   chatted (`TIME_BETWEENCHATTING`), a listener and usually a valid chat
   position. Names are written as `EasyClientName` does; `rnd.c` strings
   expand up to ten deep; a line said in the last 20 s is avoided.
+- Bots chat in every ladder arena, the one-on-one tier finals included.
+  `ai_chat.c` keeps bots quiet only in `GT_TOURNAMENT`, and Q3's
+  single-player ladder never runs in it: `spmap` starts every arena as
+  `GT_SINGLE_PLAYER` (`SV_Map_f`), whatever `type` its `arenas.txt` entry
+  lists.
 - A bot types for 2 s (`BotChatTime`), holding `BUTTON_TALK`, with the talk
   balloon (`EF_TALK`, `sprites/balloon3`) over it; then "Name: text" is said
   with `sound/player/talk.wav`. End-of-level lines go out at once and show in
@@ -357,7 +362,5 @@ Scripts (native, need the Q3 assets):
   another's movement; they only sidestep each other.
 - `BotClearPath` (shooting proximity mines and kamikaze bodies, Team Arena)
   is not modelled.
-- Every arena is free-for-all, so bots chat in the tier finals too; Q3 keeps
-  them quiet in `GT_TOURNAMENT`.
 - `BotTravel_WaterJump` looks a fixed 15 units above the far end; Q3 adds up
   to ±40 units at random.
