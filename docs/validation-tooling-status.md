@@ -47,8 +47,10 @@ differing pixels (`tests/validation_images_tests.jac`).
 
 A `QP_SMOKE` run reads no saved settings, opens the 1280×720 window whatever
 the game's `default.cfg` asks for (Quake II's sets `vid_fullscreen 1`), and
-holds the clock from each PVS-on capture to its PVS-off partner, so the pair
-shows one moment of every animated surface, model and sky.
+holds the clock from three frames before each PVS-on capture to its PVS-off
+partner (a capture reads the framebuffer after the swap, which may hold an
+earlier frame), so the pair shows one moment of every animated surface, model
+and sky.
 
 `validate_quake` builds nothing; build `qp` first (`jac build main.jac
 --native -o qp`, or pass `--binary`).

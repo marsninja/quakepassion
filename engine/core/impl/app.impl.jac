@@ -565,8 +565,10 @@ impl App.smoke_step(frame: int) -> bool {
             self.host.overlay.assign("0");
         }
         # A pair of captures, visibility culling on and then off, shows one
-        # moment: the clock stands still from the first to the second.
-        if 40 <= frame < 80 or 160 <= frame < 200 {
+        # moment: the clock stands still from the first to the second. A
+        # capture reads the framebuffer after the swap, which may hold a
+        # frame or two before the last, so the clock stops three frames early.
+        if 37 <= frame < 80 or 157 <= frame < 200 {
             self.skip_time = True;
         }
         if frame == 40 {
