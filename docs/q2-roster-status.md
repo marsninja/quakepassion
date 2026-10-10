@@ -93,7 +93,8 @@ Details that follow the originals:
 - Pain frames carry no movement steps, and there are no airborne pain reactions.
 - Light and shotgun soldiers always fire `attack1` (and `attack3` when
   dodging); `soldier_attack` picks `attack1` or `attack2` half the time each.
-- `misc_actor` and `target_actor` are not driven (no shipped map pairs them).
+- `misc_actor` is not implemented; no campaign map has one (see
+  [map mechanics](map-mechanics-status.md#limitations)).
 
 References: [Q2 game source](https://github.com/id-Software/Quake-2/tree/master/game)
 (`m_*.c`, `g_monster.c`, `g_turret.c`, `m_flash.c`).

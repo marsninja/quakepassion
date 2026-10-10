@@ -219,6 +219,9 @@ first-left/first-down flags. The step clears by the brush's full extent.
   rendering, and played sounds are not limited by the PHS
   (`MULTICAST_PHS`). A relay-toggled portal's state is not saved (portals
   held by doors follow their doors).
-- `target_actor`/`misc_actor` are not implemented; no shipped map needs them
-  (biggun's only `target_actor` has no actor to drive).
-- Q2 `func_door_secret` and Q3 mover sounds: see [doors](doors-status.md).
+- `misc_actor` (m_actor.c's scripted marine) is not implemented and the
+  campaign has none, so biggun's one `target_actor`, which only an actor
+  walking to it can touch, does nothing here as it does nothing in the
+  original.
+- A Q2 secret door does not hold area portals open
+  (`door_use_areaportals`); city3's targets none.

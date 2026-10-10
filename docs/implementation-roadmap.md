@@ -3,7 +3,8 @@
 The target is the original Quake and Quake II single-player campaigns and the
 Quake III Arena single-player ladder, each played by its own rules inside the
 one engine, plus the generated Passion mode. Network multiplayer, mods, other
-Q3 game types and an editor are out of scope.
+Q3 game types, an editor, and entity classes no campaign map uses (Q2's
+`misc_actor`) are out of scope.
 
 ## Where things stand
 
@@ -57,7 +58,6 @@ Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-
 - Closed Q2/Q3 area portals do not cull rendering, sounds are not PHS-limited,
   and a relay-toggled portal's state is not saved.
 - Q3 RoQ cinematics are not played.
-- `target_actor`/`misc_actor` are not driven (no shipped map needs them).
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - The Q3 railgun draws its core only, not the raildisc rings.
