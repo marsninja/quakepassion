@@ -261,10 +261,11 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 deaths=[
                     Reaction(
                         name="die",
+                        unsolid_frame=2,
                         frames=span("death", 1, 12),
                         steps=[10.0, 8.0, 7.0, 0.0, 0.0, 0.0, 0.0, 10.0, 11.0, 0.0, 0.0, 0.0]
                     ),
-                    Reaction(name="dieb", frames=span("deathb", 1, 9))
+                    Reaction(name="dieb", frames=span("deathb", 1, 9), unsolid_frame=2)
                 ],
                 pain_chance_scale=30.0,
                 pain_sure_after=5.0,
@@ -412,9 +413,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 # army_die: die or cdie at even odds; cdie backs away (ai_back). The
                 # third frame drops the backpack.
                 deaths=[
-                    Reaction(name="die", frames=span("death", 1, 10), drop_frame=2),
+                    Reaction(name="die", frames=span("death", 1, 10), drop_frame=2, unsolid_frame=2),
                     Reaction(
                         name="cdie",
+                        unsolid_frame=2,
                         frames=span("deathc", 1, 11),
                         steps=[0.0, -5.0, -4.0, -13.0, -3.0, -4.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                         drop_frame=2
@@ -551,8 +553,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ],
                 # knight_die: die or dieb at even odds.
                 deaths=[
-                    Reaction(name="die", frames=span("death", 1, 10)),
-                    Reaction(name="dieb", frames=span("deathb", 1, 11))
+                    Reaction(name="die", frames=span("death", 1, 10), unsolid_frame=2),
+                    Reaction(name="dieb", frames=span("deathb", 1, 11), unsolid_frame=2)
                 ],
                 pain_interval=1.0,
                 # knight.qc knight_run1-8 ai_run, knight_walk1-14 ai_walk.
@@ -663,13 +665,14 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 deaths=[
                     Reaction(
                         name="die",
+                        unsolid_frame=2,
                         frames=span("death", 1, 14),
                         steps=[
                             0.0, 0.0, 0.0, 14.0, 2.0, 0.0, 0.0, 0.0, 3.0, 5.0, 5.0, 5.0, 0.0, 0.0
                         ],
                         drop_frame=2
                     ),
-                    Reaction(name="fdie", frames=span("fdeath", 1, 11), drop_frame=2)
+                    Reaction(name="fdie", frames=span("fdeath", 1, 11), drop_frame=2, unsolid_frame=2)
                 ],
                 # enforcer.qc enf_run1-8 ai_run, enf_walk1-16 ai_walk.
                 run=Gait(
@@ -751,9 +754,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 # ogre_die: die or bdie at even odds; bdie steps forward (ai_forward).
                 # The third frame drops the backpack.
                 deaths=[
-                    Reaction(name="die", frames=span("death", 1, 14), drop_frame=2),
+                    Reaction(name="die", frames=span("death", 1, 14), drop_frame=2, unsolid_frame=2),
                     Reaction(
                         name="bdie",
+                        unsolid_frame=2,
                         frames=span("bdeath", 1, 10),
                         steps=[0.0, 5.0, 0.0, 1.0, 3.0, 7.0, 25.0, 0.0, 0.0, 0.0],
                         drop_frame=2
@@ -863,7 +867,18 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 # Wiz_Pain: the cry on every hit, a flinch when random()*70 does not
                 # exceed the damage, and no pain_finished.
                 pains=[Reaction(name="pain", frames=span("pain", 1, 4))],
-                deaths=[Reaction(name="death", frames=span("death", 1, 8))],
+                # wiz_death1 throws the corpse: up to 200 either way along x
+                # and y, and 100 to 200 upward.
+                deaths=[
+                    Reaction(
+                        name="death",
+                        frames=span("death", 1, 8),
+                        unsolid_frame=2,
+                        toss_side=200.0,
+                        toss_up=100.0,
+                        toss_up_random=100.0
+                    )
+                ],
                 pain_cry="hit",
                 # scrag.qc wiz_run1-14 ai_run, wiz_walk1-8 ai_walk.
                 run=Gait(
@@ -931,8 +946,10 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 # demon1_pain: the cry whenever pain is due, a flinch when
                 # random()*200 does not exceed the damage.
                 pains=[Reaction(name="pain", frames=span("pain", 1, 6))],
-                deaths=[Reaction(name="die", frames=span("death", 1, 9))],
+                deaths=[Reaction(name="die", frames=span("death", 1, 9), unsolid_frame=5)],
                 pain_cry="due",
+                pain_due_wait=True,
+                leap_painless=True,
                 # fiend.qc demon1_run1-6 ai_run, demon1_walk1-8 ai_walk.
                 run=Gait(
                     frames=["run" + str(i) for i in range(1, 7)],
@@ -1009,7 +1026,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 # sham_pain: the cry on every hit, a flinch when random()*400 does
                 # not exceed the damage and pain_finished (two seconds) has passed.
                 pains=[Reaction(name="pain", frames=span("pain", 1, 6))],
-                deaths=[Reaction(name="death", frames=span("death", 1, 11))],
+                deaths=[Reaction(name="death", frames=span("death", 1, 11), unsolid_frame=2)],
                 pain_cry="hit",
                 # shambler.qc sham_run1-6 ai_run, sham_walk1-12 ai_walk.
                 run=Gait(
@@ -1176,6 +1193,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     ],
                     hold_frame=10,
                     hold_time=5.0,
+                    unsolid_frame=9,
                     steps=[
                             0.0, -8.0, -5.0, -3.0, -1.0, -2.0, -1.0, -1.0, -2.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 3.0, 1.0, -1.0, 0.0, 0.0
@@ -1195,7 +1213,11 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 idle_frames=["stand" + str(i) for i in range(1, 16)],
                 pain_threshold=9,
                 pain_health_reset=60,
-                pain_interval=0.5,
+                # zombie_pain: the quick pains set no pain_finished. A hit
+                # during one arms three seconds in which the next hit knocks
+                # it down, as a hit of 25 or more does at once.
+                pain_interval=0.0,
+                knockdown_rehit=3.0,
                 knockdown_damage=25,
                 vanish_on_death=True,
                 sight_sound="sound/zombie/z_idle.wav",
@@ -1359,7 +1381,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         steps=[0.0, -6.0, -6.0, -6.0, -6.0, -6.0, -6.0, -6.0, -6.0]
                     )
                 ],
-                deaths=[Reaction(name="death", frames=span("death", 1, 21))],
+                deaths=[Reaction(name="death", frames=span("death", 1, 21), unsolid_frame=20)],
                 # rotfish.qc f_run1-9 ai_run over the odd swim frames, f_walk1-18 ai_walk.
                 run=Gait(
                     frames=["swim" + str(i) for i in range(1, 19, 2)],

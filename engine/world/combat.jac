@@ -211,7 +211,8 @@ def rest_disturbed(enemy: Opponent, collision: CollisionMap) -> bool {
 horizontally, or None when they do not overlap. Living monsters and bots are
 solid to the player (SOLID_SLIDEBOX); corpses are not."""
 def actor_overlap(body: Vec3, top_drop: float, actor: Opponent) -> Vec3 | None {
-    if actor.health <= 0
+    if (actor.health <= 0 and not dying_solid(actor))
+        or lying_down(actor)
         or actor.dormant
         or actor.rule.decoration
         or actor.rule.script
@@ -934,11 +935,50 @@ def pain_cry(victim: Opponent) {
     }
 }
 
+"""Lay a monster out on its knockdown sequence (Q1 zombie_paine1)."""
+def knock_down(victim: Opponent) {
+    victim.pain_down = True;
+    victim.pain_variant = 0;
+    victim.attack_clock = -1.0;
+    victim.leaping = False;
+    victim.pain_wait = reaction_length(victim.rule.knockdown);
+    victim.pain_cooldown = max(victim.pain_cooldown, victim.pain_wait);
+    victim.attack_flash = 0.0;
+    victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
+    victim.decision_wait = 0.0;
+    pain_cry(victim);
+}
+
+"""Whether a dying monster still blocks: until the frame of its death whose
+function clears its solidity (Q1 `self.solid = SOLID_NOT` part way through
+a *_die chain)."""
+def dying_solid(actor: Opponent) -> bool {
+    sequence = death_sequence(actor);
+    return sequence is not None
+        and not actor.gibbed
+        and actor.animation_time < float(sequence.unsolid_frame);
+}
+
+"""Whether a knocked-down monster is on the ground, where it is passable:
+from the frame it lands on (zombie_paine10's SOLID_NOT) until it gets up
+(zombie_paine12's SOLID_SLIDEBOX)."""
+def lying_down(actor: Opponent) -> bool {
+    lying = actor.rule.knockdown;
+    if not actor.pain_down or actor.health <= 0 or lying.hold_frame < 0 {
+        return False;
+    }
+    pose = pain_pose_time(actor);
+    return pose >= float(lying.unsolid_frame) and pose < float(lying.hold_frame + 1);
+}
+
 """A monster's pain function (Q1 th_pain, Q2 edict_t pain) for a hit that
 took `taken` health and left it alive: whether it flinches, on which of its
 pain sequences, and what it cries."""
 def feel_pain(victim: Opponent, taken: int) {
     rule = victim.rule;
+    if rule.leap_painless and victim.leaping {
+        return;
+    }
     if rule.pain_health_reset > 0 {
         victim.health = rule.pain_health_reset;
     }
@@ -948,17 +988,20 @@ def feel_pain(victim: Opponent, taken: int) {
     if rule.knockdown_damage > 0
         and taken >= rule.knockdown_damage
         and not victim.pain_down {
-        victim.pain_down = True;
-        victim.pain_variant = 0;
-        victim.attack_clock = -1.0;
-        victim.leaping = False;
-        victim.pain_wait = reaction_length(rule.knockdown);
-        victim.pain_cooldown = max(victim.pain_cooldown, victim.pain_wait);
-        victim.attack_flash = 0.0;
-        victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
-        victim.decision_wait = 0.0;
-        pain_cry(victim);
+        knock_down(victim);
         return;
+    }
+    if rule.knockdown_rehit > 0.0 and not victim.pain_down {
+        # zombie_pain: hit again while it flinches, it only arms
+        # pain_finished; hit while that runs, it goes down.
+        if victim.pain_wait > 0.0 {
+            victim.pain_cooldown = rule.knockdown_rehit;
+            return;
+        }
+        if victim.pain_cooldown > 0.0 {
+            knock_down(victim);
+            return;
+        }
     }
     if rule.pain_cry == "hit" {
         pain_cry(victim);
@@ -990,6 +1033,9 @@ def feel_pain(victim: Opponent, taken: int) {
     }
     if rule.pain_cry == "due" {
         pain_cry(victim);
+    }
+    if rule.pain_due_wait {
+        victim.pain_cooldown = rule.pain_interval;
     }
     sure = rule.pain_sure_after >= 0.0 and victim.pain_rested > rule.pain_sure_after;
     if not sure
@@ -1045,6 +1091,14 @@ def begin_death(victim: Opponent, taken: int, point: Vec3 | None) {
     victim.death_variant = choose_reaction(victim, rule.deaths, taken, False, head);
     select_death(victim);
     sequence = death_sequence(victim);
+    if sequence is not None and (sequence.toss_side > 0.0 or sequence.toss_up > 0.0) {
+        victim.velocity = Vec3(
+            x=(monster_random(victim) * 2.0 - 1.0) * sequence.toss_side,
+            y=(monster_random(victim) * 2.0 - 1.0) * sequence.toss_side,
+            z=sequence.toss_up + monster_random(victim) * sequence.toss_up_random
+        );
+        victim.grounded = False;
+    }
     request_sound(
         victim,
         sequence.sound if sequence is not None and sequence.sound else rule.death_sound
@@ -3439,7 +3493,9 @@ frames do as they are entered, and their strides along its facing (Q1
 ai_painforward against ai_pain's step back, Q2 `{ai_move, dist}`). It
 staggers but keeps the ground it stands on and stops at walls, as every
 sequence stride does."""
-def pain_stagger(enemy: Opponent, collision: CollisionMap, dt: float) {
+def pain_stagger(
+    enemy: Opponent, collision: CollisionMap, dt: float, blocker: Player | None = None
+) {
     if enemy.pain_wait <= 0.0 or enemy.health <= 0 {
         return;
     }
@@ -3450,6 +3506,22 @@ def pain_stagger(enemy: Opponent, collision: CollisionMap, dt: float) {
     elapsed = pain_length(enemy) - enemy.pain_wait;
     pose = pain_pose_at(enemy, elapsed);
     reached = pain_pose_at(enemy, elapsed + min(dt, enemy.pain_wait));
+    # zombie_paine12: it gets up only if nothing stands where it lies
+    # (walkmove(0, 0)); otherwise it lies through another hold.
+    rise = float(sequence.hold_frame + 1);
+    if enemy.pain_down
+        and sequence.hold_frame >= 0
+        and blocker is not None
+        and rise >= pose
+        and rise < reached
+        and inside_target(
+            blocker, collision.eye_height, enemy.pos.sub(Vec3(z=enemy.eye_height)), enemy
+        ) {
+        enemy.pain_wait += sequence.hold_time + 0.1;
+        enemy.pain_cooldown = max(enemy.pain_cooldown, enemy.pain_wait);
+        enemy.attack_wait = max(enemy.attack_wait, enemy.pain_wait);
+        return;
+    }
     frame_sounds(enemy, sequence.events, pose, reached);
     if not sequence.steps {
         return;
@@ -4552,7 +4624,7 @@ walker CombatTick {
             else self.collision.eye_height;
         delta = foe.pos.sub(here.pos);
         distance = delta.length();
-        pain_stagger(here, self.collision, self.dt);
+        pain_stagger(here, self.collision, self.dt, self.player);
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
         here.duck_wait = max(0.0, here.duck_wait - self.dt);
         if here.pain_wait <= 0.0 and here.pain_down {

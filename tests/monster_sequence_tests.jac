@@ -9,6 +9,7 @@ import from engine.world.combat {
     CombatState,
     CombatTick,
     damage_opponent,
+    actor_overlap,
     ensure_profiles,
     pain_length,
     pain_stagger,
@@ -797,4 +798,114 @@ test "pain and death frames make the sounds their frame functions do" {
             assert heard(body, "sound/makron/bhit.wav") == 1 and heard(body, "sound/makron/brain1.wav") == 1;
         }
     }
+}
+
+test "the fiend, the zombie and the Scrag follow their own pain and die functions" {
+    # demon1_pain: none in mid-leap; otherwise pain_finished is set before
+    # the flinch roll, so a hit shrugged off spends the second too.
+    leaper = sequenced("q1", "monster_demon1");
+    leaper.leaping = True;
+    damage_opponent(leaper, 100);
+    assert leaper.pain_wait == 0.0 and heard(leaper, "sound/demon/dpain1.wav") == 0;
+    shrugged = 0;
+    for seed in range(40) {
+        fiend = sequenced("q1", "monster_demon1", seed);
+        damage_opponent(fiend, 2);
+        assert heard(fiend, "sound/demon/dpain1.wav") == 1 and fiend.pain_cooldown == 1.0;
+        shrugged += 1 if fiend.pain_wait == 0.0 else 0;
+        damage_opponent(fiend, 150);
+        assert heard(fiend, "sound/demon/dpain1.wav") == 1;
+    }
+    assert shrugged > 30;
+    # zombie_pain: under 9 damage is ignored. A quick pain sets no
+    # pain_finished, so once it is over another may follow.
+    zombie = sequenced("q1", "monster_zombie");
+    damage_opponent(zombie, 8);
+    assert zombie.pain_wait == 0.0 and zombie.health == 60;
+    damage_opponent(zombie, 10);
+    assert zombie.pain_wait > 0.0 and not zombie.pain_down and zombie.pain_cooldown == 0.0;
+    zombie.pain_wait = 0.0;
+    damage_opponent(zombie, 10);
+    assert zombie.pain_wait > 0.0 and not zombie.pain_down;
+    # Hit again while it flinches: the pain runs on, and for three seconds
+    # after the next hit knocks it down.
+    zombie.pain_wait = 0.4;
+    damage_opponent(zombie, 10);
+    assert abs(zombie.pain_wait - 0.4) < 0.0001 and zombie.pain_cooldown == 3.0 and not zombie.pain_down;
+    zombie.pain_wait = 0.0;
+    zombie.pain_cooldown = 2.0;
+    damage_opponent(zombie, 10);
+    assert zombie.pain_down and zombie.pain_wait == 8.0;
+    # Down, it is hit by nothing more.
+    damage_opponent(zombie, 30);
+    assert zombie.pain_wait == 8.0;
+    # wiz_death1 throws the Scrag's corpse.
+    for seed in range(30) {
+        scrag = sequenced("q1", "monster_wizard", seed);
+        damage_opponent(scrag, 100);
+        assert scrag.health == 0 and not scrag.grounded;
+        assert abs(scrag.velocity.x) <= 200.0 and abs(scrag.velocity.y) <= 200.0;
+        assert scrag.velocity.z >= 100.0 and scrag.velocity.z <= 200.0;
+    }
+}
+
+test "a Q1 body blocks until the frame its die function clears it" {
+    # army_die3, knight_die3 and their like set SOLID_NOT on the third
+    # frame, demon1_die6 on the sixth, f_death21 on the last; dog_die and
+    # shalrath_die before any frame.
+    for row in [("monster_army", 2), ("monster_knight", 2), ("monster_hell_knight", 2),
+        ("monster_enforcer", 2), ("monster_ogre", 2), ("monster_wizard", 2), ("monster_shambler", 2),
+        ("monster_demon1", 5), ("monster_fish", 20), ("monster_dog", 0), ("monster_shalrath", 0)] {
+        rule = enemy_rule("q1", row[0]);
+        assert rule is not None;
+        for sequence in rule.deaths {
+            assert sequence.unsolid_frame == row[1] , row[0] + ":" + sequence.name;
+        }
+    }
+    grunt = sequenced("q1", "monster_army");
+    grunt.visual.visible = True;
+    beside = grunt.pos.sub(Vec3(x=20.0, z=22.0));
+    assert actor_overlap(beside, 0.0, grunt) is not None;
+    damage_opponent(grunt, 40);
+    grunt.visual.visible = True;
+    assert grunt.health == 0 and actor_overlap(beside, 0.0, grunt) is not None;
+    grunt.animation_time = 1.9;
+    assert actor_overlap(beside, 0.0, grunt) is not None;
+    grunt.animation_time = 2.0;
+    assert actor_overlap(beside, 0.0, grunt) is None;
+    dog = sequenced("q1", "monster_dog");
+    dog.visual.visible = True;
+    damage_opponent(dog, 40);
+    dog.visual.visible = True;
+    assert actor_overlap(dog.pos.sub(Vec3(x=20.0, z=22.0)), 0.0, dog) is None;
+    # A Q2 body does not block once it is dying.
+    soldier = sequenced("q2", "monster_soldier");
+    soldier.visual.visible = True;
+    damage_opponent(soldier, 35);
+    soldier.visual.visible = True;
+    assert actor_overlap(soldier.pos.sub(Vec3(x=20.0, z=22.0)), 0.0, soldier) is None;
+    # zombie_paine10 to paine12: flat on the ground the zombie is passable,
+    # and it gets up only if nothing stands where it lies.
+    nothing = CollisionMap();
+    zombie = sequenced("q1", "monster_zombie");
+    zombie.visual.visible = True;
+    over = zombie.pos.sub(Vec3(x=20.0, z=22.0));
+    damage_opponent(zombie, 30);
+    stagger(zombie, nothing, 0.85);
+    assert actor_overlap(over, 0.0, zombie) is not None;
+    stagger(zombie, nothing, 0.1);
+    assert actor_overlap(over, 0.0, zombie) is None;
+    stagger(zombie, nothing, 5.0);
+    assert actor_overlap(over, 0.0, zombie) is None;
+    blocker = Player(pos=zombie.pos.add(Vec3(x=10.0)));
+    for tick in range(4) {
+        pain_stagger(zombie, nothing, 0.05, blocker);
+        zombie.pain_wait = max(0.0, zombie.pain_wait - 0.05);
+    }
+    # Blocked: back on the ground for another five seconds.
+    assert zombie.pain_wait > 6.5 and actor_overlap(over, 0.0, zombie) is None;
+    assert heard(zombie, "sound/zombie/z_idle.wav") == 0;
+    stagger(zombie, nothing, 5.3);
+    assert heard(zombie, "sound/zombie/z_idle.wav") == 1;
+    assert actor_overlap(over, 0.0, zombie) is not None;
 }

@@ -173,6 +173,16 @@ obj Reaction {
         # playing on (Q1 zombie_paine11's nextthink + 5).
         hold_frame: int = -1,
         hold_time: float = 0.0,
+        # Death: the frame whose function stops the body blocking (Q1
+        # `self.solid = SOLID_NOT`, the third frame of most deaths); a
+        # knockdown is passable from this frame until it gets up.
+        unsolid_frame: int = 0,
+        # Death: the corpse is thrown as it dies, up to `toss_side` either
+        # way along x and y and upward by `toss_up` plus up to
+        # `toss_up_random` (Q1 wiz_death1).
+        toss_side: float = 0.0,
+        toss_up: float = 0.0,
+        toss_up_random: float = 0.0,
         # Death: the frame whose function drops the carried item (Q1
         # DropBackpack on the third), so a monster that gibs instead drops
         # nothing. Zero drops it at once, as Q2 monster_death_use does.
@@ -233,6 +243,15 @@ obj OpponentRule {
         # `knockdown` sequence (Q1 zombie_paine), where nothing hurts it.
         knockdown_damage: int = 0,
         knockdown: Reaction = Reaction(),
+        # A hit taken while it flinches starts no new pain but arms this
+        # wait, and a hit taken while the wait runs knocks it down (Q1
+        # zombie_pain's inpain and pain_finished = time + 3).
+        knockdown_rehit: float = 0.0,
+        # demon1_pain: no pain in mid-leap (self.touch == Demon_JumpTouch),
+        # and pain_finished is set as soon as pain is due, before the flinch
+        # roll, so a hit shrugged off spends the wait too.
+        leap_painless: bool = False,
+        pain_due_wait: bool = False,
         blast_scale: float = 1.0,
         death_splash: int = 0,
         death_radius: float = 0.0,
