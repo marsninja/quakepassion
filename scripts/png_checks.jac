@@ -71,10 +71,32 @@ def read_png(path: Path) -> PngImage {
     );
 }
 
+# The window the captures are taken from, in screen points.
+glob CAPTURE_WIDTH: int = 1280,
+     CAPTURE_HEIGHT: int = 720;
+
+"""How many framebuffer pixels a capture has to each screen point of the
+1280 x 720 window along one axis: 1 on a plain display, 2 on a HiDPI one
+(a capture reads the framebuffer, which the display scales). 0 when the
+image is not that window at any scale."""
+def capture_scale(image: PngImage) -> float {
+    if image.width < CAPTURE_WIDTH or image.width * CAPTURE_HEIGHT != image.height * CAPTURE_WIDTH {
+        return 0.0;
+    }
+    return float(image.width) / float(CAPTURE_WIDTH);
+}
+
+"""A count of window pixels as the capture's own pixels: a difference
+allowed in the 1280 x 720 window covers scale squared times as many."""
+def scaled_pixels(image: PngImage, count: int) -> int {
+    scale = capture_scale(image);
+    return int(float(count) * scale * scale);
+}
+
 def check_image(path: Path, minimum_colors: int = 65) -> PngImage {
     assert minimum_colors >= 2, "A content check must reject uniform images";
     decoded = read_png(path);
-    assert decoded.width == 1280 and decoded.height == 720 , str(path);
+    assert capture_scale(decoded) > 0.0 , f"{path} is {decoded.width} x {decoded.height}, not the 1280 x 720 window at any display scale";
     colors: set[bytes] = set();
     for i in range(0, len(decoded.pixels), decoded.channels) {
         colors.add(decoded.pixels[i:i + 3]);

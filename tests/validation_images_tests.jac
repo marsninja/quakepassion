@@ -3,7 +3,7 @@ import struct;
 import tempfile;
 import zlib;
 import from pathlib { Path }
-import from scripts.png_checks { PngImage, read_png, check_image, different_pixels }
+import from scripts.png_checks { PngImage, read_png, check_image, different_pixels, capture_scale, scaled_pixels }
 
 def png_chunk(kind: bytes, payload: bytes) -> bytes {
     return struct.pack(">I", len(payload))
@@ -70,6 +70,32 @@ test "blank screenshots are rejected" {
     with tempfile.TemporaryDirectory() as directory {
         path = Path(directory) / "blank.png";
         path.write_bytes(png_data(1280, 720, 2, bytes((1280 * 3 + 1) * 720)));
+        caught = False;
+        try {
+            check_image(path);
+        } except AssertionError {
+            caught = True;
+        }
+        assert caught;
+    }
+}
+
+test "captures are checked at the display's scale" {
+    plain = PngImage(width=1280, height=720, channels=3, pixels=b"");
+    dense = PngImage(width=2560, height=1440, channels=4, pixels=b"");
+    assert capture_scale(plain) == 1.0 and capture_scale(dense) == 2.0;
+    assert capture_scale(PngImage(width=1920, height=1080, channels=3, pixels=b"")) == 1.5;
+    # Another shape, or a smaller image, is not the validation window.
+    assert capture_scale(PngImage(width=2560, height=1600, channels=3, pixels=b"")) == 0.0;
+    assert capture_scale(PngImage(width=640, height=360, channels=3, pixels=b"")) == 0.0;
+    # A pixel allowance covers scale squared as many of the capture's pixels.
+    assert scaled_pixels(plain, 16) == 16 and scaled_pixels(dense, 16) == 64;
+    with tempfile.TemporaryDirectory() as directory {
+        colors = b"".join([bytes([shade, shade, shade]) for shade in range(80)]);
+        path = Path(directory) / "dense.png";
+        path.write_bytes(png_data(2560, 1440, 2, (b"\x00" + colors * 32) * 1440));
+        assert check_image(path).width == 2560;
+        path.write_bytes(png_data(640, 360, 2, (b"\x00" + colors * 8) * 360));
         caught = False;
         try {
             check_image(path);

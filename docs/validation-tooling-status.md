@@ -40,7 +40,7 @@ differing pixels (`tests/validation_images_tests.jac`).
 
 | Runner | Checks | Output |
 |---|---|---|
-| `scripts/validate_quake.jac --game q1\|q2\|q3 [maps]` | `qp` with `QP_SMOKE=1` per map: five captures (PVS on/off at spawn, a turn, PVS on/off after moving); PVS pairs differ by at most 16 pixels; the turn and move change the view | `.jac/screenshots/<game>/<map>/` |
+| `scripts/validate_quake.jac --game q1\|q2\|q3 [maps]` | `qp` with `QP_SMOKE=1` per map: five captures (PVS on/off at spawn, a turn, PVS on/off after moving); PVS pairs differ by at most 16 pixels of the 1280×720 window (captures are the framebuffer, so on a HiDPI display they are 2560×1440 and the allowance scales with them); the turn and move change the view | `.jac/screenshots/<game>/<map>/` |
 | `scripts/validate_menu.jac` | `scripts/menu_smoke.jac` with a disposable `HOME`: console, settings, bindings, resize, level list, game switching, failed load, Quit (see [menu and console](menu-console-status.md)) | `.jac/screenshots/menu/` |
 | `scripts/validate_gameplay.jac` | The `persistence`, `gameplay`, `campaign` and `combat` smokes with isolated saves | `.jac/screenshots/gameplay/` |
 | `scripts/validate_passion.jac` | `scripts/passion_smoke.jac`: a generated route, mixed assets, saves and the menu | `.jac/screenshots/passion/` |
