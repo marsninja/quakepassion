@@ -241,7 +241,8 @@ rocket shot.
 - On medium a soldier answers a third of its dodges by crouching and firing
   (`attack3`), and on hard two thirds. It fires at `attak303`, loops back once
   while the second-long duck lasts, and stays crouched from the first shot to
-  `attak307`.
+  `attak307`. A machine gunner holds `attak303` for its burst instead and
+  does not loop.
 - On hard a gunner lobs a grenade half the time as it ducks
   (`gunner_duck_down`).
 

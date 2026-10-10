@@ -2599,18 +2599,25 @@ def ready_attack(enemy: Opponent, index: int, target: Vec3) {
     begin_attack(enemy, index, target);
 }
 
-def begin_attack(enemy: Opponent, index: int, target: Vec3) {
-    select_profile(enemy, index);
-    profile = enemy.profiles[index];
-    enemy.attack_target = target.add(Vec3());
-    enemy.attack_clock = 0.0;
-    enemy.attack_event = 0;
+"""How many shots the burst now starting fires: drawn each time the held
+frame is entered afresh (Q2 soldier_fire sets pausetime only when it is not
+already holding)."""
+def draw_burst(enemy: Opponent, profile: AttackProfile) {
     enemy.burst_count = 1;
     if profile.burst_max > 1 and not enemy.attack_melee {
         enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
         enemy.burst_count = profile.burst_min
             + enemy.shot_random % (profile.burst_max - profile.burst_min + 1);
     }
+}
+
+def begin_attack(enemy: Opponent, index: int, target: Vec3) {
+    select_profile(enemy, index);
+    profile = enemy.profiles[index];
+    enemy.attack_target = target.add(Vec3());
+    enemy.attack_clock = 0.0;
+    enemy.attack_event = 0;
+    draw_burst(enemy, profile);
     enemy.attack_wait = attack_duration(enemy)
         + attack_pause(enemy, melee=profile.kind == "melee");
     if profile.finished >= 0.0 and not skips_attack_waits(enemy) {
@@ -2619,15 +2626,33 @@ def begin_attack(enemy: Opponent, index: int, target: Vec3) {
     enemy.attack_flash = attack_duration(enemy);
 }
 
-def attack_pose_time(enemy: Opponent) -> float {
-    clock = enemy.attack_clock * 10.0;
+"""The frame of its sequence an attack shows `clock` seconds in: a burst
+holds its frame while the further shots leave (Q2 AI_HOLD_FRAME)."""
+def attack_pose_at(enemy: Opponent, clock: float) -> float {
+    pose = clock * 10.0;
     profile = current_profile(enemy);
     if profile.kind != "melee"
         and profile.hold_frame >= 0
-        and clock >= float(profile.hold_frame) {
-        clock -= min(float(enemy.burst_count - 1), clock - float(profile.hold_frame));
+        and pose >= float(profile.hold_frame) {
+        pose -= min(float(enemy.burst_count - 1), pose - float(profile.hold_frame));
     }
-    return clock;
+    return pose;
+}
+
+def attack_pose_time(enemy: Opponent) -> float {
+    return attack_pose_at(enemy, enemy.attack_clock);
+}
+
+"""When on the attack clock an authored time falls: later by the burst's
+hold once the held frame has passed."""
+def attack_clock_at(enemy: Opponent, authored: float) -> float {
+    profile = current_profile(enemy);
+    if profile.kind != "melee"
+        and profile.hold_frame >= 0
+        and authored > float(profile.hold_frame) * 0.1 + 0.000001 {
+        return authored + float(enemy.burst_count - 1) * 0.1;
+    }
+    return authored;
 }
 
 # Weighted choice among sequences whose range brackets contain the target.
@@ -2645,7 +2670,9 @@ def choose_attack(
         if profile.dodge_only or profile.kind == "revive" or profile.trigger {
             continue;
         }
-        if distance < profile.min_range or distance > profile.max_range {
+        if distance < profile.min_range
+            or distance > profile.max_range
+            or enemy.skill < profile.min_skill {
             continue;
         }
         if profile.kind == "melee" {
@@ -3084,11 +3111,48 @@ def inside_target(target: Player, height: float, origin: Vec3, mover: Opponent) 
         and origin.z + rule.hull_top > feet.z + bottom;
 }
 
+"""Q1 walkmove / Q2 M_walkmove for the part of a frame's stride one tick
+covers: the monster moves by `motion` with its own box, over stairs and along
+walls, and not at all when the ground would end under it (SV_movestep's
+bottom check) or the step would put it inside `blocker`'s box. Every stride
+a sequence authors (attack `steps`, and the frames of a pain or a death)
+moves through here."""
+def sequence_stride(
+    enemy: Opponent,
+    collision: CollisionMap,
+    motion: Vec3,
+    dt: float,
+    blocker: Player | None = None,
+    blocker_height: float = 22.0
+) {
+    if not enemy.grounded or dt <= 0.0 or dt > 0.05 or motion.length() <= 0.000001 {
+        return;
+    }
+    collision = monster_collision(collision, enemy);
+    body = enemy.pos.sub(Vec3(z=enemy.eye_height));
+    ahead = body.add(motion);
+    support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
+    if support.fraction == 1.0 or support.normal.z < 0.7 {
+        return;
+    }
+    if blocker is not None
+        and inside_target(blocker, blocker_height, ahead, enemy)
+        and not inside_target(blocker, blocker_height, body, enemy) {
+        return;
+    }
+    moved = step_slide(collision, body, motion.scale(1.0 / dt), dt, True);
+    enemy.pos = moved.pos.add(Vec3(z=enemy.eye_height));
+    enemy.velocity.x = 0.0;
+    enemy.velocity.y = 0.0;
+}
+
 # Integrate authored charge distances across 10 Hz animation frames, using the
 # same stair/slide collision as walking. A charge heads at the target (Q1/Q2
 # ai_charge's movetogoal), or for a flyby stride at a point `side` to its
 # left (Q1 ai_charge_side's walkmove); either way SV_movestep refuses a step
-# into the target's box.
+# into the target's box. Strides follow the pose, so a frame a burst holds
+# moves once (Q2 M_MoveFrame passes a held frame no distance), and are scaled
+# like the gaits (monsterinfo.scale).
 def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: float) {
     profile = current_profile(enemy);
     steps = profile.steps;
@@ -3101,32 +3165,17 @@ def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: 
     goal = player.pos.sub(enemy.pos);
     goal.z = 0.0;
     left = Vec3(x=-math.sin(enemy.yaw), y=math.cos(enemy.yaw));
+    pose = attack_pose_at(enemy, enemy.attack_clock);
+    reached = attack_pose_at(enemy, enemy.attack_clock + dt);
     motion = Vec3();
     for frame in range(len(steps)) {
-        start = max(enemy.attack_clock, float(frame) * 0.1);
-        finish = min(enemy.attack_clock + dt, float(frame + 1) * 0.1);
-        share = max(0.0, finish - start) * 10.0 * steps[frame];
+        start = max(pose, float(frame));
+        finish = min(reached, float(frame + 1));
+        share = max(0.0, finish - start) * steps[frame] * enemy.rule.step_scale;
         side = profile.sides[frame] if frame < len(profile.sides) else 0.0;
         motion = motion.add(goal.add(left.scale(side)).normalized().scale(share));
     }
-    if motion.length() <= 0.000001 {
-        return;
-    }
-    collision = monster_collision(collision, enemy);
-    body = enemy.pos.sub(Vec3(z=enemy.eye_height));
-    ahead = body.add(motion);
-    support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
-    if support.fraction == 1.0 or support.normal.z < 0.7 {
-        return;
-    }
-    if inside_target(player, height, ahead, enemy)
-        and not inside_target(player, height, body, enemy) {
-        return;
-    }
-    moved = step_slide(collision, body, motion.scale(1.0 / dt), dt, True);
-    enemy.pos = moved.pos.add(Vec3(z=enemy.eye_height));
-    enemy.velocity.x = 0.0;
-    enemy.velocity.y = 0.0;
+    sequence_stride(enemy, collision, motion, dt, player, height);
 }
 
 # Attack events run on the simulation clock, independently of the 10 Hz steering query.
@@ -3279,9 +3328,55 @@ def advance_attack_segment(
     }
 }
 
+"""Whether a sequence at its refire frame goes round again (Q2 chick_rerocket,
+soldier_attack1_refire1 and their like). A target closer than `repeat_near`
+always sends it back. Otherwise it rolls `repeat_chance`, from skill
+`repeat_skill` up, with the target at least `repeat_from` away and, unless the
+refire is `repeat_unseen`, in sight and inside the sequence's own range."""
+def refires(
+    enemy: Opponent, player: Player, collision: CollisionMap, profile: AttackProfile
+) -> bool {
+    distance = player.pos.sub(enemy.pos).length();
+    if profile.repeat_near > 0.0 and distance < profile.repeat_near {
+        return True;
+    }
+    if enemy.skill < profile.repeat_skill or distance < profile.repeat_from {
+        return False;
+    }
+    if not profile.repeat_unseen {
+        sight = collision.trace_point(enemy.pos, player.pos);
+        valid = distance <= profile.reach
+            if profile.kind == "melee"
+            else (
+                distance > melee_reach(enemy)
+                and distance >= profile.min_range
+            );
+        if not valid
+            or distance > profile.max_range
+            or sight.start_solid
+            or sight.fraction < 1.0 {
+            return False;
+        }
+    }
+    return monster_random(enemy) < profile.repeat_chance;
+}
+
+"""Move a running sequence to `clock`; the events before it count as done."""
+def seek_attack(enemy: Opponent, clock: float) {
+    enemy.attack_clock = clock;
+    enemy.attack_event = 0;
+    while enemy.attack_event < attack_event_count(enemy)
+        and attack_event_time(enemy) < clock - 0.000001 {
+        enemy.attack_event += 1;
+    }
+}
+
 # Split a tick at the refire boundary so recovery and repeated attack movement
 # never run in the same slice. The saved clock/cursor/random stream are sufficient
-# to restore a sequence; no hidden per-frame refire flag is needed.
+# to restore a sequence; no hidden per-frame refire flag is needed. The refire
+# frame's think (Q2 monsterinfo.nextframe) sends the sequence back to
+# `repeat_start`, on to `repeat_skip`, or lets it play on; on the last frame it
+# decides whether the sequence ends.
 def advance_attack(
     world: World,
     enemy: Opponent,
@@ -3292,15 +3387,16 @@ def advance_attack(
     tally: CombatState | None = None
 ) {
     profile = current_profile(enemy);
-    restart = profile.repeat_start;
-    boundary = profile.repeat_end;
-    chance = profile.repeat_chance;
-    if restart < 0.0 or boundary <= restart or boundary >= attack_duration(enemy) {
+    if profile.repeat_start < 0.0
+        or profile.repeat_end <= profile.repeat_start
+        or profile.repeat_end > profile.duration + 0.000001 {
         advance_attack_segment(world, enemy, player, collision, dt, person, tally);
         return;
     }
     remaining = dt;
     while remaining > 0.000001 and enemy.attack_clock >= 0.0 {
+        boundary = attack_clock_at(enemy, profile.repeat_end);
+        final = boundary >= attack_duration(enemy) - 0.000001;
         before = enemy.attack_clock;
         step = remaining;
         crossing = before < boundary - 0.000001
@@ -3310,33 +3406,23 @@ def advance_attack(
         }
         advance_attack_segment(world, enemy, player, collision, step, person, tally);
         remaining = max(0.0, remaining - step);
-        if crossing and enemy.attack_clock >= 0.0 and player.health > 0 {
-            distance = player.pos.sub(enemy.pos).length();
-            sight = collision.trace_point(enemy.pos, player.pos);
-            valid = distance <= profile.reach
-                if profile.kind == "melee"
-                else (
-                    distance > melee_reach(enemy)
-                    and distance >= profile.min_range
-                );
-            if valid
-                and distance <= profile.max_range
-                and not sight.start_solid
-                and sight.fraction == 1.0 {
-                enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
-                if float(enemy.shot_random) / 2147483647.0 < chance {
-                    enemy.attack_clock = restart;
-                    enemy.attack_event = 0;
-                    for at in attack_times(enemy) {
-                        if at < restart - 0.000001 {
-                            enemy.attack_event += 1;
-                        }
-                    }
-                    # A shot on the first repeated pose happens at the boundary.
-                    advance_attack_segment(world, enemy, player, collision, 0.0, person, tally);
-                }
-            }
+        if not crossing
+            or enemy.health <= 0
+            or player.health <= 0
+            or (enemy.attack_clock < 0.0 and not final) {
+            continue;
         }
+        if refires(enemy, player, collision, profile) {
+            # The burst a repeated frame fires is drawn afresh.
+            draw_burst(enemy, profile);
+            seek_attack(enemy, attack_clock_at(enemy, profile.repeat_start));
+        } elif profile.repeat_skip >= 0.0 {
+            seek_attack(enemy, attack_clock_at(enemy, profile.repeat_skip));
+        } else {
+            continue;
+        }
+        # A shot on the first pose played next happens at the boundary.
+        advance_attack_segment(world, enemy, player, collision, 0.0, person, tally);
     }
 }
 
@@ -3454,7 +3540,7 @@ def crouching(enemy: Opponent) -> bool {
         profile = current_profile(enemy);
         return profile.crouch_start >= 0.0
             and enemy.attack_clock >= profile.crouch_start
-            and enemy.attack_clock < profile.crouch_end;
+            and enemy.attack_clock < attack_clock_at(enemy, profile.crouch_end);
     }
     return False;
 }
@@ -3647,8 +3733,18 @@ walker CombatTick {
     hknight_run1's CheckForCharge): with the target in sight, attacks due,
     the target in range and, if the sequence asks, nearly level with it."""
     def run_start(enemy: Opponent, foe: Player) {
+        if enemy.attack_wait <= 0.0 {
+            self.trigger_start(enemy, foe, "run");
+        }
+    }
+
+    """Start the first sequence with this `trigger` whose conditions hold: a
+    sequence begun by the run cycle (above) or by first sighting the enemy
+    (Q2 soldier_sight's run-and-shoot, half the time above Easy with the
+    enemy at RANGE_MID or beyond). The monster launches it as it stands,
+    without first turning to face."""
+    def trigger_start(enemy: Opponent, foe: Player, trigger: str) {
         if enemy.attack_clock >= 0.0
-            or enemy.attack_wait > 0.0
             or enemy.readied >= 0
             or not enemy.pursuing
             or foe.health <= 0
@@ -3663,10 +3759,15 @@ walker CombatTick {
         ensure_profiles(enemy);
         for i in range(len(enemy.profiles)) {
             profile = enemy.profiles[i];
-            if profile.trigger != "run"
+            if profile.trigger != trigger
+                or enemy.skill < profile.min_skill
                 or distance < profile.min_range
                 or distance > profile.max_range
                 or (profile.max_rise >= 0.0 and abs(rise) > profile.max_rise) {
+                continue;
+            }
+            if profile.trigger_chance < 1.0
+                and monster_random(enemy) >= profile.trigger_chance {
                 continue;
             }
             begin_attack(enemy, i, foe.pos);
@@ -4203,6 +4304,7 @@ walker CombatTick {
                         if not here.arena {
                             self.state.sighter = here;
                             self.state.sight_wait = 0.1;
+                            self.trigger_start(here, foe, "sight");
                         }
                     }
                     here.sighted = True;

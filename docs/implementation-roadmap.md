@@ -51,7 +51,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
   jump/swim links, and are not solid to each other.
 - One death sequence per monster; several monsters have one pain sequence; pain
   frames carry no movement.
-- Light and shotgun Q2 soldiers never use `attack2`.
 - Shub-Niggurath's finale is a timed hold and shake, not `finale_1`-`finale_4`
   frame by frame.
 

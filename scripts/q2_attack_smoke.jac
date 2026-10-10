@@ -11,6 +11,7 @@ import from engine.world.combat {
     CombatTick,
     attack_pose_time
 }
+import from engine.world.opponent_rule { rule_profiles }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 
@@ -38,6 +39,16 @@ with entry {
                 + rule.walk.frames
                 + rule.pain_frames {
                 assert name in names , kind + ":" + name;
+            }
+            for profile in rule_profiles(rule) {
+                for name in profile.frames {
+                    assert name in names , kind + ":" + profile.name + ":" + name;
+                }
+                for path in [profile.sound, profile.extra_sound] {
+                    if path {
+                        assert len(library.read(path)) > 44 , path;
+                    }
+                }
             }
             if rule.attack_frames {
                 assert len(rule.attack_frames) == int(rule.attack_duration * 10.0);

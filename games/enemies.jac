@@ -16,6 +16,151 @@ def two(number: int) -> str {
     return ("0" + str(number)) if number < 10 else str(number);
 }
 
+"""One m_soldier.c attack sequence firing the weapon of its class
+(soldier_fire): the light soldier's blaster bolt, the soldier's shotgun or
+the machine gunner's burst, which holds the fire frame for 4 to 11 shots
+(AI_HOLD_FRAME until pausetime). Every shot is aimed with the same scatter."""
+def soldier_shot(
+    kind: str, name: str, frames: list[str], fire: float, muzzle: Vec3
+) -> AttackProfile {
+    shot = AttackProfile(
+        name=name,
+        kind="ranged",
+        frames=frames,
+        duration=float(len(frames)) / 10.0,
+        times=[fire],
+        sound_times=[fire],
+        aim_spread=1000.0 / 8192.0,
+        aim_vertical=500.0 / 8192.0,
+        muzzles=[muzzle],
+        flash=Q2_GUN_FLASH
+    );
+    if kind == "monster_soldier_light" {
+        shot.sound = "sound/soldier/solatck2.wav";
+        shot.damage = 5;
+        shot.missile_speed = 600.0;
+        shot.missile_effect = "q2_bolt";
+    } elif kind == "monster_soldier" {
+        shot.sound = "sound/soldier/solatck1.wav";
+        shot.damage = 2;
+        shot.pellets = 12;
+        shot.spread = 1000.0 / 8192.0;
+        shot.vertical_spread = 500.0 / 8192.0;
+    } else {
+        shot.sound = "sound/soldier/solatck3.wav";
+        shot.damage = 2;
+        shot.spread = 300.0 / 8192.0;
+        shot.vertical_spread = 500.0 / 8192.0;
+        shot.burst_min = 4;
+        shot.burst_max = 11;
+        shot.hold_frame = int(fire * 10.0 + 0.5);
+    }
+    return shot;
+}
+
+"""m_soldier.c: the sequences a soldier of this class attacks with. Muzzles
+are m_flash.c's MZ2_SOLDIER_* offsets for each sequence's flash number, already
+scaled by 1.2."""
+def soldier_attacks(kind: str) -> list[AttackProfile] {
+    light = kind == "monster_soldier_light";
+    gunner = kind == "monster_soldier_ss";
+    attacks: list[AttackProfile] = [];
+    if gunner {
+        # soldier_attack: the machine gunner only has attack4 (flash 3).
+        attacks.append(
+            soldier_shot(
+                kind,
+                "attack4",
+                ["attak" + str(i) for i in range(401, 407)],
+                0.2,
+                Vec3(x=9.12, y=11.16, z=0.96)
+            )
+        );
+    } else {
+        # soldier_attack: attack1 or attack2 at even odds. Each has a refire
+        # frame for the blaster (refire1) and a later one for the shotgun
+        # (refire2), after soldier_cock: with the enemy alive, back to the
+        # frame before the shot when it is in RANGE_MELEE or, on skill 3,
+        # half the time. A blaster soldier otherwise skips the cocking
+        # frames (attak110, attak216); a shotgun soldier plays on.
+        first = soldier_shot(
+            kind,
+            "attack1",
+            ["attak" + str(i) for i in range(101, 113)],
+            0.2,
+            Vec3(x=12.72, y=9.24, z=9.36)
+        );
+        first.extra_sound_times = [0.7];
+        first.repeat_start = 0.1;
+        first.repeat_end = 0.6 if light else 0.9;
+        first.repeat_skip = 0.9 if light else -1.0;
+        second = soldier_shot(
+            kind,
+            "attack2",
+            ["attak" + str(i) for i in range(201, 219)],
+            0.4,
+            Vec3(x=25.32, y=4.32, z=22.8)
+        );
+        second.extra_sound_times = [1.2];
+        second.repeat_start = 0.3;
+        second.repeat_end = 0.8 if light else 1.5;
+        second.repeat_skip = 1.5 if light else -1.0;
+        for attack in [first, second] {
+            attack.extra_sound = "sound/infantry/infatck3.wav";
+            attack.repeat_chance = 0.5;
+            attack.repeat_skill = 3;
+            attack.repeat_near = 80.0;
+            attack.repeat_unseen = True;
+            attacks.append(attack);
+        }
+    }
+    # soldier_dodge's attack3 (flash 2): duck and shoot, crouched from
+    # soldier_fire3's duck-down on attak303 to soldier_duck_up on attak307.
+    # soldier_attack3_refire goes back from attak306 to attak303 while the
+    # second-long duck has more than 0.4 s left, which is once. The machine
+    # gunner's burst resets that pause, so it holds attak303 and never loops.
+    crouch_frames = ["attak30" + str(i) for i in range(1, 10)]
+        if gunner
+        else ["attak30" + str(i) for i in [1, 2, 3, 4, 5, 6, 3, 4, 5, 6, 7, 8, 9]];
+    crouch = soldier_shot(
+        kind, "attack3", crouch_frames, 0.2, Vec3(x=24.96, y=12.12, z=-3.24)
+    );
+    crouch.weight = 0.0;
+    crouch.dodge_only = True;
+    crouch.crouch_start = 0.2;
+    crouch.crouch_end = 0.6 if gunner else 1.0;
+    if not gunner {
+        crouch.times = [0.2, 0.6];
+        crouch.sound_times = [0.2, 0.6];
+    }
+    attacks.append(crouch);
+    # soldier_sight's attack6 (flash 7): above Easy, half the soldiers that
+    # sight an enemy at RANGE_MID or beyond run at it through runs01-14,
+    # firing on runs04. soldier_attack6_refire runs on from runs03 on skill 3
+    # while the enemy is still that far.
+    charge = soldier_shot(
+        kind,
+        "attack6",
+        ["runs" + two(i) for i in range(1, 15)],
+        0.3,
+        Vec3(x=37.8, y=11.52, z=12.12) if light else Vec3(x=41.4, y=11.52, z=7.32)
+    );
+    charge.trigger = "sight";
+    charge.trigger_chance = 0.5;
+    charge.min_skill = 1;
+    charge.min_range = 500.0;
+    charge.max_range = 100000.0;
+    charge.steps = [10.0, 4.0, 12.0, 11.0, 13.0, 18.0, 15.0, 14.0, 11.0, 8.0, 11.0, 12.0, 12.0, 17.0];
+    charge.repeat_start = 0.2;
+    charge.repeat_end = 1.4;
+    charge.repeat_chance = 1.0;
+    charge.repeat_skill = 3;
+    charge.repeat_from = 500.0;
+    charge.repeat_unseen = True;
+    attacks.append(charge);
+    return attacks;
+}
+
 def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
     # Exploding barrels: Q1 misc.qc barrel_explode (160 radius damage) and Q2
     # g_misc.c barrel_explode (150 plus 40 radius). They take any damage.
@@ -2543,8 +2688,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 sight_sound="sound/soldier/solsght1.wav",
                 pain_sounds=["sound/soldier/solpain2.wav"],
                 death_sound="sound/soldier/soldeth2.wav",
-                attack_sound="sound/soldier/solatck2.wav",
-                attack_sound_times=[0.2],
                 idle_sound="sound/soldier/solidle1.wav",
                 model="models/monsters/soldier/tris.md2",
                 # m_soldier.c soldier_move_run; MODEL_SCALE 1.2.
@@ -2574,60 +2717,22 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 duck_down=0,
                 duck_hold=1,
                 duck_up=3,
-                # attak301-309, looping back from 306 to 303 once while the
-                # one-second duck lasts: shots at 303, crouched from 303 to 307.
-                crouch_frames=["attak30" + str(i) for i in [1, 2, 3, 4, 5, 6, 3, 4, 5, 6, 7, 8, 9]],
-                crouch_times=[0.2, 0.6],
-                crouch_duration=1.3,
-                crouch_start=0.2,
-                crouch_end=1.0,
                 pain_duration=0.5,
                 pain_interval=3.0,
                 pain_frames=["pain" + str(i) for i in range(101, 106)],
                 health=20,
-                damage=5,
-                missile_speed=600.0,
-                missile_effect="q2_bolt",
-                aim_spread=1000.0 / 8192.0,
-                aim_vertical=500.0 / 8192.0,
-                # soldier_fire: flash 1 standing (attack1), 3 crouched
-                # (attack3), 4 for the machine gunner (attack4), scaled 1.2.
-                muzzles=[Vec3(x=12.72, y=9.24, z=9.36)],
-                crouch_muzzles=[Vec3(x=24.96, y=12.12, z=-3.24)],
-                flash=Q2_GUN_FLASH,
-                attack_times=[0.2],
-                attack_duration=1.2,
-                attack_frames=["attak" + str(i) for i in range(101, 113)]
+                attacks=soldier_attacks(kind)
             );
             if kind == "monster_soldier" {
                 rule.pain_sounds = ["sound/soldier/solpain1.wav"];
                 rule.death_sound = "sound/soldier/soldeth1.wav";
-                rule.attack_sound = "sound/soldier/solatck1.wav";
                 rule.health = 30;
                 rule.skin = 2;
-                rule.damage = 2;
-                rule.missile_speed = 0.0;
-                rule.missile_effect = "";
-                rule.pellets = 12;
-                rule.spread = 1000.0 / 8192.0;
-                rule.vertical_spread = 500.0 / 8192.0;
             } elif kind == "monster_soldier_ss" {
                 rule.pain_sounds = ["sound/soldier/solpain3.wav"];
                 rule.death_sound = "sound/soldier/soldeth3.wav";
-                rule.attack_sound = "sound/soldier/solatck3.wav";
                 rule.health = 40;
                 rule.skin = 4;
-                rule.damage = 2;
-                rule.missile_speed = 0.0;
-                rule.missile_effect = "";
-                rule.spread = 300.0 / 8192.0;
-                rule.vertical_spread = 500.0 / 8192.0;
-                rule.attack_duration = 0.6;
-                rule.attack_frames = ["attak" + str(i) for i in range(401, 407)];
-                rule.burst_min = 4;
-                rule.burst_max = 11;
-                rule.hold_frame = 2;
-                rule.muzzles = [Vec3(x=9.12, y=11.16, z=0.96)];
             }
             return rule;
         }

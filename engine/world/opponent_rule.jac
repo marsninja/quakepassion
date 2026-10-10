@@ -59,15 +59,35 @@ obj AttackProfile {
         crouch_start: float = -1.0,
         crouch_end: float = -1.0,
         revive_at: float = -1.0;
+    # The refire frame's own test, beyond the roll above (Q2 m_soldier.c
+    # soldier_attack1_refire1: `(skill == 3 && random() < 0.5) || range ==
+    # RANGE_MELEE`). A target closer than `repeat_near` always sends the
+    # sequence back; otherwise `repeat_chance` is rolled only from skill
+    # `repeat_skill` up and with the target at least `repeat_from` away
+    # (soldier_attack6_refire's RANGE_MID). `repeat_unseen` rolls without
+    # the sight and range test the other refires make (chick_rerocket). A
+    # refire not taken, with the target alive, skips ahead to `repeat_skip`
+    # rather than playing on (attak110, attak216). `repeat_end` may be the
+    # sequence's end: the last frame's think then decides whether it ends.
+    has repeat_near: float = -1.0,
+        repeat_skill: int = 0,
+        repeat_from: float = 0.0,
+        repeat_unseen: bool = False,
+        repeat_skip: float = -1.0;
     # Sequences sharing a `rotation` are not drawn at random but taken in
     # turn, on one count kept for every monster (Q1 hknight_melee's global
     # hknight_type). A "run" `trigger` starts the sequence from the first
     # frame of the run cycle instead of the attack decision (Q1
     # hknight_run1's CheckForCharge): with the target in sight, attacks due
-    # and the target no more than `max_rise` above or below. `finished` is the
+    # and the target no more than `max_rise` above or below. A "sight"
+    # trigger starts it as the monster first sights its enemy, `trigger_chance`
+    # of the time (Q2 soldier_sight's run-and-shoot). `min_skill` is the
+    # lowest skill at which the sequence is used at all. `finished` is the
     # SUB_AttackFinished a sequence sets when it starts, if its own.
     has rotation: str = "",
         trigger: str = "",
+        trigger_chance: float = 1.0,
+        min_skill: int = 0,
         max_rise: float = -1.0,
         finished: float = -1.0;
     # Per-frame aim of a charge's steps: how far to the left of the target

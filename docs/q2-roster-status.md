@@ -17,7 +17,7 @@ movers are in [navigation-status.md](navigation-status.md).
 
 | Class | Health | Movement | Attacks |
 | --- | ---: | --- | --- |
-| `monster_soldier_light` / `monster_soldier` / `monster_soldier_ss` | 20 / 30 / 40 | walk | blaster bolt / 12-pellet shotgun / 4-11 round machine-gun burst; duck and crouch-fire (`attack3`) |
+| `monster_soldier_light` / `monster_soldier` / `monster_soldier_ss` | 20 / 30 / 40 | walk | blaster bolt / 12-pellet shotgun (`attack1` or `attack2`) / 4-11 round machine-gun burst (`attack4`); duck and crouch-fire (`attack3`); run-and-shoot on sighting (`attack6`) |
 | `monster_infantry` | 100 | walk | gun burst; `attak2` punch (5-9, knockback) |
 | `monster_berserk` | 240 | walk | spike (15-20) or club (5-10) |
 | `monster_gladiator` | 400 | walk | two cleaver strikes; rail with aim locked at windup |
@@ -44,6 +44,28 @@ movers are in [navigation-status.md](navigation-status.md).
 
 Details that follow the originals:
 
+- **Soldiers** (`m_soldier.c`, `soldier_attacks` in `games/enemies.jac`):
+  - Light and shotgun soldiers attack with `attack1` (attak101-112, shot on
+    attak103) or `attack2` (attak201-218, shot on attak205 from the higher
+    muzzle, flash 1), half the time each (`soldier_attack`).
+  - Each has a refire frame. With the enemy alive it goes back to the frame
+    before the shot (attak102, attak204) when the enemy is within 80 units
+    (`RANGE_MELEE`) or, on Nightmare, half the time. A blaster soldier tests
+    this on attak106/attak208 and otherwise skips to attak110/attak216
+    (`soldier_attack1_refire1`). A shotgun soldier cocks its gun first
+    (`soldier_cock`, `infantry/infatck3.wav` on attak108/attak213), tests on
+    attak109/attak215 and otherwise plays on (`soldier_attack1_refire2`).
+    With the enemy dead the frames play straight through.
+  - Above Easy, a soldier that first sights its enemy 500 units or more away
+    runs at it half the time through runs01-14, striding each frame's
+    `ai_charge` distance and firing on runs04 from flash 7
+    (`soldier_sight`, `soldier_move_attack6`). On Nightmare it runs on from
+    runs03 while the enemy is still that far (`soldier_attack6_refire`).
+  - The machine gunner holds its fire frame for the burst in every sequence,
+    so its crouched `attack3` fires one burst on attak303 and does not loop.
+  - These are `AttackProfile` refire fields (`repeat_near`, `repeat_skill`,
+    `repeat_from`, `repeat_unseen`, `repeat_skip`) on the one repeat
+    mechanism the chick and gunner use, and a `"sight"` `trigger`.
 - **Jorg and Makron** (`m_boss31.c`, `m_boss32.c`): Jorg's rule names
   `monster_makron` as its `successor`. The Makron is built dormant at load and
   takes over Jorg's targets. When Jorg's death animation ends it bursts apart
@@ -72,8 +94,10 @@ Details that follow the originals:
   damage, flyer, mutant, parasite drain, brain pull/push, tank and Supertank
   choices, Hornet volley and Jorg spawning Makron, Makron sweep and rail,
   hostile BFG, flipper, static bodies.
-- `tests/chick_tests.jac`, `tests/q2_attack_tests.jac` (soldier/infantry bursts,
-  muzzles and flashes), `tests/infantry_melee_tests.jac`,
+- `tests/chick_tests.jac`, `tests/q2_attack_tests.jac` (the soldier's attack
+  tables, its choice of `attack1` or `attack2`, each refire branch, the
+  run-and-shoot and its strides, soldier/infantry bursts, muzzles and
+  flashes), `tests/infantry_melee_tests.jac`,
   `tests/enemy_pain_tests.jac`, `tests/dodge_tests.jac`, `tests/turret_tests.jac`,
   `tests/monster_skin_tests.jac` (bloodied skin below half health).
 - Native: `scripts/roster_smoke.jac` checks every Q1/Q2 class's frames, sounds
@@ -91,8 +115,6 @@ Details that follow the originals:
 - The soldiers, infantry, berserker, gladiator and chick play one pain sequence;
   the originals choose by damage or at random (for example `berserk_pain`).
 - Pain frames carry no movement steps, and there are no airborne pain reactions.
-- Light and shotgun soldiers always fire `attack1` (and `attack3` when
-  dodging); `soldier_attack` picks `attack1` or `attack2` half the time each.
 - `misc_actor` and `target_actor` are not driven (no shipped map pairs them).
 
 References: [Q2 game source](https://github.com/id-Software/Quake-2/tree/master/game)
