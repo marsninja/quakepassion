@@ -183,14 +183,23 @@ def travel_swim(origin: Vec3, point: Vec3) -> TravelResult {
     return TravelResult(direction=direction, speed=400.0, view_set=True, yaw=yaw_of(direction), pitch=pitch_of(direction));
 }
 
-"""BotTravel_WaterJump: swim forward for the far end looking 15 units above
-it, give or take up to 40 at random (`roll`, a crandom() in -1..1), and move
-up too once within 40 units of it, so the pmove's water jump
+"""The forward vector of a view of `yaw` and `pitch` (Quake degrees, pitch
+down positive)."""
+def view_forward(yaw: float, pitch: float) -> Vec3 {
+    level = math.cos(math.radians(pitch));
+    return Vec3(x=math.cos(math.radians(yaw)) * level, y=math.sin(math.radians(yaw)) * level, z=-math.sin(math.radians(pitch)));
+}
+
+"""BotTravel_WaterJump: look 15 units above the far end, give or take up to
+40 at random (`roll`, a crandom() in -1..1), and swim forward
+(EA_MoveForward): along the view the bot has now (`view`), which turns
+toward the one it wants; without one, along the wanted view. Within 40 units
+of the far end it moves up too (EA_MoveUp), so the pmove's water jump
 (PM_CheckWaterJump) lifts the bot out once it faces the ledge at waist
 depth."""
-def travel_water_jump(origin: Vec3, passage: Passage, roll: float = 0.0) -> TravelResult {
+def travel_water_jump(origin: Vec3, passage: Passage, roll: float = 0.0, view: Vec3 | None = None) -> TravelResult {
     look = passage.finish.sub(origin).add(Vec3(z=15.0 + roll * 40.0));
-    forward = look.normalized();
+    forward = view if view is not None else look.normalized();
     direction = forward;
     if flat_toward(origin, passage.finish)[1] < 40.0 {
         direction = forward.add(Vec3(z=1.0)).normalized();
@@ -598,7 +607,9 @@ walker FollowRoute {
             # On the ground or swimming the water jump itself; in the air
             # its finish (BotMoveToGoal's two halves).
             if here.grounded or here.water_depth >= 2 {
-                self.result = travel_water_jump(origin, passage, self.crandom());
+                self.result = travel_water_jump(
+                    origin, passage, self.crandom(), view_forward(self.view_yaw, self.view_pitch)
+                );
             } else {
                 self.result = finish_water_jump(
                     origin, passage, here.water_depth >= 1, [self.crandom(), self.crandom(), self.crandom()]

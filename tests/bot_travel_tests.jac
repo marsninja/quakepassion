@@ -214,6 +214,9 @@ test "a swimming bot swims straight for its waypoint and water jumps out" {
     assert abs(travel_water_jump(level, passage).pitch + math.degrees(math.atan2(15.0, 100.0))) < 0.001;
     assert abs(travel_water_jump(level, passage, 1.0).pitch + math.degrees(math.atan2(55.0, 100.0))) < 0.001;
     assert abs(travel_water_jump(level, passage, -1.0).pitch - math.degrees(math.atan2(25.0, 100.0))) < 0.001;
+    # EA_MoveForward: it swims the way it looks now, whatever it wants.
+    aside = travel_water_jump(level, passage, 0.0, Vec3(y=1.0));
+    assert aside.direction.y > 0.99 and abs(aside.yaw) < 0.001;
     # BotFinishTravel_WaterJump: clear of the surface with its feet still
     # wet, on for the far end aiming 70 units over it; dry, no move at all.
     rising = finish_water_jump(level, passage, True, [0.0, 0.0, 0.0]);

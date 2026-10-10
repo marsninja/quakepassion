@@ -53,8 +53,9 @@ weapon the movement needs, a movement view, waiting and failure.
   there.
 - Swim (`BotTravel_Swim`): with the waist under, straight for the waypoint in
   three dimensions, looking where it swims (`MOVERESULT_SWIMVIEW`).
-- Water jump (`BotTravel_WaterJump`): swim for the far end looking 15 units
-  above it, give or take up to 40 at random; `PM_CheckWaterJump` lifts the
+- Water jump (`BotTravel_WaterJump`): look 15 units above the far end, give
+  or take up to 40 at random, and swim forward along the view the bot has
+  (`EA_MoveForward`); `PM_CheckWaterJump` lifts the
   bot out. Clear of the surface with its feet still in the water
   (`BotFinishTravel_WaterJump`) it carries on for the far end, aiming 70
   units above it.
