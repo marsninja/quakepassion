@@ -97,6 +97,13 @@ weapon the movement needs, a movement view, waiting and failure.
   (`BotGetReachabilityToGoal`'s "do not go back to the previous area if the
   goal didn't change"), within one plan; a new plan starts without an area
   left behind.
+- Avoid spots (`BotCheckForGrenades`, `BotAddAvoidSpot`, `BotAvoidSpots`):
+  at each think every live grenade is a spot to avoid, 160 units round
+  where its flight began or last bounced (`pos.trBase`, `AVOID_ALWAYS`). A
+  bot choosing its way passes over a passage when the way to its start, or
+  for the straight travel types the passage itself, runs within a spot's
+  radius and toward it (`BotGetReachabilityToGoal`). Bots know of every
+  grenade on the map, not only those in their snapshot's view.
 - Avoid-reachability list (`BotAddToAvoidReach`, a single entry as in Q3):
   each passage a bot sets out on is noted; the one noted counts another try
   when it is taken again within 6 s. Tried more than four times, it is passed
@@ -446,5 +453,3 @@ Scripts (native, need the Q3 assets):
   - Jumps and barrier jumps fly by a launch velocity worked out to land
     them, not by `EA_Jump` and air movement (`BotFinishTravel_Jump`,
     `BotFinishTravel_BarrierJump`).
-  - Avoid spots (`BotAddAvoidSpot`, `BotAvoidSpots`): bots do not route
-    round live grenades (`BotCheckForGrenades`).

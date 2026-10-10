@@ -21,7 +21,7 @@ import from engine.formats.aas {
     TFL_ROCKETJUMP,
     TFL_LAVA
 }
-import from engine.world.bot_routes { best_exit, AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
+import from engine.world.bot_routes { avoid_spot_type, line_distance_squared, AvoidSpot, AVOID_ALWAYS, AVOID_DONTBLOCK, best_exit, AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
 import from engine.world.bot_travel {
     FollowRoute,
     TravelResult,
@@ -436,4 +436,39 @@ test "a walking bot slows up to a gap ahead, but not to water" {
     assert walk.result.speed == 40.0 + 2.0 * gap and route.gap == gap;
     wade = bot spawn FollowRoute(mesh=mesh, collision=collision, route=plan_route(mesh, Vec3(), Vec3(x=128.0)), eye_height=26.0, clock=0.0, liquids=Flooded());
     assert wade.result.speed == 400.0;
+}
+
+test "a bot's way keeps clear of live grenades" {
+    # Two ways from 1 to 3: straight, and round by 2.
+    aas = strip_aas(3, [(1, 3, TRAVEL_WALK), (1, 2, TRAVEL_WALK), (2, 3, TRAVEL_WALK)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    exits = [mesh.areas[1]->:Exits:->][?:Passage];
+    direct = [passage for passage in exits if passage.target == 3][0];
+    round_way = [passage for passage in exits if passage.target == 2][0];
+    # The round way leaves to the side, clear of the straight one.
+    round_way.start = Vec3(x=64.0, y=400.0);
+    round_way.finish = Vec3(x=128.0, y=400.0);
+    onward = [mesh.areas[2]->:Exits:->][?:Passage][0];
+    onward.start = Vec3(x=140.0, y=400.0);
+    onward.finish = Vec3(x=192.0, y=400.0);
+    # DistanceFromLineSquared: to the stretch, or to its nearer end.
+    assert line_distance_squared(Vec3(x=50.0, y=30.0), Vec3(), Vec3(x=100.0)) == 900.0;
+    assert line_distance_squared(Vec3(x=130.0, y=40.0), Vec3(), Vec3(x=100.0)) == 2500.0;
+    # A grenade on the straight passage: BotAvoidSpots finds the walk runs
+    # within its 160 units; the side way does not.
+    grenade = [AvoidSpot(origin=Vec3(x=150.0), radius=160.0)];
+    assert avoid_spot_type(Vec3(x=64.0), direct, grenade) == AVOID_ALWAYS;
+    assert avoid_spot_type(Vec3(x=64.0, y=300.0), round_way, [AvoidSpot(origin=Vec3(x=150.0, y=-200.0), radius=160.0)]) == 0;
+    assert avoid_spot_type(Vec3(x=64.0), direct, [AvoidSpot(origin=Vec3(x=150.0), radius=160.0, kind=AVOID_DONTBLOCK)]) == AVOID_DONTBLOCK;
+    # A grenade far behind the bot's back is none of its way's business.
+    assert avoid_spot_type(Vec3(x=64.0), direct, [AvoidSpot(origin=Vec3(x=-400.0), radius=160.0)]) == 0;
+    # BotGetReachabilityToGoal passes the straight passage over.
+    usual = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0));
+    assert usual.found and usual.areas[0] == 3;
+    far_grenade = [AvoidSpot(origin=Vec3(x=150.0, y=-150.0), radius=160.0)];
+    assert avoid_spot_type(Vec3(x=64.0), direct, far_grenade) == AVOID_ALWAYS;
+    assert avoid_spot_type(Vec3(x=64.0), round_way, far_grenade) == 0;
+    detour = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0), spots=far_grenade);
+    assert detour.found and detour.areas[0] == 2;
 }

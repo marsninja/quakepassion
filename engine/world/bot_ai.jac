@@ -17,7 +17,7 @@ the goal to move to (the combat tick routes to it over the AAS), whether to
 fight in place, where to look and when to fire (BotTactics)."""
 import math;
 import from .world { World, Player, Actor }
-import from .combat { Opponent, HasOpponent, CombatState, WEAPON_SWITCH_TIME }
+import from .combat { Opponent, HasOpponent, CombatState, Projectile, HasProjectile, WEAPON_SWITCH_TIME }
 import from .weapons { WeaponRule }
 import from .arena { ArenaMatch, Competes, match_of, competitor_name }
 import from .bot_character {
@@ -80,7 +80,7 @@ import from .bot_chat {
     weapon_name_for_means,
     random_weapon_name
 }
-import from .bot_routes { NavMesh, HasNavMesh, predict_mover }
+import from .bot_routes { NavMesh, HasNavMesh, AvoidSpot, AVOID_ALWAYS, predict_mover }
 import from .level { Level }
 import from .powerups { empowered }
 import from ..formats.aas { TFL_DEFAULT }
@@ -1781,7 +1781,8 @@ walker BotTactics {
         brain: BotBrain | None = None,
         mesh: NavMesh | None = None,
         items: BotItems | None = None,
-        contest: ArenaMatch | None = None;
+        contest: ArenaMatch | None = None,
+        grenades: list[Vec3] = [];
 
     can begin with World entry {
         self.world = here;
@@ -1790,6 +1791,14 @@ walker BotTactics {
         self.mesh = meshes[0] if meshes else None;
         self.items = bot_items(here);
         self.contest = match_of(here);
+        # ai_dmq3.c BotCheckForGrenades: every live grenade, where its flight
+        # began or last bounced (pos.trBase).
+        for missile in [here->:HasProjectile:->][?:Projectile] {
+            if missile.effect == "q3_grenade" {
+                begun = missile.base;
+                self.grenades.append(begun if begun is not None else missile.pos);
+            }
+        }
         items = self.items;
         mesh = self.mesh;
         if items is not None and mesh is not None and self.dt > 0.0 {
@@ -1850,6 +1859,9 @@ walker BotTactics {
             if here.water_depth < 3 or empowered(here, "battlesuit") {
                 memory.last_air_time = now;
             }
+            # BotCheckSnapshot: the avoid spots are cleared and every
+            # grenade is one again, 160 units round (AVOID_ALWAYS).
+            memory.avoid_spots = [AvoidSpot(origin=spot, radius=160.0, kind=AVOID_ALWAYS) for spot in self.grenades];
         }
         memory.move_goal = None;
         memory.view_mode = "movement";

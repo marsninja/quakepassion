@@ -1685,6 +1685,9 @@ node Projectile {
         owner: Opponent | None = None,
         quarry: Player | None = None,
         tick_pose: TickPose = TickPose();
+    # Where the missile's flight began or last bounced (its trajectory's
+    # trBase), which is what Q3's bots see of a grenade.
+    has base: Vec3 | None = None;
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {
@@ -2758,6 +2761,9 @@ walker ProjectileTick {
     }
 
     can move with Projectile entry {
+        if here.base is None {
+            here.base = here.pos.add(Vec3());
+        }
         world = self.world;
         if world is None or self.dt <= 0.0 {
             return;
@@ -2909,6 +2915,7 @@ walker ProjectileTick {
                 0.65 if arena else 0.5
             );
             here.pos = here.pos.add(wall.normal.scale(0.1));
+            here.base = here.pos.add(Vec3());
             if wall.normal.z > (0.2 if arena else 0.7) and here.velocity.length() < 40.0 {
                 here.velocity = Vec3();
             }
@@ -5447,7 +5454,8 @@ walker CombatTick {
                             flags=here.bot_state.travel_flags,
                             goal_area=here.bot_state.goal_area,
                             avoid=here.bot_state.avoid_reach,
-                            now=here.bot_state.clock
+                            now=here.bot_state.clock,
+                            spots=here.bot_state.avoid_spots
                         );
                         here.route_wait = 0.25 if plan.found else 1.0;
                         if plan.pending {
