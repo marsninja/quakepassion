@@ -39,6 +39,10 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | --- | --- | --- |
 | `bytes.join` had no native lowering, so a function joining bytes was demoted to Python | [#9625](https://github.com/jaseci-labs/jac/pull/9625) | A native build of the cinematic player |
 | An override in another module of a base class compiled without a vtable was silently skipped by the base's own methods; the fix reports E5113 | [#9631](https://github.com/jaseci-labs/jac/pull/9631) | |
+| A variable named like a public function of an imported module was read, or called, as that function: every public function of an imported module was bound under its bare name ahead of the module's own bindings. Entry-block variables and globals read wrongly; any variable holding a callable was called wrongly | [#9925](https://github.com/jaseci-labs/jac/pull/9925) | `scripts/player_death_smoke.jac`: a variable `burst` beside `combat.jac`'s `def burst` segfaulted |
+| The checker lost a narrowing inside a multi-part `assert` whose condition calls a method on the narrowed value (`assert x is not None; assert a and not x.method()` reported E1099) | [#9926](https://github.com/jaseci-labs/jac/pull/9926) | `tests/area_portal_tests.jac` |
+| Any `def drop` was taken for the destructor hook, so one that takes a parameter crashed `jac check` ("list index out of range") and was called without its argument on the Python side | [#9927](https://github.com/jaseci-labs/jac/pull/9927) | A `drop(name)` method on `HudRenderer`, which is named `forget` meanwhile |
+| `sum()` over `bytes` had no native lowering (E5092), and over a `bytearray` it sign-extended each byte | [#9928](https://github.com/jaseci-labs/jac/pull/9928) | A scratch probe of the RoQ decoder |
 
 ## Known open defect
 
