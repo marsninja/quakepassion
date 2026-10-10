@@ -3679,6 +3679,9 @@ def advance_attack_segment(
                     tally=tally,
                     kick=0 if enemy.game == "q2" else -1
                 );
+                if dealt > 0 {
+                    request_sound(enemy, profile.hit_sound);
+                }
                 if dealt > 0 and profile.knockback != 0.0 {
                     player.velocity = player.velocity.add(
                         delta.normalized().scale(profile.knockback)
@@ -3795,7 +3798,7 @@ def advance_attack(
 ) {
     profile = current_profile(enemy);
     if profile.repeat_start < 0.0
-        or profile.repeat_end <= profile.repeat_start
+        or profile.repeat_end < profile.repeat_start
         or profile.repeat_end > profile.duration + 0.000001 {
         advance_attack_segment(world, enemy, player, collision, dt, person, tally);
         return;
@@ -4725,7 +4728,14 @@ walker CombatTick {
                         if here.game == "q1" and not here.arena and not skips_attack_waits(here) {
                             here.attack_wait = max(here.attack_wait, 1.0);
                         }
-                        request_sound(here, here.rule.sight_sound);
+                        # soldier_sight: either sight sound, drawn beside
+                        # the monster's stream.
+                        other_sight = bool(here.rule.sight_alternate)
+                            and float((here.shot_random * 69621) % 2147483647) / 2147483647.0 >= 0.5;
+                        request_sound(
+                            here,
+                            here.rule.sight_alternate if other_sight else here.rule.sight_sound
+                        );
                         if not here.arena {
                             self.state.sighter = here;
                             self.state.sight_wait = 0.1;

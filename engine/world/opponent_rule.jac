@@ -100,6 +100,8 @@ obj AttackProfile {
     has sides: list[float] = [];
     # Played instead of `sound` half the time (Q1 knight_runatk1's sword2).
     has alternate_sound: str = "";
+    # Played when a melee strike lands (Q2 infantry_smack's melee2).
+    has hit_sound: str = "";
     # Where shots leave the monster: forward, right and up from its origin
     # (Q2 m_flash.c monster_flash_offset through G_ProjectSource, the QuakeC
     # launch origins). Successive shots of a sequence take successive
@@ -275,6 +277,8 @@ obj OpponentRule {
         dead_bottom: float = -24.0,
         dead_top: float = -8.0,
         sight_sound: str = "",
+        # Played instead of `sight_sound` half the time (Q2 soldier_sight).
+        sight_alternate: str = "",
         pain_sounds: list[str] = [],
         death_sound: str = "",
         idle_sound: str = "",
@@ -299,6 +303,11 @@ obj OpponentRule {
         power_screen: int = 0,
         attack_sound: str = "",
         attack_sound_times: list[float] = [0.0],
+        # A second sound of the ranged sequence (Q2 infantry_cock_gun) and
+        # the sound of a melee strike that lands.
+        extra_sound: str = "",
+        extra_sound_times: list[float] = [],
+        melee_hit_sound: str = "",
         melee_sound: str = "",
         melee_sound_times: list[float] = [0.0],
         alternate_melee_sound_times: list[float] = [0.0],
@@ -386,6 +395,7 @@ def rule_profiles(rule: OpponentRule) -> list[AttackProfile] {
                 steps=rule.melee_steps,
                 sound=rule.melee_sound,
                 sound_times=rule.melee_sound_times,
+                hit_sound=rule.melee_hit_sound,
                 damage=rule.melee,
                 damage_max=rule.melee_max,
                 random_scale=rule.melee_random_scale,
@@ -459,6 +469,8 @@ def rule_profiles(rule: OpponentRule) -> list[AttackProfile] {
                 repeat_chance=rule.repeat_chance,
                 sound=rule.attack_sound,
                 sound_times=rule.attack_sound_times,
+                extra_sound=rule.extra_sound,
+                extra_sound_times=rule.extra_sound_times,
                 damage=rule.damage,
                 pellets=rule.pellets,
                 spread=rule.spread,

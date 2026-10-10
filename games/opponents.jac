@@ -334,8 +334,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 register_speaker(world, enemy, profile.sound);
                 register_speaker(world, enemy, profile.extra_sound);
                 register_speaker(world, enemy, profile.alternate_sound);
+                register_speaker(world, enemy, profile.hit_sound);
             }
             register_speaker(world, enemy, rule.sight_sound);
+            register_speaker(world, enemy, rule.sight_alternate);
             register_reaction_sounds(world, enemy, rule);
             for scripted in rule.sounds {
                 register_speaker(world, enemy, scripted);

@@ -66,6 +66,18 @@ Details that follow the originals:
   - These are `AttackProfile` refire fields (`repeat_near`, `repeat_skill`,
     `repeat_from`, `repeat_unseen`, `repeat_skip`) on the one repeat
     mechanism the chick and gunner use, and a `"sight"` `trigger`.
+- **Infantry, tank, medic, mutant** (attack tables):
+  - The infantry cocks its gun on attak104 (`infantry_cock_gun`), strides
+    `infantry_move_attack1`'s distances, and its punch smacks when it lands
+    (`infantry_smack`).
+  - On Hard and above the tank fires its blaster's last two bolts again six
+    times in ten (`tank_reattack_blaster`) and its three rockets again four
+    times in ten (`tank_refire_rocket`), with the enemy alive and in sight.
+    Both sequences stride their frames' distances.
+  - The medic goes on from its two blaster bolts to the hyperblaster only
+    with its enemy in sight, 95 times in 100 (`medic_continue`).
+  - The mutant strides 17 units on attack02 before it leaps.
+  - A soldier sights with `solsght1` or `solsrch1`, half the time each.
 - **Jorg and Makron** (`m_boss31.c`, `m_boss32.c`): Jorg's rule names
   `monster_makron` as its `successor`. The Makron is built dormant at load and
   takes over Jorg's targets. When Jorg's death animation ends it bursts apart
@@ -170,9 +182,6 @@ Details that follow the originals:
   plays them at `ATTN_IDLE`. A standing marine that has lain down by itself
   (`insane_checkdown`) is not modelled, so only marines spawned crawling take
   the crawling pain and death.
-- `soldier_sight` always plays `solsght1.wav`, not `solsrch1.wav` half the time.
-  The infantry's gun cock (`infantry_cock_gun` on attak104) and the smack of
-  a punch that lands are not played.
 - Attack strides head at the target; Q2 `ai_charge` walks along the monster's
   own facing while it turns.
 - `misc_actor` is not implemented; no campaign map has one (see

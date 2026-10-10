@@ -1890,6 +1890,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         times=[0.2],
                         duration=0.8,
                         frames=["attack" + two(i) for i in range(1, 9)],
+                        # mutant_move_jump's ai_charge distances; it is off
+                        # the ground from mutant_jump_takeoff on attack03.
+                        steps=[0.0, 17.0, 15.0, 15.0, 15.0, 0.0, 3.0, 0.0],
                         sound="sound/mutant/mutsght1.wav",
                         sound_times=[0.0],
                         damage=40,
@@ -2171,6 +2174,15 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         name="blaster",
                         kind="ranged",
                         max_range=1000.0,
+                        # medic_move_attackBlaster's ai_charge distances.
+                        steps=[0.0, 5.0, 5.0, 3.0, 2.0] + [0.0] * 25,
+                        # medic_continue on attack14: with the enemy in sight,
+                        # 95 times in 100 it goes on to the hyperblaster
+                        # (attack15-30); otherwise the attack ends there.
+                        repeat_start=1.4,
+                        repeat_end=1.4,
+                        repeat_chance=0.95,
+                        repeat_skip=3.0,
                         times=[
                             0.8,
                             1.1,
@@ -2338,6 +2350,16 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         times=[0.9, 1.2, 1.5],
                         duration=2.2,
                         frames=["attak1" + two(i) for i in range(1, 23)],
+                        # tank_move_attack_blast and tank_move_attack_post_blast.
+                        steps=[0.0, 0.0, 0.0, 0.0, -1.0, -2.0, -1.0, -1.0] + [0.0] * 10
+                            + [2.0, 3.0, 2.0, -2.0],
+                        # tank_reattack_blaster: on Hard and above, with the
+                        # enemy alive and in sight, six times in ten it fires
+                        # attak111-116 again (tank_move_reattack_blast).
+                        repeat_start=1.0,
+                        repeat_end=1.6,
+                        repeat_chance=0.6,
+                        repeat_skill=2,
                         sound="sound/tank/tnkatck1.wav",
                         sound_times=[0.9, 1.2, 1.5],
                         damage=30,
@@ -2437,6 +2459,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         times=[2.3, 2.6, 2.9],
                         duration=5.3,
                         frames=["attak3" + two(i) for i in range(1, 54)],
+                        # tank_move_attack_pre_rocket, _fire_rocket and
+                        # _post_rocket.
+                        steps=[0.0] * 11 + [1.0, 2.0, 7.0, 7.0, 7.0, 0.0, 0.0, 0.0, 0.0, -3.0]
+                            + [-3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]
+                            + [0.0, -1.0, -1.0, 0.0, 2.0, 3.0, 4.0, 2.0, 0.0, 0.0, 0.0, -9.0, -8.0, -7.0, -1.0, -1.0]
+                            + [0.0] * 7,
+                        # tank_refire_rocket: on Hard and above, with the
+                        # enemy alive and in sight, four times in ten it fires
+                        # attak322-330 again.
+                        repeat_start=2.1,
+                        repeat_end=3.0,
+                        repeat_chance=0.4,
+                        repeat_skill=2,
                         sound="sound/tank/tnkatck3.wav",
                         sound_times=[2.3, 2.6, 2.9],
                         damage=50,
@@ -3387,14 +3422,21 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 attack_steps=[4.0, -1.0, -1.0, 0.0, -1.0, 1.0, 1.0, 2.0, -2.0, -3.0, 1.0, 5.0, -1.0, -2.0, -3.0],
                 attack_sound="sound/infantry/infatck1.wav",
                 attack_sound_times=[1.0],
-                # infantry_swing on attak203.
+                # infantry_cock_gun on attak104.
+                extra_sound="sound/infantry/infatck3.wav",
+                extra_sound_times=[0.3],
+                # infantry_swing on attak203; infantry_smack's melee2 when
+                # the punch lands.
                 melee_sound="sound/infantry/infatck2.wav",
-                melee_sound_times=[0.2]
+                melee_sound_times=[0.2],
+                melee_hit_sound="sound/infantry/melee2.wav"
             );
         }
         if kind in ["monster_soldier_light", "monster_soldier", "monster_soldier_ss"] {
             rule = OpponentRule(
+                # soldier_sight: solsght1 or solsrch1 at even odds.
                 sight_sound="sound/soldier/solsght1.wav",
+                sight_alternate="sound/soldier/solsrch1.wav",
                 pain_sounds=["sound/soldier/solpain2.wav"],
                 death_sound="sound/soldier/soldeth2.wav",
                 idle_sound="sound/soldier/solidle1.wav",

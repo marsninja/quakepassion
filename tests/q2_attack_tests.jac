@@ -520,3 +520,125 @@ test "a crouched machine gunner holds attak303 for its burst and a refire surviv
     run_sequence(scene, shotgun, near, 0.1);
     assert shotgun.attack_event == 1;
 }
+
+"""A monster of `kind` with a speaker for each of `sounds`."""
+def voiced(kind: str, skill: int, seed: int, sounds: list[str]) -> Opponent {
+    rule = enemy_rule("q2", kind);
+    assert rule is not None;
+    return Opponent(
+        rule=rule, game="q2", skill=skill, shot_random=1 + seed * 7919,
+        health=rule.health, max_health=rule.health,
+        speakers=[Speaker(path=path, origin=Vec3()) for path in sounds], speaker_paths=sounds
+    );
+}
+
+test "the infantry cocks its gun and its punch smacks when it lands" {
+    cock = "sound/infantry/infatck3.wav";
+    smack = "sound/infantry/melee2.wav";
+    world = World();
+    # infantry_cock_gun on attak104, before the burst on attak111.
+    gunner = voiced("monster_infantry", 1, 1, [cock, smack]);
+    far = Player(pos=Vec3(x=300.0), god_mode=True);
+    start_sequence(gunner, "ranged", far.pos);
+    run_sequence(world, gunner, far, 0.25);
+    assert gunner.speakers[0].requests == 0;
+    run_sequence(world, gunner, far, 0.1);
+    assert gunner.speakers[0].requests == 1 and gunner.attack_event == 0;
+    # infantry_smack: melee2 only when fire_hit lands.
+    for reach in [60.0, 200.0] {
+        puncher = voiced("monster_infantry", 1, 1, [cock, smack]);
+        victim = Player(pos=Vec3(x=reach));
+        start_sequence(puncher, "melee", victim.pos);
+        run_sequence(world, puncher, victim, 0.6);
+        assert puncher.speakers[1].requests == (1 if reach < 80.0 else 0);
+        assert (victim.health < 100) == (reach < 80.0);
+    }
+}
+
+test "a soldier sights with either of its two sounds" {
+    first = "sound/soldier/solsght1.wav";
+    second = "sound/soldier/solsrch1.wav";
+    heard = [0, 0];
+    for seed in range(60) {
+        world = World();
+        soldier = voiced("monster_soldier", 0, seed, [first, second]);
+        soldier.attack_wait = 10.0;
+        world +>:HasOpponent:+> soldier;
+        world spawn CombatTick(
+            player=Player(pos=Vec3(x=300.0)), collision=CollisionMap(),
+            state=CombatState(game="q2"), dt=0.05
+        );
+        assert soldier.sighted and soldier.speakers[0].requests + soldier.speakers[1].requests == 1;
+        heard[0] += soldier.speakers[0].requests;
+        heard[1] += soldier.speakers[1].requests;
+    }
+    assert heard[0] > 15 and heard[1] > 15;
+}
+
+test "the tank refires its blaster and rockets on Hard, and the medic goes on to its hyperblaster" {
+    world = World();
+    far = Player(pos=Vec3(x=400.0), god_mode=True);
+    # tank_reattack_blaster (0.6) and tank_refire_rocket (0.4), skill 2 up.
+    for row in [("blaster", 1.6, 1.0, 0.6), ("rockets", 3.0, 2.1, 0.4)] {
+        for skill in [1, 2] {
+            again = 0;
+            for seed in range(100) {
+                tank = voiced("monster_tank", skill, seed, []);
+                start_sequence(tank, row[0], far.pos);
+                run_sequence(world, tank, far, row[1]);
+                if abs(tank.attack_clock - row[2]) < 0.001 {
+                    again += 1;
+                } else {
+                    assert abs(tank.attack_clock - row[1]) < 0.001;
+                }
+            }
+            if skill == 1 {
+                assert again == 0;
+            } else {
+                assert again > row[3] * 100.0 - 18.0 and again < row[3] * 100.0 + 18.0 , row[0] + " " + str(again);
+            }
+        }
+    }
+    rule = enemy_rule("q2", "monster_tank");
+    assert rule is not None;
+    for profile in rule.attacks {
+        # The ai_charge and ai_move distances of its blast and rocket moves.
+        if profile.name == "blaster" {
+            assert len(profile.steps) == 22 and sum(profile.steps) == 0.0;
+            assert sum([abs(step) for step in profile.steps]) == 14.0;
+        } elif profile.name == "rockets" {
+            assert len(profile.steps) == 53 and sum(profile.steps) == 0.0;
+            assert sum([abs(step) for step in profile.steps]) == 70.0;
+        }
+    }
+    # medic_continue on attack14: in sight, 95 times in 100 on to attack15-30.
+    stopped = 0;
+    for seed in range(300) {
+        medic = voiced("monster_medic", 1, seed, []);
+        blaster = start_sequence(medic, "blaster", far.pos);
+        assert blaster.steps[:5] == [0.0, 5.0, 5.0, 3.0, 2.0] and len(blaster.steps) == 30;
+        run_sequence(world, medic, far, 1.45);
+        if medic.attack_clock < 0.0 {
+            stopped += 1;
+        } else {
+            assert abs(medic.attack_clock - 1.45) < 0.001;
+        }
+    }
+    assert stopped > 2 and stopped < 35 , str(stopped);
+    # Out of sight it always ends there.
+    walled = CollisionMap();
+    walled.add_box(Vec3(x=100.0, y=-500.0, z=-500.0), Vec3(x=110.0, y=500.0, z=500.0), Vec3(), Vec3(), Vec3());
+    for seed in range(20) {
+        medic = voiced("monster_medic", 1, seed, []);
+        start_sequence(medic, "blaster", far.pos);
+        for i in range(29) {
+            advance_attack(world, medic, far, walled, 0.05);
+        }
+        assert medic.attack_clock < 0.0;
+    }
+    # mutant_move_jump: 17 forward on attack02 before it takes off.
+    mutant = enemy_rule("q2", "monster_mutant");
+    assert mutant is not None;
+    leap = [profile for profile in mutant.attacks if profile.name == "leap"][0];
+    assert leap.steps == [0.0, 17.0, 15.0, 15.0, 15.0, 0.0, 3.0, 0.0] and leap.times == [0.2];
+}
