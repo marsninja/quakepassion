@@ -69,6 +69,8 @@ weapon the movement needs, a movement view, waiting and failure.
   16 units of the near end, board and stand on its middle, and walk off within
   24 units of the far end. A bot on a mover keeps its passage.
 - Ladder (`BotTravel_Ladder`): face up or down the ladder and move.
+- Barrier jump (`BotTravel_BarrierJump`): the bot slows up to the barrier (6
+  a unit over the last 60) and jumps within 9 units of the reach's start.
 - Walking off a ledge (`BotTravel_WalkOffLedge`): to within 48 units of the
   ledge, then for the far end at the speed that carries the fall there
   (`AAS_HorizontalVelocityForJump`), or at 100 for a drop straight down;

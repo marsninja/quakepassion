@@ -556,15 +556,27 @@ walker FollowRoute {
         return dice.random() * 2.0 - 1.0 if dice is not None else 0.0;
     }
 
-    """BotTravel_Jump's "if (dist1 < 24) EA_Jump": a jump's takeoff counts
-    as reached within 24 units of the jump's start."""
-    def jump_due(origin: Vec3) -> bool {
+    """Whether the waypoint ahead is a jump's takeoff."""
+    def at_takeoff() -> bool {
         route = self.route;
         passage = route.passages[0] if route.passages else None;
-        if passage is None or passage.kind != TRAVEL_JUMP or not route.launches or route.launches[0].z <= 0.0 {
+        return passage is not None
+            and passage.kind in [TRAVEL_JUMP, TRAVEL_BARRIERJUMP]
+            and bool(route.launches)
+            and route.launches[0].z > 0.0;
+    }
+
+    """A jump's takeoff counts as reached within 24 units of the jump's
+    start (BotTravel_Jump's "if (dist1 < 24) EA_Jump"), a barrier jump's
+    within 9 (BotTravel_BarrierJump's "if (dist < 9)")."""
+    def jump_due(origin: Vec3) -> bool {
+        if not self.at_takeoff() {
             return False;
         }
-        return flat_toward(origin, route.points[0])[1] < 24.0 and abs(route.points[0].z - origin.z) < 28.0;
+        route = self.route;
+        passage = route.passages[0];
+        reach = 9.0 if passage is not None and passage.kind == TRAVEL_BARRIERJUMP else 24.0;
+        return flat_toward(origin, route.points[0])[1] < reach and abs(route.points[0].z - origin.z) < 28.0;
     }
 
     can travel with Player entry {
@@ -587,10 +599,13 @@ walker FollowRoute {
                 if standing != route.areas[0] {
                     break;
                 }
+            } elif self.at_takeoff() {
+                if not self.jump_due(origin) {
+                    break;
+                }
             } elif not (
                 waypoint_reached(route.points[0], origin, True)
                     or (route.areas[0] > 0 and standing == route.areas[0])
-                    or self.jump_due(origin)
             ) {
                 break;
             }
@@ -601,7 +616,7 @@ walker FollowRoute {
                 self.launch = route.launches[0];
                 # BotTravel_Jump jumps up to 24 units short of the start:
                 # the launch is the one that lands from where the bot is.
-                if passage is not None and passage.kind == TRAVEL_JUMP {
+                if passage is not None {
                     self.launch = jump_launch(origin, passage.finish);
                 }
             }
@@ -704,6 +719,9 @@ walker FollowRoute {
         } elif passage.kind == TRAVEL_TELEPORT and toward[1] < 30.0 {
             # BotTravel_Teleport: half speed for the last 30 units.
             speed = 200.0;
+        } elif passage.kind == TRAVEL_BARRIERJUMP and self.at_takeoff() {
+            # BotTravel_BarrierJump: slowing up to the barrier.
+            speed = 6.0 * min(toward[1], 60.0);
         }
         self.heading(TravelResult(direction=toward[0], speed=speed), origin, standing);
     }

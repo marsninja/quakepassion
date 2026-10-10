@@ -351,3 +351,24 @@ test "a bot walks off a ledge at the speed that lands it, and steers for the lan
     follow = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
     assert abs(follow.result.speed - 96.0) < 0.001;
 }
+
+test "a bot slows up to a barrier and jumps it within 9 units" {
+    aas = strip_aas(2, [(1, 2, TRAVEL_BARRIERJUMP)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(2);
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=40.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=40.0), Vec3(x=128.0));
+    assert route.found and route.launches[0].z > 0.0;
+    # 40 units from the reach's start (x = 80): 6 a unit.
+    far = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert far.result.speed == 240.0 and far.launch is None;
+    # 10 units off: not yet (a waypoint's usual 12 units do not count).
+    bot.pos = Vec3(x=70.0, z=26.0);
+    close = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert close.launch is None and close.result.speed == 60.0;
+    # Within 9: the jump, launched to land from where the bot is.
+    bot.pos = Vec3(x=72.0, z=26.0);
+    jump = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    launched = jump.launch;
+    assert launched is not None and launched.z == 270.0 and launched.x > 0.0;
+}
