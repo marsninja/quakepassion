@@ -9,7 +9,7 @@ import from engine.math.vec3 { Vec3 }
 import from tests.door_support { DoorFixture }
 
 test "shoot buttons accumulate damage and emit only at the pressed endpoint" {
-    for game in ["q1", "q2", "q3"] {
+    for game in ["q1", "q2"] {
         f = DoorFixture();
         f.setup(game, {"classname": "func_button", "health": "20", "wait": "0.1"});
         button = [f.world->:HasDoor:->][?:Door][0];
@@ -39,6 +39,31 @@ test "shoot buttons accumulate damage and emit only at the pressed endpoint" {
         f.world spawn ShootMover(model=1, amount=20);
         assert button.activation.pending == 1;
     }
+}
+
+test "a Q3 shoot button is pressed by any damage while it rests" {
+    # g_combat.c G_Damage: a mover has no health; it is used when it takes
+    # damage at its first position, whatever `health` the map gave it.
+    f = DoorFixture();
+    f.setup("q3", {"classname": "func_button", "health": "20", "wait": "0.1"});
+    button = [f.world->:HasDoor:->][?:Door][0];
+    destination = Signal();
+    button.activation +>:Targets:+> destination;
+    assert button.enabled and not button.automatic and button.max_health == 1;
+    f.tick(Vec3(x=24.03125, z=24.0), 1.0);
+    assert button.position == 0.0;
+    f.world spawn ShootMover(model=1, amount=1);
+    assert button.activation.pending == 1 and destination.pending == 0;
+    f.tick(Vec3(x=500.0), 4.0);
+    assert button.state == "open" and destination.pending == 1;
+    # Shot again while pressed, it does nothing.
+    f.world spawn ShootMover(model=1, amount=100);
+    assert button.activation.pending == 0;
+    f.tick(Vec3(x=500.0), 0.2);
+    f.tick(Vec3(x=500.0), 4.0);
+    assert button.state == "closed";
+    f.world spawn ShootMover(model=1, amount=1);
+    assert button.activation.pending == 1;
 }
 
 test "a saved shot request survives until the mover consumes it" {
