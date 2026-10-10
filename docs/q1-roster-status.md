@@ -36,6 +36,30 @@ Attack profiles (`AttackProfile` in `engine/world/opponent_rule.jac`) carry the
 each monster's `.qc` file. Melee damage uses QuakeC's three-sample random
 formulas (`random_scale`), rounded down to integer health.
 
+Pain and death sequences are `Reaction` lists on each rule (`pains`, `deaths`),
+chosen as the monster's `*_pain` and `*_die` functions choose them; the
+mechanism is in [monster-behaviour-status.md](monster-behaviour-status.md).
+
+| Class | Pain (odds; `pain_finished`) | Death |
+| --- | --- | --- |
+| `monster_army` | `pain` 0.2 (0.6 s), `painb` 0.4, `painc` 0.4 (1.1 s), each with its sound | `die` or `cdie`; `cdie` backs away 29 units |
+| `monster_dog` | `pain` or `painb` on every hit (no `pain_finished`); `painb` backs away 44 | `die` or `dieb` |
+| `monster_knight` | `pain` 0.85, `painb` 0.15 stumbling 21 forward (1 s) | `die` or `dieb` |
+| `monster_hell_knight` | `pain` when `random()*30` is within the damage, or always once 5 s have gone since pain was last due (1 s) | `die` (lurching 46 forward) or `dieb` |
+| `monster_enforcer` | `paina` 0.2, `painb` 0.2, `painc` 0.3 (1 s), `paind` 0.3 (2 s); one roll also picks the sound | `die` (lunging 34 forward) or `fdie` |
+| `monster_ogre` | `pain`, `painb`, `painc` 0.25 each (1 s), `paind` 0.13, `paine` 0.12 staggering 23 back (2 s) | `die` or `bdie` (stepping 41 forward) |
+| `monster_wizard` | `pain` when `random()*70` is within the damage; no `pain_finished` | `death` |
+| `monster_demon1` | `pain` when `random()*200` is within the damage (1 s) | `die` |
+| `monster_shambler` | `pain` when `random()*400` is within the damage (2 s) | `death` |
+| `monster_zombie` | `paina`-`paind` at even odds, each with its sound and steps; `paine` knockdown | always gibs |
+| `monster_shalrath` | `pain` (3 s) | `death` |
+| `monster_fish` | `pain` on every hit, backing away 6 units a frame | `death` |
+
+Deaths with two sequences take either at even odds. The Scrag and the shambler
+cry on every hit, the fiend and the Hell Knight whenever pain is due, whether
+or not they flinch. Grunts, enforcers and ogres drop their backpack on the
+third frame of the death, so one that gibs drops nothing.
+
 Details that follow the QuakeC:
 
 - **Hell Knight** (`hknight.qc`): in melee range (`RANGE_MELEE`, 120) it takes
@@ -75,6 +99,10 @@ saved.
 
 ## Validation
 
+- `tests/monster_sequence_tests.jac`: every pain and death table against the
+  QuakeC frame counts and step distances, the odds and waits of each
+  `*_pain`, who cries without flinching, pain and death strides (floors,
+  ledges, walls, a swimming fish), saves.
 - `tests/q1_roster_tests.jac`: Scrag flight and spikes, fiend leap and claws,
   shambler beam and melee, zombie pain/knockdown and throws, vore homing, spawn
   hops and burst, rotfish swimming, sound cues, mid-leap save.
@@ -94,11 +122,11 @@ saved.
 
 ## Limitations
 
-- Each monster plays one death sequence: the authored `death_frames` or the
-  model's first contiguous `death` family (`games/opponents.jac`). The
-  originals' random choices (for example `army_die` / `army_cdie`) are not made.
-- Q1 monsters other than the zombie play one pain family. The originals' random
-  pain choices (for example `army_pain`'s three sequences) are not made.
+- Pain and death details not reproduced: the fiend's immunity to pain in
+  mid-leap and its `pain_finished` being set before the flinch roll; the
+  zombie's `inpain` bookkeeping (a second hit soon after a pain drops it) and
+  its `z_fall.wav`; the Scrag's corpse being thrown as it dies; the frame on
+  which a dying monster stops being solid.
 - Shub-Niggurath's finale is a fixed hold-and-shake timeline. It is not a
   frame-by-frame reproduction of `finale_1`-`finale_4`.
 

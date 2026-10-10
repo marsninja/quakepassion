@@ -49,8 +49,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
   `SV_StepDirection`/`SV_NewChaseDir`; fliers and swimmers only steer.
 - Monsters do not plan through elevators or trains, press switches, or use
   jump/swim links, and are not solid to each other.
-- One death sequence per monster; several monsters have one pain sequence; pain
-  frames carry no movement.
 - Shub-Niggurath's finale is a timed hold and shake, not `finale_1`-`finale_4`
   frame by frame.
 

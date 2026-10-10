@@ -38,6 +38,7 @@ import from engine.world.combat {
     current_profile,
     ensure_profiles,
     pain_length,
+    select_death,
     select_profile,
     CombatState,
     Opponent,
@@ -365,6 +366,26 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     + ("1" if corpses[index].revived else "0")
                     + " "
                     + ("1" if corpses[index].wounded else "0")
+            );
+        }
+    }
+    # The death a corpse drew and how far it has played, an attack a monster
+    # is holding until it faces its enemy, and how long since its pain was
+    # last due.
+    for index in range(len(corpses)) {
+        actor = corpses[index];
+        if actor.death_variant > 0 or actor.readied >= 0 or actor.pain_rested < 1000.0 {
+            lines.append(
+                "SEQUENCE "
+                    + str(index)
+                    + " "
+                    + str(actor.death_variant)
+                    + " "
+                    + str(actor.animation_time if actor.health <= 0 else 0.0)
+                    + " "
+                    + str(actor.readied)
+                    + " "
+                    + str(actor.pain_rested)
             );
         }
     }
@@ -885,6 +906,43 @@ def restore(
             if corpse.gibbed {
                 corpse.visual.visible = False;
             }
+        } elif words[0] == "SEQUENCE" and len(words) == 6 {
+            index = int(words[1]);
+            if index < 0 or index >= len(enemies) {
+                raise ValueError("Invalid saved sequence");
+            }
+            actor = enemies[index];
+            drawn = int(words[2]);
+            played = float(words[3]);
+            held = int(words[4]);
+            rested = float(words[5]);
+            if drawn < 0
+                or drawn > len(actor.rule.deaths)
+                or played < 0.0
+                or held < -1
+                or held >= len(actor.profiles)
+                or rested < 0.0 {
+                raise ValueError("Invalid saved sequence");
+            }
+            actor.readied = held;
+            actor.pain_rested = rested;
+            actor.death_variant = drawn;
+            if actor.health <= 0 and drawn > 0 {
+                # The corpse lies on, or is still falling through, the death
+                # it drew.
+                select_death(actor);
+                actor.animation_time = played;
+                if actor.death_animation {
+                    shown = min(int(played), len(actor.death_animation) - 1);
+                    actor.visual.first = actor.death_animation[shown];
+                    actor.visual.second = actor.death_animation[
+                        min(shown + 1, len(actor.death_animation) - 1)
+                    ];
+                    actor.visual.blend = played - float(int(played))
+                        if shown + 1 < len(actor.death_animation)
+                        else 0.0;
+                }
+            }
         } elif words[0] == "TACTIC" and len(words) == 5 {
             index = int(words[1]);
             if index < 0
@@ -1029,7 +1087,7 @@ def restore(
                 or (row[22] != 0.0 and enemy.rule.knockdown_duration <= 0.0)
                 or row[23] < 0.0
                 or row[23] != float(int(row[23]))
-                or int(row[23]) > len(enemy.rule.pain_variants) {
+                or int(row[23]) > len(enemy.rule.pains) {
                 raise ValueError("Invalid saved pain state");
             }
             enemy.pain_down = row[22] != 0.0;
@@ -1053,7 +1111,10 @@ def restore(
                 or row[14] > pain_length(enemy) + 0.000001
                 or row[15] < 0.0
                 or row[15]
-                    > max(enemy.rule.pain_interval, enemy.rule.knockdown_duration) {
+                    > max(
+                        [enemy.rule.pain_interval, enemy.rule.knockdown_duration, 5.0]
+                            + [sequence.interval for sequence in enemy.rule.pains]
+                    ) {
                 raise ValueError("Invalid saved attack state");
             }
             if row[16] < 1.0
@@ -1069,6 +1130,14 @@ def restore(
                 else 0.0;
             enemy.pain_wait = row[14];
             enemy.pain_cooldown = row[15];
+            # A SEQUENCE record, if one follows, names the death drawn and
+            # an attack held.
+            enemy.readied = -1;
+            enemy.pain_rested = 1000.0;
+            enemy.death_variant = 0;
+            if enemy.death_animations {
+                enemy.death_animation = enemy.death_animations[0];
+            }
             if enemy.health <= 0 and enemy.death_animation {
                 enemy.animation_time = float(len(enemy.death_animation));
                 enemy.visual.first = enemy.death_animation[-1];

@@ -19,9 +19,11 @@ per-game rosters are in [q1-roster-status.md](q1-roster-status.md) and
   256/512/1024) for the current skill.
 - Q1 Nightmare removes every wait to attack, as `SUB_AttackFinished` sets none
   on skill 3: the wait after an attack, the second a newly woken monster
-  waits before firing (`HuntTarget`) and the Hell Knight charge's 2 s. Pain
-  animations can replay no sooner than every 5 s. Q2 Easy halves the attack chances below, and Hard or
-  above doubles them. On Nightmare, Q2 monsters cry out but skip pain animations.
+  waits before firing (`HuntTarget`) and the Hell Knight charge's 2 s. Q2 Easy
+  halves the attack chances below, and Hard or above doubles them.
+- On Nightmare every hit puts a monster's next pain 5 s off (Q1 and Q2
+  `T_Damage`), and Q2 monsters skip their pain frames; which of them still cry
+  out is in [q2-roster-status.md](q2-roster-status.md).
 - Saves record the skill; loading a save made at another skill is refused.
 
 ## Noticing the player
@@ -99,6 +101,43 @@ attacks.
   (`soldier_walk1_random`). A `Gait` can branch this way, and a rule can list
   other walks to choose among.
 
+## Pain and death sequences
+
+Each rule lists the sequences its pain and die functions choose among as
+`Reaction` objects (`pains` and `deaths` in `engine/world/opponent_rule.jac`):
+model frames at 10 Hz, the distance each frame strides, the sequence's own
+sound, and how it is picked. The tables for each monster are in the roster
+docs.
+
+- `choose_reaction` draws a sequence by weight among those whose damage
+  bracket (`min_damage`, `max_damage`) holds the hit; `chance` is how often
+  the one drawn then plays at all. An `airborne` pain is taken instead while
+  the monster is thrown upward faster than 100 units a second, and a
+  `head_shot` death for a hit within 4 units of the eye.
+- `feel_pain` is the pain function. In order it applies the rule's damage
+  threshold and knockdown, the wait since the last pain (`pain_interval`, or
+  the drawn sequence's own `interval`; zero for monsters that never check
+  it), a shrug-off chance for light hits (`pain_shrug_damage`,
+  `pain_shrug_chance`), immunity while firing named attacks on Hard and above
+  (`pain_immune`) and the Q1 flinch roll (`pain_chance_scale`, skipped once
+  `pain_sure_after` seconds have gone since pain was last due), then draws
+  the sequence. A sequence's own sound plays with its frames; otherwise the
+  rule's pain sound is cried. `pain_cry` makes the rule's sound play on every
+  hit, or whenever pain is due, without a flinch.
+- `begin_death` is the die function for a death that leaves a body. A monster
+  that gibs draws no sequence.
+- Pain and death frames stride along the monster's facing (Q1 `ai_painforward`
+  and `ai_forward` ahead, `ai_pain` and `ai_back` behind; Q2
+  `{ai_move, dist}` by the model scale) through `sequence_stride`, the same
+  walk-move attack `steps` use. It moves with the monster's own box over
+  steps and along walls, and not at all when the ground would end under it,
+  when the monster is in the air, or into its target's box. Fliers and
+  swimmers take the whole step or none (`SV_movestep`), and a swimmer out of
+  the water stays put.
+- A body with no authored sequences (a hand-built one, or a class without a
+  rule) flinches for `pain_duration` on its model's first pain family and
+  falls on its first death family.
+
 ## Waking and hunting
 
 - Any hit from the player wakes a monster and turns it on the player, even
@@ -122,9 +161,11 @@ attacks.
 - The Q2 brain's power screen (`CheckPowerArmor`) absorbs a third of frontal
   damage from its 100 cells. It is off while the brain ducks.
 - Q1 grunts, enforcers and ogres drop a backpack with 5 shells, 5 cells or 2
-  rockets (`DropBackpack`). Q2 monsters drop their `item` key (`Drop_Item`).
-  Drops are hidden `Pickup`s linked by `Drops` edges (marked `released` once shown) and revealed where the
-  monster falls.
+  rockets (`DropBackpack`) on the third frame of their death, so one that
+  gibs drops nothing. Q2 monsters drop their `item` key as they are killed
+  (`Drop_Item` in `monster_death_use`). Drops are hidden `Pickup`s linked by
+  `Drops` edges (marked `released` once shown) and revealed where the
+  monster's body is.
 - The supertank, boss2 and Jorg blow apart into metal and meat once their death
   animation ends (`BossExplode`).
 - Q2's insane marines are harmless (`AI_GOOD_GUY`): they never hunt the player,
@@ -209,11 +250,16 @@ attacks.
   - Q3 0.6 reflection.
   - Q1/Q2 gibs tumble in all three axes, drawn with their pitch and roll.
 - Q1 heads stay where they land. Other pieces fade after 10–20 s (Q3: 5–8 s).
-- Q2 and Q3 corpses remain shootable with a lowered box and keep taking damage
-  until they gib. Q1 monster corpses take no damage, as in the original.
+- Q2 and Q3 corpses remain shootable and keep taking damage until they gib. A
+  Q2 corpse keeps its standing box while its death sequence plays and is then
+  left its `*_dead` box (`dead_width`, `dead_bottom`, `dead_top`); a Q3 body's
+  top drops at once. Q1 monster corpses take no damage, as in the original.
 - Snapshot format **22** records corpse health and gibbing, patrol progress, the
-  skill, power-screen cells, raised monsters and dropped items. Flying gibs are
-  not saved.
+  skill, power-screen cells, raised monsters and dropped items. A `SEQUENCE`
+  record carries the death a corpse drew and how far it has played, an
+  attack a monster is holding until it faces its enemy, and how long ago its
+  pain was last due. Pain in progress is
+  in the monster's own row. Flying gibs are not saved.
 
 ## Trail hunting
 
@@ -237,7 +283,8 @@ rocket shot.
   second after the duck-down frame, as `monster_duck_down` sets `pausetime`.
 - Between the duck-down and duck-up frames the monster's box top is 32 units
   lower, so eye-level shots pass over it. It neither moves nor attacks while
-  ducking, and pain cuts the duck short.
+  ducking, and while it is down its pain function is not called (`T_Damage`
+  skips it for `AI_DUCKED`).
 - On medium a soldier answers a third of its dodges by crouching and firing
   (`attack3`), and on hard two thirds. It fires at `attak303`, loops back once
   while the second-long duck lasts, and stays crouched from the first shot to
@@ -250,7 +297,10 @@ rocket shot.
 
 - Tests:
   - `tests/monster_tactics_tests.jac`: attack chances, moving between attacks,
-    waking on player hits, Q1 hunting, medic revival, dropped items.
+    waking on player hits, Q1 hunting, medic revival, dropped items (the Q1
+    drop frame, nothing from a gibbed grunt, Q2 at once).
+  - `tests/monster_sequence_tests.jac`: pain and death tables, selection,
+    sounds, strides, airborne pain, corpse boxes and saves.
   - `tests/infighting_tests.jac`: provocation rules, line of fire, missile owners,
     kill counting, return to the player.
   - `tests/gib_tests.jac`: thresholds, corpse damage, flight, landing and fading.
@@ -278,6 +328,5 @@ rocket shot.
 
 ## Limits
 
-- A held attack is not saved; a monster loaded mid-turn decides afresh.
 - No shipped map in the smoke set uses `point_combat`; that behaviour is covered
   by tests only.

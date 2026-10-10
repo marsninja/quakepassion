@@ -36,9 +36,13 @@ with entry {
                 + rule.melee_frames
                 + rule.alternate_melee_frames
                 + rule.run.frames
-                + rule.walk.frames
-                + rule.pain_frames {
+                + rule.walk.frames {
                 assert name in names , kind + ":" + name;
+            }
+            for sequence in rule.pains + rule.deaths {
+                for name in sequence.frames {
+                    assert name in names , kind + ":" + sequence.name + ":" + name;
+                }
             }
             for profile in rule_profiles(rule) {
                 for name in profile.frames {

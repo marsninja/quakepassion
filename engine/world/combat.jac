@@ -11,7 +11,7 @@ import from .particles {
     missile_hit_flesh
 }
 import from .navigation { RouteSearch, RouteQueue, walk_edge, waypoint_reached }
-import from .opponent_rule { OpponentRule, AttackProfile, Gait, rule_profiles }
+import from .opponent_rule { OpponentRule, AttackProfile, Gait, Reaction, rule_profiles }
 import from .weapons { WeaponRule }
 import from .world { World, Player, area_of, move_to_area }
 import from .damage { Damage, blast_strength }
@@ -72,15 +72,24 @@ node Opponent(Player) {
         melee_animation: list[int] = [],
         alternate_melee_animation: list[int] = [],
         profile_animations: list[list[int]] = [],
+        # The frames of each of the rule's `pains`; a body without any
+        # flinches on `pain_animation`.
         pain_animation: list[int] = [],
         pain_animations: list[list[int]] = [],
         duck_animation: list[int] = [],
         knockdown_animation: list[int] = [],
+        # The frames of each of the rule's `deaths`, which of them the
+        # monster drew as it died (1 the first, 0 none) and that death's
+        # frames: until then the first's.
         death_animation: list[int] = [],
+        death_animations: list[list[int]] = [],
+        death_variant: int = 0,
         profiles: list[AttackProfile] = [],
         pain_wait: float = 0.0,
         duck_wait: float = 0.0,
         pain_cooldown: float = 0.0,
+        # Seconds since pain was last due (the originals' time - pain_finished).
+        pain_rested: float = 1000.0,
         pain_variant: int = 0,
         pain_down: bool = False,
         leaping: bool = False,
@@ -163,6 +172,9 @@ node Opponent(Player) {
         # An attack chosen but held until the monster faces its target (Q1/Q2
         # attack_state AS_MISSILE or AS_MELEE): its profile index, else -1.
         readied: int = -1;
+    # Where the hit about to be applied landed (Q2 T_Damage's point: a
+    # bullet's end, a missile's origin); the damage that follows takes it.
+    has struck: Vec3 | None = None;
     # The last muzzle flash: where, its colour and the attack clock it fired at.
     has flash_origin: Vec3 = Vec3(),
         flash_color: Vec3 = Vec3(),
@@ -803,15 +815,245 @@ def burst(victim: Opponent, overkill: int) {
     }
 }
 
+"""The pain sequence a monster is playing, if its rule authors it."""
+def pain_sequence(enemy: Opponent) -> Reaction | None {
+    index = enemy.pain_variant - 1;
+    if enemy.pain_down or index < 0 or index >= len(enemy.rule.pains) {
+        return None;
+    }
+    return enemy.rule.pains[index];
+}
+
+"""The death sequence a dead monster drew, if its rule authors it."""
+def death_sequence(enemy: Opponent) -> Reaction | None {
+    index = enemy.death_variant - 1;
+    if index < 0 or index >= len(enemy.rule.deaths) {
+        return None;
+    }
+    return enemy.rule.deaths[index];
+}
+
 def pain_length(enemy: Opponent) -> float {
     if enemy.pain_down {
         return enemy.rule.knockdown_duration;
     }
-    if enemy.pain_variant > 0
-        and enemy.pain_variant - 1 < len(enemy.rule.pain_variant_durations) {
-        return enemy.rule.pain_variant_durations[enemy.pain_variant - 1];
+    sequence = pain_sequence(enemy);
+    if sequence is not None {
+        return float(len(sequence.frames)) / 10.0;
     }
     return enemy.rule.pain_duration;
+}
+
+"""Which of a monster's pain or death sequences a hit draws, as its Q1
+*_pain / *_die or Q2 m_*.c function does: the airborne pain or the head-shot
+death when that is how the hit found it, otherwise by weight among those
+whose damage bracket holds the hit, which may then play only some of the
+time. Counted from 1; 0 draws none."""
+def choose_reaction(
+    enemy: Opponent,
+    sequences: list[Reaction],
+    damage: int,
+    airborne: bool = False,
+    head_shot: bool = False
+) -> int {
+    pool: list[int] = [];
+    total = 0.0;
+    for i in range(len(sequences)) {
+        sequence = sequences[i];
+        if sequence.airborne or sequence.head_shot {
+            if (sequence.airborne and airborne) or (sequence.head_shot and head_shot) {
+                return i + 1;
+            }
+            continue;
+        }
+        if damage < sequence.min_damage
+            or (sequence.max_damage >= 0 and damage > sequence.max_damage) {
+            continue;
+        }
+        pool.append(i);
+        total += max(0.0, sequence.weight);
+    }
+    if not pool {
+        return 0;
+    }
+    choice = pool[-1];
+    if len(pool) > 1 {
+        roll = monster_random(enemy) * total;
+        accumulated = 0.0;
+        for i in pool {
+            accumulated += max(0.0, sequences[i].weight);
+            if roll < accumulated {
+                choice = i;
+                break;
+            }
+        }
+    }
+    if sequences[choice].chance < 1.0
+        and monster_random(enemy) >= sequences[choice].chance {
+        return 0;
+    }
+    return choice + 1;
+}
+
+"""One of the rule's pain sounds, picked beside the monster's stream."""
+def pain_cry(victim: Opponent) {
+    sounds = victim.rule.pain_sounds;
+    if sounds {
+        request_sound(victim, sounds[(victim.shot_random // 7919) % len(sounds)]);
+    }
+}
+
+"""A monster's pain function (Q1 th_pain, Q2 edict_t pain) for a hit that
+took `taken` health and left it alive: whether it flinches, on which of its
+pain sequences, and what it cries."""
+def feel_pain(victim: Opponent, taken: int) {
+    rule = victim.rule;
+    if rule.pain_health_reset > 0 {
+        victim.health = rule.pain_health_reset;
+    }
+    if taken < rule.pain_threshold {
+        return;
+    }
+    if rule.knockdown_damage > 0
+        and taken >= rule.knockdown_damage
+        and not victim.pain_down {
+        victim.pain_down = True;
+        victim.pain_variant = 0;
+        victim.attack_clock = -1.0;
+        victim.leaping = False;
+        victim.pain_wait = rule.knockdown_duration;
+        victim.pain_cooldown = max(victim.pain_cooldown, rule.knockdown_duration);
+        victim.attack_flash = 0.0;
+        victim.attack_wait = max(victim.attack_wait, rule.knockdown_duration);
+        victim.decision_wait = 0.0;
+        pain_cry(victim);
+        return;
+    }
+    if rule.pain_cry == "hit" {
+        pain_cry(victim);
+    }
+    thrown = victim.velocity.z > 100.0;
+    if victim.pain_down or (rule.pain_interval > 0.0 and victim.pain_cooldown > 0.0) {
+        # soldier_pain, gladiator_pain: thrown into the air while it
+        # flinches, a monster changes to its airborne pain.
+        current = pain_sequence(victim);
+        if thrown and victim.pain_wait > 0.0 and current is not None and not current.airborne {
+            for i in range(len(rule.pains)) {
+                if rule.pains[i].airborne {
+                    victim.pain_variant = i + 1;
+                    victim.pain_wait = pain_length(victim);
+                    victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
+                    break;
+                }
+            }
+        }
+        return;
+    }
+    if taken <= rule.pain_shrug_damage and monster_random(victim) < rule.pain_shrug_chance {
+        return;
+    }
+    if victim.skill >= 2
+        and victim.attack_clock >= 0.0
+        and current_profile(victim).name in rule.pain_immune {
+        return;
+    }
+    if rule.pain_cry == "due" {
+        pain_cry(victim);
+    }
+    sure = rule.pain_sure_after >= 0.0 and victim.pain_rested > rule.pain_sure_after;
+    if not sure
+        and rule.pain_chance_scale > 0.0
+        and monster_random(victim) * rule.pain_chance_scale > float(taken) {
+        return;
+    }
+    choice = choose_reaction(victim, rule.pains, taken, thrown);
+    sequence = rule.pains[choice - 1] if choice > 0 else None;
+    victim.pain_cooldown = sequence.interval
+        if sequence is not None and sequence.interval >= 0.0
+        else rule.pain_interval;
+    # A body with no authored pains flinches on its model's first family.
+    plays = sequence is not None or (not rule.pains and rule.pain_duration > 0.0);
+    # m_*.c *_pain: on Nightmare a Q2 monster has no pain frames, save a
+    # sequence its function picks before that test (soldier_move_pain4).
+    if victim.game == "q2"
+        and victim.skill >= 3
+        and not (sequence is not None and sequence.nightmare) {
+        plays = False;
+    }
+    # A sequence's own sound goes with its frames; the rule's is cried
+    # before the Nightmare test, flinch or not.
+    if sequence is not None and sequence.sound {
+        if plays {
+            request_sound(victim, sequence.sound);
+        }
+    } elif not rule.pain_cry {
+        pain_cry(victim);
+    }
+    if not plays {
+        return;
+    }
+    victim.pain_variant = choice;
+    victim.attack_clock = -1.0;
+    victim.leaping = False;
+    victim.duck_wait = 0.0;
+    victim.pain_wait = pain_length(victim);
+    victim.attack_flash = 0.0;
+    victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
+    victim.decision_wait = 0.0;
+}
+
+"""A monster's die function (Q1 th_die, Q2 edict_t die) for a death that
+leaves a body: which of its death sequences it falls on and the sound that
+goes with it. `taken` is the damage of the killing hit, `point` where it
+landed; soldier_die calls a hit within 4 units of the eye (origin plus
+viewheight 25) a head shot."""
+def begin_death(victim: Opponent, taken: int, point: Vec3 | None) {
+    rule = victim.rule;
+    head = point is not None
+        and abs(victim.pos.z - victim.eye_height + 25.0 - point.z) <= 4.0;
+    victim.death_variant = choose_reaction(victim, rule.deaths, taken, False, head);
+    select_death(victim);
+    sequence = death_sequence(victim);
+    request_sound(
+        victim,
+        sequence.sound if sequence is not None and sequence.sound else rule.death_sound
+    );
+}
+
+"""Give a dead monster the frames of the death it drew."""
+def select_death(victim: Opponent) {
+    index = victim.death_variant - 1;
+    if index >= 0
+        and index < len(victim.death_animations)
+        and victim.death_animations[index] {
+        victim.death_animation = victim.death_animations[index];
+    }
+}
+
+"""Whether a dead monster's death sequence has played out, which is when its
+*_dead function leaves the corpse its low box."""
+def corpse_settled(enemy: Opponent) -> bool {
+    return enemy.health <= 0
+        and (
+            not enemy.death_animation
+            or enemy.animation_time >= float(len(enemy.death_animation))
+        );
+}
+
+"""Whether a dead monster lets go of the item it carried. Q2
+monster_death_use drops it as the monster is killed. Q1 DropBackpack is
+called by a frame of the death sequence, so it waits for that frame and a
+monster that gibs instead drops nothing."""
+def drop_due(enemy: Opponent) -> bool {
+    waits = False;
+    for sequence in enemy.rule.deaths {
+        waits = waits or sequence.drop_frame > 0;
+    }
+    if not waits {
+        return True;
+    }
+    sequence = death_sequence(enemy);
+    return sequence is not None and enemy.animation_time >= float(sequence.drop_frame);
 }
 
 def damage_opponent(
@@ -825,6 +1067,8 @@ def damage_opponent(
     tally: CombatState | None = None,
     bypass_protection: bool = False
 ) -> int {
+    point = victim.struck;
+    victim.struck = None;
     if victim.dormant or victim.rule.script or victim.rule.decoration {
         return 0;
     }
@@ -894,10 +1138,11 @@ def damage_opponent(
         victim.respawn_wait = 1.7 if victim.arena else 3.0;
         victim.pending_explosion = victim.rule.death_splash > 0;
         victim.remains = -damage.overkill;
+        victim.death_variant = 0;
         if gibs_at(victim.gib_rule, victim.remains) {
             burst(victim, damage.overkill);
         } else {
-            request_sound(victim, victim.rule.death_sound);
+            begin_death(victim, damage.dealt + damage.overkill, point);
         }
         return damage.dealt;
     }
@@ -930,88 +1175,18 @@ def damage_opponent(
         victim.visual.hurt = True;
         return damage.dealt;
     }
-    rule = victim.rule;
     if victim.health < victim.max_health // 2 {
         show_wounds(victim, True);
     }
-    if rule.pain_health_reset > 0 {
-        victim.health = rule.pain_health_reset;
-    }
-    if damage.dealt < rule.pain_threshold {
+    # g_combat.c T_Damage: a ducked Q2 monster's pain function is not called.
+    if victim.game == "q2" and crouching(victim) {
         return damage.dealt;
     }
-    if rule.knockdown_damage > 0
-        and damage.dealt >= rule.knockdown_damage
-        and not victim.pain_down {
-        victim.pain_down = True;
-        victim.pain_variant = 0;
-        victim.attack_clock = -1.0;
-        victim.leaping = False;
-        victim.pain_wait = rule.knockdown_duration;
-        victim.pain_cooldown = max(victim.pain_cooldown, rule.knockdown_duration);
-        victim.attack_flash = 0.0;
-        victim.attack_wait = max(victim.attack_wait, rule.knockdown_duration);
-        victim.decision_wait = 0.0;
-        if rule.pain_sounds {
-            request_sound(
-                victim, rule.pain_sounds[(victim.shot_random // 7919) % len(rule.pain_sounds)]
-            );
-        }
-        return damage.dealt;
-    }
-    if victim.pain_cooldown > 0.0 or victim.pain_down {
-        return damage.dealt;
-    }
-    if rule.pain_chance_scale > 0.0 {
-        victim.shot_random = (victim.shot_random * 48271) % 2147483647;
-        chance = float(victim.shot_random) / 2147483647.0 * rule.pain_chance_scale;
-        if chance > float(damage.dealt) {
-            return damage.dealt;
-        }
-    }
-    # m_*.c *_pain: on Nightmare a Q2 monster only cries out, with no pain
-    # animation to interrupt it.
-    if victim.game == "q2" and victim.skill >= 3 {
-        victim.pain_cooldown = rule.pain_interval;
-        if rule.pain_sounds {
-            request_sound(
-                victim, rule.pain_sounds[(victim.shot_random // 7919) % len(rule.pain_sounds)]
-            );
-        }
-        return damage.dealt;
-    }
-    victim.pain_variant = 0;
-    for i in range(len(rule.pain_variant_damage)) {
-        if damage.dealt <= rule.pain_variant_damage[i] {
-            victim.pain_variant = i + 1;
-            break;
-        }
-    }
-    if rule.pain_variant_damage
-        and victim.pain_variant == 0
-        and len(rule.pain_variants) > len(rule.pain_variant_damage) {
-        victim.pain_variant = len(rule.pain_variant_damage) + 1;
-    }
-    if rule.pain_variants and not rule.pain_variant_damage {
-        victim.shot_random = (victim.shot_random * 48271) % 2147483647;
-        victim.pain_variant = 1 + victim.shot_random % len(rule.pain_variants);
-    }
-    victim.attack_clock = -1.0;
-    victim.leaping = False;
-    victim.duck_wait = 0.0;
-    victim.pain_wait = pain_length(victim);
-    victim.pain_cooldown = rule.pain_interval;
-    # combat.qc T_Damage: Nightmare monsters rarely return to pain frames.
-    if victim.game == "q1" and victim.skill >= 3 {
+    feel_pain(victim, damage.dealt);
+    # combat.qc T_Damage, g_combat.c T_Damage: on Nightmare every hit that
+    # reaches the pain function puts the next pain five seconds off.
+    if victim.skill >= 3 and victim.game in ["q1", "q2"] {
         victim.pain_cooldown = max(victim.pain_cooldown, 5.0);
-    }
-    victim.attack_flash = 0.0;
-    victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
-    victim.decision_wait = 0.0;
-    if rule.pain_sounds {
-        request_sound(
-            victim, rule.pain_sounds[(victim.shot_random // 7919) % len(rule.pain_sounds)]
-        );
     }
     return damage.dealt;
 }
@@ -1165,17 +1340,19 @@ walker Aim {
             or here.rule.decoration {
             return;
         }
-        # Q2 lowers a corpse's box top to -8; Q3 to the corpse height. A
-        # ducking Q2 monster lowers its own by 32.
+        # A Q2 corpse keeps its box until its death sequence ends and
+        # *_dead leaves it the low one; a Q3 body's top drops to the corpse
+        # height at once. A ducking Q2 monster lowers its own by 32.
+        settled = corpse and not here.arena and corpse_settled(here);
         hit = actor_fraction(
             self.start,
             self.finish,
             here.pos,
             here.eye_height,
-            40.0 if corpse else (32.0 if crouching(here) else 0.0),
-            here.rule.width,
-            here.rule.hull_bottom,
-            here.rule.hull_top
+            (40.0 if here.arena else 0.0) if corpse else (32.0 if crouching(here) else 0.0),
+            here.rule.dead_width if settled else here.rule.width,
+            here.rule.dead_bottom if settled else here.rule.hull_bottom,
+            here.rule.dead_top if settled else here.rule.hull_top
         );
         if hit < self.fraction {
             self.fraction = hit;
@@ -1515,6 +1692,7 @@ def fire_weapon(
             victim.last_seen = player.pos;
             victim.last_seen_height = collision.eye_height;
             victim.alert = 8.0;
+            victim.struck = player.pos.lerp(finish, fraction);
             if victim not in victims {
                 victims.append(victim);
                 amounts.append(0);
@@ -2039,6 +2217,7 @@ def blast_actors(
         }
         if isinstance(actor, Opponent) {
             living = actor.health > 0;
+            actor.struck = origin.add(Vec3());
             dealt = damage_opponent(
                 actor,
                 amount,
@@ -2421,6 +2600,7 @@ walker ProjectileTick {
             if not here.hostile and victim.health > 0 and self.state.game == "q3" {
                 self.state.accuracy_hits += 1;
             }
+            victim.struck = here.pos.add(Vec3());
             damage_opponent(
                 victim,
                 here.damage,
@@ -3125,25 +3305,92 @@ def sequence_stride(
     blocker: Player | None = None,
     blocker_height: float = 22.0
 ) {
-    if not enemy.grounded or dt <= 0.0 or dt > 0.05 or motion.length() <= 0.000001 {
+    flies = enemy.rule.movement in ["fly", "swim"];
+    if dt <= 0.0
+        or dt > 0.05
+        or motion.length() <= 0.000001
+        or (not flies and not enemy.grounded) {
         return;
     }
     collision = monster_collision(collision, enemy);
     body = enemy.pos.sub(Vec3(z=enemy.eye_height));
     ahead = body.add(motion);
-    support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
-    if support.fraction == 1.0 or support.normal.z < 0.7 {
-        return;
-    }
     if blocker is not None
         and inside_target(blocker, blocker_height, ahead, enemy)
         and not inside_target(blocker, blocker_height, body, enemy) {
+        return;
+    }
+    if flies {
+        # SV_movestep for FL_FLY and FL_SWIM: the whole step or none, and a
+        # swimmer out of the water stays where it is. The dead fall instead.
+        if enemy.health <= 0
+            or (enemy.rule.movement == "swim" and enemy.water_depth < 2) {
+            return;
+        }
+        clear = collision.trace(body, ahead);
+        if not clear.start_solid and clear.fraction == 1.0 {
+            enemy.pos = ahead.add(Vec3(z=enemy.eye_height));
+        }
+        return;
+    }
+    support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
+    if support.fraction == 1.0 or support.normal.z < 0.7 {
         return;
     }
     moved = step_slide(collision, body, motion.scale(1.0 / dt), dt, True);
     enemy.pos = moved.pos.add(Vec3(z=enemy.eye_height));
     enemy.velocity.x = 0.0;
     enemy.velocity.y = 0.0;
+}
+
+"""How far a sequence's frame `steps` carry a monster while its pose goes
+from frame `pose` to `reached`, fractions of a frame included."""
+def stride_span(steps: list[float], pose: float, reached: float) -> float {
+    total = 0.0;
+    for frame in range(max(0, int(pose)), min(len(steps), int(reached) + 1)) {
+        share = min(reached, float(frame + 1)) - max(pose, float(frame));
+        total += max(0.0, share) * steps[frame];
+    }
+    return total;
+}
+
+"""Stride the frames of the pain a monster is in for the next `dt` seconds,
+along its facing: Q1 ai_painforward against ai_pain's step back, Q2
+`{ai_move, dist}`. It staggers but keeps the ground it stands on and stops
+at walls, as every sequence stride does."""
+def pain_stagger(enemy: Opponent, collision: CollisionMap, dt: float) {
+    if enemy.pain_wait <= 0.0 or enemy.health <= 0 {
+        return;
+    }
+    sequence = pain_sequence(enemy);
+    steps = enemy.rule.knockdown_steps
+        if enemy.pain_down
+        else (sequence.steps if sequence is not None else []);
+    if not steps {
+        return;
+    }
+    elapsed = pain_length(enemy) - enemy.pain_wait;
+    distance = stride_span(
+        steps,
+        pain_pose_at(enemy, elapsed),
+        pain_pose_at(enemy, elapsed + min(dt, enemy.pain_wait))
+    )
+        * enemy.rule.step_scale;
+    sequence_stride(enemy, collision, forward_from(enemy.yaw, 0.0).scale(distance), dt);
+}
+
+"""Stride the frames of the death a monster is falling on (Q1 ai_back and
+ai_forward in the die frames, Q2 `{ai_move, dist}`)."""
+def death_stride(enemy: Opponent, collision: CollisionMap, dt: float) {
+    sequence = death_sequence(enemy);
+    if sequence is None or not sequence.steps or enemy.gibbed {
+        return;
+    }
+    distance = stride_span(
+        sequence.steps, enemy.animation_time, enemy.animation_time + dt * 10.0
+    )
+        * enemy.rule.step_scale;
+    sequence_stride(enemy, collision, forward_from(enemy.yaw, 0.0).scale(distance), dt);
 }
 
 # Integrate authored charge distances across 10 Hz animation frames, using the
@@ -3427,7 +3674,13 @@ def advance_attack(
 }
 
 def pain_pose_time(enemy: Opponent) -> float {
-    elapsed = max(0.0, pain_length(enemy) - enemy.pain_wait) * 10.0;
+    return pain_pose_at(enemy, pain_length(enemy) - enemy.pain_wait);
+}
+
+"""The frame of its pain a monster shows `seconds` into it; a knockdown
+lies on its hold frame for the hold."""
+def pain_pose_at(enemy: Opponent, seconds: float) -> float {
+    elapsed = max(0.0, seconds) * 10.0;
     if enemy.pain_down and enemy.rule.knockdown_hold_frame >= 0 {
         hold_frame = float(enemy.rule.knockdown_hold_frame);
         hold = enemy.rule.knockdown_hold_time * 10.0;
@@ -4027,7 +4280,7 @@ walker CombatTick {
             here.pending_gibs = -1;
             # Q1 DropBackpack / Q2 Drop_Item: the carried item lands at the
             # body's feet (Q2 items sit 15 units up, as droptofloor leaves them).
-            for item in [here->:Drops:->][?:Pickup] {
+            for item in ([here->:Drops:->][?:Pickup] if drop_due(here) else []) {
                 body = here.pos.sub(Vec3(z=here.eye_height));
                 floor = self.collision.trace_point(body, body.sub(Vec3(z=128.0)));
                 landing = body.lerp(body.sub(Vec3(z=128.0)), floor.fraction);
@@ -4041,8 +4294,9 @@ walker CombatTick {
                 }
                 here del --> item;
             }
+            death_stride(here, self.collision, self.dt);
+            here.animation_time += self.dt * 10.0;
             if here.death_animation {
-                here.animation_time += self.dt * 10.0;
                 index = min(int(here.animation_time), len(here.death_animation) - 1);
                 here.visual.first = here.death_animation[index];
                 here.visual.second = here.death_animation[
@@ -4212,6 +4466,7 @@ walker CombatTick {
             else self.collision.eye_height;
         delta = foe.pos.sub(here.pos);
         distance = delta.length();
+        pain_stagger(here, self.collision, self.dt);
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
         here.duck_wait = max(0.0, here.duck_wait - self.dt);
         if here.pain_wait <= 0.0 and here.pain_down {
@@ -4219,6 +4474,9 @@ walker CombatTick {
             here.pain_variant = 0;
         }
         here.pain_cooldown = max(0.0, here.pain_cooldown - self.dt);
+        here.pain_rested = 0.0
+            if here.pain_cooldown > 0.0
+            else min(1000.0, here.pain_rested + self.dt);
         here.attack_wait = max(0.0, here.attack_wait - self.dt);
         here.attack_flash = max(0.0, here.attack_flash - self.dt);
         here.alert = max(0.0, here.alert - self.dt);

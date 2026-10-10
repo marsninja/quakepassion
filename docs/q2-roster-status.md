@@ -80,14 +80,55 @@ Details that follow the originals:
   rocket and slash sequences repeat their active section on a range, sight and
   random check without replaying the windup. Recovery steps may be negative
   (backwards) and still check collision and support.
-- **Pain**: soldiers and the chick recover in 0.5 s, berserkers 0.4, gladiators
-  0.6 and infantry 1.0, with a 3 s cooldown. Monsters with several pain
-  sequences (`pain_variants`: the gunner, flyer, floater, hover, mutant, brain,
-  medic, flipper, tanks, Supertank, Hornet, Jorg and Makron) choose by damage
-  (`pain_variant_damage`) or at random, as their originals do.
+- **Pain** (`pains` on each rule; the mechanism is in
+  [monster-behaviour-status.md](monster-behaviour-status.md)). Every monster
+  waits 3 s between pains (`pain_debounce_time`) and strides its frames'
+  `ai_move` distances, scaled by the model scale.
+  - At random: soldiers (`pain1`-`pain3`, 0.33/0.33/0.34), infantry, medic and
+    flipper (even odds), brain, mutant and flyer (thirds), floater (`pain1`
+    one time in three).
+  - By damage: chick and gunner (up to 10, up to 25, more), tank (up to 30, up
+    to 60, more), Supertank (10, 25), Hornet (light under 30, else heavy),
+    Jorg (50, 100, then `pain3` three times in ten), Makron (40, 110, then
+    `pain6` about two times in three up to 150 and nothing above), berserker
+    (`pain1` under 20, either from there up), hover (`pain3` or `pain2` up to
+    25, else `pain1`).
+  - The tank ignores 10 damage or less and shrugs off four hits in five up to
+    30; the Supertank and Makron one in five up to 25; Jorg six in ten up to
+    40. On Hard and above the tank feels no pain while firing its blaster or
+    rockets, nor the Supertank its rockets.
+  - Sounds: soldiers, berserker, gladiator, chick, gunner and tank cry before
+    the Nightmare test, so they cry on Nightmare too. The others' sounds
+    belong to the sequence drawn (infantry `infpain1` with `pain1`, the
+    Supertank `btkpain3` with `pain2`) and are silent there. The Hornet has no
+    Nightmare test and flinches regardless.
+  - Thrown upward faster than 100 units a second, a soldier takes `pain4` and
+    a gladiator its `painup` frames instead, and changes to them if thrown
+    while already flinching. The soldier picks `pain4` before the Nightmare
+    test. No other `m_*.c` has this test.
+  - A ducked monster's pain function is not called (`T_Damage`).
+- **Death** (`deaths` on each rule):
+  - Soldiers fall on `death3` for a head shot, a hit within 4 units of the
+    eye (origin plus viewheight 25), and otherwise on `death1`, `death2`,
+    `death4`, `death5` or `death6` at even odds (`soldier_die`). A hit's point
+    is a bullet's end, a missile's origin or a blast's centre; of a shotgun's
+    pellets the last to land.
+  - Infantry take one of three (`death2` with the other death sound), the
+    chick one of two with its own sound, brain and mutant one of two; the
+    berserker `death1` for a killing hit of 50 or more, else `death2`; the
+    hover either death sound.
+  - Death frames stride their `ai_move` distances (a soldier's `death1` falls
+    back 42 units).
+  - A corpse keeps its box until the sequence ends and is then left the box
+    its `*_dead` sets: -16 -16 -24 to 16 16 -8 for most, 0 to 16 high for the
+    chick, -16 to 0 for the tank, and the full-width boxes of the Supertank,
+    Hornet and Makron.
 
 ## Validation
 
+- `tests/monster_sequence_tests.jac`: every pain and death table against the
+  `mmove_t` frame counts and distances, each `*_pain` and `*_die` branch,
+  sounds and Nightmare, airborne pain, strides, corpse boxes, saves.
 - `tests/q2_roster_tests.jac`: berserker windups and damage, gladiator locked aim
   and saves, rail occlusion and safe zone, cleaver escape, sound cues.
 - `tests/q2_roster_expansion_tests.jac`: gunner bursts, grenades and pain by
@@ -105,16 +146,21 @@ Details that follow the originals:
   `scripts/turret_smoke.jac`, and the render captures
   `scripts/chick_render_smoke.jac`, `scripts/berserker_render_smoke.jac`,
   `scripts/gladiator_render_smoke.jac`, `scripts/infantry_render_smoke.jac`,
-  `scripts/pain_render_smoke.jac`.
+  `scripts/pain_render_smoke.jac` (an infantry mid-pain, then an infantry
+  and a head-shot soldier mid-death and at rest, each restored from a save).
 
 ## Limitations
 
-- Each monster plays one death sequence: the authored `death_frames` or the
-  model's first contiguous `death` family (`games/opponents.jac`). The
-  originals' random choices among death animations are not made.
-- The soldiers, infantry, berserker, gladiator and chick play one pain sequence;
-  the originals choose by damage or at random (for example `berserk_pain`).
-- Pain frames carry no movement steps, and there are no airborne pain reactions.
+- A dying soldier on `death1` and a dying infantry on `death2` do not fire
+  their guns (`soldier_fire6`/`soldier_fire7`, `InfantryMachineGun`).
+- Sounds inside pain and death frames are not played (the tank's footstep and
+  thud, the Makron's and Jorg's steps, `makron_popup`, `makron_taunt`), nor is
+  the torso the Makron leaves. The insane marines cry `insane1`-`insane3`
+  rather than the player pain sounds picked by their health, and die silent.
+  Jorg's small extra resistance to pain while firing is not applied.
+- `soldier_sight` always plays `solsght1.wav`, not `solsrch1.wav` half the time.
+- Attack strides head at the target; Q2 `ai_charge` walks along the monster's
+  own facing while it turns.
 - `misc_actor` and `target_actor` are not driven (no shipped map pairs them).
 
 References: [Q2 game source](https://github.com/id-Software/Quake-2/tree/master/game)
