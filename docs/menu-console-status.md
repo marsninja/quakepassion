@@ -203,6 +203,4 @@ console drops over either (`SCR_DrawCinematic`).
 
 ## Limitations
 
-- The Q2 inventory's hotkey column is a fixed table of Q2's default binds, not
-  the current bindings.
 - Loading a level and scanning archives stall the frame.

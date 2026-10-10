@@ -545,7 +545,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for computer in [world->:HasHelp:->][?:HelpComputer] {
         lines.append(
             "HELP "
-                + numbers([float(computer.changed), float(computer.unread), computer.beep_wait])
+                # The third number is a spare (once a beep timer).
+                + numbers([float(computer.changed), float(computer.unread), 0.0])
                 + " "
                 + help_field(computer.primary)
                 + " "
@@ -1319,7 +1320,6 @@ def restore(
             computer = help_for(world);
             computer.changed = int(row[0]);
             computer.unread = int(row[1]);
-            computer.beep_wait = row[2];
             computer.primary = help_text(words[4]);
             computer.secondary = help_text(words[5]);
         } elif words[0] == "O" and o < len(progress_records) {

@@ -27,9 +27,11 @@ tiers are completed.
 - **Q1 end**: `engine/world/finale.jac` runs the end map's spiked
   `misc_teleporttrain`, the telefrag into Shub-Niggurath, the finale timeline
   and its cameras and texts.
-- **Q2 units**: an exit to a new unit (`*`) pauses at
-  `info_player_intermission` with a unit summary (kills, goals, secrets), then
-  plays the unit's closing film (`eou1_.cin` to `eou8_.cin`). Other Q2 exits
+- **Q2 units**: an exit to a new unit (`*`) pauses at one of the first four
+  `info_player_intermission` spots (a player start when the map has none),
+  with the status bar up and nothing laid over the view. Any key leaves
+  after five seconds (`ClientThink`), and the unit's closing film plays
+  (`eou1_.cin` to `eou8_.cin`). Other Q2 exits
   change level at once, as `BeginIntermission` does in single player. boss2's
   exit plays `end.cin` and shows `victory.pcx` until a key, then the menu.
 - **Monster tally**: counted on entry, including closet, trigger-spawned and
@@ -54,8 +56,8 @@ tiers are completed.
 - The Q2 help computer (`HelpComputer` in `engine/world/targets.jac`) belongs
   to the game, not the level: its objectives (`game.helpmessage1/2`), news
   count and unread reminders carry from level to level and across units, and
-  are saved. News beeps `misc/pc_up.wav` and blinks the status-bar icon; the
-  reminder repeats every 6.4 s, three times.
+  are saved. Unread news blinks the status-bar icon and beeps
+  `misc/pc_up.wav` three times, on the level's every 64th server frame.
 - A failed load leaves the current level and hub intact. Choosing a map from
   the menu starts a fresh session.
 
@@ -200,7 +202,7 @@ cannot use them either ([traversal](traversal-status.md)).
 
 ## Limitations
 
-- The Q2 unit summary is drawn in the help computer's frame; single-player Q2
-  shows only the intermission view.
-- The help computer's reminder beeps count from when the news arrives rather
-  than from the next `level.framenum & 63`.
+- A film's sound that falls behind after a long stall plays late; the
+  originals drop what overflows `S_RawSamples`.
+- Q3's postgame films close onto the level menu with the finished match
+  still behind it, where the original has disconnected.

@@ -58,7 +58,7 @@ node TargetEvent {
 
 """The help computer's current objectives (game.helpmessage1/2) and
 game.helpchanged. `unread` is pers.helpchanged: 0 once the player has
-looked, else 1 plus the reminder beeps given so far (no more than three).
+looked, else 1 plus the beeps given so far (no more than three).
 Both belong to the game, not the level: they carry from level to level
 (carry_help) and are kept in saves."""
 edge HasHelp: World --> HelpComputer {}
@@ -66,8 +66,7 @@ node HelpComputer {
     has primary: str = "",
         secondary: str = "",
         changed: int = 0,
-        unread: int = 0,
-        beep_wait: float = 0.0;
+        unread: int = 0;
 }
 
 def help_for(world: World) -> HelpComputer {
@@ -92,7 +91,6 @@ def carry_help(source: World, destination: World) {
     computer.secondary = last.secondary;
     computer.changed = last.changed;
     computer.unread = last.unread;
-    computer.beep_wait = last.beep_wait;
 }
 
 """A help message as one blank-free save field: its character codes."""
@@ -123,6 +121,8 @@ walker TargetTick {
         collision: CollisionMap,
         state: CombatState,
         dt: float,
+        # level.time once this tick has run (level.framenum counts its tenths).
+        clock: float = 0.0,
         world: World | None = None,
         message: str = "",
         cues: list[str] = [];
@@ -135,16 +135,17 @@ walker TargetTick {
         }
     }
 
-    """p_view.c G_SetClientSound's help beep: misc/pc_up.wav again every 6.4
-    seconds (level.framenum & 63) while the news is unread, three in all."""
+    """p_view.c G_SetClientSound's help beep: while the news is unread,
+    misc/pc_up.wav on each server frame whose number is a multiple of 64
+    (!(level.framenum & 63), every 6.4 s of the level's clock), three in
+    all."""
     can remind with HelpComputer entry {
         if here.unread <= 0 or here.unread > 3 {
             return;
         }
-        here.beep_wait -= self.dt;
-        if here.beep_wait <= 0.0 {
+        frame = math.floor(self.clock * 10.0 + 0.0001);
+        if frame != math.floor((self.clock - self.dt) * 10.0 + 0.0001) and frame % 64 == 0 {
             here.unread += 1;
-            here.beep_wait = 6.4;
             self.cues.append("sound/misc/pc_up.wav");
         }
     }
@@ -234,12 +235,11 @@ walker TargetTick {
                 } else {
                     computer.secondary = here.message;
                 }
+                # Use_Target_Help: game.helpchanged++. G_SetClientSound sees
+                # the change and sets pers.helpchanged to 1; the status bar's
+                # help icon blinks until the computer is opened.
                 computer.changed += 1;
-                # The first beep sounds at once; the status bar's help icon
-                # blinks until the computer is opened.
-                computer.unread = 2;
-                computer.beep_wait = 6.4;
-                self.cues.append("sound/misc/pc_up.wav");
+                computer.unread = 1;
             }
             if here.kind == "explosion" {
                 blast_actors(

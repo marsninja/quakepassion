@@ -140,7 +140,15 @@ import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
 import from games.hud_art { load_hud_art, load_q3_models, load_character_icons }
-import from games.q2_layouts { help_computer_layout, unit_summary_layout, q2_inventory_rows }
+import from games.q2_layouts {
+    help_computer_layout,
+    q2_inventory_rows,
+    q2_item_hotkeys,
+    q2_item_counts,
+    q2_step_item,
+    q2_validate_item,
+    Q2_USABLE_ITEMS
+}
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
 import from ..render.viewweapon { ViewWeapon }
@@ -156,7 +164,7 @@ import from ..math.interpolation { TickBlend }
 import from ..world.motion { CaptureMotion }
 import from ..physics.movement { MovePlayer, SetStance }
 import from ..input.input { Intent, Controls, mouse_captured, IsKeyPressed, IsMouseButtonPressed, _capture, _release }
-import from ..input.keys { Keyboard, KeyEvent, key_event_commands }
+import from ..input.keys { Keyboard, KeyEvent, BoundKeys, key_event_commands }
 import from ..console.cvar { Cvar, CVAR_ARCHIVE }
 import from ..console.shell { Shell, ResetCvars }
 import from ..console.console { Console }
@@ -320,7 +328,10 @@ obj App {
         save_path: str = "",
         notice: str = "",
         notice_wait: float = 0.0,
-        selected_item: int = 0,
+        # Q2 pers.selected_item as its itemlist entry ("" for none): what
+        # invuse uses and the inventory marks. A new game selects the Blaster
+        # (InitClientPersistant).
+        selected_item: str = "blaster",
         frame_dt: float = 0.0,
         quad_sound_wait: float = 0.0,
         respawn_wait: float = 0.0,
@@ -505,6 +516,9 @@ obj App {
     def fly(intent: Intent, dt: float);
     def toggle_movement();
     def use_item(kind: str = "");
+    """p_hud.c Cmd_Help_f: open or close the Q2 help computer; opening it
+    reads the news."""
+    def toggle_help();
     def teleport_actor(actor: Player);
     def tick_powerups(dt: float);
     def show_notice(message: str);

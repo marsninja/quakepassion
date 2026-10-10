@@ -1,7 +1,7 @@
 """Quake II's 2D presentation through the real game loop, with screenshots in
 .jac/screenshots/q2hud/: the help computer (help.pcx layout), the blinking
 help icon, Tab's inventory screen, the power armor status bar with its damage
-flash, the ch1 crosshair and the unit summary."""
+flash, the ch1 crosshair and the end of a unit."""
 import os;
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
@@ -98,13 +98,14 @@ with entry {
     app.render_frame();
     assert app.view.status_flashes() & 2;
     shoot(app, "q2_power_armor.png");
-    # The unit summary on the help computer's frame.
+    # The end of a unit: the intermission view under the status bar, and the
+    # help computer over it when asked for.
     app.combat.kills = 12;
     app.begin_stats("bunk1", "start", True, "");
-    app.completed_time = 312.0;
-    shoot(app, "q2_unit_summary.png");
-    app.stats_wait = 0.0;
-    shoot(app, "q2_unit_summary_ready.png");
+    assert app.stats_wait == 5.0;
+    shoot(app, "q2_unit_end.png");
+    app.toggle_help();
+    shoot(app, "q2_unit_end_help.png");
     renderer.close();
     print("Q2 PRESENTATION SMOKE PASS");
 }

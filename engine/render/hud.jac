@@ -636,7 +636,7 @@ obj HudRenderer {
     }
 
     """cl_scrn.c SCR_ExecuteLayoutString: run a layout program (the help
-    computer, the unit summary). xl/xr/xv and yt/yb/yv place the cursor from
+    computer). xl/xr/xv and yt/yb/yv place the cursor from
     the left, the right, or the centred 320x240 screen; picn draws a picture;
     string/cstring draw conchars text, left-aligned or centred in 320 units
     per line; the "2" forms use the alternate (high-bit) characters."""

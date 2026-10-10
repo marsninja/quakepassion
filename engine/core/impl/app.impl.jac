@@ -249,13 +249,17 @@ impl App.render_frame() {
                 "Enter: " + ("main menu" if self.campaign_complete else "continue")
             );
         }
-        if self.stats_screen {
+        # p_hud.c BeginIntermission in single player: the end of a Q2 unit is
+        # the intermission view alone, with no scores laid over it; G_SetStats
+        # goes on, so the status bar stays and the help computer still opens.
+        unit_end = self.stats_screen and self.level.bsp.game == "q2";
+        if self.stats_screen and not unit_end {
             self.draw_stats();
         }
         # The status bar gives way to intermission views (Sbar_Draw draws only
         # the intermission or finale overlay then).
         # CG_Draw2D: the intermission shows no status bar.
-        if not self.smoke and self.hud.ready and not self.finale_active and not podium {
+        if not self.smoke and self.hud.ready and (not self.finale_active or unit_end) and not podium {
             status = self.hud_status();
             self.hud.draw(status, self.renderer.width, self.renderer.height);
             if self.hud.three_d {
@@ -358,13 +362,12 @@ impl App.render_frame() {
             # secondary objectives, and kills, goals and secrets so far.
             if self.level.bsp.game == "q2"
                 and self.help_open
-                and not self.stats_screen
                 and self.hud.ready
                 and self.hud.has_pic("help") {
                 self.hud.draw_layout(
                     self.help_layout(), self.renderer.width, self.renderer.height
                 );
-            } elif self.level.bsp.game == "q2" and self.help_open and not self.stats_screen {
+            } elif self.level.bsp.game == "q2" and self.help_open {
                 lines: list[str] = [
                     ["Easy", "Medium", "Hard", "Hard+"][max(0, min(3, self.level.skill))]
                         + " - "
@@ -397,12 +400,13 @@ impl App.render_frame() {
                 and not self.stats_screen
                 and not self.finale_active
                 and self.hud.ready {
-                stored = owned_items(p.inventory, "q2");
+                bound = self.keyboard spawn BoundKeys();
                 self.hud.draw_q2_inventory(
                     q2_inventory_rows(
                         p,
                         self.combat.rules,
-                        stored[self.selected_item % len(stored)] if stored else ""
+                        self.selected_item,
+                        q2_item_hotkeys(bound.names, bound.bindings)
                     ),
                     self.simulation_time,
                     self.renderer.width,
@@ -918,6 +922,14 @@ impl App.step() -> bool {
             or (not self.smoke and (self.prompt_key(257) or self.prompt_key(32)));
         if self.stats_screen {
             self.stats_wait = max(0.0, self.stats_wait - dt);
+            if self.level.bsp.game == "q2" {
+                # ClientThink's BUTTON_ANY, and ClientCommand still runs
+                # "help" during the intermission.
+                pressed = scripted_press or (not self.smoke and not self.console.active and self.keyboard.any_down());
+                if not self.smoke and self.controls.sample(dt).help {
+                    self.toggle_help();
+                }
+            }
             if pressed and self.stats_wait <= 0.0 {
                 self.finish_stats();
             }
@@ -1026,13 +1038,7 @@ impl App.step() -> bool {
     # p_hud.c Cmd_Help_f: F1 opens and closes the Q2 help computer; opening
     # it reads the news (pers.helpchanged = 0) and hides the inventory.
     if intent.help and self.level.active and self.level.bsp.game == "q2" {
-        self.help_open = not self.help_open;
-        self.inventory_open = False;
-        if self.help_open {
-            for computer in [self.world->:HasHelp:->][?:HelpComputer] {
-                computer.unread = 0;
-            }
-        }
+        self.toggle_help();
     }
     # Cmd_Inven_f: Tab shows and hides the Q2 inventory, closing the help.
     if intent.inventory and self.level.active and self.level.bsp.game == "q2" {
@@ -1062,12 +1068,14 @@ impl App.step() -> bool {
         cycle_weapon(self.player, self.combat, intent.weapon_step);
     }
     if self.level.active and self.player.health > 0 and not self.finale_active {
-        stored = owned_items(self.player.inventory, self.level.bsp.game);
-        if stored and (intent.next_item or intent.prev_item) {
-            self.selected_item = (
-                self.selected_item + (1 if intent.next_item else len(stored) - 1)
-            ) % len(stored);
-            self.show_notice(item_label(stored[self.selected_item]));
+        # g_cmds.c SelectNextItem and SelectPrevItem (invnext, invprev):
+        # through everything carried that has a use, weapons included.
+        if self.level.bsp.game == "q2" and (intent.next_item or intent.prev_item) {
+            self.selected_item = q2_step_item(
+                q2_item_counts(self.player, self.combat.rules),
+                self.selected_item,
+                1 if intent.next_item else -1
+            );
         }
         if intent.use_item {
             self.use_item(intent.use_kind);
@@ -1506,7 +1514,8 @@ impl App.step() -> bool {
                 player=self.player,
                 collision=self.level.collision,
                 state=self.combat,
-                dt=self.physics_clock.tick_rate
+                dt=self.physics_clock.tick_rate,
+                clock=self.level.clock
             );
             self.show_notice(targeted.message);
             for cue in targeted.cues {
@@ -1614,6 +1623,12 @@ impl App.step() -> bool {
                         self.pickup_icon = picked.icon;
                         self.pickup_name = picked.label;
                         self.pickup_time = 3.0;
+                    }
+                    # g_items.c Touch_Item: picking up an item with a use
+                    # selects it.
+                    taken = picked.kind[7:] if picked.kind.startswith("weapon_") else picked.kind;
+                    if game == "q2" and taken in Q2_USABLE_ITEMS {
+                        self.selected_item = taken;
                     }
                 }
             }
@@ -1744,7 +1759,9 @@ impl App.begin_intermission(text: str) {
     self.player.god_mode = True;
     self.jump_pending = False;
     self.combat.random();
-    view = intermission_camera(self.level.bsp, self.combat.random_state);
+    # Q2 BeginIntermission chooses among the first four spots (rand() & 3).
+    pick = self.combat.random_state & 3 if self.level.bsp.game == "q2" else self.combat.random_state;
+    view = intermission_camera(self.level.bsp, pick);
     if view.found {
         self.player.pos = view.origin.add(Vec3());
         self.player.yaw = view.yaw;
@@ -1767,8 +1784,9 @@ impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
         + (Q1_SERVER_START if self.level.bsp.game == "q1" else 0.0);
     self.begin_intermission("");
     self.stats_screen = True;
-    # execute_changelevel: at least two seconds before a key may leave.
-    self.stats_wait = 2.0;
+    # Q1 execute_changelevel: at least two seconds before a key may leave.
+    # Q2 ClientThink: five, then any button.
+    self.stats_wait = 5.0 if self.level.bsp.game == "q2" else 2.0;
 }
 
 impl App.finish_stats() {
@@ -2161,6 +2179,24 @@ impl App.draw_view_blend() {
 """Q2 uses the selected stored item; Q3 uses its single holdable."""
 impl App.use_item(kind: str = "") {
     game = self.level.bsp.game;
+    if game == "q2" and not kind {
+        # g_cmds.c Cmd_InvUse_f: the selected item, if it is still carried.
+        self.selected_item = q2_validate_item(
+            q2_item_counts(self.player, self.combat.rules), self.selected_item
+        );
+        if not self.selected_item {
+            self.show_notice("No item to use.");
+            return;
+        }
+        # Use_Weapon: a weapon (or the grenades) is taken in hand.
+        for rule in self.combat.rules {
+            if rule.key == self.selected_item or (rule.hand_thrown and self.selected_item == "grenades") {
+                change_weapon(self.player, self.combat, rule.slot);
+                return;
+            }
+        }
+        kind = self.selected_item;
+    }
     items = owned_items(self.player.inventory, game);
     if not kind {
         if not items {
@@ -2169,7 +2205,7 @@ impl App.use_item(kind: str = "") {
             }
             return;
         }
-        kind = items[self.selected_item % len(items)] if game == "q2" else items[0];
+        kind = items[0];
     }
     result = self.player spawn UseItem(game=game, kind=kind);
     if result.teleport {
@@ -2177,6 +2213,22 @@ impl App.use_item(kind: str = "") {
     }
     self.audio.play_path(result.cue);
     self.show_notice(result.message);
+    if game == "q2" {
+        # Use_Quad and its kin: ValidateSelectedItem once one is spent.
+        self.selected_item = q2_validate_item(
+            q2_item_counts(self.player, self.combat.rules), self.selected_item
+        );
+    }
+}
+
+impl App.toggle_help() {
+    self.help_open = not self.help_open;
+    self.inventory_open = False;
+    if self.help_open {
+        for computer in [self.world->:HasHelp:->][?:HelpComputer] {
+            computer.unread = 0;
+        }
+    }
 }
 
 """Q3 personal teleporter (TeleportPlayer): SelectSpawnPoint picks at random
@@ -2299,7 +2351,7 @@ impl App.powerup_lines() -> list[str] {
     }
     stored = owned_items(self.player.inventory, game);
     if stored {
-        chosen = stored[self.selected_item % len(stored)] if game == "q2" else stored[0];
+        chosen = self.selected_item if game == "q2" and self.selected_item in stored else stored[0];
         count = quantity(self.player.inventory, chosen);
         lines.append(
             ("[ ] " if game == "q2" and len(stored) > 1 else "")
@@ -2712,27 +2764,6 @@ original art (text panels without it)."""
 impl App.draw_stats() {
     progress = progress_for(self.world);
     seconds = int(self.completed_time);
-    if self.level.bsp.game == "q2" and self.hud.ready and self.hud.has_pic("help") {
-        self.hud.draw_layout(
-            unit_summary_layout(
-                self.level.skill,
-                self.level.bsp.entities[0].fields.get("message", self.level.name)
-                    if self.level.bsp.entities
-                    else self.level.name,
-                seconds,
-                self.combat.kills,
-                self.total_monsters,
-                progress.goals,
-                progress.total_goals,
-                progress.secrets,
-                progress.total_secrets,
-                self.stats_wait <= 0.0
-            ),
-            self.renderer.width,
-            self.renderer.height
-        );
-        return;
-    }
     if self.level.bsp.game == "q1" and self.hud.ready and self.hud.has_pic("inter") {
         self.hud.draw_q1_intermission(
             seconds,
@@ -2746,7 +2777,7 @@ impl App.draw_stats() {
         return;
     }
     self.renderer.draw_scoreboard(
-        "Unit complete" if self.level.bsp.game == "q2" else "Level complete",
+        "Level complete",
         [
             "Time " + str(seconds // 60) + ":" + str((seconds % 60) // 10) + str(seconds % 10),
             self.tally_line()
@@ -2836,20 +2867,8 @@ impl App.selected_icon() -> str {
     if self.level.bsp.game != "q2" {
         return "";
     }
-    stored = owned_items(self.player.inventory, "q2");
-    if not stored {
-        return "";
-    }
-    icons: dict[str, str] = {
-        "powerup_quad": "p_quad",
-        "powerup_invulnerability": "p_invulnerability",
-        "powerup_breather": "p_rebreather",
-        "powerup_suit": "p_envirosuit",
-        "powerup_silencer": "p_silencer",
-        "power_screen": "i_powerscreen",
-        "power_shield": "i_powershield"
-    };
-    return icons.get(stored[self.selected_item % len(stored)], "");
+    # G_SetStats STAT_SELECTED_ICON: the selected item's icon, weapons too.
+    return Q2_USABLE_ITEMS.get(self.selected_item, "");
 }
 
 impl App.begin_cinematic(
