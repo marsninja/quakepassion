@@ -410,16 +410,22 @@ Scripts (native, need the Q3 assets):
 
   | Map | Door | Bot went to | Door opened | Goal reached |
   | --- | --- | --- | --- | --- |
-  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.5 s | 21.0 s |
-  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.1 s |
-  | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.5 s | 4.7 s |
+  | q3dm7 | `*6` (floor hatch) | press button `*7` | 8.1 s | 13.7 s |
+  | q3dm7 | `*5` | press button `*7` | 22.4 s | 24.5 s |
+  | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.4 s | 4.8 s |
 
-  For q3dm7's `*5` the bot stacks two goals (the trigger, and the button
-  whose hatch is on the way there); the ten seconds the trigger then gets
-  run out and the bot takes the long way round. q3dm11's `*5` and `*10` lie
-  on no route between spawn points and items. The other ladder arenas'
+  q3dm11's `*5` and `*10` lie on no route between spawn points and items.
+  The other ladder arenas'
   doors open by themselves (q3dm0, q3dm2, q3dm8, q3dm12, q3dm14,
   q3tourney4) or are crushers no route passes (q3tourney6).
+- `scripts/bot_jump_smoke.jac` (`QP_MAPS`, `QP_JUMPS`, `QP_TRACE`): a lone
+  bot, standing still at each jump's run start, is sent over a sample of a
+  map's jump passages. Run of 2026-10-10 with 40 jumps a map: 35/40 on
+  q3dm6, 35/40 on q3dm7, 27/40 on q3dm12, 13/16 on q3dm13 and 6/8 on
+  q3dm17 reach the jump's target area within six seconds, 116 of 144. Of
+  the 28 misses, 21 are launched jumps that come down short of the far
+  side (the launch is the slowest that reaches it, with nothing to spare)
+  and 7 leave the ground before the jump's start.
 - `scripts/bot_travel_types_smoke.jac`: counts mover rides and rocket jumps
   started and finished on q3dm19, q3tourney6 and q3dm17.
 - `scripts/bot_rocket_jump_smoke.jac`: a bot on q3dm17 rocket-jumps to the
@@ -472,7 +478,19 @@ Scripts (native, need the Q3 assets):
   `AAS_PredictClientMovement` that `BotWalkInDirection` runs; only a jump
   is predicted. `BotAIBlocked`'s sidestep does not jump a gap. Bots do not
   block one another's movement; they only sidestep each other.
+- The jump prediction has the original's blind spots. A frame that ends
+  within 10 units over a floor is a landing (`AAS_OnGround`) before any
+  sweep has hit it, so the fall's damage is not weighed; and it knows
+  nothing of `trigger_hurt`. From the ledge beside q3dm14's bobbing
+  platform it lands a jump on the pit's floor 311 units down and lets the
+  bot take it.
 - Other `be_ai_move.c` details not modelled:
   - Jumps and barrier jumps fly by a launch velocity worked out to land
     them, not by `EA_Jump` and air movement (`BotFinishTravel_Jump`,
-    `BotFinishTravel_BarrierJump`).
+    `BotFinishTravel_BarrierJump`). The bot's body can make `BotTravel_Jump`'s
+    own jump (the run to the far end at full speed, `EA_Jump` within 24
+    units of the start, air movement by the Q3 profile), but from a
+    standing start it then makes about an eighth fewer of
+    `scripts/bot_jump_smoke.jac`'s jumps than the launch does: it jumps
+    with no speed where the area leaves no run-up, comes down short or
+    long of the target area, and slips off edges it runs along.

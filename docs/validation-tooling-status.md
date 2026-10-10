@@ -86,7 +86,21 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
   `QP_SECONDS`): plays each Q3 ladder arena with the bots fighting, then gives
   the player the frag limit and checks the podium, postgame and the next
   arena. Each frame is a sixtieth of a second of game time (`QP_WALK_DT`), as
-  in the campaign walkthrough.
+  in the campaign walkthrough. Each arena's line counts the bots, the bots'
+  frags, the bots that moved less than 64 units and the pickups the bots
+  know as level items. A bot's death gets a line of its own: the means and
+  the killer, where it last stood and on which travel type, the velocity it
+  left the ground with (270 up is a jump, a few units down a step off an
+  edge), its steering and its travel's move there, and for a leg on a mover
+  where the mover was. A bot that hardly moved gets one too: its AI nodes
+  by frame, its area and the ways out of it, and how many level items it
+  wants and can reach.
+- **`scripts/bot_jump_smoke.jac`** (`QP_MAPS`, `QP_JUMPS`, `QP_TRACE`):
+  headless; sets a lone bot down, standing still, at the run start of a
+  sample of each map's AAS jump passages and counts the jumps that bring
+  it to the passage's target area within six seconds. A missed jump is
+  listed with where and how fast the bot left the ground and where it came
+  down (q3dm6, q3dm7, q3dm12, q3dm13 and q3dm17 by default).
 - **`scripts/bot_obstacle_smoke.jac`** (`QP_MAPS`, `QP_SECONDS`,
   `QP_VERBOSE`): headless; for every door of a Q3 map that something else
   opens, sends a lone bot between two spawn points or items whose route runs

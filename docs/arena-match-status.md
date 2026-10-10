@@ -164,8 +164,13 @@ When a match ends (`g_arenas.c`):
   player the frag limit and checks the podium, postgame and the next arena
   (`QP_SECONDS`, `QP_LADDER_ONLY`, `QP_WALK_DT`). Run of 2026-10-10 (20 s an
   arena): all 26 arenas end at the frag limit and go on to the next, with no
-  problems; every bot moves in 25 of them, and on q3dm19 one of the three
-  moves less than 64 units.
+  problems; every bot moves in 25 of them. On q3dm19 one of the three moves
+  less than 64 units: none of the map's 26 items is in play (each sits over
+  a clip brush, which its settling trace starts in), so a bot that sees
+  nobody there has no goal. Four bots fall to their deaths in the 26
+  arenas: two on q3dm14 jumping in a fight (the jump prediction's blind
+  spot, `docs/bot-tactics-status.md`) and two on q3dm18; one is crushed by a
+  q3dm15 pendulum.
 
 ## Limitations
 
