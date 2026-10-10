@@ -5,6 +5,9 @@ import from engine.world.world { World, Player }
 import from engine.world.combat {
     Opponent,
     HasOpponent,
+    Projectile,
+    HasProjectile,
+    select_death,
     Aim,
     CombatState,
     CombatTick,
@@ -695,6 +698,7 @@ test "a death in progress and a held attack survive a save" {
     }
     assert soldier.visual.first == soldier.death_animations[5][10];
     holder.readied = 1;
+    soldier.death_burst = 2;
     saved = snapshot(world, level, player, state);
     assert "SEQUENCE" in [line.split()[0] for line in saved.splitlines()[3:]];
     drawn = soldier.death_variant;
@@ -702,8 +706,11 @@ test "a death in progress and a held attack survive a save" {
     soldier.death_variant = 0;
     soldier.death_animation = soldier.death_animations[0];
     soldier.animation_time = 0.0;
+    soldier.death_burst = 0;
     holder.readied = -1;
     restore(world, level, player, state, saved);
+    assert soldier.death_burst == 2;
+    soldier.death_burst = 0;
     assert soldier.death_variant == drawn and abs(soldier.animation_time - played) < 0.0001;
     assert holder.pain_rested == 1000.0;
     assert soldier.death_animation == soldier.death_animations[5];
@@ -977,4 +984,82 @@ test "Jorg shrugs off a little more pain while it attacks" {
         damage_opponent(jorg, 80);
         assert (jorg.pain_wait == 0.0) == row[1];
     }
+}
+
+"""Kill a monster onto the named death and play it for `seconds` at 60 Hz."""
+def fall(world: World, body: Opponent, name: str, target: Player, seconds: float) {
+    if body.health > 0 {
+        world +>:HasOpponent:+> body;
+        damage_opponent(body, body.health + 5);
+        body.death_variant = 1 + [sequence.name for sequence in body.rule.deaths].index(name);
+        select_death(body);
+    }
+    state = CombatState(game="q2");
+    for tick in range(int(seconds * 60.0 + 0.5)) {
+        world spawn CombatTick(player=target, collision=CollisionMap(), state=state, dt=1.0 / 60.0);
+    }
+}
+
+test "a dying soldier's and a dying infantry's guns go off as they fall" {
+    bystander = Player(pos=Vec3(x=3000.0, y=3000.0, z=22.0), god_mode=True);
+    # soldier_move_death1: soldier_fire6 on death122, soldier_fire7 on
+    # death125, along the body's facing from flashes 5 and 6.
+    world = World();
+    soldier = sequenced("q2", "monster_soldier_light");
+    soldier.yaw = 1.5707963267948966;
+    fall(world, soldier, "death1", bystander, 2.05);
+    assert not [world->:HasProjectile:->];
+    fall(world, soldier, "death1", bystander, 0.1);
+    bolts = [world->:HasProjectile:->][?:Projectile];
+    assert len(bolts) == 1 and bolts[0].damage == 5 and bolts[0].hostile;
+    assert abs(bolts[0].velocity.y - 600.0) < 0.01 and abs(bolts[0].velocity.x) < 0.01;
+    # MZ2_SOLDIER_BLASTER_6: 27.6, 3.4, -10.4 by 1.2, forward, right and up.
+    muzzle = soldier.pos.add(Vec3(x=4.08, y=33.12, z=-22.0 - 12.48));
+    assert bolts[0].pos.sub(muzzle).length() < 0.01;
+    fall(world, soldier, "death1", bystander, 0.3);
+    assert len([world->:HasProjectile:->]) == 2;
+    # Another death fires nothing.
+    quiet = sequenced("q2", "monster_soldier_light", 2);
+    quiet.pos = Vec3(x=500.0, z=22.01);
+    fall(world, quiet, "death2", bystander, 3.0);
+    assert len([world->:HasProjectile:->]) == 2;
+    # The machine gunner holds death122 and death125 for a burst of 4 to 11.
+    for seed in range(12) {
+        scene = World();
+        gunner = sequenced("q2", "monster_soldier_ss", seed);
+        shots = Speaker(path="sound/soldier/solatck3.wav", origin=Vec3());
+        gunner.speakers.append(shots);
+        gunner.speaker_paths.append(shots.path);
+        fall(scene, gunner, "death1", bystander, 2.15);
+        assert shots.requests == 1 and gunner.death_burst >= 3 and gunner.death_burst <= 10;
+        first = 1 + gunner.death_burst;
+        fall(scene, gunner, "death1", bystander, float(first - 1) * 0.1);
+        assert shots.requests == first and int(gunner.animation_time) == 21;
+        fall(scene, gunner, "death1", bystander, 3.0);
+        assert shots.requests >= first + 4 and shots.requests <= first + 11;
+        assert gunner.death_burst == 0 and gunner.animation_time >= 36.0;
+    }
+    # infantry_move_death2: twelve rounds on death211-222, climbing and
+    # swinging to its right (aimangles).
+    rule = enemy_rule("q2", "monster_infantry");
+    assert rule is not None;
+    dying = [sequence for sequence in rule.deaths if sequence.name == "death2"][0].events;
+    assert [event.frame for event in dying] == [10 + shot for shot in range(12)];
+    assert dying[0].muzzle.sub(Vec3(x=18.2, y=7.5, z=15.4)).length() < 0.001;
+    assert [dying[0].aim_pitch, dying[0].aim_yaw] == [0.0, 5.0];
+    assert [dying[11].aim_pitch, dying[11].aim_yaw] == [90.0, 35.0];
+    assert not [sequence for sequence in rule.deaths if sequence.name != "death2" and sequence.events];
+    field = World();
+    infantry = sequenced("q2", "monster_infantry");
+    rounds = Speaker(path="sound/infantry/infatck1.wav", origin=Vec3());
+    infantry.speakers.append(rounds);
+    infantry.speaker_paths.append(rounds.path);
+    # Someone standing ahead and a little to its right is caught by the first.
+    unlucky = Player(pos=Vec3(x=100.0, y=-15.0, z=22.01));
+    fall(field, infantry, "death2", unlucky, 0.95);
+    assert rounds.requests == 0 and unlucky.health == 100;
+    fall(field, infantry, "death2", unlucky, 0.1);
+    assert rounds.requests == 1 and unlucky.health == 97;
+    fall(field, infantry, "death2", unlucky, 2.0);
+    assert rounds.requests == 12;
 }

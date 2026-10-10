@@ -138,6 +138,12 @@ Details that follow the originals:
     hover either death sound.
   - Death frames stride their `ai_move` distances (a soldier's `death1` falls
     back 42 units).
+  - A soldier falling on `death1` fires along the way it faces on death122
+    and death125 (`soldier_fire6`, `soldier_fire7`), the machine gunner
+    holding each frame for a burst of 4 to 11. An infantry falling on
+    `death2` fires twelve rounds on death211-222, climbing and swinging to
+    its right (`InfantryMachineGun`'s `aimangles`). These are `fire` events
+    on the sequence; whoever stands in the way is hit.
   - Frames make their sounds as they are entered (`events` on the
     sequence): the tank's footstep in `pain3` and its thud on death128,
     Jorg's steps through `pain3`, the Makron's `makron_popup` and
@@ -175,8 +181,6 @@ Details that follow the originals:
 
 ## Limitations
 
-- A dying soldier on `death1` and a dying infantry on `death2` do not fire
-  their guns (`soldier_fire6`/`soldier_fire7`, `InfantryMachineGun`).
 - The Makron leaves no torso as it dies (`makron_torso`).
 - The insane marines' cries carry as far as any other sound; the original
   plays them at `ATTN_IDLE`. A standing marine that has lain down by itself

@@ -84,6 +84,8 @@ node Opponent(Player) {
         death_animation: list[int] = [],
         death_animations: list[list[int]] = [],
         death_variant: int = 0,
+        # Shots still to leave of a burst a frame of its death is held for.
+        death_burst: int = 0,
         profiles: list[AttackProfile] = [],
         pain_wait: float = 0.0,
         duck_wait: float = 0.0,
@@ -1124,6 +1126,89 @@ def select_death(victim: Opponent) {
     }
 }
 
+"""A shot a frame of a monster's death fires along the way the body faces,
+with the weapon of one of its attack sequences (Q2 soldier_fire with flash 5
+or 6 in soldier_move_death1, InfantryMachineGun in infantry_move_death2)."""
+def dying_shot(
+    world: World,
+    enemy: Opponent,
+    event: FrameEvent,
+    profile: AttackProfile,
+    collision: CollisionMap,
+    person: Player,
+    tally: CombatState | None
+) {
+    forward = forward_from(enemy.yaw, 0.0);
+    start = enemy.pos.sub(Vec3(z=enemy.eye_height))
+        .add(forward.scale(event.muzzle.x))
+        .add(right_from(enemy.yaw).scale(event.muzzle.y))
+        .add(Vec3(z=event.muzzle.z));
+    yaw = enemy.yaw - math.radians(event.aim_yaw);
+    pitch = math.radians(event.aim_pitch);
+    heading = Vec3(
+        x=math.cos(yaw) * math.cos(pitch), y=math.sin(yaw) * math.cos(pitch), z=math.sin(pitch)
+    );
+    request_sound(enemy, profile.sound);
+    if profile.missile_speed > 0.0 {
+        flash_muzzle(enemy, profile, start);
+        launch_missile(world, enemy, heading, profile, person, start);
+    } else {
+        opponent_shot(world, enemy, person, collision, profile, 0.0, person, tally, 0, start, heading);
+    }
+}
+
+"""Run what the frames of a death do as it plays on by `advance` frames:
+their sounds and their shots. Returns how far the pose moves: a frame held
+for a burst fires again each time it would end, and stays."""
+def death_events(
+    world: World,
+    enemy: Opponent,
+    sequence: Reaction,
+    advance: float,
+    collision: CollisionMap,
+    person: Player,
+    tally: CombatState | None
+) -> float {
+    ensure_profiles(enemy);
+    start = enemy.animation_time;
+    finish = start + advance;
+    if enemy.death_burst > 0 {
+        if finish < float(int(start) + 1) {
+            return advance;
+        }
+        for event in sequence.events {
+            if event.fire and event.frame == int(start) {
+                for profile in enemy.profiles {
+                    if profile.name == event.fire {
+                        dying_shot(world, enemy, event, profile, collision, person, tally);
+                    }
+                }
+            }
+        }
+        enemy.death_burst -= 1;
+        return advance - 1.0;
+    }
+    frame_sounds(enemy, sequence.events, start, finish);
+    for event in sequence.events {
+        if not event.fire or float(event.frame) < start or float(event.frame) >= finish {
+            continue;
+        }
+        for profile in enemy.profiles {
+            if profile.name != event.fire {
+                continue;
+            }
+            dying_shot(world, enemy, event, profile, collision, person, tally);
+            if event.held and profile.burst_max > 1 {
+                # soldier_fire: pausetime 3 to 10 frames on, a shot on each.
+                enemy.shot_random = (enemy.shot_random * 48271) % 2147483647;
+                enemy.death_burst = profile.burst_min - 1
+                    + enemy.shot_random % (profile.burst_max - profile.burst_min + 1);
+            }
+        }
+    }
+    return advance;
+}
+
 """Whether a dead monster's death sequence has played out, which is when its
 *_dead function leaves the corpse its low box."""
 def corpse_settled(enemy: Opponent) -> bool {
@@ -1233,6 +1318,7 @@ def damage_opponent(
         victim.pending_explosion = victim.rule.death_splash > 0;
         victim.remains = -damage.overkill;
         victim.death_variant = 0;
+        victim.death_burst = 0;
         if gibs_at(victim.gib_rule, victim.remains) {
             burst(victim, damage.overkill);
         } else {
@@ -3136,7 +3222,9 @@ def opponent_shot(
     yaw_offset: float = 0.0,
     person: Player | None = None,
     tally: CombatState | None = None,
-    event: int = 0
+    event: int = 0,
+    origin: Vec3 | None = None,
+    heading: Vec3 | None = None
 ) {
     if profile is None {
         profile = current_profile(enemy);
@@ -3144,9 +3232,13 @@ def opponent_shot(
     if person is None and not isinstance(player, Opponent) {
         person = player;
     }
-    start = muzzle_origin(enemy, profile, event, collision);
+    # A shot not aimed at anyone (a dying monster's) names where it leaves
+    # and where it goes.
+    start = origin if origin is not None else muzzle_origin(enemy, profile, event, collision);
     flash_muzzle(enemy, profile, start);
-    direction = rotate_yaw(opponent_aim(enemy, player, profile, start), yaw_offset);
+    direction = heading
+        if heading is not None
+        else rotate_yaw(opponent_aim(enemy, player, profile, start), yaw_offset);
     side = right_from(math.atan2(direction.y, direction.x));
     up = side.cross(direction).normalized();
     # Q1 multidamage / Q2 fire_lead: pellets add up per actor before applying.
@@ -4459,13 +4551,13 @@ walker CombatTick {
             }
             death_stride(here, self.collision, self.dt);
             falling = death_sequence(here);
-            if falling is not None and not here.gibbed {
-                frame_sounds(
-                    here, falling.events, here.animation_time,
-                    here.animation_time + self.dt * 10.0
+            played = self.dt * 10.0;
+            if falling is not None and not here.gibbed and self.world is not None {
+                played = death_events(
+                    self.world, here, falling, played, self.collision, self.player, self.state
                 );
             }
-            here.animation_time += self.dt * 10.0;
+            here.animation_time += played;
             if here.death_animation {
                 index = min(int(here.animation_time), len(here.death_animation) - 1);
                 here.visual.first = here.death_animation[index];

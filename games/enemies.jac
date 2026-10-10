@@ -176,6 +176,33 @@ def soldier_attacks(kind: str) -> list[AttackProfile] {
     return attacks;
 }
 
+"""m_infantry.c InfantryMachineGun in infantry_move_death2: on each of
+death211-222 the dying infantry's gun fires, from flashes
+MZ2_INFANTRY_MACHINEGUN_2 to _13 and along its facing less `aimangles` (so
+many degrees up and to its right)."""
+def infantry_dying_shots() -> list[FrameEvent] {
+    muzzles = [
+        Vec3(x=18.2, y=7.5, z=15.4), Vec3(x=17.2, y=10.3, z=17.9), Vec3(x=17.0, y=12.8, z=20.1),
+        Vec3(x=15.1, y=14.1, z=21.8), Vec3(x=11.8, y=17.2, z=23.1), Vec3(x=11.4, y=20.2, z=21.0),
+        Vec3(x=9.0, y=23.0, z=18.9), Vec3(x=13.9, y=18.6, z=17.7), Vec3(x=15.4, y=15.6, z=15.8),
+        Vec3(x=10.2, y=15.2, z=25.1), Vec3(x=-1.9, y=15.1, z=28.2), Vec3(x=-12.4, y=13.0, z=20.2)
+    ];
+    aims = [
+        (0.0, 5.0), (10.0, 15.0), (20.0, 25.0), (25.0, 35.0), (30.0, 40.0), (30.0, 45.0),
+        (25.0, 50.0), (20.0, 40.0), (15.0, 35.0), (40.0, 35.0), (70.0, 35.0), (90.0, 35.0)
+    ];
+    return [
+        FrameEvent(
+            frame=10 + shot,
+            fire="ranged",
+            muzzle=muzzles[shot],
+            aim_pitch=aims[shot][0],
+            aim_yaw=aims[shot][1]
+        )
+        for shot in range(12)
+    ];
+}
+
 """m_insane.c insane_pain: these frames with one of the player's two pain
 cries for the marine's health (under 25, 50 or 75, or more), which it makes
 before its Nightmare test."""
@@ -3370,6 +3397,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="death2",
                         frames=span("death", 201, 225),
+                        events=infantry_dying_shots(),
                         steps=[
                             0.0, 1.0, 5.0, -1.0, 0.0, 1.0, 1.0, 4.0, 3.0, 0.0, -2.0, -2.0, -3.0,
                             -1.0, -2.0, 0.0, 2.0, 2.0, 3.0, -10.0, -7.0, -8.0, -6.0, 4.0, 0.0
@@ -3483,6 +3511,23 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="death1",
                         frames=span("death", 101, 136),
+                        # soldier_fire6 on death122 and soldier_fire7 on death125: its gun
+                        # goes off along the way it faces (flashes 5 and 6), the machine
+                        # gunner holding each frame for a burst.
+                        events=[
+                            FrameEvent(
+                                frame=21,
+                                fire="attack4" if kind == "monster_soldier_ss" else "attack1",
+                                muzzle=Vec3(x=33.12, y=4.08, z=-12.48),
+                                held=True
+                            ),
+                            FrameEvent(
+                                frame=24,
+                                fire="attack4" if kind == "monster_soldier_ss" else "attack1",
+                                muzzle=Vec3(x=34.68, y=5.52, z=-9.72),
+                                held=True
+                            )
+                        ],
                         steps=[
                             0.0, -10.0, -10.0, -10.0, -5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,

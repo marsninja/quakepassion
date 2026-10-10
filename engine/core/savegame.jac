@@ -384,7 +384,10 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     # last due.
     for index in range(len(corpses)) {
         actor = corpses[index];
-        if actor.death_variant > 0 or actor.readied >= 0 or actor.pain_rested < 1000.0 {
+        if actor.death_variant > 0
+            or actor.readied >= 0
+            or actor.pain_rested < 1000.0
+            or actor.death_burst > 0 {
             lines.append(
                 "SEQUENCE "
                     + str(index)
@@ -396,6 +399,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     + str(actor.readied)
                     + " "
                     + str(actor.pain_rested)
+                    + " "
+                    + str(actor.death_burst)
             );
         }
     }
@@ -926,7 +931,7 @@ def restore(
             if corpse.gibbed {
                 corpse.visual.visible = False;
             }
-        } elif words[0] == "SEQUENCE" and len(words) == 6 {
+        } elif words[0] == "SEQUENCE" and len(words) in [6, 7] {
             index = int(words[1]);
             if index < 0 or index >= len(enemies) {
                 raise ValueError("Invalid saved sequence");
@@ -946,6 +951,9 @@ def restore(
             }
             actor.readied = held;
             actor.pain_rested = rested;
+            # The shots a held death frame still has to fire (absent from
+            # the first saves with this record).
+            actor.death_burst = max(0, int(words[6])) if len(words) == 7 else 0;
             actor.death_variant = drawn;
             if actor.health <= 0 and drawn > 0 {
                 # The corpse lies on, or is still falling through, the death
@@ -1153,6 +1161,7 @@ def restore(
             # A SEQUENCE record, if one follows, names the death drawn and
             # an attack held.
             enemy.readied = -1;
+            enemy.death_burst = 0;
             enemy.pain_rested = 1000.0;
             enemy.death_variant = 0;
             if enemy.death_animations {

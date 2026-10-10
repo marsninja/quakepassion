@@ -138,7 +138,18 @@ obj FrameEvent {
     has frame: int = 0,
         # A sound; of several, one by `weights` (even odds without any).
         sounds: list[str] = [],
-        weights: list[float] = [];
+        weights: list[float] = [],
+        # Death: a shot with the weapon of the attack sequence named, from
+        # `muzzle` (forward, right and up of the origin) along the body's
+        # facing turned up by `aim_pitch` and right by `aim_yaw` degrees (Q2
+        # soldier_fire's flashes 5 and 6, InfantryMachineGun's aimangles).
+        # `held`, a burst weapon keeps the body on the frame while the
+        # burst leaves (soldier_fire's AI_HOLD_FRAME).
+        fire: str = "",
+        muzzle: Vec3 = Vec3(),
+        aim_pitch: float = 0.0,
+        aim_yaw: float = 0.0,
+        held: bool = False;
 }
 
 """One sequence a monster plays when it is hurt or killed: its model frames
