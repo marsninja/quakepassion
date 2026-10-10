@@ -12,6 +12,9 @@ to catch crashes, stuck starts and runaway frame times.
 Build natively and run from the repo root:
     jac build scripts/campaign_walkthrough.jac --native -o .jac/walkthrough
     DYLD_LIBRARY_PATH=vendor .jac/walkthrough      # QP_WALK_GAMES=q2 limits the games
+
+Frames are a sixtieth of a second of game time each (QP_WALK_DT sets another
+step; 0 uses the renderer's frame time).
 """
 import os;
 import math;
@@ -167,6 +170,11 @@ with entry {
     renderer.open_window();
     app = App(world=World(), player=Player(), renderer=renderer, clock=Clock(), smoke=True);
     app.host.overlay.assign("0");
+    # Each frame is a sixtieth of a second of game time, so the frame counts
+    # below are seconds of play whatever pace the display sets (a hidden
+    # window is not held to the refresh rate). QP_WALK_DT=0 plays at the
+    # renderer's own frame time.
+    app.fixed_dt = float(os.getenv("QP_WALK_DT", str(1.0 / 60.0)));
     games = os.getenv("QP_WALK_GAMES", "q1,q2").split(",");
     problems: list[str] = [];
     for game in games {

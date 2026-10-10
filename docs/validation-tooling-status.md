@@ -78,7 +78,9 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
   follows every Q1 and Q2 level exit through the real game loop, placing the
   player in the exit or a trigger chain that reaches it and passing stats
   screens; exits no touch trigger reaches are fired directly and reported.
-  Every map is also played for a few seconds in god mode.
+  Every map is also played for a few seconds in god mode. Each frame is a
+  sixtieth of a second of game time (`QP_WALK_DT`; 0 for the renderer's own
+  frame time), so the run does not depend on the display pacing its frames.
 - **`scripts/arena_ladder_walkthrough.jac`** (`QP_LADDER_ONLY`,
   `QP_SECONDS`): plays each Q3 ladder arena with the bots fighting, then gives
   the player the frag limit and checks the podium, postgame and the next
