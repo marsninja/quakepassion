@@ -17,6 +17,15 @@ obj Obituary {
         serial: int;
 }
 
+"""A line of chat as every client gets it (g_cmds.c G_Say): who said it,
+under what name, and what, numbered in order."""
+obj ChatLine {
+    has speaker: Actor | None,
+        name: str,
+        text: str,
+        serial: int;
+}
+
 edge HasMatch: World --> ArenaMatch {}
 node ArenaMatch {
     # g_fraglimit and g_timelimit (minutes); 0 is no limit. `time_called`
@@ -33,7 +42,18 @@ node ArenaMatch {
         frags_called: int = 0,
         prepared: bool = False,
         obituaries: list[Obituary] = [],
-        obituary_serial: int = 0;
+        obituary_serial: int = 0,
+        chats: list[ChatLine] = [],
+        chat_serial: int = 0;
+
+    """Say something to everyone in the match (bots read these)."""
+    def say(speaker: Actor | None, name: str, text: str) {
+        self.chat_serial += 1;
+        self.chats.append(ChatLine(speaker=speaker, name=name, text=text, serial=self.chat_serial));
+        if len(self.chats) > 64 {
+            self.chats.pop(0);
+        }
+    }
 
     """Announce a death to everyone listening (bots read these)."""
     def announce_death(victim: Actor, killer: Actor | None, means: str) {

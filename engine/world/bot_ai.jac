@@ -55,7 +55,24 @@ import from .bot_goals {
 }
 import from .bot_chat {
     BotChatState,
+    ConsoleMessage,
     TIME_BETWEENCHATTING,
+    CHAT_EC,
+    CONTEXT_NORMAL,
+    CONTEXT_NEARBYITEM,
+    CONTEXT_NAMES,
+    CONTEXT_REPLY,
+    MTCONTEXT_MISC,
+    MTCONTEXT_INITIALTEAMCHAT,
+    MTCONTEXT_REPLYCHAT,
+    MTCONTEXT_CTF,
+    MATCH_NETNAME,
+    MATCH_MESSAGE,
+    ST_TEAM,
+    find_match,
+    reply_chat,
+    replace_synonyms,
+    unify_white_spaces,
     initial_chat,
     enter_chat,
     chat_time,
@@ -893,18 +910,119 @@ walker BotThink {
 
     """BotAI_BotInitialChat, and the chat time noted (lastchat_time)."""
     def say(kind: str, variables: list[str]) -> bool {
-        typed = initial_chat(self.mind.chats, self.mind.random_strings, self.chatter(), kind, variables, self.now, self.memory.dice);
+        typed = initial_chat(
+            self.mind.chats, self.mind.random_strings, self.chatter(), kind, variables, self.now, self.memory.dice, self.mind.synonyms
+        );
         self.chatter().last_chat = self.now;
         return typed;
     }
 
     """BotEnterChat: the typed line goes out as `say`, with talk.wav."""
     def enter_chat() {
+        typed = self.chatter().message.replace("~", "");
         line = enter_chat(self.chatter(), self.name_of(self.bot));
         if line {
             self.state.messages.append(line);
             self.state.cues.append("sound/player/talk.wav");
+            # Everyone in the match hears it, the other bots too.
+            contest = self.contest;
+            if contest is not None {
+                contest.say(self.bot, self.name_of(self.bot), typed);
+            }
         }
+    }
+
+    """BotQueueConsoleMessage for what has been said in the match since the
+    bot last looked: each line as G_Say sends it, the name, the escape
+    character, a colon and the text."""
+    def hear_chats() {
+        contest = self.contest;
+        chatter = self.chatter();
+        if contest is None {
+            return;
+        }
+        for said in contest.chats {
+            if said.serial <= chatter.heard {
+                continue;
+            }
+            chatter.heard = said.serial;
+            chatter.console.append(
+                ConsoleMessage(speaker=said.name, line=said.name + CHAT_EC + ": " + said.text, time=self.now, mine=said.speaker is self.bot)
+            );
+        }
+    }
+
+    """NumBots: the bots in the match, this one included."""
+    def bot_count() -> int {
+        count = 1;
+        for rival in self.rivals() {
+            other = rival[0];
+            if isinstance(other, Opponent) and other.character is not None {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
+    """ai_dmq3.c BotCheckConsoleMessages for chat lines: each takes the bot
+    1 to 2 seconds to read (none when ten are waiting). What was said has
+    its white space unified and its synonyms replaced. A line that is a
+    command or game message (BotMatchMessage: match.c's entered-the-game,
+    team command and flag templates) gets no answer, nor does a team
+    message or the bot's own. Otherwise, when the bot is not typing already
+    and stands somewhere it may chat, it answers as likely as 1.5 over the
+    number of bots plus one and its CHARACTERISTIC_CHAT_REPLY: BotReplyChat
+    types the answer (True) and the bot stands to type it. A dead bot does
+    not answer (in Q3 it may, standing dead while it types)."""
+    def check_console_messages() -> bool {
+        mind = self.mind;
+        chatter = self.chatter();
+        self.hear_chats();
+        context = CONTEXT_NORMAL | CONTEXT_NEARBYITEM | CONTEXT_NAMES;
+        while chatter.console {
+            heard = chatter.console[0];
+            if len(chatter.console) < 10 and heard.time > self.now - (1.0 + self.random()) {
+                break;
+            }
+            chatter.console.pop(0);
+            line = heard.line;
+            envelope = find_match(mind.match_templates, line, MTCONTEXT_REPLYCHAT);
+            if envelope is not None {
+                said = replace_synonyms(unify_white_spaces(envelope.variable(MATCH_MESSAGE)), mind.synonyms, context);
+                line = line[:envelope.offsets[MATCH_MESSAGE]] + said;
+            } else {
+                line = replace_synonyms(unify_white_spaces(line), mind.synonyms, context);
+            }
+            if find_match(mind.match_templates, line, MTCONTEXT_MISC | MTCONTEXT_INITIALTEAMCHAT | MTCONTEXT_CTF) is not None {
+                continue;
+            }
+            answered = find_match(mind.match_templates, line, MTCONTEXT_REPLYCHAT);
+            if answered is None or answered.subtype & ST_TEAM or heard.mine {
+                continue;
+            }
+            if self.memory.ainode == "stand" or self.dead() or not self.valid_chat_position() {
+                continue;
+            }
+            if self.random() < 1.5 / float(self.bot_count() + 1) and self.random() < mind.chat_reply {
+                if reply_chat(
+                    mind.reply_chats,
+                    mind.random_strings,
+                    mind.synonyms,
+                    chatter,
+                    unify_white_spaces(answered.variable(MATCH_MESSAGE)),
+                    self.name_of(self.bot),
+                    mind.gender,
+                    answered.variable(MATCH_NETNAME),
+                    context,
+                    CONTEXT_REPLY,
+                    self.now,
+                    self.memory.dice
+                ) {
+                    return True;
+                }
+            }
+        }
+        return False;
     }
 
     """BotChat_EnterGame."""
@@ -1718,6 +1836,10 @@ walker BotTactics {
         chatter = mind.chat_state;
         if chatter.entered < 0.0 {
             chatter.entered = now;
+            # What was said before the bot joined never reached it.
+            if contest is not None {
+                chatter.heard = contest.chat_serial;
+            }
         }
         if not self.intermission {
             # BotUpdateInventory, BotCheckSnapshot and BotCheckAir.
@@ -1754,6 +1876,14 @@ walker BotTactics {
             world=self.world,
             bsp=level.bsp if level is not None else None
         );
+        # BotCheckConsoleMessages: an answer to what was said is typed
+        # standing (AIEnter_Stand).
+        if thinker.check_console_messages() {
+            memory.stand_time = now + chat_time();
+            memory.ainode = "stand";
+            memory.battle = "";
+            memory.stand_find_enemy_time = now + 1.0;
+        }
         # "if the bot entered the game less than 8 seconds ago"
         if not chatter.entered_chat and chatter.entered > now - 8.0 and here.health > 0 {
             chatter.entered_chat = True;

@@ -6,7 +6,7 @@ import from .world { Actor, Player }
 import from .bot_routes { BotRoute, NavMesh, AvoidReach }
 import from .bot_travel { TravelResult }
 import from ..formats.aas { TFL_DEFAULT, TFL_LAVA, TFL_SLIME, TFL_ROCKETJUMP }
-import from ..formats.botconfig { WeightConfig, ChatMessage, WeightDice }
+import from ..formats.botconfig { WeightConfig, ChatMessage, WeightDice, SynonymList, MatchTemplate, ReplyChat }
 import from .bot_goals { GoalState, BotGoal }
 import from .bot_chat { BotChatState }
 import from .bot_weights {
@@ -89,7 +89,13 @@ obj BotCharacter {
         chat_hit_no_death: float = 0.0,
         chat_hit_no_kill: float = 0.0,
         chat_random: float = 0.0,
+        chat_reply: float = 0.0,
         chat_state: BotChatState = BotChatState();
+    # Answering what is said: rchat.c's reply chats, syn.c's synonyms and
+    # match.c's match templates. Botlib has one list of each for every bot.
+    has reply_chats: list[ReplyChat] = [],
+        synonyms: list[SynonymList] = [],
+        match_templates: list[MatchTemplate] = [];
     # Where and until when the bot camps. Like the chat state it lasts the
     # match: a bot that dies goes back to its spot.
     has camp: CampState = CampState();

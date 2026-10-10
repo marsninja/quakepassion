@@ -2,7 +2,17 @@
 graph, and chats (ai_chat.c)."""
 import from engine.formats.aas { TRAVEL_WALK, TFL_DEFAULT, TFL_ROCKETJUMP }
 import from engine.formats.botscript { precompile }
-import from engine.formats.botconfig { ItemInfo, WeightDice, read_weight_config, read_initial_chat, read_random_strings }
+import from engine.formats.botconfig {
+    ItemInfo,
+    WeightDice,
+    MatchPiece,
+    MatchTemplate,
+    read_weight_config,
+    read_initial_chat,
+    read_random_strings,
+    read_reply_chats
+}
+import from engine.world.bot_chat { CHAT_EC }
 import from engine.world.world { World, Player }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, arm_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes }
@@ -482,4 +492,66 @@ test "a camper with a rocket launcher goes to a camp spot nearby, stays and look
     mind.camp.camp_time = -1000.0;
     think(world, collision, state, 1.0);
     assert not mind.camp.camping;
+}
+
+"""A bot that answers "weird" and "odd", with match.c's chat line template."""
+def answering(reply: float) -> BotCharacter {
+    mind = tester();
+    mind.chat_reply = reply;
+    mind.reply_chats = read_reply_chats(precompile("r.c", {"r.c": "[\"weird\", \"odd\"] = 5 { \"How odd of you to say that, \", 7, \".\"; }"}));
+    mind.match_templates = [
+        MatchTemplate(context=128, kind=200, pieces=[MatchPiece(variable=0), MatchPiece(strings=[CHAT_EC + ": "]), MatchPiece(variable=2)])
+    ];
+    return mind;
+}
+
+test "a bot answers what a player says, after reading it, standing while it types" {
+    collision = floor_collision();
+    state = CombatState(game="q3");
+    mind = answering(1.0);
+    parts = arena_pair(mind);
+    world = parts[0];
+    bot = parts[1];
+    contest = parts[3];
+    human = Player(health=100, pos=Vec3(x=9000.0));
+    contest +>:Competes(name="You", human=True):+> human;
+    think(world, collision, state, 0.1);
+    memory = bot.bot_state;
+    # The console's `say` reaches every bot through the match. A bot answers
+    # three times in four when it is the only bot (1.5 / (NumBots + 1)).
+    tries = 0;
+    while not state.messages and tries < 8 {
+        tries += 1;
+        contest.say(human, "You", "you  are   weird!");
+        think(world, collision, state, 0.1);
+        # Not read yet: a chat line takes one to two seconds.
+        assert memory.ainode != "stand";
+        think(world, collision, state, 2.0);
+        if memory.ainode == "stand" {
+            assert memory.talking and not state.messages;
+            think(world, collision, state, 2.1);
+        }
+    }
+    assert state.messages == ["Tester^7: ^2How odd of you to say that, You."];
+    # Its own line reached the match too, and it does not answer itself.
+    assert contest.chats[-1].speaker is bot and contest.chats[-1].text == "How odd of you to say that, You.";
+    think(world, collision, state, 6.0);
+    assert len(state.messages) == 1 and not mind.chat_state.console;
+}
+
+test "a bot that never replies reads what is said and says nothing" {
+    collision = floor_collision();
+    state = CombatState(game="q3");
+    parts = arena_pair(answering(0.0));
+    world = parts[0];
+    bot = parts[1];
+    contest = parts[3];
+    human = Player(health=100, pos=Vec3(x=9000.0));
+    contest +>:Competes(name="You", human=True):+> human;
+    think(world, collision, state, 0.1);
+    for i in range(6) {
+        contest.say(human, "You", "how odd");
+        think(world, collision, state, 2.5);
+    }
+    assert not state.messages and bot.bot_state.ainode != "stand";
 }

@@ -174,6 +174,7 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("god", "god", "toggle god mode"),
     ("noclip", "noclip", "toggle flying through walls"),
     ("give", "give <item> [count]", "give all, health, weapons, ammo, armor or an item"),
+    ("say", "say <text>", "say something to everyone in the match"),
     ("kill", "kill", "suicide"),
     ("use", "use <item>", "use a weapon or item by name (Q2)"),
     ("cmd", "cmd <command>", "run a game command (Q2's forward to the server)"),

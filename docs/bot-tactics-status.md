@@ -247,6 +247,23 @@ weapon the movement needs, a movement view, waiting and failure.
   single-player ladder never runs in it: `spmap` starts every arena as
   `GT_SINGLE_PLAYER` (`SV_Map_f`), whatever `type` its `arenas.txt` entry
   lists.
+- Synonyms (`syn.c`, `BotReplaceWeightedSynonyms`): every line a bot says is
+  worded by drawing, in each synonym list of its context, one word by weight
+  for the others ("Rocket Launcher" may come out "RL").
+- Replies (`BotCheckConsoleMessages`, `BotReplyChat`): every chat line of
+  the match, a bot's or the player's console `say`, reaches each bot as a
+  console message. A bot takes 1 to 2 s to read one. What was said has its
+  white space unified and its synonyms replaced; `match.c`'s templates
+  split the line into name and message and rule out game and command
+  messages (`BotMatchMessage`). A bot not typing already, alive and
+  somewhere it may chat answers as likely as 1.5 / (bots + 1) and its
+  `CHARACTERISTIC_CHAT_REPLY`. `rchat.c`'s reply chats are tried in
+  botlib's order: each key is a word, a match template with variables, the
+  bot's name, a list of bot names or its gender, and may have to hold (`&`)
+  or not (`!`); the fitting chat with the highest priority gives a message
+  not said in the last 20 s. The answer's variables are the template's
+  (reworded by the reply synonyms), the bot's name (6) and the speaker's
+  (7). The bot stands to type it like any other line.
 - A bot types for 2 s (`BotChatTime`), holding `BUTTON_TALK`, with the talk
   balloon (`EF_TALK`, `sprites/balloon3`) over it; then "Name: text" is said
   with `sound/player/talk.wav`. End-of-level lines go out at once and show in
@@ -286,7 +303,8 @@ Tests:
   view turning, retreat, reaction and fire, projectiles, attack moves,
   `BotFindEnemy`.
 - `tests/bot_script_tests.jac`: precompiler, fuzzy weights, item and weapon
-  configs, chat construction, character loading.
+  configs, chat construction, synonyms, match templates, reply chats,
+  character loading.
 - `tests/bot_travel_tests.jac`: travel flags, rocket jumps, bobbing
   platforms, swimming and water jumps, the avoid-reachability list and
   timed-out legs.
@@ -299,7 +317,7 @@ Tests:
 - `tests/bot_ai_tests.jac`: goal choice and avoid times, the node graph,
   fighting, suicidal fights, retreat, chase, kill/death/end-of-level chats,
   seeking after the warmup, intermission lines, going for air, camp spots
-  and camping.
+  and camping, answering what a player says.
 - `tests/liquid_tests.jac` (bot immersion, `TraceLiquid`),
   `tests/effect_quads_tests.jac` (talk balloon),
   `tests/arena_navigation_tests.jac` (pickups, teleports, jump pad goals),
@@ -379,7 +397,9 @@ Scripts (native, need the Q3 assets):
 ## Limitations
 
 - Not modelled: team play (team goals, team and voice chat, `LTG_CAMPORDER`
-  and the other ordered goals) and reply chats (`BotReplyChat`).
+  and the other ordered goals).
+- A dead bot does not answer chat; in Q3 it may. `bot_testrchat` is not
+  there.
 - A bot that ends up on a plat or bobbing platform it was not taking keeps
   its route; Q3 switches it to that mover's reachability.
 - `BotTravel_Jump`'s run-up (to a run start up to 80 units behind the jump,
