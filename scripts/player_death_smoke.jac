@@ -1,8 +1,10 @@
 """Kill the player in each game through the real game loop and watch the level
 run on around the body: it lies in its game's form touching nothing, a
 missile lands, a door opens and closes, an alerted monster goes back to its
-stand, saving is refused, and the buttons bring the player back. Captures
-qp_death_<game>.png."""
+stand, saving is refused, and the buttons bring the player back. Then a
+blow far past zero: the body's gibs fly and the player rides the head (Q1,
+Q2) or is gone (Q3), and a Q2 body shot where it lies bursts then. Captures
+qp_death_<game>.png and qp_death_gib_<game>.png."""
 import os;
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
@@ -12,7 +14,9 @@ import from engine.world.combat { Opponent, HasOpponent, Projectile, HasProjecti
 import from engine.world.doors { Door, HasDoor }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.arena { match_of }
-import from engine.world.demise { Mortality, HasMortality, mortality_of }
+import from engine.world.demise { Mortality, HasMortality, mortality_of, body_struck }
+import from engine.world.gibs { Gib, HasGib, GibsInto }
+import from engine.world.damage { Damage }
 import from engine.math.vec3 { Vec3 }
 import from scripts.input_events { event, key }
 import from engine.input.input { _capture, _release }
@@ -183,6 +187,70 @@ with entry {
                 assert fallen not in [app.player->:HasMortality:->][?:Mortality];
                 run_for(app, 0.1);
                 assert app.in_touch() and app.level.collision.eye_height == standing;
+            }
+            # A blow far past zero bursts the body: GibPlayer's three gibs,
+            # player_die's four, CG_GibPlayer's skull and ten pieces.
+            pieces = 3 if game == "q1" else (4 if game == "q2" else 11);
+            assert len([edge app.player->:GibsInto:->]) > 0, "no gib models linked";
+            for enemy in [app.world->:HasOpponent:->][?:Opponent] {
+                enemy.attack_wait = 100000.0;
+            }
+            lying_about = len([app.world->:HasGib:->][?:Gib]);
+            victim = app.player;
+            floor = victim.pos.z - app.level.collision.eye_height - 24.0;
+            victim spawn Damage(
+                amount=victim.health + 300, bypass_armor=True, bypass_protection=True
+            );
+            assert victim.health == 0 and victim.death_overkill == 300;
+            run_for(app, 0.1);
+            ended = mortality_of(victim);
+            head = app.level.collision;
+            # (Arena bots may have gibbed each other meanwhile.)
+            flying = len([app.world->:HasGib:->][?:Gib]) - lying_about;
+            assert ended.dead and ended.gibbed, ended.clock;
+            assert flying == pieces or (game == "q3" and flying > pieces), flying;
+            assert head.eye_height == ended.rule.head.eye_height;
+            assert head.top_drop == ended.rule.head.top_drop;
+            assert not body_struck(victim) and not app.in_touch();
+            run_for(app, 0.15);
+            renderer.screenshot("qp_death_gib_" + game + ".png");
+            run_for(app, 6.0);
+            eye = victim.pos.z - floor;
+            print("DEATH", game, "gibbed:", flying, "pieces thrown, the eye came to rest",
+                eye, "above the floor it stood on, grounded", victim.grounded);
+            if game != "q3" {
+                # The head has come to rest and the eye rides 8 above its
+                # foot (ThrowHead view_ofs, PM_GIB viewheight).
+                assert victim.grounded and victim.velocity.length() < 1.0;
+            }
+            if game == "q3" {
+                ended.clock = 5.0;
+                key(app, 32);
+                assert app.player.health > 0;
+            } else {
+                key(app, 257);
+                assert app.player.health > 0 and app.level.name == name;
+            }
+            run_for(app, 0.2);
+            if game != "q1" {
+                # A body shot where it lies goes on down and bursts then.
+                for enemy in [app.world->:HasOpponent:->][?:Opponent] {
+                    enemy.attack_wait = 100000.0;
+                }
+                app.player spawn Damage(
+                    amount=app.player.health, bypass_armor=True, bypass_protection=True
+                );
+                assert app.player.health == 0 and app.player.death_overkill == 0;
+                run_for(app, 0.2);
+                lain = mortality_of(app.player);
+                assert lain.dead and not lain.gibbed and body_struck(app.player);
+                app.player spawn Damage(amount=30);
+                run_for(app, 0.1);
+                assert not lain.gibbed and app.player.death_overkill == 30;
+                app.player spawn Damage(amount=30);
+                run_for(app, 0.1);
+                assert lain.gibbed and len([app.world->:HasGib:->][?:Gib]) >= pieces;
+                print("DEATH", game, "body shot past the gib health burst where it lay");
             }
             print("DEATH PASS", game);
         }

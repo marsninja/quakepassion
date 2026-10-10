@@ -23,6 +23,7 @@ import from .player_rig { PoseRig, rig_sound, reset_rig }
 import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_corpse, shootable }
 import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
+import from .demise { body_struck }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .bot_travel { FollowRoute, TravelResult, TRAVEL_JUMP_SPEED }
 import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
@@ -1074,7 +1075,8 @@ def knock_back(
         human = self_hit and not isinstance(actor, Opponent);
         speed = (1600.0 if human else 500.0) * amount / mass;
     } elif game == "q3" {
-        if isinstance(actor, Opponent) and not actor.arena {
+        # G_Damage: monsters stand fast, and so do the dead (FL_NO_KNOCKBACK).
+        if (isinstance(actor, Opponent) and not actor.arena) or actor.health <= 0 {
             return;
         }
         knock = min(amount, 200.0);
@@ -1204,7 +1206,8 @@ def line_of_fire(
     limit: float
 ) -> LineHit {
     result = LineHit(fraction=limit);
-    if person is not None and person.health > 0 {
+    # The player, or the body where shots still strike it (demise.jac).
+    if person is not None and (person.health > 0 or body_struck(person)) {
         hit = actor_fraction(start, finish, person.pos, collision.eye_height, collision.top_drop);
         if hit < result.fraction {
             result.actor = person;
@@ -1989,7 +1992,7 @@ def blast_actors(
         ]
     );
     for actor in actors {
-        corpse = isinstance(actor, Opponent) and gibbable_corpse(actor);
+        corpse = (isinstance(actor, Opponent) and gibbable_corpse(actor)) or body_struck(actor);
         if actor is direct or (actor.health <= 0 and not corpse) {
             continue;
         }
@@ -2348,7 +2351,7 @@ walker ProjectileTick {
                 self.collision.eye_height,
                 self.collision.top_drop
             );
-            if self.player.health > 0 and hit < fraction {
+            if (self.player.health > 0 or body_struck(self.player)) and hit < fraction {
                 fraction = hit;
                 player_hit = True;
             }
@@ -3200,7 +3203,8 @@ def advance_attack_segment(
         delta = player.pos.sub(enemy.pos);
         distance = delta.length();
         sight = collision.trace_point(enemy.pos, player.pos);
-        if player.health <= 0
+        # An attack under way plays out on a body shots still strike.
+        if (player.health <= 0 and not body_struck(player))
             or (
                 (not profile.lock_aim or profile.kind == "melee")
                 and (

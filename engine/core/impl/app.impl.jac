@@ -22,7 +22,9 @@ impl App.run() {
         populate_fixtures(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
         join_match(self.world, self.player);
-        prepare_death(self.player, self.level.bsp.game);
+        prepare_death(
+            self.player, self.level.bsp.game, self.world, game_directory(self.level.bsp.game)
+        );
         populate_finale(self.world, self.level, game_directory(self.level.bsp.game));
         if self.level.bsp.game == "q3" {
             prepare_arena_links(self.world, self.level.collision);
@@ -649,7 +651,7 @@ impl App.load_destination(
         populate_fixtures(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
         join_match(world, player);
-        prepare_death(player, game);
+        prepare_death(player, game, world, game_directory(game));
         populate_finale(world, level, game_directory(game));
         combat = CombatState();
         if game == "q3" {
@@ -1204,6 +1206,7 @@ impl App.step() -> bool {
                 collision=self.level.collision,
                 profile=self.level.movement,
                 dt=self.physics_clock.tick_rate,
+                world=self.world,
                 weapon=selected_weapon(self.combat).key,
                 water_depth=immersed.depth,
                 current=immersed.current

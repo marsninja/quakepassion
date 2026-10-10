@@ -1,10 +1,24 @@
 """The player's own death: the world running on around the body, the body
-touching nothing, how it lies and moves in each game, and the buttons that
-bring the player back."""
+touching nothing, how it lies and moves in each game, the buttons that bring
+the player back, and the body's gibs with the head the player then rides."""
 import math;
 import from games.deaths { death_rule, prepare_death }
-import from engine.world.demise { Mortality, HasMortality, LieDead, mortality_of, in_touch, stand_again }
-import from engine.world.world { World, Player }
+import from engine.world.demise {
+    Mortality,
+    HasMortality,
+    LieDead,
+    mortality_of,
+    in_touch,
+    stand_again,
+    body_struck,
+    body_gibbed
+}
+import from engine.world.world { World, Player, Area, move_to_area }
+import from engine.world.gibs { Gib, HasGib, GibsInto }
+import from engine.world.models { ModelResource }
+import from engine.world.vitals { VoiceTick }
+import from engine.formats.animated { AnimatedModel }
+import from engine.math.aabb { AABB }
 import from engine.world.combat {
     CombatState,
     CombatTick,
@@ -12,7 +26,9 @@ import from engine.world.combat {
     HasOpponent,
     Projectile,
     HasProjectile,
-    ProjectileTick
+    ProjectileTick,
+    line_of_fire,
+    blast_actors
 }
 import from engine.world.doors { Door, HasDoor, DoorTick }
 import from engine.world.triggers { TouchTrigger, HasTrigger, TriggerTick }
@@ -343,4 +359,189 @@ test "Q3 comes back on a held button after 1.7 s, or by itself 20 s later" {
     player.health = 0;
     lie(player, collision, "q3", TICK);
     assert fallen.dead and fallen.clock < 0.1 and not fallen.wants_back(True);
+}
+
+"""A room for the gibs to fly in, with the death floor under it."""
+def gib_room(world: World) -> Area {
+    area = Area(
+        name="room",
+        bounds=AABB(
+            mins=Vec3(x=-1000.0, y=-1000.0, z=-1000.0), maxs=Vec3(x=1000.0, y=1000.0, z=1000.0)
+        )
+    );
+    world ++> area;
+    return area;
+}
+
+"""A player with its game's death, standing in `area` and linked to the
+models its body bursts into."""
+def gibbable(game: str, area: Area) -> Player {
+    player = mortal(game);
+    move_to_area(player, area);
+    rule = mortality_of(player).rule.gibs;
+    assert rule is not None;
+    if rule.head {
+        player +>:GibsInto:count=1, head=True:+> ModelResource(name="head", model=AnimatedModel(), skins=[]);
+    }
+    player +>:GibsInto:count=len(rule.pieces):+> ModelResource(name="piece", model=AnimatedModel(), skins=[]);
+    return player;
+}
+
+test "a blow far enough past zero throws the player's own gibs, at each game's health" {
+    # GibPlayer gib1 to gib3; player_die four sm_meat; CG_GibPlayer the skull
+    # and ten pieces.
+    pieces = {"q1": 3, "q2": 4, "q3": 11};
+    for game in ["q1", "q2", "q3"] {
+        world = World();
+        area = gib_room(world);
+        # Q1 and Q2 gib below -40 health, Q3 at GIB_HEALTH (-40).
+        edge_case = gibbable(game, area);
+        edge_case spawn Damage(amount=140, bypass_armor=True);
+        first = edge_case spawn LieDead(
+            collision=death_floor(game), profile=movement_profile(game), dt=TICK, world=world
+        );
+        assert first.died and first.burst == (game == "q3");
+        assert mortality_of(edge_case).gibbed == (game == "q3");
+        for gib in [world->:HasGib:->][?:Gib] {
+            world del --> gib;
+        }
+        player = gibbable(game, area);
+        player.velocity = Vec3(x=120.0);
+        player spawn Damage(amount=141, bypass_armor=True);
+        assert player.health == 0 and player.death_overkill == 41;
+        tick = player spawn LieDead(
+            collision=death_floor(game), profile=movement_profile(game), dt=TICK, world=world
+        );
+        assert tick.died and tick.burst and tick.thrown == pieces[game];
+        assert len([world->:HasGib:->][?:Gib]) == pieces[game];
+        assert mortality_of(player).gibbed and body_gibbed(player) and not body_struck(player);
+        # A body that has burst bursts no more.
+        player spawn Damage(amount=500);
+        again = player spawn LieDead(
+            collision=death_floor(game), profile=movement_profile(game), dt=TICK, world=world
+        );
+        assert not again.burst and len([world->:HasGib:->][?:Gib]) == pieces[game];
+    }
+}
+
+test "the Q1 player is the head: thrown anew, bouncing, the eye 8 above its foot" {
+    world = World();
+    area = gib_room(world);
+    collision = death_floor("q1");
+    player = gibbable("q1", area);
+    player.velocity = Vec3(x=120.0);
+    player spawn Damage(amount=160, bypass_armor=True);
+    player spawn LieDead(collision=collision, profile=movement_profile("q1"), dt=TICK, world=world);
+    fallen = mortality_of(player);
+    # ThrowHead: the box as it stood (-16 -16 0 to 16 16 56 about an origin
+    # 24 lower), view_ofs 8 above it, and VelocityForDamage in place of the
+    # speed it had: -60 health doubles it.
+    assert collision.top_drop == 0.0 and collision.eye_height == -16.0;
+    assert abs(player.velocity.x) <= 200.0 and abs(player.velocity.y) <= 200.0;
+    assert player.velocity.z > 380.0 and player.velocity.z <= 600.0 and not player.grounded;
+    # GibPlayer: deadflag DEAD_DEAD at once, with no death frames to wait out.
+    assert fallen.ready == 0.0;
+    assert not fallen.wants_back(False) and fallen.wants_back(True);
+    # MOVETYPE_BOUNCE: off the floor again with half its speed, until it
+    # leaves it slower than 60.
+    bounces = 0;
+    peak = 0.0;
+    for tick in range(120 * 8) {
+        falling = player.velocity.z < 0.0;
+        player spawn LieDead(collision=collision, profile=movement_profile("q1"), dt=TICK, world=world);
+        if falling and player.velocity.z > 0.0 {
+            bounces += 1;
+        }
+        peak = max(peak, player.pos.z);
+    }
+    assert bounces >= 2 and peak > 80.0;
+    assert player.grounded and player.velocity.length() == 0.0;
+    # At rest the camera is 8 units off the floor.
+    assert abs(player.pos.z - 8.0) < 0.3;
+}
+
+test "the Q2 player rides its head as PM_GIB: 32 up, a 16 unit box, the eye 8 above" {
+    world = World();
+    area = gib_room(world);
+    collision = death_floor("q2");
+    player = gibbable("q2", area);
+    player.velocity = Vec3(x=100.0);
+    player.grounded = True;
+    player spawn Damage(amount=160, bypass_armor=True);
+    before = player.pos.z - collision.eye_height;
+    player spawn LieDead(collision=collision, profile=movement_profile("q2"), dt=TICK, world=world);
+    # ThrowClientHead: origin 32 higher with mins 0 0 0 and maxs 16 16 16
+    # (the box's foot 56 above where the body's was), viewheight 8, and
+    # VelocityForDamage added to its speed: 60 past zero is the 1.2 scale.
+    assert collision.top_drop == 40.0 and collision.eye_height == -16.0;
+    foot = player.pos.z - collision.eye_height - 24.0;
+    assert abs(foot - (before + 32.0)) < 6.0 and not player.grounded;
+    assert player.velocity.z > 200.0 and player.velocity.z <= 360.0;
+    assert player.velocity.x > 100.0 - 121.0 and player.velocity.x < 100.0 + 121.0;
+    peak = 0.0;
+    for tick in range(120 * 4) {
+        player spawn LieDead(collision=collision, profile=movement_profile("q2"), dt=TICK, world=world);
+        peak = max(peak, player.pos.z);
+    }
+    # It lands on the floor and the ground's friction stops it; the eye is 8
+    # above the head's origin, which rests on the floor.
+    assert peak > 80.0 and player.grounded;
+    assert Vec3(x=player.velocity.x, y=player.velocity.y).length() == 0.0;
+    assert abs(player.pos.z - 8.0) < 0.3;
+}
+
+test "Q2 and Q3 bodies are still shot, and burst when that takes them past the gib health" {
+    for game in ["q1", "q2", "q3"] {
+        world = World();
+        area = gib_room(world);
+        collision = death_floor(game);
+        state = CombatState(game=game);
+        player = gibbable(game, area);
+        player spawn Damage(amount=120, bypass_armor=True);
+        voice = player spawn VoiceTick(game=game, dt=TICK);
+        player spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        fallen = mortality_of(player);
+        assert fallen.dead and not fallen.gibbed and player.death_overkill == 20;
+        # Q1 PlayerDie makes the body SOLID_NOT; Q2 player_die leaves it
+        # DAMAGE_YES and Q3 "can still be gibbed".
+        assert body_struck(player) == (game != "q1");
+        # A nail in flight: through the Q1 body, into the others.
+        nail = Projectile(
+            pos=player.pos.add(Vec3(x=-60.0)), velocity=Vec3(x=600.0), damage=9, hostile=True
+        );
+        world +>:HasProjectile:+> nail;
+        for tick in range(30) {
+            world spawn ProjectileTick(player=player, collision=collision, state=state, dt=TICK);
+        }
+        assert player.health == 0 and player.death_overkill == (20 if game == "q1" else 29);
+        # A monster's line of fire stops at a body shots still strike.
+        shooter = Opponent(pos=player.pos.add(Vec3(x=-200.0)), game=game);
+        aim = line_of_fire(
+            world, shooter, player, shooter.pos, player.pos.add(Vec3(x=200.0)), collision, 1.0
+        );
+        assert (aim.actor is player) == (game != "q1");
+        # A weak blast on it.
+        blast_actors(world, player.pos.add(Vec3()), 8, 120.0, True, player, collision, state);
+        soaked = player.death_overkill;
+        assert (soaked > 29) == (game != "q1") and soaked < 40;
+        step = player spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        assert not step.burst and not fallen.gibbed;
+        if game == "q1" {
+            assert soaked == 20;
+            continue;
+        }
+        # Past the gib health the body bursts then, with the gib sound.
+        player spawn VoiceTick(game=game, dt=TICK);
+        player spawn Damage(amount=30);
+        step = player spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        assert step.burst and not step.died and fallen.gibbed and step.thrown > 0;
+        loud = player spawn VoiceTick(game=game, dt=TICK);
+        sound = "sound/misc/udeath.wav" if game == "q2" else "sound/player/gibsplt1.wav";
+        assert sound not in voice.cues and sound in loud.cues;
+        assert sound not in (player spawn VoiceTick(game=game, dt=TICK)).cues;
+        # Burst, it is struck no more.
+        left = player.death_overkill;
+        player spawn Damage(amount=50);
+        assert player.death_overkill == left and not body_struck(player);
+    }
 }

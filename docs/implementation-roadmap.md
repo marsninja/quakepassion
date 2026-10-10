@@ -69,7 +69,8 @@ Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-fee
 - Player projectiles spawn at the player's origin, not a muzzle point.
 - Q2 item `team` groups are ignored and `ITEM_NO_TOUCH` items are skipped.
 - The Q3 railgun draws its core only, not the raildisc rings.
-- The player's own body is not thrown as gibs.
+- A Q3 player killed in a `CONTENTS_NODROP` void still gibs; Q2 `AI_BRUTAL`
+  and lava burning a Q2 body are not modelled.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
 - Q3 flares are not drawn; `deformVertexes` applies to world surfaces only, and

@@ -142,6 +142,25 @@ body, a `Mortality` node the player holds:
   path it walked, once the attack it was in is over, and a dead player is
   never taken for an enemy (Q1 `ai_run` and `FindTarget`, Q2
   `ai_checkattack`). Monsters fighting each other fight on.
+- **Gibs.** A killing blow more than 40 past zero (Q3: 40 or more) bursts
+  the body through the gib graph the monsters use: `GibsInto` edges from the
+  player to its pieces, linked on level load (`games/deaths.jac`), thrown by
+  `throw_gibs`. Q1 `GibPlayer` throws `gib1` to `gib3` and the player goes on
+  as the head (`ThrowHead`): thrown with a new velocity, bouncing off each
+  surface with half its speed (`MOVETYPE_BOUNCE`) until it leaves a floor
+  slower than 60, the eye 8 above the foot of its box, its buttons counting
+  at once. Q2 `player_die` throws four `sm_meat` gibs and the player rides
+  its head (`ThrowClientHead`, `PM_GIB`): a 16 unit box resting on an origin
+  32 higher, the eye 8 above that, the throw added to its speed, moving by
+  the player's move without the dead drag. Q3 `GibEntity` throws
+  `CG_GibPlayer`'s skull and ten pieces and the body is gone. The Q1 and Q2
+  head models are not drawn: the head is the player's own entity, which its
+  view leaves out (`CL_RelinkEntities`, `RF_VIEWERMODEL`).
+- **Shot bodies.** Q2 `player_die` leaves the body taking damage and Q3's
+  "can still be gibbed" (`body_die`): hitscan, missiles and blasts strike it
+  where it lies, an attack under way plays out on it, and its health goes on
+  down; past the gib health it bursts then, with the gib sound. Nothing
+  strikes Q1's body (`SOLID_NOT`).
 - **Coming back.** The buttons of a dead player only bring the player back.
   Q1 `PlayerDeathThink`: after the death frames (0.8 to 1.4 s by the sequence
   `PlayerDie` picked, 0.8 s holding the axe) every button must be let go, and
@@ -193,7 +212,9 @@ left.
 - `tests/player_death_tests.jac`: a door closing over a dead player, a
   missile landing and a monster going back to its stand after the death, the
   dead touching nothing in each game, the Q1 toss and the Q2 and Q3 dead
-  boxes and slide, and each game's buttons and waits.
+  boxes and slide, each game's buttons and waits, the player's gibs at each
+  game's health, the Q1 and Q2 head and its eye, and Q2 and Q3 bodies shot
+  until they burst.
 - `tests/view_sway_tests.jac` (bob, roll, gun lag, Q2 shot kick, dead and
   intermission views), `tests/render_interpolation_tests.jac`,
   `tests/step_view_tests.jac`.
@@ -205,7 +226,10 @@ left.
   through the game loop: the body takes its game's form and touches nothing
   (it is laid on an item, which stays), a missile in the air lands, an
   alerted monster stands again, a door opens and shuts, saving is refused,
-  and the buttons bring the player back after their waits.
+  and the buttons bring the player back after their waits. Then a blow 300
+  past zero in each game: three, four and eleven gibs fly, the Q1 and Q2
+  player comes to rest as the head, and a Q2 and a Q3 body shot twice where
+  it lies bursts on the second hit.
   `scripts/gameplay_smoke.jac` checks the same waits, and Enter, from the
   keyboard.
 
@@ -213,4 +237,8 @@ left.
 
 - Q1 backpacks (grunt, enforcer and ogre drops) are picked up, but
   `BackpackTouch`'s "You get ..." print is not shown.
-- The player's own body is not thrown as gibs.
+- A Q3 player killed in a `CONTENTS_NODROP` void (q3dm17's) still gibs;
+  `player_die` never gibs there.
+- Q2 `AI_BRUTAL` (a tank firing on at a corpse down to -80 health) is not
+  modelled, and a Q2 body lying in lava or slime is not burnt on
+  (`P_WorldEffects`).
