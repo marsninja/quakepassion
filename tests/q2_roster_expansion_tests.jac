@@ -1,4 +1,5 @@
 import from games.enemies { enemy_rule }
+import from games.opponents { successor_body }
 import from engine.world.world { World, Player }
 import from engine.world.combat {
     Opponent,
@@ -9,7 +10,8 @@ import from engine.world.combat {
     CombatTick,
     ProjectileTick,
     damage_opponent,
-    choose_attack
+    choose_attack,
+    attack_chance
 }
 import from engine.world.particles { HasTrail, ShotTrail }
 import from engine.world.level { Level }
@@ -284,4 +286,23 @@ test "flipper stays a swimmer and static bodies ignore damage" {
     marine = enemy_rule("q2", "misc_insane");
     assert marine is not None and not marine.decoration;
     assert choose_attack(Opponent(rule=marine), 50.0) == -1;
+}
+
+test "Jorg's Makron is a Q2 monster of its own class at the level's skill" {
+    jorg_rule = enemy_rule("q2", "monster_jorg");
+    makron_rule = enemy_rule("q2", "monster_makron");
+    assert jorg_rule is not None and makron_rule is not None;
+    jorg = Opponent(
+        rule=jorg_rule, game="q2", kind="monster_jorg", skill=2, own_hull=True,
+        pos=Vec3(x=64.0, z=22.0), home=Vec3(x=64.0, z=22.0), yaw=1.5
+    );
+    makron = successor_body(jorg, makron_rule, jorg_rule.successor, 7920);
+    assert makron.game == "q2" and makron.kind == "monster_makron" and makron.skill == 2;
+    assert makron.dormant and makron.own_hull and makron.rule is makron_rule;
+    assert makron.health == makron_rule.health and makron.max_health == makron_rule.health;
+    assert makron.pos.x == 64.0 and makron.yaw == 1.5 and makron.shot_random == 7920;
+    # So it attacks by Q2's chances, not the generic ones.
+    assert attack_chance(makron, 300.0, False) == attack_chance(
+        Opponent(rule=makron_rule, game="q2", kind="monster_makron", skill=2), 300.0, False
+    );
 }

@@ -79,8 +79,9 @@ Details that follow the originals:
   - The mutant strides 17 units on attack02 before it leaps.
   - A soldier sights with `solsght1` or `solsrch1`, half the time each.
 - **Jorg and Makron** (`m_boss31.c`, `m_boss32.c`): Jorg's rule names
-  `monster_makron` as its `successor`. The Makron is built dormant at load and
-  takes over Jorg's targets. When Jorg's death animation ends it bursts apart
+  `monster_makron` as its `successor`. The Makron is built dormant at load
+  (`successor_body`), a Q2 `monster_makron` at the level's skill like one
+  the map places, and takes over Jorg's targets. When Jorg's death animation ends it bursts apart
   (`BossExplode`), and 0.8 s later the Makron is thrown toward the player at
   400 units a second plus 200 up (`MakronToss`, `MakronSpawn`).
 - **Hostile BFG** (Jorg, Makron): the orb lasers targets in reach and bursts at
@@ -163,7 +164,8 @@ Details that follow the originals:
   and saves, rail occlusion and safe zone, cleaver escape, sound cues.
 - `tests/q2_roster_expansion_tests.jac`: gunner bursts, grenades and pain by
   damage, flyer, mutant, parasite drain, brain pull/push, tank and Supertank
-  choices, Hornet volley and Jorg spawning Makron, Makron sweep and rail,
+  choices, Hornet volley and Jorg spawning Makron (a monster of its own
+  class at the level's skill), Makron sweep and rail,
   hostile BFG, flipper, static bodies.
 - `tests/chick_tests.jac`, `tests/q2_attack_tests.jac` (the soldier's attack
   tables, its choice of `attack1` or `attack2`, each refire branch, the

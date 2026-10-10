@@ -221,6 +221,27 @@ def arena_entities(world: World, roster: list[BotInfo], player_start: Vec3) -> l
     return result;
 }
 
+"""The form a monster leaves to fight on when it dies (Jorg's Makron),
+waiting unseen where the first stands: a monster of the same game, skill
+and box rules, of its own class."""
+def successor_body(enemy: Opponent, follower: OpponentRule, kind: str, seed: int) -> Opponent {
+    return Opponent(
+        pos=enemy.pos.add(Vec3()),
+        eye_height=enemy.eye_height,
+        dormant=True,
+        home=enemy.pos.add(Vec3()),
+        shot_random=seed,
+        rule=follower,
+        health=follower.health,
+        max_health=follower.health,
+        yaw=enemy.yaw,
+        game=enemy.game,
+        kind=kind,
+        skill=enemy.skill,
+        own_hull=enemy.own_hull
+    );
+}
+
 def populate_opponents(world: World, level: Level, directory: str) -> int {
     catalog = AssetCatalog(game=level.bsp.game, directory=directory);
     resources: dict[str, ModelResource] = {};
@@ -618,18 +639,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 if follower is None {
                     raise ValueError("Unknown successor: " + rule.successor);
                 }
-                heir = Opponent(
-                    pos=position,
-                    eye_height=level.collision.eye_height,
-                    dormant=True,
-                    home=position,
-                    shot_random=1 + count * 7919,
-                    rule=follower,
-                    health=follower.health,
-                    max_health=follower.health,
-                    yaw=enemy.yaw,
-                    own_hull=enemy.own_hull
-                );
+                heir = successor_body(enemy, follower, rule.successor, 1 + count * 7919);
                 ensure_profiles(heir);
                 for profile in heir.profiles {
                     register_speaker(world, heir, profile.sound);

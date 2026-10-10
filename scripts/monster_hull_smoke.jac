@@ -67,6 +67,13 @@ with entry {
         bosses = [enemy for enemy in [world->:HasOpponent:->][?:Opponent] if enemy.kind == scene_case[2] and not enemy.dormant];
         assert bosses and bosses[0].own_hull;
         boss = bosses[0];
+        if boss.rule.successor {
+            # The form it leaves to fight on is a monster of its own class.
+            heir = boss.successor;
+            assert heir is not None and heir.dormant and heir.own_hull;
+            assert heir.game == game and heir.kind == boss.rule.successor and heir.skill == boss.skill;
+            print("HULL HEIR", name, heir.kind, "game", heir.game, "skill", heir.skill);
+        }
         body = monster_collision(level.collision, boss);
         origin = boss.pos.sub(Vec3(z=boss.eye_height));
         assert not body.trace(origin, origin).start_solid;
