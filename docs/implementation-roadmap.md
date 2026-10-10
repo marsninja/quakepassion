@@ -52,8 +52,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
 - One death sequence per monster; several monsters have one pain sequence; pain
   frames carry no movement.
 - Light and shotgun Q2 soldiers never use `attack2`.
-- Shub-Niggurath's finale is a timed hold and shake, not `finale_1`-`finale_4`
-  frame by frame.
 
 Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-status.md](map-mechanics-status.md), [level-flow-status.md](level-flow-status.md), [traversal-status.md](traversal-status.md)):
 - Closed Q2/Q3 area portals do not cull rendering, sounds are not PHS-limited,

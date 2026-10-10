@@ -23,7 +23,8 @@ import from engine.world.finale {
     HasTeleportTrain,
     Finale,
     HasFinale,
-    SHUB_TEXT
+    SHUB_TEXT,
+    settle_finale
 }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.brushes { BrushObject, HasBrush, show_brush }
@@ -1361,13 +1362,16 @@ def restore(
         finale.camera = False;
         finale.text = "";
         for boss in enemies {
-            if boss.rule.script == "shub" and boss.boss_phase >= 1 {
+            if boss.rule.script != "shub" {
+                continue;
+            }
+            if boss.boss_phase >= 1 {
                 finale.camera = True;
                 if boss.boss_phase >= 3 {
                     finale.text = SHUB_TEXT;
-                    boss.visual.visible = False;
                 }
             }
+            settle_finale(world, boss);
         }
     }
     world spawn ApplyGates(

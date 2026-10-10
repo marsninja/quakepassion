@@ -23,7 +23,8 @@ import from engine.world.turrets { link_turret_drivers }
 import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
 import from engine.world.reflection { HasBody, Carries, player_body }
 import from .botfiles { BotFiles, load_bot_character }
-import from engine.world.finale { TeleportTrain, HasTeleportTrain }
+import from engine.world.finale { TeleportTrain, HasTeleportTrain, LeftStanding }
+import from engine.world.fixtures { Fixture, HasFixture }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
 import from engine.world.models { ModelResource, HasModelResource, UsesModel, HasVisual, attach_model }
@@ -532,6 +533,28 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 and link_gibs(world, enemy, gibs, catalog.source(source), source, resources) {
                 enemy.gib_rule = gibs;
                 register_speaker(world, enemy, gibs.sound);
+            }
+            # oldone.qc finale_4 puts a player model down by the pit: 32 and
+            # 264 units back from her origin, turned to 290 degrees, on frame
+            # 1. It stands hidden until the finale ends.
+            if source == "q1" and kind == "monster_oldone" {
+                stand_key = "q1:progs/player.mdl:0";
+                if stand_key not in resources {
+                    stand_in = catalog.source(source).model("progs/player.mdl", 0);
+                    resources[stand_key] = ModelResource(
+                        name=stand_key, model=stand_in.model, skins=stand_in.skins
+                    );
+                    world +>:HasModelResource:+> resources[stand_key];
+                }
+                spot = enemy.pos.sub(Vec3(x=32.0, y=264.0, z=enemy.eye_height));
+                figure = Fixture(pos=spot, yaw=math.radians(290.0), frames=[1]);
+                figure.visual = attach_model(figure, resources[stand_key]);
+                figure.visual.first = 1;
+                figure.visual.second = 1;
+                figure.visual.visible = False;
+                move_to_area(figure, level.areas[level.locate(spot)]);
+                world +>:HasFixture:+> figure;
+                enemy +>:LeftStanding:+> figure;
             }
             # The item a monster drops waits, hidden, until the monster dies.
             drop = None if arena else monster_drop(source, kind, fields);

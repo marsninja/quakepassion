@@ -1,5 +1,12 @@
 import from games.enemies { enemy_rule }
+import from games.gibs { gib_rule }
 import from engine.world.world { World, Player }
+import from engine.world.gibs { Gib, HasGib, GibsInto }
+import from engine.world.models { ModelResource }
+import from engine.world.fixtures { Fixture, HasFixture }
+import from engine.world.lightstyles { LightStyles, HasLightStyles }
+import from engine.world.signals { Signal, Targets }
+import from engine.formats.animated { AnimatedModel }
 import from engine.world.combat { Opponent, HasOpponent, CombatState, damage_opponent }
 import from engine.world.trains { TrackPoint, HasTrack, TrackNext }
 import from engine.world.finale {
@@ -12,7 +19,10 @@ import from engine.world.finale {
     telefrag,
     episode_text,
     intermission_camera,
-    SHUB_TEXT
+    SHUB_TEXT,
+    SHUB_THRASH_LIGHT,
+    LeftStanding,
+    shub_thrash
 }
 import from engine.world.exits { exit_map, exit_spawn, exit_cinematic }
 import from engine.world.level { Level }
@@ -67,8 +77,21 @@ test "telefrag inside shub starts the finale and finishes with the closing text"
         pos=Vec3(x=-752.0, y=2032.0, z=80.0 + 22.0),
         health=40000,
         idle_animation=[0, 1, 2],
-        death_animation=[5, 6, 7]
+        death_animation=list(range(100, 120))
     );
+    shub.gib_rule = gib_rule("q1", "monster_oldone");
+    for name in ["gib1", "gib2", "gib3"] {
+        shub +>:GibsInto:count=1:+> ModelResource(name=name, model=AnimatedModel(), skins=[]);
+    }
+    figure = Fixture(pos=Vec3(x=-784.0, y=1768.0, z=80.0));
+    figure.visual.visible = False;
+    world +>:HasFixture:+> figure;
+    shub +>:LeftStanding:+> figure;
+    styles = LightStyles(game="q1");
+    styles.patterns[0] = "m";
+    world +>:HasLightStyles:+> styles;
+    used = Signal();
+    shub.activation +>:Targets:+> used;
     world +>:HasOpponent:+> shub;
     player = Player(pos=Vec3(x=-400.0, y=2032.0, z=100.0));
     state = CombatState(game="q1");
@@ -79,22 +102,52 @@ test "telefrag inside shub starts the finale and finishes with the closing text"
     assert shub.visual.first != shub.visual.second or shub.animation_time > 0.0;
     assert telefrag(world, player, Vec3(x=-700.0, y=2000.0, z=120.0), 22.0);
     finale = [world->:HasFinale:->][?:Finale][0];
-    assert shub.boss_phase == 1 and finale.camera and not finale.text;
+    # Killed: monster_death_use fires her targets as finale_1 begins.
+    assert shub.boss_phase == 1 and finale.camera and not finale.text and used.pending == 1;
     saved = snapshot(world, level, player, state);
-    for i in range(7) {
-        world spawn FinaleTick(player=player, state=state, dt=0.5);
+    # finale_1 and finale_2: she idles on for three seconds.
+    for i in range(29) {
+        world spawn FinaleTick(player=player, state=state, dt=0.1);
+        assert shub.boss_phase == 1 and shub.visual.first in [0, 1, 2];
     }
-    assert shub.boss_phase == 2 and shub.visual.visible;
-    for i in range(13) {
-        world spawn FinaleTick(player=player, state=state, dt=0.5);
+    # finale_3: old_thrash1-15 three times over, each setting light style 0.
+    world spawn FinaleTick(player=player, state=state, dt=0.1);
+    assert shub.boss_phase == 2 and shub.visual.first == 100 and styles.patterns[0] == "m";
+    for frame in range(1, 49) {
+        world spawn FinaleTick(player=player, state=state, dt=0.1);
+        thrash = shub_thrash(frame);
+        assert shub.boss_phase == 2 and shub.visual.visible , frame;
+        assert shub.visual.first == 99 + thrash , frame;
+        assert styles.patterns[0] == SHUB_THRASH_LIGHT[thrash - 1] , frame;
+        assert styles.values[0] == float((ord(styles.patterns[0]) - 97) * 22) / 256.0 , frame;
     }
-    assert shub.boss_phase == 3 and not shub.visual.visible and state.kills == 1;
-    assert finale.text == SHUB_TEXT;
+    assert not [world->:HasGib:->] and not figure.visual.visible;
+    # old_thrash20 runs finale_4, 7.9 seconds after the telefrag.
+    world spawn FinaleTick(player=player, state=state, dt=0.1);
+    assert shub.boss_phase == 3 and not shub.visual.visible and finale.text == SHUB_TEXT;
+    # She was never FL_MONSTER: the kill count stays where it was.
+    assert state.kills == 0;
+    assert styles.patterns[0] == "m" and figure.visual.visible;
+    gibs = [world->:HasGib:->][?:Gib];
+    origin = Vec3(x=-752.0, y=2032.0, z=80.0);
+    assert len(gibs) == 50;
+    for gib in gibs {
+        offset = gib.pos.sub(origin);
+        assert abs(offset.x) <= 64.0 and abs(offset.y) <= 64.0 and offset.z in [16.0, 112.0];
+        # ThrowGib(-999): VelocityForDamage times ten.
+        assert 2000.0 <= gib.velocity.z <= 3000.0 and abs(gib.velocity.x) <= 1000.0;
+    }
     finale.text = "";
     finale.camera = False;
     restore(world, level, player, state, saved);
     assert shub.boss_phase == 1 and finale.camera and not finale.text;
-    assert shub.visual.visible;
+    assert shub.visual.visible and not figure.visual.visible;
+}
+
+test "the thrashing runs old_thrash1-15 three times, then 16-20" {
+    assert [shub_thrash(frame) for frame in [0, 1, 14, 15, 29, 30, 44]] == [1, 2, 15, 1, 15, 1, 15];
+    assert [shub_thrash(frame) for frame in [45, 46, 47, 48, 49, 60]] == [16, 17, 18, 19, 20, 20];
+    assert len(SHUB_THRASH_LIGHT) == 19;
 }
 
 test "teleport train position survives a save" {

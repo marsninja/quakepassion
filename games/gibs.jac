@@ -68,6 +68,10 @@ def gib_rule(game: str, kind: str) -> GibRule | None {
         if kind == "monster_wizard" {
             return q1_gibs(-41, "h_wizard", ["gib2", "gib2", "gib2"]);
         }
+        # oldone.qc finale_4 throws fifty of these; no damage gibs her.
+        if kind == "monster_oldone" {
+            return q1_gibs(-1000000, "gib1", ["gib2", "gib3"], "sound/boss2/pop2.wav");
+        }
         # Zombies only die by being blown apart.
         if kind == "monster_zombie" {
             return q1_gibs(0, "h_zombie", ["gib1", "gib2", "gib3"], "sound/zombie/z_gib.wav");

@@ -67,7 +67,7 @@ with entry {
         world spawn FinaleTick(player=player, state=state, dt=0.1);
     }
     finale = [world->:HasFinale:->][?:Finale][0];
-    assert boss.boss_phase == 3 and finale.text == SHUB_TEXT and state.kills == 1;
+    assert boss.boss_phase == 3 and finale.text == SHUB_TEXT and state.kills == 0;
     print("FINALE PASS shub dissolved");
     restore(world, level, player, state, saved);
     assert boss.boss_phase == 1 and boss.visual.visible and finale.camera;

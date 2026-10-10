@@ -66,9 +66,17 @@ Details that follow the QuakeC:
 - **Shub-Niggurath** (`oldone.qc`, `engine/world/finale.jac`, `FinaleTick`):
   idles through `old1-46` and refuses weapon damage. The spiked teleport train
   (`TeleportTrain`, `TeleportTrainTick`) runs its corner loop. A telefrag inside
-  the boss (`telefrag`) switches to the intermission camera, holds 3 s, then
-  plays `shake1-20` with its death sound for 6 s. The boss then vanishes, the
-  kill counts and the closing text shows.
+  the boss (`telefrag`) fires her targets and runs the finale on the original
+  timeline: `finale_1` switches to the intermission camera while she idles
+  on; a second later `finale_2` splashes a teleport flash inside her with
+  `misc/r_tele1`; two seconds after that `finale_3` plays her death sound and
+  starts `old_thrash1-15`, three times over, then `old_thrash16-20`, each
+  frame setting light style 0 to its own brightness so the whole map
+  flickers; `old_thrash20`, 4.9 s into the thrashing, runs `finale_4`:
+  `pop2`, fifty gibs thrown from a 5 by 5 grid at two heights, the closing
+  text with CD track 3, a player model left standing by the pit, and the
+  light back to normal. She is never counted among the kills, as in the
+  original (she is not `FL_MONSTER`).
 
 Boss phase, timers, lightning interval and the teleport train's position are
 saved.
@@ -84,7 +92,8 @@ saved.
   knight, enforcer and ogre timelines.
 - `tests/chthon_tests.jac`: activation, weapon immunity, sounds and skill health,
   yaw speed and leading, electrode alignment, idle over a dead player, saves.
-- `tests/finale_tests.jac`: teleport train, telefrag finale, closing texts.
+- `tests/finale_tests.jac`: teleport train, the telefrag finale frame by
+  frame (thrash frames, light letters, gibs, stand-in), closing texts.
 - Native: `scripts/roster_smoke.jac` checks every Q1/Q2 class's frames, sounds
   and missiles against the archives; `scripts/attack_timing_smoke.jac`,
   `scripts/chthon_smoke.jac` (e1m7 electrodes, death output, saves after every
@@ -99,8 +108,6 @@ saved.
   originals' random choices (for example `army_die` / `army_cdie`) are not made.
 - Q1 monsters other than the zombie play one pain family. The originals' random
   pain choices (for example `army_pain`'s three sequences) are not made.
-- Shub-Niggurath's finale is a fixed hold-and-shake timeline. It is not a
-  frame-by-frame reproduction of `finale_1`-`finale_4`.
 
 References: [v101qc](https://github.com/id-Software/Quake-Tools/tree/master/qcc/v101qc)
 (`soldier.qc`, `dog.qc`, `knight.qc`, `hknight.qc`, `enforcer.qc`, `ogre.qc`,

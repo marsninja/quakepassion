@@ -1384,6 +1384,8 @@ impl App.step() -> bool {
                 if finale.text and not self.campaign_complete {
                     self.finale_text = finale.text;
                     self.campaign_complete = True;
+                    # oldone.qc finale_4: SVC_CDTRACK 3 under the end text.
+                    self.audio.play_cd_track(3);
                 }
             }
             if self.campaign_complete {

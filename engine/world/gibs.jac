@@ -83,9 +83,51 @@ def gibs_at(rule: GibRule | None, health: int) -> bool {
     return rule is not None and health <= rule.threshold;
 }
 
-"""Burst `victim` into its linked gib models at `origin` (the model origin).
-Q1 heads stay where they land; every other piece fades after 10 to 20
-seconds (Q3: 5 to 8)."""
+"""Throw one piece of `model` from `origin` in `rule`'s style (Q1 ThrowGib and
+ThrowHead, Q2 ThrowGib, Q3 CG_LaunchGib). Q1 heads stay where they land;
+every other piece fades after 10 to 20 seconds (Q3: 5 to 8)."""
+def launch_gib(
+    world: World,
+    victim: Entity,
+    model: ModelResource,
+    rule: GibRule,
+    origin: Vec3,
+    overkill: int,
+    dice: GibDice,
+    head: bool = False,
+    base: Vec3 = Vec3()
+) -> Gib {
+    gib = Gib(pos=origin.add(Vec3(z=8.0 if head else 0.0)), yaw=victim.yaw);
+    velocity = gib_velocity(rule.style, overkill, dice);
+    if rule.style == "q2" {
+        velocity = base.add(velocity.scale(0.5));
+        gib.toss = True;
+    }
+    if rule.style == "q3" {
+        gib.backoff = 2.0;
+        gib.damping = 0.6;
+        gib.stop_speed = 40.0;
+        gib.remaining = 5.0 + dice.roll() * 3.0;
+    } else {
+        gib.remaining = 10.0 + dice.roll() * 10.0;
+        if head {
+            gib.spin = Vec3(y=dice.signed() * 600.0);
+        } else {
+            gib.spin = Vec3(x=dice.roll() * 600.0, y=dice.roll() * 600.0, z=dice.roll() * 600.0);
+        }
+    }
+    gib.lasting = head and rule.style == "q1";
+    gib.velocity = velocity;
+    gib.visual = attach_model(gib, model);
+    area = area_of(victim);
+    if area is not None {
+        move_to_area(gib, area);
+    }
+    world +>:HasGib:+> gib;
+    return gib;
+}
+
+"""Burst `victim` into its linked gib models at `origin` (the model origin)."""
 def throw_gibs(
     world: World,
     victim: Entity,
@@ -98,37 +140,11 @@ def throw_gibs(
     dice = GibDice(seed=max(1, seed % 2147483647));
     links = [edge victim->:GibsInto:->];
     models = [victim->:GibsInto:->][?:ModelResource];
-    area = area_of(victim);
     thrown = 0;
     for index in range(min(len(links), len(models))) {
         link = links[index];
         for piece in range(link.count) {
-            gib = Gib(pos=origin.add(Vec3(z=8.0 if link.head else 0.0)), yaw=victim.yaw);
-            velocity = gib_velocity(rule.style, overkill, dice);
-            if rule.style == "q2" {
-                velocity = base.add(velocity.scale(0.5));
-                gib.toss = True;
-            }
-            if rule.style == "q3" {
-                gib.backoff = 2.0;
-                gib.damping = 0.6;
-                gib.stop_speed = 40.0;
-                gib.remaining = 5.0 + dice.roll() * 3.0;
-            } else {
-                gib.remaining = 10.0 + dice.roll() * 10.0;
-                if link.head {
-                    gib.spin = Vec3(y=dice.signed() * 600.0);
-                } else {
-                    gib.spin = Vec3(x=dice.roll() * 600.0, y=dice.roll() * 600.0, z=dice.roll() * 600.0);
-                }
-            }
-            gib.lasting = link.head and rule.style == "q1";
-            gib.velocity = velocity;
-            gib.visual = attach_model(gib, models[index]);
-            if area is not None {
-                move_to_area(gib, area);
-            }
-            world +>:HasGib:+> gib;
+            launch_gib(world, victim, models[index], rule, origin, overkill, dice, link.head, base);
             thrown += 1;
         }
     }

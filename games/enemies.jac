@@ -500,7 +500,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 death_frames=["shake" + str(i) for i in range(1, 21)],
                 sight_sound="sound/boss2/sight.wav",
                 pain_sounds=["sound/boss2/pop2.wav"],
-                death_sound="sound/boss2/death.wav"
+                death_sound="sound/boss2/death.wav",
+                sounds=["sound/misc/r_tele1.wav"]
             );
         }
         if kind == "monster_wizard" {
