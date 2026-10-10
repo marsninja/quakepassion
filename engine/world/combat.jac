@@ -5759,10 +5759,12 @@ walker CombatTick {
         # Q1 ai_face/ChangeYaw, Q2 M_ChangeYaw: toward the goal by the
         # monster's yaw speed each 0.1 s frame, spread over the frame's
         # ticks. A monster walking or running is turned by its steps instead
-        # (SV_StepDirection).
+        # (SV_StepDirection), and one in pain does not turn at all: its
+        # frames only step it (ai_pain, ai_painforward, Q2 ai_move).
         if facing is not None
             and not here.fighting
             and here.character is None
+            and here.pain_wait <= 0.0
             and not (striding(here) and wish.length() > 0.0) {
             goal = facing.sub(here.pos);
             if abs(goal.x) > 0.000001 or abs(goal.y) > 0.000001 {

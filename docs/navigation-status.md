@@ -84,10 +84,11 @@ players and route over the map's AAS; see
 - **Walk branches.** A `Gait` can branch back (Q2 `soldier_walk1_random`:
   walk110 returns to walk101 nine times in ten). `other_walks` lets a monster
   pick among walks when it sets off (Q2 `soldier_walk`: walk1 or walk2).
-- **Turning out of the cycle.** Holding an attack, attacking or in pain, a
-  monster turns toward its target by `yaw_speed` degrees per 0.1 s frame,
-  spread over the frame's ticks (`change_yaw`, as Q1 `ChangeYaw` / Q2
-  `M_ChangeYaw`). Walkers use 20 (`walkmonster_start`), fliers and swimmers
+- **Turning out of the cycle.** Holding an attack or attacking, a monster
+  turns toward its target by `yaw_speed` degrees per 0.1 s frame, spread
+  over the frame's ticks (`change_yaw`, as Q1 `ChangeYaw` / Q2
+  `M_ChangeYaw`). In pain it does not turn: its frames only step it
+  (`ai_pain`, `ai_painforward`, Q2 `ai_move`). Walkers use 20 (`walkmonster_start`), fliers and swimmers
   10 (`flymonster_start`, `swimmonster_start`), Chthon 20 (`boss_awake`).
 
 ## Chasing
@@ -229,7 +230,8 @@ left of `search_time`. Saves without the line load with a fresh chase.
   reach the player; Q2's pursuit to the last sighting and along the trail; a
   noise investigated and given up; the chase in a save; a pain frame's step
   refused with a body in its way; Q2 `ai_charge` along the facing and Q1's
-  at the enemy; the flyer's, Icarus's and Hornet's attack steps.
+  at the enemy; the flyer's, Icarus's and Hornet's attack steps; no turning
+  in pain.
 - `tests/monster_sequence_tests.jac`, `tests/q2_attack_tests.jac`,
   `tests/chick_tests.jac`, `tests/hell_knight_tests.jac`,
   `tests/attack_timing_tests.jac`: the steps of pain, death and attack

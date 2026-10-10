@@ -13,6 +13,7 @@ import from engine.world.combat {
     StepField,
     attack_charge,
     begin_attack,
+    damage_opponent,
     ensure_profiles,
     pain_length,
     pain_stagger
@@ -375,4 +376,32 @@ test "fliers take their attack frames' steps, backing off as they fire" {
     charge_with(falling, "attack6", player.pos);
     charge_on(falling, player, open_air, 1.4);
     assert falling.pos.x == 0.0;
+}
+
+test "a monster in pain does not turn toward its enemy" {
+    collision = chase_floor();
+    collision.reindex();
+    for game in ["q1", "q2"] {
+        world = World();
+        state = CombatState(game=game);
+        # The player stands square behind it and shoots it in the back.
+        player = Player(pos=Vec3(x=-300.0, z=22.0), health=100000, god_mode=True);
+        victim = chaser(game, "monster_ogre" if game == "q1" else "monster_gunner", Vec3(z=22.0));
+        victim.skill = 1;
+        world +>:HasOpponent:+> victim;
+        damage_opponent(victim, 20, attacker=player);
+        assert victim.pain_wait > 0.2 and victim.alert > 0.0;
+        ticks = 0;
+        while victim.pain_wait > 1.0 / 120.0 {
+            world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 120.0);
+            assert victim.yaw == 0.0 , game + " " + str(ticks);
+            ticks += 1;
+        }
+        assert ticks > 20;
+        # Out of pain it comes round on them.
+        for tick in range(60) {
+            world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 120.0);
+        }
+        assert victim.yaw != 0.0;
+    }
 }
