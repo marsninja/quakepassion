@@ -18,7 +18,7 @@ Q3 game types and an editor are out of scope.
   See [q2-roster-status.md](q2-roster-status.md).
 - **Quake III Arena**: the `arenas.txt` ladder as free-for-all matches against
   botlib bots (AAS routing, travel types, fuzzy weights, the ai_dmnet.c nodes,
-  chat), with scoring, awards, the podium and ladder progress.
+  chat), with scoring, awards, the podium, ladder progress and the RoQ films.
   See [arena-match-status.md](arena-match-status.md) and [bot-tactics-status.md](bot-tactics-status.md).
 - **Shared engine**: per-game movement profiles, the shared pusher for every
   mover, per-game weapons, items and powerups, per-game renderers (status bars,
@@ -67,7 +67,6 @@ Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-
 - Closed Q2/Q3 area portals do not cull rendering, sounds are not PHS-limited,
   and a relay-toggled portal's state is not saved.
 - Q1 `teleport_time` and Q3's post-teleport `PMF_TIME_KNOCKBACK` are not applied.
-- Q3 RoQ cinematics are not played.
 - `target_actor`/`misc_actor` are not driven (no shipped map needs them).
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):

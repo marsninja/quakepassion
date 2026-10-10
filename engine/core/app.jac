@@ -58,7 +58,18 @@ import from ..world.arena {
     score_rows,
     ordinal
 }
-import from games.arenas { ArenaProgress, AwardLog, load_arenas, next_arena, postgame_medals }
+import from games.arenas {
+    ArenaProgress,
+    AwardLog,
+    load_arenas,
+    next_arena,
+    postgame_medals,
+    tier_completed,
+    last_tier,
+    tier_video_due,
+    postgame_film,
+    info_with
+}
 import from ..render.arena_screens { Postgame, BoardLine, draw_scoreboard, draw_postgame, postgame_score_line }
 import from ..world.powerups {
     PowerupTick,
@@ -184,7 +195,9 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("screenshot", "screenshot [name]", "save the screen as a PNG"),
     ("vid_restart", "vid_restart", "apply vid_fullscreen, vid_width and vid_height"),
     ("toggleconsole", "toggleconsole", "drop or raise the console"),
-    ("togglemenu", "togglemenu", "open or close the menu")
+    ("togglemenu", "togglemenu", "open or close the menu"),
+    ("cinematic", "cinematic <name>", "play a film from video/ (Q3's RoQ, Q2's .cin)"),
+    ("levelselect", "levelselect", "open the level list (Q3's single-player menu)")
 ];
 
 """The cvars the game loop owns: the skill of the next level, the engine's
@@ -222,6 +235,26 @@ obj HostCvars {
             kind="bool",
             flags=CVAR_ARCHIVE,
             description="the diagnostic overlay"
+        ),
+        # Q3 common.c and cl_cin.c: the introduction plays on the first start
+        # only, and a film run from the console goes on to `nextmap` when it
+        # ends. ui_gameinfo.c keeps the tier films already shown in
+        # g_spVideos.
+        intro_played: Cvar = Cvar(
+            name="com_introplayed",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="Quake III's introduction has been shown"
+        ),
+        nextmap: Cvar = Cvar(
+            name="nextmap",
+            description="the command a film runs when it ends"
+        ),
+        videos: Cvar = Cvar(
+            name="g_spVideos",
+            flags=CVAR_ARCHIVE,
+            description="the Quake III tier films already shown"
         );
 }
 
@@ -347,11 +380,13 @@ obj App {
         help_open: bool = False,
         inventory_open: bool = False,
         entry_save: str = "";
-    # Q2 films and end pictures (cl_cin.c), and where the game goes when one
-    # finishes (sv_init.c SV_Map's nextserver): a map with its spawnpoint and
-    # unit flag, a .pcx picture, nothing (the game is over), or back to the
-    # level already loaded (`cinematic_resume`, newgame's ntro.cin). `opening`
-    # is a map request whose film plays before the first level.
+    # Films and end pictures (Q2 and Q3 cl_cin.c), and where the game goes
+    # when one finishes. Q2 (sv_init.c SV_Map's nextserver): a map with its
+    # spawnpoint and unit flag, a .pcx picture, nothing (the game is over),
+    # or back to the level already loaded (`cinematic_resume`, newgame's
+    # ntro.cin). Q3 (RoQShutdown): the `nextmap` cvar's command, then the
+    # level again or, after a postgame film, the menu. `opening` is a map
+    # request whose film plays before the first level, or Q3's idlogo.RoQ.
     has cinematic: CinematicPlayer = CinematicPlayer(),
         cinematic_next: str = "",
         cinematic_spawn: str = "",
@@ -383,9 +418,15 @@ obj App {
         unit: bool = False,
         resume: bool = False
     );
-    """SCR_FinishCinematic and SV_Nextserver: leave the film or picture for
-    what follows it."""
+    """SCR_FinishCinematic and SV_Nextserver, RoQShutdown: leave the film or
+    picture for what follows it."""
     def finish_cinematic();
+    """UI_SPPostgameMenu_MenuDraw's third phase: the film for a tier or the
+    ladder just completed, the first time. True when one started."""
+    def postgame_cinematic(board: Postgame) -> bool;
+    """Open the menu on the level's game (Q3 `levelselect`, the main menu a
+    disconnect leaves), with `select` highlighted when it is listed."""
+    def open_level_menu(select: str = "");
     """A frame while a film or picture is up: its clock, skipping, drawing."""
     def cinematic_step(dt: float) -> bool;
     def draw_cinematic();
@@ -485,6 +526,8 @@ obj App {
     def board_lines(contest: ArenaMatch) -> list[BoardLine];
     """Leave a finished match for the next ladder arena (`advance`) or a rematch."""
     def finish_arena(contest: ArenaMatch, advance: bool = True);
+    """The ladder arena after the one loaded ("" at the end of the ladder)."""
+    def following_arena() -> str;
     """Act on the postgame menu's key: skip ahead, or a button's action."""
     def postgame_input(contest: ArenaMatch);
     def powerup_lines() -> list[str];

@@ -17,7 +17,7 @@ DYLD_LIBRARY_PATH=vendor .jac/<name>        # LD_LIBRARY_PATH on Linux
 ## Unit tests
 
 `tests/*_tests.jac`, one file per area. They need no game assets or window
-(the one check that reads original Q2 films, in `cinematic_tests`, returns
+(the checks that read original Q2 and Q3 films, in `cinematic_tests`, return
 early without them).
 
 ```sh

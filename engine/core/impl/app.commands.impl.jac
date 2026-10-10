@@ -19,6 +19,9 @@ impl App.configure() {
     host.god = self.shell.register(host.god);
     host.flyspeed = self.shell.register(host.flyspeed);
     host.overlay = self.shell.register(host.overlay);
+    host.intro_played = self.shell.register(host.intro_played);
+    host.nextmap = self.shell.register(host.nextmap);
+    host.videos = self.shell.register(host.videos);
     for (name, usage, description) in HOST_COMMANDS {
         self.shell.command(name, "host", usage, description);
     }
@@ -321,6 +324,28 @@ impl App.host_command(args: list[str]) {
         }
         self.renderer.screenshot(shot);
         self.shell.print("Wrote " + shot);
+    } elif name == "cinematic" {
+        # CL_PlayCinematic_f: a film from video/, over whatever is running.
+        if len(args) < 2 or "/" in args[1] or ".." in args[1] {
+            self.shell.print("cinematic <name> : play a film from video/");
+            return;
+        }
+        if self.console.active {
+            self.toggle_console();
+        }
+        self.begin_cinematic(args[1], "", resume=self.postgame is None);
+    } elif name == "levelselect" {
+        # UI_SPLevelMenu_f, opened where ui_spSelection points: the arena
+        # after the one played.
+        following = "";
+        if self.level.active and self.level.bsp.game == "q3" {
+            try {
+                following = self.following_arena();
+            } except Exception as error {
+                self.shell.print("Arena ladder: " + str(error));
+            }
+        }
+        self.open_level_menu(following);
     } elif name == "vid_restart" {
         self.renderer.apply_video();
         self.shell.print(

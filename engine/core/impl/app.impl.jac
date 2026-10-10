@@ -45,6 +45,14 @@ impl App.run() {
         film = exit_cinematic(self.opening);
         if film and not self.smoke {
             self.begin_cinematic(film, self.level.name, resume=True);
+        } elif self.opening.lower().endswith(".roq") and not self.stuffed and not self.smoke {
+            # Q3 Com_Init, when the command line gave no commands: the id
+            # logo, and after it the introduction the first time only.
+            self.shell.add_text("cinematic " + self.opening);
+            if not self.host.intro_played.on() {
+                self.host.intro_played.assign("1");
+                self.host.nextmap.assign("cinematic intro.RoQ");
+            }
         }
         self.opening = "";
     }
@@ -832,6 +840,12 @@ impl App.step() -> bool {
         self.render_frame();
         return True;
     }
+    if escape and self.cinematic.escape_skips() and not self.menu.opened {
+        # Q3 CL_KeyEvent: Escape stops a film like any other key.
+        self.finish_cinematic();
+        self.render_frame();
+        return not self.quitting;
+    }
     if escape or self.menu_requested {
         self.menu_requested = False;
         self.menu.opened = not self.menu.opened;
@@ -1337,6 +1351,8 @@ impl App.step() -> bool {
                         }
                     }
                     try {
+                        # UI_SetBestScore: against the finishes already kept.
+                        self.arena_progress.load();
                         self.arena_progress.record(self.level.name, place);
                     } except Exception as error {
                         self.show_notice("Arena progress: " + str(error));
@@ -2316,20 +2332,26 @@ impl App.respawn_arena_player() {
 impl App.finish_arena(contest: ArenaMatch, advance: bool = True) {
     destination = self.level.name;
     if advance {
-        library = AssetLibrary(game="q3");
         try {
-            library.open(game_directory("q3"));
-            following = next_arena(load_arenas(library), self.level.name);
+            following = self.following_arena();
             if following {
                 destination = following;
             }
         } except Exception as error {
             self.show_notice("Arena ladder: " + str(error));
-        } finally {
-            library.close();
         }
     }
     self.load_destination("q3", destination);
+}
+
+impl App.following_arena() -> str {
+    library = AssetLibrary(game="q3");
+    try {
+        library.open(game_directory("q3"));
+        return next_arena(load_arenas(library), self.level.name);
+    } finally {
+        library.close();
+    }
 }
 
 """Render the view through the first on-screen portal before the main view."""
@@ -2409,6 +2431,20 @@ impl App.begin_podium(contest: ArenaMatch) {
         }
         board.won = me.rank == 0;
         board.focus = 2 if board.won else 1;
+        if board.won {
+            # UI_SPPostgameMenu_f: what a first place completed.
+            library = AssetLibrary(game="q3");
+            try {
+                library.open(game_directory("q3"));
+                arenas = load_arenas(library);
+                board.tier = tier_completed(arenas, self.arena_progress.best, self.level.name);
+                board.last_tier = last_tier(arenas);
+            } except Exception as error {
+                self.show_notice("Arena ladder: " + str(error));
+            } finally {
+                library.close();
+            }
+        }
         # ui_sppostgame.c: "music music/win" (or loss) plays once.
         self.audio.start_music("music/win" if board.won else "music/loss", once=True);
     }
@@ -2426,6 +2462,9 @@ impl App.postgame_input(contest: ArenaMatch) {
     }
     for cue in board.update(self.postgame_clock) {
         self.audio.play_path(cue);
+    }
+    if board.phase == 3 and self.postgame_cinematic(board) {
+        return;
     }
     pressed = "";
     if self.prompt_key(257) or self.prompt_key(335) {
@@ -2446,15 +2485,45 @@ impl App.postgame_input(contest: ArenaMatch) {
     } elif action == "replay" {
         self.finish_arena(contest, False);
     } elif action == "menu" {
-        self.menu.opened = True;
+        self.open_level_menu();
+    }
+}
+
+impl App.postgame_cinematic(board: Postgame) -> bool {
+    # QP_SMOKE runs capture the game itself, as with the opening films.
+    if self.smoke or board.tier < 0 or not tier_video_due(self.host.videos.text, board.tier + 1) {
+        return False;
+    }
+    # UI_ShowTierVideo marks the film as shown before it plays.
+    self.host.videos.assign(info_with(self.host.videos.text, "tier" + str(board.tier + 1), "1"));
+    self.save_preferences();
+    showing = postgame_film(board.tier, board.last_tier);
+    self.host.nextmap.assign(showing[1]);
+    # "disconnect; cinematic tier2.RoQ": the match is over, and nothing but
+    # `nextmap` and the menu follows the film.
+    self.begin_cinematic(showing[0], "");
+    return True;
+}
+
+impl App.open_level_menu(select: str = "") {
+    if not self.menu.opened {
         self.menu.restore_mouse = mouse_captured();
-        _release();
-        for i in range(len(self.menu.games)) {
-            if self.menu.games[i] == "q3" {
-                self.menu.game = i;
-            }
+    }
+    self.menu.opened = True;
+    self.jump_pending = False;
+    self.physics_clock.accumulator = 0.0;
+    _release();
+    for i in range(len(self.menu.games)) {
+        if self.menu.games[i] == self.level.bsp.game {
+            self.menu.game = i;
         }
-        self.menu.scan();
+    }
+    self.menu.scan();
+    for i in range(len(self.menu.maps)) {
+        if select and self.menu.maps[i] == select {
+            self.menu.selected = i;
+            self.menu.offset = max(0, min(i, len(self.menu.maps) - 11));
+        }
     }
 }
 
@@ -2803,6 +2872,17 @@ impl App.finish_cinematic() {
     destination = self.cinematic_next;
     self.cinematic_next = "";
     self.skip_time = True;
+    following = self.host.nextmap.text;
+    if following {
+        # RoQShutdown: `nextmap` holds the command that follows a film (the
+        # introduction after the id logo, the level menu after a tier film).
+        self.host.nextmap.assign("");
+        self.shell.add_text(following);
+        self.execute_commands();
+        if self.cinematic.active or self.quitting {
+            return;
+        }
+    }
     if self.cinematic_resume {
         self.cinematic_resume = False;
         self.start_level_music();
@@ -2813,6 +2893,15 @@ impl App.finish_cinematic() {
         return;
     }
     if not destination {
+        if self.postgame is not None {
+            # Q3's postgame disconnected for its film: only the menu is left
+            # (SCR_DrawScreenField forces it up when disconnected), unless
+            # `nextmap` has already opened it.
+            if not self.menu.opened {
+                self.open_level_menu();
+            }
+            return;
+        }
         # SV_Nextserver with no next server: killserver, back to the menu.
         # The game is over; the level stays frozen behind the menu.
         self.campaign_complete = True;
@@ -2841,7 +2930,7 @@ impl App.cinematic_step(dt: float) -> bool {
         self.finish_cinematic();
     }
     self.render_frame();
-    return True;
+    return not self.quitting;
 }
 
 impl App.draw_cinematic() {

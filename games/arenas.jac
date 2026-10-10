@@ -187,6 +187,105 @@ def next_arena(arenas: list[ArenaInfo], name: str) -> str {
     return "";
 }
 
+# ui_local.h: the ladder's tiers are four arenas each.
+glob ARENAS_PER_TIER: int = 4;
+
+"""The arenas UI_LoadArenas numbers as the tiers': those of type "single"
+without a `special` tag, less any left over from whole tiers."""
+def tier_arenas(arenas: list[ArenaInfo]) -> list[ArenaInfo] {
+    singles = [arena for arena in arenas if "single" in arena.types and not arena.special];
+    return singles[:len(singles) - len(singles) % ARENAS_PER_TIER];
+}
+
+"""ui_gameinfo.c UI_TierCompleted for the arena just won, given every
+arena's best finish: 0 for the training arena, a tier's number (from 1) once
+all four of its arenas have been won, one past the last tier for the final
+arena, and -1 when nothing was completed."""
+def tier_completed(arenas: list[ArenaInfo], best: dict[str, int], name: str) -> int {
+    won = name.lower();
+    tiered = tier_arenas(arenas);
+    for index in range(len(tiered)) {
+        if tiered[index].map == won {
+            tier = index // ARENAS_PER_TIER;
+            for member in tiered[tier * ARENAS_PER_TIER:(tier + 1) * ARENAS_PER_TIER] {
+                if best.get(member.map, 0) != 1 {
+                    return -1;
+                }
+            }
+            return tier + 1;
+        }
+    }
+    specials = [arena for arena in arenas if "single" in arena.types and arena.special];
+    for arena in specials {
+        if arena.map == won {
+            if arena.special == "training" {
+                return 0;
+            }
+            finals = [other for other in specials if other.special == "final"];
+            if not finals or finals[0].map == won {
+                return len(tiered) // ARENAS_PER_TIER + 1;
+            }
+        }
+    }
+    return -1;
+}
+
+"""UI_SPPostgameMenu_f's lastTier: the tiers, and one more for a final arena."""
+def last_tier(arenas: list[ArenaInfo]) -> int {
+    tiers = len(tier_arenas(arenas)) // ARENAS_PER_TIER;
+    finals = [arena for arena in arenas if "single" in arena.types and arena.special == "final"];
+    return tiers + 1 if finals else tiers;
+}
+
+"""q_shared.c Info_ValueForKey: a key's value in a `\\key\\value` string."""
+def info_value(info: str, key: str) -> str {
+    parts = info.split("\\");
+    index = 1;
+    while index + 1 < len(parts) {
+        if parts[index].lower() == key.lower() {
+            return parts[index + 1];
+        }
+        index += 2;
+    }
+    return "";
+}
+
+"""q_shared.c Info_SetValueForKey: the string with `key` set to `value`
+(the old pair removed, the new one added at the end)."""
+def info_with(info: str, key: str, value: str) -> str {
+    parts = info.split("\\");
+    kept = "";
+    index = 1;
+    while index + 1 < len(parts) {
+        if parts[index].lower() != key.lower() {
+            kept += "\\" + parts[index] + "\\" + parts[index + 1];
+        }
+        index += 2;
+    }
+    return kept + "\\" + key + "\\" + value if value else kept;
+}
+
+"""UI_SPPostgameMenu_MenuDraw's film for a completed tier, with the command
+that follows it (`nextmap`): end.RoQ after the last tier and then nothing,
+else the next tier's film (tier1.RoQ after the training arena) and then the
+level menu."""
+def postgame_film(won: int, last: int) -> tuple[str, str] {
+    if won == last {
+        return ("end.RoQ", "");
+    }
+    return ("tier" + str(won + 1) + ".RoQ", "levelselect");
+}
+
+"""UI_ShowTierVideo's test: a tier's film is shown once, `videos` being
+g_spVideos' record of the ones already seen."""
+def tier_video_due(videos: str, tier: int) -> bool {
+    if tier <= 0 {
+        return False;
+    }
+    seen = info_value(videos, "tier" + str(tier));
+    return not seen or seen == "0";
+}
+
 """ui_gameinfo.c UI_LogAwardData: the award totals kept across matches
 (accuracy medals, impressives, excellents, gauntlet frags, frags and
 perfects), in ~/.quakepassion-awards.txt."""

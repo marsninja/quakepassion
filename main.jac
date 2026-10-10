@@ -86,6 +86,10 @@ with entry {
     if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q2" and os.getenv("QP_MAP", "") == "" {
         app.opening = "*ntro.cin+base1";
     }
+    # Quake III starts with the id logo (and its introduction the first time).
+    if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q3" and os.getenv("QP_MAP", "") == "" {
+        app.opening = "idlogo.RoQ";
+    }
     capture = os.getenv("QP_CAPTURE", "");
     if ":" in capture {
         app.capture_frame = int(capture.split(":", 1)[0]);

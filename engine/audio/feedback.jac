@@ -54,9 +54,9 @@ import from vendor.raylib {
     ) -> None;
 }
 
-"""The original engines' default master volumes (s_volume): Quake II's raw
-cinematic samples and Quake III's music bypass it, so each is scaled by the
-player's volume against that default to keep the original balance."""
+"""The original engines' default master volumes (s_volume): raw cinematic
+samples (S_RawSamples) and Quake III's music bypass it, so each is scaled by
+the player's volume against that default to keep the original balance."""
 glob Q2_DEFAULT_VOLUME: float = 0.7;
 glob Q3_DEFAULT_VOLUME: float = 0.8;
 
@@ -608,7 +608,8 @@ obj Feedback {
         self.music_channel.gain = self.music_volume.number * 2.0 / 3.0 * self.volume.number / Q3_DEFAULT_VOLUME;
         self.music.update(library, self.music_channel);
         self.music_channel.pump();
-        self.cinematic_channel.gain = self.volume.number / Q2_DEFAULT_VOLUME;
+        self.cinematic_channel.gain = self.volume.number
+            / (Q3_DEFAULT_VOLUME if self.game == "q3" else Q2_DEFAULT_VOLUME);
         self.cinematic_channel.pump();
         # The CD plays at full volume beside the effects' default level.
         voice = self.cd;

@@ -96,6 +96,9 @@ When a match ends (`g_arenas.c`):
 2. Each award takes the stage for two seconds with its medal (`menu/medals`)
    and announcer line; the awards phase lasts at least five seconds.
 3. Earned medals stay along the top with counts; Menu, Replay and Next appear.
+   A first place that completed the training arena, a tier or the ladder
+   plays its film first, once (see
+   [level flow](level-flow-status.md#films-and-music)).
 
 - With more than three players, score lines roll along the top right every
   1.5 s.
@@ -130,7 +133,8 @@ When a match ends (`g_arenas.c`):
 - `tests/item_drop_tests.jac`: item teams, respawn spread, drops, powerup
   shaders.
 - `tests/telefrag_tests.jac`: Q3 telefrags and occupied spawns.
-- `tests/cinematic_tests.jac`: worldspawn music and CD tracks.
+- `tests/cinematic_tests.jac`: worldspawn music and CD tracks, tier
+  completion and the postgame films.
 - `scripts/arena_match_smoke.jac`: ladder rosters, models, spawns and a
   simulated bot match.
 - `scripts/arena_screens_smoke.jac`: captures the scoreboard and the three

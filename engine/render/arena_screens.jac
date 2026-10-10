@@ -318,6 +318,10 @@ obj Postgame {
         announced: bool = False,
         focus: int = 2,
         won: bool = False,
+        # postgameMenuInfo.won and lastTier: what the win completed
+        # (UI_TierCompleted; -1 for nothing) and the ladder's last tier.
+        tier: int = -1,
+        last_tier: int = 0,
         scores: list[str] = [];
 
     """Advance the phases to `now`; returns the sounds to play."""
