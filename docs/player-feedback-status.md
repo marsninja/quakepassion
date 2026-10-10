@@ -190,7 +190,10 @@ body, a `Mortality` node the player holds:
   dead take no damage at all (`Killed` makes them `DAMAGE_NO`, and
   `WaterMove` leaves at once below zero health), and Q3's `P_WorldEffects`
   asks for health before its sizzle; neither burns. None of the three
-  drowns a dead player.
+  drowns a dead player. `P_WorldEffects` plays its water-level sounds with
+  no test of health, so a dead Q2 body (or the head) still splashes into
+  water or lava, goes under, comes up with the gasp its time under earns
+  and splashes out; its drown and burn sounds are for the living.
 - **Coming back.** The buttons of a dead player only bring the player back.
   Q1 `PlayerDeathThink`: after the death frames (0.8 to 1.4 s by the sequence
   `PlayerDie` picked, 0.8 s holding the axe) every button must be let go, and
@@ -275,6 +278,5 @@ left.
 
 ## Limitations
 
-- A dead Q2 body is silent in water (`P_WorldEffects` plays the enter, leave
-  and submerge sounds whatever the player's health), and a blast does not
-  push it (`T_Damage` knocks a dead client back too).
+- A blast does not push a dead Q2 body (`T_Damage` knocks a dead client back
+  too).

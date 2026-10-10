@@ -141,8 +141,8 @@ def q3_gibbed(body: Player) -> bool {
 outwater.wav on leaving, gasp1/gasp2 surfacing), player.qc PainSound (drown
 and lava/slime burn sounds, pain1-6 at most twice a second) and DeathSound
 (death1-5, h2odeath under water); Q2 p_view.c
-P_WorldEffects (watr_in/lava_in, watr_out, watr_un, gasp1/gasp2, burn1/burn2
-in lava once a second, gurp while drowning) and P_DamageFeedback's pain
+P_WorldEffects (watr_in/lava_in, watr_out, watr_un, gasp1/gasp2, for the dead
+too; burn1/burn2 in lava once a second and gurp while drowning, for the living) and P_DamageFeedback's pain
 sounds by health (0.7 s apart), with p_client.c death1-4; Q3 only
 the water events (EV_WATER_TOUCH/LEAVE/UNDER/CLEAR) and the gib sound. A
 body killed past the gib health gibs with its game's sound instead of the
@@ -257,34 +257,39 @@ walker VoiceTick {
     }
 
     def q2(body: Player, voice: Voice, before: int, now: int, hurt: bool, held: float) {
-        if body.health > 0 {
-            if self.jumped and now == 0 {
-                self.cues.append("sound/player/male/jump1.wav");
+        if body.health > 0 and self.jumped and now == 0 {
+            self.cues.append("sound/player/male/jump1.wav");
+        }
+        # P_WorldEffects plays its water-level sounds whatever the player's
+        # health, so a dead body splashes, goes under and comes up gasping
+        # too; only the drown and burn sounds ask for health.
+        if before == 0 and now > 0 {
+            self.cues.append(
+                "sound/player/lava_in.wav" if body.liquid_kind == 3 else "sound/player/watr_in.wav"
+            );
+        } elif before > 0 and now == 0 {
+            self.cues.append("sound/player/watr_out.wav");
+        }
+        if before < 3 and now >= 3 {
+            self.cues.append("sound/player/watr_un.wav");
+        }
+        if before >= 3 and now < 3 {
+            if held > 12.0 {
+                self.cues.append("sound/player/gasp1.wav");
+            } elif held > 1.0 {
+                self.cues.append("sound/player/gasp2.wav");
             }
-            if before == 0 and now > 0 {
-                self.cues.append(
-                    "sound/player/lava_in.wav" if body.liquid_kind == 3 else "sound/player/watr_in.wav"
-                );
-            } elif before > 0 and now == 0 {
-                self.cues.append("sound/player/watr_out.wav");
-            }
-            if before < 3 and now >= 3 {
-                self.cues.append("sound/player/watr_un.wav");
-            }
-            if before >= 3 and now < 3 {
-                if held > 12.0 {
-                    self.cues.append("sound/player/gasp1.wav");
-                } elif held > 1.0 {
-                    self.cues.append("sound/player/gasp2.wav");
-                }
-            }
-            # P_WorldEffects: lava burns sound once a second.
-            if now > 0 and body.liquid_kind == 3 and voice.burn_wait <= 0.0 and hurt {
-                voice.burn_wait = 1.0;
-                voice.pain_wait = 1.0;
-                self.cues.append("sound/player/burn" + str(1 + voice.pick(2)) + ".wav");
-                return;
-            }
+        }
+        # P_WorldEffects: lava burns sound once a second.
+        if body.health > 0
+            and now > 0
+            and body.liquid_kind == 3
+            and voice.burn_wait <= 0.0
+            and hurt {
+            voice.burn_wait = 1.0;
+            voice.pain_wait = 1.0;
+            self.cues.append("sound/player/burn" + str(1 + voice.pick(2)) + ".wav");
+            return;
         }
         if body.health <= 0 {
             # p_client.c player_die: below -40 health the body gibs, at the

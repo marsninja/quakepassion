@@ -813,3 +813,43 @@ test "a dead Q2 body lying in lava or slime burns down to its gib health; Q1 and
         assert other.death_overkill == 30 and not mortality_of(other).gibbed;
     }
 }
+
+test "a dead Q2 body still splashes: only the drown and burn sounds ask for health" {
+    body = mortal("q2");
+    body spawn VoiceTick(game="q2", dt=TICK);
+    body spawn Damage(amount=body.health, bypass_armor=True);
+    cry = body spawn VoiceTick(game="q2", dt=TICK);
+    assert len(cry.cues) == 1 and "death" in cry.cues[0];
+    lie(body, death_floor("q2"), "q2", TICK);
+    # P_WorldEffects: entering, going under, coming up and leaving.
+    body.water_depth = 1;
+    body.liquid_kind = 1;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/watr_in.wav"];
+    body.water_depth = 3;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/watr_un.wav"];
+    # Out of air it makes no drowning sound: that one asks for health.
+    for tick in range(120 * 13) {
+        assert not (body spawn VoiceTick(game="q2", dt=TICK)).cues;
+    }
+    body.water_depth = 2;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/gasp1.wav"];
+    body.water_depth = 0;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/watr_out.wav"];
+    # Lava has its own splash, but the dead make no burn sound in it.
+    body.water_depth = 1;
+    body.liquid_kind = 3;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/lava_in.wav"];
+    for tick in range(120) {
+        body spawn EnvironmentTick(game="q2", dt=TICK);
+        assert not (body spawn VoiceTick(game="q2", dt=TICK)).cues;
+    }
+    assert body.death_overkill == 30;
+    # Q1 WaterMove leaves at once below zero health: its dead are silent.
+    other = mortal("q1");
+    other spawn VoiceTick(game="q1", dt=TICK);
+    other spawn Damage(amount=other.health + 5, bypass_armor=True);
+    other spawn VoiceTick(game="q1", dt=TICK);
+    other.water_depth = 3;
+    other.liquid_kind = 1;
+    assert not (other spawn VoiceTick(game="q1", dt=TICK)).cues;
+}
