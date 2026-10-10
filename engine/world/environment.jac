@@ -9,7 +9,16 @@ walker EnvironmentTick {
         active: bool = True;
 
     can expose with Player entry {
-        if self.dt <= 0.0 or here.health <= 0 {
+        if self.dt <= 0.0 {
+            return;
+        }
+        # Only Q2 goes on burning the dead. p_view.c P_WorldEffects asks for
+        # health before it drowns a player, but not before lava or slime
+        # sizzles one, so a body lying in either burns down to its gib
+        # health. Q1's dead take no damage (Killed: DAMAGE_NO, and WaterMove
+        # leaves below zero health); Q3's P_WorldEffects asks for health.
+        dead = here.health <= 0;
+        if dead and self.game != "q2" {
             return;
         }
         if not self.active {
@@ -20,7 +29,7 @@ walker EnvironmentTick {
         }
         suited = empowered(here, "suit") or empowered(here, "battlesuit");
         breathing = suited or empowered(here, "breather");
-        if here.water_depth < 3 or breathing {
+        if here.water_depth < 3 or breathing or dead {
             here.air_remaining = 12.0;
             here.drown_damage = 2;
         } else {

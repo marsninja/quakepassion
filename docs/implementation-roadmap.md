@@ -57,10 +57,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
   by other monsters, and bodies that already overlap do not block each other.
 - Q2 monsters collide with player clip brushes, not monster clip brushes.
 
-Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
-- A Q3 player killed in a `CONTENTS_NODROP` void still gibs; Q2 `AI_BRUTAL`
-  and lava burning a Q2 body are not modelled.
-
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
 - Q3 patches are not thinned with distance (`r_lodCurveError`).
 - Repeated models are not instanced.

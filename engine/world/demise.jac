@@ -9,6 +9,7 @@ PM_DEAD and PM_GIB; Q3 g_combat.c player_die, body_die and GibEntity with
 bg_pmove.c PM_DeadMove and g_active.c ClientThink_real."""
 import from .world { World, Player }
 import from .gibs { GibRule, GibDice, gibs_at, gib_velocity, throw_gibs }
+import from .body_queue { in_no_drop }
 import from ..physics.collision { CollisionMap }
 import from ..physics.movement { MovementProfile, MovePlayer }
 import from ..math.vec3 { Vec3 }
@@ -61,9 +62,12 @@ obj DeathRule {
     # `head_bounce` of its speed off each surface, the eye 8 above the box's
     # foot. Q2 ThrowClientHead adds the throw to its speed and moves it as
     # PM_GIB: a 16 unit box resting on an origin 32 higher, the eye 8 above
-    # that, without the dead drag. Q3 GibEntity only hides the body.
+    # that, without the dead drag. Q3 GibEntity only hides the body, and
+    # player_die never gibs one that dies in a CONTENTS_NODROP void
+    # (`whole_in_void`): it falls on whole unless a later hit bursts it.
     has gibs: GibRule | None = None,
         shootable: bool = False,
+        whole_in_void: bool = False,
         head: BodyForm = BodyForm(eye_height=-8.0),
         head_thrown: bool = False,
         head_keeps_speed: bool = False,
@@ -75,13 +79,15 @@ edge HasMortality: Player --> Mortality {}
 
 """The player's death: its game's rule, and how the body lies while dead.
 `clock` counts the seconds dead and `ready` is when the buttons begin to
-count."""
+count. `spared` is the health below zero of a body its death left whole in
+a void (-1: none), which only a hit taking it lower bursts."""
 node Mortality {
     has rule: DeathRule = DeathRule(),
         dead: bool = False,
         clock: float = 0.0,
         ready: float = 0.0,
         gibbed: bool = False,
+        spared: int = -1,
         held: bool = True,
         released: bool = False,
         latched: bool = False,
@@ -161,6 +167,18 @@ def body_struck(player: Player) -> bool {
     return False;
 }
 
+"""Whether the player has died and the body has not yet taken its death (the
+tick that makes it fall decides, among other things, whether it bursts)."""
+def death_pending(player: Player) -> bool {
+    if player.health > 0 {
+        return False;
+    }
+    for fallen in [player->:HasMortality:->][?:Mortality] {
+        return not fallen.dead;
+    }
+    return False;
+}
+
 """Whether the player's body has burst."""
 def body_gibbed(player: Player) -> bool {
     for fallen in [player->:HasMortality:->][?:Mortality] {
@@ -236,6 +254,7 @@ walker LieDead {
         fallen.clock += self.dt;
         if not fallen.gibbed
             and (self.died or rule.shootable)
+            and here.death_overkill > fallen.spared
             and gibs_at(rule.gibs, -here.death_overkill) {
             self.burst_body(here, fallen);
         }
@@ -261,6 +280,14 @@ walker LieDead {
         self.died = True;
         fallen.dead = True;
         fallen.gibbed = False;
+        fallen.spared = -1;
+        # Q3 player_die: "never gib in a nodrop".
+        world = self.world;
+        if rule.whole_in_void
+            and world is not None
+            and in_no_drop(world, body.pos.sub(Vec3(z=self.collision.eye_height))) {
+            fallen.spared = body.death_overkill;
+        }
         fallen.clock = 0.0;
         fallen.held = True;
         fallen.released = False;

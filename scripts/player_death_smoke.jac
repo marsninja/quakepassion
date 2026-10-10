@@ -5,21 +5,22 @@ stand, saving is refused, and the buttons bring the player back. Then a
 blow far past zero: the body's gibs fly and the player rides the head (Q1,
 Q2) or is gone (Q3), and a Q2 body shot where it lies bursts then. Q3 shows
 its dead player from outside, the body dying in view, and leaves the body
-behind on the respawn. Captures qp_death_<game>.png and
-qp_death_gib_<game>.png."""
+behind on the respawn; in q3dm17's nodrop void neither the player nor a bot
+is gibbed by the blow that kills it. Captures qp_death_<game>.png,
+qp_death_gib_<game>.png and qp_death_void_q3.png."""
 import os;
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
-import from engine.world.combat { Opponent, HasOpponent, Projectile, HasProjectile }
+import from engine.world.combat { Opponent, HasOpponent, Projectile, HasProjectile, damage_opponent }
 import from engine.world.doors { Door, HasDoor }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.arena { match_of }
 import from engine.world.demise { Mortality, HasMortality, mortality_of, body_struck }
 import from engine.world.gibs { Gib, HasGib, GibsInto }
 import from engine.world.reflection { PlayerBody, HasBody }
-import from engine.world.body_queue { Corpse, HasCorpse }
+import from engine.world.body_queue { Corpse, HasCorpse, NoDropSpace, HasNoDrop, in_no_drop }
 import from engine.world.damage { Damage }
 import from engine.math.vec3 { Vec3 }
 import from scripts.input_events { event, key }
@@ -279,6 +280,55 @@ with entry {
             }
             print("DEATH PASS", game);
         }
+        # Q3 player_die: "never gib in a nodrop". q3dm17 floats in one.
+        enter(app, "q3", "q3dm17");
+        assert [app.world->:HasNoDrop:->][?:NoDropSpace], "q3dm17 has no nodrop brushes";
+        height = app.level.collision.eye_height;
+        abyss: Vec3 | None = None;
+        for fathom in range(1, 400) {
+            sunk = app.player.pos.sub(Vec3(z=float(fathom) * 16.0));
+            feet = sunk.sub(Vec3(z=height));
+            if abyss is None
+                and in_no_drop(app.world, feet)
+                and not app.level.collision.trace(feet, feet).start_solid {
+                abyss = sunk;
+            }
+        }
+        assert abyss is not None, "no open point in the void under the start";
+        faller = app.player;
+        faller.pos = abyss.add(Vec3());
+        faller.velocity = Vec3();
+        faller.tick_pose.settle();
+        pieces_before = len([app.world->:HasGib:->][?:Gib]);
+        faller spawn Damage(amount=faller.health + 1000, bypass_armor=True, bypass_protection=True);
+        assert faller.health == 0 and faller.death_overkill == 1000;
+        run_for(app, 0.2);
+        whole = mortality_of(faller);
+        shown = [app.world->:HasBody:->][?:PlayerBody][0].body;
+        assert whole.dead and not whole.gibbed and whole.spared == 1000;
+        assert len([app.world->:HasGib:->][?:Gib]) == pieces_before;
+        assert app.third_person() and shown.visible and not shown.alive;
+        renderer.screenshot("qp_death_void_q3.png");
+        print("DEATH q3dm17 void: the player's body is whole at", faller.pos.z);
+        # A bot killed there is not gibbed either.
+        mate: Opponent | None = None;
+        for enemy in [app.world->:HasOpponent:->][?:Opponent] {
+            if mate is None and enemy.arena and enemy.health > 0 and not enemy.dormant {
+                mate = enemy;
+            }
+        }
+        if mate is not None {
+            mate.pos = abyss.add(Vec3(x=96.0, z=mate.eye_height - height));
+            damage_opponent(mate, mate.health + mate.armor + 1000, bypass_armor=True);
+            assert mate.health == 0 and not mate.gibbed and mate.pending_gibs < 0;
+            print("DEATH q3dm17 void: a bot dies whole, health", mate.remains);
+        }
+        # body_die: a later hit finds the body at GIB_HEALTH and bursts it.
+        faller spawn Damage(amount=1);
+        run_for(app, 0.1);
+        assert whole.gibbed and len([app.world->:HasGib:->][?:Gib]) >= pieces_before + 11;
+        assert not shown.visible;
+        print("DEATH PASS q3dm17 void");
     } finally {
         _release();
         app.audio.close();

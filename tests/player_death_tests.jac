@@ -16,7 +16,10 @@ import from engine.world.demise {
 import from engine.world.world { World, Player, Area, move_to_area }
 import from engine.world.gibs { Gib, HasGib, GibsInto }
 import from engine.world.models { ModelResource }
-import from engine.world.vitals { VoiceTick }
+import from engine.world.vitals { VoiceTick, q3_gibbed }
+import from engine.world.body_queue { NoDropSpace, HasNoDrop, in_no_drop }
+import from engine.world.reflection { HasBody, player_body, show_body, follow_body }
+import from engine.world.player_rig { dress_rig, rig_clips }
 import from engine.formats.animated { AnimatedModel }
 import from engine.math.aabb { AABB }
 import from engine.world.combat {
@@ -28,8 +31,12 @@ import from engine.world.combat {
     HasProjectile,
     ProjectileTick,
     line_of_fire,
-    blast_actors
+    blast_actors,
+    brutal_toward,
+    current_profile
 }
+import from games.enemies { enemy_rule }
+import from engine.world.environment { EnvironmentTick }
 import from engine.world.doors { Door, HasDoor, DoorTick }
 import from engine.world.triggers { TouchTrigger, HasTrigger, TriggerTick }
 import from engine.world.exits { LevelExit, HasExit, ExitTick }
@@ -543,5 +550,266 @@ test "Q2 and Q3 bodies are still shot, and burst when that takes them past the g
         left = player.death_overkill;
         player spawn Damage(amount=50);
         assert player.death_overkill == left and not body_struck(player);
+    }
+}
+
+test "a Q3 player killed in a nodrop void falls on whole, until a later hit bursts it" {
+    world = World();
+    area = gib_room(world);
+    # CONTENTS_NODROP below z = -500, as the void around q3dm17.
+    void = NoDropSpace();
+    void.volume.add_box(
+        Vec3(x=-5000.0, y=-5000.0, z=-9000.0), Vec3(x=5000.0, y=5000.0, z=-500.0), Vec3(), Vec3(), Vec3()
+    );
+    void.volume.reindex();
+    world +>:HasNoDrop:+> void;
+    collision = death_floor("q3");
+    # The player's own rig, as the death view shows it.
+    rows: list[list[float]] = [];
+    for i in range(25) {
+        rows.append([float(i * 12), 11.0, 11.0, 21.0]);
+    }
+    part = ModelResource(name="sarge", model=AnimatedModel(), skins=[]);
+    rig = dress_rig(rig_clips(rows), part, part, part);
+    world +>:HasBody:+> player_body(rig);
+    player = gibbable("q3", area);
+    player.pos = Vec3(z=-700.0);
+    player.grounded = True;
+    follow_body(world, player, 26.0, "", 0.0);
+    assert in_no_drop(world, player.pos.sub(Vec3(z=26.0)));
+    # The void's trigger_hurt: far past GIB_HEALTH.
+    player spawn Damage(amount=1000, bypass_armor=True, bypass_protection=True);
+    assert player.health == 0 and player.death_overkill == 900;
+    # Until the body has taken its death nothing is decided: no gib sound,
+    # and the rig is not yet dying.
+    early = player spawn VoiceTick(game="q3", dt=TICK);
+    show_body(world, player, 26.0, "", 0.01, True);
+    assert not q3_gibbed(player) and rig.alive and rig.visible;
+    assert "sound/player/gibsplt1.wav" not in early.cues;
+    step = player spawn LieDead(
+        collision=collision, profile=movement_profile("q3"), dt=TICK, world=world
+    );
+    fallen = mortality_of(player);
+    # player_die: "never gib in a nodrop". The body dies whole, with its cry.
+    assert step.died and not step.burst and step.thrown == 0;
+    assert fallen.dead and not fallen.gibbed and fallen.spared == 900;
+    assert not [world->:HasGib:->][?:Gib] and not q3_gibbed(player);
+    voice = player spawn VoiceTick(game="q3", dt=TICK);
+    assert "sound/player/gibsplt1.wav" not in voice.cues;
+    show_body(world, player, collision.eye_height, "", 0.02, True);
+    assert rig.visible and not rig.alive;
+    cues = follow_body(world, player, collision.eye_height, "", 0.03);
+    assert [cue for cue in cues if "death" in cue];
+    # It falls on as it is.
+    for tick in range(60) {
+        player spawn LieDead(collision=collision, profile=movement_profile("q3"), dt=TICK, world=world);
+    }
+    assert not fallen.gibbed and player.velocity.z < -300.0 and body_struck(player);
+    # body_die: any later hit finds it at GIB_HEALTH and bursts it.
+    player spawn Damage(amount=1);
+    late = player spawn LieDead(
+        collision=collision, profile=movement_profile("q3"), dt=TICK, world=world
+    );
+    assert late.burst and late.thrown == 11 and fallen.gibbed and q3_gibbed(player);
+    sound = player spawn VoiceTick(game="q3", dt=TICK);
+    assert "sound/player/gibsplt1.wav" in sound.cues;
+    show_body(world, player, collision.eye_height, "", 0.6, True);
+    assert not rig.visible;
+    # Out of the void the same blow gibs at once.
+    above = gibbable("q3", area);
+    above spawn Damage(amount=1000, bypass_armor=True, bypass_protection=True);
+    direct = above spawn LieDead(
+        collision=death_floor("q3"), profile=movement_profile("q3"), dt=TICK, world=world
+    );
+    assert direct.died and direct.burst and mortality_of(above).spared == -1;
+    # Q1 and Q2 know no such void.
+    for game in ["q1", "q2"] {
+        other = gibbable(game, area);
+        other.pos = Vec3(z=-700.0);
+        other spawn Damage(amount=1000, bypass_armor=True, bypass_protection=True);
+        gone = other spawn LieDead(
+            collision=death_floor(game), profile=movement_profile(game), dt=TICK, world=world
+        );
+        assert gone.burst and mortality_of(other).gibbed;
+    }
+}
+
+"""A Q2 monster of `kind` standing on the death floor at `origin`, facing
+the level's origin."""
+def q2_monster(kind: str, origin: Vec3) -> Opponent {
+    rule = enemy_rule("q2", kind);
+    assert rule is not None;
+    return Opponent(
+        rule=rule,
+        kind=kind,
+        game="q2",
+        health=rule.health,
+        max_health=rule.health,
+        pos=origin.add(Vec3(z=22.0)),
+        yaw=math.atan2(-origin.y, -origin.x),
+        attack_wait=1000.0
+    );
+}
+
+test "a Q2 tank keeps after the player it killed, strikes over the body once and lets it go" {
+    collision = death_floor("q2");
+    state = CombatState(game="q2");
+    world = World();
+    tank = q2_monster("monster_tank", Vec3(x=300.0, z=24.0));
+    soldier = Opponent(
+        pos=Vec3(x=300.0, y=200.0, z=46.0),
+        yaw=math.atan2(-200.0, -300.0),
+        game="q2",
+        attack_wait=1000.0
+    );
+    # tank_run sets AI_BRUTAL; no other monster of the game has it.
+    assert tank.rule.brutal_health == -80 and soldier.rule.brutal_health == 0;
+    for kind in ["monster_tank_commander", "monster_soldier", "monster_gladiator", "monster_supertank"] {
+        other = enemy_rule("q2", kind);
+        assert other is not None;
+        assert other.brutal_health == (-80 if kind == "monster_tank_commander" else 0);
+    }
+    world +>:HasOpponent:+> tank;
+    world +>:HasOpponent:+> soldier;
+    player = mortal("q2");
+    for tick in range(20) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    }
+    assert tank.alert > 0.0 and soldier.alert > 0.0;
+    # Dead at -10 health: ai_checkattack gives a brutal monster's enemy up
+    # only at -80, and only a player is its prey (tank_run: enemy->client).
+    player spawn Damage(amount=player.health + 10, bypass_armor=True);
+    lie(player, collision, "q2", TICK);
+    assert player.death_overkill == 10;
+    assert brutal_toward(tank, player) and not brutal_toward(soldier, player);
+    assert not brutal_toward(tank, soldier);
+    for tick in range(20) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    }
+    assert tank.alert > 0.0 and tank.pursuing;
+    assert soldier.alert == 0.0 and not soldier.pursuing;
+    # tank_attack: over an enemy below zero health, tank_move_attack_strike
+    # and none of its weapons.
+    tank.attack_wait = 0.0;
+    started = False;
+    for tick in range(3000) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+        if tank.attack_clock >= 0.0 {
+            started = True;
+            break;
+        }
+    }
+    assert started and current_profile(tank).name == "strike";
+    assert not [world->:HasProjectile:->][?:Projectile] and player.death_overkill == 10;
+    # TankStrike is a sound and no more; tank_poststrike lets the enemy go.
+    for tick in range(600) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    }
+    assert tank.attack_clock < 0.0 and tank.alert == 0.0 and not tank.pursuing;
+    assert not brutal_toward(tank, player) and player.death_overkill == 10;
+    for tick in range(300) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    }
+    assert tank.attack_clock < 0.0 and tank.alert == 0.0 and tank.pose_name == "stand";
+    # A body at -80 or lower it lets go at once.
+    over = World();
+    second = q2_monster("monster_tank", Vec3(x=300.0, z=24.0));
+    over +>:HasOpponent:+> second;
+    gone = mortal("q2");
+    for tick in range(20) {
+        over spawn CombatTick(player=gone, collision=collision, state=state, dt=0.01);
+    }
+    assert second.alert > 0.0;
+    gone spawn Damage(amount=gone.health + 80, bypass_armor=True);
+    assert gone.death_overkill == 80 and not brutal_toward(second, gone);
+    over spawn CombatTick(player=gone, collision=collision, state=state, dt=0.01);
+    assert second.alert == 0.0 and not second.pursuing;
+    # One dead at exactly zero it fires on at with its weapons.
+    even = World();
+    third = q2_monster("monster_tank", Vec3(x=300.0, z=24.0));
+    even +>:HasOpponent:+> third;
+    level = mortal("q2");
+    for tick in range(20) {
+        even spawn CombatTick(player=level, collision=collision, state=state, dt=0.01);
+    }
+    level spawn Damage(amount=level.health, bypass_armor=True);
+    lie(level, collision, "q2", TICK);
+    assert level.health == 0 and level.death_overkill == 0 and brutal_toward(third, level);
+    third.attack_wait = 0.0;
+    fired = False;
+    for tick in range(3000) {
+        even spawn CombatTick(player=level, collision=collision, state=state, dt=0.01);
+        if third.attack_clock >= 0.0 {
+            fired = True;
+            break;
+        }
+    }
+    assert fired and current_profile(third).trigger == "";
+    # It takes no dead player for a new enemy (FindTarget).
+    late = World();
+    fourth = q2_monster("monster_tank", Vec3(x=300.0, z=24.0));
+    fourth.attack_wait = 0.0;
+    late +>:HasOpponent:+> fourth;
+    for tick in range(100) {
+        late spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    }
+    assert fourth.alert == 0.0 and not fourth.pursuing and fourth.attack_clock < 0.0;
+}
+
+test "a dead Q2 body lying in lava or slime burns down to its gib health; Q1 and Q3 bodies do not" {
+    for game in ["q1", "q2", "q3"] {
+        world = World();
+        area = gib_room(world);
+        collision = death_floor(game);
+        player = gibbable(game, area);
+        player.grounded = True;
+        player spawn Damage(amount=100, bypass_armor=True);
+        player spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        fallen = mortality_of(player);
+        assert fallen.dead and player.death_overkill == 0;
+        # Waist deep in lava for half a second. Q2 P_WorldEffects sizzles a
+        # player 3 a water level each 0.1 s frame with no test of its
+        # health; Q1's dead take no damage and Q3's test comes first.
+        player.water_depth = 2;
+        player.liquid_kind = 3;
+        for tick in range(60) {
+            player spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert player.health == 0 and player.death_overkill == (30 if game == "q2" else 0);
+        step = player spawn LieDead(
+            collision=collision, profile=movement_profile(game), dt=TICK, world=world
+        );
+        assert not step.burst;
+        for tick in range(60) {
+            player spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        step = player spawn LieDead(
+            collision=collision, profile=movement_profile(game), dt=TICK, world=world
+        );
+        if game != "q2" {
+            assert player.death_overkill == 0 and not step.burst and not fallen.gibbed;
+            continue;
+        }
+        # Past -40 the body bursts, and what is left burns no more.
+        assert player.death_overkill == 60 and step.burst and step.thrown == 4 and fallen.gibbed;
+        for tick in range(60) {
+            player spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert player.death_overkill == 60;
+        # Slime sizzles 1 a level; the dead do not drown.
+        other = gibbable(game, area);
+        other spawn Damage(amount=100, bypass_armor=True);
+        other spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        other.water_depth = 3;
+        other.liquid_kind = 2;
+        for tick in range(120) {
+            other spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert other.death_overkill == 30;
+        other.liquid_kind = 1;
+        for tick in range(120 * 20) {
+            other spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert other.death_overkill == 30 and not mortality_of(other).gibbed;
     }
 }

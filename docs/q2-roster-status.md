@@ -27,7 +27,7 @@ movers are in [navigation-status.md](navigation-status.md).
 | `monster_parasite` | 175 | walk | drain beam |
 | `monster_brain` | 300 | walk | claws; tentacle pull; 100-cell power screen |
 | `monster_medic` | 300 | walk | blaster; cable revives a corpse |
-| `monster_tank` / `monster_tank_commander` | 750 / 1000 | walk | blaster, machine-gun sweep, rockets, chosen by range |
+| `monster_tank` / `monster_tank_commander` | 750 / 1000 | walk | blaster, machine-gun sweep, rockets, chosen by range; brutal (`AI_BRUTAL`): a strike over the player it has killed |
 | `monster_supertank` | 1500 | walk | chaingun (repeats), rockets preferred at range; explodes |
 | `monster_flyer` | 50 | fly | blade slash loop; twin blasters |
 | `monster_floater` | 200 | fly | wham, zap, blaster |

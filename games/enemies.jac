@@ -2357,6 +2357,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 skin=2 if kind == "monster_tank_commander" else 0,
                 health=1000 if kind == "monster_tank_commander" else 750,
+                # tank_run: AI_BRUTAL against a player.
+                brutal_health=-80,
                 width=32.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 pain_threshold=11,
@@ -2508,6 +2510,28 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                             Vec3(x=8.3, y=17.8, z=49.5)
                         ],
                         flash=Q2_ROCKET_FLASH
+                    ),
+                    # tank_move_attack_strike (attak201 to attak238), which
+                    # tank_attack plays over an enemy below zero health:
+                    # tank_windup on the 19th frame and TankStrike, a sound
+                    # and no more, on the 26th. tank_poststrike then lets the
+                    # enemy go.
+                    AttackProfile(
+                        name="strike",
+                        kind="ranged",
+                        trigger="corpse",
+                        times=[],
+                        duration=3.8,
+                        frames=["attak2" + two(i) for i in range(1, 39)],
+                        steps=[
+                            3.0, 2.0, 2.0, 1.0, 6.0, 7.0, 9.0, 2.0, 1.0, 2.0, 2.0, 2.0, 0.0, 0.0,
+                            0.0, 0.0, -2.0, -2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0,
+                            -1.0, -1.0, -1.0, -1.0, -3.0, -10.0, -10.0, -2.0, -3.0, -2.0
+                        ],
+                        sound="sound/tank/tnkatck5.wav",
+                        sound_times=[2.5],
+                        extra_sound="sound/tank/tnkatck4.wav",
+                        extra_sound_times=[1.8]
                     )
                 ]
             );
