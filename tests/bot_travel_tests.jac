@@ -31,6 +31,7 @@ import from engine.world.bot_travel {
     travel_water_jump,
     goal_area_speed,
     finish_jump_pad,
+    came_through,
     gap_distance,
     fall_speed,
     travel_walk_off_ledge,
@@ -515,4 +516,35 @@ test "a bot thrown by a jump pad steers for where the pad lands it, not back for
     assert finish_jump_pad(Vec3(x=90.0, z=300.0), Vec3(x=20.0, z=100.0), passage).air_control;
     high = finish_jump_pad(Vec3(x=90.0, z=100000.0), Vec3(z=10.0), passage);
     assert high.air_control and high.speed == 400.0 and high.direction.x > 0.99;
+}
+
+test "a bot falling toward a jump pad steers for the pad until it has been through the pad's area" {
+    # The pad throws from area 2 to a landing off to the side of area 3.
+    aas = strip_aas(3, [(1, 2, TRAVEL_WALK), (2, 3, TRAVEL_JUMPPAD)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    pad = [mesh.areas[2]->:Exits:->][?:Passage][0];
+    pad.finish = Vec3(x=192.0, y=300.0);
+    route = plan_route(mesh, Vec3(x=120.0), pad.finish, goal_area=3);
+    assert route.found and route.passages[0] is pad;
+    # Dropping in from over area 1, not yet through the pad's area: for the
+    # pad's start (x = 144), not the landing.
+    bot = Opponent(
+        arena=True, health=100, pos=Vec3(x=60.0, z=326.0), eye_height=26.0, velocity=Vec3(z=-300.0), grounded=False
+    );
+    falling = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert falling.result.air_control and falling.result.direction.x > 0.99 and not route.jumped;
+    # Thrown from inside the pad's area: on for the landing.
+    bot.pos = Vec3(x=130.0, z=46.0);
+    bot.velocity = Vec3(z=500.0);
+    thrown = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.1);
+    assert thrown.result.air_control and thrown.result.direction.y > 0.9 and route.jumped;
+    assert came_through(mesh, Vec3(x=90.0, z=200.0), Vec3(x=-400.0, z=300.0), 2);
+    assert not came_through(mesh, Vec3(x=60.0, z=200.0), Vec3(z=-300.0), 2);
+    # Down again somewhere else than the landing's area: its way is chosen again.
+    bot.grounded = True;
+    bot.pos = Vec3(x=60.0, z=26.0);
+    bot.velocity = Vec3();
+    short = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.2);
+    assert not route.points and short.result.speed == 0.0;
 }

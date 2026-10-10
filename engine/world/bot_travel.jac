@@ -335,6 +335,29 @@ def finish_jump_pad(origin: Vec3, velocity: Vec3, passage: Passage) -> TravelRes
     return TravelResult(direction=flat_toward(origin, passage.finish)[0], speed=400.0, air_control=True);
 }
 
+"""A bot in the air on its way down to a jump pad it has not touched: in
+BotMoveToGoal's air half it is still on the way it came, which ends at the
+pad, so it steers for the pad's start (BotAirControl)."""
+def approach_jump_pad(origin: Vec3, velocity: Vec3, passage: Passage) -> TravelResult {
+    steer = air_control(origin, velocity, passage.start);
+    if steer is not None {
+        return steer;
+    }
+    return TravelResult(direction=flat_toward(origin, passage.start)[0], speed=400.0, air_control=True);
+}
+
+"""BotMoveToGoal's "special handling of jump pads" for a bot in the air:
+whether it has been in `area` over its last two think times, by the areas
+on the line back along its velocity (AAS_TraceAreas)."""
+def came_through(mesh: NavMesh, origin: Vec3, velocity: Vec3, area: int) -> bool {
+    for i in range(17) {
+        if mesh.aas.area_at(origin.sub(velocity.scale(0.2 * float(i) / 16.0))) == area {
+            return True;
+        }
+    }
+    return False;
+}
+
 """The world box of the mover with BSP `model` right now: its model bounds
 moved by the offset its collision hulls carry (AAS_BSPModelMinsMaxsOrigin
 and AAS_OriginOfMoverWithModelNum). None when the map has no such mover."""
@@ -773,8 +796,32 @@ walker FollowRoute {
             self.heading(swim, origin, standing);
             return;
         }
-        if passage is not None and passage.kind == TRAVEL_JUMPPAD and not here.grounded {
-            self.heading(finish_jump_pad(origin, here.velocity, passage), origin, standing);
+        if passage is not None and passage.kind == TRAVEL_JUMPPAD {
+            if here.grounded {
+                # Thrown and down short of the far end: "the area changed",
+                # so its way is chosen again.
+                if route.jumped and standing != passage.source {
+                    route.abandon();
+                    self.result = TravelResult(speed=0.0);
+                    return;
+                }
+                # BotTravel_JumpPad: "first walk straight to the
+                # reachability start".
+                self.heading(
+                    TravelResult(direction=flat_toward(origin, passage.start)[0], speed=400.0), origin, standing
+                );
+                return;
+            }
+            # The pad's passage is the one a bot in the air finishes once it
+            # has come through the pad's own area.
+            if not route.jumped and came_through(self.mesh, origin, here.velocity, passage.source) {
+                route.jumped = True;
+            }
+            if route.jumped {
+                self.heading(finish_jump_pad(origin, here.velocity, passage), origin, standing);
+            } else {
+                self.heading(approach_jump_pad(origin, here.velocity, passage), origin, standing);
+            }
             return;
         }
         if passage is not None and passage.kind == TRAVEL_WALKOFFLEDGE {
