@@ -1033,6 +1033,13 @@ def feel_pain(victim: Opponent, taken: int) {
         and current_profile(victim).name in rule.pain_immune {
         return;
     }
+    if victim.attack_clock >= 0.0 {
+        shrugs = current_profile(victim).pain_shrugs;
+        shown = int(attack_pose_time(victim));
+        if shown < len(shrugs) and monster_random(victim) <= shrugs[shown] {
+            return;
+        }
+    }
     if rule.pain_cry == "due" {
         pain_cry(victim);
     }

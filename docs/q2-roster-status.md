@@ -93,6 +93,8 @@ Details that follow the originals:
     `pain6` about two times in three up to 150 and nothing above), berserker
     (`pain1` under 20, either from there up), hover (`pain3` or `pain2` up to
     25, else `pain1`).
+  - Jorg shrugs off one hit in 200 more while it winds up either attack
+    and one in 20000 while its chainguns fire (`pain_shrugs` on the attack).
   - The tank ignores 10 damage or less and shrugs off four hits in five up to
     30; the Supertank and Makron one in five up to 25; Jorg six in ten up to
     40. On Hard and above the tank feels no pain while firing its blaster or
@@ -164,7 +166,6 @@ Details that follow the originals:
 - A dying soldier on `death1` and a dying infantry on `death2` do not fire
   their guns (`soldier_fire6`/`soldier_fire7`, `InfantryMachineGun`).
 - The Makron leaves no torso as it dies (`makron_torso`).
-  Jorg's small extra resistance to pain while firing is not applied.
 - The insane marines' cries carry as far as any other sound; the original
   plays them at `ATTN_IDLE`. A standing marine that has lain down by itself
   (`insane_checkdown`) is not modelled, so only marines spawned crawling take

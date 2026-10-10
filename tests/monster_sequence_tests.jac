@@ -953,3 +953,28 @@ test "an insane marine cries with the player's voice for its health" {
         assert count > 25;
     }
 }
+
+test "Jorg shrugs off a little more pain while it attacks" {
+    # jorg_pain: random() <= 0.005 through attak101-108 and attak201-208,
+    # <= 0.00005 through attak109-114, and nothing extra after.
+    rule = enemy_rule("q2", "monster_jorg");
+    assert rule is not None;
+    for profile in rule.attacks {
+        if profile.name == "chainguns" {
+            assert profile.pain_shrugs == [0.005] * 8 + [0.00005] * 6;
+        } else {
+            assert profile.name == "bfg" and profile.pain_shrugs == [0.005] * 8;
+        }
+    }
+    # The shrug is taken frame by frame of the attack being played.
+    for row in [(0.35, True), (0.95, False)] {
+        jorg = sequenced("q2", "monster_jorg");
+        ensure_profiles(jorg);
+        sure = [profile for profile in jorg.profiles if profile.name == "bfg"][0];
+        sure.pain_shrugs = [1.0] * 8;
+        jorg.attack_profile = jorg.profiles.index(sure);
+        jorg.attack_clock = row[0];
+        damage_opponent(jorg, 80);
+        assert (jorg.pain_wait == 0.0) == row[1];
+    }
+}

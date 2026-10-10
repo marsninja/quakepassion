@@ -2726,6 +2726,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         name="chainguns",
                         kind="ranged",
                         weight=0.75,
+                        # jorg_pain: a little less pain while it winds up
+                        # (attak101-108) and next to none while it fires.
+                        pain_shrugs=[0.005] * 8 + [0.00005] * 6,
                         max_range=1000.0,
                         times=[0.8, 0.9, 1.0, 1.1, 1.2, 1.3],
                         duration=1.8,
@@ -2749,6 +2752,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         name="bfg",
                         kind="ranged",
                         weight=0.25,
+                        # jorg_pain: attak201-208.
+                        pain_shrugs=[0.005] * 8,
                         max_range=1000.0,
                         times=[0.6],
                         duration=1.3,

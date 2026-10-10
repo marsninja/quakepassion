@@ -90,6 +90,10 @@ obj AttackProfile {
         min_skill: int = 0,
         max_rise: float = -1.0,
         finished: float = -1.0;
+    # The chance, frame by frame, that a hit is shrugged off while the
+    # sequence shows that frame (Q2 jorg_pain: 0.005 through attak101-108 and
+    # attak201-208, 0.00005 through attak109-114).
+    has pain_shrugs: list[float] = [];
     # Per-frame aim of a charge's steps: how far to the left of the target
     # the monster heads (Q1 ai_charge_side's flyby, 30 units); a sideways
     # stride is a walkmove, which the target's box blocks.
