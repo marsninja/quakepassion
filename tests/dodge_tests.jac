@@ -69,7 +69,7 @@ test "Q2 soldiers on medium sometimes crouch and fire instead of ducking" {
     world +>:HasOpponent:+> soldier;
     soldier spawn Dodge(shooter=player, roll=0.1, choice=0.2);
     assert soldier.duck_wait == 0.0 and soldier.attack_clock == 0.0;
-    assert soldier.profiles[soldier.attack_profile].name == "crouch";
+    assert soldier.profiles[soldier.attack_profile].name == "attack3";
     assert not crouching(soldier);
     for i in range(3) {
         world spawn CombatTick(player=player, collision=collision, state=state, dt=0.1);

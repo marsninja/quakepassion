@@ -50,9 +50,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
   `SV_StepDirection`/`SV_NewChaseDir`; fliers and swimmers only steer.
 - Monsters do not plan through elevators or trains, press switches, or use
   jump/swim links, and are not solid to each other.
-- One death sequence per monster; several monsters have one pain sequence; pain
-  frames carry no movement.
-- Light and shotgun Q2 soldiers never use `attack2`.
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - The Q3 railgun draws its core only, not the raildisc rings.

@@ -4,7 +4,7 @@ import from .enemies { enemy_rule }
 import from .gibs { gib_rule, link_gibs }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
-import from engine.world.opponent_rule { OpponentRule, Gait }
+import from engine.world.opponent_rule { OpponentRule, Gait, Reaction }
 import from .arena_character { character_rig, CharacterRig, character_body, weapon_kits, powerup_shells, Q3_HELD_WEAPONS }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
@@ -41,11 +41,13 @@ def frame_indices(
 ) -> list[int] {
     result: list[int] = [];
     for name in names {
+        # A name the model uses twice (Jorg's has two "death33", the first
+        # standing where death23 belongs) is the one that follows the frame
+        # before it, else the first.
         found = -1;
         for i in range(len(frames)) {
-            if frames[i].name == name {
+            if frames[i].name == name and (found < 0 or (result and i == result[-1] + 1)) {
                 found = i;
-                break;
             }
         }
         if found < 0 {
@@ -62,6 +64,46 @@ def gait_indices(frames: list[AnimationFrame], gait: Gait, path: str, label: str
         raise ValueError("Mismatched " + label + " distances: " + path);
     }
     return frame_indices(frames, gait.frames, path, label);
+}
+
+"""A pain or death sequence's model frames; its distances must cover each frame."""
+def reaction_indices(
+    frames: list[AnimationFrame], sequence: Reaction, path: str, label: str
+) -> list[int] {
+    if sequence.steps and len(sequence.steps) != len(sequence.frames) {
+        raise ValueError("Mismatched " + label + " distances: " + path + ":" + sequence.name);
+    }
+    return frame_indices(frames, sequence.frames, path, label);
+}
+
+"""Resolve the frames of every pain and death sequence a rule authors. Until
+a monster dies its death frames are those of the first."""
+def link_reactions(
+    enemy: Opponent, frames: list[AnimationFrame], rule: OpponentRule, path: str
+) {
+    enemy.pain_animations = [
+        reaction_indices(frames, sequence, path, "pain") for sequence in rule.pains
+    ];
+    enemy.death_animations = [
+        reaction_indices(frames, sequence, path, "death") for sequence in rule.deaths
+    ];
+    if enemy.death_animations {
+        enemy.death_animation = enemy.death_animations[0];
+    }
+    if rule.knockdown_steps and len(rule.knockdown_steps) != len(rule.knockdown_frames) {
+        raise ValueError("Mismatched knockdown distances: " + path);
+    }
+}
+
+"""Speakers for the sounds a rule's pain and death can make."""
+def register_reaction_sounds(world: World, enemy: Opponent, rule: OpponentRule) {
+    for pain_sound in rule.pain_sounds {
+        register_speaker(world, enemy, pain_sound);
+    }
+    register_speaker(world, enemy, rule.death_sound);
+    for sequence in rule.pains + rule.deaths {
+        register_speaker(world, enemy, sequence.sound);
+    }
 }
 
 # One positional speaker per distinct sound file an opponent can request.
@@ -289,10 +331,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 register_speaker(world, enemy, profile.alternate_sound);
             }
             register_speaker(world, enemy, rule.sight_sound);
-            for pain_sound in rule.pain_sounds {
-                register_speaker(world, enemy, pain_sound);
-            }
-            register_speaker(world, enemy, rule.death_sound);
+            register_reaction_sounds(world, enemy, rule);
             for scripted in rule.sounds {
                 register_speaker(world, enemy, scripted);
             }
@@ -446,16 +485,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         enemy.attack_animation.append(i);
                     }
                 }
-                if rule.pain_frames {
-                    enemy.pain_animation = frame_indices(
-                        frames, rule.pain_frames, path, "pain"
-                    );
-                }
-                for variant in rule.pain_variants {
-                    enemy.pain_animations.append(
-                        frame_indices(frames, variant, path, "pain")
-                    );
-                }
+                link_reactions(enemy, frames, rule, path);
                 if rule.knockdown_frames {
                     enemy.knockdown_animation = frame_indices(
                         frames, rule.knockdown_frames, path, "knockdown"
@@ -478,11 +508,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 if rule.idle_frames {
                     enemy.idle_animation = frame_indices(
                         frames, rule.idle_frames, path, "idle"
-                    );
-                }
-                if rule.death_frames {
-                    enemy.death_animation = frame_indices(
-                        frames, rule.death_frames, path, "death"
                     );
                 }
                 if rule.attack_frames {
@@ -606,10 +631,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     register_speaker(world, heir, profile.alternate_sound);
                 }
                 register_speaker(world, heir, follower.sight_sound);
-                for pain_sound in follower.pain_sounds {
-                    register_speaker(world, heir, pain_sound);
-                }
-                register_speaker(world, heir, follower.death_sound);
+                register_reaction_sounds(world, heir, follower);
                 # The map's targets belong to the last form of the boss.
                 heir.activation = enemy.activation;
                 enemy.activation = Signal();
@@ -642,17 +664,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     gait_indices(heir_frames, other, follower.model, "walk")
                     for other in follower.other_walks
                 ];
-                heir.death_animation = frame_indices(
-                    heir_frames, follower.death_frames, follower.model, "death"
-                );
-                heir.pain_animation = frame_indices(
-                    heir_frames, follower.pain_frames, follower.model, "pain"
-                );
-                for variant in follower.pain_variants {
-                    heir.pain_animations.append(
-                        frame_indices(heir_frames, variant, follower.model, "pain")
-                    );
-                }
+                link_reactions(heir, heir_frames, follower, follower.model);
                 for profile in heir.profiles {
                     heir.profile_animations.append(
                         frame_indices(heir_frames, profile.frames, follower.model, profile.name)

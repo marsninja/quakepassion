@@ -1,4 +1,4 @@
-"""Check native pain poses and mid-reaction save restoration with original assets."""
+"""Check native pain and death poses, and mid-reaction save restoration, with original assets."""
 import os;
 import math;
 import from engine.assets.library { AssetLibrary }
@@ -11,6 +11,7 @@ import from engine.world.combat { Opponent, HasOpponent, CombatTick, damage_oppo
 import from engine.world.models { ModelResource, HasModelResource, attach_model }
 import from engine.math.vec3 { Vec3 }
 import from games.enemies { enemy_rule }
+import from games.opponents { link_reactions }
 import from engine.core.savegame { snapshot, restore }
 
 with entry {
@@ -20,23 +21,43 @@ with entry {
     player = spawn_player(level);
     rule = enemy_rule("q2", "monster_infantry");
     assert rule is not None;
-    enemy = Opponent(rule=rule, attack_wait=0.0, modeled=True);
-    found = False;
+    enemy = Opponent(
+        rule=rule, game="q2", attack_wait=30.0, modeled=True, grounded=True,
+        eye_height=level.collision.eye_height
+    );
+    soldier_rule = enemy_rule("q2", "monster_soldier_light");
+    assert soldier_rule is not None;
+    soldier = Opponent(
+        rule=soldier_rule, game="q2", attack_wait=30.0, modeled=True, grounded=True,
+        eye_height=level.collision.eye_height,
+        health=soldier_rule.health, max_health=soldier_rule.health
+    );
+    # The infantry stands at the first clear spot round the player, the
+    # soldier at the next but one.
+    found = 0;
     for i in range(16) {
         angle = float(i) * math.pi / 8.0;
         origin = player.pos.add(
             Vec3(x=math.cos(angle) * 60.0, y=math.sin(angle) * 60.0)
         );
         ray = level.collision.trace_point(player.pos, origin);
-        if not ray.start_solid and ray.fraction == 1.0 {
-            enemy.pos = origin;
-            enemy.yaw = angle + math.pi;
-            player.yaw = angle;
-            found = True;
-            break;
+        # Room for a body there, not only a line to it.
+        feet = origin.sub(Vec3(z=level.collision.eye_height));
+        room = level.collision.trace(feet, feet.sub(Vec3(z=16.0)));
+        if not ray.start_solid and ray.fraction == 1.0 and not room.start_solid {
+            if found == 0 {
+                enemy.pos = origin;
+                enemy.yaw = angle + math.pi;
+                player.yaw = angle + math.pi / 8.0;
+            } elif found == 2 {
+                soldier.pos = origin;
+                soldier.yaw = angle + math.pi;
+                break;
+            }
+            found += 1;
         }
     }
-    assert found;
+    assert found == 2;
     library = AssetLibrary(game="q2");
     library.open(directory);
     try {
@@ -47,15 +68,22 @@ with entry {
         world +>:HasModelResource:+> resource;
         enemy.visual = attach_model(enemy, resource);
         enemy.visual.offset = Vec3(z=-level.collision.eye_height);
-        names = [frame.name for frame in loaded.model.surfaces[0].frames];
-        for name in rule.pain_frames {
-            enemy.pain_animation.append(names.index(name));
-        }
+        link_reactions(enemy, loaded.model.surfaces[0].frames, rule, rule.model);
+        trooper = library.model(soldier_rule.model);
+        trooper_resource = ModelResource(
+            name="soldier-death", model=trooper.model, skins=trooper.skins
+        );
+        world +>:HasModelResource:+> trooper_resource;
+        soldier.visual = attach_model(soldier, trooper_resource);
+        soldier.visual.offset = Vec3(z=-level.collision.eye_height);
+        link_reactions(soldier, trooper.model.surfaces[0].frames, soldier_rule, soldier_rule.model);
     } finally {
         library.close();
     }
     world +>:HasOpponent:+> enemy;
     move_to_area(enemy, level.areas[level.locate(enemy.pos)]);
+    world +>:HasOpponent:+> soldier;
+    move_to_area(soldier, level.areas[level.locate(soldier.pos)]);
     renderer = Renderer();
     renderer.open_window();
     app = App(
@@ -69,11 +97,30 @@ with entry {
     app.renderer.cvars.novis.assign("1");
     app.quake.upload(level);
     app.models.upload(world);
+    # Let both settle on the floor before anything is done to them.
+    for i in range(12) {
+        world spawn CombatTick(
+            player=player, collision=level.collision, state=app.combat, dt=1.0 / 60.0
+        );
+    }
+    assert enemy.grounded and soldier.grounded;
+    flinched = enemy.pos.add(Vec3());
     damage_opponent(enemy, 1);
-    world spawn CombatTick(
-        player=player, collision=level.collision, state=app.combat, dt=0.5
+    # infantry_pain drew pain1 or pain2, ten frames each, and both stagger
+    # back 9 units over the first five (less where a wall stands behind).
+    pain = enemy.pain_animations[enemy.pain_variant - 1];
+    assert len(pain) == 10;
+    for i in range(33) {
+        world spawn CombatTick(
+            player=player, collision=level.collision, state=app.combat, dt=1.0 / 60.0
+        );
+    }
+    assert enemy.visual.first == pain[5] and player.health == 100;
+    print(
+        "INFANTRY PAIN", rule.pains[enemy.pain_variant - 1].name, "moved",
+        enemy.pos.sub(flinched).length()
     );
-    assert enemy.visual.first == enemy.pain_animation[5] and player.health == 100;
+    assert enemy.pos.sub(flinched).length() <= 9.01;
     saved = snapshot(world, level, player, app.combat);
     for i in range(3) {
         app.render_frame();
@@ -83,16 +130,64 @@ with entry {
     enemy.pain_wait = 0.0;
     enemy.pose_name = "stand";
     restore(world, level, player, app.combat, saved);
-    world spawn CombatTick(
-        player=player, collision=level.collision, state=app.combat, dt=0.1
-    );
-    assert enemy.visual.first == enemy.pain_animation[6] and player.health == 100;
+    for i in range(6) {
+        world spawn CombatTick(
+            player=player, collision=level.collision, state=app.combat, dt=1.0 / 60.0
+        );
+    }
+    assert enemy.visual.first == pain[6] and player.health == 100;
     for i in range(3) {
         app.render_frame();
     }
     renderer.screenshot("qp_infantry_pain_restored.png");
+    # infantry_die draws one of three deaths; soldier_die takes death3 for
+    # a head shot. Both are caught part way through, striding as they fall.
+    stood = enemy.pos.add(Vec3());
+    fell = soldier.pos.add(Vec3());
+    damage_opponent(enemy, 110);
+    soldier.struck = Vec3(z=soldier.pos.z + 3.0);
+    damage_opponent(soldier, 25);
+    death = enemy.death_animations[enemy.death_variant - 1];
+    headshot = soldier.death_animations[soldier.death_variant - 1];
+    assert soldier_rule.deaths[soldier.death_variant - 1].name == "death3" and len(headshot) == 45;
+    for i in range(51) {
+        world spawn CombatTick(
+            player=player, collision=level.collision, state=app.combat, dt=1.0 / 60.0
+        );
+    }
+    assert enemy.visual.first == death[min(8, len(death) - 1)];
+    assert soldier.visual.first == headshot[8];
+    # soldier_move_death3 falls back 15 by 1.2 in its first three frames.
+    print(
+        "INFANTRY DEATH", rule.deaths[enemy.death_variant - 1].name, "moved",
+        enemy.pos.sub(stood).length(), "SOLDIER death3 moved", soldier.pos.sub(fell).length()
+    );
+    assert soldier.pos.sub(fell).length() <= 18.01;
+    for i in range(3) {
+        app.render_frame();
+    }
+    renderer.screenshot("qp_infantry_soldier_death.png");
+    saved = snapshot(world, level, player, app.combat);
+    for i in range(120) {
+        world spawn CombatTick(
+            player=player, collision=level.collision, state=app.combat, dt=1.0 / 60.0
+        );
+    }
+    restore(world, level, player, app.combat, saved);
+    assert enemy.visual.first == death[min(8, len(death) - 1)];
+    assert soldier.visual.first == headshot[8];
+    for i in range(240) {
+        world spawn CombatTick(
+            player=player, collision=level.collision, state=app.combat, dt=1.0 / 60.0
+        );
+    }
+    assert enemy.visual.first == death[-1] and soldier.visual.first == headshot[-1];
+    for i in range(3) {
+        app.render_frame();
+    }
+    renderer.screenshot("qp_infantry_soldier_dead.png");
     app.models.close();
     app.quake.close();
     renderer.close();
-    print("INFANTRY PAIN RESTORE RENDER PASS");
+    print("PAIN AND DEATH RESTORE RENDER PASS");
 }

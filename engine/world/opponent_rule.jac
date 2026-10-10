@@ -59,15 +59,35 @@ obj AttackProfile {
         crouch_start: float = -1.0,
         crouch_end: float = -1.0,
         revive_at: float = -1.0;
+    # The refire frame's own test, beyond the roll above (Q2 m_soldier.c
+    # soldier_attack1_refire1: `(skill == 3 && random() < 0.5) || range ==
+    # RANGE_MELEE`). A target closer than `repeat_near` always sends the
+    # sequence back; otherwise `repeat_chance` is rolled only from skill
+    # `repeat_skill` up and with the target at least `repeat_from` away
+    # (soldier_attack6_refire's RANGE_MID). `repeat_unseen` rolls without
+    # the sight and range test the other refires make (chick_rerocket). A
+    # refire not taken, with the target alive, skips ahead to `repeat_skip`
+    # rather than playing on (attak110, attak216). `repeat_end` may be the
+    # sequence's end: the last frame's think then decides whether it ends.
+    has repeat_near: float = -1.0,
+        repeat_skill: int = 0,
+        repeat_from: float = 0.0,
+        repeat_unseen: bool = False,
+        repeat_skip: float = -1.0;
     # Sequences sharing a `rotation` are not drawn at random but taken in
     # turn, on one count kept for every monster (Q1 hknight_melee's global
     # hknight_type). A "run" `trigger` starts the sequence from the first
     # frame of the run cycle instead of the attack decision (Q1
     # hknight_run1's CheckForCharge): with the target in sight, attacks due
-    # and the target no more than `max_rise` above or below. `finished` is the
+    # and the target no more than `max_rise` above or below. A "sight"
+    # trigger starts it as the monster first sights its enemy, `trigger_chance`
+    # of the time (Q2 soldier_sight's run-and-shoot). `min_skill` is the
+    # lowest skill at which the sequence is used at all. `finished` is the
     # SUB_AttackFinished a sequence sets when it starts, if its own.
     has rotation: str = "",
         trigger: str = "",
+        trigger_chance: float = 1.0,
+        min_skill: int = 0,
         max_rise: float = -1.0,
         finished: float = -1.0;
     # Per-frame aim of a charge's steps: how far to the left of the target
@@ -105,6 +125,44 @@ obj Gait {
         branch_chance: float = 0.0;
 }
 
+"""One sequence a monster plays when it is hurt or killed: its model frames
+at 10 Hz (a run of Q1 QuakeC frame functions, a Q2 mmove_t) and how the
+original's pain or die function comes to pick it."""
+obj Reaction {
+    has name: str = "",
+        frames: list[str] = [],
+        # The distance each frame carries the monster along its facing,
+        # negative backwards (Q1 ai_painforward and ai_forward against ai_pain
+        # and ai_back; Q2 `{ai_move, dist}`), scaled like the gaits.
+        steps: list[float] = [],
+        # The sound the original plays with this sequence. Without one the
+        # rule's own pain or death sound plays.
+        sound: str = "",
+        # A sequence is drawn, by `weight`, from those whose damage bracket
+        # holds the hit (`max_damage` -1 has no upper end); `chance` is then
+        # how often it plays at all (Q2 jorg_pain's pain3, 3 times in 10).
+        weight: float = 1.0,
+        min_damage: int = 0,
+        max_damage: int = -1,
+        chance: float = 1.0,
+        # Pain: taken instead of any other while the monster is thrown upward
+        # faster than 100 units a second (Q2 soldier_move_pain4,
+        # gladiator_move_pain_air). `nightmare` sequences play on Nightmare
+        # too, where a Q2 monster otherwise skips its pain frames.
+        airborne: bool = False,
+        nightmare: bool = False,
+        # Pain: the seconds before the monster may flinch again, when not the
+        # rule's `pain_interval` (Q1 army_pain's pain_finished of 0.6 or 1.1).
+        interval: float = -1.0,
+        # Death: taken instead of any other for a hit landing within 4 units
+        # of eye height (Q2 soldier_die's head shot).
+        head_shot: bool = False,
+        # Death: the frame whose function drops the carried item (Q1
+        # DropBackpack on the third), so a monster that gibs instead drops
+        # nothing. Zero drops it at once, as Q2 monster_death_use does.
+        drop_frame: int = 0;
+}
+
 obj OpponentRule {
     has model: str = "",
         script: str = "",
@@ -118,9 +176,12 @@ obj OpponentRule {
         passive: bool = False,
         good_guy: bool = False,
         inert: bool = False,
+        # A body with no authored pain sequences flinches for `pain_duration`
+        # on its model's first pain family. `pain_interval` is the wait
+        # before the next flinch (Q1 pain_finished, Q2 pain_debounce_time);
+        # zero is a monster that never checks it (Q1 dog_pain, fish_pain).
         pain_duration: float = 0.3,
         pain_interval: float = 1.0,
-        pain_frames: list[str] = [],
         duck_frames: list[str] = [],
         duck_down: int = 0,
         duck_hold: int = 1,
@@ -131,14 +192,30 @@ obj OpponentRule {
         crouch_duration: float = 0.0,
         crouch_start: float = -1.0,
         crouch_end: float = -1.0,
-        pain_variants: list[list[str]] = [],
-        pain_variant_damage: list[int] = [],
-        pain_variant_durations: list[float] = [],
+        # The sequences the monster's pain and die functions choose among.
+        pains: list[Reaction] = [],
+        deaths: list[Reaction] = [],
         pain_threshold: int = 0,
         pain_chance_scale: float = 0.0,
+        # A hit of at most `pain_shrug_damage` is shrugged off
+        # `pain_shrug_chance` of the time, before pain is due at all (Q2
+        # tank_pain: 30 and 0.8).
+        pain_shrug_damage: int = 0,
+        pain_shrug_chance: float = 0.0,
+        # When the rule's pain sound plays without a flinch: "hit" on every
+        # hit that hurts (Q1 Wiz_Pain, sham_pain), "due" whenever pain is
+        # due, before the flinch roll (Q1 demon1_pain, hknight_pain).
+        pain_cry: str = "",
+        # With more than this many seconds gone since pain was last due, a
+        # hit flinches without the roll (Q1 hknight_pain: 5).
+        pain_sure_after: float = -1.0,
+        # Attack sequences that pain does not interrupt on Hard and above
+        # (Q2 tank_pain, supertank_pain).
+        pain_immune: list[str] = [],
         pain_health_reset: int = 0,
         knockdown_damage: int = 0,
         knockdown_frames: list[str] = [],
+        knockdown_steps: list[float] = [],
         knockdown_duration: float = 0.0,
         knockdown_hold_frame: int = -1,
         knockdown_hold_time: float = 0.0,
@@ -148,7 +225,11 @@ obj OpponentRule {
         vanish_on_death: bool = False,
         explodes: bool = False,
         idle_frames: list[str] = [],
-        death_frames: list[str] = [],
+        # The box a corpse is left with once its death sequence ends (Q2
+        # *_dead: -16 -16 -24 to 16 16 -8 for most).
+        dead_width: float = 16.0,
+        dead_bottom: float = -24.0,
+        dead_top: float = -8.0,
         sight_sound: str = "",
         pain_sounds: list[str] = [],
         death_sound: str = "",

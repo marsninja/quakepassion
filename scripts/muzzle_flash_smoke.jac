@@ -55,8 +55,8 @@ with entry {
             if shooter is not None or candidate.dormant {
                 continue;
             }
-            rule = candidate.rule;
-            if not rule.muzzles {
+            ensure_profiles(candidate);
+            if not [profile for profile in candidate.profiles if profile.kind == "ranged" and profile.muzzles] {
                 continue;
             }
             for i in range(16) {

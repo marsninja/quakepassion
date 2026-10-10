@@ -69,7 +69,9 @@ test "gunner pain sequences depend on damage dealt" {
         enemy = Opponent(rule=rule, health=175, max_health=175);
         damage_opponent(enemy, pair[0]);
         assert enemy.pain_variant == pair[1] , str(enemy.pain_variant);
-        assert abs(enemy.pain_wait - rule.pain_variant_durations[pair[1] - 1]) < 0.001;
+        # gunner_move_pain3 (5 frames), pain2 (8) and pain1 (18), at 10 Hz.
+        assert abs(enemy.pain_wait - [0.5, 0.8, 1.8][pair[1] - 1]) < 0.001;
+        assert len(rule.pains[pair[1] - 1].frames) == [5, 8, 18][pair[1] - 1];
     }
 }
 

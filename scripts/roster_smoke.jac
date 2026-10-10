@@ -2,6 +2,7 @@
 import os;
 import from engine.assets.library { AssetLibrary }
 import from games.enemies { enemy_rule }
+import from games.opponents { frame_indices }
 import from engine.world.opponent_rule { rule_profiles }
 import from games.weapons { weapon_effects }
 
@@ -61,23 +62,31 @@ with entry {
             names = [frame.name for frame in model.surfaces[0].frames];
             checked = 0;
             for group in [
-                rule.pain_frames,
                 rule.knockdown_frames,
                 rule.idle_frames,
                 rule.run.frames,
                 rule.walk.frames,
-                rule.death_frames,
                 rule.attack_frames,
                 rule.melee_frames,
                 rule.alternate_melee_frames
-            ] + rule.pain_variants + [other.frames for other in rule.other_walks] {
+            ] + [sequence.frames for sequence in rule.pains + rule.deaths]
+                + [other.frames for other in rule.other_walks] {
                 for name in group {
                     assert name in names , kind + ":" + name;
                     checked += 1;
                 }
             }
+            # Every pain and death sequence: its frames in order in the model,
+            # a stride for each frame, and its own sound in the archive.
+            for sequence in rule.pains + rule.deaths {
+                assert sequence.frames , kind + ":" + sequence.name;
+                assert not sequence.steps or len(sequence.steps) == len(sequence.frames) , kind + ":" + sequence.name;
+                placed = frame_indices(model.surfaces[0].frames, sequence.frames, rule.model, sequence.name);
+                assert placed == [placed[0] + i for i in range(len(placed))] , kind + ":" + sequence.name;
+            }
             sounds: list[str] = [rule.sight_sound, rule.death_sound] + rule.pain_sounds
-                + [rule.attack_sound, rule.melee_sound];
+                + [rule.attack_sound, rule.melee_sound]
+                + [sequence.sound for sequence in rule.pains + rule.deaths];
             for profile in rule_profiles(rule) {
                 assert len(profile.frames) == int(profile.duration * 10.0 + 0.5)
                     or not profile.frames , kind + ":" + profile.name;
@@ -117,7 +126,8 @@ with entry {
                 continue;
             }
             crucified = enemy_rule(game, pair[0], pair[1]);
-            assert crucified is not None and crucified.decoration;
+            # The crucified zombie is a decoration; the crucified marine can be killed.
+            assert crucified is not None and (crucified.decoration or crucified.passive);
             model = library.model(crucified.model).model;
             names = [frame.name for frame in model.surfaces[0].frames];
             for name in crucified.idle_frames {

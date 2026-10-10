@@ -11,6 +11,7 @@ import from engine.world.combat {
     CombatTick,
     attack_pose_time
 }
+import from engine.world.opponent_rule { rule_profiles }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 
@@ -35,9 +36,23 @@ with entry {
                 + rule.melee_frames
                 + rule.alternate_melee_frames
                 + rule.run.frames
-                + rule.walk.frames
-                + rule.pain_frames {
+                + rule.walk.frames {
                 assert name in names , kind + ":" + name;
+            }
+            for sequence in rule.pains + rule.deaths {
+                for name in sequence.frames {
+                    assert name in names , kind + ":" + sequence.name + ":" + name;
+                }
+            }
+            for profile in rule_profiles(rule) {
+                for name in profile.frames {
+                    assert name in names , kind + ":" + profile.name + ":" + name;
+                }
+                for path in [profile.sound, profile.extra_sound] {
+                    if path {
+                        assert len(library.read(path)) > 44 , path;
+                    }
+                }
             }
             if rule.attack_frames {
                 assert len(rule.attack_frames) == int(rule.attack_duration * 10.0);
@@ -73,6 +88,9 @@ with entry {
     rockets = World();
     rocket_rule = enemy_rule("q2", "monster_chick");
     assert rocket_rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rocket_rule.near_chance = 1.0;
+    rocket_rule.mid_chance = 1.0;
     rocket_enemy = Opponent(rule=rocket_rule, attack_wait=0.0, shot_random=1);
     rockets +>:HasOpponent:+> rocket_enemy;
     rockets spawn CombatTick(player=player, collision=collision, state=state, dt=2.7);
