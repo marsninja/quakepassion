@@ -133,9 +133,10 @@ test "a rocket jump walks to its start looking down, then jumps and fires" {
     route.add(passage.finish, 2, passage=passage);
     follow = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0, view_pitch=89.0);
     assert follow.result.jump and follow.result.attack and route.jumped;
-    # A leg taking longer than BotReachabilityTime fails.
+    # A leg taking longer than BotReachabilityTime is given up: the route is
+    # emptied, to be planned again.
     late = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=7.0, view_pitch=89.0);
-    assert late.result.failure;
+    assert not late.result.failure and not route.points;
 }
 
 test "bobbing platforms are waited for, boarded, ridden and left" {
