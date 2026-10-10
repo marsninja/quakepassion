@@ -44,7 +44,17 @@ import from vendor.raylib {
         text: str
     ) -> None;  def rlLoadTexture(
         data: bytes, width: i32, height: i32, format: i32, mipmapCount: i32
-    ) -> u32;  def rlUnloadTexture(id: u32) -> None;  def rlSetTexture(id: u32) -> None;  def rlBegin(
+    ) -> u32;  def rlUnloadTexture(id: u32) -> None;  obj UiImage {
+        has data: u64,
+            width: i32,
+            height: i32,
+            mipmaps: i32,
+            format: i32;
+    }  def LoadImageFromMemory(
+        fileType: str, fileData: bytes, dataSize: i32
+    ) -> UiImage;  def LoadTextureFromImage(image: UiImage) -> Texture2D;  def UnloadImage(
+        image: UiImage
+    ) -> None;  def rlSetTexture(id: u32) -> None;  def rlBegin(
         mode: i32
     ) -> None;  def rlEnd -> None;  def rlTexCoord2f(x: f32, y: f32) -> None;  def rlVertex2f(
         x: f32, y: f32
@@ -159,6 +169,11 @@ obj Canvas {
     """Keep an image by name: `rgba` is its pixels, four bytes each, rows
     from the top."""
     def keep_picture(key: str, width: int, height: int, rgba: bytes) abst;
+    """Keep an image by name from a file's bytes (`extension` as ".tga",
+    ".jpg" or ".png" says which kind). False when it does not decode."""
+    def keep_encoded(key: str, extension: str, data: bytes) -> bool abst;
+    """A kept image's width and height ([0, 0] when no image has that name)."""
+    def picture_size(key: str) -> list[int] abst;
     def has_picture(key: str) -> bool abst;
     """Draw a kept image over `area`. False when no image has that name."""
     def picture(key: str, area: Rect) -> bool abst;
@@ -227,6 +242,20 @@ obj TraceCanvas(Canvas) {
 
     def has_picture(key: str) -> bool {
         return key in self.kept;
+    }
+
+    def keep_encoded(key: str, extension: str, data: bytes) -> bool {
+        if len(data) == 0 {
+            return False;
+        }
+        if key not in self.kept {
+            self.kept.append(key);
+        }
+        return True;
+    }
+
+    def picture_size(key: str) -> list[int] {
+        return [64, 64] if key in self.kept else [0, 0];
     }
 
     def picture(key: str, area: Rect) -> bool {
@@ -305,8 +334,9 @@ obj ScreenCanvas(Canvas) {
         loaded: bool = False,
         clipped: bool = False,
         clip_area: Rect = Rect(),
-        # Kept images, by name, as the graphics card knows them.
-        pictures: dict[str, int] = {};
+        # Kept images, by name, as the graphics card knows them, and their sizes.
+        pictures: dict[str, int] = {},
+        sizes: dict[str, list[int]] = {};
 
     """Load the interface font at the display's pixel density. Needs a window."""
     def open(path: str = "") {
@@ -415,6 +445,33 @@ obj ScreenCanvas(Canvas) {
         }
         # 7 is eight bits each of red, green, blue and alpha.
         self.pictures[key] = int(rlLoadTexture(rgba, i32(width), i32(height), i32(7), i32(1)));
+        self.sizes[key] = [width, height];
+    }
+
+    def keep_encoded(key: str, extension: str, data: bytes) -> bool {
+        if len(data) == 0 {
+            return False;
+        }
+        image = LoadImageFromMemory(extension, data, i32(len(data)));
+        if image.data == u64(0) {
+            return False;
+        }
+        gpu = LoadTextureFromImage(image);
+        self.sizes[key] = [int(image.width), int(image.height)];
+        UnloadImage(image);
+        if gpu.id == u32(0) {
+            return False;
+        }
+        old = self.pictures.get(key, 0);
+        if old != 0 {
+            rlUnloadTexture(u32(old));
+        }
+        self.pictures[key] = int(gpu.id);
+        return True;
+    }
+
+    def picture_size(key: str) -> list[int] {
+        return self.sizes.get(key, [0, 0]);
     }
 
     def has_picture(key: str) -> bool {

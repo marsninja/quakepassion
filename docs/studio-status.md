@@ -151,6 +151,17 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   entities through the space the world's brushes leave; when it reaches
   the void, the way it took is drawn in red in every view.
 
+- **The asset explorer** (View > Asset explorer, `ed_layout assets`): every
+  file in the installed games' archives, by game and folder. A click on a
+  file shows it: a texture as its picture (Quake II's WALs, Quake III's TGA
+  and JPEG images, PCX pictures), a script or config as its first lines, a
+  sound as its rate and length. Extract (`ed_extract [folder]`) writes the
+  file to disk under `QP_EXTRACT` (default `./extracted`), and Use as
+  material gives a texture to the selection.
+- **Packing** (`ed_pack <folder> <out.pak|out.pk3>`): a folder's files as a
+  PAK or a PK3 the games' own readers take. `ed_pack scene <out.pk3>` packs
+  the scene's map with the texture files its materials name.
+
 A scene is a "passion" level: it plays by the rules generated expeditions do
 and may hold any game's entities.
 
@@ -181,6 +192,8 @@ editor/compile/light.jac     lightmaps for that level from the scene's lights
 editor/geometry/shapes.jac   cones, balls, stairs, arches and pipes as brushes
 editor/classes/registry.jac  entity classes: fields by kind, options by name
 editor/assets/materials.jac  materials from the games' archives, by name
+editor/assets/explorer.jac   the archives' files by folder, and what to show of each
+editor/formats/archive.jac   PAK and PK3 archives written
 editor/camera.jac            the free camera: rays through the view, points onto it
 editor/studio.jac            the workbench: panels, picking, play and stop, the ed_* commands
 editor/impl/                 the workbench's scenes and brushes
@@ -255,6 +268,8 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_convert_tests.jac`: a compiled scene turned back into
   brushes with its materials and their lie; a sealed room, a hole and a
   thin wall under the flood; a duplicator's images.
+- `tests/studio_archive_tests.jac`: a PAK and a PK3 written and read back
+  by the engine's readers; the zip checksum; names listed as folders.
 - `tests/studio_shape_tests.jac`, `tests/studio_class_tests.jac`: each
   shape's size, volume and gaps; the class table read whole, fields by
   kind, classes by game, option bits.
@@ -287,6 +302,10 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/images_session.cfg` (9 steps: a post copied as images,
   moved, the copies made real; a yard that leaks, a ring of walls that
   still leaks through the top, and the same sealed by a roof).
+  `scripts/studio/assets_session.cfg` (6 steps: a Quake II texture shown in
+  the explorer, given to a brush and extracted by its buttons, a config and
+  a sound shown, the scene packed with its texture as a PK3 and a folder as
+  a PAK; the validator opens both archives itself).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -294,18 +313,23 @@ editor/impl/                 the workbench's scenes and brushes
 
 ## What remains
 
-Milestones 1 (the shell), 2 (blockout) and most of 3 and 4 (views,
-texturing, brush tools) and 5 (logic and reuse) of #73 are what this page
-describes. Left over from
-those: the clipper is a command (no plane drawn in the view), there are no
-gizmos for free rotation and scaling, face-to-face tools (tag, glue, wrap a
-texture round a corner) are not built, a shipped map cannot take new
-brushes, and Quake III's `brushDef` and `patchDef2` blocks are skipped on
-open; a linked prefab stands as its file has it (it does not turn), and the
-logic graph neither reorders nor shows signals as they fire in play. Not
-yet built: a solid-colour display mode, the bake proper (partition,
-visibility, bounced light, a leak finder, bot navigation), patches and duplicators, the asset studio, the model
-editor, terrain, the Passion tools and user walkers. Within the shell:
-entity previews are boxes rather than the entity's model, generated
-(Passion) levels can be edited but not saved, and a brush entity cannot be
-duplicated because two entities cannot share a map model.
+Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3
+(views and texturing), 4 (brush tools) and 5 (logic and reuse), with parts
+of 6, 7 and 9. The checklist in #73 says item by item what exists.
+
+- Left over in what is built: the clipper is a command (no plane drawn in
+  the view); there are no gizmos for free rotation and scaling; face-to-face
+  tools (tag, glue, wrap a texture round a corner) are not built; a shipped
+  map takes new brushes only once it is turned into a scene; Quake III's
+  `brushDef` and `patchDef2` blocks are skipped on open and its patches are
+  left behind by `ed_convert`; a linked prefab stands as its file has it (it
+  does not turn); the logic graph neither reorders nor shows signals as
+  they fire in play; a scene too large for the light budget stays flat.
+- Not yet built: a solid-colour display mode; the bake proper (partition,
+  visibility, bounced light, bot navigation); patches; the rest of the
+  asset studio (models, sounds played, shader and texture authoring); the
+  model editor; terrain; the Passion tools; user walkers.
+- Within the shell: entity previews are boxes rather than the entity's
+  model, and generated (Passion) levels can be edited but not saved as
+  they are (`ed_convert` is meant to turn one into a scene, but expeditions
+  do not load in the test environment at present: #76).

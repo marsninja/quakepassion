@@ -611,6 +611,77 @@ def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     }
 }
 
+"""The eighth session: the asset explorer and archive packing."""
+def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    import zipfile;
+    import struct;
+    shots = ["texture", "text"];
+    for shot in shots {
+        (repo / f"assets_{shot}.png").unlink(missing_ok=True);
+    }
+    pack = repo / ".jac/studio-pack";
+    shutil.rmtree(pack, ignore_errors=True);
+    with tempfile.TemporaryDirectory(prefix="qp-assets-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_EXTRACT"] = str(pack / "extract");
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/assets_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_EXTRACT");
+        (output / "assets.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The assets session failed: {output / 'assets.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["boxed", "texture", "used", "text", "sound", "packed"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'assets.log'}";
+    }
+    shown = [line for line in steps["texture"] if line.startswith("asset ")];
+    assert len(shown) == 1 and shown[0].startswith("asset q2:textures/e1u1/metal1_1.wal kind=image") , str(shown);
+    assert "note=64x64" in shown[0] and shown[0].endswith("material=q2:e1u1/metal1_1");
+    # Use as material gives the texture to the selected brush.
+    assert "material=blockout" in brushes(steps["boxed"])[0];
+    assert "material=q2:e1u1/metal1_1" in brushes(steps["used"])[0] , str(steps["used"]);
+    # Extract writes the file as the archive has it: a WAL's name, then its size.
+    wal = pack / "extract/q2/textures/e1u1/metal1_1.wal";
+    assert wal.exists() , "Extract wrote no file";
+    data = wal.read_bytes();
+    assert data[:17] == b"e1u1/metal1_1\x00\x00\x00\x00" and struct.unpack("<II", data[32:40]) == (64, 64);
+    assert f"studio: extracted {len(data)} bytes" in ran.stdout;
+    text = [line for line in steps["text"] if line.startswith("asset ")];
+    assert len(text) == 1 and "kind=text" in text[0] and int(text[0].split("lines=")[1].split()[0]) > 20 , str(text);
+    sound = [line for line in steps["sound"] if line.startswith("asset ")];
+    assert len(sound) == 1 and "kind=sound" in sound[0] and "note=11025Hz,1channel" in sound[0] , str(sound);
+    # The scene packed with the texture it uses is a zip any tool reads.
+    with zipfile.ZipFile(pack / "crate.pk3") as archive {
+        assert archive.testzip() is None;
+        assert archive.namelist() == ["maps/crate.map", "textures/e1u1/metal1_1.wal"] , str(archive.namelist());
+        assert archive.read("textures/e1u1/metal1_1.wal") == data;
+        assert b"q2:e1u1/metal1_1 [" in archive.read("maps/crate.map");
+    }
+    # The folder packed as a PAK: its header, and the one file's directory entry.
+    packed = (pack / "extract.pak").read_bytes();
+    assert packed[:4] == b"PACK";
+    (where, size) = struct.unpack("<ii", packed[4:12]);
+    assert size == 64 and packed[where:where + 33] == b"q2/textures/e1u1/metal1_1.wal\x00\x00\x00\x00";
+    assert struct.unpack("<ii", packed[where + 56:where + 64]) == (12, len(data)) and packed[12:12 + len(data)] == data;
+    assert ran.stdout.count("studio: packed ") == 2;
+    for shot in shots {
+        source = repo / f"assets_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"assets_{shot}.png");
+        source.unlink();
+    }
+    shutil.rmtree(pack, ignore_errors=True);
+    print(f"ASSETS PASS: {len(steps) - 1} steps, a texture shown, used and extracted, a scene and a folder packed");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -715,6 +786,7 @@ def main() {
     logic_session(repo, binary, env, output);
     build_session(repo, binary, env, output);
     images_session(repo, binary, env, output);
+    assets_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

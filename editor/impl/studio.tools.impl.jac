@@ -282,6 +282,11 @@ impl Studio.load_thumbs {
         if image is None {
             image = swatch_texture(name);
         }
+        if len(image.rgba) == 0 and len(image.encoded) > 0 {
+            # Quake III keeps its images as files; the canvas decodes them.
+            self.canvas.keep_encoded(name, image.extension, image.encoded);
+            continue;
+        }
         small = small_picture(image, 72);
         self.canvas.keep_picture(name, small.width, small.height, small.rgba);
     }

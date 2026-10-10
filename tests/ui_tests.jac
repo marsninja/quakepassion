@@ -23,7 +23,8 @@ import from editor.ui.widgets {
     GraphLink,
     Dropdown,
     Swatch,
-    MenuPopup
+    MenuPopup,
+    Picture
 }
 
 """Run frames until the scripted steps are played, plus one to settle."""
@@ -540,4 +541,24 @@ test "a dropdown opens its list under it and a choice runs that label's command"
     assert len(asked) == 1 and asked[0] == "set 2" and len(stage.layers()) == 1;
     fills = [stroke for stroke in canvas.strokes if stroke.kind == "fill" and stroke.color.g == 127];
     assert len(fills) >= 1 and fills[0].color.r == 255 and fills[0].color.b == 0;
+}
+
+test "a picture is shown as large as fits, in proportion" {
+    canvas = TraceCanvas();
+    assert canvas.keep_encoded("wall", ".tga", bytes(32)) and not canvas.keep_encoded("none", ".tga", b"");
+    assert canvas.picture_size("wall")[0] == 64 and canvas.picture_size("none")[0] == 0;
+    top = Box();
+    shown = Picture(key="wall", grow=1);
+    top.adopt(shown);
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 408, 208);
+    stage.paint();
+    drawn = [stroke for stroke in canvas.strokes if stroke.kind == "picture"];
+    # A square image in a wide space: as tall as the space, in its middle.
+    assert len(drawn) == 1 and drawn[0].area.same(Rect(x=104, y=4, w=200, h=200));
+    shown.key = "none";
+    canvas.strokes = [];
+    stage.paint();
+    assert len([stroke for stroke in canvas.strokes if stroke.kind == "picture"]) == 0;
 }

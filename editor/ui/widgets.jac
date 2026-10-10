@@ -1656,3 +1656,42 @@ node Swatch(Widget) {
         canvas.outline(self.area, canvas.theme.border);
     }
 }
+
+"""A kept image shown as large as fits, in proportion, on a dark ground."""
+node Picture(Widget) {
+    has key: str = "";
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        return 128;
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(self.area, theme.field);
+        size = canvas.picture_size(self.key);
+        if size[0] <= 0 or size[1] <= 0 or self.area.w <= 8 or self.area.h <= 8 {
+            return;
+        }
+        room_w = self.area.w - 8;
+        room_h = self.area.h - 8;
+        # Small images are shown larger by whole steps, so their texels stay square.
+        wide = size[0];
+        tall = size[1];
+        if wide * room_h > tall * room_w {
+            tall = max(1, tall * room_w // wide);
+            wide = room_w;
+        } else {
+            wide = max(1, wide * room_h // tall);
+            tall = room_h;
+        }
+        canvas.picture(
+            self.key,
+            Rect(
+                x=self.area.x + (self.area.w - wide) // 2, y=self.area.y + (self.area.h - tall) // 2, w=wide, h=tall
+            )
+        );
+    }
+}

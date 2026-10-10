@@ -48,8 +48,11 @@ import from .ui.widgets {
     GraphLink,
     Dropdown,
     Swatch,
-    Check
+    Check,
+    Picture
 }
+import from .assets.explorer { AssetIndex, AssetLook }
+import from .formats.archive { write_pak, write_zip, file_kind }
 import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
 import from .geometry.shapes { shape_brushes, SHAPE_KINDS }
 import from .compile.light { bake_light }
@@ -134,7 +137,18 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
     ("ed_matfilter", "ed_matfilter <text>", "show only matching materials in the materials list"),
-    ("ed_layout", "ed_layout <1|4|logic>", "one level view, four (3D, top, front and side), or the logic graph"),
+    (
+        "ed_layout",
+        "ed_layout <1|4|logic|assets>",
+        "one level view, four (3D, top, front and side), the logic graph, or the asset explorer"
+    ),
+    ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
+    ("ed_extract", "ed_extract [folder]", "write the file the explorer shows to disk"),
+    (
+        "ed_pack",
+        "ed_pack <folder|scene> <out.pak|out.pk3>",
+        "pack a folder's files, or the scene with the textures it uses, into an archive"
+    ),
     ("ed_copy", "ed_copy", "copy the selection (as map text)"),
     ("ed_cut", "ed_cut", "copy the selection and delete it"),
     ("ed_paste", "ed_paste [here]", "paste what was copied: beside where it was, or where the camera looks"),
@@ -304,6 +318,9 @@ obj StudioUi {
         checks: TreeView,
         library: TreeView,
         classes: TreeView,
+        assets: TreeView,
+        asset_box: Box,
+        asset_form: Box,
         logic: GraphView,
         prefab_name: TextField,
         modes: list[PushButton],
@@ -384,6 +401,12 @@ obj Studio(Workbench) {
         # Scenes lit from their own lights, and how many samples the last was.
         lit: bool = True,
         lit_samples: int = 0,
+        # The asset explorer in place of the level views: the games' files,
+        # which folders are open, and the file being shown.
+        assets_shown: bool = False,
+        asset_index: AssetIndex | None = None,
+        asset_now: AssetLook | None = None,
+        assets_listed: int = -1,
         # The way out the leak finder last found.
         leak: list[Vec3] = [],
         class_filter: str = "",
@@ -627,6 +650,7 @@ obj Studio(Workbench) {
                     MenuItem(text="One view", command="ed_layout 1"),
                     MenuItem(text="Four views", command="ed_layout 4"),
                     MenuItem(text="Logic graph", command="ed_layout logic", keys="L"),
+                    MenuItem(text="Asset explorer", command="ed_layout assets"),
                     MenuItem(rule=True),
                     MenuItem(text="Axis views as edges", command="ed_display wire axis"),
                     MenuItem(text="Axis views textured", command="ed_display textured axis"),
@@ -810,6 +834,19 @@ obj Studio(Workbench) {
             empty="Nothing here fires anything yet. Drag from one entity's box to another's to link them.",
             hint="Click: select | drag from a box to another: make it fire that | drag the sheet: slide | double click: look at"
         );
+        asset_box = Box(across=True, grow=1, gap=3);
+        asset_tree = TreeView(
+            pick="ed_asset",
+            toggle="ed_asset",
+            grow=1,
+            hint="Click a folder to open it, a file to see it"
+        );
+        asset_box.adopt(asset_tree);
+        asset_side = Box(size=340, fill="panel");
+        asset_box.adopt(asset_side);
+        asset_side.adopt(Header(text="File"));
+        asset_form = Box(pad=6, gap=4, grow=1);
+        asset_side.adopt(asset_form);
         body.adopt(Splitter(target=left, low=160, high=600));
         home = game_directory("passion");
         if os.path.isdir(home) {
@@ -878,6 +915,9 @@ obj Studio(Workbench) {
             checks=checks,
             library=library,
             classes=class_list,
+            assets=asset_tree,
+            asset_box=asset_box,
+            asset_form=asset_form,
             logic=sheet,
             prefab_name=prefab_name,
             modes=modes,
@@ -1111,6 +1151,11 @@ obj Studio(Workbench) {
         ui.checks.track(stage);
         ui.library.track(stage);
         ui.classes.track(stage);
+        ui.assets.track(stage);
+        if self.assets_shown and self.assets_listed != self.folds {
+            self.list_assets(ui);
+            self.assets_listed = self.folds;
+        }
         # A list opened by a dropdown follows the pointer too.
         for layer in stage.layers() {
             layer.track(stage);
@@ -1479,7 +1524,7 @@ obj Studio(Workbench) {
 
     """The level views showing: the first alone, or all four."""
     def showing -> int {
-        if self.logic_shown {
+        if self.logic_shown or self.assets_shown {
             return 0;
         }
         return len(self.ports) if self.layout == 4 else min(1, len(self.ports));
@@ -1504,6 +1549,11 @@ obj Studio(Workbench) {
         if self.logic_shown {
             ui.center.adopt(ui.logic);
             self.logic_seen = -1;
+            return;
+        }
+        if self.assets_shown {
+            ui.center.adopt(ui.asset_box);
+            self.assets_listed = -1;
             return;
         }
         if self.layout == 1 {
@@ -1851,6 +1901,15 @@ obj Studio(Workbench) {
     def build_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # The asset explorer and archive packing (impl/studio.assets.impl.jac)
+
+    """Run an explorer or packing command. False when it is not one."""
+    def asset_command(scene: Scene, args: list[str]) -> bool;
+    def list_assets(ui: StudioUi);
+    """Fill the explorer's side with the file being shown."""
+    def show_asset(ui: StudioUi);
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -1984,7 +2043,8 @@ obj Studio(Workbench) {
             }
         } elif name == "ed_layout" {
             self.logic_shown = len(args) > 1 and args[1] == "logic";
-            if self.logic_shown {
+            self.assets_shown = len(args) > 1 and args[1] == "assets";
+            if self.logic_shown or self.assets_shown {
                 self.arrange_views(self.layout);
             } else {
                 self.arrange_views(4 if len(args) > 1 and args[1] == "4" else 1);
@@ -1995,8 +2055,9 @@ obj Studio(Workbench) {
             }
             self.dump(scene);
         } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
-            and not self.library_command(scene, args) and not self.class_command(scene, args) {
-            self.build_command(scene, args);
+            and not self.library_command(scene, args) and not self.class_command(scene, args)
+            and not self.build_command(scene, args) {
+            self.asset_command(scene, args);
         }
     }
 
@@ -2175,6 +2236,14 @@ obj Studio(Workbench) {
             "studio: logic nodes=" + str(len(placed)) + " links=" + str(arrows) + " shown="
                 + ("1" if self.logic_shown else "0") + " leak=" + str(len(self.leak))
         );
+        seen_asset = self.asset_now;
+        if seen_asset is not None {
+            lines.append(
+                "studio: asset " + seen_asset.game + ":" + seen_asset.name + " kind=" + seen_asset.kind + " size="
+                    + str(seen_asset.size) + " note=" + seen_asset.note.replace(" ", "") + " lines="
+                    + str(len(seen_asset.lines)) + " material=" + seen_asset.material
+            );
+        }
         lines.append(
             "studio: mode=" + self.mode + " material=" + self.material + " wire="
                 + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0") + " lit="
