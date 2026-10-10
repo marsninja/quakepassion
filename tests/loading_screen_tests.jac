@@ -18,7 +18,9 @@ test "CG_DrawInformation's lines for a local game" {
             + "{\nmap q3ctf1\nlongname \"Dueling Keeps\"\ntype ctf\n}\n"
     );
     assert arena_loading_lines(find_arena(arenas, "q3dm1")) == ["Arena Gate", "Single Player", "fraglimit 15"];
-    assert arena_loading_lines(find_arena(arenas, "q3ctf1")) == ["Dueling Keeps", "Free For All", "fraglimit 20"];
+    # An arena that sets neither limit is played to ten frags (G_InitBots),
+    # and the screen shows the limit the match has.
+    assert arena_loading_lines(find_arena(arenas, "q3ctf1")) == ["Dueling Keeps", "Free For All", "fraglimit 10"];
     # A map the arena list does not know.
     assert arena_loading_lines(find_arena(arenas, "test_bigbox")) == ["Free For All", "fraglimit 20"];
 }
