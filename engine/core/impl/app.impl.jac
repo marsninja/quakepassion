@@ -1433,7 +1433,7 @@ impl App.step() -> bool {
                     # and only across open area portals (gi.AreasConnected).
                     if self.level.bsp.game == "q2" {
                         heard = self.level.hearable(self.player.pos);
-                        opened = open_portals(self.world);
+                        chart = self.level.area_map;
                         source = self.level.bsp.leaves[self.level.locate(self.player.pos)].area;
                         for listener in [self.world->:HasOpponent:->][?:Opponent] {
                             if listener.alert <= 0.0
@@ -1442,7 +1442,7 @@ impl App.step() -> bool {
                                 and listener.pos.sub(self.player.pos).length() < 1000.0 {
                                 leaf = self.level.bsp.leaves[self.level.locate(listener.pos)];
                                 listener.heard = leaf.cluster in heard
-                                    and areas_connected(self.level.bsp, source, leaf.area, opened);
+                                    and (chart is None or chart.connected(source, leaf.area));
                             }
                         }
                     }
@@ -1467,8 +1467,10 @@ impl App.step() -> bool {
             if self.level_clocks {
                 self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
             }
-            if self.level.bsp.game == "q2" {
+            if self.level.area_portals {
                 self.world spawn AreaPortalTick();
+            }
+            if self.level.bsp.game == "q2" {
                 trail = self.player_trail;
                 if trail is not None {
                     trail spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);

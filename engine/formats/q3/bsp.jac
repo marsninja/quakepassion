@@ -293,6 +293,8 @@ def parse_q3(data: bytes) -> Bsp {
             contents=0,
             vis_offset=-1,
             cluster=i32_at(lumps[4], p),
+            # dleaf_t area: -1 in solid.
+            area=i32_at(lumps[4], p + 4),
             mins=int_vec(lumps[4], p + 8),
             maxs=int_vec(lumps[4], p + 20)
         );

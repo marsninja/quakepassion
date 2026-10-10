@@ -154,8 +154,16 @@ through the train's speakers.
   with the gun, and the gun levels off when he dies. Turrets push and crush
   (`turret_blocked`, `dmg` 10); saves keep the aim and targeting.
 - Switchable Q1/Q2 lights (styles 32-62) toggle and are saved
-  (`engine/world/lightstyles.jac`). Q2 `func_areaportal`s open and close with
-  their doors and relays (`engine/world/area_portals.jac`).
+  (`engine/world/lightstyles.jac`).
+- Area portals (`engine/world/area_portals.jac`, `engine/world/map_areas.jac`):
+  a Q2 `func_areaportal` is open while a door that targets it is not shut
+  (`door_use_areaportals`) and toggles with each other use
+  (`Use_Areaportal`); a Q3 door whose box reaches two areas is the portal
+  between them (`SV_AdjustAreaPortalState`). The map's areas are a graph of
+  `MapArea` nodes joined through `AreaPortal` nodes, numbered again by the
+  `FloodAreaConnections` walker whenever a portal changes. Shut portals stop
+  monsters hearing the player and cull the world and its entities
+  ([rendering](rendering-status.md#visibility)).
 
 ## Fixtures and sound emitters
 
@@ -182,6 +190,7 @@ through the train's speakers.
 
 - Tests: `tests/signal_tests.jac`, `tests/trigger_tests.jac`,
   `tests/map_mechanics_tests.jac`, `tests/train_tests.jac`,
+  `tests/area_portal_tests.jac`,
   `tests/rotation_tests.jac`, `tests/mover_push_tests.jac` (monsters and items
   on lifts, Q3 rotating riders, turrets), `tests/secret_door_tests.jac`,
   `tests/hazard_tests.jac`, `tests/progress_tests.jac`,
@@ -206,10 +215,9 @@ through the train's speakers.
 
 - Timers and random waits keep the original scheduling but draw from an
   entity-local random stream, not the original engine's global sequence.
-- Closed Q2 area portals gate only sound for monsters; they do not cull
-  rendering, and played sounds are not limited by the PHS
-  (`MULTICAST_PHS`). A relay-toggled portal's state is not saved (portals
-  held by doors follow their doors).
+- Played sounds are not limited by the PHS (`MULTICAST_PHS`). A
+  relay-toggled area portal's state is not saved (portals held by doors
+  follow their doors).
 - `target_actor`/`misc_actor` are not implemented; no shipped map needs them
   (biggun's only `target_actor` has no actor to drive).
 - Q2 `func_door_secret` and Q3 mover sounds: see [doors](doors-status.md).

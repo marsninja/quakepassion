@@ -134,7 +134,7 @@ import from ..render.hud_models { HudModels, head_view }
 import from ..world.reflection { show_body, follow_body }
 import from ..world.drops { toss_items, TossTick }
 import from ..world.monster_count { monster_total }
-import from ..world.area_portals { AreaPortalTick, open_portals, areas_connected }
+import from ..world.area_portals { AreaPortalTick }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
