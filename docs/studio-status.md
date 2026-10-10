@@ -94,6 +94,29 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   level view is what Play runs. Save writes the scene as a Valve 220 `.map`
   under `QP_SCENES` (default `./scenes`), which other Quake editors open.
 
+- **Copy and paste** (Ctrl+C, Ctrl+X, Ctrl+V): the selection is copied as
+  map text, which other Quake editors read and write, and pasted where the
+  camera looks (`ed_paste here`) or beside the original (`ed_paste`).
+  `ed_import <file.map> [group]` adds a whole map file.
+- **Groups** (Ctrl+G, `ed_group [name]`): the selected brushes are held
+  together as one `func_group`, which is picked, moved and duplicated as
+  one and stays part of the world when the level is built.
+- **Prefabs** (the Library tab): the selection is kept as a prefab by name
+  (`ed_prefab save <name>`, a map file under `QP_PREFABS`, default
+  `./prefabs`); a click on a prefab adds a copy where the camera looks
+  (`ed_prefab add`); `ed_prefab link <name>` places a linked one, a single
+  `misc_prefab` entity that is built as the file's contents wherever it
+  stands, and `ed_prefab unlink` turns linked ones into copies. The tab
+  also lists the saved scenes; a click opens one.
+- **The logic graph** (L, View > Logic graph, `ed_layout logic`): every
+  entity that fires or is fired, in columns by how far from a source it is,
+  with an arrow for each `target`. A click selects, a double click looks at
+  the entity, and a drag from one box to another makes the first fire the
+  second (`ed_link <from> <to>`: the second gets a targetname when it has
+  none). Selected entities stand in the first column, so two things picked
+  in the level can be linked here. The check reports entities that set
+  themselves off through what they fire.
+
 A scene is a "passion" level: it plays by the rules generated expeditions do
 and may hold any game's entities.
 
@@ -162,6 +185,10 @@ editor/impl/                 the workbench's scenes and brushes
   `Reface` walks those edges and the selection to change materials, `Carve`
   walks every brush of the document, and `Inspect` walks it all for the
   check.
+- **Targets are edges**: an entity `Fires` what its `target` names. The
+  edges are redrawn from the fields when the document changes, so what an
+  entity sets off is a walk along them (`Reach`), and the logic graph's
+  columns and the loops the check reports come from the same edges.
 - **Play** stages the document's entity lump on the `App`
   (`staged_entities`) and reloads the level, which is how unsaved edits are
   played. The level keeps the map's entities before the skill filter
@@ -200,18 +227,25 @@ editor/impl/                 the workbench's scenes and brushes
   hollow the brush, drag an edge and a corner in the front view, select by
   a rectangle in the top view, carve, tip, find a broken target with the
   check and pick it from the list, save, play, return; then reopen).
+  `scripts/studio/logic_session.cfg` wires and reuses (14 steps: link a
+  button to a relay and the relay to a door by dragging between their boxes
+  in the logic graph, pick from the graph, copy and paste the door, save it
+  as a prefab from the Library tab, add a copy by a click, place and move a
+  linked one, group two boxes, save, play, return; then reopen).
 
 ## What remains
 
 Milestones 1 (the shell), 2 (blockout) and most of 3 and 4 (views,
-texturing, brush tools) of #73 are what this page describes. Left over from
+texturing, brush tools) and 5 (logic and reuse) of #73 are what this page
+describes. Left over from
 those: the clipper is a command (no plane drawn in the view), there are no
 gizmos for free rotation and scaling, face-to-face tools (tag, glue, wrap a
 texture round a corner) are not built, a shipped map cannot take new
 brushes, and Quake III's `brushDef` and `patchDef2` blocks are skipped on
-open. Not yet built: lit and solid-colour display modes, the entity class
-registry behind typed inspector fields, the logic graph panel, groups and
-prefabs, the bake, patches and duplicators, the asset studio, the model
+open; a linked prefab stands as its file has it (it does not turn), and the
+logic graph neither reorders nor shows signals as they fire in play. Not
+yet built: lit and solid-colour display modes, the entity class registry
+behind typed inspector fields, the bake, patches and duplicators, the asset studio, the model
 editor, terrain, the Passion tools and user walkers. Within the shell:
 entity previews are boxes rather than the entity's model, generated
 (Passion) levels can be edited but not saved, and a brush entity cannot be

@@ -1354,3 +1354,221 @@ node ViewArea(Widget) {
         return True;
     }
 }
+
+"""One box of a graph view: `key` is what its commands name; `column` and
+`row` say where it stands."""
+obj GraphNode {
+    has key: str,
+        text: str,
+        note: str = "",
+        column: int = 0,
+        row: int = 0,
+        tone: str = "text",
+        picked: bool = False;
+}
+
+"""An arrow of a graph view, from one box's key to another's."""
+obj GraphLink {
+    has source: str,
+        dest: str,
+        tone: str = "good";
+}
+
+"""Boxes in columns joined by arrows, on a sheet that slides under a drag on
+its background and under the wheel. A click on a box asks for `pick` and its
+key (a click on the sheet for `pick` alone), a double click for `open`, and
+a drag from one box to another for `link` with both keys."""
+node GraphView(Widget) {
+    has nodes: list[GraphNode] = [],
+        links: list[GraphLink] = [],
+        pick: str = "",
+        open_command: str = "",
+        link: str = "",
+        # What the sheet says when it has no boxes.
+        empty: str = "",
+        slide_x: int = 0,
+        slide_y: int = 0,
+        pitch_x: int = 200,
+        pitch_y: int = 52,
+        box_w: int = 156,
+        box_h: int = 38,
+        # The box an arrow is being pulled from, and where the pointer is.
+        pulling: int = -1,
+        pull_x: int = 0,
+        pull_y: int = 0,
+        sliding: bool = False,
+        travelled: int = 0,
+        hover_node: int = -1;
+
+    def node_area(index: int) -> Rect {
+        shown = self.nodes[index];
+        return Rect(
+            x=self.area.x + 24 + shown.column * self.pitch_x + self.slide_x,
+            y=self.area.y + 30 + shown.row * self.pitch_y + self.slide_y,
+            w=self.box_w,
+            h=self.box_h
+        );
+    }
+
+    def node_at(x: int, y: int) -> int {
+        for index in range(len(self.nodes)) {
+            if self.node_area(index).holds(x, y) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    def index_of(key: str) -> int {
+        for index in range(len(self.nodes)) {
+            if self.nodes[index].key == key {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    """Slide the sheet so a box shows."""
+    def reveal(index: int) {
+        if index < 0 or index >= len(self.nodes) {
+            return;
+        }
+        spot = self.node_area(index);
+        if spot.x < self.area.x + 8 {
+            self.slide_x += self.area.x + 24 - spot.x;
+        } elif spot.x + spot.w > self.area.x + self.area.w - 8 {
+            self.slide_x -= spot.x + spot.w - (self.area.x + self.area.w - 24);
+        }
+        if spot.y < self.area.y + 8 {
+            self.slide_y += self.area.y + 30 - spot.y;
+        } elif spot.y + spot.h > self.area.y + self.area.h - 8 {
+            self.slide_y -= spot.y + spot.h - (self.area.y + self.area.h - 24);
+        }
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(self.area, theme.field);
+        if len(self.nodes) == 0 and self.empty {
+            canvas.label(self.empty, self.area, theme.faint, 0);
+        }
+        for arrow in self.links {
+            source = self.index_of(arrow.source);
+            dest = self.index_of(arrow.dest);
+            if source < 0 or dest < 0 {
+                continue;
+            }
+            start = self.node_area(source);
+            finish = self.node_area(dest);
+            color = theme_ink(canvas, arrow.tone);
+            tip_x = finish.x - 1;
+            tip_y = finish.y + finish.h // 2;
+            canvas.line(start.x + start.w, start.y + start.h // 2, tip_x - 7, tip_y, color);
+            canvas.triangle(tip_x - 8, tip_y - 4, tip_x - 8, tip_y + 5, tip_x, tip_y, color);
+        }
+        for index in range(len(self.nodes)) {
+            shown = self.nodes[index];
+            spot = self.node_area(index);
+            back = theme.raised;
+            if shown.picked {
+                back = theme.select;
+            } elif index == self.hover_node and self.hovered {
+                back = theme.hover;
+            }
+            canvas.fill(spot, back);
+            canvas.outline(spot, theme.accent if shown.picked or index == self.pulling else theme.border);
+            canvas.label(
+                shown.text,
+                Rect(x=spot.x, y=spot.y + 2, w=spot.w, h=spot.h // 2),
+                theme_ink(canvas, shown.tone),
+                -1,
+                8
+            );
+            if shown.note {
+                canvas.label(
+                    shown.note,
+                    Rect(x=spot.x, y=spot.y + spot.h // 2 - 1, w=spot.w, h=spot.h // 2),
+                    theme.dim,
+                    -1,
+                    8,
+                    theme.small
+                );
+            }
+        }
+        if self.pulling >= 0 and self.pulling < len(self.nodes) and self.travelled > 4 {
+            start = self.node_area(self.pulling);
+            canvas.line(start.x + start.w, start.y + start.h // 2, self.pull_x, self.pull_y, theme.accent);
+        }
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        kind = event.kind;
+        if kind == "wheel" {
+            if event.shift {
+                self.slide_x += int(event.wheel * float(self.pitch_x) * 0.5);
+            } else {
+                self.slide_y += int(event.wheel * float(self.pitch_y));
+            }
+            return True;
+        }
+        if kind == "press" or kind == "double" {
+            index = self.node_at(event.x, event.y);
+            self.travelled = 0;
+            self.pull_x = event.x;
+            self.pull_y = event.y;
+            if kind == "double" and index >= 0 and self.open_command {
+                stage.emit(self.open_command + " " + quote_command_word(self.nodes[index].key));
+                return True;
+            }
+            if event.button == 0 and index >= 0 {
+                self.pulling = index;
+            } else {
+                self.sliding = True;
+            }
+            return True;
+        }
+        if kind == "drag" {
+            self.travelled += abs(event.dx) + abs(event.dy);
+            self.pull_x = event.x;
+            self.pull_y = event.y;
+            if self.sliding {
+                self.slide_x += event.dx;
+                self.slide_y += event.dy;
+            }
+            return True;
+        }
+        if kind == "release" {
+            over = self.node_at(event.x, event.y);
+            if self.pulling >= 0 and self.pulling < len(self.nodes) {
+                if over >= 0 and over != self.pulling {
+                    if self.link {
+                        stage.emit(
+                            self.link + " " + quote_command_word(self.nodes[self.pulling].key) + " "
+                                + quote_command_word(self.nodes[over].key)
+                        );
+                    }
+                } elif over == self.pulling and self.pick {
+                    stage.emit(
+                        self.pick + " " + quote_command_word(self.nodes[over].key)
+                            + (" add" if event.ctrl or event.shift else "")
+                    );
+                }
+            } elif self.sliding and self.travelled < 4 and event.button == 0 and self.pick {
+                stage.emit(self.pick);
+            }
+            self.pulling = -1;
+            self.sliding = False;
+            return True;
+        }
+        return kind == "click";
+    }
+
+    """Called every frame by the owner: which box the pointer is over."""
+    def track(stage: Stage) {
+        self.hover_node = self.node_at(stage.input.x, stage.input.y) if self.hovered else -1;
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}

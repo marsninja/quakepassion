@@ -701,6 +701,10 @@ test "the selection is copied as a map and pasted back moved" {
     box = pasted[0].bounds();
     assert box is not None and box[0].x == 128.0 and box[1].x == 192.0;
     assert scene.selection()[0].fields["origin"] == "64 -64 24";
+    # An entity that came first in the text does not keep the file's version line.
+    assert scene.insert_map(read_map(write_map(copied[1:])).items, Vec3());
+    assert "mapversion" not in scene.selection()[0].fields;
+    scene.undo();
     assert scene.undo() == "Paste";
     assert len(scene.solids()) == 2 and len(scene.items()) == 2;
     # As a group: the world's brushes come in under a func_group of their own.

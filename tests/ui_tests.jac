@@ -17,7 +17,10 @@ import from editor.ui.widgets {
     MenuItem,
     ViewArea,
     Gallery,
-    Tile
+    Tile,
+    GraphView,
+    GraphNode,
+    GraphLink
 }
 
 """Run frames until the scripted steps are played, plus one to settle."""
@@ -459,4 +462,53 @@ test "a gallery lays tiles across, draws the kept pictures and picks by click" {
     assert wall.offset == 94;
     wall.reveal(41);
     assert wall.offset == wall.reach();
+}
+
+test "a graph view picks a box by a click, links two by a drag and slides its sheet" {
+    canvas = TraceCanvas();
+    top = Box();
+    sheet = GraphView(pick="pick", open_command="look", link="join", grow=1, empty="Nothing fires anything.");
+    top.adopt(sheet);
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 600, 400);
+    stage.paint();
+    assert "Nothing fires anything." in canvas.words();
+    sheet.nodes = [
+        GraphNode(key="7", text="func_button", column=0, row=0),
+        GraphNode(key="9", text="func_door", note="door1", column=1, row=0, picked=True),
+        GraphNode(key="12", text="light", column=1, row=1)
+    ];
+    sheet.links = [GraphLink(source="7", dest="9")];
+    assert sheet.node_area(0).same(Rect(x=24, y=30, w=156, h=38));
+    assert sheet.node_area(2).same(Rect(x=224, y=82, w=156, h=38));
+    assert sheet.node_at(230, 90) == 2 and sheet.node_at(200, 90) == -1 and sheet.index_of("9") == 1;
+    canvas.strokes = [];
+    stage.paint();
+    assert "func_door" in canvas.words() and "door1" in canvas.words();
+    assert len([stroke for stroke in canvas.strokes if stroke.kind == "triangle"]) == 1;
+    script_click(source, 240, 100);
+    play(stage, source, 600, 400);
+    asked = stage.take_commands();
+    assert len(asked) == 1 and asked[0] == "pick \"12\"";
+    # A drag from the button to the light asks for a link between them.
+    script_drag(source, 60, 50, 300, 100);
+    play(stage, source, 600, 400);
+    asked = stage.take_commands();
+    assert len(asked) == 1 and asked[0] == "join \"7\" \"12\"";
+    # A click on the sheet picks nothing; a drag on it slides the boxes.
+    script_click(source, 500, 300);
+    play(stage, source, 600, 400);
+    asked = stage.take_commands();
+    assert len(asked) == 1 and asked[0] == "pick";
+    script_drag(source, 500, 300, 460, 330);
+    play(stage, source, 600, 400);
+    assert sheet.slide_x == -40 and sheet.slide_y == 30 and len(stage.take_commands()) == 0;
+    assert sheet.node_area(0).same(Rect(x=-16, y=60, w=156, h=38));
+    script_click(source, 240, 100);
+    source.script(UiStep(kind="idle"));
+    play(stage, source, 600, 400);
+    stage.take_commands();
+    sheet.reveal(0);
+    assert sheet.node_area(0).x == 24;
 }

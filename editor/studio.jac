@@ -42,7 +42,10 @@ import from .ui.widgets {
     MenuItem,
     ViewArea,
     Gallery,
-    Tile
+    Tile,
+    GraphView,
+    GraphNode,
+    GraphLink
 }
 import from .document.scene {
     Scene,
@@ -51,6 +54,7 @@ import from .document.scene {
     FaceEdit,
     FacePick,
     Finding,
+    read_vector,
     scene_of,
     scene_map,
     scene_from_map
@@ -60,7 +64,8 @@ import from .camera { EditCamera, ray_enters_box, axis_camera }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
-import from .formats.map { read_map, write_map }
+import from .formats.map { read_map, write_map, MapItem, MapFile }
+import from .geometry.brush { brush_windings, windings_bounds }
 import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
 
 """The studio's commands: name, usage, description."""
@@ -120,7 +125,20 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
     ("ed_matfilter", "ed_matfilter <text>", "show only matching materials in the materials list"),
-    ("ed_layout", "ed_layout <1|4>", "one level view, or four: 3D, top, front and side"),
+    ("ed_layout", "ed_layout <1|4|logic>", "one level view, four (3D, top, front and side), or the logic graph"),
+    ("ed_copy", "ed_copy", "copy the selection (as map text)"),
+    ("ed_cut", "ed_cut", "copy the selection and delete it"),
+    ("ed_paste", "ed_paste [here]", "paste what was copied: beside where it was, or where the camera looks"),
+    ("ed_group", "ed_group [name]", "hold the selected brushes together as a group"),
+    (
+        "ed_prefab",
+        "ed_prefab <save|add|link|unlink> [name]",
+        "keep the selection as a prefab, add a copy of one, place a linked one, or turn linked ones into copies"
+    ),
+    ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
+    ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),
+    ("ed_link", "ed_link <from> <to>", "make one entity fire another"),
+    ("ed_unlink", "ed_unlink <from> [to]", "stop an entity firing another, or anything"),
     ("ed_exec", "ed_exec <file>", "run a file of console commands"),
     ("ui_move", "ui_move <x> <y>", "script: move the pointer"),
     ("ui_click", "ui_click <x> <y> [button]", "script: click"),
@@ -258,6 +276,9 @@ obj StudioUi {
         materials: TreeView,
         gallery: Gallery,
         checks: TreeView,
+        library: TreeView,
+        logic: GraphView,
+        prefab_name: TextField,
         modes: list[PushButton],
         center: Box,
         new_key: TextField | None = None,
@@ -328,6 +349,11 @@ obj Studio(Workbench) {
         shelf: str = "",
         thumbs: list[str] = [],
         findings: list[Finding] = [],
+        # The logic graph in place of the level views.
+        logic_shown: bool = False,
+        logic_seen: int = -1,
+        # What was last copied, as map text.
+        clip: str = "",
         hover: Item | None = None,
         shapes: list[Shape] = [],
         opened: dict[str, bool] = {},
@@ -544,6 +570,10 @@ obj Studio(Workbench) {
                     MenuItem(text="Undo", command="ed_undo", keys="Ctrl+Z"),
                     MenuItem(text="Redo", command="ed_redo", keys="Ctrl+Y"),
                     MenuItem(rule=True),
+                    MenuItem(text="Cut", command="ed_cut", keys="Ctrl+X"),
+                    MenuItem(text="Copy", command="ed_copy", keys="Ctrl+C"),
+                    MenuItem(text="Paste where the camera looks", command="ed_paste here", keys="Ctrl+V"),
+                    MenuItem(text="Paste beside the original", command="ed_paste"),
                     MenuItem(text="Duplicate", command="ed_duplicate", keys="Ctrl+D"),
                     MenuItem(text="Delete", command="ed_delete", keys="Del"),
                     MenuItem(rule=True),
@@ -560,6 +590,7 @@ obj Studio(Workbench) {
                 [
                     MenuItem(text="One view", command="ed_layout 1"),
                     MenuItem(text="Four views", command="ed_layout 4"),
+                    MenuItem(text="Logic graph", command="ed_layout logic", keys="L"),
                     MenuItem(rule=True),
                     MenuItem(text="Axis views as edges", command="ed_display wire axis"),
                     MenuItem(text="Axis views textured", command="ed_display textured axis"),
@@ -586,6 +617,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Hollow", command="ed_hollow"),
                     MenuItem(text="Merge", command="ed_merge"),
                     MenuItem(rule=True),
+                    MenuItem(text="Group", command="ed_group", keys="Ctrl+G"),
                     MenuItem(text="Hand to the world", command="ed_tie")
                 ],
                 [
@@ -642,7 +674,7 @@ obj Studio(Workbench) {
         top.adopt(body);
         left = Box(size=280, fill="panel");
         body.adopt(left);
-        side = Tabs(titles=["Scene", "Materials", "Checks"], grow=1);
+        side = Tabs(titles=["Scene", "Materials", "Checks", "Library"], grow=1);
         left.adopt(side);
         scene_page = Box();
         side.adopt(scene_page);
@@ -688,6 +720,31 @@ obj Studio(Workbench) {
         );
         checks = TreeView(pick="ed_check", grow=1, hint="Click a finding to select what it is about");
         check_page.adopt(checks);
+        library_page = Box();
+        side.adopt(library_page);
+        prefab_row = Box(across=True, pad=4, gap=4);
+        library_page.adopt(prefab_row);
+        prefab_name = TextField(
+            ghost="Save the selection as a prefab", command="ed_prefab save", grow=1,
+            hint="Type a name and press Enter to keep the selection as a prefab"
+        );
+        prefab_row.adopt(prefab_name);
+        prefab_row.adopt(PushButton(text="List", command="ed_library", hint="Read the scenes and prefabs folders again"));
+        library = TreeView(
+            pick="ed_library",
+            toggle="ed_fold",
+            grow=1,
+            hint="Click a scene to open it, or a prefab to add a copy where the camera looks"
+        );
+        library_page.adopt(library);
+        sheet = GraphView(
+            pick="ed_select",
+            open_command="ed_focus",
+            link="ed_link",
+            grow=1,
+            empty="Nothing here fires anything yet. Drag from one entity's box to another's to link them.",
+            hint="Click: select | drag from a box to another: make it fire that | drag the sheet: slide | double click: look at"
+        );
         body.adopt(Splitter(target=left, low=160, high=600));
         home = game_directory("passion");
         if os.path.isdir(home) {
@@ -754,6 +811,9 @@ obj Studio(Workbench) {
             materials=material_tree,
             gallery=gallery,
             checks=checks,
+            library=library,
+            logic=sheet,
+            prefab_name=prefab_name,
             modes=modes,
             center=center
         );
@@ -797,6 +857,10 @@ obj Studio(Workbench) {
         }
         if changed or picked {
             self.fill_form(scene, ui);
+        }
+        if self.logic_shown and (changed or picked or self.logic_seen != scene.revision) {
+            self.fill_graph(scene, ui);
+            self.logic_seen = scene.revision;
         }
         self.seen_revision = scene.revision;
         self.seen_picks = scene.picks;
@@ -1010,6 +1074,11 @@ obj Studio(Workbench) {
         ui.materials.track(stage);
         ui.gallery.track(stage);
         ui.checks.track(stage);
+        ui.library.track(stage);
+        if len(ui.library.rows) == 0 {
+            self.list_library(ui);
+        }
+        ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
         hint = stage.hint();
@@ -1254,6 +1323,14 @@ obj Studio(Workbench) {
                 stage.emit("ed_save");
             } elif ctrl and key == "d" {
                 stage.emit("ed_duplicate");
+            } elif ctrl and key == "c" {
+                stage.emit("ed_copy");
+            } elif ctrl and key == "x" {
+                stage.emit("ed_cut");
+            } elif ctrl and key == "v" {
+                stage.emit("ed_paste" if shift else "ed_paste here");
+            } elif ctrl and key == "g" {
+                stage.emit("ed_group");
             } elif ctrl and key == "a" {
                 stage.emit("ed_select all");
             } elif ctrl and key == "i" {
@@ -1269,6 +1346,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_box");
             } elif key == "r" {
                 stage.emit("ed_rotate 90");
+            } elif key == "l" {
+                stage.emit("ed_layout " + (str(self.layout) if self.logic_shown else "logic"));
             } elif key == "1" {
                 stage.emit("ed_mode brush");
             } elif key == "2" {
@@ -1355,6 +1434,9 @@ obj Studio(Workbench) {
 
     """The level views showing: the first alone, or all four."""
     def showing -> int {
+        if self.logic_shown {
+            return 0;
+        }
         return len(self.ports) if self.layout == 4 else min(1, len(self.ports));
     }
 
@@ -1374,6 +1456,11 @@ obj Studio(Workbench) {
         ui.center.clear();
         self.layout = 4 if count == 4 else 1;
         self.watch(0);
+        if self.logic_shown {
+            ui.center.adopt(ui.logic);
+            self.logic_seen = -1;
+            return;
+        }
         if self.layout == 1 {
             ui.center.adopt(self.ports[0].view);
             return;
@@ -1679,6 +1766,23 @@ obj Studio(Workbench) {
     def check(scene: Scene, args: list[str]);
 
     # ------------------------------------------------------------------
+    # The clipboard, prefabs, the library and the logic graph (impl/studio.library.impl.jac)
+
+    """Run a clipboard, prefab, library or logic command. False when it is
+    not one."""
+    def library_command(scene: Scene, args: list[str]) -> bool;
+    def prefab_path(name: str) -> str;
+    """A map file's entities and brushes, or none (and why is said)."""
+    def read_fragment(path: str) -> list[MapItem] | None;
+    """Add a map's contents so they rest where the camera looks."""
+    def place_fragment(scene: Scene, found: list[MapItem], label: str, group: str = "") -> bool;
+    """The scene with every linked prefab put in as its entities and
+    brushes: what is built and played."""
+    def expanded(scene: Scene) -> Scene;
+    def list_library(ui: StudioUi);
+    def fill_graph(scene: Scene, ui: StudioUi);
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -1811,14 +1915,19 @@ obj Studio(Workbench) {
                 self.main.pitch = math.radians(float(args[5]));
             }
         } elif name == "ed_layout" {
-            self.arrange_views(4 if len(args) > 1 and args[1] == "4" else 1);
+            self.logic_shown = len(args) > 1 and args[1] == "logic";
+            if self.logic_shown {
+                self.arrange_views(self.layout);
+            } else {
+                self.arrange_views(4 if len(args) > 1 and args[1] == "4" else 1);
+            }
         } elif name == "ed_dump" {
             if len(args) > 1 {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.scene_command(scene, args) {
-            self.tool_command(scene, args);
+        } elif not self.scene_command(scene, args) and not self.tool_command(scene, args) {
+            self.library_command(scene, args);
         }
     }
 
@@ -1953,7 +2062,10 @@ obj Studio(Workbench) {
         ];
         for item in scene.selection() {
             pairs = " ".join([key + "=" + value for (key, value) in item.fields.items()]);
-            lines.append("studio: selected #" + str(item.serial) + " " + pairs);
+            owned = len(scene.solids_of(item));
+            lines.append(
+                "studio: selected #" + str(item.serial) + " " + pairs + (" owns=" + str(owned) if owned else "")
+            );
         }
         if scene.solids() {
             lines.append(
@@ -1985,6 +2097,15 @@ obj Studio(Workbench) {
                     + str(round(lay.rotation, 1))
             );
         }
+        placed = scene.logic_nodes();
+        arrows = 0;
+        for node in placed {
+            arrows += len(scene.fires(node.item));
+        }
+        lines.append(
+            "studio: logic nodes=" + str(len(placed)) + " links=" + str(arrows) + " shown="
+                + ("1" if self.logic_shown else "0")
+        );
         lines.append(
             "studio: mode=" + self.mode + " material=" + self.material + " wire="
                 + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0")

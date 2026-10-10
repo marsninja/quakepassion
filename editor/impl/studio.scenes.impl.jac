@@ -15,7 +15,7 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     if scene is None {
         return None;
     }
-    made = compile_scene(scene, self.materials);
+    made = compile_scene(self.expanded(scene), self.materials);
     self.live = made;
     self.built_geometry = scene.geometry;
     started = False;

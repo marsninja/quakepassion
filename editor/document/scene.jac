@@ -210,7 +210,8 @@ obj FieldChange(Change) {
     }
 
     def reshapes -> bool {
-        return False;
+        # A linked prefab is built where its entity stands.
+        return self.item.classname() == "misc_prefab";
     }
 }
 
@@ -228,7 +229,7 @@ obj HoldChange(Change) {
     }
 
     def reshapes -> bool {
-        return bool([self.item->:Owns:->]);
+        return bool([self.item->:Owns:->]) or self.item.classname() == "misc_prefab";
     }
 }
 

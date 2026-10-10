@@ -295,6 +295,110 @@ def tools_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"TOOLS PASS: {len(steps) - 1} steps, 12 brushes, saved as a map and reopened");
 }
 
+"""The line counting the logic graph's boxes and arrows."""
+def logic(lines: list[str]) -> str {
+    found = [line for line in lines if line.startswith("logic ")];
+    return found[0] if found else "";
+}
+
+"""The fourth session: the logic graph, the clipboard, prefabs and groups."""
+def logic_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["graph", "library", "playing"];
+    for shot in shots {
+        (repo / f"logic_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-logic-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PREFABS"] = home + "/prefabs";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/logic_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "logic.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The logic session failed: {output / 'logic.log'}";
+        saved = Path(home) / "scenes/logic.map";
+        assert saved.exists() , "Saving the scene wrote no map";
+        saved_text = saved.read_text();
+        prefab = Path(home) / "prefabs/gate.map";
+        assert prefab.exists() , "Saving the prefab wrote no map";
+        prefab_text = prefab.read_text();
+        again = subprocess.run(
+            [str(binary), "+edit", "+ed_open", str(saved), "+ed_select", "all", "+ed_dump", "reopened", "+quit"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "logic_reopen.log").write_text(again.stdout + again.stderr);
+        assert again.returncode == 0 , f"Reopening the scene failed: {output / 'logic_reopen.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in [
+        "made", "graphed", "linked", "chained", "picked", "pasted", "added", "placed", "shifted", "crate", "twin",
+        "grouped", "saved", "returned"
+    ] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'logic.log'}";
+    }
+    assert "nodes=0 links=0 shown=0" in logic(steps["made"]) , str(steps["made"]);
+    # L opens the graph; the two selected entities stand in it, linked to nothing.
+    assert "nodes=0 links=0 shown=1" in logic(steps["graphed"]) and len(selected(steps["graphed"])) == 2;
+    # A drag from the button's box to the relay's names the relay and aims the button at it.
+    linked = selected(steps["linked"]);
+    assert "classname=func_button" in linked[0] and "target=t1" in linked[0] , str(linked);
+    assert "classname=trigger_relay" in linked[1] and "targetname=t1" in linked[1] , str(linked);
+    assert "nodes=2 links=1" in logic(steps["linked"]);
+    # A second drag, from the relay to the door, makes a chain of three.
+    chained = selected(steps["chained"]);
+    assert "target=t2" in chained[1] and "classname=func_door targetname=t2" in chained[2] , str(chained);
+    assert "nodes=3 links=2" in logic(steps["chained"]);
+    # A click on the door's box, now two columns on, selects it alone.
+    picked = selected(steps["picked"]);
+    assert len(picked) == 1 and "classname=func_door" in picked[0] and "owns=1" in picked[0] , str(picked);
+
+    # Ctrl+C and Ctrl+V: a second door with a brush of its own, fired by the same relay.
+    pasted = selected(steps["pasted"]);
+    assert len(pasted) == 1 and pasted[0].startswith("selected #7 classname=func_door targetname=t2 owns=1") , str(pasted);
+    assert "brushes=3" in tally(steps["pasted"]) and "nodes=4 links=3 shown=0" in logic(steps["pasted"]);
+    # Saved as a prefab from the Library tab, and a copy added by a click on its row.
+    assert "\"classname\" \"func_door\"" in prefab_text and prefab_text.count("// brush") == 1;
+    added = selected(steps["added"]);
+    assert len(added) == 1 and "classname=func_door" in added[0] and "owns=1" in added[0] , str(added);
+    assert "brushes=4" in tally(steps["added"]) and "entities=7" in steps["added"][0];
+    # A linked prefab is one entity; the level is built again where it stands and where it is moved to.
+    placed = selected(steps["placed"]);
+    assert len(placed) == 1 and "classname=misc_prefab prefab=gate" in placed[0] , str(placed);
+    assert "brushes=4" in tally(steps["placed"]);
+    for name in ["placed", "shifted"] {
+        built = tally(steps[name]);
+        assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+    }
+    assert tally(steps["placed"]) != tally(steps["shifted"]);
+    # Ctrl+G holds the two boxes together as one group.
+    grouped = selected(steps["grouped"]);
+    assert len(grouped) == 1 and "classname=func_group" in grouped[0] and "owns=2" in grouped[0] , str(grouped);
+    assert "brushes=6" in tally(steps["grouped"]);
+
+    assert "\"classname\" \"misc_prefab\"" in saved_text and "\"_group_name\" \"group1\"" in saved_text;
+    assert saved_text.count("// brush") == 6;
+    reopened = studio_steps(again.stdout)["reopened"];
+    assert reopened[0].startswith("passion/studio:logic entities=9") , reopened[0];
+    assert "brushes=6" in tally(reopened) and "nodes=5 links=4" in logic(reopened) , str(reopened);
+    for shot in shots {
+        source = repo / f"logic_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"logic_{shot}.png");
+        source.unlink();
+    }
+    print(f"LOGIC PASS: {len(steps) - 1} steps, a chain of three, a prefab added and linked, a group");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -396,6 +500,7 @@ def main() {
     print(f"STUDIO PASS: {len(steps) - 1} steps, {count} entities, saved and reloaded");
     scene_session(repo, binary, env, output);
     tools_session(repo, binary, env, output);
+    logic_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
 

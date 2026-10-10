@@ -496,6 +496,9 @@ impl Scene.insert_map(found: list[MapItem], offset: Vec3, label: str = "Paste", 
         if at is not None {
             fields["origin"] = write_vector(at.add(offset));
         }
+        # A map's first entity says which form it is written in; that is the
+        # file's business, not the entity's.
+        fields.pop("mapversion", None);
         item = self.add_item(fields);
         step.changes.append(HoldChange(item=item, held=True));
         items.append(item);
