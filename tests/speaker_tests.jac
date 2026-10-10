@@ -147,6 +147,8 @@ test "teleporters hum as triggers.qc and g_misc.c make them" {
     assert fixture_rule("q1", {"classname": "trigger_teleport", "spawnflags": "2"}) is None;
     pad = fixture_rule("q2", {"classname": "misc_teleporter", "target": "t1"});
     assert pad is not None and pad.sound == "sound/world/amb10.wav";
+    # The same rule draws the pad and its sparkle.
+    assert pad.model == "models/objects/dmspot/tris.md2" and pad.effect == "teleporter";
     assert fixture_rule("q2", {"classname": "misc_teleporter"}) is None;
     thunder = fixture_rule("q1", {"classname": "ambient_thunder"});
     assert thunder is not None and thunder.sound == "sound/ambience/thunder1.wav";
