@@ -44,7 +44,10 @@ They are scripted runs, not human playthroughs; see
 - **Jac**: every compiler and runtime fix the pinned compiler carries has
   merged upstream and shipped in jac 0.37.25, among them the two runtime
   fixes (jac #9634, #9639) behind the intermittent native SIGBUS/SIGSEGV in
-  Q3 arenas with bots. One known jac defect has no upstream fix yet (an abort
+  Q3 arenas with bots. One fix found since is in review and not in the pin:
+  the Mach-O linker under-aligning merged sections (jac #9924), which can
+  make a natively built binary on macOS misread constants depending on how
+  its units pack. One known jac defect has no upstream fix yet (an abort
   under the `nogc` memory mode, which QuakePassion does not use). See
   [jac-native-fixes.md](jac-native-fixes.md).
 

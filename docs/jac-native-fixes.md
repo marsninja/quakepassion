@@ -22,6 +22,17 @@ a plain 0.37.25 or later) at the next pin change.
 
 ## Open upstream
 
+Needed on macOS and not in the pin:
+
+| Defect | Upstream PR | Found by |
+| --- | --- | --- |
+| The Mach-O linker merged same-named sections from different units but kept the first unit's alignment, so a later unit's 16-byte constant could land 8 bytes off a 16-byte boundary and a vectorised loop's `ldr q` read it 8 bytes early. Whether a binary is hit depends on how its units happen to pack: one program fails, a one-line change to it passes | [#9924](https://github.com/jaseci-labs/jac/pull/9924) | `scripts/validate_doors.jac` on Q3: `zipfile` raising "Invalid central directory bounds" on every pk3 |
+
+Until the pin carries it, a natively built script or `qp` that fails that way
+(or with any result that flips when an unrelated line changes) is rebuilt
+with a copy of the pinned source that has the PR's linker change applied.
+`jac test` runs are not affected.
+
 Found in QuakePassion work but not needed by it (not in the pin):
 
 | Defect | Upstream PR | Found by |
