@@ -193,6 +193,9 @@ walker BotThink {
         }
         if name != "battle_fight" {
             memory.suicidal = False;
+        } else {
+            # AIEnter_Battle_Fight: BotResetLastAvoidReach.
+            memory.avoid_reach.reset_last();
         }
         # A dead bot, or one at the intermission, lets its activate goals go
         # (BotClearActivateGoalStack).
@@ -467,6 +470,10 @@ walker BotThink {
     def movement_failed() -> bool {
         failed = self.memory.move_failed;
         self.memory.move_failed = False;
+        # "reset the avoid reach, otherwise bot is stuck in current area"
+        if failed {
+            self.memory.avoid_reach.reset();
+        }
         return failed;
     }
 
@@ -1018,6 +1025,7 @@ walker BotThink {
         if memory.check_time < self.now {
             memory.check_time = self.now + 0.5;
             if self.nearby_goal(goal, 150.0) {
+                memory.avoid_reach.reset_last();
                 memory.nbg_time = self.now + 4.0 + 150.0 * 0.01;
                 visit self.enter(here, "seek_nbg");
                 return;
@@ -1279,6 +1287,7 @@ walker BotThink {
         if memory.check_time < self.now {
             memory.check_time = self.now + 1.0;
             if self.nearby_goal(goal, 150.0) {
+                memory.avoid_reach.reset_last();
                 memory.nbg_time = self.now + 0.1 * 150.0 + 1.0;
                 visit self.enter(here, "battle_nbg");
                 return;
@@ -1343,6 +1352,7 @@ walker BotThink {
         if memory.check_time < self.now {
             memory.check_time = self.now + 1.0;
             if self.nearby_goal(goal, 150.0) {
+                memory.avoid_reach.reset_last();
                 memory.nbg_time = self.now + 150.0 / 100.0 + 1.0;
                 visit self.enter(here, "battle_nbg");
                 return;

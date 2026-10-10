@@ -85,7 +85,7 @@ Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](
 Q3 bots and arenas ([bot-tactics-status.md](bot-tactics-status.md), [arena-match-status.md](arena-match-status.md)):
 - The single-player ladder's game type only (no tournament queue, team modes
   or CTF).
-- Not modelled: `BotWantsToCamp`, `BotReplyChat`, `BotAddToAvoidReach`.
+- Not modelled: `BotWantsToCamp`, `BotReplyChat`.
 
 Passion's own limits are in [passion.md](passion.md).
 

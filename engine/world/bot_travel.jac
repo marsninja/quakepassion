@@ -9,7 +9,7 @@ attack and the weapon it needs, a view the movement sets, and whether the bot
 is waiting for a mover."""
 import math;
 import from .world { Player }
-import from .bot_routes { NavMesh, Passage, BotRoute, jump_launch }
+import from .bot_routes { NavMesh, Passage, BotRoute, AvoidReach, jump_launch }
 import from .navigation { waypoint_reached }
 import from ..formats.aas {
     TRAVEL_WALK,
@@ -422,8 +422,10 @@ def travel_funcbob(mesh: NavMesh, collision: CollisionMap, origin: Vec3, grounde
 Waypoints are done on reaching them or on entering their target area; a
 special passage is done on entering its target area and runs its own travel
 until then. A jump's launch is applied from the ground at its takeoff (the
-returned `launch`). A passage the bot has spent longer on than
-BotReachabilityTime allows fails, so the route is planned again."""
+returned `launch`). Each passage set out on goes on the bot's avoid list
+(`avoid`). A passage the bot has spent longer on than BotReachabilityTime
+allows is given up and the route emptied, to be planned again from where the
+bot is; it fails only when no way is found then."""
 walker FollowRoute {
     has mesh: NavMesh,
         collision: CollisionMap,
@@ -435,6 +437,7 @@ walker FollowRoute {
         dt: float = 0.0,
         bodies: list[Vec3] = [],
         dice: WeightDice | None = None,
+        avoid: AvoidReach | None = None,
         result: TravelResult = TravelResult(),
         launch: Vec3 | None = None;
 
@@ -552,8 +555,18 @@ walker FollowRoute {
         }
         passage = route.passages[0] if route.passages else None;
         kind = passage.kind if passage is not None else TRAVEL_WALK;
+        # "set a timeout for this reachability" and "add the reachability to
+        # the reachabilities to avoid for a while".
+        avoid = self.avoid;
+        if passage is not None and avoid is not None and not route.noted {
+            route.noted = True;
+            avoid.add(passage, self.clock);
+        }
+        # "if the goal area changed or the reachability timed out": the bot
+        # needs a new reachability, so its way is chosen again from here.
         if self.clock - route.leg_started > reachability_time(kind) {
-            self.result = TravelResult(failure=True);
+            route.abandon();
+            self.result = TravelResult(speed=0.0);
             return;
         }
         if passage is not None and passage.kind in [TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP] {

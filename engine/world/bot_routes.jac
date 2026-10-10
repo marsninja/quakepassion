@@ -38,6 +38,11 @@ import from ..math.aabb { AABB }
 
 glob UNREACHED: int = 1000000000;
 
+# be_ai_move.c: a reachability is avoided for AVOIDREACH_TIME seconds after
+# use once it has been taken more than AVOIDREACH_TRIES times.
+glob AVOIDREACH_TIME: float = 6.0,
+    AVOIDREACH_TRIES: int = 4;
+
 node NavArea {
     has index: int,
         center: Vec3;
@@ -69,6 +74,54 @@ node Passage {
 
 edge Exits: NavArea --> Passage {}
 edge Enters: Passage --> NavArea {}
+
+"""be_ai_move.c's avoid-reachability list of a bot's move state (avoidreach,
+avoidreachtimes, avoidreachtries; MAX_AVOIDREACH is 1, so it holds a single
+passage). Each passage the bot sets out on is added: the one already held
+counts another try while its time is still running, and a different one only
+takes the slot once that time is over. A passage tried more than
+AVOIDREACH_TRIES times is passed over when the bot next chooses its way
+(BotGetReachabilityToGoal), until six seconds after its last use."""
+obj AvoidReach {
+    has passage: Passage | None = None,
+        until: float = 0.0,
+        tries: int = 0;
+
+    """BotAddToAvoidReach."""
+    def add(passage: Passage, now: float) {
+        if self.passage is passage {
+            self.tries = self.tries + 1 if self.until > now else 1;
+            self.until = now + AVOIDREACH_TIME;
+        } elif self.until < now {
+            self.passage = passage;
+            self.until = now + AVOIDREACH_TIME;
+            self.tries = 1;
+        }
+    }
+
+    """Whether BotGetReachabilityToGoal passes `passage` over now."""
+    def avoids(passage: Passage, now: float) -> bool {
+        return self.passage is passage and self.until >= now and self.tries > AVOIDREACH_TRIES;
+    }
+
+    """BotResetAvoidReach."""
+    def reset() {
+        self.passage = None;
+        self.until = 0.0;
+        self.tries = 0;
+    }
+
+    """BotResetLastAvoidReach: the latest entry's time is over and one of
+    its tries forgotten."""
+    def reset_last() {
+        if self.until > 0.0 {
+            self.until = 0.0;
+            if self.tries > 0 {
+                self.tries -= 1;
+            }
+        }
+    }
+}
 
 """A travel table under construction: the times so far and the areas whose
 entering passages still need relaxing (the next round's frontier), for the
@@ -464,7 +517,9 @@ obj BotRoute {
         found: bool = False,
         pending: bool = False,
         leg_started: float = -1.0,
-        jumped: bool = False;
+        jumped: bool = False,
+        # Whether the leg under way has been added to the avoid list.
+        noted: bool = False;
 
     def add(point: Vec3, area: int, launch: Vec3 = Vec3(), passage: Passage | None = None) {
         self.points.append(point);
@@ -485,17 +540,34 @@ obj BotRoute {
         }
         self.leg_started = clock;
         self.jumped = False;
+        self.noted = False;
+    }
+
+    """Give the route up where the bot stands, so that its way is chosen
+    again (the lists are emptied in place: the body follows the same ones)."""
+    def abandon() {
+        self.points.clear();
+        self.areas.clear();
+        self.launches.clear();
+        self.passages.clear();
+        self.leg_started = -1.0;
     }
 }
 
 """The passage out of `area` that leads soonest to the goal of the travel
 table `times` for a bot at `position` (be_aas_route.c
 AAS_AreaReachabilityToGoalArea), or None when none does."""
-def best_exit(mesh: NavMesh, area: int, position: Vec3, times: list[int], flags: int) -> Passage | None {
+def best_exit(
+    mesh: NavMesh, area: int, position: Vec3, times: list[int], flags: int, avoid: AvoidReach | None = None, now: float = 0.0
+) -> Passage | None {
     best: Passage | None = None;
     best_cost = UNREACHED;
     for passage in [mesh.areas[area]->:Exits:->][?:Passage] {
         if times[passage.target] >= UNREACHED or not mesh.allows(passage, flags) {
+            continue;
+        }
+        # "check if it isn't an reachability to avoid"
+        if avoid is not None and avoid.avoids(passage, now) {
             continue;
         }
         cost = run_time(position, passage.start)
@@ -554,9 +626,16 @@ finish at the goal itself. Like botlib, a passage is done once the bot stands
 in its target area; jumps, ledges, pads and teleporters first need their
 takeoff point, and the passages that need more than a heading (rocket jumps,
 ladders, water jumps and movers) carry their passage for the bot's travel to
-follow."""
+follow. `avoid` is the bot's avoid-reachability list at the clock `now`."""
 def plan_route(
-    mesh: NavMesh, origin: Vec3, goal: Vec3, limit: int = 32, flags: int = TFL_DEFAULT, goal_area: int = 0
+    mesh: NavMesh,
+    origin: Vec3,
+    goal: Vec3,
+    limit: int = 32,
+    flags: int = TFL_DEFAULT,
+    goal_area: int = 0,
+    avoid: AvoidReach | None = None,
+    now: float = 0.0
 ) -> BotRoute {
     route = BotRoute();
     here_area = mesh.locate(origin);
@@ -580,7 +659,9 @@ def plan_route(
     position = origin;
     steps = 0;
     while area != goal_area and steps < limit {
-        best = best_exit(mesh, area, position, times, flags);
+        # The way out of the area the bot is in keeps clear of the passage
+        # it avoids; the later ones are chosen as it gets there.
+        best = best_exit(mesh, area, position, times, flags, avoid if steps == 0 else None, now);
         if best is None {
             return route;
         }

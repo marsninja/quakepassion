@@ -4352,7 +4352,13 @@ walker CombatTick {
                 if wants_route and here.arena and mesh is not None {
                     # Q3 bots route over the map's AAS, the original bots' own data.
                     plan = plan_route(
-                        mesh, origin, target, flags=here.bot_state.travel_flags, goal_area=here.bot_state.goal_area
+                        mesh,
+                        origin,
+                        target,
+                        flags=here.bot_state.travel_flags,
+                        goal_area=here.bot_state.goal_area,
+                        avoid=here.bot_state.avoid_reach,
+                        now=here.bot_state.clock
                     );
                     here.route_wait = 0.25 if plan.found else 1.0;
                     if plan.pending {
@@ -4522,7 +4528,8 @@ walker CombatTick {
                 view_pitch=memory.pitch,
                 dt=self.dt,
                 bodies=self.other_bodies(here),
-                dice=memory.dice
+                dice=memory.dice,
+                avoid=memory.avoid_reach
             );
             memory.travel = travel.result;
             launch = travel.launch;

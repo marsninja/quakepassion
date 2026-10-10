@@ -66,9 +66,17 @@ weapon the movement needs, a movement view, waiting and failure.
   16 units of the near end, board and stand on its middle, and walk off within
   24 units of the far end. A bot on a mover keeps its passage.
 - Ladder (`BotTravel_Ladder`): face up or down the ladder and move.
-- A passage fails after `BotReachabilityTime` (5 s; 6 for ladders and weapon
-  jumps; 10 for elevators, jump pads and bobbing platforms) and the route is
-  replanned.
+- A passage is given up after `BotReachabilityTime` (5 s; 6 for ladders and
+  weapon jumps; 10 for elevators, jump pads and bobbing platforms) and the
+  route is planned again from where the bot is; the movement fails only when
+  there is no way then.
+- Avoid-reachability list (`BotAddToAvoidReach`, a single entry as in Q3):
+  each passage a bot sets out on is noted; the one noted counts another try
+  when it is taken again within 6 s. Tried more than four times, it is passed
+  over when the bot next chooses its way out of its area
+  (`BotGetReachabilityToGoal`) until 6 s after its last use. A failed
+  movement clears the list (`BotResetAvoidReach`); a fight or a nearby goal
+  forgets the latest try (`BotResetLastAvoidReach`).
 - `BotCheckBlocked`: a walking or swimming leg is blocked when a mover or
   another player's box lies within 3 units along it (the bot's box raised a
   step and lowered 10 units); a blocked leg runs out ten times as fast. A bot
@@ -264,7 +272,8 @@ Tests:
 - `tests/bot_script_tests.jac`: precompiler, fuzzy weights, item and weapon
   configs, chat construction, character loading.
 - `tests/bot_travel_tests.jac`: travel flags, rocket jumps, bobbing
-  platforms, swimming and water jumps.
+  platforms, swimming and water jumps, the avoid-reachability list and
+  timed-out legs.
 - `tests/travel_table_tests.jac`: budgeted tables, one-way passages.
 - `tests/bot_obstacle_tests.jac`: route prediction and closed areas, the
   activator search (buttons behind relays, shot buttons and doors, open
@@ -353,8 +362,7 @@ Scripts (native, need the Q3 assets):
 ## Limitations
 
 - Not modelled: team play (team goals, team and voice chat), camping
-  (`BotWantsToCamp`), reply chats (`BotReplyChat`) and the
-  avoid-reachability list (`BotAddToAvoidReach`).
+  (`BotWantsToCamp`) and reply chats (`BotReplyChat`).
 - A bot that ends up on a plat or bobbing platform it was not taking keeps
   its route; Q3 switches it to that mover's reachability.
 - `BotTravel_Jump`'s run-up (to a run start up to 80 units behind the jump,
