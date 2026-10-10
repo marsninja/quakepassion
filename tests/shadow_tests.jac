@@ -6,8 +6,8 @@ import from engine.world.body_queue { Corpse, HasCorpse }
 import from engine.world.models { PlayerRig }
 import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.particles { ImpactMark, HasMark }
-import from engine.world.shadows { CastShadows, shadow_caster, shadow_strength, SHADOW_MARK, SHADOW_RADIUS, SHADOW_DISTANCE }
-import from engine.render.effects { EffectScene, EffectCvars, UploadedSprite }
+import from engine.world.shadows { CastShadows, ShadowCut, shadow_caster, shadow_strength, SHADOW_MARK, SHADOW_RADIUS, SHADOW_DISTANCE }
+import from engine.render.effects { EffectScene, EffectCvars, UploadedSprite, sight_cone }
 import from engine.formats.sprite { SpriteFrame }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.interpolation { TickBlend }
@@ -92,4 +92,40 @@ test "cg_shadows 1 is the default and the only setting that lays marks" {
         scene.cvars.shadows.assign(off);
         assert not scene.shadow_marks(world, collision, None, TickBlend());
     }
+}
+
+test "a body out of view casts nothing, and one that has not moved is not cut again" {
+    world = World();
+    collision = shadow_floor();
+    ahead = standing_bot(world, 300.0, 24.0);
+    behind = standing_bot(world, -300.0, 24.0);
+    beside = standing_bot(world, 0.0, 24.0);
+    beside.pos = Vec3(x=100.0, y=900.0, z=50.0);
+    # A view from above the origin along +x, 90 degrees across, 16:9.
+    sight = sight_cone(Vec3(z=60.0), Vec3(x=1.0), 1.0, 0.5625);
+    assert not sight.misses(Vec3(x=300.0), 100.0) and sight.misses(Vec3(x=-300.0), 100.0);
+    assert sight.misses(Vec3(x=100.0, y=900.0), 100.0);
+    # Near the view's edge it is still cast: a ball that reaches into the cone.
+    assert not sight.misses(Vec3(x=100.0, y=180.0), 100.0);
+    seen = world spawn CastShadows(collision=shadow_caster(collision), sight=sight);
+    assert len(seen.marks) == 1 and abs(seen.marks[0].pos.x - 300.0) < 0.001;
+    every = world spawn CastShadows(collision=shadow_caster(collision));
+    assert len(every.marks) == 3 and len(every.cuts) == 3;
+    # Nobody moved: the same polygons, not cut again (a marked list comes back as it went in).
+    marked = [ShadowCut(pos=cut.pos, normal=cut.normal, yaw=cut.yaw, fragments=[[Vec3(z=7.0)]]) for cut in every.cuts];
+    again = world spawn CastShadows(collision=shadow_caster(collision), kept=marked);
+    assert len(again.marks) == 3 and all([mark.fragments[0][0].z == 7.0 for mark in again.marks]);
+    # One steps aside or turns: its mark is cut afresh, the others' kept.
+    ahead.pos = ahead.pos.add(Vec3(y=8.0));
+    behind.yaw = behind.yaw + 0.5;
+    moved = world spawn CastShadows(collision=shadow_caster(collision), kept=marked);
+    fresh = [mark for mark in moved.marks if len(mark.fragments[0]) == 4];
+    assert len(moved.marks) == 3 and len(fresh) == 2;
+    # The scene keeps each frame's cuts for the next.
+    scene = EffectScene();
+    scene.flight[SHADOW_MARK] = [
+        UploadedSprite(frame=SpriteFrame(width=32, height=32, origin_x=16, origin_y=16, image=SHADOW_MARK), texture=5)
+    ];
+    assert len(scene.shadow_marks(world, collision, None, TickBlend())) == 3 and len(scene.shadow_cuts) == 3;
+    assert len(scene.shadow_marks(world, collision, None, TickBlend(), sight)) == 1 and len(scene.shadow_cuts) == 1;
 }

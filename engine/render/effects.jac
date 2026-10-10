@@ -36,7 +36,7 @@ import from ..world.particles {
 import from ..world.particle_field { ParticleField, HasParticles, puff_state }
 import from ..world.missile_trails { EmitTrails }
 import from ..world.arena { ArenaMatch, HasMatch, Competes }
-import from ..world.shadows { CastShadows, shadow_caster, SHADOW_MARK }
+import from ..world.shadows { CastShadows, ShadowCut, ShadowSight, shadow_caster, SHADOW_MARK }
 import from ..world.world { Player }
 import from ..physics.collision { CollisionMap }
 import from ..world.models { PLAYER_COLOR1, PLAYER_COLOR2 }
@@ -55,6 +55,7 @@ import from .gpu {
     GL_FLOAT,
     GL_UNSIGNED_BYTE,
     view_projection,
+    projection_matrix,
     pack_floats
 }
 import from vendor.raylib {
@@ -122,6 +123,22 @@ glob EFFECT_RINGS: int = 16,
 glob EFFECT_BLEND_ALPHA: int = 0,
      EFFECT_BLEND_ADD: int = 1,
      EFFECT_BLEND_DARKEN: int = 2;
+
+"""The cone round the view being drawn (rlgl's projection): from `eye` along
+`forward` out to the corners of the screen."""
+def view_cone(eye: Vec3, forward: Vec3) -> ShadowSight {
+    projection = projection_matrix();
+    tan_x = 1.0 / max(0.0001, abs(float(projection.m0)));
+    tan_y = 1.0 / max(0.0001, abs(float(projection.m5)));
+    return sight_cone(eye, forward, tan_x, tan_y);
+}
+
+"""A view's cone from the tangents of half its angles across and up."""
+def sight_cone(eye: Vec3, forward: Vec3, tan_x: float, tan_y: float) -> ShadowSight {
+    corner = math.sqrt(tan_x * tan_x + tan_y * tan_y);
+    reach = math.sqrt(1.0 + corner * corner);
+    return ShadowSight(eye=eye, forward=forward, sine=corner / reach, cosine=1.0 / reach);
+}
 
 """A colour channel in [0, 1] as a byte, as rlColor4ub was given it."""
 def effect_byte(value: float) -> int {
@@ -570,7 +587,9 @@ obj EffectScene {
     # The level's collision the shadows were last cast on, and the box view
     # of it they are traced with.
     has shadow_source: CollisionMap | None = None,
-        shadow_view: CollisionMap | None = None;
+        shadow_view: CollisionMap | None = None,
+        # The marks the last frame's shadows were cut into (ShadowCut).
+        shadow_cuts: list[ShadowCut] = [];
     has flight: dict[str, list[UploadedSprite]] = {},
         burst: dict[str, list[UploadedSprite]] = {},
         textures: list[int] = [],
@@ -834,7 +853,8 @@ obj EffectScene {
         found = world spawn GatherEffects(balloons=BALLOON_SHADER in self.flight);
         field = found.field;
         now = field.clock if field is not None else 0.0;
-        self.draw_marks(found.marks + self.shadow_marks(world, collision, player, blend), eye);
+        ahead = forward_from(yaw, pitch);
+        self.draw_marks(found.marks + self.shadow_marks(world, collision, player, blend, view_cone(eye, ahead)), eye);
         self.draw_trails(found.trails, eye, now);
         self.draw_bfg_lasers(found.projectiles, blend);
         self.draw_blasts(found.blasts, eye);
@@ -985,7 +1005,10 @@ obj EffectScene {
     """cg_players.c CG_PlayerShadow with cg_shadows 1: this frame's blob marks
     under the players, when the level has the markShadow art (Q3). They are
     CG_ImpactMark's temporary marks: drawn this frame and not kept."""
-    def shadow_marks(world: World, collision: CollisionMap | None, player: Player | None, blend: TickBlend) -> list[ImpactMark] {
+    def shadow_marks(
+        world: World, collision: CollisionMap | None, player: Player | None, blend: TickBlend,
+        sight: ShadowSight | None = None
+    ) -> list[ImpactMark] {
         if collision is None or self.cvars.shadows.integer != 1 or SHADOW_MARK not in self.flight {
             return [];
         }
@@ -996,8 +1019,10 @@ obj EffectScene {
             self.shadow_view = view;
         }
         cast = world spawn CastShadows(
-            collision=view, blend=blend, player=player, player_height=collision.eye_height
+            collision=view, blend=blend, player=player, player_height=collision.eye_height, sight=sight,
+            kept=self.shadow_cuts
         );
+        self.shadow_cuts = cast.cuts;
         return cast.marks;
     }
 

@@ -5,7 +5,12 @@ where it lands the markShadow shader is laid on the ground as a temporary
 impact mark (CG_ImpactMark), 24 units in radius, turned with the legs and
 fading with the height the player is at. `CastShadows` walks the world's
 players, bots and bodies and collects those marks for the frame to draw;
-nothing is kept."""
+no mark is kept on the world.
+
+Two things are spared without changing what is drawn: a body whose mark
+could not be in the view is passed over (`ShadowSight`), and one that has
+not moved since the last frame takes the polygons its mark was cut into then
+(`ShadowCut`) instead of cutting them out of the world again."""
 import math;
 import from .world { World, Entity, Actor, Player }
 import from .combat { Opponent, HasOpponent }
@@ -34,9 +39,44 @@ def shadow_strength(fraction: float) -> float {
     return max(0.0, min(1.0, 1.0 - fraction));
 }
 
+"""A shadow's mark as it was cut: where the trace landed, the way the ground
+faces there, the yaw the mark is turned to, and CG_ImpactMark's polygons."""
+obj ShadowCut {
+    has pos: Vec3,
+        normal: Vec3,
+        yaw: float,
+        fragments: list[list[Vec3]];
+
+    def matches(pos: Vec3, normal: Vec3, yaw: float) -> bool {
+        return self.pos.sub(pos).length() < 0.01 and self.normal.sub(normal).length() < 0.0001 and abs(self.yaw - yaw) < 0.0001;
+    }
+}
+
+"""The cone a view sees within: from `eye` along `forward`, the sine and
+cosine of the angle from its axis to its corners."""
+obj ShadowSight {
+    has eye: Vec3,
+        forward: Vec3,
+        sine: float,
+        cosine: float;
+
+    """Whether a ball lies wholly outside the cone."""
+    def misses(centre: Vec3, radius: float) -> bool {
+        toward = centre.sub(self.eye);
+        depth = toward.dot(self.forward);
+        aside = toward.sub(self.forward.scale(depth)).length();
+        return aside * self.cosine - depth * self.sine > radius;
+    }
+}
+
 walker CastShadows {
     has collision: CollisionMap,
         blend: TickBlend = TickBlend(),
+        # The view the marks are for (None: every body casts), last frame's
+        # cuts, and this frame's.
+        sight: ShadowSight | None = None,
+        kept: list[ShadowCut] = [],
+        cuts: list[ShadowCut] = [],
         player: Player | None = None,
         player_height: float = 26.0,
         world: World | None = None,
@@ -89,12 +129,30 @@ walker CastShadows {
             }
         }
         origin = self.blend.place(body.tick_pose, body.pos).sub(Vec3(z=height));
+        # The mark lies somewhere down the trace, SHADOW_RADIUS about it.
+        sight = self.sight;
+        if sight is not None
+            and sight.misses(origin.sub(Vec3(z=SHADOW_DISTANCE * 0.5)), SHADOW_DISTANCE * 0.5 + SHADOW_RADIUS * 1.5) {
+            return;
+        }
         trace = self.collision.trace(origin, origin.sub(Vec3(z=SHADOW_DISTANCE)), exclude=self.movers);
         # No shadow if too high.
         if trace.fraction >= 1.0 or trace.start_solid {
             return;
         }
-        fragments = mark_fragments(world, trace.end, trace.normal, yaw, SHADOW_RADIUS);
+        fragments: list[list[Vec3]] = [];
+        cut_before = False;
+        for cut in self.kept {
+            if cut.matches(trace.end, trace.normal, yaw) {
+                fragments = cut.fragments;
+                cut_before = True;
+                break;
+            }
+        }
+        if not cut_before {
+            fragments = mark_fragments(world, trace.end, trace.normal, yaw, SHADOW_RADIUS);
+        }
+        self.cuts.append(ShadowCut(pos=trace.end, normal=trace.normal, yaw=yaw, fragments=fragments));
         if not fragments {
             return;
         }
