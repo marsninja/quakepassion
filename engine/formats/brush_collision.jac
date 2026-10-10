@@ -11,8 +11,10 @@ def add_model(
     width = 15.0 if bsp.game == "q3" else 16.0;
     # Q3 MASK_PLAYERSOLID: solid and player clip. Q2 MASK_PLAYERSOLID and
     # MASK_MONSTERSOLID together: solid, window, player clip and monster
-    # clip, each clip brush stopping only the views it names.
+    # clip. A brush that is clip and nothing solid stops only the views
+    # whose mask names it, and none that trace with MASK_SOLID.
     mask = 65537 if bsp.game == "q3" else 196611;
+    solid = 1 if bsp.game == "q3" else 3;
     for index in bsp.models[model].brushes {
         brush = bsp.brushes[index];
         if (not volume and brush.contents & mask == 0) or not brush.planes {
@@ -31,11 +33,12 @@ def add_model(
             Vec3(x=width, y=width, z=32.0),
             offset
         );
-        collision.hulls[-1].point_blocking = brush.contents
-            & (1 if bsp.game == "q3" else 3)
-            != 0;
-        if bsp.game != "q3" and not volume and brush.contents & 3 == 0 {
-            if brush.contents & 65536 == 0 {
+        collision.hulls[-1].point_blocking = brush.contents & solid != 0;
+        if not volume and brush.contents & solid == 0 {
+            collision.clips.add(len(collision.hulls) - 1);
+            if bsp.game == "q3" {
+                # Q3 has no monster mask: its player clip stops every body.
+            } elif brush.contents & 65536 == 0 {
                 collision.monster_clips.add(len(collision.hulls) - 1);
             } elif brush.contents & 131072 == 0 {
                 collision.player_clips.add(len(collision.hulls) - 1);
@@ -86,6 +89,9 @@ def add_patch_facets(collision: CollisionMap, bsp: Bsp, model: int, offset: Vec3
         );
         for hull in range(first, len(collision.hulls)) {
             collision.hulls[hull].point_blocking = material.contents & 1 != 0;
+            if material.contents & 1 == 0 {
+                collision.clips.add(hull);
+            }
             collision.hulls[hull].climbable = brush_climbable(material.contents, bsp.game);
             collision.hulls[hull].conveyor = current_flow(
                 brush_current_bits(material.contents, bsp.game)

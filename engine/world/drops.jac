@@ -9,7 +9,7 @@ import from .models { ModelResource, UsesModel, attach_model }
 import from .pickups { Pickup, PickupRule, HasPickup }
 import from .powerups { Empowered, Powerup }
 import from .inventory { quantity }
-import from ..physics.collision { CollisionMap }
+import from ..physics.collision { CollisionMap, Trace }
 import from ..math.vec3 { Vec3 }
 
 """An item a dying player can drop: the rule it gives and how it is drawn
@@ -143,11 +143,29 @@ def restore_drop(
 """G_RunItem for thrown items: gravity carries each along its arc, the
 bottom of its box traced through the world. LaunchItem leaves a dropped
 item's physicsBounce at 0, so G_BounceItem stops it dead at the first
-surface: it rests on a floor, or falls straight down from a wall."""
+surface: it rests on a floor, or falls straight down from a wall. Q3's
+G_RunItem traces with MASK_PLAYERSOLID less bodies, so player clip stops a
+thrown item there; Q2's SV_Physics_Toss traces an item with MASK_SOLID,
+which goes through clip."""
 walker TossTick {
     has collision: CollisionMap,
         dt: float,
-        world: World | None = None;
+        game: str = "",
+        world: World | None = None,
+        # Q3: the level as a point with the player's mask meets it.
+        clipped: CollisionMap | None = None;
+
+    def sweep(start: Vec3, finish: Vec3) -> Trace {
+        if self.game != "q3" {
+            return self.collision.trace_point(start, finish);
+        }
+        view = self.clipped;
+        if view is None {
+            view = self.collision.for_body(0.0, 0.0, Vec3(), Vec3());
+            self.clipped = view;
+        }
+        return view.trace(start, finish);
+    }
 
     can begin with World entry {
         self.world = here;
@@ -170,7 +188,7 @@ walker TossTick {
         here.velocity.z -= 800.0 * self.dt;
         bottom = item.pos.sub(Vec3(z=ITEM_RADIUS));
         finish = bottom.add(here.velocity.scale(self.dt));
-        trace = self.collision.trace_point(bottom, finish);
+        trace = self.sweep(bottom, finish);
         if trace.start_solid {
             self.settle(world, here);
             return;

@@ -3492,7 +3492,9 @@ player's box. A monster is stopped by monster clip brushes and not by
 player clip (Q2 MASK_MONSTERSOLID); a bot is a player."""
 def monster_collision(collision: CollisionMap, enemy: Opponent) -> CollisionMap {
     if not enemy.own_hull {
-        return collision.for_body(enemy.eye_height, 0.0, None, None, striding(enemy));
+        return collision.for_body(
+            enemy.eye_height, 0.0, None, None, "monster" if striding(enemy) else "player"
+        );
     }
     rule = enemy.rule;
     return collision.for_body(
@@ -3500,7 +3502,7 @@ def monster_collision(collision: CollisionMap, enemy: Opponent) -> CollisionMap 
         0.0,
         Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom),
         Vec3(x=rule.width, y=rule.width, z=rule.hull_top),
-        striding(enemy)
+        "monster" if striding(enemy) else "player"
     );
 }
 

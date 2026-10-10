@@ -87,9 +87,17 @@ walker:
   one-unit spread of `Mod_LoadSubmodels`.
 - Q2/Q3 load convex brush planes expanded by the standing box (Q2 32 wide,
   eye 22; Q3 30 wide, eye 26; both -24..+32), and shift the planes for any
-  other box (crouching, monsters) as `CM_BoxTrace` does. Q2 players collide
-  with solid, window and playerclip brushes and Q2 monsters with solid,
-  window and monsterclip ones; Q3 with solid and playerclip.
+  other box (crouching, monsters) as `CM_BoxTrace` does.
+- A view of the collision map names the mask it traces with
+  (`CollisionMap.mask`, set by `for_body`). `"player"` is
+  `MASK_PLAYERSOLID`: solid, Q2 window and player clip. `"monster"` is Q2's
+  `MASK_MONSTERSOLID`: solid, window and monster clip. `"solid"` is
+  `MASK_SOLID`, which no clip brush stops: an item put down or pushed by a
+  mover (Q2 `droptofloor`, `SV_Push`; Q3 `FinishSpawningItem`,
+  `G_MoverPush`) and the chase camera (`CG_OffsetThirdPersonView`). The
+  hulls of brushes that are clip and nothing solid are kept apart
+  (`clips`, and Q2's `player_clips` and `monster_clips`) and a trace skips
+  those its mask does not name; Q3's player clip stops every body.
 - Rotating movers trace in the model's frame (`CM_TransformedBoxTrace`): the
   box keeps its size and the hit normal is turned back.
 - An escaping trace runs out of the solid it starts in, as Q1 `SV_Move`
@@ -101,9 +109,10 @@ walker:
 `CollisionMap.trace_point` queries level geometry with no hull expansion,
 returning fraction, endpoint, normal, start-solid, hull index and BSP model.
 Q1 traces the render BSP nodes and leaves; Q2/Q3 keep the authored plane
-distances beside the expanded ones. Point traces ignore playerclip and stop on
-solids (Q2 also on windows), as `MASK_SHOT` does. Shots, water-jump probes and
-Q1's edge test use them. Movers share their offsets with both kinds of trace.
+distances beside the expanded ones. Point traces ignore every clip brush and
+stop on solids (Q2 also on windows), as `MASK_SHOT` does. Shots, missiles,
+gibs, Q2's thrown and falling items (`SV_Physics_Toss`, `MASK_SOLID`),
+water-jump probes and Q1's edge test use them. Movers share their offsets with both kinds of trace.
 
 ### Q3 curved surfaces
 

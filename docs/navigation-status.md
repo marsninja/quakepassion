@@ -155,10 +155,11 @@ box:
   origin.
 - **Clip brushes.** Q2 monsters are stopped by `CONTENTS_MONSTERCLIP`
   brushes and pass `CONTENTS_PLAYERCLIP` ones (`MASK_MONSTERSOLID`): a
-  monster's view of the collision map (`for_body(..., monster=True)`) skips
-  the hulls of player-only clip brushes and the player's skips the
+  monster's view of the collision map (`for_body(..., mask="monster")`)
+  skips the hulls of player-only clip brushes and the player's skips the
   monster-only ones (`CollisionMap.player_clips`, `monster_clips`, filled by
-  `engine/formats/brush_collision.jac`). Every step, fall, leap and knock of
+  `engine/formats/brush_collision.jac`; see
+  [player-movement-status.md](player-movement-status.md) for the masks). Every step, fall, leap and knock of
   a monster traces that view, and a clip brush on a mover (the monster clip
   on some plats, doors and trains) carries and pushes only the bodies it
   stops (`CollisionMap.passes`, as `SV_Push` tests each body with its own
@@ -269,7 +270,7 @@ left of `search_time`. Saves without the line load with a fresh chase.
 - `tests/monster_hull_tests.jac`: a boss box stopped by a gap a player passes,
   stopping at its own edge, Q1 hull 2.
 - `tests/brush_collision_tests.jac`: player clip, monster clip and both
-  against the player's and a monster's view;
+  against the player's, a monster's and an item's mask;
   `tests/mover_push_tests.jac`: a clip brush on a lift. Native:
   `scripts/validate_monster_clip.jac` checks every clip brush of the Q2 maps
   named in `QP_MAPS` against both views.

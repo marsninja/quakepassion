@@ -46,7 +46,7 @@ with entry {
     for name in os.getenv("QP_MAPS", "base1,train,jail4,city1").split(",") {
         level = load_level(World(), directory, name, "q2");
         player = level.collision;
-        monster = player.for_body(player.eye_height, 0.0, None, None, True);
+        monster = player.for_body(player.eye_height, 0.0, None, None, "monster");
         # The world's own clip brushes; those of plats, doors and walls
         # that come and go ride with their movers and are only counted.
         for_monsters = [hull for hull in sorted(list(player.monster_clips)) if player.models[hull] == 0];

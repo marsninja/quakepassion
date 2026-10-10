@@ -326,6 +326,7 @@ test "a clip brush on a mover carries and pushes only the bodies it stops" {
         } else {
             collision.player_clips.add(1);
         }
+        collision.clips.add(1);
         collision.reindex();
         guard = Opponent(
             rule=OpponentRule(width=16.0, hull_bottom=-24.0, hull_top=32.0),
@@ -338,7 +339,7 @@ test "a clip brush on a mover carries and pushes only the bodies it stops" {
             health=100, pos=Vec3(z=22.0 + 24.0 + (0.03125 if kind == "monster" else 16.03125))
         );
         view = monster_collision(collision, guard);
-        assert view.monster and not collision.monster;
+        assert view.mask == "monster" and collision.mask == "player";
         bodies = [
             Pushable(entity=player, view=collision, lift=Vec3(z=22.0), client=True),
             Pushable(entity=guard, view=view, lift=Vec3(z=22.0))
@@ -358,5 +359,40 @@ test "a clip brush on a mover carries and pushes only the bodies it stops" {
         passed = player if kind == "monster" else guard;
         assert abs(carried.pos.z - (22.0 + 24.0 + 24.03125)) < 0.0001;
         assert abs(passed.pos.z - (22.0 + 24.0 + 0.03125)) < 0.0001;
+    }
+}
+
+test "an item over a clip brush is put down through it" {
+    # Q2 droptofloor and Q3 FinishSpawningItem trace with MASK_SOLID: an
+    # item standing in a player clip brush is not in solid, and comes down
+    # onto the floor under the clip. (q3dm19's items all sit over one.)
+    for game in ["q2", "q3"] {
+        for kind in ["clip", "solid"] {
+            collision = floor_map(0.0);
+            # A slab on the floor, 64 square, its top at 16.
+            collision.add_brush(
+                [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(z=1.0), Vec3(z=-1.0)],
+                [32.0, 32.0, 32.0, 32.0, 16.0, 0.0],
+                Vec3(x=-16.0, y=-16.0, z=-24.0),
+                Vec3(x=16.0, y=16.0, z=32.0),
+                Vec3()
+            );
+            collision.models = [0, 0];
+            if kind == "clip" {
+                collision.clips.add(1);
+                collision.player_clips.add(1);
+            }
+            collision.reindex();
+            # Its box reaches from 9 to 39: into the slab.
+            sunk = item(Vec3(z=24.0));
+            landing = drop_to_floor(sunk, item_view(collision, game), game, False);
+            assert landing.kept == (kind == "clip") , game + " " + kind;
+            if kind == "clip" {
+                assert not landing.falls and abs(sunk.pos.z - 15.0) < 0.05;
+            }
+            # The player's own box still stands on the clip.
+            stand = collision.trace(Vec3(z=100.0), Vec3(z=-100.0));
+            assert abs(stand.end.z - (16.0 + 24.03125)) < 0.0001;
+        }
     }
 }
