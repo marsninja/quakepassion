@@ -135,6 +135,10 @@ saved.
 
 ## Limitations
 
+- The fiend's leap plays `leap1`-`leap12` straight through; `demon1_jump10`
+  holds its frame for up to three seconds until it lands.
+- A knocked-down zombie is only kept down by the player standing on it, not
+  by another monster.
 
 References: [v101qc](https://github.com/id-Software/Quake-Tools/tree/master/qcc/v101qc)
 (`soldier.qc`, `dog.qc`, `knight.qc`, `hknight.qc`, `enforcer.qc`, `ogre.qc`,
