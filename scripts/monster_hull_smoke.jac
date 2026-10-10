@@ -8,7 +8,11 @@ import os;
 import from engine.core.menu { game_directory }
 import from engine.world.level { Level, load_level }
 import from engine.world.world { World, Player }
-import from engine.world.combat { CombatState, CombatTick, Opponent, HasOpponent, monster_collision }
+import from engine.world.combat {
+    CombatState, CombatTick, Opponent, HasOpponent, monster_collision, leaving_of
+}
+import from engine.world.fixtures { Hums }
+import from engine.world.speakers { Speaker }
 import from engine.world.monster_move { StepSpace, WalkMove }
 import from games.opponents { populate_opponents }
 import from engine.render.models { ModelScene }
@@ -73,6 +77,14 @@ with entry {
             assert heir is not None and heir.dormant and heir.own_hull;
             assert heir.game == game and heir.kind == boss.rule.successor and heir.skill == boss.skill;
             print("HULL HEIR", name, heir.kind, "game", heir.game, "skill", heir.skill);
+            # Jorg's Makron has its torso waiting: the rider's death301 to
+            # death319 and the spine's hum.
+            torso = leaving_of(heir);
+            assert torso is not None and not torso.visual.visible and len(torso.frames) == 19;
+            assert torso.frames == [torso.frames[0] + i for i in range(19)];
+            hums = [torso->:Hums:->][?:Speaker];
+            assert len(hums) == 1 and hums[0].looping and not hums[0].playing;
+            print("HULL TORSO", name, "frames", torso.frames[0], "to", torso.frames[-1], hums[0].path);
         }
         body = monster_collision(level.collision, boss);
         origin = boss.pos.sub(Vec3(z=boss.eye_height));

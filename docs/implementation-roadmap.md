@@ -55,7 +55,7 @@ Each is verified against the code; the linked doc has the detail.
 Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
 - The fiend's leap does not hold its frame until it lands; the insane
   marines' cries carry as far as any sound and a standing one never lies
-  down by itself; the Makron leaves no torso as it dies.
+  down by itself.
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - A Q3 player killed in a `CONTENTS_NODROP` void still gibs; Q2 `AI_BRUTAL`

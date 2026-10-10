@@ -18,8 +18,12 @@ import from engine.world.combat {
     pain_stagger,
     StepField,
     death_stride,
-    corpse_settled
+    corpse_settled,
+    Sheds,
+    leaving_of
 }
+import from engine.world.fixtures { Fixture, HasFixture, Hums, FixtureTick }
+import from engine.world.speakers { HasSpeaker }
 import from engine.world.opponent_rule { OpponentRule, Reaction }
 import from engine.world.gibs { GibRule }
 import from engine.world.speakers { Speaker }
@@ -1100,4 +1104,99 @@ test "a dying soldier's and a dying infantry's guns go off as they fall" {
     assert rounds.requests == 1 and unlucky.health == 97;
     fall(field, infantry, "death2", unlucky, 2.0);
     assert rounds.requests == 12;
+}
+
+test "the dying Makron leaves its torso twitching beside it" {
+    # m_boss32.c makron_die: a torso is put down 84 units along -y from the
+    # Makron, facing as it does, as its death begins. makron_torso: the
+    # rider's frames 346 to 364 (death301-death319) round at 10 Hz, with
+    # makron/spine.wav looping.
+    rule = enemy_rule("q2", "monster_makron");
+    assert rule is not None and len(rule.deaths) == 1;
+    left = [event for event in rule.deaths[0].events if event.leaves is not None];
+    assert len(left) == 1 and left[0].frame == 0 and left[0].leaves is not None;
+    torso_rule = left[0].leaves;
+    assert torso_rule.frames == ["death" + str(301 + i) for i in range(19)];
+    assert [torso_rule.offset.x, torso_rule.offset.y, torso_rule.offset.z] == [0.0, -84.0, 0.0];
+    assert torso_rule.sound == "sound/makron/spine.wav";
+    # Nothing else in either game leaves a part of itself.
+    for key in ORIGINAL_SEQUENCES {
+        other = enemy_rule(key.split(":")[0], key.split(":")[1]);
+        assert other is not None;
+        for sequence in other.pains + other.deaths {
+            for event in sequence.events {
+                assert event.leaves is None or key == "q2:monster_makron" , key;
+            }
+        }
+    }
+    world = World();
+    level = Level(name="torso");
+    level.bsp.game = "q2";
+    state = CombatState(game="q2");
+    player = Player(pos=Vec3(x=3000.0, z=22.0), god_mode=True);
+    makron = sequenced("q2", "monster_makron");
+    makron.pos = Vec3(x=100.0, y=50.0, z=22.01);
+    ground = strip(-400.0, 400.0);
+    makron.visual.offset = Vec3(z=-22.0);
+    makron.yaw = 1.0;
+    torso = Fixture(pos=Vec3(), frames=[346 + i for i in range(19)]);
+    torso.visual.visible = False;
+    hum = Speaker(path="sound/makron/spine.wav", origin=Vec3(), looping=True);
+    world +>:HasOpponent:+> makron;
+    world +>:HasFixture:+> torso;
+    world +>:HasSpeaker:+> hum;
+    torso +>:Hums:+> hum;
+    makron +>:Sheds:+> torso;
+    assert leaving_of(makron) is torso;
+    # While the Makron lives the torso is unseen and silent.
+    world spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    world spawn FixtureTick(dt=1.0 / 60.0);
+    assert not torso.visual.visible and not hum.playing;
+    makron.health = 1;
+    damage_opponent(makron, 50);
+    assert makron.health == 0 and makron.death_variant == 1;
+    world spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    assert torso.visual.visible and hum.playing;
+    assert abs(torso.pos.x - 100.0) < 0.0001 and abs(torso.pos.y + 34.0) < 0.0001;
+    assert abs(torso.pos.z - 0.01) < 0.0001 and torso.yaw == 1.0;
+    assert hum.origin.sub(torso.pos).length() == 0.0;
+    # It plays its nineteen frames round.
+    shown: list[int] = [];
+    for frame in range(21) {
+        world spawn FixtureTick(dt=0.1);
+        shown.append(torso.visual.first);
+    }
+    assert shown == [347 + i for i in range(18)] + [346, 347, 348];
+    # The death goes on without setting it down again.
+    torso.pos = Vec3(x=7.0);
+    for tick in range(120) {
+        world spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    }
+    assert torso.pos.x == 7.0;
+    torso.pos = Vec3(x=100.0, y=-34.0, z=0.01);
+    # A save keeps where it lies and how far round it is.
+    saved = snapshot(world, level, player, state);
+    assert "LEFT" in [line.split()[0] for line in saved.splitlines()[3:]];
+    turned = torso.clock;
+    torso.visual.visible = False;
+    torso.pos = Vec3();
+    torso.yaw = 0.0;
+    torso.clock = 0.0;
+    hum.origin = Vec3();
+    restore(world, level, player, state, saved);
+    assert torso.visual.visible and hum.playing and torso.yaw == 1.0;
+    assert abs(torso.pos.y + 34.0) < 0.0001 and abs(torso.clock - turned) < 0.0001;
+    assert abs(hum.origin.y + 34.0) < 0.0001;
+    # One torn apart outright leaves none.
+    blown = sequenced("q2", "monster_makron", 2);
+    spare = Fixture(pos=Vec3(), frames=[346 + i for i in range(19)]);
+    spare.visual.visible = False;
+    scene = World();
+    scene +>:HasOpponent:+> blown;
+    scene +>:HasFixture:+> spare;
+    blown +>:Sheds:+> spare;
+    blown.gibbed = True;
+    blown.health = 0;
+    scene spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    assert not spare.visual.visible;
 }

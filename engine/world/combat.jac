@@ -12,7 +12,10 @@ import from .particles {
     spawn_effect
 }
 import from .navigation { RouteSearch, RouteQueue, walk_edge, waypoint_reached }
-import from .opponent_rule { OpponentRule, AttackProfile, Gait, Reaction, FrameEvent, rule_profiles }
+import from .opponent_rule {
+    OpponentRule, AttackProfile, Gait, Reaction, FrameEvent, Leaving, rule_profiles
+}
+import from .fixtures { Fixture, Hums }
 import from .weapons { WeaponRule }
 import from .world { World, Player, area_of, move_to_area }
 import from .damage { Damage, blast_strength }
@@ -1206,6 +1209,10 @@ def death_events(
     }
     frame_sounds(enemy, sequence.events, start, finish);
     for event in sequence.events {
+        leaves = event.leaves;
+        if leaves is not None and float(event.frame) >= start and float(event.frame) < finish {
+            leave_behind(enemy, leaves);
+        }
         if not event.fire or float(event.frame) < start or float(event.frame) >= finish {
             continue;
         }
@@ -1223,6 +1230,49 @@ def death_events(
         }
     }
     return advance;
+}
+
+"""What a monster's death leaves beside it (Q2 makron_torso), standing
+hidden and silent in the world from the level's load until the frame of its
+death that sets it down."""
+edge Sheds: Opponent --> Fixture {}
+
+"""What a monster's death leaves or has left beside it."""
+def leaving_of(enemy: Opponent) -> Fixture | None {
+    figures = [enemy->:Sheds:->][?:Fixture];
+    return figures[0] if figures else None;
+}
+
+"""Stand what a monster's death leaves at `spot` facing `yaw`, `clock` frames round
+their loop, shown and sounding. They are drawn with the monster's own
+leaf."""
+def place_leaving(enemy: Opponent, spot: Vec3, yaw: float, clock: float) {
+    figure = leaving_of(enemy);
+    if figure is None {
+        return;
+    }
+    figure.pos = spot;
+    figure.yaw = yaw;
+    figure.clock = clock;
+    figure.visual.visible = True;
+    area = area_of(enemy);
+    if area is not None {
+        move_to_area(figure, area);
+    }
+    for hum in [figure->:Hums:->][?:Speaker] {
+        hum.origin = spot.add(Vec3());
+        hum.playing = True;
+    }
+}
+
+"""Set down what a dying monster leaves beside it: `leaves.offset` from
+where its model stands, along the map's axes, facing as it does, its frames
+starting over and its sound looping (m_boss32.c makron_die: the torso 84 units along -y,
+makron_torso)."""
+def leave_behind(enemy: Opponent, leaves: Leaving) {
+    place_leaving(
+        enemy, enemy.standing().add(enemy.visual.offset).add(leaves.offset), enemy.yaw, 0.0
+    );
 }
 
 """Whether a dead monster's death sequence has played out, which is when its

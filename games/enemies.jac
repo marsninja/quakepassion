@@ -1,5 +1,7 @@
 """Campaign enemy definitions; behavioral special cases remain explicit work."""
-import from engine.world.opponent_rule { OpponentRule, AttackProfile, Gait, Reaction, FrameEvent }
+import from engine.world.opponent_rule {
+    OpponentRule, AttackProfile, Gait, Reaction, FrameEvent, Leaving
+}
 import from engine.math.vec3 { Vec3 }
 
 # Muzzle-flash light colours: Q1 EF_MUZZLEFLASH (the engine's orange flash)
@@ -2885,6 +2887,17 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         name="death2",
                         frames=span("death", 201, 295),
                         events=[
+                            # makron_die: the torso is put down 84 units
+                            # along -y as the death begins. makron_torso_think
+                            # plays death301 round to death319.
+                            FrameEvent(
+                                frame=0,
+                                leaves=Leaving(
+                                    frames=span("death", 301, 319),
+                                    offset=Vec3(y=-84.0),
+                                    sound="sound/makron/spine.wav"
+                                )
+                            ),
                             on_frame(3, "sound/makron/step1.wav"),
                             on_frame(17, "sound/makron/step2.wav"),
                             on_frame(35, "sound/makron/step1.wav"),
