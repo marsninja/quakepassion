@@ -88,3 +88,24 @@ test "spatial hull queries agree with exhaustive sweeps" {
         assert actual.normal.sub(expected.normal).length() < 0.000001;
     }
 }
+
+test "Q2 clip brushes stop only whom they name" {
+    # CONTENTS_PLAYERCLIP 65536, CONTENTS_MONSTERCLIP 131072.
+    for row in [(1, True, True), (65536, True, False), (131072, False, True), (196608, True, True)] {
+        collision = build_brush_collision(brush_map("q2", row[0]));
+        monster = collision.for_body(22.0, 0.0, None, None, True);
+        # MASK_PLAYERSOLID and MASK_MONSTERSOLID.
+        assert (collision.trace(Vec3(z=100.0), Vec3(z=-100.0)).fraction < 1.0) == row[1] , str(row[0]);
+        assert (monster.trace(Vec3(z=100.0), Vec3(z=-100.0)).fraction < 1.0) == row[2] , str(row[0]);
+        assert collision.trace(Vec3(), Vec3()).start_solid == row[1];
+        assert monster.trace(Vec3(), Vec3()).start_solid == row[2];
+        # A monster's own box keeps the mask, and a shot passes any clip.
+        wide = collision.for_body(22.0, 0.0, Vec3(x=-32.0, y=-32.0, z=-24.0), Vec3(x=32.0, y=32.0, z=64.0), True);
+        assert wide.trace(Vec3(), Vec3()).start_solid == row[2];
+        assert (collision.trace_point(Vec3(z=100.0), Vec3(z=-100.0)).fraction < 1.0) == (row[0] == 1);
+        assert (monster.trace_point(Vec3(z=100.0), Vec3(z=-100.0)).fraction < 1.0) == (row[0] == 1);
+    }
+    # Q3 has only players: its player clip stops every view.
+    arena = build_brush_collision(brush_map("q3", 65536));
+    assert arena.trace(Vec3(), Vec3()).start_solid and not arena.player_clips;
+}

@@ -9,7 +9,10 @@ def add_model(
 ) {
     first = len(collision.hulls);
     width = 15.0 if bsp.game == "q3" else 16.0;
-    mask = 65537 if bsp.game == "q3" else 65539;
+    # Q3 MASK_PLAYERSOLID: solid and player clip. Q2 MASK_PLAYERSOLID and
+    # MASK_MONSTERSOLID together: solid, window, player clip and monster
+    # clip, each clip brush stopping only the views it names.
+    mask = 65537 if bsp.game == "q3" else 196611;
     for index in bsp.models[model].brushes {
         brush = bsp.brushes[index];
         if (not volume and brush.contents & mask == 0) or not brush.planes {
@@ -31,6 +34,13 @@ def add_model(
         collision.hulls[-1].point_blocking = brush.contents
             & (1 if bsp.game == "q3" else 3)
             != 0;
+        if bsp.game != "q3" and not volume and brush.contents & 3 == 0 {
+            if brush.contents & 65536 == 0 {
+                collision.monster_clips.add(len(collision.hulls) - 1);
+            } elif brush.contents & 131072 == 0 {
+                collision.player_clips.add(len(collision.hulls) - 1);
+            }
+        }
         collision.hulls[-1].climbable = brush_climbable(brush.contents, bsp.game);
         collision.hulls[-1].conveyor = current_flow(brush_current_bits(brush.contents, bsp.game));
         # Q2/Q3 SURF_SKY (4) and Q3 SURF_NOIMPACT (16) take no impacts, Q3

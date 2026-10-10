@@ -10,6 +10,8 @@ import from engine.world.level { Level }
 import from engine.world.combat { Opponent, HasOpponent, CombatState }
 import from engine.world.opponent_rule { OpponentRule }
 import from engine.world.pickups { Pickup, PickupRule, HasPickup, item_view, drop_to_floor }
+import from engine.world.pusher { Pushable, HullStep, push_move, riders_of }
+import from engine.world.combat { monster_collision }
 import from engine.core.savegame { snapshot, restore }
 import from engine.formats.bsp { Bsp, Face, Model, MapEntity }
 import from engine.physics.collision { CollisionMap }
@@ -302,4 +304,59 @@ test "a turret's aim and its driver's targeting survive a save" {
     assert breach.pitch == -12.0 and breach.yaw == 33.0;
     assert breach.aim_pitch == -20.0 and breach.aim_yaw == 80.0;
     assert collision.turns[0] is not None;
+}
+
+test "a clip brush on a mover carries and pushes only the bodies it stops" {
+    # Q2 SV_Push tests each body with its own clipmask: a monster clip
+    # brush riding a lift lifts the monster standing on it and goes through
+    # the player; a player clip brush does the opposite.
+    for kind in ["monster", "player"] {
+        collision = floor_map(0.0);
+        # A slab on the floor, 64 square, its top at 16.
+        collision.add_brush(
+            [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(z=1.0), Vec3(z=-1.0)],
+            [32.0, 32.0, 32.0, 32.0, 16.0, 0.0],
+            Vec3(x=-16.0, y=-16.0, z=-24.0),
+            Vec3(x=16.0, y=16.0, z=32.0),
+            Vec3()
+        );
+        collision.models = [0, 1];
+        if kind == "monster" {
+            collision.monster_clips.add(1);
+        } else {
+            collision.player_clips.add(1);
+        }
+        collision.reindex();
+        guard = Opponent(
+            rule=OpponentRule(width=16.0, hull_bottom=-24.0, hull_top=32.0),
+            own_hull=True,
+            health=100,
+            eye_height=22.0,
+            pos=Vec3(z=22.0 + 24.0 + (16.03125 if kind == "monster" else 0.03125))
+        );
+        player = Player(
+            health=100, pos=Vec3(z=22.0 + 24.0 + (0.03125 if kind == "monster" else 16.03125))
+        );
+        view = monster_collision(collision, guard);
+        assert view.monster and not collision.monster;
+        bodies = [
+            Pushable(entity=player, view=collision, lift=Vec3(z=22.0), client=True),
+            Pushable(entity=guard, view=view, lift=Vec3(z=22.0))
+        ];
+        # Only the one it stops stands on it.
+        riders = riders_of([1], bodies);
+        assert len(riders) == 1;
+        assert riders[0].entity is (guard if kind == "monster" else player);
+        stuck = push_move(
+            collision,
+            [HullStep(index=1, offset_from=Vec3(), offset_to=Vec3(z=8.0))],
+            bodies,
+            "q2"
+        );
+        assert stuck is None;
+        carried = guard if kind == "monster" else player;
+        passed = player if kind == "monster" else guard;
+        assert abs(carried.pos.z - (22.0 + 24.0 + 24.03125)) < 0.0001;
+        assert abs(passed.pos.z - (22.0 + 24.0 + 0.03125)) < 0.0001;
+    }
 }

@@ -4,7 +4,9 @@ standing on them, or caught by them in their new place, goes along by the
 mover's translation and its turn about the model origin. Bodies are traced in
 their own boxes: the player's, each monster's own, and each item's. If one of
 them cannot go, everything is put back and that body is handed to the mover,
-which crushes, reverses or waits as its game's blocked function does."""
+which crushes, reverses or waits as its game's blocked function does. A Q2
+clip brush on a mover carries and pushes only the bodies it stops
+(SV_TestEntityPosition tests each with its own clipmask)."""
 import math;
 import from .world { World, Entity, Player }
 import from .combat { Opponent, HasOpponent, Drops, monster_collision, monster_body_key }
@@ -150,7 +152,7 @@ def reach_margin(view: CollisionMap) -> float {
 """Whether a body's box rests on the hull: a floor within a quarter unit."""
 def stands_on(body: Pushable, step: HullStep) -> bool {
     origin = body.origin();
-    if not step.near(body.view, origin, body.margin) {
+    if body.view.passes(step.index) or not step.near(body.view, origin, body.margin) {
         return False;
     }
     support = hull_contact(body.view, step.index, origin, origin.add(Vec3(z=-0.25)));
@@ -160,7 +162,7 @@ def stands_on(body: Pushable, step: HullStep) -> bool {
 """Whether a body's box is inside the hull where it now stands."""
 def caught_by(body: Pushable, step: HullStep) -> bool {
     origin = body.origin();
-    if not step.near(body.view, origin, body.margin) {
+    if body.view.passes(step.index) or not step.near(body.view, origin, body.margin) {
         return False;
     }
     return hull_contact(body.view, step.index, origin, origin).start_solid;

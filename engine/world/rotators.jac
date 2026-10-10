@@ -81,7 +81,7 @@ def touching(mover: Rotator, collision: CollisionMap, origin: Vec3, t: float, to
     parts = mover.pose(t);
     turn = turn_for(parts[1]);
     for j in range(len(mover.hulls)) {
-        if not collision.reaches(mover.hulls[j], origin, 2.0) {
+        if collision.passes(mover.hulls[j]) or not collision.reaches(mover.hulls[j], origin, 2.0) {
             continue;
         }
         for delta in [

@@ -149,6 +149,17 @@ box:
   clip hull 2 (`SV_HullForEntity`). Monsters of one size share a view per tick
   (`monster_body_key`). Q2 bosses with mins z 0 stand with their feet at their
   origin.
+- **Clip brushes.** Q2 monsters are stopped by `CONTENTS_MONSTERCLIP`
+  brushes and pass `CONTENTS_PLAYERCLIP` ones (`MASK_MONSTERSOLID`): a
+  monster's view of the collision map (`for_body(..., monster=True)`) skips
+  the hulls of player-only clip brushes and the player's skips the
+  monster-only ones (`CollisionMap.player_clips`, `monster_clips`, filled by
+  `engine/formats/brush_collision.jac`). Every step, fall, leap and knock of
+  a monster traces that view, and a clip brush on a mover (the monster clip
+  on some plats, doors and trains) carries and pushes only the bodies it
+  stops (`CollisionMap.passes`, as `SV_Push` tests each body with its own
+  clipmask). 34 of Q2's 39 maps have monster-only clip brushes and eight
+  have player-only ones. Bots are players. Q3's maps carry player clip only.
 - **Other game's maps** (Passion): monsters keep the map's box
   (`CollisionMap.hull_box`), with the model lowered to the floor, and chase
   by the same steps.
@@ -241,6 +252,11 @@ left of `search_time`. Saves without the line load with a fresh chase.
   walks.
 - `tests/monster_hull_tests.jac`: a boss box stopped by a gap a player passes,
   stopping at its own edge, Q1 hull 2.
+- `tests/brush_collision_tests.jac`: player clip, monster clip and both
+  against the player's and a monster's view;
+  `tests/mover_push_tests.jac`: a clip brush on a lift. Native:
+  `scripts/validate_monster_clip.jac` checks every clip brush of the Q2 maps
+  named in `QP_MAPS` against both views.
 - `tests/navigation_tests.jac`, `navigation_hull_tests.jac`,
   `navigation_budget_tests.jac`, `navigation_revision_tests.jac`,
   `navigation_save_tests.jac`, `navigation_jump_tests.jac`: the ground route
@@ -265,8 +281,6 @@ left of `search_time`. Saves without the line load with a fresh chase.
 - Two bodies that already overlap (after a leap, a knock or a fall, none of
   which is traced against other bodies) do not block each
   other's steps, so that they can part; the originals leave such bodies stuck.
-- Q2 monsters collide with player clip brushes and not with monster clip
-  brushes (`CONTENTS_MONSTERCLIP`), which the level's hulls do not carry.
 - The player trail is laid by time and distance travelled, not when the
   player loses sight of the last crumb as `p_client.c` does.
 - Q2's course correction traces the world only, not other bodies.

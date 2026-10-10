@@ -3437,17 +3437,19 @@ def event_damage(enemy: Opponent, profile: AttackProfile, index: int) -> int {
 """The collision a monster moves with. On its own game's maps that is its
 own box: Q2's mins/maxs (SV_Move's box trace), or Q1's hull 2 for monsters
 wider than 32 units (SV_HullForEntity). Elsewhere, and for bots, it is the
-player's box."""
+player's box. A monster is stopped by monster clip brushes and not by
+player clip (Q2 MASK_MONSTERSOLID); a bot is a player."""
 def monster_collision(collision: CollisionMap, enemy: Opponent) -> CollisionMap {
     if not enemy.own_hull {
-        return collision.for_body(enemy.eye_height);
+        return collision.for_body(enemy.eye_height, 0.0, None, None, striding(enemy));
     }
     rule = enemy.rule;
     return collision.for_body(
         enemy.eye_height,
         0.0,
         Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom),
-        Vec3(x=rule.width, y=rule.width, z=rule.hull_top)
+        Vec3(x=rule.width, y=rule.width, z=rule.hull_top),
+        striding(enemy)
     );
 }
 
@@ -3516,10 +3518,12 @@ def frame_step(enemy: Opponent) -> float {
 
 """Which cached body view a monster shares with others of its size."""
 def monster_body_key(enemy: Opponent) -> str {
+    clip = "m" if striding(enemy) else "p";
     if not enemy.own_hull {
-        return str(enemy.eye_height);
+        return clip + str(enemy.eye_height);
     }
-    return str(enemy.eye_height)
+    return clip
+        + str(enemy.eye_height)
         + ":"
         + str(enemy.rule.width)
         + ":"

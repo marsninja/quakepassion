@@ -87,8 +87,9 @@ walker:
   one-unit spread of `Mod_LoadSubmodels`.
 - Q2/Q3 load convex brush planes expanded by the standing box (Q2 32 wide,
   eye 22; Q3 30 wide, eye 26; both -24..+32), and shift the planes for any
-  other box (crouching, monsters) as `CM_BoxTrace` does. Q2 collides with
-  solid, window and playerclip brushes; Q3 with solid and playerclip.
+  other box (crouching, monsters) as `CM_BoxTrace` does. Q2 players collide
+  with solid, window and playerclip brushes and Q2 monsters with solid,
+  window and monsterclip ones; Q3 with solid and playerclip.
 - Rotating movers trace in the model's frame (`CM_TransformedBoxTrace`): the
   box keeps its size and the hit normal is turned back.
 - An escaping trace runs out of the solid it starts in, as Q1 `SV_Move`

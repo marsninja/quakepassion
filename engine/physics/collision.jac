@@ -569,15 +569,27 @@ obj CollisionMap {
     # The box the brush hulls were really expanded by (add_brush), where it
     # is not the declared one.
     has brush_box: AABB | None = None;
+    # Clip brushes stop only whom they name: the hulls of Q2
+    # CONTENTS_PLAYERCLIP brushes that are not monster clip too, and of
+    # CONTENTS_MONSTERCLIP brushes that are not player clip. A `monster` view
+    # traces as MASK_MONSTERSOLID does, any other as MASK_PLAYERSOLID.
+    has player_clips: set[int] = set(),
+        monster_clips: set[int] = set(),
+        monster: bool = False;
     # Brush sides a shot leaves nothing on, by hull: the sky and Q3
     # SURF_NOIMPACT take no impact at all, Q3 SURF_NOMARKS no marks.
     has no_impact: dict[int, list[Vec3]] = {},
         no_marks: dict[int, list[Vec3]] = {};
 
     # Share live geometry and mover offsets, but keep actor stance independent.
-    # With `mins`/`maxs` the view traces that box instead of the player's.
+    # With `mins`/`maxs` the view traces that box instead of the player's; a
+    # `monster` view is stopped by monster clip instead of player clip.
     def for_body(
-        height: float, drop: float = 0.0, mins: Vec3 | None = None, maxs: Vec3 | None = None
+        height: float,
+        drop: float = 0.0,
+        mins: Vec3 | None = None,
+        maxs: Vec3 | None = None,
+        monster: bool = False
     ) -> CollisionMap {
         view = CollisionMap(
             revision=self.revision,
@@ -595,6 +607,9 @@ obj CollisionMap {
             hull_maxs=self.hull_maxs,
             large_hulls=self.large_hulls,
             brush_box=self.brush_box,
+            player_clips=self.player_clips,
+            monster_clips=self.monster_clips,
+            monster=monster,
             no_impact=self.no_impact,
             no_marks=self.no_marks
         );
@@ -602,6 +617,13 @@ obj CollisionMap {
             view.fit_body(mins, maxs);
         }
         return view;
+    }
+
+    """Whether this view's body goes through hull `index`: a clip brush
+    that names only the other kind. Every test of a single hull (a mover
+    pushing, a button touched) asks this, as `trace` does."""
+    def passes(index: int) -> bool {
+        return index in (self.player_clips if self.monster else self.monster_clips);
     }
 
     """Trace a body box of `mins`..`maxs` about the origin. Brush hulls shift
@@ -874,8 +896,9 @@ obj CollisionMap {
         } else {
             indices = list(range(len(self.hulls)));
         }
+        passed = self.player_clips if self.monster else self.monster_clips;
         for i in indices {
-            if i in exclude or i in self.disabled {
+            if i in exclude or i in self.disabled or i in passed {
                 continue;
             }
             # Tree leaves hold small batches; reject each nonintersecting hull
