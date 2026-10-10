@@ -975,6 +975,72 @@ def tidy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"TIDY PASS: {len(steps) - 1} steps, snapped, replaced, lined up, glued, faces spread, counted");
 }
 
+"""The thirteenth session: a box drawn in the top view, cut along a drawn
+line, and the settings kept between runs."""
+def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["box", "cut"];
+    for shot in shots {
+        (repo / f"draw_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-draw-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/draw_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "draw.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The draw session failed: {output / 'draw.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+        # Opened again, the studio is as it was left: the grid, four views, the axis views as edges.
+        again = subprocess.run(
+            [str(binary), "+edit", "+wait", "+wait", "+ed_dump", "again", "+quit"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "draw_again.log").write_text(again.stdout + again.stderr);
+        assert again.returncode == 0 , f"Opening the studio again failed: {output / 'draw_again.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["four", "drawn", "cut", "trimmed"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'draw.log'}";
+    }
+    # A rectangle dragged in the top view: a box on the grid, sixty-four high, standing on the floor.
+    drawn = brushes(steps["drawn"]);
+    assert len(drawn) == 1 and "mode=draw" in steps["drawn"][-1] , str(steps["drawn"]);
+    box = brush_box(drawn[0]);
+    assert box[0][2] == 0 and box[1][2] == 64 and box[1][0] - box[0][0] == 192 and box[1][1] - box[0][1] == 192 , str(box);
+    assert [value % 16 for value in box[0] + box[1]] == [0] * 6;
+    # A line drawn down through it leaves two brushes that meet at the line, each of six sides.
+    halves = [brush_box(line) for line in brushes(steps["cut"])];
+    assert len(halves) == 2 and halves[0][1][0] == halves[1][0][0] , str(halves);
+    assert halves[0][0][0] == box[0][0] and halves[1][1][0] == box[1][0];
+    assert all(["sides=6" in line for line in brushes(steps["cut"])]) , str(steps["cut"]);
+    # With Shift, a line across both keeps only what is behind it.
+    trimmed = [brush_box(line) for line in brushes(steps["trimmed"])];
+    assert len(trimmed) == 2 and trimmed[0][1][1] == trimmed[1][1][1] and trimmed[0][1][1] < box[1][1] , str(trimmed);
+    assert trimmed[0][0][1] == box[0][1];
+    assert "ed_grid 16" in kept and "ed_layout 4" in kept and "ed_display wire axis" in kept , kept;
+    back = studio_steps(again.stdout)["again"];
+    assert setting(back, "grid") == 16 and "wire=10" in back[-1] , back[-1];
+    assert [line for line in back if line.startswith("view ")][0].endswith(" of 4") , str(back);
+    for shot in shots {
+        source = repo / f"draw_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"draw_{shot}.png");
+        source.unlink();
+    }
+    print(f"DRAW PASS: {len(steps) - 1} steps, a box drawn and cut along drawn lines, the settings kept");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -1084,6 +1150,7 @@ def main() {
     terrain_session(repo, binary, env, output);
     patch_session(repo, binary, env, output);
     tidy_session(repo, binary, env, output);
+    draw_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

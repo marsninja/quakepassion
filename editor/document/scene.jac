@@ -30,7 +30,8 @@ import from ..geometry.csg {
     merged_sides,
     corners_moved,
     brush_corners,
-    joined_pieces
+    joined_pieces,
+    pruned_sides
 }
 import from ..geometry.mapping {
     side_like,
@@ -546,8 +547,9 @@ walker Clip {
             return;
         }
         parts = clip_sides(here.sides, self.plane, self.material);
-        back = parts[0];
-        front = parts[1];
+        # Each half without the sides the cut left behind it.
+        back = pruned_sides(parts[0]);
+        front = pruned_sides(parts[1]);
         kept = front if self.keep == "front" else back;
         if not kept {
             if self.keep != "both" {

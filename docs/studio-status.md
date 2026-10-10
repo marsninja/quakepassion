@@ -166,6 +166,14 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   touches are built again, and each stroke undoes. `ed_terrain export
   <file.pgm>` writes the heights as a grey image and `ed_terrain import`
   reads one back. Its faces take materials like any others.
+- **Clip** (5): a line drawn across any view cuts the selected brushes
+  along it, in the plane the line and the view's line of sight make; Shift
+  keeps only what is behind the line and Ctrl only what is in front
+  (`ed_clip_line`). **Draw** (6): a rectangle dragged in an axis view
+  becomes a box on the grid, sixty-four units deep (`ed_box_draw`).
+- **Settings** are kept between sessions beside the entity overrides
+  (`studio.cfg`): the grid, one view or four, how views are drawn, the
+  light and the sculpting brush.
 - **Small tools**: `ed_snap [size]` puts the selection's corners and origins
   on the grid; `ed_replace <old> <new> [all]` gives sides of one material
   another; `ed_align <x|y|z> <low|high|middle>` lines the selected brushes
@@ -377,6 +385,9 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/tidy_session.cfg` (7 steps: a box snapped back onto the
   grid, a material replaced everywhere, two boxes lined up, one glued
   against a tagged face, a face pick spread, the counts).
+  `scripts/studio/draw_session.cfg` (4 steps: a box drawn by a drag in the
+  top view, cut in two by a line drawn through it, trimmed by another with
+  Shift; then the studio opened again to find its settings kept).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -388,8 +399,7 @@ Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3
 (views and texturing), 4 (brush tools) and 5 (logic and reuse), with parts
 of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
-- Left over in what is built: the clipper is a command (no plane drawn in
-  the view); there are no gizmos for free rotation and scaling; face-to-face
+- Left over in what is built: there are no gizmos for free rotation and scaling; face-to-face
   tools (tag, glue, wrap a texture round a corner) are not built; a shipped
   map takes new brushes only once it is turned into a scene; Quake III's
   `brushDef` sides open without their texture alignment, and a level's

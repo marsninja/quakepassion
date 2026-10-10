@@ -88,6 +88,7 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
         self.brush_radius = max(8.0, min(2048.0, numbers[0]));
         self.brush_amount = max(1.0, min(512.0, numbers[1]));
         self.say("Brush " + str(int(self.brush_radius)) + " wide, " + str(int(self.brush_amount)) + " strong");
+        self.keep_settings();
         return True;
     }
     if name == "ed_terrain" {

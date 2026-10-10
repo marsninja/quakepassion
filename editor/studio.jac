@@ -19,7 +19,7 @@ import from engine.math.vec3 { Vec3, forward_from, right_from }
 import from engine.input.input { _capture, _release, mouse_captured }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
-import from games.levels { override_path }
+import from games.levels { override_path, override_folder }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
 }
@@ -130,9 +130,15 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_merge", "ed_merge", "join the selected brushes into one, when together they are convex"),
     (
         "ed_mode",
-        "ed_mode <brush|face|corner|sculpt>",
-        "what a click in the level does: pick brushes, pick faces, show corners, or sculpt terrain"
+        "ed_mode <brush|face|corner|sculpt|clip|draw>",
+        "what the pointer does in the level: pick brushes, pick faces, show corners, sculpt, cut along a line, draw a box"
     ),
+    (
+        "ed_clip_line",
+        "ed_clip_line <view> <x0> <y0> <x1> <y1> [back|front|both]",
+        "cut the selected brushes along a line drawn across a view"
+    ),
+    ("ed_box_draw", "ed_box_draw <view> <x0> <y0> <x1> <y1>", "add a box over a rectangle drawn in an axis view"),
     (
         "ed_terrain",
         "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest]",
@@ -432,6 +438,10 @@ obj Studio(Workbench) {
         wire_axis: bool = False,
         wire_main: bool = False,
         bare_now: bool = False,
+        # A line or a rectangle being drawn in a view by a tool, and whether
+        # the settings file has been read.
+        lining: bool = False,
+        settings_read: bool = False,
         # A rectangle dragged out over a view, to select what is in it.
         boxing: bool = False,
         box_port: int = 0,
@@ -521,6 +531,7 @@ obj Studio(Workbench) {
 
     """Take the window: the current level becomes the document."""
     def enter(reset_camera: bool = True) {
+        self.read_settings();
         app = self.app;
         if app is None or not app.level.active {
             return;
@@ -733,6 +744,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Pick faces", command="ed_mode face", keys="2"),
                     MenuItem(text="Move corners and edges", command="ed_mode corner", keys="3"),
                     MenuItem(text="Sculpt terrain", command="ed_mode sculpt", keys="4"),
+                    MenuItem(text="Cut along a drawn line", command="ed_mode clip", keys="5"),
+                    MenuItem(text="Draw boxes in the axis views", command="ed_mode draw", keys="6"),
                     MenuItem(rule=True),
                     MenuItem(text="Check the map", command="ed_check"),
                     MenuItem(text="Count what it holds", command="ed_stats"),
@@ -839,7 +852,9 @@ obj Studio(Workbench) {
             ("brush", "Brushes", "A click picks a brush or an entity; a brush shows its sides' handles (1)"),
             ("face", "Faces", "A click picks one face of a brush (2)"),
             ("corner", "Corners", "A brush shows its corners and edges, to drag (3)"),
-            ("sculpt", "Sculpt", "A drag raises terrain; Shift lowers it and Ctrl smooths it (4)")
+            ("sculpt", "Sculpt", "A drag raises terrain; Shift lowers it and Ctrl smooths it (4)"),
+            ("clip", "Clip", "A line drawn across a view cuts the selected brushes along it (5)"),
+            ("draw", "Draw", "A rectangle drawn in an axis view becomes a box (6)")
         ] {
             chooser = PushButton(text=named, command="ed_mode " + word, hint=told);
             tools.adopt(chooser);
@@ -1109,7 +1124,7 @@ obj Studio(Workbench) {
         } else {
             ui.summary.text = str(len(scene.items())) + " entities";
         }
-        for (index, word) in enumerate(["brush", "face", "corner", "sculpt"]) {
+        for (index, word) in enumerate(["brush", "face", "corner", "sculpt", "clip", "draw"]) {
             ui.modes[index].lit = self.mode == word;
         }
         eye = self.main.eye;
@@ -1322,6 +1337,12 @@ obj Studio(Workbench) {
                 self.moved = False;
                 self.press_x = event.x;
                 self.press_y = event.y;
+                if self.mode == "clip" or self.mode == "draw" {
+                    # A line, or a rectangle, from here to where the button is let go.
+                    self.lining = True;
+                    self.box_port = index;
+                    continue;
+                }
                 if self.mode == "sculpt" {
                     # The first dab of a stroke.
                     self.sculpting = True;
@@ -1364,6 +1385,21 @@ obj Studio(Workbench) {
                 if event.button == 0 and self.sculpting {
                     self.sculpting = False;
                     self.moved = True;
+                }
+                if event.button == 0 and self.lining {
+                    self.lining = False;
+                    self.moved = True;
+                    if abs(event.x - self.press_x) + abs(event.y - self.press_y) > 6 {
+                        ends = str(self.box_port) + " " + str(self.press_x) + " " + str(self.press_y) + " "
+                            + str(event.x) + " " + str(event.y);
+                        if self.mode == "clip" {
+                            stage.emit(
+                                "ed_clip_line " + ends + (" back" if event.shift else (" front" if event.ctrl else ""))
+                            );
+                        } else {
+                            stage.emit("ed_box_draw " + ends);
+                        }
+                    }
                 }
                 if event.button == 0 and self.boxing {
                     self.boxing = False;
@@ -1510,6 +1546,7 @@ obj Studio(Workbench) {
             self.resizing = False;
             self.boxing = False;
             self.sculpting = False;
+            self.lining = False;
         }
         if self.looking and self.camera.span <= 0.0 and not self.source.scripted {
             speed = app.host.flyspeed.number * (4.0 if input.shift else 1.0) * dt;
@@ -1607,6 +1644,10 @@ obj Studio(Workbench) {
                 stage.emit("ed_mode corner");
             } elif key == "4" {
                 stage.emit("ed_mode sculpt");
+            } elif key == "5" {
+                stage.emit("ed_mode clip");
+            } elif key == "6" {
+                stage.emit("ed_mode draw");
             } elif key in ["LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW", "PGUP", "PGDN"] {
                 step = 64 if shift else 16;
                 moves = {
@@ -2002,6 +2043,19 @@ obj Studio(Workbench) {
         }
         self.draw_handles(scene, area);
         stage = self.stage;
+        if self.lining and stage is not None and self.port_now == self.box_port {
+            if self.mode == "clip" {
+                canvas.line(self.press_x, self.press_y, stage.input.x, stage.input.y, canvas.theme.accent);
+            } else {
+                drawn = Rect(
+                    x=min(self.press_x, stage.input.x),
+                    y=min(self.press_y, stage.input.y),
+                    w=abs(stage.input.x - self.press_x),
+                    h=abs(stage.input.y - self.press_y)
+                );
+                canvas.outline(drawn, canvas.theme.accent);
+            }
+        }
         if self.boxing and stage is not None and self.port_now == self.box_port {
             x0 = min(self.press_x, stage.input.x);
             y0 = min(self.press_y, stage.input.y);
@@ -2140,6 +2194,15 @@ obj Studio(Workbench) {
     """What a selected entity says of itself in the level: the way it
     faces, and how far a light reaches."""
     def draw_marks(shape: Shape);
+    """Where the studio's own settings are kept between sessions."""
+    def settings_path -> str;
+    """Write the settings: the grid, the layout, how views are drawn, the light and the brush."""
+    def keep_settings;
+    """Read the settings once, when the studio is first opened."""
+    def read_settings;
+    """A point of a view's own plane (through `anchor`) under a point of
+    the screen, on the grid."""
+    def view_point(port: int, x: int, y: int, anchor: Vec3) -> Vec3 | None;
 
     # ------------------------------------------------------------------
     # Terrain (impl/studio.terrain.impl.jac)
@@ -2307,6 +2370,7 @@ obj Studio(Workbench) {
                 self.arrange_views(self.layout);
             } else {
                 self.arrange_views(4 if len(args) > 1 and args[1] == "4" else 1);
+                self.keep_settings();
             }
         } elif name == "ed_dump" {
             if len(args) > 1 {

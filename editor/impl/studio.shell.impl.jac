@@ -37,6 +37,67 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
     if app is None {
         return False;
     }
+    if name == "ed_clip_line" or name == "ed_box_draw" {
+        numbers: list[int] = [];
+        for word in args[1:6] {
+            if word.lstrip("-").isdigit() {
+                numbers.append(int(word));
+            }
+        }
+        if len(numbers) < 5 or numbers[0] < 0 or numbers[0] >= len(self.ports) {
+            self.say(name + " <view> <x0> <y0> <x1> <y1>");
+            return True;
+        }
+        middle = scene.selection_middle();
+        anchor = middle if middle is not None else Vec3();
+        first = self.view_point(numbers[0], numbers[1], numbers[2], anchor);
+        second = self.view_point(numbers[0], numbers[3], numbers[4], anchor);
+        if first is None or second is None or second.sub(first).length() < 1.0 {
+            self.say("That is too short to go by");
+            return True;
+        }
+        into = self.ports[numbers[0]].camera.forward();
+        if name == "ed_clip_line" {
+            # The plane that holds the line and the view's own line of sight.
+            normal = second.sub(first).cross(into);
+            if normal.length() < 0.0001 {
+                self.say("That line runs straight into the view");
+                return True;
+            }
+            normal = normal.normalized();
+            keep = args[6] if len(args) > 6 and args[6] in ["back", "front", "both"] else "both";
+            if not scene.selected_solids() {
+                self.say("Select the brushes to cut");
+            } elif not scene.clip_selection(Plane3(normal=normal, dist=normal.dot(first)), keep, self.material) {
+                self.say("That line cuts nothing selected");
+            }
+            return True;
+        }
+        if self.ports[numbers[0]].camera.span <= 0.0 or not self.is_built_scene() {
+            self.say("Boxes are drawn in the axis views of a scene");
+            return True;
+        }
+        # The rectangle, and sixty-four units along the line of sight: up
+        # from the anchor's height in the top view, about it in the others.
+        low = Vec3(x=min(first.x, second.x), y=min(first.y, second.y), z=min(first.z, second.z));
+        high = Vec3(x=max(first.x, second.x), y=max(first.y, second.y), z=max(first.z, second.z));
+        deep = 64.0;
+        if abs(into.z) > 0.5 {
+            base = float(round(anchor.z / self.grid)) * self.grid;
+            low = Vec3(x=low.x, y=low.y, z=base);
+            high = Vec3(x=high.x, y=high.y, z=base + deep);
+        } elif abs(into.y) > 0.5 {
+            low = Vec3(x=low.x, y=anchor.y - deep * 0.5, z=low.z);
+            high = Vec3(x=high.x, y=anchor.y + deep * 0.5, z=high.z);
+        } else {
+            low = Vec3(x=anchor.x - deep * 0.5, y=low.y, z=low.z);
+            high = Vec3(x=anchor.x + deep * 0.5, y=high.y, z=high.z);
+        }
+        if scene.create_solid(box_sides(low, high, self.material)) is None {
+            self.say("That rectangle encloses nothing");
+        }
+        return True;
+    }
     if name == "ed_palette" {
         if stage is None {
             return True;
@@ -68,6 +129,7 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         }
         self.grid = max(1.0, min(256.0, float(round(size))));
         self.say("Grid " + str(int(self.grid)));
+        self.keep_settings();
         return True;
     }
     if name == "ed_mark" {
@@ -236,5 +298,69 @@ impl Studio.draw_marks(shape: Shape) {
             wire_line(middle.add(Vec3(x=a, z=b)), middle.add(Vec3(x=c, z=d)), ink(0xf5d90a, 90));
             wire_line(middle.add(Vec3(y=a, z=b)), middle.add(Vec3(y=c, z=d)), ink(0xf5d90a, 90));
         }
+    }
+}
+
+impl Studio.view_point(port: int, x: int, y: int, anchor: Vec3) -> Vec3 | None {
+    if port < 0 or port >= len(self.ports) {
+        return None;
+    }
+    watched = self.port_now;
+    self.watch(port);
+    found = self.on_view_plane(x, y, anchor);
+    self.watch(watched);
+    step = max(1.0, self.grid);
+    return Vec3(
+        x=float(round(found.x / step)) * step,
+        y=float(round(found.y / step)) * step,
+        z=float(round(found.z / step)) * step
+    );
+}
+
+impl Studio.settings_path -> str {
+    return override_folder() + "/studio.cfg";
+}
+
+impl Studio.keep_settings {
+    if not self.settings_read {
+        # Not before what was kept has been read: it would be written over.
+        return;
+    }
+    lines = [
+        "// The studio's settings, written when one changes.",
+        "ed_grid " + str(int(self.grid)),
+        "ed_light " + ("on" if self.lit else "off"),
+        "ed_display " + ("wire" if self.wire_axis else "textured") + " axis",
+        "ed_display " + ("wire" if self.wire_main else "textured") + " 3d",
+        "ed_brush " + str(int(self.brush_radius)) + " " + str(int(self.brush_amount)),
+        "ed_layout " + str(self.layout)
+    ];
+    path = self.settings_path();
+    try {
+        os.makedirs(os.path.dirname(path), exist_ok=True);
+        with open(path, "w") as file {
+            file.write("\n".join(lines) + "\n");
+        }
+    } except OSError {
+        return;
+    }
+}
+
+impl Studio.read_settings {
+    app = self.app;
+    if self.settings_read or app is None {
+        return;
+    }
+    self.settings_read = True;
+    path = self.settings_path();
+    if not os.path.isfile(path) {
+        return;
+    }
+    try {
+        with open(path, "r") as file {
+            app.shell.insert_text(file.read());
+        }
+    } except OSError {
+        return;
     }
 }

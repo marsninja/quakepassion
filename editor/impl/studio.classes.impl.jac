@@ -294,6 +294,7 @@ impl Studio.class_command(scene: Scene, args: list[str]) -> bool {
         # Build the level again, lit or flat.
         self.built_geometry = -1;
         self.say("Scenes are lit from their own lights" if self.lit else "Scenes are lit flat");
+        self.keep_settings();
         return True;
     }
     if name == "ed_shape" {

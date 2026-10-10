@@ -351,8 +351,8 @@ impl Studio.check(scene: Scene, args: list[str]) {
 impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
     name = args[0];
     if name == "ed_mode" {
-        if len(args) < 2 or args[1] not in ["brush", "face", "corner", "sculpt"] {
-            self.say("ed_mode <brush|face|corner|sculpt>");
+        if len(args) < 2 or args[1] not in ["brush", "face", "corner", "sculpt", "clip", "draw"] {
+            self.say("ed_mode <brush|face|corner|sculpt|clip|draw>");
             return True;
         }
         self.mode = args[1];
@@ -372,7 +372,15 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
                 "Clicks pick faces" if self.mode == "face" else (
                     "The selected brush shows its corners and edges"
                         if self.mode == "corner"
-                        else "A drag raises terrain; Shift lowers it, Ctrl smooths it"
+                        else (
+                            "A drag raises terrain; Shift lowers it, Ctrl smooths it"
+                                if self.mode == "sculpt"
+                                else (
+                                    "Draw a line across a view to cut the selected brushes along it"
+                                        if self.mode == "clip"
+                                        else "Draw a rectangle in an axis view to make a box"
+                                )
+                        )
                 )
             )
         );
@@ -546,6 +554,7 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         if which == "3d" or which == "all" {
             self.wire_main = args[1] == "wire";
         }
+        self.keep_settings();
         return True;
     }
     if name == "ed_check" {
