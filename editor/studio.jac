@@ -141,6 +141,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "a stroke of the sculpting brush on a terrain, where the camera looks or at a point"
     ),
     ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
+    ("ed_replace", "ed_replace <old> <new> [all]", "give sides of one material another, in the selection or everywhere"),
+    ("ed_snap", "ed_snap [size]", "put the selection's corners and origins on the grid"),
+    ("ed_align", "ed_align <x|y|z> <low|high|middle>", "line the selected brushes up along an axis"),
+    ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
+    ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
+    ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_stats", "ed_stats", "count what the document holds"),
     (
         "ed_patch",
         "ed_patch <sheet|arch|bevel|cylinder|cone> [w d h]",
@@ -441,6 +448,9 @@ obj Studio(Workbench) {
         asset_index: AssetIndex | None = None,
         asset_now: AssetLook | None = None,
         assets_listed: int = -1,
+        # The face brushes are glued against, as its plane and what it was.
+        tagged: Plane3 | None = None,
+        tagged_words: str = "",
         # The sculpting brush, whether a stroke is being drawn, drags since
         # its last dab, and where on a terrain the pointer is.
         brush_radius: float = 96.0,
@@ -705,6 +715,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Sculpt terrain", command="ed_mode sculpt", keys="4"),
                     MenuItem(rule=True),
                     MenuItem(text="Check the map", command="ed_check"),
+                    MenuItem(text="Count what it holds", command="ed_stats"),
                     MenuItem(text="Look for a leak", command="ed_leak")
                 ],
                 [
@@ -760,6 +771,9 @@ obj Studio(Workbench) {
                     MenuItem(text="Hollow", command="ed_hollow"),
                     MenuItem(text="Merge", command="ed_merge"),
                     MenuItem(rule=True),
+                    MenuItem(text="Snap to the grid", command="ed_snap"),
+                    MenuItem(text="Tag the picked face", command="ed_tag"),
+                    MenuItem(text="Glue to the tagged face", command="ed_glue"),
                     MenuItem(text="Group", command="ed_group", keys="Ctrl+G"),
                     MenuItem(text="Four in a row", command="ed_dup 3 64 0 0"),
                     MenuItem(text="Four round the middle", command="ed_dup 3 0 0 0 90"),
@@ -2078,6 +2092,12 @@ obj Studio(Workbench) {
     def patch_now(scene: Scene) -> Item | None;
 
     # ------------------------------------------------------------------
+    # Materials replaced, snapping, lining up, face picks, glue, counts (impl/studio.utility.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def utility_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -2225,8 +2245,9 @@ obj Studio(Workbench) {
         } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
-            and not self.shell_command(scene, args) and not self.terrain_command(scene, args) {
-            self.patch_command(scene, args);
+            and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
+            and not self.patch_command(scene, args) {
+            self.utility_command(scene, args);
         }
     }
 

@@ -601,8 +601,31 @@ def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     }
     env["QP_GAME"] = "q1";
     env["QP_MAP"] = "e1m1";
+    # A map file as a Quake III editor writes it opens with its brushDef
+    # brush and its patchDef2 patch.
+    with tempfile.TemporaryDirectory(prefix="qp-arena-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_SCENES"] = home + "/scenes";
+        opened = subprocess.run(
+            [
+                str(binary), "+edit", "+ed_open", "scripts/studio/fixtures/arena.map", "+ed_dump", "opened",
+                "+quit"
+            ],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "arena_open.log").write_text(opened.stdout + opened.stderr);
+        assert opened.returncode == 0 , f"Opening the arena map failed: {output / 'arena_open.log'}";
+        arena = studio_steps(opened.stdout)["opened"];
+        assert arena[0].startswith("passion/studio:arena entities=3") , arena[0];
+        assert "brushes=33" in tally(arena) and patches(arena) == ["patch #2 3x3 top=128 prisms=32"] , str(arena);
+    }
     print(
-        f"CONVERT PASS: base1 as {counts['q2']} brushes and q3dm1 as {counts['q3']}, saved as maps and reopened"
+        f"CONVERT PASS: base1 as {counts['q2']} brushes and q3dm1 as {counts['q3']}, saved as maps and reopened; "
+            + "a brushDef and patchDef2 map opened"
     );
     if "passion" in counts {
         print(f"CONVERT PASS: expedition v2-42 as {counts['passion']} brushes");
@@ -883,6 +906,51 @@ def patch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"PATCH PASS: {len(steps) - 1} steps, an arch bent by command and by a drag, a cylinder and a cone");
 }
 
+"""The twelfth session: snapping, a material replaced, brushes lined up
+and glued, face picks spread, and the counts."""
+def tidy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "tidy_faces.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-tidy-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/tidy_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "tidy.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The tidy session failed: {output / 'tidy.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["askew", "snapped", "replaced", "aligned", "glued", "others", "every"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'tidy.log'}";
+    }
+    askew = brush_box(brushes(steps["askew"])[0]);
+    snapped = brush_box(brushes(steps["snapped"])[0]);
+    # Moved (3, -2, 1) off the grid, the box snaps back to where it was made.
+    assert [snapped[0][i] - askew[0][i] for i in range(3)] == [-3, 2, -1] , f"{askew} -> {snapped}";
+    assert snapped[0][0] % 8 == 0 and snapped[0][1] % 8 == 0 and snapped[0][2] == 0;
+    assert "material=stone" in brushes(steps["replaced"])[0] , str(steps["replaced"]);
+    # Lined up by their undersides: the small box comes down to the floor.
+    aligned = [brush_box(line) for line in brushes(steps["aligned"])];
+    assert len(aligned) == 2 and aligned[0][0][2] == 0 and aligned[1][0][2] == 0 , str(aligned);
+    # Glued, the small box's low x is the big one's high x.
+    glued = brush_box(brushes(steps["glued"])[0]);
+    assert glued[0][0] == snapped[1][0] and glued[1][0] == snapped[1][0] + 32 , f"{glued} against {snapped}";
+    assert len(faces(steps["others"])) == 5 and len(faces(steps["every"])) == 6;
+    assert "studio: stat 2 entities, 3 brushes, 18 sides" in ran.stdout;
+    assert "studio: stat 6 sides of stone" in ran.stdout and "studio: stat 6 sides of brick" in ran.stdout;
+    source = repo / "tidy_faces.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "tidy_faces.png");
+    source.unlink();
+    print(f"TIDY PASS: {len(steps) - 1} steps, snapped, replaced, lined up, glued, faces spread, counted");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -991,6 +1059,7 @@ def main() {
     handy_session(repo, binary, env, output);
     terrain_session(repo, binary, env, output);
     patch_session(repo, binary, env, output);
+    tidy_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

@@ -957,3 +957,21 @@ test "the document counts what it holds" {
     assert "  1 info_player_start" in lines and "  1 worldspawn" in lines;
     assert "2 materials" in lines and "  6 sides of floor" in lines and "  6 sides of wall" in lines;
 }
+
+test "a map's curved patch opens as a patch of the scene" {
+    text = "{\n\"classname\" \"worldspawn\"\n{\npatchDef2\n{\nbase_trim/pipe\n( 3 3 0 0 0 )\n(\n"
+        + "( ( 0 0 96 0 0 ) ( 0 32 96 0 0.5 ) ( 0 64 96 0 1 ) )\n"
+        + "( ( 32 0 128 0.5 0 ) ( 32 32 128 0.5 0.5 ) ( 32 64 128 0.5 1 ) )\n"
+        + "( ( 64 0 96 1 0 ) ( 64 32 96 1 0.5 ) ( 64 64 96 1 1 ) )\n"
+        + ")\n}\n}\n}\n";
+    scene = scene_from_map("passion", "studio:arena", read_map(text));
+    groups = [item for item in scene.items() if item.classname() == "func_group"];
+    assert len(groups) == 1 and groups[0].fields["_patch"] == "3 3 4 8";
+    control = scene.patch_control(groups[0]);
+    assert control is not None and control[1].z == 128.0 and len(scene.solids_of(groups[0])) == 32;
+    assert scene.solids_of(groups[0])[0].sides[0].material == "base_trim/pipe";
+    # Saved and opened again it is still a patch, its points in its fields.
+    again = scene_from_map("passion", "studio:arena", read_map(write_map(scene_map(scene))));
+    back = [item for item in again.items() if item.classname() == "func_group"];
+    assert len(back) == 1 and again.patch_control(back[0])[1].z == 128.0 and len(again.solids_of(back[0])) == 32;
+}

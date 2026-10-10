@@ -112,3 +112,37 @@ test "a broken map says what it wanted" {
     }
     assert map_decimal(0.5) == "0.5" and map_decimal(-64.0) == "-64" and map_decimal(0.1234567) == "0.123457";
 }
+
+glob ARENA_MAP: str = "// entity 0\n{\n\"classname\" \"worldspawn\"\n"
+    + "// brush 0\n{\nbrushDef\n{\n"
+    + "( 0 0 64 ) ( 0 64 64 ) ( 64 0 64 ) ( ( 0.015625 0 0 ) ( 0 0.015625 0 ) ) base_floor/concrete 0 0 0\n"
+    + "( 0 0 0 ) ( 64 0 0 ) ( 0 64 0 ) ( ( 0.015625 0 0 ) ( 0 0.015625 0 ) ) base_floor/concrete 0 0 0\n"
+    + "( 0 0 0 ) ( 0 64 0 ) ( 0 0 64 ) ( ( 0.015625 0 0 ) ( 0 0.015625 0 ) ) base_wall/metal 0 0 0\n"
+    + "( 64 0 0 ) ( 64 0 64 ) ( 64 64 0 ) ( ( 0.015625 0 0 ) ( 0 0.015625 0 ) ) base_wall/metal 0 0 0\n"
+    + "( 0 0 0 ) ( 0 0 64 ) ( 64 0 0 ) ( ( 0.015625 0 0 ) ( 0 0.015625 0 ) ) base_wall/metal 0 0 0\n"
+    + "( 0 64 0 ) ( 64 64 0 ) ( 0 64 64 ) ( ( 0.015625 0 0 ) ( 0 0.015625 0 ) ) base_wall/metal 0 0 0\n"
+    + "}\n}\n"
+    + "// brush 1\n{\npatchDef2\n{\nbase_trim/pipe\n( 3 3 0 0 0 )\n(\n"
+    + "( ( 0 0 96 0 0 ) ( 0 32 96 0 0.5 ) ( 0 64 96 0 1 ) )\n"
+    + "( ( 32 0 128 0.5 0 ) ( 32 32 128 0.5 0.5 ) ( 32 64 128 0.5 1 ) )\n"
+    + "( ( 64 0 96 1 0 ) ( 64 32 96 1 0.5 ) ( 64 64 96 1 1 ) )\n"
+    + ")\n}\n}\n}\n"
+    + "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"32 32 88\"\n}\n";
+
+test "a Quake III map's brushDef brushes and patchDef2 patches are read" {
+    found = read_map(ARENA_MAP);
+    assert len(found.items) == 2 and found.skipped == 0;
+    world = found.items[0];
+    assert len(world.brushes) == 1 and len(world.brushes[0]) == 6;
+    assert abs(brush_volume(world.brushes[0]) - 64.0 * 64.0 * 64.0) < 0.01;
+    assert world.brushes[0][0].material == "base_floor/concrete" and world.brushes[0][2].material == "base_wall/metal";
+    assert len(world.patches) == 1;
+    bent = world.patches[0];
+    assert bent.width == 3 and bent.height == 3 and bent.material == "base_trim/pipe" and len(bent.points) == 9;
+    # Kept row by row: the first row runs along x at y = 0, over its hump in the middle.
+    assert bent.points[0].x == 0.0 and bent.points[1].x == 32.0 and bent.points[1].z == 128.0 and bent.points[2].x == 64.0;
+    assert bent.points[3].y == 32.0 and bent.points[8].y == 64.0;
+    # A block of a kind not read is counted, and what follows it still reads.
+    odd = read_map("{\n\"classname\" \"worldspawn\"\n{\nterrainDef\n{\n( 1 2 3 )\n}\n}\n}\n{\n\"classname\" \"light\"\n}\n");
+    assert odd.skipped == 1 and len(odd.items) == 2 and odd.items[1].fields["classname"] == "light";
+}

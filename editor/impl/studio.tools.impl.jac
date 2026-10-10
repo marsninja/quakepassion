@@ -209,7 +209,14 @@ impl Studio.fill_face_form(scene: Scene, ui: StudioUi) {
             grow=1,
             hint="Select the brush this face is a side of"
         )
+    );    spread = Box(across=True, gap=4);
+    form.adopt(spread);
+    spread.adopt(PushButton(text="All faces", command="ed_faces all", grow=1, hint="Pick every face of this brush"));
+    spread.adopt(PushButton(text="Others", command="ed_faces invert", grow=1, hint="Pick the brush's other faces instead"));
+    spread.adopt(
+        PushButton(text="Same plane", command="ed_faces extend", grow=1, hint="Pick every face that lies in this face's plane")
     );
+    spread.adopt(PushButton(text="Tag", command="ed_tag", grow=1, hint="Remember this face, to glue brushes against"));
 }
 
 """A number as a form shows it: whole numbers without a point."""

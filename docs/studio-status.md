@@ -160,6 +160,13 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   touches are built again, and each stroke undoes. `ed_terrain export
   <file.pgm>` writes the heights as a grey image and `ed_terrain import`
   reads one back. Its faces take materials like any others.
+- **Small tools**: `ed_snap [size]` puts the selection's corners and origins
+  on the grid; `ed_replace <old> <new> [all]` gives sides of one material
+  another; `ed_align <x|y|z> <low|high|middle>` lines the selected brushes
+  up; `ed_tag` remembers a picked face and `ed_glue` moves the selection
+  against it; the face inspector spreads a pick to the whole brush, to its
+  other faces or across the face's plane (`ed_faces <all|invert|extend>`);
+  `ed_stats` counts the document's entities, brushes, sides and materials.
 - **Curved patches** (Brush > Curved sheet, arch, corner, cylinder, cone;
   `ed_patch <kind> [w d h]`): a grid of control points bends a surface, as
   Quake III's patches do, and the surface is built as thin prisms held as a
@@ -356,6 +363,9 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/patch_session.cfg` (7 steps: an arch made, a control
   point lifted by command, another dragged in the front view, the patch
   moved, a cylinder and a cone, saved, played).
+  `scripts/studio/tidy_session.cfg` (7 steps: a box snapped back onto the
+  grid, a material replaced everywhere, two boxes lined up, one glued
+  against a tagged face, a face pick spread, the counts).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -371,14 +381,15 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   the view); there are no gizmos for free rotation and scaling; face-to-face
   tools (tag, glue, wrap a texture round a corner) are not built; a shipped
   map takes new brushes only once it is turned into a scene; Quake III's
-  `brushDef` and `patchDef2` blocks are skipped on open and its patches are
-  left behind by `ed_convert`; a patch turned or mirrored keeps its old
+  `brushDef` sides open without their texture alignment, and a level's
+  patches are left behind by `ed_convert` (a map file's `patchDef2` patches
+  do open, as patches of the scene); a patch turned or mirrored keeps its old
   control points; a linked prefab stands as its file has it (it
   does not turn); the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
 - Not yet built: a solid-colour display mode; the bake proper (partition,
-  visibility, bounced light, bot navigation); Quake III's own patch blocks
-  in map files, and texture coordinates per control point; the rest of the
+  visibility, bounced light, bot navigation); patches written back as
+  `patchDef2`, and texture coordinates per control point; the rest of the
   asset studio (models, sounds played, shader and texture authoring); the
   model editor; the Passion tools; user walkers.
 - Within the shell: entity previews are boxes rather than the entity's

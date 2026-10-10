@@ -9,11 +9,21 @@ Quake editor can open them."""
 import from engine.math.vec3 { Vec3 }
 import from ..geometry.brush { Side, Mapping, Plane3, plane_through, classic_mapping, brush_windings }
 
-"""One entity of a map: its fields in order, and its brushes (each the list
-of its sides)."""
+"""A curved patch as a Quake III map keeps it: `width` by `height` control
+points, row by row, and its material."""
+obj MapPatch {
+    has width: int = 0,
+        height: int = 0,
+        points: list[Vec3] = [],
+        material: str = "";
+}
+
+"""One entity of a map: its fields in order, its brushes (each the list of
+its sides), and its curved patches."""
 obj MapItem {
     has fields: dict[str, str] = {},
-        brushes: list[list[Side]] = [];
+        brushes: list[list[Side]] = [],
+        patches: list[MapPatch] = [];
 }
 
 """A map as read: its entities, and what could not be read."""
@@ -225,8 +235,28 @@ def read_map(text: str) -> MapFile {
                 }
                 item.fields[word[1:]] = value[1:];
             } elif word == "{" {
+                if cursor.peek() == "patchDef2" {
+                    cursor.take();
+                    patch = read_patch(cursor);
+                    cursor.expect("}");
+                    if patch is not None {
+                        item.patches.append(patch);
+                    } else {
+                        found.skipped += 1;
+                    }
+                    continue;
+                }
+                if cursor.peek() == "brushDef" {
+                    cursor.take();
+                    primitive = read_primitive(cursor);
+                    cursor.expect("}");
+                    if len(primitive) >= 4 {
+                        item.brushes.append(primitive);
+                    }
+                    continue;
+                }
                 if cursor.peek() != "(" {
-                    # brushDef, patchDef2 and the like.
+                    # A block of a kind this does not read.
                     found.skipped += 1;
                     cursor.skip_block();
                     continue;
@@ -250,6 +280,100 @@ def read_map(text: str) -> MapFile {
         found.items.append(item);
     }
     return found;
+}
+
+"""A Quake III curved patch, from after its `patchDef2` word to the brace
+that closes it: the material, the size, then `width` rows of `height`
+control points, each a place and two texture coordinates. Kept row by row
+of `width` points. None when the size is not odd by odd."""
+def read_patch(cursor: MapCursor) -> MapPatch | None {
+    cursor.expect("{");
+    material = cursor.take();
+    if material.startswith("\"") {
+        material = material[1:];
+    }
+    cursor.expect("(");
+    width = int(cursor.number());
+    height = int(cursor.number());
+    while cursor.more() and cursor.peek() != ")" {
+        cursor.take();
+    }
+    cursor.expect(")");
+    columns: list[list[Vec3]] = [];
+    cursor.expect("(");
+    while cursor.more() and cursor.peek() == "(" {
+        cursor.expect("(");
+        column: list[Vec3] = [];
+        while cursor.more() and cursor.peek() == "(" {
+            cursor.expect("(");
+            column.append(Vec3(x=cursor.number(), y=cursor.number(), z=cursor.number()));
+            # Its texture coordinates, and anything a later format adds.
+            while cursor.more() and cursor.peek() != ")" {
+                cursor.take();
+            }
+            cursor.expect(")");
+        }
+        cursor.expect(")");
+        columns.append(column);
+    }
+    cursor.expect(")");
+    cursor.expect("}");
+    if width < 3 or height < 3 or width % 2 == 0 or height % 2 == 0 or len(columns) != width {
+        return None;
+    }
+    points: list[Vec3] = [];
+    for row in range(height) {
+        for column in columns {
+            if len(column) != height {
+                return None;
+            }
+            points.append(column[row]);
+        }
+    }
+    return MapPatch(width=width, height=height, points=points, material=material);
+}
+
+"""A Quake III brush written as `brushDef`: each side three points, a
+texture matrix and a material. The matrix is not kept: the material lies as
+it would on a new brush."""
+def read_primitive(cursor: MapCursor) -> list[Side] {
+    sides: list[Side] = [];
+    cursor.expect("{");
+    while cursor.more() and cursor.peek() == "(" {
+        a = cursor.point();
+        b = cursor.point();
+        c = cursor.point();
+        cursor.expect("(");
+        for row in range(2) {
+            cursor.expect("(");
+            while cursor.more() and cursor.peek() != ")" {
+                cursor.take();
+            }
+            cursor.expect(")");
+        }
+        cursor.expect(")");
+        material = cursor.take();
+        if material.startswith("\"") {
+            material = material[1:];
+        }
+        # Its contents, flags and value, when it has them.
+        while cursor.more() and cursor.peek() != "(" and cursor.peek() != "}" {
+            cursor.take();
+        }
+        plane = plane_through(a, b, c);
+        if plane is not None {
+            sides.append(
+                Side(
+                    plane=plane,
+                    points=[a, b, c],
+                    material=material,
+                    mapping=classic_mapping(plane.normal, 0.0, 0.0, 0.0, 1.0, 1.0)
+                )
+            );
+        }
+    }
+    cursor.expect("}");
+    return sides;
 }
 
 """A number as a map writes it: whole when it is whole, else to six places
