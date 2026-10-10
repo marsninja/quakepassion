@@ -78,10 +78,13 @@ test "walking onto a Q1 plat eases the eye up its lip and the ride" {
             dt=dt
         );
         view.ride(player.pos.z - before);
+        if player.pos.x >= 0.0 {
+            # At the centre it stops dead.
+            player.velocity.x = 0.0;
+        }
         moved = player spawn MovePlayer(
             collision=fixture.collision,
             wish=Vec3(x=1.0) if player.pos.x < 0.0 else Vec3(),
-            steady=True,
             profile=movement_profile("q1"),
             dt=dt
         );
@@ -95,8 +98,8 @@ test "walking onto a Q1 plat eases the eye up its lip and the ride" {
         }
         eye = seen;
     }
-    # The body (walking a steady stride to the centre and stopping there)
-    # pops up the eight-unit lip in one tick, then rides 64 units.
+    # The body (walking to the centre and stopping there) pops up the
+    # eight-unit lip in one tick, then rides 64 units.
     assert body_jump > 7.9;
     assert platform.state == "open";
     assert abs(player.pos.z - (48.03125 + 8.0 + 64.0 + eye_height)) < 0.001;
