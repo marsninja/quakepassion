@@ -118,7 +118,9 @@ part of a rig shares one sample.
 - `scripts/bot_bodies_smoke.jac`: captures a bot running, strafing,
   backpedalling, firing with a flash, aiming up and down, dying, a body left
   behind, a quad shell, a dropped item, an award's medal and the spawn effect,
-  each on its blob shadow.
+  each on its blob shadow. A match that short earns awards only by chance, so
+  the script gives a living bot one outright (`show_award`) and fails unless
+  the medal over its head is captured.
 - `scripts/bot_render_profile.jac`: model-pass cost with every bot drawn each
   frame (culling off, 1280x720). Measured 2026-09-24 against the baked bodies
   the rig replaced:
