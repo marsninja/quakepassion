@@ -769,7 +769,8 @@ glob STAGE_VS: str = WORLD_INPUTS
     + " else if(alphaMode==3){ vec3 toward=normalize(vec3(-960.0,1980.0,96.0)-p); vec3 r=n*(2.0*dot(n,toward))-toward; float shine=max(0.0,dot(r,normalize(eye-p))); c.a=min(1.0,shine*shine*shine*shine); }\n"
     + " int fi=int(inInfo.z+0.5)-1; if(fogMode>0&&fi>=0&&fi<" + str(WORLD_FOG_LIMIT) + "){ float clear=1.0-fogDensity(fogCoords(fi,p)); if(fogMode!=2) c.rgb*=clear; if(fogMode!=1) c.a*=clear; }\n"
     + " st=c2; shade=c; gl_Position=viewProjection*vec4(p,1.0); if(lightmapStage==1&&(f&1)==0) gl_Position=vec4(0.0,0.0,-2.0,1.0); }\n",
-     STAGE_FS: str = "#version 330\nin vec2 st; in vec4 shade; out vec4 finalColor; uniform sampler2D stageMap;\nvoid main(){ finalColor=texture(stageMap,st)*shade; }\n";
+     STAGE_FS: str = "#version 330\nin vec2 st; in vec4 shade; out vec4 finalColor; uniform sampler2D stageMap; uniform int alphaTest;\n"
+    + "void main(){ vec4 c=texture(stageMap,st)*shade; if((alphaTest==1&&c.a<=0.0)||(alphaTest==2&&c.a<0.5)||(alphaTest==3&&c.a>=0.5)) discard; finalColor=c; }\n";
 
 # tr_shade.c RB_FogPass: the fog colour through the fog image's density.
 glob FOG_VS: str = WORLD_INPUTS

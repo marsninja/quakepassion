@@ -12,7 +12,8 @@ import from engine.formats.animated {
 }
 import from engine.formats.bsp { Texture }
 import from engine.render.models { UploadedStage, MODEL_ENTITY_COLOR }
-import from engine.render.quake { packed_deforms }
+import from engine.render.quake { packed_deforms, stage_writes_depth }
+import from engine.render.world_mesh { STAGE_FS }
 
 """An archive of empty images named `images`, with `scripts` parsed."""
 def shader_archive(images: list[str], scripts: str) -> Pk3Assets {
@@ -186,6 +187,37 @@ test "model shaders draw lit, alpha-tested, specular, custom-blended and entity-
     assert veil.blended and veil.depth_write and (veil.gl_source, veil.gl_destination) == (770, 771);
     assert struct.unpack("<ffff", veil.gen) == (0.0, 1.0, 0.0, 0.0);
     assert struct.unpack("<ffff", veil.tint(0.0, [0.0, 0.0, 0.0, 0.25])) == (1.0, 1.0, 1.0, 0.75);
+    assets.close();
+}
+
+test "world stages keep their alphaFunc, depth writes and depthFunc equal" {
+    assets = shader_archive(
+        ["textures/grate.tga", "textures/floor.tga", "textures/glow.tga"],
+        # A scaled grate, lit only where its alpha test passed.
+        "textures/pjgrate { { map textures/grate.tga tcMod scale 2 2 blendFunc GL_ONE GL_ZERO alphaFunc GE128 depthWrite rgbGen identity }"
+            + " { map $lightmap rgbGen identity blendFunc GL_DST_COLOR GL_ZERO depthFunc equal } }\n"
+            # Three turning alpha-tested layers, each writing depth, then the light over all of them.
+            + "textures/techfloor { { clampmap textures/floor.tga alphaFunc GE128 tcMod rotate 70 }"
+            + " { clampmap textures/floor.tga alphaFunc GE128 tcMod rotate -50 }"
+            + " { map textures/glow.tga blendFunc add depthFunc lequal }"
+            + " { map $lightmap blendFunc filter depthFunc equal } }"
+    );
+    grate = assets.surface_stages("textures/pjgrate");
+    assert len(grate) == 2;
+    assert grate[0].alpha_test == 2 and not grate[0].depth_equal and stage_writes_depth(grate[0]);
+    assert grate[1].lightmap and grate[1].depth_equal and grate[1].alpha_test == 0 and not stage_writes_depth(grate[1]);
+    floor = assets.surface_stages("textures/techfloor");
+    assert len(floor) == 4;
+    # tr_shader.c ParseStage: a stage that does not blend writes depth, whichever it is.
+    assert stage_writes_depth(floor[0]) and stage_writes_depth(floor[1]) and floor[1].alpha_test == 2;
+    assert not stage_writes_depth(floor[2]) and not floor[2].depth_equal;
+    assert floor[3].depth_equal and not stage_writes_depth(floor[3]);
+    # A blended stage writes depth only when it says depthWrite.
+    assert stage_writes_depth(ModelStage(blend="alpha", depth_write=True)) and not stage_writes_depth(ModelStage(blend="alpha"));
+    # The stage shader discards what the alphaFunc rejects, so it writes no depth there.
+    assert "uniform int alphaTest" in STAGE_FS and "discard" in STAGE_FS;
+    # Model stages carry the comparison too.
+    assert assets.model_stages("textures/pjgrate")[1].depth_equal;
     assets.close();
 }
 

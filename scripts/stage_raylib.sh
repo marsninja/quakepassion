@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build raylib with the JPG/TGA decoders required by original Quake II/III assets.
 # Upstream's prebuilt raylib 6 libraries disable both formats by default.
+# rlgl has no call for the depth comparison, which Quake III shader stages set
+# (depthFunc equal), so the build also exports qpDepthFunc.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,6 +27,17 @@ if [[ "$actual" != "$ARCHIVE_SHA256" ]]; then
   echo "Raylib source checksum mismatch" >&2; exit 1
 fi
 tar -xzf "$tmp/raylib.tar.gz" -C "$tmp"
+# rcore.c compiles rlgl and the GL loader, so GL calls resolve there.
+cat >> "$tmp/raylib-${RAYLIB_VERSION}/src/rcore.c" <<'ADDITIONS'
+
+// QuakePassion: GL state that rlgl does not expose.
+
+// Set the depth comparison (GL_LEQUAL is rlgl's own; GL_EQUAL for depthFunc equal)
+RLAPI void qpDepthFunc(int func)
+{
+    glDepthFunc((GLenum)func);
+}
+ADDITIONS
 make -C "$tmp/raylib-${RAYLIB_VERSION}/src" -j4 \
   PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=SHARED \
   CUSTOM_CFLAGS="-DSUPPORT_FILEFORMAT_JPG=1 -DSUPPORT_FILEFORMAT_TGA=1"

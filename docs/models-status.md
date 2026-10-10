@@ -33,7 +33,9 @@ order, each with its own GL state, as `RB_StageIteratorGeneric` does
 (`UploadedStage`, `engine/render/models.jac`):
 
 - **Blending and depth**: every `blendFunc` factor pair; unblended stages and
-  `depthWrite` ones write depth, the rest do not (`ParseStage`).
+  `depthWrite` ones write depth, the rest do not (`ParseStage`); a
+  `depthFunc equal` stage draws only where the depth buffer already holds the
+  surface.
 - **`alphaFunc`** `GT0`, `GE128` and `LT128` in the fragment shader (flag
   skulls, wings, feathers, Xaero's arms).
 - **`cull`**: front-sided by default, `none`/`disable`/`twosided`, and `back`

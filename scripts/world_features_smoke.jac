@@ -2,7 +2,8 @@
 looked at up close at a fixed moment: Q1 liquids, sky, animated textures and
 flickering light styles, Q2 flowing and translucent surfaces and the sky box
 (still on base1, turning on space and boss2), and Q3 shader stages (scrolling
-and pulsing stages, deforms, autosprites, environment maps). Saves
+and pulsing stages, deforms, autosprites, environment maps, and grates lit
+through depthFunc equal). Saves
 world_<map>_<feature>.png in the working directory, for comparing renderers
 by eye or pixel by pixel. QP_FEATURE_GAMES (for example
 "q3") limits the games.
@@ -71,6 +72,9 @@ def shows(level: Level, index: int, feature: str) -> bool {
     if feature == "chrome" {
         return any([stage.environment for stage in stages]);
     }
+    if feature == "equal" {
+        return any([stage.depth_equal for stage in stages]) and any([stage.alpha_test > 0 for stage in stages]);
+    }
     return False;
 }
 
@@ -107,7 +111,10 @@ with entry {
         ["q2", "boss2", "skybox"],
         ["q3", "q3dm1", "scroll,pulse,sprite,wave,chrome"],
         ["q3", "q3dm7", "scroll,pulse,sprite,wave,chrome"],
-        ["q3", "q3dm12", "scroll,pulse,sprite,wave"]
+        ["q3", "q3dm12", "scroll,pulse,sprite,wave"],
+        ["q3", "q3dm0", "equal"],
+        ["q3", "q3dm11", "equal"],
+        ["q3", "q3tourney2", "equal"]
     ];
     wanted = os.getenv("QP_FEATURE_GAMES", "");
     for scenario in cases {

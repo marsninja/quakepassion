@@ -54,6 +54,7 @@ import from .gpu {
     GL_FLOAT,
     GL_UNSIGNED_BYTE,
     view_projection,
+    depth_equal,
     pack_floats
 }
 import from .world_mesh {
@@ -133,6 +134,7 @@ obj StagePlan {
         source: int = 1,
         destination: int = 0,
         depth_write: bool = True,
+        depth_equal: bool = False,
         two_sided: bool = False,
         images: list[int] = [],
         light: bool = False,
@@ -175,6 +177,7 @@ obj QuakeRenderer {
         cloud_height_cached: float = -1.0,
         stage_state: str = "",
         stage_blended: bool = False,
+        stage_equal: bool = False,
         portal_image: int = 0,
         portal_normal: Vec3 = Vec3(),
         portal_dist: float = 0.0,
@@ -991,6 +994,7 @@ obj QuakeRenderer {
         self.put_int(program, "alphaMode", 0);
         self.put_int(program, "fogMode", 0);
         self.put_int(program, "lightmapStage", 0);
+        self.put_int(program, "alphaTest", 0);
         rlDisableDepthMask();
         rlDisableBackfaceCulling();
         self.cloud_mesh.bind();
@@ -1697,7 +1701,8 @@ obj QuakeRenderer {
             blended=blend[0] == 1,
             source=blend[1],
             destination=blend[2],
-            depth_write=stage.depth_write or blend[0] == 0,
+            depth_write=stage_writes_depth(stage),
+            depth_equal=stage.depth_equal,
             two_sided=level.bsp.textures[t].two_sided,
             images=self.stage_images[t][k],
             light=self.stage_images[t][k][0] < 0,
@@ -1802,17 +1807,20 @@ obj QuakeRenderer {
     }
 
     """The GL state a stage needs, as a key: blended or not, the blend
-    factors, depth writes and culling."""
+    factors, depth writes, the depth comparison and culling."""
     def stage_key(level: Level, t: int, k: int) -> str {
-        blend = stage_blend(level.surface_stages[t][k], k);
+        stage = level.surface_stages[t][k];
+        blend = stage_blend(stage, k);
         two_sided = level.bsp.textures[t].two_sided;
-        writes = level.surface_stages[t][k].depth_write or blend[0] == 0;
-        return str(blend[0]) + ":" + str(blend[1]) + ":" + str(blend[2]) + ":" + str(writes) + ":" + str(two_sided);
+        return str(blend[0]) + ":" + str(blend[1]) + ":" + str(blend[2]) + ":" + str(stage_writes_depth(stage)) + ":"
+            + str(stage.depth_equal) + ":" + str(two_sided);
     }
 
-    """Switch GL state only when it differs from the current one; returns
-    whether it switched (and so flushed raylib's batch)."""
-    def use_stage_state(key: str, blended: bool, source: int, destination: int, depth_write: bool, two_sided: bool) -> bool {
+    """Switch GL state only when it differs from the current one (tr_backend.c
+    GL_State); returns whether it switched (and so flushed raylib's batch)."""
+    def use_stage_state(
+        key: str, blended: bool, source: int, destination: int, depth_write: bool, two_sided: bool, equal: bool = False
+    ) -> bool {
         if key == self.stage_state {
             return False;
         }
@@ -1823,6 +1831,10 @@ obj QuakeRenderer {
         rlEnableDepthMask();
         rlEnableBackfaceCulling();
         self.stage_blended = False;
+        if equal != self.stage_equal {
+            depth_equal(equal);
+            self.stage_equal = equal;
+        }
         if blended {
             rlSetBlendFactors(i32(source), i32(destination), i32(32774));
             BeginBlendMode(i32(6));
@@ -1859,10 +1871,13 @@ obj QuakeRenderer {
 
     """One planned stage of one shader over its visible faces."""
     def draw_stage(program: GpuProgram, level: Level, plan: StagePlan, view: VisibleIndices) {
-        if self.use_stage_state(plan.key, plan.blended, plan.source, plan.destination, plan.depth_write, plan.two_sided) {
+        if self.use_stage_state(
+            plan.key, plan.blended, plan.source, plan.destination, plan.depth_write, plan.two_sided, plan.depth_equal
+        ) {
             self.resume(program);
         }
         stage = plan.stage;
+        self.put_int(program, "alphaTest", stage.alpha_test);
         images = plan.images;
         rlEnableTexture(u32(self.atlas if plan.light else (images[0] if len(images) == 1 else images[stage_frame(self.time, stage.frequency, len(images))])));
         self.put_vec4s(program, "tint", plan.tint if plan.tint else stage_tint(stage, self.time));
@@ -2258,6 +2273,12 @@ def fog_density(s: float, t: float) -> float {
     return math.pow(float(int(s * 255.0)) / 255.0, 0.5);
 }
 
+
+"""Whether a stage writes depth (tr_shader.c ParseStage's depthMaskBits): one
+that does not blend (no blendFunc, or GL_ONE GL_ZERO) or says depthWrite."""
+def stage_writes_depth(stage: ModelStage) -> bool {
+    return stage.depth_write or stage.blend == "opaque";
+}
 
 """A stage's blending as [blended, source factor, destination factor]. The
 first stage of an opaque shader writes without blending."""

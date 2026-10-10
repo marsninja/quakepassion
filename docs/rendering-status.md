@@ -39,7 +39,8 @@ and builds the level graph.
   Brush models whose head is a leaf (negative index) load.
 - **Quake III (BSP46, `engine/formats/q3/bsp.jac`).** JPG and TGA images
   decoded by raylib (built with both decoders by `scripts/stage_raylib.sh`;
-  the prebuilt raylib has neither); 128×128 RGB lightmaps with the overbright
+  the prebuilt raylib has neither, nor the `qpDepthFunc` call the script
+  adds); 128×128 RGB lightmaps with the overbright
   shift; planar surfaces, triangle soups and quadratic patches; the light grid for
   models; cluster PVS; fog volumes; flare surfaces (`MST_FLARE`: a point, a
   colour and a normal, no geometry).
@@ -136,8 +137,15 @@ and builds the level graph.
 - **Q3 surfaces**: single-pass lightmap or vertex light with alphaFunc and
   dynamic lights; multi-stage shaders draw stage by stage with tcGen, tcMods,
   rgbGen/alphaGen, deformVertexes and the translucent stages' fog adjustment in
-  the vertex shader. Each stage's GL state and time-independent uniforms are
-  planned at level load.
+  the vertex shader, and the stage's alphaFunc in the fragment shader. Each
+  stage's GL state (`GL_State`: blend factors, depth writes, the depth
+  comparison, culling) and time-independent uniforms are planned at level
+  load. A stage that does not blend writes depth, whichever stage it is
+  (`ParseStage`); `depthFunc equal` draws only where the depth buffer already
+  holds the surface, so a grate's lightmap stage lights the bars its
+  alpha-tested stage drew and leaves the holes alone. rlgl has no call for the
+  depth comparison: `scripts/stage_raylib.sh` adds one (`qpDepthFunc`) to the
+  raylib it builds.
 - **Q3 fog pass** (`RB_FogPass`) and **cloud layers** (the sky dome is a vertex
   chunk; the stage shader applies the layer's tcMods). Two-sided fog surfaces
   seen from inside fade with distance as `RB_FogPass` does.
@@ -309,8 +317,8 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   on q3dm12 and q3dm7 with `r_flares` off and on;
   `scripts/world_features_smoke.jac` captures each kind of animated or special
   world surface up close at a fixed moment (liquids, skies and the sky box,
-  light styles, Q3 stages and deforms), for comparing two builds pixel by
-  pixel.
+  light styles, Q3 stages and deforms, grates lit through `depthFunc equal`),
+  for comparing two builds pixel by pixel.
 
 ## Limitations
 

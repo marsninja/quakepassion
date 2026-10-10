@@ -66,12 +66,18 @@ import from vendor.raylib {
     ) -> None;  def rlUnloadTexture(id: u32) -> None;  def rlTextureParameters(
         id: u32, param: i32, value: i32
     ) -> None;
+    # Added to the staged raylib build (scripts/stage_raylib.sh): glDepthFunc.
+    def qpDepthFunc(func: i32) -> None;
 }
 
 # rlgl data types (RL_FLOAT, RL_UNSIGNED_BYTE) for vertex attributes.
 glob GL_FLOAT: int = 5126,
      GL_UNSIGNED_BYTE: int = 5121,
      GL_UNSIGNED_SHORT: int = 5123;
+
+# Depth comparisons: rlgl's own, and Quake III's depthFunc equal.
+glob GL_LEQUAL: int = 515,
+     GL_EQUAL: int = 514;
 
 # rlgl uniform types (rlShaderUniformDataType).
 glob UNIFORM_FLOAT: int = 0,
@@ -341,6 +347,15 @@ obj GpuProgram {
             self.id = 0;
         }
     }
+}
+
+"""tr_backend.c GL_State's depth function: pass only fragments at exactly the
+depth already in the buffer (a stage's depthFunc equal), or rlgl's own
+less-or-equal. raylib's batch is flushed first so its queued draws keep the
+comparison they were queued under."""
+def depth_equal(on: bool) {
+    rlDrawRenderBatchActive();
+    qpDepthFunc(i32(GL_EQUAL if on else GL_LEQUAL));
 }
 
 """The current view-projection matrix (rlgl's modelview times projection),
