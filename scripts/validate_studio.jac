@@ -106,7 +106,7 @@ def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     steps = studio_steps(ran.stdout);
     for name in [
         "opened", "boxed", "cleared", "picked", "resized", "moved", "painted", "tied", "untied", "retied",
-        "copied", "saved", "returned"
+        "copied", "ramp", "pillar", "clipped", "turned", "saved", "returned"
     ] {
         assert name in steps and steps[name] , f"Step {name} printed nothing: {output / 'scene.log'}";
     }
@@ -132,17 +132,30 @@ def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert "owner=worldspawn" in brushes(steps["untied"])[0] and "entities=2" in steps["untied"][0];
     assert "owner=func_door" in brushes(steps["retied"])[0] and "entities=3" in steps["retied"][0];
     assert "brushes=4" in tally(steps["copied"]) and len(brushes(steps["copied"])) == 1 , str(steps["copied"]);
+    # A ramp 48 high and an eight-sided pillar 128 high, both on the floor.
+    ramp = brush_box(brushes(steps["ramp"])[0]);
+    assert ramp[0][2] == 0 and ramp[1][2] == 48 and ramp[1][1] - ramp[0][1] == 128 , str(ramp);
+    pillar = brush_box(brushes(steps["pillar"])[0]);
+    assert pillar[0][2] == 0 and pillar[1][2] == 128 and "brushes=6" in tally(steps["pillar"]) , str(pillar);
+    # Cut at half height: two brushes selected, one below 64 and one above.
+    halves = sorted([brush_box(line) for line in brushes(steps["clipped"])]);
+    assert len(halves) == 2 and "brushes=7" in tally(steps["clipped"]) , str(steps["clipped"]);
+    assert sorted([half[0][2] for half in halves]) == [0, 64] and sorted([half[1][2] for half in halves]) == [64, 128];
+    # R turned both a quarter about their middle: still two, same heights.
+    turned = sorted([brush_box(line) for line in brushes(steps["turned"])]);
+    assert len(turned) == 2 and sorted([half[1][2] for half in turned]) == [64, 128] , str(turned);
+    assert "undo=" in steps["turned"][0] and steps["turned"][0] != steps["clipped"][0];
     assert "dirty=0" in steps["saved"][0];
     # Every geometry edit was followed by a rebuild.
     built = tally(steps["returned"]);
     assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
-    assert "brushes=4" in built and "entities=3" in steps["returned"][0];
+    assert "brushes=7" in built and "entities=3" in steps["returned"][0];
 
-    assert saved_text.startswith("// Format: Valve") and saved_text.count("// brush") == 4;
+    assert saved_text.startswith("// Format: Valve") and saved_text.count("// brush") == 7;
     assert "\"classname\" \"func_door\"" in saved_text and " brick [" in saved_text;
     reopened = studio_steps(again.stdout)["reopened"];
     assert reopened[0].startswith("passion/studio:yard entities=3") , reopened[0];
-    assert "brushes=4" in tally(reopened) and len(brushes(reopened)) == 4 , str(reopened);
+    assert "brushes=7" in tally(reopened) and len(brushes(reopened)) == 7 , str(reopened);
     # The door's brush came back where it was left, with its material.
     kept = [line for line in brushes(reopened) if "owner=func_door" in line];
     assert len(kept) == 1 and brush_box(kept[0]) == moved and "material=brick" in kept[0] , str(kept);
@@ -153,7 +166,7 @@ def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
         shutil.copyfile(source, output / f"scene_{shot}.png");
         source.unlink();
     }
-    print(f"SCENE PASS: {len(steps) - 1} steps, 4 brushes, saved as a map and reopened");
+    print(f"SCENE PASS: {len(steps) - 1} steps, 7 brushes, saved as a map and reopened");
 }
 
 def main() {

@@ -322,3 +322,164 @@ def brush_volume(sides: list[Side]) -> float {
     }
     return total;
 }
+
+"""A copy of a side with another plane (its points go: they were the old
+plane's)."""
+def side_on(side: Side, plane: Plane3) -> Side {
+    return Side(
+        plane=plane,
+        material=side.material,
+        mapping=side.mapping,
+        contents=side.contents,
+        flags=side.flags,
+        value=side.value
+    );
+}
+
+"""Cut a brush in two along a plane: the part behind it and the part in
+front, each closed with a new side that takes `material` (or the material of
+the brush's first side). A part the plane leaves nothing of is empty."""
+def clip_sides(sides: list[Side], plane: Plane3, material: str = "") -> tuple[list[Side], list[Side]] {
+    if not sides {
+        return ([], []);
+    }
+    skin = material if material else sides[0].material;
+    behind = False;
+    ahead = False;
+    for outline in brush_windings(sides) {
+        for point in outline {
+            reach = plane.side(point);
+            if reach < -BRUSH_EPSILON {
+                behind = True;
+            } elif reach > BRUSH_EPSILON {
+                ahead = True;
+            }
+        }
+    }
+    back: list[Side] = [];
+    front: list[Side] = [];
+    if behind {
+        back = list(sides);
+        if ahead {
+            back.append(
+                Side(plane=plane, material=skin, mapping=classic_mapping(plane.normal, 0.0, 0.0, 0.0, 1.0, 1.0))
+            );
+        }
+    }
+    if ahead {
+        front = list(sides);
+        if behind {
+            turned = plane.flipped();
+            front.append(
+                Side(plane=turned, material=skin, mapping=classic_mapping(turned.normal, 0.0, 0.0, 0.0, 1.0, 1.0))
+            );
+        }
+    }
+    return (back, front);
+}
+
+"""A vector turned about the vertical axis by an angle in radians."""
+def turned_z(vector: Vec3, angle: float) -> Vec3 {
+    cosine = math.cos(angle);
+    sine = math.sin(angle);
+    return Vec3(x=vector.x * cosine - vector.y * sine, y=vector.x * sine + vector.y * cosine, z=vector.z);
+}
+
+"""A component within a rounding error of a whole number, made whole: a
+quarter turn leaves a box's planes exactly on its axes."""
+def:priv settled(value: float) -> float {
+    nearest = float(round(value));
+    return nearest if abs(value - nearest) < 0.0000001 else value;
+}
+
+def:priv settled_vector(vector: Vec3) -> Vec3 {
+    return Vec3(x=settled(vector.x), y=settled(vector.y), z=settled(vector.z));
+}
+
+"""A side turned about the vertical line through `pivot`, its material
+turning with it."""
+def side_turned(side: Side, pivot: Vec3, angle: float) -> Side {
+    normal = settled_vector(turned_z(side.plane.normal, angle));
+    # A point of the old plane, carried round the pivot.
+    carried = pivot.add(turned_z(side.plane.normal.scale(side.plane.dist).sub(pivot), angle));
+    mapping = side.mapping;
+    s_axis = settled_vector(turned_z(mapping.s_axis, angle));
+    t_axis = settled_vector(turned_z(mapping.t_axis, angle));
+    return Side(
+        plane=Plane3(normal=normal, dist=settled(normal.dot(carried))),
+        material=side.material,
+        mapping=Mapping(
+            s_axis=s_axis,
+            t_axis=t_axis,
+            # What the pivot's own texel would otherwise slip by.
+            s_shift=mapping.s_shift - (pivot.dot(s_axis) - pivot.dot(mapping.s_axis)) / mapping.s_scale,
+            t_shift=mapping.t_shift - (pivot.dot(t_axis) - pivot.dot(mapping.t_axis)) / mapping.t_scale,
+            s_scale=mapping.s_scale,
+            t_scale=mapping.t_scale,
+            rotation=mapping.rotation
+        ),
+        contents=side.contents,
+        flags=side.flags,
+        value=side.value
+    );
+}
+
+"""An upright prism with `count` sides inscribed in a box: a cylinder when
+there are many."""
+def cylinder_sides(low: Vec3, high: Vec3, count: int = 12, material: str = "") -> list[Side] {
+    count = max(3, min(64, count));
+    middle = low.add(high).scale(0.5);
+    across = (high.x - low.x) * 0.5;
+    deep = (high.y - low.y) * 0.5;
+    sides: list[Side] = [];
+    for (normal, dist) in [(Vec3(z=1.0), high.z), (Vec3(z=-1.0), -low.z)] {
+        sides.append(
+            Side(
+                plane=Plane3(normal=normal, dist=dist),
+                material=material,
+                mapping=classic_mapping(normal, 0.0, 0.0, 0.0, 1.0, 1.0)
+            )
+        );
+    }
+    for i in range(count) {
+        # The wall through two neighbouring points of the ellipse.
+        first = 2.0 * math.pi * float(i) / float(count);
+        second = 2.0 * math.pi * float(i + 1) / float(count);
+        a = Vec3(x=middle.x + across * math.cos(first), y=middle.y + deep * math.sin(first), z=low.z);
+        b = Vec3(x=middle.x + across * math.cos(second), y=middle.y + deep * math.sin(second), z=low.z);
+        along = b.sub(a);
+        normal = Vec3(x=along.y, y=-along.x).normalized();
+        sides.append(
+            Side(
+                plane=Plane3(normal=normal, dist=normal.dot(a)),
+                material=material,
+                mapping=classic_mapping(normal, 0.0, 0.0, 0.0, 1.0, 1.0)
+            )
+        );
+    }
+    return sides;
+}
+
+"""A ramp filling a box: full height along its far side (+y), nothing along
+its near one."""
+def wedge_sides(low: Vec3, high: Vec3, material: str = "") -> list[Side] {
+    slope = Vec3(y=-(high.z - low.z), z=high.y - low.y).normalized();
+    faces = [
+        (Vec3(x=1.0), high.x),
+        (Vec3(x=-1.0), -low.x),
+        (Vec3(y=1.0), high.y),
+        (Vec3(z=-1.0), -low.z),
+        (slope, slope.dot(Vec3(x=low.x, y=low.y, z=low.z)))
+    ];
+    sides: list[Side] = [];
+    for (normal, dist) in faces {
+        sides.append(
+            Side(
+                plane=Plane3(normal=normal, dist=dist),
+                material=material,
+                mapping=classic_mapping(normal, 0.0, 0.0, 0.0, 1.0, 1.0)
+            )
+        );
+    }
+    return sides;
+}

@@ -41,6 +41,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   resting on what is beneath it. A click selects a brush; dragging it moves
   it as seen; with one brush selected, the squares on its sides push that
   side (`ed_push <side> <distance>`).
+- The Brush menu also adds a cylinder (`ed_cylinder [w d h sides]`) and a
+  wedge (`ed_wedge [w d h]`), turns the selection a quarter about its middle
+  (R, `ed_rotate [degrees]`; materials turn with their faces), and
+  `ed_clip <x|y|z> <coordinate> [back|front|both]` cuts the selected brushes
+  along a plane.
 - The inspector shows a brush's material (`ed_material <name>`), size and
   owner, and hands the selected brushes to a new entity (`ed_tie
   func_door`) or back to the world.
@@ -135,16 +140,18 @@ editor/impl/                 the workbench's scenes and brushes
   scripted clicks, drags, typing and shortcuts, printing the document after
   each step. `scripts/studio/shell_session.cfg` edits e1m1's entities (15
   steps, then a second run confirms the saved entities load);
-  `scripts/studio/scene_session.cfg` builds a scene of brushes (13 steps:
+  `scripts/studio/scene_session.cfg` builds a scene of brushes (17 steps:
   box, pick, resize by a handle, drag, material, tie to a door, undo, redo,
-  duplicate, save, play, return; then a second run reopens the saved map).
+  duplicate, wedge, cylinder, clip, turn, save, play, return; then a second
+  run reopens the saved map).
 
 ## What remains
 
-Milestones 1 (the shell) and most of 2 (blockout) of #73 are what this page
-describes. Of milestone 2: brushes are boxes until cut (no clipper, wedges or
-cylinders yet), rotation and scaling are missing, the materials list has no
-thumbnails, a shipped map cannot take new brushes, and
+Milestones 1 (the shell) and 2 (blockout) of #73 are what this page
+describes. Left over from milestone 2: the clipper is a command (no plane
+drawn in the view), there is no scaling or free rotation about other axes,
+the materials list has no thumbnails, a shipped map cannot take new brushes,
+and
 Quake III's `brushDef` and `patchDef2` blocks are skipped on open. Not yet
 built: multiple views and display modes, texturing tools, the entity class
 registry behind typed inspector fields, the logic graph panel, prefabs, the

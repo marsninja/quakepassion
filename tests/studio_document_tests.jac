@@ -347,3 +347,56 @@ test "brushes are tied to a new entity and handed back to the world" {
     # Already the world's: nothing to do.
     assert scene.tie_selection("") is None;
 }
+
+test "clipping keeps a side or both, and a brush left with nothing goes" {
+    scene = built();
+    pillar = scene.solids()[1];
+    scene.select_solid(pillar);
+    # Across the pillar at half height.
+    cut = Plane3(normal=Vec3(z=1.0), dist=48.0);
+    assert scene.clip_selection(cut, "both");
+    halves = scene.selected_solids();
+    assert len(halves) == 2 and len(scene.solids()) == 4;
+    assert close_to(brush_volume(halves[0].sides) + brush_volume(halves[1].sides), 32.0 * 32.0 * 96.0);
+    lower = pillar.bounds();
+    assert lower is not None and close_to(lower[1].z, 48.0);
+    assert scene.undo() == "Clip" and len(scene.solids()) == 3;
+    whole = pillar.bounds();
+    assert whole is not None and close_to(whole[1].z, 96.0);
+    scene.select_solid(pillar);
+    assert scene.clip_selection(cut, "front") and len(scene.solids()) == 3;
+    upper = pillar.bounds();
+    assert upper is not None and close_to(upper[0].z, 48.0) and close_to(upper[1].z, 96.0);
+    # Keeping what is behind a plane the brush is wholly in front of removes it.
+    assert scene.clip_selection(Plane3(normal=Vec3(z=1.0), dist=16.0), "back");
+    assert len(scene.solids()) == 2 and scene.selected_solids() == [];
+    scene.select_solid(scene.solids()[0]);
+    # A plane that misses changes nothing.
+    assert not scene.clip_selection(Plane3(normal=Vec3(z=1.0), dist=500.0), "both");
+}
+
+test "turning swings the selection round its middle and turns what faces" {
+    scene = built();
+    door = scene.items()[1];
+    slab = scene.solids_of(door)[0];
+    start = scene.items()[2];
+    scene.select_solid(slab);
+    assert scene.turn_selection(90.0);
+    box = slab.bounds();
+    # 64 by 16 about (96, 0) becomes 16 by 64 about it.
+    assert box is not None and close_to(box[0].x, 88.0) and close_to(box[1].x, 104.0);
+    assert close_to(box[0].y, -32.0) and close_to(box[1].y, 32.0) and close_to(box[1].z, 96.0);
+    assert scene.undo() == "Turn";
+    scene.select(start);
+    scene.select_solid(slab, add=True);
+    middle = scene.selection_middle();
+    assert middle is not None and close_to(middle.x, 64.0) and close_to(middle.y, -44.0);
+    assert scene.turn_selection(180.0);
+    # The pivot snaps to the grid at (64, -48): the start swings to the far side and faces back.
+    assert start.fields["origin"] == "128 0 24";
+    scene.set_field("angle", "90");
+    scene.select(start);
+    assert scene.turn_selection(-90.0) and start.fields["angle"] == "0";
+    scene.clear_selection();
+    assert scene.selection_middle() is None and not scene.turn_selection(90.0);
+}

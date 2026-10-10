@@ -15,7 +15,12 @@ import from editor.geometry.brush {
     winding_area,
     brush_volume,
     classic_axes,
-    classic_mapping
+    classic_mapping,
+    clip_sides,
+    side_turned,
+    turned_z,
+    cylinder_sides,
+    wedge_sides
 }
 
 def close(a: float, b: float) -> bool {
@@ -100,4 +105,83 @@ test "the classic mapping projects along the nearest axis and turns with its rot
     turned = classic_mapping(Vec3(z=1.0), 0.0, 0.0, 90.0, 1.0, 1.0);
     assert close(turned.s_axis.y, 1.0) and close(turned.t_axis.x, 1.0) and close(turned.rotation, 90.0);
     assert close(classic_mapping(Vec3(z=1.0), 0.0, 0.0, 0.0, 0.0, 0.0).s_scale, 1.0);
+}
+
+test "a clip plane cuts a brush into two that add up to it" {
+    sides = box_sides(Vec3(), Vec3(x=64.0, y=64.0, z=64.0), "wall");
+    parts = clip_sides(sides, Plane3(normal=Vec3(x=1.0), dist=16.0), "cut");
+    back = parts[0];
+    front = parts[1];
+    assert len(back) == 7 and len(front) == 7 and back[6].material == "cut" and front[6].material == "cut";
+    assert close(brush_volume(back), 16.0 * 64.0 * 64.0) and close(brush_volume(front), 48.0 * 64.0 * 64.0);
+    assert brush_holds(back, Vec3(x=8.0, y=8.0, z=8.0)) and not brush_holds(back, Vec3(x=32.0, y=8.0, z=8.0));
+    assert brush_holds(front, Vec3(x=32.0, y=8.0, z=8.0)) and not brush_holds(front, Vec3(x=8.0, y=8.0, z=8.0));
+    # A slanted cut, with the new sides taking the brush's material.
+    slant = Vec3(x=1.0, z=1.0).normalized();
+    halves = clip_sides(sides, Plane3(normal=slant, dist=slant.dot(Vec3(x=32.0, z=32.0))));
+    assert close(brush_volume(halves[0]) + brush_volume(halves[1]), 64.0 ** 3);
+    assert close(brush_volume(halves[0]), 64.0 ** 3 / 2.0) and halves[0][6].material == "wall";
+}
+
+test "a clip plane that misses leaves the brush whole on one side" {
+    sides = box_sides(Vec3(), Vec3(x=64.0, y=64.0, z=64.0));
+    past = clip_sides(sides, Plane3(normal=Vec3(x=1.0), dist=200.0));
+    assert len(past[0]) == 6 and len(past[1]) == 0;
+    short = clip_sides(sides, Plane3(normal=Vec3(x=1.0), dist=-8.0));
+    assert len(short[0]) == 0 and len(short[1]) == 6;
+    # A plane lying on a face cuts nothing off.
+    flush = clip_sides(sides, Plane3(normal=Vec3(z=1.0), dist=64.0));
+    assert len(flush[0]) == 6 and len(flush[1]) == 0;
+    empty = clip_sides([], Plane3(normal=Vec3(x=1.0), dist=0.0));
+    assert len(empty[0]) == 0 and len(empty[1]) == 0;
+}
+
+test "a quarter turn carries a box round its pivot onto exact planes" {
+    sides = box_sides(Vec3(x=32.0, y=0.0, z=0.0), Vec3(x=96.0, y=16.0, z=64.0), "door");
+    spun = [side_turned(side, Vec3(), math.pi * 0.5) for side in sides];
+    bounds = windings_bounds(brush_windings(spun));
+    assert bounds is not None;
+    assert close(bounds[0].x, -16.0) and close(bounds[1].x, 0.0) and close(bounds[0].y, 32.0) and close(bounds[1].y, 96.0);
+    assert close(bounds[0].z, 0.0) and close(bounds[1].z, 64.0) and close(brush_volume(spun), 64.0 * 16.0 * 64.0);
+    for side in spun {
+        parts = [side.plane.normal.x, side.plane.normal.y, side.plane.normal.z];
+        assert sorted([abs(part) for part in parts]) == [0.0, 0.0, 1.0];
+    }
+    # Four quarter turns come back to the start.
+    round_trip = sides;
+    for _ in range(4) {
+        round_trip = [side_turned(side, Vec3(x=10.0, y=-20.0), math.pi * 0.5) for side in round_trip];
+    }
+    home = windings_bounds(brush_windings(round_trip));
+    assert home is not None and close(home[0].x, 32.0) and close(home[1].y, 16.0);
+    assert close(turned_z(Vec3(x=1.0), math.pi * 0.5).y, 1.0);
+}
+
+test "a material turns with its face" {
+    side = box_sides(Vec3(), Vec3(x=64.0, y=64.0, z=64.0), "floor")[4];
+    pivot = Vec3(x=32.0, y=32.0);
+    spun = side_turned(side, pivot, 0.6);
+    for point in [Vec3(x=0.0, y=0.0, z=64.0), Vec3(x=50.0, y=10.0, z=64.0), pivot] {
+        carried = pivot.add(turned_z(point.sub(pivot), 0.6));
+        before = side.mapping.texel(point);
+        after = spun.mapping.texel(carried);
+        assert close(before[0], after[0]) and close(before[1], after[1]);
+    }
+}
+
+test "a cylinder is a prism inside its box and a wedge half of it" {
+    low = Vec3(x=-32.0, y=-32.0, z=0.0);
+    high = Vec3(x=32.0, y=32.0, z=128.0);
+    square = cylinder_sides(low, high, 4, "pipe");
+    assert len(square) == 6 and close(brush_volume(square), 64.0 * 64.0 * 128.0 / 2.0);
+    round_one = cylinder_sides(low, high, 32, "pipe");
+    assert len(round_one) == 34 and round_one[5].material == "pipe";
+    # A 32-gon is within one percent of the circle's area.
+    assert abs(brush_volume(round_one) - math.pi * 32.0 * 32.0 * 128.0) < 0.01 * math.pi * 32.0 * 32.0 * 128.0;
+    bounds = windings_bounds(brush_windings(round_one));
+    assert bounds is not None and close(bounds[1].x, 32.0) and close(bounds[0].z, 0.0) and close(bounds[1].z, 128.0);
+    assert len(cylinder_sides(low, high, 1)) == 5;
+    ramp = wedge_sides(Vec3(), Vec3(x=64.0, y=128.0, z=32.0), "ramp");
+    assert len(ramp) == 5 and close(brush_volume(ramp), 64.0 * 128.0 * 32.0 / 2.0);
+    assert brush_holds(ramp, Vec3(x=32.0, y=120.0, z=24.0)) and not brush_holds(ramp, Vec3(x=32.0, y=8.0, z=24.0));
 }

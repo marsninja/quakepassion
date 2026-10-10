@@ -7,7 +7,17 @@ journal keeps those steps. Nothing here knows about the window: the same
 edits run from the interface, from the console and from tests."""
 import from engine.formats.bsp { MapEntity, entity_text }
 import from engine.math.vec3 { Vec3 }
-import from ..geometry.brush { Side, Plane3, Mapping, brush_windings, windings_bounds }
+import from ..geometry.brush {
+    Side,
+    Plane3,
+    Mapping,
+    brush_windings,
+    windings_bounds,
+    clip_sides,
+    side_turned,
+    turned_z
+}
+import math;
 import from ..formats.map { MapItem, MapFile }
 
 edge Holds: Scene --> Item {}
@@ -441,6 +451,117 @@ walker Paint {
     }
 }
 
+"""Cut every selected brush along a plane, keeping what is behind it
+("back"), in front of it ("front") or both as two brushes. A brush wholly on
+the side not kept goes."""
+walker Clip {
+    has plane: Plane3,
+        keep: str,
+        step: Step,
+        material: str = "",
+        scene: Scene | None = None,
+        made: list[Solid] = [];
+
+    can start with Scene entry {
+        self.scene = here;
+        visit [here->:Selected:->];
+    }
+
+    can cut with Solid entry {
+        scene = self.scene;
+        if scene is None or not here.held {
+            return;
+        }
+        parts = clip_sides(here.sides, self.plane, self.material);
+        back = parts[0];
+        front = parts[1];
+        kept = front if self.keep == "front" else back;
+        if not kept {
+            if self.keep != "both" {
+                gone = SolidHold(solid=here, held=False);
+                gone.redo();
+                self.step.changes.append(gone);
+            }
+            return;
+        }
+        if not back or not front {
+            # The plane misses it and it is on the side kept.
+            return;
+        }
+        change = SidesChange(solid=here, before=here.sides, after=kept);
+        change.redo();
+        self.step.changes.append(change);
+        if self.keep == "both" {
+            owners = [here<-:Owns:<-][?:Item];
+            if owners {
+                other = scene.add_solid(owners[0], front);
+                self.step.changes.append(SolidHold(solid=other, held=True));
+                self.made.append(other);
+            }
+        }
+    }
+}
+
+"""Turn the selection about the vertical line through a pivot: brushes turn
+with their materials, and point entities swing round it and face the new
+way."""
+walker Turn {
+    has pivot: Vec3,
+        angle: float,
+        step: Step,
+        turned: list[Solid] = [];
+
+    can start with Scene entry {
+        visit [here->:Selected:->];
+    }
+
+    can swing with Item entry {
+        at = here.origin();
+        if at is None {
+            visit [here->:Owns:->];
+            return;
+        }
+        moved = self.pivot.add(turned_z(at.sub(self.pivot), self.angle));
+        change = FieldChange(
+            item=here, key="origin", before=here.fields.get("origin"), after=write_vector(moved)
+        );
+        change.redo();
+        self.step.changes.append(change);
+        facing = here.fields.get("angle");
+        if facing is not None {
+            try {
+                # Up (-1) and down (-2) are not directions to turn.
+                if float(facing) >= 0.0 {
+                    face = FieldChange(
+                        item=here,
+                        key="angle",
+                        before=facing,
+                        after=field_number((float(facing) + math.degrees(self.angle)) % 360.0)
+                    );
+                    face.redo();
+                    self.step.changes.append(face);
+                }
+            } except ValueError {
+                return;
+            }
+        }
+    }
+
+    can spin with Solid entry {
+        if not here.held or here in self.turned {
+            return;
+        }
+        self.turned.append(here);
+        change = SidesChange(
+            solid=here,
+            before=here.sides,
+            after=[side_turned(side, self.pivot, self.angle) for side in here.sides]
+        );
+        change.redo();
+        self.step.changes.append(change);
+    }
+}
+
 walker FindSolid {
     has serial: int,
         found: Solid | None = None;
@@ -606,6 +727,75 @@ node Scene {
         after = list(solid.sides);
         after[index] = side_moved(solid.sides[index], solid.sides[index].plane.normal.scale(distance));
         return self.reshape(solid, after, "Resize");
+    }
+
+    """Cut the selected brushes along a plane, keeping "back", "front" or
+    "both"; with both, the new halves join the selection."""
+    def clip_selection(plane: Plane3, keep: str = "both", material: str = "") -> bool {
+        step = Step(label="Clip");
+        cutter = self spawn Clip(plane=plane, keep=keep, step=step, material=material);
+        if not self.commit(step) {
+            return False;
+        }
+        for half in cutter.made {
+            self +>:Selected:+> half;
+        }
+        self.picks += 1;
+        return True;
+    }
+
+    """The middle of the selection: of its brushes' boxes and its entities'
+    origins. None when nothing selected is anywhere."""
+    def selection_middle -> Vec3 | None {
+        low = Vec3(x=1000000.0, y=1000000.0, z=1000000.0);
+        high = Vec3(x=-1000000.0, y=-1000000.0, z=-1000000.0);
+        seen = False;
+        spots: list[Vec3] = [];
+        for solid in self.selected_solids() {
+            box = solid.bounds();
+            if box is not None {
+                spots.append(box[0]);
+                spots.append(box[1]);
+            }
+        }
+        for item in self.selection() {
+            at = item.origin();
+            if at is not None {
+                spots.append(at);
+            } else {
+                for solid in self.solids_of(item) {
+                    box = solid.bounds();
+                    if box is not None {
+                        spots.append(box[0]);
+                        spots.append(box[1]);
+                    }
+                }
+            }
+        }
+        for spot in spots {
+            low = Vec3(x=min(low.x, spot.x), y=min(low.y, spot.y), z=min(low.z, spot.z));
+            high = Vec3(x=max(high.x, spot.x), y=max(high.y, spot.y), z=max(high.z, spot.z));
+            seen = True;
+        }
+        return low.add(high).scale(0.5) if seen else None;
+    }
+
+    """Turn the selection by an angle in degrees about the vertical line
+    through its middle (snapped to `grid`, so quarter turns stay on it)."""
+    def turn_selection(degrees: float, grid: float = 8.0) -> bool {
+        middle = self.selection_middle();
+        if middle is None or degrees == 0.0 {
+            return False;
+        }
+        step_size = grid if grid > 0.0 else 1.0;
+        pivot = Vec3(
+            x=float(round(middle.x / step_size)) * step_size,
+            y=float(round(middle.y / step_size)) * step_size,
+            z=middle.z
+        );
+        step = Step(label="Turn");
+        self spawn Turn(pivot=pivot, angle=math.radians(degrees), step=step);
+        return self.commit(step);
     }
 
     """Hand the selected brushes to an entity: a new one of `classname`, or

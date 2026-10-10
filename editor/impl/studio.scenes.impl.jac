@@ -381,7 +381,7 @@ impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
     self.resize_by = float(round(gone / step)) * step;
 }
 
-impl Studio.add_box(scene: Scene, args: list[str]) {
+impl Studio.add_shape(scene: Scene, args: list[str], shape: str) {
     app = self.app;
     if app is None {
         return;
@@ -392,7 +392,7 @@ impl Studio.add_box(scene: Scene, args: list[str]) {
             try {
                 sizes[i] = max(1.0, float(args[i + 1]));
             } except ValueError {
-                self.say("ed_box [width depth height]");
+                self.say("ed_" + shape + " [width depth height]");
                 return;
             }
         }
@@ -420,11 +420,22 @@ impl Studio.add_box(scene: Scene, args: list[str]) {
         y=float(round((middle.y - half.y) / snap)) * snap,
         z=float(round((middle.z - half.z) / snap)) * snap
     );
-    made = scene.create_solid(box_sides(low, low.add(Vec3(x=sizes[0], y=sizes[1], z=sizes[2])), self.material));
+    high = low.add(Vec3(x=sizes[0], y=sizes[1], z=sizes[2]));
+    sides = box_sides(low, high, self.material);
+    if shape == "cylinder" {
+        count = 12;
+        if len(args) > 4 and args[4].isdigit() {
+            count = int(args[4]);
+        }
+        sides = cylinder_sides(low, high, count, self.material);
+    } elif shape == "wedge" {
+        sides = wedge_sides(low, high, self.material);
+    }
+    made = scene.create_solid(sides);
     if made is None {
-        self.say("That box encloses nothing");
+        self.say("That " + shape + " encloses nothing");
     } else {
-        self.say("Added a box");
+        self.say("Added a " + shape);
     }
 }
 
@@ -539,8 +550,43 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         }
         return True;
     }
-    if name == "ed_box" {
-        self.add_box(scene, args);
+    if name == "ed_box" or name == "ed_cylinder" or name == "ed_wedge" {
+        self.add_shape(scene, args, name[3:]);
+        return True;
+    }
+    if name == "ed_clip" {
+        if len(args) < 3 or args[1] not in ["x", "y", "z"] {
+            self.say("ed_clip <x|y|z> <coordinate> [back|front|both]");
+            return True;
+        }
+        keep = args[3] if len(args) > 3 and args[3] in ["back", "front", "both"] else "both";
+        try {
+            at = float(args[2]);
+        } except ValueError {
+            self.say("ed_clip <x|y|z> <coordinate> [back|front|both]");
+            return True;
+        }
+        normal = Vec3(x=1.0) if args[1] == "x" else (Vec3(y=1.0) if args[1] == "y" else Vec3(z=1.0));
+        if not scene.selected_solids() {
+            self.say("Select the brushes to cut");
+        } elif not scene.clip_selection(Plane3(normal=normal, dist=at), keep, self.material) {
+            self.say("That plane cuts nothing selected");
+        }
+        return True;
+    }
+    if name == "ed_rotate" {
+        degrees = 90.0;
+        if len(args) > 1 {
+            try {
+                degrees = float(args[1]);
+            } except ValueError {
+                self.say("ed_rotate [degrees]");
+                return True;
+            }
+        }
+        if not scene.turn_selection(degrees, self.grid) {
+            self.say("Nothing to turn");
+        }
         return True;
     }
     if name == "ed_matfilter" {

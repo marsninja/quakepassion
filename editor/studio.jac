@@ -48,7 +48,7 @@ import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials
 import from .assets.materials { ArchiveMaterials }
 import from engine.core.menu { game_directory }
 import from .formats.map { read_map, write_map }
-import from .geometry.brush { box_sides, ray_enters_brush }
+import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
 
 """The studio's commands: name, usage, description."""
 glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
@@ -76,6 +76,10 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_open", "ed_open <file.map>", "open a map file as a scene"),
     ("ed_save_as", "ed_save_as <file.map>", "save the scene to another file"),
     ("ed_box", "ed_box [width depth height]", "add a box brush where the camera looks"),
+    ("ed_cylinder", "ed_cylinder [width depth height sides]", "add an upright prism of that many sides"),
+    ("ed_wedge", "ed_wedge [width depth height]", "add a ramp rising toward +y"),
+    ("ed_clip", "ed_clip <x|y|z> <coordinate> [back|front|both]", "cut the selected brushes along a plane"),
+    ("ed_rotate", "ed_rotate [degrees]", "turn the selection about its middle (90 without a number)"),
     ("ed_material", "ed_material <name> [side]", "set the material of the selected brushes, and of new ones"),
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
@@ -451,7 +455,7 @@ obj Studio(Workbench) {
         stage = Stage(canvas=self.canvas);
         top = Box();
         menu = MenuBar(
-            titles=["File", "Edit", "View", "Play"],
+            titles=["File", "Edit", "View", "Brush", "Play"],
             menus=[
                 [
                     MenuItem(text="Save", command="ed_save", keys="Ctrl+S"),
@@ -473,6 +477,14 @@ obj Studio(Workbench) {
                 [
                     MenuItem(text="Look at the selection", command="ed_focus", keys="F"),
                     MenuItem(text="Console", command="toggleconsole", keys="`")
+                ],
+                [
+                    MenuItem(text="Box", command="ed_box", keys="B"),
+                    MenuItem(text="Cylinder", command="ed_cylinder"),
+                    MenuItem(text="Wedge", command="ed_wedge"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Turn a quarter", command="ed_rotate 90", keys="R"),
+                    MenuItem(text="Hand to the world", command="ed_tie")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -1010,6 +1022,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_focus");
             } elif key == "b" {
                 stage.emit("ed_box");
+            } elif key == "r" {
+                stage.emit("ed_rotate 90");
             } elif key in ["LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW", "PGUP", "PGDN"] {
                 step = 64 if shift else 16;
                 moves = {
@@ -1256,7 +1270,9 @@ obj Studio(Workbench) {
     """Start dragging a side handle under the pointer."""
     def grab_handle(scene: Scene, x: int, y: int) -> bool;
     def drag_handle(scene: Scene, x: int, y: int, free: bool);
-    def add_box(scene: Scene, args: list[str]);
+    """Add a brush of a shape ("box", "cylinder" or "wedge") where the
+    camera looks, resting on what is beneath it."""
+    def add_shape(scene: Scene, args: list[str], shape: str);
     def list_solids(scene: Scene, rows: list[TreeRow], wanted: str);
     def fill_solid_form(scene: Scene, ui: StudioUi);
     """Run a scene or brush command. False when it is not one."""
