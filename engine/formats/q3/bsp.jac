@@ -1,6 +1,7 @@
 """Quake III BSP46 surfaces, quadratic patches, and cluster visibility."""
 import from ..bsp {
     FogVolume,
+    FlareSurface,
     Brush,
     Bsp,
     Texture,
@@ -243,7 +244,8 @@ def parse_q3(data: bytes) -> Bsp {
             fog=i32_at(lumps[13], p + 4),
             planar=(kind == 1),
             patch=(kind == 2),
-            # SURF_SKY (4) faces show the sky behind them; SURF_NODRAW (128) nothing.
+            # SURF_SKY (4) faces show the sky behind them; SURF_NODRAW (128)
+            # nothing; flares (kind 4) have no geometry of their own.
             hidden=(kind == 4 or (bsp.textures[texture].flags & 132) != 0),
             normal=vec_at(lumps[13], p + 84)
         );
@@ -254,6 +256,12 @@ def parse_q3(data: bytes) -> Bsp {
             face.light_width = 128;
             face.light_height = 128;
             face.styles = [0];
+        }
+        if kind == 4 {
+            # dsurface_t lightmapOrigin, lightmapVecs[0] and lightmapVecs[2].
+            bsp.flares.append(
+                FlareSurface(face=i, origin=vec_at(lumps[13], p + 48), color=vec_at(lumps[13], p + 60), normal=face.normal)
+            );
         }
         if kind == 2 {
             tessellate(

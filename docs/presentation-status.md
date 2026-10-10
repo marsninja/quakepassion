@@ -204,5 +204,5 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   bindings.
 - Q2 item selection (`invnext`/`invprev`) steps through stored items only;
   the original's `SelectNextItem` also steps through weapons.
-- Q3 flares and unknown shader directives are not drawn (see
+- Unknown Q3 shader directives are not drawn (see
   [rendering](rendering-status.md#limitations)).

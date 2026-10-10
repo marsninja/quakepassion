@@ -43,7 +43,8 @@ and builds the level graph.
   shift; planar surfaces, triangle soups and quadratic patches (tessellated at
   eight steps per quadratic piece for drawing; collision uses cm_patch's
   adaptive facets, `engine/physics/patch_collide.jac`); the light grid for
-  models; cluster PVS; fog volumes. Flare surfaces are skipped.
+  models; cluster PVS; fog volumes; flare surfaces (`MST_FLARE`: a point, a
+  colour and a normal, no geometry).
 - **The BSP graph.** Every game's tree becomes `Split` and `BspArea` (leaf)
   nodes joined by `Front`/`Back` edges. `Locate` walks to the eye's leaf and
   `CollectFaces` gathers the faces of the visible leaves.
@@ -147,6 +148,19 @@ and builds the level graph.
   whose model is missing.
 - Effects drawn as models (Q1 lightning bolts, Q2 explosions and blaster bolts,
   missile models) go through `ModelRenderer`.
+- **Q3 flares** (`tr_flares.c`, `engine/world/flares.jac`,
+  `engine/render/flares.jac`) are off unless `r_flares` is set, as in the
+  original. Each flare surface is a `LightFlare` node on the world. Once a
+  frame the `WatchFlares` walker visits them: one among the view's visible
+  surfaces and on screen is added (`RB_AddFlare`), dimmed by how far its
+  light faces away; tested against what stands between it and the eye
+  (`RB_TestFlare`: hidden when the scene is more than 24 units nearer); and
+  faded in or out at `r_flareFade` (7) a second. A lit flare is one additive
+  quad of the `flareShader` image over everything in the view, half as wide
+  as `r_flareSize / 640 + 8 / depth` of the view's width
+  (`RB_RenderFlare`), drawn before the view weapon. id's released
+  `RB_SurfaceFlare` is compiled out, so there `r_flares 1` adds no surface
+  flares; here they are handed to `RB_AddFlare`, as ioquake3 does.
 
 ## Render interpolation
 
@@ -221,7 +235,8 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   geometry and winding, cluster 0 visibility), `world_mesh_tests` (vertex
   packing, batches, index runs), `render_culling_tests`, `model_gpu_tests`,
   `effect_quads_tests`, `lightfx_render_tests` (Q2 sky rotation, particle
-  records), `render_interpolation_tests`, `fog_tests`, `portal_tests`.
+  records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
+  `flare_tests` (adding, dimming, fading and dropping flares).
 - Native comparisons: `scripts/model_gpu_smoke.jac` draws the same scene
   through the GPU and legacy model paths (they differ in under 0.01% of
   pixels); `scripts/gpu_smoke.jac` exercises `engine/render/gpu.jac`;
@@ -237,9 +252,11 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
 - Patches draw at a fixed eight steps per quadratic piece (no LOD).
 - The lightmap atlas is a fixed 2048×2048; a map that overflows it fails to
   load ("Lightmap atlas capacity exceeded"). Every original map fits.
-- Q3 shaders: flare surfaces are not drawn; directives the parser does not
-  know are recorded in
+- Q3 shaders: directives the parser does not know are recorded in
   `material.unsupported` and skipped.
+- Q3 flares are tested with a trace through the world instead of the
+  original's depth buffer read, so a model in front of a flare does not hide
+  it. They are not drawn in mirrors and portal views, and take no fog.
 - The world shader holds 16 fog volumes (`WORLD_FOG_LIMIT`); faces in a
   later volume draw unfogged.
 - The sky box and Q3 portal backdrops still use raylib's immediate batch.

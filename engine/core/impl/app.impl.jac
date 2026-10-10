@@ -38,6 +38,7 @@ impl App.run() {
             view_weapons(self.level.bsp.game)
         );
         self.quake.upload(self.level);
+        self.flares.upload(self.level);
         self.prepare_presentation();
         self.record_entry();
         self.start_level_music();
@@ -76,6 +77,7 @@ impl App.run() {
         self.effects.close();
         self.viewweapon.close();
         self.quake.close();
+        self.flares.close();
     }
     self.cinematic.close(self.audio);
     self.audio.close();
@@ -210,6 +212,10 @@ impl App.render_frame() {
         self.effects.draw_particles(self.world, view_yaw, view_pitch, blend);
         self.effects.draw(
             self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend
+        );
+        self.flares.draw(
+            self.world, self.level, self.quake.shown_flares, self.effects.quads, eye, view_yaw, view_pitch,
+            self.renderer.fov, float(self.renderer.width) / float(max(1, self.renderer.height)), self.simulation_time
         );
         self.render_times.effects = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -722,6 +728,7 @@ impl App.load_destination(
         self.player = player;
         self.player.god_mode = self.host.god.on();
         self.quake = next_renderer;
+        self.flares.upload(level);
         self.models = next_models;
         self.effects = next_effects;
         self.viewweapon = next_viewweapon;

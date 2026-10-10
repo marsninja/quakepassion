@@ -25,6 +25,7 @@ import from .trains { load_trains }
 import from .lightstyles { load_light_styles }
 import from .particle_field { particle_field }
 import from .particles { MarkSurfaces, HasMarkSurfaces }
+import from .flares { seed_flares }
 import from .clocks { load_clocks }
 import from .flyers { load_flyers }
 import from .falling { load_falling_objects }
@@ -384,7 +385,9 @@ obj Level {
         cloud_height: float = 128.0,
         sky_rotate: float = 0.0,
         sky_axis: Vec3 = Vec3(),
-        portal_ranges: dict[int, float] = {};
+        portal_ranges: dict[int, float] = {},
+        # The flareShader's image, when the map has flare surfaces.
+        flare_image: Texture | None = None;
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -607,6 +610,14 @@ def load_level(
                 fog.color = Vec3(x=parms[0], y=parms[1], z=parms[2]);
                 fog.depth = parms[3];
             }
+        }
+        # tr_shader.c CreateExternalShaders: every flare draws with flareShader.
+        if level.bsp.flares {
+            flare_stages = assets.model_stages("flareShader");
+            if flare_stages {
+                level.flare_image = flare_stages[0].texture;
+            }
+            seed_flares(world, level.bsp.flares);
         }
         for index in range(len(level.bsp.textures)) {
             reach = assets.portal_range(level.bsp.textures[index].name);

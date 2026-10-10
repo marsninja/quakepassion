@@ -102,6 +102,7 @@ directory.
 | Renderer | `fov` (`cg_fov`), `host_maxfps` (`cl_maxfps`, `com_maxfps`), `r_novis`, `vid_width` (`r_customwidth`), `vid_height` (`r_customheight`), `vid_fullscreen` (`r_fullscreen`), `vid_highdpi` |
 | HUD | `crosshair` (`cg_drawCrosshair`) |
 | Effects | `cg_oldRail`, `cg_railTrailTime` |
+| Flares | `r_flares`, `r_flareSize`, `r_flareFade` |
 | Audio | `volume` (`s_volume`), `bgmvolume` (`s_musicvolume`) |
 | Console | `scr_conspeed` (`con_conspeed`), `con_notifytime` |
 

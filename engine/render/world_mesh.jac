@@ -434,13 +434,14 @@ obj ChunkIndices {
 }
 
 """The index lists of one visible face set, kept while the set is reused (the
-main view's and a portal view's sets alternate each frame), and the batches
-with faces in it, by pass (`shown`)."""
+main view's and a portal view's sets alternate each frame), the batches
+with faces in it, by pass (`shown`), and the flare surfaces among it."""
 obj VisibleIndices {
     has faces: list[int] = [],
         lists: IndexLists = IndexLists(),
         buffers: ChunkIndices = ChunkIndices(),
         portal_faces: dict[int, list[int]] = {},
+        flares: dict[int, bool] = {},
         shown: dict[int, list[int]] = {},
         used: int = 0;
 }

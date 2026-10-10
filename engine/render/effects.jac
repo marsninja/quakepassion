@@ -60,7 +60,7 @@ import from vendor.raylib {
         mode: i32
     ) -> None;  def EndBlendMode -> None;  def rlSetBlendFactors(
         src: i32, dst: i32, equation: i32
-    ) -> None;  def rlDisableDepthMask -> None;  def rlEnableDepthMask -> None;  def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;  def rlEnableVertexBuffer(
+    ) -> None;  def rlDisableDepthMask -> None;  def rlEnableDepthMask -> None;  def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;  def rlEnableVertexBuffer(
         id: u32
     ) -> None;  def rlSetVertexAttribute(
         index: u32, compSize: i32, kind: i32, normalized: bool, stride: i32, offset: i32
@@ -283,8 +283,9 @@ obj EffectQuads {
     }
 
     """Draw the queued quads, depth tested, both sides, and empty the queue.
-    `depth_write` keeps them writing depth (particles); sprites do not."""
-    def flush(depth_write: bool = False) {
+    `depth_write` keeps them writing depth (particles); sprites do not.
+    Without `depth_test` they draw over everything (flares)."""
+    def flush(depth_write: bool = False, depth_test: bool = True) {
         if self.count == 0 {
             return;
         }
@@ -293,6 +294,9 @@ obj EffectQuads {
         rlDrawRenderBatchActive();
         if not depth_write {
             rlDisableDepthMask();
+        }
+        if not depth_test {
+            rlDisableDepthTest();
         }
         rlDisableBackfaceCulling();
         mvp = view_projection();
@@ -319,6 +323,9 @@ obj EffectQuads {
             self.program.end();
         }
         rlEnableDepthMask();
+        if not depth_test {
+            rlEnableDepthTest();
+        }
         rlEnableBackfaceCulling();
         EndBlendMode();
         self.count = 0;

@@ -131,6 +131,7 @@ import from games.hud_art { load_hud_art, load_q3_models, load_character_icons }
 import from games.q2_layouts { help_computer_layout, unit_summary_layout, q2_inventory_rows }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
+import from ..render.flares { FlareRenderer }
 import from ..render.viewweapon { ViewWeapon }
 import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
@@ -260,6 +261,7 @@ obj App {
         player_trail: PlayerTrail | None = None,
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
+        flares: FlareRenderer = FlareRenderer(),
         viewweapon: ViewWeapon = ViewWeapon(),
         hud: HudRenderer = HudRenderer(),
         light_styles: LightStyles | None = None,

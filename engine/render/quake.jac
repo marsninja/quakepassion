@@ -210,6 +210,9 @@ obj QuakeRenderer {
         brush_count: int = 0,
         cloud_mesh: GpuMesh = GpuMesh(),
         cloud_vertices: int = 0;
+    # The map's flare surfaces by face, and those among the faces last drawn.
+    has flare_faces: dict[int, bool] = {},
+        shown_flares: dict[int, bool] = {};
     # Shader programs, the light style values the lit program reads
     # (d_lightstylevalue, 1 = 'm'), and what is bound now.
     has lit_program: GpuProgram = GpuProgram(),
@@ -382,6 +385,10 @@ obj QuakeRenderer {
             rlTextureParameters(id, i32(10240), i32(9728));
             rlTextureParameters(id, i32(10242), i32(10497));
             rlTextureParameters(id, i32(10243), i32(10497));
+        }
+        self.flare_faces = {};
+        for flare in level.bsp.flares {
+            self.flare_faces[flare.face] = True;
         }
         self.upload_lightmaps(level);
         self.upload_stages(level);
@@ -701,6 +708,14 @@ obj QuakeRenderer {
         view.faces = faces;
         view.used = self.view_clock;
         view.portal_faces = {};
+        view.flares = {};
+        if self.flare_faces {
+            for f in faces {
+                if f in self.flare_faces {
+                    view.flares[f] = True;
+                }
+            }
+        }
         lists = IndexLists(chunks=[bytearray() for c in range(len(self.chunks))], spans={});
         shown: list[int] = [];
         bsp_faces = level.bsp.faces;
@@ -1443,6 +1458,7 @@ obj QuakeRenderer {
             return 0;
         }
         view = self.visible_indices(level, faces);
+        self.shown_flares = view.flares;
         self.update_brushes(level);
         if self.single_pass {
             self.draw_single_pass(level, view, eye);
