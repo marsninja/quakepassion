@@ -563,6 +563,11 @@ impl App.smoke_step(frame: int) -> bool {
         if frame == 1 {
             self.host.overlay.assign("0");
         }
+        # A pair of captures, visibility culling on and then off, shows one
+        # moment: the clock stands still from the first to the second.
+        if 40 <= frame < 80 or 160 <= frame < 200 {
+            self.skip_time = True;
+        }
         if frame == 40 {
             print(
                 "PVS",

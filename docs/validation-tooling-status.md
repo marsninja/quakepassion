@@ -45,6 +45,11 @@ differing pixels (`tests/validation_images_tests.jac`).
 | `scripts/validate_gameplay.jac` | The `persistence`, `gameplay`, `campaign` and `combat` smokes with isolated saves | `.jac/screenshots/gameplay/` |
 | `scripts/validate_passion.jac` | `scripts/passion_smoke.jac`: a generated route, mixed assets, saves and the menu | `.jac/screenshots/passion/` |
 
+A `QP_SMOKE` run reads no saved settings, opens the 1280×720 window whatever
+the game's `default.cfg` asks for (Quake II's sets `vid_fullscreen 1`), and
+holds the clock from each PVS-on capture to its PVS-off partner, so the pair
+shows one moment of every animated surface, model and sky.
+
 `validate_quake` builds nothing; build `qp` first (`jac build main.jac
 --native -o qp`, or pass `--binary`).
 

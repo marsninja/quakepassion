@@ -89,6 +89,11 @@ import from ..math.interpolation { TickBlend }
 import from ..world.world { World, Area, Surface }
 
 
+# The window a QP_SMOKE validation run captures from, as console lines run
+# after the game's default.cfg (Quake II's asks for fullscreen): the capture
+# checks expect this window (scripts/png_checks.jac).
+glob SMOKE_VIDEO: str = "set vid_fullscreen 0\nset vid_width 1280\nset vid_height 720\n";
+
 glob FOV_DEGREES: float = 72.0,
      CAMERA_PERSPECTIVE: int = 0;
 
