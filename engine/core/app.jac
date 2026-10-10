@@ -402,6 +402,8 @@ obj App {
     # the studio's unsaved edits, played without touching the saved ones.
     has staged_entities: dict[str, str] = {};
     has workbench: Workbench = NoWorkbench(),
+        # Load without the loading plaque (the studio rebuilding its scene).
+        quiet_load: bool = False,
         bench_keys: list[str] = [],
         bench_text: str = "",
         bench_shift: bool = False,

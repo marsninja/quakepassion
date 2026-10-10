@@ -676,7 +676,9 @@ impl App.load_destination(
     session: Campaign | None = None,
     preserve_progress: bool = False
 ) {
-    self.draw_loading(game, name);
+    if not self.quiet_load {
+        self.draw_loading(game, name);
+    }
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
     next_effects = EffectScene(cvars=self.effects.cvars);
@@ -687,7 +689,8 @@ impl App.load_destination(
         level = open_level(
             world, game_directory(game), name, game, skill if game == "q3" else min(3, skill),
             subdivisions=self.renderer.cvars.subdivisions.number,
-            entities=self.staged_entities.get(game + "/" + name)
+            entities=self.staged_entities.get(game + "/" + name),
+            built=self.workbench.build_level(game, name)
         );
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"

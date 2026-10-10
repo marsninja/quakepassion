@@ -14,7 +14,7 @@ import os;
 import from engine.core.workbench { Workbench, SceneView }
 import from engine.core.app { App }
 import from engine.console.shell { Shell, quote_command_word }
-import from engine.formats.bsp { Model }
+import from engine.formats.bsp { Model, Bsp, MapEntity }
 import from engine.math.vec3 { Vec3 }
 import from engine.input.input { _capture, _release, mouse_captured }
 import from engine.world.world { move_to_area }
@@ -41,8 +41,11 @@ import from .ui.widgets {
     MenuItem,
     ViewArea
 }
-import from .document.scene { Scene, Item, scene_of }
+import from .document.scene { Scene, Item, Solid, scene_of, scene_map, scene_from_map }
 import from .camera { EditCamera, ray_enters_box }
+import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials }
+import from .formats.map { read_map, write_map }
+import from .geometry.brush { box_sides, ray_enters_brush }
 
 """The studio's commands: name, usage, description."""
 glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
@@ -66,6 +69,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_revert", "ed_revert", "discard every edit and return to the map as shipped"),
     ("ed_cam", "ed_cam <x> <y> <z> [yaw pitch]", "place the camera (angles in degrees)"),
     ("ed_dump", "ed_dump [label]", "print the document's state (after `STEP label`)"),
+    ("ed_scene", "ed_scene [name]", "start a new scene of brushes"),
+    ("ed_open", "ed_open <file.map>", "open a map file as a scene"),
+    ("ed_save_as", "ed_save_as <file.map>", "save the scene to another file"),
+    ("ed_box", "ed_box [width depth height]", "add a box brush where the camera looks"),
+    ("ed_material", "ed_material <name> [side]", "set the material of the selected brushes, and of new ones"),
+    ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
+    ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
     ("ed_exec", "ed_exec <file>", "run a file of console commands"),
     ("ui_move", "ui_move <x> <y>", "script: move the pointer"),
     ("ui_click", "ui_click <x> <y> [button]", "script: click"),
@@ -152,6 +162,28 @@ def item_shape(item: Item, models: list[Model]) -> Shape | None {
     return Shape(item=item, low=at.add(low), high=at.add(high), tone=class_tone(classname));
 }
 
+"""A brush as the level view draws and picks it: its outlines and the box
+around them."""
+obj SolidLook {
+    has solid: Solid,
+        outlines: list[list[Vec3]],
+        low: Vec3,
+        high: Vec3;
+
+    def center -> Vec3 {
+        return self.low.add(self.high).scale(0.5);
+    }
+}
+
+"""What is under a point of the level view: an entity or a brush (and which
+of its sides), and how far away."""
+obj Aim {
+    has item: Item | None = None,
+        solid: Solid | None = None,
+        side: int = -1,
+        reach: float = -1.0;
+}
+
 """The studio's widgets, kept by name so its code can reach them."""
 obj StudioUi {
     has menu: MenuBar,
@@ -197,6 +229,18 @@ obj Studio(Workbench) {
         move_by: Vec3 = Vec3(),
         press_x: int = 0,
         press_y: int = 0,
+        # Scenes of brushes: where their materials come from, what the scene
+        # last compiled to, and the document's geometry count it was built at.
+        materials: Materials = SwatchMaterials(),
+        live: LiveLevel | None = None,
+        built_geometry: int = -1,
+        looks: list[SolidLook] = [],
+        hover_solid: Solid | None = None,
+        material: str = "blockout",
+        # Dragging a side of the selected brush by its handle.
+        resizing: bool = False,
+        resize_side: int = -1,
+        resize_by: float = 0.0,
         grid: float = 8.0,
         hover: Item | None = None,
         shapes: list[Shape] = [],
@@ -276,6 +320,30 @@ obj Studio(Workbench) {
         }
     }
 
+    """Load a level on the studio's behalf. Commands still waiting (the rest
+    of a script) are held back until it is loaded: a load that changes game
+    runs that game's configuration, and with it everything waiting. False
+    when the level did not load; the host has said why."""
+    def load(game: str, name: str, quiet: bool = False) -> bool {
+        app = self.app;
+        if app is None {
+            return False;
+        }
+        waiting = app.shell.pending;
+        app.shell.pending = "";
+        before = app.level;
+        app.quiet_load = quiet;
+        app.load_destination(game, name);
+        app.quiet_load = False;
+        app.shell.add_text(waiting);
+        if app.level is before {
+            app.menu.opened = False;
+            self.say(app.menu.message);
+            return False;
+        }
+        return True;
+    }
+
     """Rebuild the world from the document and play it."""
     def play(here: bool) {
         app = self.app;
@@ -287,13 +355,9 @@ obj Studio(Workbench) {
             app.staged_entities[scene.game + "/" + scene.name] = scene.text();
         }
         self.leave();
-        before = app.level;
-        app.load_destination(scene.game, scene.name);
-        if app.level is before {
-            # The document does not load: the host has said why.
-            app.menu.opened = False;
+        if not self.load(scene.game, scene.name) {
+            # The document does not load: back to it.
             self.enter(reset_camera=False);
-            self.say(app.menu.message);
             return;
         }
         self.playing = True;
@@ -322,7 +386,7 @@ obj Studio(Workbench) {
         if app is None or scene is None {
             return;
         }
-        app.load_destination(scene.game, scene.name);
+        self.load(scene.game, scene.name);
         self.enter(reset_camera=False);
     }
 
@@ -330,6 +394,10 @@ obj Studio(Workbench) {
     def save {
         scene = self.scene;
         if scene is None {
+            return;
+        }
+        if self.is_built_scene() {
+            self.save_scene();
             return;
         }
         if scene.game == "passion" {
@@ -359,7 +427,7 @@ obj Studio(Workbench) {
         key = scene.game + "/" + scene.name;
         app.staged_entities[key] = "";
         self.scenes.pop(key, None);
-        app.load_destination(scene.game, scene.name);
+        self.load(scene.game, scene.name);
         app.staged_entities.pop(key, None);
         self.enter(reset_camera=False);
         self.say("Reverted " + scene.name + " to the map as shipped");
@@ -376,7 +444,8 @@ obj Studio(Workbench) {
             titles=["File", "Edit", "View", "Play"],
             menus=[
                 [
-                    MenuItem(text="Save entities", command="ed_save", keys="Ctrl+S"),
+                    MenuItem(text="Save", command="ed_save", keys="Ctrl+S"),
+                    MenuItem(text="New scene", command="ed_scene"),
                     MenuItem(text="Revert to the shipped map", command="ed_revert"),
                     MenuItem(rule=True),
                     MenuItem(text="Leave the studio", command="edit", keys="F8"),
@@ -425,6 +494,8 @@ obj Studio(Workbench) {
         );
         tools.adopt(new_class);
         tools.adopt(PushButton(text="Add entity", command="ed_new", hint="Add an entity in front of the camera"));
+        tools.adopt(Spacer(size=10));
+        tools.adopt(PushButton(text="Box", command="ed_box", hint="Add a box brush where the camera looks (B)"));
         tools.adopt(Spacer(grow=1));
         title = Label(text="", tone="dim");
         tools.adopt(title);
@@ -508,12 +579,19 @@ obj Studio(Workbench) {
         listed = changed or picked or self.filter != self.seen_filter or self.folds != self.seen_folds;
         if changed {
             self.shapes = [];
+            built = self.is_built_scene();
             for item in scene.items() {
-                shape = item_shape(item, app.level.bsp.models);
+                owned = scene.solids_of(item);
+                # A scene's brush entities are their brushes; a shipped
+                # map's are the map's models.
+                shape = self.owned_shape(item, owned)
+                    if owned
+                    else item_shape(item, [] if built else app.level.bsp.models);
                 if shape is not None {
                     self.shapes.append(shape);
                 }
             }
+            self.outline_solids(scene);
         }
         if picked {
             # A selection made in the level opens its class in the list.
@@ -602,6 +680,7 @@ obj Studio(Workbench) {
                 );
             }
         }
+        self.list_solids(scene, rows, wanted);
         ui.tree.rows = rows;
         if reveal and first_picked >= 0 {
             ui.tree.reveal(first_picked);
@@ -626,9 +705,13 @@ obj Studio(Workbench) {
         ui.new_key = None;
         ui.new_value = None;
         chosen = scene.selection();
+        if not chosen and scene.selected_solids() {
+            self.fill_solid_form(scene, ui);
+            return;
+        }
         if not chosen {
             form.adopt(Label(text="Nothing is selected.", tone="dim"));
-            form.adopt(Label(text="Click an entity in the level or the list.", tone="faint", small=True));
+            form.adopt(Label(text="Click an entity or a brush in the level or the list.", tone="faint", small=True));
             return;
         }
         heading = chosen[0].title() if len(chosen) == 1 else str(len(chosen)) + " entities";
@@ -712,6 +795,7 @@ obj Studio(Workbench) {
             app.shell.insert_text("\n".join(asked));
         }
         self.refresh();
+        self.keep_built();
         hint = stage.hint();
         ui.hint.text = hint if hint else self.note;
         ui.stop.enabled = self.playing;
@@ -733,18 +817,31 @@ obj Studio(Workbench) {
             } elif event.kind == "press" and event.button == 2 {
                 self.panning = True;
             } elif event.kind == "press" and event.button == 0 {
-                # A press on something selected starts moving the selection.
+                # A press on a side handle resizes; one on something selected
+                # starts moving the selection.
                 self.moved = False;
-                under = self.pick(event.x, event.y);
-                if under is not None and scene.is_selected(under) and not (event.ctrl or event.shift) {
-                    grabbed = self.shape_of(under);
-                    if grabbed is not None {
-                        self.moving = True;
-                        self.move_by = Vec3();
-                        self.move_from = grabbed.center();
-                        self.press_x = event.x;
-                        self.press_y = event.y;
+                self.press_x = event.x;
+                self.press_y = event.y;
+                if self.grab_handle(scene, event.x, event.y) {
+                    continue;
+                }
+                under = self.aim(event.x, event.y);
+                grabbed: Vec3 | None = None;
+                if not (event.ctrl or event.shift) {
+                    under_item = under.item;
+                    under_solid = under.solid;
+                    if under_solid is not None and scene.is_solid_selected(under_solid) {
+                        seen = self.look_of(under_solid);
+                        grabbed = seen.center() if seen is not None else None;
+                    } elif under_item is not None and scene.is_selected(under_item) {
+                        boxed = self.shape_of(under_item);
+                        grabbed = boxed.center() if boxed is not None else None;
                     }
+                }
+                if grabbed is not None {
+                    self.moving = True;
+                    self.move_by = Vec3();
+                    self.move_from = grabbed;
                 }
             } elif event.kind == "release" {
                 if event.button == 1 {
@@ -752,6 +849,14 @@ obj Studio(Workbench) {
                 }
                 if event.button == 2 {
                     self.panning = False;
+                }
+                if event.button == 0 and self.resizing {
+                    self.resizing = False;
+                    self.moved = abs(event.x - self.press_x) + abs(event.y - self.press_y) > 3;
+                    if self.resize_by != 0.0 {
+                        stage.emit("ed_push " + str(self.resize_side) + " " + str(int(self.resize_by)));
+                    }
+                    self.resize_by = 0.0;
                 }
                 if event.button == 0 and self.moving {
                     self.moving = False;
@@ -766,6 +871,8 @@ obj Studio(Workbench) {
                         );
                     }
                 }
+            } elif event.kind == "drag" and self.resizing {
+                self.drag_handle(scene, event.x, event.y, event.ctrl);
             } elif event.kind == "drag" and self.moving {
                 self.drag_selection(event.x, event.y, event.shift, event.ctrl);
             } elif event.kind == "drag" {
@@ -785,16 +892,20 @@ obj Studio(Workbench) {
                     self.moved = False;
                     continue;
                 }
-                found = self.pick(event.x, event.y);
+                found = self.aim(event.x, event.y);
+                found_item = found.item;
+                found_solid = found.solid;
                 words = "ed_select";
-                if found is not None {
-                    words += " " + str(found.serial);
+                if found_solid is not None {
+                    words += " solid:" + str(found_solid.serial);
+                } elif found_item is not None {
+                    words += " " + str(found_item.serial);
                 }
                 if event.ctrl or event.shift {
-                    words += " add" if found is not None else "";
-                    if found is None {
+                    if found_item is None and found_solid is None {
                         continue;
                     }
+                    words += " add";
                 }
                 stage.emit(words);
             }
@@ -803,6 +914,7 @@ obj Studio(Workbench) {
             self.looking = False;
             self.panning = False;
             self.moving = False;
+            self.resizing = False;
         }
         if self.looking and not self.source.scripted {
             speed = app.host.flyspeed.number * (4.0 if input.shift else 1.0) * dt;
@@ -813,8 +925,11 @@ obj Studio(Workbench) {
             self.camera.fly(ahead * speed, side * speed, rise * speed);
         }
         self.hover = None;
-        if stage.hover is ui.view and not self.looking and not self.panning and not self.moving {
-            self.hover = self.pick(input.x, input.y);
+        self.hover_solid = None;
+        if stage.hover is ui.view and not self.looking and not self.panning and not self.moving and not self.resizing {
+            pointed = self.aim(input.x, input.y);
+            self.hover = pointed.item;
+            self.hover_solid = pointed.solid;
         }
     }
 
@@ -852,6 +967,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_delete");
             } elif key == "f" {
                 stage.emit("ed_focus");
+            } elif key == "b" {
+                stage.emit("ed_box");
             } elif key in ["LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW", "PGUP", "PGDN"] {
                 step = 64 if shift else 16;
                 moves = {
@@ -1028,6 +1145,7 @@ obj Studio(Workbench) {
         }
         rlDrawRenderBatchActive();
         rlEnableDepthTest();
+        self.draw_solids(scene);
     }
 
     def draw(width: int, height: int) {
@@ -1059,8 +1177,46 @@ obj Studio(Workbench) {
                 words, tag, canvas.theme.text if picked else canvas.theme.dim, 0, 0, canvas.theme.small
             );
         }
+        self.draw_handles(scene, area);
         canvas.unclip();
     }
+
+    # ------------------------------------------------------------------
+    # Scenes and brushes (impl/studio.scenes.impl.jac)
+
+    def build_level(game: str, name: str) -> Bsp | None;
+    """Whether the document is a scene of its own brushes rather than a
+    shipped map's entities."""
+    def is_built_scene -> bool;
+    """Start a scene: a floor and a player start."""
+    def new_scene(name: str);
+    def open_map(path: str);
+    """Load a scene's level and edit it."""
+    def show_scene(scene: Scene);
+    def scene_path(name: str) -> str;
+    def save_scene(path: str = "");
+    """Rebuild the level when the document's brushes have changed."""
+    def keep_built;
+    """Bring the brushes' outlines in line with the document."""
+    def outline_solids(scene: Scene);
+    """The shape of an entity made of brushes: the box around them."""
+    def owned_shape(item: Item, solids: list[Solid]) -> Shape | None;
+    def look_of(solid: Solid) -> SolidLook | None;
+    """The entity or brush under a point of the level view."""
+    def aim(x: int, y: int) -> Aim;
+    def draw_solids(scene: Scene);
+    """Where the selected brush's side handles are (when one brush alone is
+    selected): each side's index and the middle of its outline."""
+    def handles(scene: Scene) -> list[tuple[int, Vec3]];
+    def draw_handles(scene: Scene, area: Rect);
+    """Start dragging a side handle under the pointer."""
+    def grab_handle(scene: Scene, x: int, y: int) -> bool;
+    def drag_handle(scene: Scene, x: int, y: int, free: bool);
+    def add_box(scene: Scene, args: list[str]);
+    def list_solids(scene: Scene, rows: list[TreeRow], wanted: str);
+    def fill_solid_form(scene: Scene, ui: StudioUi);
+    """Run a scene or brush command. False when it is not one."""
+    def scene_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
     # Commands
@@ -1099,6 +1255,18 @@ obj Studio(Workbench) {
         }
         if name.startswith("ui_") {
             self.script(args);
+            return;
+        }
+        if name == "ed_scene" {
+            self.new_scene(args[1] if len(args) > 1 else "untitled");
+            return;
+        }
+        if name == "ed_open" {
+            if len(args) > 1 {
+                self.open_map(args[1]);
+            } else {
+                self.say("ed_open <file.map>");
+            }
             return;
         }
         scene = self.scene;
@@ -1186,6 +1354,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
+        } else {
+            self.scene_command(scene, args);
         }
     }
 
@@ -1193,6 +1363,26 @@ obj Studio(Workbench) {
         add = len(args) > 2 and args[2] == "add";
         if len(args) < 2 {
             scene.select(None);
+            return;
+        }
+        if args[1].startswith("solid:") and args[1][6:].isdigit() {
+            brush = scene.find_solid(int(args[1][6:]));
+            if brush is not None {
+                scene.select_solid(brush, add=add);
+            } else {
+                self.say("ed_select: no brush " + args[1][6:]);
+            }
+            return;
+        }
+        if args[1] == "class:brushes" {
+            if not add {
+                scene.clear_selection();
+            }
+            for brush in scene.solids() {
+                if not scene.is_solid_selected(brush) {
+                    scene.select_solid(brush, add=True);
+                }
+            }
             return;
         }
         if args[1].startswith("class:") {
@@ -1236,6 +1426,13 @@ obj Studio(Workbench) {
             if shape.item in wanted {
                 low = Vec3(x=min(low.x, shape.low.x), y=min(low.y, shape.low.y), z=min(low.z, shape.low.z));
                 high = Vec3(x=max(high.x, shape.high.x), y=max(high.y, shape.high.y), z=max(high.z, shape.high.z));
+                seen += 1;
+            }
+        }
+        for look in self.looks {
+            if scene.is_solid_selected(look.solid) {
+                low = Vec3(x=min(low.x, look.low.x), y=min(low.y, look.low.y), z=min(low.z, look.low.z));
+                high = Vec3(x=max(high.x, look.high.x), y=max(high.y, look.high.y), z=max(high.z, look.high.z));
                 seen += 1;
             }
         }
@@ -1289,6 +1486,24 @@ obj Studio(Workbench) {
         for item in scene.selection() {
             pairs = " ".join([key + "=" + value for (key, value) in item.fields.items()]);
             lines.append("studio: selected #" + str(item.serial) + " " + pairs);
+        }
+        if scene.solids() {
+            lines.append(
+                "studio: brushes=" + str(len(scene.solids())) + " geometry=" + str(scene.geometry) + " built="
+                    + str(self.built_geometry)
+            );
+        }
+        for brush in scene.selected_solids() {
+            box = brush.bounds();
+            holder = scene.owner_of(brush);
+            if box is not None {
+                lines.append(
+                    "studio: brush #" + str(brush.serial) + " low=" + str(int(box[0].x)) + "," + str(int(box[0].y))
+                        + "," + str(int(box[0].z)) + " high=" + str(int(box[1].x)) + "," + str(int(box[1].y)) + ","
+                        + str(int(box[1].z)) + " material=" + brush.sides[0].material + " owner="
+                        + (holder.classname() if holder is not None else "")
+                );
+            }
         }
         app = self.app;
         for line in lines {

@@ -136,6 +136,9 @@ def write_vector(value: Vec3) -> str {
 obj Change {
     def undo abst;
     def redo abst;
+    """Whether it changes what the level is built from: its brushes, or an
+    entity that owns some."""
+    def reshapes -> bool abst;
 }
 
 """A field set, changed or removed (`None` is "not there")."""
@@ -160,6 +163,10 @@ obj FieldChange(Change) {
     def redo {
         self.put(self.after);
     }
+
+    def reshapes -> bool {
+        return False;
+    }
 }
 
 """An item entering or leaving the document."""
@@ -174,6 +181,10 @@ obj HoldChange(Change) {
     def redo {
         self.item.held = self.held;
     }
+
+    def reshapes -> bool {
+        return bool([self.item->:Owns:->]);
+    }
 }
 
 """A brush entering or leaving the document."""
@@ -187,6 +198,10 @@ obj SolidHold(Change) {
 
     def redo {
         self.solid.held = self.held;
+    }
+
+    def reshapes -> bool {
+        return True;
     }
 }
 
@@ -203,12 +218,51 @@ obj SidesChange(Change) {
     def redo {
         self.solid.sides = self.after;
     }
+
+    def reshapes -> bool {
+        return True;
+    }
+}
+
+"""A brush handed from one entity to another."""
+obj OwnChange(Change) {
+    has solid: Solid,
+        before: Item,
+        after: Item;
+
+    def hand(giver: Item, taker: Item) {
+        if self.solid in [giver->:Owns:->][?:Solid] {
+            giver del->:Owns:-> self.solid;
+        }
+        taker +>:Owns:+> self.solid;
+    }
+
+    def undo {
+        self.hand(self.after, self.before);
+    }
+
+    def redo {
+        self.hand(self.before, self.after);
+    }
+
+    def reshapes -> bool {
+        return True;
+    }
 }
 
 """One edit as the journal keeps it: what to call it and what it changed."""
 obj Step {
     has label: str,
         changes: list[Change] = [];
+
+    def reshapes -> bool {
+        for change in self.changes {
+            if change.reshapes() {
+                return True;
+            }
+        }
+        return False;
+    }
 }
 
 """The edits made, newest last, and the ones undone since."""
@@ -430,7 +484,11 @@ changes to the selection, so panels know when to refresh."""
 node Scene {
     has game: str = "",
         name: str = "",
+        # Where the scene is kept, when it is a file of its own.
+        path: str = "",
         revision: int = 0,
+        # Counts changes to what the level is built from.
+        geometry: int = 0,
         picks: int = 0,
         dirty: bool = False,
         next_serial: int = 0,
@@ -550,6 +608,34 @@ node Scene {
         return self.reshape(solid, after, "Resize");
     }
 
+    """Hand the selected brushes to an entity: a new one of `classname`, or
+    the world when it is empty. Answers the entity that took them."""
+    def tie_selection(classname: str) -> Item | None {
+        chosen = self.selected_solids();
+        if not chosen {
+            return None;
+        }
+        step = Step(label="Tie to " + classname if classname else "Move to world");
+        taker = self.world();
+        if classname and classname != "worldspawn" {
+            taker = self.add_item({"classname": classname});
+            step.changes.append(HoldChange(item=taker, held=True));
+        }
+        for solid in chosen {
+            giver = self.owner_of(solid);
+            if giver is None or giver is taker {
+                continue;
+            }
+            change = OwnChange(solid=solid, before=giver, after=taker);
+            change.redo();
+            step.changes.append(change);
+        }
+        if not self.commit(step) {
+            return None;
+        }
+        return taker;
+    }
+
     """Give the selected brushes a material (on one side when `side` names
     it)."""
     def paint_selection(material: str, side: int = -1) -> bool {
@@ -614,6 +700,9 @@ node Scene {
             journal.done.pop(0);
         }
         journal.undone = [];
+        if step.reshapes() {
+            self.geometry += 1;
+        }
         self.changed();
         return True;
     }
@@ -724,6 +813,9 @@ node Scene {
             step.changes[i].undo();
         }
         journal.undone.append(step);
+        if step.reshapes() {
+            self.geometry += 1;
+        }
         self.changed();
         return step.label;
     }
@@ -738,6 +830,9 @@ node Scene {
             change.redo();
         }
         journal.done.append(step);
+        if step.reshapes() {
+            self.geometry += 1;
+        }
         self.changed();
         return step.label;
     }

@@ -1,7 +1,9 @@
 """Game-level sources feed the same runtime world and renderer."""
 import os;
-import from engine.world.level { Level, load_level }
+import from engine.world.level { Level, load_level, prepare_level }
 import from engine.world.world { World }
+import from engine.world.signals { HasSignal }
+import from engine.formats.bsp { Bsp }
 import from .passion.generate { generate }
 import from .passion.materials { load_materials }
 
@@ -32,9 +34,18 @@ def saved_entities(game: str, name: str) -> str {
     }
 }
 
+"""A level from data already built: a scene the studio compiled."""
+def open_built(world: World, name: str, built: Bsp, skill: int = 1) -> Level {
+    level = Level(active=True, name=name, skill=skill, bsp=built);
+    prepare_level(world, level);
+    world +>:HasSignal:+> level.completion;
+    return level;
+}
+
 """Open a level. Its entities are the map's own unless edits were saved for
 it (the studio's overrides) or `entities` supplies them; `entities=""` asks
-for the map as shipped."""
+for the map as shipped. `built` is the level's data when it was made rather
+than loaded."""
 def open_level(
     world: World,
     directory: str,
@@ -42,8 +53,12 @@ def open_level(
     game: str,
     skill: int = 1,
     subdivisions: float = 4.0,
-    entities: str | None = None
+    entities: str | None = None,
+    built: Bsp | None = None
 ) -> Level {
+    if built is not None {
+        return open_built(world, name, built, skill);
+    }
     if game == "passion" {
         cache = os.environ.get(
             "QP_LIGHT_CACHE", os.path.expanduser("~/.cache/quakepassion/lighting")

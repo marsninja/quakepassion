@@ -32,6 +32,29 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
 
+### Scenes of brushes
+
+File > New scene (`ed_scene <name>`) starts a scene of its own geometry: a
+floor and a player start. `ed_open <file.map>` opens a map file as one.
+
+- **Box** (B, `ed_box [w d h]`) adds a box brush where the camera looks,
+  resting on what is beneath it. A click selects a brush; dragging it moves
+  it as seen; with one brush selected, the squares on its sides push that
+  side (`ed_push <side> <distance>`).
+- The inspector shows a brush's material (`ed_material <name>`), size and
+  owner, and hands the selected brushes to a new entity (`ed_tie
+  func_door`) or back to the world.
+- Materials are swatches for now: a colour from the name with a line every
+  64 units and a fainter one every 16.
+- Every edit that changes the brushes rebuilds the level at once, so the
+  level view is what Play runs. Save writes the scene as a Valve 220 `.map`
+  under `QP_SCENES` (default `./scenes`), which other Quake editors open.
+
+A scene is a "passion" level: it plays by the rules generated expeditions do
+and may hold any game's entities.
+
+### Saving a shipped map's entities
+
 Save writes the map's entities to
 `$QP_OVERRIDES/<game>/<map>.ent` (default
 `~/.quakepassion-overrides/`, or beside the settings when `QP_CONFIG_DIR` is
@@ -45,8 +68,12 @@ map deletes it.
 engine/core/workbench.jac    the only thing the engine knows: a mode that takes the window
 editor/ui/                   the interface toolkit
 editor/document/scene.jac    the document graph
+editor/geometry/brush.jac    brushes: planes, outlines, clipping, mappings, rays
+editor/formats/map.jac       the .map text format, classic and Valve 220
+editor/compile/live.jac      a scene's brushes as a level, at once
 editor/camera.jac            the free camera: rays through the view, points onto it
 editor/studio.jac            the workbench: panels, picking, play and stop, the ed_* commands
+editor/impl/                 the workbench's scenes and brushes
 ```
 
 - **The engine side** is one interface. `App` holds a `Workbench`; while it is
@@ -70,6 +97,15 @@ editor/studio.jac            the workbench: panels, picking, play and stop, the 
   `ui_sync` script the pointer and keyboard one step a frame, and `ed_exec
   <file>` runs a file of commands, so a script drives the interface exactly
   as a hand does.
+- **A scene compiles to a level in memory** (`editor/compile/live.jac`).
+  Every brush becomes its faces and its collision planes as drawn: no hidden
+  faces are removed, the world is one leaf that sees itself, and light is a
+  flat shade. `Workbench.build_level` hands the level loader that data
+  afresh for each load of a `studio:` level, so Play, Stop and the rebuild
+  after an edit all go through the ordinary `load_destination`.
+- **Brushes are in the document graph**: an entity `Owns` its `Solid`s, the
+  `Selected` edges reach items and solids alike, and the same walkers
+  (`Shift`, `Remove`, `Clone`, `Paint`) visit both.
 - **Play** stages the document's entity lump on the `App`
   (`staged_entities`) and reloads the level, which is how unsaved edits are
   played. The level keeps the map's entities before the skill filter
@@ -85,16 +121,28 @@ editor/studio.jac            the workbench: panels, picking, play and stop, the 
   document.
 - `tests/studio_camera_tests.jac`: the ray through a point of the view lands
   back on that point; framing; ray and box.
+- `tests/studio_brush_tests.jac`, `tests/studio_map_tests.jac`: outlines,
+  clipping, volumes, rays and mappings; maps read and written in both forms.
+- `tests/studio_compile_tests.jac`: a compiled scene's models, faces and
+  entities, and that it prepares as a level that holds the player up.
 - `scripts/ui_gallery.jac`: every widget in one window without the engine,
   with a scripted session saved to a screenshot.
-- `scripts/studio_smoke.jac`: drives the real studio in `qp` through a
-  scripted session and checks the document and the saved overrides.
+- `jac run scripts/validate_studio.jac`: drives the real studio in `qp` by
+  scripted clicks, drags, typing and shortcuts, printing the document after
+  each step. `scripts/studio/shell_session.cfg` edits e1m1's entities (15
+  steps, then a second run confirms the saved entities load);
+  `scripts/studio/scene_session.cfg` builds a scene of brushes (13 steps:
+  box, pick, resize by a handle, drag, material, tie to a door, undo, redo,
+  duplicate, save, play, return; then a second run reopens the saved map).
 
 ## What remains
 
-Milestone 1 of #73 (the shell) is what this page describes. Not yet built:
-brushes and the document's own geometry, `.map` import and export, transform
-gizmos, multiple views and display modes, texturing, the entity class
+Milestones 1 (the shell) and most of 2 (blockout) of #73 are what this page
+describes. Of milestone 2: brushes are boxes until cut (no clipper, wedges or
+cylinders yet), rotation and scaling are missing, materials are swatches
+rather than the games' textures, a shipped map cannot take new brushes, and
+Quake III's `brushDef` and `patchDef2` blocks are skipped on open. Not yet
+built: multiple views and display modes, texturing tools, the entity class
 registry behind typed inspector fields, the logic graph panel, prefabs, the
 bake, patches and duplicators, the asset studio, the model editor, terrain,
 the Passion tools and user walkers. Within the shell: entity previews are

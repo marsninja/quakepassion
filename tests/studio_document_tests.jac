@@ -308,3 +308,42 @@ test "a document with brushes writes as a map and reads back the same" {
     # The entity lump is the entities alone.
     assert again.text().count("{") == 3 and "(" not in again.text();
 }
+
+test "the document counts changes to what the level is built from" {
+    scene = built();
+    start = scene.items()[2];
+    scene.select(start);
+    scene.set_field("angle", "90");
+    scene.shift_selection(Vec3(x=16.0));
+    assert scene.geometry == 0;
+    pillar = scene.solids()[1];
+    scene.select_solid(pillar);
+    scene.shift_selection(Vec3(x=16.0));
+    assert scene.geometry == 1;
+    scene.undo();
+    assert scene.geometry == 2;
+    # Deleting an entity that owns brushes changes the level; one that owns none does not.
+    scene.select(scene.items()[1]);
+    scene.remove_selection();
+    assert scene.geometry == 3;
+    scene.select(start);
+    scene.remove_selection();
+    assert scene.geometry == 3;
+}
+
+test "brushes are tied to a new entity and handed back to the world" {
+    scene = built();
+    world = scene.world();
+    pillar = scene.solids()[1];
+    scene.select_solid(pillar);
+    taker = scene.tie_selection("func_wall");
+    assert taker is not None and taker.classname() == "func_wall" and scene.owner_of(pillar) is taker;
+    assert len(scene.solids_of(world)) == 1 and len(scene.items()) == 4 and scene.geometry == 1;
+    assert scene.undo() == "Tie to func_wall";
+    assert scene.owner_of(pillar) is world and len(scene.items()) == 3 and len(scene.solids_of(world)) == 2;
+    assert scene.redo() == "Tie to func_wall" and scene.owner_of(pillar) is taker;
+    back = scene.tie_selection("");
+    assert back is world and scene.owner_of(pillar) is world;
+    # Already the world's: nothing to do.
+    assert scene.tie_selection("") is None;
+}

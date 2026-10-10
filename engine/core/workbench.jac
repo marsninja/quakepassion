@@ -6,6 +6,7 @@ workbench is active the simulation stands still: the host hands it the
 frame's keys, draws the level from each camera it asks for, and lets it draw
 over the result."""
 import from ..console.shell { Shell }
+import from ..formats.bsp { Bsp }
 import from ..math.vec3 { Vec3 }
 
 """One camera's view of the level, drawn into a rectangle of the window
@@ -51,6 +52,11 @@ obj Workbench {
 
     """Draw over the finished views, in screen units."""
     def draw(width: int, height: int) abst;
+
+    """A level's data when the workbench is where it comes from (a scene
+    being edited), built afresh for each load; none for a level the game
+    loads from its own files."""
+    def build_level(game: str, name: str) -> Bsp | None abst;
 }
 
 """No workbench: what an App has until one is attached."""
@@ -68,4 +74,8 @@ obj NoWorkbench(Workbench) {
     def draw_scene(view: SceneView) {}
 
     def draw(width: int, height: int) {}
+
+    def build_level(game: str, name: str) -> Bsp | None {
+        return None;
+    }
 }
