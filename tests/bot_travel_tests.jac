@@ -8,6 +8,10 @@ import from engine.formats.aas {
     AREACONTENTS_LAVA,
     TRAVEL_WALK,
     TRAVEL_SWIM,
+    TRAVEL_TELEPORT,
+    TRAVEL_WALKOFFLEDGE,
+    TRAVEL_BARRIERJUMP,
+    TRAVEL_ELEVATOR,
     TRAVEL_WATERJUMP,
     TRAVEL_ROCKETJUMP,
     TRAVEL_FUNCBOB,
@@ -22,6 +26,7 @@ import from engine.world.bot_travel {
     travel_weapon_jump,
     travel_funcbob,
     travel_water_jump,
+    goal_area_speed,
     finish_water_jump,
     air_control,
     mover_box
@@ -265,4 +270,27 @@ test "a passage taken five times running is avoided for six seconds, and a timed
     assert avoid.tries == 1;
     late = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=45.5, avoid=avoid);
     assert not late.result.failure and late.result.speed == 0.0 and not route.points and not route.areas;
+}
+
+test "a bot slows into its goal and onto a teleporter" {
+    # BotMoveInGoalArea: 4 a unit over the last 100 units, nothing within 2.5.
+    assert goal_area_speed(300.0) == 400.0 and goal_area_speed(50.0) == 200.0 and goal_area_speed(2.0) == 0.0;
+    aas = strip_aas(2, [(1, 2, TRAVEL_TELEPORT)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(2);
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=0.0, z=26.0), eye_height=26.0, grounded=True);
+    # BotTravel_Teleport: full speed to within 30 units of the reach's
+    # start (x = 80 here), then half.
+    route = plan_route(mesh, Vec3(x=0.0), Vec3(x=128.0));
+    far = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert route.passages[0] is not None and far.result.speed == 400.0;
+    bot.pos = Vec3(x=60.0, z=26.0);
+    near = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert near.result.speed == 200.0;
+    # The last leg, in the goal's area, at BotMoveInGoalArea's speed.
+    last = BotRoute();
+    last.add(Vec3(x=120.0), 0);
+    bot.pos = Vec3(x=70.0, z=26.0);
+    closing = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=last, eye_height=26.0, clock=0.0);
+    assert closing.result.speed == 200.0 and closing.result.direction.x > 0.99;
 }

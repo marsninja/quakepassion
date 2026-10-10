@@ -168,6 +168,13 @@ def check_blocked(collision: CollisionMap, origin: Vec3, direction: Vec3, bodies
     }
 }
 
+"""be_ai_move.c BotMoveInGoalArea's speed: in its goal's area a bot slows
+over the last 100 units (4 a unit) and stops within 2.5."""
+def goal_area_speed(distance: float) -> float {
+    speed = 4.0 * min(distance, 100.0);
+    return 0.0 if speed < 10.0 else speed;
+}
+
 """Swimming toward `point` (BotTravel_Swim, and walking or moving in the
 goal area with MFL_SWIMMING): straight at it, up or down, looking along the
 way (MOVERESULT_SWIMVIEW)."""
@@ -615,10 +622,22 @@ walker FollowRoute {
         }
         # MFL_SWIMMING: the bot swims (AAS_Swimming, its waist in liquid).
         if here.water_depth >= 2 {
-            self.heading(travel_swim(origin, route.points[0]), origin, standing);
+            swim = travel_swim(origin, route.points[0]);
+            if passage is None {
+                swim.speed = goal_area_speed(route.points[0].sub(origin).length());
+            }
+            self.heading(swim, origin, standing);
             return;
         }
         toward = flat_toward(origin, route.points[0]);
-        self.heading(TravelResult(direction=toward[0], speed=400.0), origin, standing);
+        speed = 400.0;
+        if passage is None {
+            # The last leg is in the goal's own area (BotMoveInGoalArea).
+            speed = goal_area_speed(toward[1]);
+        } elif passage.kind == TRAVEL_TELEPORT and toward[1] < 30.0 {
+            # BotTravel_Teleport: half speed for the last 30 units.
+            speed = 200.0;
+        }
+        self.heading(TravelResult(direction=toward[0], speed=speed), origin, standing);
     }
 }

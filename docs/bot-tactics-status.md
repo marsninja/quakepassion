@@ -68,6 +68,9 @@ weapon the movement needs, a movement view, waiting and failure.
   16 units of the near end, board and stand on its middle, and walk off within
   24 units of the far end. A bot on a mover keeps its passage.
 - Ladder (`BotTravel_Ladder`): face up or down the ladder and move.
+- In its goal's area a bot slows over the last 100 units and stops within
+  2.5 (`BotMoveInGoalArea`); it takes the last 30 units to a teleporter at
+  half speed (`BotTravel_Teleport`).
 - A passage is given up after `BotReachabilityTime` (5 s; 6 for ladders and
   weapon jumps; 10 for elevators, jump pads and bobbing platforms) and the
   route is planned again from where the bot is; the movement fails only when
