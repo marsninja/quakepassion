@@ -164,7 +164,9 @@ obj FlareSurface {
     has face: int,
         origin: Vec3,
         color: Vec3,
-        normal: Vec3;
+        normal: Vec3,
+        # The fog volume the surface lies in (dsurface_t fogNum), or -1.
+        fog: int = -1;
 }
 
 obj Bsp {

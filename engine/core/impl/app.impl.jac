@@ -238,8 +238,8 @@ impl App.render_frame() {
             collision=self.level.collision, player=p
         );
         self.flares.draw(
-            self.world, self.level, self.quake.shown_flares, self.effects.quads, eye, view_yaw, view_pitch,
-            self.renderer.fov, float(self.renderer.width) / float(max(1, self.renderer.height)), self.simulation_time
+            self.world, self.level, self.quake.shown_flares, self.effects.quads, eye,
+            forward_from(view_yaw, view_pitch), self.simulation_time
         );
         self.render_times.effects = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -2519,7 +2519,8 @@ impl App.render_portal(faces: list[int]) {
         p.pitch,
         self.renderer.fov,
         self.simulation_time,
-        self.tick_blend
+        self.tick_blend,
+        flares=self.flares
     );
     show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, self.third_person(), here, self.combat.shots);
 }

@@ -300,6 +300,9 @@ def parse_q3(data: bytes, subdivisions: float = CURVE_SUBDIVISIONS) -> Bsp {
         if face.fog < 0 or face.fog >= len(bsp.fogs) {
             face.fog = -1;
         }
+        if kind == 4 {
+            bsp.flares[-1].fog = face.fog;
+        }
         bsp.faces.append(face);
     }
     # R_StitchAllPatches and R_FixSharedVertexLodError, then the grids

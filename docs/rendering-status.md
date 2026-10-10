@@ -39,8 +39,8 @@ and builds the level graph.
   Brush models whose head is a leaf (negative index) load.
 - **Quake III (BSP46, `engine/formats/q3/bsp.jac`).** JPG and TGA images
   decoded by raylib (built with both decoders by `scripts/stage_raylib.sh`;
-  the prebuilt raylib has neither, nor the `qpDepthFunc` call the script
-  adds); 128×128 RGB lightmaps with the overbright
+  the prebuilt raylib has neither, nor the `qpDepthFunc` and `qpReadDepth`
+  calls the script adds); 128×128 RGB lightmaps with the overbright
   shift; planar surfaces, triangle soups and quadratic patches; the light grid for
   models; cluster PVS; fog volumes; flare surfaces (`MST_FLARE`: a point, a
   colour and a normal, no geometry).
@@ -233,16 +233,36 @@ and builds the level graph.
 - **Q3 flares** (`tr_flares.c`, `engine/world/flares.jac`,
   `engine/render/flares.jac`) are off unless `r_flares` is set, as in the
   original. Each flare surface is a `LightFlare` node on the world. Once a
-  frame the `WatchFlares` walker visits them: one among the view's visible
-  surfaces and on screen is added (`RB_AddFlare`), dimmed by how far its
-  light faces away; tested against what stands between it and the eye
-  (`RB_TestFlare`: hidden when the scene is more than 24 units nearer); and
-  faded in or out at `r_flareFade` (7) a second. A lit flare is one additive
-  quad of the `flareShader` image over everything in the view, half as wide
-  as `r_flareSize / 640 + 8 / depth` of the view's width
-  (`RB_RenderFlare`), drawn before the view weapon. id's released
-  `RB_SurfaceFlare` is compiled out, so there `r_flares 1` adds no surface
-  flares; here they are handed to `RB_AddFlare`, as ioquake3 does.
+  view the `WatchFlares` walker visits them: one among the view's visible
+  surfaces and inside its clip volume is added (`RB_AddFlare`), dimmed by how
+  far its light faces away; tested against the depth buffer at its pixel
+  (`RB_TestFlare`: hidden when what was drawn there is more than 24 units
+  nearer, be it a wall, a door or a model); and faded in or out at
+  `r_flareFade` (7) a second. One added last frame but not this is tested
+  once more where it was, then dropped. A lit flare is one additive quad of
+  the `flareShader` image over everything in the view, half as wide as
+  `r_flareSize / 640 + 8 / depth` of the view's width (`RB_RenderFlare`),
+  drawn before the view weapon. id's released `RB_SurfaceFlare` is compiled
+  out, so there `r_flares 1` adds no surface flares; here they are handed to
+  `RB_AddFlare`, as ioquake3 does.
+  - The walker sees the view through a `FlareLens`. The renderer's
+    (`ViewLens`) places a point with rlgl's matrices, as
+    `R_TransformModelToClip` does, and reads the depth buffer back one pixel
+    a flare with `qpReadDepth`, a call `scripts/stage_raylib.sh` adds to the
+    raylib it builds (rlgl reads back colour only). The read waits for the
+    GPU to finish the frame so far, as the original's does; with flares off
+    nothing is read. Measured by `scripts/flares_smoke.jac` (2026-10-10,
+    Apple M5 Max, a 2560×1440 framebuffer): one read costs 0.17 ms in a loop;
+    a q3dm12 view with four flares in it goes from 0.97 to 2.49 ms a frame,
+    a q3dm7 view with two from 0.44 to 1.17 ms.
+  - The view through a mirror or portal draws its own flares into its own
+    image, tested against its own depth buffer, and each flare keeps a
+    separate sight for it (`flare_t` `inPortal`). A portal view is drawn
+    without the PVS, so every flare inside its frustum is tested: 72 through
+    q3dm0's mirror (`scripts/portal_smoke.jac`).
+  - A flare inside a fog volume loses the share of its colour the fog
+    between it and the eye takes (an additive shader's colours are modulated
+    by fog).
 
 ## Render interpolation
 
@@ -322,7 +342,8 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   packing, batches, index runs, autosprite quads, the lightmap atlas), `render_culling_tests`, `model_gpu_tests`,
   `effect_quads_tests`, `lightfx_render_tests` (the sky box mesh and its
   rotation, streamed triangles, particle records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
-  `flare_tests` (adding, dimming, fading and dropping flares), `curve_tests`
+  `flare_tests` (adding, dimming, hiding by depth, fading and dropping flares,
+  a portal view's own sight, the lens's place and depth, fog), `curve_tests`
   (patch subdivision, stitching, normals, and the errors and distances
   columns and rows are dropped at).
 - `scripts/validate_patches.jac` subdivides and stitches every Q3 map's
@@ -337,8 +358,10 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   pixels); `scripts/gpu_smoke.jac` exercises `engine/render/gpu.jac`;
   `scripts/effects_gallery.jac` poses every effect kind per game;
   `scripts/fog_smoke.jac` and `scripts/portal_smoke.jac` render fog volumes and
-  every portal shader; `scripts/flares_smoke.jac` stands before flare surfaces
-  on q3dm12 and q3dm7 with `r_flares` off and on;
+  every portal shader, with the flares its views add, test and draw;
+  `scripts/flares_smoke.jac` stands before flare surfaces on q3dm12 and q3dm7
+  with `r_flares` off and on, then with a cube drawn between the eye and the
+  light, and prints what a depth read and a frame with flares cost;
   `scripts/world_features_smoke.jac` captures each kind of animated or special
   world surface up close at a fixed moment (liquids, skies and the sky box,
   light styles, Q3 stages and deforms, grates lit through `depthFunc equal`),
@@ -355,9 +378,12 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   normal rather than the map's per-vertex ones.
 - Q3 shaders: directives the parser does not know are recorded in
   `material.unsupported` and skipped.
-- Q3 flares are tested with a trace through the world instead of the
-  original's depth buffer read, so a model in front of a flare does not hide
-  it. They are not drawn in mirrors and portal views, and take no fog.
+- A Q3 flare's fog is taken at the light itself. The original takes it at
+  the corners of the flare's quad, which `RB_RenderFlare` gives in window
+  coordinates and `RB_CalcFogTexCoords` reads as world ones, so there it
+  depends on where the flare falls on screen. A flare seen through a portal
+  is clipped by the portal's plane like the rest of that view; the original
+  turns the clip plane off for flares.
 - The world shaders hold 31 fog volumes (`WORLD_FOG_LIMIT`), as many as the
   original's renderer numbers (five bits of a surface's sort key). The
   shipped maps have at most 11 (pro-q3tourney2). A map with more draws the

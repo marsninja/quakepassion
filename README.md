@@ -60,9 +60,10 @@ jac build main.jac --native -o qp
 ```
 
 raylib's prebuilt libraries lack the JPG and TGA decoders the Q2/Q3 assets need,
-and rlgl has no call for the depth comparison Quake III shader stages set, so
-the script builds pinned sources with the decoders on and that one call added
-(`qpDepthFunc`); it needs a C compiler and `make` (Linux also needs the
+and rlgl has no call for the depth comparison Quake III shader stages set nor
+one to read the depth buffer its light flares are tested against, so the
+script builds pinned sources with the decoders on and those two calls added
+(`qpDepthFunc`, `qpReadDepth`); it needs a C compiler and `make` (Linux also needs the
 X11/OpenGL development packages). Run it again after pulling a change to it:
 a binary built against a newer script does not start with an older library. If the loader cannot find
 raylib, run with `DYLD_LIBRARY_PATH=vendor ./qp` (Linux: `LD_LIBRARY_PATH`).

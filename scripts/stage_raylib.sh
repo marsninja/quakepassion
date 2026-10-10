@@ -2,7 +2,9 @@
 # Build raylib with the JPG/TGA decoders required by original Quake II/III assets.
 # Upstream's prebuilt raylib 6 libraries disable both formats by default.
 # rlgl has no call for the depth comparison, which Quake III shader stages set
-# (depthFunc equal), so the build also exports qpDepthFunc.
+# (depthFunc equal), nor one to read the depth buffer, which Quake III's light
+# flares are tested against, so the build also exports qpDepthFunc and
+# qpReadDepth.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,6 +38,23 @@ cat >> "$tmp/raylib-${RAYLIB_VERSION}/src/rcore.c" <<'ADDITIONS'
 RLAPI void qpDepthFunc(int func)
 {
     glDepthFunc((GLenum)func);
+}
+
+// Read the depth buffer (0 near, 1 far) at a point of the current viewport,
+// given in normalized device coordinates (-1 to 1 each way)
+RLAPI float qpReadDepth(float x, float y)
+{
+    GLint viewport[4] = { 0 };
+    float depth = 1.0f;
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    int column = (int)(0.5f*(1.0f + x)*(float)viewport[2]);
+    int row = (int)(0.5f*(1.0f + y)*(float)viewport[3]);
+    if (column < 0) column = 0;
+    if (row < 0) row = 0;
+    if (column >= viewport[2]) column = viewport[2] - 1;
+    if (row >= viewport[3]) row = viewport[3] - 1;
+    glReadPixels(viewport[0] + column, viewport[1] + row, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth);
+    return depth;
 }
 ADDITIONS
 make -C "$tmp/raylib-${RAYLIB_VERSION}/src" -j4 \
