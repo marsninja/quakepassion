@@ -447,6 +447,20 @@ def white_texture -> Texture {
     return Texture(name="$whiteimage", width=1, height=1, pixels=b"\xff\xff\xff\xff");
 }
 
+"""tr_image.c R_CreateDefaultImage, the default shader's image: a 16-texel
+dark box with a white border, to show the mapping coordinates."""
+def default_texture -> Texture {
+    pixels = bytearray(b"\x20") * (16 * 16 * 4);
+    for i in range(16) {
+        for texel in [i, i * 16, 15 * 16 + i, i * 16 + 15] {
+            for channel in range(4) {
+                pixels[texel * 4 + channel] = 255;
+            }
+        }
+    }
+    return Texture(name="*default", width=16, height=16, pixels=bytes(pixels));
+}
+
 def image_extension(path: str) -> str {
     lower = path.lower();
     if lower.endswith(".tga") {

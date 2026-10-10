@@ -2180,6 +2180,9 @@ impl App.teleport_actor(actor: Player) {
         self.audio.play_path("sound/world/teleout.wav");
     }
     arrival = spot.pos.add(Vec3(z=10.0));
+    # EV_PLAYER_TELEPORT_OUT where the actor left, _IN where it lands.
+    spawn_effect(self.world, origin);
+    spawn_effect(self.world, arrival);
     actor.pos = arrival.add(Vec3(z=height));
     actor.yaw = spot.yaw;
     actor.pitch = 0.0;
@@ -2318,6 +2321,7 @@ impl App.respawn_arena_player() {
     self.awaiting_respawn = False;
     self.respawn_wait = 0.0;
     self.audio.play_path("sound/world/telein.wav");
+    spawn_effect(self.world, player.pos.sub(Vec3(z=self.level.collision.eye_height)));
 }
 
 """Leave a finished match for the next arena along the ladder, or replay it."""

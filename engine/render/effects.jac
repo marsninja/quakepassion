@@ -1049,6 +1049,16 @@ obj EffectScene {
                 continue;
             }
             shader = self.blast_shaders.get(blast.kind, None);
+            if shader is not None and rule.entity_fade {
+                # CG_AddFadeRGB: on the world's axes, the entity colour its
+                # shader takes fading with its life.
+                left = max(0.0, min(1.0, (blast.lifetime - blast.age) / max(0.001, blast.lifetime)));
+                variants[0].draw(
+                    blast.pos, 0.0, eye=eye, seconds=blast.age, overlay=shader,
+                    entity_color=[left, left, left, left]
+                );
+                continue;
+            }
             if shader is not None {
                 axes = mark_axes(blast.direction, blast.rotation * math.pi / 180.0);
                 variants[0].draw(

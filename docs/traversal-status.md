@@ -34,7 +34,12 @@ Teleporters:
   spot and telefrags what is there.
 - Sounds and effects: Q1 one of `misc/r_tele1-5` at the destination
   (`play_teleport`) and `R_TeleportSplash`; Q2 `misc/tele1.wav` and
-  `CL_TeleportParticles`; Q3 `world/teleout.wav` and `world/telein.wav`. Q1
+  `CL_TeleportParticles`; Q3 `world/teleout.wav` and `world/telein.wav` with
+  `CG_SpawnEffect` where the player left and where it lands: the
+  `models/misc/telep.md3` cylinder drawn with the `teleportEffect` shader 24
+  units below the origin, its entity colour fading over half a second
+  (`LE_FADE_RGB`). The same effect marks every Q3 spawn and respawn and the
+  personal teleporter (`ClientSpawn`, `TeleportPlayer`). Q1
   teleporters hum `ambience/hum1.wav` unless SILENT, and Q2 pads show the
   `dmspot` model, its `EF_TELEPORTER` particles and the `world/amb10.wav` loop
   (`games/fixtures.jac`, `engine/world/particle_field.jac`).
@@ -70,8 +75,6 @@ Pushes:
   engine's own guard, not an original rule.
 - Q1 `teleport_time` (no backward movement for 0.7 s after a teleport) and
   Q3's 160 ms `PMF_TIME_KNOCKBACK` from `TeleportPlayer` are not applied.
-- Q3's teleport effect (`CG_SpawnEffect`, the `teleportEffect` model and
-  shader) is drawn as a spark spray.
 - Some shipped teleporters cannot work in the originals either and stay
   inactive: one each in Q1 e4m5, e4m8 and start targets an `info_null`; Q2
   city1 and cool1 have a pad whose destination only spawns in deathmatch.

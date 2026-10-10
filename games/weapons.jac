@@ -723,7 +723,15 @@ def weapon_effects(game: str) -> list[EffectRule] {
             EffectRule(key="medal_excellent", flight="menu/medals/medal_excellent"),
             EffectRule(key="medal_gauntlet", flight="menu/medals/medal_gauntlet"),
             # cgs.media.shadowMarkShader (CG_PlayerShadow).
-            EffectRule(key="markShadow", flight="gfx/damage/shadow")
+            EffectRule(key="markShadow", flight="gfx/damage/shadow"),
+            # cgs.media.teleportEffectModel and teleportEffectShader (CG_SpawnEffect).
+            EffectRule(
+                key="q3_teleport",
+                flight="models/misc/telep.md3",
+                shader="teleportEffect",
+                explosion=True,
+                entity_fade=True
+            )
         ];
     }
     return [];

@@ -2,7 +2,7 @@ import from engine.assets.materials { material_name, model_materials }
 import io;
 import struct;
 import from zipfile { ZipFile }
-import from engine.assets.pk3 { Pk3Assets }
+import from engine.assets.pk3 { Pk3Assets, default_texture }
 import from engine.formats.animated {
     ModelStage,
     stage_frame,
@@ -239,4 +239,13 @@ test "a shader with a directive the parser does not know keeps the plain skin" {
     assert assets.model_shaders["models/a"].unsupported == ["tcmod entitytranslate"];
     assert not assets.model_stages("models/a") and not assets.model_hidden("models/a");
     assets.close();
+}
+
+test "a surface that names no shader takes the default image" {
+    # R_CreateDefaultImage: 16 texels square, value 32 inside a white border.
+    box = default_texture();
+    assert box.width == 16 and box.height == 16 and len(box.pixels) == 16 * 16 * 4;
+    assert box.pixels[0:4] == b"\xff\xff\xff\xff" and box.pixels[(15 * 16 + 15) * 4:] == b"\xff\xff\xff\xff";
+    assert box.pixels[(5 * 16 + 5) * 4:(5 * 16 + 5) * 4 + 4] == b"\x20\x20\x20\x20";
+    assert box.pixels[(7 * 16) * 4] == 255 and box.pixels[(7 * 16 + 15) * 4] == 255 and box.pixels[(7 * 16 + 14) * 4] == 32;
 }

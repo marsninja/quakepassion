@@ -104,13 +104,16 @@ def missile_impact_particles(world: World, game: str, effect: str, origin: Vec3,
 }
 
 """The arrival flash of a teleport: Q1 TE_TELEPORT (R_TeleportSplash), Q2
-EV_PLAYER_TELEPORT (CL_TeleportParticles); elsewhere a brief spray."""
+EV_PLAYER_TELEPORT (CL_TeleportParticles), Q3 CG_SpawnEffect; elsewhere a
+brief spray."""
 def teleport_splash(world: World, origin: Vec3) {
     field = particle_field(world);
     if field.game == "q1" {
         quake_teleport_splash(field, origin);
     } elif field.game == "q2" {
         quake2_teleport_particles(field, origin);
+    } elif field.game == "q3" {
+        spawn_effect(world, origin);
     } else {
         spark_spray(field, origin, Vec3(z=1.0), 13421772, 24);
     }
@@ -565,6 +568,19 @@ node Explosion {
         variant: int = 0,
         direction: Vec3 = Vec3(z=1.0),
         rotation: float = 0.0;
+}
+
+# The effect rule CG_SpawnEffect's local entity draws with, and its life.
+glob SPAWN_EFFECT_KIND: str = "q3_teleport",
+     SPAWN_EFFECT_TIME: float = 0.5;
+
+"""cg_effects.c CG_SpawnEffect: a player teleporting in or out
+(EV_PLAYER_TELEPORT_IN and _OUT, and every ClientSpawn): the teleportEffect
+model 24 units below the player's `origin`, fading over half a second."""
+def spawn_effect(world: World, origin: Vec3) {
+    world +>:HasExplosion:+> Explosion(
+        pos=origin.sub(Vec3(z=24.0)), kind=SPAWN_EFFECT_KIND, lifetime=SPAWN_EFFECT_TIME
+    );
 }
 
 """Start an explosion at `origin`: its look, light and sound, and its burst of
