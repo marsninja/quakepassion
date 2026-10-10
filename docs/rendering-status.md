@@ -259,7 +259,8 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   pixels); `scripts/gpu_smoke.jac` exercises `engine/render/gpu.jac`;
   `scripts/effects_gallery.jac` poses every effect kind per game;
   `scripts/fog_smoke.jac` and `scripts/portal_smoke.jac` render fog volumes and
-  every portal shader.
+  every portal shader; `scripts/flares_smoke.jac` stands before flare surfaces
+  on q3dm12 and q3dm7 with `r_flares` off and on.
 
 ## Limitations
 
