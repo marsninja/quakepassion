@@ -180,3 +180,27 @@ obj ArchiveMaterials(Materials) {
         self.loader = None;
     }
 }
+
+"""A texture no bigger than `limit` on a side, for showing small: every
+n-th texel of the original."""
+def small_picture(image: Texture, limit: int = 72) -> Texture {
+    longest = max(image.width, image.height);
+    if longest <= limit or limit <= 0 or len(image.rgba) < image.width * image.height * 4 {
+        return image;
+    }
+    width = max(1, image.width * limit // longest);
+    height = max(1, image.height * limit // longest);
+    pixels = bytearray(width * height * 4);
+    for y in range(height) {
+        row = (y * image.height // height) * image.width;
+        for x in range(width) {
+            source = (row + x * image.width // width) * 4;
+            at = (y * width + x) * 4;
+            pixels[at] = u8(image.rgba[source]);
+            pixels[at + 1] = u8(image.rgba[source + 1]);
+            pixels[at + 2] = u8(image.rgba[source + 2]);
+            pixels[at + 3] = u8(255);
+        }
+    }
+    return Texture(name=image.name, width=width, height=height, rgba=bytes(pixels));
+}

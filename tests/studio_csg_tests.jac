@@ -22,7 +22,8 @@ import from editor.geometry.csg {
     brush_corners,
     brush_edges,
     hull_sides,
-    corners_moved
+    corners_moved,
+    joined_pieces
 }
 import from editor.geometry.mapping {
     side_like,
@@ -236,4 +237,35 @@ test "a brush turns about any axis with its material" {
     for i in range(6) {
         assert near(spun[i].plane.dist, box[i].plane.dist) and near(spun[i].plane.normal.dot(box[i].plane.normal), 1.0);
     }
+}
+
+test "a slanted cutter does not split its target far from the hole" {
+    floor = box_sides(Vec3(x=-256.0, y=-256.0, z=-16.0), Vec3(x=256.0, y=256.0, z=0.0), "floor");
+    block = box_sides(Vec3(x=176.0, y=128.0, z=-8.0), Vec3(x=240.0, y=192.0, z=56.0), "wall");
+    # One top corner pulled up: the top is two slanted triangles.
+    slanted = corners_moved(block, [Vec3(x=240.0, y=192.0, z=56.0)], Vec3(z=16.0));
+    assert len(slanted) == 7;
+    pieces = carve_sides(floor, slanted);
+    # Four round the hole and one under it.
+    assert pieces is not None and len(pieces) == 5;
+    total = 0.0;
+    for piece in pieces {
+        total += brush_volume(piece);
+    }
+    assert near(total, 512.0 * 512.0 * 16.0 - 64.0 * 64.0 * 8.0);
+}
+
+test "pieces that together are convex are joined" {
+    wall = box_sides(Vec3(), Vec3(x=96.0, y=16.0, z=64.0), "wall");
+    thirds = [
+        box_sides(Vec3(), Vec3(x=32.0, y=16.0, z=64.0), "wall"),
+        box_sides(Vec3(x=64.0), Vec3(x=96.0, y=16.0, z=64.0), "wall"),
+        box_sides(Vec3(x=32.0), Vec3(x=64.0, y=16.0, z=64.0), "wall"),
+        box_sides(Vec3(x=32.0, y=16.0), Vec3(x=48.0, y=64.0, z=64.0), "wall")
+    ];
+    joined = joined_pieces(thirds);
+    # The three in a row become the wall; the one that makes a T stays.
+    assert len(joined) == 2;
+    volumes = sorted([brush_volume(piece) for piece in joined]);
+    assert near(volumes[1], brush_volume(wall)) and near(volumes[0], 16.0 * 48.0 * 64.0);
 }

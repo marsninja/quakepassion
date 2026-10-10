@@ -21,7 +21,13 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the right or middle button and zoom with the wheel; picking, dragging and
   side handles work in every view, and Look at (F) centres all of them. Each
   axis view draws a grid behind the level that coarsens as the view zooms
-  out (16 units, then 64, 256, ...), every fourth line brighter.
+  out (16 units, then 64, 256, ...), every fourth line brighter. View > Axis
+  views as edges (`ed_display wire [3d|axis|all]`) draws a scene's brushes
+  by their outlines, and a shipped map by the edges of its triangles.
+- **A rectangle selects**: a drag that starts on nothing selected draws a
+  rectangle in any view and selects what lies in it (Ctrl or Shift adds).
+  Ctrl+A selects everything, Ctrl+I the rest, `ed_select material:<name>`
+  every brush with a side of that material.
 - **Scene** (left): the map's entities by class. A click selects, a click on
   a class selects all of it, a double click looks at the entity, and the
   filter narrows the list by class, `targetname` or `target`.
@@ -52,14 +58,38 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   (R, `ed_rotate [degrees]`; materials turn with their faces), and
   `ed_clip <x|y|z> <coordinate> [back|front|both]` cuts the selected brushes
   along a plane.
+- More in the Brush menu: turn about x or y (`ed_rotate 90 x`), mirror
+  (`ed_mirror <x|y|z>`), stretch (`ed_resize <fx> [fy fz]`), carve the
+  selection out of every brush it reaches (`ed_carve`), keep what the
+  selected brushes share (`ed_intersect`), hollow them into walls
+  (`ed_hollow [thickness]`) and merge brushes that together are convex
+  (`ed_merge`). Materials stay where they were on their faces through all of
+  these.
+- **Faces** (2, or the toolbar): a click picks one face of a brush, Ctrl
+  adds another. The inspector then shows the face's material, shift, scale
+  and angle as fields, with buttons to nudge and turn it, fit the texture
+  to the face, lay it flat in the face's own plane or reset it (`ed_tex
+  <shift|shiftto|scale|turn|turnto|fit|flat|reset>`). Alt+click takes the
+  material under the pointer for new brushes and faces (`ed_pickmat`).
+- **Corners** (3): the selected brush shows its corners and the middles of
+  its edges; dragging one moves it in the plane that faces the camera and
+  the brush is rebuilt round its corners (`ed_corner`). A move that would
+  leave the brush flat is refused.
 - The inspector shows a brush's material (`ed_material <name>`), size and
   owner, and hands the selected brushes to a new entity (`ed_tie
   func_door`) or back to the world.
 - The Materials tab lists the games' textures by where they live: a Quake
   map (`q1:e1m1/tech04_1`), a Quake II folder (`q2:e1u1/metal3_2`), a Quake
-  III folder (`q3:textures/base_wall/concrete`). A click gives a material to
-  the selected brushes and to new ones. Any other name is a swatch: a colour
-  from the name with a line every 64 units and a fainter one every 16.
+  III folder (`q3:textures/base_wall/concrete`), and first of all the ones
+  the scene uses. A click on a group shows its textures as pictures; a click
+  on a picture gives that material to the selected faces or brushes and to
+  new ones. Any other name is a swatch: a colour from the name with a line
+  every 64 units and a fainter one every 16.
+- The Checks tab (`ed_check`) lists what would stop the map playing or is
+  likely a mistake: no player start, a target nothing is named, an origin
+  that is not three numbers, a brush entity without brushes, a brush that
+  encloses nothing, is thinner than a unit or has corners off the grid. A
+  click on a finding selects what it is about.
 - Every edit that changes the brushes rebuilds the level at once, so the
   level view is what Play runs. Save writes the scene as a Valve 220 `.map`
   under `QP_SCENES` (default `./scenes`), which other Quake editors open.
@@ -83,6 +113,8 @@ engine/core/workbench.jac    the only thing the engine knows: a mode that takes 
 editor/ui/                   the interface toolkit
 editor/document/scene.jac    the document graph
 editor/geometry/brush.jac    brushes: planes, outlines, clipping, mappings, rays
+editor/geometry/csg.jac      brushes cut by brushes, hulls of corners
+editor/geometry/mapping.jac  materials slid, scaled, turned and fitted; sides mirrored and turned
 editor/formats/map.jac       the .map text format, classic and Valve 220
 editor/compile/live.jac      a scene's brushes as a level, at once
 editor/assets/materials.jac  materials from the games' archives, by name
@@ -125,7 +157,11 @@ editor/impl/                 the workbench's scenes and brushes
   after an edit all go through the ordinary `load_destination`.
 - **Brushes are in the document graph**: an entity `Owns` its `Solid`s, the
   `Selected` edges reach items and solids alike, and the same walkers
-  (`Shift`, `Remove`, `Clone`, `Paint`) visit both.
+  (`Shift`, `Remove`, `Clone`, `Paint`) visit both. A picked face is a
+  `Faced` edge from the scene to its brush that carries the side's number;
+  `Reface` walks those edges and the selection to change materials, `Carve`
+  walks every brush of the document, and `Inspect` walks it all for the
+  check.
 - **Play** stages the document's entity lump on the `App`
   (`staged_entities`) and reloads the level, which is how unsaved edits are
   played. The level keeps the map's entities before the skill filter
@@ -143,6 +179,9 @@ editor/impl/                 the workbench's scenes and brushes
   back on that point; framing; ray and box.
 - `tests/studio_brush_tests.jac`, `tests/studio_map_tests.jac`: outlines,
   clipping, volumes, rays and mappings; maps read and written in both forms.
+- `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
+  corner moves by volume; materials kept in place through a slide, a fit, a
+  mirror, a stretch and a turn about each axis.
 - `tests/studio_compile_tests.jac`: a compiled scene's models, faces and
   entities, and that it prepares as a level that holds the player up.
 - `scripts/ui_gallery.jac`: every widget in one window without the engine,
@@ -155,19 +194,25 @@ editor/impl/                 the workbench's scenes and brushes
   box, pick, resize by a handle, drag, material, tie to a door, undo, redo,
   four views with a pick and a drag in the top view, duplicate, wedge,
   cylinder, clip, turn, save, play, return; then a second run reopens the
-  saved map).
+  saved map). `scripts/studio/tools_session.cfg` works on faces and shapes
+  (19 steps: pick a face, give it a texture from the Materials tab's
+  pictures, fit, nudge and turn it from the inspector, add a second face,
+  hollow the brush, drag an edge and a corner in the front view, select by
+  a rectangle in the top view, carve, tip, find a broken target with the
+  check and pick it from the list, save, play, return; then reopen).
 
 ## What remains
 
-Milestones 1 (the shell) and 2 (blockout) of #73 are what this page
-describes. Left over from milestone 2: the clipper is a command (no plane
-drawn in the view), there is no scaling or free rotation about other axes,
-the materials list has no thumbnails, a shipped map cannot take new brushes,
-and Quake III's `brushDef` and `patchDef2` blocks are skipped on open. Not
-yet built: display modes (the axis views are textured, not wireframe),
-texturing tools, the entity class registry behind typed inspector fields, the logic graph panel, prefabs, the
-bake, patches and duplicators, the asset studio, the model editor, terrain,
-the Passion tools and user walkers. Within the shell: entity previews are
-boxes rather than the entity's model, generated (Passion) levels can be
-edited but not saved, and a brush entity cannot be duplicated because two
-entities cannot share a map model.
+Milestones 1 (the shell), 2 (blockout) and most of 3 and 4 (views,
+texturing, brush tools) of #73 are what this page describes. Left over from
+those: the clipper is a command (no plane drawn in the view), there are no
+gizmos for free rotation and scaling, face-to-face tools (tag, glue, wrap a
+texture round a corner) are not built, a shipped map cannot take new
+brushes, and Quake III's `brushDef` and `patchDef2` blocks are skipped on
+open. Not yet built: lit and solid-colour display modes, the entity class
+registry behind typed inspector fields, the logic graph panel, groups and
+prefabs, the bake, patches and duplicators, the asset studio, the model
+editor, terrain, the Passion tools and user walkers. Within the shell:
+entity previews are boxes rather than the entity's model, generated
+(Passion) levels can be edited but not saved, and a brush entity cannot be
+duplicated because two entities cannot share a map model.

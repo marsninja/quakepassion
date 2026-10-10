@@ -15,7 +15,9 @@ import from editor.ui.widgets {
     Tabs,
     MenuBar,
     MenuItem,
-    ViewArea
+    ViewArea,
+    Gallery,
+    Tile
 }
 
 """Run frames until the scripted steps are played, plus one to settle."""
@@ -423,4 +425,38 @@ test "a fixed size counts along the parent's axis only" {
     assert name.area.w == 96 and row.area.h == stage.canvas.theme.row;
     assert field.area.x == 100 and field.area.w == 300;
     assert rest.area.y == row.area.h;
+}
+
+test "a gallery lays tiles across, draws the kept pictures and picks by click" {
+    canvas = TraceCanvas();
+    canvas.keep_picture("brick", 2, 2, bytes(16));
+    top = Box();
+    wall = Gallery(pick="use", grow=1);
+    top.adopt(wall);
+    wall.tiles = [Tile(key="brick", text="brick"), Tile(key="moss", text="moss", picked=True)]
+        + [Tile(key="t" + str(i), text="t" + str(i)) for i in range(40)];
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 400, 300);
+    # (400 - 10 - 6) // 78 tiles across.
+    assert wall.columns() == 4;
+    assert wall.tile_area(0).same(Rect(x=6, y=6, w=72, h=72));
+    assert wall.tile_area(5).same(Rect(x=84, y=100, w=72, h=72));
+    assert wall.tile_at(90, 110) == 5 and wall.tile_at(80, 110) == -1;
+    stage.paint();
+    pictures = [stroke for stroke in canvas.strokes if stroke.kind == "picture"];
+    assert len(pictures) == 1 and pictures[0].words == "brick";
+    assert "moss" in canvas.words();
+    script_click(source, 90, 20);
+    play(stage, source, 400, 300);
+    asked = stage.take_commands();
+    assert len(asked) == 1 and asked[0] == "use \"moss\"";
+    # The wheel scrolls a row at a time, no further than the last row.
+    assert wall.reach() == 11 * 94 + 6 - 300;
+    source.script(UiStep(kind="move", x=100, y=100));
+    source.script(UiStep(kind="wheel", amount=-1.0));
+    play(stage, source, 400, 300);
+    assert wall.offset == 94;
+    wall.reveal(41);
+    assert wall.offset == wall.reach();
 }

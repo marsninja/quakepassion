@@ -14,7 +14,7 @@ import os;
 import from engine.core.workbench { Workbench, SceneView }
 import from engine.core.app { App }
 import from engine.console.shell { Shell, quote_command_word }
-import from engine.formats.bsp { Model, Bsp, MapEntity }
+import from engine.formats.bsp { Model, Bsp, MapEntity, Texture }
 import from engine.math.vec3 { Vec3, forward_from, right_from }
 import from engine.input.input { _capture, _release, mouse_captured }
 import from engine.world.world { move_to_area }
@@ -40,12 +40,25 @@ import from .ui.widgets {
     Tabs,
     MenuBar,
     MenuItem,
-    ViewArea
+    ViewArea,
+    Gallery,
+    Tile
 }
-import from .document.scene { Scene, Item, Solid, scene_of, scene_map, scene_from_map }
+import from .document.scene {
+    Scene,
+    Item,
+    Solid,
+    FaceEdit,
+    FacePick,
+    Finding,
+    scene_of,
+    scene_map,
+    scene_from_map
+}
+import from .geometry.csg { brush_corners, brush_edges }
 import from .camera { EditCamera, ray_enters_box, axis_camera }
-import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials }
-import from .assets.materials { ArchiveMaterials }
+import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
+import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
 import from .formats.map { read_map, write_map }
 import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
@@ -55,7 +68,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("edit", "edit", "enter or leave the studio"),
     ("ed_play", "ed_play [here]", "play the document from its start, or from the camera"),
     ("ed_stop", "ed_stop", "stop playing and return to the document"),
-    ("ed_select", "ed_select [serial|class:<name>] [add]", "select an entity, a class, or nothing"),
+    (
+        "ed_select",
+        "ed_select [serial|solid:<n>|class:<name>|material:<name>|all|brushes|entities|invert] [add]",
+        "select an entity, a brush, a class, everything of a kind, the rest, or nothing"
+    ),
     ("ed_fold", "ed_fold <class>", "open or close a class in the scene list"),
     ("ed_filter", "ed_filter <text>", "show only matching entities in the scene list"),
     ("ed_focus", "ed_focus [serial]", "look at the selection, or at an entity"),
@@ -79,7 +96,26 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_cylinder", "ed_cylinder [width depth height sides]", "add an upright prism of that many sides"),
     ("ed_wedge", "ed_wedge [width depth height]", "add a ramp rising toward +y"),
     ("ed_clip", "ed_clip <x|y|z> <coordinate> [back|front|both]", "cut the selected brushes along a plane"),
-    ("ed_rotate", "ed_rotate [degrees]", "turn the selection about its middle (90 without a number)"),
+    ("ed_rotate", "ed_rotate [degrees] [x|y|z]", "turn the selection about its middle (90 about z without words)"),
+    ("ed_mirror", "ed_mirror <x|y|z>", "mirror the selection along an axis through its middle"),
+    ("ed_resize", "ed_resize <fx> [fy fz]", "stretch the selection about its middle by a factor along each axis"),
+    ("ed_carve", "ed_carve", "cut the selected brushes out of every other brush they reach"),
+    ("ed_intersect", "ed_intersect", "replace the selected brushes with what they all share"),
+    ("ed_hollow", "ed_hollow [thickness]", "turn the selected brushes into shells of walls (16 thick)"),
+    ("ed_merge", "ed_merge", "join the selected brushes into one, when together they are convex"),
+    ("ed_mode", "ed_mode <brush|face|corner>", "what a click in the level picks, and which handles a brush shows"),
+    ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
+    (
+        "ed_tex",
+        "ed_tex <shift|shiftto|scale|turn|turnto|fit|flat|reset> [a] [b]",
+        "change how the material lies on the selected faces, or on every side of the selected brushes"
+    ),
+    ("ed_pickmat", "ed_pickmat [brush side]", "take the material of a face as the one new brushes and faces get"),
+    ("ed_boxselect", "ed_boxselect <view> <x0> <y0> <x1> <y1> [add]", "select what lies in a rectangle of a view"),
+    ("ed_corner", "ed_corner <dx> <dy> <dz> <x> <y> <z> [...]", "move the corners of the selected brush at those points"),
+    ("ed_display", "ed_display <wire|textured> [3d|axis|all]", "draw views as edges or textured (the axis views without a word)"),
+    ("ed_check", "ed_check [number]", "list what is wrong with the document, or select the thing a finding is about"),
+    ("ed_shelf", "ed_shelf <group>", "show a group's materials in the materials tab"),
     ("ed_material", "ed_material <name> [side]", "set the material of the selected brushes, and of new ones"),
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
@@ -220,6 +256,9 @@ obj StudioUi {
         summary: Label,
         place: Label,
         materials: TreeView,
+        gallery: Gallery,
+        checks: TreeView,
+        modes: list[PushButton],
         center: Box,
         new_key: TextField | None = None,
         new_value: TextField | None = None;
@@ -273,6 +312,22 @@ obj Studio(Workbench) {
         resize_side: int = -1,
         resize_by: float = 0.0,
         grid: float = 8.0,
+        # What a click picks: "brush" (and entities), "face" or "corner".
+        mode: str = "brush",
+        hover_side: int = -1,
+        # Views drawn as edges: the axis views, the 3D view.
+        wire_axis: bool = False,
+        wire_main: bool = False,
+        bare_now: bool = False,
+        # A rectangle dragged out over a view, to select what is in it.
+        boxing: bool = False,
+        box_port: int = 0,
+        # How far a dragged corner or edge has gone.
+        corner_by: Vec3 = Vec3(),
+        # The group the materials tab shows, and pictures still to load.
+        shelf: str = "",
+        thumbs: list[str] = [],
+        findings: list[Finding] = [],
         hover: Item | None = None,
         shapes: list[Shape] = [],
         opened: dict[str, bool] = {},
@@ -492,11 +547,24 @@ obj Studio(Workbench) {
                     MenuItem(text="Duplicate", command="ed_duplicate", keys="Ctrl+D"),
                     MenuItem(text="Delete", command="ed_delete", keys="Del"),
                     MenuItem(rule=True),
-                    MenuItem(text="Select nothing", command="ed_select", keys="Esc")
+                    MenuItem(text="Select all", command="ed_select all", keys="Ctrl+A"),
+                    MenuItem(text="Select the rest", command="ed_select invert", keys="Ctrl+I"),
+                    MenuItem(text="Select nothing", command="ed_select", keys="Esc"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Pick brushes and entities", command="ed_mode brush", keys="1"),
+                    MenuItem(text="Pick faces", command="ed_mode face", keys="2"),
+                    MenuItem(text="Move corners and edges", command="ed_mode corner", keys="3"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Check the map", command="ed_check")
                 ],
                 [
                     MenuItem(text="One view", command="ed_layout 1"),
                     MenuItem(text="Four views", command="ed_layout 4"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Axis views as edges", command="ed_display wire axis"),
+                    MenuItem(text="Axis views textured", command="ed_display textured axis"),
+                    MenuItem(text="3D view as edges", command="ed_display wire 3d"),
+                    MenuItem(text="3D view textured", command="ed_display textured 3d"),
                     MenuItem(rule=True),
                     MenuItem(text="Look at the selection", command="ed_focus", keys="F"),
                     MenuItem(text="Console", command="toggleconsole", keys="`")
@@ -507,6 +575,17 @@ obj Studio(Workbench) {
                     MenuItem(text="Wedge", command="ed_wedge"),
                     MenuItem(rule=True),
                     MenuItem(text="Turn a quarter", command="ed_rotate 90", keys="R"),
+                    MenuItem(text="Tip a quarter about x", command="ed_rotate 90 x"),
+                    MenuItem(text="Tip a quarter about y", command="ed_rotate 90 y"),
+                    MenuItem(text="Mirror along x", command="ed_mirror x"),
+                    MenuItem(text="Mirror along y", command="ed_mirror y"),
+                    MenuItem(text="Mirror along z", command="ed_mirror z"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Carve out of the others", command="ed_carve"),
+                    MenuItem(text="Keep what they share", command="ed_intersect"),
+                    MenuItem(text="Hollow", command="ed_hollow"),
+                    MenuItem(text="Merge", command="ed_merge"),
+                    MenuItem(rule=True),
                     MenuItem(text="Hand to the world", command="ed_tie")
                 ],
                 [
@@ -541,6 +620,17 @@ obj Studio(Workbench) {
         tools.adopt(PushButton(text="Add entity", command="ed_new", hint="Add an entity in front of the camera"));
         tools.adopt(Spacer(size=10));
         tools.adopt(PushButton(text="Box", command="ed_box", hint="Add a box brush where the camera looks (B)"));
+        tools.adopt(Spacer(size=10));
+        modes: list[PushButton] = [];
+        for (word, named, told) in [
+            ("brush", "Brushes", "A click picks a brush or an entity; a brush shows its sides' handles (1)"),
+            ("face", "Faces", "A click picks one face of a brush (2)"),
+            ("corner", "Corners", "A brush shows its corners and edges, to drag (3)")
+        ] {
+            chooser = PushButton(text=named, command="ed_mode " + word, hint=told);
+            tools.adopt(chooser);
+            modes.append(chooser);
+        }
         tools.adopt(Spacer(grow=1));
         title = Label(text="", tone="dim");
         tools.adopt(title);
@@ -552,7 +642,7 @@ obj Studio(Workbench) {
         top.adopt(body);
         left = Box(size=280, fill="panel");
         body.adopt(left);
-        side = Tabs(titles=["Scene", "Materials"], grow=1);
+        side = Tabs(titles=["Scene", "Materials", "Checks"], grow=1);
         left.adopt(side);
         scene_page = Box();
         side.adopt(scene_page);
@@ -580,12 +670,24 @@ obj Studio(Workbench) {
             )
         );
         material_tree = TreeView(
-            pick="ed_material",
-            toggle="ed_fold",
-            grow=1,
-            hint="Click a material to give it to the selected brushes and to new ones"
+            pick="ed_shelf", toggle="ed_fold", size=150, hint="Click a group to see its materials below"
         );
         material_page.adopt(material_tree);
+        gallery = Gallery(
+            pick="ed_material",
+            grow=1,
+            hint="Click a material to give it to the selected faces or brushes, and to new brushes"
+        );
+        material_page.adopt(gallery);
+        check_page = Box();
+        side.adopt(check_page);
+        check_row = Box(pad=4);
+        check_page.adopt(check_row);
+        check_row.adopt(
+            PushButton(text="Check the map", command="ed_check", hint="Look for what would stop the map playing")
+        );
+        checks = TreeView(pick="ed_check", grow=1, hint="Click a finding to select what it is about");
+        check_page.adopt(checks);
         body.adopt(Splitter(target=left, low=160, high=600));
         home = game_directory("passion");
         if os.path.isdir(home) {
@@ -650,6 +752,9 @@ obj Studio(Workbench) {
             summary=summary,
             place=place,
             materials=material_tree,
+            gallery=gallery,
+            checks=checks,
+            modes=modes,
             center=center
         );
     }
@@ -706,12 +811,23 @@ obj Studio(Workbench) {
         ui.save.lit = scene.dirty;
         ui.title.text = scene.game.upper() + "  " + scene.name + ("  (edited)" if scene.dirty else "");
         chosen = scene.selection();
-        if len(chosen) == 1 {
+        picks = scene.faces();
+        brushes = scene.selected_solids();
+        if picks {
+            ui.summary.text = str(len(picks)) + (" face selected" if len(picks) == 1 else " faces selected");
+        } elif len(chosen) == 1 and not brushes {
             ui.summary.text = chosen[0].title() + "  #" + str(chosen[0].serial);
-        } elif chosen {
-            ui.summary.text = str(len(chosen)) + " entities selected";
+        } elif chosen or brushes {
+            ui.summary.text = (
+                (str(len(chosen)) + (" entity " if len(chosen) == 1 else " entities ") if chosen else "")
+                    + (str(len(brushes)) + (" brush " if len(brushes) == 1 else " brushes ") if brushes else "")
+                    + "selected"
+            );
         } else {
             ui.summary.text = str(len(scene.items())) + " entities";
+        }
+        for (index, word) in enumerate(["brush", "face", "corner"]) {
+            ui.modes[index].lit = self.mode == word;
         }
         eye = self.main.eye;
         ui.place.text = str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
@@ -793,6 +909,10 @@ obj Studio(Workbench) {
         ui.new_key = None;
         ui.new_value = None;
         chosen = scene.selection();
+        if scene.faces() {
+            self.fill_face_form(scene, ui);
+            return;
+        }
         if not chosen and scene.selected_solids() {
             self.fill_solid_form(scene, ui);
             return;
@@ -888,6 +1008,9 @@ obj Studio(Workbench) {
             self.materials_shown = self.materials_changed;
         }
         ui.materials.track(stage);
+        ui.gallery.track(stage);
+        ui.checks.track(stage);
+        self.load_thumbs();
         self.keep_built();
         hint = stage.hint();
         ui.hint.text = hint if hint else self.note;
@@ -939,10 +1062,14 @@ obj Studio(Workbench) {
                         grabbed = boxed.center() if boxed is not None else None;
                     }
                 }
-                if grabbed is not None {
+                if grabbed is not None and self.mode != "face" {
                     self.moving = True;
                     self.move_by = Vec3();
                     self.move_from = grabbed;
+                } elif self.mode == "brush" and not event.alt {
+                    # A press on nothing selected may become a rectangle.
+                    self.boxing = True;
+                    self.box_port = index;
                 }
             } elif event.kind == "release" {
                 if event.button == 1 {
@@ -951,10 +1078,32 @@ obj Studio(Workbench) {
                 if event.button == 2 {
                     self.panning = False;
                 }
+                if event.button == 0 and self.boxing {
+                    self.boxing = False;
+                    if abs(event.x - self.press_x) + abs(event.y - self.press_y) > 6 {
+                        self.moved = True;
+                        stage.emit(
+                            "ed_boxselect " + str(self.box_port) + " " + str(self.press_x) + " " + str(self.press_y)
+                                + " " + str(event.x) + " " + str(event.y)
+                                + (" add" if event.ctrl or event.shift else "")
+                        );
+                    }
+                }
                 if event.button == 0 and self.resizing {
                     self.resizing = False;
                     self.moved = abs(event.x - self.press_x) + abs(event.y - self.press_y) > 3;
-                    if self.resize_by != 0.0 {
+                    if self.mode == "corner" {
+                        gone = self.corner_by;
+                        if gone.length() > 0.0 {
+                            words = "ed_corner " + str(int(gone.x)) + " " + str(int(gone.y)) + " " + str(int(gone.z));
+                            for spot in self.grip_spots(scene, self.resize_side) {
+                                words += " " + str(round(spot.x, 2)) + " " + str(round(spot.y, 2)) + " "
+                                    + str(round(spot.z, 2));
+                            }
+                            stage.emit(words);
+                        }
+                        self.corner_by = Vec3();
+                    } elif self.resize_by != 0.0 {
                         stage.emit("ed_push " + str(self.resize_side) + " " + str(int(self.resize_by)));
                     }
                     self.resize_by = 0.0;
@@ -1005,6 +1154,24 @@ obj Studio(Workbench) {
                 found = self.aim(event.x, event.y);
                 found_item = found.item;
                 found_solid = found.solid;
+                if event.alt {
+                    # The eyedropper: the material under the pointer.
+                    if found_solid is not None {
+                        stage.emit("ed_pickmat " + str(found_solid.serial) + " " + str(found.side));
+                    }
+                    continue;
+                }
+                if self.mode == "face" {
+                    if found_solid is not None {
+                        stage.emit(
+                            "ed_face " + str(found_solid.serial) + " " + str(found.side)
+                                + (" add" if event.ctrl or event.shift else "")
+                        );
+                    } elif not (event.ctrl or event.shift) {
+                        stage.emit("ed_select");
+                    }
+                    continue;
+                }
                 words = "ed_select";
                 if found_solid is not None {
                     words += " solid:" + str(found_solid.serial);
@@ -1038,6 +1205,7 @@ obj Studio(Workbench) {
             self.panning = False;
             self.moving = False;
             self.resizing = False;
+            self.boxing = False;
         }
         if self.looking and self.camera.span <= 0.0 and not self.source.scripted {
             speed = app.host.flyspeed.number * (4.0 if input.shift else 1.0) * dt;
@@ -1049,10 +1217,13 @@ obj Studio(Workbench) {
         }
         self.hover = None;
         self.hover_solid = None;
-        if over_view and not self.looking and not self.panning and not self.moving and not self.resizing {
+        self.hover_side = -1;
+        if over_view and not self.looking and not self.panning and not self.moving and not self.resizing
+            and not self.boxing {
             pointed = self.aim(input.x, input.y);
             self.hover = pointed.item;
             self.hover_solid = pointed.solid;
+            self.hover_side = pointed.side;
         }
     }
 
@@ -1083,6 +1254,10 @@ obj Studio(Workbench) {
                 stage.emit("ed_save");
             } elif ctrl and key == "d" {
                 stage.emit("ed_duplicate");
+            } elif ctrl and key == "a" {
+                stage.emit("ed_select all");
+            } elif ctrl and key == "i" {
+                stage.emit("ed_select invert");
             } elif self.looking {
                 # Flying: the letter keys move the camera.
                 continue;
@@ -1094,6 +1269,12 @@ obj Studio(Workbench) {
                 stage.emit("ed_box");
             } elif key == "r" {
                 stage.emit("ed_rotate 90");
+            } elif key == "1" {
+                stage.emit("ed_mode brush");
+            } elif key == "2" {
+                stage.emit("ed_mode face");
+            } elif key == "3" {
+                stage.emit("ed_mode corner");
             } elif key in ["LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW", "PGUP", "PGDN"] {
                 step = 64 if shift else 16;
                 moves = {
@@ -1250,11 +1431,13 @@ obj Studio(Workbench) {
 
     def views -> list[SceneView] {
         seen: list[SceneView] = [];
-        for port in self.ports[:self.showing()] {
+        built = self.is_built_scene();
+        for (index, port) in enumerate(self.ports[:self.showing()]) {
             area = port.view.area;
             if area.w <= 0 or area.h <= 0 {
                 continue;
             }
+            edges = self.wire_main if index == 0 else self.wire_axis;
             seen.append(
                 SceneView(
                     x=area.x,
@@ -1265,7 +1448,11 @@ obj Studio(Workbench) {
                     yaw=port.camera.yaw,
                     pitch=port.camera.pitch,
                     span=port.camera.span,
-                    everything=True
+                    everything=True,
+                    # A scene's own brushes are drawn by their outlines; a
+                    # shipped map has only its triangles to show.
+                    wire=edges and not built,
+                    bare=edges and built
                 )
             );
         }
@@ -1321,6 +1508,7 @@ obj Studio(Workbench) {
         if view.span > 0.0 {
             self.draw_grid(view);
         }
+        self.bare_now = view.bare;
         chosen: list[Shape] = [];
         for shape in self.shapes {
             if scene.is_selected(shape.item) {
@@ -1413,6 +1601,16 @@ obj Studio(Workbench) {
             );
         }
         self.draw_handles(scene, area);
+        stage = self.stage;
+        if self.boxing and stage is not None and self.port_now == self.box_port {
+            x0 = min(self.press_x, stage.input.x);
+            y0 = min(self.press_y, stage.input.y);
+            band = Rect(x=x0, y=y0, w=abs(stage.input.x - self.press_x), h=abs(stage.input.y - self.press_y));
+            if band.w + band.h > 6 {
+                canvas.fill(band, canvas.theme.accent.faded(40));
+                canvas.outline(band, canvas.theme.accent);
+            }
+        }
     }
 
     # ------------------------------------------------------------------
@@ -1456,6 +1654,29 @@ obj Studio(Workbench) {
     def fill_solid_form(scene: Scene, ui: StudioUi);
     """Run a scene or brush command. False when it is not one."""
     def scene_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
+    # Faces, corners, wider selections and brush tools (impl/studio.tools.impl.jac)
+
+    """Run a face, corner, selection or brush-tool command. False when it is
+    not one."""
+    def tool_command(scene: Scene, args: list[str]) -> bool;
+    """The wider selections of ed_select. False when the word is not one."""
+    def select_wide(scene: Scene, args: list[str]) -> bool;
+    def fill_face_form(scene: Scene, ui: StudioUi);
+    """The corners a handle of the selected brush stands for in corner mode:
+    one for a corner, two for an edge."""
+    def grip_spots(scene: Scene, index: int) -> list[Vec3];
+    """Select what lies in a rectangle of a view."""
+    def select_in_box(scene: Scene, port: int, area: Rect, add: bool);
+    def draw_faces(scene: Scene);
+    """The size in texels of every material the selection's sides have."""
+    def material_sizes(scene: Scene) -> dict[str, list[int]];
+    """Show a group's materials in the gallery."""
+    def fill_gallery(ui: StudioUi);
+    """Load a few of the pictures the gallery is waiting for."""
+    def load_thumbs;
+    def check(scene: Scene, args: list[str]);
 
     # ------------------------------------------------------------------
     # Commands
@@ -1596,8 +1817,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } else {
-            self.scene_command(scene, args);
+        } elif not self.scene_command(scene, args) {
+            self.tool_command(scene, args);
         }
     }
 
@@ -1605,6 +1826,9 @@ obj Studio(Workbench) {
         add = len(args) > 2 and args[2] == "add";
         if len(args) < 2 {
             scene.select(None);
+            return;
+        }
+        if self.select_wide(scene, args) {
             return;
         }
         if args[1].startswith("solid:") and args[1][6:].isdigit() {
@@ -1742,13 +1966,29 @@ obj Studio(Workbench) {
             holder = scene.owner_of(brush);
             if box is not None {
                 lines.append(
-                    "studio: brush #" + str(brush.serial) + " low=" + str(int(box[0].x)) + "," + str(int(box[0].y))
-                        + "," + str(int(box[0].z)) + " high=" + str(int(box[1].x)) + "," + str(int(box[1].y)) + ","
-                        + str(int(box[1].z)) + " material=" + brush.sides[0].material + " owner="
+                    "studio: brush #" + str(brush.serial) + " low=" + str(int(round(box[0].x))) + ","
+                        + str(int(round(box[0].y))) + "," + str(int(round(box[0].z))) + " high="
+                        + str(int(round(box[1].x))) + "," + str(int(round(box[1].y))) + ","
+                        + str(int(round(box[1].z))) + " sides=" + str(len(brush.sides)) + " material="
+                        + brush.sides[0].material + " owner="
                         + (holder.classname() if holder is not None else "")
                 );
             }
         }
+        for face in scene.faces() {
+            side = face.solid.sides[face.side];
+            lay = side.mapping;
+            lines.append(
+                "studio: face #" + str(face.solid.serial) + "/" + str(face.side) + " material=" + side.material
+                    + " shift=" + str(round(lay.s_shift, 2)) + "," + str(round(lay.t_shift, 2)) + " scale="
+                    + str(round(lay.s_scale, 3)) + "," + str(round(lay.t_scale, 3)) + " turn="
+                    + str(round(lay.rotation, 1))
+            );
+        }
+        lines.append(
+            "studio: mode=" + self.mode + " material=" + self.material + " wire="
+                + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0")
+        );
         app = self.app;
         for line in lines {
             print(line);

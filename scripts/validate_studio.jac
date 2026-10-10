@@ -179,6 +179,122 @@ def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"SCENE PASS: {len(steps) - 1} steps, 7 brushes, saved as a map and reopened");
 }
 
+"""The face lines of a dump: `face #<brush>/<side> ...`."""
+def faces(lines: list[str]) -> list[str] {
+    return [line for line in lines if line.startswith("face #")];
+}
+
+"""The third session: faces and materials, corners, a rectangle that
+selects, hollowing, carving and the map check."""
+def tools_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["face", "corner", "checks", "playing"];
+    for shot in shots {
+        (repo / f"tools_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-tools-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/tools_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "tools.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The tools session failed: {output / 'tools.log'}";
+        saved = Path(home) / "scenes/works.map";
+        assert saved.exists() , "Saving the scene wrote no map";
+        saved_text = saved.read_text();
+        again = subprocess.run(
+            [
+                str(binary), "+edit", "+ed_open", str(saved), "+ed_select", "class:brushes", "+ed_dump",
+                "reopened", "+quit"
+            ],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "tools_reopen.log").write_text(again.stdout + again.stderr);
+        assert again.returncode == 0 , f"Reopening the scene failed: {output / 'tools_reopen.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in [
+        "boxed", "faced", "painted", "fitted", "slid", "turned", "two-faces", "moded", "hollowed", "second",
+        "edged", "cornered", "cleared", "banded", "carved", "tipped", "checked", "saved", "returned"
+    ] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'tools.log'}";
+    }
+    block = brush_box(brushes(steps["boxed"])[0]);
+    assert block == [[-64, 96, 0], [64, 224, 96]] , str(block);
+
+    # A click on the block's top in face mode picks that face alone.
+    picked = faces(steps["faced"]);
+    assert len(picked) == 1 and picked[0].startswith("face #3/4 material=blockout") , str(steps["faced"]);
+    assert "mode=face" in steps["faced"][-1] and not brushes(steps["faced"]);
+    # A click on a picture in the Materials tab gives the face that material.
+    painted = faces(steps["painted"]);
+    assert len(painted) == 1 and "material=q1:e1m1/+0basebtn" in painted[0] , str(painted);
+    assert "scale=1.0,1.0" in painted[0];
+    # Fit lays the 32-texel picture once across the 128-unit face.
+    assert "scale=4.0,4.0" in faces(steps["fitted"])[0] , str(steps["fitted"]);
+    fitted_shift = faces(steps["fitted"])[0].split("shift=")[1].split()[0].split(",");
+    slid_shift = faces(steps["slid"])[0].split("shift=")[1].split()[0].split(",");
+    assert float(slid_shift[0]) == float(fitted_shift[0]) + 8.0 and slid_shift[1] == fitted_shift[1];
+    assert "turn=90.0" in faces(steps["turned"])[0] , str(steps["turned"]);
+    # Ctrl adds the side toward the camera; the first keeps what it was given.
+    both = faces(steps["two-faces"]);
+    assert len(both) == 2 and both[1].startswith("face #3/4 material=q1:e1m1/+0basebtn") , str(both);
+    assert both[0].startswith("face #3/3 material=blockout") , str(both);
+
+    # Back in brush mode the faces' brush is selected, and Hollow makes six walls of it.
+    assert "mode=brush" in steps["moded"][-1] and len(brushes(steps["moded"])) == 1;
+    assert "brushes=2" in tally(steps["moded"]) and "brushes=7" in tally(steps["hollowed"]) , str(steps["hollowed"]);
+    assert len(brushes(steps["hollowed"])) == 6;
+
+    # An edge's handle lifts two corners (six sides still); a corner's splits the top.
+    second = brushes(steps["second"]);
+    assert len(second) == 1 and brush_box(second[0]) == [[176, 128, 0], [240, 192, 64]] , str(second);
+    edged = brushes(steps["edged"]);
+    assert brush_box(edged[0]) == [[176, 128, 0], [240, 192, 80]] and "sides=6" in edged[0] , str(edged);
+    cornered = brushes(steps["cornered"]);
+    assert brush_box(cornered[0]) == [[176, 128, 0], [240, 192, 80]] and "sides=7" in cornered[0] , str(cornered);
+    assert "mode=corner" in steps["cornered"][-1] and steps["cornered"][-1].endswith("wire=10");
+
+    # A rectangle dragged round it in the top view selects it again.
+    assert not brushes(steps["cleared"]) and "mode=brush" in steps["cleared"][-1];
+    banded = brushes(steps["banded"]);
+    assert len(banded) == 1 and banded[0].split()[1] == second[0].split()[1] , str(banded);
+
+    # Sunk eight units and carved, the floor is five pieces round and under it.
+    assert "brushes=12" in tally(steps["carved"]) , str(steps["carved"]);
+    tipped = brush_box(brushes(steps["tipped"])[0]);
+    assert tipped[1][2] - tipped[0][2] == 64 and tipped[1][1] - tipped[0][1] == 80 , str(tipped);
+
+    # The check finds the button that fires nothing; a click on the finding selects it.
+    found = [line for line in steps["checked"] if line.startswith("selected ")];
+    assert len(found) == 1 and "classname=func_button" in found[0] and "target=nowhere" in found[0] , str(found);
+    assert "studio: finding func_button has a target nothing is named: nowhere" in ran.stdout;
+
+    built = tally(steps["returned"]);
+    assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+    assert "brushes=12" in built;
+    assert saved_text.count("// brush") == 12 and "q1:e1m1/+0basebtn [" in saved_text;
+    reopened = studio_steps(again.stdout)["reopened"];
+    assert "brushes=12" in tally(reopened) and len(brushes(reopened)) == 12 , str(reopened);
+    for shot in shots {
+        source = repo / f"tools_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"tools_{shot}.png");
+        source.unlink();
+    }
+    print(f"TOOLS PASS: {len(steps) - 1} steps, 12 brushes, saved as a map and reopened");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -279,6 +395,7 @@ def main() {
     }
     print(f"STUDIO PASS: {len(steps) - 1} steps, {count} entities, saved and reloaded");
     scene_session(repo, binary, env, output);
+    tools_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
 

@@ -45,17 +45,29 @@ def common_sides(first: list[Side], second: list[Side]) -> list[Side] {
     return both;
 }
 
+"""Whether a plane faces straight along an axis."""
+def:priv axial(plane: Plane3) -> bool {
+    normal = plane.normal;
+    return max(abs(normal.x), max(abs(normal.y), abs(normal.z))) > 0.99999;
+}
+
 """What is left of `target` outside `cutter`, as convex pieces: none of them
 when the cutter swallows it. Answers None when the two do not overlap, so
 the target is left as it was. The cut faces take the target's material, or
-the cutter's sides' when `lined`."""
+the cutter's sides' when `lined`.
+
+The cutter's sides that face along an axis cut first: a slanted side's
+plane reaches far beyond the cutter, and cutting by it early would split
+the target a long way from the hole."""
 def carve_sides(target: list[Side], cutter: list[Side], lined: bool = False) -> list[list[Side]] | None {
     if not common_sides(target, cutter) {
         return None;
     }
+    kept = pruned_sides(cutter);
+    ordered = [side for side in kept if axial(side.plane)] + [side for side in kept if not axial(side.plane)];
     pieces: list[list[Side]] = [];
     rest = target;
-    for side in pruned_sides(cutter) {
+    for side in ordered {
         parts = clip_sides(rest, side.plane, side.material if lined else "");
         outside = pruned_sides(parts[1]);
         if outside and brush_volume(outside) >= CSG_SLIVER {
@@ -86,11 +98,19 @@ def hollow_sides(sides: list[Side], thickness: float) -> list[list[Side]] {
     return walls if walls is not None else [];
 }
 
-"""Every corner of a brush, once."""
+"""A coordinate within a rounding error of a whole number, made whole."""
+def:priv on_grid(value: float) -> float {
+    nearest = float(round(value));
+    return nearest if abs(value - nearest) < 0.001 else value;
+}
+
+"""Every corner of a brush, once. A corner a rounding error off the unit
+grid is put on it, so brushes built from corners stay exact."""
 def brush_corners(sides: list[Side]) -> list[Vec3] {
     found: list[Vec3] = [];
     for outline in brush_windings(sides) {
-        for point in outline {
+        for raw in outline {
+            point = Vec3(x=on_grid(raw.x), y=on_grid(raw.y), z=on_grid(raw.z));
             known = False;
             for seen in found {
                 if seen.sub(point).length() < 0.05 {
@@ -280,4 +300,29 @@ def brush_edges(sides: list[Side]) -> list[list[Vec3]] {
         }
     }
     return found;
+}
+
+"""Convex pieces with every pair that together is convex joined: fewer
+brushes filling the same space."""
+def joined_pieces(pieces: list[list[Side]]) -> list[list[Side]] {
+    left = list(pieces);
+    joining = True;
+    while joining {
+        joining = False;
+        for i in range(len(left)) {
+            for j in range(i + 1, len(left)) {
+                both = merged_sides(left[i], left[j]);
+                if len(both) > 0 {
+                    left[i] = both;
+                    left.pop(j);
+                    joining = True;
+                    break;
+                }
+            }
+            if joining {
+                break;
+            }
+        }
+    }
+    return left;
 }

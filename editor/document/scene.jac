@@ -19,7 +19,15 @@ import from ..geometry.brush {
 }
 import math;
 import from ..formats.map { MapItem, MapFile }
-import from ..geometry.csg { carve_sides, common_sides, hollow_sides, merged_sides, corners_moved, brush_corners }
+import from ..geometry.csg {
+    carve_sides,
+    common_sides,
+    hollow_sides,
+    merged_sides,
+    corners_moved,
+    brush_corners,
+    joined_pieces
+}
 import from ..geometry.mapping {
     side_like,
     mapping_slid,
@@ -608,6 +616,10 @@ obj FaceEdit {
         fresh = old;
         if self.how == "shift" {
             fresh = mapping_slid(old, self.s, self.t);
+        } elif self.how == "shift_to" {
+            fresh = mapping_slid(old, self.s - old.s_shift, self.t - old.t_shift);
+        } elif self.how == "turn_to" {
+            fresh = mapping_spun(old, self.s - old.rotation);
         } elif self.how == "scale" {
             fresh = mapping_sized(old, self.s, self.t);
         } elif self.how == "turn" {
@@ -790,6 +802,7 @@ walker Carve {
         if not touched {
             return;
         }
+        pieces = joined_pieces(pieces);
         if len(pieces) == 0 {
             gone = SolidHold(solid=here, held=False);
             gone.redo();

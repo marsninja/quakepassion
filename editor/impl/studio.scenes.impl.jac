@@ -230,8 +230,9 @@ impl Studio.aim(x: int, y: int) -> Aim {
 }
 
 impl Studio.draw_solids(scene: Scene) {
-    # Every brush's edges, faintly, so a blockout reads its own shape.
-    faint = ink(0x000000, 110);
+    # Every brush's edges, faintly, so a blockout reads its own shape; when
+    # the level itself is not drawn they are all there is of it.
+    faint = ink(0xb8b0a4, 255) if self.bare_now else ink(0x000000, 110);
     for seen in self.looks {
         if scene.is_solid_selected(seen.solid) {
             continue;
@@ -274,6 +275,7 @@ impl Studio.draw_solids(scene: Scene) {
             }
         }
     }
+    self.draw_faces(scene);
     rlDrawRenderBatchActive();
     rlEnableDepthTest();
 }
@@ -286,6 +288,22 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
     }
     seen = self.look_of(chosen[0]);
     if seen is None {
+        return found;
+    }
+    if self.mode == "face" {
+        return found;
+    }
+    if self.mode == "corner" {
+        # Its corners, then the middles of its edges.
+        count = 0;
+        for corner in brush_corners(chosen[0].sides) {
+            found.append((count, corner));
+            count += 1;
+        }
+        for pair in brush_edges(chosen[0].sides) {
+            found.append((count, pair[0].add(pair[1]).scale(0.5)));
+            count += 1;
+        }
         return found;
     }
     for index in range(len(seen.outlines)) {
@@ -309,18 +327,26 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
         return;
     }
     brush = chosen[0];
+    corners = len(brush_corners(brush.sides)) if self.mode == "corner" else 0;
     for (index, middle) in self.handles(scene) {
         place = middle;
         if self.resizing and index == self.resize_side {
-            place = middle.add(brush.sides[index].plane.normal.scale(self.resize_by));
+            if self.mode == "corner" {
+                place = middle.add(self.corner_by);
+            } else {
+                place = middle.add(brush.sides[index].plane.normal.scale(self.resize_by));
+            }
         }
         at = self.camera.project(area, place);
         if at is None {
             continue;
         }
         grabbed = self.resizing and index == self.resize_side;
-        box = Rect(x=at[0] - 4, y=at[1] - 4, w=9, h=9);
-        canvas.fill(box, canvas.theme.accent if grabbed else canvas.theme.text);
+        # An edge's handle is smaller than a corner's or a side's.
+        half = 3 if self.mode == "corner" and index >= corners else 4;
+        box = Rect(x=at[0] - half, y=at[1] - half, w=2 * half + 1, h=2 * half + 1);
+        tone = canvas.theme.good if self.mode == "corner" and index >= corners else canvas.theme.text;
+        canvas.fill(box, canvas.theme.accent if grabbed else tone);
         canvas.outline(box, canvas.theme.header);
     }
     # Its size, where its top is.
@@ -333,7 +359,7 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
     top = self.camera.project(area, Vec3(x=seen.center().x, y=seen.center().y, z=seen.high.z));
     if top is not None {
         wide = canvas.text_width(words, canvas.theme.small) + 8;
-        tag = Rect(x=top[0] - wide // 2, y=top[1] - 24, w=wide, h=16);
+        tag = Rect(x=top[0] - wide // 2, y=top[1] - 30, w=wide, h=16);
         canvas.fill(tag, canvas.theme.header.faded(210));
         canvas.label(words, tag, canvas.theme.text, 0, 0, canvas.theme.small);
     }
@@ -347,6 +373,7 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             self.resizing = True;
             self.resize_side = index;
             self.resize_by = 0.0;
+            self.corner_by = Vec3();
             return True;
         }
     }
@@ -355,7 +382,30 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
 
 impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
     chosen = scene.selected_solids();
-    if len(chosen) != 1 or self.resize_side < 0 or self.resize_side >= len(chosen[0].sides) {
+    if len(chosen) != 1 or self.resize_side < 0 {
+        return;
+    }
+    if self.mode == "corner" {
+        grabbed: Vec3 | None = None;
+        for (index, point) in self.handles(scene) {
+            if index == self.resize_side {
+                grabbed = point;
+            }
+        }
+        if grabbed is None {
+            return;
+        }
+        # As a dragged selection goes: in the plane that faces the camera.
+        dragged = self.on_view_plane(x, y, grabbed).sub(self.on_view_plane(self.press_x, self.press_y, grabbed));
+        snap = 1.0 if free else self.grid;
+        self.corner_by = Vec3(
+            x=float(round(dragged.x / snap)) * snap,
+            y=float(round(dragged.y / snap)) * snap,
+            z=float(round(dragged.z / snap)) * snap
+        );
+        return;
+    }
+    if self.resize_side >= len(chosen[0].sides) {
         return;
     }
     middle: Vec3 | None = None;
@@ -527,7 +577,15 @@ impl Studio.fill_solid_form(scene: Scene, ui: StudioUi) {
         }
         holder = scene.owner_of(chosen[0]);
         form.adopt(Label(text="part of   " + (holder.title() if holder is not None else "nothing"), tone="dim"));
-        form.adopt(Label(text="Drag a square to push that side.", tone="faint", small=True));
+        form.adopt(
+            Label(
+                text="Drag a corner or the middle of an edge."
+                    if self.mode == "corner"
+                    else "Drag a square to push that side.",
+                tone="faint",
+                small=True
+            )
+        );
     }
     form.adopt(Spacer(size=6));
     tie = Box(across=True, gap=4);
@@ -543,6 +601,22 @@ impl Studio.fill_solid_form(scene: Scene, ui: StudioUi) {
     actions.adopt(PushButton(text="Look at", command="ed_focus", grow=1, hint="Move the camera to the selection (F)"));
     actions.adopt(PushButton(text="Duplicate", command="ed_duplicate", grow=1, hint="Copy the selection (Ctrl+D)"));
     actions.adopt(PushButton(text="Delete", command="ed_delete", grow=1, hint="Delete the selection (Del)"));
+    cuts = Box(across=True, gap=4);
+    form.adopt(cuts);
+    cuts.adopt(
+        PushButton(text="Carve", command="ed_carve", grow=1, hint="Cut the selected brushes out of every other brush")
+    );
+    cuts.adopt(
+        PushButton(text="Hollow", command="ed_hollow", grow=1, hint="Turn the selected brushes into shells of walls")
+    );
+    cuts.adopt(
+        PushButton(text="Merge", command="ed_merge", grow=1, hint="Join the selected brushes when together they are convex")
+    );
+    lays = Box(across=True, gap=4);
+    form.adopt(lays);
+    lays.adopt(PushButton(text="Fit", command="ed_tex fit", grow=1, hint="Fit the material to every side"));
+    lays.adopt(PushButton(text="Flat", command="ed_tex flat", grow=1, hint="Lay the material flat on every side"));
+    lays.adopt(PushButton(text="Reset", command="ed_tex reset", grow=1, hint="Lay the material as a new brush has it"));
 }
 
 impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
@@ -585,11 +659,15 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
             try {
                 degrees = float(args[1]);
             } except ValueError {
-                self.say("ed_rotate [degrees]");
+                self.say("ed_rotate [degrees] [x|y|z]");
                 return True;
             }
         }
-        if not scene.turn_selection(degrees, self.grid) {
+        about = 2;
+        if len(args) > 2 and args[2] in ["x", "y"] {
+            about = 0 if args[2] == "x" else 1;
+        }
+        if not scene.turn_selection(degrees, self.grid, about) {
             self.say("Nothing to turn");
         }
         return True;
@@ -604,17 +682,15 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_material <name> [side]");
             return True;
         }
-        if args[1].startswith("mat:") {
-            # A group's row in the materials list: open or close it.
-            self.opened[args[1]] = not self.opened.get(args[1], False);
-            self.materials_changed += 1;
-            return True;
-        }
         self.material = args[1].strip();
         self.materials_changed += 1;
         side = int(args[2]) if len(args) > 2 and args[2].isdigit() else -1;
-        if scene.selected_solids() {
+        if side >= 0 and scene.selected_solids() {
             if not scene.paint_selection(self.material, side) {
+                self.say("Already " + self.material);
+            }
+        } elif scene.selected_solids() or scene.faces() {
+            if not scene.reface(FaceEdit(how="material", material=self.material), "Set material") {
                 self.say("Already " + self.material);
             }
         } else {
@@ -653,47 +729,31 @@ impl Studio.list_materials(ui: StudioUi) {
     rows: list[TreeRow] = [];
     wanted = self.material_filter.lower();
     rows.append(
-        TreeRow(key="blockout", text="blockout", picked=self.material == "blockout", note="swatch", tone="dim")
+        TreeRow(key="scene", text="in this scene", picked=self.shelf == "scene" or not self.shelf, tone="accent")
     );
     shelf = self.archive;
     if shelf is None {
-        rows.append(TreeRow(key="blockout", text="(no game archives found)", tone="faint"));
-        ui.materials.rows = rows;
-        return;
-    }
-    for group in shelf.groups() {
-        key = "mat:" + group;
-        # A filter looks inside the groups already opened once, so typing
-        # does not read every map.
-        shown = self.opened.get(key, False);
-        members: list[str] = [];
-        if shown or (wanted and group in shelf.listed) {
-            for name in shelf.names(group) {
-                if not wanted or wanted in name.lower() {
-                    members.append(name);
+        rows.append(TreeRow(key="scene", text="(no game archives found)", tone="faint"));
+    } else {
+        for group in shelf.groups() {
+            # A filter looks inside the groups already listed once, so typing
+            # does not read every map.
+            if wanted and wanted not in group.lower() {
+                inside = False;
+                if group in shelf.listed {
+                    for name in shelf.names(group) {
+                        if wanted in name.lower() {
+                            inside = True;
+                        }
+                    }
+                }
+                if not inside {
+                    continue;
                 }
             }
-        }
-        if wanted and not members and wanted not in group.lower() {
-            continue;
-        }
-        rows.append(
-            TreeRow(
-                key=key,
-                text=group,
-                branch=True,
-                opened=shown,
-                note=str(len(members)) if members else ""
-            )
-        );
-        if not shown {
-            continue;
-        }
-        for name in members {
-            rows.append(
-                TreeRow(key=name, text=name.split("/")[-1], depth=1, picked=name == self.material)
-            );
+            rows.append(TreeRow(key=group, text=group, picked=group == self.shelf));
         }
     }
     ui.materials.rows = rows;
+    self.fill_gallery(ui);
 }

@@ -68,7 +68,7 @@ import from vendor.raylib {
             format: i32;
     }  def rlViewport(x: i32, y: i32, width: i32, height: i32) -> None;  def rlSetMatrixProjection(
         proj: Matrix
-    ) -> None;  def rlDrawRenderBatchActive -> None;  def rlReadScreenPixels(width: i32, height: i32) -> u64;  def ExportImage(
+    ) -> None;  def rlDrawRenderBatchActive -> None;  def rlEnableWireMode -> None;  def rlDisableWireMode -> None;  def rlReadScreenPixels(width: i32, height: i32) -> u64;  def ExportImage(
         image: ScreenImage, fileName: str
     ) -> bool;  def MemFree(ptr: u64) -> None;
 }
@@ -226,6 +226,9 @@ obj Renderer {
     );
     """End a view: back to the whole window and screen space."""
     def end_view();
+    """Draw what follows in a view as the edges of its triangles, or go back
+    to filling them."""
+    def wire(on: bool);
 
     """Draw an area's graybox surfaces as solid cubes with wireframe edges."""
     def draw_area(area: Area);

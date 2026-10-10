@@ -23,7 +23,11 @@ obj SceneView {
         span: float = 0.0,
         # Draw every surface, ignoring the PVS (a camera outside the level
         # sees nothing otherwise).
-        everything: bool = False;
+        everything: bool = False,
+        # Draw the level as the edges of its triangles, or not at all (the
+        # workbench then draws what it wants of it).
+        wire: bool = False,
+        bare: bool = False;
 }
 
 """The methods are abstract so that a workbench in another module is reached

@@ -539,3 +539,12 @@ impl Renderer.draw_powerups(lines: list[str]) {
         y += 24;
     }
 }
+
+impl Renderer.wire(on: bool) {
+    rlDrawRenderBatchActive();
+    if on {
+        rlEnableWireMode();
+    } else {
+        rlDisableWireMode();
+    }
+}

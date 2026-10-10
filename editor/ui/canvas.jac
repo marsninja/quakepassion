@@ -42,7 +42,13 @@ import from vendor.raylib {
         font: UiFont, text: str, fontSize: f32, spacing: f32
     ) -> Vector2;  def SetTextureFilter(texture: Texture2D, filter: i32) -> None;  def GetWindowScaleDPI -> Vector2;  def GetClipboardText -> str;  def SetClipboardText(
         text: str
-    ) -> None;
+    ) -> None;  def rlLoadTexture(
+        data: bytes, width: i32, height: i32, format: i32, mipmapCount: i32
+    ) -> u32;  def rlUnloadTexture(id: u32) -> None;  def rlSetTexture(id: u32) -> None;  def rlBegin(
+        mode: i32
+    ) -> None;  def rlEnd -> None;  def rlTexCoord2f(x: f32, y: f32) -> None;  def rlVertex2f(
+        x: f32, y: f32
+    ) -> None;  def rlColor4ub(r: u8, g: u8, b: u8, a: u8) -> None;
 }
 
 """A colour, as the theme and the trace canvas keep it."""
@@ -150,6 +156,12 @@ obj Canvas {
     """The system clipboard's text."""
     def copied -> str abst;
     def copy(words: str) abst;
+    """Keep an image by name: `rgba` is its pixels, four bytes each, rows
+    from the top."""
+    def keep_picture(key: str, width: int, height: int, rgba: bytes) abst;
+    def has_picture(key: str) -> bool abst;
+    """Draw a kept image over `area`. False when no image has that name."""
+    def picture(key: str, area: Rect) -> bool abst;
 
     """Text centred on the height of `area`: at its left edge (`align` -1,
     after `pad`), its middle (0) or its right edge (1)."""
@@ -200,10 +212,29 @@ obj Stroke {
 tests lay out and draw without a window."""
 obj TraceCanvas(Canvas) {
     has strokes: list[Stroke] = [],
-        board: str = "";
+        board: str = "",
+        kept: list[str] = [];
 
     def copied -> str {
         return self.board;
+    }
+
+    def keep_picture(key: str, width: int, height: int, rgba: bytes) {
+        if key not in self.kept {
+            self.kept.append(key);
+        }
+    }
+
+    def has_picture(key: str) -> bool {
+        return key in self.kept;
+    }
+
+    def picture(key: str, area: Rect) -> bool {
+        if key not in self.kept {
+            return False;
+        }
+        self.strokes.append(Stroke(kind="picture", area=area, words=key));
+        return True;
     }
 
     def copy(words: str) {
@@ -273,7 +304,9 @@ obj ScreenCanvas(Canvas) {
         font_path: str = "",
         loaded: bool = False,
         clipped: bool = False,
-        clip_area: Rect = Rect();
+        clip_area: Rect = Rect(),
+        # Kept images, by name, as the graphics card knows them.
+        pictures: dict[str, int] = {};
 
     """Load the interface font at the display's pixel density. Needs a window."""
     def open(path: str = "") {
@@ -370,6 +403,47 @@ obj ScreenCanvas(Canvas) {
 
     def copied -> str {
         return GetClipboardText();
+    }
+
+    def keep_picture(key: str, width: int, height: int, rgba: bytes) {
+        if width <= 0 or height <= 0 or len(rgba) < width * height * 4 {
+            return;
+        }
+        old = self.pictures.get(key, 0);
+        if old != 0 {
+            rlUnloadTexture(u32(old));
+        }
+        # 7 is eight bits each of red, green, blue and alpha.
+        self.pictures[key] = int(rlLoadTexture(rgba, i32(width), i32(height), i32(7), i32(1)));
+    }
+
+    def has_picture(key: str) -> bool {
+        return self.pictures.get(key, 0) != 0;
+    }
+
+    def picture(key: str, area: Rect) -> bool {
+        known = self.pictures.get(key, 0);
+        if known == 0 {
+            return False;
+        }
+        left = f32(area.x);
+        top = f32(area.y);
+        right = f32(area.x + area.w);
+        bottom = f32(area.y + area.h);
+        rlSetTexture(u32(known));
+        rlBegin(i32(7));
+        rlColor4ub(u8(255), u8(255), u8(255), u8(255));
+        rlTexCoord2f(f32(0.0), f32(0.0));
+        rlVertex2f(left, top);
+        rlTexCoord2f(f32(0.0), f32(1.0));
+        rlVertex2f(left, bottom);
+        rlTexCoord2f(f32(1.0), f32(1.0));
+        rlVertex2f(right, bottom);
+        rlTexCoord2f(f32(1.0), f32(0.0));
+        rlVertex2f(right, top);
+        rlEnd();
+        rlSetTexture(u32(0));
+        return True;
     }
 
     def copy(words: str) {

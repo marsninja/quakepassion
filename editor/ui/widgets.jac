@@ -870,6 +870,170 @@ node TreeView(Widget) {
     }
 }
 
+"""One picture of a gallery: `key` is what its command names and the image
+the canvas keeps under that name."""
+obj Tile {
+    has key: str,
+        text: str,
+        picked: bool = False;
+}
+
+"""A scrolling wall of pictures with their names under them, as many across
+as fit. A click asks for `pick` and the tile's key."""
+node Gallery(Widget) {
+    has tiles: list[Tile] = [],
+        pick: str = "",
+        offset: int = 0,
+        tile: int = 72,
+        gap: int = 6,
+        grabbing: bool = False,
+        hover_tile: int = -1;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        return 160 if across else self.pitch() * 2;
+    }
+
+    """A tile's height with its name and the gap under it."""
+    def pitch -> int {
+        return self.tile + 16 + self.gap;
+    }
+
+    def columns -> int {
+        return max(1, (self.area.w - 10 - self.gap) // (self.tile + self.gap));
+    }
+
+    def reach -> int {
+        rows = (len(self.tiles) + self.columns() - 1) // self.columns();
+        return max(0, rows * self.pitch() + self.gap - self.area.h);
+    }
+
+    def tile_area(index: int) -> Rect {
+        across = self.columns();
+        return Rect(
+            x=self.area.x + self.gap + (index % across) * (self.tile + self.gap),
+            y=self.area.y + self.gap + (index // across) * self.pitch() - self.offset,
+            w=self.tile,
+            h=self.tile
+        );
+    }
+
+    def tile_at(x: int, y: int) -> int {
+        across = self.columns();
+        column = (x - self.area.x - self.gap) // (self.tile + self.gap);
+        row = (y - self.area.y - self.gap + self.offset) // self.pitch();
+        if column < 0 or column >= across or row < 0 {
+            return -1;
+        }
+        index = row * across + column;
+        if index >= len(self.tiles) {
+            return -1;
+        }
+        spot = self.tile_area(index);
+        if x >= spot.x + spot.w {
+            return -1;
+        }
+        return index;
+    }
+
+    """Scroll so a tile shows."""
+    def reveal(index: int) {
+        top = self.gap + (index // self.columns()) * self.pitch();
+        if top < self.offset {
+            self.offset = top - self.gap;
+        } elif top + self.pitch() > self.offset + self.area.h {
+            self.offset = top + self.pitch() - self.area.h;
+        }
+    }
+
+    def thumb(canvas: Canvas) -> Rect {
+        bar = canvas.theme.bar;
+        total = max(1, self.reach() + self.area.h);
+        length = max(20, (self.area.h * self.area.h) // total);
+        travel = self.area.h - length;
+        top = self.area.y + (travel * self.offset) // max(1, self.reach());
+        return Rect(x=self.area.right() - bar, y=top, w=bar, h=length);
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(self.area, theme.panel);
+        self.offset = max(0, min(self.offset, self.reach()));
+        for index in range(len(self.tiles)) {
+            spot = self.tile_area(index);
+            if spot.y + self.pitch() < self.area.y or spot.y > self.area.y + self.area.h {
+                continue;
+            }
+            shown = self.tiles[index];
+            if not canvas.picture(shown.key, spot) {
+                canvas.fill(spot, theme.field);
+            }
+            if shown.picked {
+                canvas.outline(Rect(x=spot.x - 2, y=spot.y - 2, w=spot.w + 4, h=spot.h + 4), theme.accent);
+                canvas.outline(Rect(x=spot.x - 1, y=spot.y - 1, w=spot.w + 2, h=spot.h + 2), theme.accent);
+            } elif index == self.hover_tile and self.hovered {
+                canvas.outline(Rect(x=spot.x - 1, y=spot.y - 1, w=spot.w + 2, h=spot.h + 2), theme.text);
+            }
+            canvas.label(
+                shown.text,
+                Rect(x=spot.x, y=spot.y + spot.h + 1, w=spot.w, h=14),
+                theme.text if shown.picked else theme.dim,
+                0,
+                0,
+                theme.small
+            );
+        }
+        if self.reach() > 0 {
+            bar = theme.bar;
+            canvas.fill(Rect(x=self.area.right() - bar, y=self.area.y, w=bar, h=self.area.h), theme.header);
+            canvas.fill(self.thumb(canvas).inset(2), theme.dim if self.grabbing else theme.border);
+        }
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        kind = event.kind;
+        bar = stage.canvas.theme.bar if self.reach() > 0 else 0;
+        if kind == "wheel" {
+            self.offset = max(0, min(self.reach(), self.offset - int(event.wheel * float(self.pitch()))));
+            return True;
+        }
+        if kind == "press" or kind == "double" {
+            self.grabbing = bar > 0 and event.x >= self.area.right() - bar;
+            if self.grabbing or event.button != 0 {
+                return True;
+            }
+            index = self.tile_at(event.x, event.y);
+            if index >= 0 and self.pick {
+                stage.emit(self.pick + " " + quote_command_word(self.tiles[index].key));
+            }
+            return True;
+        }
+        if kind == "drag" {
+            if self.grabbing {
+                travel = max(1, self.area.h - self.thumb(stage.canvas).h);
+                self.offset = max(0, min(self.reach(), self.offset + (event.dy * self.reach()) // travel));
+            }
+            return True;
+        }
+        if kind == "release" {
+            self.grabbing = False;
+            return True;
+        }
+        return kind == "click";
+    }
+
+    """Called every frame by the owner: which tile the pointer is over."""
+    def track(stage: Stage) {
+        self.hover_tile = self.tile_at(stage.input.x, stage.input.y) if self.hovered else -1;
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
 """Pages behind a strip of titles; one page shows at a time."""
 node Tabs(Widget) {
     has titles: list[str] = [],

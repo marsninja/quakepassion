@@ -142,22 +142,30 @@ impl App.render_bench() {
         self.renderer.begin_view(
             view.x, view.y, view.width, view.height, view.eye, view.yaw, view.pitch, view.span
         );
-        self.quake.view_forward = forward_from(view.yaw, view.pitch);
-        self.last_drawn = self.quake.draw(self.level, faces, view.eye);
-        self.models.draw(
-            self.world,
-            view.eye,
-            self.simulation_time,
-            culling=pvs,
-            yaw=view.yaw,
-            pitch=view.pitch,
-            fov=self.renderer.fov,
-            aspect=float(max(1, view.width)) / float(max(1, view.height)),
-            lighting=self.level.lighting,
-            fogs=self.level.bsp.fogs,
-            fog_image=self.quake.fog_image,
-            blend=self.tick_blend
-        );
+        if not view.bare {
+            if view.wire {
+                self.renderer.wire(True);
+            }
+            self.quake.view_forward = forward_from(view.yaw, view.pitch);
+            self.last_drawn = self.quake.draw(self.level, faces, view.eye);
+            self.models.draw(
+                self.world,
+                view.eye,
+                self.simulation_time,
+                culling=pvs,
+                yaw=view.yaw,
+                pitch=view.pitch,
+                fov=self.renderer.fov,
+                aspect=float(max(1, view.width)) / float(max(1, view.height)),
+                lighting=self.level.lighting,
+                fogs=self.level.bsp.fogs,
+                fog_image=self.quake.fog_image,
+                blend=self.tick_blend
+            );
+            if view.wire {
+                self.renderer.wire(False);
+            }
+        }
         self.workbench.draw_scene(view);
         self.renderer.end_view();
     }
