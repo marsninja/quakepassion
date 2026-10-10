@@ -1189,9 +1189,9 @@ def restore(
             item.visual.visible = item.active;
             # Items stay where they had fallen or ridden to; one a dead
             # monster already dropped is its own again.
-            place = Vec3(x=row[6], y=row[7], z=row[8]);
-            if place.sub(item.pos).length() > 0.0 {
-                item.pos = place;
+            resting = Vec3(x=row[6], y=row[7], z=row[8]);
+            if resting.sub(item.pos).length() > 0.0 {
+                item.pos = resting;
                 move_to_area(item, level.areas[level.locate(item.pos)]);
                 world.item_serial += 1;
             }
