@@ -900,8 +900,9 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
 }
 
 """What a monster leaves when it dies. Q1 DropBackpack: grunts carry 5
-shells, enforcers 5 cells and ogres 2 rockets (their ammo_* fields). Q2
-monster_death_use: Drop_Item of the monster's `item` key."""
+shells, enforcers 5 cells and ogres 2 rockets (their ammo_* fields), and
+BackpackTouch prints what the player gets. Q2 monster_death_use: Drop_Item
+of the monster's `item` key."""
 def monster_drop(game: str, kind: str, fields: dict[str, str]) -> PickupRule | None {
     if game == "q1" {
         packed = {
@@ -920,7 +921,8 @@ def monster_drop(game: str, kind: str, fields: dict[str, str]) -> PickupRule | N
             amount=1,
             capacity=1,
             capacities={ammo: 100},
-            grants={ammo: 2 if ammo == "rockets" else 5},
+            grants={ammo: count},
+            message="You get " + str(count) + " " + ammo,
             model="progs/backpack.mdl",
             sound="sound/weapons/lock4.wav"
         );

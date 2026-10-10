@@ -167,6 +167,9 @@ test "dead monsters drop what they carry where they fall" {
     assert grunt_pack is not None and grunt_pack.grants == {"shells": 5};
     ogre_pack = monster_drop("q1", "monster_ogre", {});
     assert ogre_pack is not None and ogre_pack.grants == {"rockets": 2};
+    # BackpackTouch: "You get " and each kind of ammunition it holds.
+    assert grunt_pack is not None and grunt_pack.message == "You get 5 shells";
+    assert ogre_pack is not None and ogre_pack.message == "You get 2 rockets";
     assert monster_drop("q1", "monster_knight", {}) is None;
     shard = monster_drop("q2", "monster_soldier", {"item": "item_armor_shard"});
     assert shard is not None and shard.kind == "armor";

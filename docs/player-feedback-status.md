@@ -142,7 +142,8 @@ past zero (Q3: 40 or more) gibs the player: Q1 `GibPlayer` plays `gib` or
 Printed lines go where the games put them: Q1/Q2 pickup and weapon prints at
 the top left in the game's character sheet, centre prints a third of the way
 down. Q1 pickups print "You got the Rocket Launcher", "You receive 25 health",
-"You got armor"; Q2 shows the pickup icon and name on the status bar; Q3 shows
+"You got armor", and a monster's backpack "You get 5 shells"
+(`BackpackTouch`); Q2 shows the pickup icon and name on the status bar; Q3 shows
 the icon and name above the lower left. Q3 frags add the standing ("You
 fragged X / 1st place with 3"), and bot-versus-bot obituaries print at the top
 left.
@@ -164,6 +165,4 @@ left.
 
 ## Limitations
 
-- Q1 backpacks (grunt, enforcer and ogre drops) are picked up, but
-  `BackpackTouch`'s "You get ..." print is not shown.
 - The player's own body is not thrown as gibs.
