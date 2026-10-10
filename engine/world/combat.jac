@@ -5590,7 +5590,8 @@ walker CombatTick {
                 bodies=self.other_bodies(here),
                 dice=memory.dice,
                 avoid=memory.avoid_reach,
-                ducked=here.crouched
+                ducked=here.crouched,
+                liquids=self.liquids
             );
             # EA_Crouch from the movement.
             if travel.result.crouch {

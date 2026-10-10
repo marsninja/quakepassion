@@ -29,6 +29,7 @@ import from ..formats.aas {
     PRESENCE_NORMAL
 }
 import from ..formats.botconfig { WeightDice }
+import from .liquids { LiquidProbe }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
@@ -169,6 +170,37 @@ def check_blocked(collision: CollisionMap, origin: Vec3, direction: Vec3, bodies
         result.blocked = True;
         result.block_model = hit.model;
     }
+}
+
+"""be_ai_move.c BotGapDistance: how far ahead along `direction` the floor
+falls away, 0 when it does not within 100 units. The crouching player's box
+is dropped onto the floor every 8 units; a landing more than a step and 8
+units under the last is a gap, unless water lies 20 units under it (bots
+walk into pools). With no floor within 60 units under the bot itself the
+answer is 1."""
+def gap_distance(collision: CollisionMap, origin: Vec3, direction: Vec3, liquids: LiquidProbe | None = None) -> float {
+    box = collision.for_body(collision.eye_height, 0.0, Vec3(x=-15.0, y=-15.0, z=-24.0), Vec3(x=15.0, y=15.0, z=8.0));
+    under = box.trace(origin, origin.sub(Vec3(z=60.0)));
+    if under.fraction >= 1.0 {
+        return 1.0;
+    }
+    level = under.end.z + 1.0;
+    dist = 8.0;
+    while dist <= 100.0 {
+        start = Vec3(x=origin.x + direction.x * dist, y=origin.y + direction.y * dist, z=level + 24.0);
+        drop = box.trace(start, start.sub(Vec3(z=48.0 + TRAVEL_MAX_BARRIER)));
+        if not drop.start_solid {
+            if drop.end.z < level - TRAVEL_MAX_STEP - 8.0 {
+                if liquids is not None and liquids.kind_at(drop.end.sub(Vec3(z=20.0))) == 1 {
+                    return 0.0;
+                }
+                return dist;
+            }
+            level = drop.end.z;
+        }
+        dist += 8.0;
+    }
+    return 0.0;
 }
 
 """be_ai_move.c BotMoveInGoalArea's speed: in its goal's area a bot slows
@@ -505,6 +537,7 @@ walker FollowRoute {
         bodies: list[Vec3] = [],
         dice: WeightDice | None = None,
         ducked: bool = False,
+        liquids: LiquidProbe | None = None,
         avoid: AvoidReach | None = None,
         result: TravelResult = TravelResult(),
         launch: Vec3 | None = None;
@@ -745,6 +778,16 @@ walker FollowRoute {
         } elif passage.kind == TRAVEL_TELEPORT and toward[1] < 30.0 {
             # BotTravel_Teleport: half speed for the last 30 units.
             speed = 200.0;
+        } elif passage.kind == TRAVEL_WALK and here.grounded {
+            # BotTravel_Walk: slower up to a gap ahead (looked for at the
+            # bots' think rate).
+            if self.clock - route.gap_checked >= 0.1 {
+                route.gap_checked = self.clock;
+                route.gap = gap_distance(self.collision, origin, toward[0], self.liquids);
+            }
+            if route.gap > 0.0 {
+                speed = 400.0 - (360.0 - 2.0 * route.gap);
+            }
         } elif passage.kind == TRAVEL_BARRIERJUMP and self.at_takeoff() {
             # BotTravel_BarrierJump: slowing up to the barrier.
             speed = 6.0 * min(toward[1], 60.0);

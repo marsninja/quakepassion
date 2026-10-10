@@ -75,6 +75,10 @@ weapon the movement needs, a movement view, waiting and failure.
   presence type). Ducked, it moves in the crouching player's box at a
   quarter speed and stays ducked while there is no room to stand
   (`PM_CheckDuck`).
+- Gaps (`BotGapDistance` in `BotTravel_Walk`): on a walk leg a bot looks
+  100 units ahead ten times a second for the floor falling away by more
+  than a step and 8 units, and slows up to it (40 plus 2 a unit); water
+  under the edge is no gap (`CombatTick.liquids`).
 - Barrier jump (`BotTravel_BarrierJump`): the bot slows up to the barrier (6
   a unit over the last 60) and jumps within 9 units of the reach's start.
 - Walking off a ledge (`BotTravel_WalkOffLedge`): to within 48 units of the
@@ -439,10 +443,6 @@ Scripts (native, need the Q3 assets):
   (`can_step`), not `AAS_PredictClientMovement`. Bots do not block one
   another's movement; they only sidestep each other.
 - Other `be_ai_move.c` details not modelled:
-  - `BotGapDistance`: a walking bot does not slow for a gap ahead. The test
-    lets a gap over water pass, and the combat tick that moves the bots
-    does not carry the level's liquid volumes; without that exception bots
-    would crawl up to every pool.
   - Jumps and barrier jumps fly by a launch velocity worked out to land
     them, not by `EA_Jump` and air movement (`BotFinishTravel_Jump`,
     `BotFinishTravel_BarrierJump`).

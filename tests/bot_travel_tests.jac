@@ -29,6 +29,7 @@ import from engine.world.bot_travel {
     travel_funcbob,
     travel_water_jump,
     goal_area_speed,
+    gap_distance,
     fall_speed,
     travel_walk_off_ledge,
     finish_walk_off_ledge,
@@ -37,6 +38,7 @@ import from engine.world.bot_travel {
     mover_box
 }
 import math;
+import from engine.world.liquids { LiquidProbe }
 import from engine.world.combat { Opponent }
 import from engine.world.world { World }
 import from engine.physics.collision { CollisionMap }
@@ -405,4 +407,33 @@ test "a bot ducks into an area only the crouching box fits, along a crouch reach
     assert under.result.crouch;
     clear = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=open_route, eye_height=26.0, clock=0.0, ducked=True);
     assert not clear.result.crouch;
+}
+
+"""Water wherever it is asked."""
+obj Flooded(LiquidProbe) {
+    def kind_at(point: Vec3) -> int {
+        return 1;
+    }
+}
+
+test "a walking bot slows up to a gap ahead, but not to water" {
+    # A floor that ends at x = 50, with nothing beyond.
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-500.0, y=-500.0, z=-64.0), Vec3(x=50.0, y=500.0, z=0.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    gap = gap_distance(collision, Vec3(), Vec3(x=1.0));
+    assert gap >= 48.0 and gap <= 64.0;
+    assert gap_distance(collision, Vec3(), Vec3(x=-1.0)) == 0.0;
+    # A pool under the edge is no gap; no floor under the bot at all is 1.
+    assert gap_distance(collision, Vec3(), Vec3(x=1.0), Flooded()) == 0.0;
+    assert gap_distance(collision, Vec3(x=300.0), Vec3(x=1.0)) == 1.0;
+    # BotTravel_Walk: 400 - (360 - 2 * dist) on a walk leg.
+    mesh = build_navmesh(World(), strip_aas(2, [(1, 2, TRAVEL_WALK)]));
+    mesh.times_to(2);
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(), Vec3(x=128.0));
+    walk = bot spawn FollowRoute(mesh=mesh, collision=collision, route=route, eye_height=26.0, clock=0.0);
+    assert walk.result.speed == 40.0 + 2.0 * gap and route.gap == gap;
+    wade = bot spawn FollowRoute(mesh=mesh, collision=collision, route=plan_route(mesh, Vec3(), Vec3(x=128.0)), eye_height=26.0, clock=0.0, liquids=Flooded());
+    assert wade.result.speed == 400.0;
 }
