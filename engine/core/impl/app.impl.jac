@@ -168,6 +168,7 @@ impl App.render_frame() {
         combat_lights(self.level.lighting, self.world, p, self.combat, self.tick_blend);
         self.quake.time = self.simulation_time;
         self.quake.blend = self.tick_blend;
+        self.quake.lod_curve_error = self.renderer.cvars.lod_curve_error.number;
         self.render_times.visible = (time.time() - stamp) * 1000.0;
         stamp = time.time();
         self.render_portal(faces);
@@ -237,8 +238,8 @@ impl App.render_frame() {
             collision=self.level.collision, player=p
         );
         self.flares.draw(
-            self.world, self.level, self.quake.shown_flares, self.effects.quads, eye, view_yaw, view_pitch,
-            self.renderer.fov, float(self.renderer.width) / float(max(1, self.renderer.height)), self.simulation_time
+            self.world, self.level, self.quake.shown_flares, self.effects.quads, eye,
+            forward_from(view_yaw, view_pitch), self.simulation_time
         );
         self.render_times.effects = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -562,6 +563,13 @@ impl App.smoke_step(frame: int) -> bool {
     if self.level.active {
         if frame == 1 {
             self.host.overlay.assign("0");
+        }
+        # A pair of captures, visibility culling on and then off, shows one
+        # moment: the clock stands still from the first to the second. A
+        # capture reads the framebuffer after the swap, which may hold a
+        # frame or two before the last, so the clock stops three frames early.
+        if 37 <= frame < 80 or 157 <= frame < 200 {
+            self.skip_time = True;
         }
         if frame == 40 {
             print(
@@ -2517,7 +2525,8 @@ impl App.render_portal(faces: list[int]) {
         p.pitch,
         self.renderer.fov,
         self.simulation_time,
-        self.tick_blend
+        self.tick_blend,
+        flares=self.flares
     );
     show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, self.third_person(), here, self.combat.shots);
 }

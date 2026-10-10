@@ -4,7 +4,7 @@ import os;
 import shutil;
 import subprocess;
 import from pathlib { Path }
-import from scripts.png_checks { PngImage, check_image, different_pixels }
+import from scripts.png_checks { PngImage, check_image, different_pixels, scaled_pixels }
 
 def main() {
     parser = argparse.ArgumentParser(
@@ -55,10 +55,13 @@ def main() {
         }
         for prefix in ["", "moved_"] {
             changed = different_pixels(images[prefix + "pvs"], images[prefix + "all"]);
-            assert changed <= 16 , f"{name}: {changed} PVS pixel differences at {prefix
-                or 'spawn'}";
+            # 16 pixels of the 1280 x 720 window, at the capture's display scale.
+            allowed = scaled_pixels(images[prefix + "pvs"], 16);
+            assert changed <= allowed , f"{name}: {changed} PVS pixel differences at {prefix
+                or 'spawn'} (at most {allowed})";
+            total = images[prefix + "pvs"].width * images[prefix + "pvs"].height;
             print(
-                f"  {name} {prefix or 'spawn'}: {changed} / 921600 pixels differ",
+                f"  {name} {prefix or 'spawn'}: {changed} / {total} pixels differ",
                 flush=True
             );
         }

@@ -61,7 +61,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
 - Q2 monsters collide with player clip brushes, not monster clip brushes.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
-- Q3 patches are not thinned with distance (`r_lodCurveError`).
 - Repeated models are not instanced.
 
 Q3 bots and arenas ([bot-tactics-status.md](bot-tactics-status.md), [arena-match-status.md](arena-match-status.md)):

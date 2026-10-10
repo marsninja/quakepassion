@@ -54,14 +54,18 @@ builds a native compiler kernel from that source: it is slow and memory-hungry
 ### raylib and the build
 
 ```bash
-./scripts/stage_raylib.sh                      # builds raylib 6.0 with JPG/TGA into vendor/
+./scripts/stage_raylib.sh                      # builds raylib 6.0 for the engine into vendor/
 jac build main.jac --native -o qp
 ./qp
 ```
 
 raylib's prebuilt libraries lack the JPG and TGA decoders the Q2/Q3 assets need,
-so the script builds pinned sources; it needs a C compiler and `make` (Linux
-also needs the X11/OpenGL development packages). If the loader cannot find
+and rlgl has no call for the depth comparison Quake III shader stages set nor
+one to read the depth buffer its light flares are tested against, so the
+script builds pinned sources with the decoders on and those two calls added
+(`qpDepthFunc`, `qpReadDepth`); it needs a C compiler and `make` (Linux also needs the
+X11/OpenGL development packages). Run it again after pulling a change to it:
+a binary built against a newer script does not start with an older library. If the loader cannot find
 raylib, run with `DYLD_LIBRARY_PATH=vendor ./qp` (Linux: `LD_LIBRARY_PATH`).
 Development and graphical validation happen on macOS; CI builds and tests on Linux.
 

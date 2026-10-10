@@ -40,10 +40,17 @@ differing pixels (`tests/validation_images_tests.jac`).
 
 | Runner | Checks | Output |
 |---|---|---|
-| `scripts/validate_quake.jac --game q1\|q2\|q3 [maps]` | `qp` with `QP_SMOKE=1` per map: five captures (PVS on/off at spawn, a turn, PVS on/off after moving); PVS pairs differ by at most 16 pixels; the turn and move change the view | `.jac/screenshots/<game>/<map>/` |
+| `scripts/validate_quake.jac --game q1\|q2\|q3 [maps]` | `qp` with `QP_SMOKE=1` per map: five captures (PVS on/off at spawn, a turn, PVS on/off after moving); PVS pairs differ by at most 16 pixels of the 1280×720 window (captures are the framebuffer, so on a HiDPI display they are 2560×1440 and the allowance scales with them); the turn and move change the view | `.jac/screenshots/<game>/<map>/` |
 | `scripts/validate_menu.jac` | `scripts/menu_smoke.jac` with a disposable `HOME`: console, settings, bindings, resize, level list, game switching, failed load, Quit (see [menu and console](menu-console-status.md)) | `.jac/screenshots/menu/` |
 | `scripts/validate_gameplay.jac` | The `persistence`, `gameplay`, `campaign` and `combat` smokes with isolated saves | `.jac/screenshots/gameplay/` |
 | `scripts/validate_passion.jac` | `scripts/passion_smoke.jac`: a generated route, mixed assets, saves and the menu | `.jac/screenshots/passion/` |
+
+A `QP_SMOKE` run reads no saved settings, opens the 1280×720 window whatever
+the game's `default.cfg` asks for (Quake II's sets `vid_fullscreen 1`), and
+holds the clock from three frames before each PVS-on capture to its PVS-off
+partner (a capture reads the framebuffer after the swap, which may hold an
+earlier frame), so the pair shows one moment of every animated surface, model
+and sky.
 
 `validate_quake` builds nothing; build `qp` first (`jac build main.jac
 --native -o qp`, or pass `--binary`).
@@ -61,7 +68,7 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
 | `validate_hazards.jac` | Damage volumes and their persistence |
 | `validate_collision_index.jac` | Indexed collision queries against exhaustive ones |
 | `validate_models.jac`, `validate_alias_models.jac` | Every Q2 MD2 and skin; Q1 MDL and Q3 MD3 archives, and how each Q3 model shader script is drawn (stages, hidden, or plain skin with the reason) |
-| `validate_patches.jac` (`QP_SUBDIVISIONS`) | Every Q3 map's patches subdivided and stitched: valid grids, and triangle counts beside the former fixed tessellation |
+| `validate_patches.jac` (`QP_SUBDIVISIONS`) | Every Q3 map's patches subdivided and stitched: valid grids, normals and LOD errors, and triangle counts beside the former fixed tessellation and the coarsest level of detail |
 | `validate_generation.jac` | Passion's generator (no assets): every seed softlock-free and completable |
 | `audit_campaigns.jac`, `chain_audit.jac` (Q1/Q2; `QP_AUDIT_GAMES`, `QP_AUDIT_MAPS`) | Entity inventory of the installed maps; per-map exits, disabled movers and triggers, unactivated targets |
 

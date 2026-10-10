@@ -4,8 +4,10 @@ Each map in QP_BENCH_MAPS is loaded as the menu loads it. The player stands
 at the start in god mode while the view turns a full circle over QP_BENCH_FRAMES
 frames (default 600), so every direction is drawn. For each map it prints the
 median and 95th percentile frame time, the frame rate at the median, and the
-median cost of each render stage (App.render_times). Run it on a quiet
-machine and compare runs made back to back. With QP_BENCH_SHOTS=1 it also
+median cost of each render stage (App.render_times), and how many model
+draws a frame gathers and how many of them share their model with another
+(what instancing could merge). Run it on a quiet machine and compare runs
+made back to back. With QP_BENCH_SHOTS=1 it also
 saves four views per map, a quarter turn apart, as bench_<map>_<n>.png in the
 working directory, for comparing renderers by eye; QP_BENCH_DT fixes each
 frame's time step (e.g. 0.01), so renderers of different speeds show the same
@@ -26,6 +28,7 @@ import from engine.core.menu { game_directory }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World, Player }
 import from engine.world.arena { match_of }
+import from engine.world.models { GatherModels }
 import from engine.world.combat { Projectile, HasProjectile }
 import from engine.world.particles {
     explode,
@@ -139,6 +142,9 @@ with entry {
             "visible": [], "portal": [], "world": [], "models": [],
             "effects": [], "weapon": [], "hud": [], "present": []
         };
+        gathered = 0;
+        shared = 0;
+        samples = 0;
         for i in range(frames) {
             app.player.yaw = start_yaw + 2.0 * math.pi * float(i) / float(frames);
             app.player.pitch = 0.0;
@@ -148,6 +154,19 @@ with entry {
             started = time.time();
             app.step();
             times.append((time.time() - started) * 1000.0);
+            # Outside the timed step, eight times a turn: the frame's model
+            # draws before the view culls them, and those whose model and
+            # shader another draw has too.
+            if i % max(1, frames // 8) == 0 {
+                draws = (app.world spawn GatherModels(seconds=app.simulation_time)).draws;
+                kinds: dict[str, int] = {};
+                for draw in draws {
+                    kinds[draw.resource.name + "|" + draw.shader] = 1;
+                }
+                gathered += len(draws);
+                shared += len(draws) - len(kinds);
+                samples += 1;
+            }
             if shots and i % (frames // 4) == 0 {
                 renderer.screenshot("bench_" + name + "_" + str(i // (frames // 4)) + ".png");
             }
@@ -170,7 +189,9 @@ with entry {
             "fps", round(1000.0 / max(median, 0.001), 1),
             "median_ms", round(median, 2),
             "p95_ms", round(p95, 2),
-            "|", " ".join(parts)
+            "|", " ".join(parts),
+            "| model draws", round(float(gathered) / float(max(1, samples)), 1),
+            "sharing a model", round(float(shared) / float(max(1, samples)), 1)
         );
     }
     renderer.close();

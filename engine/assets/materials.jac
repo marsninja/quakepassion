@@ -249,6 +249,8 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
         return i;
     }
     if token == "depthfunc" {
+        # lequal is the default; the original warns about anything else.
+        stage.depth_equal = argument == "equal";
         return i + 1;
     }
     return i;

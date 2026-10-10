@@ -12,6 +12,7 @@ impl Renderer.declare(shell: Shell) {
     cvars.fullscreen = shell.register(cvars.fullscreen);
     cvars.highdpi = shell.register(cvars.highdpi);
     cvars.subdivisions = shell.register(cvars.subdivisions);
+    cvars.lod_curve_error = shell.register(cvars.lod_curve_error);
 }
 
 impl Renderer.open_window() {

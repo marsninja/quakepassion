@@ -37,6 +37,7 @@ import from .gpu {
     GL_FLOAT,
     GL_UNSIGNED_BYTE,
     view_projection,
+    depth_equal,
     upload_float_texture
 }
 import from .quake {
@@ -783,6 +784,11 @@ obj ModelRenderer {
                 if not writes {
                     rlDisableDepthMask();
                 }
+                if stage.source.depth_equal {
+                    depth_equal(True);
+                    rlEnableShader(u32(program.id));
+                    self.mesh.bind();
+                }
                 steps = packed_tcmods(stage.source, seconds) if stage.source.mods else MODEL_PLAIN_STEPS;
                 struct.pack_into(
                     "<ffff", gpu.stage, 0, stage.tc_gen,
@@ -815,6 +821,11 @@ obj ModelRenderer {
                 self.mesh.draw_vertices(self.firsts[s], count);
                 if not writes {
                     rlEnableDepthMask();
+                }
+                if stage.source.depth_equal {
+                    depth_equal(False);
+                    rlEnableShader(u32(program.id));
+                    self.mesh.bind();
                 }
             }
             # RB_FogPass over the model's opaque surfaces inside a fog volume.
@@ -991,6 +1002,9 @@ obj ModelRenderer {
                 if not writes {
                     rlDisableDepthMask();
                 }
+                if stage.source.depth_equal {
+                    depth_equal(True);
+                }
                 rlSetTexture(
                     u32(
                         stage.frames[
@@ -1059,6 +1073,9 @@ obj ModelRenderer {
                 }
                 if not writes {
                     rlEnableDepthMask();
+                }
+                if stage.source.depth_equal {
+                    depth_equal(False);
                 }
                 if stage.blended or fading or not batched {
                     EndBlendMode();
