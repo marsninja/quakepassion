@@ -1658,6 +1658,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         times=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
                         duration=1.7,
                         frames=["attak2" + two(i) for i in range(1, 18)],
+                        # flyer_frames_attack2: it backs off 10 on each of
+                        # the eight frames it fires.
+                        steps=[0.0, 0.0, 0.0] + [-10.0 for i in range(8)] + [0.0 for i in range(6)],
                         sound="sound/flyer/flyatck3.wav",
                         sound_times=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
                         damage=1,
@@ -1828,6 +1831,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         times=[0.3, 0.4],
                         duration=0.8,
                         frames=["attak1" + two(i) for i in range(1, 9)],
+                        # hover_frames_start_attack, attack1 and end_attack.
+                        steps=[1.0, 1.0, 1.0, -10.0, -10.0, 0.0, 1.0, 1.0],
                         repeat_start=0.3,
                         repeat_end=0.6,
                         repeat_chance=0.6,
@@ -2670,6 +2675,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         times=[0.9, 1.0, 1.1, 1.2, 1.3],
                         duration=1.9,
                         frames=["attack" + str(i) for i in range(1, 20)],
+                        # boss2_frames_attack_pre_mg, attack_mg and post_mg.
+                        steps=[1.0 for i in range(19)],
                         repeat_start=0.9,
                         repeat_end=1.5,
                         repeat_chance=0.7,
@@ -2692,6 +2699,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         times=[1.2],
                         duration=2.1,
                         frames=["attack" + str(i) for i in range(20, 41)],
+                        # boss2_frames_attack_rocket: the recoil on the
+                        # frame it fires (ai_move -20).
+                        steps=[1.0 for i in range(12)] + [-20.0] + [1.0 for i in range(8)],
                         damage=50,
                         splash=50,
                         radius=70.0,

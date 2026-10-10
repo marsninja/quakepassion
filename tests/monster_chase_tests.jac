@@ -306,3 +306,73 @@ test "Q2 ai_charge walks along the monster's own facing, Q1's goes at the enemy"
     charge_on(turned, near, collision, 0.2);
     assert turned.pos.x > 15.0;
 }
+
+test "fliers take their attack frames' steps, backing off as they fire" {
+    open_air = CollisionMap();
+    player = Player(pos=Vec3(x=600.0, z=22.0), health=100000, god_mode=True);
+    # flyer_frames_attack2: three frames, eight of -10 as it fires, six
+    # more. Thirty-five units above its enemy's origin it keeps its height.
+    flyer = chaser("q2", "monster_flyer", Vec3(z=22.0 + 35.0));
+    flyer.grounded = False;
+    flyer.alert = 8.0;
+    flyer.attack_wait = 0.0;
+    charge_with(flyer, "blasters", player.pos);
+    charge_on(flyer, player, open_air, 0.3);
+    assert flyer.pos.x == 0.0;
+    charge_on(flyer, player, open_air, 1.4);
+    assert abs(flyer.pos.x + 80.0) < 0.001 and abs(flyer.pos.z - 57.0) < 0.001;
+    # Level with its enemy it also rises 8 units with each step
+    # (SV_movestep's FL_FLY branch) until it is 30 above.
+    low = chaser("q2", "monster_flyer", Vec3(z=22.0));
+    low.grounded = False;
+    low.alert = 8.0;
+    low.attack_wait = 0.0;
+    charge_with(low, "blasters", player.pos);
+    charge_on(low, player, open_air, 1.7);
+    assert abs(low.pos.x + 80.0) < 0.001 and abs(low.pos.z - (22.0 + 32.0)) < 0.001;
+    # hover_frames_start_attack, attack1 and end_attack: 1 1 1 -10 -10 0 1 1.
+    hover = chaser("q2", "monster_hover", Vec3(z=22.0 + 35.0));
+    hover.grounded = False;
+    hover.alert = 8.0;
+    hover.attack_wait = 0.0;
+    charge_with(hover, "blaster", player.pos);
+    charge_on(hover, player, open_air, 0.3);
+    assert abs(hover.pos.x - 3.0) < 0.001;
+    charge_on(hover, player, open_air, 0.5);
+    assert abs(hover.pos.x + 15.0) < 0.001;
+    # The Hornet creeps forward 1 a frame and is thrown back 20 on the
+    # frame its rockets leave (boss2_frames_attack_rocket's ai_move).
+    hornet = chaser("q2", "monster_boss2", Vec3(z=22.0 + 35.0));
+    hornet.grounded = False;
+    hornet.alert = 8.0;
+    hornet.attack_wait = 0.0;
+    charge_with(hornet, "rockets", player.pos);
+    charge_on(hornet, player, open_air, 1.15);
+    assert abs(hornet.standing().x - 12.0) < 0.001;
+    charge_on(hornet, player, open_air, 0.1);
+    assert abs(hornet.standing().x + 8.0) < 0.001;
+    charge_on(hornet, player, open_air, 0.8);
+    assert abs(hornet.standing().x) < 0.001;
+    # ai_move with no distance is an M_walkmove all the same: a flier in
+    # pain, level with its enemy, goes on rising 8 a frame toward its
+    # height over them and does not otherwise move.
+    hurt = chaser("q2", "monster_flyer", Vec3(z=22.0));
+    hurt.grounded = False;
+    hurt.alert = 8.0;
+    hurt.pain_variant = 1;
+    hurt.pain_wait = pain_length(hurt);
+    assert hurt.pain_wait >= 0.4;
+    for part in range(8) {
+        pain_stagger(hurt, open_air, 0.05, player);
+        hurt.advance(0.05);
+        hurt.pain_wait = max(0.0, hurt.pain_wait - 0.05);
+    }
+    assert abs(hurt.standing().z - 54.0) < 0.001 and hurt.standing().x == 0.0;
+    # A walker in the air takes no step.
+    falling = chaser("q2", "monster_soldier_light", Vec3(z=22.0));
+    falling.grounded = False;
+    falling.attack_wait = 0.0;
+    charge_with(falling, "attack6", player.pos);
+    charge_on(falling, player, open_air, 1.4);
+    assert falling.pos.x == 0.0;
+}

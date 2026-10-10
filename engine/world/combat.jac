@@ -3710,7 +3710,10 @@ def sequence_steps(enemy: Opponent) -> bool {
 `steps`, the frames of a pain or a death): one step of `dist` along `yaw`
 degrees, all of it or none, over stairs but not off a ledge, into a wall or
 into another body, as SV_movestep takes it. The step moves the monster at
-once and is then carried over the `seconds` its frame has left."""
+once and is then carried over the `seconds` its frame has left. A frame
+with no distance takes no step, unless it is `still` one: Q2's ai_move
+calls M_walkmove whatever the distance, which for a flier or swimmer is
+SV_movestep's rise or fall toward its height over its enemy."""
 def sequence_step(
     enemy: Opponent,
     collision: CollisionMap,
@@ -3718,9 +3721,10 @@ def sequence_step(
     dist: float,
     seconds: float,
     foe: Player | None = None,
-    field: StepField | None = None
+    field: StepField | None = None,
+    still: bool = False
 ) -> bool {
-    if dist == 0.0 or not sequence_steps(enemy) {
+    if (dist == 0.0 and not still) or not sequence_steps(enemy) {
         return False;
     }
     enemy.settle();
@@ -3772,13 +3776,19 @@ def pain_stagger(
     }
     frame_sounds(enemy, sequence.events, pose, reached);
     facing = anglemod(math.degrees(enemy.yaw));
-    for frame in frames_begun(enemy, len(sequence.steps), pose, reached) {
-        dist = sequence.steps[frame] * enemy.rule.step_scale;
+    # Every Q2 pain frame is an ai_move, whether or not the sequence
+    # authors a distance for it.
+    still = enemy.game == "q2" and enemy.rule.movement in ["fly", "swim"];
+    paces = len(sequence.steps);
+    for frame in frames_begun(
+        enemy, len(sequence.frames) if still else paces, pose, reached
+    ) {
+        dist = sequence.steps[frame] * enemy.rule.step_scale if frame < paces else 0.0;
         # Q1 ai_painforward is walkmove(ideal_yaw, dist); ai_pain steps back
         # along the facing, as Q2's ai_move steps either way.
         yaw = enemy.ideal_yaw if enemy.game == "q1" and dist > 0.0 else facing;
         sequence_step(
-            enemy, collision, yaw, dist, (float(frame + 1) - pose) * 0.1, blocker, field
+            enemy, collision, yaw, dist, (float(frame + 1) - pose) * 0.1, blocker, field, still
         );
     }
 }
@@ -3819,7 +3829,11 @@ distance).
 - Q1 ai_charge is ai_face then movetogoal: a step at the enemy, not taken
   where it would reach the enemy's box (SV_CloseEnough).
 - Q1 ai_charge_side walks at a point `side` units to the left of the enemy,
-  for a flyby."""
+  for a flyby.
+
+A flier or swimmer takes these steps by SV_movestep's FL_FLY / FL_SWIM
+branch, rising or sinking toward its height over the enemy as it goes; a
+walker off the ground takes none."""
 def attack_charge(
     enemy: Opponent,
     player: Player,
@@ -3829,7 +3843,7 @@ def attack_charge(
 ) {
     profile = current_profile(enemy);
     steps = profile.steps;
-    if not enemy.grounded or not steps or dt <= 0.0 or dt > 0.05 {
+    if not steps or dt <= 0.0 or dt > 0.05 {
         return;
     }
     clock = enemy.attack_clock;
@@ -5269,7 +5283,7 @@ walker CombatTick {
             else self.collision.eye_height;
         delta = foe.pos.sub(here.pos);
         distance = delta.length();
-        pain_stagger(here, self.collision, self.dt, self.player, self.field);
+        pain_stagger(here, self.collision, self.dt, foe, self.field);
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
         here.duck_wait = max(0.0, here.duck_wait - self.dt);
         if here.pain_wait <= 0.0 and here.pain_down {

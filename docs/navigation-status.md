@@ -59,8 +59,15 @@ players and route over the map's AAS; see
   point 30 units to the enemy's left. Q1 pain frames step along `ideal_yaw`
   (`ai_painforward`) or back along the facing (`ai_pain`); death frames step
   along the facing (`ai_forward`, `ai_back`). A frame a burst holds steps
-  once, as it is first shown. The bodies and liquids those steps are traced
-  against come from the tick's `StepField`.
+  once, as it is first shown. Fliers and swimmers take these steps by their
+  own branch of the step (below): the Q2 flyer backs off 10 units on each
+  of the eight frames it fires, the Icarus 10 on its two, and the Hornet
+  creeps forward a unit a frame and is thrown back 20 as its rockets leave.
+  A walker off the ground takes none. A frame with no distance takes no
+  step, except that a Q2 flier's or swimmer's pain frames (`ai_move`, an
+  `M_walkmove` whatever the distance) still rise or sink it toward its
+  height over its enemy. The bodies and liquids those steps
+  are traced against come from the tick's `StepField`.
 - **Carried over the ticks.** A step moves the monster at once, as the C
   does. `MonsterBody.stride` then carries the drawn and shootable body from
   where the frame began to where its step ended over the frame's remaining
@@ -222,7 +229,7 @@ left of `search_time`. Saves without the line load with a fresh chase.
   reach the player; Q2's pursuit to the last sighting and along the trail; a
   noise investigated and given up; the chase in a save; a pain frame's step
   refused with a body in its way; Q2 `ai_charge` along the facing and Q1's
-  at the enemy.
+  at the enemy; the flyer's, Icarus's and Hornet's attack steps.
 - `tests/monster_sequence_tests.jac`, `tests/q2_attack_tests.jac`,
   `tests/chick_tests.jac`, `tests/hell_knight_tests.jac`,
   `tests/attack_timing_tests.jac`: the steps of pain, death and attack
@@ -253,7 +260,6 @@ left of `search_time`. Saves without the line load with a fresh chase.
 
 ## Limitations
 
-- Fliers and swimmers take no steps from their attack frames.
 - Two bodies that already overlap (after a leap, a knock or a fall, none of
   which is traced against other bodies) do not block each
   other's steps, so that they can part; the originals leave such bodies stuck.
