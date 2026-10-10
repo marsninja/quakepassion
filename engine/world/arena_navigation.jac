@@ -6,7 +6,16 @@ import math;
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent }
 import from .bot_routes { NavMesh, HasNavMesh }
-import from .bot_goals { LevelItem, HasLevelItem, bot_items, add_level_item, floating_item, jump_pad_area }
+import from .bot_goals {
+    LevelItem,
+    HasLevelItem,
+    CampSpot,
+    HasCampSpot,
+    bot_items,
+    add_level_item,
+    floating_item,
+    jump_pad_area
+}
 import from .pickups { Pickup, HasPickup, PickupTick, touch_reach }
 import from .traversal { Traversal, HasTraversal, TraversalTick }
 import from ..physics.collision { CollisionMap }
@@ -152,6 +161,9 @@ def prepare_arena_links(world: World, collision: CollisionMap) {
         if item.goal_area != 0 {
             mesh.times_to(item.goal_area);
         }
+    }
+    for spot in [items->:HasCampSpot:->][?:CampSpot] {
+        mesh.times_to(spot.area);
     }
 }
 

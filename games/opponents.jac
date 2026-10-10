@@ -33,7 +33,7 @@ import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
 import from engine.formats.aas { parse_aas }
 import from engine.world.bot_routes { build_navmesh }
-import from engine.world.bot_goals { BotItems, HasBotItems }
+import from engine.world.bot_goals { BotItems, HasBotItems, init_camp_spots }
 import from engine.math.vec3 { Vec3 }
 
 def frame_indices(
@@ -174,13 +174,17 @@ def prepare_arena(
     # The bots' own navigation data (botlib AAS) drives map-wide routing.
     aas_path = "maps/" + level.name + ".aas";
     if library.exists(aas_path) {
-        build_navmesh(world, parse_aas(library.read(aas_path)), level.bsp);
+        mesh = build_navmesh(world, parse_aas(library.read(aas_path)), level.bsp);
         # The items bots know (botfiles/items.c) become their level items
-        # once every item is on the map (prepare_arena_links).
-        world +>:HasBotItems:+> BotItems(infos=botfiles.item_config());
+        # once every item is on the map (prepare_arena_links); the map's
+        # camp spots are theirs at once (BotInitInfoEntities).
+        known = BotItems(infos=botfiles.item_config());
+        world +>:HasBotItems:+> known;
+        init_camp_spots(known, mesh, level.bsp.entities);
     }
     contest = ArenaMatch(
         fraglimit=arena.fraglimit if arena is not None else 20,
+        timelimit=arena.timelimit if arena is not None else 0,
         title=arena.longname if arena is not None else level.name,
         warmup=4.0
     );

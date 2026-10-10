@@ -4146,6 +4146,20 @@ walker CombatTick {
         return kept if kept is not None else self.player;
     }
 
+    """The origins of the living players a bot can bump into (BotCheckBlocked):
+    the bots near it and the human."""
+    def other_bodies(bot: Opponent) -> list[Vec3] {
+        bodies = [
+            other.pos.sub(Vec3(z=other.eye_height))
+            for other in self.nearby(bot.pos)
+            if other is not bot and other.arena and other.health > 0
+        ];
+        if self.player.health > 0 {
+            bodies.append(self.player.pos.sub(Vec3(z=self.collision.eye_height)));
+        }
+        return bodies;
+    }
+
     """BotEntityVisible from a bot's eye to another player's box."""
     def sees(bot: Opponent, other: Player) -> bool {
         height = other.eye_height if isinstance(other, Opponent) else self.collision.eye_height;
@@ -4747,7 +4761,13 @@ walker CombatTick {
                 if wants_route and here.arena and mesh is not None {
                     # Q3 bots route over the map's AAS, the original bots' own data.
                     plan = plan_route(
-                        mesh, origin, target, flags=here.bot_state.travel_flags, goal_area=here.bot_state.goal_area
+                        mesh,
+                        origin,
+                        target,
+                        flags=here.bot_state.travel_flags,
+                        goal_area=here.bot_state.goal_area,
+                        avoid=here.bot_state.avoid_reach,
+                        now=here.bot_state.clock
                     );
                     here.route_wait = 0.25 if plan.found else 1.0;
                     if plan.pending {
@@ -4914,7 +4934,11 @@ walker CombatTick {
                 eye_height=here.eye_height,
                 clock=memory.clock,
                 view_yaw=memory.yaw,
-                view_pitch=memory.pitch
+                view_pitch=memory.pitch,
+                dt=self.dt,
+                bodies=self.other_bodies(here),
+                dice=memory.dice,
+                avoid=memory.avoid_reach
             );
             memory.travel = travel.result;
             launch = travel.launch;
@@ -4939,6 +4963,12 @@ walker CombatTick {
                     if here.water_depth >= 2
                     else Vec3(x=heading.x, y=heading.y).normalized();
             }
+        }
+        # BotAIBlocked: the move its last think made round an obstacle.
+        detour = here.bot_state.detour;
+        if here.arena and detour is not None and not here.fighting {
+            here.steering = detour;
+            here.bot_state.travel.speed = 400.0;
         }
         if self.world is not None and here.character is None {
             advance_attack(

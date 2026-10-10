@@ -17,6 +17,12 @@ podium figures' rigs are in [Q3 player bodies](player-bodies-status.md).
   `scripts/bots.txt` maps each bot to its model and skin (Hossman is
   `biker/hossman`). A map outside the ladder gets Sarge, Grunt and Major and a
   20-frag limit.
+- Limits (`G_InitBots`): an arena is played to its `fraglimit` and
+  `timelimit` keys, a missing key being no limit; an arena with neither is
+  played to 10 frags. No arena in the shipped `arenas.txt` has a `timelimit`
+  key, so the original starts every single-player arena with `timelimit` 0,
+  and so does this: the `timelimit` cvar (minutes, default 0) is set from
+  the arena as it starts and can be changed in the console during a match.
 - `prepare_arena` turns `info_player_deathmatch` entities into `SpawnPoint`
   nodes, builds the bots' AAS routes and level items, and starts a 4 s warmup.
 - The level menu lists Q3's ladder first (training, tiers, final) with arena
@@ -31,8 +37,14 @@ podium figures' rigs are in [Q3 player bodies](player-bodies-status.md).
   (`SpotWouldTelefrag`). `ClientSpawn`'s `G_KillBox` telefrags anyone still on
   the spot. Competitors spawn with 125 health, which decays to 100.
 - Scoring (`g_combat.c`): every death records its killer. A frag credits the
-  killer; suicides and world deaths cost the victim a frag. The match ends at
-  the frag limit.
+  killer; suicides and world deaths cost the victim a frag.
+- Exit rules (`CheckExitRules`): the match ends when the time limit runs out
+  (counted from the warmup's end, "Timelimit hit.") or, with two or more
+  playing, when someone reaches the frag limit ("X hit the fraglimit."). While
+  the two highest scores are tied (`ScoreIsTied`) neither limit ends it: the
+  match plays on in sudden death until someone leads.
+- Time warnings (`CG_CheckLocalSounds`): *five minutes* (limits over five
+  minutes), *one minute*, and *sudden death* two seconds past the limit.
 - Announcer (`CG_CheckLocalSounds`, `CG_Obituary`): lead taken, tied and lost,
   the last three frags, "You fragged X / Tied for 2nd place with 4", then
   *You win* or `<bot>_wins`.
@@ -50,8 +62,9 @@ podium figures' rigs are in [Q3 player bodies](player-bodies-status.md).
 - Drops (`TossClientItems`, `Drop_Item`): a dying player or bot throws its
   held weapon (not the gauntlet or machine gun, and only with ammo left) and
   every powerup it carried, with the time left on it. Items fly under gravity
-  (`G_RunItem`, no bounce), never respawn, and vanish after 30 s. Dropped
-  items are not saved.
+  (`G_RunItem`, no bounce), never respawn, and vanish after 30 s. Saves keep
+  them (`DROP`): which item, where it lies, the time it has left, a powerup's
+  remaining time, and its throw while it is still in the air.
 - Item teams (`G_FindTeams`, `RespawnItem`): items sharing a `team` key show
   one member at a time and respawn a random one. Saves keep which member is
   out.
@@ -126,12 +139,13 @@ When a match ends (`g_arenas.c`):
 ## Validation
 
 - `tests/arena_match_tests.jac`: ladder order and model paths, frag credit and
-  world deaths, frags-left and bot-win cues, warmup, spawn selection, bot
+  world deaths, frags-left and bot-win cues, the time limit, its warnings and
+  sudden death, arena limits, warmup, spawn selection, bot
   damage credit, target choice, joining and saves, awards, ranking, postgame
   medals, phases and buttons.
 - `tests/podium_tests.jac`: placement facing the intermission view.
-- `tests/item_drop_tests.jac`: item teams, respawn spread, drops, powerup
-  shaders.
+- `tests/item_drop_tests.jac`: item teams, respawn spread, drops, dropped
+  items through a save, powerup shaders.
 - `tests/telefrag_tests.jac`: Q3 telefrags and occupied spawns.
 - `tests/cinematic_tests.jac`: worldspawn music and CD tracks, tier
   completion and the postgame films.
@@ -145,6 +159,6 @@ When a match ends (`g_arenas.c`):
 
 ## Limitations
 
-- Only free-for-all: no tournament rules (`GT_TOURNAMENT`), team modes or CTF.
-- The original single-player arenas set no time limit, and none is
-  implemented.
+- Only the single-player ladder's game type (`GT_SINGLE_PLAYER`, played by
+  the free-for-all rules): no `GT_TOURNAMENT` queue of spectators, team modes
+  or CTF.

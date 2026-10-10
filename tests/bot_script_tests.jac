@@ -7,9 +7,33 @@ import from engine.formats.botconfig {
     read_weapon_names,
     read_initial_chat,
     read_random_strings,
+    read_synonyms,
+    read_match_templates,
+    read_reply_chats,
+    RCKFL_AND,
+    RCKFL_NOT,
+    RCKFL_NAME,
+    RCKFL_VARIABLES,
     MAX_INVENTORYVALUE
 }
-import from engine.world.bot_chat { BotChatState, construct_chat, choose_chat, initial_chat, enter_chat, easy_client_name }
+import from engine.world.bot_chat {
+    BotChatState,
+    construct_chat,
+    choose_chat,
+    initial_chat,
+    enter_chat,
+    easy_client_name,
+    unify_white_spaces,
+    string_contains_word,
+    string_replace_words,
+    replace_synonyms,
+    replace_reply_synonyms,
+    find_match,
+    reply_chat,
+    CHAT_EC,
+    CONTEXT_NEARBYITEM,
+    CONTEXT_REPLY
+}
 import from games.botfiles { BotFiles, character_from }
 
 # fw_items.c's balance macros, over a character's #defines (sarge_i.c style).
@@ -158,4 +182,100 @@ test "a character loads its weights and chats from the bot files" {
     assert mind.name == "Sample" and mind.chat_kill == 0.4 and mind.weapon_jumping == 0.75;
     assert mind.weapon_numbers == {7: 0} and mind.item_numbers == {"item_armor_shard": 0, "item_quad": -1};
     assert "kill_insult" in mind.chats and "TAUNT" in mind.random_strings;
+}
+
+# syn.c, match.c and rchat.c in little.
+glob REPLY_FILES: dict[str, str] = {
+    "syn.h": "#define CONTEXT_NORMAL 1\n#define CONTEXT_NEARBYITEM 2\n#define CONTEXT_REPLY 16\n",
+    "syn.c": """
+#include "syn.h"
+CONTEXT_NEARBYITEM
+{
+	[("Rocket Launcher", 1), ("rl", 0), ("rocket launcher", 0)]
+}
+CONTEXT_REPLY
+{
+	[("you", 0), ("i", 0)]
+	[("your", 0), ("my", 0)]
+}
+""",
+    "match.h": "#define EC \"\\x19\"\n#define MTCONTEXT_MISC 2\n#define MTCONTEXT_REPLYCHAT 128\n#define MSG_ENTERGAME 2\n#define MSG_CHATALL 200\n#define NETNAME 0\n#define MESSAGE 2\n",
+    "match.c": """
+#include "match.h"
+MTCONTEXT_MISC
+{
+	NETNAME, " entered the game" = (MSG_ENTERGAME, 0);
+}
+MTCONTEXT_REPLYCHAT
+{
+	NETNAME, EC": ", MESSAGE = (MSG_CHATALL, 0);
+}
+""",
+    "rchat.c": """
+["weird", "odd"] = 5
+{
+	"How odd of you to say that.";
+}
+["bot", &name] = 7
+{
+	"Who are you calling a bot, ", 7, "?";
+}
+[("i am ", 0), !"not"] = 6
+{
+	"So ", 7, " is ", 0, ".";
+}
+"""
+};
+
+test "synonyms, match templates and reply chats load as botlib reads them" {
+    synonyms = read_synonyms(precompile("syn.c", REPLY_FILES));
+    assert [group.context for group in synonyms] == [2, 16, 16];
+    assert synonyms[0].words == ["Rocket Launcher", "rl", "rocket launcher"] and synonyms[0].total == 1.0;
+    # The precompiler's "\\x19" and joined strings make EC": " one string.
+    templates = read_match_templates(precompile("match.c", REPLY_FILES));
+    assert len(templates) == 2 and templates[1].context == 128 and templates[1].kind == 200;
+    assert templates[1].pieces[0].variable == 0 and templates[1].pieces[1].strings == [CHAT_EC + ": "];
+    assert templates[1].pieces[2].variable == 2;
+    # Reply chats, their keys and messages last read first.
+    replies = read_reply_chats(precompile("rchat.c", REPLY_FILES));
+    assert [reply.priority for reply in replies] == [6.0, 7.0, 5.0];
+    assert replies[0].keys[0].flags & RCKFL_NOT and replies[0].keys[0].text == "not";
+    assert replies[0].keys[1].flags & RCKFL_VARIABLES and replies[0].keys[1].pieces[0].strings == ["i am "];
+    assert replies[1].keys[0].flags & RCKFL_AND and replies[1].keys[0].flags & RCKFL_NAME;
+    assert [key.text for key in replies[2].keys] == ["odd", "weird"];
+}
+
+test "chat lines are matched, their synonyms replaced, and answered by the reply chat that fits best" {
+    synonyms = read_synonyms(precompile("syn.c", REPLY_FILES));
+    templates = read_match_templates(precompile("match.c", REPLY_FILES));
+    replies = read_reply_chats(precompile("rchat.c", REPLY_FILES));
+    # UnifyWhiteSpaces, StringContainsWord, StringReplaceWords.
+    assert unify_white_spaces("  hi   there!!  ") == "hi there";
+    assert string_contains_word("you are odd, pal", "ODD") == 8 and string_contains_word("goddess", "odd") == -1;
+    assert string_replace_words("get the rl now", "rl", "Rocket Launcher") == "get the Rocket Launcher now";
+    # A synonym that is the first word in other letters counts as there
+    # already (the comparison ignores case), so only the abbreviation goes.
+    assert replace_synonyms("the rocket launcher or the RL", synonyms, CONTEXT_NEARBYITEM) == "the rocket launcher or the Rocket Launcher";
+    assert replace_reply_synonyms("better than my shadow", synonyms, CONTEXT_REPLY) == "better than your shadow";
+    # BotFindMatch: the chat line's envelope, and a game message.
+    said = find_match(templates, "keel" + CHAT_EC + ": hello there", 128);
+    assert said is not None and said.kind == 200 and said.variable(0) == "keel" and said.variable(2) == "hello there";
+    assert find_match(templates, "keel entered the game", 2) is not None;
+    assert find_match(templates, "keel" + CHAT_EC + ": hello there", 2) is None;
+    # BotReplyChat.
+    state = BotChatState();
+    dice = WeightDice(state=9);
+    answers: list[str] = [];
+    for message in ["you are weird", "sample is a weird bot", "i am better than my shadow", "i am not weird", "nothing to see"] {
+        state.message = "";
+        typed = reply_chat(replies, {}, synonyms, state, message, "Sample", "male", "keel", 1027, CONTEXT_REPLY, 100.0, dice);
+        answers.append(state.message if typed else "");
+    }
+    assert answers == [
+        "How odd of you to say that.",
+        "Who are you calling a bot, keel?",
+        "So keel is better than your shadow.",
+        "How odd of you to say that.",
+        ""
+    ];
 }

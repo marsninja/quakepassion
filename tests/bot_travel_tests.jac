@@ -15,16 +15,18 @@ import from engine.formats.aas {
     TFL_ROCKETJUMP,
     TFL_LAVA
 }
-import from engine.world.bot_routes { NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
+import from engine.world.bot_routes { AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
 import from engine.world.bot_travel {
     FollowRoute,
     TravelResult,
     travel_weapon_jump,
     travel_funcbob,
     travel_water_jump,
+    finish_water_jump,
     air_control,
     mover_box
 }
+import math;
 import from engine.world.combat { Opponent }
 import from engine.world.world { World }
 import from engine.physics.collision { CollisionMap }
@@ -131,9 +133,10 @@ test "a rocket jump walks to its start looking down, then jumps and fires" {
     route.add(passage.finish, 2, passage=passage);
     follow = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0, view_pitch=89.0);
     assert follow.result.jump and follow.result.attack and route.jumped;
-    # A leg taking longer than BotReachabilityTime fails.
+    # A leg taking longer than BotReachabilityTime is given up: the route is
+    # emptied, to be planned again.
     late = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=7.0, view_pitch=89.0);
-    assert late.result.failure;
+    assert not late.result.failure and not route.points;
 }
 
 test "bobbing platforms are waited for, boarded, ridden and left" {
@@ -201,6 +204,16 @@ test "a swimming bot swims straight for its waypoint and water jumps out" {
     assert far.view_set and far.pitch < 0.0 and far.direction.x > 0.98;
     near = travel_water_jump(Vec3(x=passage.finish.x - 30.0, z=passage.finish.z), passage);
     assert near.direction.z > 0.7 and near.direction.x > 0.3;
+    # The view is 15 units over the far end, give or take 40 by crandom().
+    level = Vec3(x=passage.finish.x - 100.0, z=passage.finish.z);
+    assert abs(travel_water_jump(level, passage).pitch + math.degrees(math.atan2(15.0, 100.0))) < 0.001;
+    assert abs(travel_water_jump(level, passage, 1.0).pitch + math.degrees(math.atan2(55.0, 100.0))) < 0.001;
+    assert abs(travel_water_jump(level, passage, -1.0).pitch - math.degrees(math.atan2(25.0, 100.0))) < 0.001;
+    # BotFinishTravel_WaterJump: clear of the surface with its feet still
+    # wet, on for the far end aiming 70 units over it; dry, no move at all.
+    rising = finish_water_jump(level, passage, True, [0.0, 0.0, 0.0]);
+    assert rising.view_set and rising.speed == 400.0 and abs(rising.direction.z - 70.0 / math.sqrt(14900.0)) < 0.001;
+    assert finish_water_jump(level, passage, False, [0.0, 0.0, 0.0]).speed == 0.0;
     # The route follower hands the leg to the water jump until area 3.
     bot.pos = Vec3(x=150.0, z=26.0);
     bot.water_depth = 2;
@@ -208,4 +221,48 @@ test "a swimming bot swims straight for its waypoint and water jumps out" {
     jump.add(passage.finish, 3, passage=passage);
     out = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=jump, eye_height=26.0, clock=0.0);
     assert out.result.view_set and len(jump.points) == 1 and out.result.direction.x > 0.0;
+}
+
+test "a passage taken five times running is avoided for six seconds, and a timed-out leg is planned again" {
+    # Two ways from 1 to 3: straight (quick) and round by 2.
+    aas = strip_aas(3, [(1, 3, TRAVEL_WALK), (1, 2, TRAVEL_WALK), (2, 3, TRAVEL_WALK)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    exits = [mesh.areas[1]->:Exits:->][?:Passage];
+    direct = [passage for passage in exits if passage.target == 3][0];
+    round_way = [passage for passage in exits if passage.target == 2][0];
+    avoid = AvoidReach();
+    # BotAddToAvoidReach: each use within six seconds of the last is a try.
+    for attempt in range(4) {
+        avoid.add(direct, 1.0 + float(attempt) * 5.0);
+        assert avoid.tries == attempt + 1 and not avoid.avoids(direct, 1.0 + float(attempt) * 5.0);
+    }
+    # Another passage does not take the single slot while its time runs.
+    avoid.add(round_way, 17.0);
+    assert avoid.passage is direct and avoid.tries == 4;
+    avoid.add(direct, 21.0);
+    assert avoid.tries == 5 and avoid.avoids(direct, 21.0) and avoid.avoids(direct, 27.0) and not avoid.avoids(direct, 27.5);
+    # BotGetReachabilityToGoal: the bot's way out of its area passes it over.
+    usual = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0));
+    assert usual.found and usual.areas[0] == 3;
+    detour = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0), avoid=avoid, now=22.0);
+    assert detour.found and detour.areas[0] == 2;
+    # BotResetLastAvoidReach forgets a try; BotResetAvoidReach all of it.
+    avoid.reset_last();
+    assert avoid.tries == 4 and not avoid.avoids(direct, 22.0);
+    avoid.add(direct, 30.0);
+    assert avoid.tries == 1;
+    avoid.reset();
+    assert avoid.passage is None and avoid.tries == 0;
+    # Following a route: the leg set out on is added once; past its
+    # BotReachabilityTime the route is emptied to be planned again, without
+    # a failure.
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=64.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0));
+    first = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=40.0, avoid=avoid);
+    assert avoid.passage is direct and avoid.tries == 1 and route.noted and first.result.direction.x > 0.9;
+    bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=41.0, avoid=avoid);
+    assert avoid.tries == 1;
+    late = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=45.5, avoid=avoid);
+    assert not late.result.failure and late.result.speed == 0.0 and not route.points and not route.areas;
 }

@@ -9,7 +9,7 @@ attack and the weapon it needs, a view the movement sets, and whether the bot
 is waiting for a mover."""
 import math;
 import from .world { Player }
-import from .bot_routes { NavMesh, Passage, BotRoute }
+import from .bot_routes { NavMesh, Passage, BotRoute, AvoidReach, jump_launch }
 import from .navigation { waypoint_reached }
 import from ..formats.aas {
     TRAVEL_WALK,
@@ -27,15 +27,17 @@ import from ..formats.aas {
     TRAVEL_JUMPPAD,
     TRAVEL_FUNCBOB
 }
+import from ..formats.botconfig { WeightDice }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
 
-# bg_public.h DEFAULT_GRAVITY and JUMP_VELOCITY; bg_pmove.c's step height is
-# be_ai_move.c's sv_maxbarrier for walking off a mover.
+# bg_public.h DEFAULT_GRAVITY and JUMP_VELOCITY; be_ai_move.c's sv_maxbarrier
+# for walking off a mover and sv_maxstep (bg_pmove.c's STEPSIZE).
 glob TRAVEL_GRAVITY: float = 800.0,
     TRAVEL_JUMP_SPEED: float = 270.0,
-    TRAVEL_MAX_BARRIER: float = 32.0;
+    TRAVEL_MAX_BARRIER: float = 32.0,
+    TRAVEL_MAX_STEP: float = 18.0;
 
 """be_ai_move.c bot_moveresult_t for one frame. `direction` and `speed` are
 EA_Move's (400 is full speed); `view_set` asks for the ideal view `yaw` and
@@ -43,7 +45,11 @@ EA_Move's (400 is full speed); `view_set` asks for the ideal view `yaw` and
 `weapon` is the weapon the movement needs (MOVERESULT_MOVEMENTWEAPON);
 `waiting` that the bot waits for a mover (MOVERESULT_WAITING); `air_control`
 that the bot steers through the air to its landing; `failure` that the leg
-timed out and the route has to be planned again."""
+timed out and the route has to be planned again. `blocked` says something
+other than the world stands in the bot's way (BotCheckBlocked): the mover
+with BSP model `block_model`, or another player when that is 0; `on_top`
+that the bot stands on it (MOVERESULT_ONTOPOFOBSTACLE); `in_solid` that the
+bot is in no AAS area at all (RESULTTYPE_INSOLIDAREA)."""
 obj TravelResult {
     has direction: Vec3 = Vec3(),
         speed: float = 400.0,
@@ -55,7 +61,11 @@ obj TravelResult {
         pitch: float = 0.0,
         waiting: bool = False,
         air_control: bool = False,
-        failure: bool = False;
+        failure: bool = False,
+        blocked: bool = False,
+        block_model: int = 0,
+        on_top: bool = False,
+        in_solid: bool = False;
 
     """The share of full running speed EA_Move's speed asks for
     (BotInputToUserCommand scales 400 to a full 127 move)."""
@@ -120,6 +130,44 @@ def pitch_of(direction: Vec3) -> float {
     return -math.degrees(math.atan2(direction.z, flat));
 }
 
+"""Whether a player's box at `origin` overlaps another player's at `other`
+(bg_public.h's 30 by 30 by 56 box about each origin)."""
+def bodies_overlap(origin: Vec3, other: Vec3) -> bool {
+    return abs(origin.x - other.x) < 30.0 and abs(origin.y - other.y) < 30.0 and abs(origin.z - other.z) < 56.0;
+}
+
+"""be_ai_move.c BotCheckBlocked: whether something other than the world
+stands within 3 units of the bot along `direction`. The bot's box is traced
+with its bottom raised a step and its top lowered 10 units when the
+direction is not steep, against the map's movers and the boxes of the other
+players at `bodies` (their origins). Sets `result.blocked` and what blocks:
+the mover's BSP model, or 0 for a player."""
+def check_blocked(collision: CollisionMap, origin: Vec3, direction: Vec3, bodies: list[Vec3], result: TravelResult) {
+    mins = collision.hull_mins.add(Vec3());
+    maxs = collision.hull_maxs.add(Vec3());
+    if abs(direction.z) < 0.7 {
+        mins.z += TRAVEL_MAX_STEP;
+        maxs.z -= 10.0;
+    }
+    finish = origin.add(direction.scale(3.0));
+    hit = collision.for_body(collision.eye_height, 0.0, mins, maxs).trace(origin, finish);
+    if hit.start_solid {
+        return;
+    }
+    reached = origin.lerp(finish, hit.fraction);
+    for body in bodies {
+        if bodies_overlap(reached, body) and not bodies_overlap(origin, body) {
+            result.blocked = True;
+            result.block_model = 0;
+            return;
+        }
+    }
+    if hit.fraction < 1.0 and hit.model > 0 {
+        result.blocked = True;
+        result.block_model = hit.model;
+    }
+}
+
 """Swimming toward `point` (BotTravel_Swim, and walking or moving in the
 goal area with MFL_SWIMMING): straight at it, up or down, looking along the
 way (MOVERESULT_SWIMVIEW)."""
@@ -129,17 +177,31 @@ def travel_swim(origin: Vec3, point: Vec3) -> TravelResult {
 }
 
 """BotTravel_WaterJump: swim forward for the far end looking 15 units above
-it (botlib tilts the view by up to 40 more at random), and move up too once
-within 40 units of it, so the pmove's water jump (PM_CheckWaterJump) lifts
-the bot out once it faces the ledge at waist depth."""
-def travel_water_jump(origin: Vec3, passage: Passage) -> TravelResult {
-    look = passage.finish.sub(origin).add(Vec3(z=15.0));
+it, give or take up to 40 at random (`roll`, a crandom() in -1..1), and move
+up too once within 40 units of it, so the pmove's water jump
+(PM_CheckWaterJump) lifts the bot out once it faces the ledge at waist
+depth."""
+def travel_water_jump(origin: Vec3, passage: Passage, roll: float = 0.0) -> TravelResult {
+    look = passage.finish.sub(origin).add(Vec3(z=15.0 + roll * 40.0));
     forward = look.normalized();
     direction = forward;
     if flat_toward(origin, passage.finish)[1] < 40.0 {
         direction = forward.add(Vec3(z=1.0)).normalized();
     }
     return TravelResult(direction=direction, speed=400.0, view_set=True, yaw=yaw_of(look), pitch=pitch_of(look));
+}
+
+"""BotFinishTravel_WaterJump, for a bot that has left the water's surface
+with its feet still in it (`wet`): on for the far end, aiming 70 units above
+it with up to 10 units of random error each way (`rolls`, three crandom()s),
+looking where it goes. Out of the water altogether it makes no move."""
+def finish_water_jump(origin: Vec3, passage: Passage, wet: bool, rolls: list[float]) -> TravelResult {
+    if not wet {
+        return TravelResult(speed=0.0);
+    }
+    aim = passage.finish.sub(origin).add(Vec3(x=rolls[0] * 10.0, y=rolls[1] * 10.0, z=70.0 + rolls[2] * 10.0));
+    direction = aim.normalized();
+    return TravelResult(direction=direction, speed=400.0, view_set=True, yaw=yaw_of(direction), pitch=pitch_of(direction));
 }
 
 """be_ai_move.c BotAirControl: predict the fall in tenths of a second; once
@@ -360,8 +422,10 @@ def travel_funcbob(mesh: NavMesh, collision: CollisionMap, origin: Vec3, grounde
 Waypoints are done on reaching them or on entering their target area; a
 special passage is done on entering its target area and runs its own travel
 until then. A jump's launch is applied from the ground at its takeoff (the
-returned `launch`). A passage the bot has spent longer on than
-BotReachabilityTime allows fails, so the route is planned again."""
+returned `launch`). Each passage set out on goes on the bot's avoid list
+(`avoid`). A passage the bot has spent longer on than BotReachabilityTime
+allows is given up and the route emptied, to be planned again from where the
+bot is; it fails only when no way is found then."""
 walker FollowRoute {
     has mesh: NavMesh,
         collision: CollisionMap,
@@ -370,13 +434,89 @@ walker FollowRoute {
         clock: float,
         view_yaw: float = 0.0,
         view_pitch: float = 0.0,
+        dt: float = 0.0,
+        bodies: list[Vec3] = [],
+        dice: WeightDice | None = None,
+        avoid: AvoidReach | None = None,
         result: TravelResult = TravelResult(),
         launch: Vec3 | None = None;
+
+    """BotMoveToGoal's first test, for a bot on the ground on top of
+    something that is not the world (BotOnTopOfEntity, 3 units under it). A
+    plat or bobbing platform with reachabilities carries it. On another
+    mover with no reachability area under the bot, or on another player, the
+    bot is blocked on top of an obstacle and makes no move of its own."""
+    def on_obstacle(origin: Vec3, standing: int) -> bool {
+        floor = self.collision.trace(origin, origin.sub(Vec3(z=3.0)));
+        if not floor.start_solid and floor.fraction < 1.0 and floor.model > 0 {
+            if floor.model in self.mesh.mover_bounds
+                or (standing > 0 and self.mesh.aas.areas[standing].reach_count > 0) {
+                return False;
+            }
+            self.result = TravelResult(speed=0.0, blocked=True, block_model=floor.model, on_top=True);
+            return True;
+        }
+        for body in self.bodies {
+            rise = origin.z - body.z;
+            if abs(origin.x - body.x) < 30.0 and abs(origin.y - body.y) < 30.0 and rise >= 56.0 and rise <= 59.0 {
+                self.result = TravelResult(speed=0.0, blocked=True, on_top=True);
+                return True;
+            }
+        }
+        return False;
+    }
+
+    """A leg's own move with BotCheckBlocked along it: a blocked leg runs
+    out ten times as fast ("ms->reachability_time -= 10 * ms->thinktime"),
+    and a bot standing in an area without reachabilities also checks what
+    is under it (checkbottom)."""
+    def heading(move: TravelResult, origin: Vec3, standing: int) {
+        self.result = move;
+        check_blocked(self.collision, origin, move.direction, self.bodies, move);
+        if not move.blocked and (standing == 0 or self.mesh.aas.areas[standing].reach_count == 0) {
+            floor = self.collision.trace(origin, origin.sub(Vec3(z=3.0)));
+            if not floor.start_solid and floor.fraction < 1.0 and floor.model > 0 {
+                move.blocked = True;
+                move.block_model = floor.model;
+                move.on_top = True;
+            }
+        }
+        if move.blocked {
+            self.route.leg_started -= 10.0 * self.dt;
+        }
+    }
+
+    """be_ai_move.c's crandom(), from the bot's own dice (0 without them)."""
+    def crandom() -> float {
+        dice = self.dice;
+        return dice.random() * 2.0 - 1.0 if dice is not None else 0.0;
+    }
+
+    """BotTravel_Jump's "if (dist1 < 24) EA_Jump": a jump's takeoff counts
+    as reached within 24 units of the jump's start."""
+    def jump_due(origin: Vec3) -> bool {
+        route = self.route;
+        passage = route.passages[0] if route.passages else None;
+        if passage is None or passage.kind != TRAVEL_JUMP or not route.launches or route.launches[0].z <= 0.0 {
+            return False;
+        }
+        return flat_toward(origin, route.points[0])[1] < 24.0 and abs(route.points[0].z - origin.z) < 28.0;
+    }
 
     can travel with Player entry {
         route = self.route;
         origin = here.pos.sub(Vec3(z=self.eye_height));
         standing = self.mesh.locate(origin);
+        if here.grounded {
+            if self.on_obstacle(origin, standing) {
+                return;
+            }
+            # "if ( !ms->areanum )": stuck in solid.
+            if standing == 0 {
+                self.result = TravelResult(failure=True, blocked=True, in_solid=True);
+                return;
+            }
+        }
         while route.points {
             passage = route.passages[0] if route.passages else None;
             if passage is not None and special_travel(passage.kind) {
@@ -386,6 +526,7 @@ walker FollowRoute {
             } elif not (
                 waypoint_reached(route.points[0], origin, True)
                     or (route.areas[0] > 0 and standing == route.areas[0])
+                    or self.jump_due(origin)
             ) {
                 break;
             }
@@ -394,6 +535,11 @@ walker FollowRoute {
                     break;
                 }
                 self.launch = route.launches[0];
+                # BotTravel_Jump jumps up to 24 units short of the start:
+                # the launch is the one that lands from where the bot is.
+                if passage is not None and passage.kind == TRAVEL_JUMP {
+                    self.launch = jump_launch(origin, passage.finish);
+                }
             }
             route.advance(self.clock);
             if self.launch is not None {
@@ -409,8 +555,18 @@ walker FollowRoute {
         }
         passage = route.passages[0] if route.passages else None;
         kind = passage.kind if passage is not None else TRAVEL_WALK;
+        # "set a timeout for this reachability" and "add the reachability to
+        # the reachabilities to avoid for a while".
+        avoid = self.avoid;
+        if passage is not None and avoid is not None and not route.noted {
+            route.noted = True;
+            avoid.add(passage, self.clock);
+        }
+        # "if the goal area changed or the reachability timed out": the bot
+        # needs a new reachability, so its way is chosen again from here.
         if self.clock - route.leg_started > reachability_time(kind) {
-            self.result = TravelResult(failure=True);
+            route.abandon();
+            self.result = TravelResult(speed=0.0);
             return;
         }
         if passage is not None and passage.kind in [TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP] {
@@ -432,7 +588,15 @@ walker FollowRoute {
             return;
         }
         if passage is not None and passage.kind == TRAVEL_WATERJUMP {
-            self.result = travel_water_jump(origin, passage);
+            # On the ground or swimming the water jump itself; in the air
+            # its finish (BotMoveToGoal's two halves).
+            if here.grounded or here.water_depth >= 2 {
+                self.result = travel_water_jump(origin, passage, self.crandom());
+            } else {
+                self.result = finish_water_jump(
+                    origin, passage, here.water_depth >= 1, [self.crandom(), self.crandom(), self.crandom()]
+                );
+            }
             return;
         }
         if passage is not None and passage.kind in [TRAVEL_ELEVATOR, TRAVEL_FUNCBOB] {
@@ -451,10 +615,10 @@ walker FollowRoute {
         }
         # MFL_SWIMMING: the bot swims (AAS_Swimming, its waist in liquid).
         if here.water_depth >= 2 {
-            self.result = travel_swim(origin, route.points[0]);
+            self.heading(travel_swim(origin, route.points[0]), origin, standing);
             return;
         }
         toward = flat_toward(origin, route.points[0]);
-        self.result = TravelResult(direction=toward[0], speed=400.0);
+        self.heading(TravelResult(direction=toward[0], speed=400.0), origin, standing);
     }
 }

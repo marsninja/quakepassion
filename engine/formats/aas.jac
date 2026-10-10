@@ -73,7 +73,9 @@ glob AREACONTENTS_WATER: int = 1,
     AREACONTENTS_LAVA: int = 2,
     AREACONTENTS_SLIME: int = 4,
     AREACONTENTS_DONOTENTER: int = 256,
-    AREACONTENTS_MOVER: int = 1024;
+    AREACONTENTS_MOVER: int = 1024,
+    AREACONTENTS_MODELNUMSHIFT: int = 24,
+    AREACONTENTS_MAXMODELNUM: int = 255;
 
 # aasfile.h area flags.
 glob AREA_GROUNDED: int = 1,
@@ -122,6 +124,15 @@ def area_contents_travel_flags(contents: int) -> int {
         flags |= TFL_DONOTENTER;
     }
     return flags;
+}
+
+"""The BSP model of the mover an area lies in (AREACONTENTS_MOVER with its
+AREACONTENTS_MODELNUM, bspc 2.1 and later), or 0."""
+def area_mover_model(contents: int) -> int {
+    if contents & AREACONTENTS_MOVER == 0 {
+        return 0;
+    }
+    return (contents >> AREACONTENTS_MODELNUMSHIFT) & AREACONTENTS_MAXMODELNUM;
 }
 
 obj AasArea {
@@ -175,6 +186,92 @@ obj Aas {
         }
         area = -branch;
         return area if area < len(self.areas) else 0;
+    }
+
+    """be_aas_sample.c AAS_TraceAreas: the areas a line passes through, in
+    order from `start`, each with the point where the line enters it; at
+    most `limit` of them."""
+    def trace_areas(start: Vec3, finish: Vec3, limit: int = 10) -> list[tuple[int, Vec3]] {
+        found: list[tuple[int, Vec3]] = [];
+        stack: list[tuple[int, Vec3, Vec3]] = [(1, start, finish)];
+        while stack and len(stack) < 127 {
+            leg = stack.pop();
+            branch = leg[0];
+            if branch < 0 {
+                if -branch < len(self.areas) {
+                    found.append((-branch, leg[1]));
+                    if len(found) >= limit {
+                        return found;
+                    }
+                }
+                continue;
+            }
+            if branch == 0 or branch >= len(self.node_planes) {
+                continue;
+            }
+            plane = self.node_planes[branch];
+            front = leg[1].dot(self.normals[plane]) - self.dists[plane];
+            back = leg[2].dot(self.normals[plane]) - self.dists[plane];
+            if front > 0.0 and back > 0.0 {
+                stack.append((self.front[branch], leg[1], leg[2]));
+            } elif front <= 0.0 and back <= 0.0 {
+                stack.append((self.back[branch], leg[1], leg[2]));
+            } else {
+                middle = leg[1].lerp(leg[2], max(0.0, min(1.0, front / (front - back))));
+                # The far side waits while the near side is walked first.
+                if front < 0.0 {
+                    stack.append((self.front[branch], middle, leg[2]));
+                    stack.append((self.back[branch], leg[1], middle));
+                } else {
+                    stack.append((self.back[branch], middle, leg[2]));
+                    stack.append((self.front[branch], leg[1], middle));
+                }
+            }
+        }
+        return found;
+    }
+
+    """be_aas_sample.c AAS_BBoxAreas: the areas a box touches, at most
+    `limit` of them."""
+    def box_areas(mins: Vec3, maxs: Vec3, limit: int = 64) -> list[int] {
+        found: list[int] = [];
+        stack: list[int] = [1];
+        while stack {
+            branch = stack.pop();
+            if branch < 0 {
+                if -branch < len(self.areas) and -branch not in found {
+                    found.append(-branch);
+                    if len(found) >= limit {
+                        return found;
+                    }
+                }
+                continue;
+            }
+            if branch == 0 or branch >= len(self.node_planes) {
+                continue;
+            }
+            plane = self.node_planes[branch];
+            normal = self.normals[plane];
+            # AAS_BoxOnPlaneSide2: the box's corners nearest and furthest
+            # along the plane's normal.
+            near = Vec3(
+                x=maxs.x if normal.x < 0.0 else mins.x,
+                y=maxs.y if normal.y < 0.0 else mins.y,
+                z=maxs.z if normal.z < 0.0 else mins.z
+            );
+            far = Vec3(
+                x=mins.x if normal.x < 0.0 else maxs.x,
+                y=mins.y if normal.y < 0.0 else maxs.y,
+                z=mins.z if normal.z < 0.0 else maxs.z
+            );
+            if far.dot(normal) - self.dists[plane] >= 0.0 {
+                stack.append(self.front[branch]);
+            }
+            if near.dot(normal) - self.dists[plane] < 0.0 {
+                stack.append(self.back[branch]);
+            }
+        }
+        return found;
     }
 }
 

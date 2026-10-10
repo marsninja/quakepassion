@@ -1,8 +1,9 @@
 """Q3 bot AI after ai_dmnet.c and ai_dmq3.c BotDeathmatchAI. The AI's
 states are nodes of a graph, `AINode`s under the world's `BotBrain`, linked by
 `Leads` edges wherever ai_dmnet.c switches from one to another: seek a long
-term goal, seek a nearby goal, battle (fight, chase, retreat, nearby goal),
-stand (while typing a chat line) and respawn. Every think (10 Hz,
+term goal, seek a nearby goal, go and activate what opens a door in the way,
+battle (fight, chase, retreat, nearby goal), stand (while typing a chat line)
+and respawn. Every think (10 Hz,
 bot_thinktime) a `BotThink` walker enters the bot's current node and runs it;
 a node that switches walks on to the next and runs it at once, as AINode_*
 returning qfalse does, up to MAX_NODESWITCHES. At the match's end every bot
@@ -19,13 +20,33 @@ import from .world { World, Player, Actor }
 import from .combat { Opponent, HasOpponent, CombatState, WEAPON_SWITCH_TIME }
 import from .weapons { WeaponRule }
 import from .arena { ArenaMatch, Competes, match_of, competitor_name }
-import from .bot_character { BotCharacter, BotState, entity_visible, bot_travel_flags, wants_to_retreat, wants_to_chase }
-import from .bot_tactics { aim_point, attack_move, choose_weapon, rule_for, foe_height, armed_with, act_bot }
-import from .bot_weights { bot_inventory, battle_inventory, INVENTORY_HEALTH }
+import from .bot_character {
+    BotCharacter,
+    BotState,
+    ActivateGoal,
+    entity_visible,
+    bot_travel_flags,
+    bot_aggression,
+    wants_to_retreat,
+    wants_to_chase
+}
+import from .bot_tactics { aim_point, attack_move, choose_weapon, rule_for, foe_height, armed_with, act_bot, can_step }
+import from .bot_obstacles { FindActivator, activate_weapon, mover_offset }
+import from .bot_weights {
+    bot_inventory,
+    battle_inventory,
+    INVENTORY_HEALTH,
+    INVENTORY_ROCKETLAUNCHER,
+    INVENTORY_RAILGUN,
+    INVENTORY_SLUGS,
+    INVENTORY_BFG10K,
+    INVENTORY_BFGAMMO
+}
 import from .bot_goals {
     BotItems,
     BotGoal,
     UpdateLevelItems,
+    NearestCampSpot,
     bot_items,
     choose_item_goal,
     reached_goal,
@@ -34,7 +55,24 @@ import from .bot_goals {
 }
 import from .bot_chat {
     BotChatState,
+    ConsoleMessage,
     TIME_BETWEENCHATTING,
+    CHAT_EC,
+    CONTEXT_NORMAL,
+    CONTEXT_NEARBYITEM,
+    CONTEXT_NAMES,
+    CONTEXT_REPLY,
+    MTCONTEXT_MISC,
+    MTCONTEXT_INITIALTEAMCHAT,
+    MTCONTEXT_REPLYCHAT,
+    MTCONTEXT_CTF,
+    MATCH_NETNAME,
+    MATCH_MESSAGE,
+    ST_TEAM,
+    find_match,
+    reply_chat,
+    replace_synonyms,
+    unify_white_spaces,
     initial_chat,
     enter_chat,
     chat_time,
@@ -42,10 +80,11 @@ import from .bot_chat {
     weapon_name_for_means,
     random_weapon_name
 }
-import from .bot_routes { NavMesh, HasNavMesh }
+import from .bot_routes { NavMesh, HasNavMesh, predict_mover }
 import from .level { Level }
 import from .powerups { empowered }
 import from ..formats.aas { TFL_DEFAULT }
+import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
@@ -60,6 +99,7 @@ node AINode {
 
 node SeekLongTermGoal(AINode) {}
 node SeekNearbyGoal(AINode) {}
+node SeekActivateEntity(AINode) {}
 node BattleFight(AINode) {}
 node BattleChase(AINode) {}
 node BattleRetreat(AINode) {}
@@ -85,6 +125,7 @@ def build_bot_brain() -> BotBrain {
     made: list[AINode] = [
         SeekLongTermGoal(name="seek_ltg"),
         SeekNearbyGoal(name="seek_nbg"),
+        SeekActivateEntity(name="seek_activate"),
         BattleFight(name="battle_fight"),
         BattleChase(name="battle_chase"),
         BattleRetreat(name="battle_retreat"),
@@ -98,8 +139,9 @@ def build_bot_brain() -> BotBrain {
         brain +>:HasAINode:+> state;
     }
     links: dict[str, list[str]] = {
-        "seek_ltg": ["stand", "battle_retreat", "battle_fight", "seek_nbg"],
-        "seek_nbg": ["seek_ltg", "battle_nbg", "battle_fight"],
+        "seek_ltg": ["stand", "battle_retreat", "battle_fight", "seek_nbg", "seek_activate"],
+        "seek_nbg": ["seek_ltg", "battle_nbg", "battle_fight", "seek_activate"],
+        "seek_activate": ["seek_activate", "seek_nbg", "battle_nbg", "battle_fight"],
         "battle_fight": ["seek_ltg", "stand", "battle_chase", "battle_retreat"],
         "battle_chase": ["seek_ltg", "battle_fight", "battle_nbg", "battle_retreat"],
         "battle_retreat": ["seek_ltg", "battle_chase", "battle_fight", "battle_nbg"],
@@ -152,6 +194,8 @@ walker BotThink {
         map_name: str = "",
         level: Level | None = None,
         intermission: bool = False,
+        world: World | None = None,
+        bsp: Bsp | None = None,
         switches: int = 0;
 
     can start with BotBrain entry {
@@ -177,6 +221,15 @@ walker BotThink {
         }
         if name != "battle_fight" {
             memory.suicidal = False;
+        } else {
+            # AIEnter_Battle_Fight: BotResetLastAvoidReach.
+            memory.avoid_reach.reset_last();
+        }
+        # A dead bot, or one at the intermission, lets its activate goals go
+        # (BotClearActivateGoalStack).
+        mesh = self.mesh;
+        if name in ["respawn", "intermission"] and mesh is not None {
+            memory.obstacles.clear(mesh, self.now);
         }
         self.switches += 1;
         if not run or self.switches >= MAX_NODESWITCHES {
@@ -369,11 +422,140 @@ walker BotThink {
         );
     }
 
-    """ai_dmnet.c BotGetItemLongTermGoal (a free for all's BotLongTermGoal):
-    the goal on top of the stack, or a new one every 20 seconds, when the
-    current one is reached or when there is none."""
-    def long_term_goal() -> BotGoal | None {
+    """ai_dmq3.c BotWantsToCamp (the free for all's part; the team goals
+    that rule camping out are not played). A camper (CHARACTERISTIC_CAMPER
+    of 0.1 or more) not camping already, and not within 60 seconds of the
+    last time (300 seconds less for each whole point short of a perfect
+    camper, so only the keenest wait at all), goes to camp as often as its
+    character likes when it is keen to fight (BotAggression of 50), holds a
+    rocket launcher, or a railgun or BFG with 10 shots, and a camp spot is
+    within 150 hundredths of a second (TFL_DEFAULT). BotGoCamp then has it
+    camp for 120 to 315 seconds by its character, a perfect camper for good.
+    The rocket test is the original's, which never looks at the rockets
+    ("inventory[INVENTORY_ROCKETS < 10]")."""
+    def wants_to_camp() -> bool {
+        mind = self.mind;
+        camp = mind.camp;
+        items = self.items;
+        mesh = self.mesh;
+        if mind.camper < 0.1 or camp.camping {
+            return False;
+        }
+        if camp.camp_time > self.now - 60.0 + 300.0 * (1.0 - mind.camper) {
+            return False;
+        }
+        if self.random() > mind.camper {
+            camp.camp_time = self.now;
+            return False;
+        }
+        inventory = self.memory.inventory;
+        if bot_aggression(inventory, self.bot.weapon_slot) < 50.0 {
+            return False;
+        }
+        if inventory[INVENTORY_ROCKETLAUNCHER] <= 0
+            and (inventory[INVENTORY_RAILGUN] <= 0 or inventory[INVENTORY_SLUGS] < 10)
+            and (inventory[INVENTORY_BFG10K] <= 0 or inventory[INVENTORY_BFGAMMO] < 10) {
+            return False;
+        }
+        if items is None or mesh is None {
+            return False;
+        }
+        search = items spawn NearestCampSpot(mesh=mesh, area=self.area(), origin=self.origin());
+        spot = search.best;
+        if spot is None or search.best_time > 150 {
+            return False;
+        }
+        camp.camping = True;
+        camp.goal = BotGoal(origin=spot.origin, area=spot.area);
+        camp.until = self.now + (99999.0 if mind.camper > 0.99 else 120.0 + 180.0 * mind.camper + self.random() * 15.0);
+        camp.camp_time = self.now;
+        return True;
+    }
+
+    """ai_dmq3.c BotRoamGoal: somewhere to look, up to 900 units off along x
+    and y and 96 up or down, at least 200 units away with nothing in
+    between, over a floor that is not lava or slime; the tenth try whatever
+    it is."""
+    def roam_goal() -> Vec3 {
+        origin = self.origin();
+        spot = origin;
+        for attempt in range(10) {
+            spot = origin.add(Vec3());
+            rnd = self.random();
+            if rnd > 0.25 {
+                side = -1.0 if self.random() < 0.5 else 1.0;
+                spot.x += side * (800.0 * self.random() + 100.0);
+            }
+            if rnd < 0.75 {
+                side = -1.0 if self.random() < 0.5 else 1.0;
+                spot.y += side * (800.0 * self.random() + 100.0);
+            }
+            spot.z += 2.0 * 48.0 * (self.random() * 2.0 - 1.0);
+            sight = self.collision.trace_point(origin, spot);
+            toward = origin.lerp(spot, sight.fraction).sub(origin);
+            reach = toward.length();
+            if reach > 200.0 {
+                spot = origin.add(toward.normalized().scale(reach * sight.fraction - 40.0));
+                under = spot.sub(Vec3(z=800.0));
+                floor = self.collision.trace_point(spot, under);
+                if not floor.start_solid and self.liquid_at(spot.lerp(under, floor.fraction).add(Vec3(z=1.0))) not in [2, 3] {
+                    return spot;
+                }
+            }
+        }
+        return spot;
+    }
+
+    """ai_dmnet.c BotGetLongTermGoal's LTG_CAMP while the bot is not
+    retreating: the camp spot is its goal until the camping time is up.
+    Within 60 units of it the bot has no goal to move to (False): it stands
+    there, looks round for enemies now and then (BotRoamGoal), crouches as
+    its croucher characteristic likes (never within 5 seconds of the last
+    time, never swimming), and gives the spot up when its eyes are under a
+    liquid."""
+    def camp_goal() -> BotGoal | None {
+        camp = self.mind.camp;
         memory = self.memory;
+        goal = camp.goal;
+        if goal is None {
+            camp.camping = False;
+            return None;
+        }
+        if camp.until < self.now {
+            camp.camping = False;
+        }
+        if goal.origin.sub(self.origin()).length() >= 60.0 {
+            return goal;
+        }
+        if self.random() < BOT_THINK_TIME * 0.8 {
+            memory.roam_target = self.roam_goal();
+        }
+        memory.view_mode = "roam";
+        if camp.crouch_time < self.now - 5.0 and self.random() < BOT_THINK_TIME * self.mind.croucher {
+            camp.crouch_time = self.now + 5.0 + self.mind.croucher * 15.0;
+        }
+        if camp.crouch_time > self.now {
+            memory.crouch = True;
+        }
+        if self.bot.water_depth >= 2 {
+            camp.crouch_time = self.now - 1.0;
+        }
+        if self.liquid_at(self.bot.pos) > 0 {
+            camp.camping = False;
+        }
+        memory.avoid_reach.reset();
+        return None;
+    }
+
+    """ai_dmnet.c BotLongTermGoal for a free for all: a camping bot's camp
+    spot unless it retreats (`retreat`), and otherwise
+    BotGetItemLongTermGoal: the goal on top of the stack, or a new one every
+    20 seconds, when the current one is reached or when there is none."""
+    def long_term_goal(retreat: bool = False) -> BotGoal | None {
+        memory = self.memory;
+        if self.mind.camp.camping and not retreat {
+            return self.camp_goal();
+        }
         goals = memory.goals;
         top = goals.top();
         if top is None {
@@ -445,6 +627,10 @@ walker BotThink {
     def movement_failed() -> bool {
         failed = self.memory.move_failed;
         self.memory.move_failed = False;
+        # "reset the avoid reach, otherwise bot is stuck in current area"
+        if failed {
+            self.memory.avoid_reach.reset();
+        }
         return failed;
     }
 
@@ -453,6 +639,167 @@ walker BotThink {
         enemy = self.memory.enemy;
         if enemy is not None {
             attack_move(self.bot, self.mind, enemy, self.collision);
+        }
+    }
+
+    # ---- obstacles (ai_dmq3.c) -------------------------------------------
+
+    """ai_dmq3.c BotGetActivateGoal for the mover with BSP `model`: what the
+    bot has to activate to get it out of its way, found by a FindActivator
+    walk over the level's activation graph; None when there is nothing to
+    activate. The door's areas, closed to routing while the search ran, are
+    opened again when it found nothing."""
+    def activate_goal(model: int) -> ActivateGoal | None {
+        world = self.world;
+        bsp = self.bsp;
+        mesh = self.mesh;
+        if world is None or bsp is None or mesh is None {
+            return None;
+        }
+        search = world spawn FindActivator(
+            model=model,
+            bsp=bsp,
+            collision=self.collision,
+            mesh=mesh,
+            origin=self.origin(),
+            eye=self.bot.pos,
+            area=self.area(),
+            flags=self.memory.travel_flags,
+            now=self.now,
+            top=self.memory.obstacles.top()
+        );
+        if search.entity == 0 {
+            search.found.enable_areas(mesh, True);
+            return None;
+        }
+        return search.found;
+    }
+
+    """ai_dmq3.c BotGoForActivateGoal: the goal goes on the activate stack,
+    with ten seconds to do it in when it has no time of its own, and the bot
+    is to enter the activate node; False (the door's areas open again) when
+    the stack is full."""
+    def go_for_activate_goal(found: ActivateGoal) -> bool {
+        mesh = self.mesh;
+        if mesh is None {
+            return False;
+        }
+        if found.time == 0.0 {
+            found.time = self.now + 10.0;
+        }
+        found.start_time = self.now;
+        found.origin = mover_offset(self.collision, found.entity);
+        if self.memory.obstacles.push(found) {
+            return True;
+        }
+        found.enable_areas(mesh, True);
+        return False;
+    }
+
+    """ai_dmq3.c BotAIPredictObstacles: when the goal changes, and every six
+    seconds, follow the route to it for up to 100 passages or 10 seconds
+    (AAS_PredictRoute). If it runs into a mover that something has to open,
+    the bot goes for that first; True then, and the bot switches to the
+    activate node."""
+    def predict_obstacles(goal: BotGoal) -> bool {
+        memory = self.memory;
+        mesh = self.mesh;
+        if mesh is None or self.bsp is None {
+            return False;
+        }
+        if memory.predict_area == goal.area and memory.predict_time > self.now - 6.0 {
+            return False;
+        }
+        memory.predict_area = goal.area;
+        memory.predict_time = self.now;
+        model = predict_mover(mesh, self.area(), self.origin(), goal.area, memory.travel_flags);
+        if model == 0 {
+            return False;
+        }
+        found = self.activate_goal(model);
+        if found is None {
+            return False;
+        }
+        if not memory.obstacles.going_to(found.entity, self.now) {
+            return self.go_for_activate_goal(found);
+        }
+        found.enable_areas(mesh, True);
+        return False;
+    }
+
+    """ai_dmq3.c BotRandomMove: a step in a random direction, to get out of
+    where the bot is stuck."""
+    def random_move() {
+        angle = self.random() * 2.0 * math.pi;
+        self.memory.detour = Vec3(x=math.cos(angle), y=math.sin(angle));
+    }
+
+    """ai_dmq3.c BotAIBlocked, from the movement's result since the last
+    think. A bot stuck in solid steps somewhere at random. A bot stopped by
+    a mover it may activate (`activate`, the seek nodes) looks for what
+    opens it and goes for that (BotGetActivateGoal), and that is all unless
+    it stands on the mover or in an area without reachabilities. Otherwise
+    it sidesteps: to one side of its move, or when it cannot step there
+    (BotMoveInDirection) to the same side and backwards, turning to the
+    other side for the next time (BFL_AVOIDRIGHT). Blocked for over 0.4
+    seconds, a seeking bot gives its goal up."""
+    def ai_blocked(current: AINode, activate: bool) {
+        memory = self.memory;
+        travel = memory.travel;
+        if not travel.blocked {
+            memory.notblocked_time = self.now;
+            return;
+        }
+        if travel.in_solid {
+            self.random_move();
+            return;
+        }
+        if activate and travel.block_model > 0 {
+            found = self.activate_goal(travel.block_model);
+            if found is not None {
+                if not memory.obstacles.going_to(found.entity, self.now) {
+                    if self.go_for_activate_goal(found) {
+                        self.enter(current, "seek_activate", False);
+                    }
+                } else {
+                    mesh = self.mesh;
+                    if mesh is not None {
+                        found.enable_areas(mesh, True);
+                    }
+                }
+                area = self.area();
+                mesh = self.mesh;
+                if not travel.on_top and mesh is not None and area > 0 and mesh.aas.areas[area].reach_count > 0 {
+                    return;
+                }
+            }
+        }
+        forward = Vec3(x=travel.direction.x, y=travel.direction.y);
+        if forward.length() < 0.1 {
+            angle = self.random() * 2.0 * math.pi;
+            forward = Vec3(x=math.cos(angle), y=math.sin(angle));
+        }
+        forward = forward.normalized();
+        # CrossProduct(hordir, up).
+        sideward = Vec3(x=forward.y, y=-forward.x);
+        if memory.avoid_right {
+            sideward = sideward.scale(-1.0);
+        }
+        if can_step(self.bot, sideward, self.collision) {
+            memory.detour = sideward;
+        } else {
+            memory.avoid_right = not memory.avoid_right;
+            sideward = sideward.sub(forward);
+            if can_step(self.bot, sideward, self.collision) {
+                memory.detour = sideward.normalized();
+            }
+        }
+        if memory.notblocked_time < self.now - 0.4 {
+            if memory.ainode == "seek_nbg" {
+                memory.nbg_time = 0.0;
+            } elif memory.ainode == "seek_ltg" {
+                memory.ltg_time = 0.0;
+            }
         }
     }
 
@@ -563,18 +910,119 @@ walker BotThink {
 
     """BotAI_BotInitialChat, and the chat time noted (lastchat_time)."""
     def say(kind: str, variables: list[str]) -> bool {
-        typed = initial_chat(self.mind.chats, self.mind.random_strings, self.chatter(), kind, variables, self.now, self.memory.dice);
+        typed = initial_chat(
+            self.mind.chats, self.mind.random_strings, self.chatter(), kind, variables, self.now, self.memory.dice, self.mind.synonyms
+        );
         self.chatter().last_chat = self.now;
         return typed;
     }
 
     """BotEnterChat: the typed line goes out as `say`, with talk.wav."""
     def enter_chat() {
+        typed = self.chatter().message.replace("~", "");
         line = enter_chat(self.chatter(), self.name_of(self.bot));
         if line {
             self.state.messages.append(line);
             self.state.cues.append("sound/player/talk.wav");
+            # Everyone in the match hears it, the other bots too.
+            contest = self.contest;
+            if contest is not None {
+                contest.say(self.bot, self.name_of(self.bot), typed);
+            }
         }
+    }
+
+    """BotQueueConsoleMessage for what has been said in the match since the
+    bot last looked: each line as G_Say sends it, the name, the escape
+    character, a colon and the text."""
+    def hear_chats() {
+        contest = self.contest;
+        chatter = self.chatter();
+        if contest is None {
+            return;
+        }
+        for said in contest.chats {
+            if said.serial <= chatter.heard {
+                continue;
+            }
+            chatter.heard = said.serial;
+            chatter.console.append(
+                ConsoleMessage(speaker=said.name, line=said.name + CHAT_EC + ": " + said.text, time=self.now, mine=said.speaker is self.bot)
+            );
+        }
+    }
+
+    """NumBots: the bots in the match, this one included."""
+    def bot_count() -> int {
+        count = 1;
+        for rival in self.rivals() {
+            other = rival[0];
+            if isinstance(other, Opponent) and other.character is not None {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
+    """ai_dmq3.c BotCheckConsoleMessages for chat lines: each takes the bot
+    1 to 2 seconds to read (none when ten are waiting). What was said has
+    its white space unified and its synonyms replaced. A line that is a
+    command or game message (BotMatchMessage: match.c's entered-the-game,
+    team command and flag templates) gets no answer, nor does a team
+    message or the bot's own. Otherwise, when the bot is not typing already
+    and stands somewhere it may chat, it answers as likely as 1.5 over the
+    number of bots plus one and its CHARACTERISTIC_CHAT_REPLY: BotReplyChat
+    types the answer (True) and the bot stands to type it. A dead bot does
+    not answer (in Q3 it may, standing dead while it types)."""
+    def check_console_messages() -> bool {
+        mind = self.mind;
+        chatter = self.chatter();
+        self.hear_chats();
+        context = CONTEXT_NORMAL | CONTEXT_NEARBYITEM | CONTEXT_NAMES;
+        while chatter.console {
+            heard = chatter.console[0];
+            if len(chatter.console) < 10 and heard.time > self.now - (1.0 + self.random()) {
+                break;
+            }
+            chatter.console.pop(0);
+            line = heard.line;
+            envelope = find_match(mind.match_templates, line, MTCONTEXT_REPLYCHAT);
+            if envelope is not None {
+                said = replace_synonyms(unify_white_spaces(envelope.variable(MATCH_MESSAGE)), mind.synonyms, context);
+                line = line[:envelope.offsets[MATCH_MESSAGE]] + said;
+            } else {
+                line = replace_synonyms(unify_white_spaces(line), mind.synonyms, context);
+            }
+            if find_match(mind.match_templates, line, MTCONTEXT_MISC | MTCONTEXT_INITIALTEAMCHAT | MTCONTEXT_CTF) is not None {
+                continue;
+            }
+            answered = find_match(mind.match_templates, line, MTCONTEXT_REPLYCHAT);
+            if answered is None or answered.subtype & ST_TEAM or heard.mine {
+                continue;
+            }
+            if self.memory.ainode == "stand" or self.dead() or not self.valid_chat_position() {
+                continue;
+            }
+            if self.random() < 1.5 / float(self.bot_count() + 1) and self.random() < mind.chat_reply {
+                if reply_chat(
+                    mind.reply_chats,
+                    mind.random_strings,
+                    mind.synonyms,
+                    chatter,
+                    unify_white_spaces(answered.variable(MATCH_MESSAGE)),
+                    self.name_of(self.bot),
+                    mind.gender,
+                    answered.variable(MATCH_NETNAME),
+                    context,
+                    CONTEXT_REPLY,
+                    self.now,
+                    self.memory.dice
+                ) {
+                    return True;
+                }
+            }
+        }
+        return False;
     }
 
     """BotChat_EnterGame."""
@@ -834,13 +1282,21 @@ walker BotThink {
         }
         if memory.check_time < self.now {
             memory.check_time = self.now + 0.5;
+            # "check if the bot wants to camp"
+            self.wants_to_camp();
             if self.nearby_goal(goal, 150.0) {
+                memory.avoid_reach.reset_last();
                 memory.nbg_time = self.now + 4.0 + 150.0 * 0.01;
                 visit self.enter(here, "seek_nbg");
                 return;
             }
         }
+        if self.predict_obstacles(goal) {
+            visit self.enter(here, "seek_activate");
+            return;
+        }
         self.move_to(goal);
+        self.ai_blocked(here, True);
     }
 
     """AINode_Seek_NBG."""
@@ -871,11 +1327,16 @@ walker BotThink {
             return;
         }
         if goal is not None {
+            if self.predict_obstacles(goal) {
+                visit self.enter(here, "seek_activate");
+                return;
+            }
             self.move_to(goal);
         }
         if self.movement_failed() {
             memory.nbg_time = 0.0;
         }
+        self.ai_blocked(here, True);
         if self.find_enemy(None) {
             if wants_to_retreat(memory.inventory, self.bot.weapon_slot) {
                 visit self.enter(here, "battle_nbg", False);
@@ -883,6 +1344,91 @@ walker BotThink {
                 memory.goals.empty();
                 visit self.enter(here, "battle_fight", False);
             }
+        }
+    }
+
+    """AINode_Seek_ActivateEntity: on the way to what opens a door in the
+    bot's way. A goal to shoot is shot once its target is in sight, with
+    the weapon BotSelectActivateWeapon picks, and is done when the thing shot
+    moves; a goal to touch is done when the bot touches it; either is given
+    up when its time runs out. The next goal on the stack gets ten seconds;
+    with none left the bot is back to its nearby goal. An enemy ends it."""
+    can seek_activate_entity with SeekActivateEntity entry {
+        memory = self.memory;
+        if self.intermission {
+            visit self.enter(here, "intermission");
+            return;
+        }
+        if self.dead() {
+            visit self.enter(here, "respawn");
+            return;
+        }
+        self.travel_flags(False);
+        memory.enemy = None;
+        mesh = self.mesh;
+        task = memory.obstacles.top();
+        if task is None or mesh is None {
+            visit self.enter(here, "seek_nbg");
+            return;
+        }
+        goal = task.goal;
+        target_visible = False;
+        if task.shoot {
+            sight = self.collision.trace_point(self.bot.pos, task.target);
+            # "if the shootable entity is visible from the current position":
+            # act_bot fires once the weapon is up and the aim close.
+            if sight.fraction >= 1.0 or sight.model == task.entity {
+                target_visible = True;
+                memory.shoot_target = task.target;
+            }
+        }
+        if target_visible {
+            # "if the entity the bot shoots at moved"
+            if mover_offset(self.collision, task.entity).sub(task.origin).length() > 0.0 {
+                task.time = 0.0;
+            }
+        } elif not task.shoot and touching_goal(self.origin(), goal) {
+            task.time = 0.0;
+        }
+        # "if the activate goal has been activated or the bot takes too long"
+        if task.time < self.now {
+            memory.obstacles.pop(mesh, self.now);
+            following = memory.obstacles.top();
+            if following is not None {
+                following.time = self.now + 10.0;
+                visit self.enter(here, "seek_activate");
+            } else {
+                visit self.enter(here, "seek_nbg");
+            }
+            return;
+        }
+        if not target_visible {
+            if self.predict_obstacles(goal) {
+                visit self.enter(here, "seek_activate");
+                return;
+            }
+            self.move_to(goal);
+            if self.movement_failed() {
+                task.time = 0.0;
+            }
+            self.ai_blocked(here, True);
+        }
+        if task.shoot {
+            memory.view_mode = "activate";
+            task.weapon = max(0, activate_weapon([rule.slot for rule in self.rules if armed_with(self.bot, rule)]));
+            if task.weapon > 0 and task.weapon != self.bot.weapon_slot {
+                self.bot.weapon_slot = task.weapon;
+                self.bot.weapon_change = 0.0;
+            }
+        }
+        if self.find_enemy(None) {
+            if wants_to_retreat(memory.inventory, self.bot.weapon_slot) {
+                self.enter(here, "battle_nbg", False);
+            } else {
+                memory.goals.empty();
+                self.enter(here, "battle_fight", False);
+            }
+            memory.obstacles.clear(mesh, self.now);
         }
     }
 
@@ -952,6 +1498,8 @@ walker BotThink {
         self.travel_flags(True);
         self.choose_weapon();
         self.attack_move();
+        # BotAIBlocked: an attack move's result is never blocked.
+        memory.notblocked_time = self.now;
         self.aim();
         self.bot.fighting = True;
         if not memory.suicidal and wants_to_retreat(memory.inventory, self.bot.weapon_slot) {
@@ -999,6 +1547,7 @@ walker BotThink {
         if memory.check_time < self.now {
             memory.check_time = self.now + 1.0;
             if self.nearby_goal(goal, 150.0) {
+                memory.avoid_reach.reset_last();
                 memory.nbg_time = self.now + 0.1 * 150.0 + 1.0;
                 visit self.enter(here, "battle_nbg");
                 return;
@@ -1006,6 +1555,7 @@ walker BotThink {
         }
         self.battle_inventory();
         self.move_to(goal);
+        self.ai_blocked(here, False);
         if memory.chase_time > self.now - 2.0 {
             memory.view_mode = "chase";
         }
@@ -1052,7 +1602,7 @@ walker BotThink {
             visit self.enter(here, "battle_fight");
             return;
         }
-        goal = self.long_term_goal();
+        goal = self.long_term_goal(True);
         if goal is None {
             # "battle retreat: no way out" (AIEnter_Battle_SuicidalFight)
             visit self.enter(here, "battle_fight");
@@ -1062,6 +1612,7 @@ walker BotThink {
         if memory.check_time < self.now {
             memory.check_time = self.now + 1.0;
             if self.nearby_goal(goal, 150.0) {
+                memory.avoid_reach.reset_last();
                 memory.nbg_time = self.now + 150.0 / 100.0 + 1.0;
                 visit self.enter(here, "battle_nbg");
                 return;
@@ -1071,6 +1622,7 @@ walker BotThink {
         if self.movement_failed() {
             memory.ltg_time = 0.0;
         }
+        self.ai_blocked(here, False);
         self.choose_weapon();
         if self.mind.attack_skill > 0.3 {
             self.aim();
@@ -1117,6 +1669,7 @@ walker BotThink {
         if self.movement_failed() {
             memory.nbg_time = 0.0;
         }
+        self.ai_blocked(here, False);
         self.battle_inventory();
         self.choose_weapon();
         if self.mind.attack_skill > 0.3 {
@@ -1269,6 +1822,7 @@ walker BotTactics {
         items = self.items;
         now = items.clock if items is not None else memory.clock;
         contest = self.contest;
+        level = self.level;
         if memory.last_frame_health < 0 {
             # A fresh state (a new bot or a respawn): what came before is
             # history.
@@ -1282,6 +1836,10 @@ walker BotTactics {
         chatter = mind.chat_state;
         if chatter.entered < 0.0 {
             chatter.entered = now;
+            # What was said before the bot joined never reached it.
+            if contest is not None {
+                chatter.heard = contest.chat_serial;
+            }
         }
         if not self.intermission {
             # BotUpdateInventory, BotCheckSnapshot and BotCheckAir.
@@ -1296,6 +1854,9 @@ walker BotTactics {
         memory.move_goal = None;
         memory.view_mode = "movement";
         memory.talking = False;
+        memory.detour = None;
+        memory.shoot_target = None;
+        memory.crouch = False;
         here.fighting = False;
         thinker = BotThink(
             bot=here,
@@ -1311,8 +1872,18 @@ walker BotTactics {
             contest=contest,
             map_name=self.map_name,
             level=self.level,
-            intermission=self.intermission
+            intermission=self.intermission,
+            world=self.world,
+            bsp=level.bsp if level is not None else None
         );
+        # BotCheckConsoleMessages: an answer to what was said is typed
+        # standing (AIEnter_Stand).
+        if thinker.check_console_messages() {
+            memory.stand_time = now + chat_time();
+            memory.ainode = "stand";
+            memory.battle = "";
+            memory.stand_find_enemy_time = now + 1.0;
+        }
         # "if the bot entered the game less than 8 seconds ago"
         if not chatter.entered_chat and chatter.entered > now - 8.0 and here.health > 0 {
             chatter.entered_chat = True;
@@ -1356,7 +1927,7 @@ walker BotTactics {
             memory.goal_area = 0;
         }
         if not bot.fighting {
-            bot.crouched = False;
+            bot.crouched = memory.crouch;
         }
         # MOVERESULT_MOVEMENTWEAPON: the movement's weapon (a rocket jump's).
         wanted = memory.travel.weapon;

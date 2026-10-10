@@ -77,6 +77,9 @@ tiers are completed.
   (`TURRET`, `PORTAL` for each area portal's toggle) may be missing from an
   older save of the same format; what they describe then stays as the level
   loads it.
+- Items that are not the map's own are saved by tag: a Q2 item still
+  falling (`FALL`), and what dying Q3 players dropped (`DROP`: the item, its
+  place and remaining time, and its throw while in the air).
 
 ## Q1 runes and gates
 

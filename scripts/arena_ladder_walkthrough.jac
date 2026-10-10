@@ -117,10 +117,10 @@ with entry {
         if bots and idle == len(bots) {
             problems.append(name + ": no bot moved");
         }
-        # The player has the frag limit: the next frag (bots fragging each
-        # other or themselves) ends the match into the podium, as the limit
-        # is checked when a frag changes the scores. With no frag in time
-        # (a lone bot against the idle player), the podium starts directly.
+        # The player has the frag limit: the exit rules, checked every tick
+        # (CheckExitRules), end the match into the podium. Should that not
+        # happen in time, the podium is started directly and reported as
+        # forced.
         for score in [edge contest->:Competes:->] {
             if score.human {
                 score.frags = contest.fraglimit;

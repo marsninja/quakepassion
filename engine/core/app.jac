@@ -203,6 +203,7 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("god", "god", "toggle god mode"),
     ("noclip", "noclip", "toggle flying through walls"),
     ("give", "give <item> [count]", "give all, health, weapons, ammo, armor or an item"),
+    ("say", "say <text>", "say something to everyone in the match"),
     ("kill", "kill", "suicide"),
     ("use", "use <item>", "use a weapon or item by name (Q2)"),
     ("cmd", "cmd <command>", "run a game command (Q2's forward to the server)"),
@@ -273,6 +274,17 @@ obj HostCvars {
             name="g_spVideos",
             flags=CVAR_ARCHIVE,
             description="the Quake III tier films already shown"
+        ),
+        # g_main.c g_timelimit. Each single-player arena sets it from its
+        # arenas.txt entry as it starts (G_InitBots).
+        timelimit: Cvar = Cvar(
+            name="timelimit",
+            reset_text="0",
+            kind="int",
+            low=0.0,
+            high=10000.0,
+            flags=CVAR_ARCHIVE,
+            description="minutes a Q3 match lasts (0: no limit); a tied score plays on"
         );
 }
 

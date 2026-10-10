@@ -22,6 +22,7 @@ impl App.configure() {
     host.intro_played = self.shell.register(host.intro_played);
     host.nextmap = self.shell.register(host.nextmap);
     host.videos = self.shell.register(host.videos);
+    host.timelimit = self.shell.register(host.timelimit);
     for (name, usage, description) in HOST_COMMANDS {
         self.shell.command(name, "host", usage, description);
     }
@@ -243,6 +244,21 @@ impl App.host_command(args: list[str]) {
             self.shell.print(self.movement_status);
         } else {
             self.shell.print("noclip OFF" if self.walking else "noclip ON");
+        }
+    } elif name == "say" {
+        # g_cmds.c Cmd_Say_f: the line goes to everyone, the bots included
+        # (they may answer it).
+        if rest {
+            contest = match_of(self.world);
+            speaker = competitor_name(contest, self.player) if contest is not None else "";
+            if not speaker {
+                speaker = "You";
+            }
+            self.notify(speaker + "^7: ^2" + rest);
+            self.audio.play_path("sound/player/talk.wav");
+            if contest is not None {
+                contest.say(self.player, speaker, rest);
+            }
         }
     } elif name == "give" {
         self.give(args);

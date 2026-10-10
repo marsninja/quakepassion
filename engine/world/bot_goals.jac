@@ -14,7 +14,8 @@ import from .world { World, Actor }
 import from .pickups { Pickup, HasPickup }
 import from .drops { in_flight }
 import from .bot_routes { NavMesh, Passage, Exits, area_travel_time, exits_travel_time }
-import from ..formats.aas { AREACONTENTS_WATER }
+import from ..formats.aas { AREACONTENTS_WATER, TFL_DEFAULT }
+import from ..formats.bsp { MapEntity }
 import from .liquids { LiquidSpace, TraceLiquid }
 import from ..formats.botconfig { ItemInfo, WeightConfig, WeightDice }
 import from ..physics.collision { CollisionMap }
@@ -70,6 +71,77 @@ node BotItems {
 
 edge HasBotItems: World --> BotItems {}
 edge HasLevelItem: BotItems --> LevelItem {}
+
+"""be_ai_goal.c campspot_t: a spot the map marks for camping (an info_camp
+entity), in the AAS area its origin lies in."""
+node CampSpot {
+    has origin: Vec3,
+        area: int,
+        name: str = "",
+        range: float = 0.0,
+        weight: float = 0.0,
+        hold: float = 0.0,
+        random: float = 0.0;
+}
+
+edge HasCampSpot: BotItems --> CampSpot {}
+
+"""be_ai_goal.c BotInitInfoEntities' camp spots: one for every info_camp of
+the map whose origin lies in an AAS area (a spot in solid is left out).
+Returns how many there are."""
+def init_camp_spots(items: BotItems, mesh: NavMesh, entities: list[MapEntity]) -> int {
+    count = 0;
+    for entity in entities {
+        fields = entity.fields;
+        if fields.get("classname", "") != "info_camp" {
+            continue;
+        }
+        parts = fields.get("origin", "0 0 0").split();
+        if len(parts) != 3 {
+            continue;
+        }
+        origin = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
+        area = mesh.aas.area_at(origin);
+        if area == 0 {
+            continue;
+        }
+        items +>:HasCampSpot:+> CampSpot(
+            origin=origin,
+            area=area,
+            name=fields.get("message", ""),
+            range=float(fields.get("range", "0")),
+            weight=float(fields.get("weight", "0")),
+            hold=float(fields.get("wait", "0")),
+            random=float(fields.get("random", "0"))
+        );
+        count += 1;
+    }
+    return count;
+}
+
+"""ai_dmq3.c BotWantsToCamp's "find the closest camp spot": the camp spot
+soonest reached from the bot's `area` and `origin` with TFL_DEFAULT
+(BotGetNextCampSpotGoal over them all), and its travel time in hundredths of
+a second."""
+walker NearestCampSpot {
+    has mesh: NavMesh,
+        area: int,
+        origin: Vec3,
+        best: CampSpot | None = None,
+        best_time: int = 99999;
+
+    can survey with BotItems entry {
+        visit [here->:HasCampSpot:->];
+    }
+
+    can rate with CampSpot entry {
+        t = area_travel_time(self.mesh, self.area, self.origin, here.area, TFL_DEFAULT);
+        if t > 0 and t < self.best_time {
+            self.best_time = t;
+            self.best = here;
+        }
+    }
+}
 
 def bot_items(world: World) -> BotItems | None {
     found = [world->:HasBotItems:->][?:BotItems];

@@ -479,3 +479,236 @@ def read_random_strings(tokens: list[ScriptToken]) -> dict[str, list[ChatMessage
     }
     return strings;
 }
+
+"""be_ai_chat.c bot_synonymlist_t: words that mean the same in a `context`
+(syn.h CONTEXT_*), the first the one the others are replaced by, each with
+the weight it is chosen by when a chat is worded."""
+obj SynonymList {
+    has context: int = 0,
+        words: list[str] = [],
+        weights: list[float] = [],
+        total: float = 0.0;
+}
+
+"""BotLoadSynonyms: `[("word", weight), ("word", weight)]` lists inside
+`CONTEXT { }` blocks, whose contexts add up when nested."""
+def read_synonyms(tokens: list[ScriptToken]) -> list[SynonymList] {
+    lists: list[SynonymList] = [];
+    context = 0;
+    stack: list[int] = [];
+    cursor = TokenCursor(tokens=tokens);
+    while cursor.more() {
+        token = cursor.next();
+        if token.kind == TT_NUMBER {
+            context |= token.whole;
+            stack.append(token.whole);
+            cursor.expect("{");
+        } elif token.kind == TT_PUNCTUATION and token.text == "}" and stack {
+            context &= ~stack.pop();
+        } elif token.kind == TT_PUNCTUATION and token.text == "[" {
+            made = SynonymList(context=context);
+            while True {
+                cursor.expect("(");
+                made.words.append(cursor.expect_kind(TT_STRING).text);
+                cursor.expect(",");
+                weight = cursor.expect_kind(TT_NUMBER).number;
+                cursor.expect(")");
+                made.weights.append(weight);
+                made.total += weight;
+                if cursor.check("]") {
+                    break;
+                }
+                cursor.expect(",");
+            }
+            if len(made.words) < 2 {
+                raise ValueError("A synonym must have at least two entries, line " + str(token.line));
+            }
+            lists.append(made);
+        } else {
+            raise ValueError("Unexpected " + token.text + " in the synonyms on line " + str(token.line));
+        }
+    }
+    return lists;
+}
+
+"""be_ai_chat.c bot_matchpiece_t: a piece of a match template, either a
+variable (`variable` its number) or one of several strings (MT_STRING)."""
+obj MatchPiece {
+    has variable: int = -1,
+        strings: list[str] = [];
+}
+
+"""A string, with the strings right after it: the precompiler joins
+adjacent strings (match.c writes EC"(")."""
+def read_joined_string(cursor: TokenCursor) -> str {
+    text = cursor.expect_kind(TT_STRING).text;
+    while True {
+        following = cursor.peek();
+        if following is None or following.kind != TT_STRING {
+            break;
+        }
+        text += cursor.next().text;
+    }
+    return text;
+}
+
+"""BotLoadMatchPieces: variables and `"a"|"b"` string alternatives separated
+by commas, up to the `end` token."""
+def read_match_pieces(cursor: TokenCursor, end: str) -> list[MatchPiece] {
+    pieces: list[MatchPiece] = [];
+    while True {
+        token = cursor.peek();
+        if token is None {
+            raise ValueError("Unexpected end of a match template");
+        }
+        if token.kind == TT_NUMBER and token.integer {
+            cursor.next();
+            pieces.append(MatchPiece(variable=token.whole));
+        } elif token.kind == TT_STRING {
+            piece = MatchPiece();
+            while True {
+                piece.strings.append(read_joined_string(cursor));
+                if not cursor.check("|") {
+                    break;
+                }
+            }
+            pieces.append(piece);
+        } else {
+            raise ValueError("Invalid token " + token.text + " in a match template on line " + str(token.line));
+        }
+        if cursor.check(end) {
+            break;
+        }
+        cursor.expect(",");
+    }
+    return pieces;
+}
+
+"""be_ai_chat.c bot_matchtemplate_t: what a line of chat or console text has
+to look like to be a message of `kind` and `subtype`, in a match `context`
+(match.h MTCONTEXT_*)."""
+obj MatchTemplate {
+    has context: int = 0,
+        kind: int = 0,
+        subtype: int = 0,
+        pieces: list[MatchPiece] = [];
+}
+
+"""BotLoadMatchTemplates: `CONTEXT { pieces = (type, subtype); ... }`."""
+def read_match_templates(tokens: list[ScriptToken]) -> list[MatchTemplate] {
+    templates: list[MatchTemplate] = [];
+    cursor = TokenCursor(tokens=tokens);
+    while cursor.more() {
+        context = cursor.expect_kind(TT_NUMBER).whole;
+        cursor.expect("{");
+        while not cursor.check("}") {
+            pieces = read_match_pieces(cursor, "=");
+            cursor.expect("(");
+            kind = cursor.expect_kind(TT_NUMBER).whole;
+            cursor.expect(",");
+            subtype = cursor.expect_kind(TT_NUMBER).whole;
+            cursor.expect(")");
+            cursor.expect(";");
+            templates.append(MatchTemplate(context=context, kind=kind, subtype=subtype, pieces=pieces));
+        }
+    }
+    return templates;
+}
+
+# be_ai_chat.c reply chat key flags.
+glob RCKFL_AND: int = 1,
+    RCKFL_NOT: int = 2,
+    RCKFL_NAME: int = 4,
+    RCKFL_STRING: int = 8,
+    RCKFL_VARIABLES: int = 16,
+    RCKFL_BOTNAMES: int = 32,
+    RCKFL_GENDERFEMALE: int = 64,
+    RCKFL_GENDERMALE: int = 128,
+    RCKFL_GENDERLESS: int = 256;
+
+"""be_ai_chat.c bot_replychatkey_t: one key of a reply chat: a word to be
+found (`text`), a match template with variables (`pieces`), the bot's own
+name, a list of bot names, or the bot's gender; with RCKFL_AND it must hold
+and with RCKFL_NOT it must not."""
+obj ReplyKey {
+    has flags: int = 0,
+        text: str = "",
+        pieces: list[MatchPiece] = [];
+}
+
+"""be_ai_chat.c bot_replychat_t: the keys a message is answered by, the
+priority among the reply chats that fit, and the answers."""
+obj ReplyChat {
+    has keys: list[ReplyKey] = [],
+        priority: float = 0.0,
+        messages: list[ChatMessage] = [];
+}
+
+"""Takes the word `name` when it comes next as a bare word."""
+def check_word(cursor: TokenCursor, name: str) -> bool {
+    token = cursor.peek();
+    if token is not None and token.kind == TT_NAME and token.text == name {
+        cursor.next();
+        return True;
+    }
+    return False;
+}
+
+"""BotLoadReplyChat: `[keys] = priority { message; message; }`. Botlib
+links each key, message and reply chat in at the head of its list, so they
+are kept here last read first, the order it goes through them in."""
+def read_reply_chats(tokens: list[ScriptToken]) -> list[ReplyChat] {
+    chats: list[ReplyChat] = [];
+    cursor = TokenCursor(tokens=tokens);
+    while cursor.more() {
+        cursor.expect("[");
+        made = ReplyChat();
+        while True {
+            key = ReplyKey();
+            if cursor.check("&") {
+                key.flags |= RCKFL_AND;
+            } elif cursor.check("!") {
+                key.flags |= RCKFL_NOT;
+            }
+            if check_word(cursor, "name") {
+                key.flags |= RCKFL_NAME;
+            } elif check_word(cursor, "female") {
+                key.flags |= RCKFL_GENDERFEMALE;
+            } elif check_word(cursor, "male") {
+                key.flags |= RCKFL_GENDERMALE;
+            } elif check_word(cursor, "it") {
+                key.flags |= RCKFL_GENDERLESS;
+            } elif cursor.check("(") {
+                key.flags |= RCKFL_VARIABLES;
+                key.pieces = read_match_pieces(cursor, ")");
+            } elif cursor.check("<") {
+                key.flags |= RCKFL_BOTNAMES;
+                names: list[str] = [];
+                while True {
+                    names.append(cursor.expect_kind(TT_STRING).text);
+                    if not cursor.check(",") {
+                        break;
+                    }
+                }
+                cursor.expect(">");
+                key.text = "\\".join(names);
+            } else {
+                key.flags |= RCKFL_STRING;
+                key.text = cursor.expect_kind(TT_STRING).text;
+            }
+            made.keys.insert(0, key);
+            cursor.check(",");
+            if cursor.check("]") {
+                break;
+            }
+        }
+        cursor.expect("=");
+        made.priority = cursor.signed_number();
+        cursor.expect("{");
+        while not cursor.check("}") {
+            made.messages.insert(0, read_chat_message(cursor));
+        }
+        chats.insert(0, made);
+    }
+    return chats;
+}

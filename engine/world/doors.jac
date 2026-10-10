@@ -516,6 +516,15 @@ walker DoorTick {
                 }
             }
         }
+        # g_mover.c Touch_Button: any client presses a Q3 button, bots too.
+        if here.kind == "button" and not contact and here.automatic and self.bsp.game == "q3" {
+            for i in range(len(self.actors)) {
+                if self.actors[i].arena and touches_mover(here, self.origins[i]) {
+                    contact = True;
+                    break;
+                }
+            }
+        }
         here.contact_remaining = max(0.0, here.contact_remaining - self.dt);
         if here.toggle and contact {
             if here.contact_remaining > 0.0 {

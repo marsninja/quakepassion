@@ -62,10 +62,8 @@ Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](
 - No player shadows; repeated models are not instanced.
 
 Q3 bots and arenas ([bot-tactics-status.md](bot-tactics-status.md), [arena-match-status.md](arena-match-status.md)):
-- Free-for-all only, with no time limit.
-- Not modelled: `BotWantsToCamp`, `BotReplyChat`, `BotAddToAvoidReach`,
-  `BotAIPredictObstacles`/`BotAIBlocked`.
-- Dropped items are not kept in saves.
+- The single-player ladder's game type only (no tournament queue, team modes
+  or CTF).
 
 Passion's own limits are in [passion.md](passion.md).
 

@@ -25,6 +25,12 @@ Match rules, scoring, awards and item drops are in
   background; until a flagged table is ready the `TFL_DEFAULT` one is used.
   A passage needs its travel type's flag and the contents flag of the area it
   enters (air, water, lava, slime, do-not-enter).
+- Areas can be closed to routing and opened again (`AAS_EnableRoutingArea`,
+  `NavMesh.enable_area`). Each set of closed areas has its own tables, so a
+  door's are kept from one closing to the next.
+- A passage knows the mover whose area it enters or passes through
+  (`AREACONTENTS_MOVER` with its model number). `predict_mover` follows a
+  route up to the first one (`AAS_PredictRoute`).
 - Travel flags per think (`bot_travel_flags`, `engine/world/bot_character.jac`):
   `TFL_DEFAULT`, plus lava and slime while in them (`BotInLavaOrSlime`), plus
   rocket jumps when `BotCanAndWantsToRocketJump` holds (rocket launcher and 3
@@ -40,11 +46,18 @@ Each frame a bot follows its route (`BotMoveToGoal`) and gets a
 weapon the movement needs, a movement view, waiting and failure.
 
 - Walk, crouch, barrier jump, jump, walk off ledge, teleport and jump pad head
-  for the passage's points; a jump launches from its takeoff at 270 units/s.
+  for the passage's points. A jump (`BotTravel_Jump`) is run up to from a
+  run start up to 80 units behind its start along the jump's line (as far as
+  that stays in the area), and launches at 270 units/s once the bot is
+  within 24 units of the start, with the horizontal speed that lands it from
+  there.
 - Swim (`BotTravel_Swim`): with the waist under, straight for the waypoint in
   three dimensions, looking where it swims (`MOVERESULT_SWIMVIEW`).
 - Water jump (`BotTravel_WaterJump`): swim for the far end looking 15 units
-  above it; `PM_CheckWaterJump` lifts the bot out.
+  above it, give or take up to 40 at random; `PM_CheckWaterJump` lifts the
+  bot out. Clear of the surface with its feet still in the water
+  (`BotFinishTravel_WaterJump`) it carries on for the far end, aiming 70
+  units above it.
 - Rocket and BFG jump (`BotTravel_RocketJump`, `BotFinishTravel_WeaponJump`,
   `BotAirControl`): select the weapon, walk to the start looking straight
   down, and within 5 units and 5 degrees jump and fire; the bot's own splash
@@ -55,9 +68,24 @@ weapon the movement needs, a movement view, waiting and failure.
   16 units of the near end, board and stand on its middle, and walk off within
   24 units of the far end. A bot on a mover keeps its passage.
 - Ladder (`BotTravel_Ladder`): face up or down the ladder and move.
-- A passage fails after `BotReachabilityTime` (5 s; 6 for ladders and weapon
-  jumps; 10 for elevators, jump pads and bobbing platforms) and the route is
-  replanned.
+- A passage is given up after `BotReachabilityTime` (5 s; 6 for ladders and
+  weapon jumps; 10 for elevators, jump pads and bobbing platforms) and the
+  route is planned again from where the bot is; the movement fails only when
+  there is no way then.
+- Avoid-reachability list (`BotAddToAvoidReach`, a single entry as in Q3):
+  each passage a bot sets out on is noted; the one noted counts another try
+  when it is taken again within 6 s. Tried more than four times, it is passed
+  over when the bot next chooses its way out of its area
+  (`BotGetReachabilityToGoal`) until 6 s after its last use. A failed
+  movement clears the list (`BotResetAvoidReach`); a fight or a nearby goal
+  forgets the latest try (`BotResetLastAvoidReach`).
+- `BotCheckBlocked`: a walking or swimming leg is blocked when a mover or
+  another player's box lies within 3 units along it (the bot's box raised a
+  step and lowered 10 units); a blocked leg runs out ten times as fast. A bot
+  standing on a mover with no reachability area under it, or on another
+  player, is on top of an obstacle (`MOVERESULT_ONTOPOFOBSTACLE`) and makes no
+  move of its own; plats and bobbing platforms with reachabilities carry it.
+  A grounded bot in no AAS area at all is stuck in solid.
 
 ## Bot files (`engine/formats/botscript.jac`, `engine/formats/botconfig.jac`, `engine/world/bot_weights.jac`, `games/botfiles.jac`)
 
@@ -106,6 +134,22 @@ weapon the movement needs, a movement view, waiting and failure.
 - Nearby goals must be within 150 hundredths of a second of travel and leave
   the long-term goal no further away. The long-term goal is renewed every
   20 s, when reached, or when there is none.
+- Camp spots (`BotInitInfoEntities`): each `info_camp` of the map whose
+  origin lies in an AAS area is a `CampSpot` node under `BotItems`
+  (q3dm6, q3dm7, q3dm8, q3dm10, q3dm11, q3dm16 and q3dm19 have them).
+- Camping (`BotWantsToCamp`, checked twice a second in Seek_LTG): a bot
+  whose `CHARACTERISTIC_CAMPER` is 0.1 or more, keen to fight
+  (`BotAggression` 50), holding a rocket launcher or a railgun or BFG with
+  10 shots, goes to the camp spot soonest reached when one is within 150
+  hundredths of a second, as often as its character likes and, for the
+  keenest campers, not within 60 s of the last time (60 − 300 × (1 −
+  camper)). `BotGoCamp` has it camp for 120 to 315 s
+  by its character (for good at 1.0). The spot is then its long-term goal
+  (`LTG_CAMP`) except in a retreat; within 60 units of it the bot stands,
+  looks round now and then (`BotRoamGoal`), crouches by its `croucher` for
+  5 to 20 s at a time, and gives the spot up if its eyes go under a
+  liquid. It still fights whoever it sees, and dying does not end the
+  camping.
 
 ## AI nodes (`engine/world/bot_ai.jac`)
 
@@ -124,6 +168,8 @@ weapon the movement needs, a movement view, waiting and failure.
   visible enemy (fight, or retreat if `BotWantsToRetreat`), the long-term
   goal, and a nearby goal every half second.
 - Seek_NBG: the nearby goal for 4 + 1.5 s, then back to the long-term goal.
+- Seek_ActivateEntity: on the way to what opens a door in the bot's way (see
+  Obstacles), then back to the nearby goal.
 - Battle_Fight: a better enemy, the enemy's death (kill chat), hit chats,
   lost sight (chase or seek), `BotChooseWeapon`, `BotAttackMove`,
   `BotAimAtEnemy`, `BotCheckAttack`, and retreat when outgunned; with no goal
@@ -139,6 +185,41 @@ weapon the movement needs, a movement view, waiting and failure.
   but do not move or act (`ClientIntermissionThink`). A new level or the
   warmup's `map_restart` sets bots up afresh (`BotAISetupClient`,
   `BotResetState`), so they start seeking at FIGHT!.
+
+## Obstacles (`engine/world/bot_obstacles.jac`, `engine/world/bot_ai.jac`)
+
+- `BotAIPredictObstacles` (Seek_LTG, Seek_NBG, Seek_ActivateEntity): when
+  the goal changes, and every 6 s, the route is followed for up to 100
+  passages or 10 s. If it runs into a mover, the bot looks for what opens it.
+- `BotGetActivateGoal` is a `FindActivator` walk over the level's activation
+  graph, from the door's `Signal` backwards along the `Targets` edges into
+  it, through `target_relay` and `target_delay` up to ten deep, in the map's
+  entity order:
+  - a door with health is shot at its middle from where the bot stands;
+  - a door that starts open, or is open or opening, needs nothing;
+  - a `func_button` is walked into, or shot when it has health (from where
+    the bot stands if it sees the button's face, else from under its front);
+  - a `trigger_multiple` is stood in;
+  - `func_timer`s are passed over, and so is an activator the bot has been
+    at for over 2 s.
+  The door's AAS areas are closed to routing while the bot goes, so an
+  activator that can only be reached through the door does not count.
+- The activate goals are a stack of at most eight (`bot_activategoal_t`).
+  Each has its travel time plus 5 s (10 s when it comes up later). A goal to
+  touch is done when the bot touches it; a goal to shoot when the thing shot
+  moves. The bot shoots with the first it holds of machine gun, shotgun,
+  plasma gun, lightning gun, railgun, rocket launcher and BFG
+  (`BotSelectActivateWeapon`), once the target is in sight and within 10° of
+  its view. A dead bot, the intermission or an enemy clears the stack.
+- `BotAIBlocked` after each move: a bot stuck in solid steps somewhere at
+  random (`BotRandomMove`); one stopped by a mover looks for what opens it
+  (the seek nodes only); otherwise it sidesteps, to one side of its move or,
+  when it cannot step there, to that side and backwards, taking the other
+  side from then on (`BFL_AVOIDRIGHT`). Blocked for over 0.4 s, a seeking bot
+  gives its goal up.
+- Bots are clients to the map: a Q3 `trigger_multiple` fires for a bot
+  standing in it (`Touch_Multi`), a Q3 button is pressed by a bot touching it
+  (`Touch_Button`), and a bot's shot damages the button or door it strikes.
 
 ## Liquids and air (`engine/world/wading.jac`)
 
@@ -163,6 +244,28 @@ weapon the movement needs, a movement view, waiting and failure.
   chatted (`TIME_BETWEENCHATTING`), a listener and usually a valid chat
   position. Names are written as `EasyClientName` does; `rnd.c` strings
   expand up to ten deep; a line said in the last 20 s is avoided.
+- Bots chat in every ladder arena, the one-on-one tier finals included.
+  `ai_chat.c` keeps bots quiet only in `GT_TOURNAMENT`, and Q3's
+  single-player ladder never runs in it: `spmap` starts every arena as
+  `GT_SINGLE_PLAYER` (`SV_Map_f`), whatever `type` its `arenas.txt` entry
+  lists.
+- Synonyms (`syn.c`, `BotReplaceWeightedSynonyms`): every line a bot says is
+  worded by drawing, in each synonym list of its context, one word by weight
+  for the others ("Rocket Launcher" may come out "RL").
+- Replies (`BotCheckConsoleMessages`, `BotReplyChat`): every chat line of
+  the match, a bot's or the player's console `say`, reaches each bot as a
+  console message. A bot takes 1 to 2 s to read one. What was said has its
+  white space unified and its synonyms replaced; `match.c`'s templates
+  split the line into name and message and rule out game and command
+  messages (`BotMatchMessage`). A bot not typing already, alive and
+  somewhere it may chat answers as likely as 1.5 / (bots + 1) and its
+  `CHARACTERISTIC_CHAT_REPLY`. `rchat.c`'s reply chats are tried in
+  botlib's order: each key is a word, a match template with variables, the
+  bot's name, a list of bot names or its gender, and may have to hold (`&`)
+  or not (`!`); the fitting chat with the highest priority gives a message
+  not said in the last 20 s. The answer's variables are the template's
+  (reworded by the reply synonyms), the bot's name (6) and the speaker's
+  (7). The bot stands to type it like any other line.
 - A bot types for 2 s (`BotChatTime`), holding `BUTTON_TALK`, with the talk
   balloon (`EF_TALK`, `sprites/balloon3`) over it; then "Name: text" is said
   with `sound/player/talk.wav`. End-of-level lines go out at once and show in
@@ -202,13 +305,21 @@ Tests:
   view turning, retreat, reaction and fire, projectiles, attack moves,
   `BotFindEnemy`.
 - `tests/bot_script_tests.jac`: precompiler, fuzzy weights, item and weapon
-  configs, chat construction, character loading.
+  configs, chat construction, synonyms, match templates, reply chats,
+  character loading.
 - `tests/bot_travel_tests.jac`: travel flags, rocket jumps, bobbing
-  platforms, swimming and water jumps.
+  platforms, swimming and water jumps, the avoid-reachability list and
+  timed-out legs.
 - `tests/travel_table_tests.jac`: budgeted tables, one-way passages.
+- `tests/bot_obstacle_tests.jac`: route prediction and closed areas, the
+  activator search (buttons behind relays, shot buttons and doors, open
+  doors), the activate stack, `BotCheckBlocked`, on top of an obstacle,
+  sidestepping, a bot pressing a button before its door, bots firing
+  triggers.
 - `tests/bot_ai_tests.jac`: goal choice and avoid times, the node graph,
   fighting, suicidal fights, retreat, chase, kill/death/end-of-level chats,
-  seeking after the warmup, intermission lines, going for air.
+  seeking after the warmup, intermission lines, going for air, camp spots
+  and camping, answering what a player says.
 - `tests/liquid_tests.jac` (bot immersion, `TraceLiquid`),
   `tests/effect_quads_tests.jac` (talk balloon),
   `tests/arena_navigation_tests.jac` (pickups, teleports, jump pad goals),
@@ -216,7 +327,10 @@ Tests:
   inventories, `BOTARM`/`BOTITEM`).
 
 Scripts (native, need the Q3 assets):
-- `scripts/bot_files_smoke.jac`: loads every bot's files.
+- `scripts/bot_files_smoke.jac`: loads every bot's files, and the reply
+  chats every bot answers by (457 reply chats with 1638 keys and 3811
+  answers, 191 synonym lists and 182 match templates in the shipped
+  `rchat.c`, `syn.c` and `match.c`).
 - `scripts/aas_smoke.jac`: plans a route from every spawn point and resting
   item to every spawn point and item goal, with `TFL_DEFAULT` and with rocket
   jumps. Run of 2026-09-28:
@@ -234,6 +348,23 @@ Scripts (native, need the Q3 assets):
   The 32 q3dm17 routes that need a rocket jump go to floating items. The
   q3tourney6 mega health lies in an AAS area nothing reaches, so bots never
   choose it, as in Q3.
+- `scripts/bot_obstacle_smoke.jac` (`QP_MAPS`, `QP_SECONDS`, `QP_VERBOSE`):
+  for each door that something else opens, a bot alone is sent between two
+  spawn points or items whose route runs into the shut door. q3dm7 and
+  q3dm11 are the ladder arenas with such doors. Run of 2026-10-10:
+
+  | Map | Door | Bot went to | Door opened | Goal reached |
+  | --- | --- | --- | --- | --- |
+  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.1 s | 20.6 s |
+  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.0 s |
+  | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.5 s | 4.7 s |
+
+  For q3dm7's `*5` the bot stacks two goals (the trigger, and the button
+  whose hatch is on the way there); the ten seconds the trigger then gets
+  run out and the bot takes the long way round. q3dm11's `*5` and `*10` lie
+  on no route between spawn points and items. The other ladder arenas'
+  doors open by themselves (q3dm0, q3dm2, q3dm8, q3dm12, q3dm14,
+  q3tourney4) or are crushers no route passes (q3tourney6).
 - `scripts/bot_travel_types_smoke.jac`: counts mover rides and rocket jumps
   started and finished on q3dm19, q3tourney6 and q3dm17.
 - `scripts/bot_rocket_jump_smoke.jac`: a bot on q3dm17 rocket-jumps to the
@@ -270,11 +401,22 @@ Scripts (native, need the Q3 assets):
 
 ## Limitations
 
-- Not modelled: team play (team goals, team and voice chat), camping
-  (`BotWantsToCamp`), reply chats (`BotReplyChat`), the avoid-reachability
-  list (`BotAddToAvoidReach`), and obstacle handling
-  (`BotAIPredictObstacles`, `BotAIBlocked`).
-- Every arena is free-for-all, so bots chat in the tier finals too; Q3 keeps
-  them quiet in `GT_TOURNAMENT`.
-- `BotTravel_WaterJump` looks a fixed 15 units above the far end; Q3 adds up
-  to ±40 units at random.
+- Not modelled: team play (team goals, team and voice chat, `LTG_CAMPORDER`
+  and the other ordered goals).
+- A dead bot does not answer chat; in Q3 it may. `bot_testrchat` is not
+  there.
+- A bot that ends up on a plat or bobbing platform it was not taking keeps
+  its route; Q3 switches it to that mover's reachability.
+- `BotAIBlocked`'s sidestep is tested with the bots' wall and ledge probe
+  (`can_step`), not `AAS_PredictClientMovement`. Bots do not block one
+  another's movement; they only sidestep each other.
+- `BotClearPath` (shooting proximity mines and kamikaze bodies, Team Arena)
+  is not modelled.
+- Other `be_ai_move.c` details not modelled: a walking bot slows for a gap
+  ahead (`BotGapDistance`) and near its goal (`BotMoveInGoalArea`), crouches
+  toward crouch-only areas and on `TRAVEL_CROUCH` legs, never takes a
+  reachability straight back into the area it just left for the same goal,
+  slows onto teleporters, and walks off ledges at `BotTravel_WalkOffLedge`'s
+  speeds; barrier jumps launch at their takeoff rather than with `EA_Jump`
+  within 9 units of it. A bot water-jumping moves along the view it wants
+  rather than the one it has (`EA_MoveForward`).

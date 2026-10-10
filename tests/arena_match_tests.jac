@@ -350,3 +350,66 @@ test "the postgame shows the podium, presents each award, then the buttons" {
     assert skipped.phase == 3;
     assert prop_width("A") == 18 and prop_width("AB") == 39 and prop_width(" ") == 8;
 }
+
+test "the time limit ends the match for the leader, and a tied score plays on in sudden death" {
+    contest = contest_with(["Ranger", "Phobos"], 20);
+    player = Player(health=125);
+    contest +>:Competes:name="You", human=True:+> player;
+    actors = [contest->:Competes:->];
+    ranger = actors[0];
+    contest.timelimit = 6;
+    # Five minutes and one minute left, each called once.
+    contest.elapsed = 59.9;
+    assert "sound/feedback/5_minute.wav" not in (contest spawn MatchTick(dt=0.05)).cues;
+    assert "sound/feedback/5_minute.wav" in (contest spawn MatchTick(dt=0.1)).cues;
+    assert not (contest spawn MatchTick(dt=0.1)).cues;
+    contest.elapsed = 300.0;
+    assert (contest spawn MatchTick(dt=0.1)).cues == ["sound/feedback/1_minute.wav"];
+    # At the limit with everyone on 0: ScoreIsTied, so the match goes on,
+    # with the sudden death call two seconds in.
+    contest.elapsed = 359.95;
+    tied = contest spawn MatchTick(dt=0.1);
+    assert not tied.ended and not contest.finished and not tied.prints;
+    contest.elapsed = 362.0;
+    assert (contest spawn MatchTick(dt=0.1)).cues == ["sound/feedback/sudden_death.wav"];
+    assert not contest.finished;
+    # The first frag breaks the tie and the time limit is hit.
+    player.health = 0;
+    player.killer = ranger;
+    over = contest spawn MatchTick(dt=0.1);
+    assert over.ended and contest.finished and contest.winner == "Ranger";
+    assert over.prints == ["Timelimit hit."] and "sound/player/announce/ranger_wins.wav" in over.cues;
+    # No limit: the clock never ends a match (timelimit 0, the ladder's).
+    endless = contest_with(["Ranger", "Phobos"], 20);
+    endless.elapsed = 100000.0;
+    entries = [edge endless->:Competes:->];
+    entries[0].frags = 3;
+    idle = endless spawn MatchTick(dt=0.1);
+    assert not idle.ended and not idle.cues;
+    # The frag limit waits for a lead too, and names who hit it.
+    entries[0].frags = 20;
+    entries[1].frags = 20;
+    assert not (endless spawn MatchTick(dt=0.1)).ended;
+    entries[1].frags = 19;
+    hit = endless spawn MatchTick(dt=0.1);
+    assert hit.ended and hit.prints == ["Ranger hit the fraglimit."];
+}
+
+test "an arena's limits come from arenas.txt: no key is no limit, neither is ten frags" {
+    arenas = parse_arenas("""
+{
+map "q3dm1"
+fraglimit 15
+}
+{
+map "timed"
+timelimit 8
+}
+{
+map "bare"
+}
+""");
+    assert (arenas[0].fraglimit, arenas[0].timelimit) == (15, 0);
+    assert (arenas[1].fraglimit, arenas[1].timelimit) == (0, 8);
+    assert (arenas[2].fraglimit, arenas[2].timelimit) == (10, 0);
+}

@@ -15,7 +15,13 @@ import from engine.formats.botconfig {
     read_item_config,
     read_weapon_names,
     read_initial_chat,
-    read_random_strings
+    read_random_strings,
+    ReplyChat,
+    SynonymList,
+    MatchTemplate,
+    read_reply_chats,
+    read_synonyms,
+    read_match_templates
 }
 
 glob BOT_WEAPON_NAMES: dict[str, str] = {
@@ -44,6 +50,10 @@ obj BotFiles {
         weapons_read: bool = False,
         randoms: dict[str, list[ChatMessage]] = {},
         randoms_read: bool = False,
+        replies: list[ReplyChat] = [],
+        synonyms: list[SynonymList] = [],
+        templates: list[MatchTemplate] = [],
+        replies_read: bool = False,
         chats: dict[str, dict[str, list[ChatMessage]]] = {};
 
     """A script's text, "" when there is none."""
@@ -120,6 +130,24 @@ obj BotFiles {
             self.randoms = read_random_strings(self.tokens("rnd.c"));
         }
         return self.randoms;
+    }
+
+    """BotSetupChatAI's rchat.c, syn.c and match.c, read once: every bot
+    answers from the same reply chats, as in botlib."""
+    def read_replies() {
+        if self.replies_read {
+            return;
+        }
+        self.replies_read = True;
+        if self.text("syn.c") {
+            self.synonyms = read_synonyms(self.tokens("syn.c"));
+        }
+        if self.text("match.c") {
+            self.templates = read_match_templates(self.tokens("match.c"));
+        }
+        if self.text("rchat.c") {
+            self.replies = read_reply_chats(self.tokens("rchat.c"));
+        }
     }
 
     """BotLoadInitialChat: the chat `name`'s types in a chat file. Each bot
@@ -255,6 +283,7 @@ def character_from(
         self_preservation=unit(values, "CHARACTERISTIC_SELFPRESERVATION", 0.5),
         jumper=unit(values, "CHARACTERISTIC_JUMPER", 0.0),
         croucher=unit(values, "CHARACTERISTIC_CROUCHER", 0.0),
+        camper=unit(values, "CHARACTERISTIC_CAMPER", 0.0),
         weapon_jumping=unit(values, "CHARACTERISTIC_WEAPONJUMPING", 0.0),
         alertness=unit(values, "CHARACTERISTIC_ALERTNESS", 0.5),
         chat_insult=unit(values, "CHARACTERISTIC_CHAT_INSULT", 0.0),
@@ -267,7 +296,8 @@ def character_from(
         chat_hit_talking=unit(values, "CHARACTERISTIC_CHAT_HITTALKING", 0.0),
         chat_hit_no_death=unit(values, "CHARACTERISTIC_CHAT_HITNODEATH", 0.0),
         chat_hit_no_kill=unit(values, "CHARACTERISTIC_CHAT_HITNOKILL", 0.0),
-        chat_random=unit(values, "CHARACTERISTIC_CHAT_RANDOM", 0.0)
+        chat_random=unit(values, "CHARACTERISTIC_CHAT_RANDOM", 0.0),
+        chat_reply=unit(values, "CHARACTERISTIC_CHAT_REPLY", 0.0)
     );
     for (suffix, weapon) in BOT_WEAPON_NAMES.items() {
         accuracy = "CHARACTERISTIC_AIM_ACCURACY_" + suffix;
@@ -308,6 +338,10 @@ def attach_bot_files(character: BotCharacter, values: dict[str, str], files: Bot
     if chat_path and chat_name and files.text(chat_path) {
         character.chats = files.initial_chat(chat_path, chat_name);
         character.random_strings = files.random_strings();
+        files.read_replies();
+        character.reply_chats = files.replies;
+        character.synonyms = files.synonyms;
+        character.match_templates = files.templates;
     }
 }
 

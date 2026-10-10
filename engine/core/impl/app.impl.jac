@@ -26,6 +26,11 @@ impl App.run() {
         if self.level.bsp.game == "q3" {
             prepare_arena_links(self.world, self.level.collision);
         }
+        # g_bot.c G_InitBots: the arena's own time limit (none in arenas.txt).
+        started = match_of(self.world);
+        if started is not None {
+            self.host.timelimit.assign(str(started.timelimit));
+        }
         self.models.upload(self.world);
         self.effects.upload(
             self.level.bsp.game,
@@ -669,6 +674,10 @@ impl App.load_destination(
         combat = CombatState();
         if game == "q3" {
             prepare_arena_links(world, level.collision);
+        }
+        started = match_of(world);
+        if started is not None {
+            self.host.timelimit.assign(str(started.timelimit));
         }
         equip_player(player, combat, game, fresh=not carrying);
         if carrying {
@@ -1335,6 +1344,7 @@ impl App.step() -> bool {
                 }
             }
             if contest is not None and not contest.finished {
+                contest.timelimit = self.host.timelimit.integer;
                 tally = contest spawn MatchTick(dt=self.physics_clock.tick_rate);
                 for cue in tally.cues {
                     self.audio.play_path(cue);
@@ -1350,7 +1360,7 @@ impl App.step() -> bool {
                 for message in tally.messages {
                     self.show_notice(message);
                 }
-                for line in tally.obituaries {
+                for line in tally.obituaries + tally.prints {
                     self.notify(line);
                 }
                 warming = contest.warmup > 0.0;

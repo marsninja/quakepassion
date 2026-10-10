@@ -108,6 +108,20 @@ def lex_script(text: str) -> list[ScriptToken] {
                     raise ValueError("Unterminated string in bot script on line " + str(line));
                 }
                 if text[i] == "\\" and i + 1 < count {
+                    # PS_ReadEscapeCharacter's hexadecimal escape (\x19).
+                    if text[i + 1] == "x" {
+                        j = i + 2;
+                        code = 0;
+                        while j < count and "0123456789abcdef".find(text[j].lower()) >= 0 {
+                            code = code * 16 + "0123456789abcdef".find(text[j].lower());
+                            j += 1;
+                        }
+                        if j > i + 2 {
+                            value += chr(code & 255);
+                            i = j;
+                            continue;
+                        }
+                    }
                     value += script_escape(text[i + 1]);
                     i += 2;
                     continue;

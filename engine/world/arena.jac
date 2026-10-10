@@ -2,9 +2,9 @@
 
 An `ArenaMatch` node links every competitor through a `Competes` edge that
 carries the competitor's name and score. Spawn points are `SpawnPoint` nodes.
-Walkers credit frags, announce lead changes and end the match at the limit,
-following Q3's g_combat.c scoring, g_client.c spawn selection and cg_event.c
-announcer rules."""
+Walkers credit frags, announce lead changes and end the match at the frag or
+time limit, following Q3's g_combat.c scoring, g_main.c exit rules,
+g_client.c spawn selection and cg_event.c announcer rules."""
 import from .world { World, Actor }
 import from ..math.vec3 { Vec3 }
 
@@ -17,9 +17,22 @@ obj Obituary {
         serial: int;
 }
 
+"""A line of chat as every client gets it (g_cmds.c G_Say): who said it,
+under what name, and what, numbered in order."""
+obj ChatLine {
+    has speaker: Actor | None,
+        name: str,
+        text: str,
+        serial: int;
+}
+
 edge HasMatch: World --> ArenaMatch {}
 node ArenaMatch {
+    # g_fraglimit and g_timelimit (minutes); 0 is no limit. `time_called`
+    # holds the time warnings given (cg.timelimitWarnings).
     has fraglimit: int = 20,
+        timelimit: int = 0,
+        time_called: int = 0,
         title: str = "",
         elapsed: float = 0.0,
         warmup: float = 0.0,
@@ -29,7 +42,18 @@ node ArenaMatch {
         frags_called: int = 0,
         prepared: bool = False,
         obituaries: list[Obituary] = [],
-        obituary_serial: int = 0;
+        obituary_serial: int = 0,
+        chats: list[ChatLine] = [],
+        chat_serial: int = 0;
+
+    """Say something to everyone in the match (bots read these)."""
+    def say(speaker: Actor | None, name: str, text: str) {
+        self.chat_serial += 1;
+        self.chats.append(ChatLine(speaker=speaker, name=name, text=text, serial=self.chat_serial));
+        if len(self.chats) > 64 {
+            self.chats.pop(0);
+        }
+    }
 
     """Announce a death to everyone listening (bots read these)."""
     def announce_death(victim: Actor, killer: Actor | None, means: str) {
@@ -197,12 +221,15 @@ def obituary(victim: str, killer: str, means: str) -> str {
     return victim + " " + words[0] + killer + words[1];
 }
 
-"""Advance the match: frag credit on each fresh death, then Q3's local sounds."""
+"""Advance the match: frag credit on each fresh death, Q3's local sounds,
+then the exit rules. `prints` are the lines the server prints to everyone
+("Timelimit hit.")."""
 walker MatchTick {
     has dt: float,
         cues: list[str] = [],
         messages: list[str] = [],
         obituaries: list[str] = [],
+        prints: list[str] = [],
         ended: bool = False;
 
     can tally with ArenaMatch entry {
@@ -300,36 +327,94 @@ walker MatchTick {
                 self.obituaries.append(obituary(score.name, entries[credited].name, actor.death_means));
             }
         }
-        if not changed {
+        self.time_warnings(here);
+        if changed {
+            self.announce(here, entries);
+        }
+        self.exit_rules(here, entries);
+    }
+
+    """g_main.c ScoreIsTied for a free for all: the two highest scores are
+    the same (never with fewer than two playing)."""
+    def score_tied(entries: list[Competes]) -> bool {
+        if len(entries) < 2 {
+            return False;
+        }
+        ordered = sorted([score.frags for score in entries], reverse=True);
+        return ordered[0] == ordered[1];
+    }
+
+    """g_main.c CheckExitRules (the free for all's part). A tied score always
+    waits for sudden death: neither limit ends the match until someone
+    leads. Then the time limit, counted from the warmup's end, and with two
+    or more playing the frag limit."""
+    def exit_rules(contest: ArenaMatch, entries: list[Competes]) {
+        if self.score_tied(entries) {
             return;
         }
-        self.announce(here, entries);
+        if contest.timelimit > 0 and contest.elapsed >= float(contest.timelimit) * 60.0 {
+            self.prints.append("Timelimit hit.");
+            self.end_match(contest, entries);
+            return;
+        }
+        if len(entries) < 2 or contest.fraglimit <= 0 {
+            return;
+        }
+        for score in entries {
+            if score.frags >= contest.fraglimit {
+                self.prints.append(score.name + " hit the fraglimit.");
+                self.end_match(contest, entries);
+                return;
+            }
+        }
+    }
+
+    """The match is over (LogExit): the highest score wins it."""
+    def end_match(contest: ArenaMatch, entries: list[Competes]) {
         best = max([score.frags for score in entries]) if entries else 0;
-        if best >= here.fraglimit {
-            here.finished = True;
-            self.ended = True;
-            for score in entries {
-                if score.frags == best {
-                    here.winner = score.name;
-                    if score.human {
-                        break;
-                    }
+        contest.finished = True;
+        self.ended = True;
+        for score in entries {
+            if score.frags == best {
+                contest.winner = score.name;
+                if score.human {
+                    break;
                 }
             }
-            human_won = any([score.human and score.frags == best for score in entries]);
-            self.cues.append(
-                "sound/player/announce/youwin.wav"
-                    if human_won
-                    else "sound/player/announce/" + here.winner.lower() + "_wins.wav"
-            );
-            # A win without a single death is Perfect.
-            if any([score.human and score.frags == best and score.deaths == 0 for score in entries]) {
-                self.cues.append("sound/feedback/perfect.wav");
-                self.messages.append("Perfect!");
-            }
-            self.messages.append(
-                "You win!" if human_won else here.winner + " wins the match"
-            );
+        }
+        human_won = any([score.human and score.frags == best for score in entries]);
+        self.cues.append(
+            "sound/player/announce/youwin.wav"
+                if human_won
+                else "sound/player/announce/" + contest.winner.lower() + "_wins.wav"
+        );
+        # A win without a single death is Perfect.
+        if any([score.human and score.frags == best and score.deaths == 0 for score in entries]) {
+            self.cues.append("sound/feedback/perfect.wav");
+            self.messages.append("Perfect!");
+        }
+        self.messages.append(
+            "You win!" if human_won else contest.winner + " wins the match"
+        );
+    }
+
+    """cg_playerstate.c CG_CheckLocalSounds' time limit warnings, each given
+    once: five minutes left (limits over five minutes), one minute left, and
+    sudden death two seconds past the limit."""
+    def time_warnings(contest: ArenaMatch) {
+        if contest.timelimit <= 0 {
+            return;
+        }
+        limit = float(contest.timelimit) * 60.0;
+        if contest.time_called & 4 == 0 and contest.elapsed > limit + 2.0 {
+            contest.time_called |= 7;
+            self.cues.append("sound/feedback/sudden_death.wav");
+        } elif contest.time_called & 2 == 0 and contest.elapsed > limit - 60.0 {
+            contest.time_called |= 3;
+            self.cues.append("sound/feedback/1_minute.wav");
+        } elif contest.timelimit > 5 and contest.time_called & 1 == 0 and contest.elapsed > limit - 300.0 {
+            contest.time_called |= 1;
+            self.cues.append("sound/feedback/5_minute.wav");
         }
     }
 
@@ -354,7 +439,7 @@ walker MatchTick {
         }
         best = max([score.frags for score in entries]) if entries else 0;
         left = contest.fraglimit - best;
-        if left in [1, 2, 3] and contest.frags_called != left {
+        if contest.fraglimit > 0 and left in [1, 2, 3] and contest.frags_called != left {
             contest.frags_called = left;
             self.cues.append(
                 "sound/feedback/1_frag.wav"

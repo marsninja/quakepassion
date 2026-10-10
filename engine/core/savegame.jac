@@ -49,8 +49,19 @@ import from engine.world.combat {
     Projectile,
     HasProjectile
 }
-import from engine.world.pickups { Pickup, HasPickup }
-import from engine.world.drops { Flight, HasFlight, Carries, let_fall, end_flight, in_flight }
+import from engine.world.pickups { Pickup, HasPickup, remove_pickup }
+import from engine.world.drops {
+    Flight,
+    HasFlight,
+    Carries,
+    let_fall,
+    end_flight,
+    in_flight,
+    drop_kind,
+    dropped_items,
+    flight_of,
+    restore_drop
+}
 import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
 import from engine.world.mover_ramp { ramp_rest }
 import from engine.world.rotators { Rotator, HasRotator, place }
@@ -410,7 +421,36 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             );
         }
     }
-    # Dropped items are transient and not saved; a benched team member is.
+    # What dying players dropped (TossClientItems): which item, where, how
+    # long it has left, a powerup's remaining time, and its throw while it
+    # is still in the air.
+    for thrown in dropped_items(world) {
+        if not thrown.active {
+            continue;
+        }
+        flight = flight_of(thrown);
+        motion = flight.velocity if flight is not None else Vec3();
+        lines.append(
+            "DROP "
+                + drop_kind(thrown.rule)
+                + " "
+                + numbers(
+                    [
+                        thrown.pos.x,
+                        thrown.pos.y,
+                        thrown.pos.z,
+                        thrown.yaw,
+                        thrown.lifetime,
+                        thrown.duration,
+                        1.0 if flight is not None else 0.0,
+                        motion.x,
+                        motion.y,
+                        motion.z
+                    ]
+                )
+        );
+    }
+    # A benched team member is saved with the placed items.
     placed = [pickup for pickup in [world->:HasPickup:->][?:Pickup] if not pickup.dropped];
     for pickup in placed {
         lines.append(
@@ -677,6 +717,10 @@ def restore(
     # Items falling as the level loaded fall on from where the save has them.
     for flight in [world->:HasFlight:->][?:Flight] {
         end_flight(world, flight);
+    }
+    # The dropped items are the save's.
+    for thrown in dropped_items(world) {
+        remove_pickup(world, thrown);
     }
     # Flying gibs belong to the moment that was left; the saved one has none.
     for gib in [world->:HasGib:->][?:Gib] {
@@ -980,7 +1024,7 @@ def restore(
         } elif words[0] == "MATCH" and len(words) == 7 {
             row = values(" ".join(words[1:]), 6);
             contest = match_of(world);
-            if contest is None or row[0] < 1.0 or row[2] < 0.0 or row[2] > 10.0 {
+            if contest is None or row[0] < 0.0 or row[2] < 0.0 or row[2] > 10.0 {
                 raise ValueError("Invalid saved match");
             }
             contest.fraglimit = int(row[0]);
@@ -1201,6 +1245,22 @@ def restore(
                     owner del --> item;
                 }
             }
+        } elif words[0] == "DROP" and len(words) == 12 {
+            row = values(" ".join(words[2:]), 10);
+            if row[4] <= 0.0 or row[4] > 30.0 or row[6] not in [0.0, 1.0] {
+                raise ValueError("Invalid saved dropped item");
+            }
+            place = Vec3(x=row[0], y=row[1], z=row[2]);
+            restore_drop(
+                world,
+                words[1],
+                place,
+                row[3],
+                level.areas[level.locate(place)] if level.areas else None,
+                row[4],
+                row[5],
+                Vec3(x=row[7], y=row[8], z=row[9]) if row[6] != 0.0 else None
+            );
         } elif words[0] == "FALL" and len(words) == 5 {
             row = values(" ".join(words[2:]), 3);
             index = int(words[1]) if words[1].isdigit() else -1;
