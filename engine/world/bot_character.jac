@@ -3,7 +3,7 @@ that drive its aim, reactions and tactics, resolved for the match's skill
 level, with the fuzzy item and weapon weights (*_i.c, *_w.c) it chooses
 goals and weapons by and the chats (*_t.c) it says."""
 import from .world { Actor, Player }
-import from .bot_routes { BotRoute }
+import from .bot_routes { BotRoute, NavMesh }
 import from .bot_travel { TravelResult }
 import from ..formats.aas { TFL_DEFAULT, TFL_LAVA, TFL_SLIME, TFL_ROCKETJUMP }
 import from ..formats.botconfig { WeightConfig, ChatMessage, WeightDice }
@@ -117,6 +117,92 @@ def bot_handicap(skill: float) -> int {
     return 100;
 }
 
+# ai_main.h MAX_ACTIVATESTACK and MAX_ACTIVATEAREAS.
+glob MAX_ACTIVATESTACK: int = 8,
+    MAX_ACTIVATEAREAS: int = 32;
+
+"""ai_main.h bot_activategoal_t: something a bot goes to activate to get an
+obstacle out of its way. `goal` is where it goes (a button to walk into, a
+trigger to stand in, or the spot it shoots from) and `entity` the BSP model
+of the button, trigger or door it activates there; `shoot` with `target`
+and `weapon` when that takes a shot. `time` is when the bot gives up,
+`start_time` when it set out, `origin` where the entity stood then (it has
+been hit once it moves), and `areas` the AAS areas of the blocking door,
+closed to routing while `areas_disabled`."""
+obj ActivateGoal {
+    has goal: BotGoal,
+        entity: int = 0,
+        time: float = 0.0,
+        start_time: float = 0.0,
+        shoot: bool = False,
+        weapon: int = 0,
+        target: Vec3 = Vec3(),
+        origin: Vec3 = Vec3(),
+        areas: list[int] = [],
+        areas_disabled: bool = False;
+
+    """ai_dmq3.c BotEnableActivateGoalAreas: open or close the door's areas
+    to routing."""
+    def enable_areas(mesh: NavMesh, enable: bool) {
+        if self.areas_disabled != enable {
+            return;
+        }
+        for area in self.areas {
+            mesh.enable_area(area, enable);
+        }
+        self.areas_disabled = not enable;
+    }
+}
+
+"""A bot's activate goals (ai_main.h activatestack over activategoalheap):
+the stack, its top last, and when each entity's goal was last let go
+(`used`, the heap's justused_time)."""
+obj ActivateState {
+    has stack: list[ActivateGoal] = [],
+        used: dict[int, float] = {};
+
+    def top() -> ActivateGoal | None {
+        return self.stack[len(self.stack) - 1] if self.stack else None;
+    }
+
+    """ai_dmq3.c BotPopFromActivateGoalStack: the top goal is done with and
+    its door's areas routed through again."""
+    def pop(mesh: NavMesh, now: float) -> bool {
+        if not self.stack {
+            return False;
+        }
+        done = self.stack.pop();
+        done.enable_areas(mesh, True);
+        self.used[done.entity] = now;
+        return True;
+    }
+
+    """BotPushOntoActivateGoalStack: False when all eight slots are in use."""
+    def push(goal: ActivateGoal) -> bool {
+        if len(self.stack) >= MAX_ACTIVATESTACK {
+            return False;
+        }
+        self.stack.append(goal);
+        return True;
+    }
+
+    """BotClearActivateGoalStack."""
+    def clear(mesh: NavMesh, now: float) {
+        while self.pop(mesh, now) {}
+    }
+
+    """BotIsGoingToActivateEntity: a goal for it is on the stack and has
+    time left, or one was let go within the last two seconds."""
+    def going_to(entity: int, now: float) -> bool {
+        for waiting in self.stack {
+            if waiting.time >= now and waiting.entity == entity {
+                return True;
+            }
+        }
+        return self.used.get(entity, -1000.0) > now - 2.0;
+    }
+}
+
 """What a Q3 bot is doing moment to moment beyond its character (the
 bot_state_t of ai_main.h). Its view as BotChangeViewAngles turns it (Quake
 degrees, stepped every 50 ms server frame and drawn between frames);
@@ -196,6 +282,18 @@ obj BotState {
     has travel_flags: int = TFL_DEFAULT,
         route: BotRoute = BotRoute(),
         travel: TravelResult = TravelResult();
+    # ai_dmq3.c obstacle handling: the activate goals, the goal area and time
+    # of the last obstacle prediction, when the bot was last not blocked,
+    # which side it walks round things (BFL_AVOIDRIGHT), the move its think
+    # makes round an obstacle (BotAIBlocked's EA_Move, for the frames until
+    # the next think), and what it shoots at to activate something.
+    has obstacles: ActivateState = ActivateState(),
+        predict_area: int = 0,
+        predict_time: float = -100.0,
+        notblocked_time: float = 0.0,
+        avoid_right: bool = False,
+        detour: Vec3 | None = None,
+        shoot_target: Vec3 | None = None;
 }
 
 """ai_dmq3.c BotEntityVisible for a player's box: the bot's eye sees the

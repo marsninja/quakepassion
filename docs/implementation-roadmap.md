@@ -84,8 +84,7 @@ Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](
 
 Q3 bots and arenas ([bot-tactics-status.md](bot-tactics-status.md), [arena-match-status.md](arena-match-status.md)):
 - Free-for-all only, with no time limit.
-- Not modelled: `BotWantsToCamp`, `BotReplyChat`, `BotAddToAvoidReach`,
-  `BotAIPredictObstacles`/`BotAIBlocked`.
+- Not modelled: `BotWantsToCamp`, `BotReplyChat`, `BotAddToAvoidReach`.
 - Dropped items are not kept in saves.
 
 Passion's own limits are in [passion.md](passion.md).
