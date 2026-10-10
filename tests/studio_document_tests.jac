@@ -10,7 +10,9 @@ import from editor.document.scene {
     read_vector,
     write_vector,
     field_number,
-    side_moved
+    side_moved,
+    FaceEdit,
+    Finding
 }
 import from editor.geometry.brush { box_sides, brush_volume, Plane3, Side }
 import from editor.formats.map { read_map, write_map }
@@ -399,4 +401,209 @@ test "turning swings the selection round its middle and turns what faces" {
     assert scene.turn_selection(-90.0) and start.fields["angle"] == "0";
     scene.clear_selection();
     assert scene.selection_middle() is None and not scene.turn_selection(90.0);
+}
+
+def blockout -> Scene {
+    scene = Scene(game="passion", name="studio:test");
+    world = scene.world();
+    scene.add_solid(world, box_sides(Vec3(x=-128.0, y=-128.0, z=-16.0), Vec3(x=128.0, y=128.0, z=0.0), "floor"));
+    scene.add_solid(world, box_sides(Vec3(x=0.0, y=0.0, z=0.0), Vec3(x=64.0, y=64.0, z=64.0), "wall"));
+    scene.add_item({"classname": "info_player_start", "origin": "-64 -64 24", "angle": "90"});
+    return scene;
+}
+
+test "faces are picked by edges that carry their side" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    floor = scene.solids()[0];
+    scene.select_face(wall, 4);
+    assert scene.is_face_selected(wall, 4) and not scene.is_face_selected(wall, 3);
+    scene.select_face(wall, 2, True);
+    scene.select_face(floor, 4, True);
+    assert scene.face_sides(wall) == [2, 4] and scene.face_sides(floor) == [4];
+    assert len(scene.faces()) == 3;
+    # Picked again while adding, a face is dropped.
+    scene.select_face(wall, 2, True);
+    assert scene.face_sides(wall) == [4];
+    # A face picked alone replaces everything selected; selecting a brush drops the faces.
+    scene.select_solid(floor, True);
+    scene.select_face(floor, 0);
+    assert len(scene.faces()) == 1 and not scene.selected_solids();
+    scene.select_solid(wall);
+    assert len(scene.faces()) == 0;
+    scene.select_face(wall, 9);
+    assert len(scene.faces()) == 0;
+}
+
+test "a face edit touches the picked faces, or every side of a picked brush" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    scene.select_face(wall, 4);
+    assert scene.reface(FaceEdit(how="material", material="trim"), "Set material");
+    assert [side.material for side in wall.sides] == ["wall", "wall", "wall", "wall", "trim", "wall"];
+    assert not scene.reface(FaceEdit(how="material", material="trim"), "Set material");
+    assert scene.reface(FaceEdit(how="shift", s=16.0, t=8.0), "Slide");
+    assert wall.sides[4].mapping.s_shift == 16.0 and wall.sides[3].mapping.s_shift == 0.0;
+    assert scene.reface(FaceEdit(how="fit", sizes={"trim": [32, 32]}), "Fit");
+    assert abs(wall.sides[4].mapping.s_scale - 2.0) < 0.001;
+    scene.select_solid(wall);
+    assert scene.reface(FaceEdit(how="scale", s=0.5, t=0.5), "Scale");
+    assert [side.mapping.s_scale for side in wall.sides] == [0.5] * 6;
+    assert scene.reface(FaceEdit(how="turn", s=45.0), "Turn");
+    assert abs(wall.sides[0].mapping.rotation - 45.0) < 0.001;
+    assert scene.reface(FaceEdit(how="reset"), "Reset");
+    assert wall.sides[0].mapping.s_scale == 1.0 and wall.sides[0].mapping.rotation == 0.0;
+    for i in range(6) {
+        scene.undo();
+    }
+    assert [side.material for side in wall.sides] == ["wall"] * 6 and wall.sides[4].mapping.s_shift == 0.0;
+}
+
+test "a picked face is forgotten when its brush loses that side" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    scene.select_face(wall, 5);
+    assert scene.reshape(wall, wall.sides[:5] + [wall.sides[5]], "Same");
+    assert scene.face_sides(wall) == [5];
+    wedge = [wall.sides[1], wall.sides[2], wall.sides[3], wall.sides[5], Side(
+        plane=Plane3(normal=Vec3(x=1.0, z=1.0).normalized(), dist=Vec3(x=1.0, z=1.0).normalized().dot(Vec3(x=64.0))),
+        material="wall"
+    )];
+    assert scene.reshape(wall, wedge, "Wedge");
+    assert len(scene.faces()) == 0;
+}
+
+test "everything, the rest, and every brush of a material can be selected" {
+    scene = blockout();
+    assert scene.select_all() == 3;
+    assert len(scene.selected_solids()) == 2 and len(scene.selection()) == 1;
+    assert scene.select_all("brushes") == 2 and not scene.selection();
+    assert scene.select_all("entities") == 1 and not scene.selected_solids();
+    scene.select_solid(scene.solids()[0]);
+    assert scene.invert_selection() == 2;
+    assert scene.selected_solids() == [scene.solids()[1]] and len(scene.selection()) == 1;
+    assert scene.select_material("floor") == 1 and scene.selected_solids() == [scene.solids()[0]];
+    assert scene.select_material("nothing") == 0;
+}
+
+test "mirroring and stretching the selection undo" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    start = scene.items()[1];
+    scene.select_solid(wall);
+    scene.select(start, True);
+    # The two span x -64..64, so the mirror is about x = 0.
+    assert scene.stretch_selection(Vec3(x=-1.0, y=1.0, z=1.0), 8.0, "Mirror");
+    box = wall.bounds();
+    assert box is not None and box[0].x == -64.0 and box[1].x == 0.0;
+    assert start.fields["origin"] == "64 -64 24" and start.fields["angle"] == "90";
+    assert scene.stretch_selection(Vec3(x=1.0, y=-1.0, z=1.0), 8.0, "Mirror");
+    assert start.fields["angle"] == "270";
+    scene.undo();
+    scene.undo();
+    box = wall.bounds();
+    assert box is not None and box[0].x == 0.0 and start.fields["origin"] == "-64 -64 24";
+    scene.select_solid(wall);
+    assert scene.stretch_selection(Vec3(x=2.0, y=1.0, z=0.5));
+    box = wall.bounds();
+    assert box is not None and box[1].x - box[0].x == 128.0 and box[1].z - box[0].z == 32.0;
+    assert not scene.stretch_selection(Vec3(x=1.0, y=1.0, z=1.0));
+    assert not scene.stretch_selection(Vec3(x=0.0, y=1.0, z=1.0));
+}
+
+test "the selection turns about the x and y axes too" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    scene.select_solid(wall);
+    assert scene.push_side(wall, 4, 64.0);
+    assert scene.turn_selection(90.0, 8.0, 0);
+    box = wall.bounds();
+    # A 64 x 64 x 128 pillar laid on its side along y.
+    assert box is not None and abs((box[1].y - box[0].y) - 128.0) < 0.01 and abs((box[1].z - box[0].z) - 64.0) < 0.01;
+    scene.undo();
+    box = wall.bounds();
+    assert box is not None and abs((box[1].z - box[0].z) - 128.0) < 0.01;
+}
+
+test "carving cuts the selection out of every other brush and undoes as one step" {
+    scene = blockout();
+    floor = scene.solids()[0];
+    cutter = scene.create_solid(box_sides(Vec3(x=-32.0, y=-32.0, z=-32.0), Vec3(x=32.0, y=32.0, z=32.0), "trim"));
+    assert cutter is not None;
+    before = len(scene.solids());
+    assert scene.carve_selection() > 0;
+    # The floor is four pieces round the hole and the wall has lost a corner.
+    assert len(scene.solids()) > before;
+    total = 0.0;
+    for solid in scene.solids() {
+        if solid is not cutter {
+            total += brush_volume(solid.sides);
+        }
+    }
+    whole = 256.0 * 256.0 * 16.0 + 64.0 * 64.0 * 64.0;
+    assert abs(total - (whole - 64.0 * 64.0 * 16.0 - 32.0 * 32.0 * 32.0)) < 1.0;
+    assert scene.undo() == "Carve";
+    assert len(scene.solids()) == before and abs(brush_volume(floor.sides) - 256.0 * 256.0 * 16.0) < 0.01;
+    # With nothing selected, or nothing reached, nothing is carved.
+    scene.select_solid(None);
+    assert scene.carve_selection() == 0;
+}
+
+test "intersecting, hollowing and merging replace the selection and undo" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    other = scene.create_solid(box_sides(Vec3(x=32.0, y=32.0, z=32.0), Vec3(x=96.0, y=96.0, z=96.0), "trim"));
+    assert other is not None;
+    scene.select_solid(wall, True);
+    assert scene.intersect_selection();
+    assert len(scene.solids()) == 2;
+    kept = scene.selected_solids();
+    assert len(kept) == 1 and abs(brush_volume(kept[0].sides) - 32.0 * 32.0 * 32.0) < 0.01;
+    scene.undo();
+    assert len(scene.solids()) == 3;
+    scene.select_solid(wall);
+    assert scene.hollow_selection(8.0);
+    assert len(scene.solids()) == 8 and len(scene.selected_solids()) == 6;
+    assert not scene.hollow_selection(64.0);
+    scene.undo();
+    assert len(scene.solids()) == 3 and abs(brush_volume(wall.sides) - 64.0 * 64.0 * 64.0) < 0.01;
+    # Cut in two, a wall merges back; with the floor it does not.
+    scene.select_solid(wall);
+    assert scene.clip_selection(Plane3(normal=Vec3(x=1.0), dist=32.0), "both");
+    assert len(scene.selected_solids()) == 2;
+    assert scene.merge_selection();
+    assert len(scene.selected_solids()) == 1 and abs(brush_volume(scene.selected_solids()[0].sides) - 64.0 * 64.0 * 64.0) < 0.01;
+    scene.select_solid(scene.solids()[0], True);
+    assert not scene.merge_selection();
+}
+
+test "moving a corner reshapes a brush and refuses a corner it has not got" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    assert scene.move_corners(wall, [Vec3(x=64.0, y=64.0, z=64.0)], Vec3(z=32.0));
+    box = wall.bounds();
+    assert box is not None and box[1].z == 96.0;
+    assert not scene.move_corners(wall, [Vec3(x=1.0, y=2.0, z=3.0)], Vec3(z=32.0));
+    assert not scene.move_corners(wall, [Vec3(x=64.0, y=64.0, z=96.0)], Vec3());
+    assert scene.undo() == "Move corner";
+    box = wall.bounds();
+    assert box is not None and box[1].z == 64.0;
+}
+
+test "the document reports what would stop it playing" {
+    scene = blockout();
+    assert len(scene.problems()) == 0;
+    scene.add_item({"classname": "func_button", "target": "door9", "origin": "x y"});
+    scene.add_item({"classname": "trigger_once"});
+    scene.add_solid(scene.world(), box_sides(Vec3(), Vec3(x=64.0, y=64.0, z=0.5), "wall"));
+    words = [finding.words for finding in scene.problems()];
+    assert "func_button has a target nothing is named: door9" in words;
+    assert "func_button has an origin that is not three numbers" in words;
+    assert "trigger_once has no brushes" in words;
+    assert len([word for word in words if "thinner than a unit" in word]) == 1;
+    assert len([word for word in words if "off the unit grid" in word]) == 1;
+    assert len([finding for finding in scene.problems() if finding.grave]) == 1;
+    empty = Scene(game="passion", name="studio:empty");
+    grave = [finding.words for finding in empty.problems() if finding.grave];
+    assert grave == ["There is no worldspawn", "There is no player start"];
 }

@@ -19,6 +19,21 @@ import from ..geometry.brush {
 }
 import math;
 import from ..formats.map { MapItem, MapFile }
+import from ..geometry.csg { carve_sides, common_sides, hollow_sides, merged_sides, corners_moved, brush_corners }
+import from ..geometry.mapping {
+    side_like,
+    mapping_slid,
+    mapping_sized,
+    mapping_spun,
+    mapping_flat,
+    mapping_fitted,
+    mapping_plain,
+    mapping_same,
+    side_stretched,
+    side_spun,
+    spun_about,
+    axis_vector
+}
 
 edge Holds: Scene --> Item {}
 
@@ -27,6 +42,11 @@ slab."""
 edge Owns: Item --> Solid {}
 
 edge Selected: Scene --> Item | Solid {}
+
+"""One selected face: the brush it is a side of, and which side."""
+edge Faced: Scene --> Solid {
+    has side: int = -1;
+}
 
 """One entity of the map: its key/value fields, as the map's entity lump
 writes them. `serial` names it for the life of the document; `held` is false
@@ -509,6 +529,8 @@ walker Turn {
     has pivot: Vec3,
         angle: float,
         step: Step,
+        # 0, 1 or 2: the x, y or vertical axis.
+        axis: int = 2,
         turned: list[Solid] = [];
 
     can start with Scene entry {
@@ -521,14 +543,14 @@ walker Turn {
             visit [here->:Owns:->];
             return;
         }
-        moved = self.pivot.add(turned_z(at.sub(self.pivot), self.angle));
+        moved = self.pivot.add(spun_about(at.sub(self.pivot), axis_vector(self.axis), self.angle));
         change = FieldChange(
             item=here, key="origin", before=here.fields.get("origin"), after=write_vector(moved)
         );
         change.redo();
         self.step.changes.append(change);
         facing = here.fields.get("angle");
-        if facing is not None {
+        if facing is not None and self.axis == 2 {
             try {
                 # Up (-1) and down (-2) are not directions to turn.
                 if float(facing) >= 0.0 {
@@ -555,10 +577,372 @@ walker Turn {
         change = SidesChange(
             solid=here,
             before=here.sides,
-            after=[side_turned(side, self.pivot, self.angle) for side in here.sides]
+            after=[
+                (side_turned(side, self.pivot, self.angle) if self.axis == 2 else side_spun(
+                    side, self.pivot, self.axis, self.angle
+                ))
+                for side in here.sides
+            ]
         );
         change.redo();
         self.step.changes.append(change);
+    }
+}
+
+"""What to do to a face: give it a material, or change how its material
+lies. `sizes` gives the size in texels of each material a fit may meet."""
+obj FaceEdit {
+    has how: str,
+        s: float = 0.0,
+        t: float = 0.0,
+        material: str = "",
+        sizes: dict[str, list[int]] = {};
+
+    """The side as the edit leaves it: the same side when it changes
+    nothing."""
+    def apply(side: Side, outline: list[Vec3]) -> Side {
+        if self.how == "material" {
+            return side if side.material == self.material else side_like(side, self.material);
+        }
+        old = side.mapping;
+        fresh = old;
+        if self.how == "shift" {
+            fresh = mapping_slid(old, self.s, self.t);
+        } elif self.how == "scale" {
+            fresh = mapping_sized(old, self.s, self.t);
+        } elif self.how == "turn" {
+            fresh = mapping_spun(old, self.s);
+        } elif self.how == "reset" {
+            fresh = mapping_plain(side.plane.normal);
+        } elif self.how == "flat" {
+            fresh = mapping_flat(side.plane.normal);
+        } elif self.how == "fit" {
+            size = self.sizes.get(side.material, [64, 64]);
+            fresh = mapping_fitted(
+                old,
+                outline,
+                size[0],
+                size[1],
+                self.s if self.s > 0.0 else 1.0,
+                self.t if self.t > 0.0 else 1.0
+            );
+        }
+        if mapping_same(old, fresh) and abs(old.rotation - fresh.rotation) < 0.000001 {
+            return side;
+        }
+        return side_like(side, None, fresh);
+    }
+}
+
+"""Apply a face edit to every selected face, and to every side of every
+selected brush."""
+walker Reface {
+    has change: FaceEdit,
+        step: Step,
+        scene: Scene | None = None,
+        seen: list[Solid] = [];
+
+    can start with Scene entry {
+        self.scene = here;
+        visit [here->:Faced:->];
+        visit [here->:Selected:->];
+    }
+
+    can descend with Item entry {
+        visit [here->:Owns:->];
+    }
+
+    can remap with Solid entry {
+        scene = self.scene;
+        if scene is None or not here.held or here in self.seen {
+            return;
+        }
+        self.seen.append(here);
+        picked = scene.face_sides(here);
+        outlines = here.outlines();
+        after: list[Side] = [];
+        touched = False;
+        for index in range(len(here.sides)) {
+            old = here.sides[index];
+            if len(picked) > 0 and index not in picked {
+                after.append(old);
+                continue;
+            }
+            fresh = self.change.apply(old, outlines[index]);
+            if fresh is not old {
+                touched = True;
+            }
+            after.append(fresh);
+        }
+        if touched {
+            swap = SidesChange(solid=here, before=here.sides, after=after);
+            swap.redo();
+            self.step.changes.append(swap);
+        }
+    }
+}
+
+"""Stretch the selection about a pivot by a factor along each axis (-1
+mirrors): brushes with their materials, point entities by where they are and,
+mirrored, by the way they face."""
+walker Stretch {
+    has pivot: Vec3,
+        factors: Vec3,
+        step: Step,
+        seen: list[Solid] = [];
+
+    can start with Scene entry {
+        visit [here->:Selected:->];
+    }
+
+    can place with Item entry {
+        at = here.origin();
+        if at is None {
+            visit [here->:Owns:->];
+            return;
+        }
+        away = at.sub(self.pivot);
+        moved = self.pivot.add(
+            Vec3(x=away.x * self.factors.x, y=away.y * self.factors.y, z=away.z * self.factors.z)
+        );
+        change = FieldChange(
+            item=here, key="origin", before=here.fields.get("origin"), after=write_vector(moved)
+        );
+        change.redo();
+        self.step.changes.append(change);
+        facing = here.fields.get("angle");
+        if facing is None or (self.factors.x > 0.0 and self.factors.y > 0.0) {
+            return;
+        }
+        try {
+            way = float(facing);
+            if way >= 0.0 {
+                if self.factors.x < 0.0 {
+                    way = 180.0 - way;
+                }
+                if self.factors.y < 0.0 {
+                    way = -way;
+                }
+                face = FieldChange(item=here, key="angle", before=facing, after=field_number(way % 360.0));
+                face.redo();
+                self.step.changes.append(face);
+            }
+        } except ValueError {
+            return;
+        }
+    }
+
+    can reshape with Solid entry {
+        if not here.held or here in self.seen {
+            return;
+        }
+        self.seen.append(here);
+        after = [side_stretched(side, self.pivot, self.factors) for side in here.sides];
+        if not sides_enclose(after) {
+            return;
+        }
+        change = SidesChange(solid=here, before=here.sides, after=after);
+        change.redo();
+        self.step.changes.append(change);
+    }
+}
+
+"""Cut the `cutters` out of every other brush of the document. A brush they
+reach is left as the convex pieces outside them; one they swallow goes."""
+walker Carve {
+    has cutters: list[Solid],
+        step: Step,
+        lined: bool = False,
+        scene: Scene | None = None,
+        made: list[Solid] = [];
+
+    can start with Scene entry {
+        self.scene = here;
+        visit [here->:Holds:->];
+    }
+
+    can descend with Item entry {
+        if here.held {
+            visit [here->:Owns:->];
+        }
+    }
+
+    can cut with Solid entry {
+        scene = self.scene;
+        if scene is None or not here.held or here in self.cutters or here in self.made {
+            return;
+        }
+        pieces: list[list[Side]] = [here.sides];
+        touched = False;
+        for cutter in self.cutters {
+            left: list[list[Side]] = [];
+            for piece in pieces {
+                parts = carve_sides(piece, cutter.sides, self.lined);
+                if parts is None {
+                    left.append(piece);
+                } else {
+                    touched = True;
+                    left.extend(parts);
+                }
+            }
+            pieces = left;
+        }
+        if not touched {
+            return;
+        }
+        if len(pieces) == 0 {
+            gone = SolidHold(solid=here, held=False);
+            gone.redo();
+            self.step.changes.append(gone);
+            return;
+        }
+        change = SidesChange(solid=here, before=here.sides, after=pieces[0]);
+        change.redo();
+        self.step.changes.append(change);
+        owners = [here<-:Owns:<-][?:Item];
+        if not owners {
+            return;
+        }
+        for piece in pieces[1:] {
+            other = scene.add_solid(owners[0], piece);
+            self.step.changes.append(SolidHold(solid=other, held=True));
+            self.made.append(other);
+        }
+    }
+}
+
+"""Turn every selected brush into a shell of walls."""
+walker Hollow {
+    has thickness: float,
+        step: Step,
+        scene: Scene | None = None,
+        made: list[Solid] = [];
+
+    can start with Scene entry {
+        self.scene = here;
+        visit [here->:Selected:->];
+    }
+
+    can shell with Solid entry {
+        scene = self.scene;
+        if scene is None or not here.held or here in self.made {
+            return;
+        }
+        walls = hollow_sides(here.sides, self.thickness);
+        owners = [here<-:Owns:<-][?:Item];
+        if len(walls) == 0 or not owners {
+            return;
+        }
+        change = SidesChange(solid=here, before=here.sides, after=walls[0]);
+        change.redo();
+        self.step.changes.append(change);
+        for wall in walls[1:] {
+            other = scene.add_solid(owners[0], wall);
+            self.step.changes.append(SolidHold(solid=other, held=True));
+            self.made.append(other);
+        }
+    }
+}
+
+"""Something wrong with the document, and what it is wrong with."""
+obj Finding {
+    has words: str,
+        item: Item | None = None,
+        solid: Solid | None = None,
+        # Whether the map will not play as it is.
+        grave: bool = False;
+}
+
+"""Look over the whole document for what would stop it playing or is likely
+a mistake."""
+walker Inspect {
+    has findings: list[Finding] = [],
+        names: list[str] = [],
+        aims: list[tuple[Item, str, str]] = [],
+        starts: int = 0,
+        worlds: int = 0;
+
+    can start with Scene entry {
+        visit [here->:Holds:->];
+    }
+
+    can look with Item entry {
+        if not here.held {
+            return;
+        }
+        classname = here.classname();
+        if not classname {
+            self.findings.append(Finding(words="An entity has no classname", item=here, grave=True));
+        }
+        if classname == "worldspawn" {
+            self.worlds += 1;
+        }
+        if classname.startswith("info_player_") {
+            self.starts += 1;
+        }
+        name = here.fields.get("targetname", "");
+        if name {
+            self.names.append(name);
+        }
+        for key in ["target", "killtarget"] {
+            aim = here.fields.get(key, "");
+            if aim {
+                self.aims.append((here, key, aim));
+            }
+        }
+        if "origin" in here.fields and here.origin() is None {
+            self.findings.append(
+                Finding(words=here.title() + " has an origin that is not three numbers", item=here, grave=True)
+            );
+        }
+        owned = [solid for solid in [here->:Owns:->][?:Solid] if solid.held];
+        if len(owned) == 0 and here.model() < 0 and classname != "worldspawn"
+            and (classname.startswith("func_") or classname.startswith("trigger_")) and "origin" not in here.fields {
+            self.findings.append(Finding(words=here.title() + " has no brushes", item=here));
+        }
+        visit [here->:Owns:->];
+    }
+
+    can measure with Solid entry {
+        if not here.held {
+            return;
+        }
+        outlines = here.outlines();
+        kept = 0;
+        for outline in outlines {
+            if len(outline) >= 3 {
+                kept += 1;
+            }
+        }
+        label = "Brush #" + str(here.serial);
+        if kept < 4 {
+            self.findings.append(Finding(words=label + " encloses nothing", solid=here, grave=True));
+            return;
+        }
+        if kept < len(here.sides) {
+            self.findings.append(
+                Finding(words=label + " has " + str(len(here.sides) - kept) + " sides that make no face", solid=here)
+            );
+        }
+        box = windings_bounds(outlines);
+        if box is not None {
+            size = box[1].sub(box[0]);
+            if min(size.x, min(size.y, size.z)) < 1.0 {
+                self.findings.append(Finding(words=label + " is thinner than a unit", solid=here));
+            }
+        }
+        whole = True;
+        for outline in outlines {
+            for point in outline {
+                if abs(point.x - float(round(point.x))) > 0.01 or abs(point.y - float(round(point.y))) > 0.01
+                    or abs(point.z - float(round(point.z))) > 0.01 {
+                    whole = False;
+                }
+            }
+        }
+        if not whole {
+            self.findings.append(Finding(words=label + " has corners off the unit grid", solid=here));
+        }
     }
 }
 
@@ -598,6 +982,12 @@ walker FindItem {
             disengage;
         }
     }
+}
+
+"""A face of a brush, by the brush and the number of its side."""
+obj FacePick {
+    has solid: Solid,
+        side: int;
 }
 
 """A map being edited. `revision` counts changes to its items and `picks`
@@ -691,6 +1081,40 @@ node Scene {
         return solid in [self->:Selected:->][?:Solid];
     }
 
+    """The selected faces."""
+    def faces -> list[FacePick];
+    """Which sides of a brush are selected as faces."""
+    def face_sides(solid: Solid) -> list[int];
+    def is_face_selected(solid: Solid, index: int) -> bool;
+    """Select a face: alone, or added to (or dropped from) the faces."""
+    def select_face(solid: Solid, index: int, add: bool = False);
+    def clear_faces;
+    """Apply a face edit to the selected faces and brushes."""
+    def reface(change: FaceEdit, label: str) -> bool;
+    """Select every entity and brush ("entities" or "brushes" for one
+    kind). Answers how many."""
+    def select_all(kind: str = "") -> int;
+    """Select what is not selected and drop what is."""
+    def invert_selection -> int;
+    """Select every brush with a side of a material."""
+    def select_material(material: str) -> int;
+    """Stretch the selection about its middle by a factor along each axis
+    (-1 mirrors)."""
+    def stretch_selection(factors: Vec3, grid: float = 8.0, label: str = "Stretch") -> bool;
+    """Cut the selected brushes out of every other. Answers how many brushes
+    changed."""
+    def carve_selection(lined: bool = False) -> int;
+    """Replace the selected brushes with what they all share."""
+    def intersect_selection -> bool;
+    """Turn the selected brushes into shells of walls."""
+    def hollow_selection(thickness: float) -> bool;
+    """Join the selected brushes into one, when together they are convex."""
+    def merge_selection -> bool;
+    """Move the corners of a brush nearest `spots`."""
+    def move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool;
+    """What is wrong with the document."""
+    def problems -> list[Finding];
+
     """Select a brush: alone, or added to (or dropped from) the selection."""
     def select_solid(solid: Solid | None, add: bool = False) {
         if not add {
@@ -782,7 +1206,7 @@ node Scene {
 
     """Turn the selection by an angle in degrees about the vertical line
     through its middle (snapped to `grid`, so quarter turns stay on it)."""
-    def turn_selection(degrees: float, grid: float = 8.0) -> bool {
+    def turn_selection(degrees: float, grid: float = 8.0, axis: int = 2) -> bool {
         middle = self.selection_middle();
         if middle is None or degrees == 0.0 {
             return False;
@@ -791,10 +1215,10 @@ node Scene {
         pivot = Vec3(
             x=float(round(middle.x / step_size)) * step_size,
             y=float(round(middle.y / step_size)) * step_size,
-            z=middle.z
+            z=middle.z if axis == 2 else float(round(middle.z / step_size)) * step_size
         );
         step = Step(label="Turn");
-        self spawn Turn(pivot=pivot, angle=math.radians(degrees), step=step);
+        self spawn Turn(pivot=pivot, angle=math.radians(degrees), step=step, axis=axis);
         return self.commit(step);
     }
 
@@ -876,6 +1300,9 @@ node Scene {
         for solid in [self->:Selected:->][?:Solid] {
             self del->:Selected:-> solid;
         }
+        for solid in [self->:Faced:->] {
+            self del->:Faced:-> solid;
+        }
         self.picks += 1;
     }
 
@@ -911,6 +1338,19 @@ node Scene {
             if not solid.held {
                 self del->:Selected:-> solid;
                 self.picks += 1;
+            }
+        }
+        # A face picked on a brush that has gone, or has fewer sides now.
+        for solid in [self->:Faced:->] {
+            if not solid.held {
+                self del->:Faced:-> solid;
+                self.picks += 1;
+            } else {
+                limit = len(solid.sides);
+                if solid in [self->:Faced:side >= limit:->] {
+                    self del->:Faced:side >= limit:-> solid;
+                    self.picks += 1;
+                }
             }
         }
     }
