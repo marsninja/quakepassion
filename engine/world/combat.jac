@@ -806,6 +806,33 @@ def gibbable_corpse(enemy: Opponent) -> bool {
         and not enemy.dormant;
 }
 
+"""Q2 AI_BRUTAL, which m_tank.c tank_run sets whenever its enemy is a player:
+whether `enemy` keeps after `foe`, the enemy it has, though it is dead. It
+does until the body's health is its rule's `brutal_health` or lower (g_ai.c
+ai_checkattack's hesDeadJim), or it has made its strike over the body, which
+lets it go (tank_attack clears the flag and tank_poststrike the enemy)."""
+def brutal_toward(enemy: Opponent, foe: Player) -> bool {
+    limit = enemy.rule.brutal_health;
+    if limit >= 0 or isinstance(foe, Opponent) or -foe.death_overkill <= limit {
+        return False;
+    }
+    return current_profile(enemy).trigger != "corpse"
+        or enemy.attack_clock >= 0.0
+        or enemy.readied >= 0;
+}
+
+"""The sequence a monster plays over a dead enemy (a "corpse" trigger), or
+-1."""
+def corpse_attack(enemy: Opponent) -> int {
+    ensure_profiles(enemy);
+    for i in range(len(enemy.profiles)) {
+        if enemy.profiles[i].trigger == "corpse" {
+            return i;
+        }
+    }
+    return -1;
+}
+
 """Q3 player_die's trap_PointContents: whether a player stands in a
 CONTENTS_NODROP void of its world, where it is never gibbed."""
 def in_void(victim: Opponent) -> bool {
@@ -4537,7 +4564,10 @@ walker CombatTick {
         # Q1 ai_run and Q2 ai_checkattack (hesDeadJim): with its enemy dead a
         # monster goes back to standing, or to the path it walked, once the
         # attack it was in is done. FindTarget never takes a dead client.
-        bereft = foe.health <= 0 and foe is not patient and not here.arena;
+        bereft = foe.health <= 0
+            and foe is not patient
+            and not here.arena
+            and not (here.alert > 0.0 and brutal_toward(here, foe));
         if bereft and (here.alert > 0.0 or here.readied >= 0) {
             here.alert = 0.0;
             here.pursuing = False;
@@ -4667,6 +4697,11 @@ walker CombatTick {
                     and here.readied < 0
                     and not here.leaping {
                     selected = choose_attack(here, distance, self.state.turns);
+                    # Q2 tank_attack: over an enemy lying dead below zero
+                    # health, its strike and nothing else.
+                    if foe.health <= 0 and patient is None and foe.death_overkill > 0 {
+                        selected = corpse_attack(here);
+                    }
                     if patient is not None {
                         selected = -1;
                         for i in range(len(here.profiles)) {

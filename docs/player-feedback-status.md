@@ -153,7 +153,14 @@ body, a `Mortality` node the player holds:
 - **Monsters.** One whose enemy has died goes back to standing, or to the
   path it walked, once the attack it was in is over, and a dead player is
   never taken for an enemy (Q1 `ai_run` and `FindTarget`, Q2
-  `ai_checkattack`). Monsters fighting each other fight on.
+  `ai_checkattack`). Monsters fighting each other fight on. The Q2 tank is
+  brutal (`AI_BRUTAL`, which `tank_run` sets against a player): it keeps
+  after the player it killed until the body's health is -80 or lower. Over
+  a body below zero it runs up and plays its strike (`tank_attack`:
+  `tank_move_attack_strike`, a wind-up and a pounding sound and no damage)
+  and then lets it go (`tank_poststrike`); one dead at exactly zero it
+  fires on at first. The rule carries this as `brutal_health`, and the
+  strike is an attack sequence with a "corpse" trigger.
 - **Gibs.** A killing blow more than 40 past zero (Q3: 40 or more) bursts
   the body through the gib graph the monsters use: `GibsInto` edges from the
   player to its pieces, linked on level load (`games/deaths.jac`), thrown by
@@ -230,7 +237,8 @@ left.
   dead touching nothing in each game, the Q1 toss and the Q2 and Q3 dead
   boxes and slide, each game's buttons and waits, the player's gibs at each
   game's health, the Q1 and Q2 head and its eye, Q2 and Q3 bodies shot
-  until they burst, and a Q3 player killed whole in a nodrop void.
+  until they burst, a Q3 player killed whole in a nodrop void, and the Q2
+  tank's strike over the player it killed.
 - `tests/view_sway_tests.jac` (bob, roll, gun lag, Q2 shot kick, dead and
   intermission views, and Q3's death camera against numbers worked by hand
   from `CG_OffsetThirdPersonView`: level, pitched down past the cap, pitched
@@ -258,6 +266,4 @@ left.
 
 ## Limitations
 
-- Q2 `AI_BRUTAL` (a tank firing on at a corpse down to -80 health) is not
-  modelled, and a Q2 body lying in lava or slime is not burnt on
-  (`P_WorldEffects`).
+- A Q2 body lying in lava or slime is not burnt on (`P_WorldEffects`).

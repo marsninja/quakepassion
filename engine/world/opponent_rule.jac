@@ -81,7 +81,9 @@ obj AttackProfile {
     # hknight_run1's CheckForCharge): with the target in sight, attacks due
     # and the target no more than `max_rise` above or below. A "sight"
     # trigger starts it as the monster first sights its enemy, `trigger_chance`
-    # of the time (Q2 soldier_sight's run-and-shoot). `min_skill` is the
+    # of the time (Q2 soldier_sight's run-and-shoot). A "corpse" trigger is
+    # the attack decision's only choice over an enemy lying dead below zero
+    # health (Q2 tank_attack's attack_strike). `min_skill` is the
     # lowest skill at which the sequence is used at all. `finished` is the
     # SUB_AttackFinished a sequence sets when it starts, if its own.
     has rotation: str = "",
@@ -176,6 +178,10 @@ obj OpponentRule {
         passive: bool = False,
         good_guy: bool = False,
         inert: bool = False,
+        # Q2 AI_BRUTAL: below zero, the health down to which this monster
+        # keeps after a player it has killed (g_ai.c ai_checkattack's
+        # hesDeadJim: -80); others let a dead enemy go at once.
+        brutal_health: int = 0,
         # A body with no authored pain sequences flinches for `pain_duration`
         # on its model's first pain family. `pain_interval` is the wait
         # before the next flinch (Q1 pain_finished, Q2 pain_debounce_time);
