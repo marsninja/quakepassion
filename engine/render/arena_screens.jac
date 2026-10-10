@@ -1,13 +1,19 @@
 """Q3's arena screens in its own 2D art, on the 640x480 virtual screen scaled
 to the window's height and centred: the in-game scoreboard
-(cg_scoreboard.c CG_DrawOldScoreboard) and the single-player postgame menu
-over the podium (q3_ui/ui_sppostgame.c UI_SPPostgameMenu)."""
+(cg_scoreboard.c CG_DrawOldScoreboard), the single-player postgame menu
+over the podium (q3_ui/ui_sppostgame.c UI_SPPostgameMenu) and the loading
+screen (cg_info.c CG_DrawInformation)."""
 import math;
 import from .hud { HudRenderer }
 import from .hud_models { HudModels }
 import from .models { ModelRenderer }
 import from ..formats.bsp { Texture }
 import from ..math.vec3 { Vec3 }
+import from vendor.raylib {
+    def BeginBlendMode(mode: i32) -> None;  def EndBlendMode -> None;  def rlSetBlendFactors(
+        src: i32, dst: i32, equation: i32
+    ) -> None;
+}
 
 # q3_ui/ui_atoms.c propMap: each character's column, row and width in
 # menu/art/font1_prop.tga (256x256, 27 units tall); -1 has no glyph.
@@ -384,6 +390,36 @@ obj Postgame {
         }
         return "";
     }
+}
+
+"""cg_info.c CG_DrawInformation: the arena's levelshot over the whole
+screen, the levelShotDetail texture multiplied over it two and a half times
+across and twice down (blendFunc GL_DST_COLOR GL_SRC_COLOR), what is being
+loaded, and the lines about the game from 148 down, a line every 27."""
+def draw_loading_info(hud: HudRenderer, loading: str, lines: list[str], width: int, height: int) {
+    view = screen_for(width, height);
+    white = [255, 255, 255, 255];
+    shot = "levelshot" if hud.has_pic("levelshot") else "unknownmap";
+    hud.blit(shot, 0.0, 0.0, float(width), float(height));
+    hud.flush();
+    if hud.has_pic("levelshot_detail") {
+        rlSetBlendFactors(i32(774), i32(768), i32(32774));
+        BeginBlendMode(i32(6));
+        hud.blit("levelshot_detail", 0.0, 0.0, float(width), float(height), white, 0.0, 0.0, 2.5, 2.0);
+        hud.flush();
+        EndBlendMode();
+    }
+    if not hud.has_pic("font_prop") {
+        return;
+    }
+    # UI_CENTER | UI_SMALLFONT | UI_DROPSHADOW.
+    prop_text(hud, view, "Loading... " + loading, 320.0, 128.0 - 32.0, white, "center", 0.75);
+    y = 180.0 - 32.0;
+    for line in lines {
+        prop_text(hud, view, line, 320.0, y, white, "center", 0.75);
+        y += float(PROP_HEIGHT);
+    }
+    hud.flush();
 }
 
 """UI_SPPostgameMenu_MenuDraw."""

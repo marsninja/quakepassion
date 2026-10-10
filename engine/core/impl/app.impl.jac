@@ -482,11 +482,16 @@ impl App.render_frame() {
                 ]
             );
         }
-        self.console.draw(
-            self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
-        );
-        if self.menu.opened {
-            self.menu.draw(self.renderer.width, self.renderer.height);
+        if self.loading {
+            # SCR_DrawLoading: the plaque over the view, with no console.
+            self.hud.draw_loading_plaque(self.renderer.width, self.renderer.height);
+        } else {
+            self.console.draw(
+                self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+            );
+            if self.menu.opened {
+                self.menu.draw(self.renderer.width, self.renderer.height);
+            }
         }
         self.render_times.hud = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -608,9 +613,7 @@ impl App.load_destination(
     session: Campaign | None = None,
     preserve_progress: bool = False
 ) {
-    if game == "passion" {
-        self.renderer.draw_loading(name);
-    }
+    self.draw_loading(game, name);
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
     next_effects = EffectScene();
@@ -2908,6 +2911,50 @@ impl App.begin_cinematic(
     }
 }
 
+impl App.draw_loading(game: str, name: str) {
+    black = self.loading_black;
+    self.loading_black = False;
+    if game == "passion" {
+        self.renderer.draw_loading(name);
+        return;
+    }
+    # Only the running game's art is at hand: a load that also changes the
+    # game leaves the screen as it was.
+    if self.smoke or not self.level.active or self.level.bsp.game != game or not self.hud.ready {
+        return;
+    }
+    if game == "q3" {
+        library = self.audio.library;
+        if library is None or library.game != "q3" {
+            return;
+        }
+        lines: list[str] = [];
+        try {
+            load_levelshot(self.hud, library, name);
+            lines = arena_loading_lines(find_arena(load_arenas(library), name));
+        } except Exception as error {
+            print("Loading screen:", str(error));
+        }
+        self.renderer.begin_screen();
+        # CG_Init's first CG_LoadingString.
+        draw_loading_info(self.hud, "collision map", lines, self.renderer.width, self.renderer.height);
+        self.renderer.end_frame();
+        return;
+    }
+    if not self.hud.has_pic("loading") {
+        return;
+    }
+    if black {
+        self.renderer.begin_screen();
+        self.hud.draw_loading_plaque(self.renderer.width, self.renderer.height);
+        self.renderer.end_frame();
+        return;
+    }
+    self.loading = True;
+    self.render_frame();
+    self.loading = False;
+}
+
 impl App.finish_cinematic() {
     self.cinematic.stop(self.audio);
     destination = self.cinematic_next;
@@ -2953,6 +3000,8 @@ impl App.finish_cinematic() {
         self.menu.scan();
         return;
     }
+    # Q2 SCR_BeginLoadingPlaque after a film: the plaque over black.
+    self.loading_black = True;
     self.load_destination(
         self.level.bsp.game,
         destination,

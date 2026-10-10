@@ -171,6 +171,22 @@ fullscreen (Ctrl+Cmd+F) hides it. `vid_restart` applies the video cvars. `vid_hi
 from the next start. The field of view is the horizontal angle of a 4:3 view
 (`SCR_CalcRefdef`), so wider windows see more to the sides.
 
+## Loading screens
+
+A level load stalls the frame, so the running game's own loading screen is
+drawn once first (`App.draw_loading`); nothing loads in the background.
+
+- **Quake** (`SCR_BeginLoadingPlaque`, `SCR_DrawLoading`): `gfx/loading.lmp`
+  over the view and status bar, centred in what is left above the bar's 48
+  rows, with no console or menu.
+- **Quake II** (`SCR_BeginLoadingPlaque`): `pics/loading.pcx` in the middle
+  of the last frame, or of a black screen after a film.
+- **Quake III** (`cg_info.c CG_DrawInformation`): the next arena's levelshot
+  over the whole screen (`menu/art/unknownmap` without one) under the
+  `levelShotDetail` texture, "Loading... collision map", and the arena's
+  name, game type and frag limit in the proportional font.
+- Passion shows its own "Preparing expedition" card.
+
 ## Cinematics
 
 Films play through one player (`engine/core/cinematic.jac`; see
@@ -190,6 +206,9 @@ console drops over either (`SCR_DrawCinematic`).
   console editing and completion, row wrapping, the controls menu rows, and
   the settings and bindings files as scripts.
 - `tests/level_menu_tests.jac`: map discovery and `is_q1_level`.
+- `tests/loading_screen_tests.jac`: where the Quake and Quake II plaques go,
+  and Quake III's information lines. `scripts/loading_screen_smoke.jac`
+  saves each game's loading screen to `.jac/screenshots/loading/`.
 - `tests/cinematic_tests.jac`: `.cin` and RoQ decoding and timing, the keys
   that end each, and music tracks.
 - `jac run scripts/validate_menu.jac` builds `scripts/menu_smoke.jac` and runs
@@ -203,4 +222,9 @@ console drops over either (`SCR_DrawCinematic`).
 
 ## Limitations
 
-- Loading a level and scanning archives stall the frame.
+- A level load that also changes game shows no loading screen (only the
+  running game's art is at hand), and scanning the archives for the level
+  list stalls the menu.
+- Quake III's loading screen is one frame: it does not add the icons of
+  items and players as they load, and shows the arena list's long name for
+  the map's own message.

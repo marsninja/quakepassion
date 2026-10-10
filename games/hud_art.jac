@@ -53,7 +53,8 @@ def load_q1_art(hud: HudRenderer, library: AssetLibrary) {
     }
     # Sbar_IntermissionOverlay's plaques and the console background
     # (Draw_ConsoleBackground) live outside the WAD.
-    for name in ["complete", "inter", "conback"] {
+    # SCR_DrawLoading's plaque is another.
+    for name in ["complete", "inter", "conback", "loading"] {
         path = "gfx/" + name + ".lmp";
         if library.exists(path) {
             hud.add(name, lump_picture(library.read(path), palette, name));
@@ -82,8 +83,9 @@ def load_q2_art(hud: HudRenderer, library: AssetLibrary) {
     }
     # The help computer and inventory backgrounds, the status bar's damage
     # flash field, help and power armor icons, and crosshair 1.
+    # SCR_DrawLoading's plaque is pics/loading.pcx.
     for extra in ["conchars", "conback", "p_quad", "p_silencer", "p_adrenaline", "p_bandolier",
-        "help", "inventory", "field_3", "i_help", "i_powershield", "i_powerscreen", "ch1"] {
+        "help", "inventory", "field_3", "i_help", "i_powershield", "i_powerscreen", "ch1", "loading"] {
         names.append(extra);
     }
     for name in names {
@@ -197,6 +199,30 @@ def load_character_icons(hud: HudRenderer, library: AssetLibrary, keys: list[str
         }
         if found is not None {
             hud.add("icon:" + key, found);
+        }
+    }
+}
+
+"""cg_info.c CG_DrawInformation's pictures for the arena about to load: its
+levelshot (menu/art/unknownmap when it has none) and the levelShotDetail
+shader's texture laid over it. A .tga that is missing loads as .jpg, as
+R_FindImageFile does."""
+def load_levelshot(hud: HudRenderer, library: AssetLibrary, map_name: str) {
+    hud.forget("levelshot");
+    for (name, stem) in [
+        ("levelshot", "levelshots/" + map_name),
+        ("unknownmap", "menu/art/unknownmap"),
+        ("levelshot_detail", "textures/sfx/detail")
+    ] {
+        if hud.has_pic(name) {
+            continue;
+        }
+        art = encoded(library, stem + ".tga");
+        if art is None {
+            art = encoded(library, stem + ".jpg");
+        }
+        if art is not None {
+            hud.add(name, art);
         }
     }
 }

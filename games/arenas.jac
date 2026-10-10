@@ -108,6 +108,25 @@ def ladder(arenas: list[ArenaInfo]) -> list[ArenaInfo] {
     return training + tiers + final;
 }
 
+"""cg_info.c CG_DrawInformation's lines for a local game: the map's message
+(the arena's long name), the game type and the frag limit. An arena of the
+single-player ladder says "Single Player"; any other map is run free for
+all with twenty frags."""
+def arena_loading_lines(arena: ArenaInfo | None) -> list[str] {
+    if arena is None {
+        return ["Free For All", "fraglimit 20"];
+    }
+    lines: list[str] = [];
+    if arena.longname {
+        lines.append(arena.longname);
+    }
+    lines.append("Single Player" if "single" in arena.types else "Free For All");
+    if arena.fraglimit > 0 {
+        lines.append("fraglimit " + str(arena.fraglimit));
+    }
+    return lines;
+}
+
 def find_arena(arenas: list[ArenaInfo], name: str) -> ArenaInfo | None {
     for arena in arenas {
         if arena.map == name.lower() {

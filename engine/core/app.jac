@@ -68,9 +68,18 @@ import from games.arenas {
     last_tier,
     tier_video_due,
     postgame_film,
-    info_with
+    info_with,
+    find_arena,
+    arena_loading_lines
 }
-import from ..render.arena_screens { Postgame, BoardLine, draw_scoreboard, draw_postgame, postgame_score_line }
+import from ..render.arena_screens {
+    Postgame,
+    BoardLine,
+    draw_scoreboard,
+    draw_postgame,
+    draw_loading_info,
+    postgame_score_line
+}
 import from ..world.powerups {
     PowerupTick,
     UseItem,
@@ -139,7 +148,7 @@ import from ..world.hearing { SoundReach, hearing_rule }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
-import from games.hud_art { load_hud_art, load_q3_models, load_character_icons }
+import from games.hud_art { load_hud_art, load_q3_models, load_character_icons, load_levelshot }
 import from games.q2_layouts {
     help_computer_layout,
     q2_inventory_rows,
@@ -407,7 +416,11 @@ obj App {
         cinematic_unit: bool = False,
         cinematic_resume: bool = False,
         pending_cinematic: str = "",
-        opening: str = "";
+        opening: str = "",
+        # A loading plaque is being drawn (scr_drawloading), and whether over
+        # black (Q2 scr_draw_loading 2, after a film).
+        loading: bool = False,
+        loading_black: bool = False;
 
     def begin_intermission(text: str);
     """Show the end-of-level stats at the intermission camera, then go on to
@@ -435,6 +448,12 @@ obj App {
     """SCR_FinishCinematic and SV_Nextserver, RoQShutdown: leave the film or
     picture for what follows it."""
     def finish_cinematic();
+    """The running game's own loading screen, drawn once before a level
+    load stalls the frame: Q1 SCR_BeginLoadingPlaque's gfx/loading.lmp over
+    the view and status bar, Q2's pics/loading.pcx over the last frame (over
+    black after a film), Q3's CG_DrawInformation with the arena's
+    levelshot."""
+    def draw_loading(game: str, name: str);
     """UI_SPPostgameMenu_MenuDraw's third phase: the film for a tier or the
     ladder just completed, the first time. True when one started."""
     def postgame_cinematic(board: Postgame) -> bool;
