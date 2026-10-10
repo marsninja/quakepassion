@@ -765,3 +765,21 @@ test "a light and a linked prefab change what the level is built from" {
     scene.select(scene.items()[1]);
     assert scene.set_field("angle", "180") and scene.geometry == before + 3;
 }
+
+test "several fields are set as one step, and brushes added to an entity as one" {
+    scene = blockout();
+    scene.select_all("brushes");
+    group = scene.group_selection("posts");
+    assert group is not None;
+    before = scene.geometry;
+    assert scene.set_fields({"_copies": "3", "_offset": "64 0 0"}, "Duplicate");
+    assert group.fields["_copies"] == "3" and group.fields["_offset"] == "64 0 0" and scene.geometry == before + 1;
+    assert not scene.set_fields({"_copies": "3"});
+    assert scene.set_fields({"_copies": None, "_offset": None});
+    assert "_copies" not in group.fields;
+    scene.undo();
+    assert scene.undo() == "Duplicate" and "_offset" not in group.fields;
+    assert scene.add_brushes(group, [box_sides(Vec3(x=200.0), Vec3(x=216.0, y=16.0, z=64.0), "post")], "Make real");
+    assert len(scene.solids_of(group)) == 3;
+    assert scene.undo() == "Make real" and len(scene.solids_of(group)) == 2;
+}

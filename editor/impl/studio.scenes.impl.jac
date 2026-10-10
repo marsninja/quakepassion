@@ -94,6 +94,7 @@ impl Studio.show_scene(scene: Scene) {
     if not self.load(scene.game, scene.name) {
         return;
     }
+    self.leak = [];
     self.enter(reset_camera=False);
     # Above and behind the start, looking down at it.
     self.main.eye = Vec3(x=0.0, y=-420.0, z=260.0);
@@ -141,6 +142,8 @@ impl Studio.keep_built {
     if scene.geometry == self.built_geometry or self.moving or self.resizing {
         return;
     }
+    # A way out found before the brushes changed may not be one now.
+    self.leak = [];
     loaded = self.load(scene.game, scene.name, quiet=True);
     # Loading a level takes the mouse for the game; the studio keeps it free.
     _release();

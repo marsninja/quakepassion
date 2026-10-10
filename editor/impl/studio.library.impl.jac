@@ -85,7 +85,7 @@ impl Studio.place_fragment(scene: Scene, found: list[MapItem], label: str, group
 impl Studio.expanded(scene: Scene) -> Scene {
     linked = False;
     for item in scene.items() {
-        if item.classname() == "misc_prefab" {
+        if item.classname() == "misc_prefab" or duplicates(item.fields) {
             linked = True;
         }
     }
@@ -93,7 +93,7 @@ impl Studio.expanded(scene: Scene) -> Scene {
         return scene;
     }
     plain: list[MapItem] = [];
-    for read in scene_map(scene) {
+    for read in with_images(scene_map(scene)) {
         if read.fields.get("classname", "") != "misc_prefab" {
             plain.append(read);
         }

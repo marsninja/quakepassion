@@ -53,6 +53,9 @@ import from .ui.widgets {
 import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
 import from .geometry.shapes { shape_brushes, SHAPE_KINDS }
 import from .compile.light { bake_light }
+import from .compile.leak { find_leak, LeakReport }
+import from .formats.bspmap { bsp_items }
+import from .document.generate { duplicates, image_brushes, with_images, DUPLICATOR_KEYS }
 import from .document.scene {
     Scene,
     Item,
@@ -71,7 +74,7 @@ import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
 import from .formats.map { read_map, write_map, MapItem, MapFile }
-import from .geometry.brush { brush_windings, windings_bounds }
+import from .geometry.brush { brush_windings, windings_bounds, Side }
 import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
 
 """The studio's commands: name, usage, description."""
@@ -153,6 +156,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_flag", "ed_flag <bit> <0|1>", "clear or set one of the selection's spawnflags (bit 0 is the value 1)"),
     ("ed_bump", "ed_bump <key> <amount>", "add to a number field of the selection"),
     ("ed_light", "ed_light <on|off>", "light scenes from their own lights, or leave them flat"),
+    ("ed_convert", "ed_convert", "turn the level being looked at into a scene of its own brushes"),
+    ("ed_leak", "ed_leak [clear]", "look for a way from the entities out to the void, and draw it"),
+    (
+        "ed_dup",
+        "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <x|y|z> | off | apply",
+        "make the selected group build copies of itself, stop it, or make the copies real"
+    ),
     ("ed_link", "ed_link <from> <to>", "make one entity fire another"),
     ("ed_unlink", "ed_unlink <from> [to]", "stop an entity firing another, or anything"),
     ("ed_exec", "ed_exec <file>", "run a file of console commands"),
@@ -374,6 +384,8 @@ obj Studio(Workbench) {
         # Scenes lit from their own lights, and how many samples the last was.
         lit: bool = True,
         lit_samples: int = 0,
+        # The way out the leak finder last found.
+        leak: list[Vec3] = [],
         class_filter: str = "",
         classes_seen: str = "",
         hover: Item | None = None,
@@ -583,6 +595,7 @@ obj Studio(Workbench) {
                 [
                     MenuItem(text="Save", command="ed_save", keys="Ctrl+S"),
                     MenuItem(text="New scene", command="ed_scene"),
+                    MenuItem(text="Turn this level into brushes", command="ed_convert"),
                     MenuItem(text="Revert to the shipped map", command="ed_revert"),
                     MenuItem(rule=True),
                     MenuItem(text="Leave the studio", command="edit", keys="F8"),
@@ -607,7 +620,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Pick faces", command="ed_mode face", keys="2"),
                     MenuItem(text="Move corners and edges", command="ed_mode corner", keys="3"),
                     MenuItem(rule=True),
-                    MenuItem(text="Check the map", command="ed_check")
+                    MenuItem(text="Check the map", command="ed_check"),
+                    MenuItem(text="Look for a leak", command="ed_leak")
                 ],
                 [
                     MenuItem(text="One view", command="ed_layout 1"),
@@ -651,6 +665,10 @@ obj Studio(Workbench) {
                     MenuItem(text="Merge", command="ed_merge"),
                     MenuItem(rule=True),
                     MenuItem(text="Group", command="ed_group", keys="Ctrl+G"),
+                    MenuItem(text="Four in a row", command="ed_dup 3 64 0 0"),
+                    MenuItem(text="Four round the middle", command="ed_dup 3 0 0 0 90"),
+                    MenuItem(text="Mirror image along x", command="ed_dup mirror x"),
+                    MenuItem(text="Make the copies real", command="ed_dup apply"),
                     MenuItem(text="Hand to the world", command="ed_tie")
                 ],
                 [
@@ -1665,6 +1683,10 @@ obj Studio(Workbench) {
                 }
             }
         }
+        # The way out of a level that leaks.
+        for i in range(1, len(self.leak)) {
+            wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
+        }
         rlDrawRenderBatchActive();
         rlEnableDepthTest();
         self.draw_solids(scene);
@@ -1823,6 +1845,12 @@ obj Studio(Workbench) {
     def list_classes(ui: StudioUi);
 
     # ------------------------------------------------------------------
+    # Converting levels, the leak finder and duplicators (impl/studio.build.impl.jac)
+
+    """Run a convert, leak or duplicator command. False when it is not one."""
+    def build_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -1967,8 +1995,8 @@ obj Studio(Workbench) {
             }
             self.dump(scene);
         } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
-            and not self.library_command(scene, args) {
-            self.class_command(scene, args);
+            and not self.library_command(scene, args) and not self.class_command(scene, args) {
+            self.build_command(scene, args);
         }
     }
 
@@ -2145,7 +2173,7 @@ obj Studio(Workbench) {
         }
         lines.append(
             "studio: logic nodes=" + str(len(placed)) + " links=" + str(arrows) + " shown="
-                + ("1" if self.logic_shown else "0")
+                + ("1" if self.logic_shown else "0") + " leak=" + str(len(self.leak))
         );
         lines.append(
             "studio: mode=" + self.mode + " material=" + self.material + " wire="

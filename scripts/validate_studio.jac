@@ -479,6 +479,138 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"BUILD PASS: {len(steps) - 1} steps, shapes, a lit level, a door made and set from the inspector");
 }
 
+"""The sixth session: copies as images, and the leak finder."""
+def images_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["row", "leak"];
+    for shot in shots {
+        (repo / f"images_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-images-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PREFABS"] = home + "/prefabs";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/images_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "images.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The images session failed: {output / 'images.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["post", "imaged", "shifted", "real", "leaking", "ringed", "open", "roofed", "sealed"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'images.log'}";
+    }
+    # A post grouped and asked for three copies: one brush in the document, built with its images.
+    imaged = selected(steps["imaged"]);
+    assert len(imaged) == 1 and "_copies=3 _offset=48 0 0 owns=1" in imaged[0] , str(imaged);
+    assert "brushes=2" in tally(steps["imaged"]);
+    for name in ["imaged", "shifted"] {
+        built = tally(steps[name]);
+        assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+    }
+    assert tally(steps["imaged"]) != tally(steps["shifted"]);
+    # Made real, the group owns the post and its three copies and asks for no more.
+    real = selected(steps["real"]);
+    assert len(real) == 1 and real[0].endswith("owns=4") and "_copies" not in real[0] , str(real);
+    assert "brushes=5" in tally(steps["real"]);
+    # An open yard leaks; so does a ring of walls without a roof; with one it is sealed.
+    assert "leak=0" in logic(steps["real"]) and "leak=0" not in logic(steps["leaking"]) , str(steps["leaking"]);
+    assert "leak=0" in logic(steps["ringed"]) and "leak=0" not in logic(steps["open"]) , str(steps["open"]);
+    assert ran.stdout.count("studio: leak ends") == 2 and ran.stdout.count("studio: leak sealed after") == 1;
+    assert "leak=0" in logic(steps["sealed"]) and "brushes=6" in tally(steps["roofed"]);
+    for shot in shots {
+        source = repo / f"images_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"images_{shot}.png");
+        source.unlink();
+    }
+    print(f"IMAGES PASS: {len(steps) - 1} steps, a row of images made real, a leak found and sealed");
+}
+
+"""The seventh session: a shipped Quake II level and a Quake III arena
+turned into scenes of their own brushes, and a generated expedition when
+one loads."""
+def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "convert_level.png").unlink(missing_ok=True);
+    counts: dict[str, int] = {};
+    skipped = "";
+    for (game, level, least, marker) in [
+        ("q2", "base1", 1000, " q2:e1u1/"), ("q3", "q3dm1", 500, " q3:textures/"), ("passion", "v2-42", 200, "")
+    ] {
+        with tempfile.TemporaryDirectory(prefix="qp-convert-") as home {
+            env["QP_CONFIG_DIR"] = home;
+            env["QP_OVERRIDES"] = home + "/overrides";
+            env["QP_SCENES"] = home + "/scenes";
+            env["QP_GAME"] = game;
+            env["QP_MAP"] = level;
+            ran = subprocess.run(
+                [str(binary), "+ed_exec", "scripts/studio/convert_session.cfg"],
+                cwd=repo,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=600
+            );
+            (output / f"convert_{game}.log").write_text(ran.stdout + ran.stderr);
+            steps = studio_steps(ran.stdout);
+            if game == "passion" and "shipped" not in steps {
+                # The expedition itself did not load, in or out of the studio:
+                # nothing here to convert, and not this session's to fix.
+                reason = [line for line in (ran.stdout + ran.stderr).splitlines() if "Uncaught exception" in line];
+                skipped = reason[0] if reason else "the level did not load";
+                continue;
+            }
+            assert ran.returncode == 0 , f"Converting {game}/{level} failed: {output / f'convert_{game}.log'}";
+            assert "converted" in steps and "saved" in steps , f"{output / f'convert_{game}.log'}";
+            assert steps["shipped"][0].startswith(game + "/" + level) and not tally(steps["shipped"]);
+            assert steps["converted"][0].startswith("passion/studio:" + level) , steps["converted"][0];
+            made = int(tally(steps["converted"]).split("brushes=")[1].split()[0]);
+            assert made >= least , f"{game}/{level} gave only {made} brushes";
+            entities = steps["shipped"][0].split("entities=")[1].split()[0];
+            assert ("entities=" + entities) in steps["converted"][0] , steps["converted"][0];
+            saved = Path(home) / ("scenes/" + level + ".map");
+            assert saved.exists() , "Saving the converted level wrote no map";
+            saved_text = saved.read_text();
+            assert saved_text.count("// brush") == made;
+            assert not marker or marker in saved_text , "The brushes lost their materials";
+            # The saved map opens as the same scene.
+            again = subprocess.run(
+                [str(binary), "+edit", "+ed_open", str(saved), "+ed_dump", "reopened", "+quit"],
+                cwd=repo,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=600
+            );
+            (output / f"convert_{game}_reopen.log").write_text(again.stdout + again.stderr);
+            assert again.returncode == 0 , f"Reopening {level} failed";
+            reopened = studio_steps(again.stdout)["reopened"];
+            assert ("brushes=" + str(made)) in tally(reopened) , str(reopened[:4]);
+            counts[game] = made;
+            source = repo / "convert_level.png";
+            if source.exists() {
+                shutil.copyfile(source, output / f"convert_{game}.png");
+                source.unlink();
+            }
+        }
+    }
+    env["QP_GAME"] = "q1";
+    env["QP_MAP"] = "e1m1";
+    print(
+        f"CONVERT PASS: base1 as {counts['q2']} brushes and q3dm1 as {counts['q3']}, saved as maps and reopened"
+    );
+    if "passion" in counts {
+        print(f"CONVERT PASS: expedition v2-42 as {counts['passion']} brushes");
+    } else {
+        print(f"CONVERT SKIPPED for expedition v2-42: {skipped}");
+    }
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -582,6 +714,8 @@ def main() {
     tools_session(repo, binary, env, output);
     logic_session(repo, binary, env, output);
     build_session(repo, binary, env, output);
+    images_session(repo, binary, env, output);
+    convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
 

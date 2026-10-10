@@ -603,3 +603,31 @@ impl Scene.select_named(name: str) -> int {
     self.picks += 1;
     return count;
 }
+
+impl Scene.set_fields(pairs: dict[str, str | None], label: str = "Set fields") -> bool {
+    step = Step(label=label);
+    for item in self.selection() {
+        for (key, value) in pairs.items() {
+            before = item.fields.get(key);
+            if before == value {
+                continue;
+            }
+            change = FieldChange(item=item, key=key, before=before, after=value);
+            change.redo();
+            step.changes.append(change);
+        }
+    }
+    return self.commit(step);
+}
+
+impl Scene.add_brushes(owner: Item, brushes: list[list[Side]], label: str = "Add brushes") -> bool {
+    step = Step(label=label);
+    for sides in brushes {
+        if not sides_enclose(sides) {
+            continue;
+        }
+        solid = self.add_solid(owner, sides);
+        step.changes.append(SolidHold(solid=solid, held=True));
+    }
+    return self.commit(step);
+}

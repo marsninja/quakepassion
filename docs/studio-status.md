@@ -73,7 +73,8 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   built: a lightmap on every face of the world, a sample every 16 units,
   shadows cast by the world's brushes, and doors lit where they stand. A
   light's `light` is its reach and `_color` its colour; moving one builds
-  the level again. `ed_light off` (View > Flat light) shows the flat shade
+  the level again. Where no light reaches, the world's `_minlight` (a
+  quarter of full when it names none) keeps the level readable. `ed_light off` (View > Flat light) shows the flat shade
   a scene without lights has.
 - More in the Brush menu: turn about x or y (`ed_rotate 90 x`), mirror
   (`ed_mirror <x|y|z>`), stretch (`ed_resize <fx> [fy fz]`), carve the
@@ -134,6 +135,22 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   in the level can be linked here. The check reports entities that set
   themselves off through what they fire.
 
+- **A shipped level as brushes** (File > Turn this level into brushes,
+  `ed_convert`): a Quake II or Quake III level being looked at becomes a
+  scene of its own brushes, each side with the material of the face drawn
+  on it and that material's lie solved from the face's texture coordinates,
+  and with every entity. Quake's own format keeps no brushes, so its levels
+  stay entity-only; Quake III's curved patches are not brushes and are left
+  behind.
+- **Copies as images** (`ed_dup <copies> <dx> <dy> <dz> [turn]`, `ed_dup
+  mirror <x|y|z>`): a group that asks for copies is built with them, each an
+  offset on and a turn more than the last, or its mirror image; they follow
+  the group as it is edited. `ed_dup apply` makes them real brushes and
+  `ed_dup off` stops them.
+- **The leak finder** (Edit > Look for a leak, `ed_leak`): floods from the
+  entities through the space the world's brushes leave; when it reaches
+  the void, the way it took is drawn in red in every view.
+
 A scene is a "passion" level: it plays by the rules generated expeditions do
 and may hold any game's entities.
 
@@ -156,6 +173,9 @@ editor/geometry/brush.jac    brushes: planes, outlines, clipping, mappings, rays
 editor/geometry/csg.jac      brushes cut by brushes, hulls of corners
 editor/geometry/mapping.jac  materials slid, scaled, turned and fitted; sides mirrored and turned
 editor/formats/map.jac       the .map text format, classic and Valve 220
+editor/formats/bspmap.jac    a built level's brushes back as a map
+editor/compile/leak.jac      the flood that finds a way out to the void
+editor/document/generate.jac groups that are built with copies of themselves
 editor/compile/live.jac      a scene's brushes as a level, at once
 editor/compile/light.jac     lightmaps for that level from the scene's lights
 editor/geometry/shapes.jac   cones, balls, stairs, arches and pipes as brushes
@@ -232,6 +252,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_compile_tests.jac`: a compiled scene's models, faces and
   entities, and that it prepares as a level that holds the player up;
   lamps, shadows and the lightmap a light gives the world.
+- `tests/studio_convert_tests.jac`: a compiled scene turned back into
+  brushes with its materials and their lie; a sealed room, a hole and a
+  thin wall under the flood; a duplicator's images.
 - `tests/studio_shape_tests.jac`, `tests/studio_class_tests.jac`: each
   shape's size, volume and gaps; the class table read whole, fields by
   kind, classes by game, option bits.
@@ -261,6 +284,13 @@ editor/impl/                 the workbench's scenes and brushes
   door made from the Classes tab, two options ticked, a sound chosen from
   its list, an angle typed and turned by its button, a button's target
   followed to the door, save, play, return).
+  `scripts/studio/images_session.cfg` (9 steps: a post copied as images,
+  moved, the copies made real; a yard that leaks, a ring of walls that
+  still leaks through the top, and the same sealed by a roof).
+  `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
+  brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
+  reopens them. It tries a generated expedition too and says when the
+  expedition itself does not load.
 
 ## What remains
 

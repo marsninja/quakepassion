@@ -97,11 +97,32 @@ def scene_lamps(scene: Scene) -> list[Lamp] {
     return lamps;
 }
 
+"""The least light anything in a scene gets, as a part of one: the world's
+`_minlight` (or `ambient`) out of 255 when it names one, else enough to
+read the level by where no lamp reaches."""
+def scene_floor(scene: Scene) -> float {
+    for item in scene.items() {
+        if item.classname() != "worldspawn" {
+            continue;
+        }
+        words = item.fields.get("_minlight", item.fields.get("ambient", "")).split();
+        if len(words) > 0 {
+            try {
+                return max(0.0, min(1.0, float(words[0]) / 255.0));
+            } except ValueError {
+                return 0.25;
+            }
+        }
+    }
+    return 0.25;
+}
+
 """Light the level a scene compiled to. Answers how many samples were lit:
 none when the scene has no lamps, or when it would take more than `budget`
 of them (the level is then left flat)."""
 def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 400000) -> int {
     lamps = scene_lamps(scene);
+    least = scene_floor(scene);
     bsp = made.bsp;
     if len(lamps) == 0 or len(bsp.models) == 0 {
         return 0;
@@ -182,9 +203,9 @@ def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int =
                 point = corner.add(u.scale(s)).add(v.scale(t)).add(face.normal.scale(0.25));
                 sample = shade(point, face.normal, lamps, occluder);
                 color = sample.ambient.add(sample.directed);
-                pixels[offset] = u8(int(max(0.0, min(127.0, color.x * 127.5))));
-                pixels[offset + 1] = u8(int(max(0.0, min(127.0, color.y * 127.5))));
-                pixels[offset + 2] = u8(int(max(0.0, min(127.0, color.z * 127.5))));
+                pixels[offset] = u8(int(max(0.0, min(127.0, max(least, color.x) * 127.5))));
+                pixels[offset + 1] = u8(int(max(0.0, min(127.0, max(least, color.y) * 127.5))));
+                pixels[offset + 2] = u8(int(max(0.0, min(127.0, max(least, color.z) * 127.5))));
                 offset += 3;
             }
         }
@@ -201,9 +222,9 @@ def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int =
         for (corner_index, vertex) in enumerate(face.vertices) {
             sample = shade(vertex.add(face.normal.scale(0.25)), face.normal, lamps, occluder);
             color = sample.ambient.add(sample.directed);
-            face.colors[corner_index * 4] = int(max(0.0, min(255.0, color.x * 255.0)));
-            face.colors[corner_index * 4 + 1] = int(max(0.0, min(255.0, color.y * 255.0)));
-            face.colors[corner_index * 4 + 2] = int(max(0.0, min(255.0, color.z * 255.0)));
+            face.colors[corner_index * 4] = int(max(0.0, min(255.0, max(least, color.x) * 255.0)));
+            face.colors[corner_index * 4 + 1] = int(max(0.0, min(255.0, max(least, color.y) * 255.0)));
+            face.colors[corner_index * 4 + 2] = int(max(0.0, min(255.0, max(least, color.z) * 255.0)));
         }
     }
     return total;

@@ -182,7 +182,8 @@ def write_vector(value: Vec3) -> str {
 brushes: a linked prefab's contents, a light's light."""
 def built_from(item: Item) -> bool {
     name = item.classname();
-    return name == "misc_prefab" or name.startswith("light");
+    # A group's fields may ask for copies of its brushes.
+    return name == "misc_prefab" or name == "func_group" or name.startswith("light");
 }
 
 """One reversible change."""
@@ -1180,6 +1181,11 @@ node Scene {
     def move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool;
     """What is wrong with the document."""
     def problems -> list[Finding];
+
+    """Set several fields on the selection as one step (None removes one)."""
+    def set_fields(pairs: dict[str, str | None], label: str = "Set fields") -> bool;
+    """Add brushes to an entity as one step (a duplicator's images made real)."""
+    def add_brushes(owner: Item, brushes: list[list[Side]], label: str = "Add brushes") -> bool;
 
     """Set or clear one bit of the selection's spawnflags (bit 0 is 1)."""
     def flag_selection(bit: int, on: bool) -> bool;
