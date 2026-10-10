@@ -7,10 +7,16 @@ journal keeps those steps. Nothing here knows about the window: the same
 edits run from the interface, from the console and from tests."""
 import from engine.formats.bsp { MapEntity, entity_text }
 import from engine.math.vec3 { Vec3 }
+import from ..geometry.brush { Side, Plane3, Mapping, brush_windings, windings_bounds }
+import from ..formats.map { MapItem, MapFile }
 
 edge Holds: Scene --> Item {}
 
-edge Selected: Scene --> Item {}
+"""An entity owns the brushes that make it: the world its walls, a door its
+slab."""
+edge Owns: Item --> Solid {}
+
+edge Selected: Scene --> Item | Solid {}
 
 """One entity of the map: its key/value fields, as the map's entity lump
 writes them. `serial` names it for the life of the document; `held` is false
@@ -43,6 +49,60 @@ node Item {
         name = self.fields.get("targetname", "");
         return self.classname() + (" (" + name + ")" if name else "");
     }
+}
+
+"""One brush of the document: the space behind its sides. A shipped map's
+geometry is not in the document; these are the brushes made or opened in the
+studio."""
+node Solid {
+    has serial: int = 0,
+        sides: list[Side] = [],
+        held: bool = True;
+
+    """The outline of each side."""
+    def outlines -> list[list[Vec3]] {
+        return brush_windings(self.sides);
+    }
+
+    """The box around it: [low, high], or none when its sides enclose
+    nothing."""
+    def bounds -> list[Vec3] | None {
+        return windings_bounds(self.outlines());
+    }
+}
+
+"""A side moved by `delta`, its material staying where it lies on the face
+(the mapping's shift takes up the move)."""
+def side_moved(side: Side, delta: Vec3) -> Side {
+    mapping = side.mapping;
+    return Side(
+        plane=side.plane.moved(delta),
+        points=[point.add(delta) for point in side.points],
+        material=side.material,
+        mapping=Mapping(
+            s_axis=mapping.s_axis,
+            t_axis=mapping.t_axis,
+            s_shift=mapping.s_shift - delta.dot(mapping.s_axis) / mapping.s_scale,
+            t_shift=mapping.t_shift - delta.dot(mapping.t_axis) / mapping.t_scale,
+            s_scale=mapping.s_scale,
+            t_scale=mapping.t_scale,
+            rotation=mapping.rotation
+        ),
+        contents=side.contents,
+        flags=side.flags,
+        value=side.value
+    );
+}
+
+"""Whether sides enclose a brush: at least four of them keep an outline."""
+def sides_enclose(sides: list[Side]) -> bool {
+    kept = 0;
+    for outline in brush_windings(sides) {
+        if len(outline) >= 3 {
+            kept += 1;
+        }
+    }
+    return kept >= 4;
 }
 
 """Three numbers from an entity field, or none."""
@@ -116,6 +176,35 @@ obj HoldChange(Change) {
     }
 }
 
+"""A brush entering or leaving the document."""
+obj SolidHold(Change) {
+    has solid: Solid,
+        held: bool;
+
+    def undo {
+        self.solid.held = not self.held;
+    }
+
+    def redo {
+        self.solid.held = self.held;
+    }
+}
+
+"""A brush's sides replaced: moved, resized, cut or retextured."""
+obj SidesChange(Change) {
+    has solid: Solid,
+        before: list[Side],
+        after: list[Side];
+
+    def undo {
+        self.solid.sides = self.before;
+    }
+
+    def redo {
+        self.solid.sides = self.after;
+    }
+}
+
 """One edit as the journal keeps it: what to call it and what it changed."""
 obj Step {
     has label: str,
@@ -167,12 +256,24 @@ walker Remove {
         change.redo();
         self.step.changes.append(change);
     }
+
+    can cut with Solid entry {
+        if not here.held {
+            return;
+        }
+        change = SolidHold(solid=here, held=False);
+        change.redo();
+        self.step.changes.append(change);
+    }
 }
 
-"""Move every selected item that has an origin."""
+"""Move every selected item that has an origin, and every selected brush. An
+entity made of brushes moves by moving them."""
 walker Shift {
     has delta: Vec3,
-        step: Step;
+        step: Step,
+        # Brushes already moved, so one selected with its entity moves once.
+        slid: list[Solid] = [];
 
     can start with Scene entry {
         visit [here->:Selected:->];
@@ -181,10 +282,23 @@ walker Shift {
     can apply with Item entry {
         at = here.origin();
         if at is None {
+            visit [here->:Owns:->];
             return;
         }
         change = FieldChange(
             item=here, key="origin", before=here.fields.get("origin"), after=write_vector(at.add(self.delta))
+        );
+        change.redo();
+        self.step.changes.append(change);
+    }
+
+    can slide with Solid entry {
+        if not here.held or here in self.slid {
+            return;
+        }
+        self.slid.append(here);
+        change = SidesChange(
+            solid=here, before=here.sides, after=[side_moved(side, self.delta) for side in here.sides]
         );
         change.redo();
         self.step.changes.append(change);
@@ -197,7 +311,8 @@ walker Clone {
     has offset: Vec3,
         step: Step,
         scene: Scene | None = None,
-        made: list[Item] = [];
+        made: list[Item] = [],
+        made_solids: list[Solid] = [];
 
     can start with Scene entry {
         self.scene = here;
@@ -216,6 +331,81 @@ walker Clone {
         }
         self.step.changes.append(HoldChange(item=copy, held=True));
         self.made.append(copy);
+    }
+
+    can copy_solid with Solid entry {
+        scene = self.scene;
+        if scene is None or not here.held {
+            return;
+        }
+        owners = [here<-:Owns:<-][?:Item];
+        if not owners {
+            return;
+        }
+        copy = scene.add_solid(owners[0], [side_moved(side, self.offset) for side in here.sides]);
+        self.step.changes.append(SolidHold(solid=copy, held=True));
+        self.made_solids.append(copy);
+    }
+}
+
+"""Give every selected brush a material: on every side, or on one."""
+walker Paint {
+    has material: str,
+        step: Step,
+        side: int = -1;
+
+    can start with Scene entry {
+        visit [here->:Selected:->];
+    }
+
+    can paint with Solid entry {
+        changed = False;
+        after: list[Side] = [];
+        for (index, old) in enumerate(here.sides) {
+            if (self.side < 0 or index == self.side) and old.material != self.material {
+                after.append(
+                    Side(
+                        plane=old.plane,
+                        points=old.points,
+                        material=self.material,
+                        mapping=old.mapping,
+                        contents=old.contents,
+                        flags=old.flags,
+                        value=old.value
+                    )
+                );
+                changed = True;
+            } else {
+                after.append(old);
+            }
+        }
+        if changed {
+            change = SidesChange(solid=here, before=here.sides, after=after);
+            change.redo();
+            self.step.changes.append(change);
+        }
+    }
+}
+
+walker FindSolid {
+    has serial: int,
+        found: Solid | None = None;
+
+    can start with Scene entry {
+        visit [here->:Holds:->];
+    }
+
+    can descend with Item entry {
+        if here.held {
+            visit [here->:Owns:->];
+        }
+    }
+
+    can check with Solid entry {
+        if here.serial == self.serial {
+            self.found = here;
+            disengage;
+        }
     }
 }
 
@@ -253,6 +443,119 @@ node Scene {
 
     def selection -> list[Item] {
         return [item for item in [self->:Selected:->][?:Item] if item.held];
+    }
+
+    """The selected brushes."""
+    def selected_solids -> list[Solid] {
+        return [solid for solid in [self->:Selected:->][?:Solid] if solid.held];
+    }
+
+    """An entity's brushes."""
+    def solids_of(item: Item) -> list[Solid] {
+        return [solid for solid in [item->:Owns:->][?:Solid] if solid.held];
+    }
+
+    """Every brush in the document."""
+    def solids -> list[Solid] {
+        found: list[Solid] = [];
+        for item in self.items() {
+            found.extend(self.solids_of(item));
+        }
+        return found;
+    }
+
+    """The entity that owns a brush."""
+    def owner_of(solid: Solid) -> Item | None {
+        owners = [solid<-:Owns:<-][?:Item];
+        return owners[0] if owners else None;
+    }
+
+    """The world entity, made when the document has none."""
+    def world -> Item {
+        for item in self.items() {
+            if item.classname() == "worldspawn" {
+                return item;
+            }
+        }
+        return self.add_item({"classname": "worldspawn"});
+    }
+
+    def find_solid(serial: int) -> Solid | None {
+        search = self spawn FindSolid(serial=serial);
+        found = search.found;
+        return found if found is not None and found.held else None;
+    }
+
+    """Add a brush without journalling it (loading, and Clone's copies)."""
+    def add_solid(owner: Item, sides: list[Side]) -> Solid {
+        solid = Solid(serial=self.next_serial, sides=sides);
+        self.next_serial += 1;
+        owner +>:Owns:+> solid;
+        return solid;
+    }
+
+    """Add a brush to an entity (the world when none is named) and select
+    it. None when the sides enclose nothing."""
+    def create_solid(sides: list[Side], owner: Item | None = None) -> Solid | None {
+        if not sides_enclose(sides) {
+            return None;
+        }
+        solid = self.add_solid(owner if owner is not None else self.world(), sides);
+        self.commit(Step(label="New brush", changes=[SolidHold(solid=solid, held=True)]));
+        self.clear_selection();
+        self +>:Selected:+> solid;
+        self.picks += 1;
+        return solid;
+    }
+
+    def is_solid_selected(solid: Solid) -> bool {
+        return solid in [self->:Selected:->][?:Solid];
+    }
+
+    """Select a brush: alone, or added to (or dropped from) the selection."""
+    def select_solid(solid: Solid | None, add: bool = False) {
+        if not add {
+            self.clear_selection();
+        }
+        if solid is not None {
+            if self.is_solid_selected(solid) {
+                if add {
+                    self del->:Selected:-> solid;
+                }
+            } else {
+                self +>:Selected:+> solid;
+            }
+        }
+        self.picks += 1;
+    }
+
+    """Replace a brush's sides (a resize, a cut). Refused when the new sides
+    enclose nothing."""
+    def reshape(solid: Solid, sides: list[Side], label: str = "Reshape") -> bool {
+        if not sides_enclose(sides) {
+            return False;
+        }
+        change = SidesChange(solid=solid, before=solid.sides, after=sides);
+        change.redo();
+        return self.commit(Step(label=label, changes=[change]));
+    }
+
+    """Move one side of a brush along its normal."""
+    def push_side(solid: Solid, index: int, distance: float) -> bool {
+        if index < 0 or index >= len(solid.sides) or distance == 0.0 {
+            return False;
+        }
+        after = list(solid.sides);
+        after[index] = side_moved(solid.sides[index], solid.sides[index].plane.normal.scale(distance));
+        return self.reshape(solid, after, "Resize");
+    }
+
+    """Give the selected brushes a material (on one side when `side` names
+    it)."""
+    def paint_selection(material: str, side: int = -1) -> bool {
+        step = Step(label="Set material");
+        self spawn Paint(material=material, step=step, side=side);
+        return self.commit(step);
     }
 
     def find(serial: int) -> Item | None {
@@ -294,6 +597,9 @@ node Scene {
         for item in [self->:Selected:->][?:Item] {
             self del->:Selected:-> item;
         }
+        for solid in [self->:Selected:->][?:Solid] {
+            self del->:Selected:-> solid;
+        }
         self.picks += 1;
     }
 
@@ -315,10 +621,16 @@ node Scene {
     def changed {
         self.revision += 1;
         self.dirty = True;
-        # Deleted items leave the selection.
+        # Deleted items and brushes leave the selection.
         for item in [self->:Selected:->][?:Item] {
             if not item.held {
                 self del->:Selected:-> item;
+                self.picks += 1;
+            }
+        }
+        for solid in [self->:Selected:->][?:Solid] {
+            if not solid.held {
+                self del->:Selected:-> solid;
                 self.picks += 1;
             }
         }
@@ -383,6 +695,9 @@ node Scene {
         for copy in copier.made {
             self +>:Selected:+> copy;
         }
+        for copy in copier.made_solids {
+            self +>:Selected:+> copy;
+        }
         return True;
     }
 
@@ -436,6 +751,26 @@ node Scene {
     def text -> str {
         return entity_text(self.entities());
     }
+}
+
+"""The document as a map: every entity with its brushes."""
+def scene_map(scene: Scene) -> list[MapItem] {
+    return [
+        MapItem(fields=dict(item.fields), brushes=[solid.sides for solid in scene.solids_of(item)])
+        for item in scene.items()
+    ];
+}
+
+"""A document of a map file's entities and brushes."""
+def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
+    scene = Scene(game=game, name=name);
+    for read in found.items {
+        item = scene.add_item(dict(read.fields));
+        for sides in read.brushes {
+            scene.add_solid(item, sides);
+        }
+    }
+    return scene;
 }
 
 """A document of a map's entities."""

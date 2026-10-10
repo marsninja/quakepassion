@@ -1,6 +1,19 @@
 import from engine.formats.bsp { MapEntity, parse_entities, entity_text }
 import from engine.math.vec3 { Vec3 }
-import from editor.document.scene { Scene, Item, scene_of, read_vector, write_vector, field_number }
+import from editor.document.scene {
+    Scene,
+    Item,
+    Solid,
+    scene_of,
+    scene_map,
+    scene_from_map,
+    read_vector,
+    write_vector,
+    field_number,
+    side_moved
+}
+import from editor.geometry.brush { box_sides, brush_volume, Plane3, Side }
+import from editor.formats.map { read_map, write_map }
 
 glob LUMP: str = "{\n\"classname\" \"worldspawn\"\n\"message\" \"the Slipgate Complex\"\n}\n"
          + "{\n\"classname\" \"info_player_start\"\n\"origin\" \"480 -352 88\"\n\"angle\" \"90\"\n}\n"
@@ -170,4 +183,128 @@ test "a field that would leave an entity nowhere or classless is refused" {
     assert not scene.unset_field("classname");
     assert items[1].fields["origin"] == "480 -352 88" and not scene.dirty and len(scene.journal.done) == 0;
     assert scene.refuses("origin", "1 2 3") == "" and scene.set_field("origin", "1 2 3");
+}
+
+def close_to(a: float, b: float) -> bool {
+    return abs(a - b) < 0.001;
+}
+
+"""A document with a floor and a pillar in the world, and a door made of one
+brush."""
+def built -> Scene {
+    scene = Scene(game="passion", name="room");
+    world = scene.world();
+    scene.add_solid(world, box_sides(Vec3(x=-128.0, y=-128.0, z=-16.0), Vec3(x=128.0, y=128.0, z=0.0), "floor"));
+    scene.add_solid(world, box_sides(Vec3(x=-16.0, y=-16.0, z=0.0), Vec3(x=16.0, y=16.0, z=96.0), "pillar"));
+    door = scene.add_item({"classname": "func_door", "angle": "90"});
+    scene.add_solid(door, box_sides(Vec3(x=64.0, y=-8.0, z=0.0), Vec3(x=128.0, y=8.0, z=96.0), "door"));
+    scene.add_item({"classname": "info_player_start", "origin": "0 -96 24"});
+    return scene;
+}
+
+test "brushes belong to entities and are found by serial" {
+    scene = built();
+    world = scene.world();
+    assert len(scene.solids()) == 3 and len(scene.solids_of(world)) == 2;
+    pillar = scene.solids_of(world)[1];
+    assert pillar.serial == 2 and scene.find_solid(2) is pillar and scene.find_solid(99) is None;
+    assert scene.owner_of(pillar) is world;
+    bounds = pillar.bounds();
+    assert bounds is not None and close_to(bounds[0].x, -16.0) and close_to(bounds[1].z, 96.0);
+    # Entities and brushes share one run of serials.
+    assert [item.serial for item in scene.items()] == [0, 3, 5];
+    assert scene.world() is world;
+}
+
+test "a new brush is journalled, selected and refused when it encloses nothing" {
+    scene = built();
+    made = scene.create_solid(box_sides(Vec3(), Vec3(x=32.0, y=32.0, z=32.0), "crate"));
+    assert made is not None and scene.selected_solids() == [made] and scene.selection() == [];
+    assert len(scene.solids()) == 4 and scene.owner_of(made) is scene.world();
+    assert scene.undo() == "New brush" and len(scene.solids()) == 3 and scene.selected_solids() == [];
+    assert scene.redo() == "New brush" and len(scene.solids()) == 4;
+    # Three planes do not enclose a brush, nor does a box turned inside out.
+    assert scene.create_solid(box_sides(Vec3(), Vec3(x=32.0, y=32.0, z=32.0))[:3]) is None;
+    assert scene.create_solid(box_sides(Vec3(x=32.0), Vec3(x=0.0, y=32.0, z=32.0))) is None;
+}
+
+test "moving a brush moves its planes and keeps its material where it lies" {
+    scene = built();
+    pillar = scene.solids()[1];
+    before = pillar.sides[4].mapping.texel(Vec3(x=0.0, y=0.0, z=96.0));
+    scene.select_solid(pillar);
+    assert scene.shift_selection(Vec3(x=64.0, z=16.0));
+    bounds = pillar.bounds();
+    assert bounds is not None and close_to(bounds[0].x, 48.0) and close_to(bounds[1].x, 80.0) and close_to(bounds[1].z, 112.0);
+    after = pillar.sides[4].mapping.texel(Vec3(x=64.0, y=0.0, z=112.0));
+    assert close_to(before[0], after[0]) and close_to(before[1], after[1]);
+    assert close_to(brush_volume(pillar.sides), 32.0 * 32.0 * 96.0);
+    assert scene.undo() == "Move";
+    back = pillar.bounds();
+    assert back is not None and close_to(back[0].x, -16.0) and close_to(back[1].z, 96.0);
+}
+
+test "an entity made of brushes moves by moving them, once" {
+    scene = built();
+    door = scene.items()[1];
+    slab = scene.solids_of(door)[0];
+    scene.select(door);
+    scene.select_solid(slab, add=True);
+    assert scene.shift_selection(Vec3(y=32.0));
+    bounds = slab.bounds();
+    assert bounds is not None and close_to(bounds[0].y, 24.0) and close_to(bounds[1].y, 40.0);
+    assert "origin" not in door.fields;
+}
+
+test "deleting, duplicating and painting brushes undo" {
+    scene = built();
+    floor = scene.solids()[0];
+    pillar = scene.solids()[1];
+    scene.select_solid(pillar);
+    assert scene.clone_selection(Vec3(x=64.0));
+    copies = scene.selected_solids();
+    assert len(copies) == 1 and copies[0] is not pillar and len(scene.solids()) == 4;
+    copied = copies[0].bounds();
+    assert copied is not None and close_to(copied[0].x, 48.0) and scene.owner_of(copies[0]) is scene.world();
+    assert scene.paint_selection("q1:e1m1/tech04_1");
+    assert [side.material for side in copies[0].sides] == ["q1:e1m1/tech04_1"] * 6;
+    assert scene.paint_selection("q1:e1m1/sfloor4_2", side=4);
+    assert copies[0].sides[4].material == "q1:e1m1/sfloor4_2" and copies[0].sides[0].material == "q1:e1m1/tech04_1";
+    assert not scene.paint_selection("q1:e1m1/sfloor4_2", side=4);
+    assert scene.remove_selection() and len(scene.solids()) == 3 and scene.selected_solids() == [];
+    scene.select_solid(floor);
+    scene.select_solid(pillar, add=True);
+    assert scene.remove_selection() and len(scene.solids()) == 1;
+    steps = 0;
+    while scene.undo() {
+        steps += 1;
+    }
+    assert steps == 5 and len(scene.solids()) == 3 and pillar.sides[0].material == "pillar";
+}
+
+test "resizing pushes one side and refuses to turn a brush inside out" {
+    scene = built();
+    pillar = scene.solids()[1];
+    assert scene.push_side(pillar, 4, 32.0);
+    bounds = pillar.bounds();
+    assert bounds is not None and close_to(bounds[1].z, 128.0) and close_to(bounds[0].z, 0.0);
+    assert not scene.push_side(pillar, 4, -200.0);
+    assert not scene.push_side(pillar, 9, 8.0) and not scene.push_side(pillar, 4, 0.0);
+    assert scene.undo() == "Resize";
+    restored = pillar.bounds();
+    assert restored is not None and close_to(restored[1].z, 96.0);
+}
+
+test "a document with brushes writes as a map and reads back the same" {
+    scene = built();
+    text = write_map(scene_map(scene));
+    assert text.count("// brush") == 3 and "\"classname\" \"func_door\"" in text;
+    again = scene_from_map("passion", "room", read_map(text));
+    assert len(again.items()) == 3 and len(again.solids()) == 3;
+    assert [len(again.solids_of(item)) for item in again.items()] == [2, 1, 0];
+    assert write_map(scene_map(again)) == text;
+    slab = again.solids_of(again.items()[1])[0];
+    assert slab.sides[0].material == "door" and close_to(brush_volume(slab.sides), 64.0 * 16.0 * 96.0);
+    # The entity lump is the entities alone.
+    assert again.text().count("{") == 3 and "(" not in again.text();
 }
