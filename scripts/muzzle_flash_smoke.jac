@@ -16,7 +16,8 @@ import from engine.world.combat {
     advance_attack,
     muzzle_flash_age
 }
-import from engine.world.area_portals { AreaPortal, HasAreaPortal, OpensPortal }
+import from engine.world.area_portals { HasAreaPortal, OpensPortal }
+import from engine.world.map_areas { AreaPortal }
 import from engine.world.doors { Door }
 import from games.opponents { populate_opponents }
 import from engine.math.vec3 { Vec3 }

@@ -163,8 +163,18 @@ first-left/first-down flags. The step clears by the brush's full extent.
   with the gun, and the gun levels off when he dies. Turrets push and crush
   (`turret_blocked`, `dmg` 10); saves keep the aim and targeting.
 - Switchable Q1/Q2 lights (styles 32-62) toggle and are saved
-  (`engine/world/lightstyles.jac`). Q2 `func_areaportal`s open and close with
-  their doors and relays (`engine/world/area_portals.jac`).
+  (`engine/world/lightstyles.jac`).
+- Area portals (`engine/world/area_portals.jac`, `engine/world/map_areas.jac`):
+  a Q2 `func_areaportal` is open while a door that targets it is not shut
+  (`door_use_areaportals`) and toggles with each other use
+  (`Use_Areaportal`); a Q3 door whose box reaches two areas is the portal
+  between them (`SV_AdjustAreaPortalState`). The map's areas are a graph of
+  `MapArea` nodes joined through `AreaPortal` nodes, numbered again by the
+  `FloodAreaConnections` walker whenever a portal changes. Shut portals stop
+  monsters hearing the player and cull the world and its entities
+  ([rendering](rendering-status.md#visibility)). Saves keep each portal's
+  toggle (a `PORTAL` record, Q2 `CM_WritePortalState`); a restore opens the
+  portals as the saved doors and toggles leave them and floods again.
 
 ## Fixtures and sound emitters
 
@@ -180,6 +190,27 @@ first-left/first-down flags. The step clears by the brush's full extent.
   sounds in the male voice; Q3 global (4) and activator (8) speakers at full
   volume, and `random` of a tenth or more repeats every `wait` ± `random`
   (`CG_Speaker`).
+- **Who hears what** (`engine/world/hearing.jac`). Once for each frame that
+  simulated, the `SoundReach` walker carries the listener to every speaker,
+  explosion, impact and missile, and drops what the game's server would not
+  have sent:
+  - Q2: a sound started on an entity or at a point reaches the potentially
+    hearable set (the BSP's PHS rows) of the cluster it starts in, and only
+    across connected areas (`SV_StartSound`, `SV_Multicast`), unless it has
+    no attenuation (`ATTN_NONE`) or is a mover's start or stop sound
+    (`CHAN_NO_PHS_ADD`). Explosions are multicast to the PHS and shot
+    impacts to the PVS. A looping sound is heard while its entity is in the
+    frame: its area connected to the eye's, its cluster in the PVS of the
+    leaves within 8 units of the eye (`SV_BuildClientFrame`, `SV_FatPVS`).
+  - Q3: every sound is an event or a loop on an entity and reaches the
+    player with it: a connected area and a cluster in the eye's PVS
+    (`SV_AddEntitiesVisibleFromPoint`). Global and activator speakers are
+    exempt (`SVF_BROADCAST`).
+  - Q1 sends every sound to every client (WinQuake `SV_StartSound` writes
+    `sv.datagram`); distance alone silences it. QuakeWorld's `SV_CalcPHS`
+    belongs to its multiplayer server and is not modelled.
+  - A listener inside solid (flying through walls) is in no cluster and
+    hears everything.
 - Positioned sounds fall off as each game mixes them (`sound_falloff`,
   `engine/audio/feedback.jac`): Q1 `SND_Spatialize`, Q2
   `S_SpatializeOrigin` (full within 80, then by attenuation; ATTN_STATIC and
@@ -191,6 +222,9 @@ first-left/first-down flags. The step clears by the brush's full extent.
 
 - Tests: `tests/signal_tests.jac`, `tests/trigger_tests.jac`,
   `tests/map_mechanics_tests.jac`, `tests/train_tests.jac`,
+  `tests/area_portal_tests.jac`, `tests/hearing_tests.jac` (PHS and PVS
+  rows, the fat PVS, started sounds, loops, explosions, impacts and missiles
+  per game, areas),
   `tests/rotation_tests.jac`, `tests/mover_push_tests.jac` (monsters and items
   on lifts, Q3 rotating riders, turrets), `tests/secret_door_tests.jac`,
   `tests/hazard_tests.jac`, `tests/progress_tests.jac`,
@@ -215,10 +249,8 @@ first-left/first-down flags. The step clears by the brush's full extent.
 
 - Timers and random waits keep the original scheduling but draw from an
   entity-local random stream, not the original engine's global sequence.
-- Closed Q2 area portals gate only sound for monsters; they do not cull
-  rendering, and played sounds are not limited by the PHS
-  (`MULTICAST_PHS`). A relay-toggled portal's state is not saved (portals
-  held by doors follow their doors).
+- Sounds are judged from the leaf of their origin; the originals test every
+  cluster an entity's box touches.
 - `misc_actor` (m_actor.c's scripted marine) is not implemented and the
   campaign has none, so biggun's one `target_actor`, which only an actor
   walking to it can touch, does nothing here as it does nothing in the

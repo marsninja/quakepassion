@@ -82,12 +82,21 @@ def intermission_camera(bsp: Bsp, pick: int = 0) -> IntermissionView {
             in ["info_intermission", "info_player_intermission"]
     ];
     view = IntermissionView();
+    if not spots and bsp.game == "q2" {
+        # p_hud.c BeginIntermission: "the map creator forgot to put in an
+        # intermission point", so the first player start serves.
+        spots = [
+            entity for entity in bsp.entities if entity.fields.get("classname", "") == "info_player_start"
+        ][:1];
+        pick = 0;
+    }
     if not spots {
         return view;
     }
     entity = spots[pick % len(spots)];
     key = "mangle" if entity.fields.get("classname", "") == "info_intermission" else "angles";
-    angles = entity.fields.get(key, "0 0 0").split();
+    # A point entity's "angle" is its yaw (G_SetMovedir's ED_ParseField).
+    angles = entity.fields.get(key, "0 " + entity.fields.get("angle", "0") + " 0").split();
     if len(angles) != 3 {
         raise ValueError("Invalid intermission angles");
     }

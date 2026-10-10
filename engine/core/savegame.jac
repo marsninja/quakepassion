@@ -55,6 +55,8 @@ import from engine.world.mover_ramp { ramp_rest }
 import from engine.world.rotators { Rotator, HasRotator, place }
 import from engine.world.turrets { Turret, HasTurret, Mans, pose_turret }
 import from engine.world.shooters { Shooter, HasShooter }
+import from engine.world.area_portals { HasAreaPortal, AreaPortalTick }
+import from engine.world.map_areas { AreaPortal }
 import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.arena { Competes, match_of }
 import from engine.world.inventory {
@@ -236,6 +238,12 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                         + seat
                 )
         );
+    }
+    # Q2 WriteLevel keeps a func_areaportal's count (Use_Areaportal's
+    # toggle) and SV_WriteLevelFile the portals' state
+    # (CM_WritePortalState). A portal a door holds follows its saved door.
+    for portal in [world->:HasAreaPortal:->][?:AreaPortal] {
+        lines.append("PORTAL " + numbers([1.0 if portal.toggled else 0.0]));
     }
     contest = match_of(world);
     if contest is not None {
@@ -538,7 +546,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for computer in [world->:HasHelp:->][?:HelpComputer] {
         lines.append(
             "HELP "
-                + numbers([float(computer.changed), float(computer.unread), computer.beep_wait])
+                # The third number is a spare (once a beep timer).
+                + numbers([float(computer.changed), float(computer.unread), 0.0])
                 + " "
                 + help_field(computer.primary)
                 + " "
@@ -664,6 +673,8 @@ def restore(
     aimed = 0;
     shooters = [world->:HasShooter:->][?:Shooter];
     fired = 0;
+    portals = [world->:HasAreaPortal:->][?:AreaPortal];
+    gated = 0;
     lightning = [world->:HasLightning:->][?:LightningEvent];
     l = 0;
     teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
@@ -822,6 +833,13 @@ def restore(
             }
             pose_turret(breach, level.bsp, level.collision);
             aimed += 1;
+        } elif words[0] == "PORTAL" and len(words) == 2 and gated < len(portals) {
+            toggled = values(words[1], 1)[0];
+            if toggled not in [0.0, 1.0] {
+                raise ValueError("Invalid saved area portal");
+            }
+            portals[gated].toggled = toggled != 0.0;
+            gated += 1;
         } elif words[0] == "MOVER" and len(words) == 4 and spun < len(rotators) {
             row = values(" ".join(words[1:]), 3);
             if row[0] < 0.0 or row[2] < 0.0 {
@@ -1303,7 +1321,6 @@ def restore(
             computer = help_for(world);
             computer.changed = int(row[0]);
             computer.unread = int(row[1]);
-            computer.beep_wait = row[2];
             computer.primary = help_text(words[4]);
             computer.secondary = help_text(words[5]);
         } elif words[0] == "O" and o < len(progress_records) {
@@ -1355,6 +1372,7 @@ def restore(
         or ranked != len(scores)
         or spun != len(rotators)
         or (aimed != 0 and aimed != len(turrets))
+        or (gated != 0 and gated != len(portals))
         or fired != len(shooters) {
         raise ValueError("Save does not match this map's entities");
     }
@@ -1377,6 +1395,9 @@ def restore(
     world spawn ApplyGates(
         inventory=player.inventory, bsp=level.bsp, collision=level.collision
     );
+    # CM_ReadPortalState: the portals open as the restored doors and toggles
+    # leave them, and the areas flood again.
+    world spawn AreaPortalTick();
 }
 
 def write_save(path: str, data: str) {

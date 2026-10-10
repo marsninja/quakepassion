@@ -54,6 +54,41 @@ and builds the level graph.
   cluster 0 and leaf 0) and collects the visible faces. Sets are cached per
   leaf, and three recent sets are kept so a portal view and the main view each
   keep theirs. Brush-model faces are always included and use live transforms.
+- **Area portals** (`engine/world/map_areas.jac`,
+  `engine/world/area_portals.jac`). A Q2 or Q3 map is cut into areas that
+  meet only at area portals. Each area is a `MapArea` node; every leaf lies
+  `Within` one, and an area `Joins` the `AreaPortal` nodes on its border. A Q2
+  portal is a `func_areaportal` that its door holds open or a relay toggles;
+  a Q3 portal is a door whose box reaches two areas, open from when it
+  leaves rest until it is back (`SV_AdjustAreaPortalState`). Whenever a
+  portal changes, the `FloodAreaConnections` walker gives the areas that
+  open portals join the same flood number (`FloodArea_r`).
+  - `Level.visible` leaves out the leaves of areas outside the eye's flood
+    (Q2 `R_RecursiveWorldNode`'s areabits, Q3 `R_MarkLeaves`' areamask), and
+    builds its kept sets again when the flood changes.
+  - `GatherModels` skips entities standing in a sealed area
+    (`SV_BuildClientFrame`, `SV_AddEntitiesVisibleFromPoint`).
+  - From outside every area (flying through solid) nothing is sealed.
+  - Measured by `scripts/area_portal_smoke.jac` (2026-10-09), standing 96
+    units from a portal door with that door open and then shut, every other
+    portal shut; models are what `GatherModels` collects before the frustum
+    cull:
+
+    | map | door | world faces open → shut | models open → shut |
+    |---|---|---|---|
+    | q2 base1 | `*19` | 1321 → 570 | 59 → 46 |
+    | q2 bunk1 | `*103` | 1271 → 366 | 41 → 20 |
+    | q2 jail4 | `*43` | 1365 → 492 | 27 → 8 |
+    | q2 ware1 | `*30` | 1264 → 113 | 22 → 2 |
+    | q2 command | `*25` | 1168 → 89 | 17 → 0 |
+    | q3 q3dm0 | `*12` | 1525 → 415 | 29 → 5 |
+    | q3 q3dm8 | `*17` | 1191 → 233 | 117 → 11 |
+    | q3 q3dm12 | `*43` | 1626 → 79 | 45 → 0 |
+    | q3 q3tourney4 | `*10` | 1841 → 758 | 46 → 9 |
+
+    From bunk1's start with every portal shut, 10 of the level's 207 models
+    are gathered and 560 faces drawn (596 by the PVS alone); from
+    q3tourney4's, 758 faces (1502) and 9 of 46 models.
 - `r_novis 1` (Settings: Visibility culling Off) draws every face and model.
 - Models are gathered from the areas that hold entities (`GatherModels`,
   `engine/world/models.jac`) and culled by a bounding sphere covering every
@@ -215,8 +250,12 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   culling consistency, not pixel parity with id's renderers.
 - `scripts/map_sweep.jac` loads, simulates and renders every original map
   (see [validation tooling](validation-tooling-status.md)).
-- Tests: `phase2_bsp_tests` and `phase2_level_tests` (BSP bounds, PVS, leaf
-  counts), `phase2_pak_tests`, `phase3_formats_tests` (WAL bounds, patch
+- `scripts/area_portal_smoke.jac` counts the world faces and models drawn
+  from each map's start and beside its portal doors with the portals open
+  and shut (the table under Visibility).
+- Tests: `area_portal_tests` (the area graph, the flood, doors and relays,
+  faces and models culled behind a shut door), `phase2_bsp_tests` and
+  `phase2_level_tests` (BSP bounds, PVS, leaf counts), `phase2_pak_tests`, `phase3_formats_tests` (WAL bounds, patch
   geometry and winding, cluster 0 visibility), `world_mesh_tests` (vertex
   packing, batches, index runs), `render_culling_tests`, `model_gpu_tests`,
   `effect_quads_tests`, `lightfx_render_tests` (Q2 sky rotation, particle
@@ -230,9 +269,9 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
 
 ## Limitations
 
-- Only the PVS culls world faces. Q2/Q3 area portals
-  (`engine/world/area_portals.jac`) gate sound but not drawing, so faces
-  behind a closed areaportal door are still drawn.
+- Brush models (doors, plats, trains) are neither PVS- nor area-culled, and
+  an entity is area-culled by the leaf its origin is in, not by every leaf
+  its box touches.
 - Patches draw at a fixed eight steps per quadratic piece (no LOD).
 - The lightmap atlas is a fixed 2048×2048; a map that overflows it fails to
   load ("Lightmap atlas capacity exceeded"). Every original map fits.

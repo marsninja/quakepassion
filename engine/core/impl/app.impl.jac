@@ -45,6 +45,14 @@ impl App.run() {
         film = exit_cinematic(self.opening);
         if film and not self.smoke {
             self.begin_cinematic(film, self.level.name, resume=True);
+        } elif self.opening.lower().endswith(".roq") and not self.stuffed and not self.smoke {
+            # Q3 Com_Init, when the command line gave no commands: the id
+            # logo, and after it the introduction the first time only.
+            self.shell.add_text("cinematic " + self.opening);
+            if not self.host.intro_played.on() {
+                self.host.intro_played.assign("1");
+                self.host.nextmap.assign("cinematic intro.RoQ");
+            }
         }
         self.opening = "";
     }
@@ -121,6 +129,7 @@ impl App.render_frame() {
         return;
     }
     p = self.player;
+    self.settle_sounds();
     self.audio.update(self.world, p.pos, p.yaw, paused=self.menu.opened);
     self.audio.client_loop(
         ""
@@ -240,13 +249,17 @@ impl App.render_frame() {
                 "Enter: " + ("main menu" if self.campaign_complete else "continue")
             );
         }
-        if self.stats_screen {
+        # p_hud.c BeginIntermission in single player: the end of a Q2 unit is
+        # the intermission view alone, with no scores laid over it; G_SetStats
+        # goes on, so the status bar stays and the help computer still opens.
+        unit_end = self.stats_screen and self.level.bsp.game == "q2";
+        if self.stats_screen and not unit_end {
             self.draw_stats();
         }
         # The status bar gives way to intermission views (Sbar_Draw draws only
         # the intermission or finale overlay then).
         # CG_Draw2D: the intermission shows no status bar.
-        if not self.smoke and self.hud.ready and not self.finale_active and not podium {
+        if not self.smoke and self.hud.ready and (not self.finale_active or unit_end) and not podium {
             status = self.hud_status();
             self.hud.draw(status, self.renderer.width, self.renderer.height);
             if self.hud.three_d {
@@ -349,13 +362,12 @@ impl App.render_frame() {
             # secondary objectives, and kills, goals and secrets so far.
             if self.level.bsp.game == "q2"
                 and self.help_open
-                and not self.stats_screen
                 and self.hud.ready
                 and self.hud.has_pic("help") {
                 self.hud.draw_layout(
                     self.help_layout(), self.renderer.width, self.renderer.height
                 );
-            } elif self.level.bsp.game == "q2" and self.help_open and not self.stats_screen {
+            } elif self.level.bsp.game == "q2" and self.help_open {
                 lines: list[str] = [
                     ["Easy", "Medium", "Hard", "Hard+"][max(0, min(3, self.level.skill))]
                         + " - "
@@ -388,12 +400,13 @@ impl App.render_frame() {
                 and not self.stats_screen
                 and not self.finale_active
                 and self.hud.ready {
-                stored = owned_items(p.inventory, "q2");
+                bound = self.keyboard spawn BoundKeys();
                 self.hud.draw_q2_inventory(
                     q2_inventory_rows(
                         p,
                         self.combat.rules,
-                        stored[self.selected_item % len(stored)] if stored else ""
+                        self.selected_item,
+                        q2_item_hotkeys(bound.names, bound.bindings)
                     ),
                     self.simulation_time,
                     self.renderer.width,
@@ -469,11 +482,16 @@ impl App.render_frame() {
                 ]
             );
         }
-        self.console.draw(
-            self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
-        );
-        if self.menu.opened {
-            self.menu.draw(self.renderer.width, self.renderer.height);
+        if self.loading {
+            # SCR_DrawLoading: the plaque over the view, with no console.
+            self.hud.draw_loading_plaque(self.renderer.width, self.renderer.height);
+        } else {
+            self.console.draw(
+                self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+            );
+            if self.menu.opened {
+                self.menu.draw(self.renderer.width, self.renderer.height);
+            }
         }
         self.render_times.hud = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -595,9 +613,7 @@ impl App.load_destination(
     session: Campaign | None = None,
     preserve_progress: bool = False
 ) {
-    if game == "passion" {
-        self.renderer.draw_loading(name);
-    }
+    self.draw_loading(game, name);
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
     next_effects = EffectScene();
@@ -832,6 +848,12 @@ impl App.step() -> bool {
         self.render_frame();
         return True;
     }
+    if escape and self.cinematic.escape_skips() and not self.menu.opened {
+        # Q3 CL_KeyEvent: Escape stops a film like any other key.
+        self.finish_cinematic();
+        self.render_frame();
+        return not self.quitting;
+    }
     if escape or self.menu_requested {
         self.menu_requested = False;
         self.menu.opened = not self.menu.opened;
@@ -903,6 +925,14 @@ impl App.step() -> bool {
             or (not self.smoke and (self.prompt_key(257) or self.prompt_key(32)));
         if self.stats_screen {
             self.stats_wait = max(0.0, self.stats_wait - dt);
+            if self.level.bsp.game == "q2" {
+                # ClientThink's BUTTON_ANY, and ClientCommand still runs
+                # "help" during the intermission.
+                pressed = scripted_press or (not self.smoke and not self.console.active and self.keyboard.any_down());
+                if not self.smoke and self.controls.sample(dt).help {
+                    self.toggle_help();
+                }
+            }
             if pressed and self.stats_wait <= 0.0 {
                 self.finish_stats();
             }
@@ -1011,13 +1041,7 @@ impl App.step() -> bool {
     # p_hud.c Cmd_Help_f: F1 opens and closes the Q2 help computer; opening
     # it reads the news (pers.helpchanged = 0) and hides the inventory.
     if intent.help and self.level.active and self.level.bsp.game == "q2" {
-        self.help_open = not self.help_open;
-        self.inventory_open = False;
-        if self.help_open {
-            for computer in [self.world->:HasHelp:->][?:HelpComputer] {
-                computer.unread = 0;
-            }
-        }
+        self.toggle_help();
     }
     # Cmd_Inven_f: Tab shows and hides the Q2 inventory, closing the help.
     if intent.inventory and self.level.active and self.level.bsp.game == "q2" {
@@ -1047,12 +1071,14 @@ impl App.step() -> bool {
         cycle_weapon(self.player, self.combat, intent.weapon_step);
     }
     if self.level.active and self.player.health > 0 and not self.finale_active {
-        stored = owned_items(self.player.inventory, self.level.bsp.game);
-        if stored and (intent.next_item or intent.prev_item) {
-            self.selected_item = (
-                self.selected_item + (1 if intent.next_item else len(stored) - 1)
-            ) % len(stored);
-            self.show_notice(item_label(stored[self.selected_item]));
+        # g_cmds.c SelectNextItem and SelectPrevItem (invnext, invprev):
+        # through everything carried that has a use, weapons included.
+        if self.level.bsp.game == "q2" and (intent.next_item or intent.prev_item) {
+            self.selected_item = q2_step_item(
+                q2_item_counts(self.player, self.combat.rules),
+                self.selected_item,
+                1 if intent.next_item else -1
+            );
         }
         if intent.use_item {
             self.use_item(intent.use_kind);
@@ -1337,6 +1363,8 @@ impl App.step() -> bool {
                         }
                     }
                     try {
+                        # UI_SetBestScore: against the finishes already kept.
+                        self.arena_progress.load();
                         self.arena_progress.record(self.level.name, place);
                     } except Exception as error {
                         self.show_notice("Arena progress: " + str(error));
@@ -1419,7 +1447,7 @@ impl App.step() -> bool {
                     # and only across open area portals (gi.AreasConnected).
                     if self.level.bsp.game == "q2" {
                         heard = self.level.hearable(self.player.pos);
-                        opened = open_portals(self.world);
+                        chart = self.level.area_map;
                         source = self.level.bsp.leaves[self.level.locate(self.player.pos)].area;
                         for listener in [self.world->:HasOpponent:->][?:Opponent] {
                             if listener.alert <= 0.0
@@ -1428,7 +1456,7 @@ impl App.step() -> bool {
                                 and listener.pos.sub(self.player.pos).length() < 1000.0 {
                                 leaf = self.level.bsp.leaves[self.level.locate(listener.pos)];
                                 listener.heard = leaf.cluster in heard
-                                    and areas_connected(self.level.bsp, source, leaf.area, opened);
+                                    and (chart is None or chart.connected(source, leaf.area));
                             }
                         }
                     }
@@ -1453,8 +1481,10 @@ impl App.step() -> bool {
             if self.level_clocks {
                 self.world spawn ClockTick(bsp=self.level.bsp, dt=self.physics_clock.tick_rate);
             }
-            if self.level.bsp.game == "q2" {
+            if self.level.area_portals {
                 self.world spawn AreaPortalTick();
+            }
+            if self.level.bsp.game == "q2" {
                 trail = self.player_trail;
                 if trail is not None {
                     trail spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);
@@ -1489,7 +1519,8 @@ impl App.step() -> bool {
                 player=self.player,
                 collision=self.level.collision,
                 state=self.combat,
-                dt=self.physics_clock.tick_rate
+                dt=self.physics_clock.tick_rate,
+                clock=self.level.clock
             );
             self.show_notice(targeted.message);
             for cue in targeted.cues {
@@ -1565,18 +1596,6 @@ impl App.step() -> bool {
                 }
             }
             self.combat.impacts = [];
-            for blast in [self.world->:HasExplosion:->][?:Explosion] {
-                if not blast.heard {
-                    blast.heard = True;
-                    self.play_at(blast.sound, blast.pos);
-                }
-            }
-            for struck in [self.world->:HasImpactSound:->][?:ImpactSound] {
-                if not struck.heard {
-                    struck.heard = True;
-                    self.play_at(struck.sound, struck.pos);
-                }
-            }
             pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,
@@ -1609,6 +1628,12 @@ impl App.step() -> bool {
                         self.pickup_icon = picked.icon;
                         self.pickup_name = picked.label;
                         self.pickup_time = 3.0;
+                    }
+                    # g_items.c Touch_Item: picking up an item with a use
+                    # selects it.
+                    taken = picked.kind[7:] if picked.kind.startswith("weapon_") else picked.kind;
+                    if game == "q2" and taken in Q2_USABLE_ITEMS {
+                        self.selected_item = taken;
                     }
                 }
             }
@@ -1739,7 +1764,9 @@ impl App.begin_intermission(text: str) {
     self.player.god_mode = True;
     self.jump_pending = False;
     self.combat.random();
-    view = intermission_camera(self.level.bsp, self.combat.random_state);
+    # Q2 BeginIntermission chooses among the first four spots (rand() & 3).
+    pick = self.combat.random_state & 3 if self.level.bsp.game == "q2" else self.combat.random_state;
+    view = intermission_camera(self.level.bsp, pick);
     if view.found {
         self.player.pos = view.origin.add(Vec3());
         self.player.yaw = view.yaw;
@@ -1762,8 +1789,9 @@ impl App.begin_stats(destination: str, spawnpoint: str, unit: bool, text: str) {
         + (Q1_SERVER_START if self.level.bsp.game == "q1" else 0.0);
     self.begin_intermission("");
     self.stats_screen = True;
-    # execute_changelevel: at least two seconds before a key may leave.
-    self.stats_wait = 2.0;
+    # Q1 execute_changelevel: at least two seconds before a key may leave.
+    # Q2 ClientThink: five, then any button.
+    self.stats_wait = 5.0 if self.level.bsp.game == "q2" else 2.0;
 }
 
 impl App.finish_stats() {
@@ -2048,6 +2076,37 @@ impl App.age_notify(seconds: float) {
     }
 }
 
+impl App.settle_sounds() {
+    if not self.level.active or self.simulation_time == self.sounds_settled {
+        return;
+    }
+    self.sounds_settled = self.simulation_time;
+    # What the game's server would not send is not heard: Q2's PHS and Q3's
+    # PVS, across open area portals.
+    reaching = hearing_rule(self.level.bsp.game);
+    if reaching is not None {
+        reach = self.world spawn SoundReach(
+            level=self.level,
+            rule=reaching,
+            origin=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+            eye=self.player.pos
+        );
+        self.audio.silenced = reach.silenced;
+    }
+    for blast in [self.world->:HasExplosion:->][?:Explosion] {
+        if not blast.heard {
+            blast.heard = True;
+            self.play_at(blast.sound, blast.pos);
+        }
+    }
+    for struck in [self.world->:HasImpactSound:->][?:ImpactSound] {
+        if not struck.heard {
+            struck.heard = True;
+            self.play_at(struck.sound, struck.pos);
+        }
+    }
+}
+
 impl App.play_at(path: str, origin: Vec3) {
     if path {
         distance = origin.sub(self.player.pos).length();
@@ -2125,6 +2184,24 @@ impl App.draw_view_blend() {
 """Q2 uses the selected stored item; Q3 uses its single holdable."""
 impl App.use_item(kind: str = "") {
     game = self.level.bsp.game;
+    if game == "q2" and not kind {
+        # g_cmds.c Cmd_InvUse_f: the selected item, if it is still carried.
+        self.selected_item = q2_validate_item(
+            q2_item_counts(self.player, self.combat.rules), self.selected_item
+        );
+        if not self.selected_item {
+            self.show_notice("No item to use.");
+            return;
+        }
+        # Use_Weapon: a weapon (or the grenades) is taken in hand.
+        for rule in self.combat.rules {
+            if rule.key == self.selected_item or (rule.hand_thrown and self.selected_item == "grenades") {
+                change_weapon(self.player, self.combat, rule.slot);
+                return;
+            }
+        }
+        kind = self.selected_item;
+    }
     items = owned_items(self.player.inventory, game);
     if not kind {
         if not items {
@@ -2133,7 +2210,7 @@ impl App.use_item(kind: str = "") {
             }
             return;
         }
-        kind = items[self.selected_item % len(items)] if game == "q2" else items[0];
+        kind = items[0];
     }
     result = self.player spawn UseItem(game=game, kind=kind);
     if result.teleport {
@@ -2141,6 +2218,22 @@ impl App.use_item(kind: str = "") {
     }
     self.audio.play_path(result.cue);
     self.show_notice(result.message);
+    if game == "q2" {
+        # Use_Quad and its kin: ValidateSelectedItem once one is spent.
+        self.selected_item = q2_validate_item(
+            q2_item_counts(self.player, self.combat.rules), self.selected_item
+        );
+    }
+}
+
+impl App.toggle_help() {
+    self.help_open = not self.help_open;
+    self.inventory_open = False;
+    if self.help_open {
+        for computer in [self.world->:HasHelp:->][?:HelpComputer] {
+            computer.unread = 0;
+        }
+    }
 }
 
 """Q3 personal teleporter (TeleportPlayer): SelectSpawnPoint picks at random
@@ -2263,7 +2356,7 @@ impl App.powerup_lines() -> list[str] {
     }
     stored = owned_items(self.player.inventory, game);
     if stored {
-        chosen = stored[self.selected_item % len(stored)] if game == "q2" else stored[0];
+        chosen = self.selected_item if game == "q2" and self.selected_item in stored else stored[0];
         count = quantity(self.player.inventory, chosen);
         lines.append(
             ("[ ] " if game == "q2" and len(stored) > 1 else "")
@@ -2318,20 +2411,26 @@ impl App.respawn_arena_player() {
 impl App.finish_arena(contest: ArenaMatch, advance: bool = True) {
     destination = self.level.name;
     if advance {
-        library = AssetLibrary(game="q3");
         try {
-            library.open(game_directory("q3"));
-            following = next_arena(load_arenas(library), self.level.name);
+            following = self.following_arena();
             if following {
                 destination = following;
             }
         } except Exception as error {
             self.show_notice("Arena ladder: " + str(error));
-        } finally {
-            library.close();
         }
     }
     self.load_destination("q3", destination);
+}
+
+impl App.following_arena() -> str {
+    library = AssetLibrary(game="q3");
+    try {
+        library.open(game_directory("q3"));
+        return next_arena(load_arenas(library), self.level.name);
+    } finally {
+        library.close();
+    }
 }
 
 """Render the view through the first on-screen portal before the main view."""
@@ -2411,6 +2510,20 @@ impl App.begin_podium(contest: ArenaMatch) {
         }
         board.won = me.rank == 0;
         board.focus = 2 if board.won else 1;
+        if board.won {
+            # UI_SPPostgameMenu_f: what a first place completed.
+            library = AssetLibrary(game="q3");
+            try {
+                library.open(game_directory("q3"));
+                arenas = load_arenas(library);
+                board.tier = tier_completed(arenas, self.arena_progress.best, self.level.name);
+                board.last_tier = last_tier(arenas);
+            } except Exception as error {
+                self.show_notice("Arena ladder: " + str(error));
+            } finally {
+                library.close();
+            }
+        }
         # ui_sppostgame.c: "music music/win" (or loss) plays once.
         self.audio.start_music("music/win" if board.won else "music/loss", once=True);
     }
@@ -2428,6 +2541,9 @@ impl App.postgame_input(contest: ArenaMatch) {
     }
     for cue in board.update(self.postgame_clock) {
         self.audio.play_path(cue);
+    }
+    if board.phase == 3 and self.postgame_cinematic(board) {
+        return;
     }
     pressed = "";
     if self.prompt_key(257) or self.prompt_key(335) {
@@ -2448,15 +2564,45 @@ impl App.postgame_input(contest: ArenaMatch) {
     } elif action == "replay" {
         self.finish_arena(contest, False);
     } elif action == "menu" {
-        self.menu.opened = True;
+        self.open_level_menu();
+    }
+}
+
+impl App.postgame_cinematic(board: Postgame) -> bool {
+    # QP_SMOKE runs capture the game itself, as with the opening films.
+    if self.smoke or board.tier < 0 or not tier_video_due(self.host.videos.text, board.tier + 1) {
+        return False;
+    }
+    # UI_ShowTierVideo marks the film as shown before it plays.
+    self.host.videos.assign(info_with(self.host.videos.text, "tier" + str(board.tier + 1), "1"));
+    self.save_preferences();
+    showing = postgame_film(board.tier, board.last_tier);
+    self.host.nextmap.assign(showing[1]);
+    # "disconnect; cinematic tier2.RoQ": the match is over, and nothing but
+    # `nextmap` and the menu follows the film.
+    self.begin_cinematic(showing[0], "");
+    return True;
+}
+
+impl App.open_level_menu(select: str = "") {
+    if not self.menu.opened {
         self.menu.restore_mouse = mouse_captured();
-        _release();
-        for i in range(len(self.menu.games)) {
-            if self.menu.games[i] == "q3" {
-                self.menu.game = i;
-            }
+    }
+    self.menu.opened = True;
+    self.jump_pending = False;
+    self.physics_clock.accumulator = 0.0;
+    _release();
+    for i in range(len(self.menu.games)) {
+        if self.menu.games[i] == self.level.bsp.game {
+            self.menu.game = i;
         }
-        self.menu.scan();
+    }
+    self.menu.scan();
+    for i in range(len(self.menu.maps)) {
+        if select and self.menu.maps[i] == select {
+            self.menu.selected = i;
+            self.menu.offset = max(0, min(i, len(self.menu.maps) - 11));
+        }
     }
 }
 
@@ -2623,27 +2769,6 @@ original art (text panels without it)."""
 impl App.draw_stats() {
     progress = progress_for(self.world);
     seconds = int(self.completed_time);
-    if self.level.bsp.game == "q2" and self.hud.ready and self.hud.has_pic("help") {
-        self.hud.draw_layout(
-            unit_summary_layout(
-                self.level.skill,
-                self.level.bsp.entities[0].fields.get("message", self.level.name)
-                    if self.level.bsp.entities
-                    else self.level.name,
-                seconds,
-                self.combat.kills,
-                self.total_monsters,
-                progress.goals,
-                progress.total_goals,
-                progress.secrets,
-                progress.total_secrets,
-                self.stats_wait <= 0.0
-            ),
-            self.renderer.width,
-            self.renderer.height
-        );
-        return;
-    }
     if self.level.bsp.game == "q1" and self.hud.ready and self.hud.has_pic("inter") {
         self.hud.draw_q1_intermission(
             seconds,
@@ -2657,7 +2782,7 @@ impl App.draw_stats() {
         return;
     }
     self.renderer.draw_scoreboard(
-        "Unit complete" if self.level.bsp.game == "q2" else "Level complete",
+        "Level complete",
         [
             "Time " + str(seconds // 60) + ":" + str((seconds % 60) // 10) + str(seconds % 10),
             self.tally_line()
@@ -2747,20 +2872,8 @@ impl App.selected_icon() -> str {
     if self.level.bsp.game != "q2" {
         return "";
     }
-    stored = owned_items(self.player.inventory, "q2");
-    if not stored {
-        return "";
-    }
-    icons: dict[str, str] = {
-        "powerup_quad": "p_quad",
-        "powerup_invulnerability": "p_invulnerability",
-        "powerup_breather": "p_rebreather",
-        "powerup_suit": "p_envirosuit",
-        "powerup_silencer": "p_silencer",
-        "power_screen": "i_powerscreen",
-        "power_shield": "i_powershield"
-    };
-    return icons.get(stored[self.selected_item % len(stored)], "");
+    # G_SetStats STAT_SELECTED_ICON: the selected item's icon, weapons too.
+    return Q2_USABLE_ITEMS.get(self.selected_item, "");
 }
 
 impl App.begin_cinematic(
@@ -2800,11 +2913,66 @@ impl App.begin_cinematic(
     }
 }
 
+impl App.draw_loading(game: str, name: str) {
+    black = self.loading_black;
+    self.loading_black = False;
+    if game == "passion" {
+        self.renderer.draw_loading(name);
+        return;
+    }
+    # Only the running game's art is at hand: a load that also changes the
+    # game leaves the screen as it was.
+    if self.smoke or not self.level.active or self.level.bsp.game != game or not self.hud.ready {
+        return;
+    }
+    if game == "q3" {
+        library = self.audio.library;
+        if library is None or library.game != "q3" {
+            return;
+        }
+        lines: list[str] = [];
+        try {
+            load_levelshot(self.hud, library, name);
+            lines = arena_loading_lines(find_arena(load_arenas(library), name));
+        } except Exception as error {
+            print("Loading screen:", str(error));
+        }
+        self.renderer.begin_screen();
+        # CG_Init's first CG_LoadingString.
+        draw_loading_info(self.hud, "collision map", lines, self.renderer.width, self.renderer.height);
+        self.renderer.end_frame();
+        return;
+    }
+    if not self.hud.has_pic("loading") {
+        return;
+    }
+    if black {
+        self.renderer.begin_screen();
+        self.hud.draw_loading_plaque(self.renderer.width, self.renderer.height);
+        self.renderer.end_frame();
+        return;
+    }
+    self.loading = True;
+    self.render_frame();
+    self.loading = False;
+}
+
 impl App.finish_cinematic() {
     self.cinematic.stop(self.audio);
     destination = self.cinematic_next;
     self.cinematic_next = "";
     self.skip_time = True;
+    following = self.host.nextmap.text;
+    if following {
+        # RoQShutdown: `nextmap` holds the command that follows a film (the
+        # introduction after the id logo, the level menu after a tier film).
+        self.host.nextmap.assign("");
+        self.shell.add_text(following);
+        self.execute_commands();
+        if self.cinematic.active or self.quitting {
+            return;
+        }
+    }
     if self.cinematic_resume {
         self.cinematic_resume = False;
         self.start_level_music();
@@ -2815,6 +2983,15 @@ impl App.finish_cinematic() {
         return;
     }
     if not destination {
+        if self.postgame is not None {
+            # Q3's postgame disconnected for its film: only the menu is left
+            # (SCR_DrawScreenField forces it up when disconnected), unless
+            # `nextmap` has already opened it.
+            if not self.menu.opened {
+                self.open_level_menu();
+            }
+            return;
+        }
         # SV_Nextserver with no next server: killserver, back to the menu.
         # The game is over; the level stays frozen behind the menu.
         self.campaign_complete = True;
@@ -2825,6 +3002,8 @@ impl App.finish_cinematic() {
         self.menu.scan();
         return;
     }
+    # Q2 SCR_BeginLoadingPlaque after a film: the plaque over black.
+    self.loading_black = True;
     self.load_destination(
         self.level.bsp.game,
         destination,
@@ -2843,7 +3022,7 @@ impl App.cinematic_step(dt: float) -> bool {
         self.finish_cinematic();
     }
     self.render_frame();
-    return True;
+    return not self.quitting;
 }
 
 impl App.draw_cinematic() {

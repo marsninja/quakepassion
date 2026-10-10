@@ -151,6 +151,11 @@ def follow(app: App, game: str, name: str, spot: str, which: int, frames: int) -
             fire=i % 2 == 1, move=Vec3(y=1.0) if walking and i < 180 else Vec3()
         );
         app.step();
+        # The wait before a key may leave a stats screen (five seconds at
+        # the end of a Q2 unit) is not what is being checked.
+        if app.stats_screen {
+            app.stats_wait = 0.0;
+        }
         if app.level.name != name or app.campaign_complete {
             app.scripted = Intent();
             return armed + ("touched " if placed else "fired ") + (

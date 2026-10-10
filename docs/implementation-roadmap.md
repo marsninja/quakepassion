@@ -19,7 +19,7 @@ Q3 game types, an editor, and entity classes no campaign map uses (Q2's
   See [q2-roster-status.md](q2-roster-status.md).
 - **Quake III Arena**: the `arenas.txt` ladder as free-for-all matches against
   botlib bots (AAS routing, travel types, fuzzy weights, the ai_dmnet.c nodes,
-  chat), with scoring, awards, the podium and ladder progress.
+  chat), with scoring, awards, the podium, ladder progress and the RoQ films.
   See [arena-match-status.md](arena-match-status.md) and [bot-tactics-status.md](bot-tactics-status.md).
 - **Shared engine**: per-game movement profiles, the shared pusher for every
   mover, per-game weapons, items and powerups, per-game renderers (status bars,
@@ -53,11 +53,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
 - One death sequence per monster; several monsters have one pain sequence; pain
   frames carry no movement.
 - Light and shotgun Q2 soldiers never use `attack2`.
-
-Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-status.md](map-mechanics-status.md), [level-flow-status.md](level-flow-status.md), [traversal-status.md](traversal-status.md)):
-- Closed Q2/Q3 area portals do not cull rendering, sounds are not PHS-limited,
-  and a relay-toggled portal's state is not saved.
-- Q3 RoQ cinematics are not played.
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - The Q3 railgun draws its core only, not the raildisc rings.

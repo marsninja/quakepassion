@@ -1,6 +1,7 @@
 """Visual components and shared model resources attached to world entities."""
 import math;
 import from .world { World, Area, Entity, In, Actor, Occupied, index_occupancy }
+import from .map_areas { MapArea, Within }
 import from .powerups { Empowered, Powerup }
 import from ..formats.animated { AnimatedModel, ModelTag }
 import from ..formats.bsp { Texture }
@@ -262,6 +263,13 @@ walker GatherModels {
     }
 
     can area with Area entry {
+        # SV_BuildClientFrame and SV_AddEntitiesVisibleFromPoint: nothing is
+        # sent from an area that closed area portals seal off from the view.
+        for zone in [here->:Within:->][?:MapArea] {
+            if zone.sealed {
+                return;
+            }
+        }
         inside = [here<-:In:<-];
         # Entities removed without move_to_area leave a stale count; fix it.
         here.occupants = len(inside);

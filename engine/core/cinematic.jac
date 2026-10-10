@@ -1,13 +1,26 @@
-"""Quake II cinematics and end pictures on the screen (client/cl_cin.c).
+"""Films and end pictures on the screen (Quake II client/cl_cin.c, Quake III
+code/client/cl_cin.c).
 
-A .cin film runs at 14 frames a second on the real clock. Like
-SCR_RunCinematic, each step reads at most one frame ahead: the frame just
-read waits as `pending` (its sound already queued, S_RawSamples) while the
-one before it is shown, so the picture trails the sound by a frame, and a
-slow step stretches the film rather than dropping frames. Menus pause it.
-A .pcx picture (SCR_PlayCinematic's static image) stays until a key is
-pressed. Pictures are stretched over the whole window (DrawStretchRaw)."""
-import from ..formats.q2.cin { CinDecoder, CinFrame, open_cin, CIN_FRAME_RATE }
+One player runs every film. The decoder (engine/formats/film.jac `Film`)
+supplies the pictures and sound and the rules its client ran it by:
+
+- A Quake II .cin runs at 14 frames a second on the real clock. Like
+  SCR_RunCinematic, each step reads at most one frame ahead: the frame just
+  read waits as `pending` (its sound already queued, S_RawSamples) while the
+  one before it is shown, so the picture trails the sound by a frame, and a
+  slow step stretches the film rather than dropping frames. A key finishes
+  it after its first second.
+- A Quake III RoQ runs at 30. CIN_RunCinematic reads pictures until as many
+  are decoded as the clock asks for and shows the newest, so a slow step is
+  caught up at once. Any key press finishes it; one played with CIN_hold
+  (end.RoQ) keeps its last picture up until then.
+
+Menus pause a film. A .pcx picture (SCR_PlayCinematic's static image) stays
+until a key is pressed. Pictures are stretched over the whole window
+(DrawStretchRaw)."""
+import from ..formats.film { Film, FilmPicture }
+import from ..formats.q2.cin { open_cin, cinematic_rgba }
+import from ..formats.q3.roq { open_roq }
 import from ..formats.q2.model { parse_pcx }
 import from ..audio.feedback { Feedback }
 import from vendor.raylib {
@@ -24,35 +37,37 @@ import from vendor.raylib {
     ) -> None;
 }
 
-"""Palette indices to opaque RGBA through a 768-byte palette."""
-def cinematic_rgba(pixels: bytes, palette: bytes) -> bytes {
-    count = len(pixels);
-    rgba = bytearray(count * 4);
-    for index in range(count) {
-        source = int(pixels[index]) * 3;
-        target = index * 4;
-        rgba[target] = palette[source];
-        rgba[target + 1] = palette[source + 1];
-        rgba[target + 2] = palette[source + 2];
-        rgba[target + 3] = 255;
+# CL_PlayCinematic_f: these two are played with CIN_hold.
+glob HELD_FILMS: list[str] = ["end.roq", "demoend.roq"];
+
+"""The decoder for a film file, chosen by its extension: Quake II's .cin
+or Quake III's .RoQ."""
+def open_film(name: str, data: bytes) -> Film {
+    lowered = name.lower();
+    if lowered.endswith(".roq") {
+        return open_roq(data, lowered.split("/")[-1] in HELD_FILMS);
     }
-    return bytes(rgba);
+    return open_cin(data);
 }
 
 obj CinematicPlayer {
     has name: str = "",
         active: bool = False,
-        decoder: CinDecoder | None = None,
+        film: Film | None = None,
         width: int = 0,
         height: int = 0,
-        # cin.pic, cin.pic_pending and cl.cinematicpalette.
+        # The picture on screen (cin.pic, cin.buf), the one read ahead of it
+        # (cin.pic_pending) and the palette in force (cl.cinematicpalette;
+        # empty when the pictures are RGBA).
         pic: bytes = b"",
         pending: bytes = b"",
         palette: bytes = b"",
-        # cl.cinematicframe: frames read so far, -1 for a still picture.
+        # Pictures read so far (cl.cinematicframe, numQuads), -1 for a still.
         frame: int = 0,
-        # cls.realtime - cl.cinematictime, in seconds.
+        # Real seconds since the film began (cls.realtime - cl.cinematictime).
         elapsed: float = 0.0,
+        # FMV_IDLE: a held film has run out and waits on its last picture.
+        idle: bool = False,
         texture: int = 0,
         texture_width: int = 0,
         texture_height: int = 0,
@@ -60,15 +75,13 @@ obj CinematicPlayer {
         # Keys already held when the picture came up must be let go first.
         armed: bool = False;
 
-    """SCR_PlayCinematic for a film: the header and trees, then the first
-    frame at once."""
+    """SCR_PlayCinematic and CL_PlayCinematic_f for a film: open its decoder
+    and show the first picture at once."""
     def play(name: str, data: bytes, audio: Feedback) {
         self.stop(audio);
-        decoder = open_cin(data);
+        film = open_film(name, data);
         self.name = name;
-        self.decoder = decoder;
-        self.width = decoder.header.width;
-        self.height = decoder.header.height;
+        self.film = film;
         self.frame = 0;
         self.elapsed = 0.0;
         self.active = True;
@@ -78,8 +91,15 @@ obj CinematicPlayer {
             self.active = False;
             return;
         }
+        self.width = film.width;
+        self.height = film.height;
         self.pic = first.pixels;
         self.stale = True;
+        if not film.trails {
+            # CL_PlayCinematic_f waits for the first picture, which
+            # CIN_RunCinematic decodes once the clock asks for one.
+            self.elapsed = float(self.frame) / float(film.frame_rate);
+        }
     }
 
     """SCR_PlayCinematic for a .pcx: a still picture with its palette."""
@@ -99,37 +119,38 @@ obj CinematicPlayer {
         self.stale = True;
     }
 
-    """SCR_ReadNextFrame: decode a frame and queue its sound."""
-    def read(audio: Feedback) -> CinFrame | None {
-        decoder = self.decoder;
-        if decoder is None {
+    """SCR_ReadNextFrame and RoQInterrupt: decode a picture and queue its
+    sound."""
+    def read(audio: Feedback) -> FilmPicture | None {
+        film = self.film;
+        if film is None {
             return None;
         }
-        found = decoder.next_frame();
+        found = film.next_picture();
         if found is None {
             return None;
         }
-        header = decoder.header;
         if found.samples {
             audio.cinematic_samples(
-                header.sound_rate, header.sound_width, header.sound_channels, found.samples
+                found.sound_rate, found.sound_width, found.sound_channels, found.samples
             );
         }
         if found.palette != self.palette {
             self.palette = found.palette;
             self.stale = True;
         }
-        self.frame = decoder.frame;
+        self.frame = film.frame;
         return found;
     }
 
-    """SCR_RunCinematic: advance by `dt` real seconds. True once the film has
-    run out (SCR_FinishCinematic's moment)."""
+    """SCR_RunCinematic and CIN_RunCinematic: advance by `dt` real seconds.
+    True once the film has run out (SCR_FinishCinematic's moment, FMV_EOF)."""
     def advance(dt: float, paused: bool, audio: Feedback) -> bool {
-        if not self.active or self.frame == -1 {
+        film = self.film;
+        if not self.active or film is None or self.frame == -1 or self.idle {
             return False;
         }
-        rate = float(CIN_FRAME_RATE);
+        rate = float(film.frame_rate);
         if paused {
             # The clock is held where the frames read so far put it.
             self.elapsed = float(self.frame) / rate;
@@ -138,6 +159,18 @@ obj CinematicPlayer {
         self.elapsed += dt;
         target = int(self.elapsed * rate);
         if target <= self.frame {
+            return False;
+        }
+        if not film.trails {
+            while self.frame < target {
+                found = self.read(audio);
+                if found is None {
+                    self.idle = film.holds;
+                    return not film.holds;
+                }
+                self.pic = found.pixels;
+                self.stale = True;
+            }
             return False;
         }
         if target > self.frame + 1 {
@@ -157,16 +190,27 @@ obj CinematicPlayer {
         return False;
     }
 
-    """cl_input.c CL_SendCmd: any held key or button (BUTTON_ANY) finishes a
-    film after its first second, and a still picture at once. A key still
-    held from before the picture came up counts once it has been let go, so
-    walking or firing into an exit does not skip the film."""
+    """Whether a key ends what is showing. Quake II's cl_input.c CL_SendCmd:
+    any held key or button (BUTTON_ANY) finishes a film after its first
+    second, and a still picture at once. Quake III's CL_KeyEvent: any key
+    press. A key still held from before the picture came up counts once it
+    has been let go, so walking or firing into an exit does not skip the
+    film."""
     def wants_skip(held: bool) -> bool {
         if not held {
             self.armed = True;
             return False;
         }
-        return self.active and self.armed and self.elapsed > 1.0;
+        film = self.film;
+        after = film.skip_after if film is not None else 0.0;
+        return self.active and self.armed and self.elapsed > after;
+    }
+
+    """Whether Escape ends the film as any other key does (Quake III), where
+    Quake II's opens the menu over it."""
+    def escape_skips -> bool {
+        film = self.film;
+        return self.active and film is not None and film.escape_skips;
     }
 
     """SCR_DrawCinematic: the current picture stretched over the window."""
@@ -197,8 +241,9 @@ obj CinematicPlayer {
 
     def upload() {
         self.stale = False;
-        # A still picture arrives as RGBA; film frames are palette indices.
-        rgba = self.pic if self.frame == -1 else cinematic_rgba(self.pic, self.palette);
+        # Stills and RoQ pictures arrive as RGBA; .cin frames are palette
+        # indices.
+        rgba = cinematic_rgba(self.pic, self.palette) if self.palette else self.pic;
         if len(rgba) != self.width * self.height * 4 {
             return;
         }
@@ -232,13 +277,15 @@ obj CinematicPlayer {
 
     """SCR_StopCinematic: drop the film and its queued sound."""
     def stop(audio: Feedback) {
-        if self.decoder is not None {
+        if self.film is not None {
             audio.end_cinematic();
         }
         self.active = False;
-        self.decoder = None;
+        self.film = None;
+        self.idle = False;
         self.pic = b"";
         self.pending = b"";
+        self.palette = b"";
         self.name = "";
         self.frame = 0;
         self.elapsed = 0.0;

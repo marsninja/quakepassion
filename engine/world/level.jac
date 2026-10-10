@@ -18,7 +18,8 @@ import from .rotators { load_rotators }
 import from .shooters { load_shooters }
 import from .targets { load_targets }
 import from .doors { load_doors, connect_targets, pose_doors, flood_doors }
-import from .area_portals { load_area_portals }
+import from .area_portals { load_area_portals, chart_areas, HasAreaPortal }
+import from .map_areas { AreaMap, MapArea, AreaProbe, Within }
 import from .gates { load_gates }
 import from .chthon { load_lightning, connect_electrodes }
 import from .trains { load_trains }
@@ -192,6 +193,58 @@ walker BoxSurfaces {
                 self.faces.append(face);
             }
         }
+    }
+}
+
+"""CM_BoxLeafnums through the BSP graph: the leaves a box between `mins`
+and `maxs` reaches, down each side of the planes it straddles."""
+walker BoxLeaves {
+    has mins: Vec3,
+        maxs: Vec3,
+        leaves: list[BspArea] = [];
+
+    can split with Split entry {
+        n = here.normal;
+        # BoxOnPlaneSide: the box's nearest and farthest corners.
+        far = (n.x * (self.maxs.x if n.x >= 0.0 else self.mins.x))
+            + (n.y * (self.maxs.y if n.y >= 0.0 else self.mins.y))
+            + (n.z * (self.maxs.z if n.z >= 0.0 else self.mins.z));
+        near = (n.x * (self.mins.x if n.x >= 0.0 else self.maxs.x))
+            + (n.y * (self.mins.y if n.y >= 0.0 else self.maxs.y))
+            + (n.z * (self.mins.z if n.z >= 0.0 else self.maxs.z));
+        if far >= here.distance {
+            visit [here->:Front:->];
+        }
+        if near < here.distance {
+            visit [here->:Back:->];
+        }
+    }
+
+    can leaf with BspArea entry {
+        self.leaves.append(here);
+    }
+}
+
+"""A level's answer to which areas a box touches (SV_LinkEntity's areanum
+and areanum2), from the world model's BSP graph: the areas of the leaves it
+reaches, each once, in the order met."""
+obj BspAreaProbe(AreaProbe) {
+    has head: Split | None = None;
+
+    def touching(mins: Vec3, maxs: Vec3) -> list[MapArea] {
+        head = self.head;
+        areas: list[MapArea] = [];
+        if head is None {
+            return areas;
+        }
+        for leaf in (head spawn BoxLeaves(mins=mins, maxs=maxs)).leaves {
+            for area in [leaf->:Within:->][?:MapArea] {
+                if area not in areas {
+                    areas.append(area);
+                }
+            }
+        }
+        return areas;
     }
 }
 
@@ -378,6 +431,10 @@ obj Level {
         visible_culling: bool = False,
         visible_faces: list[int] = [],
         visible_recent: dict[int, list[int]] = {},
+        # The map's areas and the portal flood the kept sets were culled by.
+        area_map: AreaMap | None = None,
+        area_portals: bool = False,
+        visible_revision: int = -1,
         surface_stages: dict[int, list[ModelStage]] = {},
         surface_deforms: dict[int, list[Deform]] = {},
         sky_clouds: list[ModelStage] = [],
@@ -465,8 +522,92 @@ obj Level {
         return clusters;
     }
 
+    """CM_ClusterPVS and CM_ClusterPHS, one bit of a row: whether cluster
+    `other` is in the set compiled for `cluster`: what it can see, or with
+    `hearable` what can hear it (Q2's PHS; Q3 has none). A map without
+    visibility data connects every cluster; no cluster (-1, in solid)
+    reaches nothing."""
+    def cluster_reaches(cluster: int, other: int, hearable: bool = False) -> bool {
+        bsp = self.bsp;
+        if bsp.clusters <= 0 {
+            return True;
+        }
+        if cluster < 0 or other < 0 or cluster >= bsp.clusters or other >= bsp.clusters {
+            return False;
+        }
+        if bsp.game == "q3" {
+            offset = 8 + cluster * bsp.cluster_bytes + (other >> 3);
+            require_range(bsp.visibility, offset, 1);
+            return int(bsp.visibility[offset]) & (1 << (other & 7)) != 0;
+        }
+        # dvis_t bitofs[cluster][DVIS_PVS or DVIS_PHS], then
+        # CM_DecompressVis' rows: a zero byte is followed by a count of zeros.
+        at = i32_at(bsp.visibility, (8 if hearable else 4) + cluster * 8);
+        if at == -1 {
+            return True;
+        }
+        target = other >> 3;
+        row = 0;
+        while row <= target {
+            require_range(bsp.visibility, at, 1);
+            bits = int(bsp.visibility[at]);
+            at += 1;
+            if bits != 0 {
+                if row == target {
+                    return bits & (1 << (other & 7)) != 0;
+                }
+                row += 1;
+                continue;
+            }
+            require_range(bsp.visibility, at, 1);
+            run = int(bsp.visibility[at]);
+            at += 1;
+            if run == 0 {
+                raise ValueError("Zero-length BSP visibility run");
+            }
+            row += run;
+        }
+        return False;
+    }
+
+    """The clusters a frame's visibility is built from. Q2 SV_FatPVS takes
+    every leaf within `spread` units of the eye; with no spread it is the
+    eye's own leaf (Q3 SV_AddEntitiesVisibleFromPoint)."""
+    def view_clusters(eye: Vec3, spread: float = 0.0) -> list[int] {
+        clusters: list[int] = [];
+        head = self.bsp.models[0].head;
+        if spread <= 0.0 or head < 0 {
+            clusters.append(self.bsp.leaves[self.locate(eye)].cluster);
+            return clusters;
+        }
+        reach = Vec3(x=spread, y=spread, z=spread);
+        for leaf in (self.splits[head] spawn BoxLeaves(mins=eye.sub(reach), maxs=eye.add(reach))).leaves {
+            cluster = self.bsp.leaves[leaf.index].cluster;
+            if cluster not in clusters {
+                clusters.append(cluster);
+            }
+        }
+        return clusters;
+    }
+
     def visible(world: World, eye: Vec3, culling: bool) -> list[int] {
         leaf = self.locate(eye);
+        # Q2 R_RecursiveWorldNode's areabits and Q3 R_MarkLeaves' areamask:
+        # leaves in areas that closed portals seal off from the eye's are
+        # not drawn. The flood changes only when a portal does.
+        sealed: list[bool] = [];
+        chart = self.area_map;
+        if chart is not None {
+            if chart.revision != self.visible_revision {
+                self.visible_revision = chart.revision;
+                self.visible_recent = {};
+                self.visible_leaf = -2;
+            }
+            chart.look(self.bsp.leaves[leaf].area, culling);
+            if chart.view_flood >= 0 {
+                sealed = [area.sealed for area in chart.areas];
+            }
+        }
         # Map topology/PVS are immutable for a loaded Level. Movers update face
         # transforms, not membership; their faces are always included below.
         if leaf == self.visible_leaf
@@ -514,6 +655,10 @@ obj Level {
                     or cluster < 0
                     or self.bsp.clusters == 0
                     or self.bsp.leaves[i].cluster in clusters {
+                    area = self.bsp.leaves[i].area;
+                    if 0 <= area < len(sealed) and sealed[area] {
+                        continue;
+                    }
                     targets.append(self.areas[i]);
                 }
             }
@@ -810,7 +955,15 @@ def prepare_level(world: World, level: Level) {
     load_targets(world, level.bsp);
     load_traversal(world, level.bsp);
     load_fixture_uses(world, level.bsp);
-    load_area_portals(world, level.bsp);
+    head = level.bsp.models[0].head if level.bsp.models else -1;
+    level.area_map = chart_areas(world, level.bsp, level.areas);
+    load_area_portals(
+        world,
+        level.bsp,
+        level.area_map,
+        BspAreaProbe(head=level.splits[head] if 0 <= head < len(level.splits) else None)
+    );
+    level.area_portals = len([world->:HasAreaPortal:->]) > 0;
     # Resolve every activation chain once all activatable entities exist.
     connect_targets(world, level.bsp);
     pose_doors(world, level.bsp, level.collision);
