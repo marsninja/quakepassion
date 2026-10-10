@@ -16,6 +16,10 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   A click selects the entity under the pointer (Ctrl or Shift adds); F looks
   at the selection. The selection's `target` links are drawn to what it fires
   (green) and from what fires it (yellow).
+- **Four views**: View > Four views (`ed_layout 4`) splits the level view
+  into 3D, top (x/y), front (x/z) and side (y/z). The axis views slide with
+  the right or middle button and zoom with the wheel; picking, dragging and
+  side handles work in every view, and Look at (F) centres all of them.
 - **Scene** (left): the map's entities by class. A click selects, a click on
   a class selects all of it, a double click looks at the entity, and the
   filter narrows the list by class, `targetname` or `target`.
@@ -100,6 +104,11 @@ editor/impl/                 the workbench's scenes and brushes
   an `Item` per entity and points at the selected ones with `Selected` edges.
   Each edit is a walker from the scene to its selection that records what it
   changed; the journal undoes and redoes those steps.
+- **Each level view is a port**: a view area and a camera. The first is the
+  free 3D camera; the others are orthographic cameras along an axis
+  (`EditCamera.span`). The pointer's code looks through the camera of the
+  view it is in (`Studio.watch`), so picking, dragging and handles are the
+  same code in every view.
 - **Every action is a console command** (`ed_select`, `ed_set`, `ed_new`,
   `ed_play`, ...; `cmdlist ed_` lists them), which is what buttons, menus and
   keys run. `ui_move`, `ui_click`, `ui_drag`, `ui_key`, `ui_type` and
@@ -140,10 +149,11 @@ editor/impl/                 the workbench's scenes and brushes
   scripted clicks, drags, typing and shortcuts, printing the document after
   each step. `scripts/studio/shell_session.cfg` edits e1m1's entities (15
   steps, then a second run confirms the saved entities load);
-  `scripts/studio/scene_session.cfg` builds a scene of brushes (17 steps:
+  `scripts/studio/scene_session.cfg` builds a scene of brushes (20 steps:
   box, pick, resize by a handle, drag, material, tie to a door, undo, redo,
-  duplicate, wedge, cylinder, clip, turn, save, play, return; then a second
-  run reopens the saved map).
+  four views with a pick and a drag in the top view, duplicate, wedge,
+  cylinder, clip, turn, save, play, return; then a second run reopens the
+  saved map).
 
 ## What remains
 
@@ -153,7 +163,8 @@ drawn in the view), there is no scaling or free rotation about other axes,
 the materials list has no thumbnails, a shipped map cannot take new brushes,
 and
 Quake III's `brushDef` and `patchDef2` blocks are skipped on open. Not yet
-built: multiple views and display modes, texturing tools, the entity class
+built: display modes (the axis views are textured, not wireframe, and draw
+no grid), texturing tools, the entity class
 registry behind typed inspector fields, the logic graph panel, prefabs, the
 bake, patches and duplicators, the asset studio, the model editor, terrain,
 the Passion tools and user walkers. Within the shell: entity previews are

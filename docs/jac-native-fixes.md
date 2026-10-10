@@ -60,6 +60,11 @@ Found in QuakePassion work but not needed by it (not in the pin):
   body for the archetype's method of the same name (E1001). Found in
   `App.render_bench`, whose local is named `pvs` rather than `culling` for
   that reason.
+- [jaseci-labs/jac#9972](https://github.com/jaseci-labs/jac/issues/9972): a
+  for-loop target that rebinds a variable to another type is not reported by
+  the checker, and the native binary then stores through the wrong object.
+  Found when a loop variable named `title` replaced a widget in
+  `Studio.build`.
 - [jaseci-labs/jac#9970](https://github.com/jaseci-labs/jac/issues/9970): a
   module that only declares C records for other modules to import has its C
   block dropped from its Python side (nothing in the module names the records

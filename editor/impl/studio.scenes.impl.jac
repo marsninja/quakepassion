@@ -94,9 +94,13 @@ impl Studio.show_scene(scene: Scene) {
     }
     self.enter(reset_camera=False);
     # Above and behind the start, looking down at it.
-    self.camera.eye = Vec3(x=0.0, y=-420.0, z=260.0);
-    self.camera.yaw = math.pi * 0.5;
-    self.camera.pitch = -0.5;
+    self.main.eye = Vec3(x=0.0, y=-420.0, z=260.0);
+    self.main.yaw = math.pi * 0.5;
+    self.main.pitch = -0.5;
+    for port in self.ports[1:] {
+        port.camera.eye = Vec3(z=64.0);
+        port.camera.span = 1024.0;
+    }
     made = self.live;
     if made is not None {
         for warning in made.warnings {
@@ -193,8 +197,9 @@ impl Studio.look_of(solid: Solid) -> SolidLook | None {
 
 impl Studio.aim(x: int, y: int) -> Aim {
     target = Aim();
-    eye = self.camera.eye;
-    along = self.camera.ray(self.view_area(), x, y);
+    line = self.camera.sight(self.view_area(), x, y);
+    eye = line[0];
+    along = line[1];
     nearest = 1000000.0;
     for seen in self.looks {
         if ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
@@ -398,8 +403,8 @@ impl Studio.add_shape(scene: Scene, args: list[str], shape: str) {
         }
     }
     half = Vec3(x=sizes[0] * 0.5, y=sizes[1] * 0.5, z=sizes[2] * 0.5);
-    eye = self.camera.eye;
-    ahead = self.camera.forward();
+    eye = self.main.eye;
+    ahead = self.main.forward();
     trace = app.level.collision.trace_point(eye, eye.add(ahead.scale(1024.0)));
     middle = eye.add(ahead.scale(256.0));
     if trace.fraction < 1.0 and not trace.start_solid {

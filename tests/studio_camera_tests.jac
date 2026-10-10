@@ -1,7 +1,7 @@
 import math;
 import from engine.math.vec3 { Vec3 }
 import from editor.ui.canvas { Rect }
-import from editor.camera { EditCamera, ray_enters_box }
+import from editor.camera { EditCamera, ray_enters_box, axis_camera }
 
 def near(a: float, b: float) -> bool {
     return abs(a - b) < 0.0001;
@@ -55,4 +55,53 @@ test "a ray enters a box at its near face, misses beside it and starts inside at
     slanted = Vec3(x=1.0, y=0.4).normalized();
     hit = ray_enters_box(Vec3(), slanted, low, high);
     assert near(hit * slanted.x, 10.0);
+}
+
+test "the axis cameras put the level's axes where a map editor does" {
+    top = axis_camera("top");
+    assert near(top.forward().z, -1.0) and near(top.right().x, 1.0) and near(top.up().y, 1.0);
+    front = axis_camera("front");
+    assert near(front.forward().y, 1.0) and near(front.right().x, 1.0) and near(front.up().z, 1.0);
+    side = axis_camera("side");
+    assert near(side.forward().x, -1.0) and near(side.right().y, 1.0) and near(side.up().z, 1.0);
+}
+
+test "an orthographic view maps screen units to world units and back" {
+    view = Rect(x=100, y=50, w=400, h=200);
+    top = axis_camera("top", 800.0);
+    top.eye = Vec3(x=64.0, y=-32.0, z=0.0);
+    # 800 units across 200 screen units: four units each.
+    middle = top.project(view, Vec3(x=64.0, y=-32.0, z=500.0));
+    assert middle == [300, 150];
+    east = top.project(view, Vec3(x=64.0 + 400.0, y=-32.0, z=-90.0));
+    north = top.project(view, Vec3(x=64.0, y=-32.0 + 200.0, z=0.0));
+    assert east == [400, 150] and north == [300, 100];
+    line = top.sight(view, 400, 100);
+    assert near(line[1].z, -1.0) and near(line[0].x, 464.0) and near(line[0].y, 168.0) and line[0].z > 10000.0;
+    # The line through a point of the view lands back on it at any depth.
+    for depth in [0.0, 5000.0, 20000.0] {
+        seen = top.project(view, line[0].add(line[1].scale(depth)));
+        assert seen == [400, 100];
+    }
+    # A perspective camera's lines all start at its eye.
+    free = EditCamera(eye=Vec3(x=1.0, y=2.0, z=3.0));
+    assert near(free.sight(view, 120, 60)[0].z, 3.0) and near(free.sight(view, 480, 240)[0].x, 1.0);
+}
+
+test "an orthographic view pans by screen units, zooms within limits and frames" {
+    view = Rect(x=0, y=0, w=400, h=200);
+    front = axis_camera("front", 400.0);
+    front.pan(view, 50, 0);
+    # Dragging right by 50 at two units each slides the view 100 to the left.
+    assert near(front.eye.x, -100.0) and near(front.eye.z, 0.0);
+    front.pan(view, 0, 25);
+    assert near(front.eye.z, 50.0);
+    front.zoom(0.5);
+    assert near(front.span, 200.0);
+    front.zoom(0.0001);
+    assert near(front.span, 16.0);
+    front.zoom(1000000.0);
+    assert near(front.span, 65536.0);
+    front.frame(Vec3(x=10.0, y=20.0, z=30.0), 100.0);
+    assert near(front.eye.x, 10.0) and near(front.eye.z, 30.0) and near(front.span, 260.0);
 }

@@ -68,7 +68,7 @@ def brushes(lines: list[str]) -> list[str] {
 """The second session: a scene of brushes made, shaped, saved, reopened and
 played."""
 def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["new", "picked", "edited", "playing", "returned"];
+    shots = ["new", "picked", "edited", "four", "playing", "returned"];
     for shot in shots {
         (repo / f"scene_{shot}.png").unlink(missing_ok=True);
     }
@@ -106,7 +106,7 @@ def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     steps = studio_steps(ran.stdout);
     for name in [
         "opened", "boxed", "cleared", "picked", "resized", "moved", "painted", "tied", "untied", "retied",
-        "copied", "ramp", "pillar", "clipped", "turned", "saved", "returned"
+        "four", "top-picked", "top-moved", "copied", "ramp", "pillar", "clipped", "turned", "saved", "returned"
     ] {
         assert name in steps and steps[name] , f"Step {name} printed nothing: {output / 'scene.log'}";
     }
@@ -131,6 +131,16 @@ def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert "owner=func_door" in brushes(steps["tied"])[0] and "entities=3" in steps["tied"][0];
     assert "owner=worldspawn" in brushes(steps["untied"])[0] and "entities=2" in steps["untied"][0];
     assert "owner=func_door" in brushes(steps["retied"])[0] and "entities=3" in steps["retied"][0];
+    # Four views show; a click in the top view picks the door's brush, and a
+    # drag there moves it across the floor only.
+    assert [line for line in steps["four"] if line.startswith("view ") and line.endswith(" of 4")] , str(steps["four"]);
+    assert not brushes(steps["four"]);
+    top_picked = brushes(steps["top-picked"]);
+    assert len(top_picked) == 1 and brush_box(top_picked[0]) == moved , str(top_picked);
+    slid = brush_box(brushes(steps["top-moved"])[0]);
+    assert slid[0][0] != moved[0][0] and (slid[0][0] - moved[0][0]) % 8 == 0 , str(slid);
+    assert slid[0][1:] == moved[0][1:] and slid[1][1:] == moved[1][1:] , str(slid);
+    moved = slid;
     assert "brushes=4" in tally(steps["copied"]) and len(brushes(steps["copied"])) == 1 , str(steps["copied"]);
     # A ramp 48 high and an eight-sided pillar 128 high, both on the floor.
     ramp = brush_box(brushes(steps["ramp"])[0]);

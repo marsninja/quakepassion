@@ -25,7 +25,7 @@ import from vendor.raylib {
 }
 import from .ui.canvas { ScreenCanvas, Rect, Ink, ink }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
-import from .ui.widget { Widget, Stage }
+import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.widgets {
     Box,
     Label,
@@ -43,7 +43,7 @@ import from .ui.widgets {
     ViewArea
 }
 import from .document.scene { Scene, Item, Solid, scene_of, scene_map, scene_from_map }
-import from .camera { EditCamera, ray_enters_box }
+import from .camera { EditCamera, ray_enters_box, axis_camera }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials }
 import from .assets.materials { ArchiveMaterials }
 import from engine.core.menu { game_directory }
@@ -84,6 +84,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
     ("ed_matfilter", "ed_matfilter <text>", "show only matching materials in the materials list"),
+    ("ed_layout", "ed_layout <1|4>", "one level view, or four: 3D, top, front and side"),
     ("ed_exec", "ed_exec <file>", "run a file of console commands"),
     ("ui_move", "ui_move <x> <y>", "script: move the pointer"),
     ("ui_click", "ui_click <x> <y> [button]", "script: click"),
@@ -192,6 +193,15 @@ obj Aim {
         reach: float = -1.0;
 }
 
+"""One view of the level: the part of the window it shows through, and the
+camera it looks with. The first is the free 3D camera; the others look along
+an axis."""
+obj Port {
+    has view: ViewArea,
+        camera: EditCamera,
+        title: str = "3D";
+}
+
 """The studio's widgets, kept by name so its code can reach them."""
 obj StudioUi {
     has menu: MenuBar,
@@ -210,6 +220,7 @@ obj StudioUi {
         summary: Label,
         place: Label,
         materials: TreeView,
+        center: Box,
         new_key: TextField | None = None,
         new_value: TextField | None = None;
 }
@@ -224,7 +235,13 @@ obj Studio(Workbench) {
         quiet: int = 0,
         scene: Scene | None = None,
         scenes: dict[str, Scene] = {},
+        # The free 3D camera, the level views, and the one the pointer is in:
+        # `camera` is that view's, which the pointer's code looks through.
+        main: EditCamera = EditCamera(),
         camera: EditCamera = EditCamera(),
+        ports: list[Port] = [],
+        port_now: int = 0,
+        layout: int = 1,
         # A play session started from the document, to return from.
         playing: bool = False,
         restore_mouse: bool = False,
@@ -311,11 +328,14 @@ obj Studio(Workbench) {
         }
         if reset_camera {
             player = app.player;
-            self.camera.eye = Vec3(
+            self.main.eye = Vec3(
                 x=player.pos.x, y=player.pos.y, z=player.pos.z + level.collision.eye_height
             );
-            self.camera.yaw = player.yaw;
-            self.camera.pitch = player.pitch;
+            self.main.yaw = player.yaw;
+            self.main.pitch = player.pitch;
+            for port in self.ports[1:] {
+                port.camera.eye = self.main.eye;
+            }
         }
     }
 
@@ -379,12 +399,12 @@ obj Studio(Workbench) {
             player = app.player;
             level = app.level;
             player.pos = Vec3(
-                x=self.camera.eye.x,
-                y=self.camera.eye.y,
-                z=self.camera.eye.z - level.collision.eye_height
+                x=self.main.eye.x,
+                y=self.main.eye.y,
+                z=self.main.eye.z - level.collision.eye_height
             );
-            player.yaw = self.camera.yaw;
-            player.pitch = self.camera.pitch;
+            player.yaw = self.main.yaw;
+            player.pitch = self.main.pitch;
             player.velocity = Vec3();
             move_to_area(player, level.areas[level.locate(player.pos)]);
         }
@@ -475,6 +495,9 @@ obj Studio(Workbench) {
                     MenuItem(text="Select nothing", command="ed_select", keys="Esc")
                 ],
                 [
+                    MenuItem(text="One view", command="ed_layout 1"),
+                    MenuItem(text="Four views", command="ed_layout 4"),
+                    MenuItem(rule=True),
                     MenuItem(text="Look at the selection", command="ed_focus", keys="F"),
                     MenuItem(text="Console", command="toggleconsole", keys="`")
                 ],
@@ -573,7 +596,23 @@ obj Studio(Workbench) {
         view = ViewArea(
             grow=1, hint="Right drag + WASD/QE: fly | wheel: dolly | middle drag: pan | click: select | F: look at selection"
         );
-        body.adopt(view);
+        center = Box(grow=1, gap=3);
+        body.adopt(center);
+        center.adopt(view);
+        self.camera = self.main;
+        self.ports = [Port(view=view, camera=self.main, title="3D")];
+        for (kind, named) in [("top", "Top  x/y"), ("front", "Front  x/z"), ("side", "Side  y/z")] {
+            self.ports.append(
+                Port(
+                    view=ViewArea(
+                        grow=1,
+                        hint="Right or middle drag: slide | wheel: zoom | click: select | drag a selection to move it"
+                    ),
+                    camera=axis_camera(kind),
+                    title=named
+                )
+            );
+        }
         right = Box(size=320, fill="panel");
         body.adopt(Splitter(target=right, after=True, low=220, high=640));
         body.adopt(right);
@@ -610,7 +649,8 @@ obj Studio(Workbench) {
             hint=hint,
             summary=summary,
             place=place,
-            materials=material_tree
+            materials=material_tree,
+            center=center
         );
     }
 
@@ -673,7 +713,7 @@ obj Studio(Workbench) {
         } else {
             ui.summary.text = str(len(scene.items())) + " entities";
         }
-        eye = self.camera.eye;
+        eye = self.main.eye;
         ui.place.text = str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
     }
 
@@ -742,7 +782,7 @@ obj Studio(Workbench) {
         if stage is not None {
             held = stage.focus;
             if held is not None and held.parent() is not None and held is not ui.search and held is not ui.new_class
-                and held is not ui.view {
+                and not isinstance(held, ViewArea) {
                 stage.focus_on(None);
             }
         }
@@ -833,7 +873,7 @@ obj Studio(Workbench) {
         stage.frame(input, app.renderer.width, app.renderer.height, dt);
         ui.menu.track(stage);
         ui.tree.track(stage);
-        self.camera.fov = app.renderer.fov;
+        self.main.fov = app.renderer.fov;
         self.steer(dt);
         self.shortcuts(stage.loose_keys, input.shift, input.ctrl);
         # Ahead of anything already waiting, so a script's next line sees
@@ -864,7 +904,15 @@ obj Studio(Workbench) {
             return;
         }
         input = stage.input;
-        for event in ui.view.take() {
+        happened: list[tuple[int, UiEvent]] = [];
+        for (index, port) in enumerate(self.ports) {
+            for taken in port.view.take() {
+                happened.append((index, taken));
+            }
+        }
+        for (index, event) in happened {
+            # The pointer's code looks through the view the event was in.
+            self.watch(index);
             if event.kind == "press" and event.button == 1 {
                 self.looking = True;
             } elif event.kind == "press" and event.button == 2 {
@@ -929,7 +977,12 @@ obj Studio(Workbench) {
             } elif event.kind == "drag" and self.moving {
                 self.drag_selection(event.x, event.y, event.shift, event.ctrl);
             } elif event.kind == "drag" {
-                if self.looking {
+                if self.camera.span > 0.0 {
+                    # An axis view slides under either button.
+                    if self.looking or self.panning {
+                        self.camera.pan(self.view_area(), event.dx, event.dy);
+                    }
+                } elif self.looking {
                     self.camera.turn(-float(event.dx) * 0.005, -float(event.dy) * 0.005);
                 } elif self.panning {
                     scale = 1.0 if not event.shift else 4.0;
@@ -938,7 +991,11 @@ obj Studio(Workbench) {
                     );
                 }
             } elif event.kind == "wheel" {
-                self.camera.fly(event.wheel * (256.0 if event.shift else 64.0), 0.0, 0.0);
+                if self.camera.span > 0.0 {
+                    self.camera.zoom(0.85 ** event.wheel);
+                } else {
+                    self.camera.fly(event.wheel * (256.0 if event.shift else 64.0), 0.0, 0.0);
+                }
             } elif event.kind == "click" and event.button == 0 {
                 if self.moved {
                     # The end of a drag is not a click.
@@ -963,13 +1020,26 @@ obj Studio(Workbench) {
                 stage.emit(words);
             }
         }
-        if stage.held is not ui.view {
+        held_view = False;
+        over_view = False;
+        for (index, port) in enumerate(self.ports) {
+            if stage.held is port.view {
+                held_view = True;
+            }
+            if stage.hover is port.view {
+                over_view = True;
+                if stage.held is None {
+                    self.watch(index);
+                }
+            }
+        }
+        if not held_view {
             self.looking = False;
             self.panning = False;
             self.moving = False;
             self.resizing = False;
         }
-        if self.looking and not self.source.scripted {
+        if self.looking and self.camera.span <= 0.0 and not self.source.scripted {
             speed = app.host.flyspeed.number * (4.0 if input.shift else 1.0) * dt;
             keyboard = app.keyboard;
             ahead = (1.0 if keyboard.is_down("w") else 0.0) - (1.0 if keyboard.is_down("s") else 0.0);
@@ -979,7 +1049,7 @@ obj Studio(Workbench) {
         }
         self.hover = None;
         self.hover_solid = None;
-        if stage.hover is ui.view and not self.looking and not self.panning and not self.moving and not self.resizing {
+        if over_view and not self.looking and not self.panning and not self.moving and not self.resizing {
             pointed = self.aim(input.x, input.y);
             self.hover = pointed.item;
             self.hover_solid = pointed.solid;
@@ -1051,14 +1121,13 @@ obj Studio(Workbench) {
     """Where the line of sight through a point of the view meets the plane
     that faces the camera through `anchor`."""
     def on_view_plane(x: int, y: int, anchor: Vec3) -> Vec3 {
-        eye = self.camera.eye;
+        line = self.camera.sight(self.view_area(), x, y);
         ahead = self.camera.forward();
-        along = self.camera.ray(self.view_area(), x, y);
-        closing = along.dot(ahead);
+        closing = line[1].dot(ahead);
         if closing < 0.001 {
             return anchor;
         }
-        return eye.add(along.scale(anchor.sub(eye).dot(ahead) / closing));
+        return line[0].add(line[1].scale(anchor.sub(line[0]).dot(ahead) / closing));
     }
 
     """Follow the pointer with the selection, as seen: it moves in the plane
@@ -1086,10 +1155,56 @@ obj Studio(Workbench) {
         );
     }
 
-    """The level view's rectangle on screen."""
+    """The rectangle of the level view the pointer's code is looking
+    through."""
     def view_area -> Rect {
+        if self.port_now < len(self.ports) {
+            return self.ports[self.port_now].view.area;
+        }
+        return Rect();
+    }
+
+    """Look through one of the level views."""
+    def watch(index: int) {
+        if index >= 0 and index < len(self.ports) {
+            self.port_now = index;
+            self.camera = self.ports[index].camera;
+        }
+    }
+
+    """The level views showing: the first alone, or all four."""
+    def showing -> int {
+        return len(self.ports) if self.layout == 4 else min(1, len(self.ports));
+    }
+
+    """Lay the level views out: one, or four in a square."""
+    def arrange_views(count: int) {
         ui = self.ui;
-        return ui.view.area if ui is not None else Rect();
+        stage = self.stage;
+        if ui is None or len(self.ports) < 4 {
+            return;
+        }
+        if stage is not None {
+            stage.focus_on(None);
+        }
+        for row in ui.center.kids() {
+            row.clear();
+        }
+        ui.center.clear();
+        self.layout = 4 if count == 4 else 1;
+        self.watch(0);
+        if self.layout == 1 {
+            ui.center.adopt(self.ports[0].view);
+            return;
+        }
+        upper = Box(across=True, grow=1, gap=3);
+        lower = Box(across=True, grow=1, gap=3);
+        ui.center.adopt(upper);
+        ui.center.adopt(lower);
+        upper.adopt(self.ports[0].view);
+        upper.adopt(self.ports[1].view);
+        lower.adopt(self.ports[2].view);
+        lower.adopt(self.ports[3].view);
     }
 
     """The entity under a point of the level view: the nearest whose box the
@@ -1099,8 +1214,9 @@ obj Studio(Workbench) {
         if app is None {
             return None;
         }
-        eye = self.camera.eye;
-        along = self.camera.ray(self.view_area(), x, y);
+        line = self.camera.sight(self.view_area(), x, y);
+        eye = line[0];
+        along = line[1];
         tried: list[Item] = [];
         for attempt in range(6) {
             best: Shape | None = None;
@@ -1133,22 +1249,27 @@ obj Studio(Workbench) {
     # Drawing
 
     def views -> list[SceneView] {
-        area = self.view_area();
-        if area.w <= 0 or area.h <= 0 {
-            return [];
+        seen: list[SceneView] = [];
+        for port in self.ports[:self.showing()] {
+            area = port.view.area;
+            if area.w <= 0 or area.h <= 0 {
+                continue;
+            }
+            seen.append(
+                SceneView(
+                    x=area.x,
+                    y=area.y,
+                    width=area.w,
+                    height=area.h,
+                    eye=port.camera.eye,
+                    yaw=port.camera.yaw,
+                    pitch=port.camera.pitch,
+                    span=port.camera.span,
+                    everything=True
+                )
+            );
         }
-        return [
-            SceneView(
-                x=area.x,
-                y=area.y,
-                width=area.w,
-                height=area.h,
-                eye=self.camera.eye,
-                yaw=self.camera.yaw,
-                pitch=self.camera.pitch,
-                everything=True
-            )
-        ];
+        return seen;
     }
 
     def draw_scene(view: SceneView) {
@@ -1210,10 +1331,25 @@ obj Studio(Workbench) {
             return;
         }
         stage.paint();
-        # Names over the selection and over what the pointer is on.
+        # Over each level view, through its own camera.
+        watched = self.port_now;
+        for index in range(self.showing()) {
+            self.watch(index);
+            self.draw_over_view(scene, self.ports[index].title if self.layout == 4 else "");
+        }
+        self.watch(watched);
+        self.canvas.unclip();
+    }
+
+    """Names over the selection and over what the pointer is on, the selected
+    brush's handles, and the view's title."""
+    def draw_over_view(scene: Scene, title: str) {
         area = self.view_area();
         canvas = self.canvas;
         canvas.clip(area);
+        if title {
+            canvas.text(title, area.x + 8, area.y + 6, canvas.theme.dim, canvas.theme.small);
+        }
         for shape in self.shapes {
             picked = scene.is_selected(shape.item);
             if not picked and shape.item is not self.hover {
@@ -1233,7 +1369,6 @@ obj Studio(Workbench) {
             );
         }
         self.draw_handles(scene, area);
-        canvas.unclip();
     }
 
     # ------------------------------------------------------------------
@@ -1404,12 +1539,14 @@ obj Studio(Workbench) {
             self.revert();
         } elif name == "ed_cam" {
             if len(args) > 3 {
-                self.camera.eye = Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3]));
+                self.main.eye = Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3]));
             }
             if len(args) > 5 {
-                self.camera.yaw = math.radians(float(args[4]));
-                self.camera.pitch = math.radians(float(args[5]));
+                self.main.yaw = math.radians(float(args[4]));
+                self.main.pitch = math.radians(float(args[5]));
             }
+        } elif name == "ed_layout" {
+            self.arrange_views(4 if len(args) > 1 and args[1] == "4" else 1);
         } elif name == "ed_dump" {
             if len(args) > 1 {
                 print("STEP " + args[1]);
@@ -1501,7 +1638,9 @@ obj Studio(Workbench) {
             self.say("Nothing to look at");
             return;
         }
-        self.camera.frame(low.add(high).scale(0.5), high.sub(low).length() * 0.5);
+        for port in self.ports {
+            port.camera.frame(low.add(high).scale(0.5), high.sub(low).length() * 0.5);
+        }
     }
 
     """Add an entity where the camera looks: against the wall ahead, or a
@@ -1517,8 +1656,8 @@ obj Studio(Workbench) {
             self.say("Type a classname first");
             return;
         }
-        eye = self.camera.eye;
-        ahead = self.camera.forward();
+        eye = self.main.eye;
+        ahead = self.main.forward();
         trace = app.level.collision.trace_point(eye, eye.add(ahead.scale(192.0)));
         at = eye.add(ahead.scale(max(32.0, 192.0 * trace.fraction - 24.0)));
         scene.create(classname, Vec3(x=float(round(at.x)), y=float(round(at.y)), z=float(round(at.z))));
@@ -1526,7 +1665,7 @@ obj Studio(Workbench) {
     }
 
     def dump(scene: Scene) {
-        eye = self.camera.eye;
+        eye = self.main.eye;
         lines = [
             "studio: "
                 + scene.game
@@ -1542,7 +1681,7 @@ obj Studio(Workbench) {
                 + str(len(scene.journal.undone)),
             "studio: camera " + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z)),
             "studio: view " + str(self.view_area().x) + " " + str(self.view_area().y) + " "
-                + str(self.view_area().w) + " " + str(self.view_area().h)
+                + str(self.view_area().w) + " " + str(self.view_area().h) + " of " + str(self.showing())
         ];
         for item in scene.selection() {
             pairs = " ".join([key + "=" + value for (key, value) in item.fields.items()]);
