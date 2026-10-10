@@ -36,6 +36,7 @@ import from engine.world.combat {
     current_profile
 }
 import from games.enemies { enemy_rule }
+import from engine.world.environment { EnvironmentTick }
 import from engine.world.doors { Door, HasDoor, DoorTick }
 import from engine.world.triggers { TouchTrigger, HasTrigger, TriggerTick }
 import from engine.world.exits { LevelExit, HasExit, ExitTick }
@@ -753,4 +754,62 @@ test "a Q2 tank keeps after the player it killed, strikes over the body once and
         late spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
     }
     assert fourth.alert == 0.0 and not fourth.pursuing and fourth.attack_clock < 0.0;
+}
+
+test "a dead Q2 body lying in lava or slime burns down to its gib health; Q1 and Q3 bodies do not" {
+    for game in ["q1", "q2", "q3"] {
+        world = World();
+        area = gib_room(world);
+        collision = death_floor(game);
+        player = gibbable(game, area);
+        player.grounded = True;
+        player spawn Damage(amount=100, bypass_armor=True);
+        player spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        fallen = mortality_of(player);
+        assert fallen.dead and player.death_overkill == 0;
+        # Waist deep in lava for half a second. Q2 P_WorldEffects sizzles a
+        # player 3 a water level each 0.1 s frame with no test of its
+        # health; Q1's dead take no damage and Q3's test comes first.
+        player.water_depth = 2;
+        player.liquid_kind = 3;
+        for tick in range(60) {
+            player spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert player.health == 0 and player.death_overkill == (30 if game == "q2" else 0);
+        step = player spawn LieDead(
+            collision=collision, profile=movement_profile(game), dt=TICK, world=world
+        );
+        assert not step.burst;
+        for tick in range(60) {
+            player spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        step = player spawn LieDead(
+            collision=collision, profile=movement_profile(game), dt=TICK, world=world
+        );
+        if game != "q2" {
+            assert player.death_overkill == 0 and not step.burst and not fallen.gibbed;
+            continue;
+        }
+        # Past -40 the body bursts, and what is left burns no more.
+        assert player.death_overkill == 60 and step.burst and step.thrown == 4 and fallen.gibbed;
+        for tick in range(60) {
+            player spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert player.death_overkill == 60;
+        # Slime sizzles 1 a level; the dead do not drown.
+        other = gibbable(game, area);
+        other spawn Damage(amount=100, bypass_armor=True);
+        other spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        other.water_depth = 3;
+        other.liquid_kind = 2;
+        for tick in range(120) {
+            other spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert other.death_overkill == 30;
+        other.liquid_kind = 1;
+        for tick in range(120 * 20) {
+            other spawn EnvironmentTick(game=game, dt=TICK);
+        }
+        assert other.death_overkill == 30 and not mortality_of(other).gibbed;
+    }
 }

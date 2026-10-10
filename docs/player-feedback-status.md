@@ -183,6 +183,14 @@ body, a `Mortality` node the player holds:
   where it lies, an attack under way plays out on it, and its health goes on
   down; past the gib health it bursts then, with the gib sound. Nothing
   strikes Q1's body (`SOLID_NOT`).
+- **Lava and slime.** A dead Q2 body lying in lava or slime goes on burning:
+  `P_WorldEffects` asks for health before it drowns a player and before the
+  burn sound, but not before the sizzle damage (3 a water level in lava, 1
+  in slime, each 0.1 s), so the body burns down past -40 and bursts. Q1's
+  dead take no damage at all (`Killed` makes them `DAMAGE_NO`, and
+  `WaterMove` leaves at once below zero health), and Q3's `P_WorldEffects`
+  asks for health before its sizzle; neither burns. None of the three
+  drowns a dead player.
 - **Coming back.** The buttons of a dead player only bring the player back.
   Q1 `PlayerDeathThink`: after the death frames (0.8 to 1.4 s by the sequence
   `PlayerDie` picked, 0.8 s holding the axe) every button must be let go, and
@@ -237,8 +245,9 @@ left.
   dead touching nothing in each game, the Q1 toss and the Q2 and Q3 dead
   boxes and slide, each game's buttons and waits, the player's gibs at each
   game's health, the Q1 and Q2 head and its eye, Q2 and Q3 bodies shot
-  until they burst, a Q3 player killed whole in a nodrop void, and the Q2
-  tank's strike over the player it killed.
+  until they burst, a Q3 player killed whole in a nodrop void, the Q2
+  tank's strike over the player it killed, and a dead Q2 body burning in
+  lava and slime where Q1's and Q3's do not.
 - `tests/view_sway_tests.jac` (bob, roll, gun lag, Q2 shot kick, dead and
   intermission views, and Q3's death camera against numbers worked by hand
   from `CG_OffsetThirdPersonView`: level, pitched down past the cap, pitched
@@ -266,4 +275,6 @@ left.
 
 ## Limitations
 
-- A Q2 body lying in lava or slime is not burnt on (`P_WorldEffects`).
+- A dead Q2 body is silent in water (`P_WorldEffects` plays the enter, leave
+  and submerge sounds whatever the player's health), and a blast does not
+  push it (`T_Damage` knocks a dead client back too).
