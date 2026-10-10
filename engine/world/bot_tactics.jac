@@ -24,7 +24,7 @@ import from .inventory { quantity, AdjustInventory }
 import from .particles { rail_trail, beam_trail, impact_spray, wall_impact }
 import from .bot_character { BotCharacter, BotState }
 import from .bot_weights { best_fight_weapon }
-import from .bot_travel { gap_distance }
+import from .bot_travel { gap_distance, predict_jump }
 import from .liquids { LiquidProbe }
 import from .powerups { damage_scale, fire_interval_scale, empowered }
 import from .models { PlayerRig, WeaponKit }
@@ -479,36 +479,67 @@ def ready_to_fire(bot: Opponent, mind: BotCharacter, rule: WeaponRule, foe: Play
     return True;
 }
 
-"""Whether the bot can take a step along `direction` (BotMoveInDirection
-refuses to walk into a wall or off a ledge; a swimming bot goes any way,
-BotSwimInDirection). BotWalkInDirection looks for a gap within 100 units
-(BotGapDistance) and then only moves if a jump would clear it; bots here
-do not try the jump, so a gap ahead is a refusal (water under it is no gap,
-by the level's `liquids`)."""
-def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap, liquids: LiquidProbe | None = None) -> bool {
+"""be_ai_move.c BotWalkInDirection for a bot on the ground: 0 when it will
+not make the move along `direction`, 1 for a walk and 2 for a walk with a
+jump. `jump` asks for one, and a gap within 100 units ahead (BotGapDistance;
+water under it is no gap, by the level's `liquids`) turns a walk into one
+("if there is a gap, try to jump over it"). A walk is refused into a wall
+within 40 units or with no floor there. A jump is predicted first
+(`predict_jump`) and refused when the bot would not come down within three
+seconds, would land hard enough to hurt or in slime or lava, would land
+with a gap ahead of it along its flight or along the move, or would get
+less than 20 units away. A swimming bot goes any way (BotSwimInDirection)."""
+def walk_in_direction(
+    bot: Opponent, direction: Vec3, collision: CollisionMap, liquids: LiquidProbe | None = None, jump: bool = False
+) -> int {
     if bot.water_depth >= 2 {
-        return True;
+        return 1;
     }
     origin = bot.pos.sub(Vec3(z=bot.eye_height));
     ahead = direction.normalized().scale(40.0);
     wall = collision.trace_point(origin.add(Vec3(z=8.0)), origin.add(ahead).add(Vec3(z=8.0)));
     if wall.start_solid or wall.fraction < 1.0 {
-        return False;
-    }
-    probe = origin.add(ahead);
-    floor = collision.trace_point(probe, probe.sub(Vec3(z=64.0)));
-    if floor.fraction >= 1.0 {
-        return False;
+        return 0;
     }
     level = Vec3(x=direction.x, y=direction.y).normalized();
-    return gap_distance(collision, origin, level, liquids) == 0.0;
+    leap = jump or gap_distance(collision, origin, level, liquids) > 0.0;
+    if not leap {
+        probe = origin.add(ahead);
+        floor = collision.trace_point(probe, probe.sub(Vec3(z=64.0)));
+        return 1 if floor.fraction < 1.0 else 0;
+    }
+    landing = predict_jump(collision, origin, bot.velocity, level, liquids);
+    if landing.frames >= 30 or landing.hurt or landing.liquid >= 2 {
+        return 0;
+    }
+    if landing.ground {
+        flight = landing.velocity.normalized();
+        if gap_distance(collision, landing.point, flight, liquids) > 0.0
+            or gap_distance(collision, landing.point, level, liquids) > 0.0 {
+            return 0;
+        }
+    }
+    away = landing.point.sub(origin);
+    if math.sqrt(away.x * away.x + away.y * away.y) < 20.0 {
+        return 0;
+    }
+    return 2;
+}
+
+"""Whether the bot can walk a step along `direction` without a jump
+(`walk_in_direction`), for a sidestep that does not try one."""
+def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap, liquids: LiquidProbe | None = None) -> bool {
+    return walk_in_direction(bot, direction, collision, liquids) == 1;
 }
 
 """ai_dmq3.c BotAttackMove. Below 0.2 attack skill the bot stands; up to
 0.4 it only closes or opens the distance; above that it strafes, flipping
 now and then after 0.4-0.6 s and whenever blocked, backs off at random,
 and keeps the ideal distance. It jumps as its jumper characteristic likes
-(at most once a second) and crouches as its croucher one does."""
+(at most once a second) and crouches as its croucher one does. The jump
+goes with the move BotWalkInDirection accepts (`walk_in_direction`), and
+off the ground the bot makes no move of its own (BotWalkInDirection gives
+none there)."""
 def attack_move(
     bot: Opponent, mind: BotCharacter, foe: Player, collision: CollisionMap, liquids: LiquidProbe | None = None
 ) {
@@ -553,11 +584,21 @@ def attack_move(
     }
     ideal = 0.0 if bot.weapon_slot == 1 else IDEAL_ATTACKDIST;
     span = 0.0 if bot.weapon_slot == 1 else ATTACK_RANGE;
+    airborne = not bot.grounded and bot.water_depth < 2;
+    moved = 0;
     if mind.attack_skill <= 0.4 {
-        if distance > ideal + span and can_step(bot, forward, collision, liquids) {
-            bot.steering = forward;
-        } elif distance < ideal - span and can_step(bot, backward, collision, liquids) {
-            bot.steering = backward;
+        if airborne {
+            moved = 0;
+        } elif distance > ideal + span {
+            moved = walk_in_direction(bot, forward, collision, liquids, jump);
+            if moved != 0 {
+                bot.steering = forward;
+            }
+        } elif distance < ideal - span {
+            moved = walk_in_direction(bot, backward, collision, liquids, jump);
+            if moved != 0 {
+                bot.steering = backward;
+            }
         }
     } else {
         memory.strafe_time += 0.1;
@@ -582,7 +623,11 @@ def attack_move(
             } elif distance < ideal - span {
                 side = side.add(backward);
             }
-            if can_step(bot, side, collision, liquids) {
+            if airborne {
+                break;
+            }
+            moved = walk_in_direction(bot, side, collision, liquids, jump);
+            if moved != 0 {
                 bot.steering = side.normalized();
                 break;
             }
@@ -590,7 +635,8 @@ def attack_move(
             memory.strafe_time = 0.0;
         }
     }
-    if jump and bot.grounded {
+    # EA_Jump goes with the move BotWalkInDirection accepted.
+    if moved == 2 and bot.grounded {
         bot.velocity.z = 270.0;
         bot.grounded = False;
     }

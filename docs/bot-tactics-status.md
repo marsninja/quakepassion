@@ -336,7 +336,14 @@ weapon the movement needs, a movement view, waiting and failure.
 - Movement (`BotAttackMove`): below 0.2 attack skill, stand; below 0.4, only
   close or open the distance; above, strafe (flipping after 0.4-0.6 s at 6.5%
   per think, or when blocked), jump by `jumper` at most once a second, and
-  crouch by `croucher` at a quarter speed.
+  crouch by `croucher` at a quarter speed. A jump goes with the move
+  (`BotWalkInDirection`) and is predicted first
+  (`AAS_PredictClientMovement`: the ground's friction, the jump and a
+  frame's air acceleration, then up to three seconds of flight in tenths);
+  the move is refused when the bot would not come down, would land hurt or
+  in slime or lava, would land with a gap ahead, or would get less than 20
+  units away. A gap within 100 units ahead (`BotGapDistance`) turns a walk
+  into such a jump. Off the ground the bot makes no move of its own.
 - Enemies (`BotFindEnemy`): range 900 + 4000 × alertness; a new enemy must be
   inside a view widening from 90° to 180° unless the bot was hurt or the enemy
   is firing; only a closer enemy replaces the current one; sight tests the
@@ -457,11 +464,11 @@ Scripts (native, need the Q3 assets):
   bobbing platform it has just ridden would be handed the ride back, where
   Q3's 10 Hz think and `BotFuzzyPointReachabilityArea` decide which frames
   see it "on top".
-- `BotAttackMove`'s and `BotAIBlocked`'s steps are tested with the bots'
-  wall, floor and gap probe (`can_step`, with `BotGapDistance`), not
-  `AAS_PredictClientMovement`; a bot does not jump a gap in a fight, as
-  `BotWalkInDirection` may. Bots do not block one
-  another's movement; they only sidestep each other.
+- A walking step of `BotAttackMove` or `BotAIBlocked` is tested with the
+  bots' wall and floor probe and `BotGapDistance`, not the two frames of
+  `AAS_PredictClientMovement` that `BotWalkInDirection` runs; only a jump
+  is predicted. `BotAIBlocked`'s sidestep does not jump a gap. Bots do not
+  block one another's movement; they only sidestep each other.
 - Other `be_ai_move.c` details not modelled:
   - Jumps and barrier jumps fly by a launch velocity worked out to land
     them, not by `EA_Jump` and air movement (`BotFinishTravel_Jump`,

@@ -203,6 +203,117 @@ def gap_distance(collision: CollisionMap, origin: Vec3, direction: Vec3, liquids
     return 0.0;
 }
 
+"""Where a predicted jump ends (be_aas_move.c aas_clientmove_t): the point,
+the velocity there, the tenths of a second it took, and what stopped it:
+the ground, a landing hard enough to hurt, or a liquid at the feet (1
+water, 2 slime, 3 lava). `frames` is 30 when nothing did."""
+obj JumpLanding {
+    has point: Vec3 = Vec3(),
+        velocity: Vec3 = Vec3(),
+        frames: int = 30,
+        ground: bool = False,
+        hurt: bool = False,
+        liquid: int = 0;
+}
+
+"""be_aas_move.c AAS_PredictClientMovement as BotWalkInDirection asks it
+about a jump from the ground along `direction`: tenths of a second, three
+seconds at most (PREDICTIONTIME_JUMP). The first frame takes the ground's
+friction off the bot's `velocity`, jumps (270, less the frame's gravity,
+plus 5 a frame "for safety") and accelerates toward the direction as in the
+air (phys_airaccelerate 1, to 320); the rest fly under gravity. Each frame
+sweeps the player's box, clips the velocity off what it hits and steps up
+19 units onto what a wall carries (not within two frames of the jump). It
+ends on the ground (AAS_OnGround, 10 units under the box), on a hit that
+takes more than 632 units a second off the fall (SE_HITGROUNDDAMAGE), or
+with a liquid 22 units under the origin once the bot rises at no more than
+100 units a second."""
+def predict_jump(
+    collision: CollisionMap, origin: Vec3, velocity: Vec3, direction: Vec3, liquids: LiquidProbe | None = None
+) -> JumpLanding {
+    # BotWalkInDirection lifts the origin 0.5, the prediction 0.25 more.
+    point = origin.add(Vec3(z=0.75));
+    # The velocity a frame, as the original keeps it.
+    step = velocity.scale(0.1);
+    grounded = True;
+    for n in range(30) {
+        step.z -= TRAVEL_GRAVITY * 0.01;
+        if n == 0 {
+            speed = math.sqrt(step.x * step.x + step.y * step.y) * 10.0;
+            if speed > 0.0 {
+                keep = max(0.0, speed - 0.1 * max(speed, 100.0) * 6.0) / speed;
+                step.x *= keep;
+                step.y *= keep;
+            }
+            step.z = TRAVEL_JUMP_SPEED * 0.1 - TRAVEL_GRAVITY * 0.01 + 5.0;
+            add = 320.0 - (step.x * direction.x + step.y * direction.y) * 10.0;
+            if add > 0.0 {
+                gain = min(32.0, add) * 0.1;
+                step.x += direction.x * gain;
+                step.y += direction.y * gain;
+            }
+        }
+        left = step.add(Vec3());
+        tries = 0;
+        while True {
+            target = point.add(left);
+            hit = collision.trace(point, target);
+            if hit.start_solid {
+                return JumpLanding(point=point);
+            }
+            point = hit.end;
+            if hit.fraction >= 1.0 {
+                break;
+            }
+            stepped = False;
+            if hit.normal.z == 0.0 and n > 2 {
+                foot = point.sub(hit.normal.scale(0.25));
+                rise = collision.trace(foot.add(Vec3(z=19.0)), foot);
+                if not rise.start_solid and rise.fraction < 1.0 and rise.normal.z > 0.7 {
+                    left = Vec3(x=target.x - rise.end.x, y=target.y - rise.end.y);
+                    step.z = 0.0;
+                    point = Vec3(x=point.x, y=point.y, z=rise.end.z);
+                    stepped = True;
+                }
+            }
+            if not stepped {
+                before = step.z;
+                left = left.sub(hit.normal.scale(left.dot(hit.normal)));
+                step = step.sub(hit.normal.scale(step.dot(hit.normal)));
+                if hit.normal.z > 0.7 {
+                    grounded = True;
+                }
+                delta = 0.0;
+                if before < 0.0 and step.z > before and not grounded {
+                    delta = before;
+                } elif grounded {
+                    delta = step.z - before;
+                }
+                # "delta = delta * 10; delta = delta * delta * 0.0001".
+                if delta * delta * 0.01 > 40.0 {
+                    return JumpLanding(point=point, velocity=step.scale(10.0), frames=n, hurt=True);
+                }
+            }
+            tries += 1;
+            if tries > 20 {
+                return JumpLanding(point=point);
+            }
+        }
+        if step.z <= 10.0 and liquids is not None {
+            kind = liquids.kind_at(point.sub(Vec3(z=22.0)));
+            if kind != 0 {
+                return JumpLanding(point=point, velocity=step.scale(10.0), frames=n, liquid=kind);
+            }
+        }
+        floor = collision.trace(point, point.sub(Vec3(z=10.0)));
+        grounded = not floor.start_solid and floor.fraction < 1.0 and floor.normal.z >= 0.7;
+        if grounded {
+            return JumpLanding(point=point, velocity=step.scale(10.0), frames=n, ground=True);
+        }
+    }
+    return JumpLanding(point=point);
+}
+
 """be_ai_move.c BotMoveInGoalArea's speed: in its goal's area a bot slows
 over the last 100 units (4 a unit) and stops within 2.5."""
 def goal_area_speed(distance: float) -> float {
