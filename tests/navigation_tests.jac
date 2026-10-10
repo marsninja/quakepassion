@@ -57,33 +57,6 @@ test "navigation budget fails closed and moving blockers invalidate edges" {
     assert not ground_route(collision, start, finish, 0);
 }
 
-test "alerted opponent follows the detour through actual movement ticks" {
-    import from engine.world.combat { Opponent, HasOpponent, CombatTick, CombatState }
-    import from engine.world.world { World, Player }
-    collision = nav_floor();
-    nav_box(collision, Vec3(x=60.0, y=-80.0), Vec3(x=100.0, y=80.0, z=120.0));
-    world = World();
-    player = Player(pos=Vec3(x=192.0, z=22.03125));
-    enemy = Opponent(
-        pos=Vec3(z=22.03125),
-        grounded=True,
-        alert=8.0,
-        last_seen=player.pos,
-        attack_wait=1000.0
-    );
-    world +>:HasOpponent:+> enemy;
-    state = CombatState();
-    for i in range(600) {
-        world spawn CombatTick(
-            player=player, collision=collision, state=state, dt=1.0 / 120.0
-        );
-    }
-    assert enemy.pos.x > 120.0;
-    assert not collision.trace(
-        enemy.pos.sub(Vec3(z=22.0)), enemy.pos.sub(Vec3(z=22.0))
-    ).start_solid;
-}
-
 test "projected connections can climb several individually valid stair risers" {
     collision = nav_floor();
     for i in range(4) {

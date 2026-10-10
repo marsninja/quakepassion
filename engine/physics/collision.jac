@@ -566,6 +566,9 @@ obj CollisionMap {
         hull_maxs: Vec3 = Vec3(x=16.0, y=16.0, z=32.0),
         large_hulls: list[HullCell] = [],
         body: BodyBox | None = None;
+    # The box the brush hulls were really expanded by (add_brush), where it
+    # is not the declared one.
+    has brush_box: AABB | None = None;
     # Brush sides a shot leaves nothing on, by hull: the sky and Q3
     # SURF_NOIMPACT take no impact at all, Q3 SURF_NOMARKS no marks.
     has no_impact: dict[int, list[Vec3]] = {},
@@ -591,6 +594,7 @@ obj CollisionMap {
             hull_mins=self.hull_mins,
             hull_maxs=self.hull_maxs,
             large_hulls=self.large_hulls,
+            brush_box=self.brush_box,
             no_impact=self.no_impact,
             no_marks=self.no_marks
         );
@@ -622,6 +626,17 @@ obj CollisionMap {
             return;
         }
         self.body = BodyBox(lo=lo, hi=hi);
+    }
+
+    """The box, about a body's origin, that this map's hulls stand for:
+    the one its brushes were expanded by, else the declared one (Q1 clip
+    hulls). A view fitted to another body traces that body's box instead."""
+    def hull_box() -> AABB {
+        box = self.brush_box;
+        if box is not None {
+            return box;
+        }
+        return AABB(mins=self.hull_mins, maxs=self.hull_maxs);
     }
 
     """A cache key for what this view's traces can reach: the body box."""
@@ -733,6 +748,9 @@ obj CollisionMap {
     ) {
         if len(normals) < 4 or len(normals) != len(distances) {
             raise ValueError("Invalid convex collision brush");
+        }
+        if self.brush_box is None {
+            self.brush_box = AABB(mins=mins, maxs=maxs);
         }
         cell = HullCell();
         lo = Vec3(x=-1.0e30, y=-1.0e30, z=-1.0e30);

@@ -9,7 +9,7 @@ import from engine.core.menu { game_directory }
 import from engine.world.level { Level, load_level }
 import from engine.world.world { World, Player }
 import from engine.world.combat { CombatState, CombatTick, Opponent, HasOpponent, monster_collision }
-import from engine.physics.movement { MovePlayer }
+import from engine.world.monster_move { StepSpace, WalkMove }
 import from games.opponents { populate_opponents }
 import from engine.render.models { ModelScene }
 import from engine.render.quake { QuakeRenderer }
@@ -101,9 +101,20 @@ with entry {
             print("HULL GAP", name, "player reaches", best_gain, "further along", best_dir.x, best_dir.y);
             if best_gain > 0.1 {
                 boss.yaw = math.atan2(best_dir.y, best_dir.x);
-                boss.walk_speed = 120.0;
-                for i in range(600) {
-                    boss spawn MovePlayer(collision=body, wish=best_dir, steady=True, dt=1.0 / 120.0);
+                # Walk it there by monster steps (M_walkmove), 4 units at a
+                # time, until one is refused.
+                space = StepSpace(
+                    collision=body,
+                    game=game,
+                    mins=Vec3(x=-boss.rule.width, y=-boss.rule.width, z=boss.rule.hull_bottom),
+                    maxs=Vec3(x=boss.rule.width, y=boss.rule.width, z=boss.rule.hull_top)
+                );
+                boss.settle();
+                for i in range(150) {
+                    pace = boss spawn WalkMove(space=space, yaw=math.degrees(boss.yaw), dist=4.0);
+                    if not pace.moved {
+                        break;
+                    }
                 }
                 stop = boss.pos.sub(Vec3(z=boss.eye_height));
                 reach = stop.sub(origin).dot(best_dir);

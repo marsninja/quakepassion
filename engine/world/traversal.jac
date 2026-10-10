@@ -379,6 +379,8 @@ walker TeleportMonsters {
         if world is None {
             return;
         }
+        # A teleported monster leaves the step it was taking behind.
+        actor.stride_time = 0.0;
         actor.pos = destination.origin.add(Vec3(z=actor.eye_height));
         actor.yaw = destination.yaw;
         actor.velocity = Vec3();

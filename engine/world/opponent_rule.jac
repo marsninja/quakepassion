@@ -170,6 +170,9 @@ obj OpponentRule {
         rest_min: float = 0.0,
         rest_random: float = 2.0,
         slides: bool = False,
+        # The distance each frame strafes a sliding monster where it is not
+        # the run frame's own (Q1 wiz_side1-8: ai_run(8)).
+        slide_step: float = 0.0,
         medic: bool = False,
         power_screen: int = 0,
         attack_sound: str = "",
@@ -207,7 +210,6 @@ obj OpponentRule {
         yaw_speed: float = 20.0,
         attack_steps: list[float] = [],
         attack_range: float = 1500.0,
-        stop_range: float = 180.0,
         melee: int = 0,
         melee_max: int = 0,
         melee_random_scale: float = 0.0,

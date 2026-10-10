@@ -335,6 +335,49 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             "PATROL " + str(index) + " " + str(heading) + " " + str(holding) + " " + str(walker_node.patrol_wait)
         );
     }
+    # How each campaign monster is moving (engine/world/monster_move.jac):
+    # its ideal_yaw and the yaw its steps have turned it to, the step it is
+    # part-way through, its random stream, FL_PARTIALGROUND, AS_SLIDING and
+    # lefty, and Q2's pursuit of a lost enemy (flags, saved_goal and what is
+    # left of search_time).
+    for index in range(len(walkers)) {
+        stepper = walkers[index];
+        if stepper.arena or stepper.step_random <= 0 {
+            continue;
+        }
+        flags = (1 if stepper.partial_ground else 0)
+            | (2 if stepper.sliding else 0)
+            | (4 if stepper.lefty else 0)
+            | (8 if stepper.lost_sight else 0)
+            | (16 if stepper.pursuit_last_seen else 0)
+            | (32 if stepper.pursue_next else 0)
+            | (64 if stepper.pursue_temp else 0)
+            | (128 if stepper.searching else 0);
+        ahead = stepper.standing();
+        lines.append(
+            "STEP "
+                + str(index)
+                + " "
+                + str(flags)
+                + " "
+                + str(stepper.step_random)
+                + " "
+                + numbers(
+                    [
+                        stepper.ideal_yaw,
+                        stepper.facing(),
+                        stepper.stride_time,
+                        ahead.x,
+                        ahead.y,
+                        ahead.z,
+                        stepper.saved_goal.x,
+                        stepper.saved_goal.y,
+                        stepper.saved_goal.z,
+                        stepper.search_left
+                    ]
+                )
+        );
+    }
     # Corpse health and gibbing, for Q2/Q3 corpses that can still be blown apart.
     corpses = [world->:HasOpponent:->][?:Opponent];
     # Arena bots keep their weapon, ammo and holdables: one BOTITEM per stack.
@@ -856,6 +899,43 @@ def restore(
                 walker_node +>:Holds:+> corners[holding];
             }
             walker_node.patrol_wait = float(words[4]);
+        } elif words[0] == "STEP" and len(words) == 14 {
+            index = int(words[1]);
+            flags = int(words[2]);
+            stream = int(words[3]);
+            row = values(" ".join(words[4:]), 10);
+            if index < 0
+                or index >= len(enemies)
+                or flags < 0
+                or flags > 255
+                or stream < 1
+                or stream >= 2147483647
+                or row[2] < 0.0
+                or row[2] > 0.1
+                or row[9] < 0.0
+                or row[9] > 25.0 {
+                raise ValueError("Invalid saved monster step");
+            }
+            stepper = enemies[index];
+            stepper.partial_ground = flags & 1 != 0;
+            stepper.sliding = flags & 2 != 0;
+            stepper.lefty = flags & 4 != 0;
+            stepper.lost_sight = flags & 8 != 0;
+            stepper.pursuit_last_seen = flags & 16 != 0;
+            stepper.pursue_next = flags & 32 != 0;
+            stepper.pursue_temp = flags & 64 != 0;
+            stepper.searching = flags & 128 != 0;
+            stepper.step_random = stream;
+            stepper.ideal_yaw = row[0];
+            # The step and the turn in progress go on from where the body
+            # was saved.
+            stepper.turn_to = row[1];
+            stepper.turn_at = stepper.yaw;
+            stepper.stride_time = row[2];
+            stepper.stride_to = Vec3(x=row[3], y=row[4], z=row[5]);
+            stepper.stride_at = stepper.pos.add(Vec3());
+            stepper.saved_goal = Vec3(x=row[6], y=row[7], z=row[8]);
+            stepper.search_left = row[9];
         } elif words[0] == "BOTARM" and len(words) == 3 {
             index = int(words[1]);
             slot = int(words[2]);

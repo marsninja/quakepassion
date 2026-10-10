@@ -26,7 +26,9 @@ import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .bot_travel { FollowRoute, TravelResult, TRAVEL_JUMP_SPEED }
 import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
-import from .trail { next_crumb, trail_clock }
+import from .trail { TrailMark, first_crumb, next_crumb, trail_clock }
+import from .monster_move { MonsterBody, StepSpace, MoveToGoal, SlideMove, vectoyaw, box_meets }
+import from .liquids { LiquidProbe }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from .pickups { Pickup }
@@ -34,17 +36,13 @@ import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace }
 import from ..physics.movement { MovePlayer, MovementProfile, movement_profile, step_slide, slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
+import from ..math.aabb { AABB }
 import from ..math.orientation { change_yaw }
 import from ..math.interpolation { TickPose }
 
 edge HasOpponent: World --> Opponent {}
-node Opponent(Player) {
-    has eye_height: float = 22.0;
-    # Moves with its own box (rule width and hull) rather than the player's:
-    # set for monsters on their own game's maps.
-    has own_hull: bool = False;
-    has rule: OpponentRule = OpponentRule(),
-        activation: Signal = Signal(),
+node Opponent(MonsterBody) {
+    has activation: Signal = Signal(),
         dormant: bool = False,
         spawn_wait: float = -1.0,
         modeled: bool = False,
@@ -149,8 +147,6 @@ node Opponent(Player) {
         weapon_visual: Visual | None = None,
         shown_weapon: str = "",
         trail_stamp: float = 0.0,
-        slide_wait: float = 0.0,
-        lefty: bool = False,
         idle_wait: float = -1.0,
         tend_wait: float = 0.0,
         revived: bool = False,
@@ -167,6 +163,20 @@ node Opponent(Player) {
     has flash_origin: Vec3 = Vec3(),
         flash_color: Vec3 = Vec3(),
         flash_clock: float = -1.0;
+    # The chase: the enemy and the path corner `ideal_yaw` was last turned
+    # on (Q1/Q2 HuntTarget, t_movetarget / path_corner_touch), and Q2 ai_run's
+    # pursuit of an enemy out of sight: AI_LOST_SIGHT, AI_PURSUIT_LAST_SEEN,
+    # AI_PURSUE_NEXT, AI_PURSUE_TEMP with its saved_goal, and the seconds
+    # left of search_time's twenty (`searching` while it is set).
+    has hunted: Player | None = None,
+        walk_goal: Vec3 | None = None,
+        lost_sight: bool = False,
+        pursuit_last_seen: bool = False,
+        pursue_next: bool = False,
+        pursue_temp: bool = False,
+        saved_goal: Vec3 = Vec3(),
+        searching: bool = False,
+        search_left: float = 0.0;
 }
 
 """Whether a monster's resting place may have changed: it has moved since it
@@ -195,15 +205,22 @@ def rest_disturbed(enemy: Opponent, collision: CollisionMap) -> bool {
     return False;
 }
 
+"""Whether an actor's box is solid to the player and to monsters' steps: the
+living (SOLID_SLIDEBOX, and Q1/Q2 barrels' SOLID_BBOX). Corpses (Q1
+SOLID_NOT, Q2 SVF_DEADMONSTER), dead figures and the unspawned are not."""
+def solid_actor(actor: Opponent) -> bool {
+    return actor.health > 0
+        and not actor.dormant
+        and not actor.rule.decoration
+        and not actor.rule.script
+        and actor.visual.visible;
+}
+
 """How far the player's box (at origin `body`) reaches into an actor's box,
 horizontally, or None when they do not overlap. Living monsters and bots are
 solid to the player (SOLID_SLIDEBOX); corpses are not."""
 def actor_overlap(body: Vec3, top_drop: float, actor: Opponent) -> Vec3 | None {
-    if actor.health <= 0
-        or actor.dormant
-        or actor.rule.decoration
-        or actor.rule.script
-        or not actor.visual.visible {
+    if not solid_actor(actor) {
         return None;
     }
     return box_overlap(
@@ -421,6 +438,10 @@ def cable_event(
 # Q3 bg_pmove.c: dropping then raising a weapon before it can fire.
 glob WEAPON_SWITCH_TIME: float = 0.45;
 
+# How near a bot that is not fighting closes on an enemy in sight before it
+# stops.
+glob BOT_STANDOFF: float = 180.0;
+
 """g_client.c ClientSpawn arms every Q3 player, bots included, with a
 gauntlet, a machine gun and 100 bullets."""
 def arm_bot(bot: Opponent) {
@@ -522,18 +543,6 @@ def attack_chance(enemy: Opponent, distance: float, melee: bool) -> float {
         return 0.05 if has_melee else 0.1;
     }
     return 0.0;
-}
-
-"""Whether a monster has a ranged attack; melee-only monsters press in to
-strike rather than circling."""
-def shoots(enemy: Opponent) -> bool {
-    ensure_profiles(enemy);
-    for profile in enemy.profiles {
-        if profile.kind in ["ranged", "beam"] and not profile.dodge_only {
-            return True;
-        }
-    }
-    return False;
 }
 
 """Roll a decision's attack chance with the monster's own random stream."""
@@ -2988,9 +2997,9 @@ def monster_collision(collision: CollisionMap, enemy: Opponent) -> CollisionMap 
     );
 }
 
-"""Whether a body moves by monster movestep (Q1 SV_movestep / Q2
-M_walkmove): each frame's stride directly, rather than accelerating and
-braking like a player. Arena bots move as players do."""
+"""Whether a body moves by monster steps (engine/world/monster_move.jac):
+one whole step each 0.1 s frame of its walk or run cycle, rather than
+accelerating and braking like a player. Arena bots move as players do."""
 def striding(enemy: Opponent) -> bool {
     return not enemy.arena and enemy.character is None;
 }
@@ -3029,23 +3038,18 @@ def choose_walk(enemy: Opponent) {
     }
 }
 
-"""The pace, in units a second, of the frame a monster is showing in its
-locomotion cycle: the run cycle, or unalerted the walk (Q1 ai_run(dist) /
-ai_walk(dist) each 0.1 s think; Q2 M_MoveFrame's dist times the model's
-monsterinfo.scale). A body without frame tables keeps its rule's speed."""
-def gait_speed(enemy: Opponent) -> float {
+"""The distance the frame a monster is showing in its walk or run cycle
+steps it (Q1 ai_run(dist) / ai_walk(dist) on that frame's 0.1 s think; Q2
+M_MoveFrame's dist times the model's monsterinfo.scale). A body without
+frame tables covers a tenth of its rule's speed."""
+def frame_step(enemy: Opponent) -> float {
     rule = enemy.rule;
-    walking = enemy.alert <= 0.0 and bool(enemy.walk_animation);
     walk = walk_gait(enemy);
-    gait = walk if walking and walk.steps else rule.run;
+    gait = walk if enemy.pose_name == "walk" and walk.steps else rule.run;
     if not gait.steps {
-        return rule.speed;
+        return rule.speed * 0.1;
     }
-    # The cycle starts over from its first frame whenever the pose changes.
-    frame = int(enemy.animation_time)
-        if enemy.pose_name == ("walk" if walking else "run")
-        else 0;
-    return gait.steps[frame % len(gait.steps)] * rule.step_scale * 10.0;
+    return gait.steps[int(enemy.animation_time) % len(gait.steps)] * rule.step_scale;
 }
 
 """Which cached body view a monster shares with others of its size."""
@@ -3585,6 +3589,10 @@ walker CombatTick {
         navmesh: NavMesh | None = None,
         neighbors: dict[str, list[Opponent]] = {},
         decisions: int = 0;
+    # What monsters' steps ask of the level: its liquids, and how wide the
+    # widest living body is (how far a step must look for bodies in its way).
+    has liquids: LiquidProbe | None = None,
+        widest: float = 0.0;
     # Monsters walk by the shared rules; Q3 bots are players and move by
     # bg_pmove.c's.
     has walk_profile: MovementProfile = MovementProfile(),
@@ -3603,6 +3611,369 @@ walker CombatTick {
             }
         }
         return result;
+    }
+
+    """What `here`'s steps of `dist` are traced against this frame
+    (StepSpace): the view of its own box, the box SV_CheckBottom tests the
+    floor under, the liquids and its Q2 waterlevel, and every other solid
+    body such a step could reach. Monsters come from the 64-unit buckets,
+    each where its own step ends; the player's box is solid while it lives.
+    A body `here` already overlaps (a leap, a knock or a fall can leave two
+    so) is left out, so that they can part."""
+    def step_space(here: Opponent, foe: Player, dist: float, view: CollisionMap) -> StepSpace {
+        rule = here.rule;
+        mins = Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom);
+        maxs = Vec3(x=rule.width, y=rule.width, z=rule.hull_top);
+        origin = here.pos.sub(Vec3(z=here.eye_height));
+        space = StepSpace(collision=view, game=here.game, mins=mins, maxs=maxs, liquids=self.liquids);
+        if not here.own_hull {
+            # Away from its own game's maps a monster moves in the map's box.
+            box = view.hull_box();
+            space.mins = box.mins;
+            space.maxs = box.maxs;
+        }
+        reach = rule.width + self.widest + abs(dist) + 2.0;
+        span = int(math.ceil(reach / 64.0));
+        x = int(math.floor(here.pos.x / 64.0));
+        y = int(math.floor(here.pos.y / 64.0));
+        for dx in range(-span, span + 1) {
+            for dy in range(-span, span + 1) {
+                key = self.cell(x + dx, y + dy);
+                if key not in self.neighbors {
+                    continue;
+                }
+                for other in self.neighbors[key] {
+                    if other is here or not solid_actor(other) {
+                        continue;
+                    }
+                    solid = other.solid_box();
+                    if not box_meets(origin, mins, maxs, solid) {
+                        space.solids.append(solid);
+                    }
+                }
+            }
+        }
+        person = self.player;
+        if person.health > 0 {
+            feet = person.pos.sub(Vec3(z=self.collision.eye_height));
+            solid = AABB(
+                mins=feet.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
+                maxs=feet.add(Vec3(x=16.0, y=16.0, z=32.0 - self.collision.top_drop))
+            );
+            if not box_meets(origin, mins, maxs, solid) {
+                space.solids.append(solid);
+            }
+        }
+        # Q1 `enemy != world`, Q2 `ent->enemy`: an alerted monster has one.
+        space.chasing = here.alert > 0.0;
+        space.seek_z = foe.pos.z
+            - (foe.eye_height if isinstance(foe, Opponent) else self.collision.eye_height);
+        space.seek_client = not isinstance(foe, Opponent);
+        liquids = self.liquids;
+        if here.game == "q2" and liquids is not None {
+            # M_CatagorizePosition: the feet, 26 units up and 22 more.
+            feet = origin.add(Vec3(z=space.mins.z + 1.0));
+            if liquids.kind_at(feet) > 0 {
+                space.water_level = 1;
+                if liquids.kind_at(feet.add(Vec3(z=26.0))) > 0 {
+                    space.water_level = 2;
+                    if liquids.kind_at(feet.add(Vec3(z=48.0))) > 0 {
+                        space.water_level = 3;
+                    }
+                }
+            }
+        }
+        return space;
+    }
+
+    """The heading a monster on its feet is going in, or none: it walks its
+    path corners, runs to a combat point or hunts (Q1/Q2 th_walk, th_run)
+    whether or not this frame's step can be taken. A Q2 monster with only a
+    noise to go on (AI_SOUND_TARGET) stands its ground within 64 units of
+    it."""
+    def stride_heading(here: Opponent) -> Vec3 {
+        if here.rule.movement == "none" {
+            return Vec3();
+        }
+        if here.patrol_goal is None {
+            if here.alert <= 0.0 {
+                return Vec3();
+            }
+            if here.game == "q2" and not here.sighted {
+                gap = here.last_seen.sub(Vec3(z=here.last_seen_height)).sub(
+                    here.standing().sub(Vec3(z=here.eye_height))
+                );
+                if gap.length() < 64.0 {
+                    return Vec3();
+                }
+            }
+        }
+        yaw = math.radians(here.ideal_yaw);
+        return Vec3(x=math.cos(yaw), y=math.sin(yaw));
+    }
+
+    """One frame of a monster's walk or run cycle, its 0.1 s think: Q1
+    ai_walk / ai_run, Q2 ai_walk / ai_run.
+
+    - Walking, or bound for a Q2 combat point (AI_COMBAT_POINT), it moves to
+      that corner (movetogoal).
+    - Holding an attack until it faces its enemy (ai_run_missile,
+      ai_run_melee) it turns in place and takes no step.
+    - Sliding (AS_SLIDING) it strafes (ai_run_slide).
+    - A Q1 monster moves at its enemy, seen or not. A Q2 monster moves at an
+      enemy in sight; one it has lost it pursues (`pursue`); with only a
+      noise to go on it moves to where the noise was.
+
+    The step it takes (monster_move.jac) moves it at once; `stride` then
+    hands it to the ticks left of the frame."""
+    def stride_frame(here: Opponent, foe: Player, patient: Opponent | None, view: CollisionMap) {
+        here.settle();
+        if here.readied >= 0 {
+            return;
+        }
+        if here.step_random <= 0 {
+            # The monster's own stream, taken beside its attack rolls.
+            here.step_random = max(1, (here.shot_random * 69621) % 2147483647);
+        }
+        start = here.pos;
+        lift = Vec3(z=here.eye_height);
+        origin = here.pos.sub(lift);
+        dist = frame_step(here);
+        if here.sliding and here.rule.slide_step > 0.0 {
+            dist = here.rule.slide_step;
+        }
+        space = self.step_space(here, foe, dist, view);
+        foe_height = foe.eye_height
+            if isinstance(foe, Opponent)
+            else self.collision.eye_height;
+        target = foe.pos.sub(Vec3(z=foe_height));
+        near = foe.solid_box()
+            if isinstance(foe, Opponent)
+            else AABB(
+                mins=target.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
+                maxs=target.add(Vec3(x=16.0, y=16.0, z=32.0 - self.collision.top_drop))
+            );
+        patrol = here.patrol_goal;
+        if patrol is not None {
+            corner = patrol.sub(lift);
+            aimed = here.walk_goal;
+            if aimed is None or aimed.x != patrol.x or aimed.y != patrol.y or aimed.z != patrol.z {
+                # t_movetarget / path_corner_touch turn it on its next corner.
+                here.ideal_yaw = vectoyaw(corner.sub(origin));
+                here.walk_goal = patrol;
+            }
+            space.seek_z = corner.z;
+            space.seek_client = False;
+            here spawn MoveToGoal(
+                space=space, dist=dist, goal=corner, near=near if here.alert > 0.0 else None
+            );
+        } else {
+            here.walk_goal = None;
+            if here.sliding {
+                here spawn SlideMove(space=space, yaw=vectoyaw(target.sub(origin)), dist=dist);
+            } elif here.game == "q2" and patient is None and here.sighted and not here.pursuing {
+                self.pursue(here, target, dist, space, near);
+            } else {
+                goal = target;
+                if here.game != "q1" and not here.pursuing {
+                    # Out of sight with no trail to follow: where it last
+                    # knew its enemy to be (for Q2, where the noise was).
+                    goal = here.last_seen.sub(Vec3(z=here.last_seen_height));
+                    space.seek_z = goal.z;
+                    space.seek_client = False;
+                    if here.game == "q2" {
+                        near = AABB(
+                            mins=goal.sub(Vec3(x=8.0, y=8.0, z=8.0)),
+                            maxs=goal.add(Vec3(x=8.0, y=8.0, z=8.0))
+                        );
+                    }
+                }
+                here spawn MoveToGoal(space=space, dist=dist, goal=goal, near=near);
+                if here.pursuing {
+                    # Q2 ai_run with the enemy in sight: no longer lost, and
+                    # search_time is five seconds on.
+                    here.lost_sight = False;
+                    here.searching = True;
+                    here.search_left = 25.0;
+                }
+            }
+        }
+        here.stride(start, (1.0 - (here.animation_time - math.floor(here.animation_time))) * 0.1);
+    }
+
+    """Q2 ai_run once its enemy is out of sight. The monster first makes
+    for where it last saw the enemy (AI_LOST_SIGHT, AI_PURSUIT_LAST_SEEN);
+    reaching a goal (AI_PURSUE_NEXT) it takes the next: the goal a detour
+    put off (AI_PURSUE_TEMP), else the first crumb of the player's trail
+    laid since, else the crumb after that, turning to the crumb's own
+    heading. A new goal the monster's box cannot reach in a straight line is
+    corrected: it traces 16 units to the left and right of the line, and
+    makes for whichever side reaches further than the middle. Twenty seconds
+    after search_time it takes one step at the enemy itself."""
+    def pursue(here: Opponent, target: Vec3, dist: float, space: StepSpace, near: AABB) {
+        world = self.world;
+        if world is None {
+            return;
+        }
+        if here.searching and here.search_left <= 0.0 {
+            here spawn MoveToGoal(space=space, dist=dist, goal=target, near=near);
+            here.searching = False;
+            return;
+        }
+        lift = Vec3(z=here.last_seen_height);
+        origin = here.pos.sub(Vec3(z=here.eye_height));
+        fresh = False;
+        if not here.lost_sight {
+            # Just lost sight of the player: decide where to go first.
+            here.lost_sight = True;
+            here.pursuit_last_seen = True;
+            here.pursue_next = False;
+            here.pursue_temp = False;
+            fresh = True;
+        }
+        if here.pursue_next {
+            here.pursue_next = False;
+            # Give ourself more time since we got this far.
+            here.searching = True;
+            here.search_left = 25.0;
+            marker: TrailMark | None = None;
+            if here.pursue_temp {
+                # Was a temp goal; retry the original.
+                here.pursue_temp = False;
+                here.last_seen = here.saved_goal.add(lift);
+                fresh = True;
+            } elif here.pursuit_last_seen {
+                here.pursuit_last_seen = False;
+                marker = first_crumb(world, here.trail_stamp, here.pos, self.collision);
+            } else {
+                marker = next_crumb(world, here.trail_stamp);
+            }
+            if marker is not None {
+                here.last_seen = marker.pos.add(Vec3());
+                here.trail_stamp = marker.stamp;
+                here.ideal_yaw = marker.yaw;
+                here.turn_to = marker.yaw;
+                fresh = True;
+            }
+        }
+        goal = here.last_seen.sub(lift);
+        reach = origin.sub(goal).length();
+        if reach <= dist {
+            here.pursue_next = True;
+            dist = reach;
+        }
+        if fresh {
+            # Checking for course correction.
+            view = space.collision;
+            center = view.trace(origin, goal).fraction;
+            if center < 1.0 {
+                toward = goal.sub(origin);
+                reach = toward.length();
+                partway = reach * ((center + 1.0) / 2.0);
+                here.ideal_yaw = vectoyaw(toward);
+                here.turn_to = here.ideal_yaw;
+                yaw = math.radians(here.ideal_yaw);
+                forward = Vec3(x=math.cos(yaw), y=math.sin(yaw));
+                right = Vec3(x=math.sin(yaw), y=-math.cos(yaw));
+                left_target = origin.add(forward.scale(partway)).sub(right.scale(16.0));
+                left = view.trace(origin, left_target).fraction;
+                right_target = origin.add(forward.scale(partway)).add(right.scale(16.0));
+                rightward = view.trace(origin, right_target).fraction;
+                center = reach * center / partway if partway > 0.0 else 1.0;
+                detour: Vec3 | None = None;
+                if left >= center and left > rightward {
+                    # An incomplete path goes part way and adjusts again.
+                    detour = left_target
+                        if left >= 1.0
+                        else origin.add(forward.scale(partway * left * 0.5)).sub(right.scale(16.0));
+                } elif rightward >= center and rightward > left {
+                    detour = right_target
+                        if rightward >= 1.0
+                        else origin.add(forward.scale(partway * rightward * 0.5)).add(
+                            right.scale(16.0)
+                        );
+                }
+                if detour is not None {
+                    here.saved_goal = goal;
+                    here.pursue_temp = True;
+                    goal = detour;
+                    here.last_seen = detour.add(lift);
+                    here.ideal_yaw = vectoyaw(goal.sub(origin));
+                    here.turn_to = here.ideal_yaw;
+                }
+            }
+        }
+        # The goal is a spot, not a client: a flier comes level with it.
+        space.seek_z = goal.z;
+        space.seek_client = False;
+        here spawn MoveToGoal(space=space, dist=dist, goal=goal, near=near);
+    }
+
+    """A monster between its frames: the step its frame took is carried on
+    a tick, and whatever else moves it runs at the tick rate. A walker that
+    is knocked (Q2 SV_Physics_Step), in the air, or whose floor may have
+    gone is finished with its step first and then falls and slides; at
+    rest it probes its support at 20 Hz, and a settled one only once its
+    place is disturbed. A flier's knock dies away as it slides, and a
+    swimmer out of water falls."""
+    def carry(here: Opponent, view: CollisionMap) {
+        movement = here.rule.movement;
+        if movement == "none" {
+            here.velocity = Vec3();
+            return;
+        }
+        knocked = here.velocity.length() > 0.000001;
+        carried = here.stride_time > 0.0;
+        if movement == "walk" {
+            here.support_wait -= self.dt;
+            if knocked
+                or (not here.grounded and (carried or here.rest_serial < 0))
+                or (not carried and here.support_wait <= 0.0 and rest_disturbed(here, view)) {
+                here.settle();
+                before = here.pos.add(Vec3());
+                here spawn MovePlayer(
+                    collision=view,
+                    water_depth=here.water_depth,
+                    current=here.water_current,
+                    dt=self.dt,
+                    profile=self.walk_profile
+                );
+                here.support_wait = 0.05;
+                # A move that went nowhere settles the monster (on the
+                # ground, or wedged where gravity cannot move it).
+                here.rest_serial = -1;
+                if not knocked
+                    and here.velocity.length() <= 0.000001
+                    and here.pos.x == before.x
+                    and here.pos.y == before.y
+                    and here.pos.z == before.z {
+                    here.rest_serial = view.revision.serial;
+                    here.rest_pos = here.pos.add(Vec3());
+                }
+                return;
+            }
+            here.advance(self.dt);
+            return;
+        }
+        if movement == "swim" and here.water_depth < 2 {
+            here.settle();
+            here spawn MovePlayer(collision=view, dt=self.dt);
+            return;
+        }
+        here.grounded = False;
+        if not knocked or self.dt <= 0.0 or self.dt > 0.05 {
+            here.advance(self.dt);
+            return;
+        }
+        here.settle();
+        here.velocity = here.velocity.scale(1.0 - min(1.0, 8.0 * self.dt));
+        if here.velocity.length() < 0.01 {
+            here.velocity = Vec3();
+            return;
+        }
+        moved = slide(view, here.pos.sub(Vec3(z=here.eye_height)), here.velocity, self.dt);
+        here.velocity = moved.velocity;
+        here.pos = moved.pos.add(Vec3(z=here.eye_height));
     }
 
     """A medic's current patient, searching twice a second for a new one."""
@@ -3804,11 +4175,18 @@ walker CombatTick {
                     enemy.route_search.cancelled = True;
                     enemy.route_search = None;
                 }
-                if enemy.health <= 0 or enemy.dormant { continue; }
+                if enemy.health <= 0 or enemy.dormant {
+                    # A body that died in mid step lies where it fell.
+                    enemy.stride_time = 0.0;
+                    continue;
+                }
             }
-            key = self.cell(int(math.floor(enemy.pos.x / 64.0)), int(math.floor(enemy.pos.y / 64.0)));
+            # A monster part-way through a step is filed where the step ends.
+            spot = enemy.standing();
+            key = self.cell(int(math.floor(spot.x / 64.0)), int(math.floor(spot.y / 64.0)));
             if key not in self.neighbors { self.neighbors[key] = []; }
             self.neighbors[key].append(enemy);
+            self.widest = max(self.widest, enemy.rule.width);
         }
         self.state.route_credit = min(
             1.0, self.state.route_credit + max(0.0, self.dt) * 8.0
@@ -4122,7 +4500,7 @@ walker CombatTick {
         here.attack_flash = max(0.0, here.attack_flash - self.dt);
         here.alert = max(0.0, here.alert - self.dt);
         here.route_wait = max(0.0, here.route_wait - self.dt);
-        here.slide_wait = max(0.0, here.slide_wait - self.dt);
+        here.search_left = max(0.0, here.search_left - self.dt);
         # Q2 ai_stand / Q1 idle frames: an unalerted monster mutters now and
         # then, every 15 to 30 seconds.
         if here.alert <= 0.0 and here.rule.idle_sound {
@@ -4237,14 +4615,18 @@ walker CombatTick {
                         )
                         and self.clear_shot(here, foe, here.profiles[selected]) {
                         ready_attack(here, selected, foe.pos);
-                    } elif here.rule.slides and here.slide_wait <= 0.0 {
-                        # Q2 M_CheckAttack / Q1 WizardCheckAttack: a flier that
-                        # holds its fire side-steps (AS_SLIDING) about a third
-                        # of the time; held briefly rather than re-rolled.
-                        here.shot_random = (here.shot_random * 48271) % 2147483647;
-                        roll = float(here.shot_random) / 2147483647.0;
-                        if roll < 0.3 {
-                            here.slide_wait = 0.6 + 2.6 * roll;
+                    } elif here.rule.slides {
+                        # A flier that holds its fire may side-step
+                        # (AS_SLIDING) until its check next decides. Q2
+                        # M_CheckAttack: three times in ten. Q1
+                        # WizardCheckAttack: whenever the shot is clear and
+                        # the enemy nearer than mid range.
+                        if here.game == "q1" {
+                            here.sliding = selected >= 0
+                                and distance < 500.0
+                                and self.clear_shot(here, foe, here.profiles[selected]);
+                        } else {
+                            here.sliding = monster_random(here) < 0.3;
                         }
                     }
                 }
@@ -4252,24 +4634,16 @@ walker CombatTick {
             if here.alert <= 0.0 and not here.pursuing {
                 here.sighted = False;
             }
-            # Q2 ai_run: out of sight at the last-seen spot, hunt along the
-            # player's trail, crumb by crumb, from where the monster lost them.
+            # Q2 ai_run keeps an enemy it has seen until one of them dies
+            # too; out of sight it makes for where it last saw the enemy and
+            # then along the player's trail (`pursue`).
             if here.game == "q2"
                 and not here.arena
                 and here.alert > 0.0
+                and here.sighted
                 and not here.pursuing
-                and foe is self.player
-                and self.world is not None {
-                lost = here.last_seen.sub(here.pos);
-                if math.sqrt(lost.x * lost.x + lost.y * lost.y) < 48.0 {
-                    crumb = next_crumb(self.world, here.trail_stamp);
-                    if crumb is not None {
-                        here.last_seen = crumb.pos.add(Vec3());
-                        here.last_seen_height = self.collision.eye_height;
-                        here.trail_stamp = crumb.stamp;
-                        here.alert = max(here.alert, 3.0);
-                    }
-                }
+                and foe.health > 0 {
+                here.alert = 8.0;
             }
             # Q1 ai_run keeps its enemy until one of them dies, and movetogoal
             # steers at the enemy itself whether it is visible or not, so a
@@ -4283,206 +4657,173 @@ walker CombatTick {
                 here.last_seen_height = foe_height;
                 here.alert = 8.0;
             }
-            # A fighting bot steers itself (BotTactics); others steer here.
-            if not here.fighting {
-                here.steering = Vec3();
-            }
-            destination = here.arena_goal if here.arena_goal is not None else here.last_seen;
-            # Arena goals sit at the bot's own eye height above the item.
-            goal_height = here.eye_height if here.arena_goal is not None else here.last_seen_height;
-            # Patrol corners and Q2 combat points take precedence over the foe.
-            patrol = here.patrol_goal;
-            if patrol is not None {
-                destination = patrol;
-                goal_height = here.eye_height;
-            }
-            if here.grounded
-                and here.alert > 0.0
-                and here.attack_clock < 0.0
-                and here.rule.movement == "walk" {
-                origin = here.pos.sub(Vec3(z=here.eye_height));
-                target = destination.sub(Vec3(z=goal_height));
-                if here.route_search is not None {
-                    if here.route_search.finish.sub(target).length() > 48.0 {
-                        here.route_search.cancelled = True;
-                        here.route_search = None;
-                    } elif here.route_search.done {
-                        here.route = here.route_search.result;
-                        here.route_launches = here.route_search.launches;
-                        here.route_areas = [];
-                        here.route_search = None;
-                        here.navigation_needed = False;
-                    }
+            if not striding(here) {
+                # Bots steer here unless they are fighting (BotTactics steers
+                # them then); monsters move by their frames' steps (stride_frame).
+                if not here.fighting {
+                    here.steering = Vec3();
                 }
-                if here.route_target.sub(target).length() > 48.0 {
-                    here.route = [];
-                    here.route_areas = [];
-                }
-                # AAS routes are followed every tick below; local routes here.
-                while here.route
-                    and len(here.route_areas) != len(here.route)
-                    and waypoint_reached(here.route[0], origin, False) {
-                    if here.route_launches and here.route_launches[0].z > 0.0 {
-                        here.velocity = here.route_launches[0];
-                        here.grounded = False;
-                    }
-                    here.route.pop(0);
-                    if here.route_launches { here.route_launches.pop(0); }
-                    if not here.grounded { break; }
-                }
-                wants_route = not here.route
-                    and here.route_search is None
-                    and (here.arena_goal is not None or not here.pursuing or here.navigation_needed)
-                    and here.route_wait <= 0.0;
-                mesh = self.navmesh;
-                if wants_route and here.arena and mesh is not None {
-                    # Q3 bots route over the map's AAS, the original bots' own data.
-                    plan = plan_route(
-                        mesh, origin, target, flags=here.bot_state.travel_flags, goal_area=here.bot_state.goal_area
-                    );
-                    here.route_wait = 0.25 if plan.found else 1.0;
-                    if plan.pending {
-                        here.route_wait = 0.05;
-                    }
-                    here.route_target = target;
-                    # botlib avoids goals it cannot route to; pick another.
-                    if not plan.found and not plan.pending and here.arena_goal is not None {
-                        here.roam_goal = None;
-                        here.arena_goal = None;
-                        here.arena_goal_wait = 0.0;
-                        here.route_wait = 0.1;
-                        # moveresult.failure: the AI gives the goal up.
-                        here.bot_state.move_failed = True;
-                    }
-                    if plan.found {
-                        # The bot's travel follows the plan itself (its
-                        # passages); the waypoint lists are the same lists.
-                        here.bot_state.route = plan;
-                        here.route = plan.points;
-                        here.route_launches = plan.launches;
-                        here.route_areas = plan.areas;
-                        here.navigation_needed = False;
-                    }
-                } elif wants_route
-                    and len(self.state.navigation.jobs) < 8
-                    and self.state.route_credit >= 1.0 {
-                    self.state.route_credit -= 1.0;
-                    here.route_wait = 1.0;
-                    here.route_target = target;
-                    here.route_areas = [];
-                    if here.route_search is None {
-                        here.route_search = RouteSearch(start=origin, finish=target, collision=body_collision, network=self.state.navigation.network, allow_jumps=here.arena);
-                        self.state.navigation.jobs.append(here.route_search);
-                    }
-                }
-                if here.route {
-                    destination = here.route[0].add(Vec3(z=here.eye_height));
-                }
-            }
-            goal = destination.sub(here.pos);
-            closing = here.pursuing
-                and patient is None
-                and here.arena_goal is None
-                and patrol is None
-                and len(here.route) <= 1;
-            # A route waypoint is walked right up to until it counts as
-            # reached; a stride has no coast to carry it the last few units.
-            stop = here.rule.stop_range
-                if closing
-                else (0.0 if here.route else 12.0);
-            # ai_run_slide: circle the target instead of standing still, both
-            # when sliding and, for every monster, once it has closed in.
-            circling = closing
-                and here.character is None
-                and (here.slide_wait > 0.0 or (goal.length() <= stop and shoots(here)));
-            if (here.alert > 0.0 or patrol is not None)
-                and not here.fighting
-                and here.pain_wait <= 0.0
-                and here.attack_flash <= 0.0
-                and not here.leaping
-                and here.rule.movement != "none"
-                and (circling or goal.length() > stop) {
-                direction = Vec3(x=goal.x, y=goal.y).normalized();
-                if circling {
-                    # Sideways with a slight inward pull, so the circle holds
-                    # its radius instead of spiralling out.
-                    side = 1.0 if here.lefty else -1.0;
-                    direction = Vec3(
-                        x=-direction.y * side + direction.x * 0.3,
-                        y=direction.x * side + direction.y * 0.3
-                    ).normalized();
-                }
-                # Local separation is evaluated with steering, not every physics tick.
-                if self.world is not None {
-                    for neighbor in self.nearby(here.pos) {
-                        if neighbor == here
-                            or neighbor.health <= 0
-                            or neighbor.dormant {
-                            continue;
+                destination = here.arena_goal if here.arena_goal is not None else here.last_seen;
+                # Arena goals sit at the bot's own eye height above the item.
+                goal_height = here.eye_height if here.arena_goal is not None else here.last_seen_height;
+                if here.grounded
+                    and here.alert > 0.0
+                    and here.attack_clock < 0.0
+                    and here.rule.movement == "walk" {
+                    origin = here.pos.sub(Vec3(z=here.eye_height));
+                    target = destination.sub(Vec3(z=goal_height));
+                    if here.route_search is not None {
+                        if here.route_search.finish.sub(target).length() > 48.0 {
+                            here.route_search.cancelled = True;
+                            here.route_search = None;
+                        } elif here.route_search.done {
+                            here.route = here.route_search.result;
+                            here.route_launches = here.route_search.launches;
+                            here.route_areas = [];
+                            here.route_search = None;
+                            here.navigation_needed = False;
                         }
-                        away = here.pos.sub(neighbor.pos);
-                        if abs(away.z) < 56.0 {
-                            away.z = 0.0;
-                            spacing = away.length();
-                            if spacing > 0.001 and spacing < 56.0 {
-                                direction = direction.add(
-                                    away.scale((56.0 - spacing) / (56.0 * spacing))
-                                );
+                    }
+                    if here.route_target.sub(target).length() > 48.0 {
+                        here.route = [];
+                        here.route_areas = [];
+                    }
+                    # AAS routes are followed every tick below; local routes here.
+                    while here.route
+                        and len(here.route_areas) != len(here.route)
+                        and waypoint_reached(here.route[0], origin, False) {
+                        if here.route_launches and here.route_launches[0].z > 0.0 {
+                            here.velocity = here.route_launches[0];
+                            here.grounded = False;
+                        }
+                        here.route.pop(0);
+                        if here.route_launches { here.route_launches.pop(0); }
+                        if not here.grounded { break; }
+                    }
+                    wants_route = not here.route
+                        and here.route_search is None
+                        and (here.arena_goal is not None or not here.pursuing or here.navigation_needed)
+                        and here.route_wait <= 0.0;
+                    mesh = self.navmesh;
+                    if wants_route and here.arena and mesh is not None {
+                        # Q3 bots route over the map's AAS, the original bots' own data.
+                        plan = plan_route(
+                            mesh, origin, target, flags=here.bot_state.travel_flags, goal_area=here.bot_state.goal_area
+                        );
+                        here.route_wait = 0.25 if plan.found else 1.0;
+                        if plan.pending {
+                            here.route_wait = 0.05;
+                        }
+                        here.route_target = target;
+                        # botlib avoids goals it cannot route to; pick another.
+                        if not plan.found and not plan.pending and here.arena_goal is not None {
+                            here.roam_goal = None;
+                            here.arena_goal = None;
+                            here.arena_goal_wait = 0.0;
+                            here.route_wait = 0.1;
+                            # moveresult.failure: the AI gives the goal up.
+                            here.bot_state.move_failed = True;
+                        }
+                        if plan.found {
+                            # The bot's travel follows the plan itself (its
+                            # passages); the waypoint lists are the same lists.
+                            here.bot_state.route = plan;
+                            here.route = plan.points;
+                            here.route_launches = plan.launches;
+                            here.route_areas = plan.areas;
+                            here.navigation_needed = False;
+                        }
+                    } elif wants_route
+                        and len(self.state.navigation.jobs) < 8
+                        and self.state.route_credit >= 1.0 {
+                        self.state.route_credit -= 1.0;
+                        here.route_wait = 1.0;
+                        here.route_target = target;
+                        here.route_areas = [];
+                        if here.route_search is None {
+                            here.route_search = RouteSearch(start=origin, finish=target, collision=body_collision, network=self.state.navigation.network, allow_jumps=here.arena);
+                            self.state.navigation.jobs.append(here.route_search);
+                        }
+                    }
+                    if here.route {
+                        destination = here.route[0].add(Vec3(z=here.eye_height));
+                    }
+                }
+                goal = destination.sub(here.pos);
+                closing = here.pursuing and here.arena_goal is None and len(here.route) <= 1;
+                # A route waypoint is walked right up to until it counts as
+                # reached.
+                stop = BOT_STANDOFF if closing else (0.0 if here.route else 12.0);
+                if here.alert > 0.0
+                    and not here.fighting
+                    and here.pain_wait <= 0.0
+                    and here.attack_flash <= 0.0
+                    and not here.leaping
+                    and here.rule.movement != "none"
+                    and goal.length() > stop {
+                    direction = Vec3(x=goal.x, y=goal.y).normalized();
+                    # Local separation is evaluated with steering, not every physics tick.
+                    if self.world is not None {
+                        for neighbor in self.nearby(here.pos) {
+                            if neighbor == here
+                                or neighbor.health <= 0
+                                or neighbor.dormant {
+                                continue;
+                            }
+                            away = here.pos.sub(neighbor.pos);
+                            if abs(away.z) < 56.0 {
+                                away.z = 0.0;
+                                spacing = away.length();
+                                if spacing > 0.001 and spacing < 56.0 {
+                                    direction = direction.add(
+                                        away.scale((56.0 - spacing) / (56.0 * spacing))
+                                    );
+                                }
                             }
                         }
+                        direction = direction.normalized();
                     }
-                    direction = direction.normalized();
-                }
-                # AAS legs are known passable (drops, jumps and pads included);
-                # a floor probe would reject some, so the bot heads straight on.
-                trusted_leg = bool(here.route) and len(here.route_areas) == len(here.route);
-                best = -1.0;
-                for angle in ([0.0] if trusted_leg else [0.0, 0.785398, -0.785398, 1.570796, -1.570796]) {
-                    candidate = Vec3(
-                        x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
-                        y=direction.x * math.sin(angle) + direction.y * math.cos(angle)
-                    );
-                    probe = Trace();
-                    if here.grounded and here.rule.movement == "walk" and not trusted_leg {
-                        origin = here.pos.sub(Vec3(z=here.eye_height));
-                        reachable = walk_edge(
-                            body_collision,
-                            origin,
-                            origin.add(candidate.scale(48.0)),
-                            match_height=False
+                    # AAS legs are known passable (drops, jumps and pads included);
+                    # a floor probe would reject some, so the bot heads straight on.
+                    trusted_leg = bool(here.route) and len(here.route_areas) == len(here.route);
+                    best = -1.0;
+                    for angle in ([0.0] if trusted_leg else [0.0, 0.785398, -0.785398, 1.570796, -1.570796]) {
+                        candidate = Vec3(
+                            x=direction.x * math.cos(angle) - direction.y * math.sin(angle),
+                            y=direction.x * math.sin(angle) + direction.y * math.cos(angle)
                         );
-                        if reachable is None {
-                            if circling {
-                                if angle == 0.0 {
-                                    here.lefty = not here.lefty;
+                        probe = Trace();
+                        if here.grounded and here.rule.movement == "walk" and not trusted_leg {
+                            origin = here.pos.sub(Vec3(z=here.eye_height));
+                            reachable = walk_edge(
+                                body_collision,
+                                origin,
+                                origin.add(candidate.scale(48.0)),
+                                match_height=False
+                            );
+                            if reachable is None {
+                                # A blocked local route is searched again; an AAS
+                                # route is authoritative, so only this heading fails.
+                                if angle == 0.0 and len(here.route_areas) != len(here.route) {
+                                    here.route = [];
+                                    here.route_launches = [];
+                                    here.navigation_needed = True;
                                 }
                                 continue;
                             }
-                            # A blocked local route is searched again; an AAS
-                            # route is authoritative, so only this heading fails.
-                            if angle == 0.0 and len(here.route_areas) != len(here.route) {
-                                here.route = [];
-                                here.route_launches = [];
-                                here.navigation_needed = True;
-                            }
-                            continue;
+                        } else {
+                            origin = here.pos.sub(Vec3(z=here.eye_height));
+                            probe = body_collision.trace(origin, origin.add(candidate.scale(48.0)));
                         }
-                    } else {
-                        origin = here.pos.sub(Vec3(z=here.eye_height));
-                        probe = body_collision.trace(origin, origin.add(candidate.scale(48.0)));
-                    }
-                    # A blocked slide turns to the other side (ai_run_slide).
-                    if circling and angle == 0.0 and probe.fraction < 1.0 {
-                        here.lefty = not here.lefty;
-                    }
-                    score = probe.fraction + 0.15 * math.cos(angle);
-                    if not probe.start_solid
-                        and probe.fraction > 0.3
-                        and score > best {
-                        best = score;
-                        here.steering = candidate;
-                        # Candidates are ordered by descending directional score.
-                        if probe.fraction == 1.0 { break; }
+                        score = probe.fraction + 0.15 * math.cos(angle);
+                        if not probe.start_solid
+                            and probe.fraction > 0.3
+                            and score > best {
+                            best = score;
+                            here.steering = candidate;
+                            # Candidates are ordered by descending directional score.
+                            if probe.fraction == 1.0 { break; }
+                        }
                     }
                 }
             }
@@ -4536,8 +4877,29 @@ walker CombatTick {
                 self.world, here, foe, self.collision, self.dt, self.player, self.state
             );
         }
-        # Monsters stride their current frame's distance; bots run at speed.
-        here.walk_speed = gait_speed(here);
+        if striding(here) {
+            # A monster starting or holding an attack is no longer sliding
+            # (ai_run_missile and ai_run_melee leave AS_STRAIGHT); one
+            # gone idle has no enemy its heading was turned on.
+            if here.attack_clock >= 0.0 or here.readied >= 0 {
+                here.sliding = False;
+            }
+            if here.alert <= 0.0 {
+                here.hunted = None;
+                here.sliding = False;
+                here.lost_sight = False;
+                here.searching = False;
+            } elif here.hunted is not foe and here.patrol_goal is None {
+                # HuntTarget turns its heading on a new enemy: on the
+                # enemy itself, or on where the noise of one was.
+                aim = foe.pos if here.pursuing else here.last_seen;
+                here.ideal_yaw = vectoyaw(aim.sub(here.pos));
+                here.hunted = foe;
+            }
+            here.steering = self.stride_heading(here);
+        }
+        # Bots run at their rule's speed; monsters step by their frames.
+        here.walk_speed = here.rule.speed;
         # bg_pmove.c pm_duckScale: crouching Q3 bots move at a quarter speed.
         if here.crouched and here.character is not None {
             here.walk_speed *= 0.25;
@@ -4572,9 +4934,13 @@ walker CombatTick {
             facing = foe.pos;
         }
         # Q1 ai_face/ChangeYaw, Q2 M_ChangeYaw: toward the goal by the
-        # monster's yaw speed each 0.1 s frame, spread over the frame's ticks
-        # as its strides are.
-        if facing is not None and not here.fighting and here.character is None {
+        # monster's yaw speed each 0.1 s frame, spread over the frame's
+        # ticks. A monster walking or running is turned by its steps instead
+        # (SV_StepDirection).
+        if facing is not None
+            and not here.fighting
+            and here.character is None
+            and not (striding(here) and wish.length() > 0.0) {
             goal = facing.sub(here.pos);
             if abs(goal.x) > 0.000001 or abs(goal.y) > 0.000001 {
                 here.yaw = change_yaw(
@@ -4599,108 +4965,67 @@ walker CombatTick {
                 begin_attack(here, held_attack, foe.pos);
             }
         }
-        if here.rule.movement == "walk" or here.rule.movement == "none" {
-            if here.rule.movement == "none" {
-                here.velocity = Vec3();
-            } else {
-                here.support_wait -= self.dt;
-                # Motion and gravity run at 120 Hz. Resting actors probe support
-                # at 20 Hz, and a settled one only once its place is disturbed.
-                moving = here.velocity.length() > 0.000001 or wish.length() > 0.0;
-                if moving
-                    or (not here.grounded and here.rest_serial < 0)
-                    or (
-                        here.support_wait <= 0.0
-                        and rest_disturbed(here, body_collision)
-                    ) {
-                    before = here.pos.add(Vec3());
-                    # A Q3 bot swims by its steering, up and down too (its
-                    # water level is sampled like the player's, ImmerseBots).
-                    here spawn MovePlayer(
-                        collision=body_collision,
-                        wish=wish,
-                        water_depth=here.water_depth,
-                        swim_wish=wish,
-                        current=here.water_current,
-                        dt=self.dt,
-                        steady=striding(here),
-                        profile=self.bot_profile if here.character is not None else self.walk_profile
-                    );
-                    here.support_wait = 0.05;
-                    # A move that went nowhere settles the actor (on the ground,
-                    # or wedged where gravity cannot move it).
-                    here.rest_serial = -1;
-                    if not moving
-                        and here.velocity.length() <= 0.000001
-                        and here.pos.x == before.x
-                        and here.pos.y == before.y
-                        and here.pos.z == before.z {
-                        here.rest_serial = body_collision.revision.serial;
-                        here.rest_pos = here.pos.add(Vec3());
-                    }
-                    # SV_movestep: a monster cannot step into the player
-                    # (a leap is a toss that lands on it instead).
-                    if self.player.health > 0
-                        and not here.leaping
-                        and actor_overlap(
-                            self.player.pos.sub(Vec3(z=self.collision.eye_height)),
-                            self.collision.top_drop,
-                            here
-                        ) is not None
-                        and box_overlap(
-                            self.player.pos.sub(Vec3(z=self.collision.eye_height)),
-                            self.collision.top_drop,
-                            before.sub(Vec3(z=here.eye_height)),
-                            here.rule.width,
-                            here.rule.hull_bottom,
-                            here.rule.hull_top
-                        ) is None {
-                        here.pos = Vec3(x=before.x, y=before.y, z=here.pos.z);
-                        here.velocity.x = 0.0;
-                        here.velocity.y = 0.0;
-                    }
+        if striding(here) {
+            self.carry(here, body_collision);
+        } elif here.rule.movement == "none" {
+            here.velocity = Vec3();
+        } else {
+            here.support_wait -= self.dt;
+            # Motion and gravity run at 120 Hz. Resting actors probe support
+            # at 20 Hz, and a settled one only once its place is disturbed.
+            moving = here.velocity.length() > 0.000001 or wish.length() > 0.0;
+            if moving
+                or (not here.grounded and here.rest_serial < 0)
+                or (
+                    here.support_wait <= 0.0
+                    and rest_disturbed(here, body_collision)
+                ) {
+                before = here.pos.add(Vec3());
+                # A Q3 bot swims by its steering, up and down too (its
+                # water level is sampled like the player's, ImmerseBots).
+                here spawn MovePlayer(
+                    collision=body_collision,
+                    wish=wish,
+                    water_depth=here.water_depth,
+                    swim_wish=wish,
+                    current=here.water_current,
+                    dt=self.dt,
+                    profile=self.bot_profile if here.character is not None else self.walk_profile
+                );
+                here.support_wait = 0.05;
+                # A move that went nowhere settles the actor (on the ground,
+                # or wedged where gravity cannot move it).
+                here.rest_serial = -1;
+                if not moving
+                    and here.velocity.length() <= 0.000001
+                    and here.pos.x == before.x
+                    and here.pos.y == before.y
+                    and here.pos.z == before.z {
+                    here.rest_serial = body_collision.revision.serial;
+                    here.rest_pos = here.pos.add(Vec3());
+                }
+                # A bot cannot walk into the player (a leap is a toss that
+                # lands on it instead).
+                if self.player.health > 0
+                    and not here.leaping
+                    and actor_overlap(
+                        self.player.pos.sub(Vec3(z=self.collision.eye_height)),
+                        self.collision.top_drop,
+                        here
+                    ) is not None
+                    and box_overlap(
+                        self.player.pos.sub(Vec3(z=self.collision.eye_height)),
+                        self.collision.top_drop,
+                        before.sub(Vec3(z=here.eye_height)),
+                        here.rule.width,
+                        here.rule.hull_bottom,
+                        here.rule.hull_top
+                    ) is None {
+                    here.pos = Vec3(x=before.x, y=before.y, z=here.pos.z);
+                    here.velocity.x = 0.0;
+                    here.velocity.y = 0.0;
                 }
             }
-        } elif here.rule.movement == "swim" and here.water_depth < 2 {
-            here spawn MovePlayer(collision=body_collision, wish=Vec3(), dt=self.dt);
-        } elif self.dt > 0.0 and self.dt <= 0.05 {
-            # Fliers and swimmers hold 30 to 40 units above the target origin.
-            desired = Vec3();
-            if wish.length() > 0.0 {
-                desired = Vec3(x=wish.x, y=wish.y);
-                corner = here.patrol_goal;
-                if corner is not None {
-                    # Fly straight at a path corner.
-                    rise = here.pos.z - corner.z;
-                    if rise > 8.0 {
-                        desired.z = -1.0;
-                    } elif rise < -8.0 {
-                        desired.z = 1.0;
-                    }
-                } else {
-                    rise = (here.pos.z - here.eye_height)
-                        - (here.last_seen.z - here.last_seen_height);
-                    if rise > 40.0 {
-                        desired.z = -1.0;
-                    } elif rise < 30.0 {
-                        desired.z = 1.0;
-                    }
-                }
-                desired = desired.normalized().scale(here.walk_speed * speed_scale(here));
-            }
-            here.velocity = here.velocity.add(
-                desired.sub(here.velocity).scale(min(1.0, 8.0 * self.dt))
-            );
-            if wish.length() == 0.0 and here.velocity.length() < 0.01 {
-                # A hovering body whose drift has died away stays put.
-                here.velocity = Vec3();
-            } else {
-                body = here.pos.sub(Vec3(z=here.eye_height));
-                moved = slide(body_collision, body, here.velocity, self.dt);
-                here.velocity = moved.velocity;
-                here.pos = moved.pos.add(Vec3(z=here.eye_height));
-            }
-            here.grounded = False;
         }
         if here.leaping {
             if here.grounded {
@@ -4751,6 +5076,13 @@ walker CombatTick {
         if pose_name == "walk" {
             frames = walk_frames(here);
         }
+        # Q1 wiz_side1-8: a sliding Scrag hovers.
+        if pose_name == "run"
+            and here.sliding
+            and here.rule.slide_step > 0.0
+            and here.walk_animation {
+            frames = here.walk_animation;
+        }
         if pose_name == "attack" {
             frames = profile_frames(here, here.attack_profile);
         }
@@ -4772,6 +5104,8 @@ walker CombatTick {
         }
         # Whether the cycle has just come round to its first frame.
         entered = False;
+        came_from = here.pose_name;
+        frame_before = int(here.animation_time);
         if pose_name != here.pose_name {
             here.animation_time = 0.0;
             here.pose_name = pose_name;
@@ -4810,6 +5144,37 @@ walker CombatTick {
                 if pose_name in ["attack", "pain", "duck"]
                 else frames[(index + 1) % len(frames)];
             here.visual.blend = here.animation_time - float(int(here.animation_time));
+        }
+        # Each new frame of a walk or run cycle is one think of the monster
+        # (Q1 ai_walk(dist) / ai_run(dist), Q2 M_MoveFrame), taking that
+        # frame's step.
+        if striding(here) and pose_name in ["walk", "run"] {
+            if not frames {
+                here.animation_time += self.dt * 10.0;
+            }
+            if came_from != pose_name {
+                # The cycle's first frame thinks a tick on, when a monster
+                # alerted this tick has its combat point (FoundTarget).
+                # Attack frames leave it facing its enemy (ai_face,
+                # ai_charge), so its heading is turned on the enemy again.
+                here.step_due = True;
+                if came_from == "attack" {
+                    here.hunted = None;
+                }
+                # The cycle keeps time with the monster's own 10 Hz
+                # decisions, which are spread over the ticks: its frames
+                # turn over as it decides, and monsters woken together do
+                # not all think on one tick.
+                here.animation_time += max(
+                    0.0,
+                    min(1.0 - here.decision_wait * 10.0, 0.999 - 2.0 * self.dt * 10.0)
+                );
+            } elif here.step_due or int(here.animation_time) != frame_before {
+                here.step_due = False;
+                self.stride_frame(here, foe, patient, body_collision);
+            }
+        } else {
+            here.step_due = False;
         }
         if entered and pose_name == "run" {
             self.run_start(here, foe);

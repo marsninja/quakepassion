@@ -259,7 +259,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=25,
                 near_chance=1.0,
                 rest_random=0.0,
-                stop_range=48.0,
                 attacks=[
                     AttackProfile(
                         name="bite",
@@ -309,7 +308,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     steps=[3.0, 2.0, 3.0, 4.0, 3.0, 3.0, 3.0, 4.0, 3.0, 3.0, 2.0, 3.0, 4.0, 3.0]
                 ),
                 health=75,
-                stop_range=40.0,
                 # th_melee knight_attack: in melee range (CheckAttack's
                 # RANGE_MELEE, 120) a standing swing when closer than 80,
                 # otherwise the running attack.
@@ -522,6 +520,7 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 # flymonster_start_go: yaw_speed 10.
                 yaw_speed=10.0,
                 slides=True,
+                slide_step=8.0,
                 near_chance=0.6,
                 mid_chance=0.2,
                 rest_min=2.0,
@@ -586,7 +585,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 width=32.0,
                 near_chance=1.0,
                 rest_random=0.0,
-                stop_range=60.0,
                 pain_frames=["pain" + str(i) for i in range(1, 7)],
                 pain_duration=0.6,
                 pain_interval=1.0,
@@ -663,7 +661,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 mid_chance=1.0,
                 rest_min=2.0,
                 rest_random=2.0,
-                stop_range=64.0,
                 blast_scale=0.5,
                 pain_frames=["pain" + str(i) for i in range(1, 7)],
                 pain_duration=0.6,
@@ -776,7 +773,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     steps=[0.0, 2.0, 3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
                 ),
                 health=60,
-                stop_range=64.0,
                 idle_frames=["stand" + str(i) for i in range(1, 16)],
                 pain_threshold=9,
                 pain_health_reset=60,
@@ -867,7 +863,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=400,
                 width=32.0,
-                stop_range=120.0,
                 idle_frames=["walk1"],
                 pain_frames=["pain" + str(i) for i in range(1, 6)],
                 pain_duration=0.5,
@@ -915,7 +910,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 health=80,
                 near_chance=1.0,
                 rest_random=0.0,
-                stop_range=48.0,
                 idle_frames=["walk1"],
                 pain_threshold=1000000,
                 death_splash=120,
@@ -961,7 +955,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 movement="swim",
                 # swimmonster_start_go: yaw_speed 10.
                 yaw_speed=10.0,
-                stop_range=40.0,
                 idle_frames=["swim" + str(i) for i in range(1, 19)],
                 pain_frames=["pain" + str(i) for i in range(1, 10)],
                 pain_duration=0.9,
@@ -1306,7 +1299,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=300,
                 width=32.0,
-                stop_range=60.0,
                 idle_frames=["stand1" + two(i) for i in range(1, 52)],
                 pain_variants=[
                     ["pain10" + str(i) for i in range(1, 6)],
@@ -1370,7 +1362,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     steps=[30.0, 30.0, 22.0, 19.0, 24.0, 28.0, 25.0]
                 ),
                 health=175,
-                stop_range=120.0,
                 idle_frames=["stand" + two(i) for i in range(1, 18)],
                 pain_frames=["pain1" + two(i) for i in range(1, 12)],
                 pain_duration=1.1,
@@ -1436,7 +1427,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 duck_hold=2,
                 duck_up=4,
                 health=300,
-                stop_range=60.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 pain_variants=[
                     ["pain1" + two(i) for i in range(1, 22)],
@@ -1645,7 +1635,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 movement="swim",
                 # swimmonster_start_go: yaw_speed 10.
                 yaw_speed=10.0,
-                stop_range=48.0,
                 idle_frames=["flphor" + two(i) for i in range(1, 25)],
                 pain_variants=[
                     ["flppn10" + str(i) for i in range(1, 6)],
@@ -1692,7 +1681,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 skin=2 if kind == "monster_tank_commander" else 0,
                 health=1000 if kind == "monster_tank_commander" else 750,
                 width=32.0,
-                stop_range=100.0,
                 idle_frames=["stand" + two(i) for i in range(1, 31)],
                 pain_threshold=11,
                 pain_variants=[
@@ -1849,7 +1837,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=1500,
                 width=64.0,
-                stop_range=160.0,
                 idle_frames=["stand" + str(i) for i in range(1, 61)],
                 pain_variants=[
                     ["paina" + str(i) for i in range(1, 5)],
@@ -1929,7 +1916,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 # flymonster_start_go: yaw_speed 10.
                 yaw_speed=10.0,
                 slides=True,
-                stop_range=160.0,
                 idle_frames=["stand" + str(i) for i in range(30, 51)],
                 pain_variants=[
                     ["pain" + str(i) for i in range(20, 24)],
@@ -2012,7 +1998,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=3000,
                 width=80.0,
-                stop_range=200.0,
                 idle_frames=["stand" + two(i) for i in range(1, 52)],
                 pain_variants=[
                     ["pain10" + str(i) for i in range(1, 4)],
@@ -2094,7 +2079,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 ),
                 health=3000,
                 width=30.0,
-                stop_range=160.0,
                 idle_frames=["stand2" + two(i) for i in range(1, 61)],
                 pain_variants=[
                     ["pain40" + str(i) for i in range(1, 5)],
@@ -2260,7 +2244,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 run=gait,
                 walk=gait,
                 health=100,
-                stop_range=120.0,
                 idle_frames=["crawl" + str(i) for i in range(1, 10)]
                     if crawls
                     else ["stand" + str(i) for i in range(60, 66)],
@@ -2427,7 +2410,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 melee_sound_times=[0.2],
                 alternate_melee_sound_times=[0.4],
                 health=240,
-                stop_range=60.0,
                 attack_range=80.0,
                 melee_range=80.0,
                 melee=15,
@@ -2475,7 +2457,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 muzzles=[Vec3(x=30.0, y=18.0, z=28.0)],
                 flash=Q2_RAIL_FLASH,
                 ranged_min=112.0,
-                stop_range=64.0,
                 attack_times=[0.3],
                 attack_duration=0.9,
                 attack_frames=["attack" + str(i) for i in range(1, 10)],

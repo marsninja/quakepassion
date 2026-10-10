@@ -89,7 +89,8 @@ test "monsters keep running at the player between attacks" {
             }
             attacking = enemy.attack_clock >= 0.0;
         }
-        # Ten seconds: it closes in and moves around rather than standing to fire.
+        # Ten seconds: it runs at the player between its shots (movetogoal)
+        # rather than standing to fire.
         assert travelled > 250.0;
         assert attacks >= 1 and attacks <= 8;
     }

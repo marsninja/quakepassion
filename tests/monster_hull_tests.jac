@@ -1,7 +1,7 @@
 """Monsters move with their own box: Q2 brush hulls shift their planes for
 the monster's mins/maxs, and Q1 maps give wide monsters hull 2."""
 import from engine.physics.collision { CollisionMap, HullCell, HullFront, HullBack }
-import from engine.physics.movement { MovePlayer }
+import from engine.world.monster_move { StepSpace, WalkMove }
 import from engine.world.combat { Opponent, monster_collision, monster_body_key }
 import from engine.world.opponent_rule { OpponentRule }
 import from engine.math.vec3 { Vec3 }
@@ -51,14 +51,24 @@ test "a boss walking into a gap stops at its own edge" {
     boss = supertank();
     boss.eye_height = 22.0;
     boss.pos = Vec3(y=-200.0, z=22.0);
-    boss.walk_speed = 120.0;
-    body = monster_collision(room, boss);
-    for i in range(480) {
-        boss spawn MovePlayer(collision=body, wish=Vec3(y=1.0), steady=True, dt=1.0 / 120.0);
+    boss.grounded = True;
+    space = StepSpace(
+        collision=monster_collision(room, boss),
+        game="q2",
+        mins=Vec3(x=-64.0, y=-64.0, z=0.0),
+        maxs=Vec3(x=64.0, y=64.0, z=112.0)
+    );
+    taken = 0;
+    for i in range(40) {
+        step = boss spawn WalkMove(space=space, yaw=90.0, dist=12.0);
+        if step.moved {
+            taken += 1;
+        }
     }
-    # The wall's face is at y -16; the boss's front is 64 ahead of its origin.
-    assert boss.grounded and abs(boss.pos.z - 22.0) < 0.05;
-    assert boss.pos.y < -79.0 and boss.pos.y > -81.0;
+    # The wall's face is at y -16; the boss's front is 64 ahead of its
+    # origin, so its tenth 12 unit step is its last.
+    assert taken == 10 and boss.grounded and abs(boss.pos.z - 22.0) < 0.05;
+    assert abs(boss.pos.y + 80.0) < 0.000001;
 }
 
 test "Q1 maps give monsters wider than 32 units hull 2" {

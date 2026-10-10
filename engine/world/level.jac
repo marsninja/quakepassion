@@ -44,7 +44,14 @@ import from .exits { load_exits }
 import from .fixtures { load_fixture_uses }
 import from .body_queue { load_no_drop }
 import from .liquids {
-    LiquidSpace, SampleLiquid, LiquidSample, Immersion, liquid_kind, load_liquids
+    LiquidSpace,
+    SampleLiquid,
+    LiquidSample,
+    LiquidProbe,
+    BrushLiquids,
+    Immersion,
+    liquid_kind,
+    load_liquids
 }
 import from .world { World, Area, Player, move_to_area }
 import from .signals { Signal }
@@ -413,6 +420,16 @@ obj Level {
         return LiquidSample(kind=sample.result, currents=sample.currents);
     }
 
+    """What a point lies in, for the systems that hold no Level: monster
+    steps ask it of their destinations (Q1 SV_PointContents, Q2
+    gi.pointcontents)."""
+    def liquid_probe() -> LiquidProbe {
+        if self.bsp.game == "q1" {
+            return LeafLiquids(level=self);
+        }
+        return BrushLiquids(space=self.liquids);
+    }
+
     """Sample the feet, the waist and the eye (the player's own view height
     unless another body's is given). Q2 PM_CatagorizePosition and Q3
     PM_SetWaterLevel take the waist at half the view height; Q1
@@ -545,6 +562,16 @@ obj Level {
         self.visible_faces = gather.faces;
         self.visible_recent[key] = gather.faces;
         return self.visible_faces;
+    }
+}
+
+"""A Q1 level's liquids: the contents of the BSP leaf a point lies in
+(SV_PointContents)."""
+obj LeafLiquids(LiquidProbe) {
+    has level: Level;
+
+    def kind_at(point: Vec3) -> int {
+        return self.level.liquid_at(point);
     }
 }
 
