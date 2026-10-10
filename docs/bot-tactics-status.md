@@ -52,7 +52,10 @@ weapon the movement needs, a movement view, waiting and failure.
 - Swim (`BotTravel_Swim`): with the waist under, straight for the waypoint in
   three dimensions, looking where it swims (`MOVERESULT_SWIMVIEW`).
 - Water jump (`BotTravel_WaterJump`): swim for the far end looking 15 units
-  above it; `PM_CheckWaterJump` lifts the bot out.
+  above it, give or take up to 40 at random; `PM_CheckWaterJump` lifts the
+  bot out. Clear of the surface with its feet still in the water
+  (`BotFinishTravel_WaterJump`) it carries on for the far end, aiming 70
+  units above it.
 - Rocket and BFG jump (`BotTravel_RocketJump`, `BotFinishTravel_WeaponJump`,
   `BotAirControl`): select the weapon, walk to the start looking straight
   down, and within 5 units and 5 degrees jump and fire; the bot's own splash
@@ -362,5 +365,11 @@ Scripts (native, need the Q3 assets):
   another's movement; they only sidestep each other.
 - `BotClearPath` (shooting proximity mines and kamikaze bodies, Team Arena)
   is not modelled.
-- `BotTravel_WaterJump` looks a fixed 15 units above the far end; Q3 adds up
-  to ±40 units at random.
+- Other `be_ai_move.c` details not modelled: a walking bot slows for a gap
+  ahead (`BotGapDistance`) and near its goal (`BotMoveInGoalArea`), crouches
+  toward crouch-only areas and on `TRAVEL_CROUCH` legs, never takes a
+  reachability straight back into the area it just left for the same goal,
+  slows onto teleporters, and walks off ledges at `BotTravel_WalkOffLedge`'s
+  speeds; barrier jumps launch at their takeoff rather than with `EA_Jump`
+  within 9 units of it. A bot water-jumping moves along the view it wants
+  rather than the one it has (`EA_MoveForward`).

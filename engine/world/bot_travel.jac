@@ -27,6 +27,7 @@ import from ..formats.aas {
     TRAVEL_JUMPPAD,
     TRAVEL_FUNCBOB
 }
+import from ..formats.botconfig { WeightDice }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
@@ -176,17 +177,31 @@ def travel_swim(origin: Vec3, point: Vec3) -> TravelResult {
 }
 
 """BotTravel_WaterJump: swim forward for the far end looking 15 units above
-it (botlib tilts the view by up to 40 more at random), and move up too once
-within 40 units of it, so the pmove's water jump (PM_CheckWaterJump) lifts
-the bot out once it faces the ledge at waist depth."""
-def travel_water_jump(origin: Vec3, passage: Passage) -> TravelResult {
-    look = passage.finish.sub(origin).add(Vec3(z=15.0));
+it, give or take up to 40 at random (`roll`, a crandom() in -1..1), and move
+up too once within 40 units of it, so the pmove's water jump
+(PM_CheckWaterJump) lifts the bot out once it faces the ledge at waist
+depth."""
+def travel_water_jump(origin: Vec3, passage: Passage, roll: float = 0.0) -> TravelResult {
+    look = passage.finish.sub(origin).add(Vec3(z=15.0 + roll * 40.0));
     forward = look.normalized();
     direction = forward;
     if flat_toward(origin, passage.finish)[1] < 40.0 {
         direction = forward.add(Vec3(z=1.0)).normalized();
     }
     return TravelResult(direction=direction, speed=400.0, view_set=True, yaw=yaw_of(look), pitch=pitch_of(look));
+}
+
+"""BotFinishTravel_WaterJump, for a bot that has left the water's surface
+with its feet still in it (`wet`): on for the far end, aiming 70 units above
+it with up to 10 units of random error each way (`rolls`, three crandom()s),
+looking where it goes. Out of the water altogether it makes no move."""
+def finish_water_jump(origin: Vec3, passage: Passage, wet: bool, rolls: list[float]) -> TravelResult {
+    if not wet {
+        return TravelResult(speed=0.0);
+    }
+    aim = passage.finish.sub(origin).add(Vec3(x=rolls[0] * 10.0, y=rolls[1] * 10.0, z=70.0 + rolls[2] * 10.0));
+    direction = aim.normalized();
+    return TravelResult(direction=direction, speed=400.0, view_set=True, yaw=yaw_of(direction), pitch=pitch_of(direction));
 }
 
 """be_ai_move.c BotAirControl: predict the fall in tenths of a second; once
@@ -419,6 +434,7 @@ walker FollowRoute {
         view_pitch: float = 0.0,
         dt: float = 0.0,
         bodies: list[Vec3] = [],
+        dice: WeightDice | None = None,
         result: TravelResult = TravelResult(),
         launch: Vec3 | None = None;
 
@@ -465,6 +481,12 @@ walker FollowRoute {
         if move.blocked {
             self.route.leg_started -= 10.0 * self.dt;
         }
+    }
+
+    """be_ai_move.c's crandom(), from the bot's own dice (0 without them)."""
+    def crandom() -> float {
+        dice = self.dice;
+        return dice.random() * 2.0 - 1.0 if dice is not None else 0.0;
     }
 
     """BotTravel_Jump's "if (dist1 < 24) EA_Jump": a jump's takeoff counts
@@ -553,7 +575,15 @@ walker FollowRoute {
             return;
         }
         if passage is not None and passage.kind == TRAVEL_WATERJUMP {
-            self.result = travel_water_jump(origin, passage);
+            # On the ground or swimming the water jump itself; in the air
+            # its finish (BotMoveToGoal's two halves).
+            if here.grounded or here.water_depth >= 2 {
+                self.result = travel_water_jump(origin, passage, self.crandom());
+            } else {
+                self.result = finish_water_jump(
+                    origin, passage, here.water_depth >= 1, [self.crandom(), self.crandom(), self.crandom()]
+                );
+            }
             return;
         }
         if passage is not None and passage.kind in [TRAVEL_ELEVATOR, TRAVEL_FUNCBOB] {

@@ -22,9 +22,11 @@ import from engine.world.bot_travel {
     travel_weapon_jump,
     travel_funcbob,
     travel_water_jump,
+    finish_water_jump,
     air_control,
     mover_box
 }
+import math;
 import from engine.world.combat { Opponent }
 import from engine.world.world { World }
 import from engine.physics.collision { CollisionMap }
@@ -201,6 +203,16 @@ test "a swimming bot swims straight for its waypoint and water jumps out" {
     assert far.view_set and far.pitch < 0.0 and far.direction.x > 0.98;
     near = travel_water_jump(Vec3(x=passage.finish.x - 30.0, z=passage.finish.z), passage);
     assert near.direction.z > 0.7 and near.direction.x > 0.3;
+    # The view is 15 units over the far end, give or take 40 by crandom().
+    level = Vec3(x=passage.finish.x - 100.0, z=passage.finish.z);
+    assert abs(travel_water_jump(level, passage).pitch + math.degrees(math.atan2(15.0, 100.0))) < 0.001;
+    assert abs(travel_water_jump(level, passage, 1.0).pitch + math.degrees(math.atan2(55.0, 100.0))) < 0.001;
+    assert abs(travel_water_jump(level, passage, -1.0).pitch - math.degrees(math.atan2(25.0, 100.0))) < 0.001;
+    # BotFinishTravel_WaterJump: clear of the surface with its feet still
+    # wet, on for the far end aiming 70 units over it; dry, no move at all.
+    rising = finish_water_jump(level, passage, True, [0.0, 0.0, 0.0]);
+    assert rising.view_set and rising.speed == 400.0 and abs(rising.direction.z - 70.0 / math.sqrt(14900.0)) < 0.001;
+    assert finish_water_jump(level, passage, False, [0.0, 0.0, 0.0]).speed == 0.0;
     # The route follower hands the leg to the water jump until area 3.
     bot.pos = Vec3(x=150.0, z=26.0);
     bot.water_depth = 2;

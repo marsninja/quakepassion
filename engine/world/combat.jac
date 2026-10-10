@@ -4521,7 +4521,8 @@ walker CombatTick {
                 view_yaw=memory.yaw,
                 view_pitch=memory.pitch,
                 dt=self.dt,
-                bodies=self.other_bodies(here)
+                bodies=self.other_bodies(here),
+                dice=memory.dice
             );
             memory.travel = travel.result;
             launch = travel.launch;
