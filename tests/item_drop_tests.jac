@@ -7,7 +7,8 @@ import from engine.world.pickups {
     ItemTeam,
     TeamMember,
     InTeam,
-    respawn_wait
+    respawn_wait,
+    start_item_team
 }
 import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, toss_items, TossTick, in_flight }
 import from engine.world.powerups { Powerup, Empowered, powerup_left }
@@ -66,6 +67,65 @@ test "a team shows one member and respawns a random one (RespawnItem)" {
         player.pos = Vec3(z=-100000.0);
     }
     assert len(seen) >= 2;
+}
+
+test "a Q2 item team starts with one member chosen at random and keeps to it" {
+    # droptofloor hides the whole team and DoRespawn shows rand() % count;
+    # nothing respawns in single player (mine3's megahealth or body armour).
+    shown: list[int] = [];
+    for seed in range(1, 40) {
+        world = World();
+        team = ItemTeam(name="lala", seed=seed);
+        members = [armor(0.0), armor(1000.0)];
+        for item in members {
+            item.respawn = 0.0;
+            team +>:TeamMember:+> item;
+            item +>:InTeam:+> team;
+            world +>:HasPickup:+> item;
+        }
+        chosen = start_item_team(team);
+        assert chosen is not None;
+        present = [i for i in range(2) if members[i].active];
+        assert len(present) == 1 and members[present[0]] is chosen;
+        absent = members[1 - present[0]];
+        assert absent.benched and not absent.visual.visible and not chosen.benched;
+        if present[0] not in shown {
+            shown.append(present[0]);
+        }
+        # The one that is away cannot be picked up and never comes back.
+        player = Player(health=100, pos=absent.pos.add(Vec3(z=10.0)));
+        tick(world, player, 30.0);
+        assert player.armor == 0 and not absent.active;
+        player.pos = chosen.pos.add(Vec3(z=10.0));
+        tick(world, player, 0.1);
+        assert player.armor == 100 and not chosen.active;
+        tick(world, player, 30.0);
+        assert not any([item.active for item in members]);
+    }
+    assert len(shown) == 2;
+    # A team of one is simply present.
+    alone = ItemTeam(name="adren", seed=3);
+    only = armor(0.0);
+    alone +>:TeamMember:+> only;
+    assert start_item_team(alone) is only and only.active and not only.benched;
+}
+
+test "an untouchable item is shown and stays where it is" {
+    # ITEM_NO_TOUCH: droptofloor takes its touch away (a power cube in its
+    # socket, shown once its trigger spawns it).
+    world = World();
+    cube = armor(0.0);
+    cube.untouchable = True;
+    cube.active = False;
+    cube.waiting_for_use = True;
+    cube.activate_on_use = True;
+    world +>:HasPickup:+> cube;
+    player = Player(health=100, pos=Vec3(z=10.0));
+    tick(world, player, 0.5);
+    assert not cube.active and player.armor == 0;
+    cube.activation.pending = 1;
+    tick(world, player, 0.5);
+    assert cube.active and cube.visual.visible and player.armor == 0;
 }
 
 test "the random key spreads respawn waits, never below a second" {

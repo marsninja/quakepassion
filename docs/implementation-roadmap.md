@@ -62,7 +62,6 @@ Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-
 - `target_actor`/`misc_actor` are not driven (no shipped map needs them).
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
-- Q2 item `team` groups are ignored and `ITEM_NO_TOUCH` items are skipped.
 - The Q3 railgun draws its core only, not the raildisc rings.
 - The player's own body is not thrown as gibs.
 

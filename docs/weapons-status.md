@@ -86,7 +86,12 @@ surfaces, and model `animMap` stages keep their image sequence and frequency
   from their respawn timer before first activation. Q3 item categories have
   their own respawn delays, overridden by `wait` and spread by `random`. Q3
   `team` items show one member and respawn a random one (`G_FindTeams`,
-  `RespawnItem`).
+  `RespawnItem`). A Q2 `team` starts with one member chosen at random and
+  keeps to it, since nothing respawns in single player (`droptofloor`,
+  `DoRespawn`; mine3 shows its megahealth or its body armour). Q2
+  `ITEM_NO_TOUCH` items are shown, still and without the item glow, and
+  cannot be picked up: the power cubes that appear in their sockets in bunk1
+  and ware2.
 - A dying Q3 player or bot drops its held weapon (not the gauntlet or machine
   gun) and its powerups; drops do not respawn and vanish after 30 s
   (`TossClientItems`, `engine/world/drops.jac`).
@@ -121,8 +126,9 @@ shells. Only those two slots can be selected.
 
 ## Limitations
 
-- Q2 `team` item groups are ignored, and Q2 `ITEM_NO_TOUCH` items (spawnflag 2)
-  are not spawned at all rather than placed untouchable (`games/items.jac`).
+- A Q2 item team's choice comes from a stream seeded by the map, so a map
+  shows the same member each time; the original draws `rand()`.
+- Q2 `ITEM_NO_TOUCH` items are not solid (`SOLID_BBOX` in the original).
 - Q3 model shaders' `deformVertexes` stages (including autosprite) are parsed
   but applied only to world surfaces (`engine/render/quake.jac`), not to models
   such as the Q3 BFG projectile.

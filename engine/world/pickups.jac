@@ -66,9 +66,11 @@ walker RaiseCapacity {
 }
 
 edge HasPickup: World --> Pickup {}
-"""An item. Q3 items may belong to a team, of which one member is present at a
-time (`benched` marks the rest); `jitter` is Q3's `random` respawn spread;
-`dropped` items were thrown by a dying player and vanish after `lifetime`."""
+"""An item. Q2 and Q3 items may belong to a team, of which one member is
+present at a time (`benched` marks the rest); `jitter` is Q3's `random`
+respawn spread; `dropped` items were thrown by a dying player and vanish after
+`lifetime`. An `untouchable` item is shown but never picked up (Q2
+ITEM_NO_TOUCH: a power cube sitting in its socket)."""
 node Pickup(Entity) {
     has rule: PickupRule,
         visual: Visual = Visual(),
@@ -80,6 +82,7 @@ node Pickup(Entity) {
         respawn: float = 0.0,
         remaining: float = 0.0,
         benched: bool = False,
+        untouchable: bool = False,
         jitter: float = 0.0,
         seed: int = 1,
         dropped: bool = False,
@@ -106,6 +109,23 @@ node ItemTeam {
 
 edge TeamMember: ItemTeam --> Pickup {}
 edge InTeam: Pickup --> ItemTeam {}
+
+"""Q2 g_items.c droptofloor and DoRespawn: every member of an item team
+starts hidden and, a frame later, one chosen at random (rand() % count)
+appears. Items do not respawn in single player, so the rest never do."""
+def start_item_team(team: ItemTeam) -> Pickup | None {
+    members = [team->:TeamMember:->][?:Pickup];
+    chosen = team.pick(members);
+    for item in members {
+        item.benched = item is not chosen;
+        if item.benched {
+            item.active = False;
+            item.remaining = 0.0;
+            item.visual.visible = False;
+        }
+    }
+    return chosen;
+}
 
 """The respawn wait after a pickup: g_items.c adds crandom() * random, at
 least a second."""
@@ -355,6 +375,7 @@ walker PickupTick {
         if not self.forced
             and (
                 not self.touching
+                    or here.untouchable
                     or self.player.health <= 0
                     or not self.touches(here)
             ) {
