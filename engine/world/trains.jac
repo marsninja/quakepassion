@@ -619,15 +619,20 @@ walker BlastMover {
                 and not (here.shared_health and here.max_health > 0) {
                 continue;
             }
-            center = part.bounds.center().add(part.rest).add(
-                part.travel.scale(here.position)
-            );
+            shift = part.rest.add(part.travel.scale(here.position));
+            center = part.bounds.center().add(shift);
+            reach = center.sub(self.origin).length();
+            if self.game == "q3" {
+                # G_RadiusDamage measures from the nearest point of the
+                # linked box (absmin/absmax, a unit wider all round).
+                pad = Vec3(x=1.0, y=1.0, z=1.0);
+                reach = AABB(
+                    mins=part.bounds.mins.add(shift).sub(pad),
+                    maxs=part.bounds.maxs.add(shift).add(pad)
+                ).distance(self.origin);
+            }
             strength = blast_strength(
-                self.game,
-                self.amount,
-                self.radius,
-                center.sub(self.origin).length(),
-                self.energy_burst
+                self.game, self.amount, self.radius, reach, self.energy_burst
             );
             if strength <= 0.0 {
                 continue;
@@ -646,7 +651,10 @@ walker BlastMover {
                     continue;
                 }
             }
-            damage_mover(here, part, int(strength));
+            # Q3 G_Damage uses a mover before it looks at the amount.
+            damage_mover(
+                here, part, max(1, int(strength)) if self.game == "q3" else int(strength)
+            );
         }
     }
 }

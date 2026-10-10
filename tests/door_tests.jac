@@ -4,13 +4,16 @@ import from engine.world.doors {
     DoorMember,
     DoorTick,
     load_doors,
-    door_direction
+    door_direction,
+    door_field,
+    field_reach
 }
 import from engine.world.world { World }
 import from engine.world.signals { chain_notes }
 import from engine.formats.bsp { Bsp, Face, Model, MapEntity }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
+import from engine.math.aabb { AABB }
 
 import from tests.door_support { DoorFixture, pair_fixture }
 
@@ -186,4 +189,62 @@ test "an absent target recipient is a no-op and does not freeze the mover" {
         fixture.tick(Vec3(x=60.0), 1.0);
         assert door.state == "open";
     }
+}
+
+
+"""Whether a closed fixture door sets off for a player standing at `origin`."""
+def opens_from(game: str, origin: Vec3, fields: dict[str, str] = {}) -> bool {
+    fixture = DoorFixture();
+    fixture.setup(game, fields);
+    door = [fixture.world->:HasDoor:->][?:Door][0];
+    fixture.tick(origin);
+    return door.state == "opening";
+}
+
+test "each game sizes a door's opening field its own way" {
+    # The fixture door spans 16 x 64 x 96 units from the floor.
+    # Q1 spawn_field: 60 sideways and 8 up and down.
+    assert opens_from("q1", Vec3(x=85.0, z=24.0));
+    assert not opens_from("q1", Vec3(x=87.0, z=24.0));
+    assert opens_from("q1", Vec3(x=60.0, z=129.0));
+    assert not opens_from("q1", Vec3(x=60.0, z=131.0));
+    # Q2 Think_SpawnDoorTrigger: 60 sideways around the linked bounds, none
+    # up or down.
+    assert opens_from("q2", Vec3(x=86.0, z=24.0));
+    assert not opens_from("q2", Vec3(x=88.0, z=24.0));
+    assert opens_from("q2", Vec3(x=60.0, y=110.0, z=24.0));
+    assert opens_from("q2", Vec3(x=60.0, z=122.0));
+    assert not opens_from("q2", Vec3(x=60.0, z=124.0));
+    # Q3 Think_SpawnNewDoorTrigger: 120 through the door's thickness only.
+    assert opens_from("q3", Vec3(x=143.0, z=24.0));
+    assert not opens_from("q3", Vec3(x=145.0, z=24.0));
+    assert opens_from("q3", Vec3(x=60.0, y=47.0, z=24.0));
+    assert not opens_from("q3", Vec3(x=60.0, y=49.0, z=24.0));
+    # A Q3 trapdoor is thinnest from top to bottom, and grows that way.
+    hatch = door_field(
+        "q3", AABB(mins=Vec3(x=-64.0, y=-64.0, z=0.0), maxs=Vec3(x=64.0, y=64.0, z=16.0))
+    );
+    assert hatch.mins.z == -120.0 and hatch.maxs.z == 136.0;
+    assert hatch.mins.x == -64.0 and hatch.maxs.y == 64.0;
+    reach = field_reach("q3", hatch);
+    assert reach.mins.x == -79.0 and reach.mins.z == -152.0 and reach.maxs.z == 160.0;
+}
+
+test "a door that starts open keeps Q1's field in place and moves Q2's and Q3's" {
+    # LinkDoors sizes the field from the model's own bounds, which setorigin
+    # to the second position leaves alone; Q2 and Q3 read the linked bounds,
+    # 88 units up with the door.
+    assert opens_from("q1", Vec3(x=60.0, z=24.0), {"spawnflags": "1"});
+    for game in ["q2", "q3"] {
+        assert not opens_from(game, Vec3(x=60.0, z=24.0), {"spawnflags": "1"});
+        assert opens_from(game, Vec3(x=60.0, z=120.0), {"spawnflags": "1"});
+    }
+}
+
+test "a door team's field is sized from the whole team" {
+    # Two 64-wide halves side by side make a team 128 wide and 16 thick.
+    fixture = pair_fixture("q3");
+    leader = [fixture.world->:HasDoor:->][?:Door][0];
+    assert leader.trigger.mins.x == -144.0 and leader.trigger.maxs.x == 144.0;
+    assert leader.trigger.mins.y == -48.0 and leader.trigger.maxs.y == 112.0;
 }

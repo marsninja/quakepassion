@@ -301,6 +301,35 @@ test "door touch messages, key wording and mover sounds follow the originals" {
     assert stop is not None and stop.requests >= 1;
 }
 
+test "Q3 doors and buttons sound as they set off, turn back and arrive" {
+    assert mover_voices("q3", "func_door", {})
+        == ["movers/doors/dr1_strt.wav", "", "movers/doors/dr1_end.wav"];
+    assert mover_voices("q3", "func_plat", {})
+        == ["movers/plats/pt1_strt.wav", "", "movers/plats/pt1_end.wav"];
+    assert mover_voices("q3", "func_button", {}) == ["movers/switches/butn2.wav", "", ""];
+    assert mover_voices("q3", "func_train", {"noise": "sound/world/fan.wav"}) == ["", "", ""];
+    sounding = DoorFixture();
+    sounding.setup("q3", {"targetname": "far"});
+    mover = [sounding.world->:HasDoor:->][?:Door][0];
+    start = mover.start_voice;
+    stop = mover.stop_voice;
+    assert start is not None and stop is not None and mover.move_voice is None;
+    assert start.path == "sound/movers/doors/dr1_strt.wav";
+    mover.requested = True;
+    sounding.tick(Vec3(x=500.0), 0.01);
+    sounding.tick(Vec3(x=500.0), 0.01);
+    assert mover.state == "opening" and start.requests == 1 and stop.requests == 0;
+    # Use_BinaryMover turning a moving door back plays its start sound again.
+    mover.state = "closing";
+    sounding.tick(Vec3(x=500.0), 0.01);
+    assert start.requests == 2 and stop.requests == 0;
+    for i in range(10) {
+        sounding.tick(Vec3(x=500.0), 0.05);
+    }
+    sounding.tick(Vec3(x=500.0), 0.05);
+    assert mover.state == "closed" and start.requests == 2 and stop.requests == 1;
+}
+
 test "Q2 trigger_key names the missing item and debounces its message" {
     key = Signal(relay=True, key="key_data_cd", once=True);
     player = Player();

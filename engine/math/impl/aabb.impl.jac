@@ -15,3 +15,12 @@ impl AABB.center() -> Vec3 {
 impl AABB.size() -> Vec3 {
     return self.maxs.sub(self.mins);
 }
+
+"""How far `p` is from the nearest point of the box; zero inside it."""
+impl AABB.distance(p: Vec3) -> float {
+    return Vec3(
+        x=max(0.0, self.mins.x - p.x, p.x - self.maxs.x),
+        y=max(0.0, self.mins.y - p.y, p.y - self.maxs.y),
+        z=max(0.0, self.mins.z - p.z, p.z - self.maxs.z)
+    ).length();
+}
