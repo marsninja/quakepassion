@@ -272,5 +272,274 @@ impl Scene.problems -> list[Finding] {
             found.append(Finding(words=item.title() + " has a " + key + " nothing is named: " + aim, item=item));
         }
     }
+    for item in self.loops() {
+        found.append(Finding(words=item.title() + " sets itself off through what it fires", item=item));
+    }
     return found;
+}
+
+impl Scene.relink {
+    names: dict[str, list[Item]] = {};
+    members = self.items();
+    for item in members {
+        for other in [item->:Fires:->] {
+            item del->:Fires:-> other;
+        }
+        name = item.fields.get("targetname", "");
+        if name {
+            if name not in names {
+                names[name] = [];
+            }
+            names[name].append(item);
+        }
+    }
+    for item in members {
+        for field in ["target", "killtarget"] {
+            aim = item.fields.get(field, "");
+            if not aim or aim not in names {
+                continue;
+            }
+            for other in names[aim] {
+                if other is not item and other not in [item->:Fires:key == field:->] {
+                    item +>:Fires(key=field):+> other;
+                }
+            }
+        }
+    }
+    self.linked = self.revision;
+}
+
+impl Scene.links {
+    if self.linked != self.revision {
+        self.relink();
+    }
+}
+
+impl Scene.fires(item: Item) -> list[Item] {
+    self.links();
+    return [other for other in [item->:Fires:->] if other.held];
+}
+
+impl Scene.fired_by(item: Item) -> list[Item] {
+    self.links();
+    return [other for other in [item<-:Fires:<-] if other.held];
+}
+
+impl Scene.reach(item: Item) -> list[Item] {
+    self.links();
+    found: list[Item] = [];
+    for other in [item->:Fires:->] {
+        traveller = other spawn Reach(seen=found);
+        found = traveller.seen;
+    }
+    return found;
+}
+
+impl Scene.fresh_name(stem: str = "t") -> str {
+    taken: list[str] = [];
+    for item in self.items() {
+        name = item.fields.get("targetname", "");
+        if name {
+            taken.append(name);
+        }
+    }
+    number = 1;
+    while stem + str(number) in taken {
+        number += 1;
+    }
+    return stem + str(number);
+}
+
+impl Scene.link(source: Item, dest: Item) -> bool {
+    if source is dest or not source.held or not dest.held {
+        return False;
+    }
+    step = Step(label="Link");
+    name = dest.fields.get("targetname", "");
+    if not name {
+        name = self.fresh_name();
+        named = FieldChange(item=dest, key="targetname", before=None, after=name);
+        named.redo();
+        step.changes.append(named);
+    }
+    if source.fields.get("target", "") != name {
+        aimed = FieldChange(item=source, key="target", before=source.fields.get("target"), after=name);
+        aimed.redo();
+        step.changes.append(aimed);
+    }
+    return self.commit(step);
+}
+
+impl Scene.unlink(source: Item, dest: Item | None = None) -> bool {
+    step = Step(label="Unlink");
+    name = dest.fields.get("targetname", "") if dest is not None else "";
+    for key in ["target", "killtarget"] {
+        aim = source.fields.get(key);
+        if aim is None or (dest is not None and aim != name) {
+            continue;
+        }
+        cut = FieldChange(item=source, key=key, before=aim, after=None);
+        cut.redo();
+        step.changes.append(cut);
+    }
+    return self.commit(step);
+}
+
+impl Scene.logic_nodes -> list[LogicNode] {
+    self.links();
+    linked: list[Item] = [];
+    for item in self.items() {
+        if len([item->:Fires:->]) > 0 or len([item<-:Fires:<-]) > 0 {
+            linked.append(item);
+        }
+    }
+    # A column further for each firing, as far as the longest chain; a loop
+    # stops being followed once it is as long as the graph.
+    ranks: dict[int, int] = {};
+    for item in linked {
+        ranks[item.serial] = 0;
+    }
+    limit = min(len(linked), 24);
+    moved = True;
+    rounds = 0;
+    while moved and rounds < limit {
+        moved = False;
+        rounds += 1;
+        for item in linked {
+            for other in [item->:Fires:->] {
+                if not other.held or other.serial not in ranks {
+                    continue;
+                }
+                wanted = ranks[item.serial] + 1;
+                if wanted > ranks[other.serial] and wanted < limit {
+                    ranks[other.serial] = wanted;
+                    moved = True;
+                }
+            }
+        }
+    }
+    filled: dict[int, int] = {};
+    placed: list[LogicNode] = [];
+    for item in linked {
+        column = ranks[item.serial];
+        row = filled.get(column, 0);
+        filled[column] = row + 1;
+        placed.append(LogicNode(item=item, column=column, row=row));
+    }
+    return placed;
+}
+
+impl Scene.loops -> list[Item] {
+    self.links();
+    found: list[Item] = [];
+    for item in self.items() {
+        if len([item->:Fires:->]) > 0 and item in self.reach(item) {
+            found.append(item);
+        }
+    }
+    return found;
+}
+
+impl Scene.selection_map -> list[MapItem] {
+    result: list[MapItem] = [];
+    chosen = self.selection();
+    loose: list[list[Side]] = [];
+    for solid in self.selected_solids() {
+        holder = self.owner_of(solid);
+        if holder is None or holder not in chosen {
+            loose.append(solid.sides);
+        }
+    }
+    if len(loose) > 0 {
+        result.append(MapItem(fields={"classname": "worldspawn"}, brushes=loose));
+    }
+    for item in chosen {
+        if item.classname() == "worldspawn" {
+            continue;
+        }
+        fields: dict[str, str] = dict(item.fields);
+        owned = [solid.sides for solid in self.solids_of(item)];
+        if len(owned) > 0 {
+            fields.pop("model", None);
+        }
+        result.append(MapItem(fields=fields, brushes=owned));
+    }
+    return result;
+}
+
+impl Scene.insert_map(found: list[MapItem], offset: Vec3, label: str = "Paste", group: str = "") -> bool {
+    step = Step(label=label);
+    items: list[Item] = [];
+    solids: list[Solid] = [];
+    for read in found {
+        fields: dict[str, str] = dict(read.fields);
+        if fields.get("classname", "") == "worldspawn" {
+            if len(read.brushes) == 0 {
+                continue;
+            }
+            holder = self.world();
+            if group {
+                holder = self.add_item({"classname": "func_group", "_group_name": group});
+                step.changes.append(HoldChange(item=holder, held=True));
+                items.append(holder);
+            }
+            for sides in read.brushes {
+                solid = self.add_solid(holder, [side_moved(side, offset) for side in sides]);
+                step.changes.append(SolidHold(solid=solid, held=True));
+                if not group {
+                    solids.append(solid);
+                }
+            }
+            continue;
+        }
+        at = read_vector(fields.get("origin", ""));
+        if at is not None {
+            fields["origin"] = write_vector(at.add(offset));
+        }
+        item = self.add_item(fields);
+        step.changes.append(HoldChange(item=item, held=True));
+        items.append(item);
+        for sides in read.brushes {
+            solid = self.add_solid(item, [side_moved(side, offset) for side in sides]);
+            step.changes.append(SolidHold(solid=solid, held=True));
+        }
+    }
+    if not self.commit(step) {
+        return False;
+    }
+    self.clear_selection();
+    for item in items {
+        self +>:Selected:+> item;
+    }
+    for solid in solids {
+        self +>:Selected:+> solid;
+    }
+    self.picks += 1;
+    return True;
+}
+
+impl Scene.group_selection(name: str) -> Item | None {
+    chosen = self.selected_solids();
+    if len(chosen) == 0 {
+        return None;
+    }
+    step = Step(label="Group");
+    taker = self.add_item({"classname": "func_group", "_group_name": name if name else self.fresh_name("group")});
+    step.changes.append(HoldChange(item=taker, held=True));
+    for solid in chosen {
+        giver = self.owner_of(solid);
+        if giver is None {
+            continue;
+        }
+        change = OwnChange(solid=solid, before=giver, after=taker);
+        change.redo();
+        step.changes.append(change);
+    }
+    if not self.commit(step) {
+        return None;
+    }
+    self.clear_selection();
+    self +>:Selected:+> taker;
+    self.picks += 1;
+    return taker;
 }

@@ -51,6 +51,13 @@ edge Owns: Item --> Solid {}
 
 edge Selected: Scene --> Item | Solid {}
 
+"""An entity fires another: its `target` (or `killtarget`) is the other's
+`targetname`. The edges are drawn from the fields (Scene.relink), so the
+map's logic is a graph that walkers travel."""
+edge Fires: Item --> Item {
+    has key: str = "target";
+}
+
 """One selected face: the brush it is a side of, and which side."""
 edge Faced: Scene --> Solid {
     has side: int = -1;
@@ -397,14 +404,18 @@ walker Shift {
     }
 }
 
-"""Copy every selected point entity, `offset` away from the original. Brush
-entities are not copied: two cannot share a map model."""
+"""Copy every selected entity, `offset` away from the original: a point
+entity by its origin, an entity made of the scene's own brushes with copies
+of them. A shipped map's brush entities are not copied: two cannot share a
+map model."""
 walker Clone {
     has offset: Vec3,
         step: Step,
         scene: Scene | None = None,
         made: list[Item] = [],
-        made_solids: list[Solid] = [];
+        made_solids: list[Solid] = [],
+        # Brushes copied along with their entity.
+        copied: list[Solid] = [];
 
     can start with Scene entry {
         self.scene = here;
@@ -416,6 +427,10 @@ walker Clone {
         if scene is None or here.model() >= 0 or here.classname() == "worldspawn" {
             return;
         }
+        owned = [solid for solid in [here->:Owns:->][?:Solid] if solid.held];
+        if here.origin() is None and len(owned) == 0 {
+            return;
+        }
         copy = scene.add_item(dict(here.fields));
         at = copy.origin();
         if at is not None {
@@ -423,11 +438,16 @@ walker Clone {
         }
         self.step.changes.append(HoldChange(item=copy, held=True));
         self.made.append(copy);
+        for solid in owned {
+            twin = scene.add_solid(copy, [side_moved(side, self.offset) for side in solid.sides]);
+            self.step.changes.append(SolidHold(solid=twin, held=True));
+            self.copied.append(solid);
+        }
     }
 
     can copy_solid with Solid entry {
         scene = self.scene;
-        if scene is None or not here.held {
+        if scene is None or not here.held or here in self.copied {
             return;
         }
         owners = [here<-:Owns:<-][?:Item];
@@ -959,6 +979,27 @@ walker Inspect {
     }
 }
 
+"""Everything an entity fires, and everything those fire in turn."""
+walker Reach {
+    has seen: list[Item] = [];
+
+    can follow with Item entry {
+        if here in self.seen or not here.held {
+            return;
+        }
+        self.seen.append(here);
+        visit [here->:Fires:->];
+    }
+}
+
+"""Where an entity stands in the logic graph: how many firings from a
+source, and which place down that column."""
+obj LogicNode {
+    has item: Item,
+        column: int = 0,
+        row: int = 0;
+}
+
 walker FindSolid {
     has serial: int,
         found: Solid | None = None;
@@ -1015,6 +1056,8 @@ node Scene {
         geometry: int = 0,
         picks: int = 0,
         dirty: bool = False,
+        # The revision the Fires edges were drawn at.
+        linked: int = -1,
         next_serial: int = 0,
         journal: Journal = Journal();
 
@@ -1127,6 +1170,38 @@ node Scene {
     def move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool;
     """What is wrong with the document."""
     def problems -> list[Finding];
+
+    """Draw the Fires edges again from the entities' fields."""
+    def relink;
+    """Bring the Fires edges in line with the document when it has changed."""
+    def links;
+    def fires(item: Item) -> list[Item];
+    def fired_by(item: Item) -> list[Item];
+    """Everything an entity sets off, directly or through others."""
+    def reach(item: Item) -> list[Item];
+    """A targetname no entity has yet."""
+    def fresh_name(stem: str = "t") -> str;
+    """Make one entity fire another: the second gets a targetname when it
+    has none, and the first's target becomes it."""
+    def link(source: Item, dest: Item) -> bool;
+    """Stop an entity firing another (or anything, when none is named)."""
+    def unlink(source: Item, dest: Item | None = None) -> bool;
+    """The entities that fire or are fired, placed in columns by how far
+    from a source they are."""
+    def logic_nodes -> list[LogicNode];
+    """The entities that set themselves off through others."""
+    def loops -> list[Item];
+
+    """The selection as a map: selected brushes as a world's, selected
+    entities with theirs."""
+    def selection_map -> list[MapItem];
+    """Add a map's entities and brushes to the document, moved by `offset`,
+    and select them. A world's brushes join this world, or a new func_group
+    named `group` when one is given."""
+    def insert_map(found: list[MapItem], offset: Vec3, label: str = "Paste", group: str = "") -> bool;
+    """Hand the selected brushes to a new func_group: brushes that stay
+    part of the world but are picked and moved as one."""
+    def group_selection(name: str) -> Item | None;
 
     """Select a brush: alone, or added to (or dropped from) the selection."""
     def select_solid(solid: Solid | None, add: bool = False) {

@@ -188,6 +188,12 @@ def compile_scene(scene: Scene, materials: Materials) -> LiveLevel {
             for solid in scene.solids_of(item) {
                 compiler.add(solid, world_model);
             }
+        } elif item.classname() == "func_group" {
+            # A group is a way of holding the world's brushes, not a thing
+            # in the level.
+            for solid in scene.solids_of(item) {
+                compiler.add(solid, world_model);
+            }
         } else {
             others.append(item);
         }

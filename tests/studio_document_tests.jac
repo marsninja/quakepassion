@@ -12,7 +12,8 @@ import from editor.document.scene {
     field_number,
     side_moved,
     FaceEdit,
-    Finding
+    Finding,
+    LogicNode
 }
 import from editor.geometry.brush { box_sides, brush_volume, Plane3, Side }
 import from editor.formats.map { read_map, write_map }
@@ -606,4 +607,126 @@ test "the document reports what would stop it playing" {
     empty = Scene(game="passion", name="studio:empty");
     grave = [finding.words for finding in empty.problems() if finding.grave];
     assert grave == ["There is no worldspawn", "There is no player start"];
+}
+
+def wired -> Scene {
+    scene = Scene(game="q1", name="wired");
+    scene.add_item({"classname": "worldspawn"});
+    scene.add_item({"classname": "info_player_start", "origin": "0 0 24"});
+    scene.add_item({"classname": "func_button", "target": "relay", "origin": "0 64 24"});
+    scene.add_item({"classname": "trigger_relay", "targetname": "relay", "target": "door", "origin": "0 128 24"});
+    scene.add_item({"classname": "func_door", "targetname": "door", "origin": "0 192 24"});
+    scene.add_item({"classname": "func_door", "targetname": "door", "origin": "64 192 24"});
+    scene.add_item({"classname": "light", "origin": "0 0 96"});
+    return scene;
+}
+
+test "targets are edges between entities, redrawn when the fields change" {
+    scene = wired();
+    items = scene.items();
+    button = items[2];
+    relay = items[3];
+    assert scene.fires(button) == [relay] and scene.fired_by(relay) == [button];
+    assert len(scene.fires(relay)) == 2 and len(scene.fired_by(items[4])) == 1;
+    assert len(scene.fires(items[6])) == 0 and len(scene.fires(items[4])) == 0;
+    # Everything the button sets off, through the relay.
+    assert len(scene.reach(button)) == 3 and button not in scene.reach(button);
+    scene.select(relay);
+    assert scene.set_field("target", "nothing");
+    assert len(scene.fires(relay)) == 0 and len(scene.reach(button)) == 1;
+    scene.undo();
+    assert len(scene.fires(relay)) == 2;
+    scene.select(items[5]);
+    assert scene.remove_selection();
+    assert len(scene.fires(relay)) == 1;
+}
+
+test "linking names what is fired and aims what fires; unlinking clears the aim" {
+    scene = wired();
+    items = scene.items();
+    light = items[6];
+    button = items[2];
+    assert scene.link(light, items[1]);
+    assert items[1].fields["targetname"] == "t1" and light.fields["target"] == "t1";
+    assert scene.fires(light) == [items[1]];
+    assert scene.undo() == "Link";
+    assert "targetname" not in items[1].fields and "target" not in light.fields;
+    # Aiming at something already named only changes the aim.
+    assert scene.link(button, items[4]);
+    assert button.fields["target"] == "door" and len(scene.fires(button)) == 2;
+    assert not scene.link(button, items[4]) and not scene.link(button, button);
+    assert scene.unlink(button, items[4]);
+    assert "target" not in button.fields and len(scene.fires(button)) == 0;
+    assert not scene.unlink(button);
+    assert scene.fresh_name() == "t1" and scene.fresh_name("door") == "door1";
+}
+
+test "the logic graph puts each entity a column past what fires it" {
+    scene = wired();
+    placed = scene.logic_nodes();
+    assert len(placed) == 4;
+    columns: dict[str, int] = {};
+    for node in placed {
+        columns[node.item.classname() + str(node.row)] = node.column;
+    }
+    assert columns["func_button0"] == 0 and columns["trigger_relay0"] == 1;
+    assert columns["func_door0"] == 2 and columns["func_door1"] == 2;
+    assert len(scene.loops()) == 0;
+    # A door that fires the button closes a loop: every entity on it is found, and the check says so.
+    scene.select(scene.items()[4]);
+    assert scene.set_field("target", "press");
+    scene.select(scene.items()[2]);
+    assert scene.set_field("targetname", "press");
+    assert len(scene.loops()) == 3;
+    assert len(scene.logic_nodes()) == 4;
+    words = [finding.words for finding in scene.problems()];
+    assert "func_button (press) sets itself off through what it fires" in words;
+}
+
+test "the selection is copied as a map and pasted back moved" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    start = scene.items()[1];
+    scene.select_solid(wall);
+    scene.select(start, True);
+    copied = scene.selection_map();
+    assert len(copied) == 2 and copied[0].fields["classname"] == "worldspawn" and len(copied[0].brushes) == 1;
+    assert copied[1].fields["classname"] == "info_player_start";
+    # Through the map format, as the clipboard carries it.
+    text = write_map(copied);
+    assert scene.insert_map(read_map(text).items, Vec3(x=128.0, y=0.0, z=0.0));
+    assert len(scene.solids()) == 3 and len(scene.items()) == 3;
+    pasted = scene.selected_solids();
+    assert len(pasted) == 1 and pasted[0] is not wall;
+    box = pasted[0].bounds();
+    assert box is not None and box[0].x == 128.0 and box[1].x == 192.0;
+    assert scene.selection()[0].fields["origin"] == "64 -64 24";
+    assert scene.undo() == "Paste";
+    assert len(scene.solids()) == 2 and len(scene.items()) == 2;
+    # As a group: the world's brushes come in under a func_group of their own.
+    assert scene.insert_map(copied, Vec3(z=64.0), "Insert", "crate");
+    groups = [item for item in scene.items() if item.classname() == "func_group"];
+    assert len(groups) == 1 and groups[0].fields["_group_name"] == "crate" and len(scene.solids_of(groups[0])) == 1;
+    assert scene.is_selected(groups[0]) and not scene.selected_solids();
+    assert not scene.insert_map([], Vec3());
+}
+
+test "brushes are grouped, and a group or a brush entity duplicates with its brushes" {
+    scene = blockout();
+    scene.select_all("brushes");
+    group = scene.group_selection("yard");
+    assert group is not None and group.classname() == "func_group" and len(scene.solids_of(group)) == 2;
+    assert len(scene.solids_of(scene.world())) == 0 and scene.selection() == [group];
+    assert scene.clone_selection(Vec3(x=512.0));
+    assert len(scene.solids()) == 4;
+    twin = scene.selection()[0];
+    assert twin is not group and twin.fields["_group_name"] == "yard" and len(scene.solids_of(twin)) == 2;
+    box = scene.solids_of(twin)[1].bounds();
+    assert box is not None and box[0].x == 512.0;
+    scene.undo();
+    assert len(scene.solids()) == 2;
+    scene.undo();
+    assert len(scene.solids_of(scene.world())) == 2;
+    scene.select(None);
+    assert scene.group_selection("none") is None;
 }
