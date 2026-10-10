@@ -1,4 +1,6 @@
-"""Exercise native graph route search and collision-aware pursuit."""
+"""Exercise the native ground route search and a Q3 character following its
+route where the map has no AAS. (Campaign monsters do not route: they chase
+by the originals' steps, engine/world/monster_move.jac.)"""
 import from engine.world.navigation { ground_route, walk_edge }
 import from engine.physics.collision { CollisionMap }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick, CombatState }
@@ -29,6 +31,7 @@ with entry {
     world = World();
     player = Player(pos=finish.add(Vec3(z=22.0)));
     enemy = Opponent(
+        arena=True,
         pos=start.add(Vec3(z=22.0)),
         grounded=True,
         alert=8.0,

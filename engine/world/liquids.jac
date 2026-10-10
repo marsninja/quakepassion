@@ -82,6 +82,25 @@ obj Immersion {
         current: Vec3 = Vec3();
 }
 
+"""Point contents for systems that hold no Level (monster steps): the
+liquid kind at a point, 0 for none. Level.liquid_probe gives a level's: its
+liquid brushes (BrushLiquids), or a Q1 map's leaves (level.jac LeafLiquids)."""
+obj LiquidProbe {
+    def kind_at(point: Vec3) -> int {
+        return 0;
+    }
+}
+
+"""The liquid brushes of a Q2 or Q3 level (CM_PointContents)."""
+obj BrushLiquids(LiquidProbe) {
+    has space: LiquidSpace;
+
+    def kind_at(point: Vec3) -> int {
+        sample = self.space spawn SampleLiquid(point=point);
+        return sample.result;
+    }
+}
+
 # Canonical contents: 0 dry, 1 water, 2 slime, 3 lava. Q1 SV_PointContents
 # counts the CONTENTS_CURRENT_* leaves (-9 to -14) as water.
 def liquid_kind(contents: int, game: str) -> int {

@@ -17,6 +17,13 @@ Q3 game types, an editor, and entity classes no campaign map uses (Q2's
   remembered levels, the help computer carried across levels, cinematics and
   music, and the full base-game roster through Jorg and Makron.
   See [q2-roster-status.md](q2-roster-status.md).
+- **Monster movement** (Quake and Quake II): each 0.1 s frame a monster takes
+  one `SV_movestep` of that frame's distance or none, chasing by
+  `SV_StepDirection` and `SV_NewChaseDir`, solid to other monsters and the
+  player; fliers and swimmers move by the `FL_FLY` / `FL_SWIM` rules. The
+  originals' monsters plan no routes: they do not take lifts or trains on
+  purpose, press switches or use jump links, and neither do these.
+  See [navigation-status.md](navigation-status.md).
 - **Quake III Arena**: the `arenas.txt` ladder as free-for-all matches against
   botlib bots (AAS routing, travel types, fuzzy weights, the ai_dmnet.c nodes,
   chat), with scoring, awards, the podium, ladder progress and the RoQ films.
@@ -46,10 +53,9 @@ They are scripted runs, not human playthroughs; see
 Each is verified against the code; the linked doc has the detail.
 
 Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
-- Steering is five fixed headings plus bounded ground detours, not
-  `SV_StepDirection`/`SV_NewChaseDir`; fliers and swimmers only steer.
-- Monsters do not plan through elevators or trains, press switches, or use
-  jump/swim links, and are not solid to each other.
+- Attack-frame steps (`ai_charge`) are stopped by the target's box only, not
+  by other monsters, and bodies that already overlap do not block each other.
+- Q2 monsters collide with player clip brushes, not monster clip brushes.
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - A Q3 player killed in a `CONTENTS_NODROP` void still gibs; Q2 `AI_BRUTAL`

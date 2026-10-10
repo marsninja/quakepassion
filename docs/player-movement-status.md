@@ -24,8 +24,9 @@ bounded catch-up, and frames draw bodies between ticks (see
   `engine/formats/brush_collision.jac` (Q2/Q3). The physics layer imports
   neither game formats nor rendering.
 
-Monsters walk with the default profile (`movement_profile("")`, a steady
-stride per frame); Q3 bots move by the Q3 profile. F4 (`noclip`) toggles the
+Monsters fall and slide from knocks by the default profile
+(`movement_profile("")`) and walk by their own steps
+([navigation-status.md](navigation-status.md)); Q3 bots move by the Q3 profile. F4 (`noclip`) toggles the
 engine's free-flying camera, which ignores collision and triggers.
 
 ### Per-game rules (`MovementProfile`)

@@ -1,5 +1,5 @@
 """Per-frame monster locomotion: Q1 ai_run/ai_walk distances and Q2 mframe_t
-move tables drive each monster's pace frame by frame."""
+move tables give each frame of a monster's cycle its one step."""
 import math;
 import from games.enemies { enemy_rule }
 import from engine.world.world { World, Player }
@@ -8,7 +8,7 @@ import from engine.world.combat {
     HasOpponent,
     CombatState,
     CombatTick,
-    gait_speed,
+    frame_step,
     striding,
     choose_walk,
     walk_frames,
@@ -104,75 +104,101 @@ test "every moving Q1 and Q2 monster has run and walk distances for each frame" 
     assert gaited("q1", "monster_ogre").rule.step_scale == 1.0;
 }
 
-test "the pace is the shown frame's distance each tenth of a second" {
+test "each frame of the cycle steps the monster that frame's distance" {
     ogre = gaited("q1", "monster_ogre");
     ogre.alert = 5.0;
     # ogre_run4: ai_run(22).
     ogre.pose_name = "run";
     ogre.animation_time = 3.5;
-    assert gait_speed(ogre) == 220.0;
-    # A monster only now setting off starts from run1: ai_run(9).
-    ogre.pose_name = "stand";
-    assert gait_speed(ogre) == 90.0;
+    assert frame_step(ogre) == 22.0;
     # The cycle wraps: frame 9 is run2, ai_run(12).
-    ogre.pose_name = "run";
     ogre.animation_time = 9.2;
-    assert gait_speed(ogre) == 120.0;
+    assert frame_step(ogre) == 12.0;
     # Unalerted it walks: ogre_walk6, ai_walk(5).
     ogre.alert = 0.0;
     ogre.pose_name = "walk";
     ogre.animation_time = 5.9;
-    assert gait_speed(ogre) == 50.0;
+    assert frame_step(ogre) == 5.0;
     # Q2 M_MoveFrame scales distances: soldier run03 is 10 * 1.2.
     soldier = gaited("q2", "monster_soldier");
     soldier.alert = 5.0;
     soldier.pose_name = "run";
-    assert abs(gait_speed(soldier) - 120.0) < 0.0001;
+    assert abs(frame_step(soldier) - 12.0) < 0.0001;
     # A backwards frame steps back (soldier walk110, ai_walk(-1)).
     soldier.alert = 0.0;
     soldier.pose_name = "walk";
     soldier.animation_time = 9.0;
-    assert abs(gait_speed(soldier) + 12.0) < 0.0001;
-    # Bots have no frame tables and run at their rule's speed.
+    assert abs(frame_step(soldier) + 1.2) < 0.0001;
+    # Bots have no frame tables: they run, at their rule's speed.
     assert striding(ogre) and not striding(Opponent(arena=True));
 }
 
-test "a striding body covers exactly its frames' distances" {
+test "a running monster takes one whole step a frame, carried over the frame's ticks" {
     collision = gait_floor();
+    world = World();
+    player = Player(pos=Vec3(x=1000.0, z=22.0), health=100000, god_mode=True);
     ogre = gaited("q1", "monster_ogre");
-    body = Player(pos=Vec3(z=collision.eye_height), grounded=True);
-    dt = 1.0 / 120.0;
-    for frame in range(len(ogre.rule.run.steps)) {
-        body.walk_speed = ogre.rule.run.steps[frame] * 10.0;
-        for tick in range(12) {
-            body spawn MovePlayer(collision=collision, wish=Vec3(x=1.0), steady=True, dt=dt);
+    ogre.pos = Vec3(z=22.0);
+    ogre.grounded = True;
+    ogre.alert = 8.0;
+    ogre.attack_wait = 100.0;
+    ogre.last_seen = player.pos;
+    world +>:HasOpponent:+> ogre;
+    state = CombatState(game="q1");
+    # A tick of 1/128 s keeps the frame clock exact: the cycle is entered
+    # on the first tick, its first frame thinks on the second, and frame n
+    # begins on tick ceil(12.8 n).
+    dt = 1.0 / 128.0;
+    for tick in range(1, 104) {
+        before = ogre.pos.x;
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=dt);
+        # Between thinks the body only glides toward where its step ended.
+        assert ogre.pos.x >= before and ogre.pos.x - before < 2.0 , str(tick);
+        if tick == 2 {
+            # ogre_run1's ai_run(9) is already taken: other steps find the
+            # ogre there, though it is drawn at its start.
+            assert ogre.pose_name == "run" and ogre.pos.x == 0.0 and ogre.standing().x == 9.0;
+        }
+        if tick == 13 {
+            # run2 begins: the first step has ended, exactly.
+            assert ogre.pos.x == 9.0 and ogre.standing().x == 21.0;
         }
     }
-    # ogre_run1-8: 9 + 12 + 8 + 22 + 16 + 4 + 13 + 24 = 108 units in 0.8 s.
-    assert abs(body.pos.x - 108.0) < 0.001;
-    assert body.velocity.length() == 0.0 and body.grounded;
+    # ogre_run1-8: 9 + 12 + 8 + 22 + 16 + 4 + 13 + 24 = 108 units, and run1
+    # again has begun.
+    assert ogre.pos.x == 108.0 and ogre.standing().x == 117.0;
+    assert ogre.velocity.length() == 0.0 and ogre.grounded;
 }
 
-test "a Q2 knockback slides on under friction beside the stride" {
+test "a Q2 knockback slides on under friction" {
     collision = gait_floor();
-    body = Player(
-        pos=Vec3(z=collision.eye_height),
-        grounded=True,
-        walk_speed=100.0,
-        velocity=Vec3(x=300.0)
-    );
+    body = Player(pos=Vec3(z=collision.eye_height), grounded=True, velocity=Vec3(x=300.0));
     dt = 1.0 / 120.0;
-    body spawn MovePlayer(collision=collision, wish=Vec3(y=1.0), steady=True, dt=dt);
+    body spawn MovePlayer(collision=collision, dt=dt);
     # SV_Physics_Step friction takes 6 * speed a second off the knock.
     knock = 300.0 - 300.0 * 6.0 * dt;
     assert abs(body.velocity.x - knock) < 0.001 and abs(body.velocity.y) < 0.000001;
-    assert abs(body.pos.y - 100.0 * dt) < 0.001;
-    assert abs(body.pos.x - knock * dt) < 0.001;
+    assert abs(body.pos.x - knock * dt) < 0.001 and body.pos.y == 0.0;
     for tick in range(240) {
-        body spawn MovePlayer(collision=collision, wish=Vec3(y=1.0), steady=True, dt=dt);
+        body spawn MovePlayer(collision=collision, dt=dt);
     }
     assert body.velocity.length() == 0.0;
-    assert abs(body.pos.y - 241.0 * 100.0 * dt) < 0.01;
+    # A knocked monster's carried step ends at once, and the knock slides
+    # it on from there.
+    world = World();
+    soldier = gaited("q2", "monster_soldier");
+    soldier.pos = Vec3(z=22.0);
+    soldier.grounded = True;
+    start = soldier.pos;
+    soldier.pos = Vec3(x=12.0, z=22.0);
+    soldier.stride(start, 0.1);
+    soldier.velocity = Vec3(y=300.0);
+    world +>:HasOpponent:+> soldier;
+    world spawn CombatTick(
+        player=Player(pos=Vec3(x=-5000.0)), collision=collision, state=CombatState(game="q2"), dt=dt
+    );
+    assert soldier.stride_time == 0.0 and soldier.pos.x == 12.0;
+    assert abs(soldier.pos.y - knock * dt) < 0.001;
 }
 
 test "each monster turns by its own yaw speed a frame" {
@@ -188,8 +214,9 @@ test "each monster turns by its own yaw speed a frame" {
             assert rule is not None and rule.yaw_speed == speeds[game][kind] , kind;
         }
     }
-    # Alerted to a player square to the left, a grunt turns 20 degrees in a
-    # 0.1 s frame and a Scrag 10, over the frame's twelve ticks.
+    # Alerted to a player square to the left, a grunt's first step turns it
+    # 20 degrees and a Scrag's 10 (SV_StepDirection's ChangeYaw), carried
+    # over the frame's twelve ticks.
     for scenario in [("monster_army", 20.0), ("monster_wizard", 10.0)] {
         world = World();
         player = Player(pos=Vec3(y=600.0, z=22.0), health=100000, god_mode=True);
@@ -224,11 +251,11 @@ test "a Q2 soldier sets off on either walk and walk1 mostly loops at walk110" {
         soldier.shot_random = seed * 7919;
         choose_walk(soldier);
         walks[soldier.walk_cycle] += 1;
-        # On walk2 the pace is its own frames' (walk209: 4, scaled 1.2).
+        # On walk2 the steps are its own frames' (walk209: 4, scaled 1.2).
         if soldier.walk_cycle == 1 {
             soldier.pose_name = "walk";
             soldier.animation_time = 0.5;
-            assert abs(gait_speed(soldier) - 48.0) < 0.0001;
+            assert abs(frame_step(soldier) - 4.8) < 0.0001;
             assert walk_frames(soldier) == list(range(100, 110));
         }
         # Once walk110 has played, soldier_walk1_random: back to walk101
@@ -240,7 +267,6 @@ test "a Q2 soldier sets off on either walk and walk1 mostly loops at walk110" {
             soldier.grounded = True;
             soldier.pose_name = "walk";
             soldier.animation_time = 9.95;
-            soldier.steering = Vec3(x=1.0);
             soldier.patrol_goal = Vec3(x=1000.0, z=24.0);
             world +>:HasOpponent:+> soldier;
             world spawn CombatTick(player=Player(pos=Vec3(z=-10000.0)), collision=collision, state=CombatState(game="q2"), dt=1.0 / 120.0);

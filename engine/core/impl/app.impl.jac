@@ -1325,19 +1325,14 @@ impl App.step() -> bool {
             for cue in voice.cues {
                 self.audio.play_path(cue);
             }
-            swimmers = [
-                enemy
-                for enemy in [self.world->:HasOpponent:->][?:Opponent]
-                if enemy.rule.movement == "swim"
-                    and not enemy.dormant
-                    and enemy.health > 0
-            ];
-            surfaces: list[Vec3] = [];
-            for swimmer in swimmers {
-                swimmer.water_depth = self.level.immersion(
-                    swimmer.pos, swimmer.eye_height
-                ).depth;
-                surfaces.append(swimmer.pos.add(Vec3()));
+            # A swimming monster out of its depth falls; its steps keep it in
+            # the water (CombatTick.liquids).
+            for swimmer in [self.world->:HasOpponent:->][?:Opponent] {
+                if swimmer.rule.movement == "swim" and not swimmer.dormant and swimmer.health > 0 {
+                    swimmer.water_depth = self.level.immersion(
+                        swimmer.pos, swimmer.eye_height
+                    ).depth;
+                }
             }
             if self.level.bsp.game == "q3" {
                 self.world spawn ArenaNavigationTick(
@@ -1360,7 +1355,8 @@ impl App.step() -> bool {
                     collision=self.level.collision,
                     state=self.combat,
                     dt=self.physics_clock.tick_rate,
-                    active=self.walking
+                    active=self.walking,
+                    liquids=self.level.liquid_probe()
                 );
                 if contest is not None {
                     self.world spawn BotTactics(
@@ -1425,17 +1421,6 @@ impl App.step() -> bool {
                 );
             } else {
                 self.world spawn MonsterJumpTick();
-            }
-            # Swimming monsters never leave their liquid volume.
-            for i in range(len(swimmers)) {
-                if swimmers[i].water_depth >= 2
-                    and self.level.immersion(
-                        swimmers[i].pos, swimmers[i].eye_height
-                    ).depth
-                        < 2 {
-                    swimmers[i].pos = surfaces[i];
-                    swimmers[i].velocity = Vec3();
-                }
             }
             self.world spawn ChthonTick(
                 player=self.player,

@@ -46,7 +46,7 @@ per-game rosters are in [q1-roster-status.md](q1-roster-status.md) and
 
 Each 10 Hz decision rolls the originals' attack chance, and a monster that
 holds its fire keeps running at its target, so fights are spent moving between
-attacks.
+attacks. How it runs is in [navigation-status.md](navigation-status.md).
 
 - Chances by range (Q1 `CheckAttack`, Q2 `M_CheckAttack`):
 
@@ -67,24 +67,31 @@ attacks.
   its spike volley takes the ordinary 0–2 s wait.
 - A newly woken Q1 monster waits one second before first firing (`HuntTarget`).
 - Ranged attacks wait for a clear shot. Another monster in the way holds fire.
-- Fliers and the Scrag slide sideways about a third of the times they hold fire
-  (`ai_run_slide`). Every monster that has closed to its stopping range circles
-  its target instead of standing still, and turns back when blocked.
+- A Q2 flier that holds its fire slides sideways three checks in ten
+  (`M_CheckAttack`), and the Q1 Scrag whenever its shot is clear and its
+  enemy nearer than 500 units (`WizardCheckAttack`); both strafe by
+  `ai_run_slide` and change sides when blocked. Every other monster runs
+  straight at its enemy and stops only where its next step would reach the
+  enemy's box (`SV_CloseEnough`), running in place there.
 - The Q1 dog leaps between 100 and 150 units (`CheckDogJump`).
 - `scripts/engagement_probe.jac` fights 25 monsters on e1m1, e1m2, e2m1, base1 and
-  base2 for 10 s each against a standing player. On 2026-09-24, before
-  monsters held attacks until facing their enemy (below), they spent 51% of
-  the fight moving and attacked 4.4 times per 10 s.
+  base2 for 10 s each against a standing player and reports how much of the
+  fight they spend moving and how often they attack. On 2026-10-09 they ran
+  the 300-400 units to the player in two to three seconds, stood against
+  its box for the rest of the fight (a quarter of the time moving) and
+  attacked 4.8 times per 10 s.
 
 ## Turning and walking
 
-- A monster turns toward where it is going, or toward its target, by its own
-  `yaw_speed` each 0.1 s frame, the short way round (Q1 `ChangeYaw`, Q2
-  `M_ChangeYaw`, through the shared `change_yaw`). The speed is data on each
-  rule: 20 degrees for walking monsters (`walkmonster_start`), 10 for fliers
+- A walking or running monster is turned by its steps: each frame it turns
+  by its own `yaw_speed` toward the heading it is stepping along
+  (`SV_StepDirection`'s `ChangeYaw`), so it runs on the eight compass
+  headings as the originals' monsters do. Holding an attack, attacking or in
+  pain it turns toward its target instead (Q1 `ChangeYaw`, Q2 `M_ChangeYaw`,
+  through the shared `change_yaw`). The speed is data on each rule: 20
+  degrees a frame for walking monsters (`walkmonster_start`), 10 for fliers
   and swimmers (`flymonster_start`, `swimmonster_start`) and 20 for Chthon
-  (`boss_awake`). Like the strides, each frame's turn is spread over its
-  ticks.
+  (`boss_awake`). Each frame's turn is spread over its ticks, as its step is.
 - A monster whose check chooses an attack state holds the attack it picked
   and turns in place on its run frames until it faces its enemy within 45
   degrees, then launches it (`ai_run_missile`, `ai_run_melee`,
@@ -144,7 +151,9 @@ docs.
   hitscan (Q1 `T_Damage`, Q2 `M_ReactToDamage`).
 - A Q1 monster keeps its enemy until one of them dies. Out of sight it heads for
   the player's current position (`movetogoal`), so it follows the player through
-  the level. Q2 monsters follow the player trail (below).
+  the level as far as its steps can take it. A Q2 monster that has seen its
+  enemy keeps it too, and follows the player trail (below); one that has only
+  heard a noise runs to it, stands there and gives up after 8 s.
 - Unalerted monsters mutter their idle sound every 15–30 s.
 - Monsters play the sight, pain, death, idle and weapon sounds their
   originals have (`scripts/roster_smoke.jac` checks each against the
@@ -177,8 +186,10 @@ docs.
   For example, Q1 shambler/ogre/fiend/vore boxes rise to 64, the Q2 tank to 72,
   the supertank to 112 and Jorg to 140.
 - Living monsters and bots are solid to the player (`SOLID_SLIDEBOX`): the player
-  is pushed back out of them and stopped. A monster cannot step into the player.
-  Corpses stay passable.
+  is pushed back out of them and stopped. Monsters are solid to each other
+  and to the player in their steps (`SV_movestep`'s trace): a monster cannot
+  step into another living monster, a barrel or the player. Corpses, gibs
+  and items stay passable.
 - Monsters move with their own box on their own game's maps
   (`monster_collision` in `engine/world/combat.jac`):
   - Q2/Q3 brush hulls are stored expanded by the player's box. A view made by
@@ -196,20 +207,18 @@ docs.
     ogre, dog, gladiator, flipper and Q2 barrel.
   - Monsters on another game's maps (Passion) keep the player's box; their
     model is lowered so a Q2 model with mins z 0 stands on the floor.
-  - Navigation caches connections per body box.
 
 ## Patrols and combat points
 
 - A monster whose `target` names a `path_corner` walks the corner chain while
   idle. It uses the original walk cycle (Q1 `walk`/`prowl_`, Q2 `walk1`; Q2
-  soldiers choose `walk1` or `walk2`, above) and each frame strides that
-  frame's own `ai_walk` distance (`gait_speed`), as the run cycle does.
+  soldiers choose `walk1` or `walk2`, above) and each frame steps that
+  frame's own `ai_walk` distance toward the corner (`frame_step`,
+  `movetogoal`), as the run cycle does.
 - Corners are reached by the original box touch.
 - Q2 corners fire their `pathtarget` and pause for their `wait`.
 - A Q2 monster with a `combattarget` runs its `point_combat` chain once alerted,
   holding fire until it arrives (`AI_COMBAT_POINT`).
-- Walking uses fixed-stride stepping, like the originals' `movestep`, so slow
-  walks are not swallowed by player friction.
 - Path corners and combat points share the `TrackPoint` graph with trains.
   `Patrols` and `Holds` edges are rewired at each corner, and saves record them.
 
@@ -254,19 +263,24 @@ docs.
   left its `*_dead` box (`dead_width`, `dead_bottom`, `dead_top`); a Q3 body's
   top drops at once. Q1 monster corpses take no damage, as in the original.
 - Snapshot format **22** records corpse health and gibbing, patrol progress, the
-  skill, power-screen cells, raised monsters and dropped items. A `SEQUENCE`
-  record carries the death a corpse drew and how far it has played, an
-  attack a monster is holding until it faces its enemy, and how long ago its
-  pain was last due. Pain in progress is
-  in the monster's own row. Flying gibs are not saved.
+  skill, power-screen cells, raised monsters, dropped items and each
+  monster's chase (`STEP` lines: heading, the step in progress, its random
+  stream and flags). A `SEQUENCE` record carries the death a corpse drew and
+  how far it has played, an attack a monster is holding until it faces its
+  enemy, and how long ago its pain was last due. Pain in progress is in the
+  monster's own row. Flying gibs are not saved.
 
 ## Trail hunting
 
 Q2's player trail (`p_trail.c`) is a graph of up to eight `TrailMark` crumbs
 hanging off a `PlayerTrail` node (`engine/world/trail.jac`). The player drops a
-crumb every half second once they are 32 units from the last one. A Q2 monster
-that reaches the spot where it lost the player follows the crumbs laid since
-then, oldest first, instead of giving up.
+crumb every half second once they are 32 units from the last one; each
+records the heading it was reached on. A Q2 monster that reaches the spot
+where it lost the player takes the first crumb laid since
+(`PlayerTrail_PickFirst`: that crumb, or the one before it if only that one
+is in sight) and then each next one (`PlayerTrail_PickNext`), turning to the
+crumb's heading. With no newer crumb the ring comes round to its oldest
+again, as the original's does.
 
 ## Dodging
 
@@ -300,26 +314,31 @@ rocket shot.
     drop frame, nothing from a gibbed grunt, Q2 at once).
   - `tests/monster_sequence_tests.jac`: pain and death tables, selection,
     sounds, strides, airborne pain, corpse boxes and saves.
+  - `tests/monster_move_tests.jac`, `tests/monster_chase_tests.jac`: the
+    originals' steps and chase directions, bodies blocking each other, Q2's
+    pursuit, the chase in saves (see
+    [navigation-status.md](navigation-status.md)).
   - `tests/infighting_tests.jac`: provocation rules, line of fire, missile owners,
     kill counting, return to the player.
   - `tests/gib_tests.jac`: thresholds, corpse damage, flight, landing and fading.
   - `tests/patrol_tests.jac`: corner loops, Q2 waits and pathtargets, combat
     points, saves.
   - `tests/combat_tests.jac`: awareness and skill.
-  - `tests/monster_gait_tests.jac`: per-frame strides, yaw speeds, the
+  - `tests/monster_gait_tests.jac`: per-frame steps, yaw speeds, the
     soldier's two walks, and turning to face before attacking (Q2, and Q1's
     ogre check against the plain `CheckAttack`).
-  - `tests/trail_tests.jac`: crumb laying and following.
+  - `tests/trail_tests.jac`: crumb laying, headings and following.
   - `tests/dodge_tests.jac`: duck timing and box, facing checks, soldier
     crouch-fire by skill.
   - `tests/monster_hull_tests.jac`: a supertank box standing at its feet,
     stopped by an 80-unit gap a player-sized box passes, and Q1 hull 2 for
     wide monsters.
 - `scripts/monster_hull_smoke.jac` loads power1 (supertank), boss2 (Jorg),
-  jail2 (tank) and e1m5 (shambler). On 2026-09-25 each started clear of the floor and settled
-  with its feet on it (within 0.04 units). The supertank, walked toward an
-  opening a player-sized box crosses, stopped after 31 units while a player box
-  could go 574 further; Jorg stopped with 215 to spare. Screenshots are saved in
+  jail2 (tank) and e1m5 (shambler). On 2026-10-09 each started clear of the floor and settled
+  with its feet on it (within 0.04 units). The supertank, walked by 4-unit
+  monster steps toward an opening a player-sized box crosses, was refused its
+  seventh step (24 units) where a player box could go 681 further; Jorg
+  stopped after 32 units with 714 to spare. Screenshots are saved in
   `.jac/screenshots/hulls/`.
 - `scripts/monsters_smoke.jac` runs on `e1m1`, `e1m2`, `base1` and `q3dm1`. It
   gibs a monster and renders the flying pieces, walks every patroller along its
