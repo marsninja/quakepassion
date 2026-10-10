@@ -159,3 +159,15 @@ test "any run of edits undone in full restores the document" {
     }
     assert steps == 0 and scene.text().count("squad") == 1 and scene.text().count("item_health") == 1;
 }
+
+test "a field that would leave an entity nowhere or classless is refused" {
+    scene = sample();
+    items = scene.items();
+    scene.select(items[1]);
+    assert scene.refuses("origin", "180") == "origin takes three numbers";
+    assert not scene.set_field("origin", "180") and not scene.set_field("origin", "a b c");
+    assert not scene.set_field("classname", " ") and not scene.set_field("", "x");
+    assert not scene.unset_field("classname");
+    assert items[1].fields["origin"] == "480 -352 88" and not scene.dirty and len(scene.journal.done) == 0;
+    assert scene.refuses("origin", "1 2 3") == "" and scene.set_field("origin", "1 2 3");
+}

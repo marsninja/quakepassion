@@ -1161,6 +1161,11 @@ node ViewArea(Widget) {
     has events: list[UiEvent] = [];
 
     def on(event: UiEvent, stage: Stage) -> bool {
+        # Keys are the studio's shortcuts whether or not the view has the
+        # keyboard: they pass on.
+        if event.kind == "key" or event.kind == "text" {
+            return False;
+        }
         self.events.append(event);
         return True;
     }

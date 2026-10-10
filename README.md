@@ -19,7 +19,7 @@ Quake (and games in general) is the thing that got me into programming. This pro
 - **Quake III Arena**: the single-player ladder from `arenas.txt`: free-for-all matches against botlib-driven bots (AAS routing, fuzzy item and weapon weights, chat), scoring, awards and the podium.
 - **Passion**: a fourth mode that generates seeded expeditions from all three games' assets. See [docs/passion.md](docs/passion.md).
 
-Save/load, per-game key bindings, the console and settings work in all modes. Network multiplayer, mods and an editor are out of scope. Known gaps are tracked per area in [docs/](docs/README.md).
+Save/load, per-game key bindings, the console and settings work in all modes. An editing studio is being built into the engine ([docs/studio-status.md](docs/studio-status.md)). Network multiplayer and mods are out of scope. Known gaps are tracked per area in [docs/](docs/README.md).
 
 ## Setup
 
@@ -86,6 +86,8 @@ QP_GAME=passion QP_SEED=42 ./qp     # a seeded Passion expedition
 | `QP_CAPTURE=<frame>:<file.png>` | Play normally, save one full screenshot at that frame, exit |
 | `QP_SMOKE=1` | Capture a fixed set of views and exit (validation) |
 | `QP_GRAYBOX=1` | The two-room development arena instead of a level |
+| `QP_EDIT=1` | Start in the studio (the `edit` command, F8) |
+| `QP_OVERRIDES` | Where the studio saves a map's edited entities (default `.quakepassion-overrides` beside the settings) |
 | `QP_RENDER_LEGACY=1` | Draw models and effect cubes through the old CPU/immediate-mode path, for comparison |
 | `QP_LIGHT_CACHE` | Passion's baked-lighting cache (default `~/.cache/quakepassion/lighting`) |
 
@@ -134,6 +136,7 @@ engine/         the game-agnostic engine
   audio/        positional sounds and music streams
 games/          per-game data and rules: weapons, items, enemies, arenas, bot files, controls
   passion/      the Passion generator
+editor/         the studio: its interface toolkit, document graph and edit mode
 scripts/        native validation harnesses and audits (validate_*, *_smoke, walkthroughs)
 tests/          jac test suites (one file per area)
 repros/         minimal programs for jac compiler defects

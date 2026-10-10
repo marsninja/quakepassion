@@ -33,6 +33,13 @@ Until the pin carries it, a natively built script or `qp` that fails that way
 with a copy of the pinned source that has the PR's linker change applied.
 `jac test` runs are not affected.
 
+Needed by the studio (`editor/`) and not in the pin, so CI cannot build
+`qp` from a branch that has the studio until the pin carries it:
+
+| Defect | Upstream PR | Found by |
+| --- | --- | --- |
+| A C record passed by value to a C function from a variable whose slot is optional (`font: Font \| None`, narrowed or defaulted before the call) emitted invalid LLVM IR; the build failed with only "native product emission failed" | [#9942](https://github.com/jaseci-labs/jac/pull/9942) | The studio's canvas (`editor/ui/canvas.jac`), which keeps its font as `UiFont \| None` |
+
 Found in QuakePassion work but not needed by it (not in the pin):
 
 | Defect | Upstream PR | Found by |
@@ -42,7 +49,21 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | A variable named like a public function of an imported module was read, or called, as that function: every public function of an imported module was bound under its bare name ahead of the module's own bindings. Entry-block variables and globals read wrongly; any variable holding a callable was called wrongly | [#9925](https://github.com/jaseci-labs/jac/pull/9925) | `scripts/player_death_smoke.jac`: a variable `burst` beside `combat.jac`'s `def burst` segfaulted |
 | The checker lost a narrowing inside a multi-part `assert` whose condition calls a method on the narrowed value (`assert x is not None; assert a and not x.method()` reported E1099) | [#9926](https://github.com/jaseci-labs/jac/pull/9926) | `tests/area_portal_tests.jac` |
 | Any `def drop` was taken for the destructor hook, so one that takes a parameter crashed `jac check` ("list index out of range") and was called without its argument on the Python side | [#9927](https://github.com/jaseci-labs/jac/pull/9927) | A `drop(name)` method on `HudRenderer`, which is named `forget` meanwhile |
+| A C record with a field typed by a C record that another module declares failed to lower natively (E5092), because a unit laid out its own records before those of the modules it imports; and on the Python side the import of the embedded record was dropped as unused, so the module raised `NameError: C type ... is not bound` as it loaded | [#9935](https://github.com/jaseci-labs/jac/pull/9935) | A first cut of the studio's canvas that imported raylib's `Texture2D` from `engine/render/quake.jac`. The canvas now declares the records it needs beside its own calls, as the renderer does, so that the interface toolkit builds without the engine |
 | `sum()` over `bytes` had no native lowering (E5092), and over a `bytearray` it sign-extended each byte | [#9928](https://github.com/jaseci-labs/jac/pull/9928) | A scratch probe of the RoQ decoder |
+
+## Reported, not yet fixed
+
+- [jaseci-labs/jac#9969](https://github.com/jaseci-labs/jac/issues/9969): the
+  checker takes a local that is first assigned inside a loop in an `impl`
+  body for the archetype's method of the same name (E1001). Found in
+  `App.render_bench`, whose local is named `pvs` rather than `culling` for
+  that reason.
+- [jaseci-labs/jac#9970](https://github.com/jaseci-labs/jac/issues/9970): a
+  module that only declares C records for other modules to import has its C
+  block dropped from its Python side (nothing in the module names the records
+  there), so `import from that_module { Record }` fails under `jac test`.
+  Nothing in the tree depends on it.
 
 ## Known open defect
 

@@ -2,9 +2,10 @@
 
 The target is the original Quake and Quake II single-player campaigns and the
 Quake III Arena single-player ladder, each played by its own rules inside the
-one engine, plus the generated Passion mode. Network multiplayer, mods, other
-Q3 game types, an editor, and entity classes no campaign map uses (Q2's
-`misc_actor`) are out of scope.
+one engine, plus the generated Passion mode, and an editing studio built into
+the engine (issue #73, [studio-status.md](studio-status.md)). Network
+multiplayer, mods, other Q3 game types, and entity classes no campaign map
+uses (Q2's `misc_actor`) are out of scope.
 
 ## Where things stand
 

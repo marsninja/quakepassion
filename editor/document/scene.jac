@@ -324,14 +324,37 @@ node Scene {
         }
     }
 
+    """Why a field cannot take a value ("" when it can). An origin that is
+    not three numbers leaves an entity nowhere, and a map whose player start
+    is nowhere does not load."""
+    def refuses(key: str, value: str) -> str {
+        if not key.strip() {
+            return "A field needs a name";
+        }
+        if key == "origin" and read_vector(value) is None {
+            return "origin takes three numbers";
+        }
+        if key == "classname" and not value.strip() {
+            return "classname cannot be empty";
+        }
+        return "";
+    }
+
     """Set a field on the selection."""
     def set_field(key: str, value: str) -> bool {
+        if self.refuses(key, value) {
+            return False;
+        }
         step = Step(label="Set " + key);
         self spawn SetField(key=key, value=value, step=step);
         return self.commit(step);
     }
 
     def unset_field(key: str) -> bool {
+        # An entity without a class is not an entity.
+        if key == "classname" {
+            return False;
+        }
         step = Step(label="Remove " + key);
         self spawn SetField(key=key, value=None, step=step);
         return self.commit(step);
