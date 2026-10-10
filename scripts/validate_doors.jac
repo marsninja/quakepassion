@@ -25,7 +25,7 @@ with entry {
         doors = [
             door
             for door in [world->:HasDoor:->][?:Door]
-            if door.automatic and door.enabled and door.kind == "door"
+            if door.automatic and door.enabled and door.kind == "door" and not door.keys
         ];
         for door in doors {
             # The expanded trigger's corner is outside the physical brush.
