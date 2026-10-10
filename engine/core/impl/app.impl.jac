@@ -46,6 +46,7 @@ impl App.run() {
             view_weapons(self.level.bsp.game)
         );
         self.quake.upload(self.level);
+        self.flares.upload(self.level);
         self.prepare_presentation();
         self.record_entry();
         self.start_level_music();
@@ -92,6 +93,7 @@ impl App.run() {
         self.effects.close();
         self.viewweapon.close();
         self.quake.close();
+        self.flares.close();
     }
     self.cinematic.close(self.audio);
     self.audio.close();
@@ -231,7 +233,12 @@ impl App.render_frame() {
         stamp = time.time();
         self.effects.draw_particles(self.world, view_yaw, view_pitch, blend);
         self.effects.draw(
-            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend
+            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend,
+            collision=self.level.collision, player=p
+        );
+        self.flares.draw(
+            self.world, self.level, self.quake.shown_flares, self.effects.quads, eye, view_yaw, view_pitch,
+            self.renderer.fov, float(self.renderer.width) / float(max(1, self.renderer.height)), self.simulation_time
         );
         self.render_times.effects = (time.time() - stamp) * 1000.0;
         stamp = time.time();
@@ -629,12 +636,15 @@ impl App.load_destination(
     self.draw_loading(game, name);
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
-    next_effects = EffectScene();
+    next_effects = EffectScene(cvars=self.effects.cvars);
     next_viewweapon = ViewWeapon();
     try {
         world = World();
         skill = self.host.skill.integer;
-        level = open_level(world, game_directory(game), name, game, skill if game == "q3" else min(3, skill));
+        level = open_level(
+            world, game_directory(game), name, game, skill if game == "q3" else min(3, skill),
+            subdivisions=self.renderer.cvars.subdivisions.number
+        );
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"
                 and self.level.bsp.game == "q1"
@@ -756,6 +766,7 @@ impl App.load_destination(
         self.player = player;
         self.player.god_mode = self.host.god.on();
         self.quake = next_renderer;
+        self.flares.upload(level);
         self.models = next_models;
         self.effects = next_effects;
         self.viewweapon = next_viewweapon;
@@ -2314,6 +2325,9 @@ impl App.teleport_actor(actor: Player) {
         self.audio.play_path("sound/world/teleout.wav");
     }
     arrival = spot.pos.add(Vec3(z=10.0));
+    # EV_PLAYER_TELEPORT_OUT where the actor left, _IN where it lands.
+    spawn_effect(self.world, origin);
+    spawn_effect(self.world, arrival);
     actor.pos = arrival.add(Vec3(z=height));
     actor.yaw = spot.yaw;
     actor.pitch = 0.0;
@@ -2463,6 +2477,7 @@ impl App.respawn_arena_player() {
     self.combat.cooldown = 0.5;
     self.combat.grenade_phase = 0;
     self.audio.play_path("sound/world/telein.wav");
+    spawn_effect(self.world, player.pos.sub(Vec3(z=self.level.collision.eye_height)));
 }
 
 """Leave a finished match for the next arena along the ladder, or replay it."""

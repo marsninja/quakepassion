@@ -43,9 +43,10 @@ import from ..world.lighting { shift_light }
 # Aux A holds the Q1/Q2 light style layer stride and the face's s texture
 # axis in lightmap samples (a sixteenth of texinfo s), aux B its t axis and
 # where its lightmap block starts in the atlas (4096 x + y), and info's
-# autosprite bytes its lightmap's last sample column and row. Or aux A holds an autosprite quad's centre and radius, or an
-# autosprite2 vertex's own short-edge midpoint and half length, and aux B
-# the other short edge's midpoint.
+# autosprite bytes its lightmap's last sample column and row. On a Q3 quad
+# aux A holds the quad's centre and autosprite radius, aux B the vertex's
+# own short-edge midpoint and half length for autosprite2, and info's
+# autosprite bytes its corner number and its sprite_quad code plus 4.
 glob WORLD_VERTEX_STRIDE: int = 84,
      WORLD_VERTEX_FORMAT: str = "<fffffffBBBBfffBBBBBBBBffffffff";
 
@@ -70,8 +71,66 @@ glob PASS_LIT: int = 1,
      PASS_FOG: int = 8,
      PASS_FOG_TWO_SIDED: int = 9;
 
-# Q3 fog volumes the shaders hold at once.
-glob WORLD_FOG_LIMIT: int = 16;
+# Q3 fog volumes the shaders hold at once: as many as the original's
+# renderer numbers (tr_local.h packs the fog into 5 bits of a surface's sort
+# key, 0 being none).
+glob WORLD_FOG_LIMIT: int = 31;
+
+# Lightmap atlas sizes, smallest first; a map takes the first that holds its
+# lightmaps. A block's corner is packed into one float as 4096 steps each
+# way, so past 4096 corners are aligned to `size / 4096` texels.
+glob LIGHT_ATLAS_SIZES: list[int] = [256, 512, 1024, 2048, 4096, 8192, 16384];
+
+"""Where each lightmap block sits in an atlas `size` across: `unit` is the
+alignment of the corners (`xs`, `ys`). `fits` is false when the blocks do
+not fit the size tried."""
+obj AtlasLayout {
+    has size: int = 0,
+        unit: int = 1,
+        fits: bool = False,
+        xs: list[int] = [],
+        ys: list[int] = [];
+}
+
+"""Lay blocks out on shelves in an atlas `size` across, each `layers` copies
+of `widths` x `heights` texels side by side with a texel of border round
+every copy."""
+def pack_light_blocks(widths: list[int], heights: list[int], layers: list[int], size: int) -> AtlasLayout {
+    unit = max(1, size // 4096);
+    layout = AtlasLayout(size=size, unit=unit, xs=[], ys=[]);
+    x = unit;
+    y = unit;
+    row_height = 0;
+    for b in range(len(widths)) {
+        span = layers[b] * (widths[b] + 2);
+        if x + span - 1 > size {
+            x = unit;
+            y = ((y + row_height + 2 + unit - 1) // unit) * unit;
+            row_height = 0;
+        }
+        if x + span - 1 > size or y + heights[b] + 1 > size {
+            return AtlasLayout(size=size, unit=unit);
+        }
+        layout.xs.append(x);
+        layout.ys.append(y);
+        x = ((x + span + unit - 1) // unit) * unit;
+        row_height = max(row_height, heights[b]);
+    }
+    layout.fits = True;
+    return layout;
+}
+
+"""The smallest atlas of LIGHT_ATLAS_SIZES that holds the blocks; one that
+does not fit when none does."""
+def fit_light_atlas(widths: list[int], heights: list[int], layers: list[int]) -> AtlasLayout {
+    for size in LIGHT_ATLAS_SIZES {
+        layout = pack_light_blocks(widths, heights, layers, size);
+        if layout.fits {
+            return layout;
+        }
+    }
+    return AtlasLayout();
+}
 
 """A run of indices in one chunk's index buffer."""
 obj IndexSpan {
@@ -139,9 +198,52 @@ def face_triangles(face: Face) -> list[int] {
     return corners;
 }
 
-"""A face's triangles as little-endian 16-bit indices from vertex `base`."""
-def face_index_bytes(face: Face, base: int) -> bytes {
-    corners = face_triangles(face);
+"""Triangles over `points` as vertex positions, three floats each, in the
+order `corners` names them: a surface drawn from a streamed vertex buffer
+rather than the world's chunks."""
+def triangle_points(points: list[Vec3], corners: list[int]) -> bytes {
+    out = bytearray(len(corners) * 12);
+    for (k, corner) in enumerate(corners) {
+        v = points[corner];
+        struct.pack_into("<fff", out, k * 12, v.x, v.y, v.z);
+    }
+    return bytes(out);
+}
+
+# gl_warp.c st_to_vec: for each side of the sky box, which of (s, t, 1) each
+# world axis takes, negative for reversed. The sides are in the order the six
+# sky images load.
+glob SKY_BOX_AXES: list[list[int]] = [[3, -1, 2], [-3, 1, 2], [1, 3, 2], [-1, -3, 2], [-2, -1, 3], [2, -1, -3]];
+
+# A sky box vertex: its position (three floats) and texture coordinates (two).
+glob SKY_BOX_STRIDE: int = 20;
+
+# How far each side of the sky box stands from the eye.
+glob SKY_BOX_REACH: float = 512.0;
+
+"""gl_warp.c R_DrawSkyBox and MakeSkyVec: the box's six sides about its
+centre, two triangles each: 36 vertices of SKY_BOX_STRIDE bytes, six a side
+in the order of the sky images."""
+def sky_box_vertices() -> bytes {
+    out = bytearray(36 * SKY_BOX_STRIDE);
+    at = 0;
+    for side in SKY_BOX_AXES {
+        for corner in [0, 1, 2, 0, 2, 3] {
+            s = -1.0 if corner < 2 else 1.0;
+            t = -1.0 if corner == 0 or corner == 3 else 1.0;
+            base = [s * SKY_BOX_REACH, t * SKY_BOX_REACH, SKY_BOX_REACH];
+            point = [base[abs(component) - 1] * (-1.0 if component < 0 else 1.0) for component in side];
+            struct.pack_into("<fffff", out, at, point[0], point[1], point[2], (s + 1.0) * 0.5, (1.0 - t) * 0.5);
+            at += SKY_BOX_STRIDE;
+        }
+    }
+    return bytes(out);
+}
+
+"""A face's triangles as little-endian 16-bit indices from vertex `base`, or
+the triangles over `stamp` corners instead (SPRITE_STAMP_CORNERS)."""
+def face_index_bytes(face: Face, base: int, stamp: list[int] = []) -> bytes {
+    corners = stamp if stamp else face_triangles(face);
     out = bytearray(len(corners) * 2);
     for i in range(len(corners)) {
         struct.pack_into("<H", out, i * 2, base + corners[i]);
@@ -199,9 +301,76 @@ def gather_indices(
     return added;
 }
 
+# tr_shade_calc.c edgeVerts: the six vertex pairs of a quad.
+glob QUAD_EDGES: list[list[int]] = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
+
+# tr_surface.c RB_AddQuadStamp's two triangles (0 1 3, 3 1 2) over a quad's
+# corners, in this renderer's winding (the file's, reversed).
+glob SPRITE_STAMP_CORNERS: list[int] = [0, 3, 1, 3, 2, 1];
+
+"""What tr_shade_calc.c Autosprite2Deform works out for a quad before the
+view comes into it. Of the six vertex pairs the two shortest are the quad's
+ends: `partners` is each vertex's other end of its edge, and `codes` twice
+its edge's rank (0 the shortest) plus which way it goes along the minor axis
+(0 forward, 1 back), or -1 for a vertex on neither edge."""
+obj SpriteQuad {
+    has partners: list[int] = [0, 1, 2, 3],
+        codes: list[int] = [-1, -1, -1, -1];
+}
+
+"""Autosprite2Deform's edges for the quad `points`, whose two triangles are
+`order` (six corner numbers in the file's winding): a vertex goes forward
+along the minor axis when its edge does not appear, first vertex then second,
+among consecutive indices, and back when it does."""
+def sprite_quad(points: list[Vec3], order: list[int]) -> SpriteQuad {
+    nums = [0, 0];
+    lengths = [999999.0, 999999.0];
+    for j in range(6) {
+        delta = points[QUAD_EDGES[j][0]].sub(points[QUAD_EDGES[j][1]]);
+        length = delta.dot(delta);
+        if length < lengths[0] {
+            nums[1] = nums[0];
+            lengths[1] = lengths[0];
+            nums[0] = j;
+            lengths[0] = length;
+        } elif length < lengths[1] {
+            nums[1] = j;
+            lengths[1] = length;
+        }
+    }
+    shape = SpriteQuad(partners=[0, 1, 2, 3], codes=[-1, -1, -1, -1]);
+    for j in range(2) {
+        first = QUAD_EDGES[nums[j]][0];
+        second = QUAD_EDGES[nums[j]][1];
+        listed = False;
+        for k in range(min(5, len(order) - 1)) {
+            if order[k] == first and order[k + 1] == second {
+                listed = True;
+                break;
+            }
+        }
+        shape.partners[first] = second;
+        shape.partners[second] = first;
+        shape.codes[first] = j * 2 + (1 if listed else 0);
+        shape.codes[second] = j * 2 + (0 if listed else 1);
+    }
+    return shape;
+}
+
+"""Triangle corners stored in this renderer's winding back in the file's
+(each triangle's last two corners swapped)."""
+def file_winding(corners: list[int]) -> list[int] {
+    order: list[int] = [];
+    for k in range(0, len(corners) - 2, 3) {
+        order.extend([corners[k], corners[k + 2], corners[k + 1]]);
+    }
+    return order;
+}
+
 """Pack one face's vertices into `out` from byte `offset`. `light_x`,
 `light_y` place its lightmap in an `atlas_size` atlas; `layer` is the Q1/Q2
-light style layer stride in atlas units. With `sprites` (Q3), a quad also
+light style layer stride in atlas units and `unit` the atlas's block
+alignment (AtlasLayout). With `sprites` (Q3), a quad also
 carries what autosprite and autosprite2 need. Q3 vertex colours go through
 the overbright shift; their alpha stays raw for alphaGen vertex. Faces
 without colours take white at `alpha` (Q2's translucent surfaces)."""
@@ -217,7 +386,8 @@ def pack_world_face(
     fog: int,
     overbright: bool,
     sprites: bool = False,
-    alpha: int = 255
+    alpha: int = 255,
+    unit: int = 1
 ) {
     count = len(face.vertices);
     inverse_atlas = 1.0 / float(atlas_size);
@@ -229,40 +399,16 @@ def pack_world_face(
         styles[k] = max(0, min(254, face.styles[k]));
     }
     quad = sprites and count == 4;
-    if quad {
-        flags = flags | SURFACE_QUAD;
-    }
     # Autosprite: the quad's centre and radius (tr_shade_calc.c
-    # AutospriteDeform). Autosprite2: each vertex's short edge, by its
-    # midpoint and half length, and which end of that edge it is.
+    # AutospriteDeform). Autosprite2: each vertex's short edge.
     middle = Vec3();
     radius = 0.0;
-    ends: list[Vec3] = [];
-    halves: list[float] = [];
-    edge_of = [0, 0, 0, 0];
-    role_of = [0, 0, 0, 0];
+    shape = SpriteQuad();
     if quad {
+        flags = flags | SURFACE_QUAD;
         middle = face.vertices[0].add(face.vertices[1]).add(face.vertices[2]).add(face.vertices[3]).scale(0.25);
         radius = face.vertices[0].sub(middle).length() * 0.707;
-        edges = [[0, 1], [1, 2], [2, 3], [3, 0]];
-        first = 0;
-        for e in range(4) {
-            if face.vertices[edges[e][0]].sub(face.vertices[edges[e][1]]).length()
-                < face.vertices[edges[first][0]].sub(face.vertices[edges[first][1]]).length() {
-                first = e;
-            }
-        }
-        shorts = [edges[first], edges[(first + 2) % 4]];
-        for k in range(2) {
-            a = shorts[k][0];
-            b = shorts[k][1];
-            ends.append(face.vertices[a].add(face.vertices[b]).scale(0.5));
-            halves.append(face.vertices[a].sub(face.vertices[b]).length() * 0.5);
-            edge_of[a] = k;
-            edge_of[b] = k;
-            role_of[a] = 0;
-            role_of[b] = 1;
-        }
+        shape = sprite_quad(face.vertices, file_winding(face_triangles(face)));
     }
     normal = face.normal;
     for i in range(count) {
@@ -287,7 +433,7 @@ def pack_world_face(
             opacity = face.colors[i * 4 + 3];
         }
         # Aux A: the style layer stride and s axis, or the quad's centre and
-        # radius. Aux B: the t axis and last sample, or this vertex's
+        # radius. Aux B: the t axis and lightmap block, or this vertex's
         # short-edge midpoint and half length (the other midpoint is the
         # centre's mirror of it).
         ax = layer;
@@ -308,12 +454,13 @@ def pack_world_face(
             mx = info.t.x / 16.0;
             my = info.t.y / 16.0;
             mz = info.t.z / 16.0;
-            mw = float(light_x * 4096 + light_y);
+            mw = float((light_x // unit) * 4096 + light_y // unit);
             corner = max(0, min(255, face.light_width - 1));
             edge_code = max(0, min(255, face.light_height - 1));
         }
         if quad {
-            end = ends[edge_of[i]];
+            partner = face.vertices[shape.partners[i]];
+            end = v.add(partner).scale(0.5);
             ax = middle.x;
             ay = middle.y;
             az = middle.z;
@@ -321,9 +468,9 @@ def pack_world_face(
             mx = end.x;
             my = end.y;
             mz = end.z;
-            mw = halves[edge_of[i]];
+            mw = v.sub(partner).length() * 0.5;
             corner = i;
-            edge_code = edge_of[i] * 2 + role_of[i] + 4;
+            edge_code = shape.codes[i] + 4;
         }
         struct.pack_into(
             "<fffffffBBBBfffBBBBBBBBffffffff",
@@ -389,13 +536,14 @@ obj ChunkIndices {
 }
 
 """The index lists of one visible face set, kept while the set is reused (the
-main view's and a portal view's sets alternate each frame), and the batches
-with faces in it, by pass (`shown`)."""
+main view's and a portal view's sets alternate each frame), the batches
+with faces in it, by pass (`shown`), and the flare surfaces among it."""
 obj VisibleIndices {
     has faces: list[int] = [],
         lists: IndexLists = IndexLists(),
         buffers: ChunkIndices = ChunkIndices(),
         portal_faces: dict[int, list[int]] = {},
+        flares: dict[int, bool] = {},
         shown: dict[int, list[int]] = {},
         used: int = 0;
 }
@@ -469,14 +617,15 @@ glob WORLD_INPUTS: str = "#version 330\nlayout(location=0) in vec3 inPosition; l
 # minimum light (Q1 dl->minlight, Q2 DLIGHT_CUTOFF). They light either side
 # of a surface, as in Quake. `lux` is where the pixel lies among the face's
 # samples (the sample k at k), `axisS`/`axisT` the texture axes in samples
-# and `lastSample` the face's last sample column and row.
+# and `lastSample` the face's last sample column and row; `lightBlockUnit`
+# is the atlas's block alignment (AtlasLayout).
 glob LIT_VS: str = WORLD_INPUTS
     + "uniform vec4 lightStyles[64]; out vec2 uv; out vec2 luv; out vec3 worldPosition; out vec2 lux; flat out vec4 styleScale; flat out float layerStride; flat out float lit;\n"
-    + "uniform sampler2D lightMap; flat out vec3 plane; flat out vec3 axisS; flat out vec3 axisT; flat out vec2 lastSample;\n"
+    + "uniform sampler2D lightMap; uniform float lightBlockUnit; flat out vec3 plane; flat out vec3 axisS; flat out vec3 axisT; flat out vec2 lastSample;\n"
     + "float styleValue(float s){ int i=int(s+0.5); return lightStyles[i>>2][i&3]; }\n"
     + "void main(){ vec4 w=model*vec4(inPosition,1.0); worldPosition=w.xyz; uv=inTexCoord; luv=inLightCoord; styleScale=vec4(styleValue(inStyles.x),styleValue(inStyles.y),styleValue(inStyles.z),styleValue(inStyles.w)); layerStride=inAuxA.x; lit=mod(floor(inInfo.x+0.5),2.0);\n"
     + " mat3 turn=mat3(model); plane=normalize(turn*inNormal); axisS=turn*inAuxA.yzw; axisT=turn*inAuxB.xyz; lastSample=inInfo.yw;\n"
-    + " float block=floor(inAuxB.w+0.5); lux=inLightCoord*vec2(textureSize(lightMap,0))-vec2(floor(block/4096.0),mod(block,4096.0))-0.5; gl_Position=viewProjection*w; }\n",
+    + " float block=floor(inAuxB.w+0.5); lux=inLightCoord*vec2(textureSize(lightMap,0))-vec2(floor(block/4096.0),mod(block,4096.0))*lightBlockUnit-0.5; gl_Position=viewProjection*w; }\n",
      LIT_FS: str = "#version 330\nin vec2 uv; in vec2 luv; in vec3 worldPosition; in vec2 lux; flat in vec4 styleScale; flat in float layerStride; flat in float lit;\n"
     + "flat in vec3 plane; flat in vec3 axisS; flat in vec3 axisT; flat in vec2 lastSample; out vec4 finalColor;\n"
     + "uniform sampler2D colorMap; uniform sampler2D lightMap; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
@@ -511,6 +660,24 @@ glob SKY_VS: str = WORLD_INPUTS
      SKY_FS: str = "#version 330\nin vec2 backUV; in vec2 frontUV; out vec4 finalColor; uniform sampler2D skyBack; uniform sampler2D skyFront;\n"
     + "void main(){ vec4 back=texture(skyBack,backUV); vec4 front=texture(skyFront,frontUV); finalColor=vec4(mix(back.rgb,front.rgb,front.a),1.0); }\n";
 
+# The Q2/Q3 sky box: one side's image over its quad (sky_box_vertices), the
+# box placed on the eye and turned by `model`.
+glob SKY_BOX_VS: str = WORLD_INPUTS
+    + "out vec2 boxUV;\n"
+    + "void main(){ boxUV=inTexCoord; gl_Position=viewProjection*model*vec4(inPosition,1.0); }\n",
+     SKY_BOX_FS: str = "#version 330\nin vec2 boxUV; out vec4 finalColor; uniform sampler2D skyBox;\n"
+    + "void main(){ finalColor=texture(skyBox,boxUV); }\n";
+
+# What lies behind a Q3 portal surface: the view rendered through it, sampled
+# where each pixel falls on the screen, or black when `live` is 0.
+glob BACKDROP_VS: str = WORLD_INPUTS
+    + "void main(){ gl_Position=viewProjection*vec4(inPosition,1.0); }\n",
+     BACKDROP_FS: str = "#version 330\nout vec4 finalColor; uniform sampler2D portalView; uniform vec2 screenSize; uniform float live;\n"
+    + "void main(){ finalColor=vec4(texture(portalView, gl_FragCoord.xy/screenSize).rgb*live, 1.0); }\n";
+
+# The most vertices of a portal surface streamed in one draw.
+glob BACKDROP_VERTICES: int = 768;
+
 # Q3 single-pass surfaces: texture times lightmap (or vertex light), the
 # shader's alphaFunc, and dynamic lights per pixel on all but emitters.
 glob BASE_VS: str = WORLD_INPUTS
@@ -528,40 +695,79 @@ glob BASE_VS: str = WORLD_INPUTS
 glob WORLD_WAVE_GLSL: str = "float waveAt(float func, float base, float amplitude, float x){ float f=fract(x); float v=0.0;"
     + " if(func<0.5) v=sin(f*6.283185307); else if(func<1.5) v=f<0.25?4.0*f:(f<0.75?2.0-4.0*f:4.0*f-4.0); else if(func<2.5) v=f<0.5?1.0:-1.0;"
     + " else if(func<3.5) v=f; else if(func<4.5) v=1.0-f; else v=sin(x*12.9898)*0.5+sin(x*78.233)*0.5; return base+v*amplitude; }\n",
-     WORLD_FOG_GLSL: str = "uniform vec3 eye; uniform vec3 viewForward; uniform vec4 fogPlane[16]; uniform vec4 fogColor[16];\n"
+     WORLD_FOG_GLSL: str = "uniform vec3 eye; uniform vec3 viewForward; uniform vec4 fogPlane[" + str(WORLD_FOG_LIMIT) + "]; uniform vec4 fogColor[" + str(WORLD_FOG_LIMIT) + "];\n"
     + "vec2 fogCoords(int i, vec3 p){ float s=(dot(viewForward,p)-dot(viewForward,eye))/(fogColor[i].w*8.0)+1.0/512.0; if(fogPlane[i].w>=1.0e8) return vec2(s,31.0/32.0);"
     + " float eyeT=dot(fogPlane[i].xyz,eye)+fogPlane[i].w; float t=dot(fogPlane[i].xyz,p)+fogPlane[i].w;"
     + " if(eyeT<0.0) t=t<1.0?1.0/32.0:1.0/32.0+30.0/32.0*t/(t-eyeT); else t=t<0.0?1.0/32.0:31.0/32.0; return vec2(s,t); }\n"
     + "float fogDensity(vec2 st){ float s=st.x-1.0/512.0; float t=st.y; if(s<0.0||t<1.0/32.0) return 0.0; if(t<31.0/32.0) s*=(t-1.0/32.0)/(30.0/32.0); s=min(1.0,s*8.0); return sqrt(floor(s*255.0)/255.0); }\n";
 
+# tr_shade_calc.c RB_DeformTessGeometry, shared by the world's stage shader
+# and the model shader (models.jac), in whichever space the caller's
+# vertices are in. deformInfo holds each deform's kind (1 wave, 2 move, 3
+# bulge, 4 autosprite, 5 autosprite2, 6 normal), waveform and spread;
+# deformWave its wave; deformVector move's push now, or bulge's width,
+# height and speed (quake.jac packed_deforms).
+#   wave (RB_CalcDeformVertexes): along the normal by the wave, its phase
+#     spread over position unless the wave stands still.
+#   move (RB_CalcMoveVertexes): the whole surface along a vector.
+#   bulge (RB_CalcBulgeVertexes): along the normal by sin(s * width + time *
+#     speed) * height.
+#   autosprite (AutospriteDeform, RB_AddQuadStamp): the quad `quad` (centre,
+#     radius) redrawn square on the view's left and up, facing the viewer,
+#     `corner` choosing which of its corners this vertex is.
+#   autosprite2 (Autosprite2Deform): the quad pivots about its long axis;
+#     `edge` is this vertex's short edge (midpoint, half length) and `code`
+#     its sprite_quad code.
+#   normal (RB_CalcDeformNormals): each normal component pushed by lattice
+#     noise over position and time (tr_noise.c R_NoiseGet4f's interpolation,
+#     over hashed lattice values in place of its rand() table).
+# viewAxes reads the view's right, up and forward from a view-projection
+# matrix: its first and last rows, with up on the side the second row says
+# (a mirror's flipped projection flips left and right alone, as the
+# original's isMirror does).
+glob SHADER_DEFORM_GLSL: str = "uniform int deformCount; uniform vec4 deformInfo[4]; uniform vec4 deformWave[4]; uniform vec4 deformVector[4];\n"
+    + "void viewAxes(mat4 m, out vec3 right, out vec3 up, out vec3 forward){ vec3 r0=vec3(m[0][0],m[1][0],m[2][0]); vec3 r1=vec3(m[0][1],m[1][1],m[2][1]); vec3 r3=vec3(m[0][3],m[1][3],m[2][3]);"
+    + " right=normalize(r0); forward=normalize(r3); up=cross(right,forward)*(dot(cross(r0,r1),r3)<0.0?1.0:-1.0); }\n"
+    + "float latticeValue(ivec4 c){ uint h=uint(c.x)*374761393u+uint(c.y)*668265263u+uint(c.z)*2246822519u+uint(c.w)*3266489917u; h=(h^(h>>15))*2246822519u; h=(h^(h>>13))*3266489917u; h^=h>>16; return float(h&65535u)/32767.5-1.0; }\n"
+    + "float latticeNoise(vec4 v){ vec4 cell=floor(v); vec4 f=v-cell; ivec4 c=ivec4(cell); float value[2];\n"
+    + " for(int i=0;i<2;i++){ ivec4 o=c+ivec4(0,0,0,i);\n"
+    + "  float front=mix(mix(latticeValue(o),latticeValue(o+ivec4(1,0,0,0)),f.x),mix(latticeValue(o+ivec4(0,1,0,0)),latticeValue(o+ivec4(1,1,0,0)),f.x),f.y);\n"
+    + "  float back=mix(mix(latticeValue(o+ivec4(0,0,1,0)),latticeValue(o+ivec4(1,0,1,0)),f.x),mix(latticeValue(o+ivec4(0,1,1,0)),latticeValue(o+ivec4(1,1,1,0)),f.x),f.y);\n"
+    + "  value[i]=mix(front,back,f.z); }\n"
+    + " return mix(value[0],value[1],f.w); }\n"
+    + "void deformVertex(inout vec3 p, inout vec3 n, inout vec2 st, float now, vec4 quad, vec4 edge, int corner, int code, vec3 right, vec3 up, vec3 forward){\n"
+    + " for(int i=0;i<4;i++){ if(i>=deformCount) break; float kind=deformInfo[i].x;\n"
+    + "  if(kind<1.5){ float off=deformWave[i].w==0.0?0.0:(p.x+p.y+p.z)*deformInfo[i].z; p+=n*waveAt(deformInfo[i].y,deformWave[i].x,deformWave[i].y,deformWave[i].z+off+now*deformWave[i].w); }\n"
+    + "  else if(kind<2.5){ p+=deformVector[i].xyz; }\n"
+    + "  else if(kind<3.5){ p+=n*(sin(st.x*deformVector[i].x+now*deformVector[i].z)*deformVector[i].y); }\n"
+    + "  else if(kind<4.5){ if(corner>=0){ vec3 left=right*-quad.w; vec3 rise=up*quad.w;\n"
+    + "    if(corner==0){ p=quad.xyz+left+rise; st=vec2(0.0,0.0); } else if(corner==1){ p=quad.xyz-left+rise; st=vec2(1.0,0.0); } else if(corner==2){ p=quad.xyz-left-rise; st=vec2(1.0,1.0); } else { p=quad.xyz+left-rise; st=vec2(0.0,1.0); }\n"
+    + "    n=-forward; } }\n"
+    + "  else if(kind<5.5){ if(code>=0){ vec3 other=quad.xyz*2.0-edge.xyz; vec3 major=code<2?other-edge.xyz:edge.xyz-other; vec3 minor=normalize(cross(major,forward)); p=edge.xyz+minor*((code&1)==0?edge.w:-edge.w); } }\n"
+    + "  else { float t=now*deformWave[i].w; vec3 at=p*0.98; n.x+=deformWave[i].y*latticeNoise(vec4(at,t)); n.y+=deformWave[i].y*latticeNoise(vec4(100.0+at.x,at.yz,t)); n.z+=deformWave[i].y*latticeNoise(vec4(200.0+at.x,at.yz,t)); n=normalize(n); }\n"
+    + " } }\n";
+
 # Q3 shader stages (tr_shade.c RB_StageIteratorGeneric, tr_shade_calc.c):
 # deformVertexes, tcGen, the tcMods folded into affine steps split at each
 # turb, rgbGen/alphaGen, and adjustColorsForFog, all per vertex.
 glob STAGE_VS: str = WORLD_INPUTS
-    + "uniform float time; uniform int deformCount; uniform vec4 deformInfo[4]; uniform vec4 deformWave[4]; uniform vec4 deformVector[4];\n"
+    + "uniform float time;\n"
     + "uniform int tcGen; uniform vec3 tcVectorS; uniform vec3 tcVectorT; uniform int tcSteps; uniform vec4 tcRowS[4]; uniform vec4 tcRowT[4]; uniform vec4 tcTurb[4]; uniform int turbFromNormal;\n"
     + "uniform vec4 tint; uniform int rgbMode; uniform int alphaMode; uniform float portalRange; uniform int fogMode; uniform int lightmapStage;\n"
     + WORLD_FOG_GLSL
     + WORLD_WAVE_GLSL
+    + SHADER_DEFORM_GLSL
     + "out vec2 st; out vec4 shade;\n"
     + "void main(){ int f=int(inInfo.x+0.5); vec3 p=(model*vec4(inPosition,1.0)).xyz; vec2 base=inTexCoord; vec3 n=inNormal; bool quad=(f&32)!=0;\n"
-    + " for(int i=0;i<4;i++){ if(i>=deformCount) break; float kind=deformInfo[i].x;\n"
-    + "  if(kind<1.5){ float off=(p.x+p.y+p.z)*deformInfo[i].z; p+=n*waveAt(deformInfo[i].y,deformWave[i].x,deformWave[i].y,deformWave[i].z+off+time*deformWave[i].w); }\n"
-    + "  else if(kind<2.5){ p+=deformVector[i].xyz; }\n"
-    + "  else if(kind<3.5){ p+=n*(sin(0.785398163*base.x*deformVector[i].x+time*deformVector[i].z)*deformVector[i].y); }\n"
-    + "  else if(kind<4.5&&quad){ vec3 mid=(model*vec4(inAuxA.xyz,1.0)).xyz; vec3 fw=normalize(mid-eye); vec3 right=cross(fw,vec3(0.0,0.0,1.0)); if(length(right)<0.001) right=vec3(1.0,0.0,0.0); right=normalize(right); vec3 up=normalize(cross(right,fw));"
-    + " vec3 left=right*-inAuxA.w; vec3 upward=up*inAuxA.w; int c=int(inInfo.y+0.5);"
-    + " if(c==0){ p=mid+left+upward; base=vec2(0.0,0.0); } else if(c==1){ p=mid-left+upward; base=vec2(1.0,0.0); } else if(c==2){ p=mid-left-upward; base=vec2(1.0,1.0); } else { p=mid+left-upward; base=vec2(0.0,1.0); } }\n"
-    + "  else if(kind<5.5&&quad){ int code=int(inInfo.w+0.5)-4; int k=code/2; int role=code-k*2; vec3 mid=(model*vec4(inAuxA.xyz,1.0)).xyz; vec3 own=(model*vec4(inAuxB.xyz,1.0)).xyz; vec3 other=mid*2.0-own;"
-    + " vec3 axis=k==0?other-own:own-other; vec3 across=normalize(cross(axis,mid-eye)); float d=dot(p-own,across); if(role==1) d=-d; float sgn=d>=0.0?1.0:-1.0; p=role==0?own+across*(inAuxB.w*sgn):own-across*(inAuxB.w*sgn); }\n"
-    + " }\n"
+    + " if(deformCount>0){ vec3 right; vec3 up; vec3 fw; viewAxes(viewProjection,right,up,fw);\n"
+    + "  deformVertex(p,n,base,time,vec4((model*vec4(inAuxA.xyz,1.0)).xyz,inAuxA.w),vec4((model*vec4(inAuxB.xyz,1.0)).xyz,inAuxB.w),quad?int(inInfo.y+0.5):-1,quad?int(inInfo.w+0.5)-4:-1,right,up,fw); }\n"
     + " vec2 c2=base; if(tcGen==1) c2=inLightCoord; else if(tcGen==2){ vec3 viewer=normalize(eye-p); vec3 r=n*(2.0*dot(n,viewer))-viewer; c2=vec2(0.5+r.y*0.5,0.5-r.z*0.5); } else if(tcGen==3) c2=vec2(dot(p,tcVectorS),dot(p,tcVectorT));\n"
     + " vec3 tp=turbFromNormal==1?inNormal:p;\n"
     + " for(int i=0;i<4;i++){ if(i>=tcSteps) break; c2=vec2(dot(tcRowS[i].xyz,vec3(c2,1.0)),dot(tcRowT[i].xyz,vec3(c2,1.0)));"
     + " if(tcTurb[i].x>0.5){ c2.x+=sin(((tp.x+tp.z)/128.0*0.125+tcTurb[i].z)*6.283185307)*tcTurb[i].y; c2.y+=sin((tp.y/128.0*0.125+tcTurb[i].z)*6.283185307)*tcTurb[i].y; } }\n"
     + " vec4 c=tint; if(rgbMode==1) c.rgb=inColor.rgb; if(alphaMode==1) c.a=inColor.a; else if(alphaMode==2) c.a=clamp(length(p-eye)/portalRange,0.0,1.0);"
     + " else if(alphaMode==3){ vec3 toward=normalize(vec3(-960.0,1980.0,96.0)-p); vec3 r=n*(2.0*dot(n,toward))-toward; float shine=max(0.0,dot(r,normalize(eye-p))); c.a=min(1.0,shine*shine*shine*shine); }\n"
-    + " int fi=int(inInfo.z+0.5)-1; if(fogMode>0&&fi>=0&&fi<16){ float clear=1.0-fogDensity(fogCoords(fi,p)); if(fogMode!=2) c.rgb*=clear; if(fogMode!=1) c.a*=clear; }\n"
+    + " int fi=int(inInfo.z+0.5)-1; if(fogMode>0&&fi>=0&&fi<" + str(WORLD_FOG_LIMIT) + "){ float clear=1.0-fogDensity(fogCoords(fi,p)); if(fogMode!=2) c.rgb*=clear; if(fogMode!=1) c.a*=clear; }\n"
     + " st=c2; shade=c; gl_Position=viewProjection*vec4(p,1.0); if(lightmapStage==1&&(f&1)==0) gl_Position=vec4(0.0,0.0,-2.0,1.0); }\n",
      STAGE_FS: str = "#version 330\nin vec2 st; in vec4 shade; out vec4 finalColor; uniform sampler2D stageMap;\nvoid main(){ finalColor=texture(stageMap,st)*shade; }\n";
 
@@ -569,7 +775,7 @@ glob STAGE_VS: str = WORLD_INPUTS
 glob FOG_VS: str = WORLD_INPUTS
     + WORLD_FOG_GLSL
     + "out vec2 st; out vec4 shade;\n"
-    + "void main(){ vec3 p=(model*vec4(inPosition,1.0)).xyz; int fi=int(inInfo.z+0.5)-1; if(fi<0||fi>=16){ st=vec2(0.0); shade=vec4(0.0); gl_Position=vec4(0.0,0.0,-2.0,1.0); return; }"
+    + "void main(){ vec3 p=(model*vec4(inPosition,1.0)).xyz; int fi=int(inInfo.z+0.5)-1; if(fi<0||fi>=" + str(WORLD_FOG_LIMIT) + "){ st=vec2(0.0); shade=vec4(0.0); gl_Position=vec4(0.0,0.0,-2.0,1.0); return; }"
     + " st=fogCoords(fi,p); shade=vec4(fogColor[fi].rgb,1.0); gl_Position=viewProjection*vec4(p,1.0); }\n",
      FOG_FS: str = "#version 330\nin vec2 st; in vec4 shade; out vec4 finalColor; uniform sampler2D fogMap;\nvoid main(){ finalColor=texture(fogMap,st)*shade; }\n";
 

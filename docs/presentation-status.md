@@ -166,10 +166,18 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   - `tcMod` scroll, scale, rotate, turb, stretch and transform, in order;
     `tcGen environment` and `tcGen vector`.
   - `alphaFunc` and `depthWrite`.
-- `deformVertexes` `wave`, `move` and `bulge` sway vertices; `autosprite` and
-  `autosprite2` turn quads toward the viewer.
-- Model shaders (powerup shells, armor, weapons) run the same tcMods,
-  including rotate and turb.
+- `deformVertexes` runs in the vertex shader, on world surfaces and models
+  alike (`RB_DeformTessGeometry`, `engine/render/world_mesh.jac`
+  `SHADER_DEFORM_GLSL`): `wave`, `move` and `bulge` sway vertices;
+  `autosprite` rebuilds each quad square on the view's left and up axes
+  (`AutospriteDeform`, `RB_AddQuadStamp`); `autosprite2` pivots it about its
+  long axis, the two shortest of its six vertex pairs being its ends
+  (`Autosprite2Deform`); `normal` wiggles the normals for wavy environment
+  maps (`RB_CalcDeformNormals`, over hashed lattice noise in place of
+  `tr_noise.c`'s `rand()` table).
+- Model shaders (players, items, weapons, powerup shells) draw stage by stage
+  too, lit by `rgbGen lightingDiffuse`; see
+  [models](models-status.md#q3-model-shaders).
 
 ## Effects and dynamic lights
 
@@ -200,12 +208,13 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
 - `tests/portal_tests.jac`: mirror and camera views, camera sway and quantized
   aim. `scripts/portal_smoke.jac` renders every portal shader on q3tourney6,
   q3dm0 and q3dm7.
-- `tests/lightfx_render_tests.jac`: Q2 sky rotation, model texture steps.
+- `tests/lightfx_render_tests.jac`: the sky box mesh and Q2 sky rotation,
+  model texture steps.
   `tests/model_material_tests.jac`: model shader stages.
 
 ## Limitations
 
 - Q2's `invnextw`/`invprevw`, `invnextp`/`invprevp` and `invdrop` are not
   commands, and the selected item is not kept in saves.
-- Q3 flares, `deformVertexes normal` and unknown shader directives are not
-  drawn (see [rendering](rendering-status.md#limitations)).
+- Unknown Q3 shader directives are not drawn (see
+  [rendering](rendering-status.md#limitations)).

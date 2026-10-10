@@ -101,8 +101,10 @@ the one played (Q3's single-player menu).
 |---|---|
 | Host | `skill` (`g_spSkill`), `qp_god`, `qp_flyspeed`, `qp_overlay`, `com_introplayed`, `nextmap`, `g_spVideos` |
 | Input | `sensitivity`, `m_pitch`, `m_yaw`, `m_forward`, `m_side`, `freelook` (`cl_freelook`), `lookstrafe`, `cl_forwardspeed`, `cl_backspeed`, `cl_sidespeed`, `cl_upspeed`, `cl_movespeedkey`, `cl_yawspeed`, `cl_pitchspeed`, `cl_anglespeedkey`, `cl_run` |
-| Renderer | `fov` (`cg_fov`), `host_maxfps` (`cl_maxfps`, `com_maxfps`), `r_novis`, `vid_width` (`r_customwidth`), `vid_height` (`r_customheight`), `vid_fullscreen` (`r_fullscreen`), `vid_highdpi` |
+| Renderer | `fov` (`cg_fov`), `host_maxfps` (`cl_maxfps`, `com_maxfps`), `r_novis`, `r_subdivisions`, `vid_width` (`r_customwidth`), `vid_height` (`r_customheight`), `vid_fullscreen` (`r_fullscreen`), `vid_highdpi` |
 | HUD | `crosshair` (`cg_drawCrosshair`) |
+| Effects | `cg_oldRail`, `cg_railTrailTime`, `cg_shadows` |
+| Flares | `r_flares`, `r_flareSize`, `r_flareFade` |
 | Audio | `volume` (`s_volume`), `bgmvolume` (`s_musicvolume`) |
 | Console | `scr_conspeed` (`con_conspeed`), `con_notifytime` |
 

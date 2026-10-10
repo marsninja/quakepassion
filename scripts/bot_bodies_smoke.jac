@@ -1,8 +1,9 @@
 """Original arenas: Q3 bots fight with bodies on the three-part rig, and each
 pose the audit asked for is captured from beside the bot: running, strafing,
 backpedalling, firing with a muzzle flash, aiming up and down, dying, a corpse
-left behind after the respawn, a quad damage shell and an item dropped on
-death."""
+left behind after the respawn, a quad damage shell, an item dropped on death,
+the medal over a bot that just earned an award and the spawn effect where one
+respawns. Each bot stands on its blob shadow."""
 import math;
 import from engine.core.menu { game_directory }
 import from engine.core.app { App }
@@ -11,7 +12,8 @@ import from engine.render.renderer { Renderer }
 import from engine.world.level { load_level, spawn_player }
 import from engine.world.world { World, Player, Entity }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileTick }
-import from engine.world.arena { MatchTick, match_of }
+import from engine.world.arena { MatchTick, match_of, Competes }
+import from engine.world.particles { Explosion, HasExplosion, SPAWN_EFFECT_KIND }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.bot_ai { BotTactics }
 import from engine.world.wading { ImmerseBots }
@@ -26,7 +28,7 @@ import from engine.world.player_rig {
 }
 import from games.opponents { populate_opponents }
 import from games.items { populate_pickups }
-import from games.weapons { equip_player }
+import from games.weapons { equip_player, weapon_effects }
 import from engine.math.vec3 { Vec3 }
 import from engine.physics.collision { CollisionMap }
 
@@ -92,12 +94,13 @@ with entry {
         equip_player(player, app.combat, "q3");
         app.quake.upload(level);
         app.models.upload(world);
+        app.effects.upload("q3", game_directory("q3"), weapon_effects("q3"));
         bots = [bot for bot in [world->:HasOpponent:->][?:Opponent] if bot.arena];
         for bot in bots {
             assert isinstance(bot.visual, PlayerRig);
         }
         eye = level.collision.eye_height;
-        wanted = ["run", "strafe", "back", "fire", "aim_up", "aim_down", "death", "corpse", "quad", "drop"]
+        wanted = ["run", "strafe", "back", "fire", "aim_up", "aim_down", "death", "corpse", "quad", "drop", "award", "spawn"]
             if name == "q3dm7"
             else ["run", "strafe", "back", "fire"];
         # One bot carries a quad damage, to show its shell (and drop it).
@@ -183,6 +186,32 @@ with entry {
                     }
                 }
             }
+            # A bot wearing an award's medal (CG_PlayerSprites).
+            if "award" not in taken and "award" in wanted {
+                scores = [edge contest->:Competes:->];
+                winners = [contest->:Competes:->];
+                for i in range(min(len(scores), len(winners))) {
+                    winner = winners[i];
+                    if scores[i].award and isinstance(winner, Opponent) and winner.health > 0
+                        and capture(app, level.collision, winner, eye, math.pi / 4.0, "qp_bot_" + name + "_award.png") {
+                        taken.append("award");
+                        print("  award", scores[i].award, "for", scores[i].name);
+                        break;
+                    }
+                }
+            }
+            # CG_SpawnEffect, early in its half second.
+            if "spawn" not in taken and "spawn" in wanted {
+                for blast in [world->:HasExplosion:->][?:Explosion] {
+                    if blast.kind == SPAWN_EFFECT_KIND and blast.age < 0.3 {
+                        marker = Entity(pos=blast.pos.add(Vec3(z=24.0 + eye)));
+                        if capture(app, level.collision, marker, eye, math.pi / 3.0, "qp_bot_" + name + "_spawn.png") {
+                            taken.append("spawn");
+                            break;
+                        }
+                    }
+                }
+            }
             if "corpse" not in taken {
                 for corpse in [world->:HasCorpse:->][?:Corpse] {
                     if corpse.age > 1.0 and corpse.age < 4.0
@@ -195,6 +224,7 @@ with entry {
         }
         print("BOT BODIES", name, "captured", taken, "after", round(float(tick) / 120.0, 1), "s");
         app.models.close();
+        app.effects.close();
         app.quake.close();
     }
     renderer.close();

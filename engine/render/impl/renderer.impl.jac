@@ -11,6 +11,7 @@ impl Renderer.declare(shell: Shell) {
     cvars.height = shell.register(cvars.height);
     cvars.fullscreen = shell.register(cvars.fullscreen);
     cvars.highdpi = shell.register(cvars.highdpi);
+    cvars.subdivisions = shell.register(cvars.subdivisions);
 }
 
 impl Renderer.open_window() {

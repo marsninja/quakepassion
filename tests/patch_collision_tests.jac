@@ -3,7 +3,8 @@ import from engine.physics.collision { CollisionMap }
 import from engine.physics.patch_collide { generate_patch_collide, PatchCollide }
 import from engine.physics.movement { MovePlayer, MovementProfile, movement_profile }
 import from engine.formats.bsp { Bsp, Face, Texture, Model, MapEntity }
-import from engine.formats.q3.bsp { Vertex, tessellate }
+import from engine.formats.q3.bsp { tessellate }
+import from engine.formats.q3.curve { Vertex }
 import from engine.formats.brush_collision { build_brush_collision }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.world { Player }

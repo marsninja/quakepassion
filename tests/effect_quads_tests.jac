@@ -10,6 +10,11 @@ import from engine.render.effects {
     EFFECT_BLEND_ALPHA,
     EFFECT_BLEND_ADD,
     EFFECT_BLEND_DARKEN,
+    EffectCvars,
+    Awarded,
+    AWARD_SHADERS,
+    rail_core_ends,
+    rail_rings,
     effect_byte
 }
 import from engine.world.world { World }
@@ -23,6 +28,8 @@ import from engine.world.particles {
     HasExplosion
 }
 import from engine.world.combat { Projectile, HasProjectile, Opponent, HasOpponent }
+import from engine.world.arena { ArenaMatch, HasMatch, Competes, MatchTick, credit_impressive, show_award, REWARD_SPRITE_TIME }
+import from engine.world.world { Player }
 import from engine.formats.sprite { SpriteFrame }
 import from engine.math.interpolation { TickBlend }
 import from engine.math.vec3 { Vec3 }
@@ -110,4 +117,102 @@ test "a bot typing a chat line wears the talk balloon over its head" {
     assert record[0] == 10.0 and record[2] == 48.0;
     assert abs(record[9] + 10.0) < 0.001 and abs(record[11] - 10.0) < 0.001;
     assert not EffectScene().add_balloons(found.talkers, TickBlend());
+}
+
+test "the rail is its core alone by default, lowered as CG_RailTrail lowers it" {
+    cvars = EffectCvars();
+    assert cvars.old_rail.on() and cvars.rail_time.number == 400.0;
+    start = Vec3(x=10.0, y=20.0, z=30.0);
+    finish = Vec3(x=510.0, y=20.0, z=30.0);
+    # start[2] -= 4, then cg_oldRail nudges both ends down 8.
+    ends = rail_core_ends(start, finish, True);
+    assert ends[0].z == 18.0 and ends[1].z == 22.0 and ends[0].x == 10.0 and ends[1].x == 510.0;
+    # With the spiral the core is not nudged.
+    plain = rail_core_ends(start, finish, False);
+    assert plain[0].z == 26.0 and plain[1].z == 30.0;
+}
+
+test "the rail's spiral leaves a ring every other step, turning 20 degrees, drifting outward" {
+    start = Vec3(z=4.0);
+    finish = Vec3(x=100.0);
+    rings = rail_rings(start, finish, 0.0);
+    # A 100-unit beam: steps 0, 5 ... 95 leave rings at 0, 10 ... 90.
+    assert len(rings) == 10;
+    # The first sits 20 units along the lowered beam, 4 off its axis.
+    assert abs(rings[0].pos.x - 20.0) < 0.0001;
+    assert abs(Vec3(y=rings[0].pos.y, z=rings[0].pos.z).length() - 4.0) < 0.0001;
+    for i in range(9) {
+        a = Vec3(y=rings[i].pos.y, z=rings[i].pos.z);
+        b = Vec3(y=rings[i + 1].pos.y, z=rings[i + 1].pos.z);
+        assert abs(rings[i + 1].pos.x - rings[i].pos.x - 10.0) < 0.0001;
+        # Two 10-degree steps between rings.
+        assert abs(a.normalized().dot(b.normalized()) - 0.9396926) < 0.0001;
+    }
+    # TR_LINEAR at 6 units a second along its perpendicular.
+    later = rail_rings(start, finish, 0.5);
+    assert abs(Vec3(y=later[0].pos.y, z=later[0].pos.z).length() - 7.0) < 0.0001;
+    assert later[0].pos.x == rings[0].pos.x;
+    # A ring lives 600 ms plus half its step in milliseconds: the ring of
+    # step 90 goes at 645 ms, the first at 600.
+    assert len(rail_rings(start, finish, 0.599)) == 10;
+    assert len(rail_rings(start, finish, 0.601)) == 9;
+    assert len(rail_rings(start, finish, 0.644)) == 1 and len(rail_rings(start, finish, 0.646)) == 0;
+    assert not rail_rings(start, start.sub(Vec3(z=4.0)), 0.0);
+}
+
+test "an award floats its medal over a bot for two seconds, under a talk balloon" {
+    world = World();
+    contest = ArenaMatch(fraglimit=20);
+    world +>:HasMatch:+> contest;
+    human = Player(health=100);
+    winner = Opponent(arena=True, health=100, pos=Vec3(x=10.0, z=26.0), eye_height=26.0);
+    winner.visual.visible = True;
+    loser = Opponent(arena=True, health=100, pos=Vec3(x=90.0, z=26.0), eye_height=26.0);
+    loser.visual.visible = True;
+    world +>:HasOpponent:+> winner;
+    world +>:HasOpponent:+> loser;
+    contest +>:Competes:name="You", human=True:+> human;
+    contest +>:Competes:name="Sarge":+> winner;
+    contest +>:Competes:name="Grunt":+> loser;
+    assert not (world spawn GatherEffects(balloons=True)).awarded;
+    # A gauntlet frag raises the gauntlet medal over the bot that made it.
+    loser.health = 0;
+    loser.killer = winner;
+    loser.death_means = "gauntlet";
+    contest spawn MatchTick(dt=0.1);
+    found = world spawn GatherEffects(balloons=True);
+    assert [(honour.actor, honour.award) for honour in found.awarded] == [(winner, "gauntlet")];
+    # A second frag inside three seconds is Excellent, which replaces it.
+    loser.health = 100;
+    contest spawn MatchTick(dt=0.5);
+    loser.health = 0;
+    contest spawn MatchTick(dt=0.1);
+    found = world spawn GatherEffects(balloons=True);
+    assert found.awarded[0].award == "excellent" and REWARD_SPRITE_TIME == 2.0;
+    # CG_PlayerFloatSprite: the medal 48 over the origin, 10 units in radius.
+    scene = EffectScene();
+    scene.flight[AWARD_SHADERS["excellent"]] = [
+        UploadedSprite(frame=SpriteFrame(width=64, height=64, origin_x=32, origin_y=32, image="medal"), texture=9)
+    ];
+    assert scene.add_awards(found.awarded, TickBlend());
+    record = struct.unpack_from("<17f4Bf", scene.quads.packed, 0);
+    assert scene.quads.runs[0].texture == 9 and record[0] == 10.0 and record[2] == 48.0;
+    assert abs(record[9] + 10.0) < 0.001 and abs(record[11] - 10.0) < 0.001;
+    assert not EffectScene().add_awards(found.awarded, TickBlend());
+    # While it types, the balloon shows instead (CG_PlayerSprites' order).
+    winner.bot_state.talking = True;
+    typing = world spawn GatherEffects(balloons=True);
+    assert typing.talkers == [winner] and not typing.awarded;
+    winner.bot_state.talking = False;
+    # The human's own medal shows only in third person: an Impressive is
+    # kept on its score for the sprite's two seconds, then taken down.
+    credit_impressive(contest, human);
+    entries = [edge contest->:Competes:->];
+    assert entries[0].award == "impressive" and entries[0].impressive == 1;
+    assert len((world spawn GatherEffects(balloons=True)).awarded) == 1;
+    loser.health = 100;
+    contest spawn MatchTick(dt=2.5);
+    contest spawn MatchTick(dt=0.1);
+    assert entries[0].award == "" and entries[1].award == "";
+    assert not (world spawn GatherEffects(balloons=True)).awarded;
 }

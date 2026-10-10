@@ -10,7 +10,7 @@ RB_SurfaceSprite). Quads draw in the old order, one instanced draw per run
 of the same texture and blend."""
 import math;
 import struct;
-import from .models { ModelRenderer }
+import from .models { ModelRenderer, upload_skin }
 import from ..math.orientation { Basis, model_basis }
 import from ..formats.animated { AnimatedModel, AnimatedSurface, ModelStage, stage_frame }
 import from ..world.lighting { Lighting }
@@ -35,6 +35,14 @@ import from ..world.particles {
 }
 import from ..world.particle_field { ParticleField, HasParticles, puff_state }
 import from ..world.missile_trails { EmitTrails }
+import from ..world.arena { ArenaMatch, HasMatch, Competes }
+import from ..world.shadows { CastShadows, shadow_caster, SHADOW_MARK }
+import from ..world.world { Player }
+import from ..physics.collision { CollisionMap }
+import from ..world.models { PLAYER_COLOR1, PLAYER_COLOR2 }
+import from ..world.portals { perpendicular, rotate_about }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell }
 import from .particles { ParticleRing }
 import from .polygons { ScenePolygons, POLYGON_BLEND_ALPHA, POLYGON_BLEND_DARKEN }
 import from ..math.vec3 { Vec3, forward_from, right_from }
@@ -56,7 +64,7 @@ import from vendor.raylib {
         mode: i32
     ) -> None;  def EndBlendMode -> None;  def rlSetBlendFactors(
         src: i32, dst: i32, equation: i32
-    ) -> None;  def rlDisableDepthMask -> None;  def rlEnableDepthMask -> None;  def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;  def rlEnableVertexBuffer(
+    ) -> None;  def rlDisableDepthMask -> None;  def rlEnableDepthMask -> None;  def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;  def rlEnableVertexBuffer(
         id: u32
     ) -> None;  def rlSetVertexAttribute(
         index: u32, compSize: i32, kind: i32, normalized: bool, stride: i32, offset: i32
@@ -279,8 +287,9 @@ obj EffectQuads {
     }
 
     """Draw the queued quads, depth tested, both sides, and empty the queue.
-    `depth_write` keeps them writing depth (particles); sprites do not."""
-    def flush(depth_write: bool = False) {
+    `depth_write` keeps them writing depth (particles); sprites do not.
+    Without `depth_test` they draw over everything (flares)."""
+    def flush(depth_write: bool = False, depth_test: bool = True) {
         if self.count == 0 {
             return;
         }
@@ -289,6 +298,9 @@ obj EffectQuads {
         rlDrawRenderBatchActive();
         if not depth_write {
             rlDisableDepthMask();
+        }
+        if not depth_test {
+            rlDisableDepthTest();
         }
         rlDisableBackfaceCulling();
         mvp = view_projection();
@@ -315,6 +327,9 @@ obj EffectQuads {
             self.program.end();
         }
         rlEnableDepthMask();
+        if not depth_test {
+            rlEnableDepthTest();
+        }
         rlEnableBackfaceCulling();
         EndBlendMode();
         self.count = 0;
@@ -333,11 +348,26 @@ obj EffectQuads {
     }
 }
 
-# cg_main.c's balloonShader, floated over a player typing a message.
+# cg_main.c's balloonShader, floated over a player typing a message, and the
+# medal shaders floated over one just given an award.
 glob BALLOON_SHADER: str = "sprites/balloon3";
+glob AWARD_SHADERS: dict[str, str] = {
+    "impressive": "medal_impressive",
+    "excellent": "medal_excellent",
+    "gauntlet": "medal_gauntlet"
+};
+
+"""A player wearing an award sprite (EF_AWARD_IMPRESSIVE and the like)."""
+obj Awarded {
+    has actor: Opponent,
+        award: str;
+}
 
 """The effects in a world, gathered in one walk over its effect edges, and,
-with `balloons`, the Q3 players typing a message (EF_TALK)."""
+with `balloons`, the Q3 players with a sprite over their heads
+(CG_PlayerSprites): those typing a message (EF_TALK), else those just given
+an award. The human's own sprite shows only in third person and mirrors
+(RF_THIRD_PERSON), so only bots are gathered."""
 walker GatherEffects {
     has marks: list[ImpactMark] = [],
         trails: list[ShotTrail] = [],
@@ -345,7 +375,8 @@ walker GatherEffects {
         projectiles: list[Projectile] = [],
         field: ParticleField | None = None,
         balloons: bool = False,
-        talkers: list[Opponent] = [];
+        talkers: list[Opponent] = [],
+        awarded: list[Awarded] = [];
 
     can begin with World entry {
         visit [here->:HasParticles:->];
@@ -355,6 +386,20 @@ walker GatherEffects {
         visit [here->:HasProjectile:->];
         if self.balloons {
             visit [here->:HasOpponent:->];
+            visit [here->:HasMatch:->];
+        }
+    }
+
+    """The competitors wearing an award; talking comes first."""
+    can honour with ArenaMatch entry {
+        entries = [edge here->:Competes:->];
+        actors = [here->:Competes:->];
+        for i in range(min(len(entries), len(actors))) {
+            actor = actors[i];
+            if entries[i].award and isinstance(actor, Opponent) and not actor.dormant and actor.visual.visible
+                and not actor.bot_state.talking {
+                self.awarded.append(Awarded(actor=actor, award=entries[i].award));
+            }
         }
     }
 
@@ -427,7 +472,105 @@ glob QUAKE2_LASER_COLORS: dict[str, list[int]] = {
     "laser_orange": [227, 226, 225, 224]
 };
 
+"""The cvars the effects own (cg_main.c): whether a Q3 rail is its core
+alone, how long the core shows, and the players' shadows."""
+obj EffectCvars {
+    has old_rail: Cvar = Cvar(
+            name="cg_oldRail",
+            reset_text="1",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="draw the railgun's core only, without the spiral of rings"
+        ),
+        rail_time: Cvar = Cvar(
+            name="cg_railTrailTime",
+            reset_text="400",
+            kind="float",
+            low=0.0,
+            high=10000.0,
+            flags=CVAR_ARCHIVE,
+            description="milliseconds a railgun's core takes to fade"
+        ),
+        shadows: Cvar = Cvar(
+            name="cg_shadows",
+            reset_text="1",
+            kind="int",
+            low=0.0,
+            high=3.0,
+            flags=CVAR_ARCHIVE,
+            description="player shadows: 0 none, 1 a blob on the ground (2 and 3, the original's stencil and projection shadows, draw none)"
+        );
+}
+
+# cg_weapons.c CG_RailTrail: the spiral's RADIUS and SPACING, how far along
+# the beam it starts, the first of the 36 perpendiculars it uses, each ring's
+# sprite radius and drift, and the least a ring lives.
+glob RAIL_SPIRAL_RADIUS: float = 4.0,
+     RAIL_SPIRAL_SPACING: int = 5,
+     RAIL_SPIRAL_START: float = 20.0,
+     RAIL_SPIRAL_FIRST_AXIS: int = 18,
+     RAIL_RING_RADIUS: float = 1.1,
+     RAIL_RING_DRIFT: float = 6.0,
+     RAIL_RING_LIFE: float = 0.6;
+
+# The railDisc shader's tcMod rotate, degrees a second.
+glob RAIL_RING_SPIN: float = -30.0;
+
+"""One ring of a rail's spiral, where it is now."""
+obj RailRing {
+    has pos: Vec3,
+        age: float;
+}
+
+"""CG_RailTrail's beam: the start drops 4 units, and with cg_oldRail both
+ends of the core drop another 8 so it is not dead centre."""
+def rail_core_ends(start: Vec3, finish: Vec3, old_rail: bool) -> list[Vec3] {
+    nudge = 8.0 if old_rail else 0.0;
+    return [start.sub(Vec3(z=4.0 + nudge)), finish.sub(Vec3(z=nudge))];
+}
+
+"""CG_RailTrail's spiral (cg_oldRail 0) `age` seconds after the shot: from 20
+units along the lowered beam, every other 5-unit step leaves a ring 4 units
+off the axis on a perpendicular that turns 10 degrees a step from the 18th
+(so 20 degrees from ring to ring, 10 units apart), drifting outward 6 units
+a second (LE_MOVE_SCALE_FADE, TR_LINEAR) and living 600 ms plus half its
+distance in milliseconds."""
+def rail_rings(start: Vec3, finish: Vec3, age: float) -> list[RailRing] {
+    rings: list[RailRing] = [];
+    low = start.sub(Vec3(z=4.0));
+    along = finish.sub(low);
+    length = along.length();
+    if length < 0.001 {
+        return rings;
+    }
+    axis = along.scale(1.0 / length);
+    side = perpendicular(axis);
+    move = low.add(axis.scale(RAIL_SPIRAL_START));
+    turn = RAIL_SPIRAL_FIRST_AXIS;
+    # The original's `skip`: a step that left a ring makes the next leave none.
+    idle = -1;
+    i = 0;
+    while float(i) < length {
+        if i != idle {
+            idle = i + RAIL_SPIRAL_SPACING;
+            if age < RAIL_RING_LIFE + float(i >> 1) / 1000.0 {
+                out = rotate_about(side, axis, float(turn * 10));
+                rings.append(RailRing(pos=move.add(out.scale(RAIL_SPIRAL_RADIUS + RAIL_RING_DRIFT * age)), age=age));
+            }
+        }
+        move = move.add(axis.scale(float(RAIL_SPIRAL_SPACING)));
+        turn = (turn + 1) % 36;
+        i += RAIL_SPIRAL_SPACING;
+    }
+    return rings;
+}
+
 obj EffectScene {
+    has cvars: EffectCvars = EffectCvars();
+    # The level's collision the shadows were last cast on, and the box view
+    # of it they are traced with.
+    has shadow_source: CollisionMap | None = None,
+        shadow_view: CollisionMap | None = None;
     has flight: dict[str, list[UploadedSprite]] = {},
         burst: dict[str, list[UploadedSprite]] = {},
         textures: list[int] = [],
@@ -444,6 +587,13 @@ obj EffectScene {
         palette: bytes = b"",
         lighting: Lighting = Lighting(),
         game: str = "";
+
+    """Register the effects' cvars."""
+    def declare(shell: Shell) {
+        self.cvars.old_rail = shell.register(self.cvars.old_rail);
+        self.cvars.rail_time = shell.register(self.cvars.rail_time);
+        self.cvars.shadows = shell.register(self.cvars.shadows);
+    }
 
     def keys() -> list[str] {
         styled = [kind for kind in STYLED_TRAILS if self.game];
@@ -617,7 +767,7 @@ obj EffectScene {
         for stage in stages {
             textures: list[int] = [];
             for image in (stage.frames if stage.frames else [stage.texture]) {
-                texture = QuakeRenderer().upload_image(image);
+                texture = upload_skin(image);
                 self.textures.append(texture);
                 if stage.clamp {
                     rlTextureParameters(u32(texture), i32(10242), i32(33071));
@@ -671,7 +821,9 @@ obj EffectScene {
         yaw: float,
         pitch: float,
         lighting: Lighting = Lighting(),
-        blend: TickBlend = TickBlend()
+        blend: TickBlend = TickBlend(),
+        collision: CollisionMap | None = None,
+        player: Player | None = None
     ) {
         self.quads.open();
         side = right_from(yaw);
@@ -682,14 +834,15 @@ obj EffectScene {
         found = world spawn GatherEffects(balloons=BALLOON_SHADER in self.flight);
         field = found.field;
         now = field.clock if field is not None else 0.0;
-        self.draw_marks(found.marks, eye);
+        self.draw_marks(found.marks + self.shadow_marks(world, collision, player, blend), eye);
         self.draw_trails(found.trails, eye, now);
         self.draw_bfg_lasers(found.projectiles, blend);
         self.draw_blasts(found.blasts, eye);
         if field is not None {
             self.draw_puffs(field, eye);
         }
-        if self.add_balloons(found.talkers, blend) {
+        floated = self.add_balloons(found.talkers, blend);
+        if self.add_awards(found.awarded, blend) or floated {
             self.quads.flush();
         }
         if not self.textures and not self.models {
@@ -790,25 +943,62 @@ obj EffectScene {
         self.particles.draw(field.clock, yaw, pitch);
     }
 
-    """cg_players.c CG_PlayerSprites and CG_PlayerFloatSprite: over each
-    player typing a message, the talk balloon, a sprite 10 units in radius
-    48 units above its origin. True when any was added to the quads."""
+    """cg_players.c CG_PlayerSprites: over each player typing a message, the
+    talk balloon. True when any was added to the quads."""
     def add_balloons(talkers: list[Opponent], blend: TickBlend) -> bool {
         art = self.flight.get(BALLOON_SHADER, []);
         if not talkers or not art {
             return False;
         }
-        sprite = art[0];
         for talker in talkers {
-            origin = blend.place(talker.tick_pose, talker.pos).sub(Vec3(z=talker.eye_height));
-            self.billboard(
-                sprite,
-                origin.add(Vec3(z=48.0)),
-                EFFECT_BLEND_ALPHA,
-                scale=20.0 / float(max(1, sprite.frame.width))
-            );
+            self.float_sprite(talker, art[0], blend);
         }
         return True;
+    }
+
+    """CG_PlayerSprites: the medal of each player just given an award. True
+    when any was added to the quads."""
+    def add_awards(awarded: list[Awarded], blend: TickBlend) -> bool {
+        added = False;
+        for honour in awarded {
+            art = self.flight.get(AWARD_SHADERS.get(honour.award, ""), []);
+            if art {
+                self.float_sprite(honour.actor, art[0], blend);
+                added = True;
+            }
+        }
+        return added;
+    }
+
+    """cg_players.c CG_PlayerFloatSprite: a sprite 10 units in radius 48 units
+    above the player's origin."""
+    def float_sprite(actor: Opponent, sprite: UploadedSprite, blend: TickBlend) {
+        origin = blend.place(actor.tick_pose, actor.pos).sub(Vec3(z=actor.eye_height));
+        self.billboard(
+            sprite,
+            origin.add(Vec3(z=48.0)),
+            EFFECT_BLEND_ALPHA,
+            scale=20.0 / float(max(1, sprite.frame.width))
+        );
+    }
+
+    """cg_players.c CG_PlayerShadow with cg_shadows 1: this frame's blob marks
+    under the players, when the level has the markShadow art (Q3). They are
+    CG_ImpactMark's temporary marks: drawn this frame and not kept."""
+    def shadow_marks(world: World, collision: CollisionMap | None, player: Player | None, blend: TickBlend) -> list[ImpactMark] {
+        if collision is None or self.cvars.shadows.integer != 1 or SHADOW_MARK not in self.flight {
+            return [];
+        }
+        view = self.shadow_view;
+        if view is None or self.shadow_source is not collision {
+            view = shadow_caster(collision);
+            self.shadow_source = collision;
+            self.shadow_view = view;
+        }
+        cast = world spawn CastShadows(
+            collision=view, blend=blend, player=player, player_height=collision.eye_height
+        );
+        return cast.marks;
     }
 
     """Q3's smoke and blood puffs (cg_localents.c CG_AddScaleFade and
@@ -859,6 +1049,16 @@ obj EffectScene {
                 continue;
             }
             shader = self.blast_shaders.get(blast.kind, None);
+            if shader is not None and rule.entity_fade {
+                # CG_AddFadeRGB: on the world's axes, the entity colour its
+                # shader takes fading with its life.
+                left = max(0.0, min(1.0, (blast.lifetime - blast.age) / max(0.001, blast.lifetime)));
+                variants[0].draw(
+                    blast.pos, 0.0, eye=eye, seconds=blast.age, overlay=shader,
+                    entity_color=[left, left, left, left]
+                );
+                continue;
+            }
             if shader is not None {
                 axes = mark_axes(blast.direction, blast.rotation * math.pi / 180.0);
                 variants[0].draw(
@@ -1079,7 +1279,10 @@ obj EffectScene {
             } elif kind.startswith("laser_") {
                 self.laser_beam(trail.start, trail.finish, QUAKE2_LASER_COLORS.get(kind, [242, 242, 240, 240]), trail.width, trail.age);
             } elif kind == "q3_rail" {
-                self.rail_core(trail.start, trail.finish, eye, fade, trail.age);
+                self.rail_core(trail.start, trail.finish, eye, trail.age);
+                if not self.cvars.old_rail.on() {
+                    self.rail_spiral(trail.start, trail.finish, trail.age);
+                }
             } else {
                 # A plain rail (Passion): a thin red core.
                 self.beam_quad(0, EFFECT_BLEND_ADD, trail.start, trail.finish, self.beam_side(trail.start, trail.finish, eye), 0.75, Vec3(x=0.75).scale(fade));
@@ -1088,28 +1291,55 @@ obj EffectScene {
         self.quads.flush();
     }
 
-    """CG_RailTrail with cg_oldRail (the default): the railCore shader's quad
-    12 units across (r_railCoreWidth 6 each side), its texture a quarter
-    repeat per 64 units scrolling back a repeat a second (tcMod scroll -1),
-    lowered 8 units, in the shooter's color1 (red) at three quarters,
-    fading over cg_railTrailTime."""
-    def rail_core(start: Vec3, finish: Vec3, eye: Vec3, fade: float, age: float) {
+    """CG_RailTrail's core (RT_RAIL_CORE, tr_surface.c RB_SurfaceRailCore): the
+    railCore shader's quad 12 units across (r_railCoreWidth 6 each side), its
+    texture a repeat per 256 units scrolling back a repeat a second (tcMod
+    scroll -1), in three quarters of the shooter's color1, fading over
+    cg_railTrailTime (LE_FADE_RGB)."""
+    def rail_core(start: Vec3, finish: Vec3, eye: Vec3, age: float) {
+        life = self.cvars.rail_time.number / 1000.0;
+        if life <= 0.0 or age >= life {
+            return;
+        }
+        fade = 0.75 * (1.0 - age / life);
         art = self.flight.get("q3_railcore", []);
-        low_start = start.sub(Vec3(z=12.0));
-        low_finish = finish.sub(Vec3(z=8.0));
-        side = self.beam_side(low_start, low_finish, eye);
-        repeat = low_finish.sub(low_start).length() / 256.0;
+        ends = rail_core_ends(start, finish, self.cvars.old_rail.on());
+        side = self.beam_side(ends[0], ends[1], eye);
+        repeat = ends[1].sub(ends[0]).length() / 256.0;
         self.beam_quad(
             art[0].texture if art else 0,
             EFFECT_BLEND_ADD,
-            low_start,
-            low_finish,
+            ends[0],
+            ends[1],
             side,
             6.0,
-            Vec3(x=0.75 * fade),
+            Vec3(x=PLAYER_COLOR1[0] * fade, y=PLAYER_COLOR1[1] * fade, z=PLAYER_COLOR1[2] * fade),
             -age,
             repeat - age
         );
+    }
+
+    """CG_RailTrail's spiral: each ring a railDisc sprite 1.1 units in radius
+    in the shooter's color2, its texture turning with the shader's tcMod
+    rotate. The local entity fades only the sprite's alpha, which the
+    additive shader's rgbGen vertex does not read, so a ring keeps its colour
+    until it expires."""
+    def rail_spiral(start: Vec3, finish: Vec3, age: float) {
+        art = self.flight.get("q3_raildisc", []);
+        if not art {
+            return;
+        }
+        sprite = art[0];
+        for ring in rail_rings(start, finish, age) {
+            self.billboard(
+                sprite,
+                ring.pos,
+                EFFECT_BLEND_ADD,
+                scale=RAIL_RING_RADIUS * 2.0 / float(max(1, sprite.frame.width)),
+                angle=-RAIL_RING_SPIN * age * math.pi / 180.0,
+                tint=Vec3(x=PLAYER_COLOR2[0], y=PLAYER_COLOR2[1], z=PLAYER_COLOR2[2])
+            );
+        }
     }
 
     """CG_LightningBolt's beam (RB_SurfaceLightningBolt): four quads 16

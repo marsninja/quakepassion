@@ -8,6 +8,14 @@ import from engine.render.world_mesh {
     face_index_bytes,
     gather_indices,
     pack_world_face,
+    sprite_quad,
+    file_winding,
+    pack_light_blocks,
+    fit_light_atlas,
+    WORLD_FOG_LIMIT,
+    WORLD_FOG_GLSL,
+    LIGHT_ATLAS_SIZES,
+    SPRITE_STAMP_CORNERS,
     batch_key,
     WORLD_VERTEX_STRIDE,
     PASS_LIT,
@@ -123,8 +131,9 @@ test "world vertices pack position, coordinates, light, styles and sprite data" 
     assert q[26] == 0.0 and q[27] == 0.0 and q[28] == -2.0 / 16.0;
     assert q[29] == float(10 * 4096 + 20);
     assert q[15] == 2 and q[17] == 1 and q[14] == 1 and q[16] == 4;
-    # Q3 quads also carry their centre, radius and short-edge midpoints.
-    wide = Face(vertices=[Vec3(), Vec3(y=64.0), Vec3(y=64.0, z=8.0), Vec3(z=8.0)], uv=[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0], colors=[10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40]);
+    # Q3 quads also carry their centre, radius and short-edge midpoints. The
+    # indices are q3map's strip (3 0 2, 2 0 1), stored reversed.
+    wide = Face(vertices=[Vec3(), Vec3(y=64.0), Vec3(y=64.0, z=8.0), Vec3(z=8.0)], uv=[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0], colors=[10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40], indices=[3, 2, 0, 2, 1, 0]);
     sprite = bytearray(4 * WORLD_VERTEX_STRIDE);
     pack_world_face(sprite, 0, wide, 0, 0, 64, 0.0, 0, -1, True, sprites=True);
     w = struct.unpack_from("<fffffffBBBBfffBBBBBBBBffffffff", bytes(sprite), WORLD_VERTEX_STRIDE);
@@ -134,7 +143,57 @@ test "world vertices pack position, coordinates, light, styles and sprite data" 
     assert w[22] == 0.0 and w[23] == 32.0 and w[24] == 4.0;
     # Vertex 1 ends the short edge 1-2, midpoint (0, 64, 4), half length 4.
     assert w[26] == 0.0 and w[27] == 64.0 and w[28] == 4.0 and w[29] == 4.0;
-    assert w[17] == 4 + 0 * 2 + 0 or w[17] == 4 + 1 * 2 + 0;
+    # Its edge is the second shortest and it goes forward along the minor axis.
+    assert w[17] == 4 + 1 * 2 + 0;
+}
+
+"""Autosprite2Deform's re-projection of a quad for a view along `forward`,
+as world_mesh.jac SHADER_DEFORM_GLSL does it from sprite_quad's codes."""
+def pivoted(points: list[Vec3], order: list[int], forward: Vec3) -> list[Vec3] {
+    shape = sprite_quad(points, order);
+    middle = points[0].add(points[1]).add(points[2]).add(points[3]).scale(0.25);
+    moved: list[Vec3] = [];
+    for i in range(4) {
+        partner = points[shape.partners[i]];
+        end = points[i].add(partner).scale(0.5);
+        other = middle.scale(2.0).sub(end);
+        major = other.sub(end) if shape.codes[i] < 2 else end.sub(other);
+        minor = major.cross(forward).normalized();
+        half = points[i].sub(partner).length() * 0.5;
+        moved.append(end.add(minor.scale(half if shape.codes[i] % 2 == 0 else -half)));
+    }
+    return moved;
+}
+
+test "autosprite2 pivots a quad about its long axis to face the viewer" {
+    # A flame 64 tall and 8 wide in the x = 0 plane, q3map's indices.
+    points = [Vec3(), Vec3(z=64.0), Vec3(y=8.0, z=64.0), Vec3(y=8.0)];
+    order = [3, 0, 2, 2, 0, 1];
+    shape = sprite_quad(points, order);
+    # The short edges are 0-3 and 1-2; the long ones keep their vertices.
+    assert shape.partners == [3, 2, 1, 0];
+    assert sorted(shape.codes) == [0, 1, 2, 3] and shape.codes[0] // 2 == shape.codes[3] // 2;
+    for forward in [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(x=0.6, y=-0.8)] {
+        moved = pivoted(points, order, forward);
+        # The long axis stays where it was and the ends stay 8 wide.
+        assert moved[0].add(moved[3]).scale(0.5).sub(Vec3(y=4.0)).length() < 0.0001;
+        assert moved[1].add(moved[2]).scale(0.5).sub(Vec3(y=4.0, z=64.0)).length() < 0.0001;
+        assert abs(moved[0].sub(moved[3]).length() - 8.0) < 0.0001;
+        # The quad lies square to the view and is not twisted: both ends
+        # run the same way across it.
+        assert abs(moved[0].sub(moved[3]).dot(forward)) < 0.0001;
+        assert moved[0].sub(moved[3]).dot(moved[1].sub(moved[2])) > 63.0;
+        # Its first triangle (file winding 3 0 2) turns clockwise for the
+        # viewer, the side Q3 draws.
+        normal = moved[0].sub(moved[3]).cross(moved[2].sub(moved[3]));
+        assert normal.dot(forward) > 0.0;
+    }
+    # A fan's triangles (0 1 2, 0 2 3) list edge 1-2 in order: that end turns
+    # the other way, as the original's index test has it.
+    fanned = sprite_quad(points, [0, 1, 2, 0, 2, 3]);
+    assert fanned.codes[1] % 2 == 1 and fanned.codes[0] % 2 == 0;
+    assert file_winding([3, 2, 0, 2, 1, 0]) == order;
+    assert face_index_bytes(Face(vertices=points), 10, SPRITE_STAMP_CORNERS) == struct.pack("<HHHHHH", 10, 13, 11, 13, 12, 11);
 }
 
 test "tcMod steps reproduce the CPU tcMods, turb included" {
@@ -187,4 +246,46 @@ test "brush placements become model matrices about the pivot" {
     assert same_placement(other, face);
     other.frame = 1;
     assert not same_placement(other, face);
+}
+
+test "the lightmap atlas is the smallest size that holds the map's lightmaps" {
+    # Three 128-texel Q3 pages (130 with their borders) need 512.
+    pages = fit_light_atlas([128, 128, 128], [128, 128, 128], [1, 1, 1]);
+    assert pages.fits and pages.size == 512 and pages.unit == 1;
+    assert pages.xs == [1, 131, 261] and pages.ys == [1, 1, 1];
+    # A fourth starts the next shelf, two texels under the first.
+    four = pack_light_blocks([128] * 4, [128] * 4, [1] * 4, 512);
+    assert four.xs[3] == 1 and four.ys[3] == 131;
+    # One page fits the smallest atlas; 226 of them (15 x 15 fit 2048) need 4096.
+    assert fit_light_atlas([128], [128], [1]).size == 256;
+    assert fit_light_atlas([128] * 225, [128] * 225, [1] * 225).size == 2048;
+    assert fit_light_atlas([128] * 226, [128] * 226, [1] * 226).size == 4096;
+    # Q1/Q2 faces lay their light style layers side by side.
+    styled = pack_light_blocks([16, 16], [8, 8], [4, 1], 256);
+    assert styled.xs == [1, 73] and styled.ys == [1, 1];
+    # Past 4096 a block's corner is aligned so 4096 steps span the atlas.
+    big = pack_light_blocks([128] * 3, [128] * 3, [1] * 3, 8192);
+    assert big.unit == 2 and big.xs == [2, 132, 262] and big.ys == [2, 2, 2];
+    assert not pack_light_blocks([300], [8], [1], 256).fits;
+    assert not pack_light_blocks([8], [300], [1], 256).fits;
+    assert not fit_light_atlas([20000], [8], [1]).fits and LIGHT_ATLAS_SIZES[-1] == 16384;
+}
+
+test "a face's lightmap block corner is packed in the atlas's units" {
+    face = square(8.0);
+    face.light_offset = 0;
+    face.light_uv = [0.0, 0.0, 2.0, 0.0, 2.0, 2.0, 0.0, 2.0];
+    face.styles = [0];
+    face.texinfo = TexInfo(s=Vec3(y=1.0), t=Vec3(z=-2.0), soff=0.0, toff=0.0, texture=0, flags=0);
+    face.light_width = 3;
+    face.light_height = 2;
+    out = bytearray(4 * WORLD_VERTEX_STRIDE);
+    pack_world_face(out, 0, face, 5000, 6002, 8192, 0.25, 1, -1, False, unit=2);
+    q = struct.unpack_from("<fffffffBBBBfffBBBBBBBBffffffff", bytes(out), 0);
+    assert q[29] == float(2500 * 4096 + 3001);
+}
+
+test "the world shaders hold as many fog volumes as the original numbers" {
+    assert WORLD_FOG_LIMIT == 31;
+    assert "fogPlane[31]" in WORLD_FOG_GLSL and "fogColor[31]" in WORLD_FOG_GLSL;
 }

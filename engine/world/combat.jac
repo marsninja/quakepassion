@@ -8,7 +8,8 @@ import from .particles {
     beam_trail,
     explode,
     blast_kind,
-    missile_hit_flesh
+    missile_hit_flesh,
+    spawn_effect
 }
 import from .navigation { RouteSearch, RouteQueue, walk_edge, waypoint_reached }
 import from .opponent_rule { OpponentRule, AttackProfile, Gait, Reaction, rule_profiles }
@@ -4453,8 +4454,10 @@ walker CombatTick {
             here.bot_state = BotState();
             here.pose_name = "";
             here.pos = destination;
-            # g_client.c ClientSpawn: G_KillBox telefrags whoever stands there.
+            # g_client.c ClientSpawn: G_KillBox telefrags whoever stands there,
+            # and EV_PLAYER_TELEPORT_IN shows the spawn effect.
             if self.world is not None {
+                spawn_effect(self.world, destination.sub(Vec3(z=here.eye_height)));
                 self.world spawn KillBox(
                     mover=here,
                     origin=destination.sub(Vec3(z=here.eye_height)),

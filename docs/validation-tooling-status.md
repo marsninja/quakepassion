@@ -60,7 +60,8 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
 | `validate_movement.jac`, `validate_traversal.jac`, `validate_swimming.jac`, `validate_ladders.jac` (`QP_MAPS`) | Player movement, teleporter and launch destinations, liquids, Q2 ladders and currents |
 | `validate_hazards.jac` | Damage volumes and their persistence |
 | `validate_collision_index.jac` | Indexed collision queries against exhaustive ones |
-| `validate_models.jac`, `validate_alias_models.jac` | Every Q2 MD2 and skin; Q1 MDL and Q3 MD3 archives |
+| `validate_models.jac`, `validate_alias_models.jac` | Every Q2 MD2 and skin; Q1 MDL and Q3 MD3 archives, and how each Q3 model shader script is drawn (stages, hidden, or plain skin with the reason) |
+| `validate_patches.jac` (`QP_SUBDIVISIONS`) | Every Q3 map's patches subdivided and stitched: valid grids, and triangle counts beside the former fixed tessellation |
 | `validate_generation.jac` | Passion's generator (no assets): every seed softlock-free and completable |
 | `audit_campaigns.jac`, `chain_audit.jac` (Q1/Q2; `QP_AUDIT_GAMES`, `QP_AUDIT_MAPS`) | Entity inventory of the installed maps; per-map exits, disabled movers and triggers, unactivated targets |
 

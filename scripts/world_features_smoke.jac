@@ -1,14 +1,17 @@
 """Original maps: the world renderer's animated and special surfaces, each
 looked at up close at a fixed moment: Q1 liquids, sky, animated textures and
-flickering light styles, Q2 flowing and translucent surfaces, and Q3 shader
-stages (scrolling and pulsing stages, deforms, autosprites, environment
-maps). Saves world_<map>_<feature>.png in the working directory, for
-comparing renderers by eye or pixel by pixel.
+flickering light styles, Q2 flowing and translucent surfaces and the sky box
+(still on base1, turning on space and boss2), and Q3 shader stages (scrolling
+and pulsing stages, deforms, autosprites, environment maps). Saves
+world_<map>_<feature>.png in the working directory, for comparing renderers
+by eye or pixel by pixel. QP_FEATURE_GAMES (for example
+"q3") limits the games.
 
     jac build scripts/world_features_smoke.jac --native -o .jac/world-features
     DYLD_LIBRARY_PATH=vendor .jac/world-features
 """
 import math;
+import os;
 import from engine.core.menu { game_directory }
 import from engine.world.level { Level, load_level }
 import from engine.world.world { World }
@@ -22,6 +25,14 @@ def shows(level: Level, index: int, feature: str) -> bool {
     face = level.bsp.faces[index];
     t = face.texture;
     name = level.bsp.textures[t].name.lower();
+    if feature == "skybox" {
+        # The six-image box shows through the map's sky surfaces (Q2
+        # SURF_SKY, whatever the texture is called).
+        if len(level.bsp.sky) != 6 or len(face.vertices) < 3 {
+            return False;
+        }
+        return "sky" in name or (face.texinfo is not None and (face.texinfo.flags & 4) != 0);
+    }
     if face.hidden or len(face.vertices) < 3 {
         return False;
     }
@@ -90,15 +101,21 @@ with entry {
     cases: list[list[str]] = [
         ["q1", "e1m1", "liquid,sky,animated,style"],
         ["q1", "e1m3", "liquid,sky,style"],
-        ["q2", "base1", "liquid,flowing,translucent,animated,style"],
+        ["q2", "base1", "liquid,flowing,translucent,animated,style,skybox"],
         ["q2", "q2dm1", "liquid,translucent"],
+        ["q2", "space", "skybox"],
+        ["q2", "boss2", "skybox"],
         ["q3", "q3dm1", "scroll,pulse,sprite,wave,chrome"],
         ["q3", "q3dm7", "scroll,pulse,sprite,wave,chrome"],
         ["q3", "q3dm12", "scroll,pulse,sprite,wave"]
     ];
+    wanted = os.getenv("QP_FEATURE_GAMES", "");
     for scenario in cases {
         game = scenario[0];
         name = scenario[1];
+        if wanted and game not in wanted.split(",") {
+            continue;
+        }
         world = World();
         level = load_level(world, game_directory(game), name, game);
         drawing = QuakeRenderer();

@@ -6,7 +6,7 @@ import from .passion.generate { generate }
 import from .passion.materials { load_materials }
 
 def open_level(
-    world: World, directory: str, name: str, game: str, skill: int = 1
+    world: World, directory: str, name: str, game: str, skill: int = 1, subdivisions: float = 4.0
 ) -> Level {
     if game == "passion" {
         cache = os.environ.get(
@@ -14,5 +14,5 @@ def open_level(
         );
         return generate(world, name, load_materials(directory), cache);
     }
-    return load_level(world, directory, name, game, skill);
+    return load_level(world, directory, name, game, skill, subdivisions);
 }

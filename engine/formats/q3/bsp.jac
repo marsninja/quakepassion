@@ -1,6 +1,7 @@
 """Quake III BSP46 surfaces, quadratic patches, and cluster visibility."""
 import from ..bsp {
     FogVolume,
+    FlareSurface,
     Brush,
     Bsp,
     Texture,
@@ -18,15 +19,7 @@ import from ..bsp {
     parse_entities
 }
 import from ...math.vec3 { Vec3 }
-
-obj Vertex {
-    has pos: Vec3 = Vec3(),
-        s: float = 0.0,
-        t: float = 0.0,
-        ls: float = 0.0,
-        lt: float = 0.0,
-        colors: list[float] = [];
-}
+import from .curve { Vertex, CurveGrid, subdivide_patch, stitch_all_patches, CURVE_SUBDIVISIONS }
 
 def add_vertex(face: Face, v: Vertex) {
     face.vertices.append(v.pos);
@@ -38,58 +31,47 @@ def add_vertex(face: Face, v: Vertex) {
     }
 }
 
-def tessellate(
-    face: Face, controls: list[Vertex], width: int, height: int, steps: int = 8
-) {
+"""A patch face's grid (tr_curve.c R_SubdividePatchToGrid at `subdivisions`,
+r_subdivisions). The control grid itself is kept on the face for collision
+(cm_patch.c)."""
+def patch_grid(
+    face: Face, controls: list[Vertex], width: int, height: int, subdivisions: float = CURVE_SUBDIVISIONS
+) -> CurveGrid {
     if width < 3
         or height < 3
         or width % 2 != 1
         or height % 2 != 1
         or width * height != len(controls)
-        or steps < 1
-        or steps > 32 {
+        or subdivisions <= 0.0 {
         raise ValueError("Invalid quadratic patch grid");
     }
-    # The control grid itself is what collision subdivides.
     face.patch_width = width;
     face.patch_height = height;
     face.patch_points = [c.pos for c in controls];
-    for py in range(0, height - 2, 2) {
-        for px in range(0, width - 2, 2) {
-            base = len(face.vertices);
-            for y in range(steps + 1) {
-                v = float(y) / float(steps);
-                wy = [(1.0 - v) * (1.0 - v), 2.0 * v * (1.0 - v), v * v];
-                for x in range(steps + 1) {
-                    u = float(x) / float(steps);
-                    wx = [(1.0 - u) * (1.0 - u), 2.0 * u * (1.0 - u), u * u];
-                    out = Vertex(colors=[0.0, 0.0, 0.0, 0.0]);
-                    for j in range(3) {
-                        for i in range(3) {
-                            c = controls[(py + j) * width + px + i];
-                            weight = wx[i] * wy[j];
-                            out.pos = out.pos.add(c.pos.scale(weight));
-                            out.s += c.s * weight;
-                            out.t += c.t * weight;
-                            out.ls += c.ls * weight;
-                            out.lt += c.lt * weight;
-                            for k in range(4) {
-                                out.colors[k] += c.colors[k] * weight;
-                            }
-                        }
-                    }
-                    add_vertex(face, out);
-                }
-            }
-            for y in range(steps) {
-                for x in range(steps) {
-                    a = base + y * (steps + 1) + x;
-                    b = a + steps + 1;
-                    face.indices.extend([a, a + 1, b, a + 1, b + 1, b]);
-                }
-            }
+    return subdivide_patch(width, height, controls, subdivisions);
+}
+
+"""Give a face its grid's vertices, row by row, and two triangles a cell."""
+def emit_grid(face: Face, grid: CurveGrid) {
+    for row in grid.rows {
+        for v in row {
+            add_vertex(face, v);
         }
     }
+    for y in range(grid.height - 1) {
+        for x in range(grid.width - 1) {
+            a = y * grid.width + x;
+            b = a + grid.width;
+            face.indices.extend([a, a + 1, b, a + 1, b + 1, b]);
+        }
+    }
+}
+
+"""Tessellate one patch on its own (no neighbours to stitch to)."""
+def tessellate(
+    face: Face, controls: list[Vertex], width: int, height: int, subdivisions: float = CURVE_SUBDIVISIONS
+) {
+    emit_grid(face, patch_grid(face, controls, width, height, subdivisions));
 }
 
 def int_vec(data: bytes, p: int) -> Vec3 {
@@ -100,7 +82,9 @@ def int_vec(data: bytes, p: int) -> Vec3 {
     );
 }
 
-def parse_q3(data: bytes) -> Bsp {
+"""Read a Q3 BSP. `subdivisions` is r_subdivisions, the error its patches are
+subdivided to."""
+def parse_q3(data: bytes, subdivisions: float = CURVE_SUBDIVISIONS) -> Bsp {
     require_range(data, 0, 144);
     if data[0:4] != b"IBSP" or i32_at(data, 4) != 46 {
         raise ValueError("Expected Quake 3 BSP version 46");
@@ -217,6 +201,9 @@ def parse_q3(data: bytes) -> Bsp {
         verts.append(v);
     }
     index_count = records(lumps[11], 4);
+    # Patch faces and their grids, emitted once neighbours are stitched.
+    patches: list[Face] = [];
+    grids: list[CurveGrid] = [];
     for i in range(records(lumps[13], 104)) {
         p = i * 104;
         texture = i32_at(lumps[13], p);
@@ -243,7 +230,8 @@ def parse_q3(data: bytes) -> Bsp {
             fog=i32_at(lumps[13], p + 4),
             planar=(kind == 1),
             patch=(kind == 2),
-            # SURF_SKY (4) faces show the sky behind them; SURF_NODRAW (128) nothing.
+            # SURF_SKY (4) faces show the sky behind them; SURF_NODRAW (128)
+            # nothing; flares (kind 4) have no geometry of their own.
             hidden=(kind == 4 or (bsp.textures[texture].flags & 132) != 0),
             normal=vec_at(lumps[13], p + 84)
         );
@@ -255,13 +243,26 @@ def parse_q3(data: bytes) -> Bsp {
             face.light_height = 128;
             face.styles = [0];
         }
+        if kind == 4 {
+            # dsurface_t lightmapOrigin, lightmapVecs[0] and lightmapVecs[2].
+            bsp.flares.append(
+                FlareSurface(face=i, origin=vec_at(lumps[13], p + 48), color=vec_at(lumps[13], p + 60), normal=face.normal)
+            );
+        }
         if kind == 2 {
-            tessellate(
+            grid = patch_grid(
                 face,
                 verts[first:first + count],
                 i32_at(lumps[13], p + 96),
-                i32_at(lumps[13], p + 100)
+                i32_at(lumps[13], p + 100),
+                subdivisions
             );
+            # tr_bsp.c ParseMesh: the LOD group's bounds, in lightmapVecs.
+            low = vec_at(lumps[13], p + 60);
+            grid.lod_origin = low.add(vec_at(lumps[13], p + 72)).scale(0.5);
+            grid.lod_radius = low.sub(grid.lod_origin).length();
+            patches.append(face);
+            grids.append(grid);
         } elif kind != 4 {
             for j in range(first, first + count) {
                 add_vertex(face, verts[j]);
@@ -285,6 +286,12 @@ def parse_q3(data: bytes) -> Bsp {
             face.fog = -1;
         }
         bsp.faces.append(face);
+    }
+    # R_StitchAllPatches, then the grids become the faces' vertices.
+    stitch_all_patches(grids);
+    for k in range(len(patches)) {
+        emit_grid(patches[k], grids[k]);
+        patches[k].plane_dist = patches[k].normal.dot(patches[k].vertices[0]);
     }
     marks = records(lumps[5], 4);
     for i in range(records(lumps[4], 48)) {

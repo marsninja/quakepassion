@@ -16,7 +16,7 @@ import from .triggers { trigger_volume }
 import from .doors { door_direction }
 import from .signals { Signal, HasSignal, note_chain }
 import from .speakers { Speaker, HasSpeaker }
-import from .particles { teleport_splash }
+import from .particles { teleport_splash, spawn_effect }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..formats.q1.collision { build_collision }
 import from ..formats.brush_collision { build_brush_collision }
@@ -222,6 +222,10 @@ walker TraversalTick {
                 destination.origin, destination.origin
             ).start_solid {
                 return;
+            }
+            # g_misc.c TeleportPlayer: EV_PLAYER_TELEPORT_OUT where it left.
+            if here.game == "q3" and self.world is not None {
+                spawn_effect(self.world, self.player.pos.sub(Vec3(z=self.collision.eye_height)));
             }
             self.player.pos = destination.origin.add(Vec3(z=self.collision.eye_height));
             self.player.yaw = destination.yaw;

@@ -121,7 +121,7 @@ import from ..world.combat {
 import from ..world.vitals { CrashLand, VoiceTick }
 import from ..world.demise { LieDead, mortality_of, in_touch, stand_again }
 import from games.deaths { prepare_death }
-import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
+import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound, spawn_effect }
 import from ..render.view_feedback { ViewFeedback }
 import from ..world.light_effects { combat_lights }
 import from ..world.teardown { destroy_graph, collision_roots }
@@ -162,6 +162,7 @@ import from games.q2_layouts {
 }
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
+import from ..render.flares { FlareRenderer }
 import from ..render.viewweapon { ViewWeapon }
 import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
@@ -325,6 +326,7 @@ obj App {
         player_trail: PlayerTrail | None = None,
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
+        flares: FlareRenderer = FlareRenderer(),
         viewweapon: ViewWeapon = ViewWeapon(),
         hud: HudRenderer = HudRenderer(),
         light_styles: LightStyles | None = None,

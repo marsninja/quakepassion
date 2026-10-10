@@ -27,6 +27,9 @@ obj EffectRule {
         frames: list[int] = [],
         explosion: bool = False,
         shader: str = "",
+        # LE_FADE_RGB: drawn on the world's axes, its shader's entity colour
+        # fading with its life (the teleport effect).
+        entity_fade: bool = False,
         # The looping sound it makes in flight (Q2 s.sound, Q3 missileSound).
         sound: str = "";
 }

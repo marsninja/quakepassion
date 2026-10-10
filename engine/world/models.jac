@@ -53,12 +53,19 @@ obj ModelDraw {
         light_flags: int = 0,
         light: ModelLight | None = None,
         shader: str = "",
-        inflate: float = 0.0;
+        # refEntity_t shaderRGBA, for rgbGen entity stages; none is black.
+        entity_color: list[float] = [];
 }
 
+# cg_players.c CG_ColorFromString of the default "color1 4" and "color2 5":
+# the red of a player's railgun flash (CG_AddPlayerWeapon) and rail core, and
+# the magenta of the rail's spiral (CG_RailTrail).
+glob PLAYER_COLOR1: list[float] = [1.0, 0.0, 0.0, 0.0],
+     PLAYER_COLOR2: list[float] = [1.0, 0.0, 1.0, 0.0];
+
 """Q3 powerup shaders (cgs.media.quadShader and friends), registered as model
-resources named "shader:<shader>", and how far each pushes the surface out
-(its deformVertexes wave base). Bodies and weapons use different ones."""
+resources named "shader:<shader>"; each pushes the surface out by its own
+deformVertexes wave. Bodies and weapons use different ones."""
 glob POWERUP_BODY_SHELLS: dict[str, str] = {
     "quad": "powerups/quad",
     "regen": "powerups/regen",
@@ -69,14 +76,6 @@ glob POWERUP_WEAPON_SHELLS: dict[str, str] = {
     "battlesuit": "powerups/battleWeapon"
 };
 glob POWERUP_INVISIBLE: str = "powerups/invisibility";
-glob POWERUP_INFLATE: dict[str, float] = {
-    "powerups/quad": 3.0,
-    "powerups/regen": 3.0,
-    "powerups/battleSuit": 1.0,
-    "powerups/quadWeapon": 0.5,
-    "powerups/battleWeapon": 0.5,
-    "powerups/invisibility": 0.0
-};
 
 """CG_AddRefEntityWithPowerups (and CG_AddWeaponWithPowerups for a weapon):
 the shaders one model is drawn with. An invisible player is only the
@@ -289,7 +288,7 @@ walker GatherModels {
             self.draws.append(
                 ModelDraw(resource=draw.resource, origin=draw.origin, yaw=draw.yaw, first=draw.first,
                     second=draw.second, blend=draw.blend, basis=draw.basis, light_origin=draw.light_origin, light=draw.light,
-                    shader="shader:" + shader, inflate=POWERUP_INFLATE.get(shader, 0.0))
+                    shader="shader:" + shader)
             );
         }
     }
@@ -395,9 +394,12 @@ walker GatherModels {
             muzzle = lerp_tag(gun.model, 0, 0, 0.0, "tag_flash");
             if muzzle is not None {
                 lit = held.on_tag(muzzle, quake_basis(Vec3(z=rig.flash_roll)));
+                # CG_AddPlayerWeapon colours only the railgun's flash; the gun
+                # itself keeps a cleared shaderRGBA outside the first-person view.
                 self.draws.append(
                     ModelDraw(resource=flash, origin=lit.origin, yaw=0.0, first=0, second=0,
-                        blend=0.0, basis=lit.basis, light_origin=origin, light=rig.light)
+                        blend=0.0, basis=lit.basis, light_origin=origin, light=rig.light,
+                        entity_color=PLAYER_COLOR1 if kits[0].key == "railgun" else [])
                 );
             }
         }

@@ -9,6 +9,8 @@ import from engine.world.traversal {
     load_traversal
 }
 import from engine.world.world { World, Player }
+import from engine.world.particles { Explosion, HasExplosion, teleport_splash, spawn_effect, SPAWN_EFFECT_KIND }
+import from engine.world.particle_field { ParticleField, particle_field }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3, right_from }
 import from engine.formats.bsp { MapEntity }
@@ -283,4 +285,25 @@ test "Q3 holds a teleported player's exit speed for 160 ms" {
     assert player.knockback_time == 0.16 and player.teleport_time == 0.0;
     other = teleported("q2");
     assert other.knockback_time == 0.0 and other.teleport_time == 0.0;
+}
+
+test "a Q3 teleport shows CG_SpawnEffect in place of a spray" {
+    world = World();
+    field = particle_field(world, "q3");
+    # EV_PLAYER_TELEPORT_IN at a player's origin: the effect model 24 units
+    # below it, a local entity fading over half a second.
+    teleport_splash(world, Vec3(x=64.0, y=32.0, z=100.0));
+    blasts = [world->:HasExplosion:->][?:Explosion];
+    assert len(blasts) == 1 and blasts[0].kind == SPAWN_EFFECT_KIND and SPAWN_EFFECT_KIND == "q3_teleport";
+    assert blasts[0].pos.x == 64.0 and blasts[0].pos.y == 32.0 and blasts[0].pos.z == 76.0;
+    assert blasts[0].lifetime == 0.5 and blasts[0].age == 0.0;
+    assert not field.puffs;
+    # TeleportPlayer leaves one where the player was as well.
+    spawn_effect(world, Vec3(z=24.0));
+    assert len([world->:HasExplosion:->][?:Explosion]) == 2;
+    # Other games keep their own flashes and leave no effect entity.
+    plain = World();
+    particle_field(plain, "passion");
+    teleport_splash(plain, Vec3());
+    assert not [plain->:HasExplosion:->][?:Explosion];
 }

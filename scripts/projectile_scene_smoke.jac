@@ -5,6 +5,7 @@ import from engine.render.effects { EffectScene }
 import from engine.world.world { World }
 import from engine.world.combat { Projectile, HasProjectile }
 import from engine.math.vec3 { Vec3 }
+import from engine.formats.animated { SHADER_CULL_NONE }
 import from games.weapons { weapon_effects }
 
 with entry {
@@ -18,7 +19,7 @@ with entry {
         if game == "q3" {
             rocket = scene.models["q3_rocket"];
             assert any(
-                stage.two_sided and stage.blend == "add" for stage in rocket.stages
+                stage.cull == SHADER_CULL_NONE and stage.blend == "add" for stage in rocket.stages
             );
             grenade = scene.models["q3_grenade"];
             assert any(

@@ -26,6 +26,7 @@ import from .trains { load_trains }
 import from .lightstyles { load_light_styles }
 import from .particle_field { particle_field }
 import from .particles { MarkSurfaces, HasMarkSurfaces }
+import from .flares { seed_flares }
 import from .clocks { load_clocks }
 import from .flyers { load_flyers }
 import from .falling { load_falling_objects }
@@ -441,7 +442,9 @@ obj Level {
         cloud_height: float = 128.0,
         sky_rotate: float = 0.0,
         sky_axis: Vec3 = Vec3(),
-        portal_ranges: dict[int, float] = {};
+        portal_ranges: dict[int, float] = {},
+        # The flareShader's image, when the map has flare surfaces.
+        flare_image: Texture | None = None;
 
     def locate(eye: Vec3) -> int {
         head = self.bsp.models[0].head;
@@ -702,14 +705,16 @@ def asset(paks: list[PakArchive], name: str) -> bytes {
     raise ValueError("Missing Quake asset: " + name);
 }
 
+"""Load a map and build its level graph. `subdivisions` is r_subdivisions for
+a Q3 map's patches."""
 def load_level(
-    world: World, directory: str, map_name: str, game: str = "q1", skill: int = 1
+    world: World, directory: str, map_name: str, game: str = "q1", skill: int = 1, subdivisions: float = 4.0
 ) -> Level {
     level = Level(active=True, name=map_name, skill=skill);
     if game == "q3" {
         assets = Pk3Assets();
         assets.open(directory);
-        level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"));
+        level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"), subdivisions);
         # Models are lit from the light grid (worldspawn "gridsize").
         spacing = Vec3(x=64.0, y=64.0, z=128.0);
         for entity in level.bsp.entities[:1] {
@@ -752,6 +757,14 @@ def load_level(
                 fog.color = Vec3(x=parms[0], y=parms[1], z=parms[2]);
                 fog.depth = parms[3];
             }
+        }
+        # tr_shader.c CreateExternalShaders: every flare draws with flareShader.
+        if level.bsp.flares {
+            flare_stages = assets.model_stages("flareShader");
+            if flare_stages {
+                level.flare_image = flare_stages[0].texture;
+            }
+            seed_flares(world, level.bsp.flares);
         }
         for index in range(len(level.bsp.textures)) {
             reach = assets.portal_range(level.bsp.textures[index].name);

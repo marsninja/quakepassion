@@ -81,5 +81,3 @@ References: [Q1 weapons.qc](https://github.com/id-Software/Quake/blob/master/QW/
 ## Limitations
 
 - Passion has no view models.
-- Q3 model shaders' `deformVertexes` stages are parsed but applied only to
-  world surfaces (`engine/render/quake.jac`), not to view or world models.

@@ -50,6 +50,12 @@ def player_part(
             mappings[fields[0].strip()] = fields[1].strip();
         }
     }
+    # A surface whose shader has nothing to draw (hunter's harpy feathers,
+    # `surfaceparm nodraw` alone) is left out.
+    model.surfaces = [
+        surface for surface in model.surfaces
+        if surface.name not in mappings or not library.pk3.model_hidden(mappings[surface.name])
+    ];
     skins: list[Texture] = [];
     for surface in model.surfaces {
         if surface.name not in mappings { raise ValueError("Missing player surface skin: " + surface.name); }
@@ -236,7 +242,7 @@ def powerup_shells(world: World, library: AssetLibrary, resources: dict[str, Mod
         if key in resources {
             continue;
         }
-        stages = library.pk3.model_stages(shader, True);
+        stages = library.pk3.model_stages(shader);
         if not stages {
             continue;
         }
