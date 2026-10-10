@@ -20,7 +20,7 @@ import from .arena { ChooseSpawn }
 import from .inventory { Inventory, quantity, AdjustInventory }
 import from .models { Visual, ModelResource, UsesModel, PlayerRig }
 import from .player_rig { PoseRig, rig_sound, reset_rig }
-import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_corpse, shootable }
+import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_corpse, shootable, in_no_drop }
 import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
 import from .demise { body_struck }
@@ -806,6 +806,15 @@ def gibbable_corpse(enemy: Opponent) -> bool {
         and not enemy.dormant;
 }
 
+"""Q3 player_die's trap_PointContents: whether a player stands in a
+CONTENTS_NODROP void of its world, where it is never gibbed."""
+def in_void(victim: Opponent) -> bool {
+    for world in [victim<-:HasOpponent:<-][?:World] {
+        return in_no_drop(world, victim.pos.sub(Vec3(z=victim.eye_height)));
+    }
+    return False;
+}
+
 def burst(victim: Opponent, overkill: int) {
     victim.gibbed = True;
     victim.visual.visible = False;
@@ -1140,7 +1149,8 @@ def damage_opponent(
         victim.pending_explosion = victim.rule.death_splash > 0;
         victim.remains = -damage.overkill;
         victim.death_variant = 0;
-        if gibs_at(victim.gib_rule, victim.remains) {
+        # Q3 player_die: "never gib in a nodrop"; body_die may burst it later.
+        if gibs_at(victim.gib_rule, victim.remains) and not (victim.arena and in_void(victim)) {
             burst(victim, damage.overkill);
         } else {
             begin_death(victim, damage.dealt + damage.overkill, point);
@@ -4325,8 +4335,9 @@ walker CombatTick {
             }
             corpse = here.visual;
             if isinstance(corpse, PlayerRig) {
-                # TossClientItems as the body starts to fall.
-                if corpse.alive and self.world is not None {
+                # TossClientItems as the body starts to fall; in a nodrop
+                # void nothing is dropped.
+                if corpse.alive and self.world is not None and not in_void(here) {
                     toss_items(self.world, here, here.shown_weapon, self.collision, here.eye_height);
                 }
                 self.pose_body(here, corpse, Vec3());

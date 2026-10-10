@@ -53,8 +53,7 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - The Q3 railgun draws its core only, not the raildisc rings.
-- A Q3 player killed in a `CONTENTS_NODROP` void still gibs; Q2 `AI_BRUTAL`
-  and lava burning a Q2 body are not modelled.
+- Q2 `AI_BRUTAL` and lava burning a Q2 body are not modelled.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
 - Q3 flares are not drawn; `deformVertexes` applies to world surfaces only, and

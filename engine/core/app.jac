@@ -142,7 +142,7 @@ import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..render.hud_models { HudModels, head_view }
 import from ..world.reflection { PlayerBody, HasBody, show_body, follow_body }
-import from ..world.body_queue { leave_corpse }
+import from ..world.body_queue { leave_corpse, in_no_drop }
 import from ..world.drops { toss_items, TossTick }
 import from ..world.monster_count { monster_total }
 import from ..world.area_portals { AreaPortalTick }

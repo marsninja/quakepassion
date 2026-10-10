@@ -72,7 +72,9 @@ part of a rig shares one sample.
     (`body_die`); a gibbed body takes no more damage.
   - A dead bot keeps falling (its pmove runs on), so the copy is left where it
     came to rest. None is left in a `CONTENTS_NODROP` void such as the one
-    around q3dm17.
+    around q3dm17, and a player or bot killed there is not gibbed by that
+    blow and drops nothing (`player_die`); a later hit on the falling body
+    still bursts it.
 - Sounds (`cg_event.c`): each rig names its character's voice and footstep
   type: pain tiers (at most two a second), three deaths, jumps, landings (a
   thud, `pain100` or `fall1` by impact speed), footsteps every 320 ms while
@@ -95,7 +97,7 @@ part of a rig shares one sample.
   angles, legs and torso choices, deaths, sound cues, tag attachment with
   barrel and flash, the body queue, the quad shell.
 - `tests/gib_tests.jac`: Q3 bodies soaking shots until they gib, no body in a
-  nodrop void, bodies not blocking movement.
+  nodrop void, a bot killed there not gibbed, bodies not blocking movement.
 - `tests/lighting_tests.jac`: the light grid. `tests/item_drop_tests.jac`:
   powerup shaders on bodies and weapons.
 - `tests/podium_tests.jac` and `tests/portal_tests.jac`: podium figures, the

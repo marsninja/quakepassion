@@ -165,7 +165,10 @@ body, a `Mortality` node the player holds:
   its head (`ThrowClientHead`, `PM_GIB`): a 16 unit box resting on an origin
   32 higher, the eye 8 above that, the throw added to its speed, moving by
   the player's move without the dead drag. Q3 `GibEntity` throws
-  `CG_GibPlayer`'s skull and ten pieces and the body is gone. The Q1 and Q2
+  `CG_GibPlayer`'s skull and ten pieces and the body is gone, except in a
+  `CONTENTS_NODROP` void such as the one around q3dm17: there `player_die`
+  never gibs and drops nothing, so the body dies whole with its cry and
+  falls on, and only a later hit bursts it (`body_die`). The Q1 and Q2
   head models are not drawn: the head is the player's own entity, which its
   view leaves out (`CL_RelinkEntities`, `RF_VIEWERMODEL`).
 - **Shot bodies.** Q2 `player_die` leaves the body taking damage and Q3's
@@ -226,8 +229,8 @@ left.
   missile landing and a monster going back to its stand after the death, the
   dead touching nothing in each game, the Q1 toss and the Q2 and Q3 dead
   boxes and slide, each game's buttons and waits, the player's gibs at each
-  game's health, the Q1 and Q2 head and its eye, and Q2 and Q3 bodies shot
-  until they burst.
+  game's health, the Q1 and Q2 head and its eye, Q2 and Q3 bodies shot
+  until they burst, and a Q3 player killed whole in a nodrop void.
 - `tests/view_sway_tests.jac` (bob, roll, gun lag, Q2 shot kick, dead and
   intermission views, and Q3's death camera against numbers worked by hand
   from `CG_OffsetThirdPersonView`: level, pitched down past the cap, pitched
@@ -246,14 +249,15 @@ left.
   player comes to rest as the head, and a Q2 and a Q3 body shot twice where
   it lies bursts on the second hit. In Q3 the death camera is on with the
   body in view (and out of it once gibbed), and the respawn leaves the body
-  in the queue. Captures: `qp_death_<game>.png`, `qp_death_gib_<game>.png`.
+  in the queue. Last, on q3dm17, a player and a bot are killed 1000 past
+  zero in the void under the map: neither gibs, and the player's body does
+  at the next hit. Captures: `qp_death_<game>.png`,
+  `qp_death_gib_<game>.png`, `qp_death_void_q3.png`.
   `scripts/gameplay_smoke.jac` checks the same waits, and Enter, from the
   keyboard.
 
 ## Limitations
 
-- A Q3 player killed in a `CONTENTS_NODROP` void (q3dm17's) still gibs;
-  `player_die` never gibs there.
 - Q2 `AI_BRUTAL` (a tank firing on at a corpse down to -80 health) is not
   modelled, and a Q2 body lying in lava or slime is not burnt on
   (`P_WorldEffects`).

@@ -7,6 +7,7 @@ import from .world { World, Entity, Player, Area, move_to_area }
 import from .models { HasVisual, PlayerRig, WeaponKit }
 import from .player_rig { PoseRig, hold_kit, rig_sound }
 import from .vitals { q3_gibbed }
+import from .demise { death_pending }
 import from ..math.vec3 { Vec3 }
 
 """`cues` are the sounds its poses have cued that nobody has played yet."""
@@ -33,7 +34,8 @@ def player_body(rig: PlayerRig) -> PlayerBody {
 """Put the body where the player is, with the weapon they hold, and pose its
 rig from their movement. The sounds the pose cues wait on the body. The dead
 hold nothing (player_die: WP_NONE), and a body gibbed at its death makes no
-death cry (EV_GIB_PLAYER)."""
+death cry (EV_GIB_PLAYER); the rig starts to die once the body has taken its
+death and that is known."""
 def pose_player_body(
     body: PlayerBody,
     player: Player,
@@ -70,7 +72,7 @@ def pose_player_body(
         pitch=player.pitch,
         water_depth=player.water_depth,
         crouched=player.crouched,
-        alive=player.health > 0,
+        alive=player.health > 0 or death_pending(player),
         health=player.health,
         hurt=hurt,
         shots=shots,

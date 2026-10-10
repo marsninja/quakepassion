@@ -1125,8 +1125,14 @@ impl App.step() -> bool {
         if hurt {
             self.pain_time = 0.2;
         }
-        if self.level.bsp.game == "q3" and self.player.health <= 0 and self.pain_health > 0 {
-            # g_combat.c player_die: TossClientItems.
+        if self.level.bsp.game == "q3"
+            and self.player.health <= 0
+            and self.pain_health > 0
+            and not in_no_drop(
+                self.world, self.player.pos.sub(Vec3(z=self.level.collision.eye_height))
+            ) {
+            # g_combat.c player_die: TossClientItems, unless "client is in a
+            # nodrop area".
             toss_items(self.world, self.player, selected_weapon(self.combat).key, self.level.collision, self.level.collision.eye_height);
         }
         if self.level.bsp.game == "q3" {

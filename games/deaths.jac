@@ -49,6 +49,7 @@ def death_rule(game: str) -> DeathRule {
             forced=20.0,
             gibs=gib_rule("q3", "player"),
             shootable=True,
+            whole_in_void=True,
             head=BodyForm(top_drop=40.0, eye_height=-16.0)
         );
     }

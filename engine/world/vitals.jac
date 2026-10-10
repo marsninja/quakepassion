@@ -2,6 +2,7 @@
 jumping, landing, pain, death, water and burning, each game by its own rules."""
 import from .world { Player }
 import from .damage { Damage }
+import from .demise { Mortality, HasMortality }
 import from .powerups { empowered }
 
 """A landing at `speed` units a second (downward). Q1 PlayerPostThink: over
@@ -123,9 +124,17 @@ def voice_of(player: Player) -> Voice {
     return voice;
 }
 
-"""Q3 GIB_HEALTH: a player killed 40 or more past zero bursts."""
+"""Q3 GIB_HEALTH: a player killed 40 or more past zero bursts (GibEntity). A
+body with a death of its own (demise.jac) says whether it did, once it has
+fallen: player_die never gibs one in a nodrop void."""
 def q3_gibbed(body: Player) -> bool {
-    return body.health <= 0 and body.death_overkill >= 40;
+    if body.health > 0 {
+        return False;
+    }
+    for fallen in [body->:HasMortality:->][?:Mortality] {
+        return fallen.dead and fallen.gibbed;
+    }
+    return body.death_overkill >= 40;
 }
 
 """Once per tick: Q1 client.qc WaterMove (inh2o/inlava/slimbrn2 on entry,

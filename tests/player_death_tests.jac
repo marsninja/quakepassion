@@ -16,7 +16,10 @@ import from engine.world.demise {
 import from engine.world.world { World, Player, Area, move_to_area }
 import from engine.world.gibs { Gib, HasGib, GibsInto }
 import from engine.world.models { ModelResource }
-import from engine.world.vitals { VoiceTick }
+import from engine.world.vitals { VoiceTick, q3_gibbed }
+import from engine.world.body_queue { NoDropSpace, HasNoDrop, in_no_drop }
+import from engine.world.reflection { HasBody, player_body, show_body, follow_body }
+import from engine.world.player_rig { dress_rig, rig_clips }
 import from engine.formats.animated { AnimatedModel }
 import from engine.math.aabb { AABB }
 import from engine.world.combat {
@@ -543,5 +546,86 @@ test "Q2 and Q3 bodies are still shot, and burst when that takes them past the g
         left = player.death_overkill;
         player spawn Damage(amount=50);
         assert player.death_overkill == left and not body_struck(player);
+    }
+}
+
+test "a Q3 player killed in a nodrop void falls on whole, until a later hit bursts it" {
+    world = World();
+    area = gib_room(world);
+    # CONTENTS_NODROP below z = -500, as the void around q3dm17.
+    void = NoDropSpace();
+    void.volume.add_box(
+        Vec3(x=-5000.0, y=-5000.0, z=-9000.0), Vec3(x=5000.0, y=5000.0, z=-500.0), Vec3(), Vec3(), Vec3()
+    );
+    void.volume.reindex();
+    world +>:HasNoDrop:+> void;
+    collision = death_floor("q3");
+    # The player's own rig, as the death view shows it.
+    rows: list[list[float]] = [];
+    for i in range(25) {
+        rows.append([float(i * 12), 11.0, 11.0, 21.0]);
+    }
+    part = ModelResource(name="sarge", model=AnimatedModel(), skins=[]);
+    rig = dress_rig(rig_clips(rows), part, part, part);
+    world +>:HasBody:+> player_body(rig);
+    player = gibbable("q3", area);
+    player.pos = Vec3(z=-700.0);
+    player.grounded = True;
+    follow_body(world, player, 26.0, "", 0.0);
+    assert in_no_drop(world, player.pos.sub(Vec3(z=26.0)));
+    # The void's trigger_hurt: far past GIB_HEALTH.
+    player spawn Damage(amount=1000, bypass_armor=True, bypass_protection=True);
+    assert player.health == 0 and player.death_overkill == 900;
+    # Until the body has taken its death nothing is decided: no gib sound,
+    # and the rig is not yet dying.
+    early = player spawn VoiceTick(game="q3", dt=TICK);
+    show_body(world, player, 26.0, "", 0.01, True);
+    assert not q3_gibbed(player) and rig.alive and rig.visible;
+    assert "sound/player/gibsplt1.wav" not in early.cues;
+    step = player spawn LieDead(
+        collision=collision, profile=movement_profile("q3"), dt=TICK, world=world
+    );
+    fallen = mortality_of(player);
+    # player_die: "never gib in a nodrop". The body dies whole, with its cry.
+    assert step.died and not step.burst and step.thrown == 0;
+    assert fallen.dead and not fallen.gibbed and fallen.spared == 900;
+    assert not [world->:HasGib:->][?:Gib] and not q3_gibbed(player);
+    voice = player spawn VoiceTick(game="q3", dt=TICK);
+    assert "sound/player/gibsplt1.wav" not in voice.cues;
+    show_body(world, player, collision.eye_height, "", 0.02, True);
+    assert rig.visible and not rig.alive;
+    cues = follow_body(world, player, collision.eye_height, "", 0.03);
+    assert [cue for cue in cues if "death" in cue];
+    # It falls on as it is.
+    for tick in range(60) {
+        player spawn LieDead(collision=collision, profile=movement_profile("q3"), dt=TICK, world=world);
+    }
+    assert not fallen.gibbed and player.velocity.z < -300.0 and body_struck(player);
+    # body_die: any later hit finds it at GIB_HEALTH and bursts it.
+    player spawn Damage(amount=1);
+    late = player spawn LieDead(
+        collision=collision, profile=movement_profile("q3"), dt=TICK, world=world
+    );
+    assert late.burst and late.thrown == 11 and fallen.gibbed and q3_gibbed(player);
+    sound = player spawn VoiceTick(game="q3", dt=TICK);
+    assert "sound/player/gibsplt1.wav" in sound.cues;
+    show_body(world, player, collision.eye_height, "", 0.6, True);
+    assert not rig.visible;
+    # Out of the void the same blow gibs at once.
+    above = gibbable("q3", area);
+    above spawn Damage(amount=1000, bypass_armor=True, bypass_protection=True);
+    direct = above spawn LieDead(
+        collision=death_floor("q3"), profile=movement_profile("q3"), dt=TICK, world=world
+    );
+    assert direct.died and direct.burst and mortality_of(above).spared == -1;
+    # Q1 and Q2 know no such void.
+    for game in ["q1", "q2"] {
+        other = gibbable(game, area);
+        other.pos = Vec3(z=-700.0);
+        other spawn Damage(amount=1000, bypass_armor=True, bypass_protection=True);
+        gone = other spawn LieDead(
+            collision=death_floor(game), profile=movement_profile(game), dt=TICK, world=world
+        );
+        assert gone.burst and mortality_of(other).gibbed;
     }
 }
