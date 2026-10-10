@@ -43,10 +43,11 @@ and run `sample <pid> 8`.
   keeps only the groups its segment passes through.
   `scripts/validate_collision_index.jac` compares indexed and exhaustive
   queries on e1m1, base1 and q3dm1.
-- Monsters decide on attacks at 10 Hz, as the originals think, and bots look
-  for enemies at their 10 Hz think rate. Movement and gravity run on
-  the 120 Hz tick; resting actors probe their support at 20 Hz, and a settled
-  one only once its place is disturbed.
+- Monsters decide on attacks and take their steps at 10 Hz, as the originals
+  think, and bots look for enemies at their 10 Hz think rate. Between its
+  steps a monster is only carried along (no traces); falls, knocks and bots'
+  movement run on the 120 Hz tick; resting actors probe their support at
+  20 Hz, and a settled one only once its place is disturbed.
 
 ## Model lighting and the cycle collector (2026-09-28)
 

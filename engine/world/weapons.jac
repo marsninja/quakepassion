@@ -1,4 +1,6 @@
 """Weapon descriptions shared by game rules, pickups and combat simulation."""
+import from ..math.vec3 { Vec3 }
+
 obj WeaponRule {
     has slot: int,
         key: str,
@@ -33,6 +35,21 @@ obj WeaponRule {
         punch_time: float = 0.0,
         raise_time: float = 0.0,
         lower_time: float = 0.0;
+    # Where shots leave, from the eye: x units along the aim, y to the right
+    # and z up in the world (Q1 weapons.qc's launch origins, Q2 p_weapon.c's
+    # P_ProjectSource offsets, Q3 g_weapon.c CalcMuzzlePoint). With
+    # `muzzle_level` the reach along the aim moves the muzzle sideways only
+    # (Q1 FireBullets sets the height by itself). `muzzle_alternates` mirrors
+    # the sideways offset on every other shot (Q1 player_nail1 and
+    # player_nail2: W_FireSpikes(4), then (-4)). `muzzle_jitter` moves each
+    # shot at random up to that far sideways and up or down (Q2
+    # Chaingun_Fire), and `muzzle_orbit` carries the muzzle round a circle of
+    # that radius, a sixth of a turn a shot (Q2 Weapon_HyperBlaster_Fire).
+    has muzzle: Vec3 = Vec3(),
+        muzzle_level: bool = False,
+        muzzle_alternates: bool = False,
+        muzzle_jitter: float = 0.0,
+        muzzle_orbit: float = 0.0;
 }
 
 """A first-person weapon's model and animation. Frames step ten a second,

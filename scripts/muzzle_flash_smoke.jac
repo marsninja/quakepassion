@@ -16,7 +16,8 @@ import from engine.world.combat {
     advance_attack,
     muzzle_flash_age
 }
-import from engine.world.area_portals { AreaPortal, HasAreaPortal, OpensPortal }
+import from engine.world.area_portals { HasAreaPortal, OpensPortal }
+import from engine.world.map_areas { AreaPortal }
 import from engine.world.doors { Door }
 import from games.opponents { populate_opponents }
 import from engine.math.vec3 { Vec3 }
@@ -54,8 +55,8 @@ with entry {
             if shooter is not None or candidate.dormant {
                 continue;
             }
-            rule = candidate.rule;
-            if not rule.muzzles {
+            ensure_profiles(candidate);
+            if not [profile for profile in candidate.profiles if profile.kind == "ranged" and profile.muzzles] {
                 continue;
             }
             for i in range(16) {

@@ -1,5 +1,5 @@
 import from engine.formats.brush_collision { build_brush_collision }
-import from engine.physics.movement { MovePlayer }
+import from engine.physics.movement { MovePlayer, movement_profile }
 import from engine.world.traversal {
     Traversal,
     Destination,
@@ -9,8 +9,10 @@ import from engine.world.traversal {
     load_traversal
 }
 import from engine.world.world { World, Player }
+import from engine.world.particles { Explosion, HasExplosion, teleport_splash, spawn_effect, SPAWN_EFFECT_KIND }
+import from engine.world.particle_field { ParticleField, particle_field }
 import from engine.physics.collision { CollisionMap }
-import from engine.math.vec3 { Vec3 }
+import from engine.math.vec3 { Vec3, right_from }
 import from engine.formats.bsp { MapEntity }
 import from tests.trigger_support { trigger_fixture }
 
@@ -217,4 +219,91 @@ test "Q2 arrival hold pauses movement before releasing normal physics" {
         player spawn MovePlayer(collision=CollisionMap(), dt=0.04);
     }
     assert player.pos.z < 100.0;
+}
+
+
+"""A player sent through a `game` teleporter to a spot in the open air."""
+def teleported(game: str) -> Player {
+    world = World();
+    pad = Traversal(volume=traversal_box(), kind="teleport", game=game);
+    pad +>:ArrivesAt:+> Destination(origin=Vec3(x=100.0, z=5000.0));
+    world +>:HasTraversal:+> pad;
+    player = Player(pos=Vec3(x=20.0, z=22.0), grounded=True);
+    world spawn TraversalTick(
+        player=player, collision=CollisionMap(), start=Vec3(x=-20.0), dt=0.01
+    );
+    assert player.pos.x == 100.0;
+    return player;
+}
+
+test "Q1 keeps a teleported player from backing up for 0.7 seconds" {
+    # teleport_touch sets teleport_time; SV_AirMove drops a backward
+    # forwardmove until it runs out, and leaves the strafe alone.
+    player = teleported("q1");
+    assert player.teleport_time == 0.7 and player.knockback_time == 0.0;
+    rules = movement_profile("q1");
+    side = right_from(0.0);
+    player.velocity = Vec3();
+    player spawn MovePlayer(
+        collision=CollisionMap(),
+        wish=Vec3(x=-1.0).add(side),
+        command=Vec3(x=1.0, y=-1.0),
+        command_full=400.0,
+        profile=rules
+    );
+    assert abs(player.velocity.x) < 0.00001;
+    assert player.velocity.dot(side) > 1.0;
+    # Forward is never held back.
+    player.velocity = Vec3();
+    player spawn MovePlayer(
+        collision=CollisionMap(),
+        wish=Vec3(x=1.0),
+        command=Vec3(y=1.0),
+        command_full=400.0,
+        profile=rules
+    );
+    assert player.velocity.x > 1.0;
+    for i in range(84) {
+        player spawn MovePlayer(collision=CollisionMap(), profile=rules);
+    }
+    assert player.teleport_time == 0.0;
+    player.velocity = Vec3();
+    player spawn MovePlayer(
+        collision=CollisionMap(),
+        wish=Vec3(x=-1.0),
+        command=Vec3(y=-1.0),
+        command_full=400.0,
+        profile=rules
+    );
+    assert player.velocity.x < -1.0;
+}
+
+test "Q3 holds a teleported player's exit speed for 160 ms" {
+    # TeleportPlayer: pm_time 160 with PMF_TIME_KNOCKBACK. Q2 holds the
+    # player in place instead, and neither sets Q1's teleport_time.
+    player = teleported("q3");
+    assert player.knockback_time == 0.16 and player.teleport_time == 0.0;
+    other = teleported("q2");
+    assert other.knockback_time == 0.0 and other.teleport_time == 0.0;
+}
+
+test "a Q3 teleport shows CG_SpawnEffect in place of a spray" {
+    world = World();
+    field = particle_field(world, "q3");
+    # EV_PLAYER_TELEPORT_IN at a player's origin: the effect model 24 units
+    # below it, a local entity fading over half a second.
+    teleport_splash(world, Vec3(x=64.0, y=32.0, z=100.0));
+    blasts = [world->:HasExplosion:->][?:Explosion];
+    assert len(blasts) == 1 and blasts[0].kind == SPAWN_EFFECT_KIND and SPAWN_EFFECT_KIND == "q3_teleport";
+    assert blasts[0].pos.x == 64.0 and blasts[0].pos.y == 32.0 and blasts[0].pos.z == 76.0;
+    assert blasts[0].lifetime == 0.5 and blasts[0].age == 0.0;
+    assert not field.puffs;
+    # TeleportPlayer leaves one where the player was as well.
+    spawn_effect(world, Vec3(z=24.0));
+    assert len([world->:HasExplosion:->][?:Explosion]) == 2;
+    # Other games keep their own flashes and leave no effect entity.
+    plain = World();
+    particle_field(plain, "passion");
+    teleport_splash(plain, Vec3());
+    assert not [plain->:HasExplosion:->][?:Explosion];
 }

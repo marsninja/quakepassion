@@ -3,7 +3,8 @@ import from engine.world.world { World }
 import from engine.world.portals { PortalSurface, HasPortal, portal_view, perpendicular, load_portals }
 import from engine.formats.bsp { Bsp, Face, MapEntity }
 import from engine.world.world { Player }
-import from engine.world.reflection { PlayerBody, HasBody, Carries, player_body, show_body }
+import from engine.world.reflection { PlayerBody, HasBody, Carries, player_body, show_body, follow_body }
+import from engine.world.damage { Damage }
 import from engine.world.models { ModelResource, WeaponKit, Holds }
 import from engine.world.player_rig { dress_rig, rig_clips, ANIM_LEGS_IDLE, ANIM_LEGS_RUN }
 import from engine.formats.animated { AnimatedModel }
@@ -75,4 +76,41 @@ test "the player's body follows them into portal views only" {
     assert rig.legs_anim == ANIM_LEGS_RUN and rig.legs.frame != rig.clips[ANIM_LEGS_RUN].first;
     show_body(world, player, 26.0, "railgun", 0.15, False);
     assert not rig.visible;
+}
+
+test "the dead player's body is shown dying, unarmed, and not at all once gibbed" {
+    world = World();
+    rows: list[list[float]] = [];
+    for i in range(25) {
+        rows.append([float(i * 12), 11.0, 11.0, 21.0]);
+    }
+    part = ModelResource(name="sarge", model=AnimatedModel(), skins=[]);
+    rig = dress_rig(rig_clips(rows), part, part, part);
+    rail = WeaponKit(key="railgun");
+    body = player_body(rig);
+    body +>:Carries(key="railgun"):+> rail;
+    world +>:HasBody:+> body;
+    player = Player(health=100, pos=Vec3(x=10.0, z=26.0), yaw=1.0, grounded=True);
+    follow_body(world, player, 26.0, "railgun", 0.0);
+    assert [rig->:Holds:->][?:WeaponKit] == [rail];
+    # The view that first sees the death starts the fall; its cry is kept
+    # for whoever plays the body's sounds.
+    player spawn Damage(amount=120, bypass_armor=True);
+    show_body(world, player, -16.0, "railgun", 0.05, True);
+    assert rig.visible and not rig.alive and rig.legs_anim in [0, 2, 4];
+    # player_die: WP_NONE.
+    assert not [rig->:Holds:->][?:WeaponKit];
+    cues = follow_body(world, player, -16.0, "railgun", 0.1);
+    assert len(cues) == 1 and "death" in cues[0];
+    assert follow_body(world, player, -16.0, "railgun", 0.15) == [];
+    # GibEntity: at GIB_HEALTH the body is ET_INVISIBLE, with no death cry.
+    burst = World();
+    gone = dress_rig(rig_clips(rows), part, part, part);
+    burst +>:HasBody:+> player_body(gone);
+    victim = Player(health=100, pos=Vec3(z=26.0));
+    follow_body(burst, victim, 26.0, "", 0.0);
+    victim spawn Damage(amount=140, bypass_armor=True);
+    show_body(burst, victim, -16.0, "", 0.05, True);
+    assert not gone.visible;
+    assert follow_body(burst, victim, -16.0, "", 0.1) == [];
 }

@@ -54,9 +54,9 @@ import from vendor.raylib {
     ) -> None;
 }
 
-"""The original engines' default master volumes (s_volume): Quake II's raw
-cinematic samples and Quake III's music bypass it, so each is scaled by the
-player's volume against that default to keep the original balance."""
+"""The original engines' default master volumes (s_volume): raw cinematic
+samples (S_RawSamples) and Quake III's music bypass it, so each is scaled by
+the player's volume against that default to keep the original balance."""
 glob Q2_DEFAULT_VOLUME: float = 0.7;
 glob Q3_DEFAULT_VOLUME: float = 0.8;
 
@@ -151,6 +151,9 @@ obj Feedback {
         # player's own looping sound and its path.
         missiles: dict[str, str] = {},
         flights: list[FlightAudio] = [],
+        # Missiles outside the listener's frame (hearing.jac): their loops
+        # are silent.
+        silenced: list[Projectile] = [],
         client_voice: EmitterAudio | None = None,
         client_path: str = "",
         # CDAudio_Play's track, played from a file standing in for the disc.
@@ -337,8 +340,9 @@ obj Feedback {
             gain = sound_falloff(self.game, relative.length(), speaker.attenuation, speaker.looping)
                 if spatial
                 else 1.0;
-            # Distant looping emitters (hundreds of Q1 torches) hold no stream.
-            if speaker.looping and gain <= 0.0 {
+            # Distant looping emitters (hundreds of Q1 torches) hold no stream,
+            # nor do ones outside the listener's frame (hearing.jac).
+            if speaker.looping and (gain <= 0.0 or not speaker.audible) {
                 speaker.requests = 0;
                 if index in self.emitters {
                     StopMusicStream(self.emitters[index].music);
@@ -518,6 +522,11 @@ obj Feedback {
             }
             relative = projectile.pos.sub(eye);
             gain = sound_falloff(self.game, relative.length(), 3.0, True);
+            for unheard in self.silenced {
+                if unheard is projectile {
+                    gain = 0.0;
+                }
+            }
             self.run_loop(
                 found.voice, gain, right_from(yaw).dot(relative.normalized()), paused
             );
@@ -608,7 +617,8 @@ obj Feedback {
         self.music_channel.gain = self.music_volume.number * 2.0 / 3.0 * self.volume.number / Q3_DEFAULT_VOLUME;
         self.music.update(library, self.music_channel);
         self.music_channel.pump();
-        self.cinematic_channel.gain = self.volume.number / Q2_DEFAULT_VOLUME;
+        self.cinematic_channel.gain = self.volume.number
+            / (Q3_DEFAULT_VOLUME if self.game == "q3" else Q2_DEFAULT_VOLUME);
         self.cinematic_channel.pump();
         # The CD plays at full volume beside the effects' default level.
         voice = self.cd;

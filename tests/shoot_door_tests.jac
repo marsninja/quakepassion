@@ -80,3 +80,62 @@ test "explosions activate campaign doors but cannot shoot ordinary proximity doo
         assert door.activation.pending == (1 if health > 0 else 0);
     }
 }
+
+
+test "a Q3 door at rest opens for any damage, and only at rest" {
+    # Think_SpawnNewDoorTrigger makes a door that opens by its own field
+    # shootable too; G_Damage uses a mover resting at its first position.
+    f = DoorFixture();
+    f.setup("q3");
+    door = [f.world->:HasDoor:->][?:Door][0];
+    assert door.automatic and door.max_health == 1;
+    f.world spawn ShootMover(model=1, amount=1);
+    assert door.activation.pending == 1;
+    f.tick(Vec3(x=500.0), 0.05);
+    assert door.state == "opening";
+    f.world spawn ShootMover(model=1, amount=50);
+    assert door.activation.pending == 0;
+    f.tick(Vec3(x=500.0), 2.0);
+    f.tick(Vec3(x=500.0), 0.2);
+    assert door.state == "closing";
+    f.world spawn ShootMover(model=1, amount=50);
+    assert door.activation.pending == 0;
+    f.tick(Vec3(x=500.0), 2.0);
+    assert door.state == "closed";
+    f.world spawn ShootMover(model=1, amount=1);
+    assert door.activation.pending == 1;
+    # A targeted door is left to its target; one given health is shot only.
+    named = DoorFixture();
+    named.setup("q3", {"targetname": "far"});
+    held = [named.world->:HasDoor:->][?:Door][0];
+    named.world spawn ShootMover(model=1, amount=100);
+    assert held.max_health == 0 and held.activation.pending == 0;
+    shot = DoorFixture();
+    shot.setup("q3", {"health": "50"});
+    target = [shot.world->:HasDoor:->][?:Door][0];
+    assert not target.automatic;
+    shot.tick(Vec3(x=60.0, z=24.0), 0.05);
+    assert target.state == "closed";
+    shot.world spawn ShootMover(model=1, amount=1);
+    assert target.activation.pending == 1;
+}
+
+test "Q3 splash reaches a door by the nearest point of its box" {
+    # 107 units from the door's side but 140 from its middle: inside a
+    # 120-unit blast only by G_RadiusDamage's measure, and for less than one
+    # point of damage, which G_Damage does not ask a mover about.
+    for game in ["q2", "q3"] {
+        f = DoorFixture();
+        f.setup(game, {"health": "1"});
+        f.world spawn BlastMover(
+            origin=Vec3(y=140.0, z=48.0),
+            amount=5,
+            radius=120.0,
+            game=game,
+            collision=f.collision,
+            player=Player()
+        );
+        door = [f.world->:HasDoor:->][?:Door][0];
+        assert door.activation.pending == (1 if game == "q3" else 0);
+    }
+}

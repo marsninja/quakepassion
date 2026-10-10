@@ -1,7 +1,7 @@
 """Archive access and model adaptation shared by all three games."""
 import os;
 import from .pak { PakArchive, open_pak }
-import from .pk3 { Pk3Assets }
+import from .pk3 { Pk3Assets, default_texture }
 import from ..formats.animated { AnimatedModel }
 import from ..formats.bsp { Texture }
 import from ..formats.q1.model { parse_mdl }
@@ -110,9 +110,21 @@ obj AssetLibrary {
             }
         } elif self.game == "q3" {
             model = parse_md3(self.read(name));
+            # A surface whose shader has nothing to draw is left out.
+            model.surfaces = [
+                surface for surface in model.surfaces
+                if skin < 0 or skin >= len(surface.skins) or not self.pk3.model_hidden(surface.skins[skin])
+            ];
             for surface in model.surfaces {
                 if skin < 0 or skin >= len(surface.skins) {
                     raise ValueError("MD3 surface needs a skin mapping");
+                }
+                if not surface.skins[skin] {
+                    # tr_model.c R_LoadMD3: a surface that names no shader
+                    # takes the default one (the teleport effect's cylinder,
+                    # which is only drawn with a custom shader).
+                    skins.append(default_texture());
+                    continue;
                 }
                 texture = Texture(name=surface.skins[skin]);
                 surface.stages = self.pk3.model_stages(surface.skins[skin]);

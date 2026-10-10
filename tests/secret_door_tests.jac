@@ -9,14 +9,16 @@ import from engine.core.savegame { snapshot, restore }
 import from engine.math.vec3 { Vec3 }
 import from tests.door_support { DoorFixture }
 
-def secret_fixture(flags: int = 0, named: bool = False) -> DoorFixture {
+def secret_fixture(
+    flags: int = 0, named: bool = False, game: str = "q1", hold: str = "5"
+) -> DoorFixture {
     f = DoorFixture();
     f.setup(
-        "q1",
+        game,
         {
             "classname": "func_door_secret",
             "angle": "0",
-            "wait": "5",
+            "wait": hold,
             "spawnflags": str(flags),
             "targetname": "remote" if named else ""
         }
@@ -146,4 +148,60 @@ test "explosions open shootable secret doors in sight but not named or shielded 
     );
     f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
     assert not door.running;
+}
+
+
+test "a Q2 secret door shoots open the way city3's does and fires no targets" {
+    # city3: ALWAYS_SHOOT | 1ST_LEFT, wait 5, no targetname.
+    f = secret_fixture(3, False, "q2");
+    door = [f.world->:HasTrain:->][?:Train][0];
+    sink = Signal();
+    door.activation +>:Targets:+> sink;
+    assert door.shootable
+        and door.start_voice is None
+        and door.move_voice is None
+        and door.stop_voice is None;
+    f.world spawn ShootMover(model=1);
+    for i in range(128) {
+        f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
+    }
+    # 1ST_LEFT: the first move is to the left of the arrow.
+    assert abs(door.motion.y - 64.0) < 0.001 and door.motion.x == 0.0 and sink.pending == 0;
+    for i in range(170) {
+        f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
+    }
+    assert abs(door.motion.y - 64.0) < 0.001 and abs(door.motion.x - 16.0) < 0.001;
+    # Shot again while open, it stays its course (takedamage is off until
+    # door_secret_done).
+    f.world spawn ShootMover(model=1);
+    for i in range(900) {
+        f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
+    }
+    assert not door.running and door.motion.length() < 0.001;
+    f.world spawn ShootMover(model=1);
+    f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.01);
+    assert door.running;
+}
+
+test "Q2 secret door flags and wait are Q2's own" {
+    # Flag 1 is ALWAYS_SHOOT, not Q1's OPEN_ONCE: a targeted door is shot
+    # open with it and left to its target without it.
+    for flags in [0, 1] {
+        f = secret_fixture(flags, True, "q2");
+        door = [f.world->:HasTrain:->][?:Train][0];
+        f.world spawn ShootMover(model=1);
+        f.world spawn TrainTick(bsp=f.bsp, collision=f.collision, dt=0.1);
+        assert door.running == (flags == 1);
+    }
+    # A wait of -1 holds the door open for good (door_secret_move3).
+    held = secret_fixture(0, False, "q2", "-1");
+    door = [held.world->:HasTrain:->][?:Train][0];
+    held.world spawn ShootMover(model=1);
+    for i in range(1500) {
+        held.world spawn TrainTick(bsp=held.bsp, collision=held.collision, dt=0.01);
+    }
+    assert not door.running and abs(door.motion.x - 16.0) < 0.001;
+    held.world spawn ShootMover(model=1);
+    held.world spawn TrainTick(bsp=held.bsp, collision=held.collision, dt=0.1);
+    assert not door.running and abs(door.motion.x - 16.0) < 0.001;
 }

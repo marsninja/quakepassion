@@ -144,6 +144,16 @@ obj FogVolume {
         depth: float = 1.0;
 }
 
+"""A Q3 flare surface (MST_FLARE, tr_bsp.c ParseFlare): face `face` of the
+map has no geometry, only a point on a light, the light's colour and the
+way it faces."""
+obj FlareSurface {
+    has face: int,
+        origin: Vec3,
+        color: Vec3,
+        normal: Vec3;
+}
+
 obj Bsp {
     has game: str = "q1",
         light_channels: int = 1,
@@ -163,6 +173,7 @@ obj Bsp {
         lighting: bytes = b"",
         visibility: bytes = b"",
         fogs: list[FogVolume] = [],
+        flares: list[FlareSurface] = [],
         light_grid: bytes = b"",
         areas: list[list[AreaLink]] = [];
 }

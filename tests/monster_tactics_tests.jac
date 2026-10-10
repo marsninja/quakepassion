@@ -11,6 +11,7 @@ import from engine.world.combat {
     attack_chance
 }
 import from games.items { monster_drop }
+import from engine.world.gibs { GibRule }
 import from engine.world.pickups { Pickup, HasPickup }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
@@ -89,7 +90,8 @@ test "monsters keep running at the player between attacks" {
             }
             attacking = enemy.attack_clock >= 0.0;
         }
-        # Ten seconds: it closes in and moves around rather than standing to fire.
+        # Ten seconds: it runs at the player between its shots (movetogoal)
+        # rather than standing to fire.
         assert travelled > 250.0;
         assert attacks >= 1 and attacks <= 8;
     }
@@ -167,6 +169,9 @@ test "dead monsters drop what they carry where they fall" {
     assert grunt_pack is not None and grunt_pack.grants == {"shells": 5};
     ogre_pack = monster_drop("q1", "monster_ogre", {});
     assert ogre_pack is not None and ogre_pack.grants == {"rockets": 2};
+    # BackpackTouch: "You get " and each kind of ammunition it holds.
+    assert grunt_pack is not None and grunt_pack.message == "You get 5 shells";
+    assert ogre_pack is not None and ogre_pack.message == "You get 2 rockets";
     assert monster_drop("q1", "monster_knight", {}) is None;
     shard = monster_drop("q2", "monster_soldier", {"item": "item_armor_shard"});
     assert shard is not None and shard.kind == "armor";
@@ -183,8 +188,39 @@ test "dead monsters drop what they carry where they fall" {
     world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 60.0);
     assert not backpack.active;
     damage_opponent(grunt, 1000, attacker=player);
-    world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 60.0);
+    # army_die3 / army_cdie3 call DropBackpack: the third frame of the death.
+    assert grunt.death_variant > 0;
+    for tick in range(11) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 60.0);
+    }
+    assert not backpack.active and grunt.animation_time < 2.0;
+    for tick in range(3) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 60.0);
+    }
     assert backpack.active and backpack.released;
-    assert abs(backpack.pos.z) < 0.5 and abs(backpack.pos.x - 100.0) < 0.5;
+    assert abs(backpack.pos.z) < 0.5 and abs(backpack.pos.x - grunt.pos.x) < 0.5;
     assert not [grunt->:Drops:->];
+    # A grunt that gibs plays no death frames and so drops nothing.
+    burst_grunt = tactics_monster("q1", "monster_army", Vec3(x=300.0, z=22.0));
+    burst_grunt.gib_rule = GibRule(threshold=-36);
+    world +>:HasOpponent:+> burst_grunt;
+    spare = Pickup(rule=grunt_pack, pos=burst_grunt.pos, active=False);
+    world +>:HasPickup:+> spare;
+    burst_grunt +>:Drops:+> spare;
+    damage_opponent(burst_grunt, 1000, attacker=player);
+    assert burst_grunt.gibbed and burst_grunt.death_variant == 0;
+    for tick in range(30) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 60.0);
+    }
+    assert not spare.active;
+    # Q2 monster_death_use drops the item as the monster is killed.
+    q2_state = CombatState(game="q2");
+    soldier = tactics_monster("q2", "monster_soldier", Vec3(x=500.0, z=22.0));
+    world +>:HasOpponent:+> soldier;
+    shards = Pickup(rule=shard, pos=soldier.pos, active=False);
+    world +>:HasPickup:+> shards;
+    soldier +>:Drops:+> shards;
+    damage_opponent(soldier, 35, attacker=player);
+    world spawn CombatTick(player=player, collision=collision, state=q2_state, dt=1.0 / 60.0);
+    assert shards.active and shards.released;
 }

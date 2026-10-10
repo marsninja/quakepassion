@@ -177,3 +177,34 @@ test "no body is left in a nodrop void, and bodies do not block movement" {
     }
     assert runner.pos.x > 50.0;
 }
+
+test "a Q3 bot killed in a nodrop void is not gibbed, until its body is hit again" {
+    world = World();
+    area = Area(name="0", bounds=AABB(mins=Vec3(), maxs=Vec3()));
+    world ++> area;
+    # CONTENTS_NODROP below z=-500 (as the void around q3dm17).
+    void = NoDropSpace();
+    void.volume.add_box(Vec3(x=-5000.0, y=-5000.0, z=-9000.0), Vec3(x=5000.0, y=5000.0, z=-500.0), Vec3(), Vec3(), Vec3());
+    void.volume.reindex();
+    world +>:HasNoDrop:+> void;
+    rule = gib_rule("q3", "arena_bot");
+    assert rule is not None;
+    # g_combat.c player_die: "never gib in a nodrop".
+    falling = Opponent(arena=True, game="q3", kind="arena_bot", pos=Vec3(z=-700.0), eye_height=26.0, health=100);
+    falling.gib_rule = rule;
+    move_to_area(falling, area);
+    world +>:HasOpponent:+> falling;
+    damage_opponent(falling, 1000, bypass_armor=True);
+    assert falling.health == 0 and not falling.gibbed and falling.pending_gibs < 0;
+    assert falling.remains == -900;
+    # body_die: a later hit finds the body at GIB_HEALTH.
+    damage_opponent(falling, 1);
+    assert falling.gibbed and falling.pending_gibs >= 0;
+    # On solid ground the same blow gibs at once.
+    standing = Opponent(arena=True, game="q3", kind="arena_bot", pos=Vec3(z=26.0), eye_height=26.0, health=100);
+    standing.gib_rule = rule;
+    move_to_area(standing, area);
+    world +>:HasOpponent:+> standing;
+    damage_opponent(standing, 1000, bypass_armor=True);
+    assert standing.gibbed and standing.pending_gibs == 900;
+}

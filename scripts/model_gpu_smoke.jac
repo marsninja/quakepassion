@@ -41,7 +41,7 @@ with entry {
         drawing.upload(loaded.model, loaded.skins);
         drawings.append(drawing);
         if games[g] == "q3" {
-            stages = library.pk3.model_stages("powerups/quad", True);
+            stages = library.pk3.model_stages("powerups/quad");
             assert stages;
             shell.upload(AnimatedModel(surfaces=[AnimatedSurface(name="powerups/quad", stages=stages)]), [stages[0].texture]);
         }
@@ -87,11 +87,11 @@ with entry {
             spot = Vec3(y=-80.0, z=-5.0);
             if name == "gpu" {
                 q3.draw(spot, yaw, 110, 111, 0.5, eye=eye, illumination=light);
-                q3.draw(spot, yaw, 110, 111, 0.5, eye=eye, seconds=1.3, illumination=light, overlay=shell, inflate=3.0);
+                q3.draw(spot, yaw, 110, 111, 0.5, eye=eye, seconds=1.3, illumination=light, overlay=shell);
                 q3.draw(spot.add(Vec3(z=-55.0)), yaw, 110, 111, 0.5, eye=eye, illumination=light, fog=fog, fog_image=fog_image);
             } else {
                 q3.draw_immediate(spot, yaw, 110, 111, 0.5, eye=eye, illumination=light);
-                q3.draw_immediate(spot, yaw, 110, 111, 0.5, eye=eye, seconds=1.3, illumination=light, overlay=shell, inflate=3.0);
+                q3.draw_immediate(spot, yaw, 110, 111, 0.5, eye=eye, seconds=1.3, illumination=light, overlay=shell);
                 q3.draw_immediate(spot.add(Vec3(z=-55.0)), yaw, 110, 111, 0.5, eye=eye, illumination=light, fog=fog, fog_image=fog_image);
             }
             renderer.draw_projectiles(world);

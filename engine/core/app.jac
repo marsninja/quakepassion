@@ -58,8 +58,28 @@ import from ..world.arena {
     score_rows,
     ordinal
 }
-import from games.arenas { ArenaProgress, AwardLog, load_arenas, next_arena, postgame_medals }
-import from ..render.arena_screens { Postgame, BoardLine, draw_scoreboard, draw_postgame, postgame_score_line }
+import from games.arenas {
+    ArenaProgress,
+    AwardLog,
+    load_arenas,
+    next_arena,
+    postgame_medals,
+    tier_completed,
+    last_tier,
+    tier_video_due,
+    postgame_film,
+    info_with,
+    find_arena,
+    arena_loading_lines
+}
+import from ..render.arena_screens {
+    Postgame,
+    BoardLine,
+    draw_scoreboard,
+    draw_postgame,
+    draw_loading_info,
+    postgame_score_line
+}
 import from ..world.powerups {
     PowerupTick,
     UseItem,
@@ -95,12 +115,13 @@ import from ..world.combat {
     pickup_switch,
     selected_weapon,
     owns_weapon,
-    release_live_grenade,
     KillBox,
     ClearActors
 }
-import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
-import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
+import from ..world.vitals { CrashLand, VoiceTick }
+import from ..world.demise { LieDead, mortality_of, in_touch, stand_again }
+import from games.deaths { prepare_death }
+import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound, spawn_effect }
 import from ..render.view_feedback { ViewFeedback }
 import from ..world.light_effects { combat_lights }
 import from ..world.teardown { destroy_graph, collision_roots }
@@ -120,17 +141,28 @@ import from ..world.turrets { TurretTick, HasTurret }
 import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..render.hud_models { HudModels, head_view }
-import from ..world.reflection { show_body, follow_body }
+import from ..world.reflection { PlayerBody, HasBody, show_body, follow_body }
+import from ..world.body_queue { leave_corpse, in_no_drop }
 import from ..world.drops { toss_items, TossTick }
 import from ..world.monster_count { monster_total }
-import from ..world.area_portals { AreaPortalTick, open_portals, areas_connected }
+import from ..world.area_portals { AreaPortalTick }
+import from ..world.hearing { SoundReach, hearing_rule }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
-import from games.hud_art { load_hud_art, load_q3_models, load_character_icons }
-import from games.q2_layouts { help_computer_layout, unit_summary_layout, q2_inventory_rows }
+import from games.hud_art { load_hud_art, load_q3_models, load_character_icons, load_levelshot }
+import from games.q2_layouts {
+    help_computer_layout,
+    q2_inventory_rows,
+    q2_item_hotkeys,
+    q2_item_counts,
+    q2_step_item,
+    q2_validate_item,
+    Q2_USABLE_ITEMS
+}
 import from games.levels { open_level }
 import from ..render.effects { EffectScene }
+import from ..render.flares { FlareRenderer }
 import from ..render.viewweapon { ViewWeapon }
 import from games.viewweapons { view_weapons }
 import from ..render.models { ModelScene }
@@ -144,7 +176,7 @@ import from ..math.interpolation { TickBlend }
 import from ..world.motion { CaptureMotion }
 import from ..physics.movement { MovePlayer, SetStance }
 import from ..input.input { Intent, Controls, mouse_captured, IsKeyPressed, IsMouseButtonPressed, _capture, _release }
-import from ..input.keys { Keyboard, KeyEvent, key_event_commands }
+import from ..input.keys { Keyboard, KeyEvent, BoundKeys, key_event_commands }
 import from ..console.cvar { Cvar, CVAR_ARCHIVE }
 import from ..console.shell { Shell, ResetCvars }
 import from ..console.console { Console }
@@ -174,6 +206,7 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("god", "god", "toggle god mode"),
     ("noclip", "noclip", "toggle flying through walls"),
     ("give", "give <item> [count]", "give all, health, weapons, ammo, armor or an item"),
+    ("say", "say <text>", "say something to everyone in the match"),
     ("kill", "kill", "suicide"),
     ("use", "use <item>", "use a weapon or item by name (Q2)"),
     ("cmd", "cmd <command>", "run a game command (Q2's forward to the server)"),
@@ -184,7 +217,9 @@ glob HOST_COMMANDS: list[tuple[str, str, str]] = [
     ("screenshot", "screenshot [name]", "save the screen as a PNG"),
     ("vid_restart", "vid_restart", "apply vid_fullscreen, vid_width and vid_height"),
     ("toggleconsole", "toggleconsole", "drop or raise the console"),
-    ("togglemenu", "togglemenu", "open or close the menu")
+    ("togglemenu", "togglemenu", "open or close the menu"),
+    ("cinematic", "cinematic <name>", "play a film from video/ (Q3's RoQ, Q2's .cin)"),
+    ("levelselect", "levelselect", "open the level list (Q3's single-player menu)")
 ];
 
 """The cvars the game loop owns: the skill of the next level, the engine's
@@ -222,6 +257,37 @@ obj HostCvars {
             kind="bool",
             flags=CVAR_ARCHIVE,
             description="the diagnostic overlay"
+        ),
+        # Q3 common.c and cl_cin.c: the introduction plays on the first start
+        # only, and a film run from the console goes on to `nextmap` when it
+        # ends. ui_gameinfo.c keeps the tier films already shown in
+        # g_spVideos.
+        intro_played: Cvar = Cvar(
+            name="com_introplayed",
+            reset_text="0",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="Quake III's introduction has been shown"
+        ),
+        nextmap: Cvar = Cvar(
+            name="nextmap",
+            description="the command a film runs when it ends"
+        ),
+        videos: Cvar = Cvar(
+            name="g_spVideos",
+            flags=CVAR_ARCHIVE,
+            description="the Quake III tier films already shown"
+        ),
+        # g_main.c g_timelimit. Each single-player arena sets it from its
+        # arenas.txt entry as it starts (G_InitBots).
+        timelimit: Cvar = Cvar(
+            name="timelimit",
+            reset_text="0",
+            kind="int",
+            low=0.0,
+            high=10000.0,
+            flags=CVAR_ARCHIVE,
+            description="minutes a Q3 match lasts (0: no limit); a tied score plays on"
         );
 }
 
@@ -260,6 +326,7 @@ obj App {
         player_trail: PlayerTrail | None = None,
         models: ModelScene = ModelScene(),
         effects: EffectScene = EffectScene(),
+        flares: FlareRenderer = FlareRenderer(),
         viewweapon: ViewWeapon = ViewWeapon(),
         hud: HudRenderer = HudRenderer(),
         light_styles: LightStyles | None = None,
@@ -286,11 +353,12 @@ obj App {
         save_path: str = "",
         notice: str = "",
         notice_wait: float = 0.0,
-        selected_item: int = 0,
+        # Q2 pers.selected_item as its itemlist entry ("" for none): what
+        # invuse uses and the inventory marks. A new game selects the Blaster
+        # (InitClientPersistant).
+        selected_item: str = "blaster",
         frame_dt: float = 0.0,
         quad_sound_wait: float = 0.0,
-        respawn_wait: float = 0.0,
-        awaiting_respawn: bool = False,
         show_scores: bool = False,
         arena_progress: ArenaProgress = ArenaProgress(),
         render_times: RenderTimes = RenderTimes();
@@ -309,6 +377,8 @@ obj App {
         pickup_name: str = "",
         pickup_time: float = 0.0,
         heard_hits: int = 0,
+        # The simulation time whose sounds settle_sounds last judged.
+        sounds_settled: float = -1.0,
         ammo_warning: int = 0;
 
     # The console and its shell, the keys and their bindings, the input
@@ -347,18 +417,24 @@ obj App {
         help_open: bool = False,
         inventory_open: bool = False,
         entry_save: str = "";
-    # Q2 films and end pictures (cl_cin.c), and where the game goes when one
-    # finishes (sv_init.c SV_Map's nextserver): a map with its spawnpoint and
-    # unit flag, a .pcx picture, nothing (the game is over), or back to the
-    # level already loaded (`cinematic_resume`, newgame's ntro.cin). `opening`
-    # is a map request whose film plays before the first level.
+    # Films and end pictures (Q2 and Q3 cl_cin.c), and where the game goes
+    # when one finishes. Q2 (sv_init.c SV_Map's nextserver): a map with its
+    # spawnpoint and unit flag, a .pcx picture, nothing (the game is over),
+    # or back to the level already loaded (`cinematic_resume`, newgame's
+    # ntro.cin). Q3 (RoQShutdown): the `nextmap` cvar's command, then the
+    # level again or, after a postgame film, the menu. `opening` is a map
+    # request whose film plays before the first level, or Q3's idlogo.RoQ.
     has cinematic: CinematicPlayer = CinematicPlayer(),
         cinematic_next: str = "",
         cinematic_spawn: str = "",
         cinematic_unit: bool = False,
         cinematic_resume: bool = False,
         pending_cinematic: str = "",
-        opening: str = "";
+        opening: str = "",
+        # A loading plaque is being drawn (scr_drawloading), and whether over
+        # black (Q2 scr_draw_loading 2, after a film).
+        loading: bool = False,
+        loading_black: bool = False;
 
     def begin_intermission(text: str);
     """Show the end-of-level stats at the intermission camera, then go on to
@@ -372,6 +448,11 @@ obj App {
     def help_layout() -> str;
     """Restart the level from its entry autosave after the player died."""
     def restart_level();
+    """Whether the player is in the level to touch its triggers, items,
+    exits, teleporters, hazards and door fields (in_touch)."""
+    def in_touch() -> bool;
+    """cg_view.c renderingThirdPerson: Q3 shows its dead player from outside."""
+    def third_person() -> bool;
     """Take the level-entry autosave and count the level's monsters."""
     def record_entry();
     """SV_Map's film or picture step: play `film` (or show `destination`
@@ -383,9 +464,21 @@ obj App {
         unit: bool = False,
         resume: bool = False
     );
-    """SCR_FinishCinematic and SV_Nextserver: leave the film or picture for
-    what follows it."""
+    """SCR_FinishCinematic and SV_Nextserver, RoQShutdown: leave the film or
+    picture for what follows it."""
     def finish_cinematic();
+    """The running game's own loading screen, drawn once before a level
+    load stalls the frame: Q1 SCR_BeginLoadingPlaque's gfx/loading.lmp over
+    the view and status bar, Q2's pics/loading.pcx over the last frame (over
+    black after a film), Q3's CG_DrawInformation with the arena's
+    levelshot."""
+    def draw_loading(game: str, name: str);
+    """UI_SPPostgameMenu_MenuDraw's third phase: the film for a tier or the
+    ladder just completed, the first time. True when one started."""
+    def postgame_cinematic(board: Postgame) -> bool;
+    """Open the menu on the level's game (Q3 `levelselect`, the main menu a
+    disconnect leaves), with `select` highlighted when it is listed."""
+    def open_level_menu(select: str = "");
     """A frame while a film or picture is up: its clock, skipping, drawing."""
     def cinematic_step(dt: float) -> bool;
     def draw_cinematic();
@@ -461,6 +554,9 @@ obj App {
     def fly(intent: Intent, dt: float);
     def toggle_movement();
     def use_item(kind: str = "");
+    """p_hud.c Cmd_Help_f: open or close the Q2 help computer; opening it
+    reads the news."""
+    def toggle_help();
     def teleport_actor(actor: Player);
     def tick_powerups(dt: float);
     def show_notice(message: str);
@@ -485,6 +581,12 @@ obj App {
     def board_lines(contest: ArenaMatch) -> list[BoardLine];
     """Leave a finished match for the next ladder arena (`advance`) or a rematch."""
     def finish_arena(contest: ArenaMatch, advance: bool = True);
+    """Once for each frame that simulated, before the audio is fed: drop
+    the sounds the game's server would not have sent the player
+    (engine/world/hearing.jac), then sound the new explosions and impacts."""
+    def settle_sounds();
+    """The ladder arena after the one loaded ("" at the end of the ladder)."""
+    def following_arena() -> str;
     """Act on the postgame menu's key: skip ahead, or a button's action."""
     def postgame_input(contest: ArenaMatch);
     def powerup_lines() -> list[str];

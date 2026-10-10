@@ -2,6 +2,7 @@
 import math;
 import from .world { Actor, Player }
 import from .powerups { effect, power_armor_save }
+import from .demise { body_struck }
 import from ..math.vec3 { Vec3 }
 
 """Apply one hit to an actor. `means` separates direct hits from "splash",
@@ -24,7 +25,16 @@ walker Damage {
         overkill: int = 0;
 
     can apply with Actor entry {
-        if self.amount <= 0 or here.health <= 0 {
+        if self.amount <= 0 {
+            return;
+        }
+        if here.health <= 0 {
+            # A dead player's body is still struck where its game leaves it
+            # shootable (Q2 player_die DAMAGE_YES, Q3 "can still be gibbed"):
+            # its health goes on down toward the gib health.
+            if isinstance(here, Player) and body_struck(here) {
+                here.death_overkill += self.amount;
+            }
             return;
         }
         if isinstance(here, Player) and here.god_mode {

@@ -2,7 +2,8 @@
 the rotating Q2 sky, model texture steps, particle records and the
 teleporter pad's sparkle."""
 import struct;
-import from engine.render.quake { sky_turn, packed_tcmods }
+import from engine.render.quake { sky_turn, sky_matrix, packed_tcmods }
+import from engine.render.world_mesh { sky_box_vertices, triangle_points, SKY_BOX_STRIDE, SKY_BOX_AXES }
 import from engine.render.models { MODEL_PLAIN_STEPS }
 import from engine.render.particles { pack_particle, PARTICLE_STRIDE }
 import from engine.formats.animated { ModelStage, TexMod, ShaderWave }
@@ -18,6 +19,59 @@ test "a rotating sky turns counter-clockwise about its axis as glRotatef does" {
     assert abs(turned.x) < 0.00001 and abs(turned.y - 1.0) < 0.00001 and abs(turned.z) < 0.00001;
     along = sky_turn(Vec3(z=5.0), Vec3(z=1.0), 33.0);
     assert abs(along.z - 5.0) < 0.00001 and abs(along.x) < 0.00001;
+}
+
+test "the sky box mesh is six quads laid out as st_to_vec maps them" {
+    packed = sky_box_vertices();
+    assert len(packed) == 36 * SKY_BOX_STRIDE and len(SKY_BOX_AXES) == 6;
+    for side in range(6) {
+        axes = SKY_BOX_AXES[side];
+        # The axis the side stands along, and on which side of the eye.
+        out = [k for k in range(3) if abs(axes[k]) == 3][0];
+        seen: dict[str, bool] = {};
+        for corner in range(6) {
+            v = struct.unpack_from("<fffff", packed, (side * 6 + corner) * SKY_BOX_STRIDE);
+            assert v[out] == (512.0 if axes[out] > 0 else -512.0);
+            # s runs with the texture's u and t against its v.
+            s = v[3] * 2.0 - 1.0;
+            t = 1.0 - v[4] * 2.0;
+            base = [s * 512.0, t * 512.0, 512.0];
+            for k in range(3) {
+                assert v[k] == base[abs(axes[k]) - 1] * (-1.0 if axes[k] < 0 else 1.0);
+            }
+            seen[str(v[3]) + "," + str(v[4])] = True;
+        }
+        assert len(seen) == 4;
+    }
+    # The first side faces +x with the image's top edge up.
+    first = struct.unpack_from("<fffff", packed, 0);
+    assert first[0] == 512.0 and first[1] == 512.0 and first[2] == -512.0 and first[3] == 0.0 and first[4] == 1.0;
+}
+
+test "the sky box is placed on the eye and turned as sky_turn turns a point" {
+    eye = Vec3(x=10.0, y=-20.0, z=30.0);
+    still = sky_matrix(eye, Vec3(), 45.0);
+    assert float(still.m0) == 1.0 and float(still.m5) == 1.0 and float(still.m10) == 1.0;
+    assert float(still.m12) == 10.0 and float(still.m13) == -20.0 and float(still.m14) == 30.0;
+    axis = Vec3(x=1.0, y=2.0, z=-0.5);
+    m = sky_matrix(eye, axis, 70.0);
+    point = Vec3(x=512.0, y=-512.0, z=512.0);
+    want = eye.add(sky_turn(point, axis, 70.0));
+    got = Vec3(
+        x=float(m.m0) * point.x + float(m.m4) * point.y + float(m.m8) * point.z + float(m.m12),
+        y=float(m.m1) * point.x + float(m.m5) * point.y + float(m.m9) * point.z + float(m.m13),
+        z=float(m.m2) * point.x + float(m.m6) * point.y + float(m.m10) * point.z + float(m.m14)
+    );
+    assert got.sub(want).length() < 0.001;
+}
+
+test "a streamed surface's triangles are its points in corner order" {
+    points = [Vec3(x=1.0), Vec3(y=2.0), Vec3(z=3.0), Vec3(x=4.0, y=5.0, z=6.0)];
+    packed = triangle_points(points, [0, 2, 1, 0, 3, 2]);
+    assert len(packed) == 72;
+    assert struct.unpack_from("<fff", packed, 12) == (0.0, 0.0, 3.0);
+    assert struct.unpack_from("<fff", packed, 48) == (4.0, 5.0, 6.0);
+    assert triangle_points(points, []) == b"";
 }
 
 test "model stages without tcMods take one identity texture step" {

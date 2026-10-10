@@ -23,6 +23,14 @@ node Speaker {
         looping: bool = False,
         playing: bool = False,
         requests: int = 0,
+        # Q2 CHAN_NO_PHS_ADD: a sound sent to everyone, wherever it starts
+        # (movers' start and stop sounds).
+        no_phs: bool = False,
+        # Whether a looping sound's entity is in the listener's frame
+        # (engine/world/hearing.jac), and the leaf found for `origin`.
+        audible: bool = True,
+        leaf: int = -1,
+        leaf_origin: Vec3 = Vec3(),
         activation: Signal = Signal(),
         # CG_Speaker's s.frame and s.clientNum: wait and random in tenths.
         repeat_wait: float = 0.0,

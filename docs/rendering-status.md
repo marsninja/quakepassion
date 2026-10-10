@@ -40,10 +40,19 @@ and builds the level graph.
 - **Quake III (BSP46, `engine/formats/q3/bsp.jac`).** JPG and TGA images
   decoded by raylib (built with both decoders by `scripts/stage_raylib.sh`;
   the prebuilt raylib has neither); 128×128 RGB lightmaps with the overbright
-  shift; planar surfaces, triangle soups and quadratic patches (tessellated at
-  eight steps per quadratic piece for drawing; collision uses cm_patch's
-  adaptive facets, `engine/physics/patch_collide.jac`); the light grid for
-  models; cluster PVS; fog volumes. Flare surfaces are skipped.
+  shift; planar surfaces, triangle soups and quadratic patches; the light grid for
+  models; cluster PVS; fog volumes; flare surfaces (`MST_FLARE`: a point, a
+  colour and a normal, no geometry).
+- **Q3 patches** (`engine/formats/q3/curve.jac`) are subdivided for drawing
+  as `R_SubdividePatchToGrid` does: a control column is split in two while
+  the curve's midpoint lies more than `r_subdivisions` (4 units) from the
+  chord of its neighbours, the approximating points are put on the curve, and
+  rows and columns that run straight are dropped, so a flat patch is two
+  triangles. `R_StitchAllPatches` then gives the patches of one LOD group the
+  vertices their neighbours have along a shared edge, so no crack opens
+  between a finely and a coarsely subdivided one. `r_subdivisions` takes
+  effect at the next map load. Collision keeps its own facets from the
+  control points (cm_patch, `engine/physics/patch_collide.jac`).
 - **The BSP graph.** Every game's tree becomes `Split` and `BspArea` (leaf)
   nodes joined by `Front`/`Back` edges. `Locate` walks to the eye's leaf and
   `CollectFaces` gathers the faces of the visible leaves.
@@ -54,6 +63,41 @@ and builds the level graph.
   cluster 0 and leaf 0) and collects the visible faces. Sets are cached per
   leaf, and three recent sets are kept so a portal view and the main view each
   keep theirs. Brush-model faces are always included and use live transforms.
+- **Area portals** (`engine/world/map_areas.jac`,
+  `engine/world/area_portals.jac`). A Q2 or Q3 map is cut into areas that
+  meet only at area portals. Each area is a `MapArea` node; every leaf lies
+  `Within` one, and an area `Joins` the `AreaPortal` nodes on its border. A Q2
+  portal is a `func_areaportal` that its door holds open or a relay toggles;
+  a Q3 portal is a door whose box reaches two areas, open from when it
+  leaves rest until it is back (`SV_AdjustAreaPortalState`). Whenever a
+  portal changes, the `FloodAreaConnections` walker gives the areas that
+  open portals join the same flood number (`FloodArea_r`).
+  - `Level.visible` leaves out the leaves of areas outside the eye's flood
+    (Q2 `R_RecursiveWorldNode`'s areabits, Q3 `R_MarkLeaves`' areamask), and
+    builds its kept sets again when the flood changes.
+  - `GatherModels` skips entities standing in a sealed area
+    (`SV_BuildClientFrame`, `SV_AddEntitiesVisibleFromPoint`).
+  - From outside every area (flying through solid) nothing is sealed.
+  - Measured by `scripts/area_portal_smoke.jac` (2026-10-09), standing 96
+    units from a portal door with that door open and then shut, every other
+    portal shut; models are what `GatherModels` collects before the frustum
+    cull:
+
+    | map | door | world faces open → shut | models open → shut |
+    |---|---|---|---|
+    | q2 base1 | `*19` | 1321 → 570 | 59 → 46 |
+    | q2 bunk1 | `*103` | 1271 → 366 | 41 → 20 |
+    | q2 jail4 | `*43` | 1365 → 492 | 27 → 8 |
+    | q2 ware1 | `*30` | 1264 → 113 | 22 → 2 |
+    | q2 command | `*25` | 1168 → 89 | 17 → 0 |
+    | q3 q3dm0 | `*12` | 1525 → 415 | 29 → 5 |
+    | q3 q3dm8 | `*17` | 1191 → 233 | 117 → 11 |
+    | q3 q3dm12 | `*43` | 1626 → 79 | 45 → 0 |
+    | q3 q3tourney4 | `*10` | 1841 → 758 | 46 → 9 |
+
+    From bunk1's start with every portal shut, 10 of the level's 207 models
+    are gathered and 560 faces drawn (596 by the PVS alone); from
+    q3tourney4's, 758 faces (1502) and 9 of 46 models.
 - `r_novis 1` (Settings: Visibility culling Off) draws every face and model.
 - Models are gathered from the areas that hold entities (`GatherModels`,
   `engine/world/models.jac`) and culled by a bounding sphere covering every
@@ -75,6 +119,12 @@ and builds the level graph.
   chunks through their own index buffer, grouped by placement: models at rest
   together, each moving model with a model matrix. Groups rebuild only when a
   model starts or stops moving or a face is hidden or shown.
+- **The lightmap atlas** is sized from the map: the smallest power of two
+  from 256 to 16384 that holds its lightmap blocks on shelves
+  (`fit_light_atlas`, `engine/render/world_mesh.jac`). A Q3 map's 128×128
+  pages each take one block; a Q1/Q2 face takes one per light style, side by
+  side. Past 4096 block corners are aligned so the per-vertex block offset
+  still addresses them.
 - **Q1/Q2 lightmapped surfaces**: one pass of texture × light-style layers.
   Each layer is stored raw in the atlas and scaled in the shader by its
   style's current value, so animating styles uploads only the values. Up to
@@ -91,8 +141,15 @@ and builds the level graph.
 - **Q3 fog pass** (`RB_FogPass`) and **cloud layers** (the sky dome is a vertex
   chunk; the stage shader applies the layer's tcMods). Two-sided fog surfaces
   seen from inside fade with distance as `RB_FogPass` does.
-- **Still through raylib's rlgl batch**: the Q2/Q3 sky box (six quads) and Q3
-  portal backdrops (the portal view shown on its surface).
+- **Sky box** (`R_DrawSkyBox`): six quads in one static mesh
+  (`sky_box_vertices`), drawn a side at a time with that side's image; the
+  model matrix puts the box on the eye and turns it for Q2's `skyrotate`
+  (`sky_matrix`).
+- **Q3 portal backdrops** (the portal view shown on its surface, or black for
+  a portal whose view was not rendered): the surface's triangles, deformed on
+  the CPU, are streamed face by face to a small dynamic vertex buffer and
+  drawn by a program that samples the portal view where each pixel falls on
+  the screen.
 
 ## Models
 
@@ -104,13 +161,14 @@ and builds the level graph.
   162 `anorms.h` normals. Texels run in rows of 4096, so no frame count hits
   `GL_MAX_TEXTURE_SIZE`.
 - **Corners** are static, non-indexed vertex records (frame-0 texel, vertices
-  per frame, texture coordinates), so there is no 16-bit index limit.
+  per frame, texture coordinates, and on autosprite surfaces which corner of
+  its quad each is), so there is no 16-bit index limit.
 - **Per draw** the CPU sends one `vec4[8]` uniform (placement, the two frames
-  and blend, shell inflate, ambient and directed light, direction and rear
-  factor, opacity, the eye in model space) and one `vec4` per stage. The
-  vertex shader lerps position and normal, pushes powerup shells out along the
-  normal, computes environment-mapped coordinates, the light (Q1/Q2 shade from
-  the lightmaps, Q3 light grid, the RF_GLOW pulse) and Q3 fog coordinates.
+  and blend, ambient and directed light, direction and rear factor, opacity,
+  the eye in model space) and a few `vec4`s per stage. The vertex shader
+  lerps position and normal, runs the shader's `deformVertexes`, computes
+  environment-mapped coordinates, the light (Q1/Q2 shade from the lightmaps,
+  Q3 light grid, the RF_GLOW pulse) and Q3 fog coordinates.
 - **Passes.** `ModelScene.draw` and the view weapon open one model pass for
   all their draws; other callers (effects, HUD icons) get one per draw.
 - Covered: monsters, items, gibs, corpses, Q3 bots' legs, torso and head with
@@ -146,6 +204,19 @@ and builds the level graph.
   whose model is missing.
 - Effects drawn as models (Q1 lightning bolts, Q2 explosions and blaster bolts,
   missile models) go through `ModelRenderer`.
+- **Q3 flares** (`tr_flares.c`, `engine/world/flares.jac`,
+  `engine/render/flares.jac`) are off unless `r_flares` is set, as in the
+  original. Each flare surface is a `LightFlare` node on the world. Once a
+  frame the `WatchFlares` walker visits them: one among the view's visible
+  surfaces and on screen is added (`RB_AddFlare`), dimmed by how far its
+  light faces away; tested against what stands between it and the eye
+  (`RB_TestFlare`: hidden when the scene is more than 24 units nearer); and
+  faded in or out at `r_flareFade` (7) a second. A lit flare is one additive
+  quad of the `flareShader` image over everything in the view, half as wide
+  as `r_flareSize / 640 + 8 / depth` of the view's width
+  (`RB_RenderFlare`), drawn before the view weapon. id's released
+  `RB_SurfaceFlare` is compiled out, so there `r_flares 1` adds no surface
+  flares; here they are handed to `RB_AddFlare`, as ioquake3 does.
 
 ## Render interpolation
 
@@ -215,32 +286,49 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   culling consistency, not pixel parity with id's renderers.
 - `scripts/map_sweep.jac` loads, simulates and renders every original map
   (see [validation tooling](validation-tooling-status.md)).
-- Tests: `phase2_bsp_tests` and `phase2_level_tests` (BSP bounds, PVS, leaf
-  counts), `phase2_pak_tests`, `phase3_formats_tests` (WAL bounds, patch
+- `scripts/area_portal_smoke.jac` counts the world faces and models drawn
+  from each map's start and beside its portal doors with the portals open
+  and shut (the table under Visibility).
+- Tests: `area_portal_tests` (the area graph, the flood, doors and relays,
+  faces and models culled behind a shut door), `phase2_bsp_tests` and
+  `phase2_level_tests` (BSP bounds, PVS, leaf counts), `phase2_pak_tests`, `phase3_formats_tests` (WAL bounds, patch
   geometry and winding, cluster 0 visibility), `world_mesh_tests` (vertex
-  packing, batches, index runs), `render_culling_tests`, `model_gpu_tests`,
-  `effect_quads_tests`, `lightfx_render_tests` (Q2 sky rotation, particle
-  records), `render_interpolation_tests`, `fog_tests`, `portal_tests`.
+  packing, batches, index runs, autosprite quads, the lightmap atlas), `render_culling_tests`, `model_gpu_tests`,
+  `effect_quads_tests`, `lightfx_render_tests` (the sky box mesh and its
+  rotation, streamed triangles, particle records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
+  `flare_tests` (adding, dimming, fading and dropping flares), `curve_tests`
+  (patch subdivision and stitching).
+- `scripts/validate_patches.jac` subdivides and stitches every Q3 map's
+  patches and sets their triangle counts beside the former fixed eight steps.
 - Native comparisons: `scripts/model_gpu_smoke.jac` draws the same scene
   through the GPU and legacy model paths (they differ in under 0.01% of
   pixels); `scripts/gpu_smoke.jac` exercises `engine/render/gpu.jac`;
   `scripts/effects_gallery.jac` poses every effect kind per game;
   `scripts/fog_smoke.jac` and `scripts/portal_smoke.jac` render fog volumes and
-  every portal shader.
+  every portal shader; `scripts/flares_smoke.jac` stands before flare surfaces
+  on q3dm12 and q3dm7 with `r_flares` off and on;
+  `scripts/world_features_smoke.jac` captures each kind of animated or special
+  world surface up close at a fixed moment (liquids, skies and the sky box,
+  light styles, Q3 stages and deforms), for comparing two builds pixel by
+  pixel.
 
 ## Limitations
 
-- Only the PVS culls world faces. Q2/Q3 area portals
-  (`engine/world/area_portals.jac`) gate sound but not drawing, so faces
-  behind a closed areaportal door are still drawn.
-- Patches draw at a fixed eight steps per quadratic piece (no LOD).
-- The lightmap atlas is a fixed 2048×2048; a map that overflows it fails to
-  load ("Lightmap atlas capacity exceeded"). Every original map fits.
-- Q3 shaders: flare surfaces are not drawn; `deformVertexes normal` is parsed
-  and ignored; directives the parser does not know are recorded in
+- Brush models (doors, plats, trains) are neither PVS- nor area-culled, and
+  an entity is area-culled by the leaf its origin is in, not by every leaf
+  its box touches.
+- Patches draw at their full `r_subdivisions` detail at any distance; the
+  original also drops rows and columns as a patch recedes
+  (`r_lodCurveError`). Their vertices share the face's one normal rather than
+  `MakeMeshNormals`' per-vertex ones.
+- Q3 shaders: directives the parser does not know are recorded in
   `material.unsupported` and skipped.
-- The world shader holds 16 fog volumes (`WORLD_FOG_LIMIT`); faces in a
-  later volume draw unfogged.
-- The sky box and Q3 portal backdrops still use raylib's immediate batch.
+- Q3 flares are tested with a trace through the world instead of the
+  original's depth buffer read, so a model in front of a flare does not hide
+  it. They are not drawn in mirrors and portal views, and take no fog.
+- The world shaders hold 31 fog volumes (`WORLD_FOG_LIMIT`), as many as the
+  original's renderer numbers (five bits of a surface's sort key). The
+  shipped maps have at most 11 (pro-q3tourney2). A map with more draws the
+  later volumes' faces unfogged and says so at load.
 - Repeated models are not instanced (the model draw loop costs 0.05-0.3 ms a
   frame on the benchmark maps).

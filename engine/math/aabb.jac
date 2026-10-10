@@ -10,4 +10,5 @@ obj AABB {
     def contains(p: Vec3) -> bool;
     def center() -> Vec3;
     def size() -> Vec3;
+    def distance(p: Vec3) -> float;
 }

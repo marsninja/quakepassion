@@ -33,7 +33,8 @@ The text status line remains for Passion levels and whenever art is missing.
   - The held weapon's icon, or `i_help` blinking while the help computer has
     unread news (`STAT_HELPICON`, `pers.helpchanged`).
   - The pickup icon and name for three seconds (`STAT_PICKUP_ICON/STRING`),
-    the selected item's icon, and the seconds left on a running powerup.
+    the selected item's icon (`STAT_SELECTED_ICON`, a weapon's too), and the
+    seconds left on a running powerup.
   - The crosshair `pics/ch1.pcx` (`SCR_DrawCrosshair`).
 - **Quake II layouts.** `HudRenderer.draw_layout` runs
   `SCR_ExecuteLayoutString` programs (`xl`/`xr`/`xv`, `yt`/`yb`/`yv`, `picn`,
@@ -42,16 +43,27 @@ The text status line remains for Passion levels and whenever art is missing.
   programs.
   - F1 (`cmd help`): the help computer, `p_hud.c HelpComputer`'s layout on
     `help.pcx` (skill, level name, both objectives, kills/goals/secrets).
-    Opening it reads the news; `misc/pc_up.wav` sounds when news arrives and
-    twice more, 6.4 s apart, while it stays unread. Objectives persist across
-    levels and in saves.
-  - The end-of-unit summary uses the same frame ("Unit complete", the time,
-    the unit's last level's tallies). The original shows only the
-    intermission view here.
+    Opening it reads the news. While news is unread, `misc/pc_up.wav` sounds
+    on each server frame whose number is a multiple of 64
+    (`!(level.framenum & 63)`: every 6.4 s of the level's clock, not of the
+    news), three times in all (`G_SetClientSound`). Objectives persist
+    across levels and in saves.
+  - The end of a unit is the intermission view alone, as `BeginIntermission`
+    leaves it in single player: nothing is laid over it, the status bar
+    stays, the gun is put away and F1 still opens the help computer. Any key
+    leaves after five seconds (`ClientThink`).
   - Tab (`inven`): the inventory (`cl_inv.c CL_DrawInventory`) on
     `inventory.pcx`, "hotkey ### item" rows in `itemlist` order, 17 at a time
     around the selected item, the selection plain with a blinking cursor.
-    `invprev`, `invnext` and `invuse` select and use stored items.
+    The hotkey is the lowest-numbered key bound to `use <item>` in the
+    current bindings (Quake II's key numbers, `client/keys.h`).
+  - The selected item (`pers.selected_item`) starts as the Blaster. `invnext`
+    and `invprev` step through everything carried that has a use, weapons
+    and the grenades included, skipping armor, other ammo and keys
+    (`SelectNextItem`, `SelectPrevItem`). Picking up such an item selects it
+    (`Touch_Item`). `invuse` uses the selection, taking a weapon in hand
+    (`Cmd_InvUse_f`); a selection that is spent moves on to the next
+    (`ValidateSelectedItem`).
   - Entity `message` values turn `\n` into line breaks at load
     (`ED_NewString`/`G_NewString`).
 - **Quake III** (`cg_draw.c`, with `cg_draw3dIcons 1`,
@@ -139,8 +151,9 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   flipped. The portal surface shows that image, then its own stages blend
   over it; `alphaGen portal` fades them in with distance, and a camera portal
   renders only within its shader's `portalRange` (`SurfIsOffscreen`).
-- In a Q3 arena the player's own body is drawn only in these views
-  (`RF_THIRD_PERSON`).
+- In a Q3 arena the living player's own body is drawn only in these views
+  (`RF_THIRD_PERSON`); dead, it is drawn in the main view too
+  ([player bodies](player-bodies-status.md)).
 
 ## Q3 shaders
 
@@ -153,10 +166,18 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   - `tcMod` scroll, scale, rotate, turb, stretch and transform, in order;
     `tcGen environment` and `tcGen vector`.
   - `alphaFunc` and `depthWrite`.
-- `deformVertexes` `wave`, `move` and `bulge` sway vertices; `autosprite` and
-  `autosprite2` turn quads toward the viewer.
-- Model shaders (powerup shells, armor, weapons) run the same tcMods,
-  including rotate and turb.
+- `deformVertexes` runs in the vertex shader, on world surfaces and models
+  alike (`RB_DeformTessGeometry`, `engine/render/world_mesh.jac`
+  `SHADER_DEFORM_GLSL`): `wave`, `move` and `bulge` sway vertices;
+  `autosprite` rebuilds each quad square on the view's left and up axes
+  (`AutospriteDeform`, `RB_AddQuadStamp`); `autosprite2` pivots it about its
+  long axis, the two shortest of its six vertex pairs being its ends
+  (`Autosprite2Deform`); `normal` wiggles the normals for wavy environment
+  maps (`RB_CalcDeformNormals`, over hashed lattice noise in place of
+  `tr_noise.c`'s `rand()` table).
+- Model shaders (players, items, weapons, powerup shells) draw stage by stage
+  too, lit by `rgbGen lightingDiffuse`; see
+  [models](models-status.md#q3-model-shaders).
 
 ## Effects and dynamic lights
 
@@ -170,11 +191,12 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
 
 ## Validation
 
-- `tests/q2_presentation_tests.jac`: layout tokenizer, help computer and unit
-  summary programs, inventory rows, help beeps, status flashes.
+- `tests/q2_presentation_tests.jac`: layout tokenizer, the help computer's
+  program, inventory rows and their hotkeys from the bindings, item
+  selection, help beeps on the level's frames, status flashes.
   `scripts/q2_presentation_smoke.jac` drives base1 and saves the help icon,
-  help computer, inventory, power armor bar and unit summary to
-  `.jac/screenshots/q2hud/`.
+  help computer, inventory, power armor bar and the end of a unit (with and
+  without the help computer) to `.jac/screenshots/q2hud/`.
 - `scripts/presentation_smoke.jac` draws each game's status bar art on e1m1,
   base1 and q3dm1, animates light styles on Q1 and Q2 maps and uploads every
   layered Q3 shader.
@@ -186,15 +208,13 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
 - `tests/portal_tests.jac`: mirror and camera views, camera sway and quantized
   aim. `scripts/portal_smoke.jac` renders every portal shader on q3tourney6,
   q3dm0 and q3dm7.
-- `tests/lightfx_render_tests.jac`: Q2 sky rotation, model texture steps.
+- `tests/lightfx_render_tests.jac`: the sky box mesh and Q2 sky rotation,
+  model texture steps.
   `tests/model_material_tests.jac`: model shader stages.
 
 ## Limitations
 
-- The Q2 inventory's hotkey column comes from a fixed table of Q2's default
-  binds (`games/q2_layouts.jac` `Q2_INVENTORY_BINDS`), not from the current
-  bindings.
-- Q2 item selection (`invnext`/`invprev`) steps through stored items only;
-  the original's `SelectNextItem` also steps through weapons.
-- Q3 flares, `deformVertexes normal` and unknown shader directives are not
-  drawn (see [rendering](rendering-status.md#limitations)).
+- Q2's `invnextw`/`invprevw`, `invnextp`/`invprevp` and `invdrop` are not
+  commands, and the selected item is not kept in saves.
+- Unknown Q3 shader directives are not drawn (see
+  [rendering](rendering-status.md#limitations)).

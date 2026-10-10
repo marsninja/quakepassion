@@ -83,7 +83,7 @@ command graph and buffer), `cvar.jac` (cvars).
 | Shell | `set`, `seta`, `toggle`, `reset`, `cvar_restart`, `cvarlist`, `cmdlist`, `alias`, `echo`, `wait`, `vstr`, `clear` |
 | Keys (`engine/input/keys.jac`) | `bind`, `unbind`, `unbindall`, `bindlist` |
 | Input (`engine/input/impl/input.impl.jac`) | `+`/`-` `forward`, `back`, `moveleft`, `moveright`, `left`, `right`, `lookup`, `lookdown`, `moveup`, `movedown`, `speed`, `strafe`, `attack`, `jump`, `use`, `klook`, `mlook`, `showscores`, `scores`, `button2`; `impulse`, `weapon`, `weapnext`, `weapprev`, `invuse`, `invnext`, `invprev`, `inven`, `help`, `centerview` |
-| Host (`engine/core/app.jac` `HOST_COMMANDS`) | `map`, `quit`, `god`, `noclip`, `give`, `kill`, `use`, `cmd`, `exec`, `writeconfig`, `save`, `load`, `screenshot`, `vid_restart`, `toggleconsole`, `togglemenu` |
+| Host (`engine/core/app.jac` `HOST_COMMANDS`) | `map`, `quit`, `god`, `noclip`, `give`, `kill`, `use`, `cmd`, `exec`, `writeconfig`, `save`, `load`, `screenshot`, `vid_restart`, `toggleconsole`, `togglemenu`, `cinematic`, `levelselect` |
 
 `impulse` 1-8, 10 and 12 choose and cycle weapons; 9 and 255 are Quake's
 weapon and quad cheats. `give` takes `all`, `health`, `weapons`, `ammo`,
@@ -91,16 +91,20 @@ weapon and quad cheats. `give` takes `all`, `health`, `weapons`, `ammo`,
 reads a file from the game directory, else from its archives. `writeconfig`
 writes the bindings and archived cvars to a `.cfg` in the game directory.
 `screenshot` writes the next free `quakepassion####.png` in the working
-directory.
+directory. `cinematic <name>` plays a film from `video/` (Q3
+`CL_PlayCinematic_f`); `levelselect` opens the level list on the arena after
+the one played (Q3's single-player menu).
 
 ### Cvars
 
 | Owner | Cvars (other games' names) |
 |---|---|
-| Host | `skill` (`g_spSkill`), `qp_god`, `qp_flyspeed`, `qp_overlay` |
+| Host | `skill` (`g_spSkill`), `qp_god`, `qp_flyspeed`, `qp_overlay`, `com_introplayed`, `nextmap`, `g_spVideos` |
 | Input | `sensitivity`, `m_pitch`, `m_yaw`, `m_forward`, `m_side`, `freelook` (`cl_freelook`), `lookstrafe`, `cl_forwardspeed`, `cl_backspeed`, `cl_sidespeed`, `cl_upspeed`, `cl_movespeedkey`, `cl_yawspeed`, `cl_pitchspeed`, `cl_anglespeedkey`, `cl_run` |
-| Renderer | `fov` (`cg_fov`), `host_maxfps` (`cl_maxfps`, `com_maxfps`), `r_novis`, `vid_width` (`r_customwidth`), `vid_height` (`r_customheight`), `vid_fullscreen` (`r_fullscreen`), `vid_highdpi` |
+| Renderer | `fov` (`cg_fov`), `host_maxfps` (`cl_maxfps`, `com_maxfps`), `r_novis`, `r_subdivisions`, `vid_width` (`r_customwidth`), `vid_height` (`r_customheight`), `vid_fullscreen` (`r_fullscreen`), `vid_highdpi` |
 | HUD | `crosshair` (`cg_drawCrosshair`) |
+| Effects | `cg_oldRail`, `cg_railTrailTime`, `cg_shadows` |
+| Flares | `r_flares`, `r_flareSize`, `r_flareFade` |
 | Audio | `volume` (`s_volume`), `bgmvolume` (`s_musicvolume`) |
 | Console | `scr_conspeed` (`con_conspeed`), `con_notifytime` |
 
@@ -152,7 +156,8 @@ progress files always use `HOME` (`App.save_file`, `games/arenas.jac`).
 `QP_WALK=0` (start flying), `QP_SMOKE=1` and `QP_CAPTURE=<frame>:<file.png>`
 (see [validation tooling](validation-tooling-status.md)), `QP_CONFIG_DIR`, and
 `+command` arguments. Starting Quake II without `QP_MAP` plays `ntro.cin`
-before base1, as its `newgame` does.
+before base1, as its `newgame` does. Starting Quake III without `QP_MAP` or
+`+commands` plays `idlogo.RoQ` and, the first time, `intro.RoQ`.
 
 ## Window
 
@@ -168,12 +173,30 @@ fullscreen (Ctrl+Cmd+F) hides it. `vid_restart` applies the video cvars. `vid_hi
 from the next start. The field of view is the horizontal angle of a 4:3 view
 (`SCR_CalcRefdef`), so wider windows see more to the sides.
 
+## Loading screens
+
+A level load stalls the frame, so the running game's own loading screen is
+drawn once first (`App.draw_loading`); nothing loads in the background.
+
+- **Quake** (`SCR_BeginLoadingPlaque`, `SCR_DrawLoading`): `gfx/loading.lmp`
+  over the view and status bar, centred in what is left above the bar's 48
+  rows, with no console or menu.
+- **Quake II** (`SCR_BeginLoadingPlaque`): `pics/loading.pcx` in the middle
+  of the last frame, or of a black screen after a film.
+- **Quake III** (`cg_info.c CG_DrawInformation`): the next arena's levelshot
+  over the whole screen (`menu/art/unknownmap` without one) under the
+  `levelShotDetail` texture, "Loading... collision map", and the arena's
+  name, game type and frag limit in the proportional font.
+- Passion shows its own "Preparing expedition" card.
+
 ## Cinematics
 
-Q2 `.cin` films (`engine/core/cinematic.jac`, `engine/formats/q2/cin.jac`)
-skip when any key is pressed after the first second, once every key has been
-let go since the film began. The menu blanks the picture and the console
-drops over it (`SCR_DrawCinematic`).
+Films play through one player (`engine/core/cinematic.jac`; see
+[level flow](level-flow-status.md#films-and-music)). Q2 `.cin` films skip
+when any key is pressed after the first second, once every key has been let
+go since the film began; Escape opens the menu, which blanks the picture.
+Q3 RoQ films end on any key press, Escape included (`CL_KeyEvent`). The
+console drops over either (`SCR_DrawCinematic`).
 
 ## Validation
 
@@ -185,7 +208,11 @@ drops over it (`SCR_DrawCinematic`).
   console editing and completion, row wrapping, the controls menu rows, and
   the settings and bindings files as scripts.
 - `tests/level_menu_tests.jac`: map discovery and `is_q1_level`.
-- `tests/cinematic_tests.jac`: `.cin` decoding and timing, and music tracks.
+- `tests/loading_screen_tests.jac`: where the Quake and Quake II plaques go,
+  and Quake III's information lines. `scripts/loading_screen_smoke.jac`
+  saves each game's loading screen to `.jac/screenshots/loading/`.
+- `tests/cinematic_tests.jac`: `.cin` and RoQ decoding and timing, the keys
+  that end each, and music tracks.
 - `jac run scripts/validate_menu.jac` builds `scripts/menu_smoke.jac` and runs
   it with a disposable `HOME` (so it never touches your files). Through raylib
   input events it checks the console (`god`, a cvar, toggling), every
@@ -197,6 +224,9 @@ drops over it (`SCR_DrawCinematic`).
 
 ## Limitations
 
-- The Q2 inventory's hotkey column is a fixed table of Q2's default binds, not
-  the current bindings.
-- Loading a level and scanning archives stall the frame.
+- A level load that also changes game shows no loading screen (only the
+  running game's art is at hand), and scanning the archives for the level
+  list stalls the menu.
+- Quake III's loading screen is one frame: it does not add the icons of
+  items and players as they load, and shows the arena list's long name for
+  the map's own message.

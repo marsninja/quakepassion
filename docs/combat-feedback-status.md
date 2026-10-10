@@ -146,8 +146,19 @@ Particles pass through surfaces, as the originals' do: neither
   Q2 `target_laser` and the BFG's lasers are `R_DrawBeam`'s six-sided tubes in
   one of their four palette colours each frame; the parasite's drain and the
   medic's cable are `CL_AddBeams`' segment models; Q3's lightning gun is
-  `lightningBoltNew` on four crossed quads (`RB_SurfaceLightningBolt`) and its
-  rail the `railCore` quad of the default `cg_oldRail`.
+  `lightningBoltNew` on four crossed quads (`RB_SurfaceLightningBolt`).
+- **The Q3 rail** is `CG_RailTrail`. Its core is the `railCore` quad
+  (`RB_SurfaceRailCore`, 12 units across), started 4 units low, in three
+  quarters of the player's `color1` (red) and fading to nothing over
+  `cg_railTrailTime` (400 ms). With the default `cg_oldRail 1` that is all
+  there is, and both ends drop another 8 units. With `cg_oldRail 0` the core
+  keeps its height and the spiral is thrown as well: from 20 units along the
+  beam every other 5-unit step leaves a `railDisc` sprite 1.1 units in radius,
+  4 units off the axis on a perpendicular that turns 10 degrees a step (so a
+  ring every 10 units, 20 degrees apart), drifting outward at 6 units a
+  second in `color2` (magenta) and living 600 ms plus half its distance in
+  milliseconds. A ring keeps its colour until it goes: the local entity fades
+  only its alpha, which the additive shader does not read.
 
 ## Validation
 
@@ -167,3 +178,10 @@ Particles pass through surfaces, as the originals' do: neither
   `scripts/attack_timing_smoke.jac` and `scripts/q2_attack_smoke.jac` (attack
   frames against the original models), and `scripts/effects_gallery.jac` (one
   posed frame per game with every effect kind, for comparison by eye).
+
+## Limitations
+
+- The world keeps a Q3 rail's trail until its last ring could expire (0.6 s
+  plus a second for every 2000 units of beam; `rail_trail`,
+  `engine/world/particles.jac`), so a `cg_railTrailTime` longer than that is
+  cut there.

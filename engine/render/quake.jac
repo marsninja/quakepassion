@@ -1,24 +1,12 @@
 """The BSP world renderer: textures, lightmaps and shader stages uploaded at
 level load, and every frame the visible surfaces drawn from GPU-resident
-vertex chunks by the shaders in world_mesh.jac. The sky box and Q3 portal
-backdrops still go through raylib's rlgl batch."""
+vertex chunks by the shaders in world_mesh.jac."""
 import math;
 import struct;
 import from vendor.raylib {
-    obj Shader {
-        has id: u32,
-            locs: u64;
-    }  def LoadShaderFromMemory(vs: str, fs: str) -> Shader;  def GetShaderLocation(
-        shader: Shader, name: str
-    ) -> i32;  def UnloadShader(shader: Shader) -> None;  def BeginShaderMode(
-        shader: Shader
-    ) -> None;  def EndShaderMode -> None;  def rlNormal3f(
-        x: f32, y: f32, z: f32
-    ) -> None;  def rlActiveTextureSlot(slot: i32) -> None;  def rlEnableTexture(
+    def rlActiveTextureSlot(slot: i32) -> None;  def rlEnableTexture(
         id: u32
-    ) -> None;  def rlDisableTexture -> None;  def rlEnableShader(id: u32) -> None;  def rlDisableShader -> None;  def rlSetUniform(
-        loc: i32, value: bytes, kind: i32, count: i32
-    ) -> None;
+    ) -> None;  def rlDisableTexture -> None;  def rlEnableShader(id: u32) -> None;
     # Opaque image data handle, matching the 64-bit desktop C ABI.
     obj Image {
         has data: u64,
@@ -42,10 +30,6 @@ import from vendor.raylib {
         id: u32, offsetX: i32, offsetY: i32, width: i32, height: i32, format: i32, data: bytes
     ) -> None;  def rlUnloadTexture(id: u32) -> None;  def rlTextureParameters(
         id: u32, param: i32, value: i32
-    ) -> None;  def rlSetTexture(id: u32) -> None;  def rlBegin(mode: i32) -> None;  def rlEnd -> None;  def rlTexCoord2f(
-        x: f32, y: f32
-    ) -> None;  def rlVertex3f(x: f32, y: f32, z: f32) -> None;  def rlColor4ub(
-        r: u8, g: u8, b: u8, a: u8
     ) -> None;  def rlDrawRenderBatchActive -> None;  def BeginBlendMode(
         mode: i32
     ) -> None;  def EndBlendMode -> None;  def rlSetBlendFactors(
@@ -82,6 +66,7 @@ import from .world_mesh {
     BrushModel,
     WORLD_VERTEX_STRIDE,
     WORLD_FOG_LIMIT,
+    fit_light_atlas,
     SURFACE_LIGHTMAP,
     SURFACE_ALPHA_SHIFT,
     SURFACE_EMISSION,
@@ -101,6 +86,15 @@ import from .world_mesh {
     WARP_FS,
     SKY_VS,
     SKY_FS,
+    SKY_BOX_VS,
+    SKY_BOX_FS,
+    SKY_BOX_STRIDE,
+    BACKDROP_VS,
+    BACKDROP_FS,
+    BACKDROP_VERTICES,
+    sky_box_vertices,
+    triangle_points,
+    face_triangles,
     BASE_VS,
     BASE_FS,
     STAGE_VS,
@@ -110,6 +104,7 @@ import from .world_mesh {
     batch_key,
     assign_chunks,
     face_index_bytes,
+    SPRITE_STAMP_CORNERS,
     gather_indices,
     pack_world_face,
     wave_code
@@ -160,6 +155,7 @@ obj QuakeRenderer {
         single_pass: bool = False,
         atlas: int = 0,
         atlas_size: int = 2048,
+        atlas_unit: int = 1,
         rects: list[LightRect] = [],
         stage_images: dict[int, list[list[int]]] = {},
         sky_layers: dict[int, list[int]] = {},
@@ -183,9 +179,13 @@ obj QuakeRenderer {
         portal_normal: Vec3 = Vec3(),
         portal_dist: float = 0.0,
         portal_width: float = 1.0,
-        portal_height: float = 1.0,
-        portal_shader: Shader = Shader(id=u32(0), locs=u64(0)),
-        portal_size: int = -1;
+        portal_height: float = 1.0;
+    # The sky box's six quads and their program; the program and streamed
+    # vertices of what lies behind a portal surface.
+    has box_program: GpuProgram = GpuProgram(),
+        box_mesh: GpuMesh = GpuMesh(),
+        backdrop_program: GpuProgram = GpuProgram(),
+        backdrop_mesh: GpuMesh = GpuMesh();
     # The world in GPU buffers (world_mesh.jac): vertex chunks, each face's
     # chunk, batches and index run, the surface batches by pass, the index
     # lists of recent visible sets, and the brush models' groups.
@@ -209,6 +209,9 @@ obj QuakeRenderer {
         brush_count: int = 0,
         cloud_mesh: GpuMesh = GpuMesh(),
         cloud_vertices: int = 0;
+    # The map's flare surfaces by face, and those among the faces last drawn.
+    has flare_faces: dict[int, bool] = {},
+        shown_flares: dict[int, bool] = {};
     # Shader programs, the light style values the lit program reads
     # (d_lightstylevalue, 1 = 'm'), and what is bound now.
     has lit_program: GpuProgram = GpuProgram(),
@@ -249,49 +252,38 @@ obj QuakeRenderer {
 
     """The six-sided sky box around the eye (gl_warp.c R_DrawSkyBox), turned
     `angle` degrees about `axis` when the level rotates its sky (Q2
-    skyrotate: glRotatef by time times the rate)."""
+    skyrotate: glRotatef by time times the rate): each side's image over its
+    quad of the box mesh."""
     def draw_sky(eye: Vec3, angle: float = 0.0, axis: Vec3 = Vec3()) {
         if len(self.sky) != 6 {
             return;
         }
-        spin = axis.length() > 0.0 and angle != 0.0;
-        axes = [
-            [3, -1, 2],
-            [-3, 1, 2],
-            [1, 3, 2],
-            [-1, -3, 2],
-            [-2, -1, 3],
-            [2, -1, -3]
-        ];
-        rlDrawRenderBatchActive();
+        program = self.box_program;
+        if program.id == 0 {
+            program.load(SKY_BOX_VS, SKY_BOX_FS);
+            self.box_mesh = GpuMesh();
+            self.box_mesh.upload(
+                sky_box_vertices(),
+                SKY_BOX_STRIDE,
+                [
+                    VertexAttribute(location=0, components=3, kind=GL_FLOAT, offset=0),
+                    VertexAttribute(location=1, components=2, kind=GL_FLOAT, offset=12)
+                ]
+            );
+        }
+        program.begin();
+        program.set_matrix("viewProjection", view_projection());
+        program.set_matrix("model", sky_matrix(eye, axis, angle));
         rlDisableDepthMask();
         rlDisableBackfaceCulling();
+        self.box_mesh.bind();
         for side in range(6) {
-            rlSetTexture(u32(self.sky[side]));
-            rlBegin(i32(4));
-            rlColor4ub(u8(255), u8(255), u8(255), u8(255));
-            for corner in [0, 1, 2, 0, 2, 3] {
-                s = -1.0 if corner < 2 else 1.0;
-                t = -1.0 if corner == 0 or corner == 3 else 1.0;
-                base = [s * 512.0, t * 512.0, 512.0];
-                coords: list[float] = [];
-                for component in axes[side] {
-                    coords.append(base[abs(component) - 1] * (-1.0 if component < 0 else 1.0));
-                }
-                point = Vec3(x=coords[0], y=coords[1], z=coords[2]);
-                if spin {
-                    point = sky_turn(point, axis, angle);
-                }
-                rlTexCoord2f(f32((s + 1.0) * 0.5), f32((1.0 - t) * 0.5));
-                rlVertex3f(
-                    f32(eye.x + point.x),
-                    f32(eye.y + point.y),
-                    f32(eye.z + point.z)
-                );
-            }
-            rlEnd();
+            program.set_texture("skyBox", 0, self.sky[side]);
+            self.box_mesh.draw_vertices(side * 6, 6);
         }
-        rlDrawRenderBatchActive();
+        self.box_mesh.unbind();
+        rlDisableTexture();
+        program.end();
         rlEnableBackfaceCulling();
         rlEnableDepthMask();
     }
@@ -302,6 +294,9 @@ obj QuakeRenderer {
         }
         self.single_pass = level.bsp.game in ["q3", "passion"];
         self.overbright = level.bsp.game == "q3";
+        if len(level.bsp.fogs) > WORLD_FOG_LIMIT {
+            print("Fog volumes past the first", WORLD_FOG_LIMIT, "draw unfogged:", len(level.bsp.fogs));
+        }
         for texture in level.bsp.sky {
             image_id = self.upload_image(texture);
             self.sky.append(image_id);
@@ -382,49 +377,76 @@ obj QuakeRenderer {
             rlTextureParameters(id, i32(10242), i32(10497));
             rlTextureParameters(id, i32(10243), i32(10497));
         }
+        self.flare_faces = {};
+        for flare in level.bsp.flares {
+            self.flare_faces[flare.face] = True;
+        }
         self.upload_lightmaps(level);
         self.upload_stages(level);
         self.load_programs(level);
         self.build_world(level);
     }
 
-    """The lightmap atlas. Q3 stores each lightmap once, shifted for
-    overbright. Q1 and Q2 keep every light style layer of a face side by
-    side, raw, so the lit shader scales each by its style's current value
-    (R_BuildLightMap) and animated or switched lights need no upload."""
+    """The lightmap atlas, sized from the map: the smallest of world_mesh.jac
+    LIGHT_ATLAS_SIZES that holds its lightmaps (fit_light_atlas). Q3 stores
+    each lightmap once, shifted for overbright. Q1 and Q2 keep every light
+    style layer of a face side by side, raw, so the lit shader scales each by
+    its style's current value (R_BuildLightMap) and animated or switched
+    lights need no upload."""
     def upload_lightmaps(level: Level) {
-        pixels = bytearray(b"\xff") * (self.atlas_size * self.atlas_size * 4);
-        x = 1;
-        y = 1;
-        row_height = 0;
-        shared: dict[int, LightRect] = {};
         layered = level.bsp.game in ["q1", "q2"];
         channels = level.bsp.light_channels;
+        # One block per lit face; Q3 faces share their lightmap page's.
+        owners: list[int] = [];
+        shared: dict[int, int] = {};
+        widths: list[int] = [];
+        heights: list[int] = [];
+        layer_counts: list[int] = [];
         for face in level.bsp.faces {
-            if level.bsp.game == "q3" and face.light_offset in shared {
-                self.rects.append(shared[face.light_offset]);
-                continue;
-            }
-            rect = LightRect();
-            self.rects.append(rect);
             if face.light_offset < 0 {
+                owners.append(-1);
                 continue;
             }
+            if level.bsp.game == "q3" and face.light_offset in shared {
+                owners.append(shared[face.light_offset]);
+                continue;
+            }
+            shared[face.light_offset] = len(widths);
+            owners.append(len(widths));
+            widths.append(face.light_width);
+            heights.append(face.light_height);
+            layer_counts.append(max(1, len(face.styles)) if layered else 1);
+        }
+        layout = fit_light_atlas(widths, heights, layer_counts);
+        if not layout.fits {
+            raise ValueError("Lightmap atlas capacity exceeded");
+        }
+        self.atlas_size = layout.size;
+        self.atlas_unit = layout.unit;
+        pixels = bytearray(b"\xff") * (self.atlas_size * self.atlas_size * 4);
+        blocks = [
+            LightRect(x=layout.xs[b], y=layout.ys[b], layer=float(widths[b] + 2) / float(self.atlas_size))
+            for b in range(len(widths))
+        ];
+        filled: dict[int, bool] = {};
+        for f in range(len(level.bsp.faces)) {
+            face = level.bsp.faces[f];
+            owner = owners[f];
+            if owner < 0 {
+                self.rects.append(LightRect());
+                continue;
+            }
+            rect = blocks[owner];
+            self.rects.append(rect);
+            if owner in filled {
+                continue;
+            }
+            filled[owner] = True;
             w = face.light_width;
             h = face.light_height;
-            layers = max(1, len(face.styles)) if layered else 1;
-            if x + layers * (w + 2) - 1 > self.atlas_size {
-                x = 1;
-                y += row_height + 2;
-                row_height = 0;
-            }
-            if y + h + 1 > self.atlas_size {
-                raise ValueError("Lightmap atlas capacity exceeded");
-            }
-            shared[face.light_offset] = rect;
-            rect.x = x;
-            rect.y = y;
-            rect.layer = float(w + 2) / float(self.atlas_size);
+            layers = layer_counts[owner];
+            x = rect.x;
+            y = rect.y;
             for layer in range(layers) {
                 left = x + layer * (w + 2);
                 for ly in range(-1, h + 1) {
@@ -463,8 +485,6 @@ obj QuakeRenderer {
                     }
                 }
             }
-            x += layers * (w + 2);
-            row_height = max(row_height, h);
         }
         self.atlas = int(
             rlLoadTexture(
@@ -646,9 +666,13 @@ obj QuakeRenderer {
                 face.fog if 0 <= face.fog < fogs else -1,
                 self.overbright,
                 sprites=self.single_pass,
-                alpha=int(face.opacity * 255.0)
+                alpha=int(face.opacity * 255.0),
+                unit=self.atlas_unit
             );
-            self.face_runs[f] = face_index_bytes(face, base);
+            # AutospriteDeform rebuilds each quad as RB_AddQuadStamp's triangles.
+            stamped = self.single_pass and len(face.vertices) == 4 and face.texture in level.surface_deforms
+                and any([deform.kind == "autosprite" for deform in level.surface_deforms[face.texture]]);
+            self.face_runs[f] = face_index_bytes(face, base, SPRITE_STAMP_CORNERS if stamped else []);
         }
         self.chunks = [];
         for c in range(chunk_count) {
@@ -697,6 +721,14 @@ obj QuakeRenderer {
         view.faces = faces;
         view.used = self.view_clock;
         view.portal_faces = {};
+        view.flares = {};
+        if self.flare_faces {
+            for f in faces {
+                if f in self.flare_faces {
+                    view.flares[f] = True;
+                }
+            }
+        }
         lists = IndexLists(chunks=[bytearray() for c in range(len(self.chunks))], spans={});
         shown: list[int] = [];
         bsp_faces = level.bsp.faces;
@@ -1439,6 +1471,7 @@ obj QuakeRenderer {
             return 0;
         }
         view = self.visible_indices(level, faces);
+        self.shown_flares = view.flares;
         self.update_brushes(level);
         if self.single_pass {
             self.draw_single_pass(level, view, eye);
@@ -1466,6 +1499,7 @@ obj QuakeRenderer {
             self.styles_dirty = False;
         }
         self.set_dynamic_lights(program, level);
+        program.set_float("lightBlockUnit", float(self.atlas_unit));
         rlActiveTextureSlot(i32(1));
         rlEnableTexture(u32(self.atlas));
         rlActiveTextureSlot(i32(0));
@@ -1664,10 +1698,11 @@ obj QuakeRenderer {
             source=blend[1],
             destination=blend[2],
             depth_write=stage.depth_write or blend[0] == 0,
-            two_sided=level.bsp.textures[t].two_sided or t in level.surface_deforms,
+            two_sided=level.bsp.textures[t].two_sided,
             images=self.stage_images[t][k],
             light=self.stage_images[t][k][0] < 0,
-            rgb_mode=1 if stage.rgb == "vertex" else 0,
+            # A world surface's lightingDiffuse is the light baked into its vertices.
+            rgb_mode=1 if stage.rgb in ["vertex", "diffuse"] else 0,
             fog_mode=fog_adjustment(stages[0], stage) if level.bsp.fogs else 0
         );
         if stage.alpha == "vertex" {
@@ -1770,7 +1805,7 @@ obj QuakeRenderer {
     factors, depth writes and culling."""
     def stage_key(level: Level, t: int, k: int) -> str {
         blend = stage_blend(level.surface_stages[t][k], k);
-        two_sided = level.bsp.textures[t].two_sided or t in level.surface_deforms;
+        two_sided = level.bsp.textures[t].two_sided;
         writes = level.surface_stages[t][k].depth_write or blend[0] == 0;
         return str(blend[0]) + ":" + str(blend[1]) + ":" + str(blend[2]) + ":" + str(writes) + ":" + str(two_sided);
     }
@@ -1857,18 +1892,28 @@ obj QuakeRenderer {
 
     """What lies behind a portal surface before its stages blend over it: the
     view rendered through it this frame, sampled in screen space, or black
-    for a portal whose view was not rendered. Portal surfaces are few, so
-    they still go through raylib's batch."""
+    for a portal whose view was not rendered. Portal surfaces are few and
+    their deforms run on the CPU (deform_face), so their triangles are
+    streamed to a small vertex buffer face by face."""
     def draw_portal_backdrop(level: Level, faces: list[int], deforms: list[Deform], eye: Vec3) {
-        if self.portal_image != 0 and self.portal_shader.id == u32(0) {
-            self.portal_shader = LoadShaderFromMemory(
-                "#version 330\nin vec3 vertexPosition; uniform mat4 mvp;\n"
-                    + "void main(){ gl_Position=mvp*vec4(vertexPosition,1.0); }\n",
-                "#version 330\nout vec4 finalColor; uniform sampler2D texture0; uniform vec2 screenSize;\n"
-                    + "void main(){ finalColor=vec4(texture(texture0, gl_FragCoord.xy/screenSize).rgb, 1.0); }\n"
-            );
-            self.portal_size = int(GetShaderLocation(self.portal_shader, "screenSize"));
+        if not faces {
+            return;
         }
+        program = self.backdrop_program;
+        if program.id == 0 {
+            program.load(BACKDROP_VS, BACKDROP_FS);
+            self.backdrop_mesh = GpuMesh();
+            self.backdrop_mesh.upload(
+                bytes(BACKDROP_VERTICES * 12),
+                12,
+                [VertexAttribute(location=0, components=3, kind=GL_FLOAT, offset=0)],
+                dynamic=True
+            );
+        }
+        program.begin();
+        program.set_matrix("viewProjection", view_projection());
+        program.set_vec2("screenSize", self.portal_width, self.portal_height);
+        self.backdrop_mesh.bind();
         for index in faces {
             face = level.bsp.faces[index];
             # Only the side facing the eye: a mirror's own surface lies on the
@@ -1883,39 +1928,19 @@ obj QuakeRenderer {
             shown = self.portal_image != 0
                 and plane[0].dot(self.portal_normal) > 0.999
                 and abs(plane[1].x - self.portal_dist) < 1.0;
-            shape = deform_face(face, deforms, eye, self.time) if deforms else None;
-            if shown {
-                rlDrawRenderBatchActive();
-                rlEnableShader(self.portal_shader.id);
-                rlSetUniform(i32(self.portal_size), struct.pack("<ff", self.portal_width, self.portal_height), i32(1), i32(1));
-                rlDisableShader();
-                BeginShaderMode(self.portal_shader);
-                rlSetTexture(u32(self.portal_image));
-            } else {
-                rlSetTexture(u32(self.white));
-            }
-            indices = face.indices;
-            if not indices {
-                indices = [];
-                for corner in range(1, len(face.vertices) - 1) {
-                    indices.extend([0, corner + 1, corner]);
-                }
-            }
-            rlBegin(i32(4));
-            level_color = 255 if shown else 0;
-            rlColor4ub(u8(level_color), u8(level_color), u8(level_color), u8(255));
-            for corner in indices {
-                v = shape.points[corner] if shape is not None else face.vertices[corner];
-                rlTexCoord2f(f32(0.0), f32(0.0));
-                rlVertex3f(f32(v.x), f32(v.y), f32(v.z));
-            }
-            rlEnd();
-            rlDrawRenderBatchActive();
-            if shown {
-                EndShaderMode();
+            program.set_texture("portalView", 0, self.portal_image if shown else self.white);
+            program.set_float("live", 1.0 if shown else 0.0);
+            points = deform_face(face, deforms, eye, self.time).points if deforms else face.vertices;
+            packed = triangle_points(points, face_triangles(face));
+            for first in range(0, len(packed), BACKDROP_VERTICES * 12) {
+                piece = packed[first:first + BACKDROP_VERTICES * 12];
+                self.backdrop_mesh.set_vertices(piece);
+                self.backdrop_mesh.draw_vertices(0, len(piece) // 12);
             }
         }
-        rlSetTexture(u32(0));
+        self.backdrop_mesh.unbind();
+        rlDisableTexture();
+        program.end();
     }
 
     """tr_shade.c RB_FogPass over every opaque surface inside a fog volume, and
@@ -1960,7 +1985,8 @@ obj QuakeRenderer {
 
     """Which surfaces take the fog pass (tr_shader.c FinishShader): opaque ones
     (FP_EQUAL) and fog shaders' own (FP_LE); translucent and sky shaders do not.
-    Deformed surfaces are left out rather than fogged in their rest pose."""
+    Surfaces whose deforms move them are left out rather than fogged in their
+    rest pose."""
     def fog_receiver(level: Level, face: Face) -> bool {
         if face.fog_only {
             return True;
@@ -1970,7 +1996,7 @@ obj QuakeRenderer {
         if face.additive or texture.additive or texture.flags & 4 != 0 or t in self.sky_layers {
             return False;
         }
-        if t in level.surface_deforms {
+        if t in level.surface_deforms and any([deform.kind != "normal" for deform in level.surface_deforms[t]]) {
             return False;
         }
         if t in level.surface_stages {
@@ -2038,10 +2064,10 @@ obj QuakeRenderer {
             rlUnloadTexture(u32(self.fog_image));
             self.fog_image = 0;
         }
-        if self.portal_shader.id != u32(0) {
-            UnloadShader(self.portal_shader);
-            self.portal_shader = Shader(id=u32(0), locs=u64(0));
-        }
+        self.box_mesh.close();
+        self.box_program.close();
+        self.backdrop_mesh.close();
+        self.backdrop_program.close();
         if self.white != 0 {
             rlUnloadTexture(u32(self.white));
             self.white = 0;
@@ -2059,6 +2085,23 @@ def sky_turn(point: Vec3, axis: Vec3, degrees: float) -> Vec3 {
     c = math.cos(math.radians(degrees));
     n = math.sin(math.radians(degrees));
     return point.scale(c).add(k.cross(point).scale(n)).add(k.scale(k.dot(point) * (1.0 - c)));
+}
+
+"""The sky box's placement: centred on `eye` and turned `degrees` about
+`axis` as sky_turn turns a point (no turn without an axis or an angle)."""
+def sky_matrix(eye: Vec3, axis: Vec3, degrees: float) -> Matrix {
+    if axis.length() <= 0.0 or degrees == 0.0 {
+        return placement_matrix_at(eye);
+    }
+    x = sky_turn(Vec3(x=1.0), axis, degrees);
+    y = sky_turn(Vec3(y=1.0), axis, degrees);
+    z = sky_turn(Vec3(z=1.0), axis, degrees);
+    return Matrix(
+        m0=f32(x.x), m4=f32(y.x), m8=f32(z.x), m12=f32(eye.x),
+        m1=f32(x.y), m5=f32(y.y), m9=f32(z.y), m13=f32(eye.y),
+        m2=f32(x.z), m6=f32(y.z), m10=f32(z.z), m14=f32(eye.z),
+        m3=f32(0.0), m7=f32(0.0), m11=f32(0.0), m15=f32(1.0)
+    );
 }
 
 """The vertex attributes of a world chunk (world_mesh WORLD_VERTEX_FORMAT) at
@@ -2175,11 +2218,12 @@ def packed_tcmods(stage: ModelStage, seconds: float) -> list[bytes] {
     return [pack_floats(rows_s), pack_floats(rows_t), pack_floats(turbs)];
 }
 
-"""A shader's deformVertexes packed for the stage shader (at most four):
-kind, waveform and spread; the wave; and move's push at time `seconds` or
-bulge's width, height and speed."""
+"""A shader's deformVertexes packed for world_mesh.jac SHADER_DEFORM_GLSL (at
+most four): kind, waveform and spread; the wave (normal's amplitude and
+frequency in it); and move's push at time `seconds` or bulge's width, height
+and speed."""
 def packed_deforms(deforms: list[Deform], seconds: float) -> list[bytes] {
-    kinds = {"wave": 1.0, "move": 2.0, "bulge": 3.0, "autosprite": 4.0, "autosprite2": 5.0};
+    kinds = {"wave": 1.0, "move": 2.0, "bulge": 3.0, "autosprite": 4.0, "autosprite2": 5.0, "normal": 6.0};
     infos: list[float] = [];
     waves: list[float] = [];
     vectors: list[float] = [];
@@ -2392,8 +2436,9 @@ obj DeformedShape {
         coords: list[float] = [];
 }
 
-"""tr_shade_calc.c RB_CalcDeformVertexes and the autosprite deforms, applied to
-a face's placed vertices for this frame."""
+"""tr_shade_calc.c RB_CalcDeformVertexes and the autosprite deforms, applied
+on the CPU to a face's placed vertices for this frame (portal backdrops; the
+stage shader deforms everything else, world_mesh.jac SHADER_DEFORM_GLSL)."""
 def deform_face(face: Face, deforms: list[Deform], eye: Vec3, seconds: float) -> DeformedShape {
     shape = DeformedShape(coords=list(face.uv));
     for v in face.vertices {
@@ -2418,7 +2463,7 @@ def deform_face(face: Face, deforms: list[Deform], eye: Vec3, seconds: float) ->
             }
         } elif deform.kind == "bulge" {
             for i in range(len(shape.points)) {
-                swell = math.sin(math.pi * 0.25 * shape.coords[i * 2] * deform.width + seconds * deform.speed) * deform.height;
+                swell = math.sin(shape.coords[i * 2] * deform.width + seconds * deform.speed) * deform.height;
                 shape.points[i] = shape.points[i].add(normal.scale(swell));
             }
         } elif deform.kind in ["autosprite", "autosprite2"] and len(shape.points) == 4 {

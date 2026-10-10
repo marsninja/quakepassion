@@ -13,6 +13,7 @@ import from .combat {
     CombatState,
     Projectile,
     HasProjectile,
+    WeaponImpact,
     line_of_fire,
     strike,
     request_sound,
@@ -397,6 +398,12 @@ def bot_fire(
             }
             wounds[bodies.index(body)] += int(float(rule.damage) * scale);
         } elif wall.fraction < 1.0 and not wall.start_solid and rule.key != "gauntlet" {
+            # A shot on a mover damages it (a button or door with health).
+            if wall.model > 0 {
+                state.impacts.append(
+                    WeaponImpact(model=wall.model, amount=int(float(rule.damage) * scale), origin=endpoint)
+                );
+            }
             surface = collision.surface_class(wall);
             if surface < 2 {
                 impact_spray(world, endpoint, wall.normal);
@@ -611,11 +618,22 @@ def act_bot(
     visible = foe is not None and foe.health > 0 and memory.sight;
     travel = memory.travel;
     # BotChangeViewAngles turns toward the node's ideal view: the aim point,
-    # the enemy's last position in a chase, or the movement's.
+    # the enemy's last position in a chase, what the bot shoots to open its
+    # way (unless a weapon jump has the view), or the movement's.
+    task = memory.obstacles.top();
     if memory.view_mode == "enemy" and visible {
         look_at(bot, memory.view_target);
+    } elif memory.view_mode == "activate" and task is not None and not (travel.view_set and travel.weapon) {
+        look_at(bot, task.target);
     } elif memory.view_mode == "chase" {
         look_at(bot, memory.last_enemy_origin.add(Vec3(z=bot.eye_height)));
+    } elif memory.view_mode == "roam" {
+        # A camping bot looks round (BotRoamGoal); its view stays where it
+        # was until it picks somewhere new.
+        spot = memory.roam_target;
+        if spot is not None {
+            look_at(bot, spot.add(Vec3(z=bot.eye_height)));
+        }
     } elif travel.view_set {
         # MOVERESULT_MOVEMENTVIEWSET: the movement needs this view.
         memory.ideal_yaw = travel.yaw;
@@ -631,6 +649,22 @@ def act_bot(
     # A rocket jump fires as it jumps (EA_Attack from the movement).
     if travel.attack and rule.key == travel.weapon {
         if bot.weapon_wait <= 0.0 and bot.weapon_change >= WEAPON_SWITCH_TIME {
+            bot_fire(world, bot, rule, human, collision, state);
+        }
+        return;
+    }
+    # AINode_Seek_ActivateEntity: with its target in sight, the right weapon
+    # up and the view within 20 degrees' field of it, the bot shoots.
+    aim = memory.shoot_target;
+    if memory.ainode == "seek_activate" and aim is not None and task is not None {
+        toward = aim.sub(bot.pos);
+        wanted_yaw = math.atan2(toward.y, toward.x);
+        wanted_pitch = math.atan2(toward.z, math.sqrt(toward.x * toward.x + toward.y * toward.y));
+        if rule.slot == task.weapon
+            and bot.weapon_wait <= 0.0
+            and bot.weapon_change >= WEAPON_SWITCH_TIME
+            and abs(turn_between(bot.yaw, wanted_yaw)) <= math.radians(10.0)
+            and abs(turn_between(bot.pitch, wanted_pitch)) <= math.radians(10.0) {
             bot_fire(world, bot, rule, human, collision, state);
         }
         return;

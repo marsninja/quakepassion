@@ -3,7 +3,8 @@
 Q3 players are drawn as `cg_players.c` draws them: legs, torso and head are
 separate MD3 models, each on its own animation, joined through their tags
 every frame. Bots, podium figures, bodies left behind (the body queue) and
-the player's own body in mirrors and portal views all use this rig.
+the player's own body in mirrors, portal views and the death view all use
+this rig.
 
 ## The rig (`engine/world/models.jac`, `engine/world/player_rig.jac`, `games/arena_character.jac`)
 
@@ -51,9 +52,18 @@ part of a rig shares one sample.
 
 ## Bodies, sounds and powerups
 
+- The player's own body (`engine/world/reflection.jac`) follows the player
+  on the same rig. It is drawn where the player can see themselves: in
+  mirrors and portal views (`RF_THIRD_PERSON`) and, once dead, in the main
+  view, which Q3 then renders from outside
+  ([player feedback](player-feedback-status.md)). There it plays one of the
+  three deaths and lies on its last frame, holding no weapon (`player_die`:
+  `WP_NONE`); a body gibbed is not drawn at all (`GibEntity`:
+  `ET_INVISIBLE`). The sounds its poses cue wait on the body until the game
+  loop plays them, whichever view posed it first.
 - Body queue (`engine/world/body_queue.jac`, `CopyToBodyQue`): a respawning
-  bot leaves a copy of its body where it lies, still finishing its death
-  sequence. After 5 s it sinks (`BodySink`) and is gone at 6.5 s; at most
+  player or bot leaves a copy of its body where it lies, still finishing its
+  death sequence. After 5 s it sinks (`BodySink`) and is gone at 6.5 s; at most
   eight (`BODY_QUEUE_SIZE`) are kept.
   - A body keeps the dead player's health and gib models. As
     `CONTENTS_CORPSE`, it is struck by hitscan, missiles and splash but not by
@@ -62,7 +72,9 @@ part of a rig shares one sample.
     (`body_die`); a gibbed body takes no more damage.
   - A dead bot keeps falling (its pmove runs on), so the copy is left where it
     came to rest. None is left in a `CONTENTS_NODROP` void such as the one
-    around q3dm17.
+    around q3dm17, and a player or bot killed there is not gibbed by that
+    blow and drops nothing (`player_die`); a later hit on the falling body
+    still bursts it.
 - Sounds (`cg_event.c`): each rig names its character's voice and footstep
   type: pain tiers (at most two a second), three deaths, jumps, landings (a
   thud, `pain100` or `fall1` by impact speed), footsteps every 320 ms while
@@ -72,8 +84,19 @@ part of a rig shares one sample.
   with the invisibility shader; quad, battle suit and regeneration add shells
   pushed out by their shaders' `deformVertexes`; weapons, the view weapon
   included, use the weapon shells.
-- Talk balloon (`CG_PlayerSprites`, `EF_TALK`): `sprites/balloon3`, 48 units
-  over the origin of a bot typing a chat line.
+- Shadows (`CG_PlayerShadow`, `engine/world/shadows.jac`): with `cg_shadows 1`
+  (the default) the `CastShadows` walker visits the human, the bots and the
+  bodies left behind each frame and drops a box (30 units square, 2 high)
+  128 units down through the world from each one's origin. Where it lands the
+  `markShadow` shader is laid as one of `CG_ImpactMark`'s temporary marks: 24
+  units in radius, cut to the faces it lies on, turned with the legs and
+  fading with the height the player is at. An invisible player casts none.
+- Head sprites (`CG_PlayerSprites`, `CG_PlayerFloatSprite`), 10 units in
+  radius 48 units over a bot's origin: `sprites/balloon3` while it types a
+  chat line (`EF_TALK`); otherwise the medal of an award it just earned
+  (`medal_impressive`, `medal_excellent`, `medal_gauntlet`) for two seconds
+  (`REWARD_SPRITE_TIME`), a newer award replacing the one showing and
+  Excellent going up over a gauntlet frag's when one frag earns both.
 - Taunts: a bot that just killed may gesture (`TORSO_GESTURE`) with its
   model's `taunt.wav` (`EV_TAUNT`).
 - Q3 players never stop to flinch when hit; the torso twitches and the pain
@@ -85,14 +108,19 @@ part of a rig shares one sample.
   angles, legs and torso choices, deaths, sound cues, tag attachment with
   barrel and flash, the body queue, the quad shell.
 - `tests/gib_tests.jac`: Q3 bodies soaking shots until they gib, no body in a
-  nodrop void, bodies not blocking movement.
+  nodrop void, a bot killed there not gibbed, bodies not blocking movement.
 - `tests/lighting_tests.jac`: the light grid. `tests/item_drop_tests.jac`:
   powerup shaders on bodies and weapons.
-- `tests/podium_tests.jac` and `tests/portal_tests.jac`: podium figures and
-  the player's body in portal views.
+- `tests/podium_tests.jac` and `tests/portal_tests.jac`: podium figures, the
+  player's body in portal views, and the dead body shown dying, unarmed, and
+  not at all once gibbed.
+- `tests/shadow_tests.jac`: the shadow's trace, strength and mark, the human
+  and bodies, invisible and dormant players, `cg_shadows`.
+  `tests/effect_quads_tests.jac`: award sprites and the talk balloon.
 - `scripts/bot_bodies_smoke.jac`: captures a bot running, strafing,
   backpedalling, firing with a flash, aiming up and down, dying, a body left
-  behind, a quad shell and a dropped item.
+  behind, a quad shell, a dropped item, an award's medal and the spawn effect,
+  each on its blob shadow.
 - `scripts/bot_render_profile.jac`: model-pass cost with every bot drawn each
   frame (culling off, 1280x720). Measured 2026-09-24 against the baked bodies
   the rig replaced:
@@ -104,7 +132,8 @@ part of a rig shares one sample.
 
 ## Limitations
 
-- No player shadows (`CG_PlayerShadow`, `cg_shadows`).
-- No award sprites over players' heads (`CG_PlayerFloatSprite` for
-  `EF_AWARD_EXCELLENT`, `EF_AWARD_IMPRESSIVE` and the like); the talk balloon
-  is the only player sprite.
+- `cg_shadows` 2 and 3 (the original's stencil and projection shadows) draw
+  no shadow. Shadows fall on the world only, not on doors and platforms (as in
+  the original), and are not drawn in mirrors and portal views.
+- The human's own head sprite, which the original shows only in third person
+  and mirrors, is not drawn.

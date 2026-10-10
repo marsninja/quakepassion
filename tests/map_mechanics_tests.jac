@@ -282,9 +282,11 @@ test "Q2 targets explode, quake, update the help computer and fire lasers" {
     result = world spawn TargetTick(player=player, collision=CollisionMap(), state=state, dt=0.05);
     assert player.health < 100 and player.health > 50;
     assert state.impacts and state.impacts[0].splash == 50;
-    assert not result.message and "sound/misc/pc_up.wav" in result.cues;
+    # Use_Target_Help is silent; the news beeps on the level's next frame
+    # that is a multiple of 64 (tests/q2_presentation_tests.jac).
+    assert not result.message and "sound/misc/pc_up.wav" not in result.cues;
     computers = [world->:HasHelp:->][?:HelpComputer];
-    assert computers[0].primary == "Find the data CD";
+    assert computers[0].primary == "Find the data CD" and computers[0].unread > 0;
     assert beam.on and quake.remaining > 0.0 and not player.grounded;
     before = player.health;
     player.grounded = True;

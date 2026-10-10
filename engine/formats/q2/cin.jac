@@ -9,6 +9,7 @@ picture (Huff1Decompress) and the frame's share of the sound: frame n holds
 samples n*rate/14 up to (n+1)*rate/14, the films running at 14 frames a
 second (SCR_ReadNextFrame)."""
 import struct;
+import from ..film { Film, FilmPicture }
 
 glob CIN_FRAME_RATE: int = 14;
 glob CIN_MAX_COMPRESSED: int = 131072;
@@ -30,18 +31,50 @@ obj CinFrame {
         samples: bytes = b"";
 }
 
+"""Palette indices to opaque RGBA through a 768-byte palette."""
+def cinematic_rgba(pixels: bytes, palette: bytes) -> bytes {
+    count = len(pixels);
+    rgba = bytearray(count * 4);
+    for index in range(count) {
+        source = int(pixels[index]) * 3;
+        target = index * 4;
+        rgba[target] = palette[source];
+        rgba[target + 1] = palette[source + 1];
+        rgba[target + 2] = palette[source + 2];
+        rgba[target + 3] = 255;
+    }
+    return bytes(rgba);
+}
+
 """A cinematic being read frame by frame, as cl.cinematic_file is. `nodes`
 holds the 256 trees' internal nodes, 512 entries (two children for each of
 nodes 256..511) per preceding value; `roots` is numhnodes1."""
-obj CinDecoder {
+obj CinDecoder(Film) {
     has data: bytes = b"",
         header: CinHeader = CinHeader(),
         nodes: list[int] = [],
         roots: list[int] = [],
         cursor: int = 0,
-        frame: int = 0,
         palette: bytes = b"",
         finished: bool = False;
+
+    """The frame as the player takes it: its palette indices with the
+    palette now in force (cl.cinematicpalette) and its sound."""
+    def next_picture() -> FilmPicture | None {
+        found = self.next_frame();
+        if found is None {
+            return None;
+        }
+        header = self.header;
+        return FilmPicture(
+            pixels=found.pixels,
+            palette=found.palette,
+            samples=found.samples,
+            sound_rate=header.sound_rate,
+            sound_width=header.sound_width,
+            sound_channels=header.sound_channels
+        );
+    }
 
     """SCR_ReadNextFrame: the next frame, or None at the end marker or the
     end of the file."""
@@ -130,7 +163,14 @@ def open_cin(data: bytes) -> CinDecoder {
         roots.append(tree[0]);
         nodes.extend(tree[1:]);
     }
+    # SCR_RunCinematic's 14 frames a second, a frame behind the reader, and
+    # CL_SendCmd's second before a key finishes the film.
     return CinDecoder(
+        width=header.width,
+        height=header.height,
+        frame_rate=CIN_FRAME_RATE,
+        trails=True,
+        skip_after=1.0,
         data=data,
         header=header,
         nodes=nodes,

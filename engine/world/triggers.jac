@@ -81,11 +81,13 @@ walker TriggerTick {
         message: str = "",
         cues: list[str] = [],
         skill: int = -1,
-        world: World | None = None;
+        world: World | None = None,
+        bots: list[Opponent] = [];
 
     can start_world with World entry {
         self.world = here;
         if self.dt > 0.0 {
+            self.bots = [bot for bot in [here->:HasOpponent:->][?:Opponent] if bot.arena];
             visit [here->:HasTrigger:->];
         }
     }
@@ -120,10 +122,11 @@ walker TriggerTick {
             }
         }
         # Q2 MONSTER triggers also fire for monsters standing in them
-        # (Touch_Multi); their messages go to no one.
+        # (Touch_Multi); their messages go to no one. A Q3 trigger fires for
+        # every client, so for the arena's bots too (g_trigger.c Touch_Multi).
         world = self.world;
-        if here.monsters and world is not None {
-            for enemy in [world->:HasOpponent:->][?:Opponent] {
+        if (here.monsters or (here.players and self.bots)) and world is not None {
+            for enemy in (self.bots if not here.monsters else [world->:HasOpponent:->][?:Opponent]) {
                 if enemy.health <= 0 or enemy.dormant {
                     continue;
                 }

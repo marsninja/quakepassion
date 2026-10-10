@@ -2,6 +2,7 @@
 jumping, landing, pain, death, water and burning, each game by its own rules."""
 import from .world { Player }
 import from .damage { Damage }
+import from .demise { Mortality, HasMortality }
 import from .powerups { empowered }
 
 """A landing at `speed` units a second (downward). Q1 PlayerPostThink: over
@@ -104,6 +105,7 @@ node Voice {
         pain_wait: float = 0.0,
         burn_wait: float = 0.0,
         dead: bool = False,
+        burst: bool = False,
         roll: int = 1;
 
     def pick(count: int) -> int {
@@ -122,21 +124,30 @@ def voice_of(player: Player) -> Voice {
     return voice;
 }
 
-"""Q3 GIB_HEALTH: a player killed 40 or more past zero bursts."""
+"""Q3 GIB_HEALTH: a player killed 40 or more past zero bursts (GibEntity). A
+body with a death of its own (demise.jac) says whether it did, once it has
+fallen: player_die never gibs one in a nodrop void."""
 def q3_gibbed(body: Player) -> bool {
-    return body.health <= 0 and body.death_overkill >= 40;
+    if body.health > 0 {
+        return False;
+    }
+    for fallen in [body->:HasMortality:->][?:Mortality] {
+        return fallen.dead and fallen.gibbed;
+    }
+    return body.death_overkill >= 40;
 }
 
 """Once per tick: Q1 client.qc WaterMove (inh2o/inlava/slimbrn2 on entry,
 outwater.wav on leaving, gasp1/gasp2 surfacing), player.qc PainSound (drown
 and lava/slime burn sounds, pain1-6 at most twice a second) and DeathSound
 (death1-5, h2odeath under water); Q2 p_view.c
-P_WorldEffects (watr_in/lava_in, watr_out, watr_un, gasp1/gasp2, burn1/burn2
-in lava once a second, gurp while drowning) and P_DamageFeedback's pain
+P_WorldEffects (watr_in/lava_in, watr_out, watr_un, gasp1/gasp2, for the dead
+too; burn1/burn2 in lava once a second and gurp while drowning, for the living) and P_DamageFeedback's pain
 sounds by health (0.7 s apart), with p_client.c death1-4; Q3 only
 the water events (EV_WATER_TOUCH/LEAVE/UNDER/CLEAR) and the gib sound. A
 body killed past the gib health gibs with its game's sound instead of the
-death cry (Q1 GibPlayer, Q2 player_die, Q3 EV_GIB_PLAYER). `jumped` is the pmove
+death cry (Q1 GibPlayer, Q2 player_die, Q3 EV_GIB_PLAYER), and a Q2 or Q3
+body shot past it after death gibs with that sound then. `jumped` is the pmove
 jump this tick (Q1 plyrjmp8.wav, Q2 *jump1.wav)."""
 walker VoiceTick {
     has game: str,
@@ -167,11 +178,15 @@ walker VoiceTick {
             if before < 3 and now >= 3 {
                 self.cues.append("sound/player/watr_un.wav");
             }
-            # g_combat.c player_die: at GIB_HEALTH the body gibs
+            # g_combat.c player_die and body_die: at GIB_HEALTH the body gibs
             # (EV_GIB_PLAYER's gibSound) instead of its death cry.
-            if here.health <= 0 and not voice.dead and q3_gibbed(here) {
+            if q3_gibbed(here) and not voice.burst {
                 self.cues.append("sound/player/gibsplt1.wav");
             }
+            voice.burst = q3_gibbed(here);
+        }
+        if here.health > 0 {
+            voice.burst = False;
         }
         voice.water_depth = now;
         voice.health = here.health;
@@ -242,44 +257,50 @@ walker VoiceTick {
     }
 
     def q2(body: Player, voice: Voice, before: int, now: int, hurt: bool, held: float) {
-        if body.health > 0 {
-            if self.jumped and now == 0 {
-                self.cues.append("sound/player/male/jump1.wav");
-            }
-            if before == 0 and now > 0 {
-                self.cues.append(
-                    "sound/player/lava_in.wav" if body.liquid_kind == 3 else "sound/player/watr_in.wav"
-                );
-            } elif before > 0 and now == 0 {
-                self.cues.append("sound/player/watr_out.wav");
-            }
-            if before < 3 and now >= 3 {
-                self.cues.append("sound/player/watr_un.wav");
-            }
-            if before >= 3 and now < 3 {
-                if held > 12.0 {
-                    self.cues.append("sound/player/gasp1.wav");
-                } elif held > 1.0 {
-                    self.cues.append("sound/player/gasp2.wav");
-                }
-            }
-            # P_WorldEffects: lava burns sound once a second.
-            if now > 0 and body.liquid_kind == 3 and voice.burn_wait <= 0.0 and hurt {
-                voice.burn_wait = 1.0;
-                voice.pain_wait = 1.0;
-                self.cues.append("sound/player/burn" + str(1 + voice.pick(2)) + ".wav");
-                return;
+        if body.health > 0 and self.jumped and now == 0 {
+            self.cues.append("sound/player/male/jump1.wav");
+        }
+        # P_WorldEffects plays its water-level sounds whatever the player's
+        # health, so a dead body splashes, goes under and comes up gasping
+        # too; only the drown and burn sounds ask for health.
+        if before == 0 and now > 0 {
+            self.cues.append(
+                "sound/player/lava_in.wav" if body.liquid_kind == 3 else "sound/player/watr_in.wav"
+            );
+        } elif before > 0 and now == 0 {
+            self.cues.append("sound/player/watr_out.wav");
+        }
+        if before < 3 and now >= 3 {
+            self.cues.append("sound/player/watr_un.wav");
+        }
+        if before >= 3 and now < 3 {
+            if held > 12.0 {
+                self.cues.append("sound/player/gasp1.wav");
+            } elif held > 1.0 {
+                self.cues.append("sound/player/gasp2.wav");
             }
         }
+        # P_WorldEffects: lava burns sound once a second.
+        if body.health > 0
+            and now > 0
+            and body.liquid_kind == 3
+            and voice.burn_wait <= 0.0
+            and hurt {
+            voice.burn_wait = 1.0;
+            voice.pain_wait = 1.0;
+            self.cues.append("sound/player/burn" + str(1 + voice.pick(2)) + ".wav");
+            return;
+        }
         if body.health <= 0 {
-            if not voice.dead {
-                # p_client.c player_die: below -40 health the body gibs.
-                if body.death_overkill > 40 {
-                    self.cues.append("sound/misc/udeath.wav");
-                } else {
-                    self.cues.append("sound/player/male/death" + str(1 + voice.pick(4)) + ".wav");
-                }
+            # p_client.c player_die: below -40 health the body gibs, at the
+            # death or when a later hit takes it there.
+            burst = body.death_overkill > 40;
+            if burst and not voice.burst {
+                self.cues.append("sound/misc/udeath.wav");
+            } elif not voice.dead and not burst {
+                self.cues.append("sound/player/male/death" + str(1 + voice.pick(4)) + ".wav");
             }
+            voice.burst = burst;
             return;
         }
         if not hurt {

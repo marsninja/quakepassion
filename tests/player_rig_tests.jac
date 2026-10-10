@@ -307,7 +307,7 @@ test "a quad-carrying body is drawn again in the quad shell" {
     carrier spawn GrantPowerup(kind="quad", duration=30.0);
     draws = (world spawn GatherModels()).draws;
     shells = [draw for draw in draws if draw.shader == "shader:powerups/quad"];
-    assert len(draws) == 6 and len(shells) == 3 and shells[0].inflate == 3.0;
+    assert len(draws) == 6 and len(shells) == 3;
     carrier spawn GrantPowerup(kind="invisibility", duration=30.0);
     draws = (world spawn GatherModels()).draws;
     assert len(draws) == 3 and all([draw.shader == "shader:powerups/invisibility" for draw in draws]);

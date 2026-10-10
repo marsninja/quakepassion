@@ -4,8 +4,12 @@ import math;
 import from .world { World, Entity, Player }
 import from .trains { TrackPoint, HasTrack, TrackNext }
 import from .combat { Opponent, HasOpponent, CombatState, request_sound }
-import from .models { Visual }
-import from .signals { Signal, HasSignal }
+import from .models { Visual, ModelResource }
+import from .signals { Signal, HasSignal, Fire }
+import from .gibs { GibsInto, GibDice, launch_gib }
+import from .fixtures { Fixture }
+import from .lightstyles { LightStyles, HasLightStyles }
+import from .particles { teleport_splash }
 import from ..formats.bsp { Bsp, MapEntity }
 import from ..math.vec3 { Vec3 }
 
@@ -27,6 +31,29 @@ node Finale {
         yaw: float = 0.0,
         pitch: float = 0.0,
         text: str = "";
+}
+
+"""The player model oldone.qc finale_4 puts down by the pit once
+Shub-Niggurath is gone; it stands hidden until then."""
+edge LeftStanding: Opponent --> Fixture {}
+
+# oldone.qc: finale_1's timer runs finale_2 (the teleport splash inside her)
+# after a second, and finale_3 (the thrashing) two seconds after that.
+glob SHUB_SPLASH_AT: float = 1.0,
+     SHUB_THRASH_AT: float = 3.0;
+
+# The brightness old_thrash1-19 give light style 0, a frame each; old_thrash20
+# runs finale_4, which sets it back to normal.
+glob SHUB_THRASH_LIGHT: str = "mkkigecacegikmmgcba";
+
+"""Which old_thrash function plays on the `frame`th tenth of a second of the
+thrashing: old_thrash1-15 three times over (old_thrash15 counts the passes),
+then old_thrash16-20."""
+def shub_thrash(frame: int) -> int {
+    if frame < 45 {
+        return frame % 15 + 1;
+    }
+    return min(20, frame - 29);
 }
 
 obj IntermissionView {
@@ -55,12 +82,21 @@ def intermission_camera(bsp: Bsp, pick: int = 0) -> IntermissionView {
             in ["info_intermission", "info_player_intermission"]
     ];
     view = IntermissionView();
+    if not spots and bsp.game == "q2" {
+        # p_hud.c BeginIntermission: "the map creator forgot to put in an
+        # intermission point", so the first player start serves.
+        spots = [
+            entity for entity in bsp.entities if entity.fields.get("classname", "") == "info_player_start"
+        ][:1];
+        pick = 0;
+    }
     if not spots {
         return view;
     }
     entity = spots[pick % len(spots)];
     key = "mangle" if entity.fields.get("classname", "") == "info_intermission" else "angles";
-    angles = entity.fields.get(key, "0 0 0").split();
+    # A point entity's "angle" is its yaw (G_SetMovedir's ED_ParseField).
+    angles = entity.fields.get(key, "0 " + entity.fields.get("angle", "0") + " 0").split();
     if len(angles) != 3 {
         raise ValueError("Invalid intermission angles");
     }
@@ -212,8 +248,37 @@ walker TeleportTrainTick {
     }
 }
 
-# Phases: 0 idle, 1 telefragged (hold), 2 thrashing, 3 dissolved. The boss
-# only dies by telefrag; ordinary damage is refused by the shared combat rules.
+"""Set light style 0, the map's ordinary light, to one brightness letter."""
+def shub_light(world: World, letter: str) {
+    for styles in [world->:HasLightStyles:->][?:LightStyles] {
+        if styles.patterns.get(0, "m") != letter {
+            styles.patterns[0] = letter;
+            styles.refresh();
+        }
+    }
+}
+
+"""What a finished or unfinished finale leaves in the world, put right as the
+finale ends and after a save is restored: once she is gone (finale_4) the
+player model stands by the pit and the light is back to normal."""
+def settle_finale(world: World, boss: Opponent) {
+    gone = boss.boss_phase >= 3;
+    for figure in [boss->:LeftStanding:->][?:Fixture] {
+        figure.visual.visible = gone;
+    }
+    if gone {
+        boss.visual.visible = False;
+    }
+    if boss.boss_phase != 2 {
+        shub_light(world, "m");
+    }
+}
+
+# Phases: 0 idle, 1 telefragged (finale_1 and finale_2), 2 thrashing
+# (finale_3), 3 gone (finale_4). The boss only dies by telefrag; ordinary
+# damage is refused by the shared combat rules. Her think keeps its own 10 Hz
+# beat through finale_1-3; it is taken here to fall on finale_3's, so the
+# pulsing style finale_3 sets gives way to old_thrash1's at once.
 walker FinaleTick {
     has player: Player,
         state: CombatState,
@@ -230,58 +295,110 @@ walker FinaleTick {
         visit [here->:HasOpponent:->];
     }
 
+    """old_idle1-46, which she keeps playing until finale_3."""
+    def idle(boss: Opponent) {
+        if not boss.idle_animation {
+            return;
+        }
+        boss.animation_time += self.dt * 10.0;
+        index = int(boss.animation_time) % len(boss.idle_animation);
+        boss.visual.first = boss.idle_animation[index];
+        boss.visual.second = boss.idle_animation[(index + 1) % len(boss.idle_animation)];
+        boss.visual.blend = boss.animation_time - float(int(boss.animation_time));
+    }
+
+    """finale_4: fifty gibs thrown from a 5 by 5 grid at two heights, a third
+    each of gib1, gib2 and gib3 as ThrowGib(-999) throws them, the closing
+    text, and the boss gone. She was never flagged FL_MONSTER, so Killed
+    does not count her among the kills."""
+    def burst(world: World, boss: Opponent) {
+        if boss.rule.pain_sounds {
+            request_sound(boss, boss.rule.pain_sounds[0]);
+        }
+        rule = boss.gib_rule;
+        models = [boss->:GibsInto:->][?:ModelResource];
+        if rule is not None and models {
+            dice = GibDice(seed=max(1, boss.shot_random % 2147483647));
+            origin = boss.pos.sub(Vec3(z=boss.eye_height));
+            for height in [16.0, 112.0] {
+                for across in range(5) {
+                    for along in range(5) {
+                        roll = dice.roll();
+                        pick = 0 if roll < 0.3 else (1 if roll < 0.6 else 2);
+                        launch_gib(
+                            world,
+                            boss,
+                            models[min(pick, len(models) - 1)],
+                            rule,
+                            origin.add(
+                                Vec3(
+                                    x=float(across) * 32.0 - 64.0,
+                                    y=float(along) * 32.0 - 64.0,
+                                    z=height
+                                )
+                            ),
+                            999,
+                            dice
+                        );
+                    }
+                }
+            }
+        }
+        boss.boss_phase = 3;
+        boss.boss_time = 0.0;
+        boss.health = 0;
+        for finale in [world->:HasFinale:->][?:Finale] {
+            finale.text = SHUB_TEXT;
+        }
+        settle_finale(world, boss);
+        self.completed = True;
+    }
+
     can boss with Opponent entry {
-        if here.rule.script != "shub" or self.world is None {
+        world = self.world;
+        if here.rule.script != "shub" or world is None {
             return;
         }
         if here.boss_phase == 0 {
-            if here.idle_animation {
-                here.animation_time += self.dt * 10.0;
-                index = int(here.animation_time) % len(here.idle_animation);
-                here.visual.first = here.idle_animation[index];
-                here.visual.second = here.idle_animation[
-                    (index + 1) % len(here.idle_animation)
-                ];
-                here.visual.blend = here.animation_time
-                    - float(int(here.animation_time));
-            }
+            self.idle(here);
             return;
         }
         if here.boss_phase >= 3 {
             self.completed = True;
             return;
         }
+        before = here.boss_time;
         here.boss_time += self.dt;
         if here.boss_phase == 1 {
-            if here.boss_time >= 3.0 {
-                here.boss_phase = 2;
-                here.boss_time = 0.0;
-                request_sound(here, here.rule.death_sound);
+            self.idle(here);
+            # finale_2: a teleport splash inside her, 100 units along -y.
+            if before < SHUB_SPLASH_AT and here.boss_time >= SHUB_SPLASH_AT {
+                teleport_splash(
+                    world, here.pos.sub(Vec3(z=here.eye_height)).sub(Vec3(y=100.0))
+                );
+                request_sound(here, "sound/misc/r_tele1.wav");
             }
+            if here.boss_time < SHUB_THRASH_AT {
+                return;
+            }
+            # finale_3: she starts thrashing wildly.
+            here.boss_phase = 2;
+            here.boss_time -= SHUB_THRASH_AT;
+            request_sound(here, here.rule.death_sound);
+        }
+        frame = int(here.boss_time * 10.0 + 0.000001);
+        state = shub_thrash(frame);
+        if state >= 20 {
+            self.burst(world, here);
             return;
         }
         frames = here.death_animation;
         if frames {
-            index = int(here.boss_time * 10.0) % len(frames);
-            here.visual.first = frames[index];
-            here.visual.second = frames[(index + 1) % len(frames)];
-            here.visual.blend = here.boss_time * 10.0
-                - float(int(here.boss_time * 10.0));
+            here.visual.first = frames[(state - 1) % len(frames)];
+            here.visual.second = frames[(shub_thrash(frame + 1) - 1) % len(frames)];
+            here.visual.blend = here.boss_time * 10.0 - float(frame);
         }
-        if here.boss_time >= 6.0 {
-            here.boss_phase = 3;
-            here.boss_time = 0.0;
-            here.health = 0;
-            here.visual.visible = False;
-            self.state.kills += 1;
-            if here.rule.pain_sounds {
-                request_sound(here, here.rule.pain_sounds[0]);
-            }
-            for finale in [self.world->:HasFinale:->][?:Finale] {
-                finale.text = SHUB_TEXT;
-            }
-            self.completed = True;
-        }
+        shub_light(world, SHUB_THRASH_LIGHT[state - 1]);
     }
 }
 
@@ -295,6 +412,8 @@ def telefrag(world: World, player: Player, point: Vec3, eye_height: float) -> bo
         if inside_boss(boss, point) {
             boss.boss_phase = 1;
             boss.boss_time = 0.0;
+            # combat.qc Killed: monster_death_use fires her targets.
+            boss.activation spawn Fire();
             struck = True;
         }
     }

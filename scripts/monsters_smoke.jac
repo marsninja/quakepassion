@@ -27,11 +27,16 @@ def look_at(renderer: Renderer, drawing: QuakeRenderer, scene: ModelScene, level
     renderer.screenshot(name);
 }
 
-"""An open spot `reach` units from `origin` with a clear line back to it."""
-def open_spot(level: Level, origin: Vec3, reach: float) -> Vec3 | None {
+"""An open spot `reach` units from `origin` with a clear line back to it;
+`floored`, one with a floor within 64 units below it (a body put there
+stays in sight rather than falling to a level below)."""
+def open_spot(level: Level, origin: Vec3, reach: float, floored: bool = False) -> Vec3 | None {
     for offset in [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(x=0.7, y=0.7), Vec3(x=-0.7, y=-0.7)] {
         spot = origin.add(offset.scale(reach));
         if level.collision.trace_point(spot, spot).start_solid {
+            continue;
+        }
+        if floored and level.collision.trace_point(spot, spot.sub(Vec3(z=86.0))).fraction == 1.0 {
             continue;
         }
         if level.collision.trace_point(origin, spot).fraction == 1.0 {
@@ -130,7 +135,7 @@ with entry {
                         crowded = True;
                     }
                 }
-                room = open_spot(level, first.pos, 200.0);
+                room = open_spot(level, first.pos, 200.0, True);
                 if crowded or room is None {
                     continue;
                 }

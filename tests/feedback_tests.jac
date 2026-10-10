@@ -90,15 +90,25 @@ test "pain interrupts movement with cooldown and death holds the final pose" {
     assert victim.visual.first == 5 and victim.visual.second == 5;
 }
 
-test "turning follows the shortest arc at the monster's yaw speed" {
+test "a running monster's steps turn it the short way round at its yaw speed" {
     world = World();
-    enemy = Opponent(pos=Vec3(x=100.0), yaw=0.0, attack_wait=5.0);
-    world +>:HasOpponent:+> enemy;
-    world spawn CombatTick(
-        player=Player(), collision=CollisionMap(), state=CombatState(), dt=0.01
+    collision = CollisionMap();
+    collision.add_box(
+        Vec3(x=-1000.0, y=-1000.0, z=-64.0), Vec3(x=1000.0, y=1000.0, z=0.0), Vec3(), Vec3(), Vec3()
     );
-    # Facing away, it turns the short way (either way round at 180 degrees
-    # goes negative, as ChangeYaw's move -= 360 does): 20 degrees a 0.1 s
-    # frame is 2 in a hundredth of a second.
-    assert abs(math.degrees(enemy.yaw) + 2.0) < 0.000001;
+    enemy = Opponent(pos=Vec3(x=100.0, z=22.0), yaw=0.0, attack_wait=5.0, grounded=True);
+    world +>:HasOpponent:+> enemy;
+    player = Player(pos=Vec3(z=22.0));
+    state = CombatState();
+    for tick in range(10) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=0.01);
+    }
+    # Facing away, its first frame's step turns it 20 degrees toward its
+    # heading (SV_StepDirection's ChangeYaw), carried over the frame's
+    # ticks; either way round at 180 degrees goes negative, as ChangeYaw's
+    # move -= 360 does.
+    assert enemy.ideal_yaw == 180.0;
+    assert abs(math.degrees(enemy.yaw) % 360.0 - 340.0) < 0.000001;
+    # Not yet within 45 degrees of its heading, it has not stepped.
+    assert enemy.pos.x == 100.0;
 }

@@ -23,7 +23,8 @@ import from engine.world.finale {
     HasTeleportTrain,
     Finale,
     HasFinale,
-    SHUB_TEXT
+    SHUB_TEXT,
+    settle_finale
 }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.brushes { BrushObject, HasBrush, show_brush }
@@ -38,6 +39,8 @@ import from engine.world.combat {
     current_profile,
     ensure_profiles,
     pain_length,
+    reaction_length,
+    select_death,
     select_profile,
     CombatState,
     Opponent,
@@ -47,13 +50,26 @@ import from engine.world.combat {
     Projectile,
     HasProjectile
 }
-import from engine.world.pickups { Pickup, HasPickup }
-import from engine.world.drops { Flight, HasFlight, Carries, let_fall, end_flight, in_flight }
+import from engine.world.pickups { Pickup, HasPickup, remove_pickup }
+import from engine.world.drops {
+    Flight,
+    HasFlight,
+    Carries,
+    let_fall,
+    end_flight,
+    in_flight,
+    drop_kind,
+    dropped_items,
+    flight_of,
+    restore_drop
+}
 import from engine.world.doors { Door, HasDoor, DoorMember, apply_pose }
 import from engine.world.mover_ramp { ramp_rest }
 import from engine.world.rotators { Rotator, HasRotator, place }
 import from engine.world.turrets { Turret, HasTurret, Mans, pose_turret }
 import from engine.world.shooters { Shooter, HasShooter }
+import from engine.world.area_portals { HasAreaPortal, AreaPortalTick }
+import from engine.world.map_areas { AreaPortal }
 import from engine.world.powerups { Powerup, Empowered }
 import from engine.world.arena { Competes, match_of }
 import from engine.world.inventory {
@@ -236,6 +252,12 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                 )
         );
     }
+    # Q2 WriteLevel keeps a func_areaportal's count (Use_Areaportal's
+    # toggle) and SV_WriteLevelFile the portals' state
+    # (CM_WritePortalState). A portal a door holds follows its saved door.
+    for portal in [world->:HasAreaPortal:->][?:AreaPortal] {
+        lines.append("PORTAL " + numbers([1.0 if portal.toggled else 0.0]));
+    }
     contest = match_of(world);
     if contest is not None {
         lines.append(
@@ -335,6 +357,49 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             "PATROL " + str(index) + " " + str(heading) + " " + str(holding) + " " + str(walker_node.patrol_wait)
         );
     }
+    # How each campaign monster is moving (engine/world/monster_move.jac):
+    # its ideal_yaw and the yaw its steps have turned it to, the step it is
+    # part-way through, its random stream, FL_PARTIALGROUND, AS_SLIDING and
+    # lefty, and Q2's pursuit of a lost enemy (flags, saved_goal and what is
+    # left of search_time).
+    for index in range(len(walkers)) {
+        stepper = walkers[index];
+        if stepper.arena or stepper.step_random <= 0 {
+            continue;
+        }
+        flags = (1 if stepper.partial_ground else 0)
+            | (2 if stepper.sliding else 0)
+            | (4 if stepper.lefty else 0)
+            | (8 if stepper.lost_sight else 0)
+            | (16 if stepper.pursuit_last_seen else 0)
+            | (32 if stepper.pursue_next else 0)
+            | (64 if stepper.pursue_temp else 0)
+            | (128 if stepper.searching else 0);
+        ahead = stepper.standing();
+        lines.append(
+            "STEP "
+                + str(index)
+                + " "
+                + str(flags)
+                + " "
+                + str(stepper.step_random)
+                + " "
+                + numbers(
+                    [
+                        stepper.ideal_yaw,
+                        stepper.facing(),
+                        stepper.stride_time,
+                        ahead.x,
+                        ahead.y,
+                        ahead.z,
+                        stepper.saved_goal.x,
+                        stepper.saved_goal.y,
+                        stepper.saved_goal.z,
+                        stepper.search_left
+                    ]
+                )
+        );
+    }
     # Corpse health and gibbing, for Q2/Q3 corpses that can still be blown apart.
     corpses = [world->:HasOpponent:->][?:Opponent];
     # Arena bots keep their weapon, ammo and holdables: one BOTITEM per stack.
@@ -368,6 +433,31 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             );
         }
     }
+    # The death a corpse drew and how far it has played, an attack a monster
+    # is holding until it faces its enemy, and how long since its pain was
+    # last due.
+    for index in range(len(corpses)) {
+        actor = corpses[index];
+        if actor.death_variant > 0
+            or actor.readied >= 0
+            or actor.pain_rested < 1000.0
+            or actor.death_burst > 0 {
+            lines.append(
+                "SEQUENCE "
+                    + str(index)
+                    + " "
+                    + str(actor.death_variant)
+                    + " "
+                    + str(actor.animation_time if actor.health <= 0 else 0.0)
+                    + " "
+                    + str(actor.readied)
+                    + " "
+                    + str(actor.pain_rested)
+                    + " "
+                    + str(actor.death_burst)
+            );
+        }
+    }
     for index in range(len(corpses)) {
         if corpses[index].health <= 0 {
             lines.append(
@@ -380,7 +470,36 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
             );
         }
     }
-    # Dropped items are transient and not saved; a benched team member is.
+    # What dying players dropped (TossClientItems): which item, where, how
+    # long it has left, a powerup's remaining time, and its throw while it
+    # is still in the air.
+    for thrown in dropped_items(world) {
+        if not thrown.active {
+            continue;
+        }
+        flight = flight_of(thrown);
+        motion = flight.velocity if flight is not None else Vec3();
+        lines.append(
+            "DROP "
+                + drop_kind(thrown.rule)
+                + " "
+                + numbers(
+                    [
+                        thrown.pos.x,
+                        thrown.pos.y,
+                        thrown.pos.z,
+                        thrown.yaw,
+                        thrown.lifetime,
+                        thrown.duration,
+                        1.0 if flight is not None else 0.0,
+                        motion.x,
+                        motion.y,
+                        motion.z
+                    ]
+                )
+        );
+    }
+    # A benched team member is saved with the placed items.
     placed = [pickup for pickup in [world->:HasPickup:->][?:Pickup] if not pickup.dropped];
     for pickup in placed {
         lines.append(
@@ -537,7 +656,8 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     for computer in [world->:HasHelp:->][?:HelpComputer] {
         lines.append(
             "HELP "
-                + numbers([float(computer.changed), float(computer.unread), computer.beep_wait])
+                # The third number is a spare (once a beep timer).
+                + numbers([float(computer.changed), float(computer.unread), 0.0])
                 + " "
                 + help_field(computer.primary)
                 + " "
@@ -647,6 +767,10 @@ def restore(
     for flight in [world->:HasFlight:->][?:Flight] {
         end_flight(world, flight);
     }
+    # The dropped items are the save's.
+    for thrown in dropped_items(world) {
+        remove_pickup(world, thrown);
+    }
     # Flying gibs belong to the moment that was left; the saved one has none.
     for gib in [world->:HasGib:->][?:Gib] {
         for placement in [edge gib->:In:->] {
@@ -663,6 +787,8 @@ def restore(
     aimed = 0;
     shooters = [world->:HasShooter:->][?:Shooter];
     fired = 0;
+    portals = [world->:HasAreaPortal:->][?:AreaPortal];
+    gated = 0;
     lightning = [world->:HasLightning:->][?:LightningEvent];
     l = 0;
     teleport_trains = [world->:HasTeleportTrain:->][?:TeleportTrain];
@@ -821,6 +947,13 @@ def restore(
             }
             pose_turret(breach, level.bsp, level.collision);
             aimed += 1;
+        } elif words[0] == "PORTAL" and len(words) == 2 and gated < len(portals) {
+            toggled = values(words[1], 1)[0];
+            if toggled not in [0.0, 1.0] {
+                raise ValueError("Invalid saved area portal");
+            }
+            portals[gated].toggled = toggled != 0.0;
+            gated += 1;
         } elif words[0] == "MOVER" and len(words) == 4 and spun < len(rotators) {
             row = values(" ".join(words[1:]), 3);
             if row[0] < 0.0 or row[2] < 0.0 {
@@ -856,6 +989,43 @@ def restore(
                 walker_node +>:Holds:+> corners[holding];
             }
             walker_node.patrol_wait = float(words[4]);
+        } elif words[0] == "STEP" and len(words) == 14 {
+            index = int(words[1]);
+            flags = int(words[2]);
+            stream = int(words[3]);
+            row = values(" ".join(words[4:]), 10);
+            if index < 0
+                or index >= len(enemies)
+                or flags < 0
+                or flags > 255
+                or stream < 1
+                or stream >= 2147483647
+                or row[2] < 0.0
+                or row[2] > 0.1
+                or row[9] < 0.0
+                or row[9] > 25.0 {
+                raise ValueError("Invalid saved monster step");
+            }
+            stepper = enemies[index];
+            stepper.partial_ground = flags & 1 != 0;
+            stepper.sliding = flags & 2 != 0;
+            stepper.lefty = flags & 4 != 0;
+            stepper.lost_sight = flags & 8 != 0;
+            stepper.pursuit_last_seen = flags & 16 != 0;
+            stepper.pursue_next = flags & 32 != 0;
+            stepper.pursue_temp = flags & 64 != 0;
+            stepper.searching = flags & 128 != 0;
+            stepper.step_random = stream;
+            stepper.ideal_yaw = row[0];
+            # The step and the turn in progress go on from where the body
+            # was saved.
+            stepper.turn_to = row[1];
+            stepper.turn_at = stepper.yaw;
+            stepper.stride_time = row[2];
+            stepper.stride_to = Vec3(x=row[3], y=row[4], z=row[5]);
+            stepper.stride_at = stepper.pos.add(Vec3());
+            stepper.saved_goal = Vec3(x=row[6], y=row[7], z=row[8]);
+            stepper.search_left = row[9];
         } elif words[0] == "BOTARM" and len(words) == 3 {
             index = int(words[1]);
             slot = int(words[2]);
@@ -885,6 +1055,46 @@ def restore(
             if corpse.gibbed {
                 corpse.visual.visible = False;
             }
+        } elif words[0] == "SEQUENCE" and len(words) in [6, 7] {
+            index = int(words[1]);
+            if index < 0 or index >= len(enemies) {
+                raise ValueError("Invalid saved sequence");
+            }
+            actor = enemies[index];
+            drawn = int(words[2]);
+            played = float(words[3]);
+            held = int(words[4]);
+            rested = float(words[5]);
+            if drawn < 0
+                or drawn > len(actor.rule.deaths)
+                or played < 0.0
+                or held < -1
+                or held >= len(actor.profiles)
+                or rested < 0.0 {
+                raise ValueError("Invalid saved sequence");
+            }
+            actor.readied = held;
+            actor.pain_rested = rested;
+            # The shots a held death frame still has to fire (absent from
+            # the first saves with this record).
+            actor.death_burst = max(0, int(words[6])) if len(words) == 7 else 0;
+            actor.death_variant = drawn;
+            if actor.health <= 0 and drawn > 0 {
+                # The corpse lies on, or is still falling through, the death
+                # it drew.
+                select_death(actor);
+                actor.animation_time = played;
+                if actor.death_animation {
+                    shown = min(int(played), len(actor.death_animation) - 1);
+                    actor.visual.first = actor.death_animation[shown];
+                    actor.visual.second = actor.death_animation[
+                        min(shown + 1, len(actor.death_animation) - 1)
+                    ];
+                    actor.visual.blend = played - float(int(played))
+                        if shown + 1 < len(actor.death_animation)
+                        else 0.0;
+                }
+            }
         } elif words[0] == "TACTIC" and len(words) == 5 {
             index = int(words[1]);
             if index < 0
@@ -903,7 +1113,7 @@ def restore(
         } elif words[0] == "MATCH" and len(words) == 7 {
             row = values(" ".join(words[1:]), 6);
             contest = match_of(world);
-            if contest is None or row[0] < 1.0 or row[2] < 0.0 or row[2] > 10.0 {
+            if contest is None or row[0] < 0.0 or row[2] < 0.0 or row[2] > 10.0 {
                 raise ValueError("Invalid saved match");
             }
             contest.fraglimit = int(row[0]);
@@ -1026,10 +1236,10 @@ def restore(
             enemy.leaping = row[18] != 0.0;
             enemy.attack_target = Vec3(x=row[19], y=row[20], z=row[21]);
             if row[22] not in [0.0, 1.0]
-                or (row[22] != 0.0 and enemy.rule.knockdown_duration <= 0.0)
+                or (row[22] != 0.0 and not enemy.rule.knockdown.frames)
                 or row[23] < 0.0
                 or row[23] != float(int(row[23]))
-                or int(row[23]) > len(enemy.rule.pain_variants) {
+                or int(row[23]) > len(enemy.rule.pains) {
                 raise ValueError("Invalid saved pain state");
             }
             enemy.pain_down = row[22] != 0.0;
@@ -1053,7 +1263,10 @@ def restore(
                 or row[14] > pain_length(enemy) + 0.000001
                 or row[15] < 0.0
                 or row[15]
-                    > max(enemy.rule.pain_interval, enemy.rule.knockdown_duration) {
+                    > max(
+                        [enemy.rule.pain_interval, reaction_length(enemy.rule.knockdown), 5.0]
+                            + [sequence.interval for sequence in enemy.rule.pains]
+                    ) {
                 raise ValueError("Invalid saved attack state");
             }
             if row[16] < 1.0
@@ -1069,6 +1282,15 @@ def restore(
                 else 0.0;
             enemy.pain_wait = row[14];
             enemy.pain_cooldown = row[15];
+            # A SEQUENCE record, if one follows, names the death drawn and
+            # an attack held.
+            enemy.readied = -1;
+            enemy.death_burst = 0;
+            enemy.pain_rested = 1000.0;
+            enemy.death_variant = 0;
+            if enemy.death_animations {
+                enemy.death_animation = enemy.death_animations[0];
+            }
             if enemy.health <= 0 and enemy.death_animation {
                 enemy.animation_time = float(len(enemy.death_animation));
                 enemy.visual.first = enemy.death_animation[-1];
@@ -1101,9 +1323,9 @@ def restore(
             item.visual.visible = item.active;
             # Items stay where they had fallen or ridden to; one a dead
             # monster already dropped is its own again.
-            place = Vec3(x=row[6], y=row[7], z=row[8]);
-            if place.sub(item.pos).length() > 0.0 {
-                item.pos = place;
+            resting = Vec3(x=row[6], y=row[7], z=row[8]);
+            if resting.sub(item.pos).length() > 0.0 {
+                item.pos = resting;
                 move_to_area(item, level.areas[level.locate(item.pos)]);
                 world.item_serial += 1;
             }
@@ -1113,6 +1335,22 @@ def restore(
                     owner del --> item;
                 }
             }
+        } elif words[0] == "DROP" and len(words) == 12 {
+            row = values(" ".join(words[2:]), 10);
+            if row[4] <= 0.0 or row[4] > 30.0 or row[6] not in [0.0, 1.0] {
+                raise ValueError("Invalid saved dropped item");
+            }
+            place = Vec3(x=row[0], y=row[1], z=row[2]);
+            restore_drop(
+                world,
+                words[1],
+                place,
+                row[3],
+                level.areas[level.locate(place)] if level.areas else None,
+                row[4],
+                row[5],
+                Vec3(x=row[7], y=row[8], z=row[9]) if row[6] != 0.0 else None
+            );
         } elif words[0] == "FALL" and len(words) == 5 {
             row = values(" ".join(words[2:]), 3);
             index = int(words[1]) if words[1].isdigit() else -1;
@@ -1302,7 +1540,6 @@ def restore(
             computer = help_for(world);
             computer.changed = int(row[0]);
             computer.unread = int(row[1]);
-            computer.beep_wait = row[2];
             computer.primary = help_text(words[4]);
             computer.secondary = help_text(words[5]);
         } elif words[0] == "O" and o < len(progress_records) {
@@ -1354,6 +1591,7 @@ def restore(
         or ranked != len(scores)
         or spun != len(rotators)
         or (aimed != 0 and aimed != len(turrets))
+        or (gated != 0 and gated != len(portals))
         or fired != len(shooters) {
         raise ValueError("Save does not match this map's entities");
     }
@@ -1361,18 +1599,24 @@ def restore(
         finale.camera = False;
         finale.text = "";
         for boss in enemies {
-            if boss.rule.script == "shub" and boss.boss_phase >= 1 {
+            if boss.rule.script != "shub" {
+                continue;
+            }
+            if boss.boss_phase >= 1 {
                 finale.camera = True;
                 if boss.boss_phase >= 3 {
                     finale.text = SHUB_TEXT;
-                    boss.visual.visible = False;
                 }
             }
+            settle_finale(world, boss);
         }
     }
     world spawn ApplyGates(
         inventory=player.inventory, bsp=level.bsp, collision=level.collision
     );
+    # CM_ReadPortalState: the portals open as the restored doors and toggles
+    # leave them, and the areas flood again.
+    world spawn AreaPortalTick();
 }
 
 def write_save(path: str, data: str) {

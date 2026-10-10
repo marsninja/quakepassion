@@ -364,7 +364,6 @@ walker MovePlayer {
         command: Vec3 = Vec3(),
         current: Vec3 = Vec3(),
         command_full: float = 0.0,
-        steady: bool = False,
         profile: MovementProfile = MovementProfile(),
         dt: float = 1.0 / 120.0,
         jumped: bool = False,
@@ -384,6 +383,7 @@ walker MovePlayer {
         pos = here.pos.sub(Vec3(z=self.collision.eye_height));
         # Q2 Pmove drops pm_time each move; PMF_TIME_LAND ends with it.
         here.land_time = max(0.0, here.land_time - self.dt);
+        here.teleport_time = max(0.0, here.teleport_time - self.dt);
         # Q1 FL_JUMPRELEASED, Q2/Q3 PMF_JUMP_HELD clear with the button up.
         if not self.jump {
             here.jump_held = False;
@@ -468,10 +468,18 @@ walker MovePlayer {
             );
         }
         speed = body.walk_speed * haste;
-        direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
+        level = Vec3(x=self.wish.x, y=self.wish.y);
+        ahead = self.command.y;
+        # Q1 SV_AirMove drops a backward forwardmove while teleport_time
+        # runs, so nobody backs straight into the teleporter they left.
+        if body.teleport_time > 0.0 and ahead < 0.0 {
+            level = level.sub(forward_from(body.yaw, 0.0).scale(ahead));
+            ahead = 0.0;
+        }
+        direction = level.normalized();
         wish = direction.scale(
             rules.command_speed(
-                self.command.y,
+                ahead,
                 self.command.x,
                 self.command.z,
                 False,
@@ -506,13 +514,7 @@ walker MovePlayer {
             );
         }
         skidding = rules.knockback_skid and body.knockback_time > 0.0;
-        stride = Vec3();
-        if self.steady and body.grounded {
-            # Monster movestep (Q1 SV_movestep, Q2 M_walkmove): the frame's
-            # stride moves the body itself, with no acceleration. Its velocity
-            # is only what knocked it (Q2 SV_Physics_Step), under friction.
-            stride = direction.scale(speed);
-        } elif self.climbing {
+        if self.climbing {
             # Q2 PM_AirMove on a ladder: no gravity; with no climb wished the
             # vertical speed settles by gravity's worth each second.
             self.accelerate(body, wish_direction, wish_speed, rules.accelerate);
@@ -548,45 +550,21 @@ walker MovePlayer {
             body.fall_speed = body.velocity.z;
         }
         air_step = rules.air_step or (rules.wet_step and self.water_depth > 0);
-        knocked = Vec3(x=body.velocity.x, y=body.velocity.y).length() > 0.0;
-        moved = Motion(pos=pos, velocity=Vec3());
-        if stride.length() > 0.0 {
-            # The stride and any knock slide apart, so neither bends the other.
-            moved = step_slide(
-                self.collision,
-                pos,
-                stride,
-                self.dt,
-                True,
-                air_step,
-                rules.rise_needs_ground,
-                rules.prefer_step
-            );
-            if rules.follow_ground {
-                moved = self.follow_ground(pos, moved);
-            }
-            moved.velocity = Vec3();
+        moved = step_slide(
+            self.collision,
+            pos,
+            body.velocity,
+            self.dt,
+            body.grounded,
+            air_step,
+            rules.rise_needs_ground,
+            rules.prefer_step
+        );
+        if rules.wall_friction {
+            self.rub_wall(body, moved);
         }
-        if stride.length() == 0.0 or knocked {
-            walked = moved.stepped;
-            origin = moved.pos;
-            moved = step_slide(
-                self.collision,
-                origin,
-                body.velocity,
-                self.dt,
-                body.grounded,
-                air_step,
-                rules.rise_needs_ground,
-                rules.prefer_step
-            );
-            if rules.wall_friction {
-                self.rub_wall(body, moved);
-            }
-            if body.grounded and rules.follow_ground and not self.climbing {
-                moved = self.follow_ground(origin, moved);
-            }
-            moved.stepped = max(moved.stepped, walked);
+        if body.grounded and rules.follow_ground and not self.climbing {
+            moved = self.follow_ground(pos, moved);
         }
         body.velocity = moved.velocity;
         body.pos = moved.pos.add(Vec3(z=self.collision.eye_height));

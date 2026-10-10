@@ -51,15 +51,23 @@ test "idle monsters walk their path corner loop at walking pace" {
     world +>:HasOpponent:+> knight;
     knight +>:Patrols:+> a;
     run(world, player, collision, state, 1.0);
-    assert knight.pos.x > 10.0 and knight.pos.x < 60.0;
-    # knight_walk1-14: the pace is the shown frame's ai_walk distance.
-    shown = int(knight.animation_time) % len(knight.rule.walk.steps);
+    # knight_walk1-14: each frame steps its own ai_walk distance, and ten of
+    # them (3 2 3 4 3 3 3 4 3 3) make 31 units.
     assert knight.pose_name == "walk";
-    assert knight.walk_speed == knight.rule.walk.steps[shown] * 10.0;
+    assert knight.pos.x > 26.0 and knight.pos.x < 36.0 and abs(knight.pos.y) < 0.001;
     run(world, player, collision, state, 4.0);
     assert [knight->:Patrols:->][?:TrackPoint][0] is b;
-    run(world, player, collision, state, 4.0);
-    assert [knight->:Patrols:->][?:TrackPoint][0] is a and knight.pos.y > 60.0;
+    # It goes on to b by its chase directions and is sent back to a.
+    north = 0.0;
+    for tick in range(60 * 12) {
+        world spawn PatrolTick(dt=1.0 / 60.0);
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 60.0);
+        north = max(north, knight.pos.y);
+        if [knight->:Patrols:->][?:TrackPoint][0] is a {
+            break;
+        }
+    }
+    assert [knight->:Patrols:->][?:TrackPoint][0] is a and north > 60.0;
     assert knight.alert == 0.0;
 }
 
@@ -98,7 +106,11 @@ test "Q2 monsters run to their combat point before opening fire" {
     guard +>:Holds:+> post;
     run(world, player, collision, state, 0.5);
     assert guard.alert > 0.0 and guard.holding and guard.attack_clock < 0.0;
-    assert player.health == 100 and guard.pos.x > 5.0;
+    # Facing away from the point, it turns 20 degrees a frame and steps
+    # only once within 45 of the way (SV_StepDirection): 0.7 s.
+    assert player.health == 100 and guard.pos.x == 0.0 and guard.ideal_yaw == 0.0;
+    run(world, player, collision, state, 1.0);
+    assert player.health == 100 and guard.pos.x > 5.0 and guard.holding;
     run(world, player, collision, state, 6.0);
     assert not [guard->:Holds:->] and not guard.holding;
 }

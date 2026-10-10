@@ -42,6 +42,9 @@ with entry {
     ];
     assert len(followers) == 1;
     start = trains[0].pos.add(Vec3());
+    # func_train_find: the end map's train is named and waits for its use.
+    assert not trains[0].running;
+    trains[0].activation.pending = 1;
     corners = 0;
     last = trains[0].current.entity;
     for i in range(1200) {
@@ -67,7 +70,7 @@ with entry {
         world spawn FinaleTick(player=player, state=state, dt=0.1);
     }
     finale = [world->:HasFinale:->][?:Finale][0];
-    assert boss.boss_phase == 3 and finale.text == SHUB_TEXT and state.kills == 1;
+    assert boss.boss_phase == 3 and finale.text == SHUB_TEXT and state.kills == 0;
     print("FINALE PASS shub dissolved");
     restore(world, level, player, state, saved);
     assert boss.boss_phase == 1 and boss.visual.visible and finale.camera;

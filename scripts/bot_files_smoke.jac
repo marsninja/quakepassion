@@ -67,5 +67,12 @@ with entry {
         # $evalint(W_LIGHTNING*0.1) truncates 0.1 to an integer first.
         assert beyond == 0.0;
     }
+    # rchat.c, syn.c and match.c, as every bot answers by them.
+    files.read_replies();
+    keys = sum([len(reply.keys) for reply in files.replies]);
+    answers = sum([len(reply.messages) for reply in files.replies]);
+    print("reply chats " + str(len(files.replies)) + " keys " + str(keys) + " answers " + str(answers)
+        + " synonym lists " + str(len(files.synonyms)) + " match templates " + str(len(files.templates)));
+    assert len(files.replies) > 400 and answers > 2000 and len(files.synonyms) > 40 and len(files.templates) > 60;
     library.close();
 }

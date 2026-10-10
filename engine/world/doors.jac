@@ -105,13 +105,18 @@ node Door {
         stop_voice: Speaker | None = None,
         voice_on_open: bool = False,
         voiced_state: str = "",
+        shot_at_rest: bool = False,
         ramp: MoverRamp | None = None;
 }
 
 """The start, moving (looped) and stop sounds of a mover. Q1 doors.qc,
 plats.qc, buttons.qc and func_train pick them by `sounds` (the moving sound
 loops by its cue point until the stop sound replaces it); Q2 g_func.c uses
-dr1_*, pt1_* and butn2 unless `sounds` is 1, and a train's `noise` loops."""
+dr1_*, pt1_* and butn2 unless `sounds` is 1, and a train's `noise` loops.
+Q3 g_mover.c gives doors and plats a sound as they set off either way
+(sound1to2, sound2to1) and one as they arrive (soundPos1, soundPos2), and
+buttons one as they are pressed; nothing loops, since no mover sets a
+soundLoop and Reached_Train clears a train's `noise` at its first corner."""
 def mover_voices(game: str, kind: str, fields: dict[str, str]) -> list[str] {
     style = int(float(fields.get("sounds", "0")));
     if game == "q1" {
@@ -168,11 +173,22 @@ def mover_voices(game: str, kind: str, fields: dict[str, str]) -> list[str] {
             return ["", noise if noise.endswith(".wav") else noise + ".wav", ""];
         }
     }
+    if game == "q3" {
+        if kind == "func_door" {
+            return ["movers/doors/dr1_strt.wav", "", "movers/doors/dr1_end.wav"];
+        }
+        if kind == "func_plat" {
+            return ["movers/plats/pt1_strt.wav", "", "movers/plats/pt1_end.wav"];
+        }
+        if kind == "func_button" {
+            return ["movers/switches/butn2.wav", "", ""];
+        }
+    }
     return ["", "", ""];
 }
 
 """A positional mover sound as a world speaker (ATTN_NORM for Q1, ATTN_STATIC
-for Q2's movers)."""
+for Q2's movers; Q3 mixes every positioned sound alike)."""
 def mover_voice(world: World, game: str, path: str, looping: bool, origin: Vec3) -> Speaker | None {
     if not path {
         return None;
@@ -181,7 +197,9 @@ def mover_voice(world: World, game: str, path: str, looping: bool, origin: Vec3)
         path="sound/" + path,
         origin=origin,
         looping=looping,
-        attenuation=3.0 if game == "q2" else 1.0
+        attenuation=3.0 if game == "q2" else 1.0,
+        # Q2 g_func.c starts and stops movers on CHAN_NO_PHS_ADD.
+        no_phs=game == "q2" and not looping
     );
     world +>:HasSpeaker:+> voice;
     return voice;
@@ -313,10 +331,13 @@ walker DoorTick {
     }
 
     """Start the moving loop and the start sound when a mover sets off; stop
-    the loop and play the stop sound when it comes to rest."""
+    the loop and play the stop sound when it comes to rest. A mover turned
+    back in mid travel sets off again, with its start sound (Q2 door_blocked
+    through door_go_up and door_go_down, Q3 Use_BinaryMover's reversals)."""
     def voice(mover: Door) {
         moving = mover.state in ["opening", "closing"];
         was = mover.voiced_state in ["opening", "closing"];
+        turned = moving and was and mover.voiced_state != mover.state;
         mover.voiced_state = mover.state;
         # A mover at rest neither moves its sounds nor starts or stops them.
         if not moving and not was {
@@ -328,7 +349,7 @@ walker DoorTick {
                 speaker.origin = centre;
             }
         }
-        if moving and not was {
+        if (moving and not was) or turned {
             start = mover.start_voice;
             if start is not None and (not mover.voice_on_open or mover.state == "opening") {
                 start.requests += 1;
@@ -456,7 +477,9 @@ walker DoorTick {
                 }
             }
         }
-        contact = here.automatic and here.trigger.contains(origin);
+        # Only a player in touch with the world sets off a field: not one
+        # flying through it, and not the dead (demise.jac in_touch).
+        contact = self.touching and here.automatic and here.trigger.contains(origin);
         if here.kind == "platform" {
             contact = (self.touching and (contact or (rider and here.state == "open")))
                 or monster_contact
@@ -492,6 +515,15 @@ walker DoorTick {
                             contact = True;
                         }
                     }
+                }
+            }
+        }
+        # g_mover.c Touch_Button: any client presses a Q3 button, bots too.
+        if here.kind == "button" and not contact and here.automatic and self.bsp.game == "q3" {
+            for i in range(len(self.actors)) {
+                if self.actors[i].arena and touches_mover(here, self.origins[i]) {
+                    contact = True;
+                    break;
                 }
             }
         }
@@ -683,6 +715,71 @@ def overlaps(a: AABB, b: AABB) -> bool {
         and a.maxs.z >= b.mins.z;
 }
 
+"""A door's bounds where it starts, as its game sizes the opening field from
+them. Q1 LinkDoors reads the model's own mins and maxs, which a START_OPEN
+door's move to its second position does not shift. Q2 and Q3 read the linked
+absmin and absmax: at the starting position, a unit wider all round
+(SV_LinkEdict, SV_LinkEntity) and, for a Q2 door that starts turned, the box
+its turning sweeps about its origin."""
+def door_start_bounds(game: str, part: Door) -> AABB {
+    if game not in ["q2", "q3"] {
+        return part.bounds;
+    }
+    pad = Vec3(x=1.0, y=1.0, z=1.0);
+    if part.rest_angles.length() > 0.0 {
+        low = part.bounds.mins.sub(part.pivot);
+        high = part.bounds.maxs.sub(part.pivot);
+        reach = 0.0;
+        for extent in [low.x, low.y, low.z, high.x, high.y, high.z] {
+            reach = max(reach, abs(extent));
+        }
+        sweep = Vec3(x=reach, y=reach, z=reach).add(pad);
+        return AABB(mins=part.pivot.sub(sweep), maxs=part.pivot.add(sweep));
+    }
+    return AABB(
+        mins=part.bounds.mins.add(part.rest).sub(pad),
+        maxs=part.bounds.maxs.add(part.rest).add(pad)
+    );
+}
+
+"""The field around a door team's starting bounds that opens it for whoever
+comes near. Q1 doors.qc spawn_field grows the bounds 60 units sideways and 8
+up and down. Q2 g_func.c Think_SpawnDoorTrigger grows them 60 sideways only.
+Q3 g_mover.c Think_SpawnNewDoorTrigger grows them 120 each way along their
+thinnest axis, whichever of the three that is."""
+def door_field(game: str, team: AABB) -> AABB {
+    grow = Vec3(x=60.0, y=60.0, z=8.0);
+    if game == "q2" {
+        grow = Vec3(x=60.0, y=60.0);
+    } elif game == "q3" {
+        size = team.size();
+        grow = Vec3(x=120.0);
+        thinnest = size.x;
+        if size.y < thinnest {
+            grow = Vec3(y=120.0);
+            thinnest = size.y;
+        }
+        if size.z < thinnest {
+            grow = Vec3(z=120.0);
+        }
+    }
+    return AABB(mins=team.mins.sub(grow), maxs=team.maxs.add(grow));
+}
+
+"""A touch field as the box a toucher's origin has to be inside: grown by the
+toucher's own box (Q1 and Q2 16 units to each side, Q3 15; 24 below the
+origin and 32 above). Q1 SV_TouchLinks and Q2 G_TouchTriggers compare linked
+bounds, a unit wider all round on the field and on the toucher; Q3
+G_TouchTriggers tests the player's own box against the field."""
+def field_reach(game: str, field: AABB) -> AABB {
+    side = 15.0 if game == "q3" else 18.0;
+    slack = 0.0 if game == "q3" else 2.0;
+    return AABB(
+        mins=field.mins.sub(Vec3(x=side, y=side, z=32.0 + slack)),
+        maxs=field.maxs.add(Vec3(x=side, y=side, z=24.0 + slack))
+    );
+}
+
 def door_direction(entity: MapEntity) -> Vec3 {
     yaw = float(entity.fields.get("angle", "0"));
     pitch = 0.0;
@@ -769,7 +866,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             reason = "spawnflags " + str(flags & ~allowed);
         } elif health > 0
             and kind != "func_button"
-            and not (kind in ["func_door", "func_door_rotating"] and bsp.game in ["q1", "q2"]) {
+            and not (kind in ["func_door", "func_door_rotating"] and bsp.game in ["q1", "q2", "q3"]) {
             reason = "shootable " + kind;
         }
         # killtarget is a Kills edge fired with the mover's targets.
@@ -841,12 +938,10 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             reason = "no speed";
         }
         enabled = not reason;
-        # Expand the proximity volume by the standing player extents as well.
-        margin = Vec3(x=76.0, y=76.0, z=8.0);
-        if kind == "func_button" {
-            width = 15.0 if bsp.game == "q3" else 16.0;
-            margin = Vec3(x=width + 0.125, y=width + 0.125, z=0.125);
-        }
+        # A button answers the touch of a standing player; a door's field is
+        # sized from its whole team once the team is assembled.
+        width = 15.0 if bsp.game == "q3" else 16.0;
+        margin = Vec3(x=width + 0.125, y=width + 0.125, z=0.125);
         door = Door(
             model=model,
             kind="platform"
@@ -892,6 +987,17 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 maxs=bounds.maxs.add(margin).add(Vec3(z=24.0))
             )
         );
+        # g_mover.c: a Q3 mover has no health of its own; g_combat.c G_Damage
+        # uses one that takes damage whenever it rests at its first position.
+        # SP_func_door and SP_func_button mark the ones given `health`, and
+        # Think_SpawnNewDoorTrigger every door that opens by its own field.
+        if bsp.game == "q3" and kind in ["func_door", "func_button"] {
+            shot = health > 0
+                or (kind == "func_door" and not fields.get("targetname", ""));
+            door.health = 1 if shot else 0;
+            door.max_health = door.health;
+            door.shot_at_rest = True;
+        }
         message = fields.get("message", "");
         if kind == "func_button" and message and bsp.game in ["q1", "q2"] {
             # A button's message is printed when it fires (SUB_UseTargets).
@@ -1037,7 +1143,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         grouped.extend(assembly.ids);
         enabled = True;
         duration = 0.0;
-        bounds = leader.trigger;
+        team = door_start_bounds(bsp.game, leader);
         why = "";
         for part in assembly.members {
             if not part.enabled {
@@ -1047,7 +1153,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             if part.speed > 0.0 {
                 duration = max(duration, door_span(part) / part.speed);
             }
-            bounds = union_bounds(bounds, part.trigger);
+            team = union_bounds(team, door_start_bounds(bsp.game, part));
             # A team containing another mover class cannot be animated partially.
             if part.team and bsp.game != "q1" {
                 for ent in bsp.entities {
@@ -1098,7 +1204,9 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 }
             }
         }
-        leader.trigger = bounds;
+        if leader.kind == "door" {
+            leader.trigger = field_reach(bsp.game, door_field(bsp.game, team));
+        }
         leader.speed = door_span(leader) / duration;
         for part in assembly.members {
             for index in part.hulls {
@@ -1519,7 +1627,8 @@ def damage_button(button: Door, amount: int) -> bool {
         or button.kind != "button"
         or button.max_health <= 0
         or button.activation.pending > 0
-        or button.state not in ["closed", "closing"] {
+        or button.state not in ["closed", "closing"]
+        or (button.shot_at_rest and button.state != "closed") {
         return False;
     }
     button.health = max(0, button.health - amount);
@@ -1539,7 +1648,8 @@ def damage_mover(leader: Door, part: Door, amount: int) -> bool {
         or not leader.enabled
         or leader.kind != "door"
         or leader.activation.pending > 0
-        or leader.state not in ["closed", "closing"] {
+        or leader.state not in ["closed", "closing"]
+        or (leader.shot_at_rest and leader.state != "closed") {
         return False;
     }
     target = leader if leader.shared_health else part;

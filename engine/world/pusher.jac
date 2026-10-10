@@ -70,8 +70,14 @@ obj Pushable {
         # unit of slack (the hull bounds are the player's).
         margin: float = 1.0;
 
+    """Where its box is. A monster part-way through a step already stands
+    where the step ends (SV_movestep moved it at once)."""
     def origin() -> Vec3 {
-        return self.entity.pos.sub(self.lift);
+        body = self.entity;
+        if isinstance(body, Opponent) {
+            return body.standing().sub(self.lift);
+        }
+        return body.pos.sub(self.lift);
     }
 
     """Whether the body is falling or at rest, so it can stand on a mover."""
@@ -305,7 +311,12 @@ def push_move(
     for i in range(len(moved)) {
         body = moved[i];
         entity = body.entity;
-        entity.pos = places[i].add(body.lift);
+        if isinstance(entity, Opponent) and entity.stride_time > 0.0 {
+            # Carried with the rest of its step still to take.
+            entity.pos = entity.pos.add(places[i].sub(body.origin()));
+        } else {
+            entity.pos = places[i].add(body.lift);
+        }
         if not isinstance(entity, Player) {
             continue;
         }

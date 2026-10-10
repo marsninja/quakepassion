@@ -5,7 +5,7 @@
 touch, use, shot and key activation, start-open and toggle flags, linked
 groups, crushing, Q2 accelerated moves, messages and sounds. Each step goes
 through the shared pusher (`engine/world/pusher.jac`), which carries the
-player, monsters and items and crushes what it cannot move. Trains, Q1 secret
+player, monsters and items and crushes what it cannot move. Trains, secret
 doors and rotating movers are in [map mechanics](map-mechanics-status.md).
 
 ## How it works
@@ -43,9 +43,15 @@ doors and rotating movers are in [map mechanics](map-mechanics-status.md).
 Activation:
 
 - Unnamed doors open when the player or a living monster is inside the
-  proximity box: the model box grown 60 units across and 8 up and down, plus
-  the player box (Q1 `spawn_field`). Toggle doors take one proximity request a
-  second (saved).
+  team's opening field, sized from the whole team's starting bounds as each
+  game does (`door_field`): Q1 `spawn_field` grows them 60 units sideways and
+  8 up and down; Q2 `Think_SpawnDoorTrigger` 60 sideways only; Q3
+  `Think_SpawnNewDoorTrigger` 120 each way along the team's thinnest axis,
+  whichever of the three it is. Q1 reads the model's own bounds, which a
+  start-open door's move does not shift; Q2 and Q3 read the linked bounds, at
+  the starting position and a unit wider (`door_start_bounds`).
+  `field_reach` adds the toucher's box and the unit by which Q1 and Q2 widen
+  every linked box. Toggle doors take one proximity request a second (saved).
 - Named doors open when used: a trigger, button, relay or delay fires their
   `Signal` (see [map mechanics](map-mechanics-status.md)). Q1/Q2 doors fire
   their targets as they start opening; buttons and Q3 doors at the open
@@ -53,6 +59,13 @@ Activation:
 - Shootable Q1/Q2 doors (`health`) open when their health is shot or blasted
   away; Q1 linked parts share the leader's threshold, Q2 team members keep
   their own. Partial damage is saved.
+- A Q3 mover has no health of its own: any damage uses one that rests at its
+  first position (`G_Damage`). That covers doors and buttons given `health`
+  and every door that opens by its own field
+  (`Think_SpawnNewDoorTrigger` marks the whole team), so shooting or
+  blasting an ordinary Q3 door opens it; a targeted door is left to its
+  target. Splash reaches a Q3 mover by the nearest point of its box
+  (`G_RadiusDamage`), whatever the damage comes to.
 - Q1 key doors (`GOLD_KEY`, `SILVER_KEY`) take the key, say "You need the
   silver key/runekey/keycard" by `worldtype` every 2 s and play the
   `med`/`rune`/`base` `try` and `use` sounds. Q2 keys go through
@@ -102,12 +115,19 @@ Plats (`func_plat`, kind `platform`):
 Sounds: `mover_voices` gives each mover its start, moving (looped) and stop
 sounds as positional speakers: Q1 `sounds` tables in doors.qc, plats.qc,
 buttons.qc and func_train; Q2 `dr1_*`, `pt1_*` and `butn2` unless `sounds` is
-1, a train's `noise`, and `func_water`'s `mov_watr`/`stp_watr`.
+1, a train's `noise`, and `func_water`'s `mov_watr`/`stp_watr`. Q3 doors play
+`sound/movers/doors/dr1_strt` as they set off either way and `dr1_end` as
+they arrive, and buttons `switches/butn2` when pressed (g_mover.c); nothing
+loops. Q3 plats name `plats/pt1_strt` and `pt1_end`, which the Q3 archives do
+not hold. A mover turned back in mid travel plays its start sound again (Q2
+`door_blocked`, Q3 `Use_BinaryMover`).
 
 ## Validation
 
-- Tests: `tests/door_tests.jac` (timing, blocking, groups, defaults, targets),
-  `tests/door_flag_tests.jac` (start-open, toggle), `tests/shoot_door_tests.jac`,
+- Tests: `tests/door_tests.jac` (timing, blocking, groups, defaults, targets,
+  each game's opening field),
+  `tests/door_flag_tests.jac` (start-open, toggle), `tests/shoot_door_tests.jac`
+  (health doors, Q3 doors shot at rest, Q3 splash by box),
   `tests/platform_tests.jac` (carrying up and down without drift in all three
   games, blocked riders, named plats, jumping and crouched riders, travel from
   model bounds), `tests/q1_mover_bounds_tests.jac`,
@@ -142,13 +162,9 @@ buttons.qc and func_train; Q2 `dr1_*`, `pt1_*` and `butn2` unless `sounds` is
 
 ## Limitations
 
-- One proximity box serves all three games: Q1 `spawn_field`'s 60 units across
-  and 8 vertically. Q2 `Think_SpawnDoorTrigger` grows only 60 horizontally,
-  and Q3 `Think_SpawnNewDoorTrigger` grows 120 along the thinnest horizontal
-  axis.
-- Q3 movers are silent: `sound/movers/doors`, `plats` and `switches` are not
-  played.
-- Q3 `func_door` with `health` stays static (no shipped Q3 map has one).
-- Q2 `func_door_secret` is not loaded; city3 has one (a shoot-to-open door
-  with `ALWAYS_SHOOT` and `1ST_LEFT`), which stays shut.
-- A Q2/Q3 door team that includes another mover class stays static.
+- Monsters open a door through the same field as the player, sized for the
+  player's box rather than their own.
+- A Q3 door team's slaves do not add the smaller fields
+  `Think_SpawnNewDoorTrigger` also spawns around each of them.
+- A Q2/Q3 door team that includes another mover class stays static; no
+  shipped map has one.

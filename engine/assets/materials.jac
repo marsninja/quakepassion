@@ -1,13 +1,21 @@
 """Initial ordered Q3 model shader stages; archive/image resolution stays separate."""
-import from ..formats.animated { ModelStage, ShaderWave, TexMod, Deform }
+import from ..formats.animated {
+    ModelStage,
+    ShaderWave,
+    TexMod,
+    Deform,
+    SHADER_CULL_FRONT,
+    SHADER_CULL_BACK,
+    SHADER_CULL_NONE
+}
 import from ..math.vec3 { Vec3 }
 import from ..formats.bsp { Texture }
 
 obj ModelMaterial {
     has stages: list[ModelStage] = [],
         two_sided: bool = False,
+        cull: int = 0,
         unsupported: list[str] = [],
-        advanced: list[str] = [],
         sky: bool = False,
         farbox: str = "",
         cloud_height: float = 128.0,
@@ -60,8 +68,8 @@ def blend_factors(source: str, destination: str) -> str {
 }
 
 """Parse one stage keyword starting at token i; returns the index of its last
-argument. Features the model renderer cannot draw are listed as advanced so
-model shaders keep their plain-skin fallback; BSP surfaces draw them all."""
+argument (tr_shader.c ParseStage). Keywords with an argument this parser does
+not know are listed in `material.unsupported`."""
 def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: ModelMaterial) -> int {
     token = tokens[i].lower();
     if i + 1 >= len(tokens) {
@@ -86,14 +94,11 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
         stage.texture = Texture(name=tokens[i + 1]);
         if argument == "$lightmap" {
             stage.lightmap = True;
-            material.advanced.append("lightmap");
         } elif argument == "$whiteimage" {
             stage.white = True;
-            material.advanced.append("white");
         }
         if token == "clampmap" {
             stage.clamp = True;
-            material.advanced.append("clampmap");
         }
         return i + 1;
     }
@@ -112,7 +117,6 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
             }
             if len(values) == 6 {
                 stage.vectors = [Vec3(x=values[0], y=values[1], z=values[2]), Vec3(x=values[3], y=values[4], z=values[5])];
-                material.advanced.append("tcgen vector");
             } else {
                 material.unsupported.append("tcgen vector");
             }
@@ -120,7 +124,6 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
         }
         if argument == "lightmap" {
             stage.lightmap = True;
-            material.advanced.append("tcgen lightmap");
         } elif argument not in ["environment", "base", "texture"] {
             material.unsupported.append("tcgen " + argument);
         }
@@ -137,7 +140,6 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
             if stage.blend == "custom" {
                 stage.blend_source = argument;
                 stage.blend_destination = destination;
-                material.advanced.append("blendfunc " + argument + " " + destination);
             }
             return i + 2;
         }
@@ -147,9 +149,16 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
         if argument in ["identity", "identitylighting"] {
             return i + 1;
         }
-        material.advanced.append("rgbgen " + argument);
-        if argument in ["vertex", "exactvertex", "lightingdiffuse"] {
+        if argument in ["vertex", "exactvertex"] {
             stage.rgb = "vertex";
+            return i + 1;
+        }
+        if argument == "lightingdiffuse" {
+            stage.rgb = "diffuse";
+            return i + 1;
+        }
+        if argument in ["entity", "oneminusentity"] {
+            stage.rgb = argument;
             return i + 1;
         }
         if argument == "wave" {
@@ -165,7 +174,6 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
         return i + 1;
     }
     if token == "alphagen" {
-        material.advanced.append("alphagen " + argument);
         if argument == "wave" {
             stage.alpha = "wave";
             stage.alpha_wave = wave_at(tokens, i + 2);
@@ -187,6 +195,8 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
             stage.alpha = "vertex";
         } elif argument == "lightingspecular" {
             stage.alpha = "specular";
+        } elif argument in ["entity", "oneminusentity"] {
+            stage.alpha = argument;
         }
         return i + 1;
     }
@@ -232,12 +242,10 @@ def parse_stage_token(tokens: list[str], i: int, stage: ModelStage, material: Mo
     }
     if token == "alphafunc" {
         stage.alpha_test = 1 if argument == "gt0" else (2 if argument == "ge128" else (3 if argument == "lt128" else 0));
-        material.advanced.append("alphafunc");
         return i + 1;
     }
     if token == "depthwrite" {
         stage.depth_write = True;
-        material.advanced.append("depthwrite");
         return i;
     }
     if token == "depthfunc" {
@@ -295,11 +303,17 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
         } elif depth == 2 {
             i = parse_stage_token(tokens, i, stage, material);
         } elif depth == 1 and token == "cull" and i + 1 < len(tokens) {
+            # tr_shader.c ParseShader: any other argument is warned about and
+            # leaves the shader front-sided.
             mode = tokens[i + 1].lower();
-            material.two_sided = mode in ["none", "disable", "twosided"];
-            if not material.two_sided {
-                material.unsupported.append("cull " + mode);
+            if mode in ["none", "disable", "twosided"] {
+                material.cull = SHADER_CULL_NONE;
+            } elif mode in ["back", "backside", "backsided"] {
+                material.cull = SHADER_CULL_BACK;
+            } else {
+                material.cull = SHADER_CULL_FRONT;
             }
+            material.two_sided = material.cull == SHADER_CULL_NONE;
             i += 1;
         } elif depth == 1 and token == "skyparms" {
             # skyParms <farbox> <cloudheight> <nearbox>
@@ -333,7 +347,6 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
             material.sky = True;
         } elif depth == 1 and token == "deformvertexes" and i + 1 < len(tokens) {
             kind = tokens[i + 1].lower();
-            material.advanced.append("deformvertexes " + kind);
             if kind == "wave" {
                 divisor = number_at(tokens, i + 2);
                 material.deforms.append(Deform(kind="wave", spread=1.0 / divisor if divisor != 0.0 else 0.0, wave=wave_at(tokens, i + 3)));
@@ -350,7 +363,11 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
                 material.deforms.append(Deform(kind=kind));
                 i += 1;
             } elif kind == "normal" {
-                i += 1;
+                # deformVertexes normal <amplitude> <frequency>
+                material.deforms.append(
+                    Deform(kind="normal", wave=ShaderWave(amplitude=number_at(tokens, i + 2), frequency=number_at(tokens, i + 3)))
+                );
+                i += 3;
             } else {
                 material.unsupported.append("deformvertexes " + kind);
             }

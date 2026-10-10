@@ -34,14 +34,20 @@ node ShotTrail {
 }
 
 """A railgun trail. Q2 CL_RailTrail is particles (a blue spiral round a
-grey core, fading in about a second); Q3 CG_RailTrail's core lasts
-cg_railTrailTime (400 ms)."""
+grey core, fading in about a second). Q3 CG_RailTrail's core fades over
+cg_railTrailTime and, with cg_oldRail 0, each ring of its spiral lives 600 ms
+plus half its distance along the beam in milliseconds; the trail is kept
+until the last ring could go, and the renderer ends each part by its own
+time."""
 def rail_trail(world: World, start: Vec3, finish: Vec3, kind: str = "rail") {
     if kind == "q2_rail" {
         quake2_rail_trail(particle_field(world), start, finish);
         return;
     }
-    life = 0.4 if kind == "q3_rail" else 0.2;
+    life = 0.2;
+    if kind == "q3_rail" {
+        life = 0.6 + finish.sub(start).length() / 2000.0;
+    }
     if len([world->:HasTrail:->]) < 64 {
         world +>:HasTrail:+> ShotTrail(
             start=start.add(Vec3()), finish=finish, kind=kind, remaining=life, lifetime=life
@@ -104,13 +110,16 @@ def missile_impact_particles(world: World, game: str, effect: str, origin: Vec3,
 }
 
 """The arrival flash of a teleport: Q1 TE_TELEPORT (R_TeleportSplash), Q2
-EV_PLAYER_TELEPORT (CL_TeleportParticles); elsewhere a brief spray."""
+EV_PLAYER_TELEPORT (CL_TeleportParticles), Q3 CG_SpawnEffect; elsewhere a
+brief spray."""
 def teleport_splash(world: World, origin: Vec3) {
     field = particle_field(world);
     if field.game == "q1" {
         quake_teleport_splash(field, origin);
     } elif field.game == "q2" {
         quake2_teleport_particles(field, origin);
+    } elif field.game == "q3" {
+        spawn_effect(world, origin);
     } else {
         spark_spray(field, origin, Vec3(z=1.0), 13421772, 24);
     }
@@ -183,17 +192,7 @@ def impact_mark(
 ) {
     angle = impact_roll(origin, 3.0) * 2.0 * math.pi;
     facing = normal.normalized();
-    axes = mark_axes(facing, angle);
-    square = [
-        origin.sub(axes[1].scale(radius)).sub(axes[0].scale(radius)),
-        origin.add(axes[1].scale(radius)).sub(axes[0].scale(radius)),
-        origin.add(axes[1].scale(radius)).add(axes[0].scale(radius)),
-        origin.sub(axes[1].scale(radius)).add(axes[0].scale(radius))
-    ];
-    fragments = [square];
-    for surfaces in [world->:HasMarkSurfaces:->][?:MarkSurfaces] {
-        fragments = surfaces.fragments(square, facing.scale(-20.0));
-    }
+    fragments = mark_fragments(world, origin, facing, angle, radius);
     if not fragments {
         return;
     }
@@ -220,6 +219,25 @@ def impact_mark(
         alpha_fade=alpha_fade,
         fragments=fragments
     );
+}
+
+"""CG_ImpactMark's polygons: the mark's square, `radius` from `origin` and
+turned by `angle` on the surface facing `facing`, cut by the world's surfaces
+20 units behind it (CM_MarkFragments). A world without mark surfaces gives
+the square itself."""
+def mark_fragments(world: World, origin: Vec3, facing: Vec3, angle: float, radius: float) -> list[list[Vec3]] {
+    axes = mark_axes(facing, angle);
+    square = [
+        origin.sub(axes[1].scale(radius)).sub(axes[0].scale(radius)),
+        origin.add(axes[1].scale(radius)).sub(axes[0].scale(radius)),
+        origin.add(axes[1].scale(radius)).add(axes[0].scale(radius)),
+        origin.sub(axes[1].scale(radius)).add(axes[0].scale(radius))
+    ];
+    fragments = [square];
+    for surfaces in [world->:HasMarkSurfaces:->][?:MarkSurfaces] {
+        fragments = surfaces.fragments(square, facing.scale(-20.0));
+    }
+    return fragments;
 }
 
 """The two axes across a surface facing `normal`, turned by `angle`
@@ -556,6 +574,19 @@ node Explosion {
         variant: int = 0,
         direction: Vec3 = Vec3(z=1.0),
         rotation: float = 0.0;
+}
+
+# The effect rule CG_SpawnEffect's local entity draws with, and its life.
+glob SPAWN_EFFECT_KIND: str = "q3_teleport",
+     SPAWN_EFFECT_TIME: float = 0.5;
+
+"""cg_effects.c CG_SpawnEffect: a player teleporting in or out
+(EV_PLAYER_TELEPORT_IN and _OUT, and every ClientSpawn): the teleportEffect
+model 24 units below the player's `origin`, fading over half a second."""
+def spawn_effect(world: World, origin: Vec3) {
+    world +>:HasExplosion:+> Explosion(
+        pos=origin.sub(Vec3(z=24.0)), kind=SPAWN_EFFECT_KIND, lifetime=SPAWN_EFFECT_TIME
+    );
 }
 
 """Start an explosion at `origin`: its look, light and sound, and its burst of

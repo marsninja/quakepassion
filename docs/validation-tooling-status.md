@@ -17,7 +17,7 @@ DYLD_LIBRARY_PATH=vendor .jac/<name>        # LD_LIBRARY_PATH on Linux
 ## Unit tests
 
 `tests/*_tests.jac`, one file per area. They need no game assets or window
-(the one check that reads original Q2 films, in `cinematic_tests`, returns
+(the checks that read original Q2 and Q3 films, in `cinematic_tests`, return
 early without them).
 
 ```sh
@@ -60,7 +60,8 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
 | `validate_movement.jac`, `validate_traversal.jac`, `validate_swimming.jac`, `validate_ladders.jac` (`QP_MAPS`) | Player movement, teleporter and launch destinations, liquids, Q2 ladders and currents |
 | `validate_hazards.jac` | Damage volumes and their persistence |
 | `validate_collision_index.jac` | Indexed collision queries against exhaustive ones |
-| `validate_models.jac`, `validate_alias_models.jac` | Every Q2 MD2 and skin; Q1 MDL and Q3 MD3 archives |
+| `validate_models.jac`, `validate_alias_models.jac` | Every Q2 MD2 and skin; Q1 MDL and Q3 MD3 archives, and how each Q3 model shader script is drawn (stages, hidden, or plain skin with the reason) |
+| `validate_patches.jac` (`QP_SUBDIVISIONS`) | Every Q3 map's patches subdivided and stitched: valid grids, and triangle counts beside the former fixed tessellation |
 | `validate_generation.jac` | Passion's generator (no assets): every seed softlock-free and completable |
 | `audit_campaigns.jac`, `chain_audit.jac` (Q1/Q2; `QP_AUDIT_GAMES`, `QP_AUDIT_MAPS`) | Entity inventory of the installed maps; per-map exits, disabled movers and triggers, unactivated targets |
 
@@ -78,11 +79,19 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
   follows every Q1 and Q2 level exit through the real game loop, placing the
   player in the exit or a trigger chain that reaches it and passing stats
   screens; exits no touch trigger reaches are fired directly and reported.
-  Every map is also played for a few seconds in god mode.
+  Every map is also played for a few seconds in god mode. Each frame is a
+  sixtieth of a second of game time (`QP_WALK_DT`; 0 for the renderer's own
+  frame time), so the run does not depend on the display pacing its frames.
 - **`scripts/arena_ladder_walkthrough.jac`** (`QP_LADDER_ONLY`,
   `QP_SECONDS`): plays each Q3 ladder arena with the bots fighting, then gives
   the player the frag limit and checks the podium, postgame and the next
-  arena.
+  arena. Each frame is a sixtieth of a second of game time (`QP_WALK_DT`), as
+  in the campaign walkthrough.
+- **`scripts/bot_obstacle_smoke.jac`** (`QP_MAPS`, `QP_SECONDS`,
+  `QP_VERBOSE`): headless; for every door of a Q3 map that something else
+  opens, sends a lone bot between two spawn points or items whose route runs
+  into the shut door, and reports what it went to activate, when the door
+  opened and when it reached its goal (q3dm7 and q3dm11 by default).
 
 ## Graphical smokes and galleries
 

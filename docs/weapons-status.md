@@ -28,6 +28,17 @@ and [g_missile.c](https://github.com/id-Software/Quake-III-Arena/blob/master/cod
 
 ## Firing
 
+- **Muzzles.** Every shot, traced or thrown, starts at its weapon's muzzle
+  rather than the eye (`WeaponRule.muzzle`, `launch_point`). Q1 weapons.qc:
+  rockets 8 ahead and 6 below the eye, grenades from the origin (22 below),
+  nails 6 below and 4 to the right and left in turn, bullets 10 ahead at
+  seven tenths of the player's height (`FireBullets`). Q2 p_weapon.c
+  `P_ProjectSource`: 8 to the right and 8 below (the railgun and chaingun 7),
+  the blasters 24 ahead and the launchers and BFG 8, the chaingun scattered
+  up to 4 either way and the hyperblaster carried round a 4-unit circle. Q3
+  g_weapon.c `CalcMuzzlePoint`: 14 ahead of the eye for every weapon, and a
+  missile starts 50 ms into its flight (`MISSILE_PRESTEP_TIME`). A muzzle a
+  wall cuts off from the eye fires from the eye.
 - **Hitscan.** Pellet spread uses a saved random stream (Q2's machine-gun climb,
   Q3 `Bullet_Fire` spread). Damage from all pellets aggregates before armor and
   death callbacks. Rails pierce actors and stop at world geometry.
@@ -58,7 +69,8 @@ grenades, rockets and plasma draw their original models, following projectile
 pitch and yaw with grenade roll from simulation age. The Q2 BFG flies and
 explodes as its animated SP2 sprites (PCX palette transparency, depth-tested
 billboards); Q3 plasma is its additive rotating sprite and the Q3 BFG is
-`models/weaphits/bfg.md3`. Q3 rocket flares use their additive two-sided
+`models/weaphits/bfg.md3`, its ball an autosprite turned to the viewer
+(see [models](models-status.md#q3-model-shaders)). Q3 rocket flares use their additive two-sided
 surfaces, and model `animMap` stages keep their image sequence and frequency
 ([Q3 tr_shader.c](https://github.com/id-Software/Quake-III-Arena/blob/master/code/renderer/tr_shader.c)).
 
@@ -75,7 +87,12 @@ surfaces, and model `animMap` stages keep their image sequence and frequency
   from their respawn timer before first activation. Q3 item categories have
   their own respawn delays, overridden by `wait` and spread by `random`. Q3
   `team` items show one member and respawn a random one (`G_FindTeams`,
-  `RespawnItem`).
+  `RespawnItem`). A Q2 `team` starts with one member chosen at random and
+  keeps to it, since nothing respawns in single player (`droptofloor`,
+  `DoRespawn`; mine3 shows its megahealth or its body armour). Q2
+  `ITEM_NO_TOUCH` items are shown, still and without the item glow, and
+  cannot be picked up: the power cubes that appear in their sockets in bunk1
+  and ware2.
 - A dying Q3 player or bot drops its held weapon (not the gauntlet or machine
   gun) and its powerups; drops do not respawn and vanish after 30 s
   (`TossClientItems`, `engine/world/drops.jac`).
@@ -110,11 +127,6 @@ shells. Only those two slots can be selected.
 
 ## Limitations
 
-- Player projectiles leave from the eye. The per-game muzzle offsets
-  (`muzzle_point`: Q2 `P_ProjectSource`, Q3 `CalcMuzzlePoint`) place only
-  hitscan trails.
-- Q2 `team` item groups are ignored, and Q2 `ITEM_NO_TOUCH` items (spawnflag 2)
-  are not spawned at all rather than placed untouchable (`games/items.jac`).
-- Q3 model shaders' `deformVertexes` stages (including autosprite) are parsed
-  but applied only to world surfaces (`engine/render/quake.jac`), not to models
-  such as the Q3 BFG projectile.
+- A Q2 item team's choice comes from a stream seeded by the map, so a map
+  shows the same member each time; the original draws `rand()`.
+- Q2 `ITEM_NO_TOUCH` items are not solid (`SOLID_BBOX` in the original).

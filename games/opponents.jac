@@ -4,7 +4,7 @@ import from .enemies { enemy_rule }
 import from .gibs { gib_rule, link_gibs }
 import from engine.world.trains { TrackPoint, HasTrack }
 import from engine.world.patrols { Patrols, Holds }
-import from engine.world.opponent_rule { OpponentRule, Gait }
+import from engine.world.opponent_rule { OpponentRule, Gait, Reaction }
 import from .arena_character { character_rig, CharacterRig, character_body, weapon_kits, powerup_shells, Q3_HELD_WEAPONS }
 import from .arenas { ArenaInfo, BotInfo, load_arenas, load_bots, find_arena, find_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, HasSpawn, ChooseSpawn }
@@ -23,7 +23,8 @@ import from engine.world.turrets { link_turret_drivers }
 import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wields, podium_figure }
 import from engine.world.reflection { HasBody, Carries, player_body }
 import from .botfiles { BotFiles, load_bot_character }
-import from engine.world.finale { TeleportTrain, HasTeleportTrain }
+import from engine.world.finale { TeleportTrain, HasTeleportTrain, LeftStanding }
+import from engine.world.fixtures { Fixture, HasFixture }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
 import from engine.world.models { ModelResource, HasModelResource, UsesModel, HasVisual, attach_model }
@@ -32,7 +33,7 @@ import from engine.assets.catalog { AssetCatalog }
 import from engine.assets.library { AssetLibrary }
 import from engine.formats.aas { parse_aas }
 import from engine.world.bot_routes { build_navmesh }
-import from engine.world.bot_goals { BotItems, HasBotItems }
+import from engine.world.bot_goals { BotItems, HasBotItems, init_camp_spots }
 import from engine.math.vec3 { Vec3 }
 
 def frame_indices(
@@ -40,11 +41,13 @@ def frame_indices(
 ) -> list[int] {
     result: list[int] = [];
     for name in names {
+        # A name the model uses twice (Jorg's has two "death33", the first
+        # standing where death23 belongs) is the one that follows the frame
+        # before it, else the first.
         found = -1;
         for i in range(len(frames)) {
-            if frames[i].name == name {
+            if frames[i].name == name and (found < 0 or (result and i == result[-1] + 1)) {
                 found = i;
-                break;
             }
         }
         if found < 0 {
@@ -61,6 +64,51 @@ def gait_indices(frames: list[AnimationFrame], gait: Gait, path: str, label: str
         raise ValueError("Mismatched " + label + " distances: " + path);
     }
     return frame_indices(frames, gait.frames, path, label);
+}
+
+"""A pain or death sequence's model frames; its distances must cover each frame."""
+def reaction_indices(
+    frames: list[AnimationFrame], sequence: Reaction, path: str, label: str
+) -> list[int] {
+    if sequence.steps and len(sequence.steps) != len(sequence.frames) {
+        raise ValueError("Mismatched " + label + " distances: " + path + ":" + sequence.name);
+    }
+    return frame_indices(frames, sequence.frames, path, label);
+}
+
+"""Resolve the frames of every pain and death sequence a rule authors. Until
+a monster dies its death frames are those of the first."""
+def link_reactions(
+    enemy: Opponent, frames: list[AnimationFrame], rule: OpponentRule, path: str
+) {
+    enemy.pain_animations = [
+        reaction_indices(frames, sequence, path, "pain") for sequence in rule.pains
+    ];
+    enemy.death_animations = [
+        reaction_indices(frames, sequence, path, "death") for sequence in rule.deaths
+    ];
+    if enemy.death_animations {
+        enemy.death_animation = enemy.death_animations[0];
+    }
+    if rule.knockdown.frames {
+        enemy.knockdown_animation = reaction_indices(frames, rule.knockdown, path, "knockdown");
+    }
+}
+
+"""Speakers for the sounds a rule's pain and death can make."""
+def register_reaction_sounds(world: World, enemy: Opponent, rule: OpponentRule) {
+    for pain_sound in rule.pain_sounds {
+        register_speaker(world, enemy, pain_sound);
+    }
+    register_speaker(world, enemy, rule.death_sound);
+    for sequence in rule.pains + rule.deaths + [rule.knockdown] {
+        for event in sequence.events {
+            for path in event.sounds {
+                register_speaker(world, enemy, path);
+            }
+        }
+        register_speaker(world, enemy, sequence.sound);
+    }
 }
 
 # One positional speaker per distinct sound file an opponent can request.
@@ -131,13 +179,17 @@ def prepare_arena(
     # The bots' own navigation data (botlib AAS) drives map-wide routing.
     aas_path = "maps/" + level.name + ".aas";
     if library.exists(aas_path) {
-        build_navmesh(world, parse_aas(library.read(aas_path)), level.bsp);
+        mesh = build_navmesh(world, parse_aas(library.read(aas_path)), level.bsp);
         # The items bots know (botfiles/items.c) become their level items
-        # once every item is on the map (prepare_arena_links).
-        world +>:HasBotItems:+> BotItems(infos=botfiles.item_config());
+        # once every item is on the map (prepare_arena_links); the map's
+        # camp spots are theirs at once (BotInitInfoEntities).
+        known = BotItems(infos=botfiles.item_config());
+        world +>:HasBotItems:+> known;
+        init_camp_spots(known, mesh, level.bsp.entities);
     }
     contest = ArenaMatch(
         fraglimit=arena.fraglimit if arena is not None else 20,
+        timelimit=arena.timelimit if arena is not None else 0,
         title=arena.longname if arena is not None else level.name,
         warmup=4.0
     );
@@ -286,12 +338,11 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 register_speaker(world, enemy, profile.sound);
                 register_speaker(world, enemy, profile.extra_sound);
                 register_speaker(world, enemy, profile.alternate_sound);
+                register_speaker(world, enemy, profile.hit_sound);
             }
             register_speaker(world, enemy, rule.sight_sound);
-            for pain_sound in rule.pain_sounds {
-                register_speaker(world, enemy, pain_sound);
-            }
-            register_speaker(world, enemy, rule.death_sound);
+            register_speaker(world, enemy, rule.sight_alternate);
+            register_reaction_sounds(world, enemy, rule);
             for scripted in rule.sounds {
                 register_speaker(world, enemy, scripted);
             }
@@ -445,21 +496,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         enemy.attack_animation.append(i);
                     }
                 }
-                if rule.pain_frames {
-                    enemy.pain_animation = frame_indices(
-                        frames, rule.pain_frames, path, "pain"
-                    );
-                }
-                for variant in rule.pain_variants {
-                    enemy.pain_animations.append(
-                        frame_indices(frames, variant, path, "pain")
-                    );
-                }
-                if rule.knockdown_frames {
-                    enemy.knockdown_animation = frame_indices(
-                        frames, rule.knockdown_frames, path, "knockdown"
-                    );
-                }
+                link_reactions(enemy, frames, rule, path);
                 if rule.duck_frames {
                     enemy.duck_animation = frame_indices(
                         frames, rule.duck_frames, path, "duck"
@@ -477,11 +514,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 if rule.idle_frames {
                     enemy.idle_animation = frame_indices(
                         frames, rule.idle_frames, path, "idle"
-                    );
-                }
-                if rule.death_frames {
-                    enemy.death_animation = frame_indices(
-                        frames, rule.death_frames, path, "death"
                     );
                 }
                 if rule.attack_frames {
@@ -533,6 +565,28 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 enemy.gib_rule = gibs;
                 register_speaker(world, enemy, gibs.sound);
             }
+            # oldone.qc finale_4 puts a player model down by the pit: 32 and
+            # 264 units back from her origin, turned to 290 degrees, on frame
+            # 1. It stands hidden until the finale ends.
+            if source == "q1" and kind == "monster_oldone" {
+                stand_key = "q1:progs/player.mdl:0";
+                if stand_key not in resources {
+                    stand_in = catalog.source(source).model("progs/player.mdl", 0);
+                    resources[stand_key] = ModelResource(
+                        name=stand_key, model=stand_in.model, skins=stand_in.skins
+                    );
+                    world +>:HasModelResource:+> resources[stand_key];
+                }
+                spot = enemy.pos.sub(Vec3(x=32.0, y=264.0, z=enemy.eye_height));
+                figure = Fixture(pos=spot, yaw=math.radians(290.0), frames=[1]);
+                figure.visual = attach_model(figure, resources[stand_key]);
+                figure.visual.first = 1;
+                figure.visual.second = 1;
+                figure.visual.visible = False;
+                move_to_area(figure, level.areas[level.locate(spot)]);
+                world +>:HasFixture:+> figure;
+                enemy +>:LeftStanding:+> figure;
+            }
             # The item a monster drops waits, hidden, until the monster dies.
             drop = None if arena else monster_drop(source, kind, fields);
             if drop is not None {
@@ -583,10 +637,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     register_speaker(world, heir, profile.alternate_sound);
                 }
                 register_speaker(world, heir, follower.sight_sound);
-                for pain_sound in follower.pain_sounds {
-                    register_speaker(world, heir, pain_sound);
-                }
-                register_speaker(world, heir, follower.death_sound);
+                register_reaction_sounds(world, heir, follower);
                 # The map's targets belong to the last form of the boss.
                 heir.activation = enemy.activation;
                 enemy.activation = Signal();
@@ -619,17 +670,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     gait_indices(heir_frames, other, follower.model, "walk")
                     for other in follower.other_walks
                 ];
-                heir.death_animation = frame_indices(
-                    heir_frames, follower.death_frames, follower.model, "death"
-                );
-                heir.pain_animation = frame_indices(
-                    heir_frames, follower.pain_frames, follower.model, "pain"
-                );
-                for variant in follower.pain_variants {
-                    heir.pain_animations.append(
-                        frame_indices(heir_frames, variant, follower.model, "pain")
-                    );
-                }
+                link_reactions(heir, heir_frames, follower, follower.model);
                 for profile in heir.profiles {
                     heir.profile_animations.append(
                         frame_indices(heir_frames, profile.frames, follower.model, profile.name)

@@ -157,6 +157,20 @@ obj InventoryRow {
         selected: bool = False;
 }
 
+"""Where a loading plaque of `pic_width` by `pic_height` goes on a screen
+drawn at `scale`. Quake centres it in what is left above the status bar's
+48 rows ((vid.width - w) / 2, (vid.height - 48 - h) / 2); Quake II in the
+whole screen."""
+def loading_plaque_place(
+    game: str, pic_width: int, pic_height: int, width: int, height: int, scale: float
+) -> tuple[float, float] {
+    bar = 48.0 * scale if game == "q1" else 0.0;
+    return (
+        (float(width) - float(pic_width) * scale) * 0.5,
+        (float(height) - bar - float(pic_height) * scale) * 0.5
+    );
+}
+
 """The tokens of a Q2 layout program (COM_Parse): words split on blanks, with
 double-quoted strings kept whole."""
 def layout_tokens(layout: str) -> list[str] {
@@ -250,6 +264,29 @@ obj HudRenderer {
 
     def has_pic(name: str) -> bool {
         return name in self.pics;
+    }
+
+    """Forget one picture (a levelshot gives way to the next arena's)."""
+    def forget(name: str) {
+        if name in self.pics {
+            rlUnloadTexture(u32(self.pics[name].id));
+            self.pics.pop(name);
+        }
+    }
+
+    """Q1 gl_screen.c SCR_DrawLoading and Q2 cl_scrn.c SCR_DrawLoading: the
+    game's loading plaque in the middle of the screen."""
+    def draw_loading_plaque(width: int, height: int) {
+        if "loading" not in self.pics {
+            return;
+        }
+        plaque = self.pics["loading"];
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))))
+            if self.game == "q1"
+            else self.q2_scale(height);
+        place = loading_plaque_place(self.game, plaque.width, plaque.height, width, height, scale);
+        self.pic("loading", place[0], place[1], scale);
+        rlDrawRenderBatchActive();
     }
 
     """Draw what is batched before the render state changes."""
@@ -636,7 +673,7 @@ obj HudRenderer {
     }
 
     """cl_scrn.c SCR_ExecuteLayoutString: run a layout program (the help
-    computer, the unit summary). xl/xr/xv and yt/yb/yv place the cursor from
+    computer). xl/xr/xv and yt/yb/yv place the cursor from
     the left, the right, or the centred 320x240 screen; picn draws a picture;
     string/cstring draw conchars text, left-aligned or centred in 320 units
     per line; the "2" forms use the alternate (high-bit) characters."""

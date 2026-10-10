@@ -78,10 +78,13 @@ test "walking onto a Q1 plat eases the eye up its lip and the ride" {
             dt=dt
         );
         view.ride(player.pos.z - before);
+        if player.pos.x >= 0.0 {
+            # At the centre it stops dead.
+            player.velocity.x = 0.0;
+        }
         moved = player spawn MovePlayer(
             collision=fixture.collision,
             wish=Vec3(x=1.0) if player.pos.x < 0.0 else Vec3(),
-            steady=True,
             profile=movement_profile("q1"),
             dt=dt
         );
@@ -95,8 +98,8 @@ test "walking onto a Q1 plat eases the eye up its lip and the ride" {
         }
         eye = seen;
     }
-    # The body (walking a steady stride to the centre and stopping there)
-    # pops up the eight-unit lip in one tick, then rides 64 units.
+    # The body (walking to the centre and stopping there) pops up the
+    # eight-unit lip in one tick, then rides 64 units.
     assert body_jump > 7.9;
     assert platform.state == "open";
     assert abs(player.pos.z - (48.03125 + 8.0 + 64.0 + eye_height)) < 0.001;
@@ -225,15 +228,15 @@ test "Q2 and Q3 ease the eye down a crouch and up a stand over 100 ms" {
     view.tick(body, False, dt);
     # The body's eye drops 14 units in the tick; the view starts where it was.
     view.duck(-14.0);
-    placed = view.place(body, Vec3(z=86.0), True, 0.0, 0.0, 1.0, 0.0, 12.0);
+    placed = view.place(body, Vec3(z=86.0), True, 0.0, 0.0, 1.0, 0.0);
     assert abs(placed.eye.z - 100.0) < 0.00001;
     # Between that tick's start (eye at 100) and end the eye stays at 100.
-    halfway = view.place(body, Vec3(z=93.0), True, 0.0, 0.0, 0.5, 0.0, 12.0);
+    halfway = view.place(body, Vec3(z=93.0), True, 0.0, 0.0, 0.5, 0.0);
     assert abs(halfway.eye.z - 100.0) < 0.00001;
     for tick in range(6) {
         view.tick(body, False, dt);
     }
-    eased = view.place(body, Vec3(z=86.0), True, 0.0, 0.0, 1.0, 0.0, 12.0);
+    eased = view.place(body, Vec3(z=86.0), True, 0.0, 0.0, 1.0, 0.0);
     assert abs(eased.eye.z - (86.0 + 14.0 * (0.1 - 6.0 * dt) / 0.1)) < 0.0001;
     q1 = ViewFeedback();
     q1.reset("q1");

@@ -7,9 +7,24 @@ import from engine.world.pickups {
     ItemTeam,
     TeamMember,
     InTeam,
-    respawn_wait
+    respawn_wait,
+    start_item_team,
+    remove_pickup
 }
-import from engine.world.drops { ItemDrop, HasItemDrop, DropsAs, toss_items, TossTick, in_flight }
+import from engine.world.drops {
+    ItemDrop,
+    HasItemDrop,
+    DropsAs,
+    toss_items,
+    TossTick,
+    in_flight,
+    restore_drop,
+    dropped_items,
+    flight_of
+}
+import from engine.core.savegame { snapshot, restore }
+import from engine.world.level { Level }
+import from engine.world.combat { CombatState }
 import from engine.world.powerups { Powerup, Empowered, powerup_left }
 import from engine.world.inventory { quantity, AdjustInventory }
 import from engine.world.models { ModelResource, powerup_shaders }
@@ -66,6 +81,65 @@ test "a team shows one member and respawns a random one (RespawnItem)" {
         player.pos = Vec3(z=-100000.0);
     }
     assert len(seen) >= 2;
+}
+
+test "a Q2 item team starts with one member chosen at random and keeps to it" {
+    # droptofloor hides the whole team and DoRespawn shows rand() % count;
+    # nothing respawns in single player (mine3's megahealth or body armour).
+    shown: list[int] = [];
+    for seed in range(1, 40) {
+        world = World();
+        team = ItemTeam(name="lala", seed=seed);
+        members = [armor(0.0), armor(1000.0)];
+        for item in members {
+            item.respawn = 0.0;
+            team +>:TeamMember:+> item;
+            item +>:InTeam:+> team;
+            world +>:HasPickup:+> item;
+        }
+        chosen = start_item_team(team);
+        assert chosen is not None;
+        present = [i for i in range(2) if members[i].active];
+        assert len(present) == 1 and members[present[0]] is chosen;
+        absent = members[1 - present[0]];
+        assert absent.benched and not absent.visual.visible and not chosen.benched;
+        if present[0] not in shown {
+            shown.append(present[0]);
+        }
+        # The one that is away cannot be picked up and never comes back.
+        player = Player(health=100, pos=absent.pos.add(Vec3(z=10.0)));
+        tick(world, player, 30.0);
+        assert player.armor == 0 and not absent.active;
+        player.pos = chosen.pos.add(Vec3(z=10.0));
+        tick(world, player, 0.1);
+        assert player.armor == 100 and not chosen.active;
+        tick(world, player, 30.0);
+        assert not any([item.active for item in members]);
+    }
+    assert len(shown) == 2;
+    # A team of one is simply present.
+    alone = ItemTeam(name="adren", seed=3);
+    only = armor(0.0);
+    alone +>:TeamMember:+> only;
+    assert start_item_team(alone) is only and only.active and not only.benched;
+}
+
+test "an untouchable item is shown and stays where it is" {
+    # ITEM_NO_TOUCH: droptofloor takes its touch away (a power cube in its
+    # socket, shown once its trigger spawns it).
+    world = World();
+    cube = armor(0.0);
+    cube.untouchable = True;
+    cube.active = False;
+    cube.waiting_for_use = True;
+    cube.activate_on_use = True;
+    world +>:HasPickup:+> cube;
+    player = Player(health=100, pos=Vec3(z=10.0));
+    tick(world, player, 0.5);
+    assert not cube.active and player.armor == 0;
+    cube.activation.pending = 1;
+    tick(world, player, 0.5);
+    assert cube.active and cube.visual.visible and player.armor == 0;
 }
 
 test "the random key spreads respawn waits, never below a second" {
@@ -164,4 +238,49 @@ test "powerups dress bodies and weapons in their shaders" {
     assert powerup_shaders(["invisibility", "quad"], 0.0) == ["powerups/invisibility"];
     assert powerup_shaders(["regen"], 0.15) == ["", "powerups/regen"];
     assert powerup_shaders(["regen"], 0.25) == [""];
+}
+
+test "dropped items are kept in saves: where they lie, the time they have left and a throw in the air" {
+    world = World();
+    area = Area(name="0", bounds=AABB(mins=Vec3(), maxs=Vec3()));
+    world ++> area;
+    drop_table(world);
+    collision = floor_map();
+    victim = Player(health=0, pos=Vec3(z=50.0));
+    move_to_area(victim, area);
+    victim.inventory spawn AdjustInventory(kind="weapon_railgun", amount=1, capacity=1);
+    victim.inventory spawn AdjustInventory(kind="slugs", amount=3, capacity=200);
+    victim +>:Empowered:+> Powerup(kind="quad", remaining=12.6);
+    items = toss_items(world, victim, "railgun", collision, 26.0);
+    # The railgun comes to rest; the quad is thrown again and still flying.
+    for step in range(300) {
+        world spawn TossTick(collision=collision, dt=0.01);
+    }
+    items[0].lifetime = 21.5;
+    flying = restore_drop(world, "quad", Vec3(x=5.0, z=80.0), 0.5, area, 29.0, 7.0, Vec3(x=10.0, z=-20.0));
+    assert flying is not None and in_flight(flying);
+    remove_pickup(world, items[1]);
+    level = Level();
+    level.name = "test";
+    player = Player(health=100);
+    data = snapshot(world, level, player, CombatState());
+    assert len([line for line in data.splitlines() if line.startswith("DROP ")]) == 2;
+    # A fresh level has the drop table and none of the dropped items.
+    fresh = World();
+    drop_table(fresh);
+    stray = restore_drop(fresh, "quad", Vec3(), 0.0, None, 30.0, 30.0);
+    assert stray is not None;
+    restore(fresh, level, player, CombatState(), data);
+    kept = dropped_items(fresh);
+    assert len(kept) == 2 and stray not in kept and not stray.active;
+    rail = kept[0];
+    assert rail.rule.kind == "weapon_railgun" and rail.active and not in_flight(rail);
+    assert abs(rail.lifetime - 21.5) < 0.001 and rail.pos.sub(items[0].pos).length() < 0.001;
+    quad = kept[1];
+    carrier = flight_of(quad);
+    assert quad.rule.powerup == "quad" and abs(quad.duration - 7.0) < 0.001 and abs(quad.lifetime - 29.0) < 0.001;
+    assert carrier is not None and abs(carrier.velocity.x - 10.0) < 0.001 and abs(carrier.velocity.z + 20.0) < 0.001;
+    assert abs(quad.yaw - 0.5) < 0.001 and abs(quad.pos.z - 80.0) < 0.001;
+    # Bots are told of them again (BotUpdateEntityItems watches the serial).
+    assert fresh.item_serial > 0;
 }

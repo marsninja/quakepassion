@@ -4,6 +4,7 @@ Animation timing, charged hand grenades and the Q2 BFG secondary laser phase
 remain separate fidelity work; ballistic effects use the common simulation.
 """
 import from engine.formats.sprite { EffectRule }
+import from engine.math.vec3 { Vec3 }
 import from engine.world.weapons { WeaponRule }
 import from engine.world.world { Player }
 import from engine.world.combat { CombatState }
@@ -13,11 +14,19 @@ def weapon_rules(game: str) -> list[WeaponRule] {
     if game == "q1" {
         return [
             WeaponRule(
-                slot=1, key="axe", name="Axe", damage=20, interval=0.5, reach=64.0
+                slot=1,
+                key="axe",
+                muzzle=Vec3(z=-6.0),
+                name="Axe",
+                damage=20,
+                interval=0.5,
+                reach=64.0
             ),
             WeaponRule(
                 slot=2,
                 key="shotgun",
+                muzzle=Vec3(x=10.0, z=-6.8),
+                muzzle_level=True,
                 name="Shotgun",
                 punch=2.0,
                 punch_time=0.2,
@@ -33,6 +42,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=3,
                 key="supershotgun",
+                muzzle=Vec3(x=10.0, z=-6.8),
+                muzzle_level=True,
                 name="Super shotgun",
                 punch=4.0,
                 punch_time=0.4,
@@ -50,6 +61,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=4,
                 key="nailgun",
+                muzzle=Vec3(y=4.0, z=-6.0),
+                muzzle_alternates=True,
                 name="Nailgun",
                 punch=2.0,
                 punch_time=0.2,
@@ -65,6 +78,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=5,
                 key="supernailgun",
+                muzzle=Vec3(z=-6.0),
                 name="Super nailgun",
                 punch=2.0,
                 punch_time=0.2,
@@ -81,6 +95,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=6,
                 key="grenadelauncher",
+                muzzle=Vec3(z=-22.0),
                 name="Grenade launcher",
                 punch=2.0,
                 punch_time=0.2,
@@ -100,6 +115,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=7,
                 key="rocketlauncher",
+                muzzle=Vec3(x=8.0, z=-6.0),
                 name="Rocket launcher",
                 punch=2.0,
                 punch_time=0.2,
@@ -117,6 +133,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=8,
                 key="lightning",
+                muzzle=Vec3(z=-6.0),
                 name="Thunderbolt",
                 punch=2.0,
                 punch_time=0.2,
@@ -136,6 +153,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=1,
                 key="blaster",
+                muzzle=Vec3(x=24.0, y=8.0, z=-8.0),
                 name="Blaster",
                 punch=1.0,
                 punch_time=0.1,
@@ -150,6 +168,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=2,
                 key="shotgun",
+                muzzle=Vec3(y=8.0, z=-8.0),
                 name="Shotgun",
                 punch=2.0,
                 punch_time=0.1,
@@ -169,6 +188,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=3,
                 key="supershotgun",
+                muzzle=Vec3(y=8.0, z=-8.0),
                 name="Super shotgun",
                 punch=2.0,
                 punch_time=0.1,
@@ -189,6 +209,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=4,
                 key="machinegun",
+                muzzle=Vec3(y=8.0, z=-8.0),
                 name="Machinegun",
                 raise_time=0.3,
                 lower_time=0.4,
@@ -205,6 +226,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=5,
                 key="chaingun",
+                muzzle=Vec3(y=7.0, z=-8.0),
+                muzzle_jitter=4.0,
                 name="Chaingun",
                 raise_time=0.4,
                 lower_time=0.3,
@@ -221,6 +244,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=6,
                 key="grenadelauncher",
+                muzzle=Vec3(x=8.0, y=8.0, z=-8.0),
                 name="Grenade launcher",
                 punch=1.0,
                 punch_time=0.1,
@@ -242,6 +266,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=7,
                 key="rocketlauncher",
+                muzzle=Vec3(x=8.0, y=8.0, z=-8.0),
                 name="Rocket launcher",
                 punch=1.0,
                 punch_time=0.1,
@@ -261,6 +286,8 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=8,
                 key="hyperblaster",
+                muzzle=Vec3(x=24.0, y=8.0, z=-8.0),
+                muzzle_orbit=4.0,
                 name="Hyperblaster",
                 punch=1.0,
                 punch_time=0.1,
@@ -280,6 +307,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=9,
                 key="railgun",
+                muzzle=Vec3(y=7.0, z=-8.0),
                 name="Railgun",
                 punch=3.0,
                 punch_time=0.1,
@@ -297,6 +325,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=10,
                 key="bfg",
+                muzzle=Vec3(x=8.0, y=8.0, z=-8.0),
                 name="BFG10K",
                 punch=40.0,
                 punch_time=0.5,
@@ -322,6 +351,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=11,
                 key="handgrenade",
+                muzzle=Vec3(x=8.0, y=8.0, z=-8.0),
                 name="Hand grenades",
                 ammo="grenades",
                 capacity=50,
@@ -344,16 +374,18 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=1,
                 key="gauntlet",
+                muzzle=Vec3(x=14.0),
                 name="Gauntlet",
                 raise_time=0.25,
                 lower_time=0.2,
                 damage=50,
                 interval=0.4,
-                reach=46.0
+                reach=32.0
             ),
             WeaponRule(
                 slot=2,
                 key="machinegun",
+                muzzle=Vec3(x=14.0),
                 name="Machinegun",
                 circular=True,
                 raise_time=0.25,
@@ -370,6 +402,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=3,
                 key="shotgun",
+                muzzle=Vec3(x=14.0),
                 name="Shotgun",
                 raise_time=0.25,
                 lower_time=0.2,
@@ -386,6 +419,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=4,
                 key="grenadelauncher",
+                muzzle=Vec3(x=14.0),
                 name="Grenade launcher",
                 raise_time=0.25,
                 lower_time=0.2,
@@ -405,6 +439,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=5,
                 key="rocketlauncher",
+                muzzle=Vec3(x=14.0),
                 name="Rocket launcher",
                 fuse=15.0,
                 raise_time=0.25,
@@ -423,6 +458,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=6,
                 key="lightning",
+                muzzle=Vec3(x=14.0),
                 name="Lightning gun",
                 raise_time=0.25,
                 lower_time=0.2,
@@ -437,6 +473,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=7,
                 key="railgun",
+                muzzle=Vec3(x=14.0),
                 name="Railgun",
                 raise_time=0.25,
                 lower_time=0.2,
@@ -451,6 +488,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=8,
                 key="plasmagun",
+                muzzle=Vec3(x=14.0),
                 name="Plasma gun",
                 fuse=10.0,
                 raise_time=0.25,
@@ -469,6 +507,7 @@ def weapon_rules(game: str) -> list[WeaponRule] {
             WeaponRule(
                 slot=9,
                 key="bfg",
+                muzzle=Vec3(x=14.0),
                 name="BFG10K",
                 fuse=10.0,
                 raise_time=0.25,
@@ -716,7 +755,22 @@ def weapon_effects(game: str) -> list[EffectRule] {
             EffectRule(key="gfx/damage/hole_lg_mrk", flight="gfx/damage/hole_lg_mrk"),
             EffectRule(key="gfx/damage/plasma_mrk", flight="gfx/damage/plasma_mrk"),
             # cgs.media.balloonShader: the talk balloon (CG_PlayerSprites).
-            EffectRule(key="sprites/balloon3", flight="sprites/balloon3")
+            EffectRule(key="sprites/balloon3", flight="sprites/balloon3"),
+            # cgs.media.medalImpressive, medalExcellent and medalGauntlet,
+            # floated over a player they were just awarded to.
+            EffectRule(key="medal_impressive", flight="menu/medals/medal_impressive"),
+            EffectRule(key="medal_excellent", flight="menu/medals/medal_excellent"),
+            EffectRule(key="medal_gauntlet", flight="menu/medals/medal_gauntlet"),
+            # cgs.media.shadowMarkShader (CG_PlayerShadow).
+            EffectRule(key="markShadow", flight="gfx/damage/shadow"),
+            # cgs.media.teleportEffectModel and teleportEffectShader (CG_SpawnEffect).
+            EffectRule(
+                key="q3_teleport",
+                flight="models/misc/telep.md3",
+                shader="teleportEffect",
+                explosion=True,
+                entity_fade=True
+            )
         ];
     }
     return [];

@@ -14,11 +14,17 @@ impl App.configure() {
     self.renderer.declare(self.shell);
     self.audio.declare(self.shell);
     self.hud.declare(self.shell);
+    self.effects.declare(self.shell);
+    self.flares.declare(self.shell);
     host = self.host;
     host.skill = self.shell.register(host.skill);
     host.god = self.shell.register(host.god);
     host.flyspeed = self.shell.register(host.flyspeed);
     host.overlay = self.shell.register(host.overlay);
+    host.intro_played = self.shell.register(host.intro_played);
+    host.nextmap = self.shell.register(host.nextmap);
+    host.videos = self.shell.register(host.videos);
+    host.timelimit = self.shell.register(host.timelimit);
     for (name, usage, description) in HOST_COMMANDS {
         self.shell.command(name, "host", usage, description);
     }
@@ -241,6 +247,21 @@ impl App.host_command(args: list[str]) {
         } else {
             self.shell.print("noclip OFF" if self.walking else "noclip ON");
         }
+    } elif name == "say" {
+        # g_cmds.c Cmd_Say_f: the line goes to everyone, the bots included
+        # (they may answer it).
+        if rest {
+            contest = match_of(self.world);
+            speaker = competitor_name(contest, self.player) if contest is not None else "";
+            if not speaker {
+                speaker = "You";
+            }
+            self.notify(speaker + "^7: ^2" + rest);
+            self.audio.play_path("sound/player/talk.wav");
+            if contest is not None {
+                contest.say(self.player, speaker, rest);
+            }
+        }
     } elif name == "give" {
         self.give(args);
     } elif name == "kill" {
@@ -321,6 +342,28 @@ impl App.host_command(args: list[str]) {
         }
         self.renderer.screenshot(shot);
         self.shell.print("Wrote " + shot);
+    } elif name == "cinematic" {
+        # CL_PlayCinematic_f: a film from video/, over whatever is running.
+        if len(args) < 2 or "/" in args[1] or ".." in args[1] {
+            self.shell.print("cinematic <name> : play a film from video/");
+            return;
+        }
+        if self.console.active {
+            self.toggle_console();
+        }
+        self.begin_cinematic(args[1], "", resume=self.postgame is None);
+    } elif name == "levelselect" {
+        # UI_SPLevelMenu_f, opened where ui_spSelection points: the arena
+        # after the one played.
+        following = "";
+        if self.level.active and self.level.bsp.game == "q3" {
+            try {
+                following = self.following_arena();
+            } except Exception as error {
+                self.shell.print("Arena ladder: " + str(error));
+            }
+        }
+        self.open_level_menu(following);
     } elif name == "vid_restart" {
         self.renderer.apply_video();
         self.shell.print(

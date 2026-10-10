@@ -77,10 +77,6 @@ def fixture_rule(game: str, fields: dict[str, str]) -> FixtureRule | None {
         return None;
     }
     if game == "q2" {
-        # SP_misc_teleporter: a pad without a target is removed.
-        if kind == "misc_teleporter" and fields.get("target", "") {
-            return FixtureRule(sound="sound/world/amb10.wav");
-        }
         if kind == "misc_deadsoldier" {
             pose = 0;
             for bit in range(1, 6) {
@@ -128,8 +124,9 @@ def fixture_rule(game: str, fields: dict[str, str]) -> FixtureRule | None {
             return FixtureRule(model="models/monsters/tank/tris.md2", frames=list(range(254, 293)));
         }
         # SP_misc_teleporter: the pad (dmspot, skin 1), its EF_TELEPORTER
-        # sparkle and amb10 hum. The teleport itself is traversal.jac's.
-        if kind == "misc_teleporter" {
+        # sparkle and amb10 hum; a pad without a target is removed. The
+        # teleport itself is traversal.jac's.
+        if kind == "misc_teleporter" and fields.get("target", "") {
             return FixtureRule(
                 model="models/objects/dmspot/tris.md2",
                 skin=1,
@@ -151,10 +148,6 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
             source = fields.get("asset_game", level.bsp.game);
             rule = fixture_rule(source, fields);
             if rule is None {
-                continue;
-            }
-            # G_FreeEdict: a teleporter pad without a destination is removed.
-            if rule.effect == "teleporter" and not fields.get("target", "") {
                 continue;
             }
             parts = fields.get("origin", "0 0 0").split();

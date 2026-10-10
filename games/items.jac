@@ -7,6 +7,7 @@ import from engine.world.pickups {
     Pickup,
     HasPickup,
     ItemTeam,
+    start_item_team,
     TeamMember,
     InTeam,
     item_view,
@@ -717,9 +718,10 @@ def item_spin(game: str, rule: PickupRule, flags: int) -> float {
 }
 
 """How an item's model takes light: Q2 SpawnItem and Drop_Item give every
-item RF_GLOW, so bonus items pulse (ITEM_NO_TOUCH items do not)."""
+item RF_GLOW, so bonus items pulse; droptofloor takes it from ITEM_NO_TOUCH
+(2) items again."""
 def item_light_flags(game: str, spawnflags: int = 0) -> int {
-    if game == "q2" and spawnflags & 1 == 0 {
+    if game == "q2" and spawnflags & 2 == 0 {
         return MODEL_LIGHT_GLOW;
     }
     return 0;
@@ -760,9 +762,12 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             if level.bsp.game == "q1" and flags & 512 {
                 continue;
             }
-            if level.bsp.game == "q2" and (flags & 512 or flags & 2) {
+            if level.bsp.game == "q2" and flags & 512 {
                 continue;
             }
+            # g_items.c droptofloor: an ITEM_NO_TOUCH (2) item is shown, still
+            # and unlit by the item glow, and cannot be picked up.
+            untouchable = level.bsp.game == "q2" and flags & 2 != 0;
             if level.bsp.game == "q3" and fields.get("notfree", "0") == "1" {
                 continue;
             }
@@ -824,6 +829,7 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
                 respawn=respawn,
                 jitter=max(0.0, float(fields.get("random", "0"))) if level.bsp.game == "q3" else 0.0,
                 seed=1 + index * 7919,
+                untouchable=untouchable,
                 active=not waiting_for_use,
                 waiting_for_use=waiting_for_use,
                 activate_on_use=waiting_for_use or level.bsp.game == "q3",
@@ -847,20 +853,23 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             if extra {
                 pickup.visual +>:UsesModel:+> resources[extra];
             }
-            pickup.visual.spin = item_spin(source, rule, resources[key].model.flags);
+            pickup.visual.spin = 0.0
+                if untouchable
+                else item_spin(source, rule, resources[key].model.flags);
             pickup.visual.light_flags = item_light_flags(source, flags);
             if source == "q3" {
                 # cg_ents.c CG_Item: bob 4 +/- 4 units at a per-entity rate.
                 pickup.visual.bob = 4.0;
                 pickup.visual.bob_rate = 5.0 + float(index) * 0.01;
             }
-            # G_FindTeams: the first item of a team is present, the rest wait
-            # for RespawnItem to pick them.
-            team_name = fields.get("team", "") if level.bsp.game == "q3" else "";
+            # G_FindTeams: the first item of a Q3 team is present, the rest
+            # wait for RespawnItem to pick them. A Q2 team's one member is
+            # chosen once every item is placed.
+            team_name = fields.get("team", "") if level.bsp.game in ["q2", "q3"] else "";
             if team_name {
                 if team_name not in teams {
                     teams[team_name] = ItemTeam(name=team_name, seed=1 + index * 48271);
-                } else {
+                } elif level.bsp.game == "q3" {
                     pickup.benched = True;
                     pickup.active = False;
                     pickup.remaining = 0.0;
@@ -876,6 +885,11 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             }
             count += 1;
         }
+        if level.bsp.game == "q2" {
+            for name in teams {
+                start_item_team(teams[name]);
+            }
+        }
         if level.bsp.game == "q3" {
             prepare_drops(world, catalog, resources);
         }
@@ -886,8 +900,9 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
 }
 
 """What a monster leaves when it dies. Q1 DropBackpack: grunts carry 5
-shells, enforcers 5 cells and ogres 2 rockets (their ammo_* fields). Q2
-monster_death_use: Drop_Item of the monster's `item` key."""
+shells, enforcers 5 cells and ogres 2 rockets (their ammo_* fields), and
+BackpackTouch prints what the player gets. Q2 monster_death_use: Drop_Item
+of the monster's `item` key."""
 def monster_drop(game: str, kind: str, fields: dict[str, str]) -> PickupRule | None {
     if game == "q1" {
         packed = {
@@ -900,12 +915,14 @@ def monster_drop(game: str, kind: str, fields: dict[str, str]) -> PickupRule | N
             return None;
         }
         ammo = packed[kind];
+        count = 2 if ammo == "rockets" else 5;
         return PickupRule(
             kind="backpack",
             amount=1,
             capacity=1,
             capacities={ammo: 100},
-            grants={ammo: 2 if ammo == "rockets" else 5},
+            grants={ammo: count},
+            message="You get " + str(count) + " " + ammo,
             model="progs/backpack.mdl",
             sound="sound/weapons/lock4.wav"
         );

@@ -3,7 +3,8 @@
 The target is the original Quake and Quake II single-player campaigns and the
 Quake III Arena single-player ladder, each played by its own rules inside the
 one engine, plus the generated Passion mode. Network multiplayer, mods, other
-Q3 game types and an editor are out of scope.
+Q3 game types, an editor, and entity classes no campaign map uses (Q2's
+`misc_actor`) are out of scope.
 
 ## Where things stand
 
@@ -16,9 +17,16 @@ Q3 game types and an editor are out of scope.
   remembered levels, the help computer carried across levels, cinematics and
   music, and the full base-game roster through Jorg and Makron.
   See [q2-roster-status.md](q2-roster-status.md).
+- **Monster movement** (Quake and Quake II): each 0.1 s frame a monster takes
+  one `SV_movestep` of that frame's distance or none, chasing by
+  `SV_StepDirection` and `SV_NewChaseDir`, solid to other monsters and the
+  player; fliers and swimmers move by the `FL_FLY` / `FL_SWIM` rules. The
+  originals' monsters plan no routes: they do not take lifts or trains on
+  purpose, press switches or use jump links, and neither do these.
+  See [navigation-status.md](navigation-status.md).
 - **Quake III Arena**: the `arenas.txt` ladder as free-for-all matches against
   botlib bots (AAS routing, travel types, fuzzy weights, the ai_dmnet.c nodes,
-  chat), with scoring, awards, the podium and ladder progress.
+  chat), with scoring, awards, the podium, ladder progress and the RoQ films.
   See [arena-match-status.md](arena-match-status.md) and [bot-tactics-status.md](bot-tactics-status.md).
 - **Shared engine**: per-game movement profiles, the shared pusher for every
   mover, per-game weapons, items and powerups, per-game renderers (status bars,
@@ -33,13 +41,13 @@ They are scripted runs, not human playthroughs; see
 
 ## Open issues
 
-- **Jac fixes in review**: the pinned compiler carries six upstream PRs not
-  yet merged, among them the two runtime fixes (jac #9634, #9639) behind the
-  intermittent native SIGBUS/SIGSEGV in Q3 arenas with bots. With the pin,
-  q3dm12 ran to frame 3000 clean 3 times out of 3, q3dm7, q3dm1 and q3dm17 to
-  frame 1500 clean, and the headless q3dm12 soak
-  (`scripts/q3dm12_live_player_crash_repro.jac`) 5400 ticks clean 3 times out
-  of 3 (2026-09-29). One known jac defect has no upstream fix yet (an abort
+- **Jac**: every compiler and runtime fix the pinned compiler carries has
+  merged upstream and shipped in jac 0.37.25, among them the two runtime
+  fixes (jac #9634, #9639) behind the intermittent native SIGBUS/SIGSEGV in
+  Q3 arenas with bots. One fix found since is in review and not in the pin:
+  the Mach-O linker under-aligning merged sections (jac #9924), which can
+  make a natively built binary on macOS misread constants depending on how
+  its units pack. One known jac defect has no upstream fix yet (an abort
   under the `nogc` memory mode, which QuakePassion does not use). See
   [jac-native-fixes.md](jac-native-fixes.md).
 
@@ -48,45 +56,17 @@ They are scripted runs, not human playthroughs; see
 Each is verified against the code; the linked doc has the detail.
 
 Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
-- Steering is five fixed headings plus bounded ground detours, not
-  `SV_StepDirection`/`SV_NewChaseDir`; fliers and swimmers only steer.
-- Monsters do not plan through elevators or trains, press switches, or use
-  jump/swim links, and are not solid to each other.
-- One death sequence per monster; several monsters have one pain sequence; pain
-  frames carry no movement.
-- Light and shotgun Q2 soldiers never use `attack2`.
-- Q1 Nightmare still applies the `SUB_AttackFinished` waits of `HuntTarget` and
-  the Hell Knight's charge, which the original skips.
-- Shub-Niggurath's finale is a timed hold and shake, not `finale_1`-`finale_4`
-  frame by frame.
-
-Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-status.md](map-mechanics-status.md), [level-flow-status.md](level-flow-status.md), [traversal-status.md](traversal-status.md)):
-- Q3 movers play no sounds.
-- Q2 `func_door_secret` is not loaded (one in city3).
-- One door proximity box for all three games; Q2 and Q3 size theirs differently.
-- Closed Q2/Q3 area portals do not cull rendering, sounds are not PHS-limited,
-  and a relay-toggled portal's state is not saved.
-- Q1 `teleport_time` and Q3's post-teleport `PMF_TIME_KNOCKBACK` are not applied.
-- Q3 RoQ cinematics are not played.
-- `target_actor`/`misc_actor` are not driven (no shipped map needs them).
-
-Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
-- Player projectiles spawn at the player's origin, not a muzzle point.
-- Q2 item `team` groups are ignored and `ITEM_NO_TOUCH` items are skipped.
-- The Q3 railgun draws its core only, not the raildisc rings.
-- The player's own body is not thrown as gibs.
+- Attack-frame steps (`ai_charge`) are stopped by the target's box only, not
+  by other monsters, and bodies that already overlap do not block each other.
+- Q2 monsters collide with player clip brushes, not monster clip brushes.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
-- Q3 flares are not drawn; `deformVertexes` applies to world surfaces only, and
-  model shaders with unsupported stage features fall back to the plain skin.
-- Patches tessellate at a fixed 8 steps; the lightmap atlas is a fixed 2048².
-- No player shadows; repeated models are not instanced.
+- Q3 patches are not thinned with distance (`r_lodCurveError`).
+- Repeated models are not instanced.
 
 Q3 bots and arenas ([bot-tactics-status.md](bot-tactics-status.md), [arena-match-status.md](arena-match-status.md)):
-- Free-for-all only, with no time limit.
-- Not modelled: `BotWantsToCamp`, `BotReplyChat`, `BotAddToAvoidReach`,
-  `BotAIPredictObstacles`/`BotAIBlocked`.
-- Dropped items are not kept in saves.
+- The single-player ladder's game type only (no tournament queue, team modes
+  or CTF).
 
 Passion's own limits are in [passion.md](passion.md).
 

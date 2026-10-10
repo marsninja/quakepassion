@@ -17,7 +17,7 @@ movers are in [navigation-status.md](navigation-status.md).
 
 | Class | Health | Movement | Attacks |
 | --- | ---: | --- | --- |
-| `monster_soldier_light` / `monster_soldier` / `monster_soldier_ss` | 20 / 30 / 40 | walk | blaster bolt / 12-pellet shotgun / 4-11 round machine-gun burst; duck and crouch-fire (`attack3`) |
+| `monster_soldier_light` / `monster_soldier` / `monster_soldier_ss` | 20 / 30 / 40 | walk | blaster bolt / 12-pellet shotgun (`attack1` or `attack2`) / 4-11 round machine-gun burst (`attack4`); duck and crouch-fire (`attack3`); run-and-shoot on sighting (`attack6`) |
 | `monster_infantry` | 100 | walk | gun burst; `attak2` punch (5-9, knockback) |
 | `monster_berserk` | 240 | walk | spike (15-20) or club (5-10) |
 | `monster_gladiator` | 400 | walk | two cleaver strikes; rail with aim locked at windup |
@@ -27,7 +27,7 @@ movers are in [navigation-status.md](navigation-status.md).
 | `monster_parasite` | 175 | walk | drain beam |
 | `monster_brain` | 300 | walk | claws; tentacle pull; 100-cell power screen |
 | `monster_medic` | 300 | walk | blaster; cable revives a corpse |
-| `monster_tank` / `monster_tank_commander` | 750 / 1000 | walk | blaster, machine-gun sweep, rockets, chosen by range |
+| `monster_tank` / `monster_tank_commander` | 750 / 1000 | walk | blaster, machine-gun sweep, rockets, chosen by range; brutal (`AI_BRUTAL`): a strike over the player it has killed |
 | `monster_supertank` | 1500 | walk | chaingun (repeats), rockets preferred at range; explodes |
 | `monster_flyer` | 50 | fly | blade slash loop; twin blasters |
 | `monster_floater` | 200 | fly | wham, zap, blaster |
@@ -44,6 +44,40 @@ movers are in [navigation-status.md](navigation-status.md).
 
 Details that follow the originals:
 
+- **Soldiers** (`m_soldier.c`, `soldier_attacks` in `games/enemies.jac`):
+  - Light and shotgun soldiers attack with `attack1` (attak101-112, shot on
+    attak103) or `attack2` (attak201-218, shot on attak205 from the higher
+    muzzle, flash 1), half the time each (`soldier_attack`).
+  - Each has a refire frame. With the enemy alive it goes back to the frame
+    before the shot (attak102, attak204) when the enemy is within 80 units
+    (`RANGE_MELEE`) or, on Nightmare, half the time. A blaster soldier tests
+    this on attak106/attak208 and otherwise skips to attak110/attak216
+    (`soldier_attack1_refire1`). A shotgun soldier cocks its gun first
+    (`soldier_cock`, `infantry/infatck3.wav` on attak108/attak213), tests on
+    attak109/attak215 and otherwise plays on (`soldier_attack1_refire2`).
+    With the enemy dead the frames play straight through.
+  - Above Easy, a soldier that first sights its enemy 500 units or more away
+    runs at it half the time through runs01-14, striding each frame's
+    `ai_charge` distance and firing on runs04 from flash 7
+    (`soldier_sight`, `soldier_move_attack6`). On Nightmare it runs on from
+    runs03 while the enemy is still that far (`soldier_attack6_refire`).
+  - The machine gunner holds its fire frame for the burst in every sequence,
+    so its crouched `attack3` fires one burst on attak303 and does not loop.
+  - These are `AttackProfile` refire fields (`repeat_near`, `repeat_skill`,
+    `repeat_from`, `repeat_unseen`, `repeat_skip`) on the one repeat
+    mechanism the chick and gunner use, and a `"sight"` `trigger`.
+- **Infantry, tank, medic, mutant** (attack tables):
+  - The infantry cocks its gun on attak104 (`infantry_cock_gun`), strides
+    `infantry_move_attack1`'s distances, and its punch smacks when it lands
+    (`infantry_smack`).
+  - On Hard and above the tank fires its blaster's last two bolts again six
+    times in ten (`tank_reattack_blaster`) and its three rockets again four
+    times in ten (`tank_refire_rocket`), with the enemy alive and in sight.
+    Both sequences stride their frames' distances.
+  - The medic goes on from its two blaster bolts to the hyperblaster only
+    with its enemy in sight, 95 times in 100 (`medic_continue`).
+  - The mutant strides 17 units on attack02 before it leaps.
+  - A soldier sights with `solsght1` or `solsrch1`, half the time each.
 - **Jorg and Makron** (`m_boss31.c`, `m_boss32.c`): Jorg's rule names
   `monster_makron` as its `successor`. The Makron is built dormant at load and
   takes over Jorg's targets. When Jorg's death animation ends it bursts apart
@@ -58,22 +92,83 @@ Details that follow the originals:
   rocket and slash sequences repeat their active section on a range, sight and
   random check without replaying the windup. Recovery steps may be negative
   (backwards) and still check collision and support.
-- **Pain**: soldiers and the chick recover in 0.5 s, berserkers 0.4, gladiators
-  0.6 and infantry 1.0, with a 3 s cooldown. Monsters with several pain
-  sequences (`pain_variants`: the gunner, flyer, floater, hover, mutant, brain,
-  medic, flipper, tanks, Supertank, Hornet, Jorg and Makron) choose by damage
-  (`pain_variant_damage`) or at random, as their originals do.
+- **Pain** (`pains` on each rule; the mechanism is in
+  [monster-behaviour-status.md](monster-behaviour-status.md)). Every monster
+  waits 3 s between pains (`pain_debounce_time`) and strides its frames'
+  `ai_move` distances, scaled by the model scale.
+  - At random: soldiers (`pain1`-`pain3`, 0.33/0.33/0.34), infantry, medic and
+    flipper (even odds), brain, mutant and flyer (thirds), floater (`pain1`
+    one time in three).
+  - By damage: chick and gunner (up to 10, up to 25, more), tank (up to 30, up
+    to 60, more), Supertank (10, 25), Hornet (light under 30, else heavy),
+    Jorg (50, 100, then `pain3` three times in ten), Makron (40, 110, then
+    `pain6` about two times in three up to 150 and nothing above), berserker
+    (`pain1` under 20, either from there up), hover (`pain3` or `pain2` up to
+    25, else `pain1`).
+  - Jorg shrugs off one hit in 200 more while it winds up either attack
+    and one in 20000 while its chainguns fire (`pain_shrugs` on the attack).
+  - The tank ignores 10 damage or less and shrugs off four hits in five up to
+    30; the Supertank and Makron one in five up to 25; Jorg six in ten up to
+    40. On Hard and above the tank feels no pain while firing its blaster or
+    rockets, nor the Supertank its rockets.
+  - Sounds: soldiers, berserker, gladiator, chick, gunner and tank cry before
+    the Nightmare test, so they cry on Nightmare too. The others' sounds
+    belong to the sequence drawn (infantry `infpain1` with `pain1`, the
+    Supertank `btkpain3` with `pain2`) and are silent there. The Hornet has no
+    Nightmare test and flinches regardless.
+  - Thrown upward faster than 100 units a second, a soldier takes `pain4` and
+    a gladiator its `painup` frames instead, and changes to them if thrown
+    while already flinching. The soldier picks `pain4` before the Nightmare
+    test. No other `m_*.c` has this test.
+  - A ducked monster's pain function is not called (`T_Damage`).
+  - An insane marine cries with the player's voice for its health
+    (`pain25`, `pain50`, `pain75` or `pain100`, either of two) before its
+    Nightmare test, and dies with one of the player's four death cries.
+    Crucified, it struggles through cross16-30 with one of eight screams
+    (`insane_scream`) and is left hanging as it is when killed.
+- **Death** (`deaths` on each rule):
+  - Soldiers fall on `death3` for a head shot, a hit within 4 units of the
+    eye (origin plus viewheight 25), and otherwise on `death1`, `death2`,
+    `death4`, `death5` or `death6` at even odds (`soldier_die`). A hit's point
+    is a bullet's end, a missile's origin or a blast's centre; of a shotgun's
+    pellets the last to land.
+  - Infantry take one of three (`death2` with the other death sound), the
+    chick one of two with its own sound, brain and mutant one of two; the
+    berserker `death1` for a killing hit of 50 or more, else `death2`; the
+    hover either death sound.
+  - Death frames stride their `ai_move` distances (a soldier's `death1` falls
+    back 42 units).
+  - A soldier falling on `death1` fires along the way it faces on death122
+    and death125 (`soldier_fire6`, `soldier_fire7`), the machine gunner
+    holding each frame for a burst of 4 to 11. An infantry falling on
+    `death2` fires twelve rounds on death211-222, climbing and swinging to
+    its right (`InfantryMachineGun`'s `aimangles`). These are `fire` events
+    on the sequence; whoever stands in the way is hit.
+  - Frames make their sounds as they are entered (`events` on the
+    sequence): the tank's footstep in `pain3` and its thud on death128,
+    Jorg's steps through `pain3`, the Makron's `makron_popup` and
+    `makron_taunt` in `pain6` and its steps, `makron_hit` and
+    `makron_brainsplorch` as it dies.
+  - A corpse keeps its box until the sequence ends and is then left the box
+    its `*_dead` sets: -16 -16 -24 to 16 16 -8 for most, 0 to 16 high for the
+    chick, -16 to 0 for the tank, and the full-width boxes of the Supertank,
+    Hornet and Makron.
 
 ## Validation
 
+- `tests/monster_sequence_tests.jac`: every pain and death table against the
+  `mmove_t` frame counts and distances, each `*_pain` and `*_die` branch,
+  sounds and Nightmare, airborne pain, strides, corpse boxes, saves.
 - `tests/q2_roster_tests.jac`: berserker windups and damage, gladiator locked aim
   and saves, rail occlusion and safe zone, cleaver escape, sound cues.
 - `tests/q2_roster_expansion_tests.jac`: gunner bursts, grenades and pain by
   damage, flyer, mutant, parasite drain, brain pull/push, tank and Supertank
   choices, Hornet volley and Jorg spawning Makron, Makron sweep and rail,
   hostile BFG, flipper, static bodies.
-- `tests/chick_tests.jac`, `tests/q2_attack_tests.jac` (soldier/infantry bursts,
-  muzzles and flashes), `tests/infantry_melee_tests.jac`,
+- `tests/chick_tests.jac`, `tests/q2_attack_tests.jac` (the soldier's attack
+  tables, its choice of `attack1` or `attack2`, each refire branch, the
+  run-and-shoot and its strides, soldier/infantry bursts, muzzles and
+  flashes), `tests/infantry_melee_tests.jac`,
   `tests/enemy_pain_tests.jac`, `tests/dodge_tests.jac`, `tests/turret_tests.jac`,
   `tests/monster_skin_tests.jac` (bloodied skin below half health).
 - Native: `scripts/roster_smoke.jac` checks every Q1/Q2 class's frames, sounds
@@ -81,19 +176,20 @@ Details that follow the originals:
   `scripts/turret_smoke.jac`, and the render captures
   `scripts/chick_render_smoke.jac`, `scripts/berserker_render_smoke.jac`,
   `scripts/gladiator_render_smoke.jac`, `scripts/infantry_render_smoke.jac`,
-  `scripts/pain_render_smoke.jac`.
+  `scripts/pain_render_smoke.jac` (an infantry mid-pain, then an infantry
+  and a head-shot soldier mid-death and at rest, each restored from a save).
 
 ## Limitations
 
-- Each monster plays one death sequence: the authored `death_frames` or the
-  model's first contiguous `death` family (`games/opponents.jac`). The
-  originals' random choices among death animations are not made.
-- The soldiers, infantry, berserker, gladiator and chick play one pain sequence;
-  the originals choose by damage or at random (for example `berserk_pain`).
-- Pain frames carry no movement steps, and there are no airborne pain reactions.
-- Light and shotgun soldiers always fire `attack1` (and `attack3` when
-  dodging); `soldier_attack` picks `attack1` or `attack2` half the time each.
-- `misc_actor` and `target_actor` are not driven (no shipped map pairs them).
+- The Makron leaves no torso as it dies (`makron_torso`).
+- The insane marines' cries carry as far as any other sound; the original
+  plays them at `ATTN_IDLE`. A standing marine that has lain down by itself
+  (`insane_checkdown`) is not modelled, so only marines spawned crawling take
+  the crawling pain and death.
+- Attack strides head at the target; Q2 `ai_charge` walks along the monster's
+  own facing while it turns.
+- `misc_actor` is not implemented; no campaign map has one (see
+  [map mechanics](map-mechanics-status.md#limitations)).
 
 References: [Q2 game source](https://github.com/id-Software/Quake-2/tree/master/game)
 (`m_*.c`, `g_monster.c`, `g_turret.c`, `m_flash.c`).

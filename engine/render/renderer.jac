@@ -110,7 +110,7 @@ glob WINDOW_RESIZABLE_FLAG: int = 4,
      WINDOW_UNDECORATED_FLAG: int = 8;
 
 """The cvars the renderer owns: the view angle, the frame rate cap, PVS
-culling and the window (Q1/Q2 vid_*, Q3 r_* names)."""
+culling, Q3 curve detail and the window (Q1/Q2 vid_*, Q3 r_* names)."""
 obj RenderCvars {
     has fov: Cvar = Cvar(
             name="fov",
@@ -166,6 +166,15 @@ obj RenderCvars {
             flags=CVAR_ARCHIVE,
             aliases=["r_fullscreen"],
             description="fill the monitor at its desktop resolution (vid_restart or alt+enter applies it)"
+        ),
+        subdivisions: Cvar = Cvar(
+            name="r_subdivisions",
+            reset_text="4",
+            kind="float",
+            low=1.0,
+            high=80.0,
+            flags=CVAR_ARCHIVE,
+            description="how far a Q3 curve may lie from its drawn surface, in units (from the next map)"
         ),
         highdpi: Cvar = Cvar(
             name="vid_highdpi",

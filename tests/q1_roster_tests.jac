@@ -9,7 +9,11 @@ import from engine.world.combat {
     CombatTick,
     ProjectileTick,
     damage_opponent,
-    choose_attack
+    choose_attack,
+    ensure_profiles,
+    begin_attack,
+    advance_attack,
+    attack_event_count
 }
 import from engine.world.particles { HasTrail, ShotTrail }
 import from engine.world.speakers { Speaker, HasSpeaker }
@@ -378,4 +382,44 @@ test "mid leap save restores motion and reproduces the uninterrupted trajectory 
     assert player.health == expected_health;
     assert enemy.pos.sub(expected_pos).length() < 0.001;
     assert enemy.velocity.sub(expected_velocity).length() < 0.001;
+}
+
+test "the shambler chains its swings and throws a fourth bolt on Nightmare" {
+    rule = enemy_rule("q1", "monster_shambler");
+    assert rule is not None;
+    names = [profile.name for profile in rule.attacks];
+    left = rule.attacks[names.index("swingl")];
+    right = rule.attacks[names.index("swingr")];
+    # sham_swingl9 and sham_swingr9: `if (random() < 0.5)` the other swing.
+    assert left.chain == "swingr" and right.chain == "swingl";
+    assert left.chain_chance == 0.5 and right.chain_chance == 0.5;
+    assert rule.attacks[names.index("smash")].chain == "";
+    world = World();
+    collision = CollisionMap();
+    player = Player(pos=Vec3(x=60.0), god_mode=True);
+    chained = 0;
+    for seed in range(100) {
+        shambler = Opponent(rule=rule, game="q1", shot_random=1 + seed * 7919);
+        ensure_profiles(shambler);
+        begin_attack(shambler, names.index("swingl"), player.pos);
+        for i in range(19) {
+            advance_attack(world, shambler, player, collision, 0.05);
+        }
+        if shambler.attack_clock >= 0.0 {
+            assert shambler.profiles[shambler.attack_profile].name == "swingr";
+            chained += 1;
+        }
+    }
+    assert chained > 30 and chained < 70;
+    # sham_magic6, 9 and 10 cast the bolt; sham_magic11 again on skill 3.
+    for skill in [1, 3] {
+        caster = Opponent(rule=rule, game="q1", skill=skill);
+        ensure_profiles(caster);
+        begin_attack(caster, names.index("lightning"), player.pos);
+        assert attack_event_count(caster) == (4 if skill == 3 else 3);
+        for i in range(21) {
+            advance_attack(world, caster, player, collision, 0.05);
+        }
+        assert caster.attack_event == (4 if skill == 3 else 3);
+    }
 }
