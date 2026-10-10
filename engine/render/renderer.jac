@@ -181,6 +181,13 @@ obj RenderCvars {
             flags=CVAR_ARCHIVE,
             description="how far a Q3 curve may lie from its drawn surface, in units (from the next map)"
         ),
+        lod_curve_error: Cvar = Cvar(
+            name="r_lodCurveError",
+            reset_text="250",
+            kind="float",
+            flags=CVAR_ARCHIVE,
+            description="how much error a Q3 curve may show per unit of distance before rows and columns are left out"
+        ),
         highdpi: Cvar = Cvar(
             name="vid_highdpi",
             reset_text="1",

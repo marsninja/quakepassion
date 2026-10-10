@@ -198,6 +198,86 @@ def face_triangles(face: Face) -> list[int] {
     return corners;
 }
 
+# tr_init.c r_lodCurveError: how much error a curve may show, in units at
+# one unit's distance.
+glob CURVE_LOD_ERROR: float = 250.0;
+
+"""tr_surface.c LodErrorForVolume: the error a grid of the LOD group at
+`origin`, `radius` across, may show from `eye` looking along `forward`:
+r_lodCurveError (`allowance`) over its depth into the view, the nearest
+point of the group counted. A negative allowance allows nothing."""
+def lod_error_for_volume(
+    origin: Vec3, radius: float, eye: Vec3, forward: Vec3, allowance: float = CURVE_LOD_ERROR
+) -> float {
+    if allowance < 0.0 {
+        return 0.0;
+    }
+    depth = abs(origin.sub(eye).dot(forward)) - radius;
+    if depth < 1.0 {
+        depth = 1.0;
+    }
+    return allowance / depth;
+}
+
+"""RB_SurfaceGrid's widthTable and heightTable: the columns (or rows) of a
+grid drawn when `allowed` error may show: the two borders, and each one
+between whose error is no more than that."""
+def grid_lines(errors: list[float], allowed: float) -> list[int] {
+    lines = [0];
+    for i in range(1, len(errors) - 1) {
+        if errors[i] <= allowed {
+            lines.append(i);
+        }
+    }
+    lines.append(len(errors) - 1);
+    return lines;
+}
+
+"""The errors at which a grid's drawn columns and rows change, rising: a
+view allowed less than the first draws the fewest, one allowed the last or
+more draws them all."""
+def grid_steps(width_errors: list[float], height_errors: list[float]) -> list[float] {
+    seen: dict[float, bool] = {};
+    for error in width_errors[1:-1] + height_errors[1:-1] {
+        if error > 0.0 {
+            seen[error] = True;
+        }
+    }
+    return sorted(seen.keys());
+}
+
+"""How many of a grid's `steps` a view allowed `allowed` error has passed:
+its level of detail, 0 the coarsest."""
+def grid_level(steps: list[float], allowed: float) -> int {
+    level = 0;
+    for step in steps {
+        if step <= allowed {
+            level += 1;
+        }
+    }
+    return level;
+}
+
+"""A grid `width` vertices wide drawn over `columns` and `rows` alone, two
+triangles a cell wound as the whole grid is (formats/q3/bsp.jac emit_grid),
+as little-endian 16-bit indices from vertex `base`."""
+def grid_index_bytes(width: int, columns: list[int], rows: list[int], base: int) -> bytes {
+    cells = (len(columns) - 1) * (len(rows) - 1);
+    out = bytearray(cells * 12);
+    at = 0;
+    for y in range(len(rows) - 1) {
+        for x in range(len(columns) - 1) {
+            a = base + rows[y] * width + columns[x];
+            right = base + rows[y] * width + columns[x + 1];
+            b = base + rows[y + 1] * width + columns[x];
+            below = base + rows[y + 1] * width + columns[x + 1];
+            struct.pack_into("<HHHHHH", out, at, a, right, b, right, below, b);
+            at += 12;
+        }
+    }
+    return bytes(out);
+}
+
 """Triangles over `points` as vertex positions, three floats each, in the
 order `corners` names them: a surface drawn from a streamed vertex buffer
 rather than the world's chunks."""
@@ -411,8 +491,12 @@ def pack_world_face(
         shape = sprite_quad(face.vertices, file_winding(face_triangles(face)));
     }
     normal = face.normal;
+    smooth = len(face.normals) >= count;
     for i in range(count) {
         v = face.vertices[i];
+        if smooth {
+            normal = face.normals[i];
+        }
         s = face.uv[i * 2] if textured else 0.0;
         t = face.uv[i * 2 + 1] if textured else 0.0;
         ls = 0.0;
@@ -546,6 +630,14 @@ obj VisibleIndices {
         flares: dict[int, bool] = {},
         shown: dict[int, list[int]] = {},
         used: int = 0;
+    # The set's Q3 patches that thin with distance, the level of detail each
+    # was last gathered at, and their index lists, rebuilt when a level
+    # changes.
+    has curves: list[int] = [],
+        levels: list[int] = [],
+        curve_lists: IndexLists = IndexLists(),
+        curve_buffers: ChunkIndices = ChunkIndices(),
+        curve_shown: dict[int, list[int]] = {};
 }
 
 """A group of brush model faces that share one placement this frame: static

@@ -93,6 +93,12 @@ import from .world_mesh {
     BACKDROP_VS,
     BACKDROP_FS,
     BACKDROP_VERTICES,
+    CURVE_LOD_ERROR,
+    lod_error_for_volume,
+    grid_lines,
+    grid_steps,
+    grid_level,
+    grid_index_bytes,
     sky_box_vertices,
     triangle_points,
     face_triangles,
@@ -212,6 +218,14 @@ obj QuakeRenderer {
         brush_count: int = 0,
         cloud_mesh: GpuMesh = GpuMesh(),
         cloud_vertices: int = 0;
+    # Q3 patches that thin with distance (tr_surface.c RB_SurfaceGrid): by
+    # face, the first vertex in its chunk, the errors at which its drawn
+    # columns and rows change, and its index runs by level of detail as
+    # they are first needed. `lod_curve_error` is r_lodCurveError.
+    has curve_bases: dict[int, int] = {},
+        curve_steps: dict[int, list[float]] = {},
+        curve_runs: dict[int, dict[int, bytes]] = {},
+        lod_curve_error: float = CURVE_LOD_ERROR;
     # The map's flare surfaces by face, and those among the faces last drawn.
     has flare_faces: dict[int, bool] = {},
         shown_flares: dict[int, bool] = {};
@@ -638,6 +652,9 @@ obj QuakeRenderer {
             buffers.append(bytearray(used[c] * WORLD_VERTEX_STRIDE));
         }
         self.face_runs = [b""] * count;
+        self.curve_bases = {};
+        self.curve_steps = {};
+        self.curve_runs = {};
         fogs = min(len(level.bsp.fogs), WORLD_FOG_LIMIT);
         for f in drawn {
             face = faces[f];
@@ -676,6 +693,16 @@ obj QuakeRenderer {
             stamped = self.single_pass and len(face.vertices) == 4 and face.texture in level.surface_deforms
                 and any([deform.kind == "autosprite" for deform in level.surface_deforms[face.texture]]);
             self.face_runs[f] = face_index_bytes(face, base, SPRITE_STAMP_CORNERS if stamped else []);
+            # A world patch with columns or rows to spare is drawn at the
+            # view's level of detail; one on a brush model keeps them all.
+            if face.grid_width > 0 and f < self.world_faces {
+                steps = grid_steps(face.width_errors, face.height_errors);
+                if steps {
+                    self.curve_bases[f] = base;
+                    self.curve_steps[f] = steps;
+                    self.curve_runs[f] = {};
+                }
+            }
         }
         self.chunks = [];
         for c in range(chunk_count) {
@@ -701,11 +728,12 @@ obj QuakeRenderer {
     """The index lists of a visible face set: reused while the same set comes
     back (Level.visible keeps its lists while the view stays in a leaf),
     rebuilt otherwise into the least recently used of three slots."""
-    def visible_indices(level: Level, faces: list[int]) -> VisibleIndices {
+    def visible_indices(level: Level, faces: list[int], eye: Vec3) -> VisibleIndices {
         self.view_clock += 1;
         for view in self.views {
             if view.faces is faces {
                 view.used = self.view_clock;
+                self.gather_curves(level, view, eye);
                 return view;
             }
         }
@@ -735,9 +763,17 @@ obj QuakeRenderer {
         lists = IndexLists(chunks=[bytearray() for c in range(len(self.chunks))], spans={});
         shown: list[int] = [];
         bsp_faces = level.bsp.faces;
+        view.curves = [];
+        view.levels = [];
+        view.curve_lists = IndexLists();
+        view.curve_shown = {};
         for f in faces {
             if f < len(self.brush_face) and not self.brush_face[f] and not bsp_faces[f].hidden {
-                shown.append(f);
+                if f in self.curve_steps {
+                    view.curves.append(f);
+                } else {
+                    shown.append(f);
+                }
                 t = bsp_faces[f].texture;
                 if t in level.portal_ranges {
                     if t not in view.portal_faces {
@@ -751,7 +787,53 @@ obj QuakeRenderer {
         view.shown = self.batches_by_pass(lists.spans);
         view.lists = lists;
         view.buffers.fill(lists);
+        self.gather_curves(level, view, eye);
         return view;
+    }
+
+    """tr_surface.c RB_SurfaceGrid's choice of columns and rows for each
+    patch of a visible set, seen from `eye` along the view's forward axis:
+    each patch's level of detail from LodErrorForVolume, and, when any has
+    changed since the set's patches were last gathered, their index lists
+    again."""
+    def gather_curves(level: Level, view: VisibleIndices, eye: Vec3) {
+        if not view.curves {
+            return;
+        }
+        faces = level.bsp.faces;
+        levels: list[int] = [];
+        for f in view.curves {
+            face = faces[f];
+            allowed = lod_error_for_volume(face.lod_origin, face.lod_radius, eye, self.view_forward, self.lod_curve_error);
+            levels.append(grid_level(self.curve_steps[f], allowed));
+        }
+        if levels == view.levels {
+            return;
+        }
+        view.levels = levels;
+        for k in range(len(view.curves)) {
+            f = view.curves[k];
+            runs = self.curve_runs[f];
+            if levels[k] not in runs {
+                face = faces[f];
+                steps = self.curve_steps[f];
+                # Level 0 draws what has no error; each level above, what the
+                # step below it allows.
+                allowed = steps[levels[k] - 1] if levels[k] > 0 else 0.0;
+                runs[levels[k]] = grid_index_bytes(
+                    face.grid_width,
+                    grid_lines(face.width_errors, allowed),
+                    grid_lines(face.height_errors, allowed),
+                    self.curve_bases[f]
+                );
+            }
+            self.face_runs[f] = runs[levels[k]];
+        }
+        lists = IndexLists(chunks=[bytearray() for c in range(len(self.chunks))], spans={});
+        gather_indices(lists, view.curves, self.face_chunks, self.face_batches, self.face_runs);
+        view.curve_shown = self.batches_by_pass(lists.spans);
+        view.curve_lists = lists;
+        view.curve_buffers.fill(lists);
     }
 
     """Group the brush models' faces by placement for this frame (world_mesh
@@ -1335,6 +1417,13 @@ obj QuakeRenderer {
             }
             self.draw_spans(view.lists.spans[batch.id], view.buffers);
         }
+        if batch.id in view.curve_lists.spans {
+            self.place(program, -1, tinted);
+            if textured {
+                rlEnableTexture(u32(self.batch_texture(level, batch, -1)));
+            }
+            self.draw_spans(view.curve_lists.spans[batch.id], view.curve_buffers);
+        }
         if batch.id not in self.brush_batches {
             return;
         }
@@ -1364,6 +1453,20 @@ obj QuakeRenderer {
                 }
                 rlEnableTexture(u32(self.batch_texture(level, batch, -1)));
                 self.draw_spans(view.lists.spans[id], view.buffers);
+                if batch.two_sided {
+                    rlEnableBackfaceCulling();
+                }
+            }
+        }
+        if kind in view.curve_shown {
+            for id in view.curve_shown[kind] {
+                batch = self.batches[id];
+                self.place(program, -1, True);
+                if batch.two_sided {
+                    rlDisableBackfaceCulling();
+                }
+                rlEnableTexture(u32(self.batch_texture(level, batch, -1)));
+                self.draw_spans(view.curve_lists.spans[id], view.curve_buffers);
                 if batch.two_sided {
                     rlEnableBackfaceCulling();
                 }
@@ -1443,7 +1546,7 @@ obj QuakeRenderer {
 
     """Whether a batch has anything to draw this frame."""
     def batch_shown(batch: SurfaceBatch, view: VisibleIndices) -> bool {
-        return batch.id in view.lists.spans or batch.id in self.brush_batches;
+        return batch.id in view.lists.spans or batch.id in view.curve_lists.spans or batch.id in self.brush_batches;
     }
 
     """The eight dynamic lights as the lit and base shaders read them: where,
@@ -1474,7 +1577,7 @@ obj QuakeRenderer {
         if not self.chunks {
             return 0;
         }
-        view = self.visible_indices(level, faces);
+        view = self.visible_indices(level, faces, eye);
         self.shown_flares = view.flares;
         self.update_brushes(level);
         if self.single_pass {
@@ -1486,7 +1589,7 @@ obj QuakeRenderer {
             self.draw_q1_sky(level, view, eye);
             self.draw_liquids(level, view);
         }
-        return view.lists.faces + self.brush_count;
+        return view.lists.faces + view.curve_lists.faces + self.brush_count;
     }
 
     """Q1/Q2 lightmapped surfaces in one pass: texture, light styles, dynamic
@@ -2035,6 +2138,7 @@ obj QuakeRenderer {
         self.chunks = [];
         for view in self.views {
             view.buffers.close();
+            view.curve_buffers.close();
         }
         self.views = [];
         self.brush_buffers.close();

@@ -19,7 +19,14 @@ import from ..bsp {
     parse_entities
 }
 import from ...math.vec3 { Vec3 }
-import from .curve { Vertex, CurveGrid, subdivide_patch, stitch_all_patches, CURVE_SUBDIVISIONS }
+import from .curve {
+    Vertex,
+    CurveGrid,
+    subdivide_patch,
+    stitch_all_patches,
+    fix_all_shared_lod_errors,
+    CURVE_SUBDIVISIONS
+}
 
 def add_vertex(face: Face, v: Vertex) {
     face.vertices.append(v.pos);
@@ -51,13 +58,21 @@ def patch_grid(
     return subdivide_patch(width, height, controls, subdivisions);
 }
 
-"""Give a face its grid's vertices, row by row, and two triangles a cell."""
+"""Give a face its grid's vertices and their normals, row by row, two
+triangles a cell, and what the renderer needs to thin the grid with distance."""
 def emit_grid(face: Face, grid: CurveGrid) {
     for row in grid.rows {
         for v in row {
             add_vertex(face, v);
+            face.normals.append(v.normal);
         }
     }
+    face.grid_width = grid.width;
+    face.grid_height = grid.height;
+    face.width_errors = list(grid.width_errors);
+    face.height_errors = list(grid.height_errors);
+    face.lod_origin = grid.lod_origin;
+    face.lod_radius = grid.lod_radius;
     for y in range(grid.height - 1) {
         for x in range(grid.width - 1) {
             a = y * grid.width + x;
@@ -287,8 +302,10 @@ def parse_q3(data: bytes, subdivisions: float = CURVE_SUBDIVISIONS) -> Bsp {
         }
         bsp.faces.append(face);
     }
-    # R_StitchAllPatches, then the grids become the faces' vertices.
+    # R_StitchAllPatches and R_FixSharedVertexLodError, then the grids
+    # become the faces' vertices.
     stitch_all_patches(grids);
+    fix_all_shared_lod_errors(grids);
     for k in range(len(patches)) {
         emit_grid(patches[k], grids[k]);
         patches[k].plane_dist = patches[k].normal.dot(patches[k].vertices[0]);

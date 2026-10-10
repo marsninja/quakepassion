@@ -168,6 +168,7 @@ impl App.render_frame() {
         combat_lights(self.level.lighting, self.world, p, self.combat, self.tick_blend);
         self.quake.time = self.simulation_time;
         self.quake.blend = self.tick_blend;
+        self.quake.lod_curve_error = self.renderer.cvars.lod_curve_error.number;
         self.render_times.visible = (time.time() - stamp) * 1000.0;
         stamp = time.time();
         self.render_portal(faces);

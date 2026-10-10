@@ -54,6 +54,24 @@ and builds the level graph.
   between a finely and a coarsely subdivided one. `r_subdivisions` takes
   effect at the next map load. Collision keeps its own facets from the
   control points (cm_patch, `engine/physics/patch_collide.jac`).
+  - **Normals.** `MakeMeshNormals` gives each grid vertex the sum of the
+    normals of the triangles it makes with the eight vertices round it,
+    looking up to three steps out past a coincident one and round the seam
+    of a grid that closes on itself. Environment mapping, specular alpha and
+    `deformVertexes` read that normal.
+  - **Distance.** Each column and row keeps the error it was added for
+    (`widthLodError`, `heightLodError`), and `R_FixSharedVertexLodError`
+    gives border vertices that grids of one LOD group share the same one.
+    Each frame `RB_SurfaceGrid`'s choice is made per patch in view
+    (`gather_curves`, `engine/render/quake.jac`): `LodErrorForVolume` allows
+    `r_lodCurveError` (250) over the group's depth into the view (its radius
+    taken off, along the view's forward axis), and a column or row is drawn
+    while its error is within that: one added for a deviation of 5 units is
+    drawn out to a depth of 1250. The vertices stay in the world's vertex
+    chunks; a patch's index run is built for each level of detail as it is
+    first needed, and the visible patches' index lists are gathered again
+    only when one's level changes. A portal or mirror view chooses for its
+    own eye.
 - **The BSP graph.** Every game's tree becomes `Split` and `BspArea` (leaf)
   nodes joined by `Front`/`Back` edges. `Locate` walks to the eye's leaf and
   `CollectFaces` gathers the faces of the visible leaves.
@@ -305,9 +323,15 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   `effect_quads_tests`, `lightfx_render_tests` (the sky box mesh and its
   rotation, streamed triangles, particle records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
   `flare_tests` (adding, dimming, fading and dropping flares), `curve_tests`
-  (patch subdivision and stitching).
+  (patch subdivision, stitching, normals, and the errors and distances
+  columns and rows are dropped at).
 - `scripts/validate_patches.jac` subdivides and stitches every Q3 map's
-  patches and sets their triangle counts beside the former fixed eight steps.
+  patches, checks each vertex's normal and each column's and row's error, and
+  sets the triangle counts beside the former fixed eight steps and beside
+  the fewest a distant view draws. `scripts/patch_lod_smoke.jac` draws a
+  spawn view of q3dm1, q3dm7 and q3dm17 at the default `r_lodCurveError`,
+  with every row and column and with the fewest, and prints the patches in
+  view and their triangles for each.
 - Native comparisons: `scripts/model_gpu_smoke.jac` draws the same scene
   through the GPU and legacy model paths (they differ in under 0.01% of
   pixels); `scripts/gpu_smoke.jac` exercises `engine/render/gpu.jac`;
@@ -325,10 +349,10 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
 - Brush models (doors, plats, trains) are neither PVS- nor area-culled, and
   an entity is area-culled by the leaf its origin is in, not by every leaf
   its box touches.
-- Patches draw at their full `r_subdivisions` detail at any distance; the
-  original also drops rows and columns as a patch recedes
-  (`r_lodCurveError`). Their vertices share the face's one normal rather than
-  `MakeMeshNormals`' per-vertex ones.
+- A patch on a brush model (a door or lift with a curved face) draws at its
+  full `r_subdivisions` detail at any distance; world patches thin as the
+  original's do. Triangle soups and planar faces take their surface's one
+  normal rather than the map's per-vertex ones.
 - Q3 shaders: directives the parser does not know are recorded in
   `material.unsupported` and skipped.
 - Q3 flares are tested with a trace through the world instead of the
