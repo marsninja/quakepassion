@@ -75,6 +75,9 @@ node MonsterBody(Player) {
     # later, once the systems that give a newly alerted monster its goal
     # have run.
     has step_due: bool = False;
+    # The last frame of the pain or death it is playing whose step it has
+    # taken, so that each frame steps once.
+    has step_frame: int = -1;
 
     """Where the body is for every step's purposes, as a `pos`: where the
     step it is being carried through ends (SV_movestep moved it at once)."""

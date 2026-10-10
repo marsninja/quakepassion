@@ -5,7 +5,18 @@ import math;
 import from games.enemies { enemy_rule }
 import from engine.world.world { World, Player }
 import from engine.world.level { Level }
-import from engine.world.combat { CombatState, CombatTick, Opponent, HasOpponent }
+import from engine.world.combat {
+    CombatState,
+    CombatTick,
+    Opponent,
+    HasOpponent,
+    StepField,
+    attack_charge,
+    begin_attack,
+    ensure_profiles,
+    pain_length,
+    pain_stagger
+}
 import from engine.world.opponent_rule { OpponentRule }
 import from engine.world.trail { TrailTick }
 import from engine.core.savegame { snapshot, restore }
@@ -204,4 +215,94 @@ test "the chase survives a save" {
     assert abs(math.degrees(loaded.yaw) - 20.0) < 0.0001;
     # A monster that has never stepped writes nothing and loads untouched.
     assert other.step_random == 0 and other.stride_time == 0.0 and "STEP 1" not in data;
+}
+
+"""Begin the attack sequence `name` at `target`."""
+def charge_with(enemy: Opponent, name: str, target: Vec3) {
+    ensure_profiles(enemy);
+    for i in range(len(enemy.profiles)) {
+        if enemy.profiles[i].name == name {
+            begin_attack(enemy, i, target);
+            return;
+        }
+    }
+    raise ValueError("No attack sequence " + name);
+}
+
+"""Play the attack a monster is in for `seconds`, in 20 Hz slices, carrying
+each frame's step as the combat tick does."""
+def charge_on(
+    enemy: Opponent, player: Player, collision: CollisionMap, seconds: float, field: StepField | None = None
+) {
+    for slice in range(int(seconds * 20.0 + 0.5)) {
+        attack_charge(enemy, player, collision, 0.05, field);
+        enemy.advance(0.05);
+        enemy.attack_clock += 0.05;
+    }
+}
+
+test "a pain frame's step is a walkmove: whole, or not at all with a body in its way" {
+    collision = chase_floor();
+    collision.reindex();
+    # mutant_move_pain2 throws it 24 back in its first frame.
+    for scenario in ["clear", "guarded", "corpse"] {
+        mutant = chaser("q2", "monster_mutant", Vec3(z=22.0));
+        mutant.pain_variant = 2;
+        mutant.pain_wait = pain_length(mutant);
+        guard = chaser("q2", "monster_soldier", Vec3(x=-(mutant.rule.width + 16.0 + 10.0), z=22.0));
+        if scenario == "corpse" {
+            guard.health = 0;
+        }
+        field = StepField();
+        if scenario != "clear" {
+            field.file(guard);
+        }
+        pain_stagger(mutant, collision, 0.05, None, field);
+        # A living soldier 10 units behind its box stops the step; nothing,
+        # or a corpse, does not.
+        assert mutant.standing().x == (0.0 if scenario == "guarded" else -24.0) , scenario;
+        assert mutant.pos.x == 0.0;
+    }
+}
+
+test "Q2 ai_charge walks along the monster's own facing, Q1's goes at the enemy" {
+    collision = chase_floor();
+    collision.reindex();
+    player = Player(pos=Vec3(x=1500.0, z=22.0), health=100000, god_mode=True);
+    # soldier_move_attack6: fourteen ai_charge distances, 168 by MODEL_SCALE
+    # 1.2. Facing north with its enemy due east, it runs north
+    # (M_walkmove(self, self->s.angles[YAW], dist)).
+    soldier = chaser("q2", "monster_soldier_light", Vec3(z=22.0));
+    soldier.yaw = math.pi / 2.0;
+    soldier.attack_wait = 0.0;
+    charge_with(soldier, "attack6", player.pos);
+    charge_on(soldier, player, collision, 1.4);
+    assert abs(soldier.pos.y - 168.0 * 1.2) < 0.01 and abs(soldier.pos.x) < 0.01;
+    # hknight_char_a: ai_charge is ai_face and movetogoal. Facing its enemy
+    # the hell knight runs at it, and takes no step that would reach its box
+    # (SV_CloseEnough): it ends within its longest step of 25, and two
+    # units, of the player's box, and never inside it.
+    near = Player(pos=Vec3(x=300.0, z=22.0), health=100000, god_mode=True);
+    knight = chaser("q1", "monster_hell_knight", Vec3(z=22.0));
+    knight.attack_wait = 0.0;
+    charge_with(knight, "charge", near.pos);
+    furthest = 0.0;
+    for slice in range(32) {
+        attack_charge(knight, near, collision, 0.05);
+        knight.advance(0.05);
+        knight.attack_clock += 0.05;
+        furthest = max(furthest, knight.pos.x);
+    }
+    assert furthest <= 268.0 and furthest >= 268.0 - 27.0 , str(furthest);
+    assert abs(knight.pos.y) < 0.01 and knight.ideal_yaw == 0.0;
+    # Facing square away from its enemy it turns before it steps: nothing
+    # for two frames (SV_StepDirection), though the frames step 20 and 25.
+    turned = chaser("q1", "monster_hell_knight", Vec3(z=22.0));
+    turned.yaw = math.pi / 2.0;
+    turned.attack_wait = 0.0;
+    charge_with(turned, "charge", near.pos);
+    charge_on(turned, near, collision, 0.2);
+    assert turned.pos.x == 0.0 and turned.pos.y == 0.0;
+    charge_on(turned, near, collision, 0.2);
+    assert turned.pos.x > 15.0;
 }

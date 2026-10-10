@@ -29,14 +29,16 @@ import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .bot_travel { FollowRoute, TravelResult, TRAVEL_JUMP_SPEED }
 import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
 import from .trail { TrailMark, first_crumb, next_crumb, trail_clock }
-import from .monster_move { MonsterBody, StepSpace, MoveToGoal, SlideMove, vectoyaw, box_meets }
+import from .monster_move {
+    MonsterBody, StepSpace, WalkMove, MoveToGoal, SlideMove, anglemod, vectoyaw, box_meets
+}
 import from .liquids { LiquidProbe }
 import from .speakers { Speaker }
 import from .signals { Signal, HasSignal, Fire }
 import from .pickups { Pickup }
 import from ..formats.bsp { Bsp }
 import from ..physics.collision { CollisionMap, Trace }
-import from ..physics.movement { MovePlayer, MovementProfile, movement_profile, step_slide, slide }
+import from ..physics.movement { MovePlayer, MovementProfile, movement_profile, slide }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..math.aabb { AABB }
 import from ..math.orientation { change_yaw }
@@ -3462,6 +3464,14 @@ def monster_random(enemy: Opponent) -> float {
     return float(enemy.shot_random) / 2147483647.0;
 }
 
+"""Seed the stream a monster's steps draw their rand() from, beside its
+attack rolls, the first time it steps."""
+def seed_steps(enemy: Opponent) {
+    if enemy.step_random <= 0 {
+        enemy.step_random = max(1, (enemy.shot_random * 69621) % 2147483647);
+    }
+}
+
 """The walk cycle a monster is on: its rule's `walk`, or the other walk it
 took when it set off."""
 def walk_gait(enemy: Opponent) -> Gait {
@@ -3540,76 +3550,199 @@ def inside_target(target: Player, height: float, origin: Vec3, mover: Opponent) 
         and origin.z + rule.hull_top > feet.z + bottom;
 }
 
-"""Q1 walkmove / Q2 M_walkmove for the part of a frame's stride one tick
-covers: the monster moves by `motion` with its own box, over stairs and along
-walls, and not at all when the ground would end under it (SV_movestep's
-bottom check) or the step would put it inside `blocker`'s box. Every stride
-a sequence authors (attack `steps`, and the frames of a pain or a death)
-moves through here."""
-def sequence_stride(
-    enemy: Opponent,
-    collision: CollisionMap,
-    motion: Vec3,
-    dt: float,
-    blocker: Player | None = None,
-    blocker_height: float = 22.0
-) {
-    flies = enemy.rule.movement in ["fly", "swim"];
-    if dt <= 0.0
-        or dt > 0.05
-        or motion.length() <= 0.000001
-        or (not flies and not enemy.grounded) {
-        return;
-    }
-    collision = monster_collision(collision, enemy);
-    body = enemy.pos.sub(Vec3(z=enemy.eye_height));
-    ahead = body.add(motion);
-    if blocker is not None
-        and inside_target(blocker, blocker_height, ahead, enemy)
-        and not inside_target(blocker, blocker_height, body, enemy) {
-        return;
-    }
-    if flies {
-        # SV_movestep for FL_FLY and FL_SWIM: the whole step or none, and a
-        # swimmer out of the water stays where it is. The dead fall instead.
-        if enemy.health <= 0
-            or (enemy.rule.movement == "swim" and enemy.water_depth < 2) {
-            return;
-        }
-        clear = collision.trace(body, ahead);
-        if not clear.start_solid and clear.fraction == 1.0 {
-            enemy.pos = ahead.add(Vec3(z=enemy.eye_height));
-        }
-        return;
-    }
-    support = collision.trace(ahead.add(Vec3(z=18.0)), ahead.sub(Vec3(z=18.0)));
-    if support.fraction == 1.0 or support.normal.z < 0.7 {
-        return;
-    }
-    moved = step_slide(collision, body, motion.scale(1.0 / dt), dt, True);
-    enemy.pos = moved.pos.add(Vec3(z=enemy.eye_height));
-    enemy.velocity.x = 0.0;
-    enemy.velocity.y = 0.0;
+"""The key of the 64-unit bucket a body is filed in."""
+def bucket_key(x: int, y: int) -> str {
+    return str(x) + ":" + str(y);
 }
 
-"""How far a sequence's frame `steps` carry a monster while its pose goes
-from frame `pose` to `reached`, fractions of a frame included."""
-def stride_span(steps: list[float], pose: float, reached: float) -> float {
-    total = 0.0;
-    for frame in range(max(0, int(pose)), min(len(steps), int(reached) + 1)) {
-        share = min(reached, float(frame + 1)) - max(pose, float(frame));
-        total += max(0.0, share) * steps[frame];
+"""What a level holds for monsters' steps to be traced against, gathered
+once a tick (CombatTick.begin): its solid bodies in 64-unit buckets, each
+filed where its own step ends, how wide the widest of them is, the player,
+and the liquids. `space` gives one monster the StepSpace of a step."""
+obj StepField {
+    has neighbors: dict[str, list[Opponent]] = {},
+        widest: float = 0.0,
+        player: Player | None = None,
+        player_height: float = 22.0,
+        player_drop: float = 0.0,
+        liquids: LiquidProbe | None = None;
+
+    def file(body: Opponent) {
+        spot = body.standing();
+        key = bucket_key(int(math.floor(spot.x / 64.0)), int(math.floor(spot.y / 64.0)));
+        if key not in self.neighbors {
+            self.neighbors[key] = [];
+        }
+        self.neighbors[key].append(body);
+        self.widest = max(self.widest, body.rule.width);
     }
-    return total;
+
+    """What `here`'s step of `dist` is traced against (StepSpace): the
+    view of its own box, the box SV_CheckBottom tests the floor under, the
+    liquids and its Q2 waterlevel, and every other solid body such a step
+    could reach: monsters from the buckets, and the player while it lives.
+    A body `here` already overlaps (a leap, a knock or a fall can leave two
+    so) is left out, so that they can part. `foe` is its enemy, whose
+    height a flier or swimmer holds its own by."""
+    def space(here: Opponent, foe: Player | None, dist: float, view: CollisionMap) -> StepSpace {
+        rule = here.rule;
+        mins = Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom);
+        maxs = Vec3(x=rule.width, y=rule.width, z=rule.hull_top);
+        origin = here.pos.sub(Vec3(z=here.eye_height));
+        space = StepSpace(collision=view, game=here.game, mins=mins, maxs=maxs, liquids=self.liquids);
+        if not here.own_hull {
+            # Away from its own game's maps a monster moves in the map's box.
+            box = view.hull_box();
+            space.mins = box.mins;
+            space.maxs = box.maxs;
+        }
+        reach = rule.width + self.widest + abs(dist) + 2.0;
+        span = int(math.ceil(reach / 64.0));
+        x = int(math.floor(here.pos.x / 64.0));
+        y = int(math.floor(here.pos.y / 64.0));
+        for dx in range(-span, span + 1) {
+            for dy in range(-span, span + 1) {
+                key = bucket_key(x + dx, y + dy);
+                if key not in self.neighbors {
+                    continue;
+                }
+                for other in self.neighbors[key] {
+                    if other is here or not solid_actor(other) {
+                        continue;
+                    }
+                    solid = other.solid_box();
+                    if not box_meets(origin, mins, maxs, solid) {
+                        space.solids.append(solid);
+                    }
+                }
+            }
+        }
+        person = self.player;
+        if person is not None and person.health > 0 {
+            feet = person.pos.sub(Vec3(z=self.player_height));
+            solid = AABB(
+                mins=feet.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
+                maxs=feet.add(Vec3(x=16.0, y=16.0, z=32.0 - self.player_drop))
+            );
+            if not box_meets(origin, mins, maxs, solid) {
+                space.solids.append(solid);
+            }
+        }
+        if foe is not None {
+            # Q1 `enemy != world`, Q2 `ent->enemy`: an alerted monster has one.
+            space.chasing = here.alert > 0.0;
+            space.seek_z = foe.pos.z
+                - (foe.eye_height if isinstance(foe, Opponent) else self.player_height);
+            space.seek_client = not isinstance(foe, Opponent);
+        }
+        liquids = self.liquids;
+        if here.game == "q2" and liquids is not None {
+            # M_CatagorizePosition: the feet, 26 units up and 22 more.
+            feet = origin.add(Vec3(z=space.mins.z + 1.0));
+            if liquids.kind_at(feet) > 0 {
+                space.water_level = 1;
+                if liquids.kind_at(feet.add(Vec3(z=26.0))) > 0 {
+                    space.water_level = 2;
+                    if liquids.kind_at(feet.add(Vec3(z=48.0))) > 0 {
+                        space.water_level = 3;
+                    }
+                }
+            }
+        }
+        return space;
+    }
+}
+
+"""The StepSpace of a step a sequence's frame takes. Stepped on its own,
+outside a level's tick, a monster has only its enemy in its way."""
+def sequence_space(
+    enemy: Opponent,
+    collision: CollisionMap,
+    foe: Player | None,
+    dist: float,
+    field: StepField | None
+) -> StepSpace {
+    view = monster_collision(collision, enemy);
+    if field is not None {
+        return field.space(enemy, foe, dist, view);
+    }
+    lone = StepField(player_height=collision.eye_height, player_drop=collision.top_drop);
+    if isinstance(foe, Opponent) {
+        lone.file(foe);
+    } elif foe is not None {
+        lone.player = foe;
+    }
+    return lone.space(enemy, foe, dist, view);
+}
+
+"""The frames of the pain or death a monster is playing that begin while
+its pose goes from `pose` up to `reached` (a frame begins as the pose
+reaches its number), each once: `step_frame` remembers the last one taken,
+so a frame whose number falls between two slices of time is neither missed
+nor taken twice."""
+def frames_begun(enemy: Opponent, count: int, pose: float, reached: float) -> list[int] {
+    if pose <= 0.000001 {
+        # The sequence is only now beginning.
+        enemy.step_frame = -1;
+    }
+    begun: list[int] = [];
+    for frame in range(max(enemy.step_frame + 1, int(math.ceil(pose - 0.000001))), count) {
+        if float(frame) >= reached {
+            break;
+        }
+        begun.append(frame);
+        enemy.step_frame = frame;
+    }
+    return begun;
+}
+
+"""Whether a sequence's frames may step a monster at all: a flier or
+swimmer that is dead falls instead, and a swimmer out of its depth stays
+where it is."""
+def sequence_steps(enemy: Opponent) -> bool {
+    if enemy.rule.movement not in ["fly", "swim"] {
+        return True;
+    }
+    return enemy.health > 0 and not (enemy.rule.movement == "swim" and enemy.water_depth < 2);
+}
+
+"""Q1 walkmove / Q2 M_walkmove for a frame of a sequence (an attack's
+`steps`, the frames of a pain or a death): one step of `dist` along `yaw`
+degrees, all of it or none, over stairs but not off a ledge, into a wall or
+into another body, as SV_movestep takes it. The step moves the monster at
+once and is then carried over the `seconds` its frame has left."""
+def sequence_step(
+    enemy: Opponent,
+    collision: CollisionMap,
+    yaw: float,
+    dist: float,
+    seconds: float,
+    foe: Player | None = None,
+    field: StepField | None = None
+) -> bool {
+    if dist == 0.0 or not sequence_steps(enemy) {
+        return False;
+    }
+    enemy.settle();
+    start = enemy.pos;
+    walk = enemy spawn WalkMove(
+        space=sequence_space(enemy, collision, foe, dist, field), yaw=yaw, dist=dist
+    );
+    enemy.stride(start, seconds);
+    return walk.moved;
 }
 
 """Play the pain a monster is in on for the next `dt` seconds: what its
-frames do as they are entered, and their strides along its facing (Q1
-ai_painforward against ai_pain's step back, Q2 `{ai_move, dist}`). It
-staggers but keeps the ground it stands on and stops at walls, as every
-sequence stride does."""
+frames do as they are entered, and the step each takes (Q1 ai_painforward
+against ai_pain's step back, Q2 `{ai_move, dist}`). It staggers but keeps
+the ground it stands on and stops at walls and other bodies, as every
+sequence step does."""
 def pain_stagger(
-    enemy: Opponent, collision: CollisionMap, dt: float, blocker: Player | None = None
+    enemy: Opponent,
+    collision: CollisionMap,
+    dt: float,
+    blocker: Player | None = None,
+    field: StepField | None = None
 ) {
     if enemy.pain_wait <= 0.0 or enemy.health <= 0 {
         return;
@@ -3638,57 +3771,114 @@ def pain_stagger(
         return;
     }
     frame_sounds(enemy, sequence.events, pose, reached);
-    if not sequence.steps {
-        return;
+    facing = anglemod(math.degrees(enemy.yaw));
+    for frame in frames_begun(enemy, len(sequence.steps), pose, reached) {
+        dist = sequence.steps[frame] * enemy.rule.step_scale;
+        # Q1 ai_painforward is walkmove(ideal_yaw, dist); ai_pain steps back
+        # along the facing, as Q2's ai_move steps either way.
+        yaw = enemy.ideal_yaw if enemy.game == "q1" and dist > 0.0 else facing;
+        sequence_step(
+            enemy, collision, yaw, dist, (float(frame + 1) - pose) * 0.1, blocker, field
+        );
     }
-    distance = stride_span(sequence.steps, pose, reached) * enemy.rule.step_scale;
-    sequence_stride(enemy, collision, forward_from(enemy.yaw, 0.0).scale(distance), dt);
 }
 
-"""Stride the frames of the death a monster is falling on (Q1 ai_back and
-ai_forward in the die frames, Q2 `{ai_move, dist}`)."""
-def death_stride(enemy: Opponent, collision: CollisionMap, dt: float) {
+"""Step the frames of the death a monster is falling on as they begin (Q1
+ai_back and ai_forward in the die frames, Q2 `{ai_move, dist}`): walkmove
+along its facing."""
+def death_stride(
+    enemy: Opponent, collision: CollisionMap, dt: float, field: StepField | None = None
+) {
     sequence = death_sequence(enemy);
-    if sequence is None or not sequence.steps or enemy.gibbed {
+    if sequence is None or not sequence.steps or enemy.gibbed or dt <= 0.0 {
         return;
     }
-    distance = stride_span(
-        sequence.steps, enemy.animation_time, enemy.animation_time + dt * 10.0
-    )
-        * enemy.rule.step_scale;
-    sequence_stride(enemy, collision, forward_from(enemy.yaw, 0.0).scale(distance), dt);
+    pose = enemy.animation_time;
+    facing = anglemod(math.degrees(enemy.yaw));
+    for frame in frames_begun(enemy, len(sequence.steps), pose, pose + dt * 10.0) {
+        sequence_step(
+            enemy,
+            collision,
+            facing,
+            sequence.steps[frame] * enemy.rule.step_scale,
+            (float(frame + 1) - pose) * 0.1,
+            None,
+            field
+        );
+    }
 }
 
-# Integrate authored charge distances across 10 Hz animation frames, using the
-# same stair/slide collision as walking. A charge heads at the target (Q1/Q2
-# ai_charge's movetogoal), or for a flyby stride at a point `side` to its
-# left (Q1 ai_charge_side's walkmove); either way SV_movestep refuses a step
-# into the target's box. Strides follow the pose, so a frame a burst holds
-# moves once (Q2 M_MoveFrame passes a held frame no distance), and are scaled
-# like the gaits (monsterinfo.scale).
-def attack_charge(enemy: Opponent, player: Player, collision: CollisionMap, dt: float) {
+"""The steps an attack's frames take as they begin, each the frame's
+distance scaled like the gaits (monsterinfo.scale). A frame a burst holds
+steps once, as it is first shown (Q2 M_MoveFrame passes a held frame no
+distance).
+
+- Q2 ai_charge and ai_move walk along the monster's own facing
+  (M_walkmove(self, self->s.angles[YAW], dist)), which ai_charge has turned
+  toward the enemy.
+- Q1 ai_charge is ai_face then movetogoal: a step at the enemy, not taken
+  where it would reach the enemy's box (SV_CloseEnough).
+- Q1 ai_charge_side walks at a point `side` units to the left of the enemy,
+  for a flyby."""
+def attack_charge(
+    enemy: Opponent,
+    player: Player,
+    collision: CollisionMap,
+    dt: float,
+    field: StepField | None = None
+) {
     profile = current_profile(enemy);
     steps = profile.steps;
     if not enemy.grounded or not steps or dt <= 0.0 or dt > 0.05 {
         return;
     }
-    height = player.eye_height
-        if isinstance(player, Opponent)
-        else collision.eye_height;
-    goal = player.pos.sub(enemy.pos);
-    goal.z = 0.0;
-    left = Vec3(x=-math.sin(enemy.yaw), y=math.cos(enemy.yaw));
-    pose = attack_pose_at(enemy, enemy.attack_clock);
-    reached = attack_pose_at(enemy, enemy.attack_clock + dt);
-    motion = Vec3();
+    clock = enemy.attack_clock;
     for frame in range(len(steps)) {
-        start = max(pose, float(frame));
-        finish = min(reached, float(frame + 1));
-        share = max(0.0, finish - start) * steps[frame] * enemy.rule.step_scale;
+        begins = attack_clock_at(enemy, float(frame) * 0.1);
+        dist = steps[frame] * enemy.rule.step_scale;
+        if begins < clock or begins >= clock + dt or dist == 0.0 {
+            continue;
+        }
+        seconds = begins + 0.1 - clock;
+        if enemy.game != "q1" {
+            sequence_step(
+                enemy, collision, anglemod(math.degrees(enemy.yaw)), dist, seconds, player, field
+            );
+            continue;
+        }
+        if not sequence_steps(enemy) {
+            continue;
+        }
+        enemy.settle();
+        start = enemy.pos;
+        origin = enemy.pos.sub(Vec3(z=enemy.eye_height));
+        target = player.pos.sub(
+            Vec3(z=player.eye_height if isinstance(player, Opponent) else collision.eye_height)
+        );
+        space = sequence_space(enemy, collision, player, dist, field);
         side = profile.sides[frame] if frame < len(profile.sides) else 0.0;
-        motion = motion.add(goal.add(left.scale(side)).normalized().scale(share));
+        if side != 0.0 {
+            left = Vec3(x=-math.sin(enemy.yaw), y=math.cos(enemy.yaw));
+            enemy spawn WalkMove(
+                space=space, yaw=vectoyaw(target.add(left.scale(side)).sub(origin)), dist=dist
+            );
+        } else {
+            seed_steps(enemy);
+            enemy.ideal_yaw = vectoyaw(target.sub(origin));
+            enemy spawn MoveToGoal(
+                space=space,
+                dist=dist,
+                goal=target,
+                near=player.solid_box()
+                    if isinstance(player, Opponent)
+                    else AABB(
+                        mins=target.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
+                        maxs=target.add(Vec3(x=16.0, y=16.0, z=32.0 - collision.top_drop))
+                    )
+            );
+        }
+        enemy.stride(start, seconds);
     }
-    sequence_stride(enemy, collision, motion, dt, player, height);
 }
 
 # Attack events run on the simulation clock, independently of the 10 Hz steering query.
@@ -3699,13 +3889,14 @@ def advance_attack_segment(
     collision: CollisionMap,
     dt: float,
     person: Player | None = None,
-    tally: CombatState | None = None
+    tally: CombatState | None = None,
+    field: StepField | None = None
 ) {
     if enemy.attack_clock < 0.0 or enemy.health <= 0 or enemy.dormant {
         return;
     }
     profile = current_profile(enemy);
-    attack_charge(enemy, player, collision, dt);
+    attack_charge(enemy, player, collision, dt, field);
     speaker = profile_speaker(enemy);
     if speaker is not None and dt > 0.0 {
         speaker.origin = enemy.pos.add(Vec3());
@@ -3910,13 +4101,14 @@ def advance_attack(
     collision: CollisionMap,
     dt: float,
     person: Player | None = None,
-    tally: CombatState | None = None
+    tally: CombatState | None = None,
+    field: StepField | None = None
 ) {
     profile = current_profile(enemy);
     if profile.repeat_start < 0.0
         or profile.repeat_end < profile.repeat_start
         or profile.repeat_end > profile.duration + 0.000001 {
-        advance_attack_segment(world, enemy, player, collision, dt, person, tally);
+        advance_attack_segment(world, enemy, player, collision, dt, person, tally, field);
         return;
     }
     remaining = dt;
@@ -3930,7 +4122,7 @@ def advance_attack(
         if crossing {
             step = max(0.0, boundary - before);
         }
-        advance_attack_segment(world, enemy, player, collision, step, person, tally);
+        advance_attack_segment(world, enemy, player, collision, step, person, tally, field);
         remaining = max(0.0, remaining - step);
         if not crossing
             or enemy.health <= 0
@@ -3948,7 +4140,7 @@ def advance_attack(
             continue;
         }
         # A shot on the first pose played next happens at the boundary.
-        advance_attack_segment(world, enemy, player, collision, 0.0, person, tally);
+        advance_attack_segment(world, enemy, player, collision, 0.0, person, tally, field);
     }
 }
 
@@ -4201,18 +4393,15 @@ walker CombatTick {
         body_collision: CollisionMap | None = None,
         bodies: dict[str, CollisionMap] = {},
         navmesh: NavMesh | None = None,
-        neighbors: dict[str, list[Opponent]] = {},
         decisions: int = 0;
-    # What monsters' steps ask of the level: its liquids, and how wide the
-    # widest living body is (how far a step must look for bodies in its way).
+    # What monsters' steps are traced against: the level's liquids, and the
+    # solid bodies filed in 64-unit buckets as the tick begins.
     has liquids: LiquidProbe | None = None,
-        widest: float = 0.0;
+        field: StepField = StepField();
     # Monsters walk by the shared rules; Q3 bots are players and move by
     # bg_pmove.c's.
     has walk_profile: MovementProfile = MovementProfile(),
         bot_profile: MovementProfile = movement_profile("q3");
-
-    def cell(x: int, y: int) -> str { return str(x) + ":" + str(y); }
 
     def nearby(pos: Vec3) -> list[Opponent] {
         result: list[Opponent] = [];
@@ -4220,84 +4409,11 @@ walker CombatTick {
         y = int(math.floor(pos.y / 64.0));
         for dx in [-1, 0, 1] {
             for dy in [-1, 0, 1] {
-                key = self.cell(x + dx, y + dy);
-                if key in self.neighbors { result.extend(self.neighbors[key]); }
+                key = bucket_key(x + dx, y + dy);
+                if key in self.field.neighbors { result.extend(self.field.neighbors[key]); }
             }
         }
         return result;
-    }
-
-    """What `here`'s steps of `dist` are traced against this frame
-    (StepSpace): the view of its own box, the box SV_CheckBottom tests the
-    floor under, the liquids and its Q2 waterlevel, and every other solid
-    body such a step could reach. Monsters come from the 64-unit buckets,
-    each where its own step ends; the player's box is solid while it lives.
-    A body `here` already overlaps (a leap, a knock or a fall can leave two
-    so) is left out, so that they can part."""
-    def step_space(here: Opponent, foe: Player, dist: float, view: CollisionMap) -> StepSpace {
-        rule = here.rule;
-        mins = Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom);
-        maxs = Vec3(x=rule.width, y=rule.width, z=rule.hull_top);
-        origin = here.pos.sub(Vec3(z=here.eye_height));
-        space = StepSpace(collision=view, game=here.game, mins=mins, maxs=maxs, liquids=self.liquids);
-        if not here.own_hull {
-            # Away from its own game's maps a monster moves in the map's box.
-            box = view.hull_box();
-            space.mins = box.mins;
-            space.maxs = box.maxs;
-        }
-        reach = rule.width + self.widest + abs(dist) + 2.0;
-        span = int(math.ceil(reach / 64.0));
-        x = int(math.floor(here.pos.x / 64.0));
-        y = int(math.floor(here.pos.y / 64.0));
-        for dx in range(-span, span + 1) {
-            for dy in range(-span, span + 1) {
-                key = self.cell(x + dx, y + dy);
-                if key not in self.neighbors {
-                    continue;
-                }
-                for other in self.neighbors[key] {
-                    if other is here or not solid_actor(other) {
-                        continue;
-                    }
-                    solid = other.solid_box();
-                    if not box_meets(origin, mins, maxs, solid) {
-                        space.solids.append(solid);
-                    }
-                }
-            }
-        }
-        person = self.player;
-        if person.health > 0 {
-            feet = person.pos.sub(Vec3(z=self.collision.eye_height));
-            solid = AABB(
-                mins=feet.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
-                maxs=feet.add(Vec3(x=16.0, y=16.0, z=32.0 - self.collision.top_drop))
-            );
-            if not box_meets(origin, mins, maxs, solid) {
-                space.solids.append(solid);
-            }
-        }
-        # Q1 `enemy != world`, Q2 `ent->enemy`: an alerted monster has one.
-        space.chasing = here.alert > 0.0;
-        space.seek_z = foe.pos.z
-            - (foe.eye_height if isinstance(foe, Opponent) else self.collision.eye_height);
-        space.seek_client = not isinstance(foe, Opponent);
-        liquids = self.liquids;
-        if here.game == "q2" and liquids is not None {
-            # M_CatagorizePosition: the feet, 26 units up and 22 more.
-            feet = origin.add(Vec3(z=space.mins.z + 1.0));
-            if liquids.kind_at(feet) > 0 {
-                space.water_level = 1;
-                if liquids.kind_at(feet.add(Vec3(z=26.0))) > 0 {
-                    space.water_level = 2;
-                    if liquids.kind_at(feet.add(Vec3(z=48.0))) > 0 {
-                        space.water_level = 3;
-                    }
-                }
-            }
-        }
-        return space;
     }
 
     """The heading a monster on its feet is going in, or none: it walks its
@@ -4345,10 +4461,7 @@ walker CombatTick {
         if here.readied >= 0 {
             return;
         }
-        if here.step_random <= 0 {
-            # The monster's own stream, taken beside its attack rolls.
-            here.step_random = max(1, (here.shot_random * 69621) % 2147483647);
-        }
+        seed_steps(here);
         start = here.pos;
         lift = Vec3(z=here.eye_height);
         origin = here.pos.sub(lift);
@@ -4356,7 +4469,7 @@ walker CombatTick {
         if here.sliding and here.rule.slide_step > 0.0 {
             dist = here.rule.slide_step;
         }
-        space = self.step_space(here, foe, dist, view);
+        space = self.field.space(here, foe, dist, view);
         foe_height = foe.eye_height
             if isinstance(foe, Opponent)
             else self.collision.eye_height;
@@ -4818,19 +4931,18 @@ walker CombatTick {
                     enemy.route_search.cancelled = True;
                     enemy.route_search = None;
                 }
-                if enemy.health <= 0 or enemy.dormant {
-                    # A body that died in mid step lies where it fell.
-                    enemy.stride_time = 0.0;
+                # The dead are filed only while they still block (a Q1
+                # monster dying, until its SOLID_NOT frame).
+                if enemy.dormant or (enemy.health <= 0 and not solid_actor(enemy)) {
                     continue;
                 }
             }
-            # A monster part-way through a step is filed where the step ends.
-            spot = enemy.standing();
-            key = self.cell(int(math.floor(spot.x / 64.0)), int(math.floor(spot.y / 64.0)));
-            if key not in self.neighbors { self.neighbors[key] = []; }
-            self.neighbors[key].append(enemy);
-            self.widest = max(self.widest, enemy.rule.width);
+            self.field.file(enemy);
         }
+        self.field.player = self.player;
+        self.field.player_height = self.collision.eye_height;
+        self.field.player_drop = self.collision.top_drop;
+        self.field.liquids = self.liquids;
         self.state.route_credit = min(
             1.0, self.state.route_credit + max(0.0, self.dt) * 8.0
         );
@@ -4960,13 +5072,18 @@ walker CombatTick {
                 }
                 here del --> item;
             }
-            death_stride(here, self.collision, self.dt);
             falling = death_sequence(here);
             played = self.dt * 10.0;
             if falling is not None and not here.gibbed and self.world is not None {
                 played = death_events(
                     self.world, here, falling, played, self.collision, self.player, self.state
                 );
+            }
+            # The frames it plays step it as they begin, and it is carried
+            # through the step it was taking, as the living are.
+            if striding(here) {
+                death_stride(here, self.collision, played * 0.1, self.field);
+                here.advance(self.dt);
             }
             here.animation_time += played;
             if here.death_animation {
@@ -5152,7 +5269,7 @@ walker CombatTick {
             else self.collision.eye_height;
         delta = foe.pos.sub(here.pos);
         distance = delta.length();
-        pain_stagger(here, self.collision, self.dt, self.player);
+        pain_stagger(here, self.collision, self.dt, self.player, self.field);
         here.pain_wait = max(0.0, here.pain_wait - self.dt);
         here.duck_wait = max(0.0, here.duck_wait - self.dt);
         if here.pain_wait <= 0.0 and here.pain_down {
@@ -5566,7 +5683,7 @@ walker CombatTick {
         }
         if self.world is not None and here.character is None {
             advance_attack(
-                self.world, here, foe, self.collision, self.dt, self.player, self.state
+                self.world, here, foe, self.collision, self.dt, self.player, self.state, self.field
             );
         }
         if striding(here) {

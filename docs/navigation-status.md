@@ -48,6 +48,19 @@ players and route over the map's AAS; see
 - **Other steps.** `WalkMove` is `PF_walkmove` / `M_walkmove`: one step
   along a yaw, all or nothing. `SlideMove` is `ai_run_slide`: turn to the
   enemy and step square to it, changing sides when blocked.
+- **Attack, pain and death frames.** The steps a sequence authors
+  (`AttackProfile.steps`, `Reaction.steps`) are taken the same way, each
+  whole as its frame begins (`attack_charge`, `pain_stagger`,
+  `death_stride` through `sequence_step`) and blocked by the world and by
+  other bodies like any step. Q2's `ai_charge` and `ai_move` walk along the
+  monster's own facing (`M_walkmove(self, self->s.angles[YAW], dist)`).
+  Q1's `ai_charge` is `ai_face` and `movetogoal`: a step at the enemy, not
+  taken where it would reach the enemy's box; `ai_charge_side` walks at a
+  point 30 units to the enemy's left. Q1 pain frames step along `ideal_yaw`
+  (`ai_painforward`) or back along the facing (`ai_pain`); death frames step
+  along the facing (`ai_forward`, `ai_back`). A frame a burst holds steps
+  once, as it is first shown. The bodies and liquids those steps are traced
+  against come from the tick's `StepField`.
 - **Carried over the ticks.** A step moves the monster at once, as the C
   does. `MonsterBody.stride` then carries the drawn and shootable body from
   where the frame began to where its step ended over the frame's remaining
@@ -207,7 +220,13 @@ left of `search_time`. Saves without the line load with a fresh chase.
 - `tests/monster_chase_tests.jac`: two monsters blocking each other in a
   corridor and a corpse that does not; stopping where the next step would
   reach the player; Q2's pursuit to the last sighting and along the trail; a
-  noise investigated and given up; the chase in a save.
+  noise investigated and given up; the chase in a save; a pain frame's step
+  refused with a body in its way; Q2 `ai_charge` along the facing and Q1's
+  at the enemy.
+- `tests/monster_sequence_tests.jac`, `tests/q2_attack_tests.jac`,
+  `tests/chick_tests.jac`, `tests/hell_knight_tests.jac`,
+  `tests/attack_timing_tests.jac`: the steps of pain, death and attack
+  frames, whole or not at all at walls and ledges.
 - `tests/monster_gait_tests.jac`: per-frame distances, one whole step a
   frame carried over its ticks, Q2 knockback, yaw speeds, the soldier's two
   walks.
@@ -234,11 +253,9 @@ left of `search_time`. Saves without the line load with a fresh chase.
 
 ## Limitations
 
-- The steps of attack frames (`ai_charge`, through `attack_charge`) still
-  slide by the player's stair-stepping move rather than `WalkMove`, so a
-  charging monster is stopped by its target's box but not by other monsters.
-- Two bodies that already overlap (after a leap, a charge, a knock or a
-  fall, none of which is traced against other bodies) do not block each
+- Fliers and swimmers take no steps from their attack frames.
+- Two bodies that already overlap (after a leap, a knock or a fall, none of
+  which is traced against other bodies) do not block each
   other's steps, so that they can part; the originals leave such bodies stuck.
 - Q2 monsters collide with player clip brushes and not with monster clip
   brushes (`CONTENTS_MONSTERCLIP`), which the level's hulls do not carry.

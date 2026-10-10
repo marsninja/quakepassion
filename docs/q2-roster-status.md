@@ -186,8 +186,6 @@ Details that follow the originals:
   plays them at `ATTN_IDLE`. A standing marine that has lain down by itself
   (`insane_checkdown`) is not modelled, so only marines spawned crawling take
   the crawling pain and death.
-- Attack strides head at the target; Q2 `ai_charge` walks along the monster's
-  own facing while it turns.
 - `misc_actor` is not implemented; no campaign map has one (see
   [map mechanics](map-mechanics-status.md#limitations)).
 

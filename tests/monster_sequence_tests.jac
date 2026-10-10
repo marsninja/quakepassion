@@ -167,11 +167,14 @@ def strip(back: float, front: float) -> CollisionMap {
     return collision;
 }
 
-"""Play out the pain a monster is in, in 20 Hz slices, and return its x."""
+"""Play out the pain a monster is in, in 20 Hz slices, and return its x.
+Each frame's step is carried over the frame's slices, as the combat tick
+carries it."""
 def stagger(enemy: Opponent, collision: CollisionMap, seconds: float = 100.0) -> float {
     elapsed = 0.0;
     while enemy.pain_wait > 0.000001 and elapsed < seconds - 0.000001 {
         pain_stagger(enemy, collision, 0.05);
+        enemy.advance(0.05);
         enemy.pain_wait = max(0.0, enemy.pain_wait - 0.05);
         elapsed += 0.05;
     }
@@ -420,13 +423,16 @@ test "pain frames stagger a monster along its facing without leaving its ground"
     soldier.pain_variant = 2;
     soldier.pain_wait = pain_length(soldier);
     assert abs(soldier.pain_wait - 0.7) < 0.0001;
-    assert abs(stagger(soldier, open_floor, 0.1) + 13.0 * 1.2) < 0.01;
+    # The first frame's step is taken as the frame begins.
+    stagger(soldier, open_floor, 0.05);
+    assert abs(soldier.standing().x + 13.0 * 1.2) < 0.01;
     assert abs(stagger(soldier, open_floor) + 1.0 * 1.2) < 0.01;
     # army_painb: ai_painforward 13 and 9, then ai_pain 2.
     grunt = sequenced("q1", "monster_army");
     grunt.pain_variant = 2;
     grunt.pain_wait = pain_length(grunt);
-    assert abs(stagger(grunt, open_floor, 0.3) - 22.0) < 0.01;
+    stagger(grunt, open_floor, 0.25);
+    assert abs(grunt.standing().x - 22.0) < 0.01;
     assert abs(stagger(grunt, open_floor) - 20.0) < 0.01;
     # The stride follows the facing.
     turned = sequenced("q1", "monster_dog");
@@ -436,9 +442,8 @@ test "pain frames stagger a monster along its facing without leaving its ground"
     stagger(turned, open_floor);
     assert abs(turned.pos.y + 44.0) < 0.01 and abs(turned.pos.x) < 0.01;
     # mutant_move_pain2 throws it 24 back in its first frame. With the
-    # floor ending, or a wall standing, 18 behind it, it takes the half of
-    # that stride that keeps it on the ground and out of the wall and no
-    # more (a stride is taken whole or not at all).
+    # floor ending, or a wall standing, 18 behind it, it takes none of that
+    # step (M_walkmove: the whole step or nothing).
     for obstacle in ["ledge", "wall"] {
         ground = strip(-18.0 if obstacle == "ledge" else -400.0, 400.0);
         if obstacle == "wall" {
@@ -449,15 +454,22 @@ test "pain frames stagger a monster along its facing without leaving its ground"
         mutant = sequenced("q2", "monster_mutant");
         mutant.pain_variant = 2;
         mutant.pain_wait = pain_length(mutant);
-        lowest = 0.0;
-        while mutant.pain_wait > 0.000001 {
-            pain_stagger(mutant, ground, 0.05);
-            mutant.pain_wait = max(0.0, mutant.pain_wait - 0.05);
-            lowest = min(lowest, mutant.pos.x);
-            assert abs(mutant.pos.z - 22.01) < 0.5;
-        }
-        assert abs(lowest + 12.0) < 0.01 , obstacle + " " + str(lowest);
+        pain_stagger(mutant, ground, 0.05);
+        mutant.advance(0.05);
+        assert mutant.pos.x == 0.0 and mutant.standing().x == 0.0 , obstacle;
+        assert abs(mutant.pos.z - 22.01) < 0.5;
     }
+    # On open ground the step is taken at once and the body carried
+    # through it over the frame.
+    mutant = sequenced("q2", "monster_mutant");
+    mutant.pain_variant = 2;
+    mutant.pain_wait = pain_length(mutant);
+    pain_stagger(mutant, open_floor, 0.05);
+    assert mutant.standing().x == -24.0 and mutant.pos.x == 0.0;
+    mutant.advance(0.05);
+    assert abs(mutant.pos.x + 12.0) < 0.001;
+    mutant.advance(0.05);
+    assert mutant.pos.x == -24.0;
     # A monster in the air does not stride.
     falling = sequenced("q2", "monster_soldier");
     falling.grounded = False;
@@ -490,11 +502,13 @@ test "pain frames stagger a monster along its facing without leaving its ground"
     damage_opponent(victim, 5);
     state = CombatState(game="q2");
     player = Player(pos=Vec3(x=3000.0, z=22.01), god_mode=True);
-    for tick in range(6) {
+    for tick in range(3) {
         world spawn CombatTick(player=player, collision=open_floor, state=state, dt=1.0 / 60.0);
     }
-    # infantry_move_pain1 and pain2 both start 3 back.
-    assert abs(victim.pos.x + 3.0) < 0.05 , str(victim.pos.x);
+    # infantry_move_pain1 and pain2 both start 3 back: the step is taken
+    # with the frame and the body is half-way through it half a frame on.
+    assert abs(victim.standing().x + 3.0) < 0.0001 , str(victim.standing().x);
+    assert abs(victim.pos.x + 1.5) < 0.05 , str(victim.pos.x);
 }
 
 test "a monster thrown into the air takes its airborne pain" {
@@ -609,6 +623,7 @@ test "death frames carry their strides and stay on the ground" {
         body.death_variant = 1 + [sequence.name for sequence in body.rule.deaths].index(row[2]);
         for tick in range(100) {
             death_stride(body, floor, 0.05);
+            body.advance(0.05);
             body.animation_time += 0.5;
         }
         assert abs(body.pos.x - row[3]) < 0.01 , row[1] + " " + str(body.pos.x);
@@ -621,9 +636,10 @@ test "death frames carry their strides and stay on the ground" {
     body.death_variant = 2;
     for tick in range(100) {
         death_stride(body, brink, 0.05);
+        body.advance(0.05);
         body.animation_time += 0.5;
     }
-    assert body.pos.x >= -12.01 and body.pos.x < -8.99 and abs(body.pos.z - 22.01) < 0.01;
+    assert body.pos.x >= -12.01 and body.pos.x < -8.99 and abs(body.pos.z - 22.01) < 0.05;
     # The combat tick plays the death it drew and strides it.
     world = World();
     grunt = sequenced("q1", "monster_army", 3);

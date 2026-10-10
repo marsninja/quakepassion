@@ -53,8 +53,8 @@ They are scripted runs, not human playthroughs; see
 Each is verified against the code; the linked doc has the detail.
 
 Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
-- Attack-frame steps (`ai_charge`) are stopped by the target's box only, not
-  by other monsters, and bodies that already overlap do not block each other.
+- Fliers and swimmers take no steps from their attack frames, and bodies
+  that already overlap do not block each other.
 - Q2 monsters collide with player clip brushes, not monster clip brushes.
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
