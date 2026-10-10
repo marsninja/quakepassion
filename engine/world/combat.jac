@@ -5427,6 +5427,11 @@ walker CombatTick {
                     if here.route_target.sub(target).length() > 48.0 {
                         here.route = [];
                         here.route_areas = [];
+                        # A bot's way to a new goal is chosen at once
+                        # (BotMoveToGoal picks a reachability every frame).
+                        if here.arena and self.navmesh is not None {
+                            here.route_wait = 0.0;
+                        }
                     }
                     # AAS routes are followed every tick below; local routes here.
                     while here.route
@@ -5501,7 +5506,12 @@ walker CombatTick {
                 # A route waypoint is walked right up to until it counts as
                 # reached.
                 stop = BOT_STANDOFF if closing else (0.0 if here.route else 12.0);
+                # A bot with the map's AAS moves by its travel alone
+                # (BotMoveToGoal, below): with no route it makes no move, as
+                # with no reachability there, where heading straight for the
+                # goal would take it off a ledge or a platform.
                 if here.alert > 0.0
+                    and not (here.arena and self.navmesh is not None)
                     and not here.fighting
                     and here.pain_wait <= 0.0
                     and here.attack_flash <= 0.0

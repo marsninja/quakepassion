@@ -43,7 +43,10 @@ Match rules, scoring, awards and item drops are in
 
 Each frame a bot follows its route (`BotMoveToGoal`) and gets a
 `bot_moveresult_t` (`TravelResult`): direction and speed, jump, attack, the
-weapon the movement needs, a movement view, waiting and failure.
+weapon the movement needs, a movement view, waiting and failure. On a map
+with AAS the travel is the only thing that moves a bot outside a fight:
+with no route to its goal it makes no move, and the way to a new goal is
+chosen on the frame the goal changes.
 
 - Walk, crouch, barrier jump, jump, walk off ledge, teleport and jump pad head
   for the passage's points. A jump (`BotTravel_Jump`) is run up to from a

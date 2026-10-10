@@ -42,8 +42,8 @@ import from engine.world.bot_travel {
 }
 import math;
 import from engine.world.liquids { LiquidProbe }
-import from engine.world.combat { Opponent }
-import from engine.world.world { World }
+import from engine.world.combat { Opponent, CombatState, CombatTick, HasOpponent }
+import from engine.world.world { World, Player }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
@@ -547,4 +547,39 @@ test "a bot falling toward a jump pad steers for the pad until it has been throu
     bot.velocity = Vec3();
     short = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.2);
     assert not route.points and short.result.speed == 0.0;
+}
+
+test "a bot with the map's AAS and no route to its goal makes no move of its own" {
+    floor = CollisionMap();
+    floor.add_box(Vec3(x=-2000.0, y=-2000.0, z=-64.0), Vec3(x=2000.0, y=2000.0, z=0.0), Vec3(), Vec3(), Vec3());
+    floor.reindex();
+    goal = Vec3(x=128.0, z=22.03125);
+    # Two areas with no way between them: it stays where it is, where a
+    # straight line for the goal would have carried it across.
+    apart = World();
+    mesh = build_navmesh(apart, strip_aas(2, []));
+    mesh.times_to(2);
+    stuck = Opponent(
+        arena=True, grounded=True, pos=Vec3(x=40.0, z=22.03125), last_seen=goal, arena_goal=goal, alert=100.0,
+        attack_wait=1000.0
+    );
+    apart +>:HasOpponent:+> stuck;
+    state = CombatState(game="q3");
+    for i in range(120) {
+        apart spawn CombatTick(player=Player(health=0, pos=Vec3(x=9000.0)), collision=floor, state=state, dt=1.0 / 120.0);
+    }
+    assert abs(stuck.pos.x - 40.0) < 1.0 and abs(stuck.pos.y) < 1.0;
+    # With a walk between them it goes by its route.
+    joined = World();
+    linked = build_navmesh(joined, strip_aas(2, [(1, 2, TRAVEL_WALK)]));
+    linked.times_to(2);
+    roamer = Opponent(
+        arena=True, grounded=True, pos=Vec3(x=40.0, z=22.03125), last_seen=goal, arena_goal=goal, alert=100.0,
+        attack_wait=1000.0
+    );
+    joined +>:HasOpponent:+> roamer;
+    for i in range(120) {
+        joined spawn CombatTick(player=Player(health=0, pos=Vec3(x=9000.0)), collision=floor, state=CombatState(game="q3"), dt=1.0 / 120.0);
+    }
+    assert roamer.pos.x > 80.0;
 }
