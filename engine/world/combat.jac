@@ -3814,9 +3814,8 @@ walker CombatTick {
             1.0, self.state.route_credit + max(0.0, self.dt) * 8.0
         );
         self.state.navigation.network.refresh(self.collision);
-        # Arena matches keep running while the player waits to respawn.
-        live = self.player.health > 0 or self.arena_live;
-        if self.active and live { self.state.navigation.advance(); }
+        # The world runs on while the player lies dead, in every game.
+        if self.active { self.state.navigation.advance(); }
         here spawn ParticleTick(dt=self.dt);
         here spawn CorpseTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
@@ -3824,7 +3823,7 @@ walker CombatTick {
         self.state.sight_wait = max(0.0, self.state.sight_wait - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
         self.state.hit_flash = max(0.0, self.state.hit_flash - self.dt);
-        if self.active and live {
+        if self.active {
             visit [here->:HasOpponent:->];
         }
     }
@@ -4102,6 +4101,17 @@ walker CombatTick {
                 here.alert = max(here.alert, 3.0);
             }
         }
+        # Q1 ai_run and Q2 ai_checkattack (hesDeadJim): with its enemy dead a
+        # monster goes back to standing, or to the path it walked, once the
+        # attack it was in is done. FindTarget never takes a dead client.
+        bereft = foe.health <= 0 and foe is not patient and not here.arena;
+        if bereft and (here.alert > 0.0 or here.readied >= 0) {
+            here.alert = 0.0;
+            here.pursuing = False;
+            here.sighted = False;
+            here.readied = -1;
+            here.steering = Vec3();
+        }
         # An alerted monster leaves its patrol unless it is bound for a combat point.
         if here.alert > 0.0 and not here.holding {
             here.patrol_goal = None;
@@ -4147,7 +4157,8 @@ walker CombatTick {
                 # Q2 AI_GOOD_GUY (misc_insane): passive figures never hunt.
                 here.pursuing = not sight.start_solid
                     and sight.fraction == 1.0
-                    and not here.rule.passive;
+                    and not here.rule.passive
+                    and not bereft;
                 if here.pursuing and not was_alert and not here.arena {
                     here.pursuing = notices(here, foe.pos, distance, self.state.noise > 0.0);
                 }

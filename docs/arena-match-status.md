@@ -39,8 +39,10 @@ podium figures' rigs are in [Q3 player bodies](player-bodies-status.md).
 - Awards on the `Competes` edge: Excellent (two frags within 3 s), Impressive
   (two railgun hits in a row), Humiliation (a gauntlet frag) and Perfect (a
   win without dying), each with its announcer sound.
-- The player respawns with fire or jump after 1.7 s, and automatically after
-  20 s (`g_forcerespawn`), with the standard loadout.
+- The player respawns with fire or jump held 1.7 s after dying
+  (`respawnTime`), and automatically 20 s after that (`g_forcerespawn`), with
+  the standard loadout. Until then the body lies where it fell and touches
+  nothing (see [player feedback](player-feedback-status.md)).
 - Saves keep the match clock, warmup, lead state and every competitor's frags
   and deaths (`MATCH`, `SCORE`), and each bot's weapon, ammo and holdables
   (`BOTARM`, `BOTITEM`).

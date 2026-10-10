@@ -146,15 +146,26 @@ test "the view places the eye from the body, or shows the dead view" {
     view = ViewFeedback();
     view.reset("q3");
     player = Player(pos=Vec3(z=100.0), grounded=True);
-    placed = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, 26.0);
+    placed = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0);
     assert placed.eye.z == 100.0 and placed.gun.z == 100.0;
     view.landing(0.0, 16.0);
     view.advance(0.15);
-    dipped = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, 26.0);
+    dipped = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0);
     assert abs(dipped.eye.z - 84.0) < 0.0001 and abs(dipped.gun.z - 80.0) < 0.0001;
     player.health = 0;
-    dead = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, 26.0, dead=True);
-    assert abs(dead.eye.z - (100.0 - 42.0)) < 0.0001 and abs(math.degrees(dead.roll) - 40.0) < 0.0001;
+    # The dead view is from the eye of the body where it lies, with no dip.
+    killer = Player(pos=Vec3(y=200.0, z=100.0));
+    player.killer = killer;
+    dead = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, dead=True);
+    assert dead.eye.z == 100.0 and abs(math.degrees(dead.roll) - 40.0) < 0.0001;
+    assert abs(math.degrees(dead.pitch) - 15.0) < 0.0001 and abs(math.degrees(dead.yaw) - 90.0) < 0.0001;
+    # Q1 rolls the player's own view over; Q2 looks at the killer as Q3 does.
+    player.pitch = math.radians(-20.0);
+    q1 = ViewFeedback();
+    q1.reset("q1");
+    fallen = q1.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, dead=True);
+    assert abs(math.degrees(fallen.roll) - 80.0) < 0.0001 and fallen.yaw == player.yaw;
+    assert abs(math.degrees(fallen.pitch) + 20.0) < 0.0001 and fallen.eye.z == 100.0;
     # Q2's fall kick also lowers the eye by 0.4 of it as it fades.
     q2 = ViewFeedback();
     q2.reset("q2");
@@ -167,7 +178,7 @@ test "an intermission camera has no bob or kick; Q1's sways idly" {
     player = Player(pos=Vec3(z=10.0), velocity=Vec3(x=300.0), grounded=True, yaw=0.5, pitch=0.1);
     q1 = ViewFeedback();
     q1.reset("q1");
-    placed = q1.place(player, Vec3(z=10.0), True, 0.0, math.pi / 2.0, 1.0, 2.0, 22.0, intermission=True);
+    placed = q1.place(player, Vec3(z=10.0), True, 0.0, math.pi / 2.0, 1.0, 2.0, intermission=True);
     assert placed.eye.z == 10.0;
     # V_AddIdle at v_idlescale 1: pitch sin(t) * 0.3, yaw sin(2t) * 0.3, roll sin(t / 2) * 0.1.
     assert abs(placed.pitch - (0.1 - math.radians(0.3))) < 0.00001;
@@ -175,7 +186,7 @@ test "an intermission camera has no bob or kick; Q1's sways idly" {
     assert abs(placed.roll - math.radians(math.sin(math.pi / 4.0) * 0.1)) < 0.00001;
     q2 = ViewFeedback();
     q2.reset("q2");
-    still = q2.place(player, Vec3(z=10.0), True, 0.0, 1.0, 1.0, 2.0, 22.0, intermission=True);
+    still = q2.place(player, Vec3(z=10.0), True, 0.0, 1.0, 1.0, 2.0, intermission=True);
     assert still.pitch == 0.1 and still.roll == 0.0 and still.eye.z == 10.0;
 }
 

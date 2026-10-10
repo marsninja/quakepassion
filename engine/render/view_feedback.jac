@@ -348,7 +348,6 @@ obj ViewFeedback {
         clock: float,
         share: float,
         punch: float,
-        eye_height: float,
         dead: bool = False,
         intermission: bool = False
     ) -> ViewPlacement {
@@ -373,14 +372,7 @@ obj ViewFeedback {
             + self.duck_was
             + (self.duck_offset() - self.duck_was) * share;
         if dead {
-            fallen = death_view(player, self.game, eye_height);
-            eye = body.sub(Vec3(z=fallen[0]));
-            pitch = math.radians(fallen[1]);
-            roll = math.radians(fallen[2]);
-            return ViewPlacement(
-                eye=eye, yaw=fallen[3], pitch=pitch, roll=roll, gun=eye,
-                gun_yaw=fallen[3], gun_pitch=pitch, gun_roll=roll
-            );
+            return death_view(player, self.game, body);
         }
         return self.sway.place(
             player,
@@ -460,23 +452,28 @@ obj ViewFeedback {
     }
 }
 
-"""The dead view: Q1 rolls 80 degrees with the eye 8 below the origin; Q2
-rolls 40, looks 15 degrees up toward the killer from 8 above the origin; Q3
-the same from 16 below (DEAD_VIEWHEIGHT). Returns [drop, pitch, roll, yaw]."""
-def death_view(player: Player, game: str, eye_height: float) -> list[float] {
+"""The dead view from `eye`, the body's eye where it lies (the lying form of
+engine/world/demise.jac). Q1 V_CalcViewRoll rolls the player's own view 80
+degrees; Q2 SV_CalcViewOffset fixes it rolled 40 and looking 15 degrees up
+along LookAtKiller's killer_yaw, toward whoever did it, and Q3 does the
+same."""
+def death_view(player: Player, game: str, eye: Vec3) -> ViewPlacement {
     yaw = player.yaw;
-    killer = player.killer;
-    if game in ["q2", "q3"] and killer is not None and killer is not player {
-        toward = killer.pos.sub(player.pos);
-        if abs(toward.x) + abs(toward.y) > 0.001 {
-            yaw = math.atan2(toward.y, toward.x);
+    pitch = player.pitch;
+    roll = math.radians(80.0);
+    if game != "q1" {
+        killer = player.killer;
+        if killer is not None and killer is not player {
+            toward = killer.pos.sub(player.pos);
+            if abs(toward.x) + abs(toward.y) > 0.001 {
+                yaw = math.atan2(toward.y, toward.x);
+            }
         }
+        pitch = math.radians(15.0);
+        roll = math.radians(40.0);
     }
-    if game == "q1" {
-        return [eye_height + 8.0, 0.0, 80.0, yaw];
-    }
-    if game == "q2" {
-        return [eye_height - 8.0, 15.0, 40.0, yaw];
-    }
-    return [eye_height + 16.0, 15.0, 40.0, yaw];
+    return ViewPlacement(
+        eye=eye, yaw=yaw, pitch=pitch, roll=roll, gun=eye,
+        gun_yaw=yaw, gun_pitch=pitch, gun_roll=roll
+    );
 }

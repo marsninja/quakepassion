@@ -61,16 +61,21 @@ the start map's gates.
 ## Death restart and saves
 
 - Each level entry takes an autosave (a campaign envelope with a snapshot).
-  Dying and pressing Enter reloads it, as Q1's `restart` with the entry parms
-  and Q2's entry autosave do: the inventory, keys, unit flags and help
-  computer as they entered, with the Q2 hub as it was.
+  A dead player's buttons reload it (Enter does too), as Q1's `respawn` runs
+  `restart` with the entry parms and Q2's runs `menu_loadgame` for its entry
+  autosave: the inventory, keys, unit flags and help computer as they
+  entered, with the Q2 hub as it was. Until then the level runs on around
+  the body; the buttons and their waits are in
+  [player feedback](player-feedback-status.md).
 - The `save`/`load` commands (quick save when unnamed) write
   `~/.quakepassion-save.txt` or `~/.quakepassion-save-<name>.txt`: a
   `QUAKEPASSION CAMPAIGN 1` envelope holding the active snapshot and the Q2
   hub's visited snapshots. Snapshots carry the header in
   `engine/core/save_format.jac` (currently `QUAKEPASSION 22`); a snapshot with
   another header is rejected, since positional entity records change between
-  formats. Saving needs a living player in walk mode.
+  formats. A dead player cannot save (Q1 `Host_Savegame_f` "Can't savegame
+  with a dead player", Q2 `SV_Savegame_f` "Can't savegame while dead!"), and
+  saving needs walk mode.
 
 ## Q1 runes and gates
 

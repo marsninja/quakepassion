@@ -22,6 +22,7 @@ impl App.run() {
         populate_fixtures(self.world, self.level, game_directory(self.level.bsp.game));
         populate_opponents(self.world, self.level, game_directory(self.level.bsp.game));
         join_match(self.world, self.player);
+        prepare_death(self.player, self.level.bsp.game);
         populate_finale(self.world, self.level, game_directory(self.level.bsp.game));
         if self.level.bsp.game == "q3" {
             prepare_arena_links(self.world, self.level.collision);
@@ -173,7 +174,6 @@ impl App.render_frame() {
             shown_time,
             blend.alpha,
             punch,
-            self.level.collision.eye_height,
             dead=p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active,
             # Q3's podium is its intermission (PM_INTERMISSION): the view is
             # the intermission point's, without bob, kick or the dead roll.
@@ -649,6 +649,7 @@ impl App.load_destination(
         populate_fixtures(world, level, game_directory(game));
         populate_opponents(world, level, game_directory(game));
         join_match(world, player);
+        prepare_death(player, game);
         populate_finale(world, level, game_directory(game));
         combat = CombatState();
         if game == "q3" {
@@ -944,24 +945,9 @@ impl App.step() -> bool {
         else None;
     arena_live = contest is not None and not contest.finished;
     if self.level.active
-        and (
-            (self.player.health <= 0 and not arena_live)
-            or self.expedition_complete
-            or (contest is not None and contest.finished)
-        ) {
+        and (self.expedition_complete or (contest is not None and contest.finished)) {
         self.jump_pending = False;
         self.physics_clock.accumulator = 0.0;
-        # A death on the last tick of a frame is still voiced, and still
-        # lets a cooking grenade go (Think_Weapon).
-        if self.player.health <= 0 and self.level.active {
-            if release_live_grenade(self.world, self.player, self.level.collision, self.combat) {
-                self.combat_feedback();
-            }
-            voice = self.player spawn VoiceTick(game=self.level.bsp.game, dt=0.0);
-            for cue in voice.cues {
-                self.audio.play_path(cue);
-            }
-        }
         if contest is not None and contest.finished {
             celebration = self.world spawn PodiumTick(dt=dt);
             for cue in celebration.cues {
@@ -1024,20 +1010,37 @@ impl App.step() -> bool {
         self.inventory_open = not self.inventory_open;
         self.help_open = False;
     }
-    # Q3 respawn: attack or jump after 1.7 s, forced after 20 s (g_forcerespawn).
-    if arena_live and self.player.health <= 0 {
-        if not self.awaiting_respawn {
-            self.awaiting_respawn = True;
-            self.respawn_wait = 1.7;
+    # A dead player's buttons only bring the player back: into the arena (Q3
+    # respawn), or to the level as it was entered (Q1 respawn's `restart`, Q2
+    # respawn's menu_loadgame of the entry autosave). Enter restarts a
+    # campaign level too, whatever the body is doing.
+    if self.level.active and self.player.health <= 0 and not self.finale_active {
+        fallen = mortality_of(self.player);
+        back = fallen.wants_back(
+            intent.fire
+                or intent.jump
+                or intent.jump_held
+                or (
+                    fallen.rule.any_key
+                        and not self.smoke
+                        and not self.console.active
+                        and self.keyboard.any_down()
+                )
+        );
+        if arena_live {
+            if back {
+                self.respawn_arena_player();
+            }
+        } elif back or self.prompt_key(257) {
+            self.restart_level();
+            self.render_frame();
+            return True;
         }
-        self.respawn_wait -= dt;
-        if (self.respawn_wait <= 0.0 and (intent.fire or intent.jump))
-            or self.respawn_wait <= -18.3 {
-            self.respawn_arena_player();
-        }
-        intent.fire = False;
-        intent.jump = False;
-        intent.move = Vec3();
+        # Q1 leaves the dead view to the mouse; Q2 and Q3 fix it.
+        intent = Intent(
+            look_yaw=intent.look_yaw if fallen.rule.looks else 0.0,
+            look_pitch=intent.look_pitch if fallen.rule.looks else 0.0
+        );
     }
     warming = contest is not None and contest.warmup > 0.0;
     if intent.weapon > 0 and self.player.health > 0 {
@@ -1126,7 +1129,7 @@ impl App.step() -> bool {
         self.notice_wait = max(0.0, self.notice_wait - self.physics_clock.tick_rate);
         self.pickup_time = max(0.0, self.pickup_time - self.physics_clock.tick_rate);
         self.age_notify(self.physics_clock.tick_rate);
-        if self.walking and self.level.active {
+        if self.walking and self.level.active and self.player.health > 0 {
             standing = self.level.collision.eye_height;
             self.player spawn SetStance(
                 collision=self.level.collision,
@@ -1173,7 +1176,7 @@ impl App.step() -> bool {
                     Vec3(z=self.level.collision.eye_height)
                 ),
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking,
+                touching=self.in_touch(),
                 player=self.player if self.walking else None
             );
             if doors.message {
@@ -1193,7 +1196,21 @@ impl App.step() -> bool {
                 self.player.pos.z - self.level.collision.eye_height - previous_origin.z
             );
         }
-        if self.walking and not self.finale_active {
+        if self.walking and not self.finale_active and self.player.health <= 0 {
+            # The dead body moves by its own rules, with no command.
+            immersed = self.level.immersion(self.player.pos);
+            self.player.immerse(immersed);
+            self.player spawn LieDead(
+                collision=self.level.collision,
+                profile=self.level.movement,
+                dt=self.physics_clock.tick_rate,
+                weapon=selected_weapon(self.combat).key,
+                water_depth=immersed.depth,
+                current=immersed.current
+            );
+            self.jump_pending = False;
+        }
+        if self.in_touch() {
             immersed = self.level.immersion(self.player.pos);
             self.player.immerse(immersed);
             swim = forward_from(self.player.yaw, self.player.pitch).scale(
@@ -1253,11 +1270,6 @@ impl App.step() -> bool {
             for cue in voice.cues {
                 self.audio.play_path(cue);
             }
-            if self.player.health <= 0 and not arena_live {
-                self.player.velocity = Vec3();
-                self.jump_pending = False;
-                break;
-            }
             swimmers = [
                 enemy
                 for enemy in [self.world->:HasOpponent:->][?:Opponent]
@@ -1293,8 +1305,7 @@ impl App.step() -> bool {
                     collision=self.level.collision,
                     state=self.combat,
                     dt=self.physics_clock.tick_rate,
-                    active=self.walking,
-                    arena_live=arena_live
+                    active=self.walking
                 );
                 if contest is not None {
                     self.world spawn BotTactics(
@@ -1584,7 +1595,7 @@ impl App.step() -> bool {
                 body_mins=self.level.collision.hull_mins,
                 body_maxs=self.level.collision.hull_maxs,
                 top_drop=self.level.collision.top_drop,
-                touching=self.walking and not self.finale_active
+                touching=self.in_touch()
             );
             if pickup_result.collected > len(pickup_result.sounds) {
                 self.audio.play(2);
@@ -1624,7 +1635,7 @@ impl App.step() -> bool {
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
                 top_drop=self.level.collision.top_drop,
-                touching=self.walking and not self.finale_active
+                touching=self.in_touch()
             );
             for cue in triggers.cues {
                 self.audio.play_path(cue);
@@ -1644,13 +1655,13 @@ impl App.step() -> bool {
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
                 top_drop=self.level.collision.top_drop,
-                touching=self.walking and not self.finale_active
+                touching=self.in_touch()
             );
             exit_request = self.world spawn ExitTick(
                 start=previous_origin,
                 finish=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking and not self.finale_active,
+                touching=self.in_touch(),
                 inventory=self.player.inventory
             );
             self.show_notice(exit_request.message);
@@ -1698,7 +1709,7 @@ impl App.step() -> bool {
                 collision=self.level.collision,
                 start=previous_origin,
                 dt=self.physics_clock.tick_rate,
-                touching=self.walking and not self.finale_active,
+                touching=self.in_touch(),
                 tally=self.combat
             );
             for cue in traversed.cues {
@@ -1810,6 +1821,10 @@ impl App.restart_level() {
     } except Exception as error {
         self.show_notice("Restart failed: " + str(error));
     }
+}
+
+impl App.in_touch() -> bool {
+    return in_touch(self.player, self.walking, self.finale_active);
 }
 
 impl App.record_entry() {
@@ -1958,8 +1973,13 @@ impl App.reset_settings() {
 }
 
 impl App.quicksave(slot: str = "") {
-    if self.player.health <= 0 or not self.walking {
-        self.notice = "Save while alive in walk mode";
+    if self.player.health <= 0 {
+        # Q1 Host_Savegame_f and Q2 SV_Savegame_f refuse a dead player.
+        self.notice = "Can't savegame while dead!"
+            if self.level.bsp.game == "q2"
+            else "Can't savegame with a dead player";
+    } elif not self.walking {
+        self.notice = "Save in walk mode";
     } else {
         try {
             write_save(
@@ -2285,6 +2305,7 @@ impl App.respawn_arena_player() {
     choice = self.world spawn ChooseSpawn(avoid=avoid, seed=self.combat.random_state);
     spot = choice.pick();
     player = self.player;
+    stand_again(player, self.level.collision, self.level.movement);
     player.inventory = Inventory();
     equip_player(player, self.combat, self.level.bsp.game);
     player.health = player.max_health + 25;
@@ -2307,8 +2328,6 @@ impl App.respawn_arena_player() {
     );
     self.combat.cooldown = 0.5;
     self.combat.grenade_phase = 0;
-    self.awaiting_respawn = False;
-    self.respawn_wait = 0.0;
     self.audio.play_path("sound/world/telein.wav");
 }
 
@@ -2360,19 +2379,18 @@ impl App.render_portal(faces: list[int]) {
 point and the finishers take the podium."""
 impl App.begin_podium(contest: ArenaMatch) {
     view = arena_intermission(self.world, self.level.bsp);
+    # BeginIntermission respawns the dead before moving them to the
+    # intermission point (ClientSpawn: the maximum health plus 25).
+    if self.player.health <= 0 {
+        stand_again(self.player, self.level.collision, self.level.movement);
+        self.player.health = self.player.max_health + 25;
+        self.player.killer = None;
+    }
     self.player.pos = view[0].add(Vec3());
     self.player.yaw = math.radians(view[1].y);
     self.player.pitch = -math.radians(view[1].x);
     self.player.velocity = Vec3();
     self.player.god_mode = True;
-    # BeginIntermission respawns the dead before moving them to the
-    # intermission point (ClientSpawn: the maximum health plus 25).
-    if self.player.health <= 0 {
-        self.player.health = self.player.max_health + 25;
-        self.player.killer = None;
-        self.awaiting_respawn = False;
-        self.respawn_wait = 0.0;
-    }
     move_to_area(self.player, self.level.areas[self.level.locate(self.player.pos)]);
     raise_podium(self.world, contest, self.level, view[0], view[1], selected_weapon(self.combat).key);
     # UI_SPPostgameMenu_f: the player's awards for the match, logged to the
