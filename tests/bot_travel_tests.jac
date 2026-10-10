@@ -8,6 +8,8 @@ import from engine.formats.aas {
     AREACONTENTS_LAVA,
     TRAVEL_WALK,
     TRAVEL_SWIM,
+    TRAVEL_CROUCH,
+    PRESENCE_CROUCH,
     TRAVEL_TELEPORT,
     TRAVEL_WALKOFFLEDGE,
     TRAVEL_BARRIERJUMP,
@@ -371,4 +373,36 @@ test "a bot slows up to a barrier and jumps it within 9 units" {
     jump = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
     launched = jump.launch;
     assert launched is not None and launched.z == 270.0 and launched.x > 0.0;
+}
+
+test "a bot ducks into an area only the crouching box fits, along a crouch reachability, and under a low ceiling" {
+    aas = strip_aas(3, [(1, 2, TRAVEL_WALK), (2, 3, TRAVEL_CROUCH)]);
+    aas.areas[2].presence = PRESENCE_CROUCH;
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=20.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=20.0), Vec3(x=192.0));
+    # BotTravel_Walk: not yet 60 units from the reach (x = 80), ducking
+    # within 20.
+    far = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert not far.result.crouch;
+    bot.pos = Vec3(x=65.0, z=26.0);
+    near = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert near.result.crouch and near.result.direction.x > 0.99;
+    # BotTravel_Crouch: all along the crouch reachability.
+    bot.pos = Vec3(x=130.0, z=26.0);
+    along = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert route.passages[0] is not None and route.passages[0].kind == TRAVEL_CROUCH and along.result.crouch;
+    # PM_CheckDuck: a ducked bot under a ceiling 40 units up stays ducked;
+    # one standing in the open does not start to.
+    low = CollisionMap();
+    low.add_box(Vec3(x=-500.0, y=-500.0, z=20.0), Vec3(x=500.0, y=500.0, z=60.0), Vec3(), Vec3(x=-15.0, y=-15.0, z=-24.0), Vec3(x=15.0, y=15.0, z=32.0));
+    low.reindex();
+    open_route = BotRoute();
+    open_route.add(Vec3(x=400.0), 0);
+    bot.pos = Vec3(x=300.0, z=26.0);
+    under = bot spawn FollowRoute(mesh=mesh, collision=low.for_body(26.0, 16.0), route=open_route, eye_height=26.0, clock=0.0, ducked=True);
+    assert under.result.crouch;
+    clear = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=open_route, eye_height=26.0, clock=0.0, ducked=True);
+    assert not clear.result.crouch;
 }

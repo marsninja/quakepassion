@@ -25,7 +25,8 @@ import from ..formats.aas {
     TRAVEL_ROCKETJUMP,
     TRAVEL_BFGJUMP,
     TRAVEL_JUMPPAD,
-    TRAVEL_FUNCBOB
+    TRAVEL_FUNCBOB,
+    PRESENCE_NORMAL
 }
 import from ..formats.botconfig { WeightDice }
 import from ..physics.collision { CollisionMap }
@@ -44,7 +45,8 @@ EA_Move's (400 is full speed); `view_set` asks for the ideal view `yaw` and
 `pitch` (Quake degrees, pitch down positive; MOVERESULT_MOVEMENTVIEWSET);
 `weapon` is the weapon the movement needs (MOVERESULT_MOVEMENTWEAPON);
 `waiting` that the bot waits for a mover (MOVERESULT_WAITING); `air_control`
-that the bot steers through the air to its landing; `failure` that the leg
+that the bot steers through the air to its landing; `crouch` that it ducks
+(EA_Crouch); `failure` that the leg
 timed out and the route has to be planned again. `blocked` says something
 other than the world stands in the bot's way (BotCheckBlocked): the mover
 with BSP model `block_model`, or another player when that is 0; `on_top`
@@ -62,6 +64,7 @@ obj TravelResult {
         waiting: bool = False,
         air_control: bool = False,
         failure: bool = False,
+        crouch: bool = False,
         blocked: bool = False,
         block_model: int = 0,
         on_top: bool = False,
@@ -501,6 +504,7 @@ walker FollowRoute {
         dt: float = 0.0,
         bodies: list[Vec3] = [],
         dice: WeightDice | None = None,
+        ducked: bool = False,
         avoid: AvoidReach | None = None,
         result: TravelResult = TravelResult(),
         launch: Vec3 | None = None;
@@ -530,12 +534,34 @@ walker FollowRoute {
         return False;
     }
 
+    """Whether the bot ducks on this leg. BotTravel_Crouch ducks all along
+    a crouch reachability; BotTravel_Walk within 20 units of a walk into an
+    area only the crouching box fits (no PRESENCE_NORMAL). A ducked player
+    also stays ducked while there is no room to stand (bg_pmove.c
+    PM_CheckDuck), which `ducked` and the standing box at `origin` tell."""
+    def ducks(origin: Vec3) -> bool {
+        route = self.route;
+        passage = route.passages[0] if route.passages else None;
+        if passage is not None {
+            if passage.kind == TRAVEL_CROUCH {
+                return True;
+            }
+            if passage.kind == TRAVEL_WALK
+                and self.mesh.aas.areas[passage.target].presence & PRESENCE_NORMAL == 0
+                and min(flat_toward(origin, passage.start)[1], flat_toward(origin, passage.finish)[1]) < 20.0 {
+                return True;
+            }
+        }
+        return self.ducked and self.collision.for_body(self.eye_height, 0.0).trace(origin, origin).start_solid;
+    }
+
     """A leg's own move with BotCheckBlocked along it: a blocked leg runs
     out ten times as fast ("ms->reachability_time -= 10 * ms->thinktime"),
     and a bot standing in an area without reachabilities also checks what
     is under it (checkbottom)."""
     def heading(move: TravelResult, origin: Vec3, standing: int) {
         self.result = move;
+        move.crouch = move.crouch or self.ducks(origin);
         check_blocked(self.collision, origin, move.direction, self.bodies, move);
         if not move.blocked and (standing == 0 or self.mesh.aas.areas[standing].reach_count == 0) {
             floor = self.collision.trace(origin, origin.sub(Vec3(z=3.0)));

@@ -77,6 +77,10 @@ glob AREACONTENTS_WATER: int = 1,
     AREACONTENTS_MODELNUMSHIFT: int = 24,
     AREACONTENTS_MAXMODELNUM: int = 255;
 
+# aasfile.h presence types: which of the player's boxes fits in an area.
+glob PRESENCE_NORMAL: int = 2,
+    PRESENCE_CROUCH: int = 4;
+
 # aasfile.h area flags.
 glob AREA_GROUNDED: int = 1,
     AREA_LADDER: int = 2,
@@ -141,6 +145,7 @@ obj AasArea {
         maxs: Vec3,
         flags: int = 0,
         contents: int = 0,
+        presence: int = 6,
         first_reach: int = 0,
         reach_count: int = 0;
 }
@@ -336,6 +341,7 @@ def parse_aas(data: bytes) -> Aas {
                 center=vec_at(data, p + 36),
                 contents=i32_at(data, s),
                 flags=i32_at(data, s + 4),
+                presence=i32_at(data, s + 8),
                 reach_count=i32_at(data, s + 20),
                 first_reach=i32_at(data, s + 24)
             )

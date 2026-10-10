@@ -4688,6 +4688,13 @@ walker CombatTick {
             }
         }
         body_key = monster_body_key(here);
+        if here.crouched and here.character is not None {
+            # A ducked bot moves in the crouching player's box (PM_CheckDuck).
+            body_key += ":duck";
+            if body_key not in self.bodies {
+                self.bodies[body_key] = self.collision.for_body(here.eye_height, self.bot_profile.duck_top_drop);
+            }
+        }
         if body_key not in self.bodies {
             self.bodies[body_key] = monster_collision(self.collision, here);
         }
@@ -5297,8 +5304,13 @@ walker CombatTick {
                 dt=self.dt,
                 bodies=self.other_bodies(here),
                 dice=memory.dice,
-                avoid=memory.avoid_reach
+                avoid=memory.avoid_reach,
+                ducked=here.crouched
             );
+            # EA_Crouch from the movement.
+            if travel.result.crouch {
+                here.crouched = True;
+            }
             memory.travel = travel.result;
             launch = travel.launch;
             if launch is not None {
