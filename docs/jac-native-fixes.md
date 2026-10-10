@@ -38,6 +38,7 @@ Needed by the studio (`editor/`) and not in the pin, so CI cannot build
 
 | Defect | Upstream PR | Found by |
 | --- | --- | --- |
+| `for (i, row) in enumerate(rows)` over a list of lists (or of dicts or sets) bound `row` as an untyped pointer, which later code took for a `str`: `len(row)` returned a wrong count and a nested `enumerate(row)` crashed. `zip` did the same | [#9971](https://github.com/jaseci-labs/jac/pull/9971) | The studio's `.map` writer (`editor/formats/map.jac`), which loops over an entity's brushes and each brush's sides |
 | A C record passed by value to a C function from a variable whose slot is optional (`font: Font \| None`, narrowed or defaulted before the call) emitted invalid LLVM IR; the build failed with only "native product emission failed" | [#9942](https://github.com/jaseci-labs/jac/pull/9942) | The studio's canvas (`editor/ui/canvas.jac`), which keeps its font as `UiFont \| None` |
 
 Found in QuakePassion work but not needed by it (not in the pin):
