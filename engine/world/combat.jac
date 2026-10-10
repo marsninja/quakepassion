@@ -1254,7 +1254,9 @@ node Projectile {
         splash: int = 0,
         radius: float = 0.0,
         gravity: bool = False,
-        remaining: float = 5.0;
+        remaining: float = 5.0,
+        # Flight time already owed when the missile first moves.
+        lead: float = 0.0;
 
     has beam_damage: int = 0,
         beam_radius: float = 0.0,
@@ -1335,6 +1337,43 @@ def muzzle_point(player: Player, game: str) -> Vec3 {
     return player.pos.add(ahead.scale(14.0)).add(side.scale(5.0)).sub(up.scale(6.0));
 }
 
+"""Where a weapon's shots start: its rule's muzzle offset from the eye,
+`direction` being the aim. A muzzle that a wall cuts off from the eye fires
+from the eye, so the shot stops at that wall (Q2 fire_lead's trace from the
+origin; a Q1 or Q3 missile spawned in a wall goes off there at once)."""
+def launch_point(
+    player: Player,
+    rule: WeaponRule,
+    direction: Vec3,
+    collision: CollisionMap,
+    state: CombatState
+) -> Vec3 {
+    ahead = rule.muzzle.x;
+    aside = rule.muzzle.y;
+    above = rule.muzzle.z;
+    if rule.muzzle_alternates and state.shots % 2 == 0 {
+        aside = -aside;
+    }
+    if rule.muzzle_jitter > 0.0 {
+        aside += state.random() * rule.muzzle_jitter;
+        above += state.random() * rule.muzzle_jitter;
+    }
+    if rule.muzzle_orbit > 0.0 {
+        turn = float(state.shots % 6) * math.pi / 3.0;
+        ahead -= rule.muzzle_orbit * math.sin(turn);
+        above += rule.muzzle_orbit * math.cos(turn);
+    }
+    reach = direction.scale(ahead);
+    if rule.muzzle_level {
+        reach.z = 0.0;
+    }
+    point = player.pos.add(reach).add(right_from(player.yaw).scale(aside)).add(Vec3(z=above));
+    if collision.trace_point(player.pos, point).fraction < 1.0 {
+        return player.pos;
+    }
+    return point;
+}
+
 """Q1 W_FireLightning under water (waterlevel above 1): every cell goes at
 once as T_RadiusDamage(self, self, 35 * cells), the shooter taking half."""
 def discharge_lightning(
@@ -1366,10 +1405,11 @@ def fire_weapon(
     direction = forward_from(player.yaw, player.pitch);
     # Q3 PM_Weapon: the gauntlet only "fires" when it touches someone.
     if state.game == "q3" and rule.key == "gauntlet" {
-        reach = player.pos.add(direction.scale(rule.reach));
-        wall = collision.trace_point(player.pos, reach);
+        fist = launch_point(player, rule, direction, collision, state);
+        reach = fist.add(direction.scale(rule.reach));
+        wall = collision.trace_point(fist, reach);
         touch = world spawn Aim(
-            start=player.pos, finish=reach, height=collision.eye_height, fraction=wall.fraction
+            start=fist, finish=reach, height=collision.eye_height, fraction=wall.fraction
         );
         if touch.target is None {
             return False;
@@ -1408,6 +1448,7 @@ def fire_weapon(
     }
     side = right_from(player.yaw);
     up = side.cross(direction).normalized();
+    origin = launch_point(player, rule, direction, collision, state);
     if rule.speed > 0.0 {
         velocity = direction.scale(rule.speed);
         if rule.gravity and state.game == "q3" {
@@ -1417,13 +1458,16 @@ def fire_weapon(
             velocity = velocity.add(Vec3(z=200.0));
         }
         world +>:HasProjectile:+> Projectile(
-            pos=player.pos,
+            pos=origin,
             velocity=velocity,
             damage=int(float(rule.damage) * scale),
             splash=int(float(rule.splash) * scale),
             radius=rule.radius,
             gravity=rule.gravity,
             remaining=rule.fuse,
+            # g_missile.c MISSILE_PRESTEP_TIME: a Q3 missile's flight is
+            # dated 50 ms back, so its first move carries it that much on.
+            lead=0.05 if state.game == "q3" else 0.0,
             effect=rule.effect,
             beam_damage=int(float(rule.beam_damage) * scale),
             beam_radius=rule.beam_radius,
@@ -1456,21 +1500,21 @@ def fire_weapon(
                 up.scale(state.random() * rule.vertical_spread)
             );
         }
-        finish = player.pos.add(shot.normalized().scale(rule.reach));
-        wall = collision.trace_point(player.pos, finish);
+        finish = origin.add(shot.normalized().scale(rule.reach));
+        wall = collision.trace_point(origin, finish);
         query = world spawn Aim(
-            start=player.pos,
+            start=origin,
             finish=finish,
             height=collision.eye_height,
             fraction=wall.fraction
         );
-        state.target = player.pos.lerp(finish, query.fraction);
+        state.target = origin.lerp(finish, query.fraction);
         hits: list[Opponent] = [];
         if rule.piercing {
             for enemy in [world->:HasOpponent:->][?:Opponent] {
                 if enemy.health > 0
                     and not enemy.dormant
-                    and opponent_fraction(player.pos, finish, enemy) < wall.fraction {
+                    and opponent_fraction(origin, finish, enemy) < wall.fraction {
                     hits.append(enemy);
                 }
             }
@@ -1479,7 +1523,7 @@ def fire_weapon(
                 rail_trail(
                     world,
                     muzzle_point(player, state.game),
-                    player.pos.lerp(finish, wall.fraction),
+                    origin.lerp(finish, wall.fraction),
                     state.game + "_rail"
                 );
             }
@@ -1487,7 +1531,7 @@ def fire_weapon(
             hits.append(query.target);
         } elif query.corpse is not None {
             body = query.corpse;
-            impact_spray(world, player.pos.lerp(finish, query.fraction), shot.normalized().scale(-1.0), True, rule.key);
+            impact_spray(world, origin.lerp(finish, query.fraction), shot.normalized().scale(-1.0), True, rule.key);
             if body not in bodies {
                 bodies.append(body);
                 wounds.append(0);
@@ -1499,15 +1543,15 @@ def fire_weapon(
             beam_trail(
                 world,
                 muzzle_point(player, state.game),
-                player.pos.lerp(finish, query.fraction),
+                origin.lerp(finish, query.fraction),
                 "player_lightning"
             );
         }
         for victim in hits {
-            fraction = opponent_fraction(player.pos, finish, victim);
+            fraction = opponent_fraction(origin, finish, victim);
             impact_spray(
                 world,
-                player.pos.lerp(finish, fraction),
+                origin.lerp(finish, fraction),
                 shot.normalized().scale(-1.0),
                 True,
                 rule.key
@@ -1527,7 +1571,7 @@ def fire_weapon(
                 * scale;
         }
         if (not hits or rule.piercing) and query.corpse is None and wall.fraction < 1.0 {
-            struck_at = player.pos.lerp(finish, wall.fraction);
+            struck_at = origin.lerp(finish, wall.fraction);
             surface = collision.surface_class(wall);
             if surface < 2 {
                 impact_spray(world, struck_at, wall.normal);
@@ -1540,7 +1584,7 @@ def fire_weapon(
                 WeaponImpact(
                     model=wall.model,
                     amount=int(float(rule.damage) * scale),
-                    origin=player.pos.lerp(finish, wall.fraction)
+                    origin=origin.lerp(finish, wall.fraction)
                 )
             );
         }
@@ -1591,9 +1635,10 @@ def throw_hand_grenade(
     }
     speed = 400.0 + (3.0 - state.grenade_remaining) * (400.0 / 3.0);
     scale = damage_scale(player, state.game);
+    aim = forward_from(player.yaw, player.pitch);
     grenade = Projectile(
-        pos=player.pos,
-        velocity=forward_from(player.yaw, player.pitch).scale(speed).add(Vec3(z=200.0)),
+        pos=launch_point(player, rule, aim, collision, state),
+        velocity=aim.scale(speed).add(Vec3(z=200.0)),
         damage=int(float(rule.damage) * scale),
         splash=int(float(rule.splash) * scale),
         radius=rule.radius,
@@ -2330,6 +2375,10 @@ walker ProjectileTick {
                 target = quarry.pos.sub(Vec3(z=12.0));
                 here.velocity = target.sub(here.pos).normalized().scale(here.homing);
             }
+        }
+        if here.lead > 0.0 {
+            step += here.lead;
+            here.lead = 0.0;
         }
         if here.gravity {
             here.velocity.z -= 800.0 * step;

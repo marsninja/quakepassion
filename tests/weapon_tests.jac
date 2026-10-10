@@ -15,7 +15,7 @@ import from engine.world.inventory { AdjustInventory, quantity }
 import from engine.world.pickups { Pickup, HasPickup, PickupTick }
 import from engine.world.level { Level }
 import from engine.core.savegame { snapshot, restore }
-import from engine.math.vec3 { Vec3 }
+import from engine.math.vec3 { Vec3, right_from }
 import from engine.physics.collision { CollisionMap }
 
 test "original loadouts require owned weapons and grant appropriate starting ammo" {
@@ -316,4 +316,112 @@ test "delayed energy burst also requires visibility from the shooter" {
     orb.burst_wait = 0.1;
     world spawn ProjectileTick(player=player, collision=collision, state=state, dt=0.1);
     assert target.health < 1000 and orb.phase == 2;
+}
+
+
+"""A player holding `game`'s weapon `key` with ammunition for it."""
+def holding_weapon(game: str, key: str, player: Player, state: CombatState) {
+    equip_player(player, state, game);
+    for rule in state.rules {
+        if rule.key == key {
+            player.inventory spawn AdjustInventory(kind="weapon_" + key, amount=1);
+            if rule.ammo {
+                player.inventory spawn AdjustInventory(kind=rule.ammo, amount=50, capacity=200);
+            }
+            assert select_weapon(player, state, rule.slot);
+            state.cooldown = 0.0;
+            state.lowering = 0.0;
+            state.raising = 0.0;
+        }
+    }
+}
+
+"""Where the missile of one shot of `game`'s `key` starts, from the eye of a
+player looking along +x: [ahead, to the right, up]."""
+def missile_start(game: str, key: str, shots: int = 1) -> Vec3 {
+    world = World();
+    player = Player(pos=Vec3(x=10.0, y=20.0, z=30.0));
+    state = CombatState();
+    holding_weapon(game, key, player, state);
+    for i in range(shots) {
+        for old in [world->:HasProjectile:->][?:Projectile] {
+            world del --> old;
+        }
+        state.cooldown = 0.0;
+        assert fire_weapon(world, player, CollisionMap(), state);
+    }
+    missile = [world->:HasProjectile:->][?:Projectile][0];
+    offset = missile.pos.sub(player.pos);
+    return Vec3(x=offset.x, y=offset.dot(right_from(0.0)), z=offset.z);
+}
+
+def near(a: Vec3, b: Vec3) -> bool {
+    return a.sub(b).length() < 0.0001;
+}
+
+test "missiles leave each game's own muzzle, not the eye" {
+    # Q1 weapons.qc: W_FireRocket 8 ahead and 16 above the origin (6 below
+    # the eye), W_FireGrenade the origin itself, W_FireSpikes 4 to the right
+    # and then 4 to the left, W_FireSuperSpikes neither.
+    assert near(missile_start("q1", "rocketlauncher"), Vec3(x=8.0, z=-6.0));
+    assert near(missile_start("q1", "grenadelauncher"), Vec3(z=-22.0));
+    assert near(missile_start("q1", "nailgun"), Vec3(y=4.0, z=-6.0));
+    assert near(missile_start("q1", "nailgun", 2), Vec3(y=-4.0, z=-6.0));
+    assert near(missile_start("q1", "supernailgun"), Vec3(z=-6.0));
+    # Q2 p_weapon.c P_ProjectSource: 8 to the right and 8 below the eye; the
+    # blaster 24 ahead, the launchers and the BFG 8.
+    assert near(missile_start("q2", "blaster"), Vec3(x=24.0, y=8.0, z=-8.0));
+    assert near(missile_start("q2", "rocketlauncher"), Vec3(x=8.0, y=8.0, z=-8.0));
+    assert near(missile_start("q2", "grenadelauncher"), Vec3(x=8.0, y=8.0, z=-8.0));
+    # Weapon_HyperBlaster_Fire carries the bolt round a 4-unit circle.
+    first = missile_start("q2", "hyperblaster");
+    assert abs(first.x - (24.0 - 3.4641)) < 0.001 and abs(first.z - (-8.0 + 2.0)) < 0.001;
+    # Q3 g_weapon.c CalcMuzzlePoint: 14 ahead of the eye for every weapon.
+    for key in ["rocketlauncher", "grenadelauncher", "plasmagun", "bfg"] {
+        assert near(missile_start("q3", key), Vec3(x=14.0)) , key;
+    }
+}
+
+test "a Q3 missile starts 50 ms into its flight and a walled-off muzzle fires from the eye" {
+    world = World();
+    player = Player();
+    state = CombatState();
+    collision = CollisionMap();
+    holding_weapon("q3", "rocketlauncher", player, state);
+    assert fire_weapon(world, player, collision, state);
+    rocket = [world->:HasProjectile:->][?:Projectile][0];
+    world spawn ProjectileTick(player=player, collision=collision, state=state, dt=0.01);
+    # MISSILE_PRESTEP_TIME: 900 units a second for 10 + 50 ms from the muzzle.
+    assert abs(rocket.pos.x - (14.0 + 900.0 * 0.06)) < 0.001;
+    world spawn ProjectileTick(player=player, collision=collision, state=state, dt=0.01);
+    assert abs(rocket.pos.x - (14.0 + 900.0 * 0.07)) < 0.001;
+    # A wall between the eye and the muzzle: the rocket starts at the eye and
+    # goes off against the wall.
+    walled = World();
+    state.cooldown = 0.0;
+    collision.add_box(
+        Vec3(x=6.0, y=-100.0, z=-100.0), Vec3(x=8.0, y=100.0, z=100.0), Vec3(), Vec3(), Vec3()
+    );
+    assert fire_weapon(walled, player, collision, state);
+    stopped = [walled->:HasProjectile:->][?:Projectile][0];
+    assert near(stopped.pos, player.pos);
+}
+
+test "Q2 bullets and slugs are traced from the gun, beside and below the eye" {
+    # fire_rail from P_ProjectSource's (0, 7, viewheight - 8): the slug runs
+    # parallel to the aim and strikes 7 to the right and 8 below it.
+    world = World();
+    player = Player();
+    state = CombatState();
+    collision = CollisionMap();
+    holding_weapon("q2", "railgun", player, state);
+    collision.add_box(
+        Vec3(x=200.0, y=-100.0, z=-100.0), Vec3(x=210.0, y=100.0, z=100.0), Vec3(), Vec3(), Vec3()
+    );
+    assert fire_weapon(world, player, collision, state);
+    struck = state.impacts[len(state.impacts) - 1].origin;
+    side = right_from(0.0);
+    assert abs(struck.x - 200.0) < 0.01
+        and abs(struck.dot(side) - 7.0) < 0.01
+        and abs(struck.z + 8.0) < 0.01;
 }

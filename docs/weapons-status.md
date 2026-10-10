@@ -28,6 +28,17 @@ and [g_missile.c](https://github.com/id-Software/Quake-III-Arena/blob/master/cod
 
 ## Firing
 
+- **Muzzles.** Every shot, traced or thrown, starts at its weapon's muzzle
+  rather than the eye (`WeaponRule.muzzle`, `launch_point`). Q1 weapons.qc:
+  rockets 8 ahead and 6 below the eye, grenades from the origin (22 below),
+  nails 6 below and 4 to the right and left in turn, bullets 10 ahead at
+  seven tenths of the player's height (`FireBullets`). Q2 p_weapon.c
+  `P_ProjectSource`: 8 to the right and 8 below (the railgun and chaingun 7),
+  the blasters 24 ahead and the launchers and BFG 8, the chaingun scattered
+  up to 4 either way and the hyperblaster carried round a 4-unit circle. Q3
+  g_weapon.c `CalcMuzzlePoint`: 14 ahead of the eye for every weapon, and a
+  missile starts 50 ms into its flight (`MISSILE_PRESTEP_TIME`). A muzzle a
+  wall cuts off from the eye fires from the eye.
 - **Hitscan.** Pellet spread uses a saved random stream (Q2's machine-gun climb,
   Q3 `Bullet_Fire` spread). Damage from all pellets aggregates before armor and
   death callbacks. Rails pierce actors and stop at world geometry.
@@ -110,9 +121,6 @@ shells. Only those two slots can be selected.
 
 ## Limitations
 
-- Player projectiles leave from the eye. The per-game muzzle offsets
-  (`muzzle_point`: Q2 `P_ProjectSource`, Q3 `CalcMuzzlePoint`) place only
-  hitscan trails.
 - Q2 `team` item groups are ignored, and Q2 `ITEM_NO_TOUCH` items (spawnflag 2)
   are not spawned at all rather than placed untouchable (`games/items.jac`).
 - Q3 model shaders' `deformVertexes` stages (including autosprite) are parsed
