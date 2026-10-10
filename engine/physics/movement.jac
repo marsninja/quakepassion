@@ -384,6 +384,7 @@ walker MovePlayer {
         pos = here.pos.sub(Vec3(z=self.collision.eye_height));
         # Q2 Pmove drops pm_time each move; PMF_TIME_LAND ends with it.
         here.land_time = max(0.0, here.land_time - self.dt);
+        here.teleport_time = max(0.0, here.teleport_time - self.dt);
         # Q1 FL_JUMPRELEASED, Q2/Q3 PMF_JUMP_HELD clear with the button up.
         if not self.jump {
             here.jump_held = False;
@@ -468,10 +469,18 @@ walker MovePlayer {
             );
         }
         speed = body.walk_speed * haste;
-        direction = Vec3(x=self.wish.x, y=self.wish.y).normalized();
+        level = Vec3(x=self.wish.x, y=self.wish.y);
+        ahead = self.command.y;
+        # Q1 SV_AirMove drops a backward forwardmove while teleport_time
+        # runs, so nobody backs straight into the teleporter they left.
+        if body.teleport_time > 0.0 and ahead < 0.0 {
+            level = level.sub(forward_from(body.yaw, 0.0).scale(ahead));
+            ahead = 0.0;
+        }
+        direction = level.normalized();
         wish = direction.scale(
             rules.command_speed(
-                self.command.y,
+                ahead,
                 self.command.x,
                 self.command.z,
                 False,

@@ -233,6 +233,14 @@ walker TraversalTick {
             );
             self.player.teleport_cooldown = 0.2;
             self.player.teleport_hold = destination.hold_time;
+            # Q1 triggers.qc teleport_touch: teleport_time = time + 0.7. Q3
+            # g_misc.c TeleportPlayer: pm_time 160 with PMF_TIME_KNOCKBACK,
+            # so the exit speed is not rubbed off by the ground.
+            if here.game == "q1" {
+                self.player.teleport_time = 0.7;
+            } elif here.game == "q3" {
+                self.player.knockback_time = 0.16;
+            }
             self.relocated = True;
             # Q1 spawn_tfog, Q2 EV_PLAYER_TELEPORT, Q3 TELEPORT_OUT and _IN.
             if here.game == "q3" {

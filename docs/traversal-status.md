@@ -22,6 +22,11 @@ Teleporters:
   along the view); Q2 `misc_teleporter` pads to `misc_teleporter_dest` (10 up,
   velocity cleared, a 160 ms hold as `pm_time` does). Position, view and
   velocity change together.
+- After a Q1 teleport the player cannot move backward for 0.7 s
+  (`teleport_time`, which `SV_AirMove` checks so nobody backs straight into
+  the teleporter); a strafe still works. After a Q3 teleport the exit speed
+  is held for 160 ms with no ground friction (`TeleportPlayer`'s `pm_time`
+  with `PMF_TIME_KNOCKBACK`).
 - A destination inside solid rejects the teleport. Arrival telefrags whoever
   stands there (Q1 `spawn_tdeath`, Q2 `KillBox`, Q3 `G_KillBox`), through
   armour and invulnerability, credited to the arriving player; Q3 telefrags
@@ -68,8 +73,6 @@ Pushes:
 
 - After a teleport the player cannot trigger another for 0.2 s. This is the
   engine's own guard, not an original rule.
-- Q1 `teleport_time` (no backward movement for 0.7 s after a teleport) and
-  Q3's 160 ms `PMF_TIME_KNOCKBACK` from `TeleportPlayer` are not applied.
 - Q3's teleport effect (`CG_SpawnEffect`, the `teleportEffect` model and
   shader) is drawn as a spark spray.
 - Some shipped teleporters cannot work in the originals either and stay

@@ -58,7 +58,6 @@ Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigatio
 Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-status.md](map-mechanics-status.md), [level-flow-status.md](level-flow-status.md), [traversal-status.md](traversal-status.md)):
 - Closed Q2/Q3 area portals do not cull rendering, sounds are not PHS-limited,
   and a relay-toggled portal's state is not saved.
-- Q1 `teleport_time` and Q3's post-teleport `PMF_TIME_KNOCKBACK` are not applied.
 - Q3 RoQ cinematics are not played.
 - `target_actor`/`misc_actor` are not driven (no shipped map needs them).
 
