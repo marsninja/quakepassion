@@ -569,15 +569,31 @@ obj CollisionMap {
     # The box the brush hulls were really expanded by (add_brush), where it
     # is not the declared one.
     has brush_box: AABB | None = None;
+    # Clip brushes stop only whom they name. `clips` are the hulls of brushes
+    # that are clip and nothing solid (Q2 CONTENTS_PLAYERCLIP and
+    # CONTENTS_MONSTERCLIP, Q3 CONTENTS_PLAYERCLIP). Of those, on Q2 maps,
+    # `player_clips` stop players and not monsters and `monster_clips`
+    # monsters and not players. A view names the mask it traces with:
+    # "player" (MASK_PLAYERSOLID), "monster" (MASK_MONSTERSOLID) or "solid"
+    # (MASK_SOLID, which no clip brush stops: items, gibs, the chase camera).
+    has clips: set[int] = set(),
+        player_clips: set[int] = set(),
+        monster_clips: set[int] = set(),
+        mask: str = "player";
     # Brush sides a shot leaves nothing on, by hull: the sky and Q3
     # SURF_NOIMPACT take no impact at all, Q3 SURF_NOMARKS no marks.
     has no_impact: dict[int, list[Vec3]] = {},
         no_marks: dict[int, list[Vec3]] = {};
 
     # Share live geometry and mover offsets, but keep actor stance independent.
-    # With `mins`/`maxs` the view traces that box instead of the player's.
+    # With `mins`/`maxs` the view traces that box instead of the player's,
+    # and with `mask` it is stopped by the clip brushes of that mask.
     def for_body(
-        height: float, drop: float = 0.0, mins: Vec3 | None = None, maxs: Vec3 | None = None
+        height: float,
+        drop: float = 0.0,
+        mins: Vec3 | None = None,
+        maxs: Vec3 | None = None,
+        mask: str = "player"
     ) -> CollisionMap {
         view = CollisionMap(
             revision=self.revision,
@@ -595,6 +611,10 @@ obj CollisionMap {
             hull_maxs=self.hull_maxs,
             large_hulls=self.large_hulls,
             brush_box=self.brush_box,
+            clips=self.clips,
+            player_clips=self.player_clips,
+            monster_clips=self.monster_clips,
+            mask=mask,
             no_impact=self.no_impact,
             no_marks=self.no_marks
         );
@@ -602,6 +622,22 @@ obj CollisionMap {
             view.fit_body(mins, maxs);
         }
         return view;
+    }
+
+    """The hulls this view's mask goes through: every clip brush for
+    "solid", and for a player or a monster those that name only the other."""
+    def passed() -> set[int] {
+        if self.mask == "solid" {
+            return self.clips;
+        }
+        return self.player_clips if self.mask == "monster" else self.monster_clips;
+    }
+
+    """Whether this view's body goes through hull `index`. Every test of a
+    single hull (a mover pushing, a button touched) asks this, as `trace`
+    does."""
+    def passes(index: int) -> bool {
+        return index in self.passed();
     }
 
     """Trace a body box of `mins`..`maxs` about the origin. Brush hulls shift
@@ -874,8 +910,9 @@ obj CollisionMap {
         } else {
             indices = list(range(len(self.hulls)));
         }
+        passed = self.passed();
         for i in indices {
-            if i in exclude or i in self.disabled {
+            if i in exclude or i in self.disabled or i in passed {
                 continue;
             }
             # Tree leaves hold small batches; reject each nonintersecting hull

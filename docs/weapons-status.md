@@ -78,8 +78,14 @@ surfaces, and model `animMap` stages keep their image sequence and frequency
 
 - Items settle as their game spawns them (Q1 `PlaceItem`/`droptofloor`, where
   an item starting partly in solid is carried out to the floor as `SV_Move`
-  does; Q2 `droptofloor`; Q3 `FinishSpawningItem`) and ride movers. A falling
-  Q2 item and every item's place are saved.
+  does; Q2 `droptofloor`; Q3 `FinishSpawningItem`) and ride movers. Q2 and
+  Q3 put an item down with `MASK_SOLID`, so one standing in a clip brush is
+  kept and comes down through it onto the floor (all 28 items of q3dm19 sit
+  over thin player clip, as do one of q3dm11's, two of q3tourney2's and one
+  each in Q2's city3 and ware1). A thrown Q3 item is stopped by player clip
+  (`G_RunItem`: `MASK_PLAYERSOLID` less bodies); a thrown or falling Q2 item
+  goes through clip (`SV_Physics_Toss`). A falling Q2 item and every item's
+  place are saved.
 - Touch uses each game's boxes: Q1 the item box widened 15 units (`FL_ITEM`)
   against the player (`SV_TouchLinks`), Q2 both boxes a unit bigger
   (`G_TouchTriggers`), Q3 `BG_PlayerTouchesItem`'s 44/50/36-unit reach.
@@ -115,7 +121,11 @@ shells. Only those two slots can be selected.
 - `tests/hand_grenade_tests.jac`: release, held detonation, pause and saves,
   empty-weapon fallback, pin and tick sounds, death with the pin out.
 - `tests/pickup_tests.jac`, `tests/item_drop_tests.jac`: touch boxes, armor
-  rules, trigger-spawned and targeted items, Q3 teams and `random`, death drops.
+  rules, trigger-spawned and targeted items, Q3 teams and `random`, death
+  drops, a thrown item on player clip per game. `tests/mover_push_tests.jac`:
+  items settling, and one put down through a clip brush. Native:
+  `scripts/validate_item_clip.jac` counts the items each map in `QP_MAPS`
+  keeps and those placed in a clip brush, and takes one of them.
 - `tests/orientation_tests.jac`, `tests/model_material_tests.jac`: projectile
   transforms and animated model stages.
 - Native: `scripts/weapon_smoke.jac` (every weapon's assets and firing path),

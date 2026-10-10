@@ -137,14 +137,15 @@ docs.
   hit, or whenever pain is due, without a flinch.
 - `begin_death` is the die function for a death that leaves a body. A monster
   that gibs draws no sequence.
-- Pain and death frames stride along the monster's facing (Q1 `ai_painforward`
-  and `ai_forward` ahead, `ai_pain` and `ai_back` behind; Q2
-  `{ai_move, dist}` by the model scale) through `sequence_stride`, the same
-  walk-move attack `steps` use. It moves with the monster's own box over
-  steps and along walls, and not at all when the ground would end under it,
-  when the monster is in the air, or into its target's box. Fliers and
-  swimmers take the whole step or none (`SV_movestep`), and a swimmer out of
-  the water stays put.
+- Pain and death frames step the monster (Q1 `ai_painforward` along
+  `ideal_yaw`, `ai_pain` back along the facing, `ai_forward` and `ai_back`
+  along it; Q2 `{ai_move, dist}` by the model scale along the facing)
+  through `sequence_step`, the walk-move attack `steps` use
+  (`PF_walkmove`, `M_walkmove`). Each step is taken whole as its frame
+  begins, with the monster's own box, or not at all: into a wall or another
+  body, where the ground would end under it, or with a walker in the air. A
+  dead flier or swimmer and a swimmer out of the water stay put. See
+  [navigation-status.md](navigation-status.md).
 - A body with no authored sequences (a hand-built one, or a class without a
   rule) flinches for `pain_duration` on its model's first pain family and
   falls on its first death family.
@@ -279,9 +280,11 @@ docs.
 ## Trail hunting
 
 Q2's player trail (`p_trail.c`) is a graph of up to eight `TrailMark` crumbs
-hanging off a `PlayerTrail` node (`engine/world/trail.jac`). The player drops a
-crumb every half second once they are 32 units from the last one; each
-records the heading it was reached on. A Q2 monster that reaches the spot
+hanging off a `PlayerTrail` node (`engine/world/trail.jac`). Once every 0.1 s
+server frame a living player who cannot see the last crumb drops one where
+they stand (`ClientBeginServerFrame`: `PlayerTrail_Add` when
+`PlayerTrail_LastSpot` is not `visible`); each records the heading it was
+reached on. A Q2 monster that reaches the spot
 where it lost the player takes the first crumb laid since
 (`PlayerTrail_PickFirst`: that crumb, or the one before it if only that one
 is in sight) and then each next one (`PlayerTrail_PickNext`), turning to the

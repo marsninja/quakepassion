@@ -1,6 +1,7 @@
 """Q2's player trail (p_trail.c): the player leaves up to eight breadcrumbs,
-one whenever they have moved on from the last, and a monster that has lost
-sight of them follows the crumbs laid since it last saw them, oldest first."""
+one whenever the last has gone out of their sight, and a monster that has
+lost sight of them follows the crumbs laid since it last saw them, oldest
+first."""
 import math;
 import from .world { World, Player }
 import from ..physics.collision { CollisionMap }
@@ -8,8 +9,11 @@ import from ..math.vec3 { Vec3 }
 
 glob TRAIL_LENGTH: int = 8;
 
+"""The trail: its clock (level.time) and the time to the next 0.1 s
+server frame."""
 node PlayerTrail {
-    has clock: float = 0.0;
+    has clock: float = 0.0,
+        frame_wait: float = 0.0;
 }
 
 """One crumb: where the player was, when, and the heading (degrees) they
@@ -34,10 +38,14 @@ def trail_of(world: World) -> PlayerTrail {
     return trail;
 }
 
-"""Drop a crumb every half second the player has moved 32 units from the last."""
+"""ClientBeginServerFrame: once a 0.1 s server frame, a living player who
+cannot see the last crumb (visible(): from the eye to the crumb's origin)
+drops one where they stand (PlayerTrail_Add of s.old_origin, which
+G_RunFrame has just copied from s.origin)."""
 walker TrailTick {
     has player: Player,
-        dt: float;
+        dt: float,
+        collision: CollisionMap;
 
     can begin with World entry {
         self.lay(trail_of(here));
@@ -51,6 +59,11 @@ walker TrailTick {
 
     def lay(trail: PlayerTrail) {
         trail.clock += self.dt;
+        trail.frame_wait -= self.dt;
+        if trail.frame_wait > 0.0 {
+            return;
+        }
+        trail.frame_wait = trail.frame_wait + 0.1 if trail.frame_wait > -0.1 else 0.1;
         if self.player.health <= 0 {
             return;
         }
@@ -62,7 +75,9 @@ walker TrailTick {
             }
         }
         if newest is not None
-            and (trail.clock - newest.stamp < 0.5 or newest.pos.sub(self.player.pos).length() < 32.0) {
+            and self.collision.trace_point(
+                self.player.pos, newest.pos.sub(Vec3(z=self.collision.eye_height))
+            ).fraction == 1.0 {
             return;
         }
         heading = 0.0;
@@ -112,7 +127,8 @@ def next_crumb(world: World, since: float) -> TrailMark | None {
 
 """PlayerTrail_PickFirst: the crumb a monster that has just lost the player
 starts on. The oldest laid after `since` if `eye` can see it; else the one
-before it, if that is in sight; else the first all the same."""
+before it, if that is in sight; else the first all the same. A crumb is
+seen at its origin, as visible() sees an entity with no view height."""
 def first_crumb(
     world: World, since: float, eye: Vec3, collision: CollisionMap
 ) -> TrailMark | None {
@@ -120,7 +136,8 @@ def first_crumb(
     if marker is None {
         return None;
     }
-    if collision.trace_point(eye, marker.pos).fraction == 1.0 {
+    down = Vec3(z=collision.eye_height);
+    if collision.trace_point(eye, marker.pos.sub(down)).fraction == 1.0 {
         return marker;
     }
     # The crumb before it in the ring: the newest older one, or, before the
@@ -138,7 +155,7 @@ def first_crumb(
     if previous is None {
         previous = newest;
     }
-    if previous is not None and collision.trace_point(eye, previous.pos).fraction == 1.0 {
+    if previous is not None and collision.trace_point(eye, previous.pos.sub(down)).fraction == 1.0 {
         return previous;
     }
     return marker;

@@ -150,7 +150,7 @@ test "a monster does not step off a ledge but does walk down a stair" {
     assert not off.moved and walker_body.pos.x == 96.0;
 }
 
-test "another solid body stops a step, and a body already overlapped is the caller's to leave out" {
+test "another solid body stops a step, and one already overlapped still does" {
     collision = step_floor();
     collision.reindex();
     body = stepper();
@@ -165,6 +165,19 @@ test "another solid body stops a step, and a body already overlapped is the call
     # Sideways past it is free.
     aside = body spawn WalkMove(space=space, yaw=90.0, dist=40.0);
     assert aside.moved and abs(body.pos.y - 40.0) < 0.000001;
+    # Two bodies left overlapping (a leap or a fall can leave them so): a
+    # step whose end is still inside the other starts solid and is refused,
+    # as SV_movestep's trace refuses it; one that ends clear of it is taken.
+    stuck = stepper();
+    inside = AABB(mins=Vec3(x=-6.0, y=-16.0, z=0.0), maxs=Vec3(x=26.0, y=16.0, z=56.0));
+    crowd = StepSpace(collision=collision, solids=[inside]);
+    for heading in [0.0, 90.0, 180.0, 270.0] {
+        short = stuck spawn WalkMove(space=crowd, yaw=heading, dist=8.0);
+        assert not short.moved , str(heading);
+    }
+    assert stuck.pos.x == 0.0 and stuck.pos.y == 0.0;
+    away = stuck spawn WalkMove(space=crowd, yaw=180.0, dist=24.0);
+    assert away.moved and abs(stuck.pos.x + 24.0) < 0.000001;
 }
 
 test "SV_StepDirection turns first and steps only once within 45 degrees one way round" {
@@ -363,6 +376,11 @@ test "fliers rise and sink 8 units a step toward 30 to 40 above their enemy" {
     low.solids = [AABB(mins=Vec3(x=40.0, y=-16.0, z=0.0), maxs=Vec3(x=72.0, y=16.0, z=200.0))];
     step = body spawn WalkMove(space=low, yaw=0.0, dist=16.0);
     assert not step.moved and body.pos.x == 16.0;
+    # A flier already inside another body is not held by it (a trace that
+    # starts solid runs its whole length).
+    low.solids = [AABB(mins=Vec3(x=20.0, y=-16.0, z=0.0), maxs=Vec3(x=52.0, y=16.0, z=200.0))];
+    step = body spawn WalkMove(space=low, yaw=0.0, dist=16.0);
+    assert step.moved and body.pos.x == 32.0;
     # Q2 comes level with a goal that is not a player, to the unit.
     body = MonsterBody(pos=Vec3(z=5.0 + 22.0), health=100, rule=flier_rule);
     spot = StepSpace(collision=open_air, game="q2", chasing=True, seek_z=0.0, seek_client=False);

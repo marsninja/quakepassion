@@ -443,23 +443,27 @@ test "the run-and-shoot strides its frames, fires on runs04 and runs on only on 
         assert rule is not None;
         enemy = Opponent(rule=rule, game="q2", skill=1, pos=Vec3(z=22.01), grounded=True);
         charge = start_sequence(enemy, "attack6", player.pos);
-        # The machine gunner holds runs04 for its burst and does not move then.
+        # The machine gunner holds runs04 for its burst: the frame steps as
+        # it is first shown (M_MoveFrame) and not again while it is held.
         held = float(enemy.burst_count - 1) * 0.1;
         assert (held > 0.0) == (kind == "monster_soldier_ss");
         stood = -1.0;
         for i in range(int((charge.duration + held) * 20.0 + 0.5)) {
-            if abs(enemy.attack_clock - 0.3) < 0.001 {
+            if abs(enemy.attack_clock - 0.4) < 0.001 {
                 stood = enemy.pos.x;
             }
-            if held > 0.0 and abs(enemy.attack_clock - (0.3 + held)) < 0.001 {
+            # (A slice before runs05 begins.)
+            if held > 0.0 and abs(enemy.attack_clock - (0.35 + held)) < 0.001 {
                 assert abs(enemy.pos.x - stood) < 0.001;
             }
             attack_charge(enemy, player, floor, 0.05);
+            enemy.advance(0.05);
             enemy.attack_clock += 0.05;
         }
-        # The fourteen ai_charge distances, by MODEL_SCALE 1.2.
+        # The fourteen ai_charge distances, by MODEL_SCALE 1.2, each along
+        # the soldier's own facing.
         assert abs(enemy.pos.x - 168.0 * 1.2) < 0.01 , str(enemy.pos.x);
-        assert abs(stood - 26.0 * 1.2) < 0.01;
+        assert abs(stood - 37.0 * 1.2) < 0.01;
     }
     # soldier_attack6_refire: back to runs03 on skill 3 with the enemy still
     # at RANGE_MID or beyond; otherwise the sequence ends.

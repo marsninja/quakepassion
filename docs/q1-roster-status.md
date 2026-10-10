@@ -62,7 +62,8 @@ third frame of the death, so one that gibs drops nothing. A dying monster
 still blocks the player until the frame whose function sets `SOLID_NOT` (the
 third of most deaths, the sixth of the fiend's, the last of the rotfish's;
 the dog and the vore at once). A knocked-down zombie is passable while it lies
-flat and gets up only when nothing stands where it lies.
+flat and gets up only when nothing, the player or another monster, stands
+where it lies (`zombie_paine12`'s `walkmove(0, 0)`, `stands_clear`).
 
 Details that follow the QuakeC:
 
@@ -137,8 +138,6 @@ saved.
 
 - The fiend's leap plays `leap1`-`leap12` straight through; `demon1_jump10`
   holds its frame for up to three seconds until it lands.
-- A knocked-down zombie is only kept down by the player standing on it, not
-  by another monster.
 
 References: [v101qc](https://github.com/id-Software/Quake-Tools/tree/master/qcc/v101qc)
 (`soldier.qc`, `dog.qc`, `knight.qc`, `hknight.qc`, `enforcer.qc`, `ogre.qc`,

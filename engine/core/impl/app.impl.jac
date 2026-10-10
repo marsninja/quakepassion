@@ -1527,7 +1527,11 @@ impl App.step() -> bool {
             if self.level.bsp.game == "q2" {
                 trail = self.player_trail;
                 if trail is not None {
-                    trail spawn TrailTick(player=self.player, dt=self.physics_clock.tick_rate);
+                    trail spawn TrailTick(
+                        player=self.player,
+                        dt=self.physics_clock.tick_rate,
+                        collision=self.level.collision
+                    );
                 }
             }
             if self.level_falling {
@@ -1576,7 +1580,9 @@ impl App.step() -> bool {
                 collision=self.level.collision, dt=self.physics_clock.tick_rate
             );
             self.world spawn TossTick(
-                collision=self.level.collision, dt=self.physics_clock.tick_rate
+                collision=self.level.collision,
+                dt=self.physics_clock.tick_rate,
+                game=self.level.bsp.game
             );
             for impact in self.combat.impacts {
                 if impact.model >= 0 {

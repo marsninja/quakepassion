@@ -56,9 +56,9 @@ They are scripted runs, not human playthroughs; see
 Each is verified against the code; the linked doc has the detail.
 
 Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
-- Attack-frame steps (`ai_charge`) are stopped by the target's box only, not
-  by other monsters, and bodies that already overlap do not block each other.
-- Q2 monsters collide with player clip brushes, not monster clip brushes.
+- The fiend's leap does not hold its frame until it lands; the insane
+  marines' cries carry as far as any sound and a standing one never lies
+  down by itself.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
 - Repeated models are not instanced.
