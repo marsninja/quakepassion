@@ -503,6 +503,30 @@ def jump_launch(start: Vec3, finish: Vec3) -> Vec3 {
     return horizontal.add(Vec3(z=270.0));
 }
 
+"""be_ai_move.c BotTravel_Jump's run start: up to 80 units back from the
+jump's start along the line of the jump, as far as that stays in the area
+the jump leaves (sampled every 10 units). The bot goes there first, so that
+it runs up to the jump along its line. None when there is no room."""
+def jump_run_start(mesh: NavMesh, area: int, passage: Passage) -> Vec3 | None {
+    back = Vec3(x=passage.start.x - passage.finish.x, y=passage.start.y - passage.finish.y);
+    if back.length() < 0.001 {
+        return None;
+    }
+    back = back.normalized();
+    room = 0.0;
+    while room < 80.0 {
+        probe = passage.start.add(back.scale(room + 10.0)).add(Vec3(z=2.0));
+        if mesh.aas.area_at(probe) != area {
+            break;
+        }
+        room += 10.0;
+    }
+    if room <= 0.0 {
+        return None;
+    }
+    return passage.start.add(back.scale(room));
+}
+
 """A planned path: waypoints at bot-origin height, the launch to apply on
 reaching each one, the AAS area whose entry completes it (0 when only
 reaching the point itself counts, as for a jump's takeoff), and the passage a
@@ -674,6 +698,12 @@ def plan_route(
         if best.kind in [TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_LADDER, TRAVEL_WATERJUMP, TRAVEL_ELEVATOR, TRAVEL_FUNCBOB] {
             route.add(best.finish, best.target, passage=best);
         } else {
+            if best.kind == TRAVEL_JUMP {
+                run_up = jump_run_start(mesh, area, best);
+                if run_up is not None {
+                    route.add(run_up, 0, passage=best);
+                }
+            }
             if best.kind in [TRAVEL_BARRIERJUMP, TRAVEL_JUMP] {
                 route.add(best.start, 0, jump_launch(best.start, best.finish), best);
             } elif best.kind == TRAVEL_WALKOFFLEDGE {

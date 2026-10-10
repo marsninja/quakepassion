@@ -46,9 +46,11 @@ Each frame a bot follows its route (`BotMoveToGoal`) and gets a
 weapon the movement needs, a movement view, waiting and failure.
 
 - Walk, crouch, barrier jump, jump, walk off ledge, teleport and jump pad head
-  for the passage's points; a jump launches at 270 units/s once the bot is
-  within 24 units of its start (`BotTravel_Jump`), with the horizontal speed
-  that lands it from there.
+  for the passage's points. A jump (`BotTravel_Jump`) is run up to from a
+  run start up to 80 units behind its start along the jump's line (as far as
+  that stays in the area), and launches at 270 units/s once the bot is
+  within 24 units of the start, with the horizontal speed that lands it from
+  there.
 - Swim (`BotTravel_Swim`): with the waist under, straight for the waypoint in
   three dimensions, looking where it swims (`MOVERESULT_SWIMVIEW`).
 - Water jump (`BotTravel_WaterJump`): swim for the far end looking 15 units
@@ -325,7 +327,10 @@ Tests:
   inventories, `BOTARM`/`BOTITEM`).
 
 Scripts (native, need the Q3 assets):
-- `scripts/bot_files_smoke.jac`: loads every bot's files.
+- `scripts/bot_files_smoke.jac`: loads every bot's files, and the reply
+  chats every bot answers by (457 reply chats with 1638 keys and 3811
+  answers, 191 synonym lists and 182 match templates in the shipped
+  `rchat.c`, `syn.c` and `match.c`).
 - `scripts/aas_smoke.jac`: plans a route from every spawn point and resting
   item to every spawn point and item goal, with `TFL_DEFAULT` and with rocket
   jumps. Run of 2026-09-28:
@@ -346,12 +351,12 @@ Scripts (native, need the Q3 assets):
 - `scripts/bot_obstacle_smoke.jac` (`QP_MAPS`, `QP_SECONDS`, `QP_VERBOSE`):
   for each door that something else opens, a bot alone is sent between two
   spawn points or items whose route runs into the shut door. q3dm7 and
-  q3dm11 are the ladder arenas with such doors. Run of 2026-10-09:
+  q3dm11 are the ladder arenas with such doors. Run of 2026-10-10:
 
   | Map | Door | Bot went to | Door opened | Goal reached |
   | --- | --- | --- | --- | --- |
-  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.2 s | 16.5 s |
-  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.8 s |
+  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.1 s | 20.6 s |
+  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.0 s |
   | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.5 s | 4.7 s |
 
   For q3dm7's `*5` the bot stacks two goals (the trigger, and the button
@@ -402,9 +407,6 @@ Scripts (native, need the Q3 assets):
   there.
 - A bot that ends up on a plat or bobbing platform it was not taking keeps
   its route; Q3 switches it to that mover's reachability.
-- `BotTravel_Jump`'s run-up (to a run start up to 80 units behind the jump,
-  then along its line) is not modelled: a bot heads straight for the
-  takeoff.
 - `BotAIBlocked`'s sidestep is tested with the bots' wall and ledge probe
   (`can_step`), not `AAS_PredictClientMovement`. Bots do not block one
   another's movement; they only sidestep each other.
