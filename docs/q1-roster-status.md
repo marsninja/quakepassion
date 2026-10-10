@@ -51,7 +51,7 @@ mechanism is in [monster-behaviour-status.md](monster-behaviour-status.md).
 | `monster_wizard` | `pain` when `random()*70` is within the damage; no `pain_finished` | `death` |
 | `monster_demon1` | `pain` when `random()*200` is within the damage (1 s) | `die` |
 | `monster_shambler` | `pain` when `random()*400` is within the damage (2 s) | `death` |
-| `monster_zombie` | `paina`-`paind` at even odds, each with its sound and steps; `paine` knockdown | always gibs |
+| `monster_zombie` | `paina`-`paind` at even odds, each with its sound and steps (`z_fall` on painb9); `paine` knockdown with `z_fall` as it lands and `z_idle` as it rises | always gibs |
 | `monster_shalrath` | `pain` (3 s) | `death` |
 | `monster_fish` | `pain` on every hit, backing away 6 units a frame | `death` |
 
@@ -133,8 +133,8 @@ saved.
 
 - Pain and death details not reproduced: the fiend's immunity to pain in
   mid-leap and its `pain_finished` being set before the flinch roll; the
-  zombie's `inpain` bookkeeping (a second hit soon after a pain drops it) and
-  its `z_fall.wav`; the Scrag's corpse being thrown as it dies; the frame on
+  zombie's `inpain` bookkeeping (a second hit soon after a pain drops it); the
+  Scrag's corpse being thrown as it dies; the frame on
   which a dying monster stops being solid.
 
 References: [v101qc](https://github.com/id-Software/Quake-Tools/tree/master/qcc/v101qc)

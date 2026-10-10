@@ -86,9 +86,16 @@ def sequenced(game: str, kind: str, seed: int = 1, skill: int = 1) -> Opponent {
     rule = enemy_rule(game, kind);
     assert rule is not None;
     paths: list[str] = [path for path in rule.pain_sounds];
-    for sequence in rule.pains + rule.deaths {
+    for sequence in rule.pains + rule.deaths + [rule.knockdown] {
         if sequence.sound and sequence.sound not in paths {
             paths.append(sequence.sound);
+        }
+        for event in sequence.events {
+            for path in event.sounds {
+                if path not in paths {
+                    paths.append(path);
+                }
+            }
         }
     }
     if rule.death_sound {
@@ -191,8 +198,10 @@ test "every monster's pain and death tables match the originals" {
     # zombie_paine, the knockdown: thirty frames, 15 back in all.
     zombie = enemy_rule("q1", "monster_zombie");
     assert zombie is not None;
-    assert len(zombie.knockdown_frames) == 30 and len(zombie.knockdown_steps) == 30;
-    assert sum(zombie.knockdown_steps) == -15.0;
+    assert len(zombie.knockdown.frames) == 30 and len(zombie.knockdown.steps) == 30;
+    assert sum(zombie.knockdown.steps) == -15.0;
+    # paine11 waits five seconds (nextthink + 5) before it gets up.
+    assert zombie.knockdown.hold_frame == 10 and zombie.knockdown.hold_time == 5.0;
     # m_insane.c: the standing or the crawling sequences, by its stance.
     stands = enemy_rule("q2", "misc_insane");
     crawls = enemy_rule("q2", "misc_insane", 4);
@@ -709,4 +718,83 @@ test "a death in progress and a held attack survive a save" {
     restore(world, level, player, state, plain);
     assert soldier.death_variant == 0 and holder.readied == -1;
     assert soldier.visual.first == soldier.death_animations[0][-1];
+}
+
+"""Give a monster the named pain to play from its first frame."""
+def in_pain(game: str, kind: str, name: str, seed: int = 1) -> Opponent {
+    enemy = sequenced(game, kind, seed);
+    enemy.pain_variant = 1 + [sequence.name for sequence in enemy.rule.pains].index(name);
+    enemy.pain_wait = pain_length(enemy);
+    return enemy;
+}
+
+test "pain and death frames make the sounds their frame functions do" {
+    nothing = CollisionMap();
+    # tank_footstep on the last frame of tank_move_pain3.
+    tank = in_pain("q2", "monster_tank", "pain3");
+    stagger(tank, nothing, 1.45);
+    assert heard(tank, "sound/tank/step.wav") == 0;
+    stagger(tank, nothing);
+    assert heard(tank, "sound/tank/step.wav") == 1;
+    # jorg_step_left and jorg_step_right through jorg_move_pain3.
+    jorg = in_pain("q2", "monster_jorg", "pain3");
+    stagger(jorg, nothing, 0.45);
+    assert heard(jorg, "sound/boss3/step1.wav") == 1 and heard(jorg, "sound/boss3/step2.wav") == 1;
+    stagger(jorg, nothing);
+    assert heard(jorg, "sound/boss3/step1.wav") == 2 and heard(jorg, "sound/boss3/step2.wav") == 2;
+    # makron_popup on pain616, then makron_taunt: voice4 and voice3 three
+    # times in ten each, voice the rest.
+    taunts: dict[str, int] = {};
+    for seed in range(300) {
+        makron = in_pain("q2", "monster_makron", "pain6", seed);
+        stagger(makron, nothing, 2.25);
+        assert heard(makron, "sound/makron/popup.wav") == 1;
+        assert heard(makron, "sound/makron/voice.wav") + heard(makron, "sound/makron/voice3.wav") + heard(makron, "sound/makron/voice4.wav") == 0;
+        stagger(makron, nothing);
+        for path in ["sound/makron/voice4.wav", "sound/makron/voice3.wav", "sound/makron/voice.wav"] {
+            taunts[path] = taunts.get(path, 0) + heard(makron, path);
+        }
+    }
+    assert taunts["sound/makron/voice4.wav"] + taunts["sound/makron/voice3.wav"] + taunts["sound/makron/voice.wav"] == 300;
+    assert taunts["sound/makron/voice4.wav"] > 60 and taunts["sound/makron/voice4.wav"] < 120;
+    assert taunts["sound/makron/voice.wav"] > 90 and taunts["sound/makron/voice.wav"] < 150;
+    # zombie_painb9's z_fall; the knockdown's on paine10, and z_idle as it
+    # gets up after the five seconds on the ground.
+    zombie = in_pain("q1", "monster_zombie", "painb");
+    stagger(zombie, nothing, 0.75);
+    assert heard(zombie, "sound/zombie/z_fall.wav") == 0;
+    stagger(zombie, nothing, 0.1);
+    assert heard(zombie, "sound/zombie/z_fall.wav") == 1;
+    downed = sequenced("q1", "monster_zombie");
+    damage_opponent(downed, 30);
+    stagger(downed, nothing, 0.95);
+    assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 0;
+    stagger(downed, nothing, 5.0);
+    assert heard(downed, "sound/zombie/z_idle.wav") == 0;
+    stagger(downed, nothing, 0.3);
+    assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 1;
+    # tank_thud on death128, and the Makron's nine steps, makron_hit and
+    # makron_brainsplorch through makron_move_death2.
+    for row in [("monster_tank", "sound/tank/tnkdeth2.wav", 2.65, 0, 2.8, 1),
+        ("monster_makron", "sound/makron/step1.wav", 5.75, 3, 9.5, 5)] {
+        world = World();
+        body = sequenced("q2", row[0]);
+        world +>:HasOpponent:+> body;
+        damage_opponent(body, body.rule.health + 5);
+        assert body.health == 0 and body.death_variant == 1;
+        state = CombatState(game="q2");
+        player = Player(pos=Vec3(x=3000.0, z=22.0), god_mode=True);
+        for tick in range(int(row[2] * 60.0 + 0.5)) {
+            world spawn CombatTick(player=player, collision=nothing, state=state, dt=1.0 / 60.0);
+        }
+        assert heard(body, row[1]) == row[3] , row[0];
+        for tick in range(int((row[4] - row[2]) * 60.0 + 0.5)) {
+            world spawn CombatTick(player=player, collision=nothing, state=state, dt=1.0 / 60.0);
+        }
+        assert heard(body, row[1]) == row[5] , row[0];
+        if row[0] == "monster_makron" {
+            assert heard(body, "sound/makron/step2.wav") == 4;
+            assert heard(body, "sound/makron/bhit.wav") == 1 and heard(body, "sound/makron/brain1.wav") == 1;
+        }
+    }
 }

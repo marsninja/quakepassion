@@ -1,5 +1,5 @@
 """Campaign enemy definitions; behavioral special cases remain explicit work."""
-import from engine.world.opponent_rule { OpponentRule, AttackProfile, Gait, Reaction }
+import from engine.world.opponent_rule { OpponentRule, AttackProfile, Gait, Reaction, FrameEvent }
 import from engine.math.vec3 { Vec3 }
 
 # Muzzle-flash light colours: Q1 EF_MUZZLEFLASH (the engine's orange flash)
@@ -19,6 +19,11 @@ def two(number: int) -> str {
 # Frames `first` to `last` of a numbered family: span("pain", 101, 105).
 def span(family: str, first: int, last: int) -> list[str] {
     return [family + str(i) for i in range(first, last + 1)];
+}
+
+# A sound on one frame of a pain or death.
+def on_frame(frame: int, sound: str) -> FrameEvent {
+    return FrameEvent(frame=frame, sounds=[sound]);
 }
 
 # The same in two digits: span2("death", 1, 11) is death01 to death11.
@@ -1135,6 +1140,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="painb",
                         frames=span("painb", 1, 28),
+                        events=[
+                            on_frame(8, "sound/zombie/z_fall.wav")
+                        ],
                         steps=[
                             0.0, -2.0, -8.0, -6.0, -2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0
@@ -1157,10 +1165,22 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         sound="sound/zombie/z_pain.wav"
                     )
                 ],
-                knockdown_steps=[
-                    0.0, -8.0, -5.0, -3.0, -1.0, -2.0, -1.0, -1.0, -2.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 3.0, 1.0, -1.0, 0.0, 0.0
-                ],
+                # zombie_paine: knocked flat. It slides back, lies on paine11 for
+                # five seconds (nextthink + 5) and gets up again.
+                knockdown=Reaction(
+                    name="paine",
+                    frames=span("paine", 1, 30),
+                    events=[
+                        on_frame(9, "sound/zombie/z_fall.wav"),
+                        on_frame(11, "sound/zombie/z_idle.wav")
+                    ],
+                    hold_frame=10,
+                    hold_time=5.0,
+                    steps=[
+                            0.0, -8.0, -5.0, -3.0, -1.0, -2.0, -1.0, -1.0, -2.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 3.0, 1.0, -1.0, 0.0, 0.0
+                    ]
+                ),
                 # zombie.qc zombie_run1-18 ai_run, zombie_walk1-19 ai_walk.
                 run=Gait(
                     frames=["run" + str(i) for i in range(1, 19)],
@@ -1177,10 +1197,6 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 pain_health_reset=60,
                 pain_interval=0.5,
                 knockdown_damage=25,
-                knockdown_frames=["paine" + str(i) for i in range(1, 31)],
-                knockdown_duration=8.0,
-                knockdown_hold_frame=10,
-                knockdown_hold_time=5.0,
                 vanish_on_death=True,
                 sight_sound="sound/zombie/z_idle.wav",
                 death_sound="sound/zombie/z_gib.wav",
@@ -2215,6 +2231,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="pain3",
                         frames=span("pain", 301, 316),
+                        events=[
+                            on_frame(15, "sound/tank/step.wav")
+                        ],
                         steps=[
                             -7.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0,
                             0.0, 0.0
@@ -2226,6 +2245,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="death",
                         frames=span("death", 101, 132),
+                        events=[
+                            on_frame(27, "sound/tank/tnkdeth2.wav")
+                        ],
                         steps=[
                             -7.0, -2.0, -2.0, 1.0, 3.0, 6.0, 1.0, 1.0, 2.0, 0.0, 0.0, 0.0, -2.0, 0.0,
                             0.0, -3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -4.0, -6.0, -4.0, -5.0, -7.0,
@@ -2609,6 +2631,12 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="pain3",
                         frames=span("pain", 301, 325),
+                        events=[
+                            on_frame(2, "sound/boss3/step1.wav"),
+                            on_frame(4, "sound/boss3/step2.wav"),
+                            on_frame(20, "sound/boss3/step1.wav"),
+                            on_frame(24, "sound/boss3/step2.wav")
+                        ],
                         steps=[
                             -28.0, -6.0, -3.0, -9.0, 0.0, 0.0, 0.0, 0.0, -7.0, 1.0, -11.0, -4.0, 0.0,
                             0.0, 10.0, 11.0, 0.0, 10.0, 3.0, 10.0, 7.0, 17.0, 0.0, 0.0, 0.0
@@ -2719,6 +2747,14 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="pain6",
                         frames=span("pain", 601, 627),
+                        events=[
+                            on_frame(15, "sound/makron/popup.wav"),
+                            FrameEvent(
+                                frame=23,
+                                sounds=["sound/makron/voice4.wav", "sound/makron/voice3.wav", "sound/makron/voice.wav"],
+                                weights=[0.3, 0.3, 0.4]
+                            )
+                        ],
                         sound="sound/makron/pain1.wav",
                         min_damage=111,
                         max_damage=150,
@@ -2729,6 +2765,19 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     Reaction(
                         name="death2",
                         frames=span("death", 201, 295),
+                        events=[
+                            on_frame(3, "sound/makron/step1.wav"),
+                            on_frame(17, "sound/makron/step2.wav"),
+                            on_frame(35, "sound/makron/step1.wav"),
+                            on_frame(55, "sound/makron/step2.wav"),
+                            on_frame(57, "sound/makron/step1.wav"),
+                            on_frame(64, "sound/makron/step2.wav"),
+                            on_frame(66, "sound/makron/step1.wav"),
+                            on_frame(69, "sound/makron/step2.wav"),
+                            on_frame(72, "sound/makron/step1.wav"),
+                            on_frame(90, "sound/makron/bhit.wav"),
+                            on_frame(92, "sound/makron/brain1.wav")
+                        ],
                         steps=[
                             -15.0, 3.0, -12.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                             0.0, 11.0, 12.0, 11.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,

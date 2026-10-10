@@ -125,6 +125,16 @@ obj Gait {
         branch_chance: float = 0.0;
 }
 
+"""What a frame of a pain or death does besides show: the think of a Q2
+mframe_t, the body of a Q1 frame function. It happens as the sequence enters
+`frame`."""
+obj FrameEvent {
+    has frame: int = 0,
+        # A sound; of several, one by `weights` (even odds without any).
+        sounds: list[str] = [],
+        weights: list[float] = [];
+}
+
 """One sequence a monster plays when it is hurt or killed: its model frames
 at 10 Hz (a run of Q1 QuakeC frame functions, a Q2 mmove_t) and how the
 original's pain or die function comes to pick it."""
@@ -157,6 +167,12 @@ obj Reaction {
         # Death: taken instead of any other for a hit landing within 4 units
         # of eye height (Q2 soldier_die's head shot).
         head_shot: bool = False,
+        # What its frames do as they are entered (tank_footstep, makron_taunt).
+        events: list[FrameEvent] = [],
+        # A sequence that lies on `hold_frame` for `hold_time` seconds before
+        # playing on (Q1 zombie_paine11's nextthink + 5).
+        hold_frame: int = -1,
+        hold_time: float = 0.0,
         # Death: the frame whose function drops the carried item (Q1
         # DropBackpack on the third), so a monster that gibs instead drops
         # nothing. Zero drops it at once, as Q2 monster_death_use does.
@@ -213,12 +229,10 @@ obj OpponentRule {
         # (Q2 tank_pain, supertank_pain).
         pain_immune: list[str] = [],
         pain_health_reset: int = 0,
+        # A hit of `knockdown_damage` or more lays the monster out on its
+        # `knockdown` sequence (Q1 zombie_paine), where nothing hurts it.
         knockdown_damage: int = 0,
-        knockdown_frames: list[str] = [],
-        knockdown_steps: list[float] = [],
-        knockdown_duration: float = 0.0,
-        knockdown_hold_frame: int = -1,
-        knockdown_hold_time: float = 0.0,
+        knockdown: Reaction = Reaction(),
         blast_scale: float = 1.0,
         death_splash: int = 0,
         death_radius: float = 0.0,

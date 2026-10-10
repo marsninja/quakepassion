@@ -39,6 +39,7 @@ import from engine.world.combat {
     current_profile,
     ensure_profiles,
     pain_length,
+    reaction_length,
     select_death,
     select_profile,
     CombatState,
@@ -1103,7 +1104,7 @@ def restore(
             enemy.leaping = row[18] != 0.0;
             enemy.attack_target = Vec3(x=row[19], y=row[20], z=row[21]);
             if row[22] not in [0.0, 1.0]
-                or (row[22] != 0.0 and enemy.rule.knockdown_duration <= 0.0)
+                or (row[22] != 0.0 and not enemy.rule.knockdown.frames)
                 or row[23] < 0.0
                 or row[23] != float(int(row[23]))
                 or int(row[23]) > len(enemy.rule.pains) {
@@ -1131,7 +1132,7 @@ def restore(
                 or row[15] < 0.0
                 or row[15]
                     > max(
-                        [enemy.rule.pain_interval, enemy.rule.knockdown_duration, 5.0]
+                        [enemy.rule.pain_interval, reaction_length(enemy.rule.knockdown), 5.0]
                             + [sequence.interval for sequence in enemy.rule.pains]
                     ) {
                 raise ValueError("Invalid saved attack state");

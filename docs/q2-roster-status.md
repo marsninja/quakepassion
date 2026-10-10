@@ -119,6 +119,11 @@ Details that follow the originals:
     hover either death sound.
   - Death frames stride their `ai_move` distances (a soldier's `death1` falls
     back 42 units).
+  - Frames make their sounds as they are entered (`events` on the
+    sequence): the tank's footstep in `pain3` and its thud on death128,
+    Jorg's steps through `pain3`, the Makron's `makron_popup` and
+    `makron_taunt` in `pain6` and its steps, `makron_hit` and
+    `makron_brainsplorch` as it dies.
   - A corpse keeps its box until the sequence ends and is then left the box
     its `*_dead` sets: -16 -16 -24 to 16 16 -8 for most, 0 to 16 high for the
     chick, -16 to 0 for the tank, and the full-width boxes of the Supertank,
@@ -153,9 +158,7 @@ Details that follow the originals:
 
 - A dying soldier on `death1` and a dying infantry on `death2` do not fire
   their guns (`soldier_fire6`/`soldier_fire7`, `InfantryMachineGun`).
-- Sounds inside pain and death frames are not played (the tank's footstep and
-  thud, the Makron's and Jorg's steps, `makron_popup`, `makron_taunt`), nor is
-  the torso the Makron leaves. The insane marines cry `insane1`-`insane3`
+- The Makron leaves no torso as it dies (`makron_torso`). The insane marines cry `insane1`-`insane3`
   rather than the player pain sounds picked by their health, and die silent.
   Jorg's small extra resistance to pain while firing is not applied.
 - `soldier_sight` always plays `solsght1.wav`, not `solsrch1.wav` half the time.

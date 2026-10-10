@@ -62,7 +62,7 @@ with entry {
             names = [frame.name for frame in model.surfaces[0].frames];
             checked = 0;
             for group in [
-                rule.knockdown_frames,
+                rule.knockdown.frames,
                 rule.idle_frames,
                 rule.run.frames,
                 rule.walk.frames,
@@ -87,6 +87,12 @@ with entry {
             sounds: list[str] = [rule.sight_sound, rule.death_sound] + rule.pain_sounds
                 + [rule.attack_sound, rule.melee_sound]
                 + [sequence.sound for sequence in rule.pains + rule.deaths];
+            for sequence in rule.pains + rule.deaths + [rule.knockdown] {
+                for event in sequence.events {
+                    assert event.frame < len(sequence.frames) , kind + ":" + sequence.name;
+                    sounds.extend(event.sounds);
+                }
+            }
             for profile in rule_profiles(rule) {
                 assert len(profile.frames) == int(profile.duration * 10.0 + 0.5)
                     or not profile.frames , kind + ":" + profile.name;

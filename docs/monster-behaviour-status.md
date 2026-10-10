@@ -105,7 +105,10 @@ attacks.
 Each rule lists the sequences its pain and die functions choose among as
 `Reaction` objects (`pains` and `deaths` in `engine/world/opponent_rule.jac`):
 model frames at 10 Hz, the distance each frame strides, the sequence's own
-sound, and how it is picked. The tables for each monster are in the roster
+sound, what its frames do as they are entered (`events`, a `FrameEvent` per
+frame function: a sound, or one of several by weight), and how it is picked.
+A knockdown (`knockdown`, the zombie's `paine`) is the same object with a
+frame it lies on for a hold. The tables for each monster are in the roster
 docs.
 
 - `choose_reaction` draws a sequence by weight among those whose damage

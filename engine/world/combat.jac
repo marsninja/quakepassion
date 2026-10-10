@@ -11,7 +11,7 @@ import from .particles {
     missile_hit_flesh
 }
 import from .navigation { RouteSearch, RouteQueue, walk_edge, waypoint_reached }
-import from .opponent_rule { OpponentRule, AttackProfile, Gait, Reaction, rule_profiles }
+import from .opponent_rule { OpponentRule, AttackProfile, Gait, Reaction, FrameEvent, rule_profiles }
 import from .weapons { WeaponRule }
 import from .world { World, Player, area_of, move_to_area }
 import from .damage { Damage, blast_strength }
@@ -833,9 +833,40 @@ def death_sequence(enemy: Opponent) -> Reaction | None {
     return enemy.rule.deaths[index];
 }
 
+"""How long a sequence takes: its frames at 10 Hz and its hold."""
+def reaction_length(sequence: Reaction) -> float {
+    return float(len(sequence.frames)) / 10.0 + max(0.0, sequence.hold_time);
+}
+
+"""Play the sounds of the frames a sequence enters while its pose goes from
+frame `pose` to `reached`."""
+def frame_sounds(enemy: Opponent, events: list[FrameEvent], pose: float, reached: float) {
+    for event in events {
+        if float(event.frame) < pose or float(event.frame) >= reached or not event.sounds {
+            continue;
+        }
+        choice = len(event.sounds) - 1;
+        if len(event.sounds) > 1 {
+            total = 0.0;
+            for i in range(len(event.sounds)) {
+                total += event.weights[i] if i < len(event.weights) else 1.0;
+            }
+            roll = monster_random(enemy) * total;
+            for i in range(len(event.sounds)) {
+                roll -= event.weights[i] if i < len(event.weights) else 1.0;
+                if roll < 0.0 {
+                    choice = i;
+                    break;
+                }
+            }
+        }
+        request_sound(enemy, event.sounds[choice]);
+    }
+}
+
 def pain_length(enemy: Opponent) -> float {
     if enemy.pain_down {
-        return enemy.rule.knockdown_duration;
+        return reaction_length(enemy.rule.knockdown);
     }
     sequence = pain_sequence(enemy);
     if sequence is not None {
@@ -921,10 +952,10 @@ def feel_pain(victim: Opponent, taken: int) {
         victim.pain_variant = 0;
         victim.attack_clock = -1.0;
         victim.leaping = False;
-        victim.pain_wait = rule.knockdown_duration;
-        victim.pain_cooldown = max(victim.pain_cooldown, rule.knockdown_duration);
+        victim.pain_wait = reaction_length(rule.knockdown);
+        victim.pain_cooldown = max(victim.pain_cooldown, victim.pain_wait);
         victim.attack_flash = 0.0;
-        victim.attack_wait = max(victim.attack_wait, rule.knockdown_duration);
+        victim.attack_wait = max(victim.attack_wait, victim.pain_wait);
         victim.decision_wait = 0.0;
         pain_cry(victim);
         return;
@@ -3403,28 +3434,27 @@ def stride_span(steps: list[float], pose: float, reached: float) -> float {
     return total;
 }
 
-"""Stride the frames of the pain a monster is in for the next `dt` seconds,
-along its facing: Q1 ai_painforward against ai_pain's step back, Q2
-`{ai_move, dist}`. It staggers but keeps the ground it stands on and stops
-at walls, as every sequence stride does."""
+"""Play the pain a monster is in on for the next `dt` seconds: what its
+frames do as they are entered, and their strides along its facing (Q1
+ai_painforward against ai_pain's step back, Q2 `{ai_move, dist}`). It
+staggers but keeps the ground it stands on and stops at walls, as every
+sequence stride does."""
 def pain_stagger(enemy: Opponent, collision: CollisionMap, dt: float) {
     if enemy.pain_wait <= 0.0 or enemy.health <= 0 {
         return;
     }
-    sequence = pain_sequence(enemy);
-    steps = enemy.rule.knockdown_steps
-        if enemy.pain_down
-        else (sequence.steps if sequence is not None else []);
-    if not steps {
+    sequence = enemy.rule.knockdown if enemy.pain_down else pain_sequence(enemy);
+    if sequence is None {
         return;
     }
     elapsed = pain_length(enemy) - enemy.pain_wait;
-    distance = stride_span(
-        steps,
-        pain_pose_at(enemy, elapsed),
-        pain_pose_at(enemy, elapsed + min(dt, enemy.pain_wait))
-    )
-        * enemy.rule.step_scale;
+    pose = pain_pose_at(enemy, elapsed);
+    reached = pain_pose_at(enemy, elapsed + min(dt, enemy.pain_wait));
+    frame_sounds(enemy, sequence.events, pose, reached);
+    if not sequence.steps {
+        return;
+    }
+    distance = stride_span(sequence.steps, pose, reached) * enemy.rule.step_scale;
     sequence_stride(enemy, collision, forward_from(enemy.yaw, 0.0).scale(distance), dt);
 }
 
@@ -3730,9 +3760,9 @@ def pain_pose_time(enemy: Opponent) -> float {
 lies on its hold frame for the hold."""
 def pain_pose_at(enemy: Opponent, seconds: float) -> float {
     elapsed = max(0.0, seconds) * 10.0;
-    if enemy.pain_down and enemy.rule.knockdown_hold_frame >= 0 {
-        hold_frame = float(enemy.rule.knockdown_hold_frame);
-        hold = enemy.rule.knockdown_hold_time * 10.0;
+    if enemy.pain_down and enemy.rule.knockdown.hold_frame >= 0 {
+        hold_frame = float(enemy.rule.knockdown.hold_frame);
+        hold = enemy.rule.knockdown.hold_time * 10.0;
         if elapsed < hold_frame {
             return elapsed;
         }
@@ -4344,6 +4374,13 @@ walker CombatTick {
                 here del --> item;
             }
             death_stride(here, self.collision, self.dt);
+            falling = death_sequence(here);
+            if falling is not None and not here.gibbed {
+                frame_sounds(
+                    here, falling.events, here.animation_time,
+                    here.animation_time + self.dt * 10.0
+                );
+            }
             here.animation_time += self.dt * 10.0;
             if here.death_animation {
                 index = min(int(here.animation_time), len(here.death_animation) - 1);
