@@ -53,8 +53,9 @@ weapon the movement needs, a movement view, waiting and failure.
   there.
 - Swim (`BotTravel_Swim`): with the waist under, straight for the waypoint in
   three dimensions, looking where it swims (`MOVERESULT_SWIMVIEW`).
-- Water jump (`BotTravel_WaterJump`): swim for the far end looking 15 units
-  above it, give or take up to 40 at random; `PM_CheckWaterJump` lifts the
+- Water jump (`BotTravel_WaterJump`): look 15 units above the far end, give
+  or take up to 40 at random, and swim forward along the view the bot has
+  (`EA_MoveForward`); `PM_CheckWaterJump` lifts the
   bot out. Clear of the surface with its feet still in the water
   (`BotFinishTravel_WaterJump`) it carries on for the far end, aiming 70
   units above it.
@@ -68,10 +69,30 @@ weapon the movement needs, a movement view, waiting and failure.
   16 units of the near end, board and stand on its middle, and walk off within
   24 units of the far end. A bot on a mover keeps its passage.
 - Ladder (`BotTravel_Ladder`): face up or down the ladder and move.
+- Crouching: a bot ducks along a crouch reachability (`BotTravel_Crouch`;
+  no shipped ladder arena has one) and within 20 units of a walk into an
+  area only the crouching box fits (`BotTravel_Walk`, the area's AAS
+  presence type). Ducked, it moves in the crouching player's box at a
+  quarter speed and stays ducked while there is no room to stand
+  (`PM_CheckDuck`).
+- Barrier jump (`BotTravel_BarrierJump`): the bot slows up to the barrier (6
+  a unit over the last 60) and jumps within 9 units of the reach's start.
+- Walking off a ledge (`BotTravel_WalkOffLedge`): to within 48 units of the
+  ledge, then for the far end at the speed that carries the fall there
+  (`AAS_HorizontalVelocityForJump`), or at 100 for a drop straight down;
+  in the air the bot steers for 16 units past the landing
+  (`BotFinishTravel_WalkOffLedge`).
+- In its goal's area a bot slows over the last 100 units and stops within
+  2.5 (`BotMoveInGoalArea`); it takes the last 30 units to a teleporter at
+  half speed (`BotTravel_Teleport`).
 - A passage is given up after `BotReachabilityTime` (5 s; 6 for ladders and
   weapon jumps; 10 for elevators, jump pads and bobbing platforms) and the
   route is planned again from where the bot is; the movement fails only when
   there is no way then.
+- A route never turns straight back into the area it just left
+  (`BotGetReachabilityToGoal`'s "do not go back to the previous area if the
+  goal didn't change"), within one plan; a new plan starts without an area
+  left behind.
 - Avoid-reachability list (`BotAddToAvoidReach`, a single entry as in Q3):
   each passage a bot sets out on is noted; the one noted counts another try
   when it is taken again within 6 s. Tried more than four times, it is passed
@@ -217,6 +238,8 @@ weapon the movement needs, a movement view, waiting and failure.
   when it cannot step there, to that side and backwards, taking the other
   side from then on (`BFL_AVOIDRIGHT`). Blocked for over 0.4 s, a seeking bot
   gives its goal up.
+- `BotClearPath` has nothing to do in the base game: it shoots proximity
+  mines and kamikaze bodies, which only Team Arena has.
 - Bots are clients to the map: a Q3 `trigger_multiple` fires for a bot
   standing in it (`Touch_Multi`), a Q3 button is pressed by a bot touching it
   (`Touch_Button`), and a bot's shot damages the button or door it strikes.
@@ -355,8 +378,8 @@ Scripts (native, need the Q3 assets):
 
   | Map | Door | Bot went to | Door opened | Goal reached |
   | --- | --- | --- | --- | --- |
-  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.1 s | 20.6 s |
-  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.0 s |
+  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.5 s | 21.0 s |
+  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.1 s |
   | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.5 s | 4.7 s |
 
   For q3dm7's `*5` the bot stacks two goals (the trigger, and the button
@@ -406,17 +429,22 @@ Scripts (native, need the Q3 assets):
 - A dead bot does not answer chat; in Q3 it may. `bot_testrchat` is not
   there.
 - A bot that ends up on a plat or bobbing platform it was not taking keeps
-  its route; Q3 switches it to that mover's reachability.
+  its route; Q3 hands it that mover's first reachability
+  (`AAS_NextModelReachability`), whichever way that runs. The swap is left
+  out because the bots' travel runs every 120 Hz tick: a bot stepping off a
+  bobbing platform it has just ridden would be handed the ride back, where
+  Q3's 10 Hz think and `BotFuzzyPointReachabilityArea` decide which frames
+  see it "on top".
 - `BotAIBlocked`'s sidestep is tested with the bots' wall and ledge probe
   (`can_step`), not `AAS_PredictClientMovement`. Bots do not block one
   another's movement; they only sidestep each other.
-- `BotClearPath` (shooting proximity mines and kamikaze bodies, Team Arena)
-  is not modelled.
-- Other `be_ai_move.c` details not modelled: a walking bot slows for a gap
-  ahead (`BotGapDistance`) and near its goal (`BotMoveInGoalArea`), crouches
-  toward crouch-only areas and on `TRAVEL_CROUCH` legs, never takes a
-  reachability straight back into the area it just left for the same goal,
-  slows onto teleporters, and walks off ledges at `BotTravel_WalkOffLedge`'s
-  speeds; barrier jumps launch at their takeoff rather than with `EA_Jump`
-  within 9 units of it. A bot water-jumping moves along the view it wants
-  rather than the one it has (`EA_MoveForward`).
+- Other `be_ai_move.c` details not modelled:
+  - `BotGapDistance`: a walking bot does not slow for a gap ahead. The test
+    lets a gap over water pass, and the combat tick that moves the bots
+    does not carry the level's liquid volumes; without that exception bots
+    would crawl up to every pool.
+  - Jumps and barrier jumps fly by a launch velocity worked out to land
+    them, not by `EA_Jump` and air movement (`BotFinishTravel_Jump`,
+    `BotFinishTravel_BarrierJump`).
+  - Avoid spots (`BotAddAvoidSpot`, `BotAvoidSpots`): bots do not route
+    round live grenades (`BotCheckForGrenades`).

@@ -8,6 +8,12 @@ import from engine.formats.aas {
     AREACONTENTS_LAVA,
     TRAVEL_WALK,
     TRAVEL_SWIM,
+    TRAVEL_CROUCH,
+    PRESENCE_CROUCH,
+    TRAVEL_TELEPORT,
+    TRAVEL_WALKOFFLEDGE,
+    TRAVEL_BARRIERJUMP,
+    TRAVEL_ELEVATOR,
     TRAVEL_WATERJUMP,
     TRAVEL_ROCKETJUMP,
     TRAVEL_FUNCBOB,
@@ -15,13 +21,17 @@ import from engine.formats.aas {
     TFL_ROCKETJUMP,
     TFL_LAVA
 }
-import from engine.world.bot_routes { AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
+import from engine.world.bot_routes { best_exit, AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
 import from engine.world.bot_travel {
     FollowRoute,
     TravelResult,
     travel_weapon_jump,
     travel_funcbob,
     travel_water_jump,
+    goal_area_speed,
+    fall_speed,
+    travel_walk_off_ledge,
+    finish_walk_off_ledge,
     finish_water_jump,
     air_control,
     mover_box
@@ -209,6 +219,9 @@ test "a swimming bot swims straight for its waypoint and water jumps out" {
     assert abs(travel_water_jump(level, passage).pitch + math.degrees(math.atan2(15.0, 100.0))) < 0.001;
     assert abs(travel_water_jump(level, passage, 1.0).pitch + math.degrees(math.atan2(55.0, 100.0))) < 0.001;
     assert abs(travel_water_jump(level, passage, -1.0).pitch - math.degrees(math.atan2(25.0, 100.0))) < 0.001;
+    # EA_MoveForward: it swims the way it looks now, whatever it wants.
+    aside = travel_water_jump(level, passage, 0.0, Vec3(y=1.0));
+    assert aside.direction.y > 0.99 and abs(aside.yaw) < 0.001;
     # BotFinishTravel_WaterJump: clear of the surface with its feet still
     # wet, on for the far end aiming 70 units over it; dry, no move at all.
     rising = finish_water_jump(level, passage, True, [0.0, 0.0, 0.0]);
@@ -265,4 +278,131 @@ test "a passage taken five times running is avoided for six seconds, and a timed
     assert avoid.tries == 1;
     late = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=45.5, avoid=avoid);
     assert not late.result.failure and late.result.speed == 0.0 and not route.points and not route.areas;
+}
+
+test "a bot slows into its goal and onto a teleporter" {
+    # BotMoveInGoalArea: 4 a unit over the last 100 units, nothing within 2.5.
+    assert goal_area_speed(300.0) == 400.0 and goal_area_speed(50.0) == 200.0 and goal_area_speed(2.0) == 0.0;
+    aas = strip_aas(2, [(1, 2, TRAVEL_TELEPORT)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(2);
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=0.0, z=26.0), eye_height=26.0, grounded=True);
+    # BotTravel_Teleport: full speed to within 30 units of the reach's
+    # start (x = 80 here), then half.
+    route = plan_route(mesh, Vec3(x=0.0), Vec3(x=128.0));
+    far = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert route.passages[0] is not None and far.result.speed == 400.0;
+    bot.pos = Vec3(x=60.0, z=26.0);
+    near = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert near.result.speed == 200.0;
+    # The last leg, in the goal's area, at BotMoveInGoalArea's speed.
+    last = BotRoute();
+    last.add(Vec3(x=120.0), 0);
+    bot.pos = Vec3(x=70.0, z=26.0);
+    closing = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=last, eye_height=26.0, clock=0.0);
+    assert closing.result.speed == 200.0 and closing.result.direction.x > 0.99;
+}
+
+test "a route never turns straight back into the area it just left" {
+    # From 2 the quick way to 4 is back through 1 (a short cut 1 -> 4); the
+    # route that came from 1 takes the long way by 3 instead.
+    aas = strip_aas(4, [(1, 2, TRAVEL_WALK), (2, 1, TRAVEL_WALK), (2, 3, TRAVEL_WALK), (3, 4, TRAVEL_WALK), (1, 4, TRAVEL_WALK)]);
+    mesh = build_navmesh(World(), aas);
+    times = mesh.times_to(4);
+    exits = [mesh.areas[1]->:Exits:->][?:Passage];
+    short_cut = [passage for passage in exits if passage.target == 4][0];
+    # Make the short cut dear from area 1 itself, so a route from 1 sets
+    # out by 2, where going back to 1 would then look best.
+    short_cut.time = 100000;
+    back = [passage for passage in [mesh.areas[2]->:Exits:->][?:Passage] if passage.target == 1][0];
+    onward = [passage for passage in [mesh.areas[2]->:Exits:->][?:Passage] if passage.target == 3][0];
+    assert best_exit(mesh, 2, Vec3(x=128.0), times, TFL_DEFAULT) is back;
+    assert best_exit(mesh, 2, Vec3(x=128.0), times, TFL_DEFAULT, None, 0.0, 1) is onward;
+    route = plan_route(mesh, Vec3(x=64.0), Vec3(x=256.0));
+    assert route.found and [area for area in route.areas if area > 0] == [2, 3, 4];
+}
+
+test "a bot walks off a ledge at the speed that lands it, and steers for the landing in the air" {
+    aas = strip_aas(2, [(1, 2, TRAVEL_WALKOFFLEDGE)]);
+    mesh = build_navmesh(World(), aas);
+    passage = [mesh.areas[1]->:Exits:->][?:Passage][0];
+    passage.start = Vec3(x=80.0);
+    passage.finish = Vec3(x=128.0, z=-100.0);
+    # AAS_HorizontalVelocityForJump for a fall of 100 units: half a second.
+    assert abs(fall_speed(passage.start, passage.finish) - 96.0) < 0.001;
+    assert fall_speed(passage.start, Vec3(x=128.0, z=10.0)) is None and fall_speed(passage.start, Vec3(x=900.0, z=-100.0)) is None;
+    # Far from the ledge: for its start at full speed. Within 48 units: for
+    # the far end, at the speed that carries the fall.
+    far = travel_walk_off_ledge(Vec3(x=0.0), passage);
+    assert far.speed == 400.0 and far.direction.x > 0.99;
+    near = travel_walk_off_ledge(Vec3(x=60.0), passage);
+    assert abs(near.speed - 96.0) < 0.001 and near.direction.x > 0.99;
+    # A drop straight down: slowing over the last 64 units, then 100.
+    passage.finish = Vec3(x=90.0, z=-100.0);
+    assert travel_walk_off_ledge(Vec3(x=30.0), passage).speed == 344.0;
+    assert travel_walk_off_ledge(Vec3(x=60.0), passage).speed == 100.0;
+    # In the air: BotAirControl for 16 units past the far end.
+    passage.finish = Vec3(x=128.0, z=-100.0);
+    falling = finish_walk_off_ledge(Vec3(x=90.0, z=-10.0), Vec3(x=100.0, z=-50.0), passage);
+    assert falling.air_control and falling.direction.x > 0.9;
+    # The route follower hands a ledge leg to them.
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=60.0, z=26.0), eye_height=26.0, grounded=True);
+    route = BotRoute();
+    route.add(passage.start, 0, passage=passage);
+    route.add(passage.finish, 2, passage=passage);
+    follow = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert abs(follow.result.speed - 96.0) < 0.001;
+}
+
+test "a bot slows up to a barrier and jumps it within 9 units" {
+    aas = strip_aas(2, [(1, 2, TRAVEL_BARRIERJUMP)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(2);
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=40.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=40.0), Vec3(x=128.0));
+    assert route.found and route.launches[0].z > 0.0;
+    # 40 units from the reach's start (x = 80): 6 a unit.
+    far = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert far.result.speed == 240.0 and far.launch is None;
+    # 10 units off: not yet (a waypoint's usual 12 units do not count).
+    bot.pos = Vec3(x=70.0, z=26.0);
+    close = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert close.launch is None and close.result.speed == 60.0;
+    # Within 9: the jump, launched to land from where the bot is.
+    bot.pos = Vec3(x=72.0, z=26.0);
+    jump = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    launched = jump.launch;
+    assert launched is not None and launched.z == 270.0 and launched.x > 0.0;
+}
+
+test "a bot ducks into an area only the crouching box fits, along a crouch reachability, and under a low ceiling" {
+    aas = strip_aas(3, [(1, 2, TRAVEL_WALK), (2, 3, TRAVEL_CROUCH)]);
+    aas.areas[2].presence = PRESENCE_CROUCH;
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=20.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=20.0), Vec3(x=192.0));
+    # BotTravel_Walk: not yet 60 units from the reach (x = 80), ducking
+    # within 20.
+    far = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert not far.result.crouch;
+    bot.pos = Vec3(x=65.0, z=26.0);
+    near = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert near.result.crouch and near.result.direction.x > 0.99;
+    # BotTravel_Crouch: all along the crouch reachability.
+    bot.pos = Vec3(x=130.0, z=26.0);
+    along = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert route.passages[0] is not None and route.passages[0].kind == TRAVEL_CROUCH and along.result.crouch;
+    # PM_CheckDuck: a ducked bot under a ceiling 40 units up stays ducked;
+    # one standing in the open does not start to.
+    low = CollisionMap();
+    low.add_box(Vec3(x=-500.0, y=-500.0, z=20.0), Vec3(x=500.0, y=500.0, z=60.0), Vec3(), Vec3(x=-15.0, y=-15.0, z=-24.0), Vec3(x=15.0, y=15.0, z=32.0));
+    low.reindex();
+    open_route = BotRoute();
+    open_route.add(Vec3(x=400.0), 0);
+    bot.pos = Vec3(x=300.0, z=26.0);
+    under = bot spawn FollowRoute(mesh=mesh, collision=low.for_body(26.0, 16.0), route=open_route, eye_height=26.0, clock=0.0, ducked=True);
+    assert under.result.crouch;
+    clear = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=open_route, eye_height=26.0, clock=0.0, ducked=True);
+    assert not clear.result.crouch;
 }

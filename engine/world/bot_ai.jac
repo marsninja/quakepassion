@@ -1927,7 +1927,7 @@ walker BotTactics {
             memory.goal_area = 0;
         }
         if not bot.fighting {
-            bot.crouched = memory.crouch;
+            bot.crouched = memory.crouch or memory.travel.crouch;
         }
         # MOVERESULT_MOVEMENTWEAPON: the movement's weapon (a rocket jump's).
         wanted = memory.travel.weapon;
