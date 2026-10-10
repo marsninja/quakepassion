@@ -1468,8 +1468,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         repeat_chance=0.5,
                         sound="sound/gunner/gunatck2.wav",
                         sound_times=[0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
+                        # gunner_opengun on attak209, the first frame.
                         extra_sound="sound/gunner/gunatck1.wav",
-                        extra_sound_times=[0.6],
+                        extra_sound_times=[0.0],
                         damage=3,
                         spread=300.0 / 8192.0,
                         vertical_spread=500.0 / 8192.0,
@@ -3267,10 +3268,13 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                 burst_max=19,
                 hold_frame=10,
                 attack_frames=["attak" + str(i) for i in range(101, 116)],
+                # infantry_move_attack1's ai_charge distances.
+                attack_steps=[4.0, -1.0, -1.0, 0.0, -1.0, 1.0, 1.0, 2.0, -2.0, -3.0, 1.0, 5.0, -1.0, -2.0, -3.0],
                 attack_sound="sound/infantry/infatck1.wav",
                 attack_sound_times=[1.0],
+                # infantry_swing on attak203.
                 melee_sound="sound/infantry/infatck2.wav",
-                melee_sound_times=[0.3]
+                melee_sound_times=[0.2]
             );
         }
         if kind in ["monster_soldier_light", "monster_soldier", "monster_soldier_ss"] {

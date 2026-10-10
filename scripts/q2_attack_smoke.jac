@@ -88,6 +88,9 @@ with entry {
     rockets = World();
     rocket_rule = enemy_rule("q2", "monster_chick");
     assert rocket_rule is not None;
+    # Attack the moment it may, to time the sequence itself.
+    rocket_rule.near_chance = 1.0;
+    rocket_rule.mid_chance = 1.0;
     rocket_enemy = Opponent(rule=rocket_rule, attack_wait=0.0, shot_random=1);
     rockets +>:HasOpponent:+> rocket_enemy;
     rockets spawn CombatTick(player=player, collision=collision, state=state, dt=2.7);

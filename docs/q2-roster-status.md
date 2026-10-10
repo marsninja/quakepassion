@@ -159,6 +159,8 @@ Details that follow the originals:
   rather than the player pain sounds picked by their health, and die silent.
   Jorg's small extra resistance to pain while firing is not applied.
 - `soldier_sight` always plays `solsght1.wav`, not `solsrch1.wav` half the time.
+  The infantry's gun cock (`infantry_cock_gun` on attak104) and the smack of
+  a punch that lands are not played.
 - Attack strides head at the target; Q2 `ai_charge` walks along the monster's
   own facing while it turns.
 - `misc_actor` and `target_actor` are not driven (no shipped map pairs them).
