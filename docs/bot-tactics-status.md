@@ -85,6 +85,9 @@ weapon the movement needs, a movement view, waiting and failure.
   under the edge is no gap (`CombatTick.liquids`).
 - Barrier jump (`BotTravel_BarrierJump`): the bot slows up to the barrier (6
   a unit over the last 60) and jumps within 9 units of the reach's start.
+- Jump pad (`BotTravel_JumpPad`, `BotFinishTravel_JumpPad`): for the pad on
+  the ground; thrown, the bot steers for the passage's far end
+  (`BotAirControl`).
 - Walking off a ledge (`BotTravel_WalkOffLedge`): to within 48 units of the
   ledge, then for the far end at the speed that carries the fall there
   (`AAS_HorizontalVelocityForJump`), or at 100 for a drop straight down;

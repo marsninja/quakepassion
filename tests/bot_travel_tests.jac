@@ -8,6 +8,7 @@ import from engine.formats.aas {
     AREACONTENTS_LAVA,
     TRAVEL_WALK,
     TRAVEL_SWIM,
+    TRAVEL_JUMPPAD,
     TRAVEL_CROUCH,
     PRESENCE_CROUCH,
     TRAVEL_TELEPORT,
@@ -29,6 +30,7 @@ import from engine.world.bot_travel {
     travel_funcbob,
     travel_water_jump,
     goal_area_speed,
+    finish_jump_pad,
     gap_distance,
     fall_speed,
     travel_walk_off_ledge,
@@ -489,4 +491,28 @@ test "a walk goes by the reachability's start, then on to its end" {
     bot.pos = Vec3(x=92.0, y=6.0, z=26.0);
     still = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
     assert still.result.direction.x > 0.98;
+}
+
+test "a bot thrown by a jump pad steers for where the pad lands it, not back for the pad" {
+    aas = strip_aas(2, [(1, 2, TRAVEL_JUMPPAD)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(2);
+    passage = [mesh.areas[1]->:Exits:->][?:Passage][0];
+    passage.finish = Vec3(x=128.0, z=200.0);
+    # On the ground: for the pad (BotTravel_JumpPad).
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=40.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=40.0), Vec3(x=128.0, z=200.0), goal_area=2);
+    walking = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert walking.result.direction.x > 0.99 and not walking.result.air_control;
+    # In the air past the pad, still on its leg: on for the landing.
+    bot.grounded = False;
+    bot.pos = Vec3(x=90.0, z=326.0);
+    bot.velocity = Vec3(x=20.0, z=100.0);
+    flying = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.1);
+    assert flying.result.air_control and flying.result.direction.x > 0.9;
+    # BotAirControl by itself, and the straight line when it has no answer
+    # (too high to come down to the landing within its five seconds).
+    assert finish_jump_pad(Vec3(x=90.0, z=300.0), Vec3(x=20.0, z=100.0), passage).air_control;
+    high = finish_jump_pad(Vec3(x=90.0, z=100000.0), Vec3(z=10.0), passage);
+    assert high.air_control and high.speed == 400.0 and high.direction.x > 0.99;
 }

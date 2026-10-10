@@ -324,6 +324,17 @@ def finish_walk_off_ledge(origin: Vec3, velocity: Vec3, passage: Passage) -> Tra
     return TravelResult(direction=toward[0], speed=400.0, air_control=True);
 }
 
+"""BotFinishTravel_JumpPad: thrown by the pad, the bot steers for the
+passage's far end (BotAirControl), or straight for it when its fall will not
+bring it down to that height."""
+def finish_jump_pad(origin: Vec3, velocity: Vec3, passage: Passage) -> TravelResult {
+    steer = air_control(origin, velocity, passage.finish);
+    if steer is not None {
+        return steer;
+    }
+    return TravelResult(direction=flat_toward(origin, passage.finish)[0], speed=400.0, air_control=True);
+}
+
 """The world box of the mover with BSP `model` right now: its model bounds
 moved by the offset its collision hulls carry (AAS_BSPModelMinsMaxsOrigin
 and AAS_OriginOfMoverWithModelNum). None when the map has no such mover."""
@@ -760,6 +771,10 @@ walker FollowRoute {
                 swim.speed = goal_area_speed(route.points[0].sub(origin).length());
             }
             self.heading(swim, origin, standing);
+            return;
+        }
+        if passage is not None and passage.kind == TRAVEL_JUMPPAD and not here.grounded {
+            self.heading(finish_jump_pad(origin, here.velocity, passage), origin, standing);
             return;
         }
         if passage is not None and passage.kind == TRAVEL_WALKOFFLEDGE {
