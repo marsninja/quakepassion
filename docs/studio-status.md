@@ -32,7 +32,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   a class selects all of it, a double click looks at the entity, and the
   filter narrows the list by class, `targetname` or `target`.
 - **Inspector** (right): the selection's fields. Enter sets a field on every
-  selected entity, `x` removes it, and the last row adds one.
+  selected entity, `x` removes it, and the last row adds one. Each field is
+  edited by its kind: a list for one of several values, a patch of colour
+  beside a colour, buttons that turn an angle (`ed_bump angle 45`), an arrow
+  beside a `target` that selects what it fires. Under the fields the class
+  says what it is, its spawnflags are boxes to tick (`ed_flag <bit> <0|1>`),
+  and the fields it knows that the selection lacks wait to be filled in.
+- **Classes** (left): the entity classes of the document's game by family,
+  with a filter. A click adds one where the camera looks; a class made of
+  brushes takes the selected brushes, or a new box (`ed_class <name>`).
 - **Toolbar**: Play (F5) rebuilds the world from the document and plays it
   from the start; From here (F6) starts at the camera; F8 stops and returns
   to the document as it was left. Undo and redo (Ctrl+Z, Ctrl+Y), a classname
@@ -58,6 +66,15 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   (R, `ed_rotate [degrees]`; materials turn with their faces), and
   `ed_clip <x|y|z> <coordinate> [back|front|both]` cuts the selected brushes
   along a plane.
+- **Shapes** (`ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe> [w d
+  h] [count] [thickness]`): a cone, a pyramid, a ball or a dome is one brush;
+  stairs, spiral stairs, an arch and a pipe are several, held as a group.
+- **Light**: a scene with `light` entities is lit from them when it is
+  built: a lightmap on every face of the world, a sample every 16 units,
+  shadows cast by the world's brushes, and doors lit where they stand. A
+  light's `light` is its reach and `_color` its colour; moving one builds
+  the level again. `ed_light off` (View > Flat light) shows the flat shade
+  a scene without lights has.
 - More in the Brush menu: turn about x or y (`ed_rotate 90 x`), mirror
   (`ed_mirror <x|y|z>`), stretch (`ed_resize <fx> [fy fz]`), carve the
   selection out of every brush it reaches (`ed_carve`), keep what the
@@ -140,6 +157,9 @@ editor/geometry/csg.jac      brushes cut by brushes, hulls of corners
 editor/geometry/mapping.jac  materials slid, scaled, turned and fitted; sides mirrored and turned
 editor/formats/map.jac       the .map text format, classic and Valve 220
 editor/compile/live.jac      a scene's brushes as a level, at once
+editor/compile/light.jac     lightmaps for that level from the scene's lights
+editor/geometry/shapes.jac   cones, balls, stairs, arches and pipes as brushes
+editor/classes/registry.jac  entity classes: fields by kind, options by name
 editor/assets/materials.jac  materials from the games' archives, by name
 editor/camera.jac            the free camera: rays through the view, points onto it
 editor/studio.jac            the workbench: panels, picking, play and stop, the ed_* commands
@@ -210,7 +230,11 @@ editor/impl/                 the workbench's scenes and brushes
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
 - `tests/studio_compile_tests.jac`: a compiled scene's models, faces and
-  entities, and that it prepares as a level that holds the player up.
+  entities, and that it prepares as a level that holds the player up;
+  lamps, shadows and the lightmap a light gives the world.
+- `tests/studio_shape_tests.jac`, `tests/studio_class_tests.jac`: each
+  shape's size, volume and gaps; the class table read whole, fields by
+  kind, classes by game, option bits.
 - `scripts/ui_gallery.jac`: every widget in one window without the engine,
   with a scripted session saved to a screenshot.
 - `jac run scripts/validate_studio.jac`: drives the real studio in `qp` by
@@ -232,6 +256,11 @@ editor/impl/                 the workbench's scenes and brushes
   in the logic graph, pick from the graph, copy and paste the door, save it
   as a prefab from the Library tab, add a copy by a click, place and move a
   linked one, group two boxes, save, play, return; then reopen).
+  `scripts/studio/build_session.cfg` builds and sets up (16 steps: stairs,
+  an arch and a cone, a light that lights the level, flat and lit again, a
+  door made from the Classes tab, two options ticked, a sound chosen from
+  its list, an angle typed and turned by its button, a button's target
+  followed to the door, save, play, return).
 
 ## What remains
 
@@ -244,8 +273,8 @@ texture round a corner) are not built, a shipped map cannot take new
 brushes, and Quake III's `brushDef` and `patchDef2` blocks are skipped on
 open; a linked prefab stands as its file has it (it does not turn), and the
 logic graph neither reorders nor shows signals as they fire in play. Not
-yet built: lit and solid-colour display modes, the entity class registry
-behind typed inspector fields, the bake, patches and duplicators, the asset studio, the model
+yet built: a solid-colour display mode, the bake proper (partition,
+visibility, bounced light, a leak finder, bot navigation), patches and duplicators, the asset studio, the model
 editor, terrain, the Passion tools and user walkers. Within the shell:
 entity previews are boxes rather than the entity's model, generated
 (Passion) levels can be edited but not saved, and a brush entity cannot be

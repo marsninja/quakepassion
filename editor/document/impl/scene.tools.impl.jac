@@ -546,3 +546,60 @@ impl Scene.group_selection(name: str) -> Item | None {
     self.picks += 1;
     return taker;
 }
+
+impl Scene.flag_selection(bit: int, on: bool) -> bool {
+    step = Step(label="Set option" if on else "Clear option");
+    for item in self.selection() {
+        before = item.fields.get("spawnflags");
+        after = flag_put(before if before is not None else "", bit, on);
+        fresh: str | None = after;
+        if after == "0" {
+            # No options is no field.
+            fresh = None;
+        }
+        if fresh == before {
+            continue;
+        }
+        change = FieldChange(item=item, key="spawnflags", before=before, after=fresh);
+        change.redo();
+        step.changes.append(change);
+    }
+    return self.commit(step);
+}
+
+impl Scene.bump_selection(key: str, delta: float, wrap: float = 0.0, fill: bool = False) -> bool {
+    step = Step(label="Change " + key);
+    for item in self.selection() {
+        before = item.fields.get(key);
+        if before is None and not fill {
+            continue;
+        }
+        number = 0.0;
+        try {
+            number = float(before) if before is not None else 0.0;
+        } except ValueError {
+            continue;
+        }
+        number += delta;
+        if wrap > 0.0 {
+            number = number % wrap;
+        }
+        change = FieldChange(item=item, key=key, before=before, after=field_number(number));
+        change.redo();
+        step.changes.append(change);
+    }
+    return self.commit(step);
+}
+
+impl Scene.select_named(name: str) -> int {
+    self.clear_selection();
+    count = 0;
+    for item in self.items() {
+        if name and item.fields.get("targetname", "") == name {
+            self +>:Selected:+> item;
+            count += 1;
+        }
+    }
+    self.picks += 1;
+    return count;
+}

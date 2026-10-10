@@ -19,6 +19,8 @@ test "every line of the table reads as a class" {
     for (name, found) in known.items() {
         assert name == found.name and found.help , name;
         for entry_field in found.fields {
+            # A comma in a field's help would have cut it in two.
+            assert " " not in entry_field.name , name + " " + entry_field.name;
             assert entry_field.name and entry_field.kind in [
                 "number", "text", "angle", "vector", "color", "link", "name", "choice"
             ] , name + " " + entry_field.name;

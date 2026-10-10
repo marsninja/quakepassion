@@ -4,6 +4,7 @@ import from engine.world.level { Level, prepare_level, spawn_player }
 import from editor.document.scene { Scene }
 import from editor.geometry.brush { box_sides }
 import from editor.compile.live { compile_scene, SwatchMaterials, swatch_texture, material_hidden }
+import from editor.compile.light { bake_light, scene_lamps, BrushOccluder }
 
 """A room: a floor, two walls, a door of one brush, a trigger and a start."""
 def room -> Scene {
@@ -100,4 +101,83 @@ test "a compiled scene prepares as a level and holds the player up" {
     assert across.fraction < 0.62;
     faces = level.visible(world, Vec3(x=0.0, y=0.0, z=32.0), True);
     assert len(faces) == 18;
+}
+
+def lit_yard -> Scene {
+    scene = Scene(game="passion", name="studio:lit");
+    world = scene.world();
+    scene.add_solid(world, box_sides(Vec3(x=-128.0, y=-128.0, z=-16.0), Vec3(x=128.0, y=128.0, z=0.0), "floor"));
+    scene.add_solid(world, box_sides(Vec3(x=32.0, y=-64.0, z=0.0), Vec3(x=48.0, y=64.0, z=128.0), "wall"));
+    scene.add_item({"classname": "info_player_start", "origin": "-64 0 24"});
+    return scene;
+}
+
+test "a group's brushes are built as part of the world" {
+    scene = lit_yard();
+    group = scene.add_item({"classname": "func_group", "_group_name": "crates"});
+    scene.add_solid(group, box_sides(Vec3(x=-96.0, y=64.0, z=0.0), Vec3(x=-64.0, y=96.0, z=32.0), "crate"));
+    made = compile_scene(scene, SwatchMaterials());
+    assert made.brushes == 3 and made.bsp.models[0].face_count == 18;
+    assert len([entity for entity in made.bsp.entities if entity.fields.get("classname", "") == "func_group"]) == 0;
+}
+
+test "lamps are the scene's light entities, with their reach and colour" {
+    scene = lit_yard();
+    assert len(scene_lamps(scene)) == 0;
+    scene.add_item({"classname": "light", "origin": "0 0 96"});
+    scene.add_item({"classname": "light_torch_small_walltorch", "origin": "-64 0 64", "light": "150", "_color": "255 128 0"});
+    scene.add_item({"classname": "light", "light": "200"});
+    scene.add_item({"classname": "light", "origin": "0 0 0", "light": "0"});
+    lamps = scene_lamps(scene);
+    assert len(lamps) == 2;
+    assert lamps[0].radius == 600.0 and lamps[0].color.x == 1.0 and lamps[0].origin.z == 96.0;
+    assert lamps[1].radius == 300.0 and abs(lamps[1].color.y - 128.0 / 255.0) < 0.001 and lamps[1].color.z == 0.0;
+}
+
+test "a brush between a point and a lamp shadows it" {
+    shadows = BrushOccluder();
+    shadows.add(box_sides(Vec3(x=32.0, y=-64.0, z=0.0), Vec3(x=48.0, y=64.0, z=128.0), "wall"));
+    lamp = Vec3(x=0.0, y=0.0, z=64.0);
+    assert shadows.visibility(Vec3(x=100.0, y=0.0, z=0.25), lamp) == 0.0;
+    assert shadows.visibility(Vec3(x=-100.0, y=0.0, z=0.25), lamp) == 1.0;
+    # Round the end of the wall, and from on the wall's own lit side.
+    assert shadows.visibility(Vec3(x=100.0, y=120.0, z=0.25), Vec3(x=0.0, y=120.0, z=64.0)) == 1.0;
+    assert shadows.visibility(Vec3(x=31.75, y=0.0, z=64.0), lamp) == 1.0;
+}
+
+test "a scene with a light gets a lightmap on every face of the world" {
+    scene = lit_yard();
+    made = compile_scene(scene, SwatchMaterials());
+    # Without a light it stays as the compiler shaded it.
+    assert bake_light(scene, made) == 0 and len(made.bsp.lighting) == 0;
+    assert made.bsp.faces[0].light_offset < 0 and len(made.bsp.faces[0].colors) > 0;
+    scene.add_item({"classname": "light", "origin": "0 0 64", "light": "300"});
+    made = compile_scene(scene, SwatchMaterials());
+    count = bake_light(scene, made);
+    assert count > 0 and len(made.bsp.lighting) == count * 3 and made.bsp.light_channels == 3;
+    floor_top = [face for face in made.bsp.faces if face.normal.z > 0.5 and face.plane_dist == 0.0][0];
+    assert floor_top.light_width == 17 and floor_top.light_height == 17 and floor_top.light_offset >= 0;
+    assert len(floor_top.colors) == 0 and len(floor_top.light_uv) == len(floor_top.vertices) * 2;
+    for value in floor_top.light_uv {
+        assert value >= 0.0 and value <= 16.0;
+    }
+    block = made.bsp.lighting[floor_top.light_offset:floor_top.light_offset + 17 * 17 * 3];
+    # Bright under the lamp, down to the ambient floor in the wall's shadow.
+    assert max(block) > 80 and min(block) == 15;
+    # A scene too large for the budget is left flat, and says so.
+    again = compile_scene(scene, SwatchMaterials());
+    assert bake_light(scene, again, 16.0, 100) == 0 and len(again.bsp.lighting) == 0;
+    assert len([warning for warning in again.warnings if "too large to light" in warning]) == 1;
+}
+
+test "a lit scene prepares as a level" {
+    scene = lit_yard();
+    scene.add_item({"classname": "light", "origin": "0 0 64", "light": "300"});
+    made = compile_scene(scene, SwatchMaterials());
+    assert bake_light(scene, made) > 0;
+    world = World();
+    level = Level(active=True, name="studio:lit", bsp=made.bsp);
+    prepare_level(world, level);
+    assert level.bsp.light_channels == 3 and len(level.bsp.lighting) > 0;
+    assert len(level.visible(world, Vec3(x=-64.0, y=0.0, z=32.0), True)) == 12;
 }

@@ -1572,3 +1572,87 @@ node GraphView(Widget) {
         return True;
     }
 }
+
+"""One value from a list: it shows the chosen label, and a click opens the
+list under it. Choosing a label asks for the command beside it."""
+node Dropdown(Widget) {
+    has text: str = "",
+        labels: list[str] = [],
+        commands: list[str] = [];
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        if across {
+            return canvas.text_width(self.text) + 2 * canvas.theme.pad + 18;
+        }
+        return canvas.theme.row + 2;
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(self.area, theme.hover if self.hovered else theme.field);
+        canvas.outline(self.area, theme.border);
+        canvas.label(
+            self.text,
+            Rect(x=self.area.x, y=self.area.y, w=self.area.w - 16, h=self.area.h),
+            theme.text if self.enabled else theme.faint,
+            -1,
+            theme.pad
+        );
+        draw_glyph(canvas, "down", self.area.right() - 14, self.area.y + (self.area.h - 8) // 2, 8, theme.dim);
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "click" and event.button == 0 and self.enabled {
+            items: list[MenuItem] = [];
+            for index in range(len(self.labels)) {
+                items.append(
+                    MenuItem(
+                        text=self.labels[index],
+                        command=self.commands[index] if index < len(self.commands) else "",
+                        ticked=self.labels[index] == self.text
+                    )
+                );
+            }
+            if len(items) > 0 {
+                popup = MenuPopup(items=items);
+                popup.open_at(stage, self.area.x, self.area.bottom());
+            }
+            return True;
+        }
+        return event.kind in ["press", "release", "double", "drag"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
+"""A patch of one colour: red, green and blue as parts of one."""
+node Swatch(Widget) {
+    has red: float = 1.0,
+        green: float = 1.0,
+        blue: float = 1.0;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        return canvas.theme.row + 2;
+    }
+
+    def draw(canvas: Canvas) {
+        canvas.fill(
+            self.area,
+            Ink(
+                r=int(max(0.0, min(1.0, self.red)) * 255.0),
+                g=int(max(0.0, min(1.0, self.green)) * 255.0),
+                b=int(max(0.0, min(1.0, self.blue)) * 255.0),
+                a=255
+            )
+        );
+        canvas.outline(self.area, canvas.theme.border);
+    }
+}

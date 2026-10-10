@@ -45,8 +45,14 @@ import from .ui.widgets {
     Tile,
     GraphView,
     GraphNode,
-    GraphLink
+    GraphLink,
+    Dropdown,
+    Swatch,
+    Check
 }
+import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
+import from .geometry.shapes { shape_brushes, SHAPE_KINDS }
+import from .compile.light { bake_light }
 import from .document.scene {
     Scene,
     Item,
@@ -137,6 +143,16 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
     ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),
+    (
+        "ed_shape",
+        "ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe> [w d h] [count] [thickness]",
+        "add a shape built of brushes where the camera looks"
+    ),
+    ("ed_class", "ed_class <classname>", "add an entity of a class, or make the selected brushes one"),
+    ("ed_classfilter", "ed_classfilter <text>", "show only matching classes in the class list"),
+    ("ed_flag", "ed_flag <bit> <0|1>", "clear or set one of the selection's spawnflags (bit 0 is the value 1)"),
+    ("ed_bump", "ed_bump <key> <amount>", "add to a number field of the selection"),
+    ("ed_light", "ed_light <on|off>", "light scenes from their own lights, or leave them flat"),
     ("ed_link", "ed_link <from> <to>", "make one entity fire another"),
     ("ed_unlink", "ed_unlink <from> [to]", "stop an entity firing another, or anything"),
     ("ed_exec", "ed_exec <file>", "run a file of console commands"),
@@ -277,6 +293,7 @@ obj StudioUi {
         gallery: Gallery,
         checks: TreeView,
         library: TreeView,
+        classes: TreeView,
         logic: GraphView,
         prefab_name: TextField,
         modes: list[PushButton],
@@ -354,6 +371,11 @@ obj Studio(Workbench) {
         logic_seen: int = -1,
         # What was last copied, as map text.
         clip: str = "",
+        # Scenes lit from their own lights, and how many samples the last was.
+        lit: bool = True,
+        lit_samples: int = 0,
+        class_filter: str = "",
+        classes_seen: str = "",
         hover: Item | None = None,
         shapes: list[Shape] = [],
         opened: dict[str, bool] = {},
@@ -597,6 +619,9 @@ obj Studio(Workbench) {
                     MenuItem(text="3D view as edges", command="ed_display wire 3d"),
                     MenuItem(text="3D view textured", command="ed_display textured 3d"),
                     MenuItem(rule=True),
+                    MenuItem(text="Light from the scene's lights", command="ed_light on"),
+                    MenuItem(text="Flat light", command="ed_light off"),
+                    MenuItem(rule=True),
                     MenuItem(text="Look at the selection", command="ed_focus", keys="F"),
                     MenuItem(text="Console", command="toggleconsole", keys="`")
                 ],
@@ -604,6 +629,14 @@ obj Studio(Workbench) {
                     MenuItem(text="Box", command="ed_box", keys="B"),
                     MenuItem(text="Cylinder", command="ed_cylinder"),
                     MenuItem(text="Wedge", command="ed_wedge"),
+                    MenuItem(text="Cone", command="ed_shape cone"),
+                    MenuItem(text="Pyramid", command="ed_shape pyramid"),
+                    MenuItem(text="Ball", command="ed_shape ball"),
+                    MenuItem(text="Dome", command="ed_shape dome"),
+                    MenuItem(text="Stairs", command="ed_shape stairs"),
+                    MenuItem(text="Spiral stairs", command="ed_shape spiral"),
+                    MenuItem(text="Arch", command="ed_shape arch"),
+                    MenuItem(text="Pipe", command="ed_shape pipe"),
                     MenuItem(rule=True),
                     MenuItem(text="Turn a quarter", command="ed_rotate 90", keys="R"),
                     MenuItem(text="Tip a quarter about x", command="ed_rotate 90 x"),
@@ -674,7 +707,7 @@ obj Studio(Workbench) {
         top.adopt(body);
         left = Box(size=280, fill="panel");
         body.adopt(left);
-        side = Tabs(titles=["Scene", "Materials", "Checks", "Library"], grow=1);
+        side = Tabs(titles=["Scene", "Materials", "Checks", "Library", "Classes"], grow=1);
         left.adopt(side);
         scene_page = Box();
         side.adopt(scene_page);
@@ -737,6 +770,20 @@ obj Studio(Workbench) {
             hint="Click a scene to open it, or a prefab to add a copy where the camera looks"
         );
         library_page.adopt(library);
+        class_page = Box();
+        side.adopt(class_page);
+        class_row = Box(pad=4);
+        class_page.adopt(class_row);
+        class_row.adopt(
+            TextField(ghost="Filter classes", command="ed_classfilter", live=True, hint="Show only matching classes")
+        );
+        class_list = TreeView(
+            pick="ed_class",
+            toggle="ed_fold",
+            grow=1,
+            hint="Click a class to add one where the camera looks; a brush class takes the selected brushes"
+        );
+        class_page.adopt(class_list);
         sheet = GraphView(
             pick="ed_select",
             open_command="ed_focus",
@@ -812,6 +859,7 @@ obj Studio(Workbench) {
             gallery=gallery,
             checks=checks,
             library=library,
+            classes=class_list,
             logic=sheet,
             prefab_name=prefab_name,
             modes=modes,
@@ -988,39 +1036,7 @@ obj Studio(Workbench) {
         }
         heading = chosen[0].title() if len(chosen) == 1 else str(len(chosen)) + " entities";
         form.adopt(Label(text=heading, tone="accent"));
-        # The class first, then the fields in the order the map has them.
-        keys: list[str] = ["classname"];
-        for item in chosen {
-            for key in item.fields.keys() {
-                if key not in keys {
-                    keys.append(key);
-                }
-            }
-        }
-        for key in keys {
-            first = chosen[0].fields.get(key, "");
-            same = True;
-            for item in chosen {
-                if item.fields.get(key, "") != first or key not in item.fields {
-                    same = False;
-                }
-            }
-            row = Box(across=True, gap=4);
-            form.adopt(row);
-            row.adopt(Label(text=key, tone="dim", size=104));
-            row.adopt(
-                TextField(
-                    value=first if same else "",
-                    ghost="" if same else "(mixed)",
-                    command="ed_set " + quote_command_word(key),
-                    grow=1,
-                    hint="Enter sets " + key + " on the selection; Escape cancels"
-                )
-            );
-            row.adopt(
-                PushButton(text="x", command="ed_unset " + quote_command_word(key), size=22, hint="Remove " + key)
-            );
-        }
+        self.fill_fields(scene, ui, chosen);
         adder = Box(across=True, gap=4);
         form.adopt(adder);
         new_key = TextField(ghost="new key", size=104, hint="The name of a field to add");
@@ -1036,6 +1052,7 @@ obj Studio(Workbench) {
         actions.adopt(PushButton(text="Look at", command="ed_focus", grow=1, hint="Move the camera to the selection (F)"));
         actions.adopt(PushButton(text="Duplicate", command="ed_duplicate", grow=1, hint="Copy the selection (Ctrl+D)"));
         actions.adopt(PushButton(text="Delete", command="ed_delete", grow=1, hint="Delete the selection (Del)"));
+        self.fill_class(scene, ui, chosen);
     }
 
     # ------------------------------------------------------------------
@@ -1075,6 +1092,16 @@ obj Studio(Workbench) {
         ui.gallery.track(stage);
         ui.checks.track(stage);
         ui.library.track(stage);
+        ui.classes.track(stage);
+        # A list opened by a dropdown follows the pointer too.
+        for layer in stage.layers() {
+            layer.track(stage);
+        }
+        signature = scene_game(self.scene) + "|" + self.class_filter + "|" + str(self.folds);
+        if signature != self.classes_seen {
+            self.list_classes(ui);
+            self.classes_seen = signature;
+        }
         if len(ui.library.rows) == 0 {
             self.list_library(ui);
         }
@@ -1783,6 +1810,19 @@ obj Studio(Workbench) {
     def fill_graph(scene: Scene, ui: StudioUi);
 
     # ------------------------------------------------------------------
+    # Entity classes, typed fields and shapes (impl/studio.classes.impl.jac)
+
+    """Run a class, option or shape command. False when it is not one."""
+    def class_command(scene: Scene, args: list[str]) -> bool;
+    """The inspector's rows for the fields the selection has, each edited
+    by its kind."""
+    def fill_fields(scene: Scene, ui: StudioUi, chosen: list[Item]);
+    """Under the fields: what the class is, its options as boxes to tick,
+    and the fields it knows that the selection does not have yet."""
+    def fill_class(scene: Scene, ui: StudioUi, chosen: list[Item]);
+    def list_classes(ui: StudioUi);
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -1926,8 +1966,9 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.scene_command(scene, args) and not self.tool_command(scene, args) {
-            self.library_command(scene, args);
+        } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
+            and not self.library_command(scene, args) {
+            self.class_command(scene, args);
         }
     }
 
@@ -2108,7 +2149,8 @@ obj Studio(Workbench) {
         );
         lines.append(
             "studio: mode=" + self.mode + " material=" + self.material + " wire="
-                + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0")
+                + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0") + " lit="
+                + str(self.lit_samples if self.lit else 0)
         );
         app = self.app;
         for line in lines {
@@ -2194,6 +2236,11 @@ def wire_line(start: Vec3, finish: Vec3, color: Ink) {
         Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),
         wire_color(color)
     );
+}
+
+"""The game whose classes a document may hold ("" before there is one)."""
+def scene_game(scene: Scene | None) -> str {
+    return scene.game if scene is not None else "";
 }
 
 """Give an App its studio."""

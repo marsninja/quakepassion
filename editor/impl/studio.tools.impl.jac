@@ -13,6 +13,8 @@ impl Studio.select_wide(scene: Scene, args: list[str]) -> bool {
         count = scene.invert_selection();
     } elif word.startswith("material:") {
         count = scene.select_material(word[9:]);
+    } elif word.startswith("name:") {
+        count = scene.select_named(word[5:]);
     }
     if count < 0 {
         return False;

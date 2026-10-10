@@ -734,3 +734,34 @@ test "brushes are grouped, and a group or a brush entity duplicates with its bru
     scene.select(None);
     assert scene.group_selection("none") is None;
 }
+
+test "options are set a bit at a time and numbers nudged, across the selection" {
+    scene = wired();
+    doors = [item for item in scene.items() if item.classname() == "func_door"];
+    scene.select(doors[0]);
+    scene.select(doors[1], True);
+    assert scene.flag_selection(3, True);
+    assert doors[0].fields["spawnflags"] == "8" and doors[1].fields["spawnflags"] == "8";
+    assert scene.flag_selection(0, True) and doors[0].fields["spawnflags"] == "9";
+    assert not scene.flag_selection(0, True);
+    assert scene.flag_selection(3, False) and scene.flag_selection(0, False);
+    assert "spawnflags" not in doors[0].fields;
+    scene.undo();
+    assert doors[1].fields["spawnflags"] == "1";
+    # An angle wraps round; a field the entity lacks is left alone unless asked for.
+    assert not scene.bump_selection("angle", 45.0, 360.0);
+    assert scene.bump_selection("angle", -45.0, 360.0, True) and doors[0].fields["angle"] == "315";
+    assert scene.bump_selection("angle", 90.0, 360.0) and doors[1].fields["angle"] == "45";
+    assert scene.select_named("door") == 2 and scene.select_named("nothing") == 0 and scene.select_named("") == 0;
+}
+
+test "a light and a linked prefab change what the level is built from" {
+    scene = blockout();
+    before = scene.geometry;
+    lamp = scene.create("light", Vec3(z=64.0));
+    assert scene.geometry == before + 1;
+    assert scene.set_field("light", "200") and scene.geometry == before + 2;
+    assert scene.shift_selection(Vec3(x=16.0)) and scene.geometry == before + 3;
+    scene.select(scene.items()[1]);
+    assert scene.set_field("angle", "180") and scene.geometry == before + 3;
+}

@@ -19,6 +19,7 @@ import from ..geometry.brush {
 }
 import math;
 import from ..formats.map { MapItem, MapFile }
+import from ..classes.registry { flag_put }
 import from ..geometry.csg {
     carve_sides,
     common_sides,
@@ -177,6 +178,13 @@ def write_vector(value: Vec3) -> str {
     return field_number(value.x) + " " + field_number(value.y) + " " + field_number(value.z);
 }
 
+"""Whether the level is built from a point entity itself, not only from
+brushes: a linked prefab's contents, a light's light."""
+def built_from(item: Item) -> bool {
+    name = item.classname();
+    return name == "misc_prefab" or name.startswith("light");
+}
+
 """One reversible change."""
 obj Change {
     def undo abst;
@@ -210,8 +218,9 @@ obj FieldChange(Change) {
     }
 
     def reshapes -> bool {
-        # A linked prefab is built where its entity stands.
-        return self.item.classname() == "misc_prefab";
+        # A linked prefab is built where its entity stands, and a light
+        # lights what is round it.
+        return built_from(self.item);
     }
 }
 
@@ -229,7 +238,7 @@ obj HoldChange(Change) {
     }
 
     def reshapes -> bool {
-        return bool([self.item->:Owns:->]) or self.item.classname() == "misc_prefab";
+        return bool([self.item->:Owns:->]) or built_from(self.item);
     }
 }
 
@@ -1171,6 +1180,14 @@ node Scene {
     def move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool;
     """What is wrong with the document."""
     def problems -> list[Finding];
+
+    """Set or clear one bit of the selection's spawnflags (bit 0 is 1)."""
+    def flag_selection(bit: int, on: bool) -> bool;
+    """Add to a number field of every selected item: one that has it, or
+    every one when `fill`. `wrap` keeps it under that many (an angle's 360)."""
+    def bump_selection(key: str, delta: float, wrap: float = 0.0, fill: bool = False) -> bool;
+    """Select every entity with a targetname. Answers how many."""
+    def select_named(name: str) -> int;
 
     """Draw the Fires edges again from the entities' fields."""
     def relink;

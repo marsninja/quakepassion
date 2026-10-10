@@ -263,7 +263,7 @@ def tools_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert brush_box(edged[0]) == [[176, 128, 0], [240, 192, 80]] and "sides=6" in edged[0] , str(edged);
     cornered = brushes(steps["cornered"]);
     assert brush_box(cornered[0]) == [[176, 128, 0], [240, 192, 80]] and "sides=7" in cornered[0] , str(cornered);
-    assert "mode=corner" in steps["cornered"][-1] and steps["cornered"][-1].endswith("wire=10");
+    assert "mode=corner" in steps["cornered"][-1] and "wire=10" in steps["cornered"][-1];
 
     # A rectangle dragged round it in the top view selects it again.
     assert not brushes(steps["cleared"]) and "mode=brush" in steps["cleared"][-1];
@@ -399,6 +399,86 @@ def logic_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"LOGIC PASS: {len(steps) - 1} steps, a chain of three, a prefab added and linked, a group");
 }
 
+"""How many light samples the level was built with (0 when lit flat)."""
+def lit(lines: list[str]) -> int {
+    found = [line for line in lines if line.startswith("mode=")];
+    return int(found[0].split("lit=")[1].split()[0]) if found else -1;
+}
+
+"""The fifth session: shapes, light, the class list and the typed inspector."""
+def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["lit", "inspector", "playing"];
+    for shot in shots {
+        (repo / f"build_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-build-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PREFABS"] = home + "/prefabs";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/build_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "build.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The build session failed: {output / 'build.log'}";
+        saved = Path(home) / "scenes/hall.map";
+        assert saved.exists() , "Saving the scene wrote no map";
+        saved_text = saved.read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    for name in [
+        "stairs", "arch", "cone", "lit", "flat", "relit", "door", "flagged", "keyed", "sounded", "angled",
+        "turned", "aimed", "followed", "saved", "returned"
+    ] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'build.log'}";
+    }
+    # Stairs and an arch are groups of eight brushes; a cone is one brush of thirteen sides.
+    stairs = selected(steps["stairs"]);
+    assert len(stairs) == 1 and "_group_name=stairs owns=8" in stairs[0] , str(stairs);
+    arch = selected(steps["arch"]);
+    assert len(arch) == 1 and "_group_name=arch owns=8" in arch[0] and "brushes=17" in tally(steps["arch"]);
+    cone = brushes(steps["cone"]);
+    assert len(cone) == 1 and "sides=13" in cone[0] and brush_box(cone[0])[1][2] == 96 , str(cone);
+    # No light, no lightmap; a light lights the level; flat and lit again on request.
+    assert lit(steps["cone"]) == 0 and lit(steps["lit"]) > 1000 , str(steps["lit"]);
+    assert lit(steps["flat"]) == 0 and lit(steps["relit"]) == lit(steps["lit"]);
+    built = tally(steps["lit"]);
+    assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+
+    # A click on func_door in the class list makes a door of a new box.
+    door = selected(steps["door"]);
+    assert len(door) == 1 and door[0].endswith("classname=func_door owns=1") , str(door);
+    assert "brushes=19" in tally(steps["door"]);
+    # Options ticked one at a time, a sound chosen from a list, an angle typed and turned.
+    assert "spawnflags=1 " in selected(steps["flagged"])[0] , str(steps["flagged"]);
+    assert "spawnflags=9 " in selected(steps["keyed"])[0] , str(steps["keyed"]);
+    assert "sounds=1 " in selected(steps["sounded"])[0] , str(steps["sounded"]);
+    assert "angle=90 " in selected(steps["angled"])[0] , str(steps["angled"]);
+    assert "angle=135 " in selected(steps["turned"])[0] , str(steps["turned"]);
+    # The arrow beside a button's target selects what it fires.
+    aimed = selected(steps["aimed"]);
+    assert len(aimed) == 1 and "classname=func_button" in aimed[0] and "target=gate" in aimed[0] , str(aimed);
+    followed = selected(steps["followed"]);
+    assert len(followed) == 1 and "classname=func_door" in followed[0] and "targetname=gate" in followed[0];
+
+    built = tally(steps["returned"]);
+    assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+    assert saved_text.count("// brush") == 19 and "\"spawnflags\" \"9\"" in saved_text;
+    assert "\"_group_name\" \"stairs\"" in saved_text and "\"classname\" \"light\"" in saved_text;
+    for shot in shots {
+        source = repo / f"build_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"build_{shot}.png");
+        source.unlink();
+    }
+    print(f"BUILD PASS: {len(steps) - 1} steps, shapes, a lit level, a door made and set from the inspector");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -501,6 +581,7 @@ def main() {
     scene_session(repo, binary, env, output);
     tools_session(repo, binary, env, output);
     logic_session(repo, binary, env, output);
+    build_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
 

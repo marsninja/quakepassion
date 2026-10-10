@@ -15,7 +15,9 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     if scene is None {
         return None;
     }
-    made = compile_scene(self.expanded(scene), self.materials);
+    whole = self.expanded(scene);
+    made = compile_scene(whole, self.materials);
+    self.lit_samples = bake_light(whole, made) if self.lit else 0;
     self.live = made;
     self.built_geometry = scene.geometry;
     started = False;

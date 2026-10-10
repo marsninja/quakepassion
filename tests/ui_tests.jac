@@ -20,7 +20,10 @@ import from editor.ui.widgets {
     Tile,
     GraphView,
     GraphNode,
-    GraphLink
+    GraphLink,
+    Dropdown,
+    Swatch,
+    MenuPopup
 }
 
 """Run frames until the scripted steps are played, plus one to settle."""
@@ -511,4 +514,30 @@ test "a graph view picks a box by a click, links two by a drag and slides its sh
     stage.take_commands();
     sheet.reveal(0);
     assert sheet.node_area(0).x == 24;
+}
+
+test "a dropdown opens its list under it and a choice runs that label's command" {
+    canvas = TraceCanvas();
+    top = Box();
+    chooser = Dropdown(text="stone", labels=["silent", "stone", "machine"], commands=["set 0", "set 1", "set 2"]);
+    top.adopt(chooser);
+    top.adopt(Swatch(red=1.0, green=0.5, blue=0.0));
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    stage.paint();
+    assert "stone" in canvas.words();
+    assert len(stage.layers()) == 1;
+    script_click(source, 40, 10);
+    play(stage, source, 300, 200);
+    assert len(stage.layers()) == 2 and len(stage.take_commands()) == 0;
+    popup = stage.layers()[1];
+    assert popup.area.y == chooser.area.bottom() and popup.area.x == chooser.area.x;
+    # The third line of the list.
+    script_click(source, 40, popup.area.y + 4 + 22 * 2 + 10);
+    play(stage, source, 300, 200);
+    asked = stage.take_commands();
+    assert len(asked) == 1 and asked[0] == "set 2" and len(stage.layers()) == 1;
+    fills = [stroke for stroke in canvas.strokes if stroke.kind == "fill" and stroke.color.g == 127];
+    assert len(fills) >= 1 and fills[0].color.r == 255 and fills[0].color.b == 0;
 }

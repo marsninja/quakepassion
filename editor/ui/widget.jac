@@ -117,6 +117,10 @@ node Widget {
         return False;
     }
 
+    """Follow the pointer between events (which row it is over): called
+    each frame by whoever owns the widget."""
+    def track(stage: Stage) {}
+
     """Whether the pointer lands on this widget rather than passing through."""
     def solid -> bool {
         return False;
