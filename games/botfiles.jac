@@ -255,6 +255,7 @@ def character_from(
         self_preservation=unit(values, "CHARACTERISTIC_SELFPRESERVATION", 0.5),
         jumper=unit(values, "CHARACTERISTIC_JUMPER", 0.0),
         croucher=unit(values, "CHARACTERISTIC_CROUCHER", 0.0),
+        camper=unit(values, "CHARACTERISTIC_CAMPER", 0.0),
         weapon_jumping=unit(values, "CHARACTERISTIC_WEAPONJUMPING", 0.0),
         alertness=unit(values, "CHARACTERISTIC_ALERTNESS", 0.5),
         chat_insult=unit(values, "CHARACTERISTIC_CHAT_INSULT", 0.0),

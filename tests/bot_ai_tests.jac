@@ -8,8 +8,21 @@ import from engine.world.combat { Opponent, HasOpponent, CombatState, arm_bot }
 import from engine.world.arena { ArenaMatch, HasMatch, Competes }
 import from engine.world.pickups { Pickup, PickupRule, HasPickup }
 import from engine.world.inventory { AdjustInventory }
-import from engine.world.bot_routes { build_navmesh }
-import from engine.world.bot_goals { BotItems, HasBotItems, GoalState, LevelItem, GFL_AIR, add_level_item, choose_item_goal }
+import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
+import from engine.world.bot_goals {
+    BotItems,
+    HasBotItems,
+    GoalState,
+    LevelItem,
+    CampSpot,
+    HasCampSpot,
+    GFL_AIR,
+    add_level_item,
+    choose_item_goal,
+    init_camp_spots,
+    bot_items
+}
+import from engine.formats.bsp { MapEntity }
 import from engine.world.bot_weights { bot_inventory }
 import from engine.world.bot_character { BotCharacter, bot_travel_flags }
 import from engine.world.bot_ai { BotTactics, BotThink, AINode, Leads, build_bot_brain }
@@ -410,4 +423,63 @@ test "a bot six seconds under water heads for the surface above it" {
     assert bot.water_depth == 2 and memory.ainode == "seek_ltg";
     top = memory.goals.top();
     assert top is not None and top.item is item;
+}
+
+test "a camper with a rocket launcher goes to a camp spot nearby, stays and looks round, and moves on when its time is up" {
+    collision = floor_collision();
+    state = CombatState(game="q3");
+    mind = tester();
+    mind.camper = 1.0;
+    mind.croucher = 1.0;
+    # A perfect camper waits 60 seconds from the last time (or the start).
+    mind.camp.camp_time = -1000.0;
+    parts = arena_pair(mind);
+    world = parts[0];
+    bot = parts[1];
+    item = strip_world(world);
+    items = bot_items(world);
+    assert items is not None;
+    # BotInitInfoEntities: the map's info_camp entities, by AAS area.
+    mesh = [world->:HasNavMesh:->][?:NavMesh][0];
+    found = init_camp_spots(items, mesh, [
+        MapEntity(fields={"classname": "info_camp", "origin": "128 0 0", "range": "64", "weight": "3"}),
+        MapEntity(fields={"classname": "info_player_deathmatch", "origin": "64 0 0"})
+    ]);
+    spots = [items->:HasCampSpot:->][?:CampSpot];
+    assert found == 1 and len(spots) == 1 and spots[0].area == 2 and spots[0].range == 64.0 and spots[0].weight == 3.0;
+    mesh.times_to(2);
+    bot.pos = Vec3(x=64.0, z=26.0);
+    # Only a machine gun: no camping (BotWantsToCamp's weapons).
+    think(world, collision, state, 0.6);
+    memory = bot.bot_state;
+    assert not mind.camp.camping and memory.ainode == "seek_ltg";
+    bot.inventory spawn AdjustInventory(kind="weapon_rocketlauncher", amount=1, capacity=1);
+    bot.inventory spawn AdjustInventory(kind="rockets", amount=10, capacity=200);
+    think(world, collision, state, 0.7);
+    spot = mind.camp.goal;
+    assert mind.camp.camping and spot is not None and spot.area == 2 and mind.camp.until > 90000.0;
+    # The camp spot is the long-term goal now, not the item.
+    assert memory.move_goal is spot and memory.goal_area == 2;
+    # At the spot the bot stands, looking round, and crouches as its
+    # character likes; it stays for all its thinks.
+    bot.pos = Vec3(x=128.0, z=26.0);
+    crouched = False;
+    for i in range(80) {
+        think(world, collision, state, 0.1);
+        crouched = crouched or bot.crouched;
+        assert memory.move_goal is None and memory.view_mode == "roam" and bot.arena_goal is None;
+    }
+    assert crouched and memory.roam_target is not None;
+    # A respawn keeps it camping (the state lasts the match); its time up,
+    # it goes for items again.
+    mind.camp.until = 0.0;
+    think(world, collision, state, 0.2);
+    assert not mind.camp.camping;
+    top = memory.goals.top();
+    assert top is not None and top.item is item and memory.move_goal is top;
+    # Not a camper: never.
+    mind.camper = 0.05;
+    mind.camp.camp_time = -1000.0;
+    think(world, collision, state, 1.0);
+    assert not mind.camp.camping;
 }

@@ -627,6 +627,13 @@ def act_bot(
         look_at(bot, task.target);
     } elif memory.view_mode == "chase" {
         look_at(bot, memory.last_enemy_origin.add(Vec3(z=bot.eye_height)));
+    } elif memory.view_mode == "roam" {
+        # A camping bot looks round (BotRoamGoal); its view stays where it
+        # was until it picks somewhere new.
+        spot = memory.roam_target;
+        if spot is not None {
+            look_at(bot, spot.add(Vec3(z=bot.eye_height)));
+        }
     } elif travel.view_set {
         # MOVERESULT_MOVEMENTVIEWSET: the movement needs this view.
         memory.ideal_yaw = travel.yaw;

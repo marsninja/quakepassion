@@ -35,6 +35,18 @@ import from .powerups { empowered }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 
+"""A bot's camping (ai_main.h's ltgtype LTG_CAMP with its teamgoal,
+teamgoal_time and camp_time): whether it is camping, the camp spot it goes
+to and stays at, until when, when it last began to (or decided not to), and
+until when it crouches there (attackcrouch_time). All on the level clock."""
+obj CampState {
+    has camping: bool = False,
+        goal: BotGoal | None = None,
+        until: float = 0.0,
+        camp_time: float = 0.0,
+        crouch_time: float = 0.0;
+}
+
 obj BotCharacter {
     has name: str = "",
         gender: str = "male",
@@ -52,6 +64,7 @@ obj BotCharacter {
         self_preservation: float = 0.5,
         jumper: float = 0.0,
         croucher: float = 0.0,
+        camper: float = 0.0,
         weapon_jumping: float = 0.0,
         alertness: float = 0.5;
     # The fuzzy weights and, for each item classname and weapon number, the
@@ -77,6 +90,9 @@ obj BotCharacter {
         chat_hit_no_kill: float = 0.0,
         chat_random: float = 0.0,
         chat_state: BotChatState = BotChatState();
+    # Where and until when the bot camps. Like the chat state it lasts the
+    # match: a bot that dies goes back to its spot.
+    has camp: CampState = CampState();
 
     """Per-weapon accuracy, falling back to the general characteristic."""
     def accuracy_for(weapon: str) -> float {
@@ -295,6 +311,10 @@ obj BotState {
         avoid_right: bool = False,
         detour: Vec3 | None = None,
         shoot_target: Vec3 | None = None;
+    # What a camping bot asks of its body: to crouch, and where it looks
+    # round for enemies (BotRoamGoal).
+    has crouch: bool = False,
+        roam_target: Vec3 | None = None;
 }
 
 """ai_dmq3.c BotEntityVisible for a player's box: the bot's eye sees the

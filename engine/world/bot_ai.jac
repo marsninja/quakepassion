@@ -26,16 +26,27 @@ import from .bot_character {
     ActivateGoal,
     entity_visible,
     bot_travel_flags,
+    bot_aggression,
     wants_to_retreat,
     wants_to_chase
 }
 import from .bot_tactics { aim_point, attack_move, choose_weapon, rule_for, foe_height, armed_with, act_bot, can_step }
 import from .bot_obstacles { FindActivator, activate_weapon, mover_offset }
-import from .bot_weights { bot_inventory, battle_inventory, INVENTORY_HEALTH }
+import from .bot_weights {
+    bot_inventory,
+    battle_inventory,
+    INVENTORY_HEALTH,
+    INVENTORY_ROCKETLAUNCHER,
+    INVENTORY_RAILGUN,
+    INVENTORY_SLUGS,
+    INVENTORY_BFG10K,
+    INVENTORY_BFGAMMO
+}
 import from .bot_goals {
     BotItems,
     BotGoal,
     UpdateLevelItems,
+    NearestCampSpot,
     bot_items,
     choose_item_goal,
     reached_goal,
@@ -394,11 +405,140 @@ walker BotThink {
         );
     }
 
-    """ai_dmnet.c BotGetItemLongTermGoal (a free for all's BotLongTermGoal):
-    the goal on top of the stack, or a new one every 20 seconds, when the
-    current one is reached or when there is none."""
-    def long_term_goal() -> BotGoal | None {
+    """ai_dmq3.c BotWantsToCamp (the free for all's part; the team goals
+    that rule camping out are not played). A camper (CHARACTERISTIC_CAMPER
+    of 0.1 or more) not camping already, and not within 60 seconds of the
+    last time (300 seconds less for each whole point short of a perfect
+    camper, so only the keenest wait at all), goes to camp as often as its
+    character likes when it is keen to fight (BotAggression of 50), holds a
+    rocket launcher, or a railgun or BFG with 10 shots, and a camp spot is
+    within 150 hundredths of a second (TFL_DEFAULT). BotGoCamp then has it
+    camp for 120 to 315 seconds by its character, a perfect camper for good.
+    The rocket test is the original's, which never looks at the rockets
+    ("inventory[INVENTORY_ROCKETS < 10]")."""
+    def wants_to_camp() -> bool {
+        mind = self.mind;
+        camp = mind.camp;
+        items = self.items;
+        mesh = self.mesh;
+        if mind.camper < 0.1 or camp.camping {
+            return False;
+        }
+        if camp.camp_time > self.now - 60.0 + 300.0 * (1.0 - mind.camper) {
+            return False;
+        }
+        if self.random() > mind.camper {
+            camp.camp_time = self.now;
+            return False;
+        }
+        inventory = self.memory.inventory;
+        if bot_aggression(inventory, self.bot.weapon_slot) < 50.0 {
+            return False;
+        }
+        if inventory[INVENTORY_ROCKETLAUNCHER] <= 0
+            and (inventory[INVENTORY_RAILGUN] <= 0 or inventory[INVENTORY_SLUGS] < 10)
+            and (inventory[INVENTORY_BFG10K] <= 0 or inventory[INVENTORY_BFGAMMO] < 10) {
+            return False;
+        }
+        if items is None or mesh is None {
+            return False;
+        }
+        search = items spawn NearestCampSpot(mesh=mesh, area=self.area(), origin=self.origin());
+        spot = search.best;
+        if spot is None or search.best_time > 150 {
+            return False;
+        }
+        camp.camping = True;
+        camp.goal = BotGoal(origin=spot.origin, area=spot.area);
+        camp.until = self.now + (99999.0 if mind.camper > 0.99 else 120.0 + 180.0 * mind.camper + self.random() * 15.0);
+        camp.camp_time = self.now;
+        return True;
+    }
+
+    """ai_dmq3.c BotRoamGoal: somewhere to look, up to 900 units off along x
+    and y and 96 up or down, at least 200 units away with nothing in
+    between, over a floor that is not lava or slime; the tenth try whatever
+    it is."""
+    def roam_goal() -> Vec3 {
+        origin = self.origin();
+        spot = origin;
+        for attempt in range(10) {
+            spot = origin.add(Vec3());
+            rnd = self.random();
+            if rnd > 0.25 {
+                side = -1.0 if self.random() < 0.5 else 1.0;
+                spot.x += side * (800.0 * self.random() + 100.0);
+            }
+            if rnd < 0.75 {
+                side = -1.0 if self.random() < 0.5 else 1.0;
+                spot.y += side * (800.0 * self.random() + 100.0);
+            }
+            spot.z += 2.0 * 48.0 * (self.random() * 2.0 - 1.0);
+            sight = self.collision.trace_point(origin, spot);
+            toward = origin.lerp(spot, sight.fraction).sub(origin);
+            reach = toward.length();
+            if reach > 200.0 {
+                spot = origin.add(toward.normalized().scale(reach * sight.fraction - 40.0));
+                under = spot.sub(Vec3(z=800.0));
+                floor = self.collision.trace_point(spot, under);
+                if not floor.start_solid and self.liquid_at(spot.lerp(under, floor.fraction).add(Vec3(z=1.0))) not in [2, 3] {
+                    return spot;
+                }
+            }
+        }
+        return spot;
+    }
+
+    """ai_dmnet.c BotGetLongTermGoal's LTG_CAMP while the bot is not
+    retreating: the camp spot is its goal until the camping time is up.
+    Within 60 units of it the bot has no goal to move to (False): it stands
+    there, looks round for enemies now and then (BotRoamGoal), crouches as
+    its croucher characteristic likes (never within 5 seconds of the last
+    time, never swimming), and gives the spot up when its eyes are under a
+    liquid."""
+    def camp_goal() -> BotGoal | None {
+        camp = self.mind.camp;
         memory = self.memory;
+        goal = camp.goal;
+        if goal is None {
+            camp.camping = False;
+            return None;
+        }
+        if camp.until < self.now {
+            camp.camping = False;
+        }
+        if goal.origin.sub(self.origin()).length() >= 60.0 {
+            return goal;
+        }
+        if self.random() < BOT_THINK_TIME * 0.8 {
+            memory.roam_target = self.roam_goal();
+        }
+        memory.view_mode = "roam";
+        if camp.crouch_time < self.now - 5.0 and self.random() < BOT_THINK_TIME * self.mind.croucher {
+            camp.crouch_time = self.now + 5.0 + self.mind.croucher * 15.0;
+        }
+        if camp.crouch_time > self.now {
+            memory.crouch = True;
+        }
+        if self.bot.water_depth >= 2 {
+            camp.crouch_time = self.now - 1.0;
+        }
+        if self.liquid_at(self.bot.pos) > 0 {
+            camp.camping = False;
+        }
+        memory.avoid_reach.reset();
+        return None;
+    }
+
+    """ai_dmnet.c BotLongTermGoal for a free for all: a camping bot's camp
+    spot unless it retreats (`retreat`), and otherwise
+    BotGetItemLongTermGoal: the goal on top of the stack, or a new one every
+    20 seconds, when the current one is reached or when there is none."""
+    def long_term_goal(retreat: bool = False) -> BotGoal | None {
+        memory = self.memory;
+        if self.mind.camp.camping and not retreat {
+            return self.camp_goal();
+        }
         goals = memory.goals;
         top = goals.top();
         if top is None {
@@ -1024,6 +1164,8 @@ walker BotThink {
         }
         if memory.check_time < self.now {
             memory.check_time = self.now + 0.5;
+            # "check if the bot wants to camp"
+            self.wants_to_camp();
             if self.nearby_goal(goal, 150.0) {
                 memory.avoid_reach.reset_last();
                 memory.nbg_time = self.now + 4.0 + 150.0 * 0.01;
@@ -1342,7 +1484,7 @@ walker BotThink {
             visit self.enter(here, "battle_fight");
             return;
         }
-        goal = self.long_term_goal();
+        goal = self.long_term_goal(True);
         if goal is None {
             # "battle retreat: no way out" (AIEnter_Battle_SuicidalFight)
             visit self.enter(here, "battle_fight");
@@ -1592,6 +1734,7 @@ walker BotTactics {
         memory.talking = False;
         memory.detour = None;
         memory.shoot_target = None;
+        memory.crouch = False;
         here.fighting = False;
         thinker = BotThink(
             bot=here,
@@ -1654,7 +1797,7 @@ walker BotTactics {
             memory.goal_area = 0;
         }
         if not bot.fighting {
-            bot.crouched = False;
+            bot.crouched = memory.crouch;
         }
         # MOVERESULT_MOVEMENTWEAPON: the movement's weapon (a rocket jump's).
         wanted = memory.travel.weapon;

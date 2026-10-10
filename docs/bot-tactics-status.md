@@ -132,6 +132,22 @@ weapon the movement needs, a movement view, waiting and failure.
 - Nearby goals must be within 150 hundredths of a second of travel and leave
   the long-term goal no further away. The long-term goal is renewed every
   20 s, when reached, or when there is none.
+- Camp spots (`BotInitInfoEntities`): each `info_camp` of the map whose
+  origin lies in an AAS area is a `CampSpot` node under `BotItems`
+  (q3dm6, q3dm7, q3dm8, q3dm10, q3dm11, q3dm16 and q3dm19 have them).
+- Camping (`BotWantsToCamp`, checked twice a second in Seek_LTG): a bot
+  whose `CHARACTERISTIC_CAMPER` is 0.1 or more, keen to fight
+  (`BotAggression` 50), holding a rocket launcher or a railgun or BFG with
+  10 shots, goes to the camp spot soonest reached when one is within 150
+  hundredths of a second, as often as its character likes and, for the
+  keenest campers, not within 60 s of the last time (60 − 300 × (1 −
+  camper)). `BotGoCamp` has it camp for 120 to 315 s
+  by its character (for good at 1.0). The spot is then its long-term goal
+  (`LTG_CAMP`) except in a retreat; within 60 units of it the bot stands,
+  looks round now and then (`BotRoamGoal`), crouches by its `croucher` for
+  5 to 20 s at a time, and gives the spot up if its eyes go under a
+  liquid. It still fights whoever it sees, and dying does not end the
+  camping.
 
 ## AI nodes (`engine/world/bot_ai.jac`)
 
@@ -282,7 +298,8 @@ Tests:
   triggers.
 - `tests/bot_ai_tests.jac`: goal choice and avoid times, the node graph,
   fighting, suicidal fights, retreat, chase, kill/death/end-of-level chats,
-  seeking after the warmup, intermission lines, going for air.
+  seeking after the warmup, intermission lines, going for air, camp spots
+  and camping.
 - `tests/liquid_tests.jac` (bot immersion, `TraceLiquid`),
   `tests/effect_quads_tests.jac` (talk balloon),
   `tests/arena_navigation_tests.jac` (pickups, teleports, jump pad goals),
@@ -361,8 +378,8 @@ Scripts (native, need the Q3 assets):
 
 ## Limitations
 
-- Not modelled: team play (team goals, team and voice chat), camping
-  (`BotWantsToCamp`) and reply chats (`BotReplyChat`).
+- Not modelled: team play (team goals, team and voice chat, `LTG_CAMPORDER`
+  and the other ordered goals) and reply chats (`BotReplyChat`).
 - A bot that ends up on a plat or bobbing platform it was not taking keeps
   its route; Q3 switches it to that mover's reachability.
 - `BotTravel_Jump`'s run-up (to a run start up to 80 units behind the jump,
