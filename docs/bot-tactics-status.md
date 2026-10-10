@@ -43,7 +43,10 @@ Match rules, scoring, awards and item drops are in
 
 Each frame a bot follows its route (`BotMoveToGoal`) and gets a
 `bot_moveresult_t` (`TravelResult`): direction and speed, jump, attack, the
-weapon the movement needs, a movement view, waiting and failure.
+weapon the movement needs, a movement view, waiting and failure. On a map
+with AAS the travel is the only thing that moves a bot outside a fight:
+with no route to its goal it makes no move, and the way to a new goal is
+chosen on the frame the goal changes.
 
 - Walk, crouch, barrier jump, jump, walk off ledge, teleport and jump pad head
   for the passage's points. A jump (`BotTravel_Jump`) is run up to from a
@@ -75,8 +78,23 @@ weapon the movement needs, a movement view, waiting and failure.
   presence type). Ducked, it moves in the crouching player's box at a
   quarter speed and stays ducked while there is no room to stand
   (`PM_CheckDuck`).
+- Walk (`BotTravel_Walk`): straight to the reachability's start, then on to
+  its end from within 10 units of the start, so the bot stays inside the two
+  areas the walk joins (heading for the far end from anywhere in an area can
+  cut a walkway's corner over the void).
+- Gaps (`BotGapDistance` in `BotTravel_Walk`): on a walk leg a bot looks
+  100 units ahead ten times a second for the floor falling away by more
+  than a step and 8 units, and slows up to it (40 plus 2 a unit); water
+  under the edge is no gap (`CombatTick.liquids`).
 - Barrier jump (`BotTravel_BarrierJump`): the bot slows up to the barrier (6
   a unit over the last 60) and jumps within 9 units of the reach's start.
+- Jump pad (`BotTravel_JumpPad`, `BotFinishTravel_JumpPad`): on the ground
+  the bot walks for the passage's start, on the pad. In the air it steers
+  for the passage's far end (`BotAirControl`) once it has been through the
+  pad's own area in its last two think times (`BotMoveToGoal`'s "special
+  handling of jump pads"); a bot still dropping toward the pad steers for
+  the pad. Thrown and down outside the landing's area, its way is chosen
+  again.
 - Walking off a ledge (`BotTravel_WalkOffLedge`): to within 48 units of the
   ledge, then for the far end at the speed that carries the fall there
   (`AAS_HorizontalVelocityForJump`), or at 100 for a drop straight down;
@@ -93,6 +111,13 @@ weapon the movement needs, a movement view, waiting and failure.
   (`BotGetReachabilityToGoal`'s "do not go back to the previous area if the
   goal didn't change"), within one plan; a new plan starts without an area
   left behind.
+- Avoid spots (`BotCheckForGrenades`, `BotAddAvoidSpot`, `BotAvoidSpots`):
+  at each think every live grenade is a spot to avoid, 160 units round
+  where its flight began or last bounced (`pos.trBase`, `AVOID_ALWAYS`). A
+  bot choosing its way passes over a passage when the way to its start, or
+  for the straight travel types the passage itself, runs within a spot's
+  radius and toward it (`BotGetReachabilityToGoal`). Bots know of every
+  grenade on the map, not only those in their snapshot's view.
 - Avoid-reachability list (`BotAddToAvoidReach`, a single entry as in Q3):
   each passage a bot sets out on is noted; the one noted counts another try
   when it is taken again within 6 s. Tried more than four times, it is passed
@@ -314,7 +339,14 @@ weapon the movement needs, a movement view, waiting and failure.
 - Movement (`BotAttackMove`): below 0.2 attack skill, stand; below 0.4, only
   close or open the distance; above, strafe (flipping after 0.4-0.6 s at 6.5%
   per think, or when blocked), jump by `jumper` at most once a second, and
-  crouch by `croucher` at a quarter speed.
+  crouch by `croucher` at a quarter speed. A jump goes with the move
+  (`BotWalkInDirection`) and is predicted first
+  (`AAS_PredictClientMovement`: the ground's friction, the jump and a
+  frame's air acceleration, then up to three seconds of flight in tenths);
+  the move is refused when the bot would not come down, would land hurt or
+  in slime or lava, would land with a gap ahead, or would get less than 20
+  units away. A gap within 100 units ahead (`BotGapDistance`) turns a walk
+  into such a jump. Off the ground the bot makes no move of its own.
 - Enemies (`BotFindEnemy`): range 900 + 4000 × alertness; a new enemy must be
   inside a view widening from 90° to 180° unless the bot was hurt or the enemy
   is firing; only a closer enemy replaces the current one; sight tests the
@@ -378,16 +410,22 @@ Scripts (native, need the Q3 assets):
 
   | Map | Door | Bot went to | Door opened | Goal reached |
   | --- | --- | --- | --- | --- |
-  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.5 s | 21.0 s |
-  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.1 s |
-  | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.5 s | 4.7 s |
+  | q3dm7 | `*6` (floor hatch) | press button `*7` | 8.1 s | 13.7 s |
+  | q3dm7 | `*5` | press button `*7` | 22.4 s | 24.5 s |
+  | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.4 s | 4.8 s |
 
-  For q3dm7's `*5` the bot stacks two goals (the trigger, and the button
-  whose hatch is on the way there); the ten seconds the trigger then gets
-  run out and the bot takes the long way round. q3dm11's `*5` and `*10` lie
-  on no route between spawn points and items. The other ladder arenas'
+  q3dm11's `*5` and `*10` lie on no route between spawn points and items.
+  The other ladder arenas'
   doors open by themselves (q3dm0, q3dm2, q3dm8, q3dm12, q3dm14,
   q3tourney4) or are crushers no route passes (q3tourney6).
+- `scripts/bot_jump_smoke.jac` (`QP_MAPS`, `QP_JUMPS`, `QP_TRACE`): a lone
+  bot, standing still at each jump's run start, is sent over a sample of a
+  map's jump passages. Run of 2026-10-10 with 40 jumps a map: 35/40 on
+  q3dm6, 35/40 on q3dm7, 27/40 on q3dm12, 13/16 on q3dm13 and 6/8 on
+  q3dm17 reach the jump's target area within six seconds, 116 of 144. Of
+  the 28 misses, 21 are launched jumps that come down short of the far
+  side (the launch is the slowest that reaches it, with nothing to spare)
+  and 7 leave the ground before the jump's start.
 - `scripts/bot_travel_types_smoke.jac`: counts mover rides and rocket jumps
   started and finished on q3dm19, q3tourney6 and q3dm17.
 - `scripts/bot_rocket_jump_smoke.jac`: a bot on q3dm17 rocket-jumps to the
@@ -435,16 +473,24 @@ Scripts (native, need the Q3 assets):
   bobbing platform it has just ridden would be handed the ride back, where
   Q3's 10 Hz think and `BotFuzzyPointReachabilityArea` decide which frames
   see it "on top".
-- `BotAIBlocked`'s sidestep is tested with the bots' wall and ledge probe
-  (`can_step`), not `AAS_PredictClientMovement`. Bots do not block one
-  another's movement; they only sidestep each other.
+- A walking step of `BotAttackMove` or `BotAIBlocked` is tested with the
+  bots' wall and floor probe and `BotGapDistance`, not the two frames of
+  `AAS_PredictClientMovement` that `BotWalkInDirection` runs; only a jump
+  is predicted. `BotAIBlocked`'s sidestep does not jump a gap. Bots do not
+  block one another's movement; they only sidestep each other.
+- The jump prediction has the original's blind spots. A frame that ends
+  within 10 units over a floor is a landing (`AAS_OnGround`) before any
+  sweep has hit it, so the fall's damage is not weighed; and it knows
+  nothing of `trigger_hurt`. From the ledge beside q3dm14's bobbing
+  platform it lands a jump on the pit's floor 311 units down and lets the
+  bot take it.
 - Other `be_ai_move.c` details not modelled:
-  - `BotGapDistance`: a walking bot does not slow for a gap ahead. The test
-    lets a gap over water pass, and the combat tick that moves the bots
-    does not carry the level's liquid volumes; without that exception bots
-    would crawl up to every pool.
   - Jumps and barrier jumps fly by a launch velocity worked out to land
     them, not by `EA_Jump` and air movement (`BotFinishTravel_Jump`,
-    `BotFinishTravel_BarrierJump`).
-  - Avoid spots (`BotAddAvoidSpot`, `BotAvoidSpots`): bots do not route
-    round live grenades (`BotCheckForGrenades`).
+    `BotFinishTravel_BarrierJump`). The bot's body can make `BotTravel_Jump`'s
+    own jump (the run to the far end at full speed, `EA_Jump` within 24
+    units of the start, air movement by the Q3 profile), but from a
+    standing start it then makes about an eighth fewer of
+    `scripts/bot_jump_smoke.jac`'s jumps than the launch does: it jumps
+    with no speed where the area leaves no run-up, comes down short or
+    long of the target area, and slips off edges it runs along.

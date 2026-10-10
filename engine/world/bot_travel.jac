@@ -29,6 +29,7 @@ import from ..formats.aas {
     PRESENCE_NORMAL
 }
 import from ..formats.botconfig { WeightDice }
+import from .liquids { LiquidProbe }
 import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3 }
 import from ..math.aabb { AABB }
@@ -171,6 +172,148 @@ def check_blocked(collision: CollisionMap, origin: Vec3, direction: Vec3, bodies
     }
 }
 
+"""be_ai_move.c BotGapDistance: how far ahead along `direction` the floor
+falls away, 0 when it does not within 100 units. The crouching player's box
+is dropped onto the floor every 8 units; a landing more than a step and 8
+units under the last is a gap, unless water lies 20 units under it (bots
+walk into pools). With no floor within 60 units under the bot itself the
+answer is 1."""
+def gap_distance(collision: CollisionMap, origin: Vec3, direction: Vec3, liquids: LiquidProbe | None = None) -> float {
+    box = collision.for_body(collision.eye_height, 0.0, Vec3(x=-15.0, y=-15.0, z=-24.0), Vec3(x=15.0, y=15.0, z=8.0));
+    under = box.trace(origin, origin.sub(Vec3(z=60.0)));
+    if under.fraction >= 1.0 {
+        return 1.0;
+    }
+    level = under.end.z + 1.0;
+    dist = 8.0;
+    while dist <= 100.0 {
+        start = Vec3(x=origin.x + direction.x * dist, y=origin.y + direction.y * dist, z=level + 24.0);
+        drop = box.trace(start, start.sub(Vec3(z=48.0 + TRAVEL_MAX_BARRIER)));
+        if not drop.start_solid {
+            if drop.end.z < level - TRAVEL_MAX_STEP - 8.0 {
+                if liquids is not None and liquids.kind_at(drop.end.sub(Vec3(z=20.0))) == 1 {
+                    return 0.0;
+                }
+                return dist;
+            }
+            level = drop.end.z;
+        }
+        dist += 8.0;
+    }
+    return 0.0;
+}
+
+"""Where a predicted jump ends (be_aas_move.c aas_clientmove_t): the point,
+the velocity there, the tenths of a second it took, and what stopped it:
+the ground, a landing hard enough to hurt, or a liquid at the feet (1
+water, 2 slime, 3 lava). `frames` is 30 when nothing did."""
+obj JumpLanding {
+    has point: Vec3 = Vec3(),
+        velocity: Vec3 = Vec3(),
+        frames: int = 30,
+        ground: bool = False,
+        hurt: bool = False,
+        liquid: int = 0;
+}
+
+"""be_aas_move.c AAS_PredictClientMovement as BotWalkInDirection asks it
+about a jump from the ground along `direction`: tenths of a second, three
+seconds at most (PREDICTIONTIME_JUMP). The first frame takes the ground's
+friction off the bot's `velocity`, jumps (270, less the frame's gravity,
+plus 5 a frame "for safety") and accelerates toward the direction as in the
+air (phys_airaccelerate 1, to 320); the rest fly under gravity. Each frame
+sweeps the player's box, clips the velocity off what it hits and steps up
+19 units onto what a wall carries (not within two frames of the jump). It
+ends on the ground (AAS_OnGround, 10 units under the box), on a hit that
+takes more than 632 units a second off the fall (SE_HITGROUNDDAMAGE), or
+with a liquid 22 units under the origin once the bot rises at no more than
+100 units a second."""
+def predict_jump(
+    collision: CollisionMap, origin: Vec3, velocity: Vec3, direction: Vec3, liquids: LiquidProbe | None = None
+) -> JumpLanding {
+    # BotWalkInDirection lifts the origin 0.5, the prediction 0.25 more.
+    point = origin.add(Vec3(z=0.75));
+    # The velocity a frame, as the original keeps it.
+    step = velocity.scale(0.1);
+    grounded = True;
+    for n in range(30) {
+        step.z -= TRAVEL_GRAVITY * 0.01;
+        if n == 0 {
+            speed = math.sqrt(step.x * step.x + step.y * step.y) * 10.0;
+            if speed > 0.0 {
+                keep = max(0.0, speed - 0.1 * max(speed, 100.0) * 6.0) / speed;
+                step.x *= keep;
+                step.y *= keep;
+            }
+            step.z = TRAVEL_JUMP_SPEED * 0.1 - TRAVEL_GRAVITY * 0.01 + 5.0;
+            add = 320.0 - (step.x * direction.x + step.y * direction.y) * 10.0;
+            if add > 0.0 {
+                gain = min(32.0, add) * 0.1;
+                step.x += direction.x * gain;
+                step.y += direction.y * gain;
+            }
+        }
+        left = step.add(Vec3());
+        tries = 0;
+        while True {
+            target = point.add(left);
+            hit = collision.trace(point, target);
+            if hit.start_solid {
+                return JumpLanding(point=point);
+            }
+            point = hit.end;
+            if hit.fraction >= 1.0 {
+                break;
+            }
+            stepped = False;
+            if hit.normal.z == 0.0 and n > 2 {
+                foot = point.sub(hit.normal.scale(0.25));
+                rise = collision.trace(foot.add(Vec3(z=19.0)), foot);
+                if not rise.start_solid and rise.fraction < 1.0 and rise.normal.z > 0.7 {
+                    left = Vec3(x=target.x - rise.end.x, y=target.y - rise.end.y);
+                    step.z = 0.0;
+                    point = Vec3(x=point.x, y=point.y, z=rise.end.z);
+                    stepped = True;
+                }
+            }
+            if not stepped {
+                before = step.z;
+                left = left.sub(hit.normal.scale(left.dot(hit.normal)));
+                step = step.sub(hit.normal.scale(step.dot(hit.normal)));
+                if hit.normal.z > 0.7 {
+                    grounded = True;
+                }
+                delta = 0.0;
+                if before < 0.0 and step.z > before and not grounded {
+                    delta = before;
+                } elif grounded {
+                    delta = step.z - before;
+                }
+                # "delta = delta * 10; delta = delta * delta * 0.0001".
+                if delta * delta * 0.01 > 40.0 {
+                    return JumpLanding(point=point, velocity=step.scale(10.0), frames=n, hurt=True);
+                }
+            }
+            tries += 1;
+            if tries > 20 {
+                return JumpLanding(point=point);
+            }
+        }
+        if step.z <= 10.0 and liquids is not None {
+            kind = liquids.kind_at(point.sub(Vec3(z=22.0)));
+            if kind != 0 {
+                return JumpLanding(point=point, velocity=step.scale(10.0), frames=n, liquid=kind);
+            }
+        }
+        floor = collision.trace(point, point.sub(Vec3(z=10.0)));
+        grounded = not floor.start_solid and floor.fraction < 1.0 and floor.normal.z >= 0.7;
+        if grounded {
+            return JumpLanding(point=point, velocity=step.scale(10.0), frames=n, ground=True);
+        }
+    }
+    return JumpLanding(point=point);
+}
+
 """be_ai_move.c BotMoveInGoalArea's speed: in its goal's area a bot slows
 over the last 100 units (4 a unit) and stops within 2.5."""
 def goal_area_speed(distance: float) -> float {
@@ -290,6 +433,40 @@ def finish_walk_off_ledge(origin: Vec3, velocity: Vec3, passage: Passage) -> Tra
         return steer;
     }
     return TravelResult(direction=toward[0], speed=400.0, air_control=True);
+}
+
+"""BotFinishTravel_JumpPad: thrown by the pad, the bot steers for the
+passage's far end (BotAirControl), or straight for it when its fall will not
+bring it down to that height."""
+def finish_jump_pad(origin: Vec3, velocity: Vec3, passage: Passage) -> TravelResult {
+    steer = air_control(origin, velocity, passage.finish);
+    if steer is not None {
+        return steer;
+    }
+    return TravelResult(direction=flat_toward(origin, passage.finish)[0], speed=400.0, air_control=True);
+}
+
+"""A bot in the air on its way down to a jump pad it has not touched: in
+BotMoveToGoal's air half it is still on the way it came, which ends at the
+pad, so it steers for the pad's start (BotAirControl)."""
+def approach_jump_pad(origin: Vec3, velocity: Vec3, passage: Passage) -> TravelResult {
+    steer = air_control(origin, velocity, passage.start);
+    if steer is not None {
+        return steer;
+    }
+    return TravelResult(direction=flat_toward(origin, passage.start)[0], speed=400.0, air_control=True);
+}
+
+"""BotMoveToGoal's "special handling of jump pads" for a bot in the air:
+whether it has been in `area` over its last two think times, by the areas
+on the line back along its velocity (AAS_TraceAreas)."""
+def came_through(mesh: NavMesh, origin: Vec3, velocity: Vec3, area: int) -> bool {
+    for i in range(17) {
+        if mesh.aas.area_at(origin.sub(velocity.scale(0.2 * float(i) / 16.0))) == area {
+            return True;
+        }
+    }
+    return False;
 }
 
 """The world box of the mover with BSP `model` right now: its model bounds
@@ -505,6 +682,7 @@ walker FollowRoute {
         bodies: list[Vec3] = [],
         dice: WeightDice | None = None,
         ducked: bool = False,
+        liquids: LiquidProbe | None = None,
         avoid: AvoidReach | None = None,
         result: TravelResult = TravelResult(),
         launch: Vec3 | None = None;
@@ -729,6 +907,34 @@ walker FollowRoute {
             self.heading(swim, origin, standing);
             return;
         }
+        if passage is not None and passage.kind == TRAVEL_JUMPPAD {
+            if here.grounded {
+                # Thrown and down short of the far end: "the area changed",
+                # so its way is chosen again.
+                if route.jumped and standing != passage.source {
+                    route.abandon();
+                    self.result = TravelResult(speed=0.0);
+                    return;
+                }
+                # BotTravel_JumpPad: "first walk straight to the
+                # reachability start".
+                self.heading(
+                    TravelResult(direction=flat_toward(origin, passage.start)[0], speed=400.0), origin, standing
+                );
+                return;
+            }
+            # The pad's passage is the one a bot in the air finishes once it
+            # has come through the pad's own area.
+            if not route.jumped and came_through(self.mesh, origin, here.velocity, passage.source) {
+                route.jumped = True;
+            }
+            if route.jumped {
+                self.heading(finish_jump_pad(origin, here.velocity, passage), origin, standing);
+            } else {
+                self.heading(approach_jump_pad(origin, here.velocity, passage), origin, standing);
+            }
+            return;
+        }
         if passage is not None and passage.kind == TRAVEL_WALKOFFLEDGE {
             if here.grounded {
                 self.heading(travel_walk_off_ledge(origin, passage), origin, standing);
@@ -737,7 +943,19 @@ walker FollowRoute {
             }
             return;
         }
-        toward = flat_toward(origin, route.points[0]);
+        # BotTravel_Walk: "first walk straight to the reachability start",
+        # and on to its end from within 10 units of that. The straight line
+        # from anywhere in an area to the far end can leave both areas (off
+        # a walkway's corner); by the start it cannot.
+        aim = route.points[0];
+        if passage is not None and passage.kind == TRAVEL_WALK and route.areas[0] == passage.target and not route.begun {
+            if flat_toward(origin, passage.start)[1] < 10.0 {
+                route.begun = True;
+            } else {
+                aim = passage.start;
+            }
+        }
+        toward = flat_toward(origin, aim);
         speed = 400.0;
         if passage is None {
             # The last leg is in the goal's own area (BotMoveInGoalArea).
@@ -745,6 +963,16 @@ walker FollowRoute {
         } elif passage.kind == TRAVEL_TELEPORT and toward[1] < 30.0 {
             # BotTravel_Teleport: half speed for the last 30 units.
             speed = 200.0;
+        } elif passage.kind == TRAVEL_WALK and here.grounded {
+            # BotTravel_Walk: slower up to a gap ahead (looked for at the
+            # bots' think rate).
+            if self.clock - route.gap_checked >= 0.1 {
+                route.gap_checked = self.clock;
+                route.gap = gap_distance(self.collision, origin, toward[0], self.liquids);
+            }
+            if route.gap > 0.0 {
+                speed = 400.0 - (360.0 - 2.0 * route.gap);
+            }
         } elif passage.kind == TRAVEL_BARRIERJUMP and self.at_takeoff() {
             # BotTravel_BarrierJump: slowing up to the barrier.
             speed = 6.0 * min(toward[1], 60.0);

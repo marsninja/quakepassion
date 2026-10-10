@@ -3,7 +3,7 @@ that drive its aim, reactions and tactics, resolved for the match's skill
 level, with the fuzzy item and weapon weights (*_i.c, *_w.c) it chooses
 goals and weapons by and the chats (*_t.c) it says."""
 import from .world { Actor, Player }
-import from .bot_routes { BotRoute, NavMesh, AvoidReach }
+import from .bot_routes { BotRoute, NavMesh, AvoidReach, AvoidSpot }
 import from .bot_travel { TravelResult }
 import from ..formats.aas { TFL_DEFAULT, TFL_LAVA, TFL_SLIME, TFL_ROCKETJUMP }
 import from ..formats.botconfig { WeightConfig, ChatMessage, WeightDice, SynonymList, MatchTemplate, ReplyChat }
@@ -304,7 +304,10 @@ obj BotState {
     has travel_flags: int = TFL_DEFAULT,
         route: BotRoute = BotRoute(),
         travel: TravelResult = TravelResult(),
-        avoid_reach: AvoidReach = AvoidReach();
+        avoid_reach: AvoidReach = AvoidReach(),
+        # The spots the bot keeps its way clear of, from its last look at
+        # the world (BotCheckSnapshot's BotCheckForGrenades).
+        avoid_spots: list[AvoidSpot] = [];
     # ai_dmq3.c obstacle handling: the activate goals, the goal area and time
     # of the last obstacle prediction, when the bot was last not blocked,
     # which side it walks round things (BFL_AVOIDRIGHT), the move its think

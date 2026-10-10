@@ -1685,6 +1685,9 @@ node Projectile {
         owner: Opponent | None = None,
         quarry: Player | None = None,
         tick_pose: TickPose = TickPose();
+    # Where the missile's flight began or last bounced (its trajectory's
+    # trBase), which is what Q3's bots see of a grenade.
+    has base: Vec3 | None = None;
 }
 
 def selected_weapon(state: CombatState) -> WeaponRule {
@@ -2758,6 +2761,9 @@ walker ProjectileTick {
     }
 
     can move with Projectile entry {
+        if here.base is None {
+            here.base = here.pos.add(Vec3());
+        }
         world = self.world;
         if world is None or self.dt <= 0.0 {
             return;
@@ -2909,6 +2915,7 @@ walker ProjectileTick {
                 0.65 if arena else 0.5
             );
             here.pos = here.pos.add(wall.normal.scale(0.1));
+            here.base = here.pos.add(Vec3());
             if wall.normal.z > (0.2 if arena else 0.7) and here.velocity.length() < 40.0 {
                 here.velocity = Vec3();
             }
@@ -5420,6 +5427,11 @@ walker CombatTick {
                     if here.route_target.sub(target).length() > 48.0 {
                         here.route = [];
                         here.route_areas = [];
+                        # A bot's way to a new goal is chosen at once
+                        # (BotMoveToGoal picks a reachability every frame).
+                        if here.arena and self.navmesh is not None {
+                            here.route_wait = 0.0;
+                        }
                     }
                     # AAS routes are followed every tick below; local routes here.
                     while here.route
@@ -5447,7 +5459,8 @@ walker CombatTick {
                             flags=here.bot_state.travel_flags,
                             goal_area=here.bot_state.goal_area,
                             avoid=here.bot_state.avoid_reach,
-                            now=here.bot_state.clock
+                            now=here.bot_state.clock,
+                            spots=here.bot_state.avoid_spots
                         );
                         here.route_wait = 0.25 if plan.found else 1.0;
                         if plan.pending {
@@ -5493,7 +5506,12 @@ walker CombatTick {
                 # A route waypoint is walked right up to until it counts as
                 # reached.
                 stop = BOT_STANDOFF if closing else (0.0 if here.route else 12.0);
+                # A bot with the map's AAS moves by its travel alone
+                # (BotMoveToGoal, below): with no route it makes no move, as
+                # with no reachability there, where heading straight for the
+                # goal would take it off a ledge or a platform.
                 if here.alert > 0.0
+                    and not (here.arena and self.navmesh is not None)
                     and not here.fighting
                     and here.pain_wait <= 0.0
                     and here.attack_flash <= 0.0
@@ -5590,7 +5608,8 @@ walker CombatTick {
                 bodies=self.other_bodies(here),
                 dice=memory.dice,
                 avoid=memory.avoid_reach,
-                ducked=here.crouched
+                ducked=here.crouched,
+                liquids=self.liquids
             );
             # EA_Crouch from the movement.
             if travel.result.crouch {
