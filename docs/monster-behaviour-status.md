@@ -280,9 +280,11 @@ docs.
 ## Trail hunting
 
 Q2's player trail (`p_trail.c`) is a graph of up to eight `TrailMark` crumbs
-hanging off a `PlayerTrail` node (`engine/world/trail.jac`). The player drops a
-crumb every half second once they are 32 units from the last one; each
-records the heading it was reached on. A Q2 monster that reaches the spot
+hanging off a `PlayerTrail` node (`engine/world/trail.jac`). Once every 0.1 s
+server frame a living player who cannot see the last crumb drops one where
+they stand (`ClientBeginServerFrame`: `PlayerTrail_Add` when
+`PlayerTrail_LastSpot` is not `visible`); each records the heading it was
+reached on. A Q2 monster that reaches the spot
 where it lost the player takes the first crumb laid since
 (`PlayerTrail_PickFirst`: that crumb, or the one before it if only that one
 is in sight) and then each next one (`PlayerTrail_PickNext`), turning to the

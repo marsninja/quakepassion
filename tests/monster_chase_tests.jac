@@ -19,6 +19,8 @@ import from engine.world.combat {
     pain_stagger
 }
 import from engine.world.opponent_rule { OpponentRule }
+import from engine.world.monster_move { sweep_entry }
+import from engine.math.aabb { AABB }
 import from engine.world.trail { TrailTick }
 import from engine.core.savegame { snapshot, restore }
 import from engine.physics.collision { CollisionMap }
@@ -130,7 +132,7 @@ test "a Q2 monster that loses its enemy makes for where it saw them, then along 
     assert guard.alert > 0.0 and guard.sighted and guard.pursuing and not guard.lost_sight;
     for spot in [Vec3(x=350.0, z=22.0), Vec3(x=400.0, y=300.0, z=22.0), Vec3(x=400.0, y=600.0, z=22.0)] {
         player.pos = spot;
-        world spawn TrailTick(player=player, dt=0.6);
+        world spawn TrailTick(player=player, dt=0.6, collision=collision);
     }
     chase(world, player, collision, state, 0.5);
     assert not guard.pursuing and guard.lost_sight and guard.alert > 0.0;
@@ -404,4 +406,119 @@ test "a monster in pain does not turn toward its enemy" {
         }
         assert victim.yaw != 0.0;
     }
+}
+
+test "Q2's course correction is stopped by a body in the way as by a wall" {
+    collision = chase_floor();
+    collision.reindex();
+    world = World();
+    state = CombatState(game="q2");
+    player = Player(pos=Vec3(x=3000.0, z=22.0), health=100000, god_mode=True);
+    guard = chaser("q2", "monster_soldier", Vec3(z=22.0));
+    guard.alert = 8.0;
+    guard.sighted = True;
+    guard.last_seen = Vec3(x=300.0, z=22.0);
+    # Another soldier stands in the line to where the guard last saw its
+    # enemy, a little to the right of it.
+    other = chaser("q2", "monster_soldier", Vec3(x=150.0, y=-28.0, z=22.0));
+    world +>:HasOpponent:+> guard;
+    world +>:HasOpponent:+> other;
+    tick = world spawn CombatTick(player=player, collision=collision, state=state, dt=0.0, active=False);
+    target = player.pos.sub(Vec3(z=22.0));
+    near = AABB(mins=target.sub(Vec3(x=16.0, y=16.0, z=24.0)), maxs=target.add(Vec3(x=16.0, y=16.0, z=32.0)));
+    space = tick.field.space(guard, player, 10.0, collision.for_body(22.0));
+    tick.pursue(guard, target, 10.0, space, near);
+    # The box is stopped half-way down the line; 16 units to the left it
+    # passes, so the guard makes for that side first (AI_PURSUE_TEMP) and
+    # keeps the goal it put off.
+    assert guard.lost_sight and guard.pursue_temp;
+    assert guard.saved_goal.x == 300.0 and guard.saved_goal.y == 0.0;
+    assert abs(guard.last_seen.y - 16.0) < 0.001 and guard.last_seen.x > 150.0 and guard.last_seen.x < 300.0;
+    # A sweep that starts inside a body is not stopped by it; one that
+    # meets it is, at the fraction where their boxes touch.
+    box = AABB(mins=Vec3(x=84.0, y=-16.0, z=0.0), maxs=Vec3(x=116.0, y=16.0, z=56.0));
+    mins = Vec3(x=-16.0, y=-16.0, z=-24.0);
+    maxs = Vec3(x=16.0, y=16.0, z=32.0);
+    assert abs(sweep_entry(Vec3(z=24.0), Vec3(x=200.0, z=24.0), mins, maxs, box) - 0.34) < 0.000001;
+    assert sweep_entry(Vec3(x=90.0, z=24.0), Vec3(x=200.0, z=24.0), mins, maxs, box) == 1.0;
+    assert sweep_entry(Vec3(z=24.0), Vec3(y=200.0, z=24.0), mins, maxs, box) == 1.0;
+}
+
+test "a knocked flier sheds its speed by SV_Physics_Step's friction" {
+    world = World();
+    state = CombatState(game="q2");
+    player = Player(pos=Vec3(x=5000.0, z=22.0), health=100000, god_mode=True);
+    flyer = chaser("q2", "monster_flyer", Vec3(z=222.0));
+    flyer.grounded = False;
+    flyer.velocity = Vec3(x=300.0, z=90.0);
+    world +>:HasOpponent:+> flyer;
+    dt = 1.0 / 120.0;
+    world spawn CombatTick(player=player, collision=CollisionMap(), state=state, dt=dt);
+    # Level speed at sv_friction 6; rise at a third of it, on a control
+    # speed never under sv_stopspeed 100.
+    assert abs(flyer.velocity.x - (300.0 - dt * 300.0 * 6.0)) < 0.0001;
+    assert abs(flyer.velocity.z - (90.0 - dt * 100.0 * 2.0)) < 0.0001;
+    assert abs(flyer.pos.x - flyer.velocity.x * dt) < 0.0001;
+    for tick in range(240) {
+        world spawn CombatTick(player=player, collision=CollisionMap(), state=state, dt=dt);
+    }
+    assert flyer.velocity.length() == 0.0 and flyer.pos.x > 20.0;
+}
+
+test "a knocked or falling monster is stopped by other bodies" {
+    collision = chase_floor();
+    collision.reindex();
+    state = CombatState(game="q2");
+    player = Player(pos=Vec3(x=5000.0, z=22.0), health=100000, god_mode=True);
+    # SV_FlyMove clips to entities: a soldier knocked at another 8 units
+    # off stops against it, and at a corpse does not.
+    for scenario in ["living", "corpse"] {
+        world = World();
+        knocked = chaser("q2", "monster_soldier", Vec3(z=22.0));
+        other = chaser("q2", "monster_soldier", Vec3(x=40.0, z=22.0));
+        if scenario == "corpse" {
+            other.health = 0;
+        }
+        world +>:HasOpponent:+> knocked;
+        world +>:HasOpponent:+> other;
+        knocked.velocity = Vec3(x=300.0);
+        for tick in range(60) {
+            world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 120.0);
+        }
+        if scenario == "living" {
+            assert knocked.pos.x == 8.0 and knocked.velocity.x == 0.0;
+        } else {
+            assert knocked.pos.x > 12.0;
+        }
+        assert other.pos.x == 40.0;
+    }
+    # Knocked past it at an angle, it slides along the other's side.
+    world = World();
+    glancing = chaser("q2", "monster_soldier", Vec3(z=22.0));
+    other = chaser("q2", "monster_soldier", Vec3(x=40.0, z=22.0));
+    world +>:HasOpponent:+> glancing;
+    world +>:HasOpponent:+> other;
+    glancing.velocity = Vec3(x=300.0, y=-300.0);
+    for tick in range(60) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 120.0);
+    }
+    assert glancing.pos.x == 8.0 and glancing.pos.y < -20.0 and glancing.velocity.x == 0.0;
+    # One that falls on another comes to rest on its head, off the ground,
+    # and falls on to the floor when the one below is gone.
+    world = World();
+    under = chaser("q2", "monster_soldier", Vec3(z=22.0));
+    faller = chaser("q2", "monster_soldier", Vec3(z=22.0 + 100.0));
+    faller.grounded = False;
+    world +>:HasOpponent:+> under;
+    world +>:HasOpponent:+> faller;
+    for tick in range(120) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 120.0);
+    }
+    assert faller.pos.z == under.pos.z + 56.0 and not faller.grounded;
+    assert faller.velocity.z == 0.0;
+    under.pos = Vec3(x=400.0, z=22.0);
+    for tick in range(120) {
+        world spawn CombatTick(player=player, collision=collision, state=state, dt=1.0 / 120.0);
+    }
+    assert faller.grounded and abs(faller.pos.z - 22.0) < 0.1;
 }

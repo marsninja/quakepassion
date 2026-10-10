@@ -16,6 +16,7 @@ import from engine.world.combat {
     ensure_profiles,
     pain_length,
     pain_stagger,
+    StepField,
     death_stride,
     corpse_settled
 }
@@ -791,11 +792,13 @@ test "pain and death frames make the sounds their frame functions do" {
     assert heard(zombie, "sound/zombie/z_fall.wav") == 1;
     downed = sequenced("q1", "monster_zombie");
     damage_opponent(downed, 30);
-    stagger(downed, nothing, 0.95);
+    # It gets up by walkmove(0, 0), which wants a floor under it.
+    ground = strip(-400.0, 400.0);
+    stagger(downed, ground, 0.95);
     assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 0;
-    stagger(downed, nothing, 5.0);
+    stagger(downed, ground, 5.0);
     assert heard(downed, "sound/zombie/z_idle.wav") == 0;
-    stagger(downed, nothing, 0.3);
+    stagger(downed, ground, 0.3);
     assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 1;
     # tank_thud on death128, and the Makron's nine steps, makron_hit and
     # makron_brainsplorch through makron_move_death2.
@@ -909,28 +912,47 @@ test "a Q1 body blocks until the frame its die function clears it" {
     assert actor_overlap(soldier.pos.sub(Vec3(x=20.0, z=22.0)), 0.0, soldier) is None;
     # zombie_paine10 to paine12: flat on the ground the zombie is passable,
     # and it gets up only if nothing stands where it lies.
-    nothing = CollisionMap();
+    flat = strip(-400.0, 400.0);
     zombie = sequenced("q1", "monster_zombie");
     zombie.visual.visible = True;
     over = zombie.pos.sub(Vec3(x=20.0, z=22.0));
     damage_opponent(zombie, 30);
-    stagger(zombie, nothing, 0.85);
+    stagger(zombie, flat, 0.85);
     assert actor_overlap(over, 0.0, zombie) is not None;
-    stagger(zombie, nothing, 0.1);
+    stagger(zombie, flat, 0.1);
     assert actor_overlap(over, 0.0, zombie) is None;
-    stagger(zombie, nothing, 5.0);
+    stagger(zombie, flat, 5.0);
     assert actor_overlap(over, 0.0, zombie) is None;
     blocker = Player(pos=zombie.pos.add(Vec3(x=10.0)));
     for tick in range(4) {
-        pain_stagger(zombie, nothing, 0.05, blocker);
+        pain_stagger(zombie, flat, 0.05, blocker);
         zombie.pain_wait = max(0.0, zombie.pain_wait - 0.05);
     }
     # Blocked: back on the ground for another five seconds.
     assert zombie.pain_wait > 6.5 and actor_overlap(over, 0.0, zombie) is None;
     assert heard(zombie, "sound/zombie/z_idle.wav") == 0;
-    stagger(zombie, nothing, 5.3);
+    stagger(zombie, flat, 5.3);
     assert heard(zombie, "sound/zombie/z_idle.wav") == 1;
     assert actor_overlap(over, 0.0, zombie) is not None;
+    # Another monster standing where it lies keeps it down as the player
+    # does, and with nobody there it gets up.
+    for crowded in [True, False] {
+        lying = sequenced("q1", "monster_zombie");
+        damage_opponent(lying, 30);
+        stagger(lying, flat, 5.95);
+        dog = sequenced("q1", "monster_dog");
+        dog.visual.visible = True;
+        dog.pos = lying.pos.add(Vec3(x=10.0));
+        crowd = StepField();
+        if crowded {
+            crowd.file(dog);
+        }
+        for tick in range(4) {
+            pain_stagger(lying, flat, 0.05, None, crowd);
+            lying.pain_wait = max(0.0, lying.pain_wait - 0.05);
+        }
+        assert (lying.pain_wait > 6.5) == crowded;
+    }
 }
 
 test "an insane marine cries with the player's voice for its health" {

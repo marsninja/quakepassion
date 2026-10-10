@@ -105,9 +105,10 @@ players and route over the map's AAS; see
   `AI_PURSUIT_LAST_SEEN`), then takes the player trail crumb by crumb
   (`PlayerTrail_PickFirst`, `PlayerTrail_PickNext`,
   `engine/world/trail.jac`), turning to each crumb's own heading. A new goal
-  its box cannot reach in a straight line is corrected by tracing 16 units
-  to the left and right of the line and making for the side that reaches
-  further (`AI_PURSUE_TEMP`). Twenty seconds after `search_time` it takes one
+  its box cannot reach in a straight line, through the world as a player
+  meets it or past another body (`MASK_PLAYERSOLID`, `body_sweep`), is
+  corrected by tracing 16 units to the left and right of the line and making
+  for the side that reaches further (`AI_PURSUE_TEMP`). Twenty seconds after `search_time` it takes one
   step at the enemy itself. A monster with only a noise to go on
   (`AI_SOUND_TARGET`) runs to it and stands within 64 units.
 - **Corners.** Path corners and Q2 combat points are reached by `MoveToGoal`
@@ -135,8 +136,11 @@ box:
 - Q2: a flier out of the water never steps into it; a swimmer less than
   waist deep never steps out of it or rises.
 - Without an enemy (a path corner) the step keeps its height.
-- A knocked flier's velocity dies away as it slides. A swimmer out of its
-  depth falls.
+- A knocked flier or swimmer slides under `SV_Physics_Step`'s friction: its
+  level speed is rubbed off at `sv_friction` 6 on a control speed never
+  under `sv_stopspeed` 100, a flier's rise or fall at a third of that and a
+  swimmer's at `sv_waterfriction` 1 for each of its water levels. A swimmer
+  out of its depth falls.
 
 ## Bodies
 
@@ -171,7 +175,17 @@ box:
   `SOLID_BBOX` entities and Q2's `MASK_MONSTERSOLID`): living monsters and
   barrels, each where its own step ends, and the living player. So monsters
   block each other and the player, and a walker can come to rest on another
-  body's head only where the floor is there too. Corpses (Q1 `SOLID_NOT`, Q2
+  body's head only where the floor is there too. A monster moved by its
+  velocity (a knock, a fall, a leap) is stopped by other bodies as well
+  (`CombatTick.stop_at_bodies`, as `SV_FlyMove` clips to entities): it stops
+  against the body, goes on along that face and loses its speed into it. One
+  that lands on another's head rests there off the ground until the one
+  below moves away. A leap that runs into its enemy is its touch
+  (`Demon_JumpTouch`, `mutant_jump_touch`). Two bodies found overlapping all
+  the same are stuck as the originals leave them: a walker's step that ends
+  still inside the other starts solid and is refused, one that ends clear of
+  it is taken, and a flier's straight trace runs its length from inside
+  (`sweep_entry`). Corpses (Q1 `SOLID_NOT`, Q2
   `SVF_DEADMONSTER`), gibs, heads and items never block a step. The bodies
   near a step come from `CombatTick`'s 64-unit buckets, widened for the
   widest living body. The player is pushed back out of living monsters and
@@ -239,7 +253,9 @@ left of `search_time`. Saves without the line load with a fresh chase.
 - `tests/monster_chase_tests.jac`: two monsters blocking each other in a
   corridor and a corpse that does not; stopping where the next step would
   reach the player; Q2's pursuit to the last sighting and along the trail; a
-  noise investigated and given up; the chase in a save; a pain frame's step
+  noise investigated and given up; the chase in a save; course correction
+  round a body; a knocked flier's friction; a knocked monster stopped by a
+  body, sliding along it and resting on its head; a pain frame's step
   refused with a body in its way; Q2 `ai_charge` along the facing and Q1's
   at the enemy; the flyer's, Icarus's and Hornet's attack steps; no turning
   in pain.
@@ -262,8 +278,9 @@ left of `search_time`. Saves without the line load with a fresh chase.
   `navigation_save_tests.jac`, `navigation_jump_tests.jac`: the ground route
   search: detours, pits, step height, narrow passages and headroom, search
   budgets, cache invalidation, restoration.
-- `tests/trail_tests.jac`: Q2 crumbs, their headings and the pursuit taking
-  the first.
+- `tests/trail_tests.jac`: Q2 crumbs laid as the last goes out of sight,
+  once a server frame and never by the dead, their headings and the pursuit
+  taking the first.
 - `tests/enemy_stance_tests.jac`, `tests/actor_body_integration_tests.jac`:
   stance isolation, remembered stance, trains carrying monsters.
 - `tests/enemy_door_tests.jac`: doors opening for monsters, forbidden and dormant
@@ -278,12 +295,6 @@ left of `search_time`. Saves without the line load with a fresh chase.
 
 ## Limitations
 
-- Two bodies that already overlap (after a leap, a knock or a fall, none of
-  which is traced against other bodies) do not block each
-  other's steps, so that they can part; the originals leave such bodies stuck.
-- The player trail is laid by time and distance travelled, not when the
-  player loses sight of the last crumb as `p_client.c` does.
-- Q2's course correction traces the world only, not other bodies.
-- A knocked Q2 flier's velocity is eased away rather than rubbed off by
-  `SV_Physics_Step`'s flying friction.
+- A Q2 monster that has landed on another's head is not on the ground
+  (`M_CheckGround` takes any entity for ground), so it cannot walk off.
 - Angles are not quantised to 16 bits as `anglemod` does.

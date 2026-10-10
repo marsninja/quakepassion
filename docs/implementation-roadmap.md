@@ -53,7 +53,9 @@ They are scripted runs, not human playthroughs; see
 Each is verified against the code; the linked doc has the detail.
 
 Monsters ([monster-behaviour-status.md](monster-behaviour-status.md), [navigation-status.md](navigation-status.md), [q1-roster-status.md](q1-roster-status.md), [q2-roster-status.md](q2-roster-status.md)):
-- Bodies that already overlap do not block each other.
+- The fiend's leap does not hold its frame until it lands; the insane
+  marines' cries carry as far as any sound and a standing one never lies
+  down by itself; the Makron leaves no torso as it dies.
 
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - A Q3 player killed in a `CONTENTS_NODROP` void still gibs; Q2 `AI_BRUTAL`

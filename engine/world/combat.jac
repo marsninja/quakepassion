@@ -30,7 +30,8 @@ import from .bot_travel { FollowRoute, TravelResult, TRAVEL_JUMP_SPEED }
 import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
 import from .trail { TrailMark, first_crumb, next_crumb, trail_clock }
 import from .monster_move {
-    MonsterBody, StepSpace, WalkMove, MoveToGoal, SlideMove, anglemod, vectoyaw, box_meets
+    MonsterBody, StepSpace, WalkMove, MoveToGoal, SlideMove, anglemod, vectoyaw, sweep_entry,
+    sweep_normal, touching_face
 }
 import from .liquids { LiquidProbe }
 import from .speakers { Speaker }
@@ -3532,28 +3533,6 @@ def monster_body_key(enemy: Opponent) -> str {
         + str(enemy.rule.hull_top);
 }
 
-"""Whether a monster standing at `origin` would be inside `target`'s box
-(the player's, or another monster's own), which SV_movestep refuses."""
-def inside_target(target: Player, height: float, origin: Vec3, mover: Opponent) -> bool {
-    if target.health <= 0 {
-        return False;
-    }
-    width = 16.0;
-    bottom = -24.0;
-    top = 32.0;
-    if isinstance(target, Opponent) {
-        width = target.rule.width;
-        bottom = target.rule.hull_bottom;
-        top = target.rule.hull_top;
-    }
-    feet = target.pos.sub(Vec3(z=height));
-    rule = mover.rule;
-    return abs(feet.x - origin.x) < width + rule.width
-        and abs(feet.y - origin.y) < width + rule.width
-        and origin.z + rule.hull_bottom < feet.z + top
-        and origin.z + rule.hull_top > feet.z + bottom;
-}
-
 """The key of the 64-unit bucket a body is filed in."""
 def bucket_key(x: int, y: int) -> str {
     return str(x) + ":" + str(y);
@@ -3585,9 +3564,10 @@ obj StepField {
     view of its own box, the box SV_CheckBottom tests the floor under, the
     liquids and its Q2 waterlevel, and every other solid body such a step
     could reach: monsters from the buckets, and the player while it lives.
-    A body `here` already overlaps (a leap, a knock or a fall can leave two
-    so) is left out, so that they can part. `foe` is its enemy, whose
-    height a flier or swimmer holds its own by."""
+    A body `here` already overlaps is in its way like any other, as in the
+    originals: a step whose end is clear of it is taken, one that ends still
+    inside it starts solid and is not. `foe` is its enemy, whose height a
+    flier or swimmer holds its own by."""
     def space(here: Opponent, foe: Player | None, dist: float, view: CollisionMap) -> StepSpace {
         rule = here.rule;
         mins = Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom);
@@ -3614,23 +3594,19 @@ obj StepField {
                     if other is here or not solid_actor(other) {
                         continue;
                     }
-                    solid = other.solid_box();
-                    if not box_meets(origin, mins, maxs, solid) {
-                        space.solids.append(solid);
-                    }
+                    space.solids.append(other.solid_box());
                 }
             }
         }
         person = self.player;
         if person is not None and person.health > 0 {
             feet = person.pos.sub(Vec3(z=self.player_height));
-            solid = AABB(
-                mins=feet.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
-                maxs=feet.add(Vec3(x=16.0, y=16.0, z=32.0 - self.player_drop))
+            space.solids.append(
+                AABB(
+                    mins=feet.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
+                    maxs=feet.add(Vec3(x=16.0, y=16.0, z=32.0 - self.player_drop))
+                )
             );
-            if not box_meets(origin, mins, maxs, solid) {
-                space.solids.append(solid);
-            }
         }
         if foe is not None {
             # Q1 `enemy != world`, Q2 `ent->enemy`: an alerted monster has one.
@@ -3655,6 +3631,84 @@ obj StepField {
         }
         return space;
     }
+}
+
+"""Where a sweep of a monster's box is stopped by another body: how far
+along it gets, and the body and its box."""
+obj BodyStop {
+    has fraction: float = 1.0,
+        other: Player | None = None,
+        box: AABB | None = None;
+}
+
+"""The first solid body `here`'s box meets on a sweep from `start` to
+`finish` (origins): the entities of an SV_Move or gi.trace whose mask has
+CONTENTS_MONSTER in it."""
+def body_stop(field: StepField, here: Opponent, start: Vec3, finish: Vec3) -> BodyStop {
+    rule = here.rule;
+    mins = Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom);
+    maxs = Vec3(x=rule.width, y=rule.width, z=rule.hull_top);
+    reach = rule.width + field.widest + 2.0;
+    stop = BodyStop();
+    for x in range(
+        int(math.floor((min(start.x, finish.x) - reach) / 64.0)),
+        int(math.floor((max(start.x, finish.x) + reach) / 64.0)) + 1
+    ) {
+        for y in range(
+            int(math.floor((min(start.y, finish.y) - reach) / 64.0)),
+            int(math.floor((max(start.y, finish.y) + reach) / 64.0)) + 1
+        ) {
+            key = bucket_key(x, y);
+            if key not in field.neighbors {
+                continue;
+            }
+            for other in field.neighbors[key] {
+                if other is here or not solid_actor(other) {
+                    continue;
+                }
+                solid = other.solid_box();
+                fraction = sweep_entry(start, finish, mins, maxs, solid);
+                if fraction < stop.fraction {
+                    stop.fraction = fraction;
+                    stop.other = other;
+                    stop.box = solid;
+                }
+            }
+        }
+    }
+    person = field.player;
+    if person is not None and person.health > 0 {
+        feet = person.pos.sub(Vec3(z=field.player_height));
+        solid = AABB(
+            mins=feet.add(Vec3(x=-16.0, y=-16.0, z=-24.0)),
+            maxs=feet.add(Vec3(x=16.0, y=16.0, z=32.0 - field.player_drop))
+        );
+        fraction = sweep_entry(start, finish, mins, maxs, solid);
+        if fraction < stop.fraction {
+            stop.fraction = fraction;
+            stop.other = person;
+            stop.box = solid;
+        }
+    }
+    return stop;
+}
+
+"""How far `here`'s box gets along such a sweep, as a fraction of it."""
+def body_sweep(field: StepField, here: Opponent, start: Vec3, finish: Vec3) -> float {
+    return body_stop(field, here, start, finish).fraction;
+}
+
+"""Q1/Q2 walkmove(0, 0): whether a monster can stand where it is, on a
+floor and with no other body in its box (zombie_paine12 gets up only if it
+can)."""
+def stands_clear(
+    enemy: Opponent, collision: CollisionMap, foe: Player | None, field: StepField | None
+) -> bool {
+    enemy.settle();
+    walk = enemy spawn WalkMove(
+        space=sequence_space(enemy, collision, foe, 0.0, field), yaw=0.0, dist=0.0
+    );
+    return walk.moved;
 }
 
 """The StepSpace of a step a sequence's frame takes. Stepped on its own,
@@ -3767,12 +3821,9 @@ def pain_stagger(
     rise = float(sequence.hold_frame + 1);
     if enemy.pain_down
         and sequence.hold_frame >= 0
-        and blocker is not None
         and rise >= pose
         and rise < reached
-        and inside_target(
-            blocker, collision.eye_height, enemy.pos.sub(Vec3(z=enemy.eye_height)), enemy
-        ) {
+        and not stands_clear(enemy, collision, blocker, field) {
         enemy.pain_wait += sequence.hold_time + 0.1;
         enemy.pain_cooldown = max(enemy.pain_cooldown, enemy.pain_wait);
         enemy.attack_wait = max(enemy.attack_wait, enemy.pain_wait);
@@ -4416,6 +4467,10 @@ walker CombatTick {
     # solid bodies filed in 64-unit buckets as the tick begins.
     has liquids: LiquidProbe | None = None,
         field: StepField = StepField();
+    # What the monster being thought ran into as its velocity carried it
+    # (SV_Impact, for a leap's touch function) and how fast it was going.
+    has bumped: Player | None = None,
+        bump_speed: float = 0.0;
     # Monsters walk by the shared rules; Q3 bots are players and move by
     # bg_pmove.c's.
     has walk_profile: MovementProfile = MovementProfile(),
@@ -4608,9 +4663,19 @@ walker CombatTick {
             dist = reach;
         }
         if fresh {
-            # Checking for course correction.
-            view = space.collision;
-            center = view.trace(origin, goal).fraction;
+            # Checking for course correction: the monster's box against
+            # MASK_PLAYERSOLID, the world as a player meets it and the
+            # other bodies.
+            rule = here.rule;
+            view = self.collision.for_body(
+                here.eye_height,
+                0.0,
+                Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom),
+                Vec3(x=rule.width, y=rule.width, z=rule.hull_top)
+            )
+                if here.own_hull
+                else self.collision.for_body(here.eye_height);
+            center = min(view.trace(origin, goal).fraction, body_sweep(self.field, here, origin, goal));
             if center < 1.0 {
                 toward = goal.sub(origin);
                 reach = toward.length();
@@ -4621,9 +4686,15 @@ walker CombatTick {
                 forward = Vec3(x=math.cos(yaw), y=math.sin(yaw));
                 right = Vec3(x=math.sin(yaw), y=-math.cos(yaw));
                 left_target = origin.add(forward.scale(partway)).sub(right.scale(16.0));
-                left = view.trace(origin, left_target).fraction;
+                left = min(
+                    view.trace(origin, left_target).fraction,
+                    body_sweep(self.field, here, origin, left_target)
+                );
                 right_target = origin.add(forward.scale(partway)).add(right.scale(16.0));
-                rightward = view.trace(origin, right_target).fraction;
+                rightward = min(
+                    view.trace(origin, right_target).fraction,
+                    body_sweep(self.field, here, origin, right_target)
+                );
                 center = reach * center / partway if partway > 0.0 else 1.0;
                 detour: Vec3 | None = None;
                 if left >= center and left > rightward {
@@ -4659,10 +4730,13 @@ walker CombatTick {
     is knocked (Q2 SV_Physics_Step), in the air, or whose floor may have
     gone is finished with its step first and then falls and slides; at
     rest it probes its support at 20 Hz, and a settled one only once its
-    place is disturbed. A flier's knock dies away as it slides, and a
-    swimmer out of water falls."""
+    place is disturbed. A flier's or swimmer's knock is rubbed off as it
+    slides (SV_Physics_Step), and a swimmer out of water falls. Every such
+    move stops at other bodies (stop_at_bodies)."""
     def carry(here: Opponent, view: CollisionMap) {
         movement = here.rule.movement;
+        self.bumped = None;
+        self.bump_speed = 0.0;
         if movement == "none" {
             here.velocity = Vec3();
             return;
@@ -4695,6 +4769,7 @@ walker CombatTick {
                     here.rest_serial = view.revision.serial;
                     here.rest_pos = here.pos.add(Vec3());
                 }
+                self.stop_at_bodies(here, before, view);
                 return;
             }
             here.advance(self.dt);
@@ -4702,7 +4777,9 @@ walker CombatTick {
         }
         if movement == "swim" and here.water_depth < 2 {
             here.settle();
+            before = here.pos.add(Vec3());
             here spawn MovePlayer(collision=view, dt=self.dt);
+            self.stop_at_bodies(here, before, view);
             return;
         }
         here.grounded = False;
@@ -4711,14 +4788,68 @@ walker CombatTick {
             return;
         }
         here.settle();
-        here.velocity = here.velocity.scale(1.0 - min(1.0, 8.0 * self.dt));
-        if here.velocity.length() < 0.01 {
+        # SV_Physics_Step: a flier given vertical velocity sheds it at a
+        # third of sv_friction, a swimmer at sv_waterfriction for each of
+        # its water levels, and either rubs its level speed off at
+        # sv_friction; the control speed is never under sv_stopspeed.
+        rise = abs(here.velocity.z);
+        if rise > 0.0 {
+            rub = 2.0 if movement == "fly" else float(here.water_depth);
+            here.velocity.z *= max(0.0, rise - self.dt * max(rise, 100.0) * rub) / rise;
+        }
+        level = math.sqrt(here.velocity.x * here.velocity.x + here.velocity.y * here.velocity.y);
+        if level > 0.0 {
+            kept = max(0.0, level - self.dt * max(level, 100.0) * 6.0) / level;
+            here.velocity.x *= kept;
+            here.velocity.y *= kept;
+        }
+        if here.velocity.length() <= 0.000001 {
             here.velocity = Vec3();
             return;
         }
+        before = here.pos.add(Vec3());
         moved = slide(view, here.pos.sub(Vec3(z=here.eye_height)), here.velocity, self.dt);
         here.velocity = moved.velocity;
         here.pos = moved.pos.add(Vec3(z=here.eye_height));
+        self.stop_at_bodies(here, before, view);
+    }
+
+    """SV_FlyMove against the other bodies, for a monster its velocity has
+    just moved from `before` (a knock, a fall, a leap; the move itself is
+    traced against the world): it stops where its box meets another solid
+    body's, goes on along that face, and loses its speed into it
+    (ClipVelocity). What it struck is `bumped`, for a leap's touch. Landed
+    on another's head it rests there off the ground (only the world is
+    ground to SV_FlyMove) and is looked at again every tick, so that it
+    falls when the one below moves away."""
+    def stop_at_bodies(here: Opponent, before: Vec3, view: CollisionMap) {
+        lift = Vec3(z=here.eye_height);
+        start = before.sub(lift);
+        finish = here.pos.sub(lift);
+        hit = body_stop(self.field, here, start, finish);
+        box = hit.box;
+        if hit.fraction >= 1.0 or box is None {
+            return;
+        }
+        rule = here.rule;
+        mins = Vec3(x=-rule.width, y=-rule.width, z=rule.hull_bottom);
+        maxs = Vec3(x=rule.width, y=rule.width, z=rule.hull_top);
+        normal = sweep_normal(start, finish, mins, maxs, box);
+        self.bumped = hit.other;
+        self.bump_speed = here.velocity.length();
+        contact = touching_face(start.lerp(finish, hit.fraction), normal, mins, maxs, box);
+        rest = finish.sub(contact);
+        rest = rest.sub(normal.scale(rest.dot(normal)));
+        if rest.length() > 0.000001 {
+            along = view.trace(contact, contact.add(rest)).end;
+            contact = contact.lerp(along, body_stop(self.field, here, contact, along).fraction);
+        }
+        here.pos = contact.add(lift);
+        into = here.velocity.dot(normal);
+        if into < 0.0 {
+            here.velocity = here.velocity.sub(normal.scale(into));
+        }
+        here.rest_serial = -1;
     }
 
     """A medic's current patient, searching twice a second for a new one."""
@@ -5859,12 +5990,18 @@ walker CombatTick {
         if here.leaping {
             if here.grounded {
                 here.leaping = False;
-            } elif here.velocity.length() > current_profile(here).leap_contact_speed
+            } elif max(here.velocity.length(), self.bump_speed)
+                > current_profile(here).leap_contact_speed
                 and foe.health > 0 {
+                # Demon_JumpTouch, mutant_jump_touch: the leap has run into
+                # its enemy (SV_Impact, at the speed it met it with).
                 contact = foe.pos.sub(here.pos);
-                if abs(contact.x) < here.rule.width + 16.0
-                    and abs(contact.y) < here.rule.width + 16.0
-                    and abs(contact.z) < 56.0 {
+                if self.bumped is foe
+                    or (
+                        abs(contact.x) < here.rule.width + 16.0
+                            and abs(contact.y) < here.rule.width + 16.0
+                            and abs(contact.z) < 56.0
+                    ) {
                     profile = current_profile(here);
                     amount = event_damage(here, profile, 0);
                     dealt = strike(foe, amount, here, source=here.pos, tally=self.state, kick=0);

@@ -227,29 +227,30 @@ def:priv step_rand(body: MonsterBody, sides: int) -> int {
     return min(sides - 1, int(float(body.step_random) / 2147483647.0 * float(sides)));
 }
 
-"""Whether a box of `mins`..`maxs` about `origin` overlaps `solid`."""
-def box_meets(origin: Vec3, mins: Vec3, maxs: Vec3, solid: AABB) -> bool {
-    return origin.x + maxs.x > solid.mins.x
-        and origin.x + mins.x < solid.maxs.x
-        and origin.y + maxs.y > solid.mins.y
-        and origin.y + mins.y < solid.maxs.y
-        and origin.z + maxs.z > solid.mins.z
-        and origin.z + mins.z < solid.maxs.z;
-}
-
-"""Whether a box of `mins`..`maxs` swept from `start` to `finish` meets
-`solid` (a slab test of the segment against the box grown by the mover's)."""
-def:priv sweep_meets(start: Vec3, finish: Vec3, mins: Vec3, maxs: Vec3, solid: AABB) -> bool {
-    enter = 0.0;
-    leave = 1.0;
+"""How far a box of `mins`..`maxs` swept from `start` to `finish` gets
+before it meets `solid`, as a fraction of the sweep; 1 if it never does (a
+slab test of the segment against the box grown by the mover's). A sweep that
+starts inside the solid is not stopped by it: SV_RecursiveHullCheck and
+CM_BoxTrace leave such a trace its whole length."""
+def sweep_entry(start: Vec3, finish: Vec3, mins: Vec3, maxs: Vec3, solid: AABB) -> float {
     lows = [solid.mins.x - maxs.x, solid.mins.y - maxs.y, solid.mins.z - maxs.z];
     highs = [solid.maxs.x - mins.x, solid.maxs.y - mins.y, solid.maxs.z - mins.z];
     starts = [start.x, start.y, start.z];
     deltas = [finish.x - start.x, finish.y - start.y, finish.z - start.z];
+    if starts[0] > lows[0]
+        and starts[0] < highs[0]
+        and starts[1] > lows[1]
+        and starts[1] < highs[1]
+        and starts[2] > lows[2]
+        and starts[2] < highs[2] {
+        return 1.0;
+    }
+    enter = 0.0;
+    leave = 1.0;
     for axis in range(3) {
         if abs(deltas[axis]) < 0.000001 {
             if starts[axis] <= lows[axis] or starts[axis] >= highs[axis] {
-                return False;
+                return 1.0;
             }
             continue;
         }
@@ -258,10 +259,64 @@ def:priv sweep_meets(start: Vec3, finish: Vec3, mins: Vec3, maxs: Vec3, solid: A
         enter = max(enter, min(a, b));
         leave = min(leave, max(a, b));
         if enter >= leave {
-            return False;
+            return 1.0;
         }
     }
-    return True;
+    return enter;
+}
+
+"""The face of `solid` such a sweep meets first, as the unit normal that
+looks back at the mover (a box trace's plane); zero when the sweep never
+meets it."""
+def sweep_normal(start: Vec3, finish: Vec3, mins: Vec3, maxs: Vec3, solid: AABB) -> Vec3 {
+    if sweep_entry(start, finish, mins, maxs, solid) >= 1.0 {
+        return Vec3();
+    }
+    lows = [solid.mins.x - maxs.x, solid.mins.y - maxs.y, solid.mins.z - maxs.z];
+    highs = [solid.maxs.x - mins.x, solid.maxs.y - mins.y, solid.maxs.z - mins.z];
+    starts = [start.x, start.y, start.z];
+    deltas = [finish.x - start.x, finish.y - start.y, finish.z - start.z];
+    face = -1;
+    latest = -1.0e30;
+    for axis in range(3) {
+        if abs(deltas[axis]) < 0.000001 {
+            continue;
+        }
+        reached = min(
+            (lows[axis] - starts[axis]) / deltas[axis], (highs[axis] - starts[axis]) / deltas[axis]
+        );
+        if reached > latest {
+            latest = reached;
+            face = axis;
+        }
+    }
+    if face < 0 {
+        return Vec3();
+    }
+    back = -1.0 if deltas[face] > 0.0 else 1.0;
+    return Vec3(
+        x=back if face == 0 else 0.0, y=back if face == 1 else 0.0, z=back if face == 2 else 0.0
+    );
+}
+
+"""`point` moved along `normal`'s axis to where the mover's box just touches
+that face of `solid`, exactly."""
+def touching_face(point: Vec3, normal: Vec3, mins: Vec3, maxs: Vec3, solid: AABB) -> Vec3 {
+    spot = point.add(Vec3());
+    if normal.x < 0.0 {
+        spot.x = solid.mins.x - maxs.x;
+    } elif normal.x > 0.0 {
+        spot.x = solid.maxs.x - mins.x;
+    } elif normal.y < 0.0 {
+        spot.y = solid.mins.y - maxs.y;
+    } elif normal.y > 0.0 {
+        spot.y = solid.maxs.y - mins.y;
+    } elif normal.z < 0.0 {
+        spot.z = solid.mins.z - maxs.z;
+    } elif normal.z > 0.0 {
+        spot.z = solid.maxs.z - mins.z;
+    }
+    return spot;
 }
 
 """SV_Move for a step's push down: the monster's box dropped from `start` to
@@ -397,7 +452,7 @@ def:priv movestep(space: StepSpace, body: MonsterBody, move: Vec3) -> bool {
             trace = view.trace(oldorg, neworg, escape=True);
             blocked = trace.fraction < 1.0;
             for solid in space.solids {
-                if not blocked and sweep_meets(oldorg, neworg, box_mins, box_maxs, solid) {
+                if not blocked and sweep_entry(oldorg, neworg, box_mins, box_maxs, solid) < 1.0 {
                     blocked = True;
                 }
             }
