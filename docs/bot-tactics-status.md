@@ -378,8 +378,8 @@ Scripts (native, need the Q3 assets):
 
   | Map | Door | Bot went to | Door opened | Goal reached |
   | --- | --- | --- | --- | --- |
-  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.1 s | 20.6 s |
-  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.0 s |
+  | q3dm7 | `*6` (floor hatch) | press button `*7` | 7.5 s | 21.0 s |
+  | q3dm7 | `*5` | press button `*7`, on its way to trigger `*2` | never | 28.1 s |
   | q3dm11 | `*4` (glass door) | stand in trigger `*13` | 3.5 s | 4.7 s |
 
   For q3dm7's `*5` the bot stacks two goals (the trigger, and the button

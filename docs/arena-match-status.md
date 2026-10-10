@@ -160,8 +160,12 @@ When a match ends (`g_arenas.c`):
 - `scripts/arena_screens_smoke.jac`: captures the scoreboard and the three
   postgame phases on q3dm7.
 - `scripts/arena_ladder_walkthrough.jac`: plays each ladder arena through the
-  real game loop, then gives the player the frag limit and checks the podium,
-  postgame and the next arena (`QP_SECONDS`, `QP_LADDER_ONLY`).
+  real game loop, a sixtieth of a second of game time a frame, then gives the
+  player the frag limit and checks the podium, postgame and the next arena
+  (`QP_SECONDS`, `QP_LADDER_ONLY`, `QP_WALK_DT`). Run of 2026-10-10 (20 s an
+  arena): all 26 arenas end at the frag limit and go on to the next, with no
+  problems; every bot moves in 25 of them, and on q3dm19 one of the three
+  moves less than 64 units.
 
 ## Limitations
 
