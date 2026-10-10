@@ -256,6 +256,20 @@ def check_index(index: int, count: int) {
     }
 }
 
+"""The entity lump's text for a list of entities: what parse_entities reads
+back. Quotes cannot be written inside a value and are dropped."""
+def entity_text(entities: list[MapEntity]) -> str {
+    lines: list[str] = [];
+    for entity in entities {
+        lines.append("{");
+        for (key, value) in entity.fields.items() {
+            lines.append("\"" + key.replace("\"", "") + "\" \"" + value.replace("\"", "") + "\"");
+        }
+        lines.append("}");
+    }
+    return "\n".join(lines) + "\n";
+}
+
 def parse_entities(text: str) -> list[MapEntity] {
     result: list[MapEntity] = [];
     current = MapEntity();

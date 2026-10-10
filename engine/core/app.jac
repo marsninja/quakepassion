@@ -184,6 +184,7 @@ import from games.controls { binding_layer, control_actions }
 import from ..world.damage { Damage }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from ..render.renderer { Renderer, RenderPass }
+import from .workbench { Workbench, NoWorkbench, SceneView }
 import from ..world.world {
     World,
     Area,
@@ -396,6 +397,17 @@ obj App {
         menu_requested: bool = False,
         quitting: bool = False;
 
+    # The studio, when main.jac attaches one, and the frame's keys for it.
+    # Entity lumps staged for the next load of a level ("game/map" keys):
+    # the studio's unsaved edits, played without touching the saved ones.
+    has staged_entities: dict[str, str] = {};
+    has workbench: Workbench = NoWorkbench(),
+        bench_keys: list[str] = [],
+        bench_text: str = "",
+        bench_shift: bool = False,
+        bench_ctrl: bool = False,
+        bench_alt: bool = False;
+
     has expedition_complete: bool = False;
     has finale_text: str = "",
         finale_active: bool = False,
@@ -595,6 +607,9 @@ obj App {
     """What the original status bar shows this frame."""
     def hud_status() -> HudStatus;
     def render_frame();
+    """A frame while the workbench is active: the level from each of its
+    cameras, then its own drawing over them."""
+    def render_bench();
     """Headless validation script: steer the camera through three known
     states and screenshot each, then quit. Drives the exact culling
     behavior a human would check by hand."""

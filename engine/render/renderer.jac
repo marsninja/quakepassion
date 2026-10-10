@@ -66,12 +66,15 @@ import from vendor.raylib {
             height: i32,
             mipmaps: i32,
             format: i32;
-    }  def rlReadScreenPixels(width: i32, height: i32) -> u64;  def ExportImage(
+    }  def rlViewport(x: i32, y: i32, width: i32, height: i32) -> None;  def rlSetMatrixProjection(
+        proj: Matrix
+    ) -> None;  def rlDrawRenderBatchActive -> None;  def rlReadScreenPixels(width: i32, height: i32) -> u64;  def ExportImage(
         image: ScreenImage, fileName: str
     ) -> bool;  def MemFree(ptr: u64) -> None;
 }
 
 import math;
+import from .gpu { Matrix }
 import from .cubes { CubeBatch }
 import from ..console.cvar { Cvar, CVAR_ARCHIVE }
 import from ..console.shell { Shell }
@@ -213,6 +216,16 @@ obj Renderer {
     def begin_frame(eye: Vec3, yaw: float, pitch: float, roll: float = 0.0);
     """Begin a frame of screen-space drawing only, over black (cinematics)."""
     def begin_screen();
+    """Begin a frame made of several views of the level (the studio's)."""
+    def begin_views();
+    """Start drawing the level from a camera into a rectangle of the window,
+    in screen units. A positive `span` draws orthographically, that many
+    world units across the rectangle's height."""
+    def begin_view(
+        x: int, y: int, width: int, height: int, eye: Vec3, yaw: float, pitch: float, span: float = 0.0
+    );
+    """End a view: back to the whole window and screen space."""
+    def end_view();
 
     """Draw an area's graybox surfaces as solid cubes with wireframe edges."""
     def draw_area(area: Area);

@@ -3,7 +3,17 @@ import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
 import from ..formats.q1.bsp { parse_bsp }
-import from ..formats.bsp { Bsp, Face, Texture, decode_pvs, i32_at, require_range, current_flow }
+import from ..formats.bsp {
+    Bsp,
+    Face,
+    Texture,
+    MapEntity,
+    decode_pvs,
+    i32_at,
+    require_range,
+    current_flow,
+    parse_entities
+}
 import from ..formats.q2.bsp { parse_q2, parse_wal, texture_names }
 import from ..formats.q3.bsp { parse_q3 }
 import from ..formats.animated { ModelStage, Deform }
@@ -429,6 +439,9 @@ obj Level {
         movement: MovementProfile = MovementProfile(),
         name: str = "",
         bsp: Bsp = Bsp(),
+        # The map's entities before the skill and mode filter: what an
+        # editor shows, where bsp.entities is what spawned.
+        source_entities: list[MapEntity] = [],
         brush_faces: list[int] = [],
         palette: bytes = b"",
         areas: list[BspArea] = [],
@@ -733,15 +746,25 @@ def asset(paks: list[PakArchive], name: str) -> bytes {
 }
 
 """Load a map and build its level graph. `subdivisions` is r_subdivisions for
-a Q3 map's patches."""
+a Q3 map's patches. `entities`, when given, replaces the map's own entity
+lump (an edited copy of it: brush entities keep naming the map's models)."""
 def load_level(
-    world: World, directory: str, map_name: str, game: str = "q1", skill: int = 1, subdivisions: float = 4.0
+    world: World,
+    directory: str,
+    map_name: str,
+    game: str = "q1",
+    skill: int = 1,
+    subdivisions: float = 4.0,
+    entities: str = ""
 ) -> Level {
     level = Level(active=True, name=map_name, skill=skill);
     if game == "q3" {
         assets = Pk3Assets();
         assets.open(directory);
         level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"), subdivisions);
+        if entities {
+            level.bsp.entities = parse_entities(entities);
+        }
         # Models are lit from the light grid (worldspawn "gridsize").
         spacing = Vec3(x=64.0, y=64.0, z=128.0);
         for entity in level.bsp.entities[:1] {
@@ -835,6 +858,9 @@ def load_level(
                 );
             }
             level.bsp = parse_q2(data, textures);
+            if entities {
+                level.bsp.entities = parse_entities(entities);
+            }
             sky_name = "unit1_";
             for entity in level.bsp.entities {
                 if entity.fields.get("classname", "") == "worldspawn" {
@@ -861,6 +887,9 @@ def load_level(
             level.palette = pcx[len(pcx) - 768:];
         } else {
             level.bsp = parse_bsp(data);
+            if entities {
+                level.bsp.entities = parse_entities(entities);
+            }
             level.palette = asset(paks, "gfx/palette.lmp");
         }
         if len(level.palette) != 768 {
@@ -876,6 +905,7 @@ def load_level(
 def prepare_level(world: World, level: Level) {
     game = level.bsp.game;
     level.movement = movement_profile(game);
+    level.source_entities = level.bsp.entities;
     level.bsp.entities = active_entities(game, level.bsp.entities, level.skill);
     for i in range(len(level.bsp.leaves)) {
         leaf = level.bsp.leaves[i];

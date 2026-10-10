@@ -16,6 +16,7 @@ impl App.configure() {
     self.hud.declare(self.shell);
     self.effects.declare(self.shell);
     self.flares.declare(self.shell);
+    self.workbench.declare(self.shell);
     host = self.host;
     host.skill = self.shell.register(host.skill);
     host.god = self.shell.register(host.god);
@@ -85,6 +86,8 @@ impl App.execute_commands() -> bool {
             self.keyboard.command(self.shell, args);
         } elif forwarded.owner == "input" {
             self.controls.command(self.shell, args);
+        } elif forwarded.owner == "studio" {
+            self.workbench.command(args);
         } else {
             self.host_command(args);
         }
@@ -103,6 +106,10 @@ impl App.handle_keys() -> bool {
     shift = self.keyboard.is_down("SHIFT");
     ctrl = self.keyboard.is_down("CTRL") or self.keyboard.is_down("COMMAND");
     alt = self.keyboard.is_down("ALT");
+    bench = self.workbench.active and self.level.active and not self.menu.opened;
+    self.bench_shift = shift;
+    self.bench_ctrl = ctrl;
+    self.bench_alt = alt;
     for event in events {
         name = event.key.name;
         if not event.down {
@@ -134,7 +141,7 @@ impl App.handle_keys() -> bool {
             }
             continue;
         }
-        if name == "ESCAPE" {
+        if name == "ESCAPE" and not (bench and not self.console.active) {
             # M_ToggleMenu_f: Escape puts the console away, else the menu.
             if not event.repeat {
                 if self.console.active {
@@ -146,6 +153,13 @@ impl App.handle_keys() -> bool {
             continue;
         }
         if self.console.active and self.console.key(self.shell, name, ctrl, shift) {
+            continue;
+        }
+        if bench {
+            # The studio reads its own keys; the game's bindings rest.
+            if not self.console.active {
+                self.bench_keys.append(name);
+            }
             continue;
         }
         if event.repeat or self.menu.opened {
@@ -162,6 +176,8 @@ impl App.handle_keys() -> bool {
     }
     if self.console.active and typed {
         self.console.type_text("".join(typed));
+    } elif bench and typed {
+        self.bench_text += "".join(typed);
     }
     return escape;
 }
