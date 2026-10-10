@@ -63,8 +63,12 @@ def add_patch_facets(collision: CollisionMap, bsp: Bsp, model: int, offset: Vec3
     record = bsp.models[model];
     for index in range(record.first_face, record.first_face + record.face_count) {
         face = bsp.faces[index];
+        # Only a patch has a shader to ask (and only its contents matter).
+        if not face.patch {
+            continue;
+        }
         material = bsp.textures[face.texture];
-        if not face.patch or material.contents & mask == 0 {
+        if material.contents & mask == 0 {
             continue;
         }
         first = len(collision.hulls);
