@@ -3,7 +3,8 @@
 Q3 players are drawn as `cg_players.c` draws them: legs, torso and head are
 separate MD3 models, each on its own animation, joined through their tags
 every frame. Bots, podium figures, bodies left behind (the body queue) and
-the player's own body in mirrors and portal views all use this rig.
+the player's own body in mirrors, portal views and the death view all use
+this rig.
 
 ## The rig (`engine/world/models.jac`, `engine/world/player_rig.jac`, `games/arena_character.jac`)
 
@@ -51,9 +52,18 @@ part of a rig shares one sample.
 
 ## Bodies, sounds and powerups
 
+- The player's own body (`engine/world/reflection.jac`) follows the player
+  on the same rig. It is drawn where the player can see themselves: in
+  mirrors and portal views (`RF_THIRD_PERSON`) and, once dead, in the main
+  view, which Q3 then renders from outside
+  ([player feedback](player-feedback-status.md)). There it plays one of the
+  three deaths and lies on its last frame, holding no weapon (`player_die`:
+  `WP_NONE`); a body gibbed is not drawn at all (`GibEntity`:
+  `ET_INVISIBLE`). The sounds its poses cue wait on the body until the game
+  loop plays them, whichever view posed it first.
 - Body queue (`engine/world/body_queue.jac`, `CopyToBodyQue`): a respawning
-  bot leaves a copy of its body where it lies, still finishing its death
-  sequence. After 5 s it sinks (`BodySink`) and is gone at 6.5 s; at most
+  player or bot leaves a copy of its body where it lies, still finishing its
+  death sequence. After 5 s it sinks (`BodySink`) and is gone at 6.5 s; at most
   eight (`BODY_QUEUE_SIZE`) are kept.
   - A body keeps the dead player's health and gib models. As
     `CONTENTS_CORPSE`, it is struck by hitscan, missiles and splash but not by
@@ -88,8 +98,9 @@ part of a rig shares one sample.
   nodrop void, bodies not blocking movement.
 - `tests/lighting_tests.jac`: the light grid. `tests/item_drop_tests.jac`:
   powerup shaders on bodies and weapons.
-- `tests/podium_tests.jac` and `tests/portal_tests.jac`: podium figures and
-  the player's body in portal views.
+- `tests/podium_tests.jac` and `tests/portal_tests.jac`: podium figures, the
+  player's body in portal views, and the dead body shown dying, unarmed, and
+  not at all once gibbed.
 - `scripts/bot_bodies_smoke.jac`: captures a bot running, strafing,
   backpedalling, firing with a flash, aiming up and down, dying, a body left
   behind, a quad shell and a dropped item.

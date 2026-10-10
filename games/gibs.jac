@@ -1,6 +1,8 @@
 """Which monsters gib, and into what, from the original die functions. Q1
 thresholds come from `self.health < N` (stored as N - 1 so every game tests
-health <= threshold); Q2 from each monster's gib_health; Q3 from GIB_HEALTH."""
+health <= threshold); Q2 from each monster's gib_health; Q3 from GIB_HEALTH.
+The player's own body ("player") gibs too: its rule names the pieces thrown
+beside it, and it goes on as the head itself (engine/world/demise.jac)."""
 import from engine.world.gibs { GibRule, GibsInto }
 import from engine.world.world { World, Entity }
 import from engine.world.models { ModelResource, HasModelResource }
@@ -38,6 +40,17 @@ def q2_gibs(threshold: int, head: str, bones: int, meat: int, extra: list[str] =
 
 def gib_rule(game: str, kind: str) -> GibRule | None {
     if game == "q1" {
+        # player.qc PlayerDie: below -40 health GibPlayer throws gib1 to gib3
+        # and the player is the head (ThrowHead, h_player.mdl), which its
+        # own view never draws.
+        if kind == "player" {
+            return GibRule(
+                threshold=-41,
+                pieces=["progs/gib1.mdl", "progs/gib2.mdl", "progs/gib3.mdl"],
+                sound="sound/player/udeath.wav",
+                style="q1"
+            );
+        }
         if kind == "monster_army" {
             return q1_gibs(-36, "h_guard", ["gib1", "gib2", "gib3"]);
         }
@@ -79,6 +92,16 @@ def gib_rule(game: str, kind: str) -> GibRule | None {
         return None;
     }
     if game == "q2" {
+        # p_client.c player_die: below -40 health four sm_meat gibs, and the
+        # player is the head (ThrowClientHead: head2 or the skull).
+        if kind == "player" {
+            return GibRule(
+                threshold=-41,
+                pieces=["models/objects/gibs/sm_meat/tris.md2" for i in range(4)],
+                sound="sound/misc/udeath.wav",
+                style="q2"
+            );
+        }
         if kind in ["monster_soldier", "monster_soldier_light", "monster_soldier_ss"] {
             return q2_gibs(-30, "head2", 0, 3, ["chest"]);
         }
@@ -132,7 +155,7 @@ def gib_rule(game: str, kind: str) -> GibRule | None {
         }
         return None;
     }
-    if game == "q3" and kind == "arena_bot" {
+    if game == "q3" and kind in ["arena_bot", "player"] {
         # cg_players.c CG_GibPlayer, thrown when health falls to GIB_HEALTH.
         return GibRule(
             threshold=-40,
@@ -158,7 +181,7 @@ def gib_rule(game: str, kind: str) -> GibRule | None {
 
 """Link a monster to the models it breaks into, loading each once per level.
 Returns False when the game data lacks any of them, leaving the monster to die
-whole."""
+whole. A rule with no head links its pieces alone."""
 def link_gibs(
     world: World,
     victim: Entity,
@@ -167,7 +190,7 @@ def link_gibs(
     source: str,
     resources: dict[str, ModelResource]
 ) -> bool {
-    paths = [rule.head] + rule.pieces;
+    paths = ([rule.head] if rule.head else []) + rule.pieces;
     try {
         for path in paths {
             key = "gib:" + source + ":" + path;
@@ -188,7 +211,7 @@ def link_gibs(
             continue;
         }
         linked.append(path);
-        victim +>:GibsInto:count=paths.count(path), head=index == 0:+> resources["gib:" + source + ":" + path];
+        victim +>:GibsInto:count=paths.count(path), head=bool(rule.head) and index == 0:+> resources["gib:" + source + ":" + path];
     }
     return True;
 }

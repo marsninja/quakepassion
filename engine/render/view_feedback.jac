@@ -5,12 +5,13 @@ Q1 view.c: V_ParseDamage (cshift_damage, v_dmg_roll/pitch), V_SetContentsColor,
 V_BonusFlash_f, V_CalcRefdef's dead roll. Q2 p_view.c: P_DamageFeedback
 (damage_blend/alpha, kick angles), SV_CalcBlend, P_FallingDamage's fall kick,
 the dead view. Q3 cg_view.c: CG_DamageFeedback / CG_DamageBlendBlob, the
-landing change and CG_OffsetFirstPersonView's dead view. Each game also eases
+landing change and CG_OffsetThirdPersonView's dead view. Each game also eases
 the eye up a step instead of jumping it there (Q1 V_CalcRefdef's oldz, Q2
 cl.predicted_step, Q3 cg.stepChange). `place` puts it together with the
 game's sway (view_sway.jac) into where the eye and the gun are this frame."""
 import math;
 import from ..world.world { Player }
+import from ..physics.collision { CollisionMap }
 import from ..math.vec3 { Vec3, forward_from, right_from }
 import from .view_sway { ViewSway, ViewBase, ViewPlacement, view_sway_for }
 
@@ -336,7 +337,8 @@ obj ViewFeedback {
     how far through the last tick that is, `clock` the simulation time shown
     and `punch` the weapon punch in degrees (positive looks up). The eye is
     eased up steps and dipped by landings, then the game's sway bobs and rolls
-    it and places the gun; the dead view replaces it all, and an intermission
+    it and places the gun; the dead view replaces it all (Q3's stands off
+    from the body, kept out of `collision`'s walls), and an intermission
     camera takes none of it (Q2 ClientEndServerFrame and Q3
     CG_OffsetFirstPersonView skip it), Q1 swaying it gently instead
     (V_CalcIntermissionRefdef's V_AddIdle at v_idlescale 1)."""
@@ -348,9 +350,9 @@ obj ViewFeedback {
         clock: float,
         share: float,
         punch: float,
-        eye_height: float,
         dead: bool = False,
-        intermission: bool = False
+        intermission: bool = False,
+        collision: CollisionMap | None = None
     ) -> ViewPlacement {
         if intermission {
             yaw = player.yaw;
@@ -373,14 +375,11 @@ obj ViewFeedback {
             + self.duck_was
             + (self.duck_offset() - self.duck_was) * share;
         if dead {
-            fallen = death_view(player, self.game, eye_height);
-            eye = body.sub(Vec3(z=fallen[0]));
-            pitch = math.radians(fallen[1]);
-            roll = math.radians(fallen[2]);
-            return ViewPlacement(
-                eye=eye, yaw=fallen[3], pitch=pitch, roll=roll, gun=eye,
-                gun_yaw=fallen[3], gun_pitch=pitch, gun_roll=roll
-            );
+            if self.game == "q3" {
+                # player_die levels the dead player's view angles.
+                return third_person_view(body, killer_yaw(player), 0.0, collision);
+            }
+            return death_view(player, self.game, body);
         }
         return self.sway.place(
             player,
@@ -460,23 +459,65 @@ obj ViewFeedback {
     }
 }
 
-"""The dead view: Q1 rolls 80 degrees with the eye 8 below the origin; Q2
-rolls 40, looks 15 degrees up toward the killer from 8 above the origin; Q3
-the same from 16 below (DEAD_VIEWHEIGHT). Returns [drop, pitch, roll, yaw]."""
-def death_view(player: Player, game: str, eye_height: float) -> list[float] {
-    yaw = player.yaw;
+"""LookAtKiller: the yaw from a dead player toward whoever killed it, its own
+when that was nobody else (Q2 killer_yaw, Q3 STAT_DEAD_YAW)."""
+def killer_yaw(player: Player) -> float {
     killer = player.killer;
-    if game in ["q2", "q3"] and killer is not None and killer is not player {
+    if killer is not None and killer is not player {
         toward = killer.pos.sub(player.pos);
         if abs(toward.x) + abs(toward.y) > 0.001 {
-            yaw = math.atan2(toward.y, toward.x);
+            return math.atan2(toward.y, toward.x);
         }
     }
-    if game == "q1" {
-        return [eye_height + 8.0, 0.0, 80.0, yaw];
+    return player.yaw;
+}
+
+"""The first-person dead view from `eye`, the body's eye where it lies (the
+lying form of engine/world/demise.jac). Q1 V_CalcViewRoll rolls the player's
+own view 80 degrees; Q2 SV_CalcViewOffset fixes it rolled 40 and looking 15
+degrees up along killer_yaw."""
+def death_view(player: Player, game: str, eye: Vec3) -> ViewPlacement {
+    yaw = player.yaw;
+    pitch = player.pitch;
+    roll = math.radians(80.0);
+    if game != "q1" {
+        yaw = killer_yaw(player);
+        pitch = math.radians(15.0);
+        roll = math.radians(40.0);
     }
-    if game == "q2" {
-        return [eye_height - 8.0, 15.0, 40.0, yaw];
+    return ViewPlacement(
+        eye=eye, yaw=yaw, pitch=pitch, roll=roll, gun=eye,
+        gun_yaw=yaw, gun_pitch=pitch, gun_roll=roll
+    );
+}
+
+"""Q3 CG_OffsetThirdPersonView, which CG_CalcViewValues uses whenever the
+player's health is gone (renderingThirdPerson). `eye` is the body's eye
+(origin plus viewheight), `yaw` the way the view faces (STAT_DEAD_YAW for
+the dead) and `pitch` its pitch in Quake's degrees, positive down. The view
+aims at a point FOCUS_DISTANCE (512) ahead of the eye, along a pitch held to
+45 degrees down; the camera rises 8 and backs off cg_thirdPersonRange (40)
+along half the pitch (cg_thirdPersonAngle is 0). An 8 unit box traced from
+the eye keeps it out of `collision`'s walls: stopped short, it rises by 32 of
+what it lost and is traced again, for a tunnel's ceiling. Its pitch is then
+the one that looks at the focus point."""
+def third_person_view(
+    eye: Vec3, yaw: float, pitch: float, collision: CollisionMap | None = None
+) -> ViewPlacement {
+    focus = eye.add(forward_from(yaw, -math.radians(min(pitch, 45.0))).scale(512.0));
+    view = eye.add(Vec3(z=8.0)).sub(forward_from(yaw, -math.radians(pitch * 0.5)).scale(40.0));
+    if collision is not None {
+        box = collision.for_body(
+            0.0, 0.0, Vec3(x=-4.0, y=-4.0, z=-4.0), Vec3(x=4.0, y=4.0, z=4.0)
+        );
+        hit = box.trace(eye, view);
+        if hit.fraction < 1.0 {
+            view = box.trace(eye, hit.end.add(Vec3(z=(1.0 - hit.fraction) * 32.0))).end;
+        }
     }
-    return [eye_height + 16.0, 15.0, 40.0, yaw];
+    toward = focus.sub(view);
+    aim = math.atan2(toward.z, max(1.0, math.sqrt(toward.x * toward.x + toward.y * toward.y)));
+    return ViewPlacement(
+        eye=view, yaw=yaw, pitch=aim, roll=0.0, gun=view, gun_yaw=yaw, gun_pitch=aim, gun_roll=0.0
+    );
 }

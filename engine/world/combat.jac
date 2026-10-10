@@ -23,6 +23,7 @@ import from .player_rig { PoseRig, rig_sound, reset_rig }
 import from .body_queue { Corpse, HasCorpse, CorpseTick, leave_corpse, damage_corpse, shootable }
 import from .drops { toss_items }
 import from .gibs { GibRule, gibs_at, throw_gibs }
+import from .demise { body_struck }
 import from .bot_routes { NavMesh, HasNavMesh, plan_route }
 import from .bot_travel { FollowRoute, TravelResult, TRAVEL_JUMP_SPEED }
 import from .bot_character { BotCharacter, BotState, entity_visible, enemy_view }
@@ -1249,7 +1250,8 @@ def knock_back(
         human = self_hit and not isinstance(actor, Opponent);
         speed = (1600.0 if human else 500.0) * amount / mass;
     } elif game == "q3" {
-        if isinstance(actor, Opponent) and not actor.arena {
+        # G_Damage: monsters stand fast, and so do the dead (FL_NO_KNOCKBACK).
+        if (isinstance(actor, Opponent) and not actor.arena) or actor.health <= 0 {
             return;
         }
         knock = min(amount, 200.0);
@@ -1381,7 +1383,8 @@ def line_of_fire(
     limit: float
 ) -> LineHit {
     result = LineHit(fraction=limit);
-    if person is not None and person.health > 0 {
+    # The player, or the body where shots still strike it (demise.jac).
+    if person is not None and (person.health > 0 or body_struck(person)) {
         hit = actor_fraction(start, finish, person.pos, collision.eye_height, collision.top_drop);
         if hit < result.fraction {
             result.actor = person;
@@ -2212,7 +2215,7 @@ def blast_actors(
         ]
     );
     for actor in actors {
-        corpse = isinstance(actor, Opponent) and gibbable_corpse(actor);
+        corpse = (isinstance(actor, Opponent) and gibbable_corpse(actor)) or body_struck(actor);
         if actor is direct or (actor.health <= 0 and not corpse) {
             continue;
         }
@@ -2576,7 +2579,7 @@ walker ProjectileTick {
                 self.collision.eye_height,
                 self.collision.top_drop
             );
-            if self.player.health > 0 and hit < fraction {
+            if (self.player.health > 0 or body_struck(self.player)) and hit < fraction {
                 fraction = hit;
                 player_hit = True;
             }
@@ -3545,7 +3548,8 @@ def advance_attack_segment(
         delta = player.pos.sub(enemy.pos);
         distance = delta.length();
         sight = collision.trace_point(enemy.pos, player.pos);
-        if player.health <= 0
+        # An attack under way plays out on a body shots still strike.
+        if (player.health <= 0 and not body_struck(player))
             or (
                 (not profile.lock_aim or profile.kind == "melee")
                 and (
@@ -4231,9 +4235,8 @@ walker CombatTick {
             1.0, self.state.route_credit + max(0.0, self.dt) * 8.0
         );
         self.state.navigation.network.refresh(self.collision);
-        # Arena matches keep running while the player waits to respawn.
-        live = self.player.health > 0 or self.arena_live;
-        if self.active and live { self.state.navigation.advance(); }
+        # The world runs on while the player lies dead, in every game.
+        if self.active { self.state.navigation.advance(); }
         here spawn ParticleTick(dt=self.dt);
         here spawn CorpseTick(dt=self.dt);
         self.state.cooldown = max(0.0, self.state.cooldown - self.dt);
@@ -4241,7 +4244,7 @@ walker CombatTick {
         self.state.sight_wait = max(0.0, self.state.sight_wait - self.dt);
         self.state.flash = max(0.0, self.state.flash - self.dt);
         self.state.hit_flash = max(0.0, self.state.hit_flash - self.dt);
-        if self.active and live {
+        if self.active {
             visit [here->:HasOpponent:->];
         }
     }
@@ -4520,6 +4523,17 @@ walker CombatTick {
                 here.alert = max(here.alert, 3.0);
             }
         }
+        # Q1 ai_run and Q2 ai_checkattack (hesDeadJim): with its enemy dead a
+        # monster goes back to standing, or to the path it walked, once the
+        # attack it was in is done. FindTarget never takes a dead client.
+        bereft = foe.health <= 0 and foe is not patient and not here.arena;
+        if bereft and (here.alert > 0.0 or here.readied >= 0) {
+            here.alert = 0.0;
+            here.pursuing = False;
+            here.sighted = False;
+            here.readied = -1;
+            here.steering = Vec3();
+        }
         # An alerted monster leaves its patrol unless it is bound for a combat point.
         if here.alert > 0.0 and not here.holding {
             here.patrol_goal = None;
@@ -4569,7 +4583,8 @@ walker CombatTick {
                 # Q2 AI_GOOD_GUY (misc_insane): passive figures never hunt.
                 here.pursuing = not sight.start_solid
                     and sight.fraction == 1.0
-                    and not here.rule.passive;
+                    and not here.rule.passive
+                    and not bereft;
                 if here.pursuing and not was_alert and not here.arena {
                     here.pursuing = notices(here, foe.pos, distance, self.state.noise > 0.0);
                 }

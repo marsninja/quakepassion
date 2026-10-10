@@ -477,7 +477,9 @@ walker DoorTick {
                 }
             }
         }
-        contact = here.automatic and here.trigger.contains(origin);
+        # Only a player in touch with the world sets off a field: not one
+        # flying through it, and not the dead (demise.jac in_touch).
+        contact = self.touching and here.automatic and here.trigger.contains(origin);
         if here.kind == "platform" {
             contact = (self.touching and (contact or (rider and here.state == "open")))
                 or monster_contact

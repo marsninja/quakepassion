@@ -151,8 +151,9 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   flipped. The portal surface shows that image, then its own stages blend
   over it; `alphaGen portal` fades them in with distance, and a camera portal
   renders only within its shader's `portalRange` (`SurfIsOffscreen`).
-- In a Q3 arena the player's own body is drawn only in these views
-  (`RF_THIRD_PERSON`).
+- In a Q3 arena the living player's own body is drawn only in these views
+  (`RF_THIRD_PERSON`); dead, it is drawn in the main view too
+  ([player bodies](player-bodies-status.md)).
 
 ## Q3 shaders
 

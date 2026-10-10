@@ -93,9 +93,23 @@ originals' flashes and kicks: Q1 `V_ParseDamage` (red or armor-tinted cshift,
 pitch/roll kick), Q2 `P_DamageFeedback` (damage blend and kick by health) and
 Q3 `CG_DamageFeedback` with the `viewBloodBlend` blob toward the hit. Liquids
 tint the view when the eye is under (Q1 `V_SetContentsColor`, Q2
-`SV_CalcBlend`), pickups flash gold (Q1 `V_BonusFlash_f`, Q2 `bonus_alpha`),
-and the dead view drops and rolls (Q1 80 degrees; Q2/Q3 40, looking toward the
-killer).
+`SV_CalcBlend`), and pickups flash gold (Q1 `V_BonusFlash_f`, Q2
+`bonus_alpha`). The Q1 and Q2 dead views are from the eye of the body where
+it lies (see Death below): Q1 `V_CalcViewRoll` rolls the player's own view 80
+degrees, which the mouse still turns; Q2 `SV_CalcViewOffset` fixes it rolled
+40 degrees and looking 15 up toward the killer (`LookAtKiller`).
+
+Q3 shows its dead player from outside (`CG_CalcViewValues` renders third
+person whenever health is gone). `third_person_view` is
+`CG_OffsetThirdPersonView`: from the body's eye the camera backs off 40 units
+(`cg_thirdPersonRange`) and rises 8, facing `STAT_DEAD_YAW` (toward the
+killer) and pitched to look at a point 512 units ahead of the eye; the dead
+player's own view angles are level, so the 45 degree cap on the focus pitch
+never binds. An 8 unit box traced from the eye keeps the camera out of walls:
+stopped short, it rises by 32 units of the fraction it lost and is traced
+again. The player's own body is drawn in this view, dying, lying dead or
+gone to gibs ([player bodies](player-bodies-status.md)), there is no
+crosshair, and the level is culled from where the camera stands.
 
 Moving sways the view per game (`engine/render/view_sway.jac`):
 
@@ -115,6 +129,59 @@ Moving sways the view per game (`engine/render/view_sway.jac`):
 the step and crouch ease (see [player movement](player-movement-status.md);
 Q1 eases the body's height net of what movers carried it), the landing dip,
 kicks, punch and sway.
+
+## Death
+
+The level runs on around a dead player in all three games.
+`engine/world/demise.jac` plays each game's rules (`games/deaths.jac`) on the
+body, a `Mortality` node the player holds:
+
+- **The body.** Q1 `PlayerDie` keeps the standing box with the eye 8 below the
+  origin, lifts a body rising slower than 10 units a second by up to 300, and
+  tosses it (`MOVETYPE_TOSS`, `SV_Physics_Toss`): it falls and the first floor
+  stops it dead. Q2 `PM_DEAD` is the ducked box (its top 4 above the origin,
+  the eye 2 below it) and Q3's `PM_CheckDuck` ends the box 8 below the origin
+  with the eye at `DEAD_VIEWHEIGHT`, 16 below; both go on moving by the
+  player's own move with no command, and lose 20 more units of speed a move
+  on the ground (`PM_DeadMove`). Movers carry and push the body and are never
+  blocked by it.
+- **It touches nothing.** No trigger, item, exit, teleporter, jump pad, hazard
+  or door field answers a dead player (`in_touch`; Q1 `SOLID_NOT`, Q2 and Q3
+  `G_TouchTriggers`), in the Q3 arena as in the campaigns. The same test
+  keeps a player flying through the level or held at an intermission camera
+  from touching them.
+- **Monsters.** One whose enemy has died goes back to standing, or to the
+  path it walked, once the attack it was in is over, and a dead player is
+  never taken for an enemy (Q1 `ai_run` and `FindTarget`, Q2
+  `ai_checkattack`). Monsters fighting each other fight on.
+- **Gibs.** A killing blow more than 40 past zero (Q3: 40 or more) bursts
+  the body through the gib graph the monsters use: `GibsInto` edges from the
+  player to its pieces, linked on level load (`games/deaths.jac`), thrown by
+  `throw_gibs`. Q1 `GibPlayer` throws `gib1` to `gib3` and the player goes on
+  as the head (`ThrowHead`): thrown with a new velocity, bouncing off each
+  surface with half its speed (`MOVETYPE_BOUNCE`) until it leaves a floor
+  slower than 60, the eye 8 above the foot of its box, its buttons counting
+  at once. Q2 `player_die` throws four `sm_meat` gibs and the player rides
+  its head (`ThrowClientHead`, `PM_GIB`): a 16 unit box resting on an origin
+  32 higher, the eye 8 above that, the throw added to its speed, moving by
+  the player's move without the dead drag. Q3 `GibEntity` throws
+  `CG_GibPlayer`'s skull and ten pieces and the body is gone. The Q1 and Q2
+  head models are not drawn: the head is the player's own entity, which its
+  view leaves out (`CL_RelinkEntities`, `RF_VIEWERMODEL`).
+- **Shot bodies.** Q2 `player_die` leaves the body taking damage and Q3's
+  "can still be gibbed" (`body_die`): hitscan, missiles and blasts strike it
+  where it lies, an attack under way plays out on it, and its health goes on
+  down; past the gib health it bursts then, with the gib sound. Nothing
+  strikes Q1's body (`SOLID_NOT`).
+- **Coming back.** The buttons of a dead player only bring the player back.
+  Q1 `PlayerDeathThink`: after the death frames (0.8 to 1.4 s by the sequence
+  `PlayerDie` picked, 0.8 s holding the axe) every button must be let go, and
+  then fire or jump restarts the level. Q2 `ClientBeginServerFrame`: any key
+  or button pressed restarts it, a second after the death at the earliest (a
+  press during that second counts when it is over). Enter restarts a campaign
+  level at any time. What a restart brings back is in
+  [campaign level flow](level-flow-status.md); the Q3 respawn is in
+  [arena matches](arena-match-status.md).
 
 ## Drawing between physics ticks
 
@@ -155,14 +222,38 @@ left.
   fall thresholds, autoswitch/refusal/cycling, chaingun spin-up, BFG delay,
   machinegun climb, Q1 discharge, trails, explosions per game, Q3 top-up, Q2
   health cap, gibbing, voice cues and view blends.
+- `tests/player_death_tests.jac`: a door closing over a dead player, a
+  missile landing and a monster going back to its stand after the death, the
+  dead touching nothing in each game, the Q1 toss and the Q2 and Q3 dead
+  boxes and slide, each game's buttons and waits, the player's gibs at each
+  game's health, the Q1 and Q2 head and its eye, and Q2 and Q3 bodies shot
+  until they burst.
 - `tests/view_sway_tests.jac` (bob, roll, gun lag, Q2 shot kick, dead and
-  intermission views), `tests/render_interpolation_tests.jac`,
+  intermission views, and Q3's death camera against numbers worked by hand
+  from `CG_OffsetThirdPersonView`: level, pitched down past the cap, pitched
+  up, against a wall and in a tunnel), `tests/render_interpolation_tests.jac`,
   `tests/step_view_tests.jac`.
 - `scripts/player_feedback_smoke.jac` renders each game's rocket and grenade
   explosions, the Q1/Q3 lightning beam, Q2/Q3 rail trails, the damage flash,
   the underwater tint, pickup feedback and the dead view.
 - `scripts/rocket_jump_probe.jac` prints the rocket jump apexes.
+- `scripts/player_death_smoke.jac` kills the player on e1m1, base1 and q3dm1
+  through the game loop: the body takes its game's form and touches nothing
+  (it is laid on an item, which stays), a missile in the air lands, an
+  alerted monster stands again, a door opens and shuts, saving is refused,
+  and the buttons bring the player back after their waits. Then a blow 300
+  past zero in each game: three, four and eleven gibs fly, the Q1 and Q2
+  player comes to rest as the head, and a Q2 and a Q3 body shot twice where
+  it lies bursts on the second hit. In Q3 the death camera is on with the
+  body in view (and out of it once gibbed), and the respawn leaves the body
+  in the queue. Captures: `qp_death_<game>.png`, `qp_death_gib_<game>.png`.
+  `scripts/gameplay_smoke.jac` checks the same waits, and Enter, from the
+  keyboard.
 
 ## Limitations
 
-- The player's own body is not thrown as gibs.
+- A Q3 player killed in a `CONTENTS_NODROP` void (q3dm17's) still gibs;
+  `player_die` never gibs there.
+- Q2 `AI_BRUTAL` (a tank firing on at a corpse down to -80 health) is not
+  modelled, and a Q2 body lying in lava or slime is not burnt on
+  (`P_WorldEffects`).
