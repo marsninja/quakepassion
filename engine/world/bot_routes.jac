@@ -582,12 +582,23 @@ obj BotRoute {
 table `times` for a bot at `position` (be_aas_route.c
 AAS_AreaReachabilityToGoalArea), or None when none does."""
 def best_exit(
-    mesh: NavMesh, area: int, position: Vec3, times: list[int], flags: int, avoid: AvoidReach | None = None, now: float = 0.0
+    mesh: NavMesh,
+    area: int,
+    position: Vec3,
+    times: list[int],
+    flags: int,
+    avoid: AvoidReach | None = None,
+    now: float = 0.0,
+    came_from: int = 0
 ) -> Passage | None {
     best: Passage | None = None;
     best_cost = UNREACHED;
     for passage in [mesh.areas[area]->:Exits:->][?:Passage] {
         if times[passage.target] >= UNREACHED or not mesh.allows(passage, flags) {
+            continue;
+        }
+        # "do not go back to the previous area if the goal didn't change"
+        if came_from > 0 and passage.target == came_from {
             continue;
         }
         # "check if it isn't an reachability to avoid"
@@ -682,13 +693,17 @@ def plan_route(
     area = here_area;
     position = origin;
     steps = 0;
+    # The area just left: BotGetReachabilityToGoal never takes a passage
+    # straight back into it while the goal is the same.
+    came_from = 0;
     while area != goal_area and steps < limit {
         # The way out of the area the bot is in keeps clear of the passage
         # it avoids; the later ones are chosen as it gets there.
-        best = best_exit(mesh, area, position, times, flags, avoid if steps == 0 else None, now);
+        best = best_exit(mesh, area, position, times, flags, avoid if steps == 0 else None, now, came_from);
         if best is None {
             return route;
         }
+        came_from = area;
         if best.kind in [TRAVEL_TELEPORT, TRAVEL_JUMPPAD] {
             # The trigger carries the bot on; planning resumes where it lands.
             route.add(best.start, best.target, passage=best);

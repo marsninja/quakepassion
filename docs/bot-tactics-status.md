@@ -76,6 +76,10 @@ weapon the movement needs, a movement view, waiting and failure.
   weapon jumps; 10 for elevators, jump pads and bobbing platforms) and the
   route is planned again from where the bot is; the movement fails only when
   there is no way then.
+- A route never turns straight back into the area it just left
+  (`BotGetReachabilityToGoal`'s "do not go back to the previous area if the
+  goal didn't change"), within one plan; a new plan starts without an area
+  left behind.
 - Avoid-reachability list (`BotAddToAvoidReach`, a single entry as in Q3):
   each passage a bot sets out on is noted; the one noted counts another try
   when it is taken again within 6 s. Tried more than four times, it is passed

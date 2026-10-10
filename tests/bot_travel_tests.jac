@@ -19,7 +19,7 @@ import from engine.formats.aas {
     TFL_ROCKETJUMP,
     TFL_LAVA
 }
-import from engine.world.bot_routes { AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
+import from engine.world.bot_routes { best_exit, AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
 import from engine.world.bot_travel {
     FollowRoute,
     TravelResult,
@@ -296,4 +296,23 @@ test "a bot slows into its goal and onto a teleporter" {
     bot.pos = Vec3(x=70.0, z=26.0);
     closing = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=last, eye_height=26.0, clock=0.0);
     assert closing.result.speed == 200.0 and closing.result.direction.x > 0.99;
+}
+
+test "a route never turns straight back into the area it just left" {
+    # From 2 the quick way to 4 is back through 1 (a short cut 1 -> 4); the
+    # route that came from 1 takes the long way by 3 instead.
+    aas = strip_aas(4, [(1, 2, TRAVEL_WALK), (2, 1, TRAVEL_WALK), (2, 3, TRAVEL_WALK), (3, 4, TRAVEL_WALK), (1, 4, TRAVEL_WALK)]);
+    mesh = build_navmesh(World(), aas);
+    times = mesh.times_to(4);
+    exits = [mesh.areas[1]->:Exits:->][?:Passage];
+    short_cut = [passage for passage in exits if passage.target == 4][0];
+    # Make the short cut dear from area 1 itself, so a route from 1 sets
+    # out by 2, where going back to 1 would then look best.
+    short_cut.time = 100000;
+    back = [passage for passage in [mesh.areas[2]->:Exits:->][?:Passage] if passage.target == 1][0];
+    onward = [passage for passage in [mesh.areas[2]->:Exits:->][?:Passage] if passage.target == 3][0];
+    assert best_exit(mesh, 2, Vec3(x=128.0), times, TFL_DEFAULT) is back;
+    assert best_exit(mesh, 2, Vec3(x=128.0), times, TFL_DEFAULT, None, 0.0, 1) is onward;
+    route = plan_route(mesh, Vec3(x=64.0), Vec3(x=256.0));
+    assert route.found and [area for area in route.areas if area > 0] == [2, 3, 4];
 }
