@@ -560,14 +560,16 @@ def asset(paks: list[PakArchive], name: str) -> bytes {
     raise ValueError("Missing Quake asset: " + name);
 }
 
+"""Load a map and build its level graph. `subdivisions` is r_subdivisions for
+a Q3 map's patches."""
 def load_level(
-    world: World, directory: str, map_name: str, game: str = "q1", skill: int = 1
+    world: World, directory: str, map_name: str, game: str = "q1", skill: int = 1, subdivisions: float = 4.0
 ) -> Level {
     level = Level(active=True, name=map_name, skill=skill);
     if game == "q3" {
         assets = Pk3Assets();
         assets.open(directory);
-        level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"));
+        level.bsp = parse_q3(assets.read("maps/" + map_name + ".bsp"), subdivisions);
         # Models are lit from the light grid (worldspawn "gridsize").
         spacing = Vec3(x=64.0, y=64.0, z=128.0);
         for entity in level.bsp.entities[:1] {

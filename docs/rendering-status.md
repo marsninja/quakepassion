@@ -40,11 +40,19 @@ and builds the level graph.
 - **Quake III (BSP46, `engine/formats/q3/bsp.jac`).** JPG and TGA images
   decoded by raylib (built with both decoders by `scripts/stage_raylib.sh`;
   the prebuilt raylib has neither); 128×128 RGB lightmaps with the overbright
-  shift; planar surfaces, triangle soups and quadratic patches (tessellated at
-  eight steps per quadratic piece for drawing; collision uses cm_patch's
-  adaptive facets, `engine/physics/patch_collide.jac`); the light grid for
+  shift; planar surfaces, triangle soups and quadratic patches; the light grid for
   models; cluster PVS; fog volumes; flare surfaces (`MST_FLARE`: a point, a
   colour and a normal, no geometry).
+- **Q3 patches** (`engine/formats/q3/curve.jac`) are subdivided for drawing
+  as `R_SubdividePatchToGrid` does: a control column is split in two while
+  the curve's midpoint lies more than `r_subdivisions` (4 units) from the
+  chord of its neighbours, the approximating points are put on the curve, and
+  rows and columns that run straight are dropped, so a flat patch is two
+  triangles. `R_StitchAllPatches` then gives the patches of one LOD group the
+  vertices their neighbours have along a shared edge, so no crack opens
+  between a finely and a coarsely subdivided one. `r_subdivisions` takes
+  effect at the next map load. Collision keeps its own facets from the
+  control points (cm_patch, `engine/physics/patch_collide.jac`).
 - **The BSP graph.** Every game's tree becomes `Split` and `BspArea` (leaf)
   nodes joined by `Front`/`Back` edges. `Locate` walks to the eye's leaf and
   `CollectFaces` gathers the faces of the visible leaves.
@@ -236,7 +244,10 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   packing, batches, index runs), `render_culling_tests`, `model_gpu_tests`,
   `effect_quads_tests`, `lightfx_render_tests` (Q2 sky rotation, particle
   records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
-  `flare_tests` (adding, dimming, fading and dropping flares).
+  `flare_tests` (adding, dimming, fading and dropping flares), `curve_tests`
+  (patch subdivision and stitching).
+- `scripts/validate_patches.jac` subdivides and stitches every Q3 map's
+  patches and sets their triangle counts beside the former fixed eight steps.
 - Native comparisons: `scripts/model_gpu_smoke.jac` draws the same scene
   through the GPU and legacy model paths (they differ in under 0.01% of
   pixels); `scripts/gpu_smoke.jac` exercises `engine/render/gpu.jac`;
@@ -249,7 +260,10 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
 - Only the PVS culls world faces. Q2/Q3 area portals
   (`engine/world/area_portals.jac`) gate sound but not drawing, so faces
   behind a closed areaportal door are still drawn.
-- Patches draw at a fixed eight steps per quadratic piece (no LOD).
+- Patches draw at their full `r_subdivisions` detail at any distance; the
+  original also drops rows and columns as a patch recedes
+  (`r_lodCurveError`). Their vertices share the face's one normal rather than
+  `MakeMeshNormals`' per-vertex ones.
 - The lightmap atlas is a fixed 2048×2048; a map that overflows it fails to
   load ("Lightmap atlas capacity exceeded"). Every original map fits.
 - Q3 shaders: directives the parser does not know are recorded in

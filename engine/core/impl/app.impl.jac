@@ -612,7 +612,10 @@ impl App.load_destination(
     try {
         world = World();
         skill = self.host.skill.integer;
-        level = open_level(world, game_directory(game), name, game, skill if game == "q3" else min(3, skill));
+        level = open_level(
+            world, game_directory(game), name, game, skill if game == "q3" else min(3, skill),
+            subdivisions=self.renderer.cvars.subdivisions.number
+        );
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"
                 and self.level.bsp.game == "q1"

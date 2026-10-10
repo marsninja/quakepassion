@@ -2,7 +2,8 @@
 import struct;
 import from engine.formats.bsp { Bsp, Face, Leaf, Model }
 import from engine.formats.q2.bsp { parse_wal, parse_q2 }
-import from engine.formats.q3.bsp { Vertex, tessellate, parse_q3 }
+import from engine.formats.q3.bsp { tessellate, parse_q3 }
+import from engine.formats.q3.curve { Vertex }
 import from engine.world.level { Level, Split, BspArea, Front, Back }
 import from engine.world.world { World }
 import from engine.math.vec3 { Vec3 }
