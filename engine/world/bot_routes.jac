@@ -603,7 +603,9 @@ obj BotRoute {
         # The gap found ahead on a walking leg (BotGapDistance) and when it
         # was last looked for.
         gap: float = 0.0,
-        gap_checked: float = -1000.0;
+        gap_checked: float = -1000.0,
+        # Whether the bot has come to the start of the walk under way.
+        begun: bool = False;
 
     def add(point: Vec3, area: int, launch: Vec3 = Vec3(), passage: Passage | None = None) {
         self.points.append(point);
@@ -627,6 +629,7 @@ obj BotRoute {
         self.noted = False;
         self.gap = 0.0;
         self.gap_checked = -1000.0;
+        self.begun = False;
     }
 
     """Give the route up where the bot stands, so that its way is chosen

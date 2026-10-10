@@ -75,6 +75,10 @@ weapon the movement needs, a movement view, waiting and failure.
   presence type). Ducked, it moves in the crouching player's box at a
   quarter speed and stays ducked while there is no room to stand
   (`PM_CheckDuck`).
+- Walk (`BotTravel_Walk`): straight to the reachability's start, then on to
+  its end from within 10 units of the start, so the bot stays inside the two
+  areas the walk joins (heading for the far end from anywhere in an area can
+  cut a walkway's corner over the void).
 - Gaps (`BotGapDistance` in `BotTravel_Walk`): on a walk leg a bot looks
   100 units ahead ten times a second for the floor falling away by more
   than a step and 8 units, and slows up to it (40 plus 2 a unit); water

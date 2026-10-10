@@ -472,3 +472,21 @@ test "a bot's way keeps clear of live grenades" {
     detour = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0), spots=far_grenade);
     assert detour.found and detour.areas[0] == 2;
 }
+
+test "a walk goes by the reachability's start, then on to its end" {
+    mesh = build_navmesh(World(), strip_aas(2, [(1, 2, TRAVEL_WALK)]));
+    mesh.times_to(2);
+    # From the side of area 1 the far end (x = 128) lies ahead and to the
+    # right; the bot makes for the start (x = 80, y = 0) first.
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=80.0, y=30.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=80.0, y=30.0), Vec3(x=128.0));
+    first = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert first.result.direction.y < -0.99 and not route.begun;
+    # Within 10 units of the start: on for the far end, and no turning back.
+    bot.pos = Vec3(x=80.0, y=6.0, z=26.0);
+    on = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert on.result.direction.x > 0.99 and route.begun;
+    bot.pos = Vec3(x=92.0, y=6.0, z=26.0);
+    still = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert still.result.direction.x > 0.98;
+}

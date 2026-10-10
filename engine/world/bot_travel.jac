@@ -770,7 +770,19 @@ walker FollowRoute {
             }
             return;
         }
-        toward = flat_toward(origin, route.points[0]);
+        # BotTravel_Walk: "first walk straight to the reachability start",
+        # and on to its end from within 10 units of that. The straight line
+        # from anywhere in an area to the far end can leave both areas (off
+        # a walkway's corner); by the start it cannot.
+        aim = route.points[0];
+        if passage is not None and passage.kind == TRAVEL_WALK and route.areas[0] == passage.target and not route.begun {
+            if flat_toward(origin, passage.start)[1] < 10.0 {
+                route.begun = True;
+            } else {
+                aim = passage.start;
+            }
+        }
+        toward = flat_toward(origin, aim);
         speed = 400.0;
         if passage is None {
             # The last leg is in the goal's own area (BotMoveInGoalArea).
