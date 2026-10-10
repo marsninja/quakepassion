@@ -899,7 +899,9 @@ def choose_reaction(
             continue;
         }
         if damage < sequence.min_damage
-            or (sequence.max_damage >= 0 and damage > sequence.max_damage) {
+            or (sequence.max_damage >= 0 and damage > sequence.max_damage)
+            or enemy.health < sequence.min_health
+            or (sequence.max_health >= 0 and enemy.health > sequence.max_health) {
             continue;
         }
         pool.append(i);
@@ -1060,7 +1062,7 @@ def feel_pain(victim: Opponent, taken: int) {
     # A sequence's own sound goes with its frames; the rule's is cried
     # before the Nightmare test, flinch or not.
     if sequence is not None and sequence.sound {
-        if plays {
+        if plays or sequence.cries {
             request_sound(victim, sequence.sound);
         }
     } elif not rule.pain_cry {

@@ -176,6 +176,33 @@ def soldier_attacks(kind: str) -> list[AttackProfile] {
     return attacks;
 }
 
+"""m_insane.c insane_pain: these frames with one of the player's two pain
+cries for the marine's health (under 25, 50 or 75, or more), which it makes
+before its Nightmare test."""
+def insane_pains(name: str, frames: list[str], events: list[FrameEvent]) -> list[Reaction] {
+    return [
+        Reaction(
+            name=name,
+            frames=frames,
+            events=events,
+            sound="sound/player/male/pain" + str(level[0]) + "_" + str(voice) + ".wav",
+            min_health=level[1],
+            max_health=level[2],
+            cries=True
+        )
+        for level in [(25, 0, 24), (50, 25, 49), (75, 50, 74), (100, 75, -1)]
+        for voice in [1, 2]
+    ];
+}
+
+"""insane_die: these frames with one of the player's four death cries."""
+def insane_deaths(name: str, frames: list[str]) -> list[Reaction] {
+    return [
+        Reaction(name=name, frames=frames, sound="sound/player/male/death" + str(cry) + ".wav")
+        for cry in range(1, 5)
+    ];
+}
+
 def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
     # Exploding barrels: Q1 misc.qc barrel_explode (160 radius damage) and Q2
     # g_misc.c barrel_explode (150 plus 40 radius). They take any damage.
@@ -2958,8 +2985,24 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     good_guy=True,
                     speed=0.0,
                     idle_frames=["cross" + str(i) for i in range(1, 16)],
-                    deaths=[Reaction(name="cross", frames=["cross1"])],
-                    pain_sounds=["sound/insane/insane5.wav"],
+                    # insane_pain: crucified, it struggles (cross16-30) with
+                    # insane_scream, one of eight screams. insane_die leaves
+                    # it hanging as it is.
+                    pains=insane_pains(
+                        "struggle_cross",
+                        span("cross", 16, 30),
+                        [
+                            FrameEvent(
+                                frame=0,
+                                sounds=[
+                                    "sound/insane/insane" + str(scream) + ".wav"
+                                    for scream in [1, 2, 3, 4, 6, 8, 9, 10]
+                                ]
+                            )
+                        ]
+                    ),
+                    pain_interval=3.0,
+                    deaths=insane_deaths("cross", ["cross1"]),
                     idle_sound="sound/insane/insane7.wav"
                 );
             }
@@ -2986,18 +3029,13 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     if crawls
                     else ["stand" + str(i) for i in range(60, 66)],
                 # insane_pain, insane_die: the crawling or the standing sequence.
-                pains=[
-                    Reaction(name="crawl_pain", frames=span("cr_pain", 2, 10))
-                        if crawls
-                        else Reaction(name="stand_pain", frames=span("st_pain", 2, 12))
-                ],
+                pains=insane_pains("crawl_pain", span("cr_pain", 2, 10), [])
+                    if crawls
+                    else insane_pains("stand_pain", span("st_pain", 2, 12), []),
                 pain_interval=3.0,
-                deaths=[
-                    Reaction(name="crawl_death", frames=span("cr_death", 10, 16))
-                        if crawls
-                        else Reaction(name="stand_death", frames=span("st_death", 2, 18))
-                ],
-                pain_sounds=["sound/insane/insane1.wav", "sound/insane/insane2.wav", "sound/insane/insane3.wav"],
+                deaths=insane_deaths("crawl_death", span("cr_death", 10, 16))
+                    if crawls
+                    else insane_deaths("stand_death", span("st_death", 2, 18)),
                 idle_sound="sound/insane/insane9.wav",
                 passive=True,
                 good_guy=True

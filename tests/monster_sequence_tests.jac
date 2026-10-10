@@ -909,3 +909,47 @@ test "a Q1 body blocks until the frame its die function clears it" {
     assert heard(zombie, "sound/zombie/z_idle.wav") == 1;
     assert actor_overlap(over, 0.0, zombie) is not None;
 }
+
+test "an insane marine cries with the player's voice for its health" {
+    # insane_pain: pain25, pain50, pain75 or pain100 by its health, either
+    # of two, and it cries on Nightmare though it does not flinch.
+    for row in [(100, 10, 100), (100, 30, 75), (60, 15, 50), (40, 20, 25), (100, 26, 75)] {
+        for skill in [1, 3] {
+            cried: dict[str, int] = {};
+            for seed in range(30) {
+                marine = sequenced("q2", "misc_insane", seed, skill);
+                marine.health = row[0];
+                damage_opponent(marine, row[1]);
+                assert (marine.pain_wait > 0.0) == (skill == 1);
+                for voice in [1, 2] {
+                    path = "sound/player/male/pain" + str(row[2]) + "_" + str(voice) + ".wav";
+                    cried[path] = cried.get(path, 0) + heard(marine, path);
+                }
+                assert len(marine.rule.pains[marine.pain_variant - 1].frames) == 11 or skill == 3;
+            }
+            counts = [count for count in cried.values()];
+            assert counts[0] + counts[1] == 30 and counts[0] > 5 and counts[1] > 5 , str(row[2]);
+        }
+    }
+    # Crawling it has its own frames; crucified it struggles and screams.
+    crawler = enemy_rule("q2", "misc_insane", 4);
+    hung = enemy_rule("q2", "misc_insane", 8);
+    assert crawler is not None and hung is not None;
+    assert len(crawler.pains) == 8 and len(crawler.pains[0].frames) == 9;
+    assert hung.pains[0].frames == ["cross" + str(i) for i in range(16, 31)];
+    assert len(hung.pains[0].events[0].sounds) == 8 and hung.pains[0].events[0].frame == 0;
+    # insane_die: one of the player's four death cries.
+    deaths: dict[str, int] = {};
+    for seed in range(200) {
+        marine = sequenced("q2", "misc_insane", seed);
+        damage_opponent(marine, 120);
+        for cry in range(1, 5) {
+            path = "sound/player/male/death" + str(cry) + ".wav";
+            deaths[path] = deaths.get(path, 0) + heard(marine, path);
+        }
+    }
+    assert len(deaths) == 4 and sum([count for count in deaths.values()]) == 200;
+    for count in deaths.values() {
+        assert count > 25;
+    }
+}

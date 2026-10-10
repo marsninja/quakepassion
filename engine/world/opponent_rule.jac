@@ -155,6 +155,13 @@ obj Reaction {
         min_damage: int = 0,
         max_damage: int = -1,
         chance: float = 1.0,
+        # Drawn only while the monster's health is in this bracket (Q2
+        # insane_pain's cry for under 25, 50 or 75 health, or more).
+        min_health: int = 0,
+        max_health: int = -1,
+        # Pain: its sound is cried even when its frames do not play, the
+        # original crying before its Nightmare test.
+        cries: bool = False,
         # Pain: taken instead of any other while the monster is thrown upward
         # faster than 100 units a second (Q2 soldier_move_pain4,
         # gladiator_move_pain_air). `nightmare` sequences play on Nightmare

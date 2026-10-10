@@ -107,6 +107,11 @@ Details that follow the originals:
     while already flinching. The soldier picks `pain4` before the Nightmare
     test. No other `m_*.c` has this test.
   - A ducked monster's pain function is not called (`T_Damage`).
+  - An insane marine cries with the player's voice for its health
+    (`pain25`, `pain50`, `pain75` or `pain100`, either of two) before its
+    Nightmare test, and dies with one of the player's four death cries.
+    Crucified, it struggles through cross16-30 with one of eight screams
+    (`insane_scream`) and is left hanging as it is when killed.
 - **Death** (`deaths` on each rule):
   - Soldiers fall on `death3` for a head shot, a hit within 4 units of the
     eye (origin plus viewheight 25), and otherwise on `death1`, `death2`,
@@ -158,9 +163,12 @@ Details that follow the originals:
 
 - A dying soldier on `death1` and a dying infantry on `death2` do not fire
   their guns (`soldier_fire6`/`soldier_fire7`, `InfantryMachineGun`).
-- The Makron leaves no torso as it dies (`makron_torso`). The insane marines cry `insane1`-`insane3`
-  rather than the player pain sounds picked by their health, and die silent.
+- The Makron leaves no torso as it dies (`makron_torso`).
   Jorg's small extra resistance to pain while firing is not applied.
+- The insane marines' cries carry as far as any other sound; the original
+  plays them at `ATTN_IDLE`. A standing marine that has lain down by itself
+  (`insane_checkdown`) is not modelled, so only marines spawned crawling take
+  the crawling pain and death.
 - `soldier_sight` always plays `solsght1.wav`, not `solsrch1.wav` half the time.
   The infantry's gun cock (`infantry_cock_gun` on attak104) and the smack of
   a punch that lands are not played.
