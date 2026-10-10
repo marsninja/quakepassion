@@ -85,7 +85,13 @@ game with `QP_GAME` and a directory with `QP_ASSETS`.
 - **`scripts/arena_ladder_walkthrough.jac`** (`QP_LADDER_ONLY`,
   `QP_SECONDS`): plays each Q3 ladder arena with the bots fighting, then gives
   the player the frag limit and checks the podium, postgame and the next
-  arena.
+  arena. Each frame is a sixtieth of a second of game time (`QP_WALK_DT`), as
+  in the campaign walkthrough.
+- **`scripts/bot_obstacle_smoke.jac`** (`QP_MAPS`, `QP_SECONDS`,
+  `QP_VERBOSE`): headless; for every door of a Q3 map that something else
+  opens, sends a lone bot between two spawn points or items whose route runs
+  into the shut door, and reports what it went to activate, when the door
+  opened and when it reached its goal (q3dm7 and q3dm11 by default).
 
 ## Graphical smokes and galleries
 
