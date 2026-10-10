@@ -97,6 +97,17 @@ obj Deform {
         speed: float = 0.0;
 }
 
+# tr_local.h cullType_t: which side of a shader's surfaces is drawn ("cull"
+# with no argument is front-sided; "cull back" draws only the far side).
+glob SHADER_CULL_FRONT: int = 0,
+     SHADER_CULL_BACK: int = 1,
+     SHADER_CULL_NONE: int = 2;
+
+"""One stage of a Q3 shader (tr_shader.c ParseStage). `rgb` is its rgbGen:
+identity, wave, const, vertex, diffuse (lightingDiffuse) or entity and
+oneminusentity (the drawn entity's shaderRGBA); `alpha` its alphaGen:
+identity, wave, const, vertex, portal, specular (lightingSpecular), entity
+or oneminusentity. `cull` is the whole shader's, the same on each stage."""
 obj ModelStage {
     has texture: Texture = Texture(),
         frames: list[Texture] = [],
@@ -117,7 +128,8 @@ obj ModelStage {
         alpha_test: int = 0,
         depth_write: bool = False,
         vectors: list[Vec3] = [],
-        clamp: bool = False;
+        clamp: bool = False,
+        cull: int = 0;
 }
 
 def stage_frame(seconds: float, frequency: float, count: int) -> int {

@@ -77,8 +77,8 @@ Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-fee
 - The player's own body is not thrown as gibs.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
-- Q3 flares are not drawn; `deformVertexes` applies to world surfaces only, and
-  model shaders with unsupported stage features fall back to the plain skin.
+- Q3 flares are not drawn; `deformVertexes` applies to world surfaces only, so
+  the 13 shipped model shaders that use it draw their plain skin.
 - Patches tessellate at a fixed 8 steps; the lightmap atlas is a fixed 2048².
 - No player shadows; repeated models are not instanced.
 

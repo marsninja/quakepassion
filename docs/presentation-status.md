@@ -155,8 +155,9 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   - `alphaFunc` and `depthWrite`.
 - `deformVertexes` `wave`, `move` and `bulge` sway vertices; `autosprite` and
   `autosprite2` turn quads toward the viewer.
-- Model shaders (powerup shells, armor, weapons) run the same tcMods,
-  including rotate and turb.
+- Model shaders (players, items, weapons, powerup shells) draw stage by stage
+  too, lit by `rgbGen lightingDiffuse`; see
+  [models](models-status.md#q3-model-shaders).
 
 ## Effects and dynamic lights
 

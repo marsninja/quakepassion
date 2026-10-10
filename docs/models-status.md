@@ -26,6 +26,42 @@ the frame's dynamic lights.
 - `engine/assets/library.jac` `AssetLibrary.model` loads a model and its skins
   from the archives; Q3 model shaders come from `Pk3Assets.model_stages`.
 
+## Q3 model shaders
+
+A Q3 surface whose skin names a shader script draws that script's stages in
+order, each with its own GL state, as `RB_StageIteratorGeneric` does
+(`UploadedStage`, `engine/render/models.jac`):
+
+- **Blending and depth**: every `blendFunc` factor pair; unblended stages and
+  `depthWrite` ones write depth, the rest do not (`ParseStage`).
+- **`alphaFunc`** `GT0`, `GE128` and `LT128` in the fragment shader (flag
+  skulls, wings, feathers, Xaero's arms).
+- **`cull`**: front-sided by default, `none`/`disable`/`twosided`, and `back`
+  (the medkit's and personal teleporter's fluid draws its far side only).
+- **Colour**: `rgbGen lightingDiffuse` stages take the model's light (the
+  light grid and dynamic lights); a stage without one is full bright, as
+  `CGEN_IDENTITY_LIGHTING` is. `rgbGen`/`alphaGen` `wave` and `const`, and
+  `entity`/`oneMinusEntity` from the drawn entity's `shaderRGBA`.
+- **`alphaGen lightingSpecular`** per vertex in model space with the
+  original's fixed light origin (`RB_CalcSpecularAlpha`): the shine multiplied
+  into `$whiteimage`-lit skins such as Xaero's and Tank Jr.'s.
+- **Texture coordinates**: `tcGen environment` and `vector`, every `tcMod`,
+  `animMap` and `clampMap`. `$whiteimage` and `$lightmap` are white on a model.
+- A skin with no script is one lit stage. A script without stages (hunter's
+  `harpy_f`, `surfaceparm nodraw` alone) draws nothing: its surface is left
+  out of the model (`Pk3Assets.model_hidden`).
+- **Entity colour** (`cg_weapons.c CG_AddPlayerWeapon`): the first-person gun
+  is white, and a railgun's glow climbs from black to magenta over the 1.5 s
+  after a shot; a railgun's muzzle flash takes the player's `color1` (red);
+  everything else keeps a cleared `shaderRGBA`, so the railgun's glow stages
+  are dark on a bot's gun and on the pickup, as in the original.
+
+`scripts/validate_alias_models.jac` lists how each of the 151 shader scripts
+named by a shipped MD3 or `.skin` file is drawn. 136 draw their stages and 1
+is hidden; 14 draw their plain skin: 13 for `deformVertexes` and
+`models/players/brandon/branhat`, whose glow image is not in the archives
+(`ParseStage` fails that shader in the original too).
+
 ## Scene and animation
 
 - A world entity draws through a `Visual` node linked to a shared
@@ -84,6 +120,9 @@ the frame's dynamic lights.
   normals, fullbright skins, baked brush pickups), `model_material_tests`
   (model shader stages), `visual_tests` (`GatherModels`),
   `render_interpolation_tests`, `monster_skin_tests`.
+- `scripts/model_shader_smoke.jac`: three pages of original MD3s whose skins
+  are shader scripts (items and weapons, player parts, map objects), each at
+  two shader times that must differ (`model_shaders_<page>_<n>.png`).
 - Native captures: `scripts/models_smoke.jac` and
   `scripts/alias_models_smoke.jac` (Q2 soldier and berserker, Q1 soldier and
   shambler, Q3 red armor's stages in two time-separated captures that must
@@ -95,13 +134,13 @@ the frame's dynamic lights.
 
 ## Limitations
 
-- Q3 model shaders draw their stages only when every stage feature is one the
-  model renderer handles (tcMods, `tcGen environment`, `animMap`, the standard
-  blends, `rgbGen`/`alphaGen` wave and const, `clampMap`). A shader that also
-  uses, for example, `rgbGen lightingDiffuse`, `alphaFunc`, a custom
-  `blendFunc` or `depthWrite` draws its plain skin; one with directives the
-  parser does not know prints "Partial model material" and does the same
-  (`Pk3Assets.model_stages`).
+- A Q3 model shader with `deformVertexes` draws its plain skin (13 of the
+  shipped ones: flags, Hunter's feathers, Uriel's wings, the BFG ball, the
+  armor shard's glow); so does one with a directive the parser does not know,
+  which prints "Partial model material" (`Pk3Assets.model_blockers`; none of
+  the shipped model shaders).
+- The legacy CPU model path (`QP_RENDER_LEGACY=1`) draws stages without
+  `alphaFunc` and `lightingSpecular`.
 - Q1 model frames blend between keyframes, where Quake's own renderers showed
   each keyframe as is (Q2 lerps frames as here).
 - Repeated models are not instanced.

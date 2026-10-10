@@ -23,10 +23,10 @@ import from vendor.raylib {
     ) -> None;
 }
 import from .quake { rlDrawRenderBatchActive }
-import from .models { ModelRenderer, open_model_pass, end_model_pass }
+import from .models { ModelRenderer, open_model_pass, end_model_pass, MODEL_ENTITY_COLOR }
 import from ..assets.library { AssetLibrary }
 import from ..formats.animated { AnimatedModel, AnimatedSurface }
-import from ..world.models { powerup_shaders, POWERUP_INFLATE, POWERUP_INVISIBLE }
+import from ..world.models { powerup_shaders, POWERUP_INFLATE, POWERUP_INVISIBLE, PLAYER_COLOR1 }
 import from ..world.powerups { Empowered, Powerup }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, model_basis }
@@ -36,6 +36,10 @@ import from ..world.weapons { ViewWeaponRule, GunAnimation, grenade_frame, switc
 import from ..world.models { lerp_tag }
 import from ..world.lighting { Lighting, ModelLight, MODEL_LIGHT_VIEW }
 import from .view_sway { ViewPlacement }
+
+# The railgun's weaponTime after a shot, over which cg_weapons.c
+# CG_AddPlayerWeapon brings its glow back.
+glob RAILGUN_REFIRE: float = 1.5;
 
 obj ViewAsset {
     has rule: ViewWeaponRule,
@@ -256,6 +260,15 @@ obj ViewWeapon {
         # Lit where the frame's view is (the gun entity's origin), as a view
         # weapon: Q1 at least 24, Q2 and Q3 RF_MINLIGHT.
         illumination = lighting.light_model(view.eye, math.degrees(view.yaw), MODEL_LIGHT_VIEW, self.light);
+        # CG_AddPlayerWeapon: the view gun's shaderRGBA is white, but a railgun
+        # between shots (WEAPON_FIRING, weaponTime running down from 1500 ms)
+        # glows from black back to magenta; its flash takes the player's color1.
+        railgun = state.game == "q3" and "railgun" in asset.rule.model;
+        gun_color = [1.0, 1.0, 1.0, 1.0];
+        recharge = (seconds - self.fired_at) / RAILGUN_REFIRE;
+        if railgun and 0.0 <= recharge < 1.0 {
+            gun_color = [recharge, 0.0, recharge, 0.0];
+        }
         # One model pass for the gun, its barrel and flash, under this projection.
         open_model_pass();
         try {
@@ -278,7 +291,8 @@ obj ViewWeapon {
                     illumination=illumination,
                     basis=basis,
                     overlay=shell,
-                    inflate=POWERUP_INFLATE.get(shader, 0.0)
+                    inflate=POWERUP_INFLATE.get(shader, 0.0),
+                    entity_color=gun_color
                 );
             }
             if asset.barrel.stages and asset.drawing.model.tags {
@@ -329,7 +343,8 @@ obj ViewWeapon {
                                 forward=basis.apply(mount.apply(turned.forward)),
                                 left=basis.apply(mount.apply(turned.left)),
                                 up=basis.apply(mount.apply(turned.up))
-                            )
+                            ),
+                            entity_color=PLAYER_COLOR1 if railgun else MODEL_ENTITY_COLOR
                         );
                         break;
                     }

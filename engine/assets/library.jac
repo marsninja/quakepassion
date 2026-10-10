@@ -110,6 +110,11 @@ obj AssetLibrary {
             }
         } elif self.game == "q3" {
             model = parse_md3(self.read(name));
+            # A surface whose shader has nothing to draw is left out.
+            model.surfaces = [
+                surface for surface in model.surfaces
+                if skin < 0 or skin >= len(surface.skins) or not self.pk3.model_hidden(surface.skins[skin])
+            ];
             for surface in model.surfaces {
                 if skin < 0 or skin >= len(surface.skins) {
                     raise ValueError("MD3 surface needs a skin mapping");

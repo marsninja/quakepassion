@@ -6,13 +6,7 @@ import os;
 import from zipfile { ZipFile }
 import from ..formats.bsp { Texture }
 import from .materials { ModelMaterial, model_materials, material_name }
-import from ..formats.animated { ModelStage, Deform }
-
-# The stage features beyond a plain map that models draw (render/models.jac):
-# rgbGen and alphaGen waves and constants, and clamped maps.
-glob MODEL_STAGE_FEATURES: list[str] = [
-    "rgbgen wave", "rgbgen const", "alphagen wave", "alphagen const", "clampmap"
-];
+import from ..formats.animated { ModelStage, Deform, SHADER_CULL_BACK }
 
 obj Pk3Assets {
     has archives: list[ZipFile] = [],
@@ -221,40 +215,37 @@ obj Pk3Assets {
         }
     }
 
-    """A model shader's stages, with their tcMods. `deformed` accepts
-    shaders whose vertex deforms the caller applies itself (Q3's powerup
-    shells)."""
+    """A model shader's stages with their images loaded, for the model
+    renderer (render/models.jac), or none when the name has no script, the
+    script has no stages (the model then draws nothing of it, see
+    `model_hidden`) or it uses a directive the parser does not know.
+    `$whiteimage` and `$lightmap` are white on a model, which has no lightmap
+    (tr_shader.c ParseStage). `deformed` accepts shaders whose vertex deforms
+    the caller applies itself (Q3's powerup shells)."""
     def model_stages(name: str, deformed: bool = False) -> list[ModelStage] {
         key = material_name(name);
         if key not in self.model_shaders {
             return [];
         }
         material = self.model_shaders[key];
-        if material.unsupported {
-            print("Partial model material:", name, material.unsupported);
-            return [];
-        }
-        # Surface-only stage features keep models on their plain skin; the
-        # model renderer draws waved and constant colours and clamped maps.
-        for feature in material.advanced {
-            if feature not in MODEL_STAGE_FEATURES and not (deformed and feature.startswith("deformvertexes")) {
-                return [];
+        if self.model_blockers(name, deformed) {
+            if material.unsupported {
+                print("Partial model material:", name, material.unsupported);
             }
+            return [];
         }
         result: list[ModelStage] = [];
         for stage in material.stages {
-            texture = self.model_image(stage.texture.name, material.two_sided);
-            frames = [
-                self.model_image(frame.name, material.two_sided)
-                for frame in stage.frames
-            ];
+            plain = stage.white or stage.lightmap;
             result.append(
                 ModelStage(
-                    texture=texture,
-                    frames=frames,
+                    texture=white_texture() if plain else self.model_image(stage.texture.name, material.two_sided),
+                    frames=[self.model_image(frame.name, material.two_sided) for frame in stage.frames],
                     frequency=stage.frequency,
                     environment=stage.environment,
                     blend=stage.blend,
+                    blend_source=stage.blend_source,
+                    blend_destination=stage.blend_destination,
                     rgb=stage.rgb,
                     rgb_wave=stage.rgb_wave,
                     rgb_const=stage.rgb_const,
@@ -262,11 +253,52 @@ obj Pk3Assets {
                     alpha_wave=stage.alpha_wave,
                     alpha_const=stage.alpha_const,
                     mods=stage.mods,
-                    clamp=stage.clamp
+                    alpha_test=stage.alpha_test,
+                    depth_write=stage.depth_write,
+                    vectors=stage.vectors,
+                    clamp=stage.clamp,
+                    cull=material.cull
                 )
             );
         }
         return result;
+    }
+
+    """Why a scripted model shader draws as its plain skin instead of its
+    stages: the directives the parser does not know, images the archives
+    lack, and vertex deforms unless the caller applies them (`deformed`).
+    Empty when it draws."""
+    def model_blockers(name: str, deformed: bool = False) -> list[str] {
+        key = material_name(name);
+        if key not in self.model_shaders {
+            return [];
+        }
+        material = self.model_shaders[key];
+        blockers = list(material.unsupported);
+        if material.deformed and not deformed {
+            blockers.append("deformvertexes");
+        }
+        # tr_shader.c ParseStage fails a shader whose image is not found.
+        for stage in material.stages {
+            if stage.white or stage.lightmap {
+                continue;
+            }
+            for image in (stage.frames if stage.frames else [stage.texture]) {
+                if not self.image_name(image.name) {
+                    blockers.append("missing image " + image.name);
+                }
+            }
+        }
+        return blockers;
+    }
+
+    """Whether a model surface with this shader is not drawn at all: a script
+    without stages (hunter's harpy_f, `surfaceparm nodraw` alone) fails
+    tr_shader.c ParseShader, and the default shader FinishShader leaves in
+    its place has no stage to draw."""
+    def model_hidden(name: str) -> bool {
+        key = material_name(name);
+        return key in self.model_shaders and not self.model_shaders[key].stages and not self.model_shaders[key].sky;
     }
 
     """The ordered stages of a BSP surface shader, images loaded, when the
@@ -279,7 +311,10 @@ obj Pk3Assets {
         }
         material = self.model_shaders[key];
         # Skies keep their sky-box drawing; their cloud layers belong on the dome.
-        if material.sky or material.unsupported or not material.stages or not layered_material(material) {
+        # Back-sided surface shaders (a few fog and darkness volumes) keep the
+        # one-pass drawing too.
+        if material.sky or material.unsupported or material.cull == SHADER_CULL_BACK or not material.stages
+            or not layered_material(material) {
             return [];
         }
         result: list[ModelStage] = [];
@@ -408,6 +443,11 @@ obj SkyParts {
     has farbox: list[Texture] = [],
         cloud_height: float = 128.0,
         clouds: list[ModelStage] = [];
+}
+
+"""tr_image.c tr.whiteImage: one opaque white texel."""
+def white_texture -> Texture {
+    return Texture(name="$whiteimage", width=1, height=1, pixels=b"\xff\xff\xff\xff");
 }
 
 def image_extension(path: str) -> str {

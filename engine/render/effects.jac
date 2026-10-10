@@ -10,7 +10,7 @@ RB_SurfaceSprite). Quads draw in the old order, one instanced draw per run
 of the same texture and blend."""
 import math;
 import struct;
-import from .models { ModelRenderer }
+import from .models { ModelRenderer, upload_skin }
 import from ..math.orientation { Basis, model_basis }
 import from ..formats.animated { AnimatedModel, AnimatedSurface, ModelStage, stage_frame }
 import from ..world.lighting { Lighting }
@@ -617,7 +617,7 @@ obj EffectScene {
         for stage in stages {
             textures: list[int] = [];
             for image in (stage.frames if stage.frames else [stage.texture]) {
-                texture = QuakeRenderer().upload_image(image);
+                texture = upload_skin(image);
                 self.textures.append(texture);
                 if stage.clamp {
                     rlTextureParameters(u32(texture), i32(10242), i32(33071));

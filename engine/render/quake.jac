@@ -1667,7 +1667,8 @@ obj QuakeRenderer {
             two_sided=level.bsp.textures[t].two_sided or t in level.surface_deforms,
             images=self.stage_images[t][k],
             light=self.stage_images[t][k][0] < 0,
-            rgb_mode=1 if stage.rgb == "vertex" else 0,
+            # A world surface's lightingDiffuse is the light baked into its vertices.
+            rgb_mode=1 if stage.rgb in ["vertex", "diffuse"] else 0,
             fog_mode=fog_adjustment(stages[0], stage) if level.bsp.fogs else 0
         );
         if stage.alpha == "vertex" {
