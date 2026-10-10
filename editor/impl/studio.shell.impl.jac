@@ -37,6 +37,20 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
     if app is None {
         return False;
     }
+    if name == "ed_palette" {
+        if stage is None {
+            return True;
+        }
+        entries: list[PaletteEntry] = [];
+        for (known, usage, about) in STUDIO_COMMANDS {
+            if not known.startswith("ui_") {
+                entries.append(PaletteEntry(command=known, usage=usage, about=about));
+            }
+        }
+        chooser = Palette(entries=entries);
+        chooser.open_in(stage);
+        return True;
+    }
     if name == "ed_grid" {
         word = args[1] if len(args) > 1 else "";
         size = self.grid;
@@ -177,4 +191,50 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.draw_marks(shape: Shape) {
+    item = shape.item;
+    middle = shape.center();
+    facing = item.fields.get("angle");
+    if facing is not None {
+        try {
+            turn = float(facing);
+            ahead = Vec3(z=1.0);
+            if turn == -2.0 {
+                ahead = Vec3(z=-1.0);
+            } elif turn != -1.0 {
+                ahead = Vec3(x=math.cos(math.radians(turn)), y=math.sin(math.radians(turn)));
+            }
+            # An arrow the way it faces.
+            tip = middle.add(ahead.scale(48.0));
+            wire_line(middle, tip, ink(0x4cc38a));
+            side = Vec3(x=-ahead.y, y=ahead.x) if abs(ahead.z) < 0.5 else Vec3(x=1.0);
+            wire_line(tip, tip.sub(ahead.scale(12.0)).add(side.scale(6.0)), ink(0x4cc38a));
+            wire_line(tip, tip.sub(ahead.scale(12.0)).sub(side.scale(6.0)), ink(0x4cc38a));
+        } except ValueError {
+            return;
+        }
+    }
+    if item.classname().startswith("light") {
+        reach = 300.0;
+        try {
+            reach = float(item.fields.get("light", "300").split()[0]);
+        } except (ValueError, IndexError) {
+            reach = 300.0;
+        }
+        # How far it lights, as a ring in each of the three planes.
+        far = max(64.0, reach * 2.0);
+        for i in range(32) {
+            first = 2.0 * math.pi * float(i) / 32.0;
+            second = 2.0 * math.pi * float(i + 1) / 32.0;
+            a = far * math.cos(first);
+            b = far * math.sin(first);
+            c = far * math.cos(second);
+            d = far * math.sin(second);
+            wire_line(middle.add(Vec3(x=a, y=b)), middle.add(Vec3(x=c, y=d)), ink(0xf5d90a, 150));
+            wire_line(middle.add(Vec3(x=a, z=b)), middle.add(Vec3(x=c, z=d)), ink(0xf5d90a, 90));
+            wire_line(middle.add(Vec3(y=a, z=b)), middle.add(Vec3(y=c, z=d)), ink(0xf5d90a, 90));
+        }
+    }
 }

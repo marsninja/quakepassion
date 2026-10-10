@@ -50,7 +50,9 @@ import from .ui.widgets {
     Dropdown,
     Swatch,
     Check,
-    Picture
+    Picture,
+    Palette,
+    PaletteEntry
 }
 import from .assets.explorer { AssetIndex, AssetLook }
 import from .assets.models { ModelLook, load_model, is_model }
@@ -176,6 +178,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_layout <1|4|logic|assets>",
         "one level view, four (3D, top, front and side), the logic graph, or the asset explorer"
     ),
+    ("ed_palette", "ed_palette", "open the list of every studio command, to find one by typing"),
     ("ed_grid", "ed_grid <size|up|down>", "the grid moves and resizes snap to (1 to 256)"),
     ("ed_mark", "ed_mark [name]", "remember where the camera is, in the document"),
     ("ed_goto", "ed_goto <name|next>", "put the camera where it was remembered"),
@@ -701,6 +704,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Turn this level into brushes", command="ed_convert"),
                     MenuItem(text="Revert to the shipped map", command="ed_revert"),
                     MenuItem(rule=True),
+                    MenuItem(text="Run a command", command="ed_palette", keys="Ctrl+P"),
                     MenuItem(text="Leave the studio", command="edit", keys="F8"),
                     MenuItem(text="Quit", command="quit")
                 ],
@@ -1581,6 +1585,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_box");
             } elif key == "r" {
                 stage.emit("ed_rotate 90");
+            } elif ctrl and key == "p" {
+                stage.emit("ed_palette");
             } elif ctrl and key == "h" {
                 stage.emit("ed_hide others");
             } elif key == "h" {
@@ -1892,6 +1898,7 @@ obj Studio(Workbench) {
                 wire_box(shape.low.add(self.move_by), shape.high.add(self.move_by), ink(0xff7a18));
             }
             wire_box(shape.low, shape.high, ink(0xffffff));
+            self.draw_marks(shape);
             target = shape.item.fields.get("target", "");
             name = shape.item.fields.get("targetname", "");
             for other in self.shapes {
@@ -1905,6 +1912,12 @@ obj Studio(Workbench) {
                 if name and other.item.fields.get("target", "") == name {
                     wire_line(other.center(), shape.center(), ink(0xf5d90a));
                     wire_box(other.low, other.high, ink(0xf5d90a));
+                }
+                # What it removes when it fires, in red.
+                doomed = shape.item.fields.get("killtarget", "");
+                if doomed and other.item.fields.get("targetname", "") == doomed {
+                    wire_line(shape.center(), other.center(), ink(0xe5484d));
+                    wire_box(other.low, other.high, ink(0xe5484d));
                 }
             }
         }
@@ -1945,7 +1958,12 @@ obj Studio(Workbench) {
             return;
         }
         stage.paint();
-        # Over each level view, through its own camera.
+        # Over each level view, through its own camera: unless a menu, a
+        # list or the palette is open over them.
+        if len(stage.layers()) > 1 {
+            self.canvas.unclip();
+            return;
+        }
         watched = self.port_now;
         for index in range(self.showing()) {
             self.watch(index);
@@ -2119,6 +2137,9 @@ obj Studio(Workbench) {
     time has passed (or at once, when `now`)."""
     def autosave(dt: float, now: bool);
     def autosave_path(name: str) -> str;
+    """What a selected entity says of itself in the level: the way it
+    faces, and how far a light reaches."""
+    def draw_marks(shape: Shape);
 
     # ------------------------------------------------------------------
     # Terrain (impl/studio.terrain.impl.jac)

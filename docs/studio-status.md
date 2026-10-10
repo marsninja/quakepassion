@@ -62,6 +62,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   where the camera is in the document; `ed_goto <name|next>` returns to it.
   View > Look at everything frames the whole level.
 - **End** lets the selection down onto what is beneath it (`ed_drop`).
+- **The palette** (Ctrl+P, File > Run a command): a line to type into with
+  every studio command that matches listed beneath, best first. Enter runs
+  the one that is lit, or what was typed when it has words after the
+  command; Tab takes the lit command's name ready for its words.
+- A selected entity shows the way it faces as an arrow, a selected light
+  how far it reaches as rings, and what it `killtarget`s in red.
 - **History** (Edit > History, `ed_history`) lists the last edits, newest
   first; choosing one undoes it and everything after it.
 - **Autosave**: a scene that has changed is written every half minute to
@@ -359,8 +365,9 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/handy_session.cfg` (12 steps: the grid by command and
   by its keys, a brush lifted and dropped back with End, a view remembered
   and returned to, hiding with H and Shift+H and everything else with a
-  command, two edits undone from the history list, an autosave, a
-  selection by field).
+  command, two edits undone from the history list, a command typed into
+  the palette and another found by a few letters, an autosave, a selection
+  by field).
   `scripts/studio/terrain_session.cfg` (7 steps: a terrain made, raised
   by a command, raised further by dragging the brush over it, lowered with
   Shift, flattened, given back heights written to an image, saved, played).

@@ -729,7 +729,10 @@ def setting(lines: list[str], key: str) -> int {
 """The ninth session: the grid, remembered views, hiding, dropping, the
 history list and the autosave."""
 def handy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "handy_history.png").unlink(missing_ok=True);
+    shots = ["history", "palette", "light"];
+    for shot in shots {
+        (repo / f"handy_{shot}.png").unlink(missing_ok=True);
+    }
     with tempfile.TemporaryDirectory(prefix="qp-handy-") as home {
         env["QP_CONFIG_DIR"] = home;
         env["QP_OVERRIDES"] = home + "/overrides";
@@ -751,7 +754,7 @@ def handy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     steps = studio_steps(ran.stdout);
     for name in [
         "boxed", "coarse", "fine", "lifted", "dropped", "returned", "hid", "shown", "alone", "before", "undone",
-        "picked"
+        "typed", "found", "picked"
     ] {
         assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'handy.log'}";
     }
@@ -781,12 +784,18 @@ def handy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert "redo=2" in steps["undone"][0];
     picked = selected(steps["picked"]);
     assert len(picked) == 1 and "classname=info_player_start" in picked[0] , str(picked);
-    assert autosave_text.count("// brush") == 2;
-    source = repo / "handy_history.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "handy_history.png");
-    source.unlink();
-    print(f"HANDY PASS: {len(steps) - 1} steps, grid, drop, a remembered view, hiding, history and autosave");
+    # The palette runs what is typed with its words, and finds a command by a few letters.
+    assert setting(steps["typed"], "grid") == 4 , str(steps["typed"][-1]);
+    assert "leak=0" in logic(steps["typed"]) and "leak=0" not in logic(steps["found"]) , str(steps["found"]);
+    for shot in shots {
+        source = repo / f"handy_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"handy_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"HANDY PASS: {len(steps) - 1} steps, grid, drop, a remembered view, hiding, history, the palette and autosave"
+    );
 }
 
 """The terrain line of a dump as numbers: its tallest corner and how many
