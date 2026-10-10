@@ -11,7 +11,8 @@ import from engine.render.view_sway {
     q1_view_roll,
     view_sway_for
 }
-import from engine.render.view_feedback { ViewFeedback }
+import from engine.render.view_feedback { ViewFeedback, third_person_view }
+import from engine.physics.collision { CollisionMap }
 import from engine.world.world { Player }
 import from engine.math.vec3 { Vec3, forward_from }
 
@@ -153,14 +154,24 @@ test "the view places the eye from the body, or shows the dead view" {
     dipped = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0);
     assert abs(dipped.eye.z - 84.0) < 0.0001 and abs(dipped.gun.z - 80.0) < 0.0001;
     player.health = 0;
-    # The dead view is from the eye of the body where it lies, with no dip.
+    # Q3 shows its dead from outside (CG_OffsetThirdPersonView): 40 behind
+    # the body's eye and 8 above it, looking over it toward the killer.
     killer = Player(pos=Vec3(y=200.0, z=100.0));
     player.killer = killer;
-    dead = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, dead=True);
-    assert dead.eye.z == 100.0 and abs(math.degrees(dead.roll) - 40.0) < 0.0001;
-    assert abs(math.degrees(dead.pitch) - 15.0) < 0.0001 and abs(math.degrees(dead.yaw) - 90.0) < 0.0001;
-    # Q1 rolls the player's own view over; Q2 looks at the killer as Q3 does.
     player.pitch = math.radians(-20.0);
+    dead = view.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, dead=True);
+    assert abs(dead.eye.x) < 0.0001 and abs(dead.eye.y + 40.0) < 0.0001;
+    assert abs(dead.eye.z - 108.0) < 0.0001 and dead.roll == 0.0;
+    assert abs(math.degrees(dead.yaw) - 90.0) < 0.0001;
+    assert abs(math.degrees(dead.pitch) + 0.8303) < 0.001;
+    # Q2's dead view is from the eye of the body where it lies, with no dip,
+    # rolled over and looking up at the killer.
+    lying = ViewFeedback();
+    lying.reset("q2");
+    down = lying.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, dead=True);
+    assert down.eye.z == 100.0 and abs(math.degrees(down.roll) - 40.0) < 0.0001;
+    assert abs(math.degrees(down.pitch) - 15.0) < 0.0001 and abs(math.degrees(down.yaw) - 90.0) < 0.0001;
+    # Q1 rolls the player's own view over.
     q1 = ViewFeedback();
     q1.reset("q1");
     fallen = q1.place(player, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, dead=True);
@@ -172,6 +183,58 @@ test "the view places the eye from the body, or shows the dead view" {
     q2.landing(20.0, 0.0);
     assert abs(q2.eye_drop() - 8.0) < 0.00001;
     assert view_sway_for("passion").place(player, ViewBase(eye=Vec3(z=5.0)), 0.0, 1.0).gun.z == 5.0;
+}
+
+test "Q3's death camera is CG_OffsetThirdPersonView, worked by hand" {
+    # cg_thirdPersonRange 40, cg_thirdPersonAngle 0, FOCUS_DISTANCE 512. A
+    # level view: 40 back and 8 up, pitched down by atan(8 / 552).
+    level = third_person_view(Vec3(x=10.0, y=20.0, z=100.0), 0.0, 0.0);
+    assert level.eye.sub(Vec3(x=-30.0, y=20.0, z=108.0)).length() < 0.0001;
+    assert abs(math.degrees(level.pitch) + 0.8303) < 0.001 and level.yaw == 0.0 and level.roll == 0.0;
+    side = third_person_view(Vec3(z=100.0), math.pi / 2.0, 0.0);
+    assert side.eye.sub(Vec3(y=-40.0, z=108.0)).length() < 0.0001;
+    assert abs(math.degrees(side.pitch) + 0.8303) < 0.001;
+    # Looking 80 degrees down: the focus pitch stops at 45 ("don't go too
+    # far overhead") while the camera swings by half the view's pitch, 40.
+    steep = third_person_view(Vec3(z=100.0), 0.0, 80.0);
+    assert steep.eye.sub(Vec3(x=-30.6418, z=133.7115)).length() < 0.001;
+    assert abs(math.degrees(steep.pitch) + 45.2231) < 0.001;
+    # Looking 30 degrees up: the camera drops behind by 15.
+    up = third_person_view(Vec3(z=100.0), 0.0, -30.0);
+    assert up.eye.sub(Vec3(x=-38.637, z=97.6472)).length() < 0.001;
+    assert abs(math.degrees(up.pitch) - 28.1893) < 0.001;
+    # A wall 20 behind the eye stops the 8 unit box 16 back, 0.4 of the way;
+    # the camera rises 0.6 * 32 from there and is traced again.
+    collision = CollisionMap();
+    collision.add_box(
+        Vec3(x=-100.0, y=-500.0, z=-500.0),
+        Vec3(x=-20.0, y=500.0, z=500.0),
+        Vec3(),
+        Vec3(x=-16.0, y=-16.0, z=-24.0),
+        Vec3(x=16.0, y=16.0, z=32.0)
+    );
+    collision.reindex();
+    walled = third_person_view(Vec3(z=100.0), 0.0, 0.0, collision);
+    assert abs(walled.eye.x + 16.0) < 0.2 and walled.eye.y == 0.0;
+    assert abs(walled.eye.z - 122.4) < 0.3 and abs(math.degrees(walled.pitch) + 2.4293) < 0.05;
+    # In a tunnel the second trace stops under the ceiling (here 110 up: the
+    # box's centre gets to 106, 6 / 22.4 of the way).
+    collision.add_box(
+        Vec3(x=-500.0, y=-500.0, z=110.0),
+        Vec3(x=500.0, y=500.0, z=200.0),
+        Vec3(),
+        Vec3(x=-16.0, y=-16.0, z=-24.0),
+        Vec3(x=16.0, y=16.0, z=32.0)
+    );
+    collision.reindex();
+    tunnel = third_person_view(Vec3(z=100.0), 0.0, 0.0, collision);
+    assert abs(tunnel.eye.x + 4.2857) < 0.2 and abs(tunnel.eye.z - 106.0) < 0.2;
+    # The view carries its collision to the camera.
+    q3 = ViewFeedback();
+    q3.reset("q3");
+    body = Player(pos=Vec3(z=100.0), health=0);
+    seen = q3.place(body, Vec3(z=100.0), True, 0.0, 0.0, 1.0, 0.0, dead=True, collision=collision);
+    assert seen.eye.sub(tunnel.eye).length() < 0.0001 and seen.pitch == tunnel.pitch;
 }
 
 test "an intermission camera has no bob or kick; Q1's sways idly" {

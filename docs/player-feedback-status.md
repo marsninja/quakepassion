@@ -94,10 +94,22 @@ pitch/roll kick), Q2 `P_DamageFeedback` (damage blend and kick by health) and
 Q3 `CG_DamageFeedback` with the `viewBloodBlend` blob toward the hit. Liquids
 tint the view when the eye is under (Q1 `V_SetContentsColor`, Q2
 `SV_CalcBlend`), and pickups flash gold (Q1 `V_BonusFlash_f`, Q2
-`bonus_alpha`). The dead view is from the eye of the body where it lies (see
-Death below): Q1 `V_CalcViewRoll` rolls the player's own view 80 degrees,
-which the mouse still turns; Q2 `SV_CalcViewOffset` and Q3 fix it rolled 40
-degrees and looking 15 up toward the killer (`LookAtKiller`).
+`bonus_alpha`). The Q1 and Q2 dead views are from the eye of the body where
+it lies (see Death below): Q1 `V_CalcViewRoll` rolls the player's own view 80
+degrees, which the mouse still turns; Q2 `SV_CalcViewOffset` fixes it rolled
+40 degrees and looking 15 up toward the killer (`LookAtKiller`).
+
+Q3 shows its dead player from outside (`CG_CalcViewValues` renders third
+person whenever health is gone). `third_person_view` is
+`CG_OffsetThirdPersonView`: from the body's eye the camera backs off 40 units
+(`cg_thirdPersonRange`) and rises 8, facing `STAT_DEAD_YAW` (toward the
+killer) and pitched to look at a point 512 units ahead of the eye; the dead
+player's own view angles are level, so the 45 degree cap on the focus pitch
+never binds. An 8 unit box traced from the eye keeps the camera out of walls:
+stopped short, it rises by 32 units of the fraction it lost and is traced
+again. The player's own body is drawn in this view, dying, lying dead or
+gone to gibs ([player bodies](player-bodies-status.md)), there is no
+crosshair, and the level is culled from where the camera stands.
 
 Moving sways the view per game (`engine/render/view_sway.jac`):
 
@@ -216,7 +228,9 @@ left.
   game's health, the Q1 and Q2 head and its eye, and Q2 and Q3 bodies shot
   until they burst.
 - `tests/view_sway_tests.jac` (bob, roll, gun lag, Q2 shot kick, dead and
-  intermission views), `tests/render_interpolation_tests.jac`,
+  intermission views, and Q3's death camera against numbers worked by hand
+  from `CG_OffsetThirdPersonView`: level, pitched down past the cap, pitched
+  up, against a wall and in a tunnel), `tests/render_interpolation_tests.jac`,
   `tests/step_view_tests.jac`.
 - `scripts/player_feedback_smoke.jac` renders each game's rocket and grenade
   explosions, the Q1/Q3 lightning beam, Q2/Q3 rail trails, the damage flash,
@@ -229,7 +243,9 @@ left.
   and the buttons bring the player back after their waits. Then a blow 300
   past zero in each game: three, four and eleven gibs fly, the Q1 and Q2
   player comes to rest as the head, and a Q2 and a Q3 body shot twice where
-  it lies bursts on the second hit.
+  it lies bursts on the second hit. In Q3 the death camera is on with the
+  body in view (and out of it once gibbed), and the respawn leaves the body
+  in the queue. Captures: `qp_death_<game>.png`, `qp_death_gib_<game>.png`.
   `scripts/gameplay_smoke.jac` checks the same waits, and Enter, from the
   keyboard.
 

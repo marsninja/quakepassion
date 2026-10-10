@@ -98,7 +98,7 @@ import from ..world.combat {
     KillBox,
     ClearActors
 }
-import from ..world.vitals { CrashLand, VoiceTick, q3_gibbed }
+import from ..world.vitals { CrashLand, VoiceTick }
 import from ..world.demise { LieDead, mortality_of, in_touch, stand_again }
 import from games.deaths { prepare_death }
 import from ..world.particles { Explosion, HasExplosion, ImpactSound, HasImpactSound }
@@ -121,7 +121,8 @@ import from ..world.turrets { TurretTick, HasTurret }
 import from ..world.podium { PodiumTick, arena_intermission, raise_podium }
 import from ..render.portal { PortalTarget, draw_portal_view }
 import from ..render.hud_models { HudModels, head_view }
-import from ..world.reflection { show_body, follow_body }
+import from ..world.reflection { PlayerBody, HasBody, show_body, follow_body }
+import from ..world.body_queue { leave_corpse }
 import from ..world.drops { toss_items, TossTick }
 import from ..world.monster_count { monster_total }
 import from ..world.area_portals { AreaPortalTick, open_portals, areas_connected }
@@ -374,6 +375,8 @@ obj App {
     """Whether the player is in the level to touch its triggers, items,
     exits, teleporters, hazards and door fields (in_touch)."""
     def in_touch() -> bool;
+    """cg_view.c renderingThirdPerson: Q3 shows its dead player from outside."""
+    def third_person() -> bool;
     """Take the level-entry autosave and count the level's monsters."""
     def record_entry();
     """SV_Map's film or picture step: play `film` (or show `destination`

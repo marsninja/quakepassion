@@ -179,9 +179,15 @@ impl App.render_frame() {
             dead=p.health <= 0 and game in ["q1", "q2", "q3"] and not self.finale_active,
             # Q3's podium is its intermission (PM_INTERMISSION): the view is
             # the intermission point's, without bob, kick or the dead roll.
-            intermission=self.finale_active or self.postgame is not None
+            intermission=self.finale_active or self.postgame is not None,
+            collision=self.level.collision
         );
         eye = placed.eye;
+        # Q3's death camera stands off from the body, and sees what is
+        # visible from where it stands.
+        if self.third_person() {
+            faces = self.level.visible(self.world, eye, self.culling());
+        }
         view_yaw = placed.yaw;
         view_pitch = placed.pitch;
         view_roll = placed.roll;
@@ -1091,7 +1097,7 @@ impl App.step() -> bool {
         if self.level.bsp.game == "q3" {
             # cg_event.c: the player's own body cues its pain, death, jumps,
             # landings and footsteps in its character's voice.
-            for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots, q3_gibbed(self.player)) {
+            for cue in follow_body(self.world, self.player, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, hurt, self.combat.shots) {
                 self.audio.play_path(cue);
             }
         }
@@ -1830,6 +1836,14 @@ impl App.in_touch() -> bool {
     return in_touch(self.player, self.walking, self.finale_active);
 }
 
+impl App.third_person() -> bool {
+    return self.level.active
+        and self.level.bsp.game == "q3"
+        and self.player.health <= 0
+        and not self.finale_active
+        and self.postgame is None;
+}
+
 impl App.record_entry() {
     self.total_monsters = monster_total(self.world);
     self.entry_save = "";
@@ -2308,6 +2322,18 @@ impl App.respawn_arena_player() {
     choice = self.world spawn ChooseSpawn(avoid=avoid, seed=self.combat.random_state);
     spot = choice.pick();
     player = self.player;
+    # CopyToBodyQue: the body stays where it lay, unless it has gibbed.
+    for lying in [self.world->:HasBody:->][?:PlayerBody] {
+        leave_corpse(
+            self.world,
+            player,
+            lying.body,
+            -player.death_overkill,
+            mortality_of(player).rule.gibs,
+            None,
+            self.level.collision.eye_height
+        );
+    }
     stand_again(player, self.level.collision, self.level.movement);
     player.inventory = Inventory();
     equip_player(player, self.combat, self.level.bsp.game);
@@ -2357,7 +2383,8 @@ impl App.finish_arena(contest: ArenaMatch, advance: bool = True) {
 """Render the view through the first on-screen portal before the main view."""
 impl App.render_portal(faces: list[int]) {
     p = self.player;
-    # RF_THIRD_PERSON: the player's body shows only in the portal view.
+    # RF_THIRD_PERSON: the player's body shows only in the portal view,
+    # until the death view shows it in the main one too (CG_Player).
     here = self.level.areas[self.level.locate(p.pos)] if self.level.areas else None;
     show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, True, here, self.combat.shots);
     draw_portal_view(
@@ -2375,7 +2402,7 @@ impl App.render_portal(faces: list[int]) {
         self.simulation_time,
         self.tick_blend
     );
-    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, False);
+    show_body(self.world, p, self.level.collision.eye_height, selected_weapon(self.combat).key, self.simulation_time, self.third_person(), here, self.combat.shots);
 }
 
 """Q3 BeginIntermission in single player: the view moves to the intermission
@@ -2758,7 +2785,9 @@ impl App.hud_status() -> HudStatus {
         ammo_warning=self.ammo_warning if game == "q3" and p.health > 0 else 0,
         # cg.damageTime and cg.damageX from CG_DamageFeedback (DAMAGE_TIME 0.5 s).
         damage_age=0.5 - self.view.blob_time if game == "q3" and self.view.blob_time > 0.0 else -1.0,
-        damage_x=self.view.blob_x
+        damage_x=self.view.blob_x,
+        # CG_DrawCrosshair: none in the third-person view.
+        crosshair=not self.third_person()
     );
 }
 

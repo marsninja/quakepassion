@@ -3,8 +3,10 @@ run on around the body: it lies in its game's form touching nothing, a
 missile lands, a door opens and closes, an alerted monster goes back to its
 stand, saving is refused, and the buttons bring the player back. Then a
 blow far past zero: the body's gibs fly and the player rides the head (Q1,
-Q2) or is gone (Q3), and a Q2 body shot where it lies bursts then. Captures
-qp_death_<game>.png and qp_death_gib_<game>.png."""
+Q2) or is gone (Q3), and a Q2 body shot where it lies bursts then. Q3 shows
+its dead player from outside, the body dying in view, and leaves the body
+behind on the respawn. Captures qp_death_<game>.png and
+qp_death_gib_<game>.png."""
 import os;
 import from engine.core.app { App }
 import from engine.core.clock { Clock }
@@ -16,6 +18,8 @@ import from engine.world.pickups { Pickup, HasPickup }
 import from engine.world.arena { match_of }
 import from engine.world.demise { Mortality, HasMortality, mortality_of, body_struck }
 import from engine.world.gibs { Gib, HasGib, GibsInto }
+import from engine.world.reflection { PlayerBody, HasBody }
+import from engine.world.body_queue { Corpse, HasCorpse }
 import from engine.world.damage { Damage }
 import from engine.math.vec3 { Vec3 }
 import from scripts.input_events { event, key }
@@ -102,6 +106,14 @@ with entry {
             assert fallen.dead and app.simulation_time > before + 0.2;
             assert lying.eye_height == rule.lying.eye_height and lying.top_drop == rule.lying.top_drop;
             assert not app.in_touch();
+            # CG_CalcViewValues: Q3 renders its dead in third person, the
+            # body in view, 40 units off (less against a wall) and 8 up.
+            assert app.third_person() == (game == "q3");
+            if game == "q3" {
+                rig = [app.world->:HasBody:->][?:PlayerBody][0].body;
+                assert rig.visible and not rig.alive and rig.weapon == "";
+                print("DEATH q3 body in view, legs sequence", rig.legs_anim);
+            }
             print("DEATH", game, "form eye", lying.eye_height, "top drop", lying.top_drop,
                 "origin z", app.player.pos.z - lying.eye_height, "was", origin.z);
             # Q1 Host_Savegame_f and Q2 SV_Savegame_f refuse a dead player.
@@ -173,8 +185,16 @@ with entry {
             # Coming back.
             fallen.clock = 5.0;
             if game == "q3" {
+                lay = app.player.pos.add(Vec3());
                 key(app, 32);
                 assert app.player.health == app.player.max_health + 25 and not fallen.dead;
+                # CopyToBodyQue: the body stays where it lay.
+                assert [
+                    left
+                    for left in [app.world->:HasCorpse:->][?:Corpse]
+                    if left.pos.sub(lay).length() < 1.0
+                ];
+                assert not app.third_person();
                 run_for(app, 0.1);
                 assert app.in_touch() and app.level.collision.eye_height == standing;
                 assert app.level.collision.top_drop == 0.0;
@@ -212,6 +232,11 @@ with entry {
             assert head.eye_height == ended.rule.head.eye_height;
             assert head.top_drop == ended.rule.head.top_drop;
             assert not body_struck(victim) and not app.in_touch();
+            if game == "q3" {
+                # GibEntity: the body is gone from the death view.
+                assert app.third_person();
+                assert not [app.world->:HasBody:->][?:PlayerBody][0].body.visible;
+            }
             run_for(app, 0.15);
             renderer.screenshot("qp_death_gib_" + game + ".png");
             run_for(app, 6.0);
