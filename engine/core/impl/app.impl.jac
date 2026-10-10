@@ -129,6 +129,7 @@ impl App.render_frame() {
         return;
     }
     p = self.player;
+    self.settle_sounds();
     self.audio.update(self.world, p.pos, p.yaw, paused=self.menu.opened);
     self.audio.client_loop(
         ""
@@ -1581,18 +1582,6 @@ impl App.step() -> bool {
                 }
             }
             self.combat.impacts = [];
-            for blast in [self.world->:HasExplosion:->][?:Explosion] {
-                if not blast.heard {
-                    blast.heard = True;
-                    self.play_at(blast.sound, blast.pos);
-                }
-            }
-            for struck in [self.world->:HasImpactSound:->][?:ImpactSound] {
-                if not struck.heard {
-                    struck.heard = True;
-                    self.play_at(struck.sound, struck.pos);
-                }
-            }
             pickup_result = self.world spawn PickupTick(
                 player=self.player,
                 start=previous_origin,
@@ -2061,6 +2050,37 @@ impl App.age_notify(seconds: float) {
     while self.notify_ages and self.notify_ages[0] <= 0.0 {
         self.notify_ages.pop(0);
         self.notify_lines.pop(0);
+    }
+}
+
+impl App.settle_sounds() {
+    if not self.level.active or self.simulation_time == self.sounds_settled {
+        return;
+    }
+    self.sounds_settled = self.simulation_time;
+    # What the game's server would not send is not heard: Q2's PHS and Q3's
+    # PVS, across open area portals.
+    reaching = hearing_rule(self.level.bsp.game);
+    if reaching is not None {
+        reach = self.world spawn SoundReach(
+            level=self.level,
+            rule=reaching,
+            origin=self.player.pos.sub(Vec3(z=self.level.collision.eye_height)),
+            eye=self.player.pos
+        );
+        self.audio.silenced = reach.silenced;
+    }
+    for blast in [self.world->:HasExplosion:->][?:Explosion] {
+        if not blast.heard {
+            blast.heard = True;
+            self.play_at(blast.sound, blast.pos);
+        }
+    }
+    for struck in [self.world->:HasImpactSound:->][?:ImpactSound] {
+        if not struck.heard {
+            struck.heard = True;
+            self.play_at(struck.sound, struck.pos);
+        }
     }
 }
 

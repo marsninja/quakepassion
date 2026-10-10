@@ -135,6 +135,7 @@ import from ..world.reflection { show_body, follow_body }
 import from ..world.drops { toss_items, TossTick }
 import from ..world.monster_count { monster_total }
 import from ..world.area_portals { AreaPortalTick }
+import from ..world.hearing { SoundReach, hearing_rule }
 import from ..world.falling { FallingTick, HasFallingObject }
 import from ..world.trail { TrailTick, PlayerTrail, trail_of }
 import from ..render.hud { HudRenderer, HudStatus }
@@ -342,6 +343,8 @@ obj App {
         pickup_name: str = "",
         pickup_time: float = 0.0,
         heard_hits: int = 0,
+        # The simulation time whose sounds settle_sounds last judged.
+        sounds_settled: float = -1.0,
         ammo_warning: int = 0;
 
     # The console and its shell, the keys and their bindings, the input
@@ -526,6 +529,10 @@ obj App {
     def board_lines(contest: ArenaMatch) -> list[BoardLine];
     """Leave a finished match for the next ladder arena (`advance`) or a rematch."""
     def finish_arena(contest: ArenaMatch, advance: bool = True);
+    """Once for each frame that simulated, before the audio is fed: drop
+    the sounds the game's server would not have sent the player
+    (engine/world/hearing.jac), then sound the new explosions and impacts."""
+    def settle_sounds();
     """The ladder arena after the one loaded ("" at the end of the ladder)."""
     def following_arena() -> str;
     """Act on the postgame menu's key: skip ahead, or a button's action."""

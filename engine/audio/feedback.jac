@@ -151,6 +151,9 @@ obj Feedback {
         # player's own looping sound and its path.
         missiles: dict[str, str] = {},
         flights: list[FlightAudio] = [],
+        # Missiles outside the listener's frame (hearing.jac): their loops
+        # are silent.
+        silenced: list[Projectile] = [],
         client_voice: EmitterAudio | None = None,
         client_path: str = "",
         # CDAudio_Play's track, played from a file standing in for the disc.
@@ -337,8 +340,9 @@ obj Feedback {
             gain = sound_falloff(self.game, relative.length(), speaker.attenuation, speaker.looping)
                 if spatial
                 else 1.0;
-            # Distant looping emitters (hundreds of Q1 torches) hold no stream.
-            if speaker.looping and gain <= 0.0 {
+            # Distant looping emitters (hundreds of Q1 torches) hold no stream,
+            # nor do ones outside the listener's frame (hearing.jac).
+            if speaker.looping and (gain <= 0.0 or not speaker.audible) {
                 speaker.requests = 0;
                 if index in self.emitters {
                     StopMusicStream(self.emitters[index].music);
@@ -518,6 +522,11 @@ obj Feedback {
             }
             relative = projectile.pos.sub(eye);
             gain = sound_falloff(self.game, relative.length(), 3.0, True);
+            for unheard in self.silenced {
+                if unheard is projectile {
+                    gain = 0.0;
+                }
+            }
             self.run_loop(
                 found.voice, gain, right_from(yaw).dot(relative.normalized()), paused
             );

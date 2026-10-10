@@ -522,6 +522,74 @@ obj Level {
         return clusters;
     }
 
+    """CM_ClusterPVS and CM_ClusterPHS, one bit of a row: whether cluster
+    `other` is in the set compiled for `cluster`: what it can see, or with
+    `hearable` what can hear it (Q2's PHS; Q3 has none). A map without
+    visibility data connects every cluster; no cluster (-1, in solid)
+    reaches nothing."""
+    def cluster_reaches(cluster: int, other: int, hearable: bool = False) -> bool {
+        bsp = self.bsp;
+        if bsp.clusters <= 0 {
+            return True;
+        }
+        if cluster < 0 or other < 0 or cluster >= bsp.clusters or other >= bsp.clusters {
+            return False;
+        }
+        if bsp.game == "q3" {
+            offset = 8 + cluster * bsp.cluster_bytes + (other >> 3);
+            require_range(bsp.visibility, offset, 1);
+            return int(bsp.visibility[offset]) & (1 << (other & 7)) != 0;
+        }
+        # dvis_t bitofs[cluster][DVIS_PVS or DVIS_PHS], then
+        # CM_DecompressVis' rows: a zero byte is followed by a count of zeros.
+        at = i32_at(bsp.visibility, (8 if hearable else 4) + cluster * 8);
+        if at == -1 {
+            return True;
+        }
+        target = other >> 3;
+        row = 0;
+        while row <= target {
+            require_range(bsp.visibility, at, 1);
+            bits = int(bsp.visibility[at]);
+            at += 1;
+            if bits != 0 {
+                if row == target {
+                    return bits & (1 << (other & 7)) != 0;
+                }
+                row += 1;
+                continue;
+            }
+            require_range(bsp.visibility, at, 1);
+            run = int(bsp.visibility[at]);
+            at += 1;
+            if run == 0 {
+                raise ValueError("Zero-length BSP visibility run");
+            }
+            row += run;
+        }
+        return False;
+    }
+
+    """The clusters a frame's visibility is built from. Q2 SV_FatPVS takes
+    every leaf within `spread` units of the eye; with no spread it is the
+    eye's own leaf (Q3 SV_AddEntitiesVisibleFromPoint)."""
+    def view_clusters(eye: Vec3, spread: float = 0.0) -> list[int] {
+        clusters: list[int] = [];
+        head = self.bsp.models[0].head;
+        if spread <= 0.0 or head < 0 {
+            clusters.append(self.bsp.leaves[self.locate(eye)].cluster);
+            return clusters;
+        }
+        reach = Vec3(x=spread, y=spread, z=spread);
+        for leaf in (self.splits[head] spawn BoxLeaves(mins=eye.sub(reach), maxs=eye.add(reach))).leaves {
+            cluster = self.bsp.leaves[leaf.index].cluster;
+            if cluster not in clusters {
+                clusters.append(cluster);
+            }
+        }
+        return clusters;
+    }
+
     def visible(world: World, eye: Vec3, culling: bool) -> list[int] {
         leaf = self.locate(eye);
         # Q2 R_RecursiveWorldNode's areabits and Q3 R_MarkLeaves' areamask:

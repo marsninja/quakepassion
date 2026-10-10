@@ -181,7 +181,9 @@ def mover_voice(world: World, game: str, path: str, looping: bool, origin: Vec3)
         path="sound/" + path,
         origin=origin,
         looping=looping,
-        attenuation=3.0 if game == "q2" else 1.0
+        attenuation=3.0 if game == "q2" else 1.0,
+        # Q2 g_func.c starts and stops movers on CHAN_NO_PHS_ADD.
+        no_phs=game == "q2" and not looping
     );
     world +>:HasSpeaker:+> voice;
     return voice;
