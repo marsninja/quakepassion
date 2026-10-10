@@ -1,7 +1,8 @@
 """Effects gallery: one still frame per game with every effect kind posed in
 view at fixed ages, for comparing effect renderers by eye. Time does not
 advance: the frame is drawn from the posed effects alone. Saves
-effects_<game>.png in the working directory.
+effects_<game>.png in the working directory, and for Q3 its wall marks
+(effects_q3_marks.png) and the rail with its spiral (effects_q3_spiral.png).
 
     jac build scripts/effects_gallery.jac --native -o .jac/effects-gallery
     DYLD_LIBRARY_PATH=vendor .jac/effects-gallery
@@ -182,6 +183,12 @@ with entry {
             app.render_frame();
             app.render_frame();
             renderer.screenshot("effects_q3_marks.png");
+            # The rail again with its spiral (cg_oldRail 0).
+            app.effects.cvars.old_rail.assign("0");
+            app.render_frame();
+            app.render_frame();
+            renderer.screenshot("effects_q3_spiral.png");
+            app.effects.cvars.old_rail.assign("1");
         }
     }
     renderer.close();
