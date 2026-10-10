@@ -112,7 +112,12 @@ attacks. How it runs is in [navigation-status.md](navigation-status.md).
 Each rule lists the sequences its pain and die functions choose among as
 `Reaction` objects (`pains` and `deaths` in `engine/world/opponent_rule.jac`):
 model frames at 10 Hz, the distance each frame strides, the sequence's own
-sound, and how it is picked. The tables for each monster are in the roster
+sound, what its frames do as they are entered (`events`, a `FrameEvent` per
+frame function: a sound, or one of several by weight, or a shot along the
+body's facing with one of its attack sequences' weapons), and how it is
+picked.
+A knockdown (`knockdown`, the zombie's `paine`) is the same object with a
+frame it lies on for a hold. The tables for each monster are in the roster
 docs.
 
 - `choose_reaction` draws a sequence by weight among those whose damage
@@ -267,8 +272,9 @@ docs.
   monster's chase (`STEP` lines: heading, the step in progress, its random
   stream and flags). A `SEQUENCE` record carries the death a corpse drew and
   how far it has played, an attack a monster is holding until it faces its
-  enemy, and how long ago its pain was last due. Pain in progress is in the
-  monster's own row. Flying gibs are not saved.
+  enemy, how long ago its pain was last due, and the shots left of a burst a
+  death frame is held for. Pain in progress is in the monster's own row.
+  Flying gibs are not saved.
 
 ## Trail hunting
 

@@ -66,6 +66,18 @@ Details that follow the originals:
   - These are `AttackProfile` refire fields (`repeat_near`, `repeat_skill`,
     `repeat_from`, `repeat_unseen`, `repeat_skip`) on the one repeat
     mechanism the chick and gunner use, and a `"sight"` `trigger`.
+- **Infantry, tank, medic, mutant** (attack tables):
+  - The infantry cocks its gun on attak104 (`infantry_cock_gun`), strides
+    `infantry_move_attack1`'s distances, and its punch smacks when it lands
+    (`infantry_smack`).
+  - On Hard and above the tank fires its blaster's last two bolts again six
+    times in ten (`tank_reattack_blaster`) and its three rockets again four
+    times in ten (`tank_refire_rocket`), with the enemy alive and in sight.
+    Both sequences stride their frames' distances.
+  - The medic goes on from its two blaster bolts to the hyperblaster only
+    with its enemy in sight, 95 times in 100 (`medic_continue`).
+  - The mutant strides 17 units on attack02 before it leaps.
+  - A soldier sights with `solsght1` or `solsrch1`, half the time each.
 - **Jorg and Makron** (`m_boss31.c`, `m_boss32.c`): Jorg's rule names
   `monster_makron` as its `successor`. The Makron is built dormant at load and
   takes over Jorg's targets. When Jorg's death animation ends it bursts apart
@@ -93,6 +105,8 @@ Details that follow the originals:
     `pain6` about two times in three up to 150 and nothing above), berserker
     (`pain1` under 20, either from there up), hover (`pain3` or `pain2` up to
     25, else `pain1`).
+  - Jorg shrugs off one hit in 200 more while it winds up either attack
+    and one in 20000 while its chainguns fire (`pain_shrugs` on the attack).
   - The tank ignores 10 damage or less and shrugs off four hits in five up to
     30; the Supertank and Makron one in five up to 25; Jorg six in ten up to
     40. On Hard and above the tank feels no pain while firing its blaster or
@@ -107,6 +121,11 @@ Details that follow the originals:
     while already flinching. The soldier picks `pain4` before the Nightmare
     test. No other `m_*.c` has this test.
   - A ducked monster's pain function is not called (`T_Damage`).
+  - An insane marine cries with the player's voice for its health
+    (`pain25`, `pain50`, `pain75` or `pain100`, either of two) before its
+    Nightmare test, and dies with one of the player's four death cries.
+    Crucified, it struggles through cross16-30 with one of eight screams
+    (`insane_scream`) and is left hanging as it is when killed.
 - **Death** (`deaths` on each rule):
   - Soldiers fall on `death3` for a head shot, a hit within 4 units of the
     eye (origin plus viewheight 25), and otherwise on `death1`, `death2`,
@@ -119,6 +138,17 @@ Details that follow the originals:
     hover either death sound.
   - Death frames stride their `ai_move` distances (a soldier's `death1` falls
     back 42 units).
+  - A soldier falling on `death1` fires along the way it faces on death122
+    and death125 (`soldier_fire6`, `soldier_fire7`), the machine gunner
+    holding each frame for a burst of 4 to 11. An infantry falling on
+    `death2` fires twelve rounds on death211-222, climbing and swinging to
+    its right (`InfantryMachineGun`'s `aimangles`). These are `fire` events
+    on the sequence; whoever stands in the way is hit.
+  - Frames make their sounds as they are entered (`events` on the
+    sequence): the tank's footstep in `pain3` and its thud on death128,
+    Jorg's steps through `pain3`, the Makron's `makron_popup` and
+    `makron_taunt` in `pain6` and its steps, `makron_hit` and
+    `makron_brainsplorch` as it dies.
   - A corpse keeps its box until the sequence ends and is then left the box
     its `*_dead` sets: -16 -16 -24 to 16 16 -8 for most, 0 to 16 high for the
     chick, -16 to 0 for the tank, and the full-width boxes of the Supertank,
@@ -151,16 +181,11 @@ Details that follow the originals:
 
 ## Limitations
 
-- A dying soldier on `death1` and a dying infantry on `death2` do not fire
-  their guns (`soldier_fire6`/`soldier_fire7`, `InfantryMachineGun`).
-- Sounds inside pain and death frames are not played (the tank's footstep and
-  thud, the Makron's and Jorg's steps, `makron_popup`, `makron_taunt`), nor is
-  the torso the Makron leaves. The insane marines cry `insane1`-`insane3`
-  rather than the player pain sounds picked by their health, and die silent.
-  Jorg's small extra resistance to pain while firing is not applied.
-- `soldier_sight` always plays `solsght1.wav`, not `solsrch1.wav` half the time.
-  The infantry's gun cock (`infantry_cock_gun` on attak104) and the smack of
-  a punch that lands are not played.
+- The Makron leaves no torso as it dies (`makron_torso`).
+- The insane marines' cries carry as far as any other sound; the original
+  plays them at `ATTN_IDLE`. A standing marine that has lain down by itself
+  (`insane_checkdown`) is not modelled, so only marines spawned crawling take
+  the crawling pain and death.
 - Attack strides head at the target; Q2 `ai_charge` walks along the monster's
   own facing while it turns.
 - `misc_actor` is not implemented; no campaign map has one (see

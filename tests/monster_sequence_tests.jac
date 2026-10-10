@@ -5,10 +5,14 @@ import from engine.world.world { World, Player }
 import from engine.world.combat {
     Opponent,
     HasOpponent,
+    Projectile,
+    HasProjectile,
+    select_death,
     Aim,
     CombatState,
     CombatTick,
     damage_opponent,
+    actor_overlap,
     ensure_profiles,
     pain_length,
     pain_stagger,
@@ -86,9 +90,16 @@ def sequenced(game: str, kind: str, seed: int = 1, skill: int = 1) -> Opponent {
     rule = enemy_rule(game, kind);
     assert rule is not None;
     paths: list[str] = [path for path in rule.pain_sounds];
-    for sequence in rule.pains + rule.deaths {
+    for sequence in rule.pains + rule.deaths + [rule.knockdown] {
         if sequence.sound and sequence.sound not in paths {
             paths.append(sequence.sound);
+        }
+        for event in sequence.events {
+            for path in event.sounds {
+                if path not in paths {
+                    paths.append(path);
+                }
+            }
         }
     }
     if rule.death_sound {
@@ -191,8 +202,10 @@ test "every monster's pain and death tables match the originals" {
     # zombie_paine, the knockdown: thirty frames, 15 back in all.
     zombie = enemy_rule("q1", "monster_zombie");
     assert zombie is not None;
-    assert len(zombie.knockdown_frames) == 30 and len(zombie.knockdown_steps) == 30;
-    assert sum(zombie.knockdown_steps) == -15.0;
+    assert len(zombie.knockdown.frames) == 30 and len(zombie.knockdown.steps) == 30;
+    assert sum(zombie.knockdown.steps) == -15.0;
+    # paine11 waits five seconds (nextthink + 5) before it gets up.
+    assert zombie.knockdown.hold_frame == 10 and zombie.knockdown.hold_time == 5.0;
     # m_insane.c: the standing or the crawling sequences, by its stance.
     stands = enemy_rule("q2", "misc_insane");
     crawls = enemy_rule("q2", "misc_insane", 4);
@@ -685,6 +698,7 @@ test "a death in progress and a held attack survive a save" {
     }
     assert soldier.visual.first == soldier.death_animations[5][10];
     holder.readied = 1;
+    soldier.death_burst = 2;
     saved = snapshot(world, level, player, state);
     assert "SEQUENCE" in [line.split()[0] for line in saved.splitlines()[3:]];
     drawn = soldier.death_variant;
@@ -692,8 +706,11 @@ test "a death in progress and a held attack survive a save" {
     soldier.death_variant = 0;
     soldier.death_animation = soldier.death_animations[0];
     soldier.animation_time = 0.0;
+    soldier.death_burst = 0;
     holder.readied = -1;
     restore(world, level, player, state, saved);
+    assert soldier.death_burst == 2;
+    soldier.death_burst = 0;
     assert soldier.death_variant == drawn and abs(soldier.animation_time - played) < 0.0001;
     assert holder.pain_rested == 1000.0;
     assert soldier.death_animation == soldier.death_animations[5];
@@ -709,4 +726,340 @@ test "a death in progress and a held attack survive a save" {
     restore(world, level, player, state, plain);
     assert soldier.death_variant == 0 and holder.readied == -1;
     assert soldier.visual.first == soldier.death_animations[0][-1];
+}
+
+"""Give a monster the named pain to play from its first frame."""
+def in_pain(game: str, kind: str, name: str, seed: int = 1) -> Opponent {
+    enemy = sequenced(game, kind, seed);
+    enemy.pain_variant = 1 + [sequence.name for sequence in enemy.rule.pains].index(name);
+    enemy.pain_wait = pain_length(enemy);
+    return enemy;
+}
+
+test "pain and death frames make the sounds their frame functions do" {
+    nothing = CollisionMap();
+    # tank_footstep on the last frame of tank_move_pain3.
+    tank = in_pain("q2", "monster_tank", "pain3");
+    stagger(tank, nothing, 1.45);
+    assert heard(tank, "sound/tank/step.wav") == 0;
+    stagger(tank, nothing);
+    assert heard(tank, "sound/tank/step.wav") == 1;
+    # jorg_step_left and jorg_step_right through jorg_move_pain3.
+    jorg = in_pain("q2", "monster_jorg", "pain3");
+    stagger(jorg, nothing, 0.45);
+    assert heard(jorg, "sound/boss3/step1.wav") == 1 and heard(jorg, "sound/boss3/step2.wav") == 1;
+    stagger(jorg, nothing);
+    assert heard(jorg, "sound/boss3/step1.wav") == 2 and heard(jorg, "sound/boss3/step2.wav") == 2;
+    # makron_popup on pain616, then makron_taunt: voice4 and voice3 three
+    # times in ten each, voice the rest.
+    taunts: dict[str, int] = {};
+    for seed in range(300) {
+        makron = in_pain("q2", "monster_makron", "pain6", seed);
+        stagger(makron, nothing, 2.25);
+        assert heard(makron, "sound/makron/popup.wav") == 1;
+        assert heard(makron, "sound/makron/voice.wav") + heard(makron, "sound/makron/voice3.wav") + heard(makron, "sound/makron/voice4.wav") == 0;
+        stagger(makron, nothing);
+        for path in ["sound/makron/voice4.wav", "sound/makron/voice3.wav", "sound/makron/voice.wav"] {
+            taunts[path] = taunts.get(path, 0) + heard(makron, path);
+        }
+    }
+    assert taunts["sound/makron/voice4.wav"] + taunts["sound/makron/voice3.wav"] + taunts["sound/makron/voice.wav"] == 300;
+    assert taunts["sound/makron/voice4.wav"] > 60 and taunts["sound/makron/voice4.wav"] < 120;
+    assert taunts["sound/makron/voice.wav"] > 90 and taunts["sound/makron/voice.wav"] < 150;
+    # zombie_painb9's z_fall; the knockdown's on paine10, and z_idle as it
+    # gets up after the five seconds on the ground.
+    zombie = in_pain("q1", "monster_zombie", "painb");
+    stagger(zombie, nothing, 0.75);
+    assert heard(zombie, "sound/zombie/z_fall.wav") == 0;
+    stagger(zombie, nothing, 0.1);
+    assert heard(zombie, "sound/zombie/z_fall.wav") == 1;
+    downed = sequenced("q1", "monster_zombie");
+    damage_opponent(downed, 30);
+    stagger(downed, nothing, 0.95);
+    assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 0;
+    stagger(downed, nothing, 5.0);
+    assert heard(downed, "sound/zombie/z_idle.wav") == 0;
+    stagger(downed, nothing, 0.3);
+    assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 1;
+    # tank_thud on death128, and the Makron's nine steps, makron_hit and
+    # makron_brainsplorch through makron_move_death2.
+    for row in [("monster_tank", "sound/tank/tnkdeth2.wav", 2.65, 0, 2.8, 1),
+        ("monster_makron", "sound/makron/step1.wav", 5.75, 3, 9.5, 5)] {
+        world = World();
+        body = sequenced("q2", row[0]);
+        world +>:HasOpponent:+> body;
+        damage_opponent(body, body.rule.health + 5);
+        assert body.health == 0 and body.death_variant == 1;
+        state = CombatState(game="q2");
+        player = Player(pos=Vec3(x=3000.0, z=22.0), god_mode=True);
+        for tick in range(int(row[2] * 60.0 + 0.5)) {
+            world spawn CombatTick(player=player, collision=nothing, state=state, dt=1.0 / 60.0);
+        }
+        assert heard(body, row[1]) == row[3] , row[0];
+        for tick in range(int((row[4] - row[2]) * 60.0 + 0.5)) {
+            world spawn CombatTick(player=player, collision=nothing, state=state, dt=1.0 / 60.0);
+        }
+        assert heard(body, row[1]) == row[5] , row[0];
+        if row[0] == "monster_makron" {
+            assert heard(body, "sound/makron/step2.wav") == 4;
+            assert heard(body, "sound/makron/bhit.wav") == 1 and heard(body, "sound/makron/brain1.wav") == 1;
+        }
+    }
+}
+
+test "the fiend, the zombie and the Scrag follow their own pain and die functions" {
+    # demon1_pain: none in mid-leap; otherwise pain_finished is set before
+    # the flinch roll, so a hit shrugged off spends the second too.
+    leaper = sequenced("q1", "monster_demon1");
+    leaper.leaping = True;
+    damage_opponent(leaper, 100);
+    assert leaper.pain_wait == 0.0 and heard(leaper, "sound/demon/dpain1.wav") == 0;
+    shrugged = 0;
+    for seed in range(40) {
+        fiend = sequenced("q1", "monster_demon1", seed);
+        damage_opponent(fiend, 2);
+        assert heard(fiend, "sound/demon/dpain1.wav") == 1 and fiend.pain_cooldown == 1.0;
+        shrugged += 1 if fiend.pain_wait == 0.0 else 0;
+        damage_opponent(fiend, 150);
+        assert heard(fiend, "sound/demon/dpain1.wav") == 1;
+    }
+    assert shrugged > 30;
+    # zombie_pain: under 9 damage is ignored. A quick pain sets no
+    # pain_finished, so once it is over another may follow.
+    zombie = sequenced("q1", "monster_zombie");
+    damage_opponent(zombie, 8);
+    assert zombie.pain_wait == 0.0 and zombie.health == 60;
+    damage_opponent(zombie, 10);
+    assert zombie.pain_wait > 0.0 and not zombie.pain_down and zombie.pain_cooldown == 0.0;
+    zombie.pain_wait = 0.0;
+    damage_opponent(zombie, 10);
+    assert zombie.pain_wait > 0.0 and not zombie.pain_down;
+    # Hit again while it flinches: the pain runs on, and for three seconds
+    # after the next hit knocks it down.
+    zombie.pain_wait = 0.4;
+    damage_opponent(zombie, 10);
+    assert abs(zombie.pain_wait - 0.4) < 0.0001 and zombie.pain_cooldown == 3.0 and not zombie.pain_down;
+    zombie.pain_wait = 0.0;
+    zombie.pain_cooldown = 2.0;
+    damage_opponent(zombie, 10);
+    assert zombie.pain_down and zombie.pain_wait == 8.0;
+    # Down, it is hit by nothing more.
+    damage_opponent(zombie, 30);
+    assert zombie.pain_wait == 8.0;
+    # wiz_death1 throws the Scrag's corpse.
+    for seed in range(30) {
+        scrag = sequenced("q1", "monster_wizard", seed);
+        damage_opponent(scrag, 100);
+        assert scrag.health == 0 and not scrag.grounded;
+        assert abs(scrag.velocity.x) <= 200.0 and abs(scrag.velocity.y) <= 200.0;
+        assert scrag.velocity.z >= 100.0 and scrag.velocity.z <= 200.0;
+    }
+}
+
+test "a Q1 body blocks until the frame its die function clears it" {
+    # army_die3, knight_die3 and their like set SOLID_NOT on the third
+    # frame, demon1_die6 on the sixth, f_death21 on the last; dog_die and
+    # shalrath_die before any frame.
+    for row in [("monster_army", 2), ("monster_knight", 2), ("monster_hell_knight", 2),
+        ("monster_enforcer", 2), ("monster_ogre", 2), ("monster_wizard", 2), ("monster_shambler", 2),
+        ("monster_demon1", 5), ("monster_fish", 20), ("monster_dog", 0), ("monster_shalrath", 0)] {
+        rule = enemy_rule("q1", row[0]);
+        assert rule is not None;
+        for sequence in rule.deaths {
+            assert sequence.unsolid_frame == row[1] , row[0] + ":" + sequence.name;
+        }
+    }
+    grunt = sequenced("q1", "monster_army");
+    grunt.visual.visible = True;
+    beside = grunt.pos.sub(Vec3(x=20.0, z=22.0));
+    assert actor_overlap(beside, 0.0, grunt) is not None;
+    damage_opponent(grunt, 40);
+    grunt.visual.visible = True;
+    assert grunt.health == 0 and actor_overlap(beside, 0.0, grunt) is not None;
+    grunt.animation_time = 1.9;
+    assert actor_overlap(beside, 0.0, grunt) is not None;
+    grunt.animation_time = 2.0;
+    assert actor_overlap(beside, 0.0, grunt) is None;
+    dog = sequenced("q1", "monster_dog");
+    dog.visual.visible = True;
+    damage_opponent(dog, 40);
+    dog.visual.visible = True;
+    assert actor_overlap(dog.pos.sub(Vec3(x=20.0, z=22.0)), 0.0, dog) is None;
+    # A Q2 body does not block once it is dying.
+    soldier = sequenced("q2", "monster_soldier");
+    soldier.visual.visible = True;
+    damage_opponent(soldier, 35);
+    soldier.visual.visible = True;
+    assert actor_overlap(soldier.pos.sub(Vec3(x=20.0, z=22.0)), 0.0, soldier) is None;
+    # zombie_paine10 to paine12: flat on the ground the zombie is passable,
+    # and it gets up only if nothing stands where it lies.
+    nothing = CollisionMap();
+    zombie = sequenced("q1", "monster_zombie");
+    zombie.visual.visible = True;
+    over = zombie.pos.sub(Vec3(x=20.0, z=22.0));
+    damage_opponent(zombie, 30);
+    stagger(zombie, nothing, 0.85);
+    assert actor_overlap(over, 0.0, zombie) is not None;
+    stagger(zombie, nothing, 0.1);
+    assert actor_overlap(over, 0.0, zombie) is None;
+    stagger(zombie, nothing, 5.0);
+    assert actor_overlap(over, 0.0, zombie) is None;
+    blocker = Player(pos=zombie.pos.add(Vec3(x=10.0)));
+    for tick in range(4) {
+        pain_stagger(zombie, nothing, 0.05, blocker);
+        zombie.pain_wait = max(0.0, zombie.pain_wait - 0.05);
+    }
+    # Blocked: back on the ground for another five seconds.
+    assert zombie.pain_wait > 6.5 and actor_overlap(over, 0.0, zombie) is None;
+    assert heard(zombie, "sound/zombie/z_idle.wav") == 0;
+    stagger(zombie, nothing, 5.3);
+    assert heard(zombie, "sound/zombie/z_idle.wav") == 1;
+    assert actor_overlap(over, 0.0, zombie) is not None;
+}
+
+test "an insane marine cries with the player's voice for its health" {
+    # insane_pain: pain25, pain50, pain75 or pain100 by its health, either
+    # of two, and it cries on Nightmare though it does not flinch.
+    for row in [(100, 10, 100), (100, 30, 75), (60, 15, 50), (40, 20, 25), (100, 26, 75)] {
+        for skill in [1, 3] {
+            cried: dict[str, int] = {};
+            for seed in range(30) {
+                marine = sequenced("q2", "misc_insane", seed, skill);
+                marine.health = row[0];
+                damage_opponent(marine, row[1]);
+                assert (marine.pain_wait > 0.0) == (skill == 1);
+                for voice in [1, 2] {
+                    path = "sound/player/male/pain" + str(row[2]) + "_" + str(voice) + ".wav";
+                    cried[path] = cried.get(path, 0) + heard(marine, path);
+                }
+                assert len(marine.rule.pains[marine.pain_variant - 1].frames) == 11 or skill == 3;
+            }
+            counts = [count for count in cried.values()];
+            assert counts[0] + counts[1] == 30 and counts[0] > 5 and counts[1] > 5 , str(row[2]);
+        }
+    }
+    # Crawling it has its own frames; crucified it struggles and screams.
+    crawler = enemy_rule("q2", "misc_insane", 4);
+    hung = enemy_rule("q2", "misc_insane", 8);
+    assert crawler is not None and hung is not None;
+    assert len(crawler.pains) == 8 and len(crawler.pains[0].frames) == 9;
+    assert hung.pains[0].frames == ["cross" + str(i) for i in range(16, 31)];
+    assert len(hung.pains[0].events[0].sounds) == 8 and hung.pains[0].events[0].frame == 0;
+    # insane_die: one of the player's four death cries.
+    deaths: dict[str, int] = {};
+    for seed in range(200) {
+        marine = sequenced("q2", "misc_insane", seed);
+        damage_opponent(marine, 120);
+        for cry in range(1, 5) {
+            path = "sound/player/male/death" + str(cry) + ".wav";
+            deaths[path] = deaths.get(path, 0) + heard(marine, path);
+        }
+    }
+    assert len(deaths) == 4 and sum([count for count in deaths.values()]) == 200;
+    for count in deaths.values() {
+        assert count > 25;
+    }
+}
+
+test "Jorg shrugs off a little more pain while it attacks" {
+    # jorg_pain: random() <= 0.005 through attak101-108 and attak201-208,
+    # <= 0.00005 through attak109-114, and nothing extra after.
+    rule = enemy_rule("q2", "monster_jorg");
+    assert rule is not None;
+    for profile in rule.attacks {
+        if profile.name == "chainguns" {
+            assert profile.pain_shrugs == [0.005] * 8 + [0.00005] * 6;
+        } else {
+            assert profile.name == "bfg" and profile.pain_shrugs == [0.005] * 8;
+        }
+    }
+    # The shrug is taken frame by frame of the attack being played.
+    for row in [(0.35, True), (0.95, False)] {
+        jorg = sequenced("q2", "monster_jorg");
+        ensure_profiles(jorg);
+        sure = [profile for profile in jorg.profiles if profile.name == "bfg"][0];
+        sure.pain_shrugs = [1.0] * 8;
+        jorg.attack_profile = jorg.profiles.index(sure);
+        jorg.attack_clock = row[0];
+        damage_opponent(jorg, 80);
+        assert (jorg.pain_wait == 0.0) == row[1];
+    }
+}
+
+"""Kill a monster onto the named death and play it for `seconds` at 60 Hz."""
+def fall(world: World, body: Opponent, name: str, target: Player, seconds: float) {
+    if body.health > 0 {
+        world +>:HasOpponent:+> body;
+        damage_opponent(body, body.health + 5);
+        body.death_variant = 1 + [sequence.name for sequence in body.rule.deaths].index(name);
+        select_death(body);
+    }
+    state = CombatState(game="q2");
+    for tick in range(int(seconds * 60.0 + 0.5)) {
+        world spawn CombatTick(player=target, collision=CollisionMap(), state=state, dt=1.0 / 60.0);
+    }
+}
+
+test "a dying soldier's and a dying infantry's guns go off as they fall" {
+    bystander = Player(pos=Vec3(x=3000.0, y=3000.0, z=22.0), god_mode=True);
+    # soldier_move_death1: soldier_fire6 on death122, soldier_fire7 on
+    # death125, along the body's facing from flashes 5 and 6.
+    world = World();
+    soldier = sequenced("q2", "monster_soldier_light");
+    soldier.yaw = 1.5707963267948966;
+    fall(world, soldier, "death1", bystander, 2.05);
+    assert not [world->:HasProjectile:->];
+    fall(world, soldier, "death1", bystander, 0.1);
+    bolts = [world->:HasProjectile:->][?:Projectile];
+    assert len(bolts) == 1 and bolts[0].damage == 5 and bolts[0].hostile;
+    assert abs(bolts[0].velocity.y - 600.0) < 0.01 and abs(bolts[0].velocity.x) < 0.01;
+    # MZ2_SOLDIER_BLASTER_6: 27.6, 3.4, -10.4 by 1.2, forward, right and up.
+    muzzle = soldier.pos.add(Vec3(x=4.08, y=33.12, z=-22.0 - 12.48));
+    assert bolts[0].pos.sub(muzzle).length() < 0.01;
+    fall(world, soldier, "death1", bystander, 0.3);
+    assert len([world->:HasProjectile:->]) == 2;
+    # Another death fires nothing.
+    quiet = sequenced("q2", "monster_soldier_light", 2);
+    quiet.pos = Vec3(x=500.0, z=22.01);
+    fall(world, quiet, "death2", bystander, 3.0);
+    assert len([world->:HasProjectile:->]) == 2;
+    # The machine gunner holds death122 and death125 for a burst of 4 to 11.
+    for seed in range(12) {
+        scene = World();
+        gunner = sequenced("q2", "monster_soldier_ss", seed);
+        shots = Speaker(path="sound/soldier/solatck3.wav", origin=Vec3());
+        gunner.speakers.append(shots);
+        gunner.speaker_paths.append(shots.path);
+        fall(scene, gunner, "death1", bystander, 2.15);
+        assert shots.requests == 1 and gunner.death_burst >= 3 and gunner.death_burst <= 10;
+        first = 1 + gunner.death_burst;
+        fall(scene, gunner, "death1", bystander, float(first - 1) * 0.1);
+        assert shots.requests == first and int(gunner.animation_time) == 21;
+        fall(scene, gunner, "death1", bystander, 3.0);
+        assert shots.requests >= first + 4 and shots.requests <= first + 11;
+        assert gunner.death_burst == 0 and gunner.animation_time >= 36.0;
+    }
+    # infantry_move_death2: twelve rounds on death211-222, climbing and
+    # swinging to its right (aimangles).
+    rule = enemy_rule("q2", "monster_infantry");
+    assert rule is not None;
+    dying = [sequence for sequence in rule.deaths if sequence.name == "death2"][0].events;
+    assert [event.frame for event in dying] == [10 + shot for shot in range(12)];
+    assert dying[0].muzzle.sub(Vec3(x=18.2, y=7.5, z=15.4)).length() < 0.001;
+    assert [dying[0].aim_pitch, dying[0].aim_yaw] == [0.0, 5.0];
+    assert [dying[11].aim_pitch, dying[11].aim_yaw] == [90.0, 35.0];
+    assert not [sequence for sequence in rule.deaths if sequence.name != "death2" and sequence.events];
+    field = World();
+    infantry = sequenced("q2", "monster_infantry");
+    rounds = Speaker(path="sound/infantry/infatck1.wav", origin=Vec3());
+    infantry.speakers.append(rounds);
+    infantry.speaker_paths.append(rounds.path);
+    # Someone standing ahead and a little to its right is caught by the first.
+    unlucky = Player(pos=Vec3(x=100.0, y=-15.0, z=22.01));
+    fall(field, infantry, "death2", unlucky, 0.95);
+    assert rounds.requests == 0 and unlucky.health == 100;
+    fall(field, infantry, "death2", unlucky, 0.1);
+    assert rounds.requests == 1 and unlucky.health == 97;
+    fall(field, infantry, "death2", unlucky, 2.0);
+    assert rounds.requests == 12;
 }

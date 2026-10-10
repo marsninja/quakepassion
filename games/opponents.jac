@@ -90,8 +90,8 @@ def link_reactions(
     if enemy.death_animations {
         enemy.death_animation = enemy.death_animations[0];
     }
-    if rule.knockdown_steps and len(rule.knockdown_steps) != len(rule.knockdown_frames) {
-        raise ValueError("Mismatched knockdown distances: " + path);
+    if rule.knockdown.frames {
+        enemy.knockdown_animation = reaction_indices(frames, rule.knockdown, path, "knockdown");
     }
 }
 
@@ -101,7 +101,12 @@ def register_reaction_sounds(world: World, enemy: Opponent, rule: OpponentRule) 
         register_speaker(world, enemy, pain_sound);
     }
     register_speaker(world, enemy, rule.death_sound);
-    for sequence in rule.pains + rule.deaths {
+    for sequence in rule.pains + rule.deaths + [rule.knockdown] {
+        for event in sequence.events {
+            for path in event.sounds {
+                register_speaker(world, enemy, path);
+            }
+        }
         register_speaker(world, enemy, sequence.sound);
     }
 }
@@ -333,8 +338,10 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 register_speaker(world, enemy, profile.sound);
                 register_speaker(world, enemy, profile.extra_sound);
                 register_speaker(world, enemy, profile.alternate_sound);
+                register_speaker(world, enemy, profile.hit_sound);
             }
             register_speaker(world, enemy, rule.sight_sound);
+            register_speaker(world, enemy, rule.sight_alternate);
             register_reaction_sounds(world, enemy, rule);
             for scripted in rule.sounds {
                 register_speaker(world, enemy, scripted);
@@ -490,11 +497,6 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                     }
                 }
                 link_reactions(enemy, frames, rule, path);
-                if rule.knockdown_frames {
-                    enemy.knockdown_animation = frame_indices(
-                        frames, rule.knockdown_frames, path, "knockdown"
-                    );
-                }
                 if rule.duck_frames {
                     enemy.duck_animation = frame_indices(
                         frames, rule.duck_frames, path, "duck"

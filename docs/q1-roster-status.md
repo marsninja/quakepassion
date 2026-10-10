@@ -23,7 +23,7 @@ and movers are in [navigation-status.md](navigation-status.md).
 | `monster_ogre`, `monster_ogre_marksman` | 200 | grenade (40 splash); chainsaw sweep or smash |
 | `monster_wizard` (Scrag) | 80 | flies; two spikes at 0.3 and 0.8 s; side slides |
 | `monster_demon1` (Fiend) | 300 | claws; 40-50 damage leap |
-| `monster_shambler` | 600 | smash and two swings (chosen by weight); lightning beam; takes half blast damage |
+| `monster_shambler` | 600 | smash and two swings (chosen by weight), a swing going straight into the other half the time; lightning beam of three bolts, four on Nightmare; takes half blast damage |
 | `monster_zombie` | 60 | three flesh-throw sequences; see below |
 | `monster_shalrath` (Vore) | 400 | homing pod (40 splash) |
 | `monster_tarbaby` (Spawn) | 80 | hopping 10-20 damage leap; bursts for 120 when killed |
@@ -48,17 +48,21 @@ mechanism is in [monster-behaviour-status.md](monster-behaviour-status.md).
 | `monster_hell_knight` | `pain` when `random()*30` is within the damage, or always once 5 s have gone since pain was last due (1 s) | `die` (lurching 46 forward) or `dieb` |
 | `monster_enforcer` | `paina` 0.2, `painb` 0.2, `painc` 0.3 (1 s), `paind` 0.3 (2 s); one roll also picks the sound | `die` (lunging 34 forward) or `fdie` |
 | `monster_ogre` | `pain`, `painb`, `painc` 0.25 each (1 s), `paind` 0.13, `paine` 0.12 staggering 23 back (2 s) | `die` or `bdie` (stepping 41 forward) |
-| `monster_wizard` | `pain` when `random()*70` is within the damage; no `pain_finished` | `death` |
-| `monster_demon1` | `pain` when `random()*200` is within the damage (1 s) | `die` |
+| `monster_wizard` | `pain` when `random()*70` is within the damage; no `pain_finished` | `death`, the corpse thrown up to 200 sideways and 100-200 up |
+| `monster_demon1` | `pain` when `random()*200` is within the damage; the second's wait is spent whether or not it flinches; none in mid-leap | `die` |
 | `monster_shambler` | `pain` when `random()*400` is within the damage (2 s) | `death` |
-| `monster_zombie` | `paina`-`paind` at even odds, each with its sound and steps; `paine` knockdown | always gibs |
+| `monster_zombie` | `paina`-`paind` at even odds, each with its sound and steps (`z_fall` on painb9); `paine` knockdown with `z_fall` as it lands and `z_idle` as it rises. A hit during a quick pain arms 3 s in which the next hit knocks it down | always gibs |
 | `monster_shalrath` | `pain` (3 s) | `death` |
 | `monster_fish` | `pain` on every hit, backing away 6 units a frame | `death` |
 
 Deaths with two sequences take either at even odds. The Scrag and the shambler
 cry on every hit, the fiend and the Hell Knight whenever pain is due, whether
 or not they flinch. Grunts, enforcers and ogres drop their backpack on the
-third frame of the death, so one that gibs drops nothing.
+third frame of the death, so one that gibs drops nothing. A dying monster
+still blocks the player until the frame whose function sets `SOLID_NOT` (the
+third of most deaths, the sixth of the fiend's, the last of the rotfish's;
+the dog and the vore at once). A knocked-down zombie is passable while it lies
+flat and gets up only when nothing stands where it lies.
 
 Details that follow the QuakeC:
 
@@ -131,11 +135,10 @@ saved.
 
 ## Limitations
 
-- Pain and death details not reproduced: the fiend's immunity to pain in
-  mid-leap and its `pain_finished` being set before the flinch roll; the
-  zombie's `inpain` bookkeeping (a second hit soon after a pain drops it) and
-  its `z_fall.wav`; the Scrag's corpse being thrown as it dies; the frame on
-  which a dying monster stops being solid.
+- The fiend's leap plays `leap1`-`leap12` straight through; `demon1_jump10`
+  holds its frame for up to three seconds until it lands.
+- A knocked-down zombie is only kept down by the player standing on it, not
+  by another monster.
 
 References: [v101qc](https://github.com/id-Software/Quake-Tools/tree/master/qcc/v101qc)
 (`soldier.qc`, `dog.qc`, `knight.qc`, `hknight.qc`, `enforcer.qc`, `ogre.qc`,
