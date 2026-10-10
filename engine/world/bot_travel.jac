@@ -241,6 +241,54 @@ def air_control(origin: Vec3, velocity: Vec3, goal: Vec3) -> TravelResult | None
     return None;
 }
 
+"""be_aas_move.c AAS_HorizontalVelocityForJump for a fall (no jump): the
+horizontal speed that carries a body dropping from `start` to `finish`, or
+None when `finish` is higher or the speed would be over phys_maxvelocity
+(320)."""
+def fall_speed(start: Vec3, finish: Vec3) -> float | None {
+    drop = start.z - finish.z;
+    if drop < 0.0 {
+        return None;
+    }
+    falling = math.sqrt(drop / (0.5 * TRAVEL_GRAVITY));
+    if falling == 0.0 {
+        return None;
+    }
+    speed = flat_toward(start, finish)[1] / falling;
+    return speed if speed <= 320.0 else None;
+}
+
+"""BotTravel_WalkOffLedge on the ground. Further than 48 units from the
+ledge the bot walks for the passage's start, at full speed, or slowing over
+the last 64 units when the drop is straight down (its two ends within 20
+units of each other level). Within 48 units it heads for the far end: at
+100 when the drop is straight down, otherwise at the speed that carries the
+fall there (full speed when there is none)."""
+def travel_walk_off_ledge(origin: Vec3, passage: Passage) -> TravelResult {
+    across = flat_toward(passage.start, passage.finish)[1];
+    to_start = flat_toward(origin, passage.start);
+    if to_start[1] < 48.0 {
+        carried = fall_speed(passage.start, passage.finish);
+        speed = 100.0 if across < 20.0 else (carried if carried is not None else 400.0);
+        return TravelResult(direction=flat_toward(origin, passage.finish)[0], speed=speed);
+    }
+    speed = 400.0 - (256.0 - 4.0 * min(to_start[1], 64.0)) if across < 20.0 else 400.0;
+    return TravelResult(direction=to_start[0], speed=speed);
+}
+
+"""BotFinishTravel_WalkOffLedge in the air: steer for a point 16 units past
+the far end along the bot's way there (BotAirControl), or straight for the
+far end when the fall will not bring it down to that height."""
+def finish_walk_off_ledge(origin: Vec3, velocity: Vec3, passage: Passage) -> TravelResult {
+    toward = flat_toward(origin, passage.finish);
+    landing = passage.finish.add(toward[0].scale(16.0)) if toward[1] > 16.0 else passage.finish;
+    steer = air_control(origin, velocity, landing);
+    if steer is not None {
+        return steer;
+    }
+    return TravelResult(direction=toward[0], speed=400.0, air_control=True);
+}
+
 """The world box of the mover with BSP `model` right now: its model bounds
 moved by the offset its collision hulls carry (AAS_BSPModelMinsMaxsOrigin
 and AAS_OriginOfMoverWithModelNum). None when the map has no such mover."""
@@ -638,6 +686,14 @@ walker FollowRoute {
                 swim.speed = goal_area_speed(route.points[0].sub(origin).length());
             }
             self.heading(swim, origin, standing);
+            return;
+        }
+        if passage is not None and passage.kind == TRAVEL_WALKOFFLEDGE {
+            if here.grounded {
+                self.heading(travel_walk_off_ledge(origin, passage), origin, standing);
+            } else {
+                self.heading(finish_walk_off_ledge(origin, here.velocity, passage), origin, standing);
+            }
             return;
         }
         toward = flat_toward(origin, route.points[0]);

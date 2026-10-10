@@ -27,6 +27,9 @@ import from engine.world.bot_travel {
     travel_funcbob,
     travel_water_jump,
     goal_area_speed,
+    fall_speed,
+    travel_walk_off_ledge,
+    finish_walk_off_ledge,
     finish_water_jump,
     air_control,
     mover_box
@@ -315,4 +318,36 @@ test "a route never turns straight back into the area it just left" {
     assert best_exit(mesh, 2, Vec3(x=128.0), times, TFL_DEFAULT, None, 0.0, 1) is onward;
     route = plan_route(mesh, Vec3(x=64.0), Vec3(x=256.0));
     assert route.found and [area for area in route.areas if area > 0] == [2, 3, 4];
+}
+
+test "a bot walks off a ledge at the speed that lands it, and steers for the landing in the air" {
+    aas = strip_aas(2, [(1, 2, TRAVEL_WALKOFFLEDGE)]);
+    mesh = build_navmesh(World(), aas);
+    passage = [mesh.areas[1]->:Exits:->][?:Passage][0];
+    passage.start = Vec3(x=80.0);
+    passage.finish = Vec3(x=128.0, z=-100.0);
+    # AAS_HorizontalVelocityForJump for a fall of 100 units: half a second.
+    assert abs(fall_speed(passage.start, passage.finish) - 96.0) < 0.001;
+    assert fall_speed(passage.start, Vec3(x=128.0, z=10.0)) is None and fall_speed(passage.start, Vec3(x=900.0, z=-100.0)) is None;
+    # Far from the ledge: for its start at full speed. Within 48 units: for
+    # the far end, at the speed that carries the fall.
+    far = travel_walk_off_ledge(Vec3(x=0.0), passage);
+    assert far.speed == 400.0 and far.direction.x > 0.99;
+    near = travel_walk_off_ledge(Vec3(x=60.0), passage);
+    assert abs(near.speed - 96.0) < 0.001 and near.direction.x > 0.99;
+    # A drop straight down: slowing over the last 64 units, then 100.
+    passage.finish = Vec3(x=90.0, z=-100.0);
+    assert travel_walk_off_ledge(Vec3(x=30.0), passage).speed == 344.0;
+    assert travel_walk_off_ledge(Vec3(x=60.0), passage).speed == 100.0;
+    # In the air: BotAirControl for 16 units past the far end.
+    passage.finish = Vec3(x=128.0, z=-100.0);
+    falling = finish_walk_off_ledge(Vec3(x=90.0, z=-10.0), Vec3(x=100.0, z=-50.0), passage);
+    assert falling.air_control and falling.direction.x > 0.9;
+    # The route follower hands a ledge leg to them.
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=60.0, z=26.0), eye_height=26.0, grounded=True);
+    route = BotRoute();
+    route.add(passage.start, 0, passage=passage);
+    route.add(passage.finish, 2, passage=passage);
+    follow = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert abs(follow.result.speed - 96.0) < 0.001;
 }
