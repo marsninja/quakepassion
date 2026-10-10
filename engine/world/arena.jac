@@ -50,7 +50,21 @@ edge Competes: ArenaMatch --> Actor {
         excellent: int = 0,
         impressive: int = 0,
         humiliation: int = 0,
-        last_frag: float = -100.0;
+        last_frag: float = -100.0,
+        # The award sprite over the competitor's head (EF_AWARD_IMPRESSIVE,
+        # _EXCELLENT or _GAUNTLET) and the match time it is taken down.
+        award: str = "",
+        award_until: float = -1.0;
+}
+
+# g_local.h REWARD_SPRITE_TIME: how long an award floats over a player.
+glob REWARD_SPRITE_TIME: float = 2.0;
+
+"""g_combat.c and g_weapon.c: a new award replaces the one showing over a
+competitor's head and stays REWARD_SPRITE_TIME from match time `now`."""
+def show_award(score: Competes, kind: str, now: float) {
+    score.award = kind;
+    score.award_until = now + REWARD_SPRITE_TIME;
 }
 
 edge HasSpawn: World --> SpawnPoint {}
@@ -153,6 +167,7 @@ def credit_impressive(contest: ArenaMatch, actor: Actor) {
     for i in range(len(actors)) {
         if actors[i] is actor {
             entries[i].impressive += 1;
+            show_award(entries[i], "impressive", contest.elapsed);
         }
     }
 }
@@ -236,6 +251,10 @@ walker MatchTick {
         for i in range(len(actors)) {
             actor = actors[i];
             score = entries[i];
+            # g_active.c ClientEndFrame: the award sprite comes down in time.
+            if score.award and here.elapsed > score.award_until {
+                score.award = "";
+            }
             if actor.health > 0 {
                 score.down = False;
                 continue;
@@ -266,14 +285,21 @@ walker MatchTick {
             # g_combat.c rewards: two frags within CARNAGE_REWARD_TIME is
             # Excellent; a gauntlet frag is Humiliation.
             winner = entries[credited];
+            # player_die raises the gauntlet's sprite first, then Excellent
+            # over it when both are earned.
+            earned = "gauntlet" if actor.death_means == "gauntlet" else "";
             if here.elapsed - winner.last_frag < 3.0 {
                 winner.excellent += 1;
+                earned = "excellent";
                 if winner.human {
                     self.cues.append("sound/feedback/excellent.wav");
                     self.messages.append("Excellent!");
                 }
             }
             winner.last_frag = here.elapsed;
+            if earned {
+                show_award(winner, earned, here.elapsed);
+            }
             if actor.death_means == "gauntlet" {
                 winner.humiliation += 1;
                 if winner.human or score.human {

@@ -36,7 +36,10 @@ podium figures' rigs are in [Q3 player bodies](player-bodies-status.md).
 - Announcer (`CG_CheckLocalSounds`, `CG_Obituary`): lead taken, tied and lost,
   the last three frags, "You fragged X / Tied for 2nd place with 4", then
   *You win* or `<bot>_wins`.
-- Awards on the `Competes` edge: Excellent (two frags within 3 s), Impressive
+- Awards on the `Competes` edge, each also floating its medal over the
+  winner's head for two seconds
+  ([player bodies](player-bodies-status.md#bodies-sounds-and-powerups)):
+  Excellent (two frags within 3 s), Impressive
   (two railgun hits in a row), Humiliation (a gauntlet frag) and Perfect (a
   win without dying), each with its announcer sound.
 - The player respawns with fire or jump after 1.7 s, and automatically after

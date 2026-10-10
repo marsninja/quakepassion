@@ -211,7 +211,8 @@ impl App.render_frame() {
         stamp = time.time();
         self.effects.draw_particles(self.world, view_yaw, view_pitch, blend);
         self.effects.draw(
-            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend
+            self.world, eye, view_yaw, view_pitch, lighting=self.level.lighting, blend=blend,
+            collision=self.level.collision, player=p
         );
         self.flares.draw(
             self.world, self.level, self.quake.shown_flares, self.effects.quads, eye, view_yaw, view_pitch,

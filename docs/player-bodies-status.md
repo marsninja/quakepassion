@@ -72,8 +72,19 @@ part of a rig shares one sample.
   with the invisibility shader; quad, battle suit and regeneration add shells
   pushed out by their shaders' `deformVertexes`; weapons, the view weapon
   included, use the weapon shells.
-- Talk balloon (`CG_PlayerSprites`, `EF_TALK`): `sprites/balloon3`, 48 units
-  over the origin of a bot typing a chat line.
+- Shadows (`CG_PlayerShadow`, `engine/world/shadows.jac`): with `cg_shadows 1`
+  (the default) the `CastShadows` walker visits the human, the bots and the
+  bodies left behind each frame and drops a box (30 units square, 2 high)
+  128 units down through the world from each one's origin. Where it lands the
+  `markShadow` shader is laid as one of `CG_ImpactMark`'s temporary marks: 24
+  units in radius, cut to the faces it lies on, turned with the legs and
+  fading with the height the player is at. An invisible player casts none.
+- Head sprites (`CG_PlayerSprites`, `CG_PlayerFloatSprite`), 10 units in
+  radius 48 units over a bot's origin: `sprites/balloon3` while it types a
+  chat line (`EF_TALK`); otherwise the medal of an award it just earned
+  (`medal_impressive`, `medal_excellent`, `medal_gauntlet`) for two seconds
+  (`REWARD_SPRITE_TIME`), a newer award replacing the one showing and
+  Excellent going up over a gauntlet frag's when one frag earns both.
 - Taunts: a bot that just killed may gesture (`TORSO_GESTURE`) with its
   model's `taunt.wav` (`EV_TAUNT`).
 - Q3 players never stop to flinch when hit; the torso twitches and the pain
@@ -90,9 +101,13 @@ part of a rig shares one sample.
   powerup shaders on bodies and weapons.
 - `tests/podium_tests.jac` and `tests/portal_tests.jac`: podium figures and
   the player's body in portal views.
+- `tests/shadow_tests.jac`: the shadow's trace, strength and mark, the human
+  and bodies, invisible and dormant players, `cg_shadows`.
+  `tests/effect_quads_tests.jac`: award sprites and the talk balloon.
 - `scripts/bot_bodies_smoke.jac`: captures a bot running, strafing,
   backpedalling, firing with a flash, aiming up and down, dying, a body left
-  behind, a quad shell and a dropped item.
+  behind, a quad shell, a dropped item, an award's medal and the spawn effect,
+  each on its blob shadow.
 - `scripts/bot_render_profile.jac`: model-pass cost with every bot drawn each
   frame (culling off, 1280x720). Measured 2026-09-24 against the baked bodies
   the rig replaced:
@@ -104,7 +119,8 @@ part of a rig shares one sample.
 
 ## Limitations
 
-- No player shadows (`CG_PlayerShadow`, `cg_shadows`).
-- No award sprites over players' heads (`CG_PlayerFloatSprite` for
-  `EF_AWARD_EXCELLENT`, `EF_AWARD_IMPRESSIVE` and the like); the talk balloon
-  is the only player sprite.
+- `cg_shadows` 2 and 3 (the original's stencil and projection shadows) draw
+  no shadow. Shadows fall on the world only, not on doors and platforms (as in
+  the original), and are not drawn in mirrors and portal views.
+- The human's own head sprite, which the original shows only in third person
+  and mirrors, is not drawn.

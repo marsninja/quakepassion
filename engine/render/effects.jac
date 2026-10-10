@@ -35,6 +35,10 @@ import from ..world.particles {
 }
 import from ..world.particle_field { ParticleField, HasParticles, puff_state }
 import from ..world.missile_trails { EmitTrails }
+import from ..world.arena { ArenaMatch, HasMatch, Competes }
+import from ..world.shadows { CastShadows, shadow_caster, SHADOW_MARK }
+import from ..world.world { Player }
+import from ..physics.collision { CollisionMap }
 import from ..world.models { PLAYER_COLOR1, PLAYER_COLOR2 }
 import from ..world.portals { perpendicular, rotate_about }
 import from ..console.cvar { Cvar, CVAR_ARCHIVE }
@@ -344,11 +348,26 @@ obj EffectQuads {
     }
 }
 
-# cg_main.c's balloonShader, floated over a player typing a message.
+# cg_main.c's balloonShader, floated over a player typing a message, and the
+# medal shaders floated over one just given an award.
 glob BALLOON_SHADER: str = "sprites/balloon3";
+glob AWARD_SHADERS: dict[str, str] = {
+    "impressive": "medal_impressive",
+    "excellent": "medal_excellent",
+    "gauntlet": "medal_gauntlet"
+};
+
+"""A player wearing an award sprite (EF_AWARD_IMPRESSIVE and the like)."""
+obj Awarded {
+    has actor: Opponent,
+        award: str;
+}
 
 """The effects in a world, gathered in one walk over its effect edges, and,
-with `balloons`, the Q3 players typing a message (EF_TALK)."""
+with `balloons`, the Q3 players with a sprite over their heads
+(CG_PlayerSprites): those typing a message (EF_TALK), else those just given
+an award. The human's own sprite shows only in third person and mirrors
+(RF_THIRD_PERSON), so only bots are gathered."""
 walker GatherEffects {
     has marks: list[ImpactMark] = [],
         trails: list[ShotTrail] = [],
@@ -356,7 +375,8 @@ walker GatherEffects {
         projectiles: list[Projectile] = [],
         field: ParticleField | None = None,
         balloons: bool = False,
-        talkers: list[Opponent] = [];
+        talkers: list[Opponent] = [],
+        awarded: list[Awarded] = [];
 
     can begin with World entry {
         visit [here->:HasParticles:->];
@@ -366,6 +386,20 @@ walker GatherEffects {
         visit [here->:HasProjectile:->];
         if self.balloons {
             visit [here->:HasOpponent:->];
+            visit [here->:HasMatch:->];
+        }
+    }
+
+    """The competitors wearing an award; talking comes first."""
+    can honour with ArenaMatch entry {
+        entries = [edge here->:Competes:->];
+        actors = [here->:Competes:->];
+        for i in range(min(len(entries), len(actors))) {
+            actor = actors[i];
+            if entries[i].award and isinstance(actor, Opponent) and not actor.dormant and actor.visual.visible
+                and not actor.bot_state.talking {
+                self.awarded.append(Awarded(actor=actor, award=entries[i].award));
+            }
         }
     }
 
@@ -439,7 +473,7 @@ glob QUAKE2_LASER_COLORS: dict[str, list[int]] = {
 };
 
 """The cvars the effects own (cg_main.c): whether a Q3 rail is its core
-alone, and how long the core shows."""
+alone, how long the core shows, and the players' shadows."""
 obj EffectCvars {
     has old_rail: Cvar = Cvar(
             name="cg_oldRail",
@@ -456,6 +490,15 @@ obj EffectCvars {
             high=10000.0,
             flags=CVAR_ARCHIVE,
             description="milliseconds a railgun's core takes to fade"
+        ),
+        shadows: Cvar = Cvar(
+            name="cg_shadows",
+            reset_text="1",
+            kind="int",
+            low=0.0,
+            high=3.0,
+            flags=CVAR_ARCHIVE,
+            description="player shadows: 0 none, 1 a blob on the ground (2 and 3, the original's stencil and projection shadows, draw none)"
         );
 }
 
@@ -524,6 +567,10 @@ def rail_rings(start: Vec3, finish: Vec3, age: float) -> list[RailRing] {
 
 obj EffectScene {
     has cvars: EffectCvars = EffectCvars();
+    # The level's collision the shadows were last cast on, and the box view
+    # of it they are traced with.
+    has shadow_source: CollisionMap | None = None,
+        shadow_view: CollisionMap | None = None;
     has flight: dict[str, list[UploadedSprite]] = {},
         burst: dict[str, list[UploadedSprite]] = {},
         textures: list[int] = [],
@@ -545,6 +592,7 @@ obj EffectScene {
     def declare(shell: Shell) {
         self.cvars.old_rail = shell.register(self.cvars.old_rail);
         self.cvars.rail_time = shell.register(self.cvars.rail_time);
+        self.cvars.shadows = shell.register(self.cvars.shadows);
     }
 
     def keys() -> list[str] {
@@ -773,7 +821,9 @@ obj EffectScene {
         yaw: float,
         pitch: float,
         lighting: Lighting = Lighting(),
-        blend: TickBlend = TickBlend()
+        blend: TickBlend = TickBlend(),
+        collision: CollisionMap | None = None,
+        player: Player | None = None
     ) {
         self.quads.open();
         side = right_from(yaw);
@@ -784,14 +834,15 @@ obj EffectScene {
         found = world spawn GatherEffects(balloons=BALLOON_SHADER in self.flight);
         field = found.field;
         now = field.clock if field is not None else 0.0;
-        self.draw_marks(found.marks, eye);
+        self.draw_marks(found.marks + self.shadow_marks(world, collision, player, blend), eye);
         self.draw_trails(found.trails, eye, now);
         self.draw_bfg_lasers(found.projectiles, blend);
         self.draw_blasts(found.blasts, eye);
         if field is not None {
             self.draw_puffs(field, eye);
         }
-        if self.add_balloons(found.talkers, blend) {
+        floated = self.add_balloons(found.talkers, blend);
+        if self.add_awards(found.awarded, blend) or floated {
             self.quads.flush();
         }
         if not self.textures and not self.models {
@@ -892,25 +943,62 @@ obj EffectScene {
         self.particles.draw(field.clock, yaw, pitch);
     }
 
-    """cg_players.c CG_PlayerSprites and CG_PlayerFloatSprite: over each
-    player typing a message, the talk balloon, a sprite 10 units in radius
-    48 units above its origin. True when any was added to the quads."""
+    """cg_players.c CG_PlayerSprites: over each player typing a message, the
+    talk balloon. True when any was added to the quads."""
     def add_balloons(talkers: list[Opponent], blend: TickBlend) -> bool {
         art = self.flight.get(BALLOON_SHADER, []);
         if not talkers or not art {
             return False;
         }
-        sprite = art[0];
         for talker in talkers {
-            origin = blend.place(talker.tick_pose, talker.pos).sub(Vec3(z=talker.eye_height));
-            self.billboard(
-                sprite,
-                origin.add(Vec3(z=48.0)),
-                EFFECT_BLEND_ALPHA,
-                scale=20.0 / float(max(1, sprite.frame.width))
-            );
+            self.float_sprite(talker, art[0], blend);
         }
         return True;
+    }
+
+    """CG_PlayerSprites: the medal of each player just given an award. True
+    when any was added to the quads."""
+    def add_awards(awarded: list[Awarded], blend: TickBlend) -> bool {
+        added = False;
+        for honour in awarded {
+            art = self.flight.get(AWARD_SHADERS.get(honour.award, ""), []);
+            if art {
+                self.float_sprite(honour.actor, art[0], blend);
+                added = True;
+            }
+        }
+        return added;
+    }
+
+    """cg_players.c CG_PlayerFloatSprite: a sprite 10 units in radius 48 units
+    above the player's origin."""
+    def float_sprite(actor: Opponent, sprite: UploadedSprite, blend: TickBlend) {
+        origin = blend.place(actor.tick_pose, actor.pos).sub(Vec3(z=actor.eye_height));
+        self.billboard(
+            sprite,
+            origin.add(Vec3(z=48.0)),
+            EFFECT_BLEND_ALPHA,
+            scale=20.0 / float(max(1, sprite.frame.width))
+        );
+    }
+
+    """cg_players.c CG_PlayerShadow with cg_shadows 1: this frame's blob marks
+    under the players, when the level has the markShadow art (Q3). They are
+    CG_ImpactMark's temporary marks: drawn this frame and not kept."""
+    def shadow_marks(world: World, collision: CollisionMap | None, player: Player | None, blend: TickBlend) -> list[ImpactMark] {
+        if collision is None or self.cvars.shadows.integer != 1 or SHADOW_MARK not in self.flight {
+            return [];
+        }
+        view = self.shadow_view;
+        if view is None or self.shadow_source is not collision {
+            view = shadow_caster(collision);
+            self.shadow_source = collision;
+            self.shadow_view = view;
+        }
+        cast = world spawn CastShadows(
+            collision=view, blend=blend, player=player, player_height=collision.eye_height
+        );
+        return cast.marks;
     }
 
     """Q3's smoke and blood puffs (cg_localents.c CG_AddScaleFade and

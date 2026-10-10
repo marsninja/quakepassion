@@ -183,17 +183,7 @@ def impact_mark(
 ) {
     angle = impact_roll(origin, 3.0) * 2.0 * math.pi;
     facing = normal.normalized();
-    axes = mark_axes(facing, angle);
-    square = [
-        origin.sub(axes[1].scale(radius)).sub(axes[0].scale(radius)),
-        origin.add(axes[1].scale(radius)).sub(axes[0].scale(radius)),
-        origin.add(axes[1].scale(radius)).add(axes[0].scale(radius)),
-        origin.sub(axes[1].scale(radius)).add(axes[0].scale(radius))
-    ];
-    fragments = [square];
-    for surfaces in [world->:HasMarkSurfaces:->][?:MarkSurfaces] {
-        fragments = surfaces.fragments(square, facing.scale(-20.0));
-    }
+    fragments = mark_fragments(world, origin, facing, angle, radius);
     if not fragments {
         return;
     }
@@ -220,6 +210,25 @@ def impact_mark(
         alpha_fade=alpha_fade,
         fragments=fragments
     );
+}
+
+"""CG_ImpactMark's polygons: the mark's square, `radius` from `origin` and
+turned by `angle` on the surface facing `facing`, cut by the world's surfaces
+20 units behind it (CM_MarkFragments). A world without mark surfaces gives
+the square itself."""
+def mark_fragments(world: World, origin: Vec3, facing: Vec3, angle: float, radius: float) -> list[list[Vec3]] {
+    axes = mark_axes(facing, angle);
+    square = [
+        origin.sub(axes[1].scale(radius)).sub(axes[0].scale(radius)),
+        origin.add(axes[1].scale(radius)).sub(axes[0].scale(radius)),
+        origin.add(axes[1].scale(radius)).add(axes[0].scale(radius)),
+        origin.sub(axes[1].scale(radius)).add(axes[0].scale(radius))
+    ];
+    fragments = [square];
+    for surfaces in [world->:HasMarkSurfaces:->][?:MarkSurfaces] {
+        fragments = surfaces.fragments(square, facing.scale(-20.0));
+    }
+    return fragments;
 }
 
 """The two axes across a surface facing `normal`, turned by `angle`

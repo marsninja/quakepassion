@@ -716,7 +716,14 @@ def weapon_effects(game: str) -> list[EffectRule] {
             EffectRule(key="gfx/damage/hole_lg_mrk", flight="gfx/damage/hole_lg_mrk"),
             EffectRule(key="gfx/damage/plasma_mrk", flight="gfx/damage/plasma_mrk"),
             # cgs.media.balloonShader: the talk balloon (CG_PlayerSprites).
-            EffectRule(key="sprites/balloon3", flight="sprites/balloon3")
+            EffectRule(key="sprites/balloon3", flight="sprites/balloon3"),
+            # cgs.media.medalImpressive, medalExcellent and medalGauntlet,
+            # floated over a player they were just awarded to.
+            EffectRule(key="medal_impressive", flight="menu/medals/medal_impressive"),
+            EffectRule(key="medal_excellent", flight="menu/medals/medal_excellent"),
+            EffectRule(key="medal_gauntlet", flight="menu/medals/medal_gauntlet"),
+            # cgs.media.shadowMarkShader (CG_PlayerShadow).
+            EffectRule(key="markShadow", flight="gfx/damage/shadow")
         ];
     }
     return [];

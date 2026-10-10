@@ -79,7 +79,7 @@ Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-fee
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
 - Patches tessellate at a fixed 8 steps; the lightmap atlas is a fixed 2048².
-- No player shadows; repeated models are not instanced.
+- Repeated models are not instanced.
 
 Q3 bots and arenas ([bot-tactics-status.md](bot-tactics-status.md), [arena-match-status.md](arena-match-status.md)):
 - Free-for-all only, with no time limit.
