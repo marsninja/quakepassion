@@ -104,13 +104,14 @@ and builds the level graph.
   162 `anorms.h` normals. Texels run in rows of 4096, so no frame count hits
   `GL_MAX_TEXTURE_SIZE`.
 - **Corners** are static, non-indexed vertex records (frame-0 texel, vertices
-  per frame, texture coordinates), so there is no 16-bit index limit.
+  per frame, texture coordinates, and on autosprite surfaces which corner of
+  its quad each is), so there is no 16-bit index limit.
 - **Per draw** the CPU sends one `vec4[8]` uniform (placement, the two frames
-  and blend, shell inflate, ambient and directed light, direction and rear
-  factor, opacity, the eye in model space) and one `vec4` per stage. The
-  vertex shader lerps position and normal, pushes powerup shells out along the
-  normal, computes environment-mapped coordinates, the light (Q1/Q2 shade from
-  the lightmaps, Q3 light grid, the RF_GLOW pulse) and Q3 fog coordinates.
+  and blend, ambient and directed light, direction and rear factor, opacity,
+  the eye in model space) and a few `vec4`s per stage. The vertex shader
+  lerps position and normal, runs the shader's `deformVertexes`, computes
+  environment-mapped coordinates, the light (Q1/Q2 shade from the lightmaps,
+  Q3 light grid, the RF_GLOW pulse) and Q3 fog coordinates.
 - **Passes.** `ModelScene.draw` and the view weapon open one model pass for
   all their draws; other callers (effects, HUD icons) get one per draw.
 - Covered: monsters, items, gibs, corpses, Q3 bots' legs, torso and head with
@@ -236,8 +237,8 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
 - Patches draw at a fixed eight steps per quadratic piece (no LOD).
 - The lightmap atlas is a fixed 2048×2048; a map that overflows it fails to
   load ("Lightmap atlas capacity exceeded"). Every original map fits.
-- Q3 shaders: flare surfaces are not drawn; `deformVertexes normal` is parsed
-  and ignored; directives the parser does not know are recorded in
+- Q3 shaders: flare surfaces are not drawn; directives the parser does not
+  know are recorded in
   `material.unsupported` and skipped.
 - The world shader holds 16 fog volumes (`WORLD_FOG_LIMIT`); faces in a
   later volume draw unfogged.

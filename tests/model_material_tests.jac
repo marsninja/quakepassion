@@ -12,6 +12,7 @@ import from engine.formats.animated {
 }
 import from engine.formats.bsp { Texture }
 import from engine.render.models { UploadedStage, MODEL_ENTITY_COLOR }
+import from engine.render.quake { packed_deforms }
 
 """An archive of empty images named `images`, with `scripts` parsed."""
 def shader_archive(images: list[str], scripts: str) -> Pk3Assets {
@@ -200,6 +201,36 @@ test "a skin without a script is lit and a script without stages hides its surfa
     assert assets.model_hidden("models/harpy_f.tga") and not assets.model_stages("models/harpy_f.tga");
     assert not assets.model_hidden("models/harpy_h") and not assets.model_hidden("models/unscripted");
     assert assets.model_stages("models/harpy_h")[0].rgb == "diffuse";
+    assets.close();
+}
+
+test "model shaders carry their deformVertexes, normal included, to every stage" {
+    assets = shader_archive(
+        ["models/flag.tga", "models/fx.tga"],
+        "models/flag { deformVertexes wave 100 sin 4 3 0 0.3\ndeformVertexes normal .3 .2\ncull none { map models/flag.tga rgbGen identity } { map models/fx.tga tcGen environment blendFunc GL_ONE GL_ONE } }\n"
+            + "models/bfg01 { cull none deformVertexes autoSprite { clampmap models/fx.tga blendFunc GL_ONE GL_ONE } }\n"
+            + "models/holo { deformVertexes move 0 0 .7 sin 0 5 0 0.2 { map models/flag.tga } }"
+    );
+    stages = assets.model_stages("models/flag");
+    assert len(stages) == 2 and not assets.model_blockers("models/flag");
+    for stage in stages {
+        assert [deform.kind for deform in stage.deforms] == ["wave", "normal"];
+    }
+    normal = stages[0].deforms[1];
+    assert normal.wave.amplitude == 0.3 and normal.wave.frequency == 0.2;
+    # Packed for the shared deform shader: kind 6, the amplitude and frequency
+    # where the wave's are.
+    packed = packed_deforms(stages[0].deforms, 0.0);
+    assert struct.unpack("<ffffffff", packed[0])[0] == 1.0 and struct.unpack("<ffffffff", packed[0])[4] == 6.0;
+    waves = struct.unpack("<ffffffff", packed[1]);
+    assert abs(waves[5] - 0.3) < 0.00001 and abs(waves[7] - 0.2) < 0.00001;
+    # A static shader's deforms are packed once; a move's follow time.
+    assert planned_stage(stages[0]).deform_values == packed;
+    assert [deform.kind for deform in assets.model_stages("models/bfg01")[0].deforms] == ["autosprite"];
+    holo = planned_stage(assets.model_stages("models/holo")[0]);
+    assert not holo.deform_values and holo.source.deforms[0].kind == "move";
+    quarter = struct.unpack("<ffff", packed_deforms(holo.source.deforms, 1.25)[2]);
+    assert abs(quarter[2] - 0.7 * 5.0) < 0.0001 and quarter[0] == 0.0;
     assets.close();
 }
 

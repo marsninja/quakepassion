@@ -26,7 +26,7 @@ import from .quake { rlDrawRenderBatchActive }
 import from .models { ModelRenderer, open_model_pass, end_model_pass, MODEL_ENTITY_COLOR }
 import from ..assets.library { AssetLibrary }
 import from ..formats.animated { AnimatedModel, AnimatedSurface }
-import from ..world.models { powerup_shaders, POWERUP_INFLATE, POWERUP_INVISIBLE, PLAYER_COLOR1 }
+import from ..world.models { powerup_shaders, POWERUP_INVISIBLE, PLAYER_COLOR1 }
 import from ..world.powerups { Empowered, Powerup }
 import from ..math.vec3 { Vec3 }
 import from ..math.orientation { Basis, model_basis }
@@ -79,7 +79,7 @@ obj ViewWeapon {
             if game == "q3" {
                 # The powerup shaders the gun may be drawn with.
                 for shader in [POWERUP_INVISIBLE, "powerups/quadWeapon", "powerups/battleWeapon"] {
-                    stages = library.pk3.model_stages(shader, True);
+                    stages = library.pk3.model_stages(shader);
                     if stages {
                         shell = ModelRenderer();
                         shell.upload(AnimatedModel(surfaces=[AnimatedSurface(name=shader, stages=stages)]), [stages[0].texture]);
@@ -291,7 +291,6 @@ obj ViewWeapon {
                     illumination=illumination,
                     basis=basis,
                     overlay=shell,
-                    inflate=POWERUP_INFLATE.get(shader, 0.0),
                     entity_color=gun_color
                 );
             }
@@ -317,8 +316,7 @@ obj ViewWeapon {
                                 seconds=seconds,
                                 illumination=illumination,
                                 basis=barrel_basis,
-                                overlay=shell,
-                                inflate=POWERUP_INFLATE.get(shader, 0.0)
+                                overlay=shell
                             );
                         }
                         break;

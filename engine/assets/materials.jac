@@ -16,7 +16,6 @@ obj ModelMaterial {
         two_sided: bool = False,
         cull: int = 0,
         unsupported: list[str] = [],
-        deformed: bool = False,
         sky: bool = False,
         farbox: str = "",
         cloud_height: float = 128.0,
@@ -348,7 +347,6 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
             material.sky = True;
         } elif depth == 1 and token == "deformvertexes" and i + 1 < len(tokens) {
             kind = tokens[i + 1].lower();
-            material.deformed = True;
             if kind == "wave" {
                 divisor = number_at(tokens, i + 2);
                 material.deforms.append(Deform(kind="wave", spread=1.0 / divisor if divisor != 0.0 else 0.0, wave=wave_at(tokens, i + 3)));
@@ -365,7 +363,11 @@ def model_materials(clean_source: str) -> dict[str, ModelMaterial] {
                 material.deforms.append(Deform(kind=kind));
                 i += 1;
             } elif kind == "normal" {
-                i += 1;
+                # deformVertexes normal <amplitude> <frequency>
+                material.deforms.append(
+                    Deform(kind="normal", wave=ShaderWave(amplitude=number_at(tokens, i + 2), frequency=number_at(tokens, i + 3)))
+                );
+                i += 3;
             } else {
                 material.unsupported.append("deformvertexes " + kind);
             }

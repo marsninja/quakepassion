@@ -3,12 +3,14 @@ looked at up close at a fixed moment: Q1 liquids, sky, animated textures and
 flickering light styles, Q2 flowing and translucent surfaces, and Q3 shader
 stages (scrolling and pulsing stages, deforms, autosprites, environment
 maps). Saves world_<map>_<feature>.png in the working directory, for
-comparing renderers by eye or pixel by pixel.
+comparing renderers by eye or pixel by pixel. QP_FEATURE_GAMES (for example
+"q3") limits the games.
 
     jac build scripts/world_features_smoke.jac --native -o .jac/world-features
     DYLD_LIBRARY_PATH=vendor .jac/world-features
 """
 import math;
+import os;
 import from engine.core.menu { game_directory }
 import from engine.world.level { Level, load_level }
 import from engine.world.world { World }
@@ -96,9 +98,13 @@ with entry {
         ["q3", "q3dm7", "scroll,pulse,sprite,wave,chrome"],
         ["q3", "q3dm12", "scroll,pulse,sprite,wave"]
     ];
+    wanted = os.getenv("QP_FEATURE_GAMES", "");
     for scenario in cases {
         game = scenario[0];
         name = scenario[1];
+        if wanted and game not in wanted.split(",") {
+            continue;
+        }
         world = World();
         level = load_level(world, game_directory(game), name, game);
         drawing = QuakeRenderer();

@@ -153,8 +153,15 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   - `tcMod` scroll, scale, rotate, turb, stretch and transform, in order;
     `tcGen environment` and `tcGen vector`.
   - `alphaFunc` and `depthWrite`.
-- `deformVertexes` `wave`, `move` and `bulge` sway vertices; `autosprite` and
-  `autosprite2` turn quads toward the viewer.
+- `deformVertexes` runs in the vertex shader, on world surfaces and models
+  alike (`RB_DeformTessGeometry`, `engine/render/world_mesh.jac`
+  `SHADER_DEFORM_GLSL`): `wave`, `move` and `bulge` sway vertices;
+  `autosprite` rebuilds each quad square on the view's left and up axes
+  (`AutospriteDeform`, `RB_AddQuadStamp`); `autosprite2` pivots it about its
+  long axis, the two shortest of its six vertex pairs being its ends
+  (`Autosprite2Deform`); `normal` wiggles the normals for wavy environment
+  maps (`RB_CalcDeformNormals`, over hashed lattice noise in place of
+  `tr_noise.c`'s `rand()` table).
 - Model shaders (players, items, weapons, powerup shells) draw stage by stage
   too, lit by `rgbGen lightingDiffuse`; see
   [models](models-status.md#q3-model-shaders).
@@ -197,5 +204,5 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   bindings.
 - Q2 item selection (`invnext`/`invprev`) steps through stored items only;
   the original's `SelectNextItem` also steps through weapons.
-- Q3 flares, `deformVertexes normal` and unknown shader directives are not
-  drawn (see [rendering](rendering-status.md#limitations)).
+- Q3 flares and unknown shader directives are not drawn (see
+  [rendering](rendering-status.md#limitations)).

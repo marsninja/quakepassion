@@ -84,9 +84,11 @@ obj TexMod {
         matrix: list[float] = [];
 }
 
-"""A surface-wide deformVertexes: wave and move sway vertices along the normal
-or a vector by a wave spread over position, bulge ripples along the texture's
-s, and autosprite/autosprite2 turn quads to face the viewer."""
+"""A surface-wide deformVertexes (tr_shade_calc.c RB_DeformTessGeometry):
+wave and move sway vertices along the normal or a vector by a wave spread
+over position, bulge ripples along the texture's s, autosprite and
+autosprite2 turn quads to face the viewer, and normal wiggles the normals
+(its wave holds the amplitude and frequency) for wavy environment maps."""
 obj Deform {
     has kind: str,
         spread: float = 0.0,
@@ -107,7 +109,8 @@ glob SHADER_CULL_FRONT: int = 0,
 identity, wave, const, vertex, diffuse (lightingDiffuse) or entity and
 oneminusentity (the drawn entity's shaderRGBA); `alpha` its alphaGen:
 identity, wave, const, vertex, portal, specular (lightingSpecular), entity
-or oneminusentity. `cull` is the whole shader's, the same on each stage."""
+or oneminusentity. `cull` and `deforms` are the whole shader's, the same on
+each of its stages."""
 obj ModelStage {
     has texture: Texture = Texture(),
         frames: list[Texture] = [],
@@ -129,7 +132,8 @@ obj ModelStage {
         depth_write: bool = False,
         vectors: list[Vec3] = [],
         clamp: bool = False,
-        cull: int = 0;
+        cull: int = 0,
+        deforms: list[Deform] = [];
 }
 
 def stage_frame(seconds: float, frequency: float, count: int) -> int {

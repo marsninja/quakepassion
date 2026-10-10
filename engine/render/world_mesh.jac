@@ -43,9 +43,10 @@ import from ..world.lighting { shift_light }
 # Aux A holds the Q1/Q2 light style layer stride and the face's s texture
 # axis in lightmap samples (a sixteenth of texinfo s), aux B its t axis and
 # where its lightmap block starts in the atlas (4096 x + y), and info's
-# autosprite bytes its lightmap's last sample column and row. Or aux A holds an autosprite quad's centre and radius, or an
-# autosprite2 vertex's own short-edge midpoint and half length, and aux B
-# the other short edge's midpoint.
+# autosprite bytes its lightmap's last sample column and row. On a Q3 quad
+# aux A holds the quad's centre and autosprite radius, aux B the vertex's
+# own short-edge midpoint and half length for autosprite2, and info's
+# autosprite bytes its corner number and its sprite_quad code plus 4.
 glob WORLD_VERTEX_STRIDE: int = 84,
      WORLD_VERTEX_FORMAT: str = "<fffffffBBBBfffBBBBBBBBffffffff";
 
@@ -139,9 +140,10 @@ def face_triangles(face: Face) -> list[int] {
     return corners;
 }
 
-"""A face's triangles as little-endian 16-bit indices from vertex `base`."""
-def face_index_bytes(face: Face, base: int) -> bytes {
-    corners = face_triangles(face);
+"""A face's triangles as little-endian 16-bit indices from vertex `base`, or
+the triangles over `stamp` corners instead (SPRITE_STAMP_CORNERS)."""
+def face_index_bytes(face: Face, base: int, stamp: list[int] = []) -> bytes {
+    corners = stamp if stamp else face_triangles(face);
     out = bytearray(len(corners) * 2);
     for i in range(len(corners)) {
         struct.pack_into("<H", out, i * 2, base + corners[i]);
@@ -199,6 +201,72 @@ def gather_indices(
     return added;
 }
 
+# tr_shade_calc.c edgeVerts: the six vertex pairs of a quad.
+glob QUAD_EDGES: list[list[int]] = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
+
+# tr_surface.c RB_AddQuadStamp's two triangles (0 1 3, 3 1 2) over a quad's
+# corners, in this renderer's winding (the file's, reversed).
+glob SPRITE_STAMP_CORNERS: list[int] = [0, 3, 1, 3, 2, 1];
+
+"""What tr_shade_calc.c Autosprite2Deform works out for a quad before the
+view comes into it. Of the six vertex pairs the two shortest are the quad's
+ends: `partners` is each vertex's other end of its edge, and `codes` twice
+its edge's rank (0 the shortest) plus which way it goes along the minor axis
+(0 forward, 1 back), or -1 for a vertex on neither edge."""
+obj SpriteQuad {
+    has partners: list[int] = [0, 1, 2, 3],
+        codes: list[int] = [-1, -1, -1, -1];
+}
+
+"""Autosprite2Deform's edges for the quad `points`, whose two triangles are
+`order` (six corner numbers in the file's winding): a vertex goes forward
+along the minor axis when its edge does not appear, first vertex then second,
+among consecutive indices, and back when it does."""
+def sprite_quad(points: list[Vec3], order: list[int]) -> SpriteQuad {
+    nums = [0, 0];
+    lengths = [999999.0, 999999.0];
+    for j in range(6) {
+        delta = points[QUAD_EDGES[j][0]].sub(points[QUAD_EDGES[j][1]]);
+        length = delta.dot(delta);
+        if length < lengths[0] {
+            nums[1] = nums[0];
+            lengths[1] = lengths[0];
+            nums[0] = j;
+            lengths[0] = length;
+        } elif length < lengths[1] {
+            nums[1] = j;
+            lengths[1] = length;
+        }
+    }
+    shape = SpriteQuad(partners=[0, 1, 2, 3], codes=[-1, -1, -1, -1]);
+    for j in range(2) {
+        first = QUAD_EDGES[nums[j]][0];
+        second = QUAD_EDGES[nums[j]][1];
+        listed = False;
+        for k in range(min(5, len(order) - 1)) {
+            if order[k] == first and order[k + 1] == second {
+                listed = True;
+                break;
+            }
+        }
+        shape.partners[first] = second;
+        shape.partners[second] = first;
+        shape.codes[first] = j * 2 + (1 if listed else 0);
+        shape.codes[second] = j * 2 + (0 if listed else 1);
+    }
+    return shape;
+}
+
+"""Triangle corners stored in this renderer's winding back in the file's
+(each triangle's last two corners swapped)."""
+def file_winding(corners: list[int]) -> list[int] {
+    order: list[int] = [];
+    for k in range(0, len(corners) - 2, 3) {
+        order.extend([corners[k], corners[k + 2], corners[k + 1]]);
+    }
+    return order;
+}
+
 """Pack one face's vertices into `out` from byte `offset`. `light_x`,
 `light_y` place its lightmap in an `atlas_size` atlas; `layer` is the Q1/Q2
 light style layer stride in atlas units. With `sprites` (Q3), a quad also
@@ -229,40 +297,16 @@ def pack_world_face(
         styles[k] = max(0, min(254, face.styles[k]));
     }
     quad = sprites and count == 4;
-    if quad {
-        flags = flags | SURFACE_QUAD;
-    }
     # Autosprite: the quad's centre and radius (tr_shade_calc.c
-    # AutospriteDeform). Autosprite2: each vertex's short edge, by its
-    # midpoint and half length, and which end of that edge it is.
+    # AutospriteDeform). Autosprite2: each vertex's short edge.
     middle = Vec3();
     radius = 0.0;
-    ends: list[Vec3] = [];
-    halves: list[float] = [];
-    edge_of = [0, 0, 0, 0];
-    role_of = [0, 0, 0, 0];
+    shape = SpriteQuad();
     if quad {
+        flags = flags | SURFACE_QUAD;
         middle = face.vertices[0].add(face.vertices[1]).add(face.vertices[2]).add(face.vertices[3]).scale(0.25);
         radius = face.vertices[0].sub(middle).length() * 0.707;
-        edges = [[0, 1], [1, 2], [2, 3], [3, 0]];
-        first = 0;
-        for e in range(4) {
-            if face.vertices[edges[e][0]].sub(face.vertices[edges[e][1]]).length()
-                < face.vertices[edges[first][0]].sub(face.vertices[edges[first][1]]).length() {
-                first = e;
-            }
-        }
-        shorts = [edges[first], edges[(first + 2) % 4]];
-        for k in range(2) {
-            a = shorts[k][0];
-            b = shorts[k][1];
-            ends.append(face.vertices[a].add(face.vertices[b]).scale(0.5));
-            halves.append(face.vertices[a].sub(face.vertices[b]).length() * 0.5);
-            edge_of[a] = k;
-            edge_of[b] = k;
-            role_of[a] = 0;
-            role_of[b] = 1;
-        }
+        shape = sprite_quad(face.vertices, file_winding(face_triangles(face)));
     }
     normal = face.normal;
     for i in range(count) {
@@ -287,7 +331,7 @@ def pack_world_face(
             opacity = face.colors[i * 4 + 3];
         }
         # Aux A: the style layer stride and s axis, or the quad's centre and
-        # radius. Aux B: the t axis and last sample, or this vertex's
+        # radius. Aux B: the t axis and lightmap block, or this vertex's
         # short-edge midpoint and half length (the other midpoint is the
         # centre's mirror of it).
         ax = layer;
@@ -313,7 +357,8 @@ def pack_world_face(
             edge_code = max(0, min(255, face.light_height - 1));
         }
         if quad {
-            end = ends[edge_of[i]];
+            partner = face.vertices[shape.partners[i]];
+            end = v.add(partner).scale(0.5);
             ax = middle.x;
             ay = middle.y;
             az = middle.z;
@@ -321,9 +366,9 @@ def pack_world_face(
             mx = end.x;
             my = end.y;
             mz = end.z;
-            mw = halves[edge_of[i]];
+            mw = v.sub(partner).length() * 0.5;
             corner = i;
-            edge_code = edge_of[i] * 2 + role_of[i] + 4;
+            edge_code = shape.codes[i] + 4;
         }
         struct.pack_into(
             "<fffffffBBBBfffBBBBBBBBffffffff",
@@ -534,27 +579,66 @@ glob WORLD_WAVE_GLSL: str = "float waveAt(float func, float base, float amplitud
     + " if(eyeT<0.0) t=t<1.0?1.0/32.0:1.0/32.0+30.0/32.0*t/(t-eyeT); else t=t<0.0?1.0/32.0:31.0/32.0; return vec2(s,t); }\n"
     + "float fogDensity(vec2 st){ float s=st.x-1.0/512.0; float t=st.y; if(s<0.0||t<1.0/32.0) return 0.0; if(t<31.0/32.0) s*=(t-1.0/32.0)/(30.0/32.0); s=min(1.0,s*8.0); return sqrt(floor(s*255.0)/255.0); }\n";
 
+# tr_shade_calc.c RB_DeformTessGeometry, shared by the world's stage shader
+# and the model shader (models.jac), in whichever space the caller's
+# vertices are in. deformInfo holds each deform's kind (1 wave, 2 move, 3
+# bulge, 4 autosprite, 5 autosprite2, 6 normal), waveform and spread;
+# deformWave its wave; deformVector move's push now, or bulge's width,
+# height and speed (quake.jac packed_deforms).
+#   wave (RB_CalcDeformVertexes): along the normal by the wave, its phase
+#     spread over position unless the wave stands still.
+#   move (RB_CalcMoveVertexes): the whole surface along a vector.
+#   bulge (RB_CalcBulgeVertexes): along the normal by sin(s * width + time *
+#     speed) * height.
+#   autosprite (AutospriteDeform, RB_AddQuadStamp): the quad `quad` (centre,
+#     radius) redrawn square on the view's left and up, facing the viewer,
+#     `corner` choosing which of its corners this vertex is.
+#   autosprite2 (Autosprite2Deform): the quad pivots about its long axis;
+#     `edge` is this vertex's short edge (midpoint, half length) and `code`
+#     its sprite_quad code.
+#   normal (RB_CalcDeformNormals): each normal component pushed by lattice
+#     noise over position and time (tr_noise.c R_NoiseGet4f's interpolation,
+#     over hashed lattice values in place of its rand() table).
+# viewAxes reads the view's right, up and forward from a view-projection
+# matrix: its first and last rows, with up on the side the second row says
+# (a mirror's flipped projection flips left and right alone, as the
+# original's isMirror does).
+glob SHADER_DEFORM_GLSL: str = "uniform int deformCount; uniform vec4 deformInfo[4]; uniform vec4 deformWave[4]; uniform vec4 deformVector[4];\n"
+    + "void viewAxes(mat4 m, out vec3 right, out vec3 up, out vec3 forward){ vec3 r0=vec3(m[0][0],m[1][0],m[2][0]); vec3 r1=vec3(m[0][1],m[1][1],m[2][1]); vec3 r3=vec3(m[0][3],m[1][3],m[2][3]);"
+    + " right=normalize(r0); forward=normalize(r3); up=cross(right,forward)*(dot(cross(r0,r1),r3)<0.0?1.0:-1.0); }\n"
+    + "float latticeValue(ivec4 c){ uint h=uint(c.x)*374761393u+uint(c.y)*668265263u+uint(c.z)*2246822519u+uint(c.w)*3266489917u; h=(h^(h>>15))*2246822519u; h=(h^(h>>13))*3266489917u; h^=h>>16; return float(h&65535u)/32767.5-1.0; }\n"
+    + "float latticeNoise(vec4 v){ vec4 cell=floor(v); vec4 f=v-cell; ivec4 c=ivec4(cell); float value[2];\n"
+    + " for(int i=0;i<2;i++){ ivec4 o=c+ivec4(0,0,0,i);\n"
+    + "  float front=mix(mix(latticeValue(o),latticeValue(o+ivec4(1,0,0,0)),f.x),mix(latticeValue(o+ivec4(0,1,0,0)),latticeValue(o+ivec4(1,1,0,0)),f.x),f.y);\n"
+    + "  float back=mix(mix(latticeValue(o+ivec4(0,0,1,0)),latticeValue(o+ivec4(1,0,1,0)),f.x),mix(latticeValue(o+ivec4(0,1,1,0)),latticeValue(o+ivec4(1,1,1,0)),f.x),f.y);\n"
+    + "  value[i]=mix(front,back,f.z); }\n"
+    + " return mix(value[0],value[1],f.w); }\n"
+    + "void deformVertex(inout vec3 p, inout vec3 n, inout vec2 st, float now, vec4 quad, vec4 edge, int corner, int code, vec3 right, vec3 up, vec3 forward){\n"
+    + " for(int i=0;i<4;i++){ if(i>=deformCount) break; float kind=deformInfo[i].x;\n"
+    + "  if(kind<1.5){ float off=deformWave[i].w==0.0?0.0:(p.x+p.y+p.z)*deformInfo[i].z; p+=n*waveAt(deformInfo[i].y,deformWave[i].x,deformWave[i].y,deformWave[i].z+off+now*deformWave[i].w); }\n"
+    + "  else if(kind<2.5){ p+=deformVector[i].xyz; }\n"
+    + "  else if(kind<3.5){ p+=n*(sin(st.x*deformVector[i].x+now*deformVector[i].z)*deformVector[i].y); }\n"
+    + "  else if(kind<4.5){ if(corner>=0){ vec3 left=right*-quad.w; vec3 rise=up*quad.w;\n"
+    + "    if(corner==0){ p=quad.xyz+left+rise; st=vec2(0.0,0.0); } else if(corner==1){ p=quad.xyz-left+rise; st=vec2(1.0,0.0); } else if(corner==2){ p=quad.xyz-left-rise; st=vec2(1.0,1.0); } else { p=quad.xyz+left-rise; st=vec2(0.0,1.0); }\n"
+    + "    n=-forward; } }\n"
+    + "  else if(kind<5.5){ if(code>=0){ vec3 other=quad.xyz*2.0-edge.xyz; vec3 major=code<2?other-edge.xyz:edge.xyz-other; vec3 minor=normalize(cross(major,forward)); p=edge.xyz+minor*((code&1)==0?edge.w:-edge.w); } }\n"
+    + "  else { float t=now*deformWave[i].w; vec3 at=p*0.98; n.x+=deformWave[i].y*latticeNoise(vec4(at,t)); n.y+=deformWave[i].y*latticeNoise(vec4(100.0+at.x,at.yz,t)); n.z+=deformWave[i].y*latticeNoise(vec4(200.0+at.x,at.yz,t)); n=normalize(n); }\n"
+    + " } }\n";
+
 # Q3 shader stages (tr_shade.c RB_StageIteratorGeneric, tr_shade_calc.c):
 # deformVertexes, tcGen, the tcMods folded into affine steps split at each
 # turb, rgbGen/alphaGen, and adjustColorsForFog, all per vertex.
 glob STAGE_VS: str = WORLD_INPUTS
-    + "uniform float time; uniform int deformCount; uniform vec4 deformInfo[4]; uniform vec4 deformWave[4]; uniform vec4 deformVector[4];\n"
+    + "uniform float time;\n"
     + "uniform int tcGen; uniform vec3 tcVectorS; uniform vec3 tcVectorT; uniform int tcSteps; uniform vec4 tcRowS[4]; uniform vec4 tcRowT[4]; uniform vec4 tcTurb[4]; uniform int turbFromNormal;\n"
     + "uniform vec4 tint; uniform int rgbMode; uniform int alphaMode; uniform float portalRange; uniform int fogMode; uniform int lightmapStage;\n"
     + WORLD_FOG_GLSL
     + WORLD_WAVE_GLSL
+    + SHADER_DEFORM_GLSL
     + "out vec2 st; out vec4 shade;\n"
     + "void main(){ int f=int(inInfo.x+0.5); vec3 p=(model*vec4(inPosition,1.0)).xyz; vec2 base=inTexCoord; vec3 n=inNormal; bool quad=(f&32)!=0;\n"
-    + " for(int i=0;i<4;i++){ if(i>=deformCount) break; float kind=deformInfo[i].x;\n"
-    + "  if(kind<1.5){ float off=(p.x+p.y+p.z)*deformInfo[i].z; p+=n*waveAt(deformInfo[i].y,deformWave[i].x,deformWave[i].y,deformWave[i].z+off+time*deformWave[i].w); }\n"
-    + "  else if(kind<2.5){ p+=deformVector[i].xyz; }\n"
-    + "  else if(kind<3.5){ p+=n*(sin(0.785398163*base.x*deformVector[i].x+time*deformVector[i].z)*deformVector[i].y); }\n"
-    + "  else if(kind<4.5&&quad){ vec3 mid=(model*vec4(inAuxA.xyz,1.0)).xyz; vec3 fw=normalize(mid-eye); vec3 right=cross(fw,vec3(0.0,0.0,1.0)); if(length(right)<0.001) right=vec3(1.0,0.0,0.0); right=normalize(right); vec3 up=normalize(cross(right,fw));"
-    + " vec3 left=right*-inAuxA.w; vec3 upward=up*inAuxA.w; int c=int(inInfo.y+0.5);"
-    + " if(c==0){ p=mid+left+upward; base=vec2(0.0,0.0); } else if(c==1){ p=mid-left+upward; base=vec2(1.0,0.0); } else if(c==2){ p=mid-left-upward; base=vec2(1.0,1.0); } else { p=mid+left-upward; base=vec2(0.0,1.0); } }\n"
-    + "  else if(kind<5.5&&quad){ int code=int(inInfo.w+0.5)-4; int k=code/2; int role=code-k*2; vec3 mid=(model*vec4(inAuxA.xyz,1.0)).xyz; vec3 own=(model*vec4(inAuxB.xyz,1.0)).xyz; vec3 other=mid*2.0-own;"
-    + " vec3 axis=k==0?other-own:own-other; vec3 across=normalize(cross(axis,mid-eye)); float d=dot(p-own,across); if(role==1) d=-d; float sgn=d>=0.0?1.0:-1.0; p=role==0?own+across*(inAuxB.w*sgn):own-across*(inAuxB.w*sgn); }\n"
-    + " }\n"
+    + " if(deformCount>0){ vec3 right; vec3 up; vec3 fw; viewAxes(viewProjection,right,up,fw);\n"
+    + "  deformVertex(p,n,base,time,vec4((model*vec4(inAuxA.xyz,1.0)).xyz,inAuxA.w),vec4((model*vec4(inAuxB.xyz,1.0)).xyz,inAuxB.w),quad?int(inInfo.y+0.5):-1,quad?int(inInfo.w+0.5)-4:-1,right,up,fw); }\n"
     + " vec2 c2=base; if(tcGen==1) c2=inLightCoord; else if(tcGen==2){ vec3 viewer=normalize(eye-p); vec3 r=n*(2.0*dot(n,viewer))-viewer; c2=vec2(0.5+r.y*0.5,0.5-r.z*0.5); } else if(tcGen==3) c2=vec2(dot(p,tcVectorS),dot(p,tcVectorT));\n"
     + " vec3 tp=turbFromNormal==1?inNormal:p;\n"
     + " for(int i=0;i<4;i++){ if(i>=tcSteps) break; c2=vec2(dot(tcRowS[i].xyz,vec3(c2,1.0)),dot(tcRowT[i].xyz,vec3(c2,1.0)));"

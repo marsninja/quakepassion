@@ -8,6 +8,9 @@ import from engine.render.world_mesh {
     face_index_bytes,
     gather_indices,
     pack_world_face,
+    sprite_quad,
+    file_winding,
+    SPRITE_STAMP_CORNERS,
     batch_key,
     WORLD_VERTEX_STRIDE,
     PASS_LIT,
@@ -123,8 +126,9 @@ test "world vertices pack position, coordinates, light, styles and sprite data" 
     assert q[26] == 0.0 and q[27] == 0.0 and q[28] == -2.0 / 16.0;
     assert q[29] == float(10 * 4096 + 20);
     assert q[15] == 2 and q[17] == 1 and q[14] == 1 and q[16] == 4;
-    # Q3 quads also carry their centre, radius and short-edge midpoints.
-    wide = Face(vertices=[Vec3(), Vec3(y=64.0), Vec3(y=64.0, z=8.0), Vec3(z=8.0)], uv=[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0], colors=[10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40]);
+    # Q3 quads also carry their centre, radius and short-edge midpoints. The
+    # indices are q3map's strip (3 0 2, 2 0 1), stored reversed.
+    wide = Face(vertices=[Vec3(), Vec3(y=64.0), Vec3(y=64.0, z=8.0), Vec3(z=8.0)], uv=[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0], colors=[10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40], indices=[3, 2, 0, 2, 1, 0]);
     sprite = bytearray(4 * WORLD_VERTEX_STRIDE);
     pack_world_face(sprite, 0, wide, 0, 0, 64, 0.0, 0, -1, True, sprites=True);
     w = struct.unpack_from("<fffffffBBBBfffBBBBBBBBffffffff", bytes(sprite), WORLD_VERTEX_STRIDE);
@@ -134,7 +138,57 @@ test "world vertices pack position, coordinates, light, styles and sprite data" 
     assert w[22] == 0.0 and w[23] == 32.0 and w[24] == 4.0;
     # Vertex 1 ends the short edge 1-2, midpoint (0, 64, 4), half length 4.
     assert w[26] == 0.0 and w[27] == 64.0 and w[28] == 4.0 and w[29] == 4.0;
-    assert w[17] == 4 + 0 * 2 + 0 or w[17] == 4 + 1 * 2 + 0;
+    # Its edge is the second shortest and it goes forward along the minor axis.
+    assert w[17] == 4 + 1 * 2 + 0;
+}
+
+"""Autosprite2Deform's re-projection of a quad for a view along `forward`,
+as world_mesh.jac SHADER_DEFORM_GLSL does it from sprite_quad's codes."""
+def pivoted(points: list[Vec3], order: list[int], forward: Vec3) -> list[Vec3] {
+    shape = sprite_quad(points, order);
+    middle = points[0].add(points[1]).add(points[2]).add(points[3]).scale(0.25);
+    moved: list[Vec3] = [];
+    for i in range(4) {
+        partner = points[shape.partners[i]];
+        end = points[i].add(partner).scale(0.5);
+        other = middle.scale(2.0).sub(end);
+        major = other.sub(end) if shape.codes[i] < 2 else end.sub(other);
+        minor = major.cross(forward).normalized();
+        half = points[i].sub(partner).length() * 0.5;
+        moved.append(end.add(minor.scale(half if shape.codes[i] % 2 == 0 else -half)));
+    }
+    return moved;
+}
+
+test "autosprite2 pivots a quad about its long axis to face the viewer" {
+    # A flame 64 tall and 8 wide in the x = 0 plane, q3map's indices.
+    points = [Vec3(), Vec3(z=64.0), Vec3(y=8.0, z=64.0), Vec3(y=8.0)];
+    order = [3, 0, 2, 2, 0, 1];
+    shape = sprite_quad(points, order);
+    # The short edges are 0-3 and 1-2; the long ones keep their vertices.
+    assert shape.partners == [3, 2, 1, 0];
+    assert sorted(shape.codes) == [0, 1, 2, 3] and shape.codes[0] // 2 == shape.codes[3] // 2;
+    for forward in [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(x=0.6, y=-0.8)] {
+        moved = pivoted(points, order, forward);
+        # The long axis stays where it was and the ends stay 8 wide.
+        assert moved[0].add(moved[3]).scale(0.5).sub(Vec3(y=4.0)).length() < 0.0001;
+        assert moved[1].add(moved[2]).scale(0.5).sub(Vec3(y=4.0, z=64.0)).length() < 0.0001;
+        assert abs(moved[0].sub(moved[3]).length() - 8.0) < 0.0001;
+        # The quad lies square to the view and is not twisted: both ends
+        # run the same way across it.
+        assert abs(moved[0].sub(moved[3]).dot(forward)) < 0.0001;
+        assert moved[0].sub(moved[3]).dot(moved[1].sub(moved[2])) > 63.0;
+        # Its first triangle (file winding 3 0 2) turns clockwise for the
+        # viewer, the side Q3 draws.
+        normal = moved[0].sub(moved[3]).cross(moved[2].sub(moved[3]));
+        assert normal.dot(forward) > 0.0;
+    }
+    # A fan's triangles (0 1 2, 0 2 3) list edge 1-2 in order: that end turns
+    # the other way, as the original's index test has it.
+    fanned = sprite_quad(points, [0, 1, 2, 0, 2, 3]);
+    assert fanned.codes[1] % 2 == 1 and fanned.codes[0] % 2 == 0;
+    assert file_winding([3, 2, 0, 2, 1, 0]) == order;
+    assert face_index_bytes(Face(vertices=points), 10, SPRITE_STAMP_CORNERS) == struct.pack("<HHHHHH", 10, 13, 11, 13, 12, 11);
 }
 
 test "tcMod steps reproduce the CPU tcMods, turb included" {

@@ -242,7 +242,7 @@ def powerup_shells(world: World, library: AssetLibrary, resources: dict[str, Mod
         if key in resources {
             continue;
         }
-        stages = library.pk3.model_stages(shader, True);
+        stages = library.pk3.model_stages(shader);
         if not stages {
             continue;
         }

@@ -16,7 +16,9 @@ import struct;
 import from ..math.orientation { Basis, model_basis }
 import from ..formats.animated {
     AnimatedModel,
+    AnimatedSurface,
     ModelStage,
+    Deform,
     pose,
     stage_frame,
     frame_normals,
@@ -33,6 +35,7 @@ import from .gpu {
     GpuProgram,
     VertexAttribute,
     GL_FLOAT,
+    GL_UNSIGNED_BYTE,
     view_projection,
     upload_float_texture
 }
@@ -58,8 +61,10 @@ import from .quake {
     packed_tcmods,
     apply_tcmods,
     stage_color,
-    stage_blend
+    stage_blend,
+    packed_deforms
 }
+import from .world_mesh { WORLD_WAVE_GLSL, SHADER_DEFORM_GLSL, SpriteQuad, sprite_quad }
 import from ..formats.bsp { FogVolume }
 import from vendor.raylib {
     def rlSetBlendFactors(src: i32, dst: i32, equation: i32) -> None;  def rlActiveTextureSlot(
@@ -78,10 +83,15 @@ glob MODEL_FRAME_ROW: int = 4096;
 glob MODEL_NORMAL_STEPS: int = 4095;
 
 """Every corner reads its two keyframes from the frame texture, lerps them
-(position, and the normal when the format has one), pushes a shell out along
-the normal and places the result with the model's axes. u_draw: [0..2] the
-forward/left/up axes with the origin in w, [3] frame A, frame B, blend,
-inflate, [4] ambient and whether it glows (Q2 RF_GLOW, lighting.jac
+(position, and the normal when the format has one), runs the shader's
+deformVertexes in model space (world_mesh.jac SHADER_DEFORM_GLSL: powerup
+shells pushed out along the normal, waving flags and wings, sprites turned to
+the viewer) and places the result with the model's axes. `quad` marks the
+corners of autosprite surfaces (corner number, the other vertex of its short
+edge, its sprite_quad code plus 1, and whether the surface is made of quads):
+their quads are read whole from the frame texture each frame. u_draw: [0..2]
+the forward/left/up axes with the origin in w, [3] frame A, frame B and blend,
+[4] ambient and whether it glows (Q2 RF_GLOW, lighting.jac
 glow_pulse, directed light following ambient), [5] directed and opacity,
 [6] light direction (in world space) and the share of directed light on
 faces turned away, [7] the eye in model space and the time. u_stage: the
@@ -98,19 +108,27 @@ affine map (u_tcS, u_tcT rows) then maybe a turb (u_turb: on, amplitude,
 phase), which tr_shade_calc.c RB_CalcTurbulentTexCoords takes from the
 model-space position. u_fog: tr_main.c fog texture coordinates as quake.jac
 fog_coords computes them, and the fog colour."""
-glob MODEL_VERTEX_SHADER: str = "#version 330\nin vec4 corner;\n"
+glob MODEL_VERTEX_SHADER: str = "#version 330\nin vec4 corner; in vec4 quad;\n"
     + "uniform mat4 mvp; uniform sampler2D frames; uniform vec4 u_draw[8]; uniform vec4 u_stage; uniform vec4 u_gen; uniform vec4 u_color; uniform vec4 u_tcv[2]; uniform vec4 u_tcS[4]; uniform vec4 u_tcT[4]; uniform vec4 u_turb[4]; uniform vec4 u_fog[4];\n"
+    + WORLD_WAVE_GLSL
+    + SHADER_DEFORM_GLSL
     + "out vec2 uv; out vec4 tint;\n"
     + "vec4 keyframe(float texel){ int t=int(texel+0.5); return texelFetch(frames, ivec2(t&4095, t>>12), 0); }\n"
+    + "vec3 posed(float texel){ return mix(keyframe(texel+u_draw[3].x*corner.y).xyz,keyframe(texel+u_draw[3].y*corner.y).xyz,u_draw[3].z); }\n"
     + "vec3 unpackNormal(float code){ float hi=floor(code/4096.0); vec2 p=vec2(hi, code-hi*4096.0)*(2.0/4095.0)-1.0; vec3 n=vec3(p, 1.0-abs(p.x)-abs(p.y)); float t=max(-n.z,0.0); n.x+=n.x>=0.0?-t:t; n.y+=n.y>=0.0?-t:t; return normalize(n); }\n"
     + "void main(){\n"
     + " vec4 a=keyframe(corner.x+u_draw[3].x*corner.y); vec4 b=keyframe(corner.x+u_draw[3].y*corner.y); float f=u_draw[3].z;\n"
     + " vec3 local=mix(a.xyz,b.xyz,f); bool shaded=a.w>=0.0&&b.w>=0.0; vec3 n=vec3(0.0,0.0,1.0);\n"
-    + " if(shaded){ vec3 blended=mix(unpackNormal(a.w),unpackNormal(b.w),f); local+=blended*u_draw[3].w; n=normalize(blended); }\n"
-    + " mat3 axes=mat3(u_draw[0].xyz,u_draw[1].xyz,u_draw[2].xyz);\n"
+    + " if(shaded){ n=normalize(mix(unpackNormal(a.w),unpackNormal(b.w),f)); }\n"
+    + " mat3 axes=mat3(u_draw[0].xyz,u_draw[1].xyz,u_draw[2].xyz); vec2 st=corner.zw;\n"
+    + " if(deformCount>0){ vec3 right; vec3 up; vec3 fw; viewAxes(mvp,right,up,fw); right=right*axes; up=up*axes; fw=fw*axes;\n"
+    + "  vec4 q=vec4(0.0); vec4 e=vec4(0.0); int c=-1; int code=-1;\n"
+    + "  if(quad.w>0.5){ c=int(quad.x+0.5); float first=corner.x-quad.x; vec3 v[4]; for(int k=0;k<4;k++){ v[k]=posed(first+float(k)); }\n"
+    + "   vec3 mid=(v[0]+v[1]+v[2]+v[3])*0.25; q=vec4(mid,length(v[0]-mid)*0.707); int partner=int(quad.y+0.5); e=vec4((v[c]+v[partner])*0.5,length(v[c]-v[partner])*0.5); code=int(quad.z+0.5)-1; }\n"
+    + "  deformVertex(local,n,st,u_draw[7].w,q,e,c,code,right,up,fw); }\n"
     + " vec3 world=vec3(u_draw[0].w,u_draw[1].w,u_draw[2].w)+axes*local;\n"
     + " gl_Position=mvp*vec4(world,1.0);\n"
-    + " uv=corner.zw; vec3 viewer=normalize(u_draw[7].xyz-local);\n"
+    + " uv=st; vec3 viewer=normalize(u_draw[7].xyz-local);\n"
     + " if(u_stage.x>1.5){ uv=vec2(dot(local,u_tcv[0].xyz),dot(local,u_tcv[1].xyz)); }\n"
     + " else if(u_stage.x>0.5){ vec3 r=n*(2.0*dot(n,viewer))-viewer; uv=vec2(0.5+r.y*0.5,0.5-r.z*0.5); }\n"
     + " int steps=int(u_stage.w+0.5);\n"
@@ -141,6 +159,7 @@ draws share one program bind) and the uniform scratch buffers."""
 obj ModelGpu {
     has program: GpuProgram = GpuProgram(),
         corner: int = -1,
+        quad: int = -1,
         loaded: bool = False,
         checked: bool = False,
         legacy: bool = False,
@@ -169,8 +188,9 @@ def model_program -> ModelGpu {
     if not gpu.loaded {
         gpu.program.load(MODEL_VERTEX_SHADER, MODEL_FRAGMENT_SHADER);
         gpu.corner = gpu.program.attribute("corner");
-        if gpu.corner < 0 {
-            raise RuntimeError("Model shader lost its corner attribute");
+        gpu.quad = gpu.program.attribute("quad");
+        if gpu.corner < 0 or gpu.quad < 0 {
+            raise RuntimeError("Model shader lost a vertex attribute");
         }
         gpu.loaded = True;
     }
@@ -340,15 +360,40 @@ def pack_model_keyframes(model: AnimatedModel) -> ModelKeyframes {
     return result;
 }
 
+# One corner record: four floats, then the four `quad` bytes.
+glob MODEL_CORNER_STRIDE: int = 20;
+
 """Every surface's triangle corners as vertex records: the corner's texel in
-frame 0, the surface's vertices per frame (the stride to later frames) and
-its texture coordinates. Alias model file triangles wind clockwise; the
-records keep the immediate path's reversed (CCW) order. Surface s's corners
-are `counts[s]` records from `firsts[s]`."""
+frame 0, the surface's vertices per frame (the stride to later frames), its
+texture coordinates and, on a surface of quads an autosprite or autosprite2
+shader turns (surface_sprite), its `quad` bytes. Alias model file triangles
+wind clockwise; the records keep the immediate path's reversed (CCW) order.
+An autosprite surface's quads are triangulated as tr_surface.c
+RB_AddQuadStamp does. Surface s's corners are `counts[s]` records from
+`firsts[s]`."""
 obj ModelCorners {
     has records: bytes = b"",
         firsts: list[int] = [],
         counts: list[int] = [];
+}
+
+"""Which sprite deform turns a surface's quads: "autosprite", "autosprite2" or
+"" (tr_shade_calc.c takes every four vertices and six indices as a quad; a
+surface that is not made that way is left as it is)."""
+def surface_sprite(surface: AnimatedSurface) -> str {
+    if not surface.stages or not surface.frames {
+        return "";
+    }
+    count = len(surface.frames[0].vertices);
+    if count == 0 or count % 4 != 0 or len(surface.indices) != (count // 4) * 6 {
+        return "";
+    }
+    for deform in surface.stages[0].deforms {
+        if deform.kind in ["autosprite", "autosprite2"] {
+            return deform.kind;
+        }
+    }
+    return "";
 }
 
 def pack_model_corners(model: AnimatedModel, keyframes: ModelKeyframes) -> ModelCorners {
@@ -361,20 +406,46 @@ def pack_model_corners(model: AnimatedModel, keyframes: ModelKeyframes) -> Model
         result.counts.append(count);
         total += count;
     }
-    out = bytearray(total * 16);
+    out = bytearray(total * MODEL_CORNER_STRIDE);
     offset = 0;
     for s in range(len(model.surfaces)) {
         surface = model.surfaces[s];
         base = float(keyframes.bases[s]);
         stride = float(keyframes.vertices[s]);
+        sprite = surface_sprite(surface);
+        indices = surface.indices;
+        shapes: list[SpriteQuad] = [];
+        if sprite {
+            rest = surface.frames[0].vertices;
+            for q in range(len(rest) // 4) {
+                order = [index - q * 4 for index in indices[q * 6:q * 6 + 6]];
+                shapes.append(sprite_quad(rest[q * 4:q * 4 + 4], order));
+            }
+        }
+        if sprite == "autosprite" {
+            # RB_AddQuadStamp: corners 0 1 3 and 3 1 2 of each quad.
+            indices = [];
+            for q in range(len(shapes)) {
+                indices.extend([q * 4, q * 4 + 1, q * 4 + 3, q * 4 + 3, q * 4 + 1, q * 4 + 2]);
+            }
+        }
         for triangle in range(result.counts[s] // 3) {
             for corner in [0, 2, 1] {
                 index = triangle * 3 + corner;
+                vertex = indices[index];
+                role = [0, 0, 0, 0];
+                if sprite {
+                    shape = shapes[vertex // 4];
+                    role = [vertex % 4, shape.partners[vertex % 4], shape.codes[vertex % 4] + 1, 1];
+                }
+                # A stamped quad's texture coordinates come from its corner.
+                stamped = sprite == "autosprite";
                 struct.pack_into(
-                    "<ffff", out, offset, base + float(surface.indices[index]), stride,
-                    surface.uv[index * 2], surface.uv[index * 2 + 1]
+                    "<ffffBBBB", out, offset, base + float(vertex), stride,
+                    0.0 if stamped else surface.uv[index * 2], 0.0 if stamped else surface.uv[index * 2 + 1],
+                    role[0], role[1], role[2], role[3]
                 );
-                offset += 16;
+                offset += MODEL_CORNER_STRIDE;
             }
         }
     }
@@ -386,9 +457,10 @@ def pack_model_corners(model: AnimatedModel, keyframes: ModelKeyframes) -> Model
 it came from (its tcMods and colour run per draw), with the GL state
 tr_shader.c ParseStage gives it worked out once: blend factors, whether it
 writes depth (unblended stages and `depthWrite` ones), which side it draws,
-whether it is lit (rgbGen lightingDiffuse, and a skin without a script) and
-its u_gen. `fullbright`: the skin's alpha marks Q1 palette fullbright
-texels, which light leaves alone."""
+whether it is lit (rgbGen lightingDiffuse, and a skin without a script),
+its u_gen and its shader's deformVertexes (packed once unless a move makes
+them follow time). `fullbright`: the skin's alpha marks Q1 palette
+fullbright texels, which light leaves alone."""
 obj UploadedStage {
     has texture: int,
         surface: int,
@@ -408,7 +480,8 @@ obj UploadedStage {
         tc_gen: float = 0.0,
         vectors: bytes = b"",
         gen: bytes = b"",
-        fixed_tint: bytes = b"";
+        fixed_tint: bytes = b"",
+        deform_values: list[bytes] = [];
 
     """Work out the stage's GL state and fixed uniforms from its source."""
     def plan() {
@@ -427,6 +500,9 @@ obj UploadedStage {
             self.vectors = struct.pack("<ffffffff", s.x, s.y, s.z, 0.0, t.x, t.y, t.z, 0.0);
         }
         self.gen = struct.pack("<ffff", 1.0 if stage.alpha == "specular" else 0.0, float(stage.alpha_test), 0.0, 0.0);
+        if stage.deforms and not any([deform.kind == "move" for deform in stage.deforms]) {
+            self.deform_values = packed_deforms(stage.deforms, 0.0);
+        }
         # A colour that neither waves nor follows the entity never changes.
         if not self.entity_tint and stage.rgb != "wave" and stage.alpha != "wave" {
             self.fixed_tint = self.tint(0.0, MODEL_ENTITY_COLOR);
@@ -464,6 +540,18 @@ glob MODEL_NO_GEN: bytes = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0
 # A drawn entity's shaderRGBA when its caller sets none (refEntity_t is
 # cleared: rgbGen entity stages draw black).
 glob MODEL_ENTITY_COLOR: list[float] = [0.0, 0.0, 0.0, 0.0];
+
+"""How far a shader's standing waves (deformVertexes wave with no frequency,
+the powerup shells') push its vertices out along their normals."""
+def steady_push(deforms: list[Deform]) -> float {
+    push = 0.0;
+    for deform in deforms {
+        if deform.kind == "wave" and deform.wave.frequency == 0.0 {
+            push += deform.wave.at(0.0);
+        }
+    }
+    return push;
+}
 
 """Upload a skin or stage image: an encoded picture from the archives, or
 RGBA pixels (Q1 and Q2 skins, the white image)."""
@@ -571,15 +659,18 @@ obj ModelRenderer {
         self.mesh = GpuMesh();
         self.mesh.upload(
             corners.records,
-            16,
-            [VertexAttribute(location=gpu.corner, components=4, kind=GL_FLOAT)]
+            MODEL_CORNER_STRIDE,
+            [
+                VertexAttribute(location=gpu.corner, components=4, kind=GL_FLOAT),
+                VertexAttribute(location=gpu.quad, components=4, kind=GL_UNSIGNED_BYTE, offset=16)
+            ]
         );
     }
 
     """Draw one pose of the model: frames `first` and `second` blended by
     `blend`, placed at `origin` turned by `yaw` (or the full `basis`), lit by
     `illumination`, and fogged, faded or drawn with an `overlay` shader
-    (powerup shells, pushed out by `inflate`) as the immediate path did.
+    (powerup shells, pushed out by their own deformVertexes).
     Each stage draws with its own GL state (tr_shade.c
     RB_StageIteratorGeneric); `entity_color` is the entity's shaderRGBA for
     rgbGen and alphaGen entity."""
@@ -599,7 +690,6 @@ obj ModelRenderer {
         forward: Vec3 = Vec3(x=1.0),
         alpha: float = 1.0,
         overlay: ModelRenderer | None = None,
-        inflate: float = 0.0,
         entity_color: list[float] = MODEL_ENTITY_COLOR
     ) {
         if not self.stages {
@@ -608,7 +698,7 @@ obj ModelRenderer {
         if self.keyframes == 0 {
             self.draw_immediate(
                 origin, yaw, first, second, blend, eye, seconds, batched, illumination,
-                basis, fog, fog_image, forward, alpha, overlay, inflate, entity_color
+                basis, fog, fog_image, forward, alpha, overlay, entity_color
             );
             return;
         }
@@ -640,7 +730,7 @@ obj ModelRenderer {
         struct.pack_into("<ffff", params, 16, axes.left.x, axes.left.y, axes.left.z, origin.y);
         struct.pack_into("<ffff", params, 32, axes.up.x, axes.up.y, axes.up.z, origin.z);
         struct.pack_into(
-            "<ffff", params, 48, float(first), float(second), max(0.0, min(1.0, blend)), inflate
+            "<ffff", params, 48, float(first), float(second), max(0.0, min(1.0, blend)), 0.0
         );
         light = illumination.ambient;
         struct.pack_into("<ffff", params, 64, light.x, light.y, light.z, 1.0 if illumination.glow else 0.0);
@@ -703,6 +793,16 @@ obj ModelRenderer {
                 program.set_vec4s("u_stage", bytes(gpu.stage));
                 program.set_vec4s("u_gen", stage.gen);
                 program.set_vec4s("u_color", stage.tint(seconds, entity_color));
+                deforms = stage.source.deforms;
+                if deforms {
+                    values = stage.deform_values if stage.deform_values else packed_deforms(deforms, seconds);
+                    program.set_int("deformCount", len(values[0]) // 16);
+                    program.set_vec4s("deformInfo", values[0]);
+                    program.set_vec4s("deformWave", values[1]);
+                    program.set_vec4s("deformVector", values[2]);
+                } else {
+                    program.set_int("deformCount", 0);
+                }
                 if stage.vectors {
                     program.set_vec4s("u_tcv", stage.vectors);
                 }
@@ -763,8 +863,9 @@ obj ModelRenderer {
 
     """The CPU path (QP_RENDER_LEGACY=1): pose every vertex and send it
     through raylib's immediate mode. It draws each stage's blend, culling,
-    colour, light and tcMods; alphaFunc and lightingSpecular need the model
-    shader and are left out."""
+    colour, light and tcMods, and a shell's steady push along the normals;
+    alphaFunc, lightingSpecular and the other deforms need the model shader
+    and are left out."""
     def draw_immediate(
         origin: Vec3,
         yaw: float,
@@ -781,7 +882,6 @@ obj ModelRenderer {
         forward: Vec3 = Vec3(x=1.0),
         alpha: float = 1.0,
         overlay: ModelRenderer | None = None,
-        inflate: float = 0.0,
         entity_color: list[float] = MODEL_ENTITY_COLOR
     ) {
         if not self.stages {
@@ -833,6 +933,8 @@ obj ModelRenderer {
         for s in range(len(self.model.surfaces)) {
             surface = self.model.surfaces[s];
             vertices = pose(surface, first, second, blend);
+            pushed = [stage for stage in stage_list if overlay is not None or stage.surface == s];
+            inflate = steady_push(pushed[0].source.deforms) if pushed else 0.0;
             if inflate != 0.0 {
                 a = frame_normals(surface.frames[first]);
                 b = frame_normals(surface.frames[second]);
@@ -1140,7 +1242,6 @@ obj ModelScene {
                     seconds,
                     batched=True,
                     overlay=overlay,
-                    inflate=draw.inflate,
                     illumination=illumination,
                     basis=draw.basis
                         if draw.basis is not None

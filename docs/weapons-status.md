@@ -58,7 +58,8 @@ grenades, rockets and plasma draw their original models, following projectile
 pitch and yaw with grenade roll from simulation age. The Q2 BFG flies and
 explodes as its animated SP2 sprites (PCX palette transparency, depth-tested
 billboards); Q3 plasma is its additive rotating sprite and the Q3 BFG is
-`models/weaphits/bfg.md3`. Q3 rocket flares use their additive two-sided
+`models/weaphits/bfg.md3`, its ball an autosprite turned to the viewer
+(see [models](models-status.md#q3-model-shaders)). Q3 rocket flares use their additive two-sided
 surfaces, and model `animMap` stages keep their image sequence and frequency
 ([Q3 tr_shader.c](https://github.com/id-Software/Quake-III-Arena/blob/master/code/renderer/tr_shader.c)).
 
@@ -115,6 +116,3 @@ shells. Only those two slots can be selected.
   hitscan trails.
 - Q2 `team` item groups are ignored, and Q2 `ITEM_NO_TOUCH` items (spawnflag 2)
   are not spawned at all rather than placed untouchable (`games/items.jac`).
-- Q3 model shaders' `deformVertexes` stages (including autosprite) are parsed
-  but applied only to world surfaces (`engine/render/quake.jac`), not to models
-  such as the Q3 BFG projectile.

@@ -220,15 +220,15 @@ obj Pk3Assets {
     script has no stages (the model then draws nothing of it, see
     `model_hidden`) or it uses a directive the parser does not know.
     `$whiteimage` and `$lightmap` are white on a model, which has no lightmap
-    (tr_shader.c ParseStage). `deformed` accepts shaders whose vertex deforms
-    the caller applies itself (Q3's powerup shells)."""
-    def model_stages(name: str, deformed: bool = False) -> list[ModelStage] {
+    (tr_shader.c ParseStage). Each stage carries the shader's cull and
+    deformVertexes."""
+    def model_stages(name: str) -> list[ModelStage] {
         key = material_name(name);
         if key not in self.model_shaders {
             return [];
         }
         material = self.model_shaders[key];
-        if self.model_blockers(name, deformed) {
+        if self.model_blockers(name) {
             if material.unsupported {
                 print("Partial model material:", name, material.unsupported);
             }
@@ -257,7 +257,8 @@ obj Pk3Assets {
                     depth_write=stage.depth_write,
                     vectors=stage.vectors,
                     clamp=stage.clamp,
-                    cull=material.cull
+                    cull=material.cull,
+                    deforms=material.deforms
                 )
             );
         }
@@ -265,19 +266,15 @@ obj Pk3Assets {
     }
 
     """Why a scripted model shader draws as its plain skin instead of its
-    stages: the directives the parser does not know, images the archives
-    lack, and vertex deforms unless the caller applies them (`deformed`).
-    Empty when it draws."""
-    def model_blockers(name: str, deformed: bool = False) -> list[str] {
+    stages: the directives the parser does not know and the images the
+    archives lack. Empty when it draws."""
+    def model_blockers(name: str) -> list[str] {
         key = material_name(name);
         if key not in self.model_shaders {
             return [];
         }
         material = self.model_shaders[key];
         blockers = list(material.unsupported);
-        if material.deformed and not deformed {
-            blockers.append("deformvertexes");
-        }
         # tr_shader.c ParseStage fails a shader whose image is not found.
         for stage in material.stages {
             if stage.white or stage.lightmap {

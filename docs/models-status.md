@@ -47,6 +47,13 @@ order, each with its own GL state, as `RB_StageIteratorGeneric` does
   into `$whiteimage`-lit skins such as Xaero's and Tank Jr.'s.
 - **Texture coordinates**: `tcGen environment` and `vector`, every `tcMod`,
   `animMap` and `clampMap`. `$whiteimage` and `$lightmap` are white on a model.
+- **`deformVertexes`** in model space, by the same vertex-shader code as world
+  surfaces (`RB_DeformTessGeometry`; see
+  [presentation](presentation-status.md#q3-shaders)): `wave` (flags, Uriel's
+  wings, Hunter's feathers, the powerup shells' steady push), `move` (the
+  hologram), `bulge`, `normal`, and `autosprite`/`autosprite2`, whose quads
+  are read whole from the keyframe texture each frame and turned on the
+  view's axes (the BFG ball, Slash's skate glow, the jets).
 - A skin with no script is one lit stage. A script without stages (hunter's
   `harpy_f`, `surfaceparm nodraw` alone) draws nothing: its surface is left
   out of the model (`Pk3Assets.model_hidden`).
@@ -57,10 +64,10 @@ order, each with its own GL state, as `RB_StageIteratorGeneric` does
   are dark on a bot's gun and on the pickup, as in the original.
 
 `scripts/validate_alias_models.jac` lists how each of the 151 shader scripts
-named by a shipped MD3 or `.skin` file is drawn. 136 draw their stages and 1
-is hidden; 14 draw their plain skin: 13 for `deformVertexes` and
-`models/players/brandon/branhat`, whose glow image is not in the archives
-(`ParseStage` fails that shader in the original too).
+named by a shipped MD3 or `.skin` file is drawn. 149 draw their stages and 1
+is hidden; `models/players/brandon/branhat` draws its plain skin because its
+glow image is not in the archives (`ParseStage` fails that shader in the
+original too).
 
 ## Scene and animation
 
@@ -134,13 +141,12 @@ is hidden; 14 draw their plain skin: 13 for `deformVertexes` and
 
 ## Limitations
 
-- A Q3 model shader with `deformVertexes` draws its plain skin (13 of the
-  shipped ones: flags, Hunter's feathers, Uriel's wings, the BFG ball, the
-  armor shard's glow); so does one with a directive the parser does not know,
-  which prints "Partial model material" (`Pk3Assets.model_blockers`; none of
-  the shipped model shaders).
+- A Q3 model shader with a directive the parser does not know draws its plain
+  skin and prints "Partial model material" (`Pk3Assets.model_blockers`; none
+  of the shipped model shaders).
 - The legacy CPU model path (`QP_RENDER_LEGACY=1`) draws stages without
-  `alphaFunc` and `lightingSpecular`.
+  `alphaFunc`, `lightingSpecular` and deforms other than a shell's steady
+  push.
 - Q1 model frames blend between keyframes, where Quake's own renderers showed
   each keyframe as is (Q2 lerps frames as here).
 - Repeated models are not instanced.

@@ -52,7 +52,6 @@ obj ModelDraw {
         light_flags: int = 0,
         light: ModelLight | None = None,
         shader: str = "",
-        inflate: float = 0.0,
         # refEntity_t shaderRGBA, for rgbGen entity stages; none is black.
         entity_color: list[float] = [];
 }
@@ -64,8 +63,8 @@ glob PLAYER_COLOR1: list[float] = [1.0, 0.0, 0.0, 0.0],
      PLAYER_COLOR2: list[float] = [1.0, 0.0, 1.0, 0.0];
 
 """Q3 powerup shaders (cgs.media.quadShader and friends), registered as model
-resources named "shader:<shader>", and how far each pushes the surface out
-(its deformVertexes wave base). Bodies and weapons use different ones."""
+resources named "shader:<shader>"; each pushes the surface out by its own
+deformVertexes wave. Bodies and weapons use different ones."""
 glob POWERUP_BODY_SHELLS: dict[str, str] = {
     "quad": "powerups/quad",
     "regen": "powerups/regen",
@@ -76,14 +75,6 @@ glob POWERUP_WEAPON_SHELLS: dict[str, str] = {
     "battlesuit": "powerups/battleWeapon"
 };
 glob POWERUP_INVISIBLE: str = "powerups/invisibility";
-glob POWERUP_INFLATE: dict[str, float] = {
-    "powerups/quad": 3.0,
-    "powerups/regen": 3.0,
-    "powerups/battleSuit": 1.0,
-    "powerups/quadWeapon": 0.5,
-    "powerups/battleWeapon": 0.5,
-    "powerups/invisibility": 0.0
-};
 
 """CG_AddRefEntityWithPowerups (and CG_AddWeaponWithPowerups for a weapon):
 the shaders one model is drawn with. An invisible player is only the
@@ -289,7 +280,7 @@ walker GatherModels {
             self.draws.append(
                 ModelDraw(resource=draw.resource, origin=draw.origin, yaw=draw.yaw, first=draw.first,
                     second=draw.second, blend=draw.blend, basis=draw.basis, light_origin=draw.light_origin, light=draw.light,
-                    shader="shader:" + shader, inflate=POWERUP_INFLATE.get(shader, 0.0))
+                    shader="shader:" + shader)
             );
         }
     }

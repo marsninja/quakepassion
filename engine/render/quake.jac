@@ -110,6 +110,7 @@ import from .world_mesh {
     batch_key,
     assign_chunks,
     face_index_bytes,
+    SPRITE_STAMP_CORNERS,
     gather_indices,
     pack_world_face,
     wave_code
@@ -648,7 +649,10 @@ obj QuakeRenderer {
                 sprites=self.single_pass,
                 alpha=int(face.opacity * 255.0)
             );
-            self.face_runs[f] = face_index_bytes(face, base);
+            # AutospriteDeform rebuilds each quad as RB_AddQuadStamp's triangles.
+            stamped = self.single_pass and len(face.vertices) == 4 and face.texture in level.surface_deforms
+                and any([deform.kind == "autosprite" for deform in level.surface_deforms[face.texture]]);
+            self.face_runs[f] = face_index_bytes(face, base, SPRITE_STAMP_CORNERS if stamped else []);
         }
         self.chunks = [];
         for c in range(chunk_count) {
@@ -1664,7 +1668,7 @@ obj QuakeRenderer {
             source=blend[1],
             destination=blend[2],
             depth_write=stage.depth_write or blend[0] == 0,
-            two_sided=level.bsp.textures[t].two_sided or t in level.surface_deforms,
+            two_sided=level.bsp.textures[t].two_sided,
             images=self.stage_images[t][k],
             light=self.stage_images[t][k][0] < 0,
             # A world surface's lightingDiffuse is the light baked into its vertices.
@@ -1771,7 +1775,7 @@ obj QuakeRenderer {
     factors, depth writes and culling."""
     def stage_key(level: Level, t: int, k: int) -> str {
         blend = stage_blend(level.surface_stages[t][k], k);
-        two_sided = level.bsp.textures[t].two_sided or t in level.surface_deforms;
+        two_sided = level.bsp.textures[t].two_sided;
         writes = level.surface_stages[t][k].depth_write or blend[0] == 0;
         return str(blend[0]) + ":" + str(blend[1]) + ":" + str(blend[2]) + ":" + str(writes) + ":" + str(two_sided);
     }
@@ -1961,7 +1965,8 @@ obj QuakeRenderer {
 
     """Which surfaces take the fog pass (tr_shader.c FinishShader): opaque ones
     (FP_EQUAL) and fog shaders' own (FP_LE); translucent and sky shaders do not.
-    Deformed surfaces are left out rather than fogged in their rest pose."""
+    Surfaces whose deforms move them are left out rather than fogged in their
+    rest pose."""
     def fog_receiver(level: Level, face: Face) -> bool {
         if face.fog_only {
             return True;
@@ -1971,7 +1976,7 @@ obj QuakeRenderer {
         if face.additive or texture.additive or texture.flags & 4 != 0 or t in self.sky_layers {
             return False;
         }
-        if t in level.surface_deforms {
+        if t in level.surface_deforms and any([deform.kind != "normal" for deform in level.surface_deforms[t]]) {
             return False;
         }
         if t in level.surface_stages {
@@ -2176,11 +2181,12 @@ def packed_tcmods(stage: ModelStage, seconds: float) -> list[bytes] {
     return [pack_floats(rows_s), pack_floats(rows_t), pack_floats(turbs)];
 }
 
-"""A shader's deformVertexes packed for the stage shader (at most four):
-kind, waveform and spread; the wave; and move's push at time `seconds` or
-bulge's width, height and speed."""
+"""A shader's deformVertexes packed for world_mesh.jac SHADER_DEFORM_GLSL (at
+most four): kind, waveform and spread; the wave (normal's amplitude and
+frequency in it); and move's push at time `seconds` or bulge's width, height
+and speed."""
 def packed_deforms(deforms: list[Deform], seconds: float) -> list[bytes] {
-    kinds = {"wave": 1.0, "move": 2.0, "bulge": 3.0, "autosprite": 4.0, "autosprite2": 5.0};
+    kinds = {"wave": 1.0, "move": 2.0, "bulge": 3.0, "autosprite": 4.0, "autosprite2": 5.0, "normal": 6.0};
     infos: list[float] = [];
     waves: list[float] = [];
     vectors: list[float] = [];
@@ -2393,8 +2399,9 @@ obj DeformedShape {
         coords: list[float] = [];
 }
 
-"""tr_shade_calc.c RB_CalcDeformVertexes and the autosprite deforms, applied to
-a face's placed vertices for this frame."""
+"""tr_shade_calc.c RB_CalcDeformVertexes and the autosprite deforms, applied
+on the CPU to a face's placed vertices for this frame (portal backdrops; the
+stage shader deforms everything else, world_mesh.jac SHADER_DEFORM_GLSL)."""
 def deform_face(face: Face, deforms: list[Deform], eye: Vec3, seconds: float) -> DeformedShape {
     shape = DeformedShape(coords=list(face.uv));
     for v in face.vertices {
@@ -2419,7 +2426,7 @@ def deform_face(face: Face, deforms: list[Deform], eye: Vec3, seconds: float) ->
             }
         } elif deform.kind == "bulge" {
             for i in range(len(shape.points)) {
-                swell = math.sin(math.pi * 0.25 * shape.coords[i * 2] * deform.width + seconds * deform.speed) * deform.height;
+                swell = math.sin(shape.coords[i * 2] * deform.width + seconds * deform.speed) * deform.height;
                 shape.points[i] = shape.points[i].add(normal.scale(swell));
             }
         } elif deform.kind in ["autosprite", "autosprite2"] and len(shape.points) == 4 {
