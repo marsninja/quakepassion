@@ -494,7 +494,8 @@ walker DoorTick {
             contact = False;
             if self.touching and here.automatic {
                 for index in here.hulls {
-                    if not self.collision.reaches(index, origin, 1.0) {
+                    if self.collision.passes(index)
+                        or not self.collision.reaches(index, origin, 1.0) {
                         continue;
                     }
                     for delta in [

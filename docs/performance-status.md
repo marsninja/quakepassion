@@ -14,7 +14,7 @@ made back to back.
 
 | Script | Measures |
 |---|---|
-| `scripts/render_benchmark.jac` | Frame time and each render stage (`App.render_times`) over a full turn; `QP_BENCH_COMBAT=1` adds combat effects |
+| `scripts/render_benchmark.jac` | Frame time and each render stage (`App.render_times`) over a full turn, and the model draws a frame gathers and how many share a model; `QP_BENCH_COMBAT=1` adds combat effects |
 | `scripts/profile_gameplay.jac` | A fixed view's render cost and the combat tick on e1m1, base1 and q3dm1 |
 | `scripts/profile_campaign_maps.jac` | The real game loop, the view alone and each simulation walker per tick, idle and with nearby monsters awake (`QP_PROFILE_MAPS`) |
 | `scripts/profile_model_lighting.jac` | Q1/Q2 model lighting: alternating lit and unlit blocks of a map's start view |

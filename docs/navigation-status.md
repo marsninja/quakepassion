@@ -48,6 +48,26 @@ players and route over the map's AAS; see
 - **Other steps.** `WalkMove` is `PF_walkmove` / `M_walkmove`: one step
   along a yaw, all or nothing. `SlideMove` is `ai_run_slide`: turn to the
   enemy and step square to it, changing sides when blocked.
+- **Attack, pain and death frames.** The steps a sequence authors
+  (`AttackProfile.steps`, `Reaction.steps`) are taken the same way, each
+  whole as its frame begins (`attack_charge`, `pain_stagger`,
+  `death_stride` through `sequence_step`) and blocked by the world and by
+  other bodies like any step. Q2's `ai_charge` and `ai_move` walk along the
+  monster's own facing (`M_walkmove(self, self->s.angles[YAW], dist)`).
+  Q1's `ai_charge` is `ai_face` and `movetogoal`: a step at the enemy, not
+  taken where it would reach the enemy's box; `ai_charge_side` walks at a
+  point 30 units to the enemy's left. Q1 pain frames step along `ideal_yaw`
+  (`ai_painforward`) or back along the facing (`ai_pain`); death frames step
+  along the facing (`ai_forward`, `ai_back`). A frame a burst holds steps
+  once, as it is first shown. Fliers and swimmers take these steps by their
+  own branch of the step (below): the Q2 flyer backs off 10 units on each
+  of the eight frames it fires, the Icarus 10 on its two, and the Hornet
+  creeps forward a unit a frame and is thrown back 20 as its rockets leave.
+  A walker off the ground takes none. A frame with no distance takes no
+  step, except that a Q2 flier's or swimmer's pain frames (`ai_move`, an
+  `M_walkmove` whatever the distance) still rise or sink it toward its
+  height over its enemy. The bodies and liquids those steps
+  are traced against come from the tick's `StepField`.
 - **Carried over the ticks.** A step moves the monster at once, as the C
   does. `MonsterBody.stride` then carries the drawn and shootable body from
   where the frame began to where its step ended over the frame's remaining
@@ -64,10 +84,11 @@ players and route over the map's AAS; see
 - **Walk branches.** A `Gait` can branch back (Q2 `soldier_walk1_random`:
   walk110 returns to walk101 nine times in ten). `other_walks` lets a monster
   pick among walks when it sets off (Q2 `soldier_walk`: walk1 or walk2).
-- **Turning out of the cycle.** Holding an attack, attacking or in pain, a
-  monster turns toward its target by `yaw_speed` degrees per 0.1 s frame,
-  spread over the frame's ticks (`change_yaw`, as Q1 `ChangeYaw` / Q2
-  `M_ChangeYaw`). Walkers use 20 (`walkmonster_start`), fliers and swimmers
+- **Turning out of the cycle.** Holding an attack or attacking, a monster
+  turns toward its target by `yaw_speed` degrees per 0.1 s frame, spread
+  over the frame's ticks (`change_yaw`, as Q1 `ChangeYaw` / Q2
+  `M_ChangeYaw`). In pain it does not turn: its frames only step it
+  (`ai_pain`, `ai_painforward`, Q2 `ai_move`). Walkers use 20 (`walkmonster_start`), fliers and swimmers
   10 (`flymonster_start`, `swimmonster_start`), Chthon 20 (`boss_awake`).
 
 ## Chasing
@@ -84,9 +105,10 @@ players and route over the map's AAS; see
   `AI_PURSUIT_LAST_SEEN`), then takes the player trail crumb by crumb
   (`PlayerTrail_PickFirst`, `PlayerTrail_PickNext`,
   `engine/world/trail.jac`), turning to each crumb's own heading. A new goal
-  its box cannot reach in a straight line is corrected by tracing 16 units
-  to the left and right of the line and making for the side that reaches
-  further (`AI_PURSUE_TEMP`). Twenty seconds after `search_time` it takes one
+  its box cannot reach in a straight line, through the world as a player
+  meets it or past another body (`MASK_PLAYERSOLID`, `body_sweep`), is
+  corrected by tracing 16 units to the left and right of the line and making
+  for the side that reaches further (`AI_PURSUE_TEMP`). Twenty seconds after `search_time` it takes one
   step at the enemy itself. A monster with only a noise to go on
   (`AI_SOUND_TARGET`) runs to it and stands within 64 units.
 - **Corners.** Path corners and Q2 combat points are reached by `MoveToGoal`
@@ -114,8 +136,11 @@ box:
 - Q2: a flier out of the water never steps into it; a swimmer less than
   waist deep never steps out of it or rises.
 - Without an enemy (a path corner) the step keeps its height.
-- A knocked flier's velocity dies away as it slides. A swimmer out of its
-  depth falls.
+- A knocked flier or swimmer slides under `SV_Physics_Step`'s friction: its
+  level speed is rubbed off at `sv_friction` 6 on a control speed never
+  under `sv_stopspeed` 100, a flier's rise or fall at a third of that and a
+  swimmer's at `sv_waterfriction` 1 for each of its water levels. A swimmer
+  out of its depth falls.
 
 ## Bodies
 
@@ -128,6 +153,18 @@ box:
   clip hull 2 (`SV_HullForEntity`). Monsters of one size share a view per tick
   (`monster_body_key`). Q2 bosses with mins z 0 stand with their feet at their
   origin.
+- **Clip brushes.** Q2 monsters are stopped by `CONTENTS_MONSTERCLIP`
+  brushes and pass `CONTENTS_PLAYERCLIP` ones (`MASK_MONSTERSOLID`): a
+  monster's view of the collision map (`for_body(..., mask="monster")`)
+  skips the hulls of player-only clip brushes and the player's skips the
+  monster-only ones (`CollisionMap.player_clips`, `monster_clips`, filled by
+  `engine/formats/brush_collision.jac`; see
+  [player-movement-status.md](player-movement-status.md) for the masks). Every step, fall, leap and knock of
+  a monster traces that view, and a clip brush on a mover (the monster clip
+  on some plats, doors and trains) carries and pushes only the bodies it
+  stops (`CollisionMap.passes`, as `SV_Push` tests each body with its own
+  clipmask). 34 of Q2's 39 maps have monster-only clip brushes and eight
+  have player-only ones. Bots are players. Q3's maps carry player clip only.
 - **Other game's maps** (Passion): monsters keep the map's box
   (`CollisionMap.hull_box`), with the model lowered to the floor, and chase
   by the same steps.
@@ -139,7 +176,17 @@ box:
   `SOLID_BBOX` entities and Q2's `MASK_MONSTERSOLID`): living monsters and
   barrels, each where its own step ends, and the living player. So monsters
   block each other and the player, and a walker can come to rest on another
-  body's head only where the floor is there too. Corpses (Q1 `SOLID_NOT`, Q2
+  body's head only where the floor is there too. A monster moved by its
+  velocity (a knock, a fall, a leap) is stopped by other bodies as well
+  (`CombatTick.stop_at_bodies`, as `SV_FlyMove` clips to entities): it stops
+  against the body, goes on along that face and loses its speed into it. One
+  that lands on another's head rests there off the ground until the one
+  below moves away. A leap that runs into its enemy is its touch
+  (`Demon_JumpTouch`, `mutant_jump_touch`). Two bodies found overlapping all
+  the same are stuck as the originals leave them: a walker's step that ends
+  still inside the other starts solid and is refused, one that ends clear of
+  it is taken, and a flier's straight trace runs its length from inside
+  (`sweep_entry`). Corpses (Q1 `SOLID_NOT`, Q2
   `SVF_DEADMONSTER`), gibs, heads and items never block a step. The bodies
   near a step come from `CombatTick`'s 64-unit buckets, widened for the
   widest living body. The player is pushed back out of living monsters and
@@ -207,19 +254,34 @@ left of `search_time`. Saves without the line load with a fresh chase.
 - `tests/monster_chase_tests.jac`: two monsters blocking each other in a
   corridor and a corpse that does not; stopping where the next step would
   reach the player; Q2's pursuit to the last sighting and along the trail; a
-  noise investigated and given up; the chase in a save.
+  noise investigated and given up; the chase in a save; course correction
+  round a body; a knocked flier's friction; a knocked monster stopped by a
+  body, sliding along it and resting on its head; a pain frame's step
+  refused with a body in its way; Q2 `ai_charge` along the facing and Q1's
+  at the enemy; the flyer's, Icarus's and Hornet's attack steps; no turning
+  in pain.
+- `tests/monster_sequence_tests.jac`, `tests/q2_attack_tests.jac`,
+  `tests/chick_tests.jac`, `tests/hell_knight_tests.jac`,
+  `tests/attack_timing_tests.jac`: the steps of pain, death and attack
+  frames, whole or not at all at walls and ledges.
 - `tests/monster_gait_tests.jac`: per-frame distances, one whole step a
   frame carried over its ticks, Q2 knockback, yaw speeds, the soldier's two
   walks.
 - `tests/monster_hull_tests.jac`: a boss box stopped by a gap a player passes,
   stopping at its own edge, Q1 hull 2.
+- `tests/brush_collision_tests.jac`: player clip, monster clip and both
+  against the player's, a monster's and an item's mask;
+  `tests/mover_push_tests.jac`: a clip brush on a lift. Native:
+  `scripts/validate_monster_clip.jac` checks every clip brush of the Q2 maps
+  named in `QP_MAPS` against both views.
 - `tests/navigation_tests.jac`, `navigation_hull_tests.jac`,
   `navigation_budget_tests.jac`, `navigation_revision_tests.jac`,
   `navigation_save_tests.jac`, `navigation_jump_tests.jac`: the ground route
   search: detours, pits, step height, narrow passages and headroom, search
   budgets, cache invalidation, restoration.
-- `tests/trail_tests.jac`: Q2 crumbs, their headings and the pursuit taking
-  the first.
+- `tests/trail_tests.jac`: Q2 crumbs laid as the last goes out of sight,
+  once a server frame and never by the dead, their headings and the pursuit
+  taking the first.
 - `tests/enemy_stance_tests.jac`, `tests/actor_body_integration_tests.jac`:
   stance isolation, remembered stance, trains carrying monsters.
 - `tests/enemy_door_tests.jac`: doors opening for monsters, forbidden and dormant
@@ -234,17 +296,6 @@ left of `search_time`. Saves without the line load with a fresh chase.
 
 ## Limitations
 
-- The steps of attack frames (`ai_charge`, through `attack_charge`) still
-  slide by the player's stair-stepping move rather than `WalkMove`, so a
-  charging monster is stopped by its target's box but not by other monsters.
-- Two bodies that already overlap (after a leap, a charge, a knock or a
-  fall, none of which is traced against other bodies) do not block each
-  other's steps, so that they can part; the originals leave such bodies stuck.
-- Q2 monsters collide with player clip brushes and not with monster clip
-  brushes (`CONTENTS_MONSTERCLIP`), which the level's hulls do not carry.
-- The player trail is laid by time and distance travelled, not when the
-  player loses sight of the last crumb as `p_client.c` does.
-- Q2's course correction traces the world only, not other bodies.
-- A knocked Q2 flier's velocity is eased away rather than rubbed off by
-  `SV_Physics_Step`'s flying friction.
+- A Q2 monster that has landed on another's head is not on the ground
+  (`M_CheckGround` takes any entity for ground), so it cannot walk off.
 - Angles are not quantised to 16 bits as `anglemod` does.

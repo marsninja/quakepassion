@@ -66,12 +66,19 @@ import from vendor.raylib {
     ) -> None;  def rlUnloadTexture(id: u32) -> None;  def rlTextureParameters(
         id: u32, param: i32, value: i32
     ) -> None;
+    # Added to the staged raylib build (scripts/stage_raylib.sh): glDepthFunc,
+    # and glReadPixels of one depth value at a point of the viewport.
+    def qpDepthFunc(func: i32) -> None;  def qpReadDepth(x: f32, y: f32) -> f32;
 }
 
 # rlgl data types (RL_FLOAT, RL_UNSIGNED_BYTE) for vertex attributes.
 glob GL_FLOAT: int = 5126,
      GL_UNSIGNED_BYTE: int = 5121,
      GL_UNSIGNED_SHORT: int = 5123;
+
+# Depth comparisons: rlgl's own, and Quake III's depthFunc equal.
+glob GL_LEQUAL: int = 515,
+     GL_EQUAL: int = 514;
 
 # rlgl uniform types (rlShaderUniformDataType).
 glob UNIFORM_FLOAT: int = 0,
@@ -341,6 +348,33 @@ obj GpuProgram {
             self.id = 0;
         }
     }
+}
+
+"""tr_backend.c GL_State's depth function: pass only fragments at exactly the
+depth already in the buffer (a stage's depthFunc equal), or rlgl's own
+less-or-equal. raylib's batch is flushed first so its queued draws keep the
+comparison they were queued under."""
+def depth_equal(on: bool) {
+    rlDrawRenderBatchActive();
+    qpDepthFunc(i32(GL_EQUAL if on else GL_LEQUAL));
+}
+
+"""The depth buffer's value (0 near, 1 far) at a point of the current
+viewport in normalized device coordinates, as tr_flares.c RB_TestFlare reads
+it with qglReadPixels. raylib's batch is flushed first so what it holds is
+in the buffer. Reading back waits for the GPU to finish what it was sent."""
+def read_depth(x: float, y: float) -> float {
+    rlDrawRenderBatchActive();
+    return float(qpReadDepth(f32(x), f32(y)));
+}
+
+"""rlgl's current modelview and projection matrices."""
+def view_matrix -> Matrix {
+    return rlGetMatrixModelview();
+}
+
+def projection_matrix -> Matrix {
+    return rlGetMatrixProjection();
 }
 
 """The current view-projection matrix (rlgl's modelview times projection),

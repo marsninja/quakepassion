@@ -39,7 +39,8 @@ and builds the level graph.
   Brush models whose head is a leaf (negative index) load.
 - **Quake III (BSP46, `engine/formats/q3/bsp.jac`).** JPG and TGA images
   decoded by raylib (built with both decoders by `scripts/stage_raylib.sh`;
-  the prebuilt raylib has neither); 128×128 RGB lightmaps with the overbright
+  the prebuilt raylib has neither, nor the `qpDepthFunc` and `qpReadDepth`
+  calls the script adds); 128×128 RGB lightmaps with the overbright
   shift; planar surfaces, triangle soups and quadratic patches; the light grid for
   models; cluster PVS; fog volumes; flare surfaces (`MST_FLARE`: a point, a
   colour and a normal, no geometry).
@@ -53,6 +54,24 @@ and builds the level graph.
   between a finely and a coarsely subdivided one. `r_subdivisions` takes
   effect at the next map load. Collision keeps its own facets from the
   control points (cm_patch, `engine/physics/patch_collide.jac`).
+  - **Normals.** `MakeMeshNormals` gives each grid vertex the sum of the
+    normals of the triangles it makes with the eight vertices round it,
+    looking up to three steps out past a coincident one and round the seam
+    of a grid that closes on itself. Environment mapping, specular alpha and
+    `deformVertexes` read that normal.
+  - **Distance.** Each column and row keeps the error it was added for
+    (`widthLodError`, `heightLodError`), and `R_FixSharedVertexLodError`
+    gives border vertices that grids of one LOD group share the same one.
+    Each frame `RB_SurfaceGrid`'s choice is made per patch in view
+    (`gather_curves`, `engine/render/quake.jac`): `LodErrorForVolume` allows
+    `r_lodCurveError` (250) over the group's depth into the view (its radius
+    taken off, along the view's forward axis), and a column or row is drawn
+    while its error is within that: one added for a deviation of 5 units is
+    drawn out to a depth of 1250. The vertices stay in the world's vertex
+    chunks; a patch's index run is built for each level of detail as it is
+    first needed, and the visible patches' index lists are gathered again
+    only when one's level changes. A portal or mirror view chooses for its
+    own eye.
 - **The BSP graph.** Every game's tree becomes `Split` and `BspArea` (leaf)
   nodes joined by `Front`/`Back` edges. `Locate` walks to the eye's leaf and
   `CollectFaces` gathers the faces of the visible leaves.
@@ -136,8 +155,15 @@ and builds the level graph.
 - **Q3 surfaces**: single-pass lightmap or vertex light with alphaFunc and
   dynamic lights; multi-stage shaders draw stage by stage with tcGen, tcMods,
   rgbGen/alphaGen, deformVertexes and the translucent stages' fog adjustment in
-  the vertex shader. Each stage's GL state and time-independent uniforms are
-  planned at level load.
+  the vertex shader, and the stage's alphaFunc in the fragment shader. Each
+  stage's GL state (`GL_State`: blend factors, depth writes, the depth
+  comparison, culling) and time-independent uniforms are planned at level
+  load. A stage that does not blend writes depth, whichever stage it is
+  (`ParseStage`); `depthFunc equal` draws only where the depth buffer already
+  holds the surface, so a grate's lightmap stage lights the bars its
+  alpha-tested stage drew and leaves the holes alone. rlgl has no call for the
+  depth comparison: `scripts/stage_raylib.sh` adds one (`qpDepthFunc`) to the
+  raylib it builds.
 - **Q3 fog pass** (`RB_FogPass`) and **cloud layers** (the sky dome is a vertex
   chunk; the stage shader applies the layer's tcMods). Two-sided fog surfaces
   seen from inside fade with distance as `RB_FogPass` does.
@@ -207,16 +233,36 @@ and builds the level graph.
 - **Q3 flares** (`tr_flares.c`, `engine/world/flares.jac`,
   `engine/render/flares.jac`) are off unless `r_flares` is set, as in the
   original. Each flare surface is a `LightFlare` node on the world. Once a
-  frame the `WatchFlares` walker visits them: one among the view's visible
-  surfaces and on screen is added (`RB_AddFlare`), dimmed by how far its
-  light faces away; tested against what stands between it and the eye
-  (`RB_TestFlare`: hidden when the scene is more than 24 units nearer); and
-  faded in or out at `r_flareFade` (7) a second. A lit flare is one additive
-  quad of the `flareShader` image over everything in the view, half as wide
-  as `r_flareSize / 640 + 8 / depth` of the view's width
-  (`RB_RenderFlare`), drawn before the view weapon. id's released
-  `RB_SurfaceFlare` is compiled out, so there `r_flares 1` adds no surface
-  flares; here they are handed to `RB_AddFlare`, as ioquake3 does.
+  view the `WatchFlares` walker visits them: one among the view's visible
+  surfaces and inside its clip volume is added (`RB_AddFlare`), dimmed by how
+  far its light faces away; tested against the depth buffer at its pixel
+  (`RB_TestFlare`: hidden when what was drawn there is more than 24 units
+  nearer, be it a wall, a door or a model); and faded in or out at
+  `r_flareFade` (7) a second. One added last frame but not this is tested
+  once more where it was, then dropped. A lit flare is one additive quad of
+  the `flareShader` image over everything in the view, half as wide as
+  `r_flareSize / 640 + 8 / depth` of the view's width (`RB_RenderFlare`),
+  drawn before the view weapon. id's released `RB_SurfaceFlare` is compiled
+  out, so there `r_flares 1` adds no surface flares; here they are handed to
+  `RB_AddFlare`, as ioquake3 does.
+  - The walker sees the view through a `FlareLens`. The renderer's
+    (`ViewLens`) places a point with rlgl's matrices, as
+    `R_TransformModelToClip` does, and reads the depth buffer back one pixel
+    a flare with `qpReadDepth`, a call `scripts/stage_raylib.sh` adds to the
+    raylib it builds (rlgl reads back colour only). The read waits for the
+    GPU to finish the frame so far, as the original's does; with flares off
+    nothing is read. Measured by `scripts/flares_smoke.jac` (2026-10-10,
+    Apple M5 Max, a 2560×1440 framebuffer): one read costs 0.17 ms in a loop;
+    a q3dm12 view with four flares in it goes from 0.97 to 2.49 ms a frame,
+    a q3dm7 view with two from 0.44 to 1.17 ms.
+  - The view through a mirror or portal draws its own flares into its own
+    image, tested against its own depth buffer, and each flare keeps a
+    separate sight for it (`flare_t` `inPortal`). A portal view is drawn
+    without the PVS, so every flare inside its frustum is tested: 72 through
+    q3dm0's mirror (`scripts/portal_smoke.jac`).
+  - A flare inside a fog volume loses the share of its colour the fog
+    between it and the eye takes (an additive shader's colours are modulated
+    by fog).
 
 ## Render interpolation
 
@@ -296,39 +342,56 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   packing, batches, index runs, autosprite quads, the lightmap atlas), `render_culling_tests`, `model_gpu_tests`,
   `effect_quads_tests`, `lightfx_render_tests` (the sky box mesh and its
   rotation, streamed triangles, particle records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
-  `flare_tests` (adding, dimming, fading and dropping flares), `curve_tests`
-  (patch subdivision and stitching).
+  `flare_tests` (adding, dimming, hiding by depth, fading and dropping flares,
+  a portal view's own sight, the lens's place and depth, fog), `curve_tests`
+  (patch subdivision, stitching, normals, and the errors and distances
+  columns and rows are dropped at).
 - `scripts/validate_patches.jac` subdivides and stitches every Q3 map's
-  patches and sets their triangle counts beside the former fixed eight steps.
+  patches, checks each vertex's normal and each column's and row's error, and
+  sets the triangle counts beside the former fixed eight steps and beside
+  the fewest a distant view draws. `scripts/patch_lod_smoke.jac` draws a
+  spawn view of q3dm1, q3dm7 and q3dm17 at the default `r_lodCurveError`,
+  with every row and column and with the fewest, and prints the patches in
+  view and their triangles for each.
 - Native comparisons: `scripts/model_gpu_smoke.jac` draws the same scene
   through the GPU and legacy model paths (they differ in under 0.01% of
   pixels); `scripts/gpu_smoke.jac` exercises `engine/render/gpu.jac`;
   `scripts/effects_gallery.jac` poses every effect kind per game;
   `scripts/fog_smoke.jac` and `scripts/portal_smoke.jac` render fog volumes and
-  every portal shader; `scripts/flares_smoke.jac` stands before flare surfaces
-  on q3dm12 and q3dm7 with `r_flares` off and on;
+  every portal shader, with the flares its views add, test and draw;
+  `scripts/flares_smoke.jac` stands before flare surfaces on q3dm12 and q3dm7
+  with `r_flares` off and on, then with a cube drawn between the eye and the
+  light, and prints what a depth read and a frame with flares cost;
   `scripts/world_features_smoke.jac` captures each kind of animated or special
   world surface up close at a fixed moment (liquids, skies and the sky box,
-  light styles, Q3 stages and deforms), for comparing two builds pixel by
-  pixel.
+  light styles, Q3 stages and deforms, grates lit through `depthFunc equal`),
+  for comparing two builds pixel by pixel.
 
 ## Limitations
 
 - Brush models (doors, plats, trains) are neither PVS- nor area-culled, and
   an entity is area-culled by the leaf its origin is in, not by every leaf
   its box touches.
-- Patches draw at their full `r_subdivisions` detail at any distance; the
-  original also drops rows and columns as a patch recedes
-  (`r_lodCurveError`). Their vertices share the face's one normal rather than
-  `MakeMeshNormals`' per-vertex ones.
+- A patch on a brush model (a door or lift with a curved face) draws at its
+  full `r_subdivisions` detail at any distance; world patches thin as the
+  original's do. Triangle soups and planar faces take their surface's one
+  normal rather than the map's per-vertex ones.
 - Q3 shaders: directives the parser does not know are recorded in
   `material.unsupported` and skipped.
-- Q3 flares are tested with a trace through the world instead of the
-  original's depth buffer read, so a model in front of a flare does not hide
-  it. They are not drawn in mirrors and portal views, and take no fog.
+- A Q3 flare's fog is taken at the light itself. The original takes it at
+  the corners of the flare's quad, which `RB_RenderFlare` gives in window
+  coordinates and `RB_CalcFogTexCoords` reads as world ones, so there it
+  depends on where the flare falls on screen. A flare seen through a portal
+  is clipped by the portal's plane like the rest of that view; the original
+  turns the clip plane off for flares.
 - The world shaders hold 31 fog volumes (`WORLD_FOG_LIMIT`), as many as the
   original's renderer numbers (five bits of a surface's sort key). The
   shipped maps have at most 11 (pro-q3tourney2). A map with more draws the
   later volumes' faces unfogged and says so at load.
-- Repeated models are not instanced (the model draw loop costs 0.05-0.3 ms a
-  frame on the benchmark maps).
+- Repeated models are not instanced. `scripts/render_benchmark.jac`
+  (2026-10-10, two runs back to back at a load average near 5): the whole
+  model stage (gathering, culling, lighting and drawing) is 0.10 to 0.42 ms
+  of a 0.6 to 2.8 ms frame, and of the 21 to 139 model draws a frame gathers,
+  11 to 112 share their model with another (q1 e4m7 the most). The two runs
+  differ by up to 0.05 ms in that stage and 0.4 ms in the frame, more than
+  merging those draws could save.

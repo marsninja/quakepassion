@@ -42,6 +42,8 @@ import from engine.world.combat {
     reaction_length,
     select_death,
     select_profile,
+    leaving_of,
+    place_leaving,
     CombatState,
     Opponent,
     HasOpponent,
@@ -455,6 +457,21 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
                     + str(actor.pain_rested)
                     + " "
                     + str(actor.death_burst)
+            );
+        }
+    }
+    # What a death has set down beside the body (the Makron's torso): where,
+    # facing which way and how far round its frames.
+    for index in range(len(corpses)) {
+        figure = leaving_of(corpses[index]);
+        if figure is not None and figure.visual.visible {
+            lines.append(
+                "LEFT "
+                    + str(index)
+                    + " "
+                    + numbers(
+                        [figure.pos.x, figure.pos.y, figure.pos.z, figure.yaw, figure.clock]
+                    )
             );
         }
     }
@@ -1095,6 +1112,13 @@ def restore(
                         else 0.0;
                 }
             }
+        } elif words[0] == "LEFT" and len(words) == 7 {
+            index = int(words[1]);
+            if index < 0 or index >= len(enemies) {
+                raise ValueError("Invalid saved leaving");
+            }
+            row = values(" ".join(words[2:]), 5);
+            place_leaving(enemies[index], Vec3(x=row[0], y=row[1], z=row[2]), row[3], row[4]);
         } elif words[0] == "TACTIC" and len(words) == 5 {
             index = int(words[1]);
             if index < 0

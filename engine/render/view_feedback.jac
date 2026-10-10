@@ -507,8 +507,9 @@ def third_person_view(
     focus = eye.add(forward_from(yaw, -math.radians(min(pitch, 45.0))).scale(512.0));
     view = eye.add(Vec3(z=8.0)).sub(forward_from(yaw, -math.radians(pitch * 0.5)).scale(40.0));
     if collision is not None {
+        # CG_OffsetThirdPersonView traces with MASK_SOLID.
         box = collision.for_body(
-            0.0, 0.0, Vec3(x=-4.0, y=-4.0, z=-4.0), Vec3(x=4.0, y=4.0, z=4.0)
+            0.0, 0.0, Vec3(x=-4.0, y=-4.0, z=-4.0), Vec3(x=4.0, y=4.0, z=4.0), "solid"
         );
         hit = box.trace(eye, view);
         if hit.fraction < 1.0 {

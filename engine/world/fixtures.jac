@@ -3,9 +3,13 @@ entities that animate on the world clock without any game logic."""
 import from .world { World, Entity }
 import from .models { Visual }
 import from .signals { Signal, HasSignal }
+import from .speakers { Speaker }
 import from ..formats.bsp { Bsp }
 
 edge HasFixture: World --> Fixture {}
+"""The looping sound of a fixture that is set down during play (the Makron's
+torso and its makron/spine.wav), silent until then."""
+edge Hums: Fixture --> Speaker {}
 """A decorative model. `effect` is an entity effect it shows (Q2
 EF_TELEPORTER: "teleporter")."""
 node Fixture(Entity) {

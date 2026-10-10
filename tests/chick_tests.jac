@@ -115,7 +115,7 @@ test "authored recovery can move backward but stops at walls and ledges" {
         );
         if obstruction == 1 {
             collision.add_box(
-                Vec3(x=-2.0, y=-100.0, z=0.0),
+                Vec3(x=-40.0, y=-100.0, z=0.0),
                 Vec3(x=-1.0, y=100.0, z=100.0),
                 Vec3(),
                 Vec3(),
@@ -124,8 +124,11 @@ test "authored recovery can move backward but stops at walls and ledges" {
         }
         enemy = Opponent(rule=rule, pos=Vec3(z=22.01), grounded=True, attack_clock=0.5);
         player = Player(pos=Vec3(x=300.0, z=22.01));
+        # The frame's step is taken whole as the frame begins (M_walkmove)
+        # and carried over its two slices.
         for i in range(2) {
             attack_charge(enemy, player, collision, 0.05);
+            enemy.advance(0.05);
             enemy.attack_clock += 0.05;
         }
         if obstruction == 0 {

@@ -3,7 +3,10 @@ pose the audit asked for is captured from beside the bot: running, strafing,
 backpedalling, firing with a muzzle flash, aiming up and down, dying, a corpse
 left behind after the respawn, a quad damage shell, an item dropped on death,
 the medal over a bot that just earned an award and the spawn effect where one
-respawns. Each bot stands on its blob shadow."""
+respawns. Each bot stands on its blob shadow. Awards come by chance in a
+match this short, so from three seconds in a living bot is given one outright
+every two seconds (show_award, as the game gives one) until its medal has
+been captured, which the run requires."""
 import math;
 import from engine.core.menu { game_directory }
 import from engine.core.app { App }
@@ -12,7 +15,7 @@ import from engine.render.renderer { Renderer }
 import from engine.world.level { load_level, spawn_player }
 import from engine.world.world { World, Player, Entity }
 import from engine.world.combat { Opponent, HasOpponent, CombatTick, ProjectileTick }
-import from engine.world.arena { MatchTick, match_of, Competes }
+import from engine.world.arena { MatchTick, match_of, Competes, show_award }
 import from engine.world.particles { Explosion, HasExplosion, SPAWN_EFFECT_KIND }
 import from engine.world.arena_navigation { ArenaNavigationTick, ArenaContactIndex, prepare_arena_links }
 import from engine.world.bot_ai { BotTactics }
@@ -190,6 +193,16 @@ with entry {
             if "award" not in taken and "award" in wanted {
                 scores = [edge contest->:Competes:->];
                 winners = [contest->:Competes:->];
+                if tick >= 360 and tick % 240 == 0 {
+                    for i in range(min(len(scores), len(winners))) {
+                        winner = winners[i];
+                        if isinstance(winner, Opponent) and winner.health > 0 and not scores[i].award {
+                            show_award(scores[i], "excellent", contest.elapsed);
+                            print("  tick", tick, "award given to", scores[i].name);
+                            break;
+                        }
+                    }
+                }
                 for i in range(min(len(scores), len(winners))) {
                     winner = winners[i];
                     if scores[i].award and isinstance(winner, Opponent) and winner.health > 0
@@ -223,6 +236,7 @@ with entry {
             }
         }
         print("BOT BODIES", name, "captured", taken, "after", round(float(tick) / 120.0, 1), "s");
+        assert "award" not in wanted or "award" in taken , "no medal was captured";
         app.models.close();
         app.effects.close();
         app.quake.close();

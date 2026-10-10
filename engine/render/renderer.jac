@@ -89,6 +89,11 @@ import from ..math.interpolation { TickBlend }
 import from ..world.world { World, Area, Surface }
 
 
+# The window a QP_SMOKE validation run captures from, as console lines run
+# after the game's default.cfg (Quake II's asks for fullscreen): the capture
+# checks expect this window (scripts/png_checks.jac).
+glob SMOKE_VIDEO: str = "set vid_fullscreen 0\nset vid_width 1280\nset vid_height 720\n";
+
 glob FOV_DEGREES: float = 72.0,
      CAMERA_PERSPECTIVE: int = 0;
 
@@ -175,6 +180,13 @@ obj RenderCvars {
             high=80.0,
             flags=CVAR_ARCHIVE,
             description="how far a Q3 curve may lie from its drawn surface, in units (from the next map)"
+        ),
+        lod_curve_error: Cvar = Cvar(
+            name="r_lodCurveError",
+            reset_text="250",
+            kind="float",
+            flags=CVAR_ARCHIVE,
+            description="how much error a Q3 curve may show per unit of distance before rows and columns are left out"
         ),
         highdpi: Cvar = Cvar(
             name="vid_highdpi",

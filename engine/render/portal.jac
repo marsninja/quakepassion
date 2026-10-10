@@ -24,6 +24,7 @@ import from .renderer { Camera3D, Vector3, BeginMode3D, EndMode3D, rlSetClipPlan
 import from .quake { QuakeRenderer }
 import from .models { ModelScene }
 import from .effects { EffectScene }
+import from .flares { FlareRenderer }
 import from ..world.world { World }
 import from ..world.level { Level }
 import from ..world.portals { portal_view, surface_plane }
@@ -158,7 +159,9 @@ def oblique_near_plane(projection: Matrix, view: Matrix, normal: Vec3, dist: flo
 """tr_main.c R_SortDrawSurfs: before the main view, render the view through the
 first on-screen portal or mirror surface (only one a frame) and hand it to the
 world renderer. A mirror always renders; a portal only within its shader's
-portalRange. Returns whether a view was rendered."""
+portalRange. With `flares` the view draws its own light flares, tested
+against its own depth buffer (RB_RenderFlares runs after each view). Returns
+whether a view was rendered."""
 def draw_portal_view(
     target: PortalTarget,
     level: Level,
@@ -172,7 +175,8 @@ def draw_portal_view(
     pitch: float,
     fov: float,
     seconds: float,
-    blend: TickBlend = TickBlend()
+    blend: TickBlend = TickBlend(),
+    flares: FlareRenderer | None = None
 ) -> bool {
     quake.portal_image = 0;
     if level.bsp.game != "q3" or not level.portal_ranges {
@@ -219,6 +223,9 @@ def draw_portal_view(
         view_pitch = math.asin(max(-1.0, min(1.0, view.forward.z)));
         models.draw(world, view.origin, seconds, culling=False, yaw=view_yaw, pitch=view_pitch, lighting=level.lighting, fogs=level.bsp.fogs, fog_image=quake.fog_image, blend=blend);
         effects.draw(world, view.origin, view_yaw, view_pitch, lighting=level.lighting, blend=blend);
+        if flares is not None {
+            flares.draw(world, level, quake.shown_flares, effects.quads, view.origin, view.forward, seconds, portal=True);
+        }
         target.finish();
         quake.portal_image = target.color;
         quake.portal_normal = plane[0];
