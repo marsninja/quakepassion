@@ -2950,7 +2950,11 @@ def melee_reach(enemy: Opponent) -> float {
 }
 
 def attack_times(enemy: Opponent) -> list[float] {
-    return current_profile(enemy).times;
+    profile = current_profile(enemy);
+    if enemy.skill >= 3 and profile.nightmare_times {
+        return profile.times + profile.nightmare_times;
+    }
+    return profile.times;
 }
 
 def attack_duration(enemy: Opponent) -> float {
@@ -3827,6 +3831,15 @@ def advance_attack_segment(
     enemy.attack_flash = max(0.0, attack_duration(enemy) - enemy.attack_clock);
     if enemy.attack_clock >= attack_duration(enemy) {
         enemy.attack_clock = -1.0;
+        # The last frame's function may set the next sequence itself.
+        if profile.chain and monster_random(enemy) < profile.chain_chance {
+            for i in range(len(enemy.profiles)) {
+                if enemy.profiles[i].name == profile.chain {
+                    begin_attack(enemy, i, player.pos);
+                    break;
+                }
+            }
+        }
     }
 }
 

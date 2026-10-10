@@ -23,7 +23,7 @@ and movers are in [navigation-status.md](navigation-status.md).
 | `monster_ogre`, `monster_ogre_marksman` | 200 | grenade (40 splash); chainsaw sweep or smash |
 | `monster_wizard` (Scrag) | 80 | flies; two spikes at 0.3 and 0.8 s; side slides |
 | `monster_demon1` (Fiend) | 300 | claws; 40-50 damage leap |
-| `monster_shambler` | 600 | smash and two swings (chosen by weight); lightning beam; takes half blast damage |
+| `monster_shambler` | 600 | smash and two swings (chosen by weight), a swing going straight into the other half the time; lightning beam of three bolts, four on Nightmare; takes half blast damage |
 | `monster_zombie` | 60 | three flesh-throw sequences; see below |
 | `monster_shalrath` (Vore) | 400 | homing pod (40 splash) |
 | `monster_tarbaby` (Spawn) | 80 | hopping 10-20 damage leap; bursts for 120 when killed |

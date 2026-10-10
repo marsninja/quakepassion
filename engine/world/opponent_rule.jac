@@ -102,6 +102,12 @@ obj AttackProfile {
     has alternate_sound: str = "";
     # Played when a melee strike lands (Q2 infantry_smack's melee2).
     has hit_sound: str = "";
+    # As the sequence ends it goes straight into the one named, this often
+    # (Q1 sham_swingl9: `if (random() < 0.5) self.think = sham_swingr1`).
+    has chain: str = "",
+        chain_chance: float = 0.0;
+    # Further events on Nightmare only (Q1 sham_magic11's fourth bolt).
+    has nightmare_times: list[float] = [];
     # Where shots leave the monster: forward, right and up from its origin
     # (Q2 m_flash.c monster_flash_offset through G_ProjectSource, the QuakeC
     # launch origins). Successive shots of a sequence take successive

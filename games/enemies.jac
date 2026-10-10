@@ -1123,6 +1123,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     ),
                     AttackProfile(
                         name="swingr",
+                        # sham_swingr9: half the time straight into the other swing.
+                        chain="swingl",
+                        chain_chance=0.5,
                         kind="melee",
                         weight=0.3,
                         max_range=100.0,
@@ -1139,6 +1142,9 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                     ),
                     AttackProfile(
                         name="swingl",
+                        # sham_swingl9: half the time straight into the other swing.
+                        chain="swingr",
+                        chain_chance=0.5,
                         kind="melee",
                         weight=0.3,
                         max_range=100.0,
@@ -1160,6 +1166,8 @@ def enemy_rule(game: str, kind: str, flags: int = 0) -> OpponentRule | None {
                         max_range=600.0,
                         reach=600.0,
                         times=[0.7, 0.8, 0.9],
+                        # sham_magic11: a fourth bolt on skill 3.
+                        nightmare_times=[1.0],
                         duration=1.2,
                         frames=[
                             "magic1",
