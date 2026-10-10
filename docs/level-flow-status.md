@@ -71,6 +71,9 @@ the start map's gates.
   `engine/core/save_format.jac` (currently `QUAKEPASSION 22`); a snapshot with
   another header is rejected, since positional entity records change between
   formats. Saving needs a living player in walk mode.
+- Items that are not the map's own are saved by tag: a Q2 item still
+  falling (`FALL`), and what dying Q3 players dropped (`DROP`: the item, its
+  place and remaining time, and its throw while in the air).
 
 ## Q1 runes and gates
 

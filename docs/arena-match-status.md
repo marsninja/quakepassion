@@ -62,8 +62,9 @@ podium figures' rigs are in [Q3 player bodies](player-bodies-status.md).
 - Drops (`TossClientItems`, `Drop_Item`): a dying player or bot throws its
   held weapon (not the gauntlet or machine gun, and only with ammo left) and
   every powerup it carried, with the time left on it. Items fly under gravity
-  (`G_RunItem`, no bounce), never respawn, and vanish after 30 s. Dropped
-  items are not saved.
+  (`G_RunItem`, no bounce), never respawn, and vanish after 30 s. Saves keep
+  them (`DROP`): which item, where it lies, the time it has left, a powerup's
+  remaining time, and its throw while it is still in the air.
 - Item teams (`G_FindTeams`, `RespawnItem`): items sharing a `team` key show
   one member at a time and respawn a random one. Saves keep which member is
   out.
@@ -140,8 +141,8 @@ When a match ends (`g_arenas.c`):
   damage credit, target choice, joining and saves, awards, ranking, postgame
   medals, phases and buttons.
 - `tests/podium_tests.jac`: placement facing the intermission view.
-- `tests/item_drop_tests.jac`: item teams, respawn spread, drops, powerup
-  shaders.
+- `tests/item_drop_tests.jac`: item teams, respawn spread, drops, dropped
+  items through a save, powerup shaders.
 - `tests/telefrag_tests.jac`: Q3 telefrags and occupied spawns.
 - `tests/cinematic_tests.jac`: worldspawn music and CD tracks.
 - `scripts/arena_match_smoke.jac`: ladder rosters, models, spawns and a

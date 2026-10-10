@@ -52,15 +52,20 @@ def toss_crandom(world: World) -> float {
     return float(roll) / 2147483647.0 * 2.0 - 1.0;
 }
 
-"""Drop_Item: throw one item from `actor`'s origin along `yaw`, level, at
-150 units a second with a 200 (±50) unit lift."""
-def drop_item(world: World, actor: Player, drop: ItemDrop, yaw: float, collision: CollisionMap, area: Area, eye_height: float) -> Pickup | None {
+"""The name a dying player's item goes by in the drop table: the powerup's
+own, or the item kind."""
+def drop_kind(rule: PickupRule) -> str {
+    return rule.powerup if rule.kind == "powerup" else rule.kind;
+}
+
+"""LaunchItem's entity: the dropped item `drop` at `origin`, drawn with its
+models, in `area` and in the world's pickups. None when the drop has no
+model to show."""
+def place_drop(world: World, drop: ItemDrop, origin: Vec3, yaw: float, area: Area | None) -> Pickup | None {
     models = [drop->:DropsAs:->][?:ModelResource];
     if not models {
         return None;
     }
-    origin = actor.pos.sub(Vec3(z=eye_height));
-    velocity = Vec3(x=math.cos(yaw) * 150.0, y=math.sin(yaw) * 150.0, z=200.0 + toss_crandom(world) * 50.0);
     item = Pickup(rule=drop.rule, pos=origin, yaw=yaw, dropped=True, lifetime=DROP_LIFETIME);
     item.visual = attach_model(item, models[0]);
     for extra in models[1:] {
@@ -68,13 +73,71 @@ def drop_item(world: World, actor: Player, drop: ItemDrop, yaw: float, collision
     }
     item.visual.spin = drop.spin;
     item.visual.bob = drop.bob;
-    move_to_area(item, area);
+    if area is not None {
+        move_to_area(item, area);
+    }
     world +>:HasPickup:+> item;
     world.item_serial += 1;
+    return item;
+}
+
+"""Drop_Item: throw one item from `actor`'s origin along `yaw`, level, at
+150 units a second with a 200 (±50) unit lift."""
+def drop_item(world: World, actor: Player, drop: ItemDrop, yaw: float, collision: CollisionMap, area: Area, eye_height: float) -> Pickup | None {
+    velocity = Vec3(x=math.cos(yaw) * 150.0, y=math.sin(yaw) * 150.0, z=200.0 + toss_crandom(world) * 50.0);
+    item = place_drop(world, drop, actor.pos.sub(Vec3(z=eye_height)), yaw, area);
+    if item is None {
+        return None;
+    }
     flight = Flight(velocity=velocity);
     world +>:HasFlight:+> flight;
     flight +>:Carries:+> item;
     return item;
+}
+
+"""The dropped items of a world, in order."""
+def dropped_items(world: World) -> list[Pickup] {
+    return [item for item in [world->:HasPickup:->][?:Pickup] if item.dropped];
+}
+
+"""The flight carrying an item still being thrown, or None."""
+def flight_of(item: Pickup) -> Flight | None {
+    carriers = [item<-:Carries:<-][?:Flight];
+    return carriers[0] if carriers else None;
+}
+
+"""A dropped item out of a save: the drop table's `kind` at `origin`, with
+`lifetime` seconds left before it vanishes and, for a powerup, the
+`duration` its carrier had left; still flying at `velocity` when that is
+given. None when the level's drop table has no such item."""
+def restore_drop(
+    world: World,
+    kind: str,
+    origin: Vec3,
+    yaw: float,
+    area: Area | None,
+    lifetime: float,
+    duration: float,
+    velocity: Vec3 | None = None
+) -> Pickup | None {
+    for drop in [world->:HasItemDrop:->][?:ItemDrop] {
+        if drop.kind != kind {
+            continue;
+        }
+        item = place_drop(world, drop, origin, yaw, area);
+        if item is None {
+            return None;
+        }
+        item.lifetime = lifetime;
+        item.duration = duration;
+        if velocity is not None {
+            flight = Flight(velocity=velocity);
+            world +>:HasFlight:+> flight;
+            flight +>:Carries:+> item;
+        }
+        return item;
+    }
+    return None;
 }
 
 """G_RunItem for thrown items: gravity carries each along its arc, the
