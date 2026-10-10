@@ -19,6 +19,7 @@ impl App.configure() {
     host.god = self.shell.register(host.god);
     host.flyspeed = self.shell.register(host.flyspeed);
     host.overlay = self.shell.register(host.overlay);
+    host.timelimit = self.shell.register(host.timelimit);
     for (name, usage, description) in HOST_COMMANDS {
         self.shell.command(name, "host", usage, description);
     }

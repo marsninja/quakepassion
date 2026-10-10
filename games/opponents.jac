@@ -138,6 +138,7 @@ def prepare_arena(
     }
     contest = ArenaMatch(
         fraglimit=arena.fraglimit if arena is not None else 20,
+        timelimit=arena.timelimit if arena is not None else 0,
         title=arena.longname if arena is not None else level.name,
         warmup=4.0
     );

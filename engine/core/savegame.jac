@@ -903,7 +903,7 @@ def restore(
         } elif words[0] == "MATCH" and len(words) == 7 {
             row = values(" ".join(words[1:]), 6);
             contest = match_of(world);
-            if contest is None or row[0] < 1.0 or row[2] < 0.0 or row[2] > 10.0 {
+            if contest is None or row[0] < 0.0 or row[2] < 0.0 or row[2] > 10.0 {
                 raise ValueError("Invalid saved match");
             }
             contest.fraglimit = int(row[0]);

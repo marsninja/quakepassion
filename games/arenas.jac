@@ -8,6 +8,7 @@ obj ArenaInfo {
         longname: str = "",
         bots: list[str] = [],
         fraglimit: int = 20,
+        timelimit: int = 0,
         types: list[str] = [],
         special: str = "";
 }
@@ -56,6 +57,18 @@ def info_blocks(text: str) -> list[dict[str, str]] {
     return blocks;
 }
 
+"""g_bot.c G_InitBots: the frag limit and the time limit in minutes a
+single-player arena is played to, from its `fraglimit` and `timelimit` keys;
+a missing key is no limit, and an arena with neither is played to 10 frags."""
+def arena_limits(block: dict[str, str]) -> tuple[int, int] {
+    frags = int(block.get("fraglimit", "0"));
+    minutes = int(block.get("timelimit", "0"));
+    if frags == 0 and minutes == 0 {
+        return (10, 0);
+    }
+    return (frags, minutes);
+}
+
 def parse_arenas(text: str) -> list[ArenaInfo] {
     arenas: list[ArenaInfo] = [];
     for block in info_blocks(text) {
@@ -67,7 +80,8 @@ def parse_arenas(text: str) -> list[ArenaInfo] {
                 map=block["map"].lower(),
                 longname=block.get("longname", block["map"]),
                 bots=[name.lower() for name in block.get("bots", "").split()],
-                fraglimit=int(block.get("fraglimit", "20")),
+                fraglimit=arena_limits(block)[0],
+                timelimit=arena_limits(block)[1],
                 types=block.get("type", "").lower().split(),
                 special=block.get("special", "").lower()
             )
