@@ -182,7 +182,11 @@ body, a `Mortality` node the player holds:
   "can still be gibbed" (`body_die`): hitscan, missiles and blasts strike it
   where it lies, an attack under way plays out on it, and its health goes on
   down; past the gib health it bursts then, with the gib sound. Nothing
-  strikes Q1's body (`SOLID_NOT`).
+  strikes Q1's body (`SOLID_NOT`). A hit or a blast also pushes a dead Q2
+  body as it would the living player, 500 times its knockback over the
+  client's mass of 200 (`T_Damage`); the head it becomes is pushed by
+  nothing (`ThrowClientHead`: `DAMAGE_NO`, `FL_NO_KNOCKBACK`), and Q3's
+  dead are not pushed at all (`FL_NO_KNOCKBACK`).
 - **Lava and slime.** A dead Q2 body lying in lava or slime goes on burning:
   `P_WorldEffects` asks for health before it drowns a player and before the
   burn sound, but not before the sizzle damage (3 a water level in lava, 1
@@ -249,8 +253,9 @@ left.
   boxes and slide, each game's buttons and waits, the player's gibs at each
   game's health, the Q1 and Q2 head and its eye, Q2 and Q3 bodies shot
   until they burst, a Q3 player killed whole in a nodrop void, the Q2
-  tank's strike over the player it killed, and a dead Q2 body burning in
-  lava and slime where Q1's and Q3's do not.
+  tank's strike over the player it killed, a dead Q2 body burning in lava
+  and slime where Q1's and Q3's do not, its water sounds, and the push a
+  blast or a shot gives it but not its head or a Q3 body.
 - `tests/view_sway_tests.jac` (bob, roll, gun lag, Q2 shot kick, dead and
   intermission views, and Q3's death camera against numbers worked by hand
   from `CG_OffsetThirdPersonView`: level, pitched down past the cap, pitched
@@ -278,5 +283,4 @@ left.
 
 ## Limitations
 
-- A blast does not push a dead Q2 body (`T_Damage` knocks a dead client back
-  too).
+None known.
