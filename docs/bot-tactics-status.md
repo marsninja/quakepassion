@@ -453,8 +453,10 @@ Scripts (native, need the Q3 assets):
   bobbing platform it has just ridden would be handed the ride back, where
   Q3's 10 Hz think and `BotFuzzyPointReachabilityArea` decide which frames
   see it "on top".
-- `BotAIBlocked`'s sidestep is tested with the bots' wall and ledge probe
-  (`can_step`), not `AAS_PredictClientMovement`. Bots do not block one
+- `BotAttackMove`'s and `BotAIBlocked`'s steps are tested with the bots'
+  wall, floor and gap probe (`can_step`, with `BotGapDistance`), not
+  `AAS_PredictClientMovement`; a bot does not jump a gap in a fight, as
+  `BotWalkInDirection` may. Bots do not block one
   another's movement; they only sidestep each other.
 - Other `be_ai_move.c` details not modelled:
   - Jumps and barrier jumps fly by a launch velocity worked out to land

@@ -638,7 +638,8 @@ walker BotThink {
     def attack_move() {
         enemy = self.memory.enemy;
         if enemy is not None {
-            attack_move(self.bot, self.mind, enemy, self.collision);
+            level = self.level;
+            attack_move(self.bot, self.mind, enemy, self.collision, level.liquid_probe() if level is not None else None);
         }
     }
 

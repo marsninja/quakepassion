@@ -24,6 +24,8 @@ import from .inventory { quantity, AdjustInventory }
 import from .particles { rail_trail, beam_trail, impact_spray, wall_impact }
 import from .bot_character { BotCharacter, BotState }
 import from .bot_weights { best_fight_weapon }
+import from .bot_travel { gap_distance }
+import from .liquids { LiquidProbe }
 import from .powerups { damage_scale, fire_interval_scale, empowered }
 import from .models { PlayerRig, WeaponKit }
 import from .player_rig { hold_kit }
@@ -479,8 +481,11 @@ def ready_to_fire(bot: Opponent, mind: BotCharacter, rule: WeaponRule, foe: Play
 
 """Whether the bot can take a step along `direction` (BotMoveInDirection
 refuses to walk into a wall or off a ledge; a swimming bot goes any way,
-BotSwimInDirection)."""
-def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap) -> bool {
+BotSwimInDirection). BotWalkInDirection looks for a gap within 100 units
+(BotGapDistance) and then only moves if a jump would clear it; bots here
+do not try the jump, so a gap ahead is a refusal (water under it is no gap,
+by the level's `liquids`)."""
+def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap, liquids: LiquidProbe | None = None) -> bool {
     if bot.water_depth >= 2 {
         return True;
     }
@@ -492,7 +497,11 @@ def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap) -> bool {
     }
     probe = origin.add(ahead);
     floor = collision.trace_point(probe, probe.sub(Vec3(z=64.0)));
-    return floor.fraction < 1.0;
+    if floor.fraction >= 1.0 {
+        return False;
+    }
+    level = Vec3(x=direction.x, y=direction.y).normalized();
+    return gap_distance(collision, origin, level, liquids) == 0.0;
 }
 
 """ai_dmq3.c BotAttackMove. Below 0.2 attack skill the bot stands; up to
@@ -500,7 +509,9 @@ def can_step(bot: Opponent, direction: Vec3, collision: CollisionMap) -> bool {
 now and then after 0.4-0.6 s and whenever blocked, backs off at random,
 and keeps the ideal distance. It jumps as its jumper characteristic likes
 (at most once a second) and crouches as its croucher one does."""
-def attack_move(bot: Opponent, mind: BotCharacter, foe: Player, collision: CollisionMap) {
+def attack_move(
+    bot: Opponent, mind: BotCharacter, foe: Player, collision: CollisionMap, liquids: LiquidProbe | None = None
+) {
     memory = bot.bot_state;
     now = memory.clock;
     bot.steering = Vec3();
@@ -543,9 +554,9 @@ def attack_move(bot: Opponent, mind: BotCharacter, foe: Player, collision: Colli
     ideal = 0.0 if bot.weapon_slot == 1 else IDEAL_ATTACKDIST;
     span = 0.0 if bot.weapon_slot == 1 else ATTACK_RANGE;
     if mind.attack_skill <= 0.4 {
-        if distance > ideal + span and can_step(bot, forward, collision) {
+        if distance > ideal + span and can_step(bot, forward, collision, liquids) {
             bot.steering = forward;
-        } elif distance < ideal - span and can_step(bot, backward, collision) {
+        } elif distance < ideal - span and can_step(bot, backward, collision, liquids) {
             bot.steering = backward;
         }
     } else {
@@ -571,7 +582,7 @@ def attack_move(bot: Opponent, mind: BotCharacter, foe: Player, collision: Colli
             } elif distance < ideal - span {
                 side = side.add(backward);
             }
-            if can_step(bot, side, collision) {
+            if can_step(bot, side, collision, liquids) {
                 bot.steering = side.normalized();
                 break;
             }

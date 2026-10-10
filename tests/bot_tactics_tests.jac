@@ -7,7 +7,7 @@ import from engine.world.bot_ai { BotTactics }
 import from engine.world.bot_tactics { choose_weapon, change_view, steer_view, look_at, bot_fire, rule_for }
 import from engine.world.bot_character { BotCharacter, BotState, bot_skill, bot_handicap, bot_aggression, enemy_view, entity_visible, Q3_SKILL_NAMES }
 import from engine.world.bot_weights { bot_inventory, battle_inventory }
-import from engine.world.bot_tactics { attack_move }
+import from engine.world.bot_tactics { attack_move, can_step }
 import from engine.formats.botscript { precompile }
 import from engine.formats.botconfig { WeightConfig, read_weight_config }
 import from engine.world.inventory { quantity, AdjustInventory }
@@ -295,4 +295,16 @@ test "the reaction time runs from finding an enemy, not from each glimpse" {
         world spawn BotTactics(player=human, collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
     }
     assert shooter.bot_state.enemy is other and shooter.enemy_sight < 0.2;
+}
+
+test "a fighting bot does not step toward a gap" {
+    # A floor that ends 60 units to the bot's left (+y), with nothing beyond.
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-2000.0, y=-2000.0, z=-64.0), Vec3(x=2000.0, y=60.0, z=0.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=26.0), eye_height=26.0, grounded=True);
+    # The old test looked 40 units on: there is floor there, and the gap
+    # (BotGapDistance, up to 100 units ahead) is just past it.
+    assert not can_step(bot, Vec3(y=1.0), collision);
+    assert can_step(bot, Vec3(y=-1.0), collision) and can_step(bot, Vec3(x=1.0), collision);
 }
