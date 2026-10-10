@@ -28,7 +28,9 @@ Needed on macOS and not in the pin:
 | --- | --- | --- |
 | The Mach-O linker merged same-named sections from different units but kept the first unit's alignment, so a later unit's 16-byte constant could land 8 bytes off a 16-byte boundary and a vectorised loop's `ldr q` read it 8 bytes early. Whether a binary is hit depends on how its units happen to pack: one program fails, a one-line change to it passes | [#9924](https://github.com/jaseci-labs/jac/pull/9924) | `scripts/validate_doors.jac` on Q3: `zipfile` raising "Invalid central directory bounds" on every pk3 |
 
-Until the pin carries it, a natively built script or `qp` that fails that way
+| `set()` and `frozenset()` over a range, a numeric tuple or an int-keyed dict had no native lowering (E5092); under `jac test` the function holding the line aborted the process | [#9929](https://github.com/jaseci-labs/jac/pull/9929) | Brush-model culling's `set(range(1, n + 1))` in `engine/world/level.jac`, which waits on this fix |
+
+Until the pin carries #9924, a natively built script or `qp` that fails that way
 (or with any result that flips when an unrelated line changes) is rebuilt
 with a copy of the pinned source that has the PR's linker change applied.
 `jac test` runs are not affected.
@@ -40,9 +42,9 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | `bytes.join` had no native lowering, so a function joining bytes was demoted to Python | [#9625](https://github.com/jaseci-labs/jac/pull/9625) | A native build of the cinematic player |
 | An override in another module of a base class compiled without a vtable was silently skipped by the base's own methods; the fix reports E5113 | [#9631](https://github.com/jaseci-labs/jac/pull/9631) | |
 | A variable named like a public function of an imported module was read, or called, as that function: every public function of an imported module was bound under its bare name ahead of the module's own bindings. Entry-block variables and globals read wrongly; any variable holding a callable was called wrongly | [#9925](https://github.com/jaseci-labs/jac/pull/9925) | `scripts/player_death_smoke.jac`: a variable `burst` beside `combat.jac`'s `def burst` segfaulted |
-| The checker lost a narrowing inside a multi-part `assert` whose condition calls a method on the narrowed value (`assert x is not None; assert a and not x.method()` reported E1099) | [#9926](https://github.com/jaseci-labs/jac/pull/9926) | `tests/area_portal_tests.jac` |
 | Any `def drop` was taken for the destructor hook, so one that takes a parameter crashed `jac check` ("list index out of range") and was called without its argument on the Python side | [#9927](https://github.com/jaseci-labs/jac/pull/9927) | A `drop(name)` method on `HudRenderer`, which is named `forget` meanwhile |
 | `sum()` over `bytes` had no native lowering (E5092), and over a `bytearray` it sign-extended each byte | [#9928](https://github.com/jaseci-labs/jac/pull/9928) | A scratch probe of the RoQ decoder |
+| `==` between two lists of different native element types (one of tagged values, as `list(struct.unpack(...))` gives, against a `list[int]`; a `list[int]` against a `list[float]`) compared the two pointers and was always False | [#9931](https://github.com/jaseci-labs/jac/pull/9931) | A flare test's assertion |
 
 ## Known open defect
 
@@ -117,6 +119,7 @@ and exits with SIGABRT under `--memory nogc`.
 | A native module's Python side did not bind the C declarations it names (`Matrix` imports failed) | [#9638](https://github.com/jaseci-labs/jac/pull/9638) (supersedes the closed #9627) | `tests/effect_quads_tests.jac` |
 | A cycle collection could start inside a destructor, while the dying container was still reachable, and trace elements already freed (heap corruption when a large list was dropped) | [#9639](https://github.com/jaseci-labs/jac/pull/9639) | The Q3 arena SIGBUS/SIGSEGV: closing the asset library (`self.archives = []`) |
 | Native `bytes.decode` ignored its encoding and `errors` arguments (`errors=` was rejected with E5092) and raised no `UnicodeDecodeError` | [#9640](https://github.com/jaseci-labs/jac/pull/9640) | `scripts/audit_campaigns.jac`, `scripts/shoot_door_smoke.jac`; repro `repros/native_decode_errors.jac` |
+| The checker lost a narrowing inside a multi-part `assert` whose condition calls a method on the narrowed value (`assert x is not None; assert a and not x.method()` reported E1099) | [#9926](https://github.com/jaseci-labs/jac/pull/9926) | `tests/area_portal_tests.jac` |
 
 Three PRs closed unmerged: #9323 (an alternative stdlib approach, not needed),
 #9627 (replaced by #9638) and #9533 (a guard against calling an extern no unit defines, from a
