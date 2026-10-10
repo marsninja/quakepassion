@@ -111,6 +111,42 @@ impl Studio.show_asset(ui: StudioUi) {
     form.adopt(Label(text=seen.game + ":" + seen.name, tone="dim", small=True));
     words = seen.kind + ", " + str(seen.size) + " bytes" + (", " + seen.note if seen.note else "");
     form.adopt(Label(text=words, tone="dim", small=True));
+    figure = self.model_now;
+    if figure is not None and figure.game == seen.game and figure.name == seen.name {
+        form.adopt(
+            Label(
+                text=str(len(figure.model.surfaces)) + " surfaces, " + str(figure.triangles) + " triangles, "
+                    + str(figure.vertices) + " vertices, " + str(figure.frames) + " frames",
+                tone="dim",
+                small=True
+            )
+        );
+        form.adopt(ui.model_view);
+        frames = Box(across=True, gap=4);
+        form.adopt(frames);
+        frames.adopt(PushButton(text="<", command="ed_frame prev", size=28, hint="The frame before"));
+        frames.adopt(PushButton(text=">", command="ed_frame next", size=28, hint="The frame after"));
+        frames.adopt(
+            PushButton(
+                text="Stop" if self.model_playing else "Play",
+                command="ed_frame stop" if self.model_playing else "ed_frame play",
+                size=56,
+                hint="Run through the frames, ten a second"
+            )
+        );
+        frames.adopt(
+            Label(
+                text="frame " + str(self.model_frame) + " of " + str(figure.frames) + "   "
+                    + figure.frame_name(self.model_frame),
+                tone="dim",
+                grow=1
+            )
+        );
+        form.adopt(
+            PushButton(text="Extract", command="ed_extract", hint="Write this file under the extract folder")
+        );
+        return;
+    }
     image = seen.image;
     if image is not None {
         key = "asset:" + seen.game + ":" + seen.name;
@@ -185,7 +221,59 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
             self.asset_index = known;
         }
         self.asset_now = known.look(parts[1], parts[2]);
+        self.model_now = None;
+        self.model_playing = False;
+        self.model_edges = [];
+        stock_now = self.archive;
+        if is_model(parts[2]) and stock_now is not None {
+            figure = load_model(stock_now, parts[1], parts[2]);
+            if figure is not None {
+                self.model_now = figure;
+                self.model_yaw = 0.6;
+                self.model_pitch = -0.25;
+                box = figure.bounds(0);
+                self.model_middle = box[0].add(box[1]).scale(0.5);
+                self.model_reach = max(32.0, box[1].sub(box[0]).length() * 1.2);
+                self.set_frame(0);
+            }
+        }
         self.folds += 1;
+        if ui is not None {
+            self.show_asset(ui);
+        }
+        return True;
+    }
+    if name == "ed_frame" or name == "ed_orbit" {
+        figure = self.model_now;
+        if figure is None {
+            self.say("Show a model in the explorer first");
+            return True;
+        }
+        word = args[1] if len(args) > 1 else "";
+        if name == "ed_orbit" {
+            try {
+                self.model_yaw = math.radians(float(word));
+                self.model_pitch = math.radians(float(args[2])) if len(args) > 2 else self.model_pitch;
+                if len(args) > 3 {
+                    self.model_reach = max(8.0, float(args[3]));
+                }
+            } except ValueError {
+                self.say("ed_orbit <yaw> <pitch> [distance]");
+            }
+            return True;
+        }
+        if word == "play" or word == "stop" {
+            self.model_playing = word == "play";
+        } elif word == "next" {
+            self.set_frame((self.model_frame + 1) % figure.frames);
+        } elif word == "prev" {
+            self.set_frame((self.model_frame + figure.frames - 1) % figure.frames);
+        } elif word.isdigit() {
+            self.set_frame(min(int(word), figure.frames - 1));
+        } else {
+            self.say("ed_frame <number|next|prev|play|stop>");
+            return True;
+        }
         if ui is not None {
             self.show_asset(ui);
         }
@@ -296,4 +384,45 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.set_frame(frame: int) {
+    figure = self.model_now;
+    if figure is None {
+        return;
+    }
+    self.model_frame = max(0, min(frame, figure.frames - 1));
+    self.model_edges = figure.edges(self.model_frame);
+}
+
+impl Studio.turn_model(dt: float) {
+    ui = self.ui;
+    figure = self.model_now;
+    if ui is None {
+        return;
+    }
+    for event in ui.model_view.take() {
+        if event.kind == "drag" {
+            self.model_yaw -= float(event.dx) * 0.01;
+            self.model_pitch = max(-1.5, min(1.5, self.model_pitch - float(event.dy) * 0.01));
+        } elif event.kind == "wheel" {
+            self.model_reach = max(8.0, self.model_reach * (0.85 ** event.wheel));
+        }
+    }
+    if figure is None {
+        return;
+    }
+    if self.model_playing {
+        # Ten frames a second, as the games play most of them.
+        self.model_clock += dt;
+        if self.model_clock >= 0.1 {
+            self.model_clock = 0.0;
+            self.set_frame((self.model_frame + 1) % figure.frames);
+        }
+    }
+    camera = self.model_camera;
+    camera.span = 0.0;
+    camera.yaw = self.model_yaw;
+    camera.pitch = self.model_pitch;
+    camera.eye = self.model_middle.sub(camera.forward().scale(self.model_reach));
 }

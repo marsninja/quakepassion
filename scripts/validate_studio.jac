@@ -638,7 +638,7 @@ def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
 def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     import zipfile;
     import struct;
-    shots = ["texture", "text"];
+    shots = ["texture", "text", "model"];
     for shot in shots {
         (repo / f"assets_{shot}.png").unlink(missing_ok=True);
     }
@@ -662,7 +662,7 @@ def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
         assert ran.returncode == 0 , f"The assets session failed: {output / 'assets.log'}";
     }
     steps = studio_steps(ran.stdout);
-    for name in ["boxed", "texture", "used", "text", "sound", "packed"] {
+    for name in ["boxed", "texture", "used", "text", "sound", "model", "turned", "playing", "arena", "packed"] {
         assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'assets.log'}";
     }
     shown = [line for line in steps["texture"] if line.startswith("asset ")];
@@ -681,6 +681,18 @@ def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     assert len(text) == 1 and "kind=text" in text[0] and int(text[0].split("lines=")[1].split()[0]) > 20 , str(text);
     sound = [line for line in steps["sound"] if line.startswith("asset ")];
     assert len(sound) == 1 and "kind=sound" in sound[0] and "note=11025Hz,1channel" in sound[0] , str(sound);
+    # Quake's player model: one surface, 143 frames, shown at its first.
+    figure = [line for line in steps["model"] if line.startswith("model ")];
+    assert len(figure) == 1 and figure[0].startswith("model q1:progs/player.mdl surfaces=1 frames=143 triangles=408 frame=0") , str(figure);
+    start_yaw = int(figure[0].split("yaw=")[1].split()[0]);
+    # A drag to the left turns it about a third of a radian a hundred pixels' worth; > steps a frame.
+    turned = [line for line in steps["turned"] if line.startswith("model ")][0];
+    assert "frame=1 " in turned and 25 <= int(turned.split("yaw=")[1].split()[0]) - start_yaw <= 45 , turned;
+    assert "edges=612" in turned;
+    playing = [line for line in steps["playing"] if line.startswith("model ")][0];
+    assert "playing=1" in playing and int(playing.split("frame=")[1].split()[0]) > 1 , playing;
+    arena = [line for line in steps["arena"] if line.startswith("model ")][0];
+    assert arena.startswith("model q3:models/players/sarge/upper.md3 surfaces=2 frames=153") , arena;
     # The scene packed with the texture it uses is a zip any tool reads.
     with zipfile.ZipFile(pack / "crate.pk3") as archive {
         assert archive.testzip() is None;
@@ -702,7 +714,10 @@ def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
         source.unlink();
     }
     shutil.rmtree(pack, ignore_errors=True);
-    print(f"ASSETS PASS: {len(steps) - 1} steps, a texture shown, used and extracted, a scene and a folder packed");
+    print(
+        f"ASSETS PASS: {len(steps) - 1} steps, a texture shown, used and extracted, a model turned and played, "
+            + "a scene and a folder packed"
+    );
 }
 
 """A value from the dump's last line: `grid=16` gives 16."""

@@ -194,7 +194,10 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   file in the installed games' archives, by game and folder. A click on a
   file shows it: a texture as its picture (Quake II's WALs, Quake III's TGA
   and JPEG images, PCX pictures), a script or config as its first lines, a
-  sound as its rate and length. Extract (`ed_extract [folder]`) writes the
+  sound as its rate and length, and a model (Quake's MDL, Quake II's MD2,
+  Quake III's MD3) as its wireframe: a drag turns it, the wheel moves
+  nearer, and its buttons step through its frames or play them (`ed_frame
+  <number|next|prev|play|stop>`). Extract (`ed_extract [folder]`) writes the
   file to disk under `QP_EXTRACT` (default `./extracted`), and Use as
   material gives a texture to the selection.
 - **Packing** (`ed_pack <folder> <out.pak|out.pk3>`): a folder's files as a
@@ -234,6 +237,7 @@ editor/geometry/patch.jac    control points, the surface they bend, and its pris
 editor/classes/registry.jac  entity classes: fields by kind, options by name
 editor/assets/materials.jac  materials from the games' archives, by name
 editor/assets/explorer.jac   the archives' files by folder, and what to show of each
+editor/assets/models.jac     the games' models read for looking at: edges and bounds by frame
 editor/formats/archive.jac   PAK and PK3 archives written
 editor/camera.jac            the free camera: rays through the view, points onto it
 editor/studio.jac            the workbench: panels, picking, play and stop, the ed_* commands
@@ -390,7 +394,8 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
 - Not yet built: a solid-colour display mode; the bake proper (partition,
   visibility, bounced light, bot navigation); patches written back as
   `patchDef2`, and texture coordinates per control point; the rest of the
-  asset studio (models, sounds played, shader and texture authoring); the
+  asset studio (models textured and assembled, sounds played, shader and
+  texture authoring); the
   model editor; the Passion tools; user walkers.
 - Within the shell: entity previews are boxes rather than the entity's
   model, and generated (Passion) levels can be edited but not saved as

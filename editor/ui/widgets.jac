@@ -1695,3 +1695,167 @@ node Picture(Widget) {
         );
     }
 }
+
+"""One thing a palette can run: the words that run it, how it is used, and
+what it does."""
+obj PaletteEntry {
+    has command: str,
+        usage: str = "",
+        about: str = "";
+}
+
+"""How well typed letters find an entry: 4 when its command begins with
+them, 3 when it holds them, 2 when its description does, 1 when the letters
+appear in the command in that order, 0 when they do not find it."""
+def palette_score(typed: str, found: PaletteEntry) -> int {
+    wanted = typed.lower().strip();
+    if not wanted {
+        return 1;
+    }
+    name = found.command.lower();
+    if name.startswith(wanted) {
+        return 4;
+    }
+    if wanted in name {
+        return 3;
+    }
+    if wanted in found.about.lower() {
+        return 2;
+    }
+    at = 0;
+    for letter in name {
+        if at < len(wanted) and letter == wanted[at] {
+            at += 1;
+        }
+    }
+    return 1 if at == len(wanted) else 0;
+}
+
+"""A line to type into with the commands that match it listed beneath, best
+first. Enter runs the one that is lit, or what was typed when it has words
+after the command; the arrows move the light; Escape closes it. It opens as
+a layer over the middle of the window and takes the keyboard."""
+node Palette(Widget) {
+    has entries: list[PaletteEntry] = [],
+        typed: str = "",
+        lit: int = 0,
+        rows: int = 12;
+
+    """The entries the typed letters find, best first."""
+    def matches -> list[PaletteEntry] {
+        found: list[PaletteEntry] = [];
+        for score in [4, 3, 2, 1] {
+            for known in self.entries {
+                if palette_score(self.typed.split(" ")[0], known) == score {
+                    found.append(known);
+                }
+            }
+        }
+        return found;
+    }
+
+    def open_in(stage: Stage) {
+        wide = min(620, max(240, stage.width - 80));
+        tall = 34 + self.rows * 22 + 8;
+        self.transient = True;
+        self.typed = "";
+        self.lit = 0;
+        self.area = Rect(x=(stage.width - wide) // 2, y=max(20, stage.height // 6), w=wide, h=tall);
+        stage.open(self);
+        stage.focus_on(self);
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(self.area, theme.raised);
+        canvas.outline(self.area, theme.accent);
+        line = Rect(x=self.area.x + 6, y=self.area.y + 6, w=self.area.w - 12, h=24);
+        canvas.fill(line, theme.field);
+        canvas.outline(line, theme.border);
+        if self.typed {
+            canvas.label(self.typed, line, theme.text, -1, 6);
+        } else {
+            canvas.label("Type a command", line, theme.faint, -1, 6);
+        }
+        found = self.matches();
+        self.lit = max(0, min(self.lit, len(found) - 1));
+        first = max(0, self.lit - self.rows + 1);
+        for shown in range(first, min(len(found), first + self.rows)) {
+            row = Rect(x=self.area.x + 4, y=self.area.y + 36 + (shown - first) * 22, w=self.area.w - 8, h=22);
+            if shown == self.lit {
+                canvas.fill(row, theme.select);
+            }
+            name_wide = canvas.text_width(found[shown].command) + 16;
+            canvas.label(found[shown].command, row, theme.text, -1, 6);
+            canvas.label(
+                found[shown].about,
+                Rect(x=row.x + name_wide, y=row.y, w=row.w - name_wide, h=row.h),
+                theme.dim,
+                -1,
+                6,
+                theme.small
+            );
+        }
+        if len(found) == 0 {
+            canvas.label(
+                "Nothing by that name: Enter runs what is typed",
+                Rect(x=self.area.x + 4, y=self.area.y + 36, w=self.area.w - 8, h=22),
+                theme.faint,
+                -1,
+                6
+            );
+        }
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "text" {
+            self.typed += event.text;
+            self.lit = 0;
+            return True;
+        }
+        if event.kind == "blur" {
+            stage.close(self);
+            return True;
+        }
+        if event.kind != "key" {
+            return True;
+        }
+        key = event.key;
+        found = self.matches();
+        if key == "ESCAPE" {
+            stage.close(self);
+            stage.focus_on(None);
+        } elif key == "BACKSPACE" {
+            self.typed = self.typed[:-1];
+            self.lit = 0;
+        } elif key == "DOWNARROW" {
+            self.lit = min(self.lit + 1, max(0, len(found) - 1));
+        } elif key == "UPARROW" {
+            self.lit = max(0, self.lit - 1);
+        } elif key == "TAB" {
+            # Take the lit command's name, ready for its words.
+            if len(found) > 0 {
+                self.typed = found[max(0, min(self.lit, len(found) - 1))].command + " ";
+            }
+        } elif key == "ENTER" or key == "KP_ENTER" {
+            words = self.typed.strip();
+            if " " not in words and len(found) > 0 {
+                words = found[max(0, min(self.lit, len(found) - 1))].command;
+            }
+            stage.close(self);
+            stage.focus_on(None);
+            if words {
+                stage.emit(words);
+            }
+        }
+        return True;
+    }
+
+    def solid -> bool {
+        return True;
+    }
+
+    def focusable -> bool {
+        return True;
+    }
+}

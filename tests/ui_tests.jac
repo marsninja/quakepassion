@@ -24,7 +24,10 @@ import from editor.ui.widgets {
     Dropdown,
     Swatch,
     MenuPopup,
-    Picture
+    Picture,
+    Palette,
+    PaletteEntry,
+    palette_score
 }
 
 """Run frames until the scripted steps are played, plus one to settle."""
@@ -561,4 +564,51 @@ test "a picture is shown as large as fits, in proportion" {
     canvas.strokes = [];
     stage.paint();
     assert len([stroke for stroke in canvas.strokes if stroke.kind == "picture"]) == 0;
+}
+
+test "a palette finds commands by what is typed and runs the one that is lit" {
+    known = [
+        PaletteEntry(command="ed_box", usage="ed_box [w d h]", about="add a box brush"),
+        PaletteEntry(command="ed_hollow", usage="ed_hollow [thickness]", about="turn brushes into shells of walls"),
+        PaletteEntry(command="ed_save", usage="ed_save", about="save the document"),
+        PaletteEntry(command="ed_leak", usage="ed_leak", about="look for a way out to the void")
+    ];
+    assert palette_score("ed_b", known[0]) == 4 and palette_score("box", known[0]) == 3;
+    assert palette_score("walls", known[1]) == 2 and palette_score("ehw", known[1]) == 1 and palette_score("zz", known[1]) == 0;
+    canvas = TraceCanvas();
+    top = Box();
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 800, 600);
+    palette = Palette(entries=known);
+    palette.open_in(stage);
+    assert len(stage.layers()) == 2 and stage.focus is palette and len(palette.matches()) == 4;
+    source.script(UiStep(kind="type", words="sa"));
+    play(stage, source, 800, 600);
+    found = palette.matches();
+    assert palette.typed == "sa" and len(found) == 1 and found[0].command == "ed_save";
+    stage.paint();
+    assert "ed_save" in canvas.words() and "save the document" in canvas.words();
+    source.script(UiStep(kind="key", words="ENTER"));
+    play(stage, source, 800, 600);
+    asked = stage.take_commands();
+    assert len(asked) == 1 and asked[0] == "ed_save" and len(stage.layers()) == 1;
+    # The arrows move the light; words after the command are run as typed.
+    palette.open_in(stage);
+    source.script(UiStep(kind="type", words="o"));
+    source.script(UiStep(kind="key", words="DOWNARROW"));
+    play(stage, source, 800, 600);
+    lit = palette.matches()[palette.lit];
+    assert palette.lit == 1 and lit.command == "ed_hollow";
+    source.script(UiStep(kind="key", words="TAB"));
+    source.script(UiStep(kind="type", words="24"));
+    source.script(UiStep(kind="key", words="ENTER"));
+    play(stage, source, 800, 600);
+    asked = stage.take_commands();
+    assert len(asked) == 1 and asked[0] == "ed_hollow 24";
+    # Escape closes it and runs nothing.
+    palette.open_in(stage);
+    source.script(UiStep(kind="key", words="ESCAPE"));
+    play(stage, source, 800, 600);
+    assert len(stage.layers()) == 1 and len(stage.take_commands()) == 0;
 }

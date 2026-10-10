@@ -53,6 +53,7 @@ import from .ui.widgets {
     Picture
 }
 import from .assets.explorer { AssetIndex, AssetLook }
+import from .assets.models { ModelLook, load_model, is_model }
 import from .formats.archive { write_pak, write_zip, file_kind }
 import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
 import from .geometry.shapes { shape_brushes, SHAPE_KINDS }
@@ -185,6 +186,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_extract", "ed_extract [folder]", "write the file the explorer shows to disk"),
+    ("ed_frame", "ed_frame <number|next|prev|play|stop>", "the frame of the model the explorer shows"),
+    ("ed_orbit", "ed_orbit <yaw> <pitch> [distance]", "turn the model view (angles in degrees)"),
     (
         "ed_pack",
         "ed_pack <folder|scene> <out.pak|out.pk3>",
@@ -362,6 +365,7 @@ obj StudioUi {
         assets: TreeView,
         asset_box: Box,
         asset_form: Box,
+        model_view: ViewArea,
         logic: GraphView,
         prefab_name: TextField,
         modes: list[PushButton],
@@ -448,6 +452,18 @@ obj Studio(Workbench) {
         asset_index: AssetIndex | None = None,
         asset_now: AssetLook | None = None,
         assets_listed: int = -1,
+        # The model the explorer shows: its frame, whether it plays, the
+        # edges drawn, and the camera that goes round it.
+        model_now: ModelLook | None = None,
+        model_frame: int = 0,
+        model_clock: float = 0.0,
+        model_playing: bool = False,
+        model_edges: list[list[Vec3]] = [],
+        model_camera: EditCamera = EditCamera(),
+        model_yaw: float = 0.6,
+        model_pitch: float = -0.25,
+        model_reach: float = 128.0,
+        model_middle: Vec3 = Vec3(),
         # The face brushes are glued against, as its plane and what it was.
         tagged: Plane3 | None = None,
         tagged_words: str = "",
@@ -929,9 +945,11 @@ obj Studio(Workbench) {
             hint="Click a folder to open it, a file to see it"
         );
         asset_box.adopt(asset_tree);
-        asset_side = Box(size=340, fill="panel");
+        # No fill: the model is drawn before the interface, and shows through.
+        asset_side = Box(size=340);
         asset_box.adopt(asset_side);
         asset_side.adopt(Header(text="File"));
+        model_view = ViewArea(grow=1, hint="Drag: turn the model | wheel: nearer or further");
         asset_form = Box(pad=6, gap=4, grow=1);
         asset_side.adopt(asset_form);
         body.adopt(Splitter(target=left, low=160, high=600));
@@ -1005,6 +1023,7 @@ obj Studio(Workbench) {
             assets=asset_tree,
             asset_box=asset_box,
             asset_form=asset_form,
+            model_view=model_view,
             logic=sheet,
             prefab_name=prefab_name,
             modes=modes,
@@ -1225,6 +1244,7 @@ obj Studio(Workbench) {
         ui.menu.track(stage);
         ui.tree.track(stage);
         self.main.fov = app.renderer.fov;
+        self.turn_model(dt);
         self.steer(dt);
         self.shortcuts(stage.loose_keys, input.shift, input.ctrl);
         # Ahead of anything already waiting, so a script's next line sees
@@ -1751,6 +1771,25 @@ obj Studio(Workbench) {
     def views -> list[SceneView] {
         seen: list[SceneView] = [];
         built = self.is_built_scene();
+        shown_model = self.model_now;
+        if self.assets_shown and shown_model is not None and ui_model_area(self.ui).w > 0 {
+            # The explorer's model, alone in its own view.
+            spot = ui_model_area(self.ui);
+            seen.append(
+                SceneView(
+                    x=spot.x,
+                    y=spot.y,
+                    width=spot.w,
+                    height=spot.h,
+                    eye=self.model_camera.eye,
+                    yaw=self.model_camera.yaw,
+                    pitch=self.model_camera.pitch,
+                    span=0.0,
+                    everything=True,
+                    bare=True
+                )
+            );
+        }
         for (index, port) in enumerate(self.ports[:self.showing()]) {
             area = port.view.area;
             if area.w <= 0 or area.h <= 0 {
@@ -1822,6 +1861,13 @@ obj Studio(Workbench) {
     def draw_scene(view: SceneView) {
         scene = self.scene;
         if scene is None {
+            return;
+        }
+        if self.assets_shown {
+            # The only view then is the explorer's model.
+            for pair in self.model_edges {
+                wire_line(pair[0], pair[1], ink(0xe6dfd4));
+            }
             return;
         }
         if view.span > 0.0 {
@@ -2058,6 +2104,10 @@ obj Studio(Workbench) {
     def list_assets(ui: StudioUi);
     """Fill the explorer's side with the file being shown."""
     def show_asset(ui: StudioUi);
+    """Show a frame of the explorer's model."""
+    def set_frame(frame: int);
+    """The model view: turned by a drag, played a frame at a time."""
+    def turn_model(dt: float);
 
     # ------------------------------------------------------------------
     # The grid, remembered views, hiding, history and autosave (impl/studio.shell.impl.jac)
@@ -2453,6 +2503,16 @@ obj Studio(Workbench) {
                     + str(len(scene.solids_of(item)))
             );
         }
+        seen_model = self.model_now;
+        if seen_model is not None {
+            lines.append(
+                "studio: model " + seen_model.game + ":" + seen_model.name + " surfaces="
+                    + str(len(seen_model.model.surfaces)) + " frames=" + str(seen_model.frames) + " triangles="
+                    + str(seen_model.triangles) + " frame=" + str(self.model_frame) + " edges="
+                    + str(len(self.model_edges)) + " yaw=" + str(int(round(math.degrees(self.model_yaw))))
+                    + " playing=" + ("1" if self.model_playing else "0")
+            );
+        }
         seen_asset = self.asset_now;
         if seen_asset is not None {
             lines.append(
@@ -2551,6 +2611,14 @@ def wire_line(start: Vec3, finish: Vec3, color: Ink) {
         Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),
         wire_color(color)
     );
+}
+
+"""Where the explorer's model view is ([0, 0, 0, 0] when it is not laid out)."""
+def ui_model_area(ui: StudioUi | None) -> Rect {
+    if ui is None or ui.model_view.parent() is None {
+        return Rect();
+    }
+    return ui.model_view.area;
 }
 
 """The game whose classes a document may hold ("" before there is one)."""
