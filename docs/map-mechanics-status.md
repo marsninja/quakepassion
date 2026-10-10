@@ -163,7 +163,9 @@ through the train's speakers.
   `MapArea` nodes joined through `AreaPortal` nodes, numbered again by the
   `FloodAreaConnections` walker whenever a portal changes. Shut portals stop
   monsters hearing the player and cull the world and its entities
-  ([rendering](rendering-status.md#visibility)).
+  ([rendering](rendering-status.md#visibility)). Saves keep each portal's
+  toggle (a `PORTAL` record, Q2 `CM_WritePortalState`); a restore opens the
+  portals as the saved doors and toggles leave them and floods again.
 
 ## Fixtures and sound emitters
 
@@ -238,8 +240,6 @@ through the train's speakers.
 
 - Timers and random waits keep the original scheduling but draw from an
   entity-local random stream, not the original engine's global sequence.
-- A relay-toggled area portal's state is not saved (portals held by doors
-  follow their doors).
 - Sounds are judged from the leaf of their origin; the originals test every
   cluster an entity's box touches.
 - `target_actor`/`misc_actor` are not implemented; no shipped map needs them

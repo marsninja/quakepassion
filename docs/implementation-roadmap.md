@@ -64,7 +64,6 @@ Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-
 - Q3 movers play no sounds.
 - Q2 `func_door_secret` is not loaded (one in city3).
 - One door proximity box for all three games; Q2 and Q3 size theirs differently.
-- A relay-toggled area portal's state is not saved.
 - Q1 `teleport_time` and Q3's post-teleport `PMF_TIME_KNOCKBACK` are not applied.
 - `target_actor`/`misc_actor` are not driven (no shipped map needs them).
 

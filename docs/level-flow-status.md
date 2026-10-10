@@ -71,7 +71,10 @@ tiers are completed.
   hub's visited snapshots. Snapshots carry the header in
   `engine/core/save_format.jac` (currently `QUAKEPASSION 22`); a snapshot with
   another header is rejected, since positional entity records change between
-  formats. Saving needs a living player in walk mode.
+  formats. Saving needs a living player in walk mode. Tagged records
+  (`TURRET`, `PORTAL` for each area portal's toggle) may be missing from an
+  older save of the same format; what they describe then stays as the level
+  loads it.
 
 ## Q1 runes and gates
 

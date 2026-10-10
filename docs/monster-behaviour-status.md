@@ -32,8 +32,7 @@ per-game rosters are in [q1-roster-status.md](q1-roster-status.md) and
   stop it, and only across open area portals (`gi.AreasConnected`): the map's
   areas and area portals are parsed, a `func_areaportal` is open while a door
   that targets it is not shut (`door_use_areaportals`) and toggles with each
-  other use (`Use_Areaportal`), so a closed door stops the sound. A relay-
-  toggled portal's state is not saved (door-held portals follow their doors).
+  other use (`Use_Areaportal`), so a closed door stops the sound.
 - Ambush monsters (spawnflag 1) wait for sight.
 - A monster that spots the player wakes others that can see it (Q1
   `sight_entity`, Q2 `sight_client`).

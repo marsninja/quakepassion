@@ -23,6 +23,9 @@ import from engine.world.map_areas {
 import from engine.world.level { Level, Split, BspArea, Front, Back, BspAreaProbe }
 import from engine.world.models { ModelResource, attach_model, GatherModels }
 import from engine.world.doors { Door, HasDoor }
+import from engine.world.combat { CombatState }
+import from engine.world.world { Player }
+import from engine.core.savegame { snapshot, restore }
 import from engine.world.signals { Fire }
 import from engine.world.world { World, Actor, move_to_area }
 import from engine.formats.bsp { Bsp, MapEntity, AreaLink, Leaf, Model }
@@ -224,4 +227,49 @@ test "a Q3 door between two areas is their portal, and shut it culls what lies b
     world spawn AreaPortalTick();
     assert level.visible(world, eye, True) == [10];
     assert len((world spawn GatherModels()).draws) == 0;
+}
+
+test "a relay-toggled portal is kept in saves and floods again on restore" {
+    bsp = row_of_areas();
+    bsp.entities = [
+        MapEntity(fields={"classname": "func_areaportal", "targetname": "gate", "style": "1"}),
+        MapEntity(fields={"classname": "func_areaportal", "targetname": "hatch", "style": "2"})
+    ];
+    world = World();
+    level = Level(bsp=bsp);
+    level.name = "test";
+    charted = chart_areas(world, bsp, []);
+    assert charted is not None;
+    chart: AreaMap = charted;
+    load_area_portals(world, bsp, chart);
+    level.area_map = chart;
+    portals = [world->:HasAreaPortal:->][?:AreaPortal];
+    hatch = [portal for portal in portals if portal.style == 2][0];
+    hatch.activation spawn Fire(emit=False);
+    world spawn AreaPortalTick();
+    assert hatch.toggled and chart.connected(2, 3) and not chart.connected(1, 2);
+    player = Player();
+    data = snapshot(world, level, player, CombatState());
+    assert [line for line in data.splitlines() if line.startswith("PORTAL ")] == ["PORTAL 0.0", "PORTAL 1.0"];
+    # A fresh load of the level: every portal shut.
+    hatch.toggled = False;
+    world spawn AreaPortalTick();
+    assert not chart.connected(2, 3);
+    flooded = chart.revision;
+    restore(world, level, player, CombatState(), data);
+    assert hatch.toggled and hatch.open and open_portals(world) == set([2]);
+    assert chart.connected(2, 3) and not chart.connected(1, 2) and chart.revision == flooded + 1;
+    # A save from before portals were kept leaves them as the level loads.
+    older = "\n".join([line for line in data.splitlines() if not line.startswith("PORTAL ")]) + "\n";
+    hatch.toggled = False;
+    restore(world, level, player, CombatState(), older);
+    assert not hatch.toggled and not chart.connected(2, 3);
+    damaged = data.replace("PORTAL 1.0", "PORTAL 2.0");
+    failed = False;
+    try {
+        restore(world, level, player, CombatState(), damaged);
+    } except ValueError {
+        failed = True;
+    }
+    assert failed;
 }
