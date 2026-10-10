@@ -49,6 +49,9 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   faces the camera), snapped to 8 units; Shift keeps to one axis and Ctrl
   moves freely. Arrow keys, PgUp and PgDn move it 16 units (64 with Shift);
   Del deletes it; Ctrl+D duplicates it.
+- A selection that is not one lone brush shows three arrows from its
+  middle, red, green and blue for x, y and z; dragging one moves the
+  selection along that axis alone, on the grid.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
 - **The grid** moves and resizes snap to is 8 units to begin with; `[` and
@@ -123,8 +126,10 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   III folder (`q3:textures/base_wall/concrete`), and first of all the ones
   the scene uses. A click on a group shows its textures as pictures; a click
   on a picture gives that material to the selected faces or brushes and to
-  new ones. Any other name is a swatch: a colour from the name with a line
-  every 64 units and a fainter one every 16.
+  new ones. A project's own images are materials too: PNG, TGA and JPEG
+  files under `QP_TEXTURES` (default `./textures`) are listed as "your
+  files" and named `file:<path>`. Any other name is a swatch: a colour from
+  the name with a line every 64 units and a fainter one every 16.
 - The Checks tab (`ed_check`) lists what would stop the map playing or is
   likely a mistake: no player start, a target nothing is named, an origin
   that is not three numbers, a brush entity without brushes, a brush that
@@ -174,6 +179,13 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **Settings** are kept between sessions beside the entity overrides
   (`studio.cfg`): the grid, one view or four, how views are drawn, the
   light and the sculpting brush.
+- **Tab** steps to the next entity and Shift+Tab to the one before
+  (`ed_step`); Edit > Freeze the selection (`ed_freeze`) keeps clicks in the
+  level from changing it. The status bar says how long the level last took
+  to build. The explorer's search field lists every file, in every game,
+  whose name holds what is typed (`ed_assetfind`). The check also reports
+  materials named as a game's that no archive holds, and `ed_stats <file>`
+  writes the names of the materials in use.
 - **Small tools**: `ed_snap [size]` puts the selection's corners and origins
   on the grid; `ed_replace <old> <new> [all]` gives sides of one material
   another; `ed_align <x|y|z> <low|high|middle>` lines the selected brushes
@@ -208,7 +220,8 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   file in the installed games' archives, by game and folder. A click on a
   file shows it: a texture as its picture (Quake II's WALs, Quake III's TGA
   and JPEG images, PCX pictures), a script or config as its first lines, a
-  sound as its rate and length, and a model (Quake's MDL, Quake II's MD2,
+  sound as its rate and length (with a Play button while a level of its
+  game is open), and a model (Quake's MDL, Quake II's MD2,
   Quake III's MD3) as its wireframe: a drag turns it, the wheel moves
   nearer, and its buttons step through its frames or play them (`ed_frame
   <number|next|prev|play|stop>`). Extract (`ed_extract [folder]`) writes the
@@ -388,6 +401,9 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/draw_session.cfg` (4 steps: a box drawn by a drag in the
   top view, cut in two by a line drawn through it, trimmed by another with
   Shift; then the studio opened again to find its settings kept).
+  `scripts/studio/material_session.cfg` (3 steps: a 256 by 512 Quake III
+  texture and a 4-texel image of the project's own, each fitted to a face
+  at its true size, and the image picked from the Materials tab).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -399,7 +415,8 @@ Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3
 (views and texturing), 4 (brush tools) and 5 (logic and reuse), with parts
 of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
-- Left over in what is built: there are no gizmos for free rotation and scaling; face-to-face
+- Left over in what is built: there are arrows to move by but no gizmos for
+  free rotation and scaling; face-to-face
   tools (tag, glue, wrap a texture round a corner) are not built; a shipped
   map takes new brushes only once it is turned into a scene; Quake III's
   `brushDef` sides open without their texture alignment, and a level's

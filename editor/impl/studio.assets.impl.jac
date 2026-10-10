@@ -37,6 +37,35 @@ impl Studio.list_assets(ui: StudioUi) {
     }
     seen = self.asset_now;
     titles = {"q1": "Quake", "q2": "Quake II", "q3": "Quake III Arena"};
+    if self.asset_filter {
+        # A search: every file whose name holds the text, flat, a few hundred at most.
+        hits = 0;
+        for game in known.games() {
+            for name in known.names(game) {
+                if self.asset_filter not in name.lower() {
+                    continue;
+                }
+                if hits >= 400 {
+                    break;
+                }
+                rows.append(
+                    TreeRow(
+                        key="file:" + game + ":" + name,
+                        text=name,
+                        note=game,
+                        picked=seen is not None and seen.game == game and seen.name == name
+                    )
+                );
+                hits += 1;
+            }
+        }
+        if hits == 0 {
+            rows.append(TreeRow(key="none", text="Nothing is named like that.", tone="faint"));
+        }
+        ui.assets.rows = rows;
+        print("studio: found " + str(hits) + " files");
+        return;
+    }
     for game in known.games() {
         top = "dir:" + game + ":";
         unfolded = self.opened.get(top, False);
@@ -183,6 +212,9 @@ impl Studio.show_asset(ui: StudioUi) {
     actions.adopt(
         PushButton(text="Extract", command="ed_extract", grow=1, hint="Write this file under the extract folder")
     );
+    if seen.kind == "sound" {
+        actions.adopt(PushButton(text="Play", command="ed_listen", grow=1, hint="Play this sound"));
+    }
     if seen.material {
         actions.adopt(
             PushButton(
@@ -277,6 +309,24 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         if ui is not None {
             self.show_asset(ui);
         }
+        return True;
+    }
+    if name == "ed_listen" {
+        heard = self.asset_now;
+        app = self.app;
+        if heard is None or heard.kind != "sound" or app is None {
+            self.say("Show a sound in the explorer first");
+            return True;
+        }
+        # The game's own sound player reads from the game that is loaded.
+        library = app.audio.library;
+        if library is None or library.game != heard.game or not library.exists(heard.name) {
+            self.say("A " + heard.game + " sound plays while one of that game's levels is open");
+            return True;
+        }
+        app.audio.play_path(heard.name);
+        self.say("Playing " + heard.name);
+        print("studio: played " + heard.name);
         return True;
     }
     if name == "ed_extract" {

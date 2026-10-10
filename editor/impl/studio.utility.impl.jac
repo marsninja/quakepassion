@@ -79,6 +79,62 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
         }
         return True;
     }
+    if name == "ed_step" {
+        way = args[1] if len(args) > 1 else "next";
+        members = [item for item in scene.items() if item.classname() != "worldspawn" and not item.hidden];
+        if len(members) == 0 {
+            self.say("There are no entities to step through");
+            return True;
+        }
+        chosen = scene.selection();
+        at = -1;
+        for (index, item) in enumerate(members) {
+            if len(chosen) > 0 and item is chosen[-1] {
+                at = index;
+            }
+        }
+        if way == "prev" {
+            at = (at - 1 + len(members)) % len(members) if at >= 0 else len(members) - 1;
+        } else {
+            at = (at + 1) % len(members);
+        }
+        scene.select(members[at]);
+        self.say(members[at].title() + "  #" + str(members[at].serial));
+        return True;
+    }
+    if name == "ed_freeze" {
+        word = args[1] if len(args) > 1 else "";
+        self.frozen = (not self.frozen) if word not in ["on", "off"] else word == "on";
+        self.say(
+            "The selection is frozen: clicks in the level leave it alone" if self.frozen else "Clicks select again"
+        );
+        return True;
+    }
+    if name == "ed_assetfind" {
+        self.asset_filter = args[1].strip().lower() if len(args) > 1 else "";
+        self.folds += 1;
+        return True;
+    }
+    if name == "ed_stats" and len(args) > 1 {
+        # The materials it uses, a name a line, for another tool to read.
+        used: list[str] = [];
+        for brush in scene.solids() {
+            for side in brush.sides {
+                if side.material and side.material not in used {
+                    used.append(side.material);
+                }
+            }
+        }
+        folder = os.path.dirname(args[1]);
+        if folder {
+            os.makedirs(folder, exist_ok=True);
+        }
+        with open(args[1], "w") as file {
+            file.write("\n".join(sorted(used)) + "\n");
+        }
+        self.say("Wrote " + str(len(used)) + " material names to " + args[1]);
+        return True;
+    }
     if name == "ed_stats" {
         rows: list[TreeRow] = [];
         for line in scene.statistics() {

@@ -61,6 +61,10 @@ test "a built level's brushes come back with their materials and how they lie" {
         assert near(before[0], after[0]) and near(before[1], after[1]);
     }
     assert [side.material for side in items[1].brushes[0]] == ["studio:door"] * 6;
+    # Told the scene draws that material at another size, the lie is solved for that size.
+    wider = bsp_items(made.bsp, [dict(entity.fields) for entity in made.bsp.entities], "blockout", {"studio:tiles": [128, 64]});
+    wide_top = [side for side in wider[0].brushes[0] if side.plane.normal.z > 0.5][0];
+    assert near(wide_top.mapping.s_scale * 2.0, top.mapping.s_scale) and near(wide_top.mapping.t_scale, top.mapping.t_scale);
     # Through a document and built again, it is the same level.
     again = compile_scene(scene_from_map("passion", "studio:again", MapFile(items=items)), SwatchMaterials());
     assert len(again.bsp.faces) == len(made.bsp.faces) and len(again.bsp.models) == len(made.bsp.models);

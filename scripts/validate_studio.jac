@@ -638,7 +638,7 @@ def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
 def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     import zipfile;
     import struct;
-    shots = ["texture", "text", "model"];
+    shots = ["texture", "text", "model", "found"];
     for shot in shots {
         (repo / f"assets_{shot}.png").unlink(missing_ok=True);
     }
@@ -681,6 +681,10 @@ def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     assert len(text) == 1 and "kind=text" in text[0] and int(text[0].split("lines=")[1].split()[0]) > 20 , str(text);
     sound = [line for line in steps["sound"] if line.startswith("asset ")];
     assert len(sound) == 1 and "kind=sound" in sound[0] and "note=11025Hz,1channel" in sound[0] , str(sound);
+    assert "studio: played sound/misc/menu1.wav" in ran.stdout , "The sound's Play button played nothing";
+    # A search by name lists files from the archives (and nothing else when there is none).
+    found = [line for line in ran.stdout.splitlines() if line.startswith("studio: found ")];
+    assert len(found) >= 1 and int(found[0].split()[2]) >= 1 , str(found);
     # Quake's player model: one surface, 143 frames, shown at its first.
     figure = [line for line in steps["model"] if line.startswith("model ")];
     assert len(figure) == 1 and figure[0].startswith("model q1:progs/player.mdl surfaces=1 frames=143 triangles=408 frame=0") , str(figure);
@@ -934,6 +938,8 @@ def patch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
 and glued, face picks spread, and the counts."""
 def tidy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     (repo / "tidy_faces.png").unlink(missing_ok=True);
+    pack = repo / ".jac/studio-pack";
+    shutil.rmtree(pack, ignore_errors=True);
     with tempfile.TemporaryDirectory(prefix="qp-tidy-") as home {
         env["QP_CONFIG_DIR"] = home;
         env["QP_OVERRIDES"] = home + "/overrides";
@@ -950,7 +956,7 @@ def tidy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
         assert ran.returncode == 0 , f"The tidy session failed: {output / 'tidy.log'}";
     }
     steps = studio_steps(ran.stdout);
-    for name in ["askew", "snapped", "replaced", "aligned", "glued", "others", "every"] {
+    for name in ["askew", "snapped", "replaced", "aligned", "glued", "others", "every", "stepped", "frozen", "thawed"] {
         assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'tidy.log'}";
     }
     askew = brush_box(brushes(steps["askew"])[0]);
@@ -968,17 +974,30 @@ def tidy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert len(faces(steps["others"])) == 5 and len(faces(steps["every"])) == 6;
     assert "studio: stat 2 entities, 3 brushes, 18 sides" in ran.stdout;
     assert "studio: stat 6 sides of stone" in ran.stdout and "studio: stat 6 sides of brick" in ran.stdout;
+    # Tab selects the first entity; frozen, a click in the level changes nothing; thawed, it does.
+    stepped = selected(steps["stepped"]);
+    assert len(stepped) == 1 and "classname=info_player_start" in stepped[0] , str(stepped);
+    assert selected(steps["frozen"]) == stepped and setting(steps["frozen"], "frozen") == 1 , str(steps["frozen"]);
+    assert selected(steps["thawed"]) != stepped and setting(steps["thawed"], "frozen") == 0 , str(steps["thawed"]);
+    # The check names the material no archive holds, and the names in use are written a line each.
+    assert "studio: finding No archive holds the material q2:e1u1/no_such_texture (brush #4)" in ran.stdout;
+    names = (pack / "materials.txt").read_text().split();
+    assert names == sorted(names) and "q2:e1u1/no_such_texture" in names and "stone" in names , str(names);
+    shutil.rmtree(pack, ignore_errors=True);
     source = repo / "tidy_faces.png";
     check_capture(source, 6);
     shutil.copyfile(source, output / "tidy_faces.png");
     source.unlink();
-    print(f"TIDY PASS: {len(steps) - 1} steps, snapped, replaced, lined up, glued, faces spread, counted");
+    print(
+        f"TIDY PASS: {len(steps) - 1} steps, snapped, replaced, lined up, glued, faces spread, counted, stepped, "
+            + "frozen, checked for materials"
+    );
 }
 
 """The thirteenth session: a box drawn in the top view, cut along a drawn
 line, and the settings kept between runs."""
 def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["box", "cut"];
+    shots = ["box", "cut", "arrows"];
     for shot in shots {
         (repo / f"draw_{shot}.png").unlink(missing_ok=True);
     }
@@ -1010,7 +1029,7 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
         assert again.returncode == 0 , f"Opening the studio again failed: {output / 'draw_again.log'}";
     }
     steps = studio_steps(ran.stdout);
-    for name in ["four", "drawn", "cut", "trimmed"] {
+    for name in ["four", "drawn", "cut", "trimmed", "start", "pulled"] {
         assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'draw.log'}";
     }
     # A rectangle dragged in the top view: a box on the grid, sixty-four high, standing on the floor.
@@ -1028,6 +1047,10 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     trimmed = [brush_box(line) for line in brushes(steps["trimmed"])];
     assert len(trimmed) == 2 and trimmed[0][1][1] == trimmed[1][1][1] and trimmed[0][1][1] < box[1][1] , str(trimmed);
     assert trimmed[0][0][1] == box[0][1];
+    # The player start's red arrow, dragged forty pixels in the top view, takes it 128 units along x.
+    start = selected(steps["start"]);
+    pulled = selected(steps["pulled"]);
+    assert len(start) == 1 and "origin=0 0 24" in start[0] and "origin=128 0 24" in pulled[0] , f"{start} -> {pulled}";
     assert "ed_grid 16" in kept and "ed_layout 4" in kept and "ed_display wire axis" in kept , kept;
     back = studio_steps(again.stdout)["again"];
     assert setting(back, "grid") == 16 and "wire=10" in back[-1] , back[-1];
@@ -1038,7 +1061,74 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
         shutil.copyfile(source, output / f"draw_{shot}.png");
         source.unlink();
     }
-    print(f"DRAW PASS: {len(steps) - 1} steps, a box drawn and cut along drawn lines, the settings kept");
+    print(
+        f"DRAW PASS: {len(steps) - 1} steps, a box drawn and cut along drawn lines, an entity moved by its arrow, "
+            + "the settings kept"
+    );
+}
+
+"""A small PNG: `size` texels a side, a checker of two colours."""
+def checker_png(size: int = 4) -> bytes {
+    import zlib;
+    import struct;
+    rows = b"";
+    for y in range(size) {
+        rows += b"\x00";
+        for x in range(size) {
+            rows += bytes([200, 120, 40, 255]) if (x + y) % 2 == 0 else bytes([60, 40, 20, 255]);
+        }
+    }
+    def chunk(kind: bytes, data: bytes) -> bytes {
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF);
+    }
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"");
+}
+
+"""The fourteenth session: materials at their true size, from Quake III's
+archives and from the project's own image files."""
+def material_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "material_files.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-material-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_TEXTURES"] = home + "/textures";
+        (Path(home) / "textures").mkdir();
+        (Path(home) / "textures/crate.png").write_bytes(checker_png(4));
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/material_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_TEXTURES");
+        (output / "material.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The material session failed: {output / 'material.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["arena", "own", "clicked"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'material.log'}";
+    }
+    # A 256 by 512 image once across 128 units: half a unit a texel one way, a quarter the other.
+    arena = faces(steps["arena"]);
+    assert len(arena) == 1 and "material=q3:textures/base_wall/archpipe2_k_tall3fin" in arena[0] , str(arena);
+    assert "scale=0.5,0.25" in arena[0] , arena[0];
+    # The project's 4-texel image across a side 128 by 96: thirty-two units a texel, and twenty-four.
+    homemade = faces(steps["own"]);
+    assert len(homemade) == 1 and "material=file:crate.png" in homemade[0] and "scale=32.0,24.0" in homemade[0] , str(homemade);
+    # A click on its picture in the Materials tab gives it to the face then picked.
+    clicked = faces(steps["clicked"]);
+    assert len(clicked) == 1 and clicked[0].startswith("face #3/2 material=file:crate.png") , str(clicked);
+    # Both are in the archives or the folder: the check does not call them missing.
+    assert "No archive holds the material" not in ran.stdout;
+    source = repo / "material_files.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "material_files.png");
+    source.unlink();
+    print(f"MATERIAL PASS: {len(steps) - 1} steps, a Quake III texture and a project image fitted at their true sizes");
 }
 
 def main() {
@@ -1151,6 +1241,7 @@ def main() {
     patch_session(repo, binary, env, output);
     tidy_session(repo, binary, env, output);
     draw_session(repo, binary, env, output);
+    material_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

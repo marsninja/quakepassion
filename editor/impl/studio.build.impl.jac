@@ -29,7 +29,16 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
         for item in scene.items() {
             fields.append(dict(item.fields));
         }
-        found = bsp_items(app.level.bsp, fields, self.material);
+        # The size each of the level's textures is drawn at as a material.
+        drawn: dict[str, list[int]] = {};
+        for image in app.level.bsp.textures {
+            named = level_material(app.level.bsp.game, image.name);
+            if named and named not in drawn {
+                seen_as = self.materials.texture(named);
+                drawn[named] = [max(1, seen_as.width), max(1, seen_as.height)];
+            }
+        }
+        found = bsp_items(app.level.bsp, fields, self.material, drawn);
         if len(found) == 0 {
             self.say(
                 "This level keeps no brushes to turn back into a scene (Quake's own format does not; "

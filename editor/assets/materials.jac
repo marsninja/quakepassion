@@ -10,6 +10,7 @@ import from engine.formats.bsp { Texture }
 import from engine.formats.q1.bsp { parse_bsp }
 import from games.passion.materials { Loader }
 import from ..compile.live { Materials, swatch_texture }
+import from ..formats.image { image_size, image_kind }
 
 obj ArchiveMaterials(Materials) {
     # The folder holding id1, baseq2 and baseq3.
@@ -44,9 +45,59 @@ obj ArchiveMaterials(Materials) {
         return image;
     }
 
-    """A material's image from the archives, or none."""
+    """Where a project keeps image files of its own to use as materials."""
+    def files_folder -> str {
+        folder = os.getenv("QP_TEXTURES", "");
+        return folder if folder else os.getcwd() + "/textures";
+    }
+
+    """The image files there, as material names: `file:` and the path under
+    the folder."""
+    def file_names -> list[str] {
+        found: list[str] = [];
+        top = self.files_folder();
+        if not os.path.isdir(top) {
+            return found;
+        }
+        waiting: list[str] = [""];
+        while len(waiting) > 0 {
+            part = waiting.pop();
+            here = top + "/" + part if part else top;
+            for entry_name in sorted(os.listdir(here)) {
+                inner = part + "/" + entry_name if part else entry_name;
+                if os.path.isdir(here + "/" + entry_name) {
+                    waiting.append(inner);
+                } elif image_kind(entry_name) {
+                    found.append("file:" + inner);
+                }
+            }
+        }
+        return sorted(found);
+    }
+
+    """A material's image from the archives or the project's own files, or none."""
     def fetch(name: str) -> Texture | None {
         parts = name.split(":", 1);
+        if len(parts) == 2 and parts[0] == "file" and parts[1] and ".." not in parts[1] {
+            path = self.files_folder() + "/" + parts[1];
+            kind = image_kind(parts[1]);
+            if not kind or not os.path.isfile(path) {
+                return None;
+            }
+            data = b"";
+            try {
+                with open(path, "rb") as handle {
+                    data = handle.read();
+                }
+            } except OSError {
+                return None;
+            }
+            size = image_size(data, kind);
+            if size[0] <= 0 or size[1] <= 0 {
+                return None;
+            }
+            return Texture(name=name, width=size[0], height=size[1], encoded=data, extension=kind);
+        }
         if len(parts) != 2 or parts[0] not in ["q1", "q2", "q3"] or not parts[1] {
             return None;
         }
@@ -61,7 +112,15 @@ obj ArchiveMaterials(Materials) {
             if parts[0] == "q2" {
                 return self.reader().q2(parts[1]);
             }
-            return self.reader().q3(parts[1]);
+            image = self.reader().q3(parts[1]);
+            # Quake III keeps an image as its file; a level's own
+            # coordinates need no size, but a brush's mapping does.
+            size = image_size(image.encoded, image.extension);
+            if size[0] > 0 and size[1] > 0 {
+                image.width = size[0];
+                image.height = size[1];
+            }
+            return image;
         } except Exception {
             if name not in self.missing {
                 self.missing.append(name);

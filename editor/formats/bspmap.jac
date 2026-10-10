@@ -106,8 +106,12 @@ def face_mapping(face: Face, width: int, height: int) -> Mapping | None {
 
 """A level's entities and brushes as a map's. `entities` are the level's
 entities as fields; one whose `model` is "*n" gets model n's brushes, and
-the world gets model 0's. No items when the level keeps no brushes."""
-def bsp_items(bsp: Bsp, entities: list[dict[str, str]], fallback: str = "blockout") -> list[MapItem] {
+the world gets model 0's. `sizes` gives the width and height a material is
+drawn at, where that is not what the level records. No items when the level
+keeps no brushes."""
+def bsp_items(
+    bsp: Bsp, entities: list[dict[str, str]], fallback: str = "blockout", sizes: dict[str, list[int]] = {}
+) -> list[MapItem] {
     if len(bsp.brushes) == 0 {
         return [];
     }
@@ -163,7 +167,15 @@ def bsp_items(bsp: Bsp, entities: list[dict[str, str]], fallback: str = "blockou
             middle = middle.scale(1.0 / float(len(face.vertices)));
             image = bsp.textures[face.texture] if face.texture >= 0 and face.texture < len(bsp.textures) else None;
             name = level_material(bsp.game, image.name if image is not None else "");
-            lie = face_mapping(face, image.width if image is not None else 64, image.height if image is not None else 64);
+            # The size the scene will draw the material at, when the level's
+            # own record of it does not say (Quake III's does not).
+            wide = image.width if image is not None else 64;
+            tall = image.height if image is not None else 64;
+            if name in sizes {
+                wide = sizes[name][0];
+                tall = sizes[name][1];
+            }
+            lie = face_mapping(face, wide, tall);
             for b in range(len(brushes)) {
                 if middle.x < lows[b].x - 1.0 or middle.x > highs[b].x + 1.0 or middle.y < lows[b].y - 1.0
                     or middle.y > highs[b].y + 1.0 or middle.z < lows[b].z - 1.0 or middle.z > highs[b].z + 1.0 {

@@ -15,6 +15,7 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     if scene is None {
         return None;
     }
+    began = time.time();
     source = scene;
     if not self.play_build and scene.hidden_count() > 0 {
         # While editing, what is hidden is left out of the level.
@@ -24,6 +25,7 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     made = compile_scene(whole, self.materials);
     self.lit_samples = bake_light(whole, made) if self.lit else 0;
     self.live = made;
+    self.build_ms = int((time.time() - began) * 1000.0);
     self.built_geometry = scene.geometry;
     started = False;
     for entity in made.bsp.entities {
@@ -309,6 +311,17 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
     }
     chosen = scene.selected_solids();
     if len(chosen) != 1 or scene.selection() {
+        # Anything but one lone brush: three arrows from the selection's
+        # middle, one along each axis, to move it by.
+        heart = scene.selection_middle();
+        if self.mode == "brush" and heart is not None {
+            arm = self.camera.span * 0.08
+                if self.camera.span > 0.0
+                else max(24.0, self.camera.eye.sub(heart).length() * 0.12);
+            found.append((900, heart.add(Vec3(x=arm))));
+            found.append((901, heart.add(Vec3(y=arm))));
+            found.append((902, heart.add(Vec3(z=arm))));
+        }
         return found;
     }
     seen = self.look_of(chosen[0]);
@@ -362,6 +375,30 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
     }
     chosen = scene.selected_solids();
     if len(chosen) != 1 or scene.selection() {
+        hub = scene.selection_middle();
+        if hub is None {
+            return;
+        }
+        centre = self.camera.project(area, hub.add(self.move_by) if self.moving else hub);
+        tones = [ink(0xe5484d), ink(0x4cc38a), ink(0x5b8def)];
+        for (index, spot) in self.handles(scene) {
+            if index < 900 {
+                continue;
+            }
+            at = self.camera.project(area, spot.add(self.move_by) if self.moving else spot);
+            if at is None or centre is None {
+                continue;
+            }
+            # An arrow seen end on is no arrow: its handle would sit on the middle.
+            if abs(at[0] - centre[0]) + abs(at[1] - centre[1]) < 6 {
+                continue;
+            }
+            tone = tones[index - 900];
+            canvas.line(centre[0], centre[1], at[0], at[1], tone);
+            box = Rect(x=at[0] - 4, y=at[1] - 4, w=9, h=9);
+            canvas.fill(box, canvas.theme.accent if self.resizing and index == self.resize_side else tone);
+            canvas.outline(box, canvas.theme.header);
+        }
         return;
     }
     brush = chosen[0];
@@ -405,8 +442,15 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
 
 impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
     area = self.view_area();
+    hub = scene.selection_middle();
+    centre = self.camera.project(area, hub) if hub is not None else None;
     for (index, middle) in self.handles(scene) {
         at = self.camera.project(area, middle);
+        if index >= 900 and at is not None and centre is not None
+            and abs(at[0] - centre[0]) + abs(at[1] - centre[1]) < 6 {
+            # An arrow seen end on cannot be taken hold of.
+            continue;
+        }
         if at is not None and abs(at[0] - x) <= 7 and abs(at[1] - y) <= 7 {
             self.resizing = True;
             self.resize_side = index;
@@ -419,6 +463,32 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
 }
 
 impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
+    if self.resize_side >= 900 {
+        # An arrow of the selection's own: move along its axis, as far as
+        # the pointer has gone along the arrow as seen.
+        hub = scene.selection_middle();
+        if hub is None {
+            return;
+        }
+        axis = Vec3(x=1.0) if self.resize_side == 900 else (Vec3(y=1.0) if self.resize_side == 901 else Vec3(z=1.0));
+        view = self.view_area();
+        from_at = self.camera.project(view, hub);
+        to_at = self.camera.project(view, hub.add(axis.scale(64.0)));
+        if from_at is None or to_at is None {
+            return;
+        }
+        run = float(to_at[0] - from_at[0]);
+        rise = float(to_at[1] - from_at[1]);
+        length = run * run + rise * rise;
+        if length < 1.0 {
+            return;
+        }
+        along = (float(x - self.press_x) * run + float(y - self.press_y) * rise) / length * 64.0;
+        notch = 1.0 if free else self.grid;
+        self.moving = True;
+        self.move_by = axis.scale(float(round(along / notch)) * notch);
+        return;
+    }
     chosen = scene.selected_solids();
     patched = self.mode == "corner" and self.patch_now(scene) is not None;
     if (len(chosen) != 1 and not patched) or self.resize_side < 0 {
@@ -774,6 +844,10 @@ impl Studio.list_materials(ui: StudioUi) {
     if shelf is None {
         rows.append(TreeRow(key="scene", text="(no game archives found)", tone="faint"));
     } else {
+        # The project's own image files, when it has a folder of them.
+        if len(shelf.file_names()) > 0 {
+            rows.append(TreeRow(key="files", text="your files", picked=self.shelf == "files", tone="accent"));
+        }
         for group in shelf.groups() {
             # A filter looks inside the groups already listed once, so typing
             # does not read every map.

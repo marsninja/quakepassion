@@ -263,6 +263,8 @@ impl Studio.fill_gallery(ui: StudioUi) {
             }
             names.extend(sorted(used));
         }
+    } elif self.shelf == "files" {
+        names = shelf.file_names();
     } else {
         names = list(shelf.names(self.shelf));
     }
@@ -322,6 +324,25 @@ impl Studio.check(scene: Scene, args: list[str]) {
         return;
     }
     self.findings = scene.problems();
+    # Materials named as a game's that no archive holds draw as swatches.
+    stock = self.archive;
+    if stock is not None {
+        looked: list[str] = [];
+        for brush in scene.solids() {
+            for side in brush.sides {
+                name = side.material;
+                if name in looked or ":" not in name or name.startswith("studio:") {
+                    continue;
+                }
+                looked.append(name);
+                if name.split(":", 1)[0] in ["q1", "q2", "q3", "file"] and stock.fetch(name) is None {
+                    self.findings.append(
+                        Finding(words="No archive holds the material " + name + " (brush #" + str(brush.serial) + ")", solid=brush)
+                    );
+                }
+            }
+        }
+    }
     rows: list[TreeRow] = [];
     grave = 0;
     for (index, found) in enumerate(self.findings) {

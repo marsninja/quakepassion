@@ -11,6 +11,7 @@ buttons, menus and keys run. The `ui_*` commands script the pointer and the
 keyboard, so a config file can drive the interface for validation."""
 import math;
 import os;
+import time;
 import from engine.core.workbench { Workbench, SceneView }
 import from engine.core.app { App }
 import from engine.console.shell { Shell, quote_command_word }
@@ -63,7 +64,7 @@ import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
 import from .compile.leak { find_leak, LeakReport }
-import from .formats.bspmap { bsp_items }
+import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate { duplicates, image_brushes, with_images, DUPLICATOR_KEYS }
 import from .document.scene {
     Scene,
@@ -156,7 +157,10 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
-    ("ed_stats", "ed_stats", "count what the document holds"),
+    ("ed_stats", "ed_stats [file]", "count what the document holds, or write the materials it uses to a file"),
+    ("ed_step", "ed_step <next|prev>", "select the entity after, or before, the selected one"),
+    ("ed_freeze", "ed_freeze [on|off]", "keep clicks in the level from changing the selection, or let them"),
+    ("ed_assetfind", "ed_assetfind <text>", "list the files of every game whose names hold some text"),
     (
         "ed_patch",
         "ed_patch <sheet|arch|bevel|cylinder|cone> [w d h]",
@@ -195,6 +199,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_extract", "ed_extract [folder]", "write the file the explorer shows to disk"),
+    ("ed_listen", "ed_listen", "play the sound the explorer shows"),
     ("ed_frame", "ed_frame <number|next|prev|play|stop>", "the frame of the model the explorer shows"),
     ("ed_orbit", "ed_orbit <yaw> <pitch> [distance]", "turn the model view (angles in degrees)"),
     (
@@ -477,6 +482,11 @@ obj Studio(Workbench) {
         model_pitch: float = -0.25,
         model_reach: float = 128.0,
         model_middle: Vec3 = Vec3(),
+        # Clicks in the level leave the selection alone.
+        frozen: bool = False,
+        asset_filter: str = "",
+        # How long the level last took to build, in milliseconds.
+        build_ms: int = 0,
         # The face brushes are glued against, as its plane and what it was.
         tagged: Plane3 | None = None,
         tagged_words: str = "",
@@ -735,6 +745,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Select the rest", command="ed_select invert", keys="Ctrl+I"),
                     MenuItem(text="Select nothing", command="ed_select", keys="Esc"),
                     MenuItem(rule=True),
+                    MenuItem(text="Next entity", command="ed_step next", keys="Tab"),
+                    MenuItem(text="Freeze the selection", command="ed_freeze"),
                     MenuItem(text="Hide the selection", command="ed_hide", keys="H"),
                     MenuItem(text="Hide everything else", command="ed_hide others", keys="Ctrl+H"),
                     MenuItem(text="Show everything", command="ed_show", keys="Shift+H"),
@@ -957,13 +969,22 @@ obj Studio(Workbench) {
             hint="Click: select | drag from a box to another: make it fire that | drag the sheet: slide | double click: look at"
         );
         asset_box = Box(across=True, grow=1, gap=3);
+        asset_list = Box(grow=1);
+        asset_box.adopt(asset_list);
+        asset_search = Box(pad=4);
+        asset_list.adopt(asset_search);
+        asset_search.adopt(
+            TextField(
+                ghost="Find a file by name", command="ed_assetfind", hint="Enter lists every file whose name holds this"
+            )
+        );
         asset_tree = TreeView(
             pick="ed_asset",
             toggle="ed_asset",
             grow=1,
             hint="Click a folder to open it, a file to see it"
         );
-        asset_box.adopt(asset_tree);
+        asset_list.adopt(asset_tree);
         # No fill: the model is drawn before the interface, and shows through.
         asset_side = Box(size=340);
         asset_box.adopt(asset_side);
@@ -1129,7 +1150,8 @@ obj Studio(Workbench) {
         }
         eye = self.main.eye;
         concealed = scene.hidden_count();
-        ui.place.text = (str(concealed) + " hidden   " if concealed else "") + "grid " + str(int(self.grid)) + "   "
+        ui.place.text = ("frozen   " if self.frozen else "") + (str(concealed) + " hidden   " if concealed else "")
+            + (str(self.build_ms) + " ms   " if self.build_ms > 0 else "") + "grid " + str(int(self.grid)) + "   "
             + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
     }
 
@@ -1493,6 +1515,10 @@ obj Studio(Workbench) {
                 found = self.aim(event.x, event.y);
                 found_item = found.item;
                 found_solid = found.solid;
+                if self.frozen and not event.alt {
+                    # The selection is frozen: a click is only a click.
+                    continue;
+                }
                 if event.alt {
                     # The eyedropper: the material under the pointer.
                     if found_solid is not None {
@@ -1628,6 +1654,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_hide others");
             } elif key == "h" {
                 stage.emit("ed_show" if shift else "ed_hide");
+            } elif key == "TAB" {
+                stage.emit("ed_step prev" if shift else "ed_step next");
             } elif key == "END" {
                 stage.emit("ed_drop");
             } elif key == "[" {
@@ -2610,7 +2638,7 @@ obj Studio(Workbench) {
             "studio: mode=" + self.mode + " material=" + self.material + " wire="
                 + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0") + " lit="
                 + str(self.lit_samples if self.lit else 0) + " grid=" + str(int(self.grid)) + " hidden="
-                + str(scene.hidden_count())
+                + str(scene.hidden_count()) + " frozen=" + ("1" if self.frozen else "0")
         );
         app = self.app;
         for line in lines {
