@@ -820,6 +820,69 @@ def terrain_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     print(f"TERRAIN PASS: {len(steps) - 1} steps, a terrain sculpted by command and by dragging, heights out and in");
 }
 
+"""The patch lines of a dump: `patch #n WxH top=Z prisms=N`."""
+def patches(lines: list[str]) -> list[str] {
+    return [line for line in lines if line.startswith("patch #")];
+}
+
+"""The eleventh session: curved patches made, bent and moved."""
+def patch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["arch", "playing"];
+    for shot in shots {
+        (repo / f"patch_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-patch-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/patch_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "patch.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The patch session failed: {output / 'patch.log'}";
+        saved_text = (Path(home) / "scenes/curves.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["made", "bent", "dragged", "moved", "tube", "cone", "returned"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'patch.log'}";
+    }
+    # An arch is five by three control points and sixty-four prisms, its crown at the top of its box.
+    made = patches(steps["made"]);
+    assert len(made) == 1 and made[0] == "patch #3 5x3 top=96 prisms=64" , str(made);
+    assert "_patch=5 3 4 8" in selected(steps["made"])[0];
+    # A control point lifted by command, then one dragged thirty-two units sideways in the front view.
+    assert patches(steps["bent"])[0] == "patch #3 5x3 top=128 prisms=64" , str(steps["bent"]);
+    before = selected(steps["bent"])[0].split("_points=")[1].split(" owns=")[0].split();
+    after = selected(steps["dragged"])[0].split("_points=")[1].split(" owns=")[0].split();
+    changed = [i for i in range(len(before)) if before[i] != after[i]];
+    assert changed == [9] and int(after[9]) == int(before[9]) + 32 , f"{changed}: {before[9:12]} -> {after[9:12]}";
+    assert int(steps["dragged"][0].split("undo=")[1].split()[0]) == int(steps["bent"][0].split("undo=")[1].split()[0]) + 1;
+    # Moved as a whole, every control point moved with it.
+    moved = selected(steps["moved"])[0].split("_points=")[1].split(" owns=")[0].split();
+    assert [int(moved[i]) - int(after[i]) for i in range(0, len(after), 3)] == [64] * 15;
+    assert [int(moved[i]) - int(after[i]) for i in range(1, len(after), 3)] == [0] * 15;
+    # A cylinder is a tube of nine by three; a cone pinches to a point and so has fewer prisms.
+    tube = [line for line in patches(steps["tube"]) if " 9x3 " in line];
+    assert len(tube) == 1 and tube[0].endswith("prisms=128") , str(tube);
+    cones = [line for line in patches(steps["cone"]) if " 9x3 " in line];
+    assert len(cones) == 2 and len([line for line in cones if not line.endswith("prisms=128")]) == 1 , str(cones);
+    built = tally(steps["returned"]);
+    assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+    assert saved_text.count("\"_patch\"") == 3 and "\"_patch\" \"5 3 4 8\"" in saved_text;
+    for shot in shots {
+        source = repo / f"patch_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"patch_{shot}.png");
+        source.unlink();
+    }
+    print(f"PATCH PASS: {len(steps) - 1} steps, an arch bent by command and by a drag, a cylinder and a cone");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -927,6 +990,7 @@ def main() {
     assets_session(repo, binary, env, output);
     handy_session(repo, binary, env, output);
     terrain_session(repo, binary, env, output);
+    patch_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

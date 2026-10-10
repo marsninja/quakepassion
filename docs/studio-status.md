@@ -160,6 +160,13 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   touches are built again, and each stroke undoes. `ed_terrain export
   <file.pgm>` writes the heights as a grey image and `ed_terrain import`
   reads one back. Its faces take materials like any others.
+- **Curved patches** (Brush > Curved sheet, arch, corner, cylinder, cone;
+  `ed_patch <kind> [w d h]`): a grid of control points bends a surface, as
+  Quake III's patches do, and the surface is built as thin prisms held as a
+  group, so a patch draws, collides and takes materials in any game's
+  scenes. With the patch selected, Corners (3) shows its control points; a
+  drag moves one and the surface is built again (`ed_patch_point <patch>
+  <point> <dx> <dy> <dz>`). Moved as a whole, its control points go with it.
 - **A shipped level as brushes** (File > Turn this level into brushes,
   `ed_convert`): a Quake II or Quake III level being looked at becomes a
   scene of its own brushes, each side with the material of the face drawn
@@ -216,6 +223,7 @@ editor/compile/live.jac      a scene's brushes as a level, at once
 editor/compile/light.jac     lightmaps for that level from the scene's lights
 editor/geometry/shapes.jac   cones, balls, stairs, arches and pipes as brushes
 editor/geometry/terrain.jac  a grid of heights as prisms, sculpting, heights as images
+editor/geometry/patch.jac    control points, the surface they bend, and its prisms
 editor/classes/registry.jac  entity classes: fields by kind, options by name
 editor/assets/materials.jac  materials from the games' archives, by name
 editor/assets/explorer.jac   the archives' files by folder, and what to show of each
@@ -299,6 +307,8 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_terrain_tests.jac`: heights as a field, a flat terrain's
   volume, a raised corner, each kind of stroke, heights out to an image and
   back.
+- `tests/studio_patch_tests.jac`: control points as a field, the surface
+  through its corner points, a sheet's prisms, a lifted point, every kind.
 - `tests/studio_shape_tests.jac`, `tests/studio_class_tests.jac`: each
   shape's size, volume and gaps; the class table read whole, fields by
   kind, classes by game, option bits.
@@ -343,6 +353,9 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/terrain_session.cfg` (7 steps: a terrain made, raised
   by a command, raised further by dragging the brush over it, lowered with
   Shift, flattened, given back heights written to an image, saved, played).
+  `scripts/studio/patch_session.cfg` (7 steps: an arch made, a control
+  point lifted by command, another dragged in the front view, the patch
+  moved, a cylinder and a cone, saved, played).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -359,11 +372,13 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   tools (tag, glue, wrap a texture round a corner) are not built; a shipped
   map takes new brushes only once it is turned into a scene; Quake III's
   `brushDef` and `patchDef2` blocks are skipped on open and its patches are
-  left behind by `ed_convert`; a linked prefab stands as its file has it (it
+  left behind by `ed_convert`; a patch turned or mirrored keeps its old
+  control points; a linked prefab stands as its file has it (it
   does not turn); the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
 - Not yet built: a solid-colour display mode; the bake proper (partition,
-  visibility, bounced light, bot navigation); patches; the rest of the
+  visibility, bounced light, bot navigation); Quake III's own patch blocks
+  in map files, and texture coordinates per control point; the rest of the
   asset studio (models, sounds played, shader and texture authoring); the
   model editor; the Passion tools; user walkers.
 - Within the shell: entity previews are boxes rather than the entity's

@@ -16,6 +16,7 @@ import from editor.document.scene {
     LogicNode
 }
 import from editor.geometry.brush { box_sides, brush_volume, Plane3, Side }
+import from editor.geometry.patch { patch_points }
 import from editor.formats.map { read_map, write_map }
 
 glob LUMP: str = "{\n\"classname\" \"worldspawn\"\n\"message\" \"the Slipgate Complex\"\n}\n"
@@ -845,4 +846,114 @@ test "a terrain is a group of prisms that a stroke reshapes and undo restores" {
     scene.select_solid(scene.solids_of(land)[0]);
     assert scene.remove_selection();
     assert not scene.sculpt_terrain(land, 0.0, 0.0, 100.0, 48.0);
+}
+
+test "a patch is a group of prisms that a control point bends and a move carries" {
+    scene = Scene(game="passion", name="studio:curves");
+    scene.world();
+    made = patch_points("sheet", Vec3(), Vec3(x=128.0, y=128.0, z=64.0));
+    sheet = scene.make_patch(made[2], made[0], made[1], "glass");
+    assert sheet is not None and scene.selection() == [sheet] and sheet.fields["_patch"] == "3 3 4 8";
+    assert len(scene.solids_of(sheet)) == 32;
+    control = scene.patch_control(sheet);
+    assert control is not None and len(control) == 9 and control[4].z == 64.0;
+    assert scene.patch_control(scene.world()) is None;
+    before = scene.geometry;
+    assert scene.move_patch_point(sheet, 4, Vec3(z=64.0));
+    assert scene.geometry == before + 1 and scene.patch_control(sheet)[4].z == 128.0;
+    tallest = max([solid.bounds()[1].z for solid in scene.solids_of(sheet)]);
+    assert abs(tallest - 80.0) < 0.5 and len(scene.solids_of(sheet)) == 32;
+    assert scene.solids_of(sheet)[0].sides[0].material == "glass";
+    assert not scene.move_patch_point(sheet, 99, Vec3(z=8.0)) and not scene.move_patch_point(sheet, 4, Vec3());
+    # Moved as a whole, its control points go with its brushes.
+    assert scene.shift_selection(Vec3(x=256.0));
+    assert scene.patch_control(sheet)[0].x == 256.0 and scene.solids_of(sheet)[0].bounds()[0].x >= 255.9;
+    scene.undo();
+    assert scene.undo() == "Move control point";
+    assert scene.patch_control(sheet)[4].z == 64.0;
+    flat = max([solid.bounds()[1].z for solid in scene.solids_of(sheet)]);
+    assert abs(flat - 64.0) < 0.01 and len(scene.solids_of(sheet)) == 32;
+    assert scene.make_patch(made[2][:8], 3, 3) is None;
+}
+
+test "a material is replaced in the selection or everywhere, as one step" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    scene.select_solid(wall);
+    assert scene.replace_material("floor", "stone") == 0;
+    assert scene.replace_material("wall", "stone") == 6 and wall.sides[0].material == "stone";
+    assert scene.replace_material("floor", "stone", True) == 6 and scene.solids()[0].sides[3].material == "stone";
+    assert scene.undo() == "Replace floor" and scene.solids()[0].sides[3].material == "floor";
+    assert scene.replace_material("stone", "stone") == 0 and scene.replace_material("stone", "") == 0;
+}
+
+test "snapping puts corners and origins on the grid and leaves what is on it" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    start = scene.items()[1];
+    scene.select_solid(wall);
+    assert scene.snap_selection(8.0) == 0;
+    assert scene.shift_selection(Vec3(x=3.0, y=-2.0, z=1.0));
+    scene.select(start, True);
+    assert scene.set_field("origin", "-61 -67 25");
+    assert scene.snap_selection(8.0) == 2;
+    box = wall.bounds();
+    assert box is not None and box[0].x == 0.0 and box[0].y == 0.0 and box[1].z == 64.0;
+    assert start.fields["origin"] == "-64 -64 24";
+    assert scene.undo() == "Snap to grid";
+    box = wall.bounds();
+    assert box is not None and box[0].x == 3.0 and start.fields["origin"] == "-61 -67 25";
+}
+
+test "brushes line up by their low sides, their high sides or their middles" {
+    scene = blockout();
+    first = scene.solids()[1];
+    second = scene.create_solid(box_sides(Vec3(x=128.0, y=40.0, z=16.0), Vec3(x=160.0, y=200.0, z=48.0), "wall"));
+    assert second is not None;
+    scene.select_solid(first, True);
+    assert scene.align_selection(2, "low");
+    assert second.bounds()[0].z == 0.0 and first.bounds()[0].z == 0.0;
+    assert scene.align_selection(1, "high");
+    assert first.bounds()[1].y == 200.0 and second.bounds()[1].y == 200.0;
+    assert not scene.align_selection(1, "high") and not scene.align_selection(0, "sideways");
+    scene.select_solid(first);
+    assert not scene.align_selection(0, "low");
+}
+
+test "picked faces spread to the whole brush, to the others, and across a plane" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    twin = scene.create_solid(box_sides(Vec3(x=64.0, y=0.0, z=0.0), Vec3(x=128.0, y=64.0, z=64.0), "wall"));
+    assert twin is not None;
+    scene.select_face(wall, 4);
+    # The top of the brush beside it lies in the same plane; the floor's top does not.
+    assert scene.extend_faces() == 1 and scene.is_face_selected(twin, 4) and len(scene.faces()) == 2;
+    assert scene.invert_faces() == 10 and not scene.is_face_selected(wall, 4) and len(scene.faces()) == 10;
+    scene.select_face(wall, 0);
+    assert scene.pick_all_faces() == 5 and len(scene.faces()) == 6;
+    scene.select_solid(twin);
+    assert scene.pick_all_faces() == 6 and not scene.selected_solids() and len(scene.face_sides(twin)) == 6;
+}
+
+test "a brush is glued against a plane by the side that faces it" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    loose = scene.create_solid(box_sides(Vec3(x=200.0, y=8.0, z=24.0), Vec3(x=232.0, y=40.0, z=56.0), "crate"));
+    assert loose is not None;
+    # Against the wall's +x face, and down onto the floor's top.
+    assert scene.glue_selection(wall.sides[0].plane);
+    assert loose.bounds()[0].x == 64.0 and loose.bounds()[1].x == 96.0;
+    assert scene.glue_selection(scene.solids()[0].sides[4].plane);
+    assert loose.bounds()[0].z == 0.0 and loose.bounds()[0].y == 8.0;
+    assert not scene.glue_selection(wall.sides[0].plane);
+    scene.undo();
+    assert scene.undo() == "Glue" and loose.bounds()[0].x == 200.0;
+}
+
+test "the document counts what it holds" {
+    scene = blockout();
+    lines = scene.statistics();
+    assert lines[0] == "2 entities, 2 brushes, 12 sides";
+    assert "  1 info_player_start" in lines and "  1 worldspawn" in lines;
+    assert "2 materials" in lines and "  6 sides of floor" in lines and "  6 sides of wall" in lines;
 }

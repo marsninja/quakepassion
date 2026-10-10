@@ -21,6 +21,8 @@ import math;
 import from ..formats.map { MapItem, MapFile }
 import from ..classes.registry { flag_put }
 import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted }
+import from ..geometry.patch { patch_brushes, points_text, points_from, points_shifted }
+import from ..geometry.csg { hull_sides }
 import from ..geometry.csg {
     carve_sides,
     common_sides,
@@ -397,6 +399,13 @@ walker Shift {
     can apply with Item entry {
         at = here.origin();
         if at is None {
+            bent = here.fields.get("_points");
+            if bent is not None {
+                # A patch's control points go where its brushes go.
+                carried = FieldChange(item=here, key="_points", before=bent, after=points_shifted(bent, self.delta));
+                carried.redo();
+                self.step.changes.append(carried);
+            }
             visit [here->:Owns:->];
             return;
         }
@@ -1199,6 +1208,42 @@ node Scene {
     def set_heights(item: Item, heights: list[float], label: str = "Sculpt") -> bool;
     """A stroke of a sculpting brush on a terrain, centred at (x, y)."""
     def sculpt_terrain(item: Item, x: float, y: float, radius: float, amount: float, how: str = "raise") -> bool;
+
+    """Give every side that has one material another: in the selected
+    brushes, or in every brush. Answers how many sides changed."""
+    def replace_material(old: str, fresh: str, everywhere: bool = False) -> int;
+    """Put the corners of the selected brushes, and the origins of the
+    selected entities, on a grid. Answers how many things moved."""
+    def snap_selection(size: float = 8.0) -> int;
+    """Line the selected brushes up along an axis: their low sides, their
+    high sides or their middles brought to the selection's own."""
+    def align_selection(axis: int, how: str = "low") -> bool;
+    """Every side of the brushes that have a picked face becomes picked."""
+    def pick_all_faces -> int;
+    """Within the brushes that have picked faces: the others, instead."""
+    def invert_faces -> int;
+    """Pick, in every brush of the document, the faces that lie in the
+    plane of a picked face and face its way."""
+    def extend_faces -> int;
+    """Move the selected brushes so that the side of each that most nearly
+    faces a plane lies on it (glued against the face that has that plane)."""
+    def glue_selection(plane: Plane3) -> bool;
+    """Counts of what the document holds: brushes, sides, entities by
+    class, materials by how many sides have them."""
+    def statistics -> list[str];
+
+    """Add a patch: a group of thin prisms under the surface its control
+    points bend, the points kept in its fields."""
+    def make_patch(
+        points: list[Vec3], width: int, height: int, material: str = "", steps: int = 4, thickness: float = 8.0
+    ) -> Item | None;
+    """A patch's grid from its fields: [width, height, steps, thickness], or
+    none when the entity is not a patch."""
+    def patch_grid(item: Item) -> list[float] | None;
+    def patch_control(item: Item) -> list[Vec3] | None;
+    """Give a patch other control points and build its prisms again."""
+    def set_patch(item: Item, points: list[Vec3], label: str = "Bend") -> bool;
+    def move_patch_point(item: Item, index: int, delta: Vec3) -> bool;
 
     """Put the selection out of sight (and out of the selection). Answers
     how many things were hidden."""

@@ -57,6 +57,7 @@ import from .formats.archive { write_pak, write_zip, file_kind }
 import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
 import from .geometry.shapes { shape_brushes, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
+import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items }
@@ -140,6 +141,12 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "a stroke of the sculpting brush on a terrain, where the camera looks or at a point"
     ),
     ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
+    (
+        "ed_patch",
+        "ed_patch <sheet|arch|bevel|cylinder|cone> [w d h]",
+        "add a curved patch where the camera looks"
+    ),
+    ("ed_patch_point", "ed_patch_point <patch> <point> <dx> <dy> <dz>", "move one control point of a patch"),
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
     (
         "ed_tex",
@@ -735,6 +742,11 @@ obj Studio(Workbench) {
                     MenuItem(text="Arch", command="ed_shape arch"),
                     MenuItem(text="Pipe", command="ed_shape pipe"),
                     MenuItem(text="Terrain", command="ed_terrain"),
+                    MenuItem(text="Curved sheet", command="ed_patch sheet"),
+                    MenuItem(text="Curved arch", command="ed_patch arch"),
+                    MenuItem(text="Curved corner", command="ed_patch bevel"),
+                    MenuItem(text="Curved cylinder", command="ed_patch cylinder"),
+                    MenuItem(text="Curved cone", command="ed_patch cone"),
                     MenuItem(rule=True),
                     MenuItem(text="Turn a quarter", command="ed_rotate 90", keys="R"),
                     MenuItem(text="Tip a quarter about x", command="ed_rotate 90 x"),
@@ -1329,7 +1341,17 @@ obj Studio(Workbench) {
                 if event.button == 0 and self.resizing {
                     self.resizing = False;
                     self.moved = abs(event.x - self.press_x) + abs(event.y - self.press_y) > 3;
-                    if self.mode == "corner" {
+                    bent = self.patch_now(scene);
+                    if self.mode == "corner" and bent is not None {
+                        pulled = self.corner_by;
+                        if pulled.length() > 0.0 {
+                            stage.emit(
+                                "ed_patch_point " + str(bent.serial) + " " + str(self.resize_side) + " "
+                                    + str(int(pulled.x)) + " " + str(int(pulled.y)) + " " + str(int(pulled.z))
+                            );
+                        }
+                        self.corner_by = Vec3();
+                    } elif self.mode == "corner" {
                         gone = self.corner_by;
                         if gone.length() > 0.0 {
                             words = "ed_corner " + str(int(gone.x)) + " " + str(int(gone.y)) + " " + str(int(gone.z));
@@ -2048,6 +2070,14 @@ obj Studio(Workbench) {
     def dab(scene: Scene, x: int, y: int, lower: bool, smooth: bool);
 
     # ------------------------------------------------------------------
+    # Curved patches (impl/studio.patch.impl.jac)
+
+    """Run a patch command. False when it is not one."""
+    def patch_command(scene: Scene, args: list[str]) -> bool;
+    """The one selected entity, when it is a patch."""
+    def patch_now(scene: Scene) -> Item | None;
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -2195,8 +2225,8 @@ obj Studio(Workbench) {
         } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
-            and not self.shell_command(scene, args) {
-            self.terrain_command(scene, args);
+            and not self.shell_command(scene, args) and not self.terrain_command(scene, args) {
+            self.patch_command(scene, args);
         }
     }
 
@@ -2389,6 +2419,18 @@ obj Studio(Workbench) {
                         + str(len([value for value in heights if value > 0.0]))
                 );
             }
+        }
+        for item in scene.items() {
+            control = scene.patch_control(item);
+            bend = scene.patch_grid(item);
+            if control is None or bend is None {
+                continue;
+            }
+            lines.append(
+                "studio: patch #" + str(item.serial) + " " + str(int(bend[0])) + "x" + str(int(bend[1])) + " top="
+                    + str(int(round(max([point.z for point in control])))) + " prisms="
+                    + str(len(scene.solids_of(item)))
+            );
         }
         seen_asset = self.asset_now;
         if seen_asset is not None {

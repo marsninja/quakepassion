@@ -296,6 +296,17 @@ impl Studio.draw_solids(scene: Scene) {
 
 impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
     found: list[tuple[int, Vec3]] = [];
+    bent = self.patch_now(scene);
+    if self.mode == "corner" and bent is not None {
+        # A patch shows the points that bend it.
+        control = scene.patch_control(bent);
+        if control is not None {
+            for (number, point) in enumerate(control) {
+                found.append((number, point));
+            }
+        }
+        return found;
+    }
     chosen = scene.selected_solids();
     if len(chosen) != 1 or scene.selection() {
         return found;
@@ -336,6 +347,19 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
 
 impl Studio.draw_handles(scene: Scene, area: Rect) {
     canvas = self.canvas;
+    if self.mode == "corner" and self.patch_now(scene) is not None {
+        for (index, spot) in self.handles(scene) {
+            grabbed = self.resizing and index == self.resize_side;
+            at = self.camera.project(area, spot.add(self.corner_by) if grabbed else spot);
+            if at is None {
+                continue;
+            }
+            box = Rect(x=at[0] - 4, y=at[1] - 4, w=9, h=9);
+            canvas.fill(box, canvas.theme.accent if grabbed else canvas.theme.good);
+            canvas.outline(box, canvas.theme.header);
+        }
+        return;
+    }
     chosen = scene.selected_solids();
     if len(chosen) != 1 or scene.selection() {
         return;
@@ -396,7 +420,8 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
 
 impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
     chosen = scene.selected_solids();
-    if len(chosen) != 1 or self.resize_side < 0 {
+    patched = self.mode == "corner" and self.patch_now(scene) is not None;
+    if (len(chosen) != 1 and not patched) or self.resize_side < 0 {
         return;
     }
     if self.mode == "corner" {
