@@ -1,4 +1,5 @@
-"""Original Q1 secret door routes, transform synchronization, and restoration."""
+"""Original Q1 and Q2 secret door routes, transform synchronization, and
+restoration."""
 import os;
 import from engine.world.level { load_level }
 import from engine.world.world { World, Player }
@@ -7,10 +8,16 @@ import from engine.world.combat { CombatState }
 import from engine.core.savegame { snapshot, restore }
 
 with entry {
-    for name in ["e1m1", "e1m2", "e2m1", "e4m1"] {
+    for (game, folder, name) in [
+        ("q1", "id1", "e1m1"),
+        ("q1", "id1", "e1m2"),
+        ("q1", "id1", "e2m1"),
+        ("q1", "id1", "e4m1"),
+        ("q2", "baseq2", "city3")
+    ] {
         world = World();
         level = load_level(
-            world, os.getenv("HOME", "") + "/quake-assets/id1", name, "q1"
+            world, os.getenv("HOME", "") + "/quake-assets/" + folder, name, game
         );
         doors = [
             door
@@ -48,6 +55,6 @@ with entry {
         }
         restore(world, level, player, state, before);
         assert snapshot(world, level, player, state) == before;
-        print("SECRET DOORS PASS", name, len(doors), "routes and snapshots");
+        print("SECRET DOORS PASS", game, name, len(doors), "routes and snapshots");
     }
 }

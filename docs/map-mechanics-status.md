@@ -3,7 +3,7 @@
 Everything a map's entities do between the player and the exit: the
 activation graph (targets, killtargets, relays, delays, timers, counters),
 touch and shot triggers, trains, rotating and bobbing movers, the shared
-pusher, Q1 secret doors, damage volumes, secrets and goals, traps, targets,
+pusher, secret doors, damage volumes, secrets and goals, traps, targets,
 destructible and toggle walls, Q2 turrets and fly-bys, fixtures and sound
 emitters. Doors, buttons and plats are in [doors](doors-status.md);
 teleporters and pushes in [traversal](traversal-status.md); exits and
@@ -106,14 +106,23 @@ doors, buttons, plats, `func_water`, trains, rotators and turrets (Q1
 - A Q2/Q3 player's view turns with a rotating mover (`delta_angles`); Q1
   turns nobody.
 
-## Q1 secret doors
+## Secret doors
 
-`engine/world/secret_doors.jac` builds `func_door_secret` as a train route:
-two-stage travel with corner pauses, open-once, named activation, shooting
+`engine/world/secret_doors.jac` builds Q1 and Q2 `func_door_secret` as a
+train route: two-stage travel with corner pauses, named activation, shooting
 (the trace identifies the brush actually hit), blasts in sight, and the
 first-left/first-down flags. The step clears by the brush's full extent.
-Touching one prints its message (`secret_touch`); its `sounds` set plays
-through the train's speakers.
+
+- Q1 (doors.qc `fd_secret_use`): OPEN_ONCE, NO_SHOOT and YES_SHOOT flags,
+  `t_width`/`t_length`, targets fired as the door sets off. Touching one
+  prints its message every 2 s until it is first used (`secret_touch`); its
+  `sounds` set plays through the train's speakers.
+- Q2 (g_func.c `door_secret_use`): flag 1 is ALWAYS_SHOOT, a `wait` of -1
+  holds the door open for good, no targets fire, and nothing sounds
+  (`SP_func_door_secret` indexes the door sounds but no `door_secret_*`
+  function plays them). A targeted door with a message prints it every 5 s
+  with `misc/talk1` (`door_touch`). city3 has the only one in the campaign:
+  shot open, first move to the left.
 
 ## Damage volumes, secrets and goals
 

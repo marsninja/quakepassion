@@ -366,8 +366,9 @@ walker TrainTick {
         train.was_moving = moving;
     }
 
-    """Q1 secret_touch: a secret door's message to the player touching it,
-    every two seconds, until the door is first used."""
+    """A secret door's message to the player touching it: Q1 secret_touch
+    every two seconds with the talk sound, until the door is first used; Q2
+    door_touch every five with its own."""
     def touch_note(train: Train) {
         person = self.player;
         train.message_wait = max(0.0, train.message_wait - self.dt);
@@ -384,8 +385,10 @@ walker TrainTick {
             and origin.y + 17.0 >= lo.y and origin.y - 17.0 <= hi.y
             and origin.z + 33.0 >= lo.z and origin.z - 25.0 <= hi.z {
             self.message = train.touch_message;
-            self.cues.append("sound/misc/talk.wav");
-            train.message_wait = 2.0;
+            self.cues.append(
+                "sound/misc/talk1.wav" if train.game == "q2" else "sound/misc/talk.wav"
+            );
+            train.message_wait = 5.0 if train.game == "q2" else 2.0;
         }
     }
 
@@ -450,9 +453,11 @@ walker TrainTick {
                 and (here.kind != "secret" or here.motion.length() < 0.00001) {
                 here.running = True;
                 here.remaining = 0.0;
-                # fd_secret_use: no more message once the door is used.
-                here.touch_message = "";
-                if here.kind == "secret" {
+                # fd_secret_use: no more message once the door is used, and
+                # its targets fire as it sets off. Q2 door_secret_use does
+                # neither.
+                if here.kind == "secret" and here.game == "q1" {
+                    here.touch_message = "";
                     here.activation spawn Fire(
                         inventory=self.player.inventory
                             if self.player is not None
