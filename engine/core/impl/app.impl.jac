@@ -600,7 +600,7 @@ impl App.load_destination(
     }
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
-    next_effects = EffectScene();
+    next_effects = EffectScene(cvars=self.effects.cvars);
     next_viewweapon = ViewWeapon();
     try {
         world = World();

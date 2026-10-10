@@ -10,6 +10,9 @@ import from engine.render.effects {
     EFFECT_BLEND_ALPHA,
     EFFECT_BLEND_ADD,
     EFFECT_BLEND_DARKEN,
+    EffectCvars,
+    rail_core_ends,
+    rail_rings,
     effect_byte
 }
 import from engine.world.world { World }
@@ -110,4 +113,45 @@ test "a bot typing a chat line wears the talk balloon over its head" {
     assert record[0] == 10.0 and record[2] == 48.0;
     assert abs(record[9] + 10.0) < 0.001 and abs(record[11] - 10.0) < 0.001;
     assert not EffectScene().add_balloons(found.talkers, TickBlend());
+}
+
+test "the rail is its core alone by default, lowered as CG_RailTrail lowers it" {
+    cvars = EffectCvars();
+    assert cvars.old_rail.on() and cvars.rail_time.number == 400.0;
+    start = Vec3(x=10.0, y=20.0, z=30.0);
+    finish = Vec3(x=510.0, y=20.0, z=30.0);
+    # start[2] -= 4, then cg_oldRail nudges both ends down 8.
+    ends = rail_core_ends(start, finish, True);
+    assert ends[0].z == 18.0 and ends[1].z == 22.0 and ends[0].x == 10.0 and ends[1].x == 510.0;
+    # With the spiral the core is not nudged.
+    plain = rail_core_ends(start, finish, False);
+    assert plain[0].z == 26.0 and plain[1].z == 30.0;
+}
+
+test "the rail's spiral leaves a ring every other step, turning 20 degrees, drifting outward" {
+    start = Vec3(z=4.0);
+    finish = Vec3(x=100.0);
+    rings = rail_rings(start, finish, 0.0);
+    # A 100-unit beam: steps 0, 5 ... 95 leave rings at 0, 10 ... 90.
+    assert len(rings) == 10;
+    # The first sits 20 units along the lowered beam, 4 off its axis.
+    assert abs(rings[0].pos.x - 20.0) < 0.0001;
+    assert abs(Vec3(y=rings[0].pos.y, z=rings[0].pos.z).length() - 4.0) < 0.0001;
+    for i in range(9) {
+        a = Vec3(y=rings[i].pos.y, z=rings[i].pos.z);
+        b = Vec3(y=rings[i + 1].pos.y, z=rings[i + 1].pos.z);
+        assert abs(rings[i + 1].pos.x - rings[i].pos.x - 10.0) < 0.0001;
+        # Two 10-degree steps between rings.
+        assert abs(a.normalized().dot(b.normalized()) - 0.9396926) < 0.0001;
+    }
+    # TR_LINEAR at 6 units a second along its perpendicular.
+    later = rail_rings(start, finish, 0.5);
+    assert abs(Vec3(y=later[0].pos.y, z=later[0].pos.z).length() - 7.0) < 0.0001;
+    assert later[0].pos.x == rings[0].pos.x;
+    # A ring lives 600 ms plus half its step in milliseconds: the ring of
+    # step 90 goes at 645 ms, the first at 600.
+    assert len(rail_rings(start, finish, 0.599)) == 10;
+    assert len(rail_rings(start, finish, 0.601)) == 9;
+    assert len(rail_rings(start, finish, 0.644)) == 1 and len(rail_rings(start, finish, 0.646)) == 0;
+    assert not rail_rings(start, start.sub(Vec3(z=4.0)), 0.0);
 }

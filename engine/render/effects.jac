@@ -35,6 +35,10 @@ import from ..world.particles {
 }
 import from ..world.particle_field { ParticleField, HasParticles, puff_state }
 import from ..world.missile_trails { EmitTrails }
+import from ..world.models { PLAYER_COLOR1, PLAYER_COLOR2 }
+import from ..world.portals { perpendicular, rotate_about }
+import from ..console.cvar { Cvar, CVAR_ARCHIVE }
+import from ..console.shell { Shell }
 import from .particles { ParticleRing }
 import from .polygons { ScenePolygons, POLYGON_BLEND_ALPHA, POLYGON_BLEND_DARKEN }
 import from ..math.vec3 { Vec3, forward_from, right_from }
@@ -427,7 +431,92 @@ glob QUAKE2_LASER_COLORS: dict[str, list[int]] = {
     "laser_orange": [227, 226, 225, 224]
 };
 
+"""The cvars the effects own (cg_main.c): whether a Q3 rail is its core
+alone, and how long the core shows."""
+obj EffectCvars {
+    has old_rail: Cvar = Cvar(
+            name="cg_oldRail",
+            reset_text="1",
+            kind="bool",
+            flags=CVAR_ARCHIVE,
+            description="draw the railgun's core only, without the spiral of rings"
+        ),
+        rail_time: Cvar = Cvar(
+            name="cg_railTrailTime",
+            reset_text="400",
+            kind="float",
+            low=0.0,
+            high=10000.0,
+            flags=CVAR_ARCHIVE,
+            description="milliseconds a railgun's core takes to fade"
+        );
+}
+
+# cg_weapons.c CG_RailTrail: the spiral's RADIUS and SPACING, how far along
+# the beam it starts, the first of the 36 perpendiculars it uses, each ring's
+# sprite radius and drift, and the least a ring lives.
+glob RAIL_SPIRAL_RADIUS: float = 4.0,
+     RAIL_SPIRAL_SPACING: int = 5,
+     RAIL_SPIRAL_START: float = 20.0,
+     RAIL_SPIRAL_FIRST_AXIS: int = 18,
+     RAIL_RING_RADIUS: float = 1.1,
+     RAIL_RING_DRIFT: float = 6.0,
+     RAIL_RING_LIFE: float = 0.6;
+
+# The railDisc shader's tcMod rotate, degrees a second.
+glob RAIL_RING_SPIN: float = -30.0;
+
+"""One ring of a rail's spiral, where it is now."""
+obj RailRing {
+    has pos: Vec3,
+        age: float;
+}
+
+"""CG_RailTrail's beam: the start drops 4 units, and with cg_oldRail both
+ends of the core drop another 8 so it is not dead centre."""
+def rail_core_ends(start: Vec3, finish: Vec3, old_rail: bool) -> list[Vec3] {
+    nudge = 8.0 if old_rail else 0.0;
+    return [start.sub(Vec3(z=4.0 + nudge)), finish.sub(Vec3(z=nudge))];
+}
+
+"""CG_RailTrail's spiral (cg_oldRail 0) `age` seconds after the shot: from 20
+units along the lowered beam, every other 5-unit step leaves a ring 4 units
+off the axis on a perpendicular that turns 10 degrees a step from the 18th
+(so 20 degrees from ring to ring, 10 units apart), drifting outward 6 units
+a second (LE_MOVE_SCALE_FADE, TR_LINEAR) and living 600 ms plus half its
+distance in milliseconds."""
+def rail_rings(start: Vec3, finish: Vec3, age: float) -> list[RailRing] {
+    rings: list[RailRing] = [];
+    low = start.sub(Vec3(z=4.0));
+    along = finish.sub(low);
+    length = along.length();
+    if length < 0.001 {
+        return rings;
+    }
+    axis = along.scale(1.0 / length);
+    side = perpendicular(axis);
+    move = low.add(axis.scale(RAIL_SPIRAL_START));
+    turn = RAIL_SPIRAL_FIRST_AXIS;
+    # The original's `skip`: a step that left a ring makes the next leave none.
+    idle = -1;
+    i = 0;
+    while float(i) < length {
+        if i != idle {
+            idle = i + RAIL_SPIRAL_SPACING;
+            if age < RAIL_RING_LIFE + float(i >> 1) / 1000.0 {
+                out = rotate_about(side, axis, float(turn * 10));
+                rings.append(RailRing(pos=move.add(out.scale(RAIL_SPIRAL_RADIUS + RAIL_RING_DRIFT * age)), age=age));
+            }
+        }
+        move = move.add(axis.scale(float(RAIL_SPIRAL_SPACING)));
+        turn = (turn + 1) % 36;
+        i += RAIL_SPIRAL_SPACING;
+    }
+    return rings;
+}
+
 obj EffectScene {
+    has cvars: EffectCvars = EffectCvars();
     has flight: dict[str, list[UploadedSprite]] = {},
         burst: dict[str, list[UploadedSprite]] = {},
         textures: list[int] = [],
@@ -444,6 +533,12 @@ obj EffectScene {
         palette: bytes = b"",
         lighting: Lighting = Lighting(),
         game: str = "";
+
+    """Register the effects' cvars."""
+    def declare(shell: Shell) {
+        self.cvars.old_rail = shell.register(self.cvars.old_rail);
+        self.cvars.rail_time = shell.register(self.cvars.rail_time);
+    }
 
     def keys() -> list[str] {
         styled = [kind for kind in STYLED_TRAILS if self.game];
@@ -1079,7 +1174,10 @@ obj EffectScene {
             } elif kind.startswith("laser_") {
                 self.laser_beam(trail.start, trail.finish, QUAKE2_LASER_COLORS.get(kind, [242, 242, 240, 240]), trail.width, trail.age);
             } elif kind == "q3_rail" {
-                self.rail_core(trail.start, trail.finish, eye, fade, trail.age);
+                self.rail_core(trail.start, trail.finish, eye, trail.age);
+                if not self.cvars.old_rail.on() {
+                    self.rail_spiral(trail.start, trail.finish, trail.age);
+                }
             } else {
                 # A plain rail (Passion): a thin red core.
                 self.beam_quad(0, EFFECT_BLEND_ADD, trail.start, trail.finish, self.beam_side(trail.start, trail.finish, eye), 0.75, Vec3(x=0.75).scale(fade));
@@ -1088,28 +1186,55 @@ obj EffectScene {
         self.quads.flush();
     }
 
-    """CG_RailTrail with cg_oldRail (the default): the railCore shader's quad
-    12 units across (r_railCoreWidth 6 each side), its texture a quarter
-    repeat per 64 units scrolling back a repeat a second (tcMod scroll -1),
-    lowered 8 units, in the shooter's color1 (red) at three quarters,
-    fading over cg_railTrailTime."""
-    def rail_core(start: Vec3, finish: Vec3, eye: Vec3, fade: float, age: float) {
+    """CG_RailTrail's core (RT_RAIL_CORE, tr_surface.c RB_SurfaceRailCore): the
+    railCore shader's quad 12 units across (r_railCoreWidth 6 each side), its
+    texture a repeat per 256 units scrolling back a repeat a second (tcMod
+    scroll -1), in three quarters of the shooter's color1, fading over
+    cg_railTrailTime (LE_FADE_RGB)."""
+    def rail_core(start: Vec3, finish: Vec3, eye: Vec3, age: float) {
+        life = self.cvars.rail_time.number / 1000.0;
+        if life <= 0.0 or age >= life {
+            return;
+        }
+        fade = 0.75 * (1.0 - age / life);
         art = self.flight.get("q3_railcore", []);
-        low_start = start.sub(Vec3(z=12.0));
-        low_finish = finish.sub(Vec3(z=8.0));
-        side = self.beam_side(low_start, low_finish, eye);
-        repeat = low_finish.sub(low_start).length() / 256.0;
+        ends = rail_core_ends(start, finish, self.cvars.old_rail.on());
+        side = self.beam_side(ends[0], ends[1], eye);
+        repeat = ends[1].sub(ends[0]).length() / 256.0;
         self.beam_quad(
             art[0].texture if art else 0,
             EFFECT_BLEND_ADD,
-            low_start,
-            low_finish,
+            ends[0],
+            ends[1],
             side,
             6.0,
-            Vec3(x=0.75 * fade),
+            Vec3(x=PLAYER_COLOR1[0] * fade, y=PLAYER_COLOR1[1] * fade, z=PLAYER_COLOR1[2] * fade),
             -age,
             repeat - age
         );
+    }
+
+    """CG_RailTrail's spiral: each ring a railDisc sprite 1.1 units in radius
+    in the shooter's color2, its texture turning with the shader's tcMod
+    rotate. The local entity fades only the sprite's alpha, which the
+    additive shader's rgbGen vertex does not read, so a ring keeps its colour
+    until it expires."""
+    def rail_spiral(start: Vec3, finish: Vec3, age: float) {
+        art = self.flight.get("q3_raildisc", []);
+        if not art {
+            return;
+        }
+        sprite = art[0];
+        for ring in rail_rings(start, finish, age) {
+            self.billboard(
+                sprite,
+                ring.pos,
+                EFFECT_BLEND_ADD,
+                scale=RAIL_RING_RADIUS * 2.0 / float(max(1, sprite.frame.width)),
+                angle=-RAIL_RING_SPIN * age * math.pi / 180.0,
+                tint=Vec3(x=PLAYER_COLOR2[0], y=PLAYER_COLOR2[1], z=PLAYER_COLOR2[2])
+            );
+        }
     }
 
     """CG_LightningBolt's beam (RB_SurfaceLightningBolt): four quads 16

@@ -57,9 +57,11 @@ obj ModelDraw {
         entity_color: list[float] = [];
 }
 
-# cg_players.c CG_ColorFromString of the default "color1 4": the red a
-# player's railgun flash is drawn in (CG_AddPlayerWeapon).
-glob PLAYER_COLOR1: list[float] = [1.0, 0.0, 0.0, 0.0];
+# cg_players.c CG_ColorFromString of the default "color1 4" and "color2 5":
+# the red of a player's railgun flash (CG_AddPlayerWeapon) and rail core, and
+# the magenta of the rail's spiral (CG_RailTrail).
+glob PLAYER_COLOR1: list[float] = [1.0, 0.0, 0.0, 0.0],
+     PLAYER_COLOR2: list[float] = [1.0, 0.0, 1.0, 0.0];
 
 """Q3 powerup shaders (cgs.media.quadShader and friends), registered as model
 resources named "shader:<shader>", and how far each pushes the surface out

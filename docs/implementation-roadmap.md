@@ -73,7 +73,8 @@ Movers, triggers and levels ([doors-status.md](doors-status.md), [map-mechanics-
 Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-feedback-status.md](combat-feedback-status.md), [player-feedback-status.md](player-feedback-status.md)):
 - Player projectiles spawn at the player's origin, not a muzzle point.
 - Q2 item `team` groups are ignored and `ITEM_NO_TOUCH` items are skipped.
-- The Q3 railgun draws its core only, not the raildisc rings.
+- With `cg_oldRail 0` the Q3 rail's rings last only as long as its core
+  (the default `cg_oldRail 1` draws the core alone, as the original does).
 - The player's own body is not thrown as gibs.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):

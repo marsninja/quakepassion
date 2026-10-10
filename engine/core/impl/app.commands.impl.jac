@@ -14,6 +14,7 @@ impl App.configure() {
     self.renderer.declare(self.shell);
     self.audio.declare(self.shell);
     self.hud.declare(self.shell);
+    self.effects.declare(self.shell);
     host = self.host;
     host.skill = self.shell.register(host.skill);
     host.god = self.shell.register(host.god);
