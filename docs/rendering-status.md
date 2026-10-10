@@ -84,6 +84,12 @@ and builds the level graph.
   chunks through their own index buffer, grouped by placement: models at rest
   together, each moving model with a model matrix. Groups rebuild only when a
   model starts or stops moving or a face is hidden or shown.
+- **The lightmap atlas** is sized from the map: the smallest power of two
+  from 256 to 16384 that holds its lightmap blocks on shelves
+  (`fit_light_atlas`, `engine/render/world_mesh.jac`). A Q3 map's 128×128
+  pages each take one block; a Q1/Q2 face takes one per light style, side by
+  side. Past 4096 block corners are aligned so the per-vertex block offset
+  still addresses them.
 - **Q1/Q2 lightmapped surfaces**: one pass of texture × light-style layers.
   Each layer is stored raw in the atlas and scaled in the shader by its
   style's current value, so animating styles uploads only the values. Up to
@@ -241,7 +247,7 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
 - Tests: `phase2_bsp_tests` and `phase2_level_tests` (BSP bounds, PVS, leaf
   counts), `phase2_pak_tests`, `phase3_formats_tests` (WAL bounds, patch
   geometry and winding, cluster 0 visibility), `world_mesh_tests` (vertex
-  packing, batches, index runs), `render_culling_tests`, `model_gpu_tests`,
+  packing, batches, index runs, autosprite quads, the lightmap atlas), `render_culling_tests`, `model_gpu_tests`,
   `effect_quads_tests`, `lightfx_render_tests` (Q2 sky rotation, particle
   records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
   `flare_tests` (adding, dimming, fading and dropping flares), `curve_tests`
@@ -264,15 +270,15 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   original also drops rows and columns as a patch recedes
   (`r_lodCurveError`). Their vertices share the face's one normal rather than
   `MakeMeshNormals`' per-vertex ones.
-- The lightmap atlas is a fixed 2048×2048; a map that overflows it fails to
-  load ("Lightmap atlas capacity exceeded"). Every original map fits.
 - Q3 shaders: directives the parser does not know are recorded in
   `material.unsupported` and skipped.
 - Q3 flares are tested with a trace through the world instead of the
   original's depth buffer read, so a model in front of a flare does not hide
   it. They are not drawn in mirrors and portal views, and take no fog.
-- The world shader holds 16 fog volumes (`WORLD_FOG_LIMIT`); faces in a
-  later volume draw unfogged.
+- The world shaders hold 31 fog volumes (`WORLD_FOG_LIMIT`), as many as the
+  original's renderer numbers (five bits of a surface's sort key). The
+  shipped maps have at most 11 (pro-q3tourney2). A map with more draws the
+  later volumes' faces unfogged and says so at load.
 - The sky box and Q3 portal backdrops still use raylib's immediate batch.
 - Repeated models are not instanced (the model draw loop costs 0.05-0.3 ms a
   frame on the benchmark maps).

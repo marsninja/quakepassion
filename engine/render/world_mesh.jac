@@ -71,8 +71,66 @@ glob PASS_LIT: int = 1,
      PASS_FOG: int = 8,
      PASS_FOG_TWO_SIDED: int = 9;
 
-# Q3 fog volumes the shaders hold at once.
-glob WORLD_FOG_LIMIT: int = 16;
+# Q3 fog volumes the shaders hold at once: as many as the original's
+# renderer numbers (tr_local.h packs the fog into 5 bits of a surface's sort
+# key, 0 being none).
+glob WORLD_FOG_LIMIT: int = 31;
+
+# Lightmap atlas sizes, smallest first; a map takes the first that holds its
+# lightmaps. A block's corner is packed into one float as 4096 steps each
+# way, so past 4096 corners are aligned to `size / 4096` texels.
+glob LIGHT_ATLAS_SIZES: list[int] = [256, 512, 1024, 2048, 4096, 8192, 16384];
+
+"""Where each lightmap block sits in an atlas `size` across: `unit` is the
+alignment of the corners (`xs`, `ys`). `fits` is false when the blocks do
+not fit the size tried."""
+obj AtlasLayout {
+    has size: int = 0,
+        unit: int = 1,
+        fits: bool = False,
+        xs: list[int] = [],
+        ys: list[int] = [];
+}
+
+"""Lay blocks out on shelves in an atlas `size` across, each `layers` copies
+of `widths` x `heights` texels side by side with a texel of border round
+every copy."""
+def pack_light_blocks(widths: list[int], heights: list[int], layers: list[int], size: int) -> AtlasLayout {
+    unit = max(1, size // 4096);
+    layout = AtlasLayout(size=size, unit=unit, xs=[], ys=[]);
+    x = unit;
+    y = unit;
+    row_height = 0;
+    for b in range(len(widths)) {
+        span = layers[b] * (widths[b] + 2);
+        if x + span - 1 > size {
+            x = unit;
+            y = ((y + row_height + 2 + unit - 1) // unit) * unit;
+            row_height = 0;
+        }
+        if x + span - 1 > size or y + heights[b] + 1 > size {
+            return AtlasLayout(size=size, unit=unit);
+        }
+        layout.xs.append(x);
+        layout.ys.append(y);
+        x = ((x + span + unit - 1) // unit) * unit;
+        row_height = max(row_height, heights[b]);
+    }
+    layout.fits = True;
+    return layout;
+}
+
+"""The smallest atlas of LIGHT_ATLAS_SIZES that holds the blocks; one that
+does not fit when none does."""
+def fit_light_atlas(widths: list[int], heights: list[int], layers: list[int]) -> AtlasLayout {
+    for size in LIGHT_ATLAS_SIZES {
+        layout = pack_light_blocks(widths, heights, layers, size);
+        if layout.fits {
+            return layout;
+        }
+    }
+    return AtlasLayout();
+}
 
 """A run of indices in one chunk's index buffer."""
 obj IndexSpan {
@@ -269,7 +327,8 @@ def file_winding(corners: list[int]) -> list[int] {
 
 """Pack one face's vertices into `out` from byte `offset`. `light_x`,
 `light_y` place its lightmap in an `atlas_size` atlas; `layer` is the Q1/Q2
-light style layer stride in atlas units. With `sprites` (Q3), a quad also
+light style layer stride in atlas units and `unit` the atlas's block
+alignment (AtlasLayout). With `sprites` (Q3), a quad also
 carries what autosprite and autosprite2 need. Q3 vertex colours go through
 the overbright shift; their alpha stays raw for alphaGen vertex. Faces
 without colours take white at `alpha` (Q2's translucent surfaces)."""
@@ -285,7 +344,8 @@ def pack_world_face(
     fog: int,
     overbright: bool,
     sprites: bool = False,
-    alpha: int = 255
+    alpha: int = 255,
+    unit: int = 1
 ) {
     count = len(face.vertices);
     inverse_atlas = 1.0 / float(atlas_size);
@@ -352,7 +412,7 @@ def pack_world_face(
             mx = info.t.x / 16.0;
             my = info.t.y / 16.0;
             mz = info.t.z / 16.0;
-            mw = float(light_x * 4096 + light_y);
+            mw = float((light_x // unit) * 4096 + light_y // unit);
             corner = max(0, min(255, face.light_width - 1));
             edge_code = max(0, min(255, face.light_height - 1));
         }
@@ -515,14 +575,15 @@ glob WORLD_INPUTS: str = "#version 330\nlayout(location=0) in vec3 inPosition; l
 # minimum light (Q1 dl->minlight, Q2 DLIGHT_CUTOFF). They light either side
 # of a surface, as in Quake. `lux` is where the pixel lies among the face's
 # samples (the sample k at k), `axisS`/`axisT` the texture axes in samples
-# and `lastSample` the face's last sample column and row.
+# and `lastSample` the face's last sample column and row; `lightBlockUnit`
+# is the atlas's block alignment (AtlasLayout).
 glob LIT_VS: str = WORLD_INPUTS
     + "uniform vec4 lightStyles[64]; out vec2 uv; out vec2 luv; out vec3 worldPosition; out vec2 lux; flat out vec4 styleScale; flat out float layerStride; flat out float lit;\n"
-    + "uniform sampler2D lightMap; flat out vec3 plane; flat out vec3 axisS; flat out vec3 axisT; flat out vec2 lastSample;\n"
+    + "uniform sampler2D lightMap; uniform float lightBlockUnit; flat out vec3 plane; flat out vec3 axisS; flat out vec3 axisT; flat out vec2 lastSample;\n"
     + "float styleValue(float s){ int i=int(s+0.5); return lightStyles[i>>2][i&3]; }\n"
     + "void main(){ vec4 w=model*vec4(inPosition,1.0); worldPosition=w.xyz; uv=inTexCoord; luv=inLightCoord; styleScale=vec4(styleValue(inStyles.x),styleValue(inStyles.y),styleValue(inStyles.z),styleValue(inStyles.w)); layerStride=inAuxA.x; lit=mod(floor(inInfo.x+0.5),2.0);\n"
     + " mat3 turn=mat3(model); plane=normalize(turn*inNormal); axisS=turn*inAuxA.yzw; axisT=turn*inAuxB.xyz; lastSample=inInfo.yw;\n"
-    + " float block=floor(inAuxB.w+0.5); lux=inLightCoord*vec2(textureSize(lightMap,0))-vec2(floor(block/4096.0),mod(block,4096.0))-0.5; gl_Position=viewProjection*w; }\n",
+    + " float block=floor(inAuxB.w+0.5); lux=inLightCoord*vec2(textureSize(lightMap,0))-vec2(floor(block/4096.0),mod(block,4096.0))*lightBlockUnit-0.5; gl_Position=viewProjection*w; }\n",
      LIT_FS: str = "#version 330\nin vec2 uv; in vec2 luv; in vec3 worldPosition; in vec2 lux; flat in vec4 styleScale; flat in float layerStride; flat in float lit;\n"
     + "flat in vec3 plane; flat in vec3 axisS; flat in vec3 axisT; flat in vec2 lastSample; out vec4 finalColor;\n"
     + "uniform sampler2D colorMap; uniform sampler2D lightMap; uniform vec4 flashPosition[8]; uniform vec4 flashColor[8];\n"
@@ -574,7 +635,7 @@ glob BASE_VS: str = WORLD_INPUTS
 glob WORLD_WAVE_GLSL: str = "float waveAt(float func, float base, float amplitude, float x){ float f=fract(x); float v=0.0;"
     + " if(func<0.5) v=sin(f*6.283185307); else if(func<1.5) v=f<0.25?4.0*f:(f<0.75?2.0-4.0*f:4.0*f-4.0); else if(func<2.5) v=f<0.5?1.0:-1.0;"
     + " else if(func<3.5) v=f; else if(func<4.5) v=1.0-f; else v=sin(x*12.9898)*0.5+sin(x*78.233)*0.5; return base+v*amplitude; }\n",
-     WORLD_FOG_GLSL: str = "uniform vec3 eye; uniform vec3 viewForward; uniform vec4 fogPlane[16]; uniform vec4 fogColor[16];\n"
+     WORLD_FOG_GLSL: str = "uniform vec3 eye; uniform vec3 viewForward; uniform vec4 fogPlane[" + str(WORLD_FOG_LIMIT) + "]; uniform vec4 fogColor[" + str(WORLD_FOG_LIMIT) + "];\n"
     + "vec2 fogCoords(int i, vec3 p){ float s=(dot(viewForward,p)-dot(viewForward,eye))/(fogColor[i].w*8.0)+1.0/512.0; if(fogPlane[i].w>=1.0e8) return vec2(s,31.0/32.0);"
     + " float eyeT=dot(fogPlane[i].xyz,eye)+fogPlane[i].w; float t=dot(fogPlane[i].xyz,p)+fogPlane[i].w;"
     + " if(eyeT<0.0) t=t<1.0?1.0/32.0:1.0/32.0+30.0/32.0*t/(t-eyeT); else t=t<0.0?1.0/32.0:31.0/32.0; return vec2(s,t); }\n"
@@ -646,7 +707,7 @@ glob STAGE_VS: str = WORLD_INPUTS
     + " if(tcTurb[i].x>0.5){ c2.x+=sin(((tp.x+tp.z)/128.0*0.125+tcTurb[i].z)*6.283185307)*tcTurb[i].y; c2.y+=sin((tp.y/128.0*0.125+tcTurb[i].z)*6.283185307)*tcTurb[i].y; } }\n"
     + " vec4 c=tint; if(rgbMode==1) c.rgb=inColor.rgb; if(alphaMode==1) c.a=inColor.a; else if(alphaMode==2) c.a=clamp(length(p-eye)/portalRange,0.0,1.0);"
     + " else if(alphaMode==3){ vec3 toward=normalize(vec3(-960.0,1980.0,96.0)-p); vec3 r=n*(2.0*dot(n,toward))-toward; float shine=max(0.0,dot(r,normalize(eye-p))); c.a=min(1.0,shine*shine*shine*shine); }\n"
-    + " int fi=int(inInfo.z+0.5)-1; if(fogMode>0&&fi>=0&&fi<16){ float clear=1.0-fogDensity(fogCoords(fi,p)); if(fogMode!=2) c.rgb*=clear; if(fogMode!=1) c.a*=clear; }\n"
+    + " int fi=int(inInfo.z+0.5)-1; if(fogMode>0&&fi>=0&&fi<" + str(WORLD_FOG_LIMIT) + "){ float clear=1.0-fogDensity(fogCoords(fi,p)); if(fogMode!=2) c.rgb*=clear; if(fogMode!=1) c.a*=clear; }\n"
     + " st=c2; shade=c; gl_Position=viewProjection*vec4(p,1.0); if(lightmapStage==1&&(f&1)==0) gl_Position=vec4(0.0,0.0,-2.0,1.0); }\n",
      STAGE_FS: str = "#version 330\nin vec2 st; in vec4 shade; out vec4 finalColor; uniform sampler2D stageMap;\nvoid main(){ finalColor=texture(stageMap,st)*shade; }\n";
 
@@ -654,7 +715,7 @@ glob STAGE_VS: str = WORLD_INPUTS
 glob FOG_VS: str = WORLD_INPUTS
     + WORLD_FOG_GLSL
     + "out vec2 st; out vec4 shade;\n"
-    + "void main(){ vec3 p=(model*vec4(inPosition,1.0)).xyz; int fi=int(inInfo.z+0.5)-1; if(fi<0||fi>=16){ st=vec2(0.0); shade=vec4(0.0); gl_Position=vec4(0.0,0.0,-2.0,1.0); return; }"
+    + "void main(){ vec3 p=(model*vec4(inPosition,1.0)).xyz; int fi=int(inInfo.z+0.5)-1; if(fi<0||fi>=" + str(WORLD_FOG_LIMIT) + "){ st=vec2(0.0); shade=vec4(0.0); gl_Position=vec4(0.0,0.0,-2.0,1.0); return; }"
     + " st=fogCoords(fi,p); shade=vec4(fogColor[fi].rgb,1.0); gl_Position=viewProjection*vec4(p,1.0); }\n",
      FOG_FS: str = "#version 330\nin vec2 st; in vec4 shade; out vec4 finalColor; uniform sampler2D fogMap;\nvoid main(){ finalColor=texture(fogMap,st)*shade; }\n";
 

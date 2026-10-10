@@ -10,6 +10,11 @@ import from engine.render.world_mesh {
     pack_world_face,
     sprite_quad,
     file_winding,
+    pack_light_blocks,
+    fit_light_atlas,
+    WORLD_FOG_LIMIT,
+    WORLD_FOG_GLSL,
+    LIGHT_ATLAS_SIZES,
     SPRITE_STAMP_CORNERS,
     batch_key,
     WORLD_VERTEX_STRIDE,
@@ -241,4 +246,46 @@ test "brush placements become model matrices about the pivot" {
     assert same_placement(other, face);
     other.frame = 1;
     assert not same_placement(other, face);
+}
+
+test "the lightmap atlas is the smallest size that holds the map's lightmaps" {
+    # Three 128-texel Q3 pages (130 with their borders) need 512.
+    pages = fit_light_atlas([128, 128, 128], [128, 128, 128], [1, 1, 1]);
+    assert pages.fits and pages.size == 512 and pages.unit == 1;
+    assert pages.xs == [1, 131, 261] and pages.ys == [1, 1, 1];
+    # A fourth starts the next shelf, two texels under the first.
+    four = pack_light_blocks([128] * 4, [128] * 4, [1] * 4, 512);
+    assert four.xs[3] == 1 and four.ys[3] == 131;
+    # One page fits the smallest atlas; 226 of them (15 x 15 fit 2048) need 4096.
+    assert fit_light_atlas([128], [128], [1]).size == 256;
+    assert fit_light_atlas([128] * 225, [128] * 225, [1] * 225).size == 2048;
+    assert fit_light_atlas([128] * 226, [128] * 226, [1] * 226).size == 4096;
+    # Q1/Q2 faces lay their light style layers side by side.
+    styled = pack_light_blocks([16, 16], [8, 8], [4, 1], 256);
+    assert styled.xs == [1, 73] and styled.ys == [1, 1];
+    # Past 4096 a block's corner is aligned so 4096 steps span the atlas.
+    big = pack_light_blocks([128] * 3, [128] * 3, [1] * 3, 8192);
+    assert big.unit == 2 and big.xs == [2, 132, 262] and big.ys == [2, 2, 2];
+    assert not pack_light_blocks([300], [8], [1], 256).fits;
+    assert not pack_light_blocks([8], [300], [1], 256).fits;
+    assert not fit_light_atlas([20000], [8], [1]).fits and LIGHT_ATLAS_SIZES[-1] == 16384;
+}
+
+test "a face's lightmap block corner is packed in the atlas's units" {
+    face = square(8.0);
+    face.light_offset = 0;
+    face.light_uv = [0.0, 0.0, 2.0, 0.0, 2.0, 2.0, 0.0, 2.0];
+    face.styles = [0];
+    face.texinfo = TexInfo(s=Vec3(y=1.0), t=Vec3(z=-2.0), soff=0.0, toff=0.0, texture=0, flags=0);
+    face.light_width = 3;
+    face.light_height = 2;
+    out = bytearray(4 * WORLD_VERTEX_STRIDE);
+    pack_world_face(out, 0, face, 5000, 6002, 8192, 0.25, 1, -1, False, unit=2);
+    q = struct.unpack_from("<fffffffBBBBfffBBBBBBBBffffffff", bytes(out), 0);
+    assert q[29] == float(2500 * 4096 + 3001);
+}
+
+test "the world shaders hold as many fog volumes as the original numbers" {
+    assert WORLD_FOG_LIMIT == 31;
+    assert "fogPlane[31]" in WORLD_FOG_GLSL and "fogColor[31]" in WORLD_FOG_GLSL;
 }

@@ -82,6 +82,7 @@ import from .world_mesh {
     BrushModel,
     WORLD_VERTEX_STRIDE,
     WORLD_FOG_LIMIT,
+    fit_light_atlas,
     SURFACE_LIGHTMAP,
     SURFACE_ALPHA_SHIFT,
     SURFACE_EMISSION,
@@ -161,6 +162,7 @@ obj QuakeRenderer {
         single_pass: bool = False,
         atlas: int = 0,
         atlas_size: int = 2048,
+        atlas_unit: int = 1,
         rects: list[LightRect] = [],
         stage_images: dict[int, list[list[int]]] = {},
         sky_layers: dict[int, list[int]] = {},
@@ -306,6 +308,9 @@ obj QuakeRenderer {
         }
         self.single_pass = level.bsp.game in ["q3", "passion"];
         self.overbright = level.bsp.game == "q3";
+        if len(level.bsp.fogs) > WORLD_FOG_LIMIT {
+            print("Fog volumes past the first", WORLD_FOG_LIMIT, "draw unfogged:", len(level.bsp.fogs));
+        }
         for texture in level.bsp.sky {
             image_id = self.upload_image(texture);
             self.sky.append(image_id);
@@ -396,43 +401,66 @@ obj QuakeRenderer {
         self.build_world(level);
     }
 
-    """The lightmap atlas. Q3 stores each lightmap once, shifted for
-    overbright. Q1 and Q2 keep every light style layer of a face side by
-    side, raw, so the lit shader scales each by its style's current value
-    (R_BuildLightMap) and animated or switched lights need no upload."""
+    """The lightmap atlas, sized from the map: the smallest of world_mesh.jac
+    LIGHT_ATLAS_SIZES that holds its lightmaps (fit_light_atlas). Q3 stores
+    each lightmap once, shifted for overbright. Q1 and Q2 keep every light
+    style layer of a face side by side, raw, so the lit shader scales each by
+    its style's current value (R_BuildLightMap) and animated or switched
+    lights need no upload."""
     def upload_lightmaps(level: Level) {
-        pixels = bytearray(b"\xff") * (self.atlas_size * self.atlas_size * 4);
-        x = 1;
-        y = 1;
-        row_height = 0;
-        shared: dict[int, LightRect] = {};
         layered = level.bsp.game in ["q1", "q2"];
         channels = level.bsp.light_channels;
+        # One block per lit face; Q3 faces share their lightmap page's.
+        owners: list[int] = [];
+        shared: dict[int, int] = {};
+        widths: list[int] = [];
+        heights: list[int] = [];
+        layer_counts: list[int] = [];
         for face in level.bsp.faces {
-            if level.bsp.game == "q3" and face.light_offset in shared {
-                self.rects.append(shared[face.light_offset]);
-                continue;
-            }
-            rect = LightRect();
-            self.rects.append(rect);
             if face.light_offset < 0 {
+                owners.append(-1);
                 continue;
             }
+            if level.bsp.game == "q3" and face.light_offset in shared {
+                owners.append(shared[face.light_offset]);
+                continue;
+            }
+            shared[face.light_offset] = len(widths);
+            owners.append(len(widths));
+            widths.append(face.light_width);
+            heights.append(face.light_height);
+            layer_counts.append(max(1, len(face.styles)) if layered else 1);
+        }
+        layout = fit_light_atlas(widths, heights, layer_counts);
+        if not layout.fits {
+            raise ValueError("Lightmap atlas capacity exceeded");
+        }
+        self.atlas_size = layout.size;
+        self.atlas_unit = layout.unit;
+        pixels = bytearray(b"\xff") * (self.atlas_size * self.atlas_size * 4);
+        blocks = [
+            LightRect(x=layout.xs[b], y=layout.ys[b], layer=float(widths[b] + 2) / float(self.atlas_size))
+            for b in range(len(widths))
+        ];
+        filled: dict[int, bool] = {};
+        for f in range(len(level.bsp.faces)) {
+            face = level.bsp.faces[f];
+            owner = owners[f];
+            if owner < 0 {
+                self.rects.append(LightRect());
+                continue;
+            }
+            rect = blocks[owner];
+            self.rects.append(rect);
+            if owner in filled {
+                continue;
+            }
+            filled[owner] = True;
             w = face.light_width;
             h = face.light_height;
-            layers = max(1, len(face.styles)) if layered else 1;
-            if x + layers * (w + 2) - 1 > self.atlas_size {
-                x = 1;
-                y += row_height + 2;
-                row_height = 0;
-            }
-            if y + h + 1 > self.atlas_size {
-                raise ValueError("Lightmap atlas capacity exceeded");
-            }
-            shared[face.light_offset] = rect;
-            rect.x = x;
-            rect.y = y;
-            rect.layer = float(w + 2) / float(self.atlas_size);
+            layers = layer_counts[owner];
+            x = rect.x;
+            y = rect.y;
             for layer in range(layers) {
                 left = x + layer * (w + 2);
                 for ly in range(-1, h + 1) {
@@ -471,8 +499,6 @@ obj QuakeRenderer {
                     }
                 }
             }
-            x += layers * (w + 2);
-            row_height = max(row_height, h);
         }
         self.atlas = int(
             rlLoadTexture(
@@ -654,7 +680,8 @@ obj QuakeRenderer {
                 face.fog if 0 <= face.fog < fogs else -1,
                 self.overbright,
                 sprites=self.single_pass,
-                alpha=int(face.opacity * 255.0)
+                alpha=int(face.opacity * 255.0),
+                unit=self.atlas_unit
             );
             # AutospriteDeform rebuilds each quad as RB_AddQuadStamp's triangles.
             stamped = self.single_pass and len(face.vertices) == 4 and face.texture in level.surface_deforms
@@ -1486,6 +1513,7 @@ obj QuakeRenderer {
             self.styles_dirty = False;
         }
         self.set_dynamic_lights(program, level);
+        program.set_float("lightBlockUnit", float(self.atlas_unit));
         rlActiveTextureSlot(i32(1));
         rlEnableTexture(u32(self.atlas));
         rlActiveTextureSlot(i32(0));

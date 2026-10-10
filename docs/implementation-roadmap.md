@@ -78,8 +78,7 @@ Weapons, items and feedback ([weapons-status.md](weapons-status.md), [combat-fee
 - The player's own body is not thrown as gibs.
 
 Rendering ([rendering-status.md](rendering-status.md), [presentation-status.md](presentation-status.md), [models-status.md](models-status.md)):
-- Q3 patches are not thinned with distance (`r_lodCurveError`); the lightmap
-  atlas is a fixed 2048².
+- Q3 patches are not thinned with distance (`r_lodCurveError`).
 - Repeated models are not instanced.
 
 Q3 bots and arenas ([bot-tactics-status.md](bot-tactics-status.md), [arena-match-status.md](arena-match-status.md)):
