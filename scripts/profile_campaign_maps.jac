@@ -97,7 +97,13 @@ def:priv profile_systems(app: App, ticks: int) -> list[str] {
             } elif name == "RotatorTick" {
                 world spawn RotatorTick(bsp=level.bsp, collision=level.collision, dt=dt, player=player);
             } elif name == "CombatTick" {
-                world spawn CombatTick(player=player, collision=level.collision, state=app.combat, dt=dt);
+                world spawn CombatTick(
+                    player=player,
+                    collision=level.collision,
+                    state=app.combat,
+                    dt=dt,
+                    liquids=level.liquid_probe()
+                );
             } elif name == "MonsterJumpTick" {
                 world spawn MonsterJumpTick();
             } elif name == "TargetTick" {
