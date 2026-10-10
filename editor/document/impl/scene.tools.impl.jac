@@ -631,3 +631,251 @@ impl Scene.add_brushes(owner: Item, brushes: list[list[Side]], label: str = "Add
     }
     return self.commit(step);
 }
+
+impl Scene.hide_selection -> int {
+    count = 0;
+    for item in self.selection() {
+        item.hidden = True;
+        count += 1;
+    }
+    for solid in self.selected_solids() {
+        solid.hidden = True;
+        count += 1;
+    }
+    if count > 0 {
+        self.clear_selection();
+        self.geometry += 1;
+        self.revision += 1;
+    }
+    return count;
+}
+
+impl Scene.hide_others -> int {
+    chosen = self.selection();
+    solids = self.selected_solids();
+    if len(chosen) == 0 and len(solids) == 0 {
+        return 0;
+    }
+    count = 0;
+    for item in self.items() {
+        if item.classname() == "worldspawn" or item in chosen {
+            for solid in self.solids_of(item) {
+                if item.classname() == "worldspawn" and solid not in solids and not solid.hidden {
+                    solid.hidden = True;
+                    count += 1;
+                }
+            }
+            continue;
+        }
+        owned = self.solids_of(item);
+        kept = False;
+        for solid in owned {
+            if solid in solids {
+                kept = True;
+            }
+        }
+        if kept {
+            for solid in owned {
+                if solid not in solids and not solid.hidden {
+                    solid.hidden = True;
+                    count += 1;
+                }
+            }
+        } elif not item.hidden {
+            item.hidden = True;
+            count += 1;
+        }
+    }
+    if count > 0 {
+        self.geometry += 1;
+        self.revision += 1;
+    }
+    return count;
+}
+
+impl Scene.show_all -> int {
+    count = 0;
+    for item in self.items() {
+        if item.hidden {
+            item.hidden = False;
+            count += 1;
+        }
+        for solid in self.solids_of(item) {
+            if solid.hidden {
+                solid.hidden = False;
+                count += 1;
+            }
+        }
+    }
+    if count > 0 {
+        self.geometry += 1;
+        self.revision += 1;
+    }
+    return count;
+}
+
+impl Scene.hidden_count -> int {
+    count = 0;
+    for item in self.items() {
+        if item.hidden {
+            count += 1;
+        }
+        for solid in self.solids_of(item) {
+            if solid.hidden {
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
+impl Scene.shown_map -> list[MapItem] {
+    result: list[MapItem] = [];
+    for item in self.items() {
+        if item.hidden {
+            continue;
+        }
+        result.append(
+            MapItem(
+                fields=dict(item.fields),
+                brushes=[solid.sides for solid in self.solids_of(item) if not solid.hidden]
+            )
+        );
+    }
+    return result;
+}
+
+impl Scene.select_field(key: str, value: str) -> int {
+    self.clear_selection();
+    count = 0;
+    for item in self.items() {
+        if key in item.fields and (not value or item.fields[key] == value) and item.classname() != "worldspawn" {
+            self +>:Selected:+> item;
+            count += 1;
+        }
+    }
+    self.picks += 1;
+    return count;
+}
+
+impl Scene.terrain_grid(item: Item) -> list[float] | None {
+    parts = item.fields.get("_terrain", "").split();
+    if len(parts) != 4 {
+        return None;
+    }
+    try {
+        grid = [float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])];
+    } except ValueError {
+        return None;
+    }
+    if grid[0] < 1.0 or grid[1] < 1.0 or grid[2] <= 0.0 {
+        return None;
+    }
+    return grid;
+}
+
+impl Scene.make_terrain(
+    origin: Vec3, cols: int, rows: int, cell: float, material: str = "", base: float = 16.0
+) -> Item | None {
+    if cols < 1 or rows < 1 or cols > 64 or rows > 64 or cell < 1.0 {
+        return None;
+    }
+    heights = flat_heights(cols, rows);
+    step = Step(label="New terrain");
+    item = self.add_item(
+        {
+            "classname": "func_group",
+            "_group_name": "terrain",
+            "_terrain": str(cols) + " " + str(rows) + " " + field_number(cell) + " " + field_number(base),
+            "_heights": heights_text(heights)
+        }
+    );
+    step.changes.append(HoldChange(item=item, held=True));
+    for sides in terrain_brushes(origin, cols, rows, cell, heights, base, material) {
+        solid = self.add_solid(item, sides);
+        step.changes.append(SolidHold(solid=solid, held=True));
+    }
+    self.commit(step);
+    self.select(item);
+    return item;
+}
+
+impl Scene.set_heights(item: Item, heights: list[float], label: str = "Sculpt") -> bool {
+    grid = self.terrain_grid(item);
+    if grid is None {
+        return False;
+    }
+    cols = int(grid[0]);
+    rows = int(grid[1]);
+    owned = self.solids_of(item);
+    old = heights_from(item.fields.get("_heights", ""), cols, rows);
+    if old is None or len(heights) != len(old) or len(owned) != cols * rows * 2 {
+        # Its brushes were added to or taken from by hand: no longer a grid.
+        return False;
+    }
+    # Where it stands now: the low corner of its brushes, wherever it was moved.
+    far = 1000000.0;
+    low = Vec3(x=far, y=far, z=far);
+    for solid in owned {
+        box = solid.bounds();
+        if box is not None {
+            low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
+        }
+    }
+    fresh = terrain_brushes(low, cols, rows, grid[2], heights, grid[3], "", [solid.sides for solid in owned]);
+    step = Step(label=label);
+    for row in range(rows) {
+        for col in range(cols) {
+            touched = False;
+            for (dc, dr) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
+                index = (row + dr) * (cols + 1) + col + dc;
+                if abs(old[index] - heights[index]) > 0.001 {
+                    touched = True;
+                }
+            }
+            if not touched {
+                continue;
+            }
+            for half in range(2) {
+                which = (row * cols + col) * 2 + half;
+                if not sides_enclose(fresh[which]) {
+                    continue;
+                }
+                change = SidesChange(solid=owned[which], before=owned[which].sides, after=fresh[which]);
+                change.redo();
+                step.changes.append(change);
+            }
+        }
+    }
+    if len(step.changes) == 0 {
+        return False;
+    }
+    kept = FieldChange(item=item, key="_heights", before=item.fields.get("_heights"), after=heights_text(heights));
+    kept.redo();
+    step.changes.append(kept);
+    return self.commit(step);
+}
+
+impl Scene.sculpt_terrain(
+    item: Item, x: float, y: float, radius: float, amount: float, how: str = "raise"
+) -> bool {
+    grid = self.terrain_grid(item);
+    if grid is None {
+        return False;
+    }
+    cols = int(grid[0]);
+    rows = int(grid[1]);
+    old = heights_from(item.fields.get("_heights", ""), cols, rows);
+    if old is None {
+        return False;
+    }
+    far = 1000000.0;
+    low = Vec3(x=far, y=far, z=far);
+    for solid in self.solids_of(item) {
+        box = solid.bounds();
+        if box is not None {
+            low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
+        }
+    }
+    return self.set_heights(item, sculpted(old, low, cols, rows, grid[2], x, y, radius, amount, how), "Sculpt " + how);
+}

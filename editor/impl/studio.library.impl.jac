@@ -123,7 +123,8 @@ impl Studio.list_library(ui: StudioUi) {
     rows: list[TreeRow] = [];
     shelves = [
         ("Scenes", "scene:", os.path.dirname(self.scene_path("x"))),
-        ("Prefabs", "prefab:", os.path.dirname(self.prefab_path("x")))
+        ("Prefabs", "prefab:", os.path.dirname(self.prefab_path("x"))),
+        ("Autosaved", "auto:", os.path.dirname(self.autosave_path("x")))
     ];
     for (named, lead, folder) in shelves {
         names: list[str] = [];
@@ -347,6 +348,8 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
         word = args[1] if len(args) > 1 else "";
         if word.startswith("scene:") {
             self.open_map(self.scene_path(word[6:]));
+        } elif word.startswith("auto:") {
+            self.open_map(self.autosave_path(word[5:]));
         } elif word.startswith("prefab:") {
             self.library_command(scene, ["ed_prefab", "add", word[7:]]);
         } else {

@@ -15,7 +15,12 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     if scene is None {
         return None;
     }
-    whole = self.expanded(scene);
+    source = scene;
+    if not self.play_build and scene.hidden_count() > 0 {
+        # While editing, what is hidden is left out of the level.
+        source = scene_from_map(scene.game, scene.name, MapFile(items=scene.shown_map()));
+    }
+    whole = self.expanded(source);
     made = compile_scene(whole, self.materials);
     self.lit_samples = bake_light(whole, made) if self.lit else 0;
     self.live = made;
@@ -157,6 +162,10 @@ impl Studio.keep_built {
 impl Studio.outline_solids(scene: Scene) {
     self.looks = [];
     for brush in scene.solids() {
+        holder = scene.owner_of(brush);
+        if brush.hidden or (holder is not None and holder.hidden) {
+            continue;
+        }
         outlines = brush.outlines();
         low = Vec3(x=1000000.0, y=1000000.0, z=1000000.0);
         high = Vec3(x=-1000000.0, y=-1000000.0, z=-1000000.0);

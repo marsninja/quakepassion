@@ -15,6 +15,9 @@ impl Studio.select_wide(scene: Scene, args: list[str]) -> bool {
         count = scene.select_material(word[9:]);
     } elif word.startswith("name:") {
         count = scene.select_named(word[5:]);
+    } elif word.startswith("field:") {
+        pair = word[6:].split("=", 1);
+        count = scene.select_field(pair[0], pair[1] if len(pair) > 1 else "");
     }
     if count < 0 {
         return False;

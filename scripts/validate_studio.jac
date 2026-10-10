@@ -682,6 +682,75 @@ def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     print(f"ASSETS PASS: {len(steps) - 1} steps, a texture shown, used and extracted, a scene and a folder packed");
 }
 
+"""A value from the dump's last line: `grid=16` gives 16."""
+def setting(lines: list[str], key: str) -> int {
+    found = [line for line in lines if line.startswith("mode=")];
+    return int(found[0].split(key + "=")[1].split()[0]) if found else -1;
+}
+
+"""The ninth session: the grid, remembered views, hiding, dropping, the
+history list and the autosave."""
+def handy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "handy_history.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-handy-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/handy_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "handy.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The handy session failed: {output / 'handy.log'}";
+        autosave = Path(home) / "scenes/autosave/handy.map";
+        assert autosave.exists() , "The autosave wrote no map";
+        autosave_text = autosave.read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    for name in [
+        "boxed", "coarse", "fine", "lifted", "dropped", "returned", "hid", "shown", "alone", "before", "undone",
+        "picked"
+    ] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'handy.log'}";
+    }
+    # The grid is 8 to begin with, 32 by command, 64 by ] and 16 by [ twice.
+    assert setting(steps["boxed"], "grid") == 8 and setting(steps["coarse"], "grid") == 64;
+    assert setting(steps["fine"], "grid") == 16;
+    # Lifted forty units, End lets the brush down onto the floor again.
+    start = brush_box(brushes(steps["boxed"])[0]);
+    assert brush_box(brushes(steps["lifted"])[0])[0][2] == start[0][2] + 40;
+    assert brush_box(brushes(steps["dropped"])[0]) == start , str(steps["dropped"]);
+    # The remembered view is where the camera goes back to.
+    assert "camera 0 -420 260" in steps["returned"][1] , steps["returned"][1];
+    # Remembering it is an edit of the document, like any other.
+    assert "undo=4" in steps["returned"][0] and "undo=3" in steps["dropped"][0];
+    # Hidden, the brush is out of the selection and out of the edited level; then back.
+    assert setting(steps["hid"], "hidden") == 1 and not brushes(steps["hid"]);
+    for name in ["hid", "shown", "alone"] {
+        built = tally(steps[name]);
+        assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+    }
+    assert setting(steps["shown"], "hidden") == 0 and setting(steps["alone"], "hidden") == 2;
+    assert len(brushes(steps["alone"])) == 1;
+    # The second line of the history list undoes two edits.
+    before = int(steps["before"][0].split("undo=")[1].split()[0]);
+    after = int(steps["undone"][0].split("undo=")[1].split()[0]);
+    assert after == before - 2 , f"{before} -> {after}";
+    assert "redo=2" in steps["undone"][0];
+    picked = selected(steps["picked"]);
+    assert len(picked) == 1 and "classname=info_player_start" in picked[0] , str(picked);
+    assert autosave_text.count("// brush") == 2;
+    source = repo / "handy_history.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "handy_history.png");
+    source.unlink();
+    print(f"HANDY PASS: {len(steps) - 1} steps, grid, drop, a remembered view, hiding, history and autosave");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -787,6 +856,7 @@ def main() {
     build_session(repo, binary, env, output);
     images_session(repo, binary, env, output);
     assets_session(repo, binary, env, output);
+    handy_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

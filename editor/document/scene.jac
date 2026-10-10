@@ -20,6 +20,7 @@ import from ..geometry.brush {
 import math;
 import from ..formats.map { MapItem, MapFile }
 import from ..classes.registry { flag_put }
+import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted }
 import from ..geometry.csg {
     carve_sides,
     common_sides,
@@ -70,7 +71,10 @@ once it has been deleted (the journal still knows it, so the delete undoes)."""
 node Item {
     has serial: int = 0,
         fields: dict[str, str] = {},
-        held: bool = True;
+        held: bool = True,
+        # Out of sight while editing: not drawn, picked or built, but saved
+        # and played like the rest.
+        hidden: bool = False;
 
     def classname -> str {
         return self.fields.get("classname", "");
@@ -103,7 +107,8 @@ studio."""
 node Solid {
     has serial: int = 0,
         sides: list[Side] = [],
-        held: bool = True;
+        held: bool = True,
+        hidden: bool = False;
 
     """The outline of each side."""
     def outlines -> list[list[Vec3]] {
@@ -1181,6 +1186,33 @@ node Scene {
     def move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool;
     """What is wrong with the document."""
     def problems -> list[Finding];
+
+    """Add a terrain: a group of two prisms a cell over a base, its heights
+    kept in its fields. `origin` is the low corner of its underside."""
+    def make_terrain(
+        origin: Vec3, cols: int, rows: int, cell: float, material: str = "", base: float = 16.0
+    ) -> Item | None;
+    """A terrain's grid from its fields: [cols, rows, cell, base], or none
+    when the entity is not a terrain."""
+    def terrain_grid(item: Item) -> list[float] | None;
+    """Give a terrain other heights and build its brushes again from them."""
+    def set_heights(item: Item, heights: list[float], label: str = "Sculpt") -> bool;
+    """A stroke of a sculpting brush on a terrain, centred at (x, y)."""
+    def sculpt_terrain(item: Item, x: float, y: float, radius: float, amount: float, how: str = "raise") -> bool;
+
+    """Put the selection out of sight (and out of the selection). Answers
+    how many things were hidden."""
+    def hide_selection -> int;
+    """Hide everything but the selection."""
+    def hide_others -> int;
+    """Bring everything hidden back. Answers how many things were."""
+    def show_all -> int;
+    def hidden_count -> int;
+    """The document as a map without what is hidden: what is built while
+    editing."""
+    def shown_map -> list[MapItem];
+    """Select every entity whose field has a value. Answers how many."""
+    def select_field(key: str, value: str) -> int;
 
     """Set several fields on the selection as one step (None removes one)."""
     def set_fields(pairs: dict[str, str | None], label: str = "Set fields") -> bool;

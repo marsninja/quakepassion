@@ -783,3 +783,66 @@ test "several fields are set as one step, and brushes added to an entity as one"
     assert len(scene.solids_of(group)) == 3;
     assert scene.undo() == "Make real" and len(scene.solids_of(group)) == 2;
 }
+
+test "hidden things leave the selection and the edited build, not the map" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    start = scene.items()[1];
+    before = scene.geometry;
+    scene.select_solid(wall);
+    assert scene.hide_selection() == 1 and wall.hidden and not scene.selected_solids();
+    assert scene.geometry == before + 1 and scene.hidden_count() == 1;
+    assert len(scene.shown_map()[0].brushes) == 1 and len(scene_map(scene)[0].brushes) == 2;
+    assert scene.hide_selection() == 0;
+    assert scene.show_all() == 1 and not wall.hidden and scene.show_all() == 0;
+    # Everything but the selection: the floor goes, the wall and nothing else stays.
+    scene.select_solid(wall);
+    assert scene.hide_others() == 2 and start.hidden and scene.solids()[0].hidden and not wall.hidden;
+    shown = scene.shown_map();
+    assert len(shown) == 1 and len(shown[0].brushes) == 1;
+    scene.select(None);
+    assert scene.hide_others() == 0;
+    assert scene.show_all() == 2;
+}
+
+test "entities are selected by a field and its value" {
+    scene = wired();
+    assert scene.select_field("targetname", "door") == 2;
+    assert scene.select_field("target", "") == 2;
+    assert scene.select_field("targetname", "nothing") == 0 and scene.select_field("wobble", "") == 0;
+}
+
+test "a terrain is a group of prisms that a stroke reshapes and undo restores" {
+    scene = Scene(game="passion", name="studio:hills");
+    scene.world();
+    land = scene.make_terrain(Vec3(x=-128.0, y=-128.0, z=0.0), 4, 4, 64.0, "grass");
+    assert land is not None and land.classname() == "func_group" and scene.selection() == [land];
+    assert len(scene.solids_of(land)) == 32 and land.fields["_terrain"] == "4 4 64 16";
+    grid = scene.terrain_grid(land);
+    assert grid is not None and grid[2] == 64.0 and scene.terrain_grid(scene.world()) is None;
+    flat = sum([brush_volume(solid.sides) for solid in scene.solids_of(land)]);
+    assert abs(flat - 256.0 * 256.0 * 16.0) < 1.0;
+    before = scene.geometry;
+    assert scene.sculpt_terrain(land, 0.0, 0.0, 60.0, 48.0);
+    assert scene.geometry == before + 1 and land.fields["_heights"].split()[12] == "48";
+    raised = sum([brush_volume(solid.sides) for solid in scene.solids_of(land)]);
+    assert raised > flat + 1000.0;
+    # Only the four cells round the one raised corner changed (and the field), and their materials stayed.
+    assert len(scene.journal.done[-1].changes) == 9;
+    assert scene.solids_of(land)[0].sides[0].material == "grass";
+    # A stroke off the terrain changes nothing; moved, the terrain is sculpted where it now stands.
+    assert not scene.sculpt_terrain(land, 900.0, 900.0, 50.0, 48.0);
+    assert scene.shift_selection(Vec3(x=1000.0));
+    assert scene.sculpt_terrain(land, 1000.0, 0.0, 100.0, 16.0);
+    assert land.fields["_heights"].split()[12] == "64";
+    scene.undo();
+    scene.undo();
+    assert scene.undo() == "Sculpt raise";
+    assert abs(sum([brush_volume(solid.sides) for solid in scene.solids_of(land)]) - flat) < 1.0;
+    assert land.fields["_heights"].split()[12] == "0";
+    assert scene.make_terrain(Vec3(), 0, 4, 64.0) is None and scene.make_terrain(Vec3(), 4, 4, 0.0) is None;
+    # With a brush taken away it is no longer a grid, and is left alone.
+    scene.select_solid(scene.solids_of(land)[0]);
+    assert scene.remove_selection();
+    assert not scene.sculpt_terrain(land, 0.0, 0.0, 100.0, 48.0);
+}

@@ -40,6 +40,7 @@ import from .ui.widgets {
     Tabs,
     MenuBar,
     MenuItem,
+    MenuPopup,
     ViewArea,
     Gallery,
     Tile,
@@ -66,6 +67,8 @@ import from .document.scene {
     FaceEdit,
     FacePick,
     Finding,
+    Step,
+    FieldChange,
     read_vector,
     scene_of,
     scene_map,
@@ -142,6 +145,14 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_layout <1|4|logic|assets>",
         "one level view, four (3D, top, front and side), the logic graph, or the asset explorer"
     ),
+    ("ed_grid", "ed_grid <size|up|down>", "the grid moves and resizes snap to (1 to 256)"),
+    ("ed_mark", "ed_mark [name]", "remember where the camera is, in the document"),
+    ("ed_goto", "ed_goto <name|next>", "put the camera where it was remembered"),
+    ("ed_hide", "ed_hide [others]", "put the selection, or everything else, out of sight while editing"),
+    ("ed_show", "ed_show", "bring back everything hidden"),
+    ("ed_drop", "ed_drop", "let the selection down onto what is beneath it"),
+    ("ed_history", "ed_history [steps]", "list the edits made, or undo that many"),
+    ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_extract", "ed_extract [folder]", "write the file the explorer shows to disk"),
     (
@@ -407,6 +418,13 @@ obj Studio(Workbench) {
         asset_index: AssetIndex | None = None,
         asset_now: AssetLook | None = None,
         assets_listed: int = -1,
+        # A build for playing takes everything; one for editing leaves out
+        # what is hidden.
+        play_build: bool = False,
+        marks_at: int = -1,
+        # Seconds since the scene was last autosaved, and the revision it was at.
+        autosave_clock: float = 0.0,
+        autosaved: int = -1,
         # The way out the leak finder last found.
         leak: list[Vec3] = [],
         class_filter: str = "",
@@ -527,7 +545,11 @@ obj Studio(Workbench) {
             app.staged_entities[scene.game + "/" + scene.name] = scene.text();
         }
         self.leave();
-        if not self.load(scene.game, scene.name) {
+        # What is hidden while editing is in the level that is played.
+        self.play_build = True;
+        played = self.load(scene.game, scene.name);
+        self.play_build = False;
+        if not played {
             # The document does not load: back to it.
             self.enter(reset_camera=False);
             return;
@@ -627,6 +649,7 @@ obj Studio(Workbench) {
                 [
                     MenuItem(text="Undo", command="ed_undo", keys="Ctrl+Z"),
                     MenuItem(text="Redo", command="ed_redo", keys="Ctrl+Y"),
+                    MenuItem(text="History", command="ed_history"),
                     MenuItem(rule=True),
                     MenuItem(text="Cut", command="ed_cut", keys="Ctrl+X"),
                     MenuItem(text="Copy", command="ed_copy", keys="Ctrl+C"),
@@ -638,6 +661,11 @@ obj Studio(Workbench) {
                     MenuItem(text="Select all", command="ed_select all", keys="Ctrl+A"),
                     MenuItem(text="Select the rest", command="ed_select invert", keys="Ctrl+I"),
                     MenuItem(text="Select nothing", command="ed_select", keys="Esc"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Hide the selection", command="ed_hide", keys="H"),
+                    MenuItem(text="Hide everything else", command="ed_hide others", keys="Ctrl+H"),
+                    MenuItem(text="Show everything", command="ed_show", keys="Shift+H"),
+                    MenuItem(text="Drop to the floor", command="ed_drop", keys="End"),
                     MenuItem(rule=True),
                     MenuItem(text="Pick brushes and entities", command="ed_mode brush", keys="1"),
                     MenuItem(text="Pick faces", command="ed_mode face", keys="2"),
@@ -661,6 +689,11 @@ obj Studio(Workbench) {
                     MenuItem(text="Flat light", command="ed_light off"),
                     MenuItem(rule=True),
                     MenuItem(text="Look at the selection", command="ed_focus", keys="F"),
+                    MenuItem(text="Look at everything", command="ed_focus all"),
+                    MenuItem(text="Remember this view", command="ed_mark"),
+                    MenuItem(text="Next remembered view", command="ed_goto next"),
+                    MenuItem(text="Finer grid", command="ed_grid down", keys="["),
+                    MenuItem(text="Coarser grid", command="ed_grid up", keys="]"),
                     MenuItem(text="Console", command="toggleconsole", keys="`")
                 ],
                 [
@@ -940,7 +973,10 @@ obj Studio(Workbench) {
             self.shapes = [];
             built = self.is_built_scene();
             for item in scene.items() {
-                owned = scene.solids_of(item);
+                if item.hidden {
+                    continue;
+                }
+                owned = [solid for solid in scene.solids_of(item) if not solid.hidden];
                 # A scene's brush entities are their brushes; a shipped
                 # map's are the map's models.
                 shape = self.owned_shape(item, owned)
@@ -1000,7 +1036,9 @@ obj Studio(Workbench) {
             ui.modes[index].lit = self.mode == word;
         }
         eye = self.main.eye;
-        ui.place.text = str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
+        concealed = scene.hidden_count();
+        ui.place.text = (str(concealed) + " hidden   " if concealed else "") + "grid " + str(int(self.grid)) + "   "
+            + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
     }
 
     """Fill the scene list: a row per class, and under an open class a row
@@ -1171,6 +1209,7 @@ obj Studio(Workbench) {
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
+        self.autosave(dt, False);
         hint = stage.hint();
         ui.hint.text = hint if hint else self.note;
         ui.stop.enabled = self.playing;
@@ -1436,6 +1475,16 @@ obj Studio(Workbench) {
                 stage.emit("ed_box");
             } elif key == "r" {
                 stage.emit("ed_rotate 90");
+            } elif ctrl and key == "h" {
+                stage.emit("ed_hide others");
+            } elif key == "h" {
+                stage.emit("ed_show" if shift else "ed_hide");
+            } elif key == "END" {
+                stage.emit("ed_drop");
+            } elif key == "[" {
+                stage.emit("ed_grid down");
+            } elif key == "]" {
+                stage.emit("ed_grid up");
             } elif key == "l" {
                 stage.emit("ed_layout " + (str(self.layout) if self.logic_shown else "logic"));
             } elif key == "1" {
@@ -1650,7 +1699,7 @@ obj Studio(Workbench) {
         up = across.cross(ahead);
         tall = view.span * 0.5;
         wide = tall * float(max(1, view.width)) / float(max(1, view.height));
-        step = 16.0;
+        step = max(1.0, self.grid);
         while view.span / step > 40.0 {
             step *= 4.0;
         }
@@ -1910,6 +1959,17 @@ obj Studio(Workbench) {
     def show_asset(ui: StudioUi);
 
     # ------------------------------------------------------------------
+    # The grid, remembered views, hiding, history and autosave (impl/studio.shell.impl.jac)
+
+    """Run a grid, view, hiding, history or autosave command. False when it
+    is not one."""
+    def shell_command(scene: Scene, args: list[str]) -> bool;
+    """Write the scene to its autosave file when it has changed and enough
+    time has passed (or at once, when `now`)."""
+    def autosave(dt: float, now: bool);
+    def autosave_path(name: str) -> str;
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -2056,8 +2116,8 @@ obj Studio(Workbench) {
             self.dump(scene);
         } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
-            and not self.build_command(scene, args) {
-            self.asset_command(scene, args);
+            and not self.build_command(scene, args) and not self.asset_command(scene, args) {
+            self.shell_command(scene, args);
         }
     }
 
@@ -2115,6 +2175,7 @@ obj Studio(Workbench) {
     """Look at an entity, or at the whole selection."""
     def focus(scene: Scene, args: list[str]) {
         wanted: list[Item] = scene.selection();
+        everything = len(args) > 1 and args[1] == "all";
         if len(args) > 1 and args[1].isdigit() {
             found = scene.find(int(args[1]));
             if found is not None {
@@ -2128,14 +2189,14 @@ obj Studio(Workbench) {
         high = Vec3(x=-1000000.0, y=-1000000.0, z=-1000000.0);
         seen = 0;
         for shape in self.shapes {
-            if shape.item in wanted {
+            if everything or shape.item in wanted {
                 low = Vec3(x=min(low.x, shape.low.x), y=min(low.y, shape.low.y), z=min(low.z, shape.low.z));
                 high = Vec3(x=max(high.x, shape.high.x), y=max(high.y, shape.high.y), z=max(high.z, shape.high.z));
                 seen += 1;
             }
         }
         for look in self.looks {
-            if scene.is_solid_selected(look.solid) {
+            if everything or scene.is_solid_selected(look.solid) {
                 low = Vec3(x=min(low.x, look.low.x), y=min(low.y, look.low.y), z=min(low.z, look.low.z));
                 high = Vec3(x=max(high.x, look.high.x), y=max(high.y, look.high.y), z=max(high.z, look.high.z));
                 seen += 1;
@@ -2247,7 +2308,8 @@ obj Studio(Workbench) {
         lines.append(
             "studio: mode=" + self.mode + " material=" + self.material + " wire="
                 + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0") + " lit="
-                + str(self.lit_samples if self.lit else 0)
+                + str(self.lit_samples if self.lit else 0) + " grid=" + str(int(self.grid)) + " hidden="
+                + str(scene.hidden_count())
         );
         app = self.app;
         for line in lines {

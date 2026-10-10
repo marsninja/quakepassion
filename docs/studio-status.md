@@ -51,6 +51,22 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   Del deletes it; Ctrl+D duplicates it.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
+- **The grid** moves and resizes snap to is 8 units to begin with; `[` and
+  `]` halve and double it (`ed_grid <size|up|down>`), and the axis views
+  draw it.
+- **Hiding**: H puts the selection out of sight while editing, Ctrl+H
+  everything else, and Shift+H brings it all back (`ed_hide [others]`,
+  `ed_show`). What is hidden is not drawn, picked or built into the level
+  being edited, but it is saved and it is played.
+- **Remembered views**: View > Remember this view (`ed_mark [name]`) keeps
+  where the camera is in the document; `ed_goto <name|next>` returns to it.
+  View > Look at everything frames the whole level.
+- **End** lets the selection down onto what is beneath it (`ed_drop`).
+- **History** (Edit > History, `ed_history`) lists the last edits, newest
+  first; choosing one undoes it and everything after it.
+- **Autosave**: a scene that has changed is written every half minute to
+  `autosave/` beside the saved scenes, and the Library tab lists those
+  files to open after a crash.
 
 ### Scenes of brushes
 
@@ -306,6 +322,11 @@ editor/impl/                 the workbench's scenes and brushes
   the explorer, given to a brush and extracted by its buttons, a config and
   a sound shown, the scene packed with its texture as a PK3 and a folder as
   a PAK; the validator opens both archives itself).
+  `scripts/studio/handy_session.cfg` (12 steps: the grid by command and
+  by its keys, a brush lifted and dropped back with End, a view remembered
+  and returned to, hiding with H and Shift+H and everything else with a
+  command, two edits undone from the history list, an autosave, a
+  selection by field).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
