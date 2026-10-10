@@ -388,5 +388,10 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   original's renderer numbers (five bits of a surface's sort key). The
   shipped maps have at most 11 (pro-q3tourney2). A map with more draws the
   later volumes' faces unfogged and says so at load.
-- Repeated models are not instanced (the model draw loop costs 0.05-0.3 ms a
-  frame on the benchmark maps).
+- Repeated models are not instanced. `scripts/render_benchmark.jac`
+  (2026-10-10, two runs back to back at a load average near 5): the whole
+  model stage (gathering, culling, lighting and drawing) is 0.10 to 0.42 ms
+  of a 0.6 to 2.8 ms frame, and of the 21 to 139 model draws a frame gathers,
+  11 to 112 share their model with another (q1 e4m7 the most). The two runs
+  differ by up to 0.05 ms in that stage and 0.4 ms in the frame, more than
+  merging those draws could save.
