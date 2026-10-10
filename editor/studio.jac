@@ -37,6 +37,7 @@ import from .ui.widgets {
     Splitter,
     TreeView,
     TreeRow,
+    Tabs,
     MenuBar,
     MenuItem,
     ViewArea
@@ -44,6 +45,8 @@ import from .ui.widgets {
 import from .document.scene { Scene, Item, Solid, scene_of, scene_map, scene_from_map }
 import from .camera { EditCamera, ray_enters_box }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials }
+import from .assets.materials { ArchiveMaterials }
+import from engine.core.menu { game_directory }
 import from .formats.map { read_map, write_map }
 import from .geometry.brush { box_sides, ray_enters_brush }
 
@@ -76,6 +79,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_material", "ed_material <name> [side]", "set the material of the selected brushes, and of new ones"),
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
+    ("ed_matfilter", "ed_matfilter <text>", "show only matching materials in the materials list"),
     ("ed_exec", "ed_exec <file>", "run a file of console commands"),
     ("ui_move", "ui_move <x> <y>", "script: move the pointer"),
     ("ui_click", "ui_click <x> <y> [button]", "script: click"),
@@ -201,6 +205,7 @@ obj StudioUi {
         hint: Label,
         summary: Label,
         place: Label,
+        materials: TreeView,
         new_key: TextField | None = None,
         new_value: TextField | None = None;
 }
@@ -232,6 +237,11 @@ obj Studio(Workbench) {
         # Scenes of brushes: where their materials come from, what the scene
         # last compiled to, and the document's geometry count it was built at.
         materials: Materials = SwatchMaterials(),
+        # The same, when the games' archives are at hand, for listing them.
+        archive: ArchiveMaterials | None = None,
+        material_filter: str = "",
+        materials_shown: int = -1,
+        materials_changed: int = 0,
         live: LiveLevel | None = None,
         built_geometry: int = -1,
         looks: list[SolidLook] = [],
@@ -507,9 +517,12 @@ obj Studio(Workbench) {
         top.adopt(body);
         left = Box(size=280, fill="panel");
         body.adopt(left);
-        left.adopt(Header(text="Scene"));
+        side = Tabs(titles=["Scene", "Materials"], grow=1);
+        left.adopt(side);
+        scene_page = Box();
+        side.adopt(scene_page);
         search_row = Box(pad=4);
-        left.adopt(search_row);
+        scene_page.adopt(search_row);
         search = TextField(
             ghost="Filter by class or name", command="ed_filter", live=True, hint="Show only matching entities"
         );
@@ -521,8 +534,30 @@ obj Studio(Workbench) {
             grow=1,
             hint="Click selects (Ctrl adds), double click looks at it"
         );
-        left.adopt(tree);
+        scene_page.adopt(tree);
+        material_page = Box();
+        side.adopt(material_page);
+        material_row = Box(pad=4);
+        material_page.adopt(material_row);
+        material_row.adopt(
+            TextField(
+                ghost="Filter materials", command="ed_matfilter", live=True, hint="Show only matching materials"
+            )
+        );
+        material_tree = TreeView(
+            pick="ed_material",
+            toggle="ed_fold",
+            grow=1,
+            hint="Click a material to give it to the selected brushes and to new ones"
+        );
+        material_page.adopt(material_tree);
         body.adopt(Splitter(target=left, low=160, high=600));
+        home = game_directory("passion");
+        if os.path.isdir(home) {
+            found = ArchiveMaterials(directory=home);
+            self.archive = found;
+            self.materials = found;
+        }
         view = ViewArea(
             grow=1, hint="Right drag + WASD/QE: fly | wheel: dolly | middle drag: pan | click: select | F: look at selection"
         );
@@ -562,7 +597,8 @@ obj Studio(Workbench) {
             title=title,
             hint=hint,
             summary=summary,
-            place=place
+            place=place,
+            materials=material_tree
         );
     }
 
@@ -795,6 +831,11 @@ obj Studio(Workbench) {
             app.shell.insert_text("\n".join(asked));
         }
         self.refresh();
+        if self.materials_shown != self.materials_changed {
+            self.list_materials(ui);
+            self.materials_shown = self.materials_changed;
+        }
+        ui.materials.track(stage);
         self.keep_built();
         hint = stage.hint();
         ui.hint.text = hint if hint else self.note;
@@ -1202,6 +1243,9 @@ obj Studio(Workbench) {
     """The shape of an entity made of brushes: the box around them."""
     def owned_shape(item: Item, solids: list[Solid]) -> Shape | None;
     def look_of(solid: Solid) -> SolidLook | None;
+    """Fill the materials list: the games' groups, and under an open group
+    its materials."""
+    def list_materials(ui: StudioUi);
     """The entity or brush under a point of the level view."""
     def aim(x: int, y: int) -> Aim;
     def draw_solids(scene: Scene);
@@ -1283,6 +1327,7 @@ obj Studio(Workbench) {
                 group = args[1][6:] if args[1].startswith("class:") else args[1];
                 self.opened[group] = not self.opened.get(group, False);
                 self.folds += 1;
+                self.materials_changed += 1;
             }
         } elif name == "ed_filter" {
             self.filter = args[1] if len(args) > 1 else "";

@@ -78,7 +78,7 @@ test "faces wind for the renderer, map their material and remember their brush" 
         assert len(face.uv) == 8 and len(face.colors) == 16;
     }
     top = bsp.faces[4];
-    assert top.normal.z == 1.0 and top.plane_dist == 0.0 and top.colors[0] == 220;
+    assert top.normal.z == 1.0 and top.plane_dist == 0.0 and top.colors[0] == 255;
     # 512 units of floor across a 64 texel swatch is eight repeats.
     spread = max([top.uv[i] for i in range(0, 8, 2)]) - min([top.uv[i] for i in range(0, 8, 2)]);
     assert abs(spread - 8.0) < 0.001;

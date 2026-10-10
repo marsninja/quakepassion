@@ -543,15 +543,31 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         self.add_box(scene, args);
         return True;
     }
+    if name == "ed_matfilter" {
+        self.material_filter = args[1] if len(args) > 1 else "";
+        self.materials_changed += 1;
+        return True;
+    }
     if name == "ed_material" {
         if len(args) < 2 or not args[1].strip() {
             self.say("ed_material <name> [side]");
             return True;
         }
+        if args[1].startswith("mat:") {
+            # A group's row in the materials list: open or close it.
+            self.opened[args[1]] = not self.opened.get(args[1], False);
+            self.materials_changed += 1;
+            return True;
+        }
         self.material = args[1].strip();
+        self.materials_changed += 1;
         side = int(args[2]) if len(args) > 2 and args[2].isdigit() else -1;
-        if scene.selected_solids() and not scene.paint_selection(self.material, side) {
-            self.say("Already " + self.material);
+        if scene.selected_solids() {
+            if not scene.paint_selection(self.material, side) {
+                self.say("Already " + self.material);
+            }
+        } else {
+            self.say("New brushes will be " + self.material);
         }
         return True;
     }
@@ -580,4 +596,53 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.list_materials(ui: StudioUi) {
+    rows: list[TreeRow] = [];
+    wanted = self.material_filter.lower();
+    rows.append(
+        TreeRow(key="blockout", text="blockout", picked=self.material == "blockout", note="swatch", tone="dim")
+    );
+    shelf = self.archive;
+    if shelf is None {
+        rows.append(TreeRow(key="blockout", text="(no game archives found)", tone="faint"));
+        ui.materials.rows = rows;
+        return;
+    }
+    for group in shelf.groups() {
+        key = "mat:" + group;
+        # A filter looks inside the groups already opened once, so typing
+        # does not read every map.
+        shown = self.opened.get(key, False);
+        members: list[str] = [];
+        if shown or (wanted and group in shelf.listed) {
+            for name in shelf.names(group) {
+                if not wanted or wanted in name.lower() {
+                    members.append(name);
+                }
+            }
+        }
+        if wanted and not members and wanted not in group.lower() {
+            continue;
+        }
+        rows.append(
+            TreeRow(
+                key=key,
+                text=group,
+                branch=True,
+                opened=shown,
+                note=str(len(members)) if members else ""
+            )
+        );
+        if not shown {
+            continue;
+        }
+        for name in members {
+            rows.append(
+                TreeRow(key=name, text=name.split("/")[-1], depth=1, picked=name == self.material)
+            );
+        }
+    }
+    ui.materials.rows = rows;
 }

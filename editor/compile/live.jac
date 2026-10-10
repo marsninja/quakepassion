@@ -125,7 +125,9 @@ obj LiveCompiler {
             for i in range(1, len(corners) - 1) {
                 face.indices.extend([0, i, i + 1]);
             }
-            shade = int(150.0 + 70.0 * max(0.0, normal.z) + 22.0 * abs(normal.x) - 30.0 * max(0.0, -normal.z));
+            # Full light from above, less on the sides (east and west a
+            # little more than north and south), least from below.
+            shade = int(205.0 + 50.0 * max(0.0, normal.z) + 15.0 * abs(normal.x) - 35.0 * max(0.0, -normal.z));
             for corner in corners {
                 texel = side.mapping.texel(corner);
                 face.uv.extend([texel[0] / float(max(1, image.width)), texel[1] / float(max(1, image.height))]);

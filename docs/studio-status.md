@@ -44,8 +44,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - The inspector shows a brush's material (`ed_material <name>`), size and
   owner, and hands the selected brushes to a new entity (`ed_tie
   func_door`) or back to the world.
-- Materials are swatches for now: a colour from the name with a line every
-  64 units and a fainter one every 16.
+- The Materials tab lists the games' textures by where they live: a Quake
+  map (`q1:e1m1/tech04_1`), a Quake II folder (`q2:e1u1/metal3_2`), a Quake
+  III folder (`q3:textures/base_wall/concrete`). A click gives a material to
+  the selected brushes and to new ones. Any other name is a swatch: a colour
+  from the name with a line every 64 units and a fainter one every 16.
 - Every edit that changes the brushes rebuilds the level at once, so the
   level view is what Play runs. Save writes the scene as a Valve 220 `.map`
   under `QP_SCENES` (default `./scenes`), which other Quake editors open.
@@ -71,6 +74,7 @@ editor/document/scene.jac    the document graph
 editor/geometry/brush.jac    brushes: planes, outlines, clipping, mappings, rays
 editor/formats/map.jac       the .map text format, classic and Valve 220
 editor/compile/live.jac      a scene's brushes as a level, at once
+editor/assets/materials.jac  materials from the games' archives, by name
 editor/camera.jac            the free camera: rays through the view, points onto it
 editor/studio.jac            the workbench: panels, picking, play and stop, the ed_* commands
 editor/impl/                 the workbench's scenes and brushes
@@ -139,8 +143,8 @@ editor/impl/                 the workbench's scenes and brushes
 
 Milestones 1 (the shell) and most of 2 (blockout) of #73 are what this page
 describes. Of milestone 2: brushes are boxes until cut (no clipper, wedges or
-cylinders yet), rotation and scaling are missing, materials are swatches
-rather than the games' textures, a shipped map cannot take new brushes, and
+cylinders yet), rotation and scaling are missing, the materials list has no
+thumbnails, a shipped map cannot take new brushes, and
 Quake III's `brushDef` and `patchDef2` blocks are skipped on open. Not yet
 built: multiple views and display modes, texturing tools, the entity class
 registry behind typed inspector fields, the logic graph panel, prefabs, the
