@@ -75,7 +75,10 @@ attacks. How it runs is in [navigation-status.md](navigation-status.md).
 - The Q1 dog leaps between 100 and 150 units (`CheckDogJump`).
 - `scripts/engagement_probe.jac` fights 25 monsters on e1m1, e1m2, e2m1, base1 and
   base2 for 10 s each against a standing player and reports how much of the
-  fight they spend moving and how often they attack.
+  fight they spend moving and how often they attack. On 2026-10-09 they ran
+  the 300-400 units to the player in two to three seconds, stood against
+  its box for the rest of the fight (a quarter of the time moving) and
+  attacked 4.8 times per 10 s.
 
 ## Turning and walking
 
