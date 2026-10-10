@@ -56,6 +56,7 @@ import from .assets.explorer { AssetIndex, AssetLook }
 import from .formats.archive { write_pak, write_zip, file_kind }
 import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
 import from .geometry.shapes { shape_brushes, SHAPE_KINDS }
+import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .compile.light { bake_light }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items }
@@ -123,7 +124,22 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_intersect", "ed_intersect", "replace the selected brushes with what they all share"),
     ("ed_hollow", "ed_hollow [thickness]", "turn the selected brushes into shells of walls (16 thick)"),
     ("ed_merge", "ed_merge", "join the selected brushes into one, when together they are convex"),
-    ("ed_mode", "ed_mode <brush|face|corner>", "what a click in the level picks, and which handles a brush shows"),
+    (
+        "ed_mode",
+        "ed_mode <brush|face|corner|sculpt>",
+        "what a click in the level does: pick brushes, pick faces, show corners, or sculpt terrain"
+    ),
+    (
+        "ed_terrain",
+        "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest]",
+        "add a terrain where the camera looks, or write or read its heights as a grey image"
+    ),
+    (
+        "ed_sculpt",
+        "ed_sculpt <raise|lower|smooth|flatten|noise> [radius] [amount] [at <x> <y>]",
+        "a stroke of the sculpting brush on a terrain, where the camera looks or at a point"
+    ),
+    ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
     (
         "ed_tex",
@@ -418,6 +434,15 @@ obj Studio(Workbench) {
         asset_index: AssetIndex | None = None,
         asset_now: AssetLook | None = None,
         assets_listed: int = -1,
+        # The sculpting brush, whether a stroke is being drawn, drags since
+        # its last dab, and where on a terrain the pointer is.
+        brush_radius: float = 96.0,
+        brush_amount: float = 16.0,
+        sculpting: bool = False,
+        sculpt_drags: int = 0,
+        sculpt_at: Vec3 | None = None,
+        # The terrain under the pointer, by its number (-1 when none).
+        sculpt_land: int = -1,
         # A build for playing takes everything; one for editing leaves out
         # what is hidden.
         play_build: bool = False,
@@ -670,6 +695,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Pick brushes and entities", command="ed_mode brush", keys="1"),
                     MenuItem(text="Pick faces", command="ed_mode face", keys="2"),
                     MenuItem(text="Move corners and edges", command="ed_mode corner", keys="3"),
+                    MenuItem(text="Sculpt terrain", command="ed_mode sculpt", keys="4"),
                     MenuItem(rule=True),
                     MenuItem(text="Check the map", command="ed_check"),
                     MenuItem(text="Look for a leak", command="ed_leak")
@@ -708,6 +734,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Spiral stairs", command="ed_shape spiral"),
                     MenuItem(text="Arch", command="ed_shape arch"),
                     MenuItem(text="Pipe", command="ed_shape pipe"),
+                    MenuItem(text="Terrain", command="ed_terrain"),
                     MenuItem(rule=True),
                     MenuItem(text="Turn a quarter", command="ed_rotate 90", keys="R"),
                     MenuItem(text="Tip a quarter about x", command="ed_rotate 90 x"),
@@ -765,7 +792,8 @@ obj Studio(Workbench) {
         for (word, named, told) in [
             ("brush", "Brushes", "A click picks a brush or an entity; a brush shows its sides' handles (1)"),
             ("face", "Faces", "A click picks one face of a brush (2)"),
-            ("corner", "Corners", "A brush shows its corners and edges, to drag (3)")
+            ("corner", "Corners", "A brush shows its corners and edges, to drag (3)"),
+            ("sculpt", "Sculpt", "A drag raises terrain; Shift lowers it and Ctrl smooths it (4)")
         ] {
             chooser = PushButton(text=named, command="ed_mode " + word, hint=told);
             tools.adopt(chooser);
@@ -1032,7 +1060,7 @@ obj Studio(Workbench) {
         } else {
             ui.summary.text = str(len(scene.items())) + " entities";
         }
-        for (index, word) in enumerate(["brush", "face", "corner"]) {
+        for (index, word) in enumerate(["brush", "face", "corner", "sculpt"]) {
             ui.modes[index].lit = self.mode == word;
         }
         eye = self.main.eye;
@@ -1244,6 +1272,13 @@ obj Studio(Workbench) {
                 self.moved = False;
                 self.press_x = event.x;
                 self.press_y = event.y;
+                if self.mode == "sculpt" {
+                    # The first dab of a stroke.
+                    self.sculpting = True;
+                    self.sculpt_drags = 0;
+                    self.dab(scene, event.x, event.y, event.shift, event.ctrl);
+                    continue;
+                }
                 if self.grab_handle(scene, event.x, event.y) {
                     continue;
                 }
@@ -1275,6 +1310,10 @@ obj Studio(Workbench) {
                 }
                 if event.button == 2 {
                     self.panning = False;
+                }
+                if event.button == 0 and self.sculpting {
+                    self.sculpting = False;
+                    self.moved = True;
                 }
                 if event.button == 0 and self.boxing {
                     self.boxing = False;
@@ -1318,6 +1357,12 @@ obj Studio(Workbench) {
                             "ed_move " + str(int(shift.x)) + " " + str(int(shift.y)) + " " + str(int(shift.z))
                         );
                     }
+                }
+            } elif event.kind == "drag" and self.sculpting {
+                # A dab every few moves of the pointer, so a stroke builds up evenly.
+                self.sculpt_drags += 1;
+                if self.sculpt_drags % 3 == 0 {
+                    self.dab(scene, event.x, event.y, event.shift, event.ctrl);
                 }
             } elif event.kind == "drag" and self.resizing {
                 self.drag_handle(scene, event.x, event.y, event.ctrl);
@@ -1404,6 +1449,7 @@ obj Studio(Workbench) {
             self.moving = False;
             self.resizing = False;
             self.boxing = False;
+            self.sculpting = False;
         }
         if self.looking and self.camera.span <= 0.0 and not self.source.scripted {
             speed = app.host.flyspeed.number * (4.0 if input.shift else 1.0) * dt;
@@ -1422,6 +1468,10 @@ obj Studio(Workbench) {
             self.hover = pointed.item;
             self.hover_solid = pointed.solid;
             self.hover_side = pointed.side;
+        }
+        self.sculpt_at = None;
+        if over_view and self.mode == "sculpt" and not self.looking and not self.panning {
+            self.sculpt_at = self.terrain_point(scene, input.x, input.y);
         }
     }
 
@@ -1493,6 +1543,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_mode face");
             } elif key == "3" {
                 stage.emit("ed_mode corner");
+            } elif key == "4" {
+                stage.emit("ed_mode sculpt");
             } elif key in ["LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW", "PGUP", "PGDN"] {
                 step = 64 if shift else 16;
                 moves = {
@@ -1782,6 +1834,19 @@ obj Studio(Workbench) {
                 }
             }
         }
+        # Where the sculpting brush would fall, and how wide.
+        ring = self.sculpt_at;
+        if ring is not None {
+            for i in range(24) {
+                first = 2.0 * math.pi * float(i) / 24.0;
+                second = 2.0 * math.pi * float(i + 1) / 24.0;
+                wire_line(
+                    Vec3(x=ring.x + self.brush_radius * math.cos(first), y=ring.y + self.brush_radius * math.sin(first), z=ring.z + 2.0),
+                    Vec3(x=ring.x + self.brush_radius * math.cos(second), y=ring.y + self.brush_radius * math.sin(second), z=ring.z + 2.0),
+                    ink(0xff7a18)
+                );
+            }
+        }
         # The way out of a level that leaks.
         for i in range(1, len(self.leak)) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
@@ -1970,6 +2035,19 @@ obj Studio(Workbench) {
     def autosave_path(name: str) -> str;
 
     # ------------------------------------------------------------------
+    # Terrain (impl/studio.terrain.impl.jac)
+
+    """Run a terrain or sculpting command. False when it is not one."""
+    def terrain_command(scene: Scene, args: list[str]) -> bool;
+    """The terrain a stroke goes to: the selected one, else the only one."""
+    def terrain_now(scene: Scene) -> Item | None;
+    """Where on a terrain the line of sight through a point of the view
+    lands, or none when it lands on none."""
+    def terrain_point(scene: Scene, x: int, y: int) -> Vec3 | None;
+    """One dab of the sculpting brush under the pointer."""
+    def dab(scene: Scene, x: int, y: int, lower: bool, smooth: bool);
+
+    # ------------------------------------------------------------------
     # Commands
 
     def command(args: list[str]) {
@@ -2116,8 +2194,9 @@ obj Studio(Workbench) {
             self.dump(scene);
         } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
-            and not self.build_command(scene, args) and not self.asset_command(scene, args) {
-            self.shell_command(scene, args);
+            and not self.build_command(scene, args) and not self.asset_command(scene, args)
+            and not self.shell_command(scene, args) {
+            self.terrain_command(scene, args);
         }
     }
 
@@ -2297,6 +2376,20 @@ obj Studio(Workbench) {
             "studio: logic nodes=" + str(len(placed)) + " links=" + str(arrows) + " shown="
                 + ("1" if self.logic_shown else "0") + " leak=" + str(len(self.leak))
         );
+        for item in scene.items() {
+            shape_now = scene.terrain_grid(item);
+            if shape_now is None {
+                continue;
+            }
+            heights = heights_from(item.fields.get("_heights", ""), int(shape_now[0]), int(shape_now[1]));
+            if heights is not None {
+                lines.append(
+                    "studio: terrain #" + str(item.serial) + " " + str(int(shape_now[0])) + "x" + str(int(shape_now[1]))
+                        + " cell=" + str(int(shape_now[2])) + " tallest=" + str(int(max(heights))) + " raised="
+                        + str(len([value for value in heights if value > 0.0]))
+                );
+            }
+        }
         seen_asset = self.asset_now;
         if seen_asset is not None {
             lines.append(

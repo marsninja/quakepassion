@@ -344,8 +344,8 @@ impl Studio.check(scene: Scene, args: list[str]) {
 impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
     name = args[0];
     if name == "ed_mode" {
-        if len(args) < 2 or args[1] not in ["brush", "face", "corner"] {
-            self.say("ed_mode <brush|face|corner>");
+        if len(args) < 2 or args[1] not in ["brush", "face", "corner", "sculpt"] {
+            self.say("ed_mode <brush|face|corner|sculpt>");
             return True;
         }
         self.mode = args[1];
@@ -362,7 +362,11 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         scene.picks += 1;
         self.say(
             "Clicks pick brushes and entities" if self.mode == "brush" else (
-                "Clicks pick faces" if self.mode == "face" else "The selected brush shows its corners and edges"
+                "Clicks pick faces" if self.mode == "face" else (
+                    "The selected brush shows its corners and edges"
+                        if self.mode == "corner"
+                        else "A drag raises terrain; Shift lowers it, Ctrl smooths it"
+                )
             )
         );
         return True;

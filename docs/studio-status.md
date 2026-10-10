@@ -151,6 +151,15 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   in the level can be linked here. The check reports entities that set
   themselves off through what they fire.
 
+- **Terrain** (Brush > Terrain, `ed_terrain [cols rows cell]`): a grid of
+  cells where the camera looks, built as two prisms a cell over a base and
+  held as a group whose heights are in its fields. In Sculpt mode (4) a drag
+  over it raises it under an orange ring the width of the brush; Shift
+  lowers and Ctrl smooths (`ed_sculpt <raise|lower|smooth|flatten|noise>
+  [radius] [amount]`, `ed_brush <radius> <amount>`). Only the cells a stroke
+  touches are built again, and each stroke undoes. `ed_terrain export
+  <file.pgm>` writes the heights as a grey image and `ed_terrain import`
+  reads one back. Its faces take materials like any others.
 - **A shipped level as brushes** (File > Turn this level into brushes,
   `ed_convert`): a Quake II or Quake III level being looked at becomes a
   scene of its own brushes, each side with the material of the face drawn
@@ -206,6 +215,7 @@ editor/document/generate.jac groups that are built with copies of themselves
 editor/compile/live.jac      a scene's brushes as a level, at once
 editor/compile/light.jac     lightmaps for that level from the scene's lights
 editor/geometry/shapes.jac   cones, balls, stairs, arches and pipes as brushes
+editor/geometry/terrain.jac  a grid of heights as prisms, sculpting, heights as images
 editor/classes/registry.jac  entity classes: fields by kind, options by name
 editor/assets/materials.jac  materials from the games' archives, by name
 editor/assets/explorer.jac   the archives' files by folder, and what to show of each
@@ -286,6 +296,9 @@ editor/impl/                 the workbench's scenes and brushes
   thin wall under the flood; a duplicator's images.
 - `tests/studio_archive_tests.jac`: a PAK and a PK3 written and read back
   by the engine's readers; the zip checksum; names listed as folders.
+- `tests/studio_terrain_tests.jac`: heights as a field, a flat terrain's
+  volume, a raised corner, each kind of stroke, heights out to an image and
+  back.
 - `tests/studio_shape_tests.jac`, `tests/studio_class_tests.jac`: each
   shape's size, volume and gaps; the class table read whole, fields by
   kind, classes by game, option bits.
@@ -327,6 +340,9 @@ editor/impl/                 the workbench's scenes and brushes
   and returned to, hiding with H and Shift+H and everything else with a
   command, two edits undone from the history list, an autosave, a
   selection by field).
+  `scripts/studio/terrain_session.cfg` (7 steps: a terrain made, raised
+  by a command, raised further by dragging the brush over it, lowered with
+  Shift, flattened, given back heights written to an image, saved, played).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -349,7 +365,7 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
 - Not yet built: a solid-colour display mode; the bake proper (partition,
   visibility, bounced light, bot navigation); patches; the rest of the
   asset studio (models, sounds played, shader and texture authoring); the
-  model editor; terrain; the Passion tools; user walkers.
+  model editor; the Passion tools; user walkers.
 - Within the shell: entity previews are boxes rather than the entity's
   model, and generated (Passion) levels can be edited but not saved as
   they are (`ed_convert` is meant to turn one into a scene, but expeditions

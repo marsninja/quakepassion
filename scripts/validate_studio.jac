@@ -751,6 +751,75 @@ def handy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"HANDY PASS: {len(steps) - 1} steps, grid, drop, a remembered view, hiding, history and autosave");
 }
 
+"""The terrain line of a dump as numbers: its tallest corner and how many
+corners are raised."""
+def terrain(lines: list[str]) -> list[int] {
+    found = [line for line in lines if line.startswith("terrain #")];
+    if not found {
+        return [-1, -1];
+    }
+    return [int(found[0].split("tallest=")[1].split()[0]), int(found[0].split("raised=")[1].split()[0])];
+}
+
+"""The tenth session: terrain made, sculpted and read from an image."""
+def terrain_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["hills", "playing"];
+    for shot in shots {
+        (repo / f"terrain_{shot}.png").unlink(missing_ok=True);
+    }
+    pack = repo / ".jac/studio-pack";
+    shutil.rmtree(pack, ignore_errors=True);
+    with tempfile.TemporaryDirectory(prefix="qp-terrain-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/terrain_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "terrain.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The terrain session failed: {output / 'terrain.log'}";
+        saved_text = (Path(home) / "scenes/hills.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["made", "raised", "stroked", "lowered", "flat", "read", "returned"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'terrain.log'}";
+    }
+    # Eight by eight cells, two prisms each, on the scene's floor.
+    assert terrain(steps["made"]) == [0, 0] and "brushes=129" in tally(steps["made"]);
+    made = [line for line in steps["made"] if line.startswith("terrain #")];
+    assert " 8x8 cell=64 " in made[0] , str(made);
+    # A stroke by command raises a hill; dragging the brush raises more, a dab at a time.
+    raised = terrain(steps["raised"]);
+    assert raised[0] > 50 and raised[1] > 5 , str(raised);
+    stroked = terrain(steps["stroked"]);
+    edits = int(steps["stroked"][0].split("undo=")[1].split()[0]);
+    assert stroked[1] > raised[1] and edits >= 5 , f"{stroked} after {edits} edits";
+    assert "mode=sculpt" in steps["stroked"][-1];
+    # Shift lowers: one more edit.
+    assert int(steps["lowered"][0].split("undo=")[1].split()[0]) == edits + 1;
+    # Flattened, then the heights written out before the drag come back.
+    assert terrain(steps["flat"])[0] <= 2;
+    assert terrain(steps["read"]) == [96, raised[1]] , str(terrain(steps["read"]));
+    image = (pack / "hills.pgm").read_text();
+    assert image.startswith("P2\n9 9\n255\n") and len(image.splitlines()) == 12;
+    built = tally(steps["returned"]);
+    assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
+    assert "\"_terrain\" \"8 8 64 16\"" in saved_text and saved_text.count("// brush") == 129;
+    for shot in shots {
+        source = repo / f"terrain_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"terrain_{shot}.png");
+        source.unlink();
+    }
+    shutil.rmtree(pack, ignore_errors=True);
+    print(f"TERRAIN PASS: {len(steps) - 1} steps, a terrain sculpted by command and by dragging, heights out and in");
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -857,6 +926,7 @@ def main() {
     images_session(repo, binary, env, output);
     assets_session(repo, binary, env, output);
     handy_session(repo, binary, env, output);
+    terrain_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
