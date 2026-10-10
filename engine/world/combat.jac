@@ -1525,7 +1525,7 @@ def strike(
         }
         return dealt;
     }
-    if target.health > 0 {
+    if target.health > 0 or body_struck(target) {
         knock_back(target, attacker.game, target.pos.sub(origin), push);
     }
     result = target spawn Damage(
@@ -2487,7 +2487,11 @@ def blast_actors(
             strength *= actor.rule.blast_scale;
         }
         amount = int(strength);
-        if not corpse {
+        # A monster's corpse is not pushed. The player's body is, where it
+        # is still struck: Q2 T_Damage knocks a dead client back like a
+        # living one (the head is FL_NO_KNOCKBACK, and takes no damage to
+        # be asked), while Q3's dead are FL_NO_KNOCKBACK (knock_back).
+        if not (corpse and isinstance(actor, Opponent)) {
             # Q3 pushes the centre of mass 24 units higher.
             away = body.sub(origin).add(Vec3(z=24.0 if state.game == "q3" else 0.0));
             knock_back(actor, state.game, away, float(int(push)), self_hit);

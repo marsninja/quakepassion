@@ -32,6 +32,7 @@ import from engine.world.combat {
     ProjectileTick,
     line_of_fire,
     blast_actors,
+    strike,
     brutal_toward,
     current_profile
 }
@@ -811,5 +812,91 @@ test "a dead Q2 body lying in lava or slime burns down to its gib health; Q1 and
             other spawn EnvironmentTick(game=game, dt=TICK);
         }
         assert other.death_overkill == 30 and not mortality_of(other).gibbed;
+    }
+}
+
+test "a dead Q2 body still splashes: only the drown and burn sounds ask for health" {
+    body = mortal("q2");
+    body spawn VoiceTick(game="q2", dt=TICK);
+    body spawn Damage(amount=body.health, bypass_armor=True);
+    cry = body spawn VoiceTick(game="q2", dt=TICK);
+    assert len(cry.cues) == 1 and "death" in cry.cues[0];
+    lie(body, death_floor("q2"), "q2", TICK);
+    # P_WorldEffects: entering, going under, coming up and leaving.
+    body.water_depth = 1;
+    body.liquid_kind = 1;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/watr_in.wav"];
+    body.water_depth = 3;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/watr_un.wav"];
+    # Out of air it makes no drowning sound: that one asks for health.
+    for tick in range(120 * 13) {
+        assert not (body spawn VoiceTick(game="q2", dt=TICK)).cues;
+    }
+    body.water_depth = 2;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/gasp1.wav"];
+    body.water_depth = 0;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/watr_out.wav"];
+    # Lava has its own splash, but the dead make no burn sound in it.
+    body.water_depth = 1;
+    body.liquid_kind = 3;
+    assert (body spawn VoiceTick(game="q2", dt=TICK)).cues == ["sound/player/lava_in.wav"];
+    for tick in range(120) {
+        body spawn EnvironmentTick(game="q2", dt=TICK);
+        assert not (body spawn VoiceTick(game="q2", dt=TICK)).cues;
+    }
+    assert body.death_overkill == 30;
+    # Q1 WaterMove leaves at once below zero health: its dead are silent.
+    other = mortal("q1");
+    other spawn VoiceTick(game="q1", dt=TICK);
+    other spawn Damage(amount=other.health + 5, bypass_armor=True);
+    other spawn VoiceTick(game="q1", dt=TICK);
+    other.water_depth = 3;
+    other.liquid_kind = 1;
+    assert not (other spawn VoiceTick(game="q1", dt=TICK)).cues;
+}
+
+test "a blast and a shot push a dead Q2 body, but not its head and not a Q3 body" {
+    for game in ["q2", "q3"] {
+        world = World();
+        area = gib_room(world);
+        collision = death_floor(game);
+        state = CombatState(game=game);
+        player = gibbable(game, area);
+        player.grounded = True;
+        player spawn Damage(amount=player.health, bypass_armor=True);
+        player spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        assert body_struck(player) and player.velocity.length() == 0.0;
+        # A blast 40 units to one side. Q2 T_Damage: 500 * knockback / mass
+        # (a client's is 200) away from it, dead or alive; the knockback is
+        # the blast's strength there, 60 less half the distance to the
+        # body's centre (40 across and 6 up).
+        blast_actors(world, player.pos.add(Vec3(x=-40.0)), 60, 120.0, True, player, collision, state);
+        if game == "q3" {
+            # G_Damage: the dead are FL_NO_KNOCKBACK.
+            assert player.velocity.length() == 0.0 and player.death_overkill > 0;
+            shooter = Opponent(pos=player.pos.add(Vec3(x=-200.0)), game=game);
+            strike(player, 2, shooter);
+            assert player.velocity.length() == 0.0;
+            continue;
+        }
+        reach = math.sqrt(40.0 * 40.0 + 6.0 * 6.0);
+        knock = float(int(60.0 - reach * 0.5));
+        assert player.death_overkill == int(knock);
+        assert abs(player.velocity.length() - 500.0 * knock / 200.0) < 0.001;
+        assert player.velocity.x > 90.0 and player.velocity.z > 0.0 and not player.grounded;
+        # A monster's shot pushes it along the shot: 500 * 2 / 200.
+        player.velocity = Vec3();
+        shooter = Opponent(pos=player.pos.add(Vec3(x=-200.0)), game=game);
+        strike(player, 2, shooter);
+        assert abs(player.velocity.x - 5.0) < 0.001 and player.death_overkill == int(knock) + 2;
+        # Past -40 it bursts, and the head is pushed by nothing
+        # (ThrowClientHead: DAMAGE_NO and FL_NO_KNOCKBACK).
+        step = player spawn LieDead(collision=collision, profile=movement_profile(game), dt=TICK, world=world);
+        assert step.burst and not body_struck(player);
+        flying = player.velocity.add(Vec3());
+        left = player.death_overkill;
+        blast_actors(world, player.pos.add(Vec3(x=-40.0)), 60, 120.0, True, player, collision, state);
+        strike(player, 20, shooter);
+        assert player.velocity.sub(flying).length() == 0.0 and player.death_overkill == left;
     }
 }
