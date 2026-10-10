@@ -44,12 +44,6 @@ import from .quake {
     rlLoadTexture,
     rlUnloadTexture,
     rlTextureParameters,
-    rlSetTexture,
-    rlBegin,
-    rlEnd,
-    rlTexCoord2f,
-    rlVertex3f,
-    rlColor4ub,
     rlDrawRenderBatchActive,
     BeginBlendMode,
     EndBlendMode,
@@ -72,6 +66,12 @@ import from vendor.raylib {
     ) -> None;  def rlEnableTexture(id: u32) -> None;  def rlDisableTexture -> None;  def rlEnableShader(
         id: u32
     ) -> None;  def rlSetCullFace(mode: i32) -> None;
+    # raylib's immediate batch, for the legacy path (draw_immediate).
+    def rlSetTexture(id: u32) -> None;  def rlBegin(mode: i32) -> None;  def rlEnd -> None;  def rlTexCoord2f(
+        x: f32, y: f32
+    ) -> None;  def rlVertex3f(x: f32, y: f32, z: f32) -> None;  def rlColor4ub(
+        r: u8, g: u8, b: u8, a: u8
+    ) -> None;
 }
 
 # Keyframe texels per row of a model's frame texture: a surface's frames are

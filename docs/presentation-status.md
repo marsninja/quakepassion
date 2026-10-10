@@ -194,7 +194,8 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
 - `tests/portal_tests.jac`: mirror and camera views, camera sway and quantized
   aim. `scripts/portal_smoke.jac` renders every portal shader on q3tourney6,
   q3dm0 and q3dm7.
-- `tests/lightfx_render_tests.jac`: Q2 sky rotation, model texture steps.
+- `tests/lightfx_render_tests.jac`: the sky box mesh and Q2 sky rotation,
+  model texture steps.
   `tests/model_material_tests.jac`: model shader stages.
 
 ## Limitations

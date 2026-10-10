@@ -106,8 +106,15 @@ and builds the level graph.
 - **Q3 fog pass** (`RB_FogPass`) and **cloud layers** (the sky dome is a vertex
   chunk; the stage shader applies the layer's tcMods). Two-sided fog surfaces
   seen from inside fade with distance as `RB_FogPass` does.
-- **Still through raylib's rlgl batch**: the Q2/Q3 sky box (six quads) and Q3
-  portal backdrops (the portal view shown on its surface).
+- **Sky box** (`R_DrawSkyBox`): six quads in one static mesh
+  (`sky_box_vertices`), drawn a side at a time with that side's image; the
+  model matrix puts the box on the eye and turns it for Q2's `skyrotate`
+  (`sky_matrix`).
+- **Q3 portal backdrops** (the portal view shown on its surface, or black for
+  a portal whose view was not rendered): the surface's triangles, deformed on
+  the CPU, are streamed face by face to a small dynamic vertex buffer and
+  drawn by a program that samples the portal view where each pixel falls on
+  the screen.
 
 ## Models
 
@@ -248,8 +255,8 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   counts), `phase2_pak_tests`, `phase3_formats_tests` (WAL bounds, patch
   geometry and winding, cluster 0 visibility), `world_mesh_tests` (vertex
   packing, batches, index runs, autosprite quads, the lightmap atlas), `render_culling_tests`, `model_gpu_tests`,
-  `effect_quads_tests`, `lightfx_render_tests` (Q2 sky rotation, particle
-  records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
+  `effect_quads_tests`, `lightfx_render_tests` (the sky box mesh and its
+  rotation, streamed triangles, particle records), `render_interpolation_tests`, `fog_tests`, `portal_tests`,
   `flare_tests` (adding, dimming, fading and dropping flares), `curve_tests`
   (patch subdivision and stitching).
 - `scripts/validate_patches.jac` subdivides and stitches every Q3 map's
@@ -260,7 +267,11 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   `scripts/effects_gallery.jac` poses every effect kind per game;
   `scripts/fog_smoke.jac` and `scripts/portal_smoke.jac` render fog volumes and
   every portal shader; `scripts/flares_smoke.jac` stands before flare surfaces
-  on q3dm12 and q3dm7 with `r_flares` off and on.
+  on q3dm12 and q3dm7 with `r_flares` off and on;
+  `scripts/world_features_smoke.jac` captures each kind of animated or special
+  world surface up close at a fixed moment (liquids, skies and the sky box,
+  light styles, Q3 stages and deforms), for comparing two builds pixel by
+  pixel.
 
 ## Limitations
 
@@ -280,6 +291,5 @@ time step, so two renderers show the same moment) and `QP_BENCH_COMBAT=1`.
   original's renderer numbers (five bits of a surface's sort key). The
   shipped maps have at most 11 (pro-q3tourney2). A map with more draws the
   later volumes' faces unfogged and says so at load.
-- The sky box and Q3 portal backdrops still use raylib's immediate batch.
 - Repeated models are not instanced (the model draw loop costs 0.05-0.3 ms a
   frame on the benchmark maps).

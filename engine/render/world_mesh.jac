@@ -198,6 +198,48 @@ def face_triangles(face: Face) -> list[int] {
     return corners;
 }
 
+"""Triangles over `points` as vertex positions, three floats each, in the
+order `corners` names them: a surface drawn from a streamed vertex buffer
+rather than the world's chunks."""
+def triangle_points(points: list[Vec3], corners: list[int]) -> bytes {
+    out = bytearray(len(corners) * 12);
+    for (k, corner) in enumerate(corners) {
+        v = points[corner];
+        struct.pack_into("<fff", out, k * 12, v.x, v.y, v.z);
+    }
+    return bytes(out);
+}
+
+# gl_warp.c st_to_vec: for each side of the sky box, which of (s, t, 1) each
+# world axis takes, negative for reversed. The sides are in the order the six
+# sky images load.
+glob SKY_BOX_AXES: list[list[int]] = [[3, -1, 2], [-3, 1, 2], [1, 3, 2], [-1, -3, 2], [-2, -1, 3], [2, -1, -3]];
+
+# A sky box vertex: its position (three floats) and texture coordinates (two).
+glob SKY_BOX_STRIDE: int = 20;
+
+# How far each side of the sky box stands from the eye.
+glob SKY_BOX_REACH: float = 512.0;
+
+"""gl_warp.c R_DrawSkyBox and MakeSkyVec: the box's six sides about its
+centre, two triangles each: 36 vertices of SKY_BOX_STRIDE bytes, six a side
+in the order of the sky images."""
+def sky_box_vertices() -> bytes {
+    out = bytearray(36 * SKY_BOX_STRIDE);
+    at = 0;
+    for side in SKY_BOX_AXES {
+        for corner in [0, 1, 2, 0, 2, 3] {
+            s = -1.0 if corner < 2 else 1.0;
+            t = -1.0 if corner == 0 or corner == 3 else 1.0;
+            base = [s * SKY_BOX_REACH, t * SKY_BOX_REACH, SKY_BOX_REACH];
+            point = [base[abs(component) - 1] * (-1.0 if component < 0 else 1.0) for component in side];
+            struct.pack_into("<fffff", out, at, point[0], point[1], point[2], (s + 1.0) * 0.5, (1.0 - t) * 0.5);
+            at += SKY_BOX_STRIDE;
+        }
+    }
+    return bytes(out);
+}
+
 """A face's triangles as little-endian 16-bit indices from vertex `base`, or
 the triangles over `stamp` corners instead (SPRITE_STAMP_CORNERS)."""
 def face_index_bytes(face: Face, base: int, stamp: list[int] = []) -> bytes {
@@ -617,6 +659,24 @@ glob SKY_VS: str = WORLD_INPUTS
     + "void main(){ vec4 w=model*vec4(inPosition,1.0); vec3 d=w.xyz-eye; d.z*=3.0; float scale=6.0*63.0/max(0.001,length(d)); backUV=(vec2(skyTime*8.0)+d.xy*scale)/128.0; frontUV=(vec2(skyTime*16.0)+d.xy*scale)/128.0; gl_Position=viewProjection*w; }\n",
      SKY_FS: str = "#version 330\nin vec2 backUV; in vec2 frontUV; out vec4 finalColor; uniform sampler2D skyBack; uniform sampler2D skyFront;\n"
     + "void main(){ vec4 back=texture(skyBack,backUV); vec4 front=texture(skyFront,frontUV); finalColor=vec4(mix(back.rgb,front.rgb,front.a),1.0); }\n";
+
+# The Q2/Q3 sky box: one side's image over its quad (sky_box_vertices), the
+# box placed on the eye and turned by `model`.
+glob SKY_BOX_VS: str = WORLD_INPUTS
+    + "out vec2 boxUV;\n"
+    + "void main(){ boxUV=inTexCoord; gl_Position=viewProjection*model*vec4(inPosition,1.0); }\n",
+     SKY_BOX_FS: str = "#version 330\nin vec2 boxUV; out vec4 finalColor; uniform sampler2D skyBox;\n"
+    + "void main(){ finalColor=texture(skyBox,boxUV); }\n";
+
+# What lies behind a Q3 portal surface: the view rendered through it, sampled
+# where each pixel falls on the screen, or black when `live` is 0.
+glob BACKDROP_VS: str = WORLD_INPUTS
+    + "void main(){ gl_Position=viewProjection*vec4(inPosition,1.0); }\n",
+     BACKDROP_FS: str = "#version 330\nout vec4 finalColor; uniform sampler2D portalView; uniform vec2 screenSize; uniform float live;\n"
+    + "void main(){ finalColor=vec4(texture(portalView, gl_FragCoord.xy/screenSize).rgb*live, 1.0); }\n";
+
+# The most vertices of a portal surface streamed in one draw.
+glob BACKDROP_VERTICES: int = 768;
 
 # Q3 single-pass surfaces: texture times lightmap (or vertex light), the
 # shader's alphaFunc, and dynamic lights per pixel on all but emitters.
