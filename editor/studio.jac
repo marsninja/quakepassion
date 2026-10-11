@@ -24,7 +24,7 @@ import from games.levels { override_path, override_folder }
 import from games.items { pickup_rule }
 import from games.enemies { enemy_rule }
 import from games.fixtures { fixture_rule }
-import from games.arena_character { character_rig }
+import from games.arena_character { character_rig, animation_settings }
 import from games.viewweapons { view_weapons }
 import from games.passion.materials {
     DistrictTable, district_table, kept_table, table_text, districts_path, material_word, material_spec, SLOT_NAMES,
@@ -99,6 +99,17 @@ import from .model.skin {
 import from .model.document { ModelDoc, Part, Reshape, Bone }
 import from .model.bones { point_swung }
 import from .model.assembly { body_model, held_model, clip_frames, rule_frames }
+import from .assets.playback {
+    frame_after,
+    edges_between,
+    facing_edges,
+    box_corners,
+    box_mesh,
+    box_round,
+    sequence_range,
+    share_stepped,
+    SEQUENCES
+}
 import from .model.files { doc_from_model, model_of, write_md3, md3_limits, write_md2, md2_limits }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }
@@ -467,7 +478,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_extract", "ed_extract [to] | folder <game>:<folder> [to]", "write the file the explorer shows to disk, or every file under a folder of a game's archives"),
     ("ed_listen", "ed_listen", "play the sound the explorer shows"),
-    ("ed_frame", "ed_frame <number|next|prev|play|stop>", "the frame of the model the explorer shows"),
+    ("ed_frame", "ed_frame <number|next|prev|play|stop> | fps <n> | range <first> <last>|all | smooth on|off|<frames between> | once | loop | clip <sequence|list>", "the frame of the model the explorer shows, and how its frames are played"),
     ("ed_orbit", "ed_orbit <yaw> <pitch> [distance]", "turn the model view (angles in degrees)"),
     (
         "ed_pack",
@@ -813,6 +824,17 @@ obj Studio(Workbench) {
         model_now: ModelLook | None = None,
         model_frame: int = 0,
         model_clock: float = 0.0,
+        # How the model is played and drawn: frames a second, the frames
+        # played (all when the last is below zero), round again or once,
+        # with frames between, with the faces turned away, every point ticked.
+        model_rate: float = 10.0,
+        model_first: int = 0,
+        model_last: int = -1,
+        model_loops: bool = True,
+        model_smooth: bool = False,
+        model_between: int = 0,
+        model_backs: bool = True,
+        model_ticks: float = 0.0,
         model_playing: bool = False,
         model_edges: list[list[Vec3]] = [],
         model_camera: EditCamera = EditCamera(),
@@ -2717,6 +2739,7 @@ obj Studio(Workbench) {
             for pair in self.model_edges {
                 wire_line(pair[0], pair[1], ink(0xe6dfd4));
             }
+            self.draw_model_ticks();
             self.draw_model_marks();
             return;
         }
@@ -3371,6 +3394,20 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # How the explorer's model is played and drawn (impl/studio.playback.impl.jac)
+
+    """Run one of those commands (asked before the model's own, whose words
+    they share). False when it is not one."""
+    def playview_command(scene: Scene, args: list[str]) -> bool;
+    """The edges of a frame as they are to be drawn: all, or those of the
+    triangles that face the eye."""
+    def shown_edges(frame: int) -> list[list[Vec3]];
+    """Play on by a frame's time, and draw every point as a tick when asked."""
+    def play_model(dt: float);
+    def draw_model_ticks;
+    def playview_words -> str;
+
+    # ------------------------------------------------------------------
     # Faces on whole points and whole angles (impl/studio.integral.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -3675,7 +3712,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.links_command(scene, args) and not self.prefab_change(scene, args)
+        } elif not self.playview_command(scene, args) and not self.links_command(scene, args)
+            and not self.prefab_change(scene, args)
             and not self.scene_command(scene, args)
             and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
@@ -3972,6 +4010,12 @@ obj Studio(Workbench) {
                     + str(len(self.model_edges)) + " yaw=" + str(int(round(math.degrees(self.model_yaw))))
                     + " playing=" + ("1" if self.model_playing else "0")
             );
+        }
+        if seen_model is not None and (
+            self.model_rate != 10.0 or self.model_last >= 0 or self.model_smooth or not self.model_backs
+            or self.model_ticks > 0.0 or not self.model_loops
+        ) {
+            lines.append(self.playview_words());
         }
         seen_asset = self.asset_now;
         if seen_asset is not None {

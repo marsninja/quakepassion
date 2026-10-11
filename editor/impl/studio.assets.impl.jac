@@ -303,7 +303,8 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         if word == "play" or word == "stop" {
             self.model_playing = word == "play";
         } elif word == "next" {
-            self.set_frame((self.model_frame + 1) % figure.frames);
+            # On through the frames that are played: round again, or to the last of them.
+            self.set_frame(frame_after(self.model_frame, self.model_first, self.model_last, figure.frames, self.model_loops));
         } elif word == "prev" {
             self.set_frame((self.model_frame + figure.frames - 1) % figure.frames);
         } elif word.isdigit() {
@@ -491,7 +492,7 @@ impl Studio.set_frame(frame: int) {
         return;
     }
     self.model_frame = max(0, min(frame, figure.frames - 1));
-    self.model_edges = figure.edges(self.model_frame);
+    self.model_edges = self.shown_edges(self.model_frame);
     edited = self.model_doc;
     if edited is not None {
         # The model being edited goes to the frame the view shows.
@@ -521,14 +522,8 @@ impl Studio.turn_model(dt: float) {
     if figure is None {
         return;
     }
-    if self.model_playing {
-        # Ten frames a second, as the games play most of them.
-        self.model_clock += dt;
-        if self.model_clock >= 0.1 {
-            self.model_clock = 0.0;
-            self.set_frame((self.model_frame + 1) % figure.frames);
-        }
-    }
+    # At its own pace (ten frames a second unless told, as the games play most of them).
+    self.play_model(dt);
     camera = self.model_camera;
     camera.span = 0.0;
     camera.yaw = self.model_yaw;

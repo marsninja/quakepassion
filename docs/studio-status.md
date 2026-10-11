@@ -937,7 +937,25 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   game is open), and a model (Quake's MDL, Quake II's MD2,
   Quake III's MD3) as its wireframe: a drag turns it, the wheel moves
   nearer, and its buttons step through its frames or play them (`ed_frame
-  <number|next|prev|play|stop>`). Extract (`ed_extract [folder]`) writes the
+  <number|next|prev|play|stop>`). How it plays is set beside that:
+  `ed_frame fps <n>` for how many frames a second (ten unless told),
+  `ed_frame range <first> <last>|all` for the frames it runs through
+  (stepping on from the last comes round to the first), `ed_frame once`
+  and `loop` for whether it stops at the last, and `ed_frame smooth
+  on|off` to draw the frames between as it goes from one to the next
+  (`ed_frame smooth <n>` draws just that many between each two). The
+  `lower.md3` or `upper.md3` of one of Quake III's players plays the
+  sequences of its own `animation.cfg`: `ed_frame clip list` names those
+  the part plays, and `ed_frame clip <sequence>` takes that sequence's
+  frames, its speed and whether it goes round from the table (the legs'
+  frames counted as the legs' file has them). How
+  it is drawn: `ed_model backs off` leaves out the faces turned away from
+  the eye (found again as the model is turned), and `ed_model ticks
+  <size>|off` marks every point. `ed_model boxpart` gives the model in
+  the model editor a part named `bbox`: a box of eight points round the
+  model at each of its frames, kept and saved with it; `ed_model boxpart
+  picked` makes the box round the picked points or faces of the part in
+  hand instead, as a part named `bbox_<part>`. Extract (`ed_extract [folder]`) writes the
   file to disk under `QP_EXTRACT` (default `./extracted`), and Use as
   material gives a texture to the selection.
 - **Packing** (`ed_pack <folder> <out.pak|out.pk3>`): a folder's files as a
@@ -1168,6 +1186,11 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_playback_tests.jac`: the frame after one within a range,
+  round and once, and with a range that is no range; the edges of the
+  faces toward an eye; a box as a mesh of twelve triangles facing out; a
+  body's sequences read from its table for its legs and for its torso; a
+  set number of frames between two; the box round some points.
 - `tests/studio_integral_tests.jac`: a drifted face laid through whole
   points and left alone when asked again; a direction put on whole
   angles; a face tilted about its own middle.
@@ -1351,6 +1374,13 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/playview_session.cfg` (12 steps: a soldier's frames
+  eight to fourteen stepped round and played once; 269 of its 492 edges
+  drawn without the faces turned away, every point ticked, and all put
+  back; sarge's legs running through the frames and at the speed of his
+  table, with three frames between, and the torso's shot refused; a box
+  part made for a model of two frames, as high as the model stands at
+  each, and another round one picked wall).
   `scripts/studio/whole_session.cfg` (5 steps: a ramp's slope tilted to a
   whole angle, an upright side left; the slope laid through whole
   points; both undone and one done again; every face of the selected

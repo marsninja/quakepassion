@@ -2097,6 +2097,94 @@ def whole_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The sixty-first session: how the explorer's model is played and drawn, and a box kept as a part."""
+def playview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "playview_fronts.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-playview-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/playview_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "playview.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The playview session failed: {output / 'playview.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "shown", "ranged", "round", "once", "playing", "fronts", "plain", "running", "boxed", "low_box", "high_box", "picked_box"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'playview.log'}";
+    }
+    shown: dict[str, str] = {};
+    views: dict[str, str] = {};
+    for name in names {
+        # What the commands after a step print comes before the next step: only the line under the
+        # model's own is the step's.
+        place = [index for (index, line) in enumerate(steps[name]) if line.startswith("model ")][0];
+        shown[name] = steps[name][place];
+        under = steps[name][place + 1] if place + 1 < len(steps[name]) else "";
+        views[name] = under if under.startswith("modelview ") else "";
+    }
+    # As it is shown at first nothing is said of how it is played: all its frames, ten a second.
+    frames = int(shown["shown"].split("frames=")[1].split()[0]);
+    edges = int(shown["shown"].split("edges=")[1].split()[0]);
+    assert frames > 20 and views["shown"] == "" and " frame=0 " in shown["shown"];
+    # Given frames eight to fourteen it comes in at the first; stepped on from the last it is at the
+    # first again, and told to play once it stays on the last.
+    assert " frame=8 " in shown["ranged"] and views["ranged"].startswith("modelview fps=30.0 range=8..14 loops=1 ");
+    assert " frame=8 " in shown["round"] and " frame=14 " in shown["once"] and " loops=0 " in views["once"];
+    assert " playing=1" in shown["playing"] and " frame=" in shown["playing"];
+    # Without the faces turned away there are fewer edges to draw, and every point is ticked.
+    fronts = int(views["fronts"].split("edges=")[1]);
+    assert " backs=0 ticks=2.0 " in views["fronts"] and 0 < fronts < edges and f"edges={fronts} " in shown["fronts"] , views["fronts"];
+    # Put back, nothing is said of it again; what is not an answer changes nothing.
+    assert views["plain"] == "" and f"edges={edges} " in shown["plain"] and " frame=0 " in shown["plain"];
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
+    # The legs of a Quake III player play what its table gives the legs: running is found there with
+    # its frames and its speed and goes round; the torso's shot is not the legs' to play. Three
+    # frames are drawn between each two.
+    offered = [line for line in said if line.startswith("clips sarge legs: ")][0].split(": ")[1].split();
+    assert len(offered) == 18 and "run" in offered and "death1" in offered and "attack" not in offered , offered;
+    clips = [line for line in said if line.startswith("clip ")];
+    assert len(clips) == 1 and clips[0].startswith("clip run frames=") and clips[0].endswith(" loops=1") , clips;
+    span = clips[0].split("frames=")[1].split()[0].split("..");
+    rate = clips[0].split("fps=")[1].split()[0];
+    assert int(span[1]) > int(span[0]) > 63 and f" frame={span[0]} " in shown["running"] and "sarge/lower.md3" in shown["running"];
+    assert views["running"].startswith(f"modelview fps={rate} range={span[0]}..{span[1]} loops=1 smooth=1 between=3 ") , views["running"];
+    # A model of two frames, the second sixteen higher: its box at each frame is a part of eight
+    # points and twelve triangles, as high as the model stands at that frame.
+    assert "boxpart frames=2 low=-32,-32,0 high=32,32,96" in said;
+    low = [line for line in steps["low_box"] if line.startswith("modeldoc ")][0];
+    high = [line for line in steps["high_box"] if line.startswith("modeldoc ")][0];
+    assert " parts=2 part=1 " in low and " points=8 triangles=12 " in low and " open=0 " in low and "volume=393216 " in low , low;
+    assert "low=-32,-32,0 high=32,32,96" in low and "low=-32,-32,16 high=32,32,112" in high and "volume=393216 " in high , high;
+    # Asked for with nothing picked, no box is made; round one wall of the cylinder it is a thin one,
+    # a part named for the part it was measured from.
+    assert len([line for line in said if line.startswith("boxpart ")]) == 2 and "boxpart frames=2 low=23,0,0 high=32,23,96" in said;
+    assert "part 2 bbox_cylinder triangles=12 in hand" in said;
+    thin = [line for line in steps["picked_box"] if line.startswith("modeldoc ")][0];
+    assert " parts=3 part=2 " in thin and " points=8 triangles=12 " in thin and " open=0 " in thin , thin;
+    assert 20000 < int(thin.split("volume=")[1].split()[0]) < 21000 , thin;
+    source = repo / "playview_fronts.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "playview_fronts.png");
+    source.unlink();
+    print(
+        f"PLAYVIEW PASS: {len(steps) - 1} steps, a range of a model's {frames} frames stepped round and once, "
+            + f"{fronts} of {edges} edges drawn without the faces turned away, sarge's legs running through frames "
+            + f"{span[0]} to {span[1]} at {rate} a second, and a box part for each frame of a model and of one wall of it"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4455,6 +4543,7 @@ def main() {
         "restrict": restrict_session,
         "finds": finds_session,
         "whole": whole_session,
+        "playview": playview_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4630,6 +4719,7 @@ def main() {
     restrict_session(repo, binary, env, output);
     finds_session(repo, binary, env, output);
     whole_session(repo, binary, env, output);
+    playview_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
