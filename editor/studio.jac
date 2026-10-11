@@ -26,6 +26,10 @@ import from games.enemies { enemy_rule }
 import from games.fixtures { fixture_rule }
 import from games.arena_character { character_rig }
 import from games.viewweapons { view_weapons }
+import from games.passion.materials {
+    DistrictTable, district_table, kept_table, table_text, districts_path, material_word, material_spec, SLOT_NAMES,
+    load_materials
+}
 import from engine.world.weapons { ViewWeaponRule }
 import from engine.formats.animated { AnimatedModel }
 import from vendor.raylib {
@@ -273,6 +277,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    (
+        "ed_district",
+        "ed_district [list] | <n> <floor|wall|ceiling|trim|accent> [material] | <n> name <words> | check | reset [n]",
+        "the materials generated levels are built of: list each district's slots, give one another material (the one in hand), name a district, check them against the archives, or put them back"
+    ),
     (
         "ed_body",
         "ed_body [character|list] [weapon|none] [legs <sequence>] [torso <sequence>]",
@@ -1376,7 +1385,10 @@ obj Studio(Workbench) {
                     MenuItem(text="Points in their bones' colours", command="ed_bone colours"),
                     MenuItem(rule=True),
                     MenuItem(text="A Quake III body, put together", command="ed_body"),
-                    MenuItem(text="Quake's shotgun as held in view", command="ed_viewweapon q1 2")
+                    MenuItem(text="Quake's shotgun as held in view", command="ed_viewweapon q1 2"),
+                    MenuItem(rule=True),
+                    MenuItem(text="The districts' materials", command="ed_district"),
+                    MenuItem(text="Check the districts' materials", command="ed_district check")
                 ]
             ]
         );
@@ -3271,6 +3283,14 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # The Passion districts' materials (impl/studio.districts.impl.jac)
+
+    """Run a district command. False when it is not one."""
+    def district_command(scene: Scene, args: list[str]) -> bool;
+    """Write the districts' table where levels read it. False when it could not be."""
+    def keep_districts(table: DistrictTable) -> bool;
+
+    # ------------------------------------------------------------------
     # Bodies and weapons in view, put together (impl/studio.figures.impl.jac)
 
     """Run a figure command. False when it is not one."""
@@ -3536,6 +3556,7 @@ obj Studio(Workbench) {
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
             and not self.model_command(scene, args) and not self.skin_command(scene, args)
             and not self.bone_command(scene, args) and not self.figure_command(scene, args)
+            and not self.district_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)

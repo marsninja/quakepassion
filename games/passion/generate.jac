@@ -33,7 +33,7 @@ import from .compile { compile_blueprint, Compiled }
 import from .visibility { cluster_visibility, visible_pairs }
 import from .playtest { progress, Proof }
 import from .lighting { bake }
-import from .materials { DISTRICTS, DISTRICT_NAMES }
+import from .materials { DISTRICTS, district_names }
 import from engine.formats.bsp { Texture }
 import from engine.math.vec3 { Vec3 }
 import from engine.world.level { Level, prepare_level }
@@ -348,7 +348,8 @@ def briefing_for(plan: Expedition) -> str {
                 + (" guardians" if counts["guardians"] > 1 else " guardian")
         );
     }
-    route = " > ".join([DISTRICT_NAMES[d] for d in plan.districts]);
+    called = district_names();
+    route = " > ".join([called[d % len(called)] for d in plan.districts]);
     return route + " | " + ", ".join(parts).capitalize() + ", reach extraction";
 }
 

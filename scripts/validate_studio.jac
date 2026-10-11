@@ -1742,6 +1742,61 @@ def figure_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     );
 }
 
+"""The fifty-fifth session: the Passion districts' materials as data."""
+def district_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-district-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/district_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "district.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The district session failed: {output / 'district.log'}";
+        left = (Path(home) / "overrides/passion/districts.txt").exists();
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["listed", "changed", "refused", "checked", "one_back", "all_back"] {
+        assert name in steps , f"The session never reached '{name}': {output / 'district.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: district")];
+    # Each listing: six districts, each with its name and its five slots.
+    rows = [line for line in said if line.startswith("district ") and " floor=" in line];
+    assert len(rows) == 30 , str(len(rows));
+    lists = [rows[index:index + 6] for index in range(0, 30, 6)];
+    plain = lists[0];
+    assert plain[0] == "district 0 Stone_Keep floor=q1:e1m2/stone1_3 wall=q1:e1m2/wbrick1_5 ceiling=q1:e1m2/wizmet1_2 "
+        + "trim=q1:e1m2/wizmet1_7 accent=q1:e1m2/wizwood1_5" , plain[0];
+    assert plain[5].startswith("district 5 Arena_Works floor=q3:textures/base_floor/diamond2c ");
+    # A floor from another game, a wall from the material in hand, and a name: only that district changes.
+    changed = lists[1];
+    assert changed[0] == "district 0 The_Keep_Below floor=q2:e1u1/floor3_1 wall=q1:e1m1/tech04_1 ceiling=q1:e1m2/wizmet1_2 "
+        + "trim=q1:e1m2/wizmet1_7 accent=q1:e1m2/wizwood1_5" , changed[0];
+    assert changed[1:] == plain[1:];
+    sets = [line for line in said if line.startswith("district ") and " floor=" not in line and not line.startswith("district loads") and not line.startswith("district slot")];
+    assert sets[:3] == ["district 0 floor q2:e1u1/floor3_1", "district 0 wall q1:e1m1/tech04_1", "district 0 name The_Keep_Below"] , str(sets);
+    # A material the archives do not hold, a word that names none, a slot and a district that are not: nothing changes.
+    assert lists[2] == changed and len(sets) == 4 , str(sets);
+    # Checked: every slot's material is there, and what a level is made with (through the game's own
+    # loader, which reads the kept file) has the first district's floor and wall as they were set.
+    loads = [line for line in said if line.startswith("district loads ")];
+    assert "districts missing=0" in said and len(loads) == 6 , str(loads);
+    assert loads[0] == "district loads 0 q2:e1u1/floor3_1 q1:tech04_1 q1:wizmet1_2 q1:wizmet1_7 q1:wizwood1_5" , loads[0];
+    assert loads[2] == "district loads 2 q2:e1u1/floor3_1 q2:e1u1/metal3_2 q2:e1u1/ceil1_1 q2:e1u1/box1_3 q2:e1u1/box3_1" , loads[2];
+    assert not [line for line in said if line.startswith("district slot ")];
+    # One district put back, then (after another is changed) all of them; and the file is gone.
+    assert lists[3] == plain and sets[3] == "district 3 accent q3:textures/base_wall/concrete" and lists[4] == plain and not left;
+    print(
+        "DISTRICT PASS: 6 steps, a district's slots given other materials and a name, what is not there refused, "
+            + "the game's own loader reading the table, and the table put back"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4094,6 +4149,7 @@ def main() {
         "arms": arms_session,
         "bones": bones_session,
         "figure": figure_session,
+        "district": district_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4263,6 +4319,7 @@ def main() {
     arms_session(repo, binary, env, output);
     bones_session(repo, binary, env, output);
     figure_session(repo, binary, env, output);
+    district_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

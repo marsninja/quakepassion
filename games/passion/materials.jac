@@ -3,7 +3,21 @@
 Material indices are fixed whether or not assets are loaded: six districts of
 five slots (floor, wall, ceiling, trim, accent), then liquids, set-piece
 surfaces and emissive lamp colors. Headless generation uses the same indices.
+
+What fills the slots is data: the table below, with whatever a file kept
+beside the settings says in its place (`districts_path`). The file is text,
+a line a fact:
+
+    district 0 Stone Keep
+    0 floor q1:e1m2/stone1_3
+    4 accent q3:textures/gothic_wall/iron01_e
+
+A line names a district (by number) and either its name or one of its slots
+and the material there; districts and slots it does not speak of stay as the
+table has them, and a material that cannot be found is passed over for the
+table's own, so a file can never leave a level without a surface.
 """
+import os;
 import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q1.bsp { parse_bsp }
@@ -83,6 +97,127 @@ glob DISTRICT_TEXTURES: list[list[list[str]]] = [
              ["q3", "", "textures/base_wall/bluemetal2"]
          ]
      ];
+
+glob SLOT_NAMES: list[str] = ["floor", "wall", "ceiling", "trim", "accent"];
+
+"""The districts as data: what each is called, and for each of its slots
+where its material comes from (source, map or directory, name)."""
+obj DistrictTable {
+    has names: list[str] = [],
+        slots: list[list[list[str]]] = [];
+}
+
+"""The table as it is built in."""
+def district_table -> DistrictTable {
+    return DistrictTable(
+        names=list(DISTRICT_NAMES),
+        slots=[[list(spec) for spec in district] for district in DISTRICT_TEXTURES]
+    );
+}
+
+"""A slot's material in one word, as the studio names materials:
+`q1:e1m2/stone1_3`, `q2:e1u1/floor3_1`, `q3:textures/base_wall/concrete`."""
+def material_word(spec: list[str]) -> str {
+    if len(spec) < 3 {
+        return "";
+    }
+    return spec[0] + ":" + (spec[1] + "/" if spec[0] == "q1" else "") + spec[2];
+}
+
+"""Where a material named in one word comes from, or none when the word does
+not name one (a Quake texture is named with its map: `q1:<map>/<name>`)."""
+def material_spec(word: str) -> list[str] | None {
+    parts = word.split(":", 1);
+    if len(parts) != 2 or parts[0] not in ["q1", "q2", "q3"] or not parts[1] {
+        return None;
+    }
+    if parts[0] != "q1" {
+        return [parts[0], "", parts[1]];
+    }
+    halves = parts[1].split("/", 1);
+    if len(halves) != 2 or not halves[0] or not halves[1] {
+        return None;
+    }
+    return ["q1", halves[0], halves[1]];
+}
+
+"""The table as text: every district's name and every slot's material."""
+def table_text(table: DistrictTable) -> str {
+    lines = ["// The materials of each district's slots. A line: <district> <slot> <material>."];
+    for (index, district) in enumerate(table.slots) {
+        lines.append("district " + str(index) + " " + (table.names[index] if index < len(table.names) else ""));
+        for (slot, spec) in enumerate(district) {
+            if slot < len(SLOT_NAMES) {
+                lines.append(str(index) + " " + SLOT_NAMES[slot] + " " + material_word(spec));
+            }
+        }
+    }
+    return "\n".join(lines) + "\n";
+}
+
+"""A table with what a text says in place of what it had. Lines that say
+nothing a table can hold are passed over."""
+def table_from(text: str, base: DistrictTable | None = None) -> DistrictTable {
+    start = base if base is not None else district_table();
+    made = DistrictTable(names=list(start.names), slots=[[list(spec) for spec in district] for district in start.slots]);
+    for raw in text.split("\n") {
+        words = raw.strip().split();
+        if len(words) < 3 or words[0].startswith("//") {
+            continue;
+        }
+        if words[0] == "district" {
+            if words[1].isdigit() and int(words[1]) < len(made.names) {
+                made.names[int(words[1])] = " ".join(words[2:]);
+            }
+            continue;
+        }
+        if not words[0].isdigit() or int(words[0]) >= len(made.slots) or words[1] not in SLOT_NAMES {
+            continue;
+        }
+        spec = material_spec(words[2]);
+        if spec is not None and SLOT_NAMES.index(words[1]) < len(made.slots[int(words[0])]) {
+            made.slots[int(words[0])][SLOT_NAMES.index(words[1])] = spec;
+        }
+    }
+    return made;
+}
+
+"""Where the districts' table is kept when it is not the built-in one:
+QP_DISTRICTS, else beside the studio's other edits (QP_OVERRIDES, else a
+folder beside the settings)."""
+def districts_path -> str {
+    chosen = os.getenv("QP_DISTRICTS", "");
+    if chosen {
+        return chosen;
+    }
+    folder = os.getenv("QP_OVERRIDES", "");
+    if not folder {
+        configured = os.getenv("QP_CONFIG_DIR", "");
+        folder = (configured if configured else os.getenv("HOME", ".")) + "/.quakepassion-overrides";
+    }
+    return folder + "/passion/districts.txt";
+}
+
+"""The table levels are made with: the built-in one, with what the kept
+file says in its place."""
+def kept_table -> DistrictTable {
+    path = districts_path();
+    if not os.path.isfile(path) {
+        return district_table();
+    }
+    try {
+        with open(path, "r") as file {
+            return table_from(file.read());
+        }
+    } except OSError {
+        return district_table();
+    }
+}
+
+"""What the districts are called, as the kept table has them."""
+def district_names -> list[str] {
+    return kept_table().names;
+}
 
 glob SPECIAL_TEXTURES: list[list[str]] = [
          ["q1", "e1m1", "*water0"],
@@ -220,14 +355,25 @@ obj Loader {
     }
 }
 
-def load_materials(directory: str) -> list[Texture] {
+def load_materials(directory: str, table: DistrictTable | None = None) -> list[Texture] {
     catalog = AssetCatalog(game="passion", directory=directory);
     result: list[Texture] = [];
+    chosen = table if table is not None else kept_table();
     try {
         loader = Loader(catalog=catalog);
-        for district in DISTRICT_TEXTURES {
-            for spec in district {
-                result.append(loader.load(spec));
+        for (index, district) in enumerate(DISTRICT_TEXTURES) {
+            for (slot, spec) in enumerate(district) {
+                wanted = chosen.slots[index][slot] if index < len(chosen.slots) and slot < len(chosen.slots[index]) else spec;
+                if wanted == spec {
+                    result.append(loader.load(spec));
+                    continue;
+                }
+                try {
+                    result.append(loader.load(wanted));
+                } except Exception {
+                    # What the table asks for is not there: the slot keeps its own.
+                    result.append(loader.load(spec));
+                }
             }
         }
         for spec in SPECIAL_TEXTURES {

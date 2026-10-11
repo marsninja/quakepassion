@@ -397,6 +397,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   over it, and `ed_skin save <file.tga>` writes it. Not there yet:
   picking and dragging on the skin view itself, patterns, and the
   picture drawn on the model.
+- **The districts' materials** (`ed_district`, Window menu): a generated
+  (Passion) level is built of six districts, each with five slots: floor,
+  wall, ceiling, trim and accent. What fills them is data now: a table
+  in the game (`games/passion/materials.jac`) and, in its place wherever
+  it speaks, a text file kept beside the studio's other edits
+  (`passion/districts.txt`, or `QP_DISTRICTS`). `ed_district` lists the
+  table; `ed_district <n> <slot> [material]` gives a slot another of the
+  games' textures (the material in hand when none is named), refusing
+  one the archives do not hold; `ed_district <n> name <words>` names a
+  district, as its briefing will; `ed_district check` looks every slot
+  up and loads the materials the game's own way; `ed_district reset [n]`
+  puts one district, or all, back. The numbers levels are made with do
+  not move, and a slot whose material cannot be found falls back to the
+  built-in one, so the file can never leave a level without a surface.
 - **Bodies and weapons put together** (Window menu): `ed_body
   [character] [weapon|none] [legs <sequence>] [torso <sequence>]` shows
   a Quake III body as the game joins it, through the engine's own rig:
@@ -1014,6 +1028,9 @@ editor/impl/                 the workbench's scenes and brushes
   frames matched; MD3 and MD2 written and read back by the engine's own
   readers, and taken up again as a graph; tags added, moved a frame at a
   time and dropped, going with their frames; a frame moved in the order.
+- `tests/studio_district_tests.jac`: a slot's material as one word and
+  back; the table as text, a text changing only what it speaks of, lines
+  that say nothing passed over; the kept file read in place of the table.
 - `tests/studio_assembly_tests.jac`: points carried to where a model is
   placed; a body of legs, torso, head and weapon joined by their tags at
   each frame, a tag turning what hangs from it; a sequence's frames and
@@ -1348,6 +1365,11 @@ editor/impl/                 the workbench's scenes and brushes
   brushes; the instance given a swap and names of its own; the built map
   written out, with the gate's blockout in brass and the inner post
   still slate).
+  `scripts/studio/district_session.cfg` (6 steps: the districts listed; a
+  floor from another game, a wall from the material in hand and a name;
+  a missing material, a plain word, a wrong slot and a wrong district
+  refused; every slot found and the game's own loader returning the
+  changed table; one district put back, then all).
   `scripts/studio/figure_session.cfg` (9 steps: Quake III's bodies named;
   Sarge at rest with a machinegun, then running while he attacks, empty
   handed; Visor with a rocket launcher; Quake's shotgun as held, at rest
