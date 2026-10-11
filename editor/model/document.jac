@@ -436,6 +436,13 @@ node ModelDoc {
                 part +>:HasPose(index=index):+> pose;
             }
         }
+        for tag in self.tags() {
+            # A tag stands in the copy where it stood in what was copied.
+            if frame < len(tag.origins) and frame < len(tag.axes) {
+                tag.origins.insert(frame + 1, tag.origins[frame]);
+                tag.axes.insert(frame + 1, list(tag.axes[frame]));
+            }
+        }
         self.frame = frame + 1;
         self.dirty = True;
         self.revision += 1;
@@ -454,7 +461,107 @@ node ModelDoc {
                 part del->:HasPose:-> stood[frame];
             }
         }
+        for tag in self.tags() {
+            if frame < len(tag.origins) and frame < len(tag.axes) {
+                tag.origins.pop(frame);
+                tag.axes.pop(frame);
+            }
+        }
         self.frame = max(0, min(self.frame, count - 2));
+        self.dirty = True;
+        self.revision += 1;
+        return True;
+    }
+
+    """Move a frame to another place in the order, in every part."""
+    def move_frame(frame: int, to: int) -> bool {
+        count = self.frames();
+        if frame < 0 or frame >= count or to < 0 or to >= count or frame == to {
+            return False;
+        }
+        for part in self.parts() {
+            stood = self.poses(part);
+            if frame >= len(stood) or to >= len(stood) {
+                continue;
+            }
+            order = [pose for pose in stood if pose is not stood[frame]];
+            order = order[:to] + [stood[frame]] + order[to:];
+            for pose in stood {
+                part del->:HasPose:-> pose;
+            }
+            for (index, pose) in enumerate(order) {
+                part +>:HasPose(index=index):+> pose;
+            }
+        }
+        for tag in self.tags() {
+            if frame < len(tag.origins) and to < len(tag.origins) {
+                moved_at = tag.origins.pop(frame);
+                tag.origins.insert(to, moved_at);
+                moved_axes = tag.axes.pop(frame);
+                tag.axes.insert(to, moved_axes);
+            }
+        }
+        self.frame = to;
+        self.dirty = True;
+        self.revision += 1;
+        return True;
+    }
+
+    # ------------------------------------------------------------------
+    # Tags
+
+    def tag(name: str) -> Tag | None {
+        for held in self.tags() {
+            if held.name == name {
+                return held;
+            }
+        }
+        return None;
+    }
+
+    """Add a tag at a place: there at every frame, turned as the model is."""
+    def add_tag(name: str, at: Vec3) -> Tag | None {
+        if not name or self.tag(name) is not None {
+            return None;
+        }
+        made = Tag(name=name);
+        for index in range(max(1, self.frames())) {
+            made.origins.append(at);
+            made.axes.append([Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)]);
+        }
+        self +>:HasTag:+> made;
+        self.dirty = True;
+        self.revision += 1;
+        return made;
+    }
+
+    def drop_tag(name: str) -> bool {
+        held = self.tag(name);
+        if held is None {
+            return False;
+        }
+        self del->:HasTag:-> held;
+        self.dirty = True;
+        self.revision += 1;
+        return True;
+    }
+
+    """Put a tag somewhere else: at the frame in hand, or at every frame."""
+    def move_tag(name: str, at: Vec3, every: bool = False) -> bool {
+        held = self.tag(name);
+        if held is None {
+            return False;
+        }
+        while len(held.origins) < self.frames() {
+            # A tag from before the model had so many frames.
+            held.origins.append(held.origins[-1] if len(held.origins) > 0 else at);
+            held.axes.append([Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)]);
+        }
+        for index in range(len(held.origins)) {
+            if every or index == self.frame {
+                held.origins[index] = at;
+            }
+        }
         self.dirty = True;
         self.revision += 1;
         return True;

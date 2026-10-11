@@ -463,6 +463,10 @@ impl Studio.turn_model(dt: float) {
         return;
     }
     for event in ui.model_view.take() {
+        if self.model_event(event) {
+            # A click or a drag that was for the model being edited.
+            continue;
+        }
         if event.kind == "drag" {
             self.model_yaw -= float(event.dx) * 0.01;
             self.model_pitch = max(-1.5, min(1.5, self.model_pitch - float(event.dy) * 0.01));

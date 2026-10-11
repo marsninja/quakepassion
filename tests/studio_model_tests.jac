@@ -222,3 +222,32 @@ test "a model written as MD2 is one mesh the engine reads, to within what its by
     assert about(mesh_volume(again.mesh(again.parts()[0], 0)), held, held * 0.02);
     assert len(md2_limits(ModelDoc())) == 2 and write_md2(ModelDoc()) == b"";
 }
+
+test "tags are added, moved a frame at a time and dropped, and go with the frames" {
+    doc = lifting();
+    hook = doc.add_tag("tag_hook", Vec3(x=32.0, y=16.0, z=16.0));
+    assert hook is not None and len(hook.origins) == 3 and doc.tag("tag_hook") is hook;
+    assert doc.add_tag("tag_hook", Vec3()) is None and doc.add_tag("", Vec3()) is None;
+    # Moved at the last frame only; then everywhere.
+    doc.frame = 2;
+    assert doc.move_tag("tag_hook", Vec3(x=32.0, y=16.0, z=32.0));
+    assert hook.origins[0].z == 16.0 and hook.origins[2].z == 32.0;
+    # A frame copied carries the tag where it stood; a frame dropped takes its place out.
+    assert doc.copy_frame(2, "wide") == 3 and len(hook.origins) == 4 and hook.origins[3].z == 32.0;
+    assert doc.drop_frame(0) and len(hook.origins) == 3 and hook.origins[0].z == 16.0 and hook.origins[1].z == 32.0;
+    assert doc.move_tag("tag_hook", Vec3(z=8.0), True) and hook.origins[0].z == 8.0 and hook.origins[2].z == 8.0;
+    assert not doc.move_tag("nothing", Vec3());
+    data = write_md3(doc);
+    assert len(parse_md3(data).tags) == 3 and parse_md3(data).tags[1].tags[0].name == "tag_hook";
+    assert doc.drop_tag("tag_hook") and not doc.drop_tag("tag_hook") and len(doc.tags()) == 0;
+}
+
+test "a frame is moved to another place in the order" {
+    doc = lifting();
+    part = doc.parts()[0];
+    assert [pose.name for pose in doc.poses(part)] == ["frame 0", "half", "open"];
+    assert doc.move_frame(2, 0) and [pose.name for pose in doc.poses(part)] == ["open", "frame 0", "half"];
+    assert doc.frame == 0 and about(mesh_volume(doc.mesh(part, 0)), 65536.0);
+    assert doc.move_frame(0, 2) and [pose.name for pose in doc.poses(part)] == ["frame 0", "half", "open"];
+    assert not doc.move_frame(1, 1) and not doc.move_frame(0, 9) and not doc.move_frame(-1, 0);
+}

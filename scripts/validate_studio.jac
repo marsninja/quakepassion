@@ -1309,6 +1309,77 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The fortieth session: a model's triangles and points picked by clicks,
+a point dragged, tags, a frame moved in the order, and skins."""
+def rig_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["faces", "tags"];
+    for shot in shots {
+        (repo / f"rig_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-rig-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/rig_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "rig.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The rig session failed: {output / 'rig.log'}";
+        md3 = (Path(home) / "models/rig.md3").read_bytes();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "made", "faceclick", "added", "pointclick", "dragged", "undragged", "tagged", "first", "moved", "skinned"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'rig.log'}";
+    }
+    # A click on the top: one triangle of its eight, with its three points; Shift adds another.
+    clicked = [line for line in steps["made"] if line.startswith("clicked faces ")];
+    assert clicked and 16 <= int(clicked[0].split()[2]) and int(clicked[0].split()[2]) <= 23 , str(steps["made"]);
+    assert model_word(steps["faceclick"], "picked") == "3/1" , str(steps["faceclick"]);
+    assert model_word(steps["added"], "picked").endswith("/2") , str(steps["added"]);
+    # A click on the middle of the top picks that one point; dragged with Ctrl it is moved, as one step.
+    assert model_word(steps["pointclick"], "picked") == "1/0" and model_word(steps["pointclick"], "pick") == "points" , str(
+        steps["pointclick"]
+    );
+    hub = [line for line in steps["added"] if line.startswith("clicked points ")];
+    # One of the two points on the cylinder's axis: the view looks straight down it.
+    assert hub and hub[0] in ["clicked points 16", "clicked points 17"] , str(steps["added"]);
+    assert model_word(steps["dragged"], "undo") == "1" and model_word(steps["undragged"], "undo") == "0";
+    before = int(model_word(steps["pointclick"], "volume"));
+    assert int(model_word(steps["dragged"], "volume")) != before and int(model_word(steps["undragged"], "volume")) == before;
+    # Tags: two, one moved at the copied frame only.
+    assert model_word(steps["tagged"], "tags") == "2" and model_word(steps["tagged"], "frames") == "2";
+    raised = [line for line in steps["tagged"] if line.startswith("tag ")];
+    assert raised == ["tag tag_top at=0,0,128 frames=2", "tag tag_side at=32,0,48 frames=2"] , str(raised);
+    stood = [line for line in steps["first"] if line.startswith("tag ")];
+    assert stood == ["tag tag_top at=0,0,96 frames=2", "tag tag_side at=32,0,48 frames=2"] , str(stood);
+    # The copied frame at the front of the order; one tag and one skin left.
+    assert model_word(steps["moved"], "frame") == "0:up" , str(steps["moved"]);
+    assert model_word(steps["skinned"], "tags") == "1" and model_word(steps["skinned"], "skins") == "1";
+    assert [line for line in steps["skinned"] if line == "skin 0 models/tower/alt.tga"] , str(steps["skinned"]);
+    assert md3[:4] == b"IDP3" and int.from_bytes(md3[76:80], "little") == 2 and int.from_bytes(md3[80:84], "little") == 1;
+    assert b"models/tower/alt.tga" in md3 and b"tag_top" in md3 and b"tag_side" not in md3;
+    for shot in shots {
+        source = repo / f"rig_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"rig_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"RIG PASS: {len(steps) - 1} steps, triangles and a point picked by clicks in the model's view, the point dragged "
+            + "and that undone, two tags moved by frame, a frame moved to the front, and a part's skins"
+    );
+}
+
 """The thirty-eighth session: a played game's firings counted, a firing
 that holds the game, and the live player and signals changed while held."""
 def live_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2978,6 +3049,7 @@ def main() {
         "sweep": sweep_session,
         "live": live_session,
         "model": model_session,
+        "rig": rig_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3120,6 +3192,7 @@ def main() {
     sweep_session(repo, binary, env, output);
     live_session(repo, binary, env, output);
     model_session(repo, binary, env, output);
+    rig_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

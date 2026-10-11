@@ -15,7 +15,10 @@ import from editor.model.mesh {
     mesh_flipped,
     mesh_subdivided,
     mesh_extruded,
-    mesh_welded
+    mesh_welded,
+    ray_meets,
+    face_under,
+    point_under
 }
 import from editor.model.primitives { primitive_mesh, PRIMITIVE_KINDS }
 import from editor.model.wavefront { mesh_obj, obj_mesh }
@@ -173,4 +176,23 @@ test "a mesh written as OBJ text reads back the same, and other programs' files 
     assert len(mesh_welded(seam).points) == 4 and mesh_welded(seam).triangles() == 2;
     spare = Mesh(points=list(box.points) + [Vec3(z=99.0)], corners=list(box.corners), uvs=list(box.uvs) + [0.0, 0.0]);
     assert len(mesh_welded(spare).points) == 8 and len(mesh_welded(spare).uvs) == 16;
+}
+
+test "a line of sight finds the triangle it meets first and the point it passes nearest" {
+    box = crate();
+    # Straight down onto the top, from above its middle.
+    assert about(ray_meets(Vec3(x=32.0, y=16.0, z=100.0), Vec3(z=-1.0), box.points[4], box.points[5], box.points[6]), 84.0);
+    assert ray_meets(Vec3(x=200.0, y=16.0, z=100.0), Vec3(z=-1.0), box.points[4], box.points[5], box.points[6]) < 0.0;
+    # Behind the eye is not met.
+    assert ray_meets(Vec3(x=32.0, y=16.0, z=100.0), Vec3(z=1.0), box.points[4], box.points[5], box.points[6]) < 0.0;
+    down = face_under(box, Vec3(x=48.0, y=8.0, z=100.0), Vec3(z=-1.0));
+    assert down in [2, 3] and about(box.normal(down).z, 1.0);
+    # From below, the bottom; and with facing off, still the nearest.
+    assert face_under(box, Vec3(x=48.0, y=8.0, z=-100.0), Vec3(z=1.0)) in [0, 1];
+    assert face_under(box, Vec3(x=48.0, y=8.0, z=100.0), Vec3(z=-1.0), False) in [2, 3];
+    assert face_under(box, Vec3(x=500.0, y=8.0, z=100.0), Vec3(z=-1.0)) == -1;
+    # A sight line passing just beside a top corner picks it; one well away from every point picks none.
+    assert point_under(box, Vec3(x=63.0, y=31.0, z=100.0), Vec3(z=-1.0)) == 6;
+    assert point_under(box, Vec3(x=32.0, y=16.0, z=100.0), Vec3(z=-1.0)) == -1;
+    assert point_under(box, Vec3(x=63.0, y=31.0, z=100.0), Vec3(z=1.0)) == -1;
 }

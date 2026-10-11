@@ -171,6 +171,69 @@ def faces_toward(mesh: Mesh, sight: Vec3, front: bool = True) -> list[int] {
     return found;
 }
 
+"""How far along a line a triangle is met (below zero when it is not).
+Either side of the triangle counts."""
+def ray_meets(start: Vec3, along: Vec3, first: Vec3, second: Vec3, third: Vec3) -> float {
+    one = second.sub(first);
+    two = third.sub(first);
+    across = along.cross(two);
+    lean = one.dot(across);
+    if abs(lean) < 0.0000001 {
+        return -1.0;
+    }
+    from_first = start.sub(first);
+    u = from_first.dot(across) / lean;
+    if u < 0.0 or u > 1.0 {
+        return -1.0;
+    }
+    other = from_first.cross(one);
+    v = along.dot(other) / lean;
+    if v < 0.0 or u + v > 1.0 {
+        return -1.0;
+    }
+    reach = two.dot(other) / lean;
+    return reach if reach > 0.0 else -1.0;
+}
+
+"""The triangle a line of sight meets first (-1 when it meets none). With
+`facing`, only triangles that face where the line comes from."""
+def face_under(mesh: Mesh, start: Vec3, along: Vec3, facing: bool = True) -> int {
+    best = -1;
+    nearest = 1000000000.0;
+    for index in range(mesh.triangles()) {
+        spots = mesh.triangle(index);
+        reach = ray_meets(start, along, spots[0], spots[1], spots[2]);
+        if reach < 0.0 or reach >= nearest {
+            continue;
+        }
+        if facing and mesh.normal(index).dot(along) >= 0.0 {
+            continue;
+        }
+        nearest = reach;
+        best = index;
+    }
+    return best;
+}
+
+"""The point a line of sight passes: the nearest to the eye of those within
+`slack` of the line for each unit of distance along it (-1 when none is)."""
+def point_under(mesh: Mesh, start: Vec3, along: Vec3, slack: float = 0.02) -> int {
+    best = -1;
+    nearest = 1000000000.0;
+    for (index, point) in enumerate(mesh.points) {
+        away = point.sub(start);
+        reach = away.dot(along);
+        if reach <= 0.0 or reach >= nearest {
+            continue;
+        }
+        if away.sub(along.scale(reach)).length() <= slack * reach {
+            nearest = reach;
+            best = index;
+        }
+    }
+    return best;
+}
+
 # ----------------------------------------------------------------------
 # Moving points
 

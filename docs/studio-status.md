@@ -231,9 +231,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   parts as one mesh, with a command list for renderers that want one) or
   an OBJ (the part in hand) under `QP_MODELS`, a project's `models/` or
   `./models`; the games' files wind triangles the other way round from
-  the editor, and are turned on the way in and out. Not there yet:
-  picking by clicks in the view, drag handles, the skin view and
-  painting, tags made and moved, bones, MDL writing and glTF.
+  the editor, and are turned on the way in and out.
+  A click in the model's view picks the triangle under the pointer, or
+  with `ed_pick mode points` (the panel's last row) the point it passes
+  nearest, the nearest to the eye; Shift adds to what is picked, and Ctrl
+  and a drag moves the picked points in the plane of the view, as one
+  step when the button is let go. `ed_model tag add <name> [x y z]` adds
+  a tag (in the middle of what is picked when no place is given),
+  `ed_model tag at <name> <x y z> [all]` moves it at the frame in hand or
+  at every frame, `ed_model tag drop <name>` drops it and `ed_model tag`
+  lists them; a tag goes with its frames when they are copied, dropped or
+  moved. `ed_model frame move <to>` puts the frame in hand elsewhere in
+  the order, and `ed_model skin [add <name>|drop <number>]` keeps the
+  skins the part in hand names. Not there yet: handles drawn on the
+  model, the skin view and painting, bones, MDL writing and glTF.
 - **A played game watched**: while a game is played from the studio, what
   fires is counted, by the name it is fired by (or its class and what it
   fires, when it has no name). `ed_fired` says how often each has fired
@@ -750,12 +761,15 @@ editor/impl/                 the workbench's scenes and brushes
   the way they face; points moved, turned, stretched and mirrored;
   triangles cut in two, three and four; triangles pushed out with and
   without bulkheads; every primitive closed, facing outward and filling
-  its box; OBJ text written and read back, and other programs' files read.
+  its box; OBJ text written and read back, and other programs' files
+  read; a line of sight finding the triangle it meets first and the point
+  it passes nearest.
 - `tests/studio_model_tests.jac`: a model's parts, poses and frames; a
   tool that changes the triangles carried to every pose alike; edits
   undone and redone; picking; a model of several parts checked and its
   frames matched; MD3 and MD2 written and read back by the engine's own
-  readers, and taken up again as a graph.
+  readers, and taken up again as a graph; tags added, moved a frame at a
+  time and dropped, going with their frames; a frame moved in the order.
 - `tests/studio_extrude_tests.jac`: every outline's pieces within its
   square; a square along a line as a beam of the line's length; stretches
   meeting at a turn on the plane that halves it, with no gap and no
@@ -1002,6 +1016,13 @@ editor/impl/                 the workbench's scenes and brushes
   cut in four, turned round and that undone; a ball added as a second
   part; the panel's Cut in 4 and Undo buttons clicked; saved as MD3 and
   OBJ; closed, and opened again from the MD3 with both parts and frames).
+  `scripts/studio/rig_session.cfg` (10 steps: a cylinder looked down
+  on; a click picking a triangle of its top and a click with Shift
+  another; a click picking the point on its axis, dragged with Ctrl as
+  one step and that undone; two tags, one moved at every frame and one
+  at a copied frame only; the copied frame moved to the front; a tag
+  dropped; two skins named and one dropped; saved as an MD3 with its
+  frames, tag and skin).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

@@ -69,7 +69,7 @@ import from .classes.registry {
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
-import from .model.mesh { Mesh, mesh_volume, open_edges }
+import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under }
 import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
 import from .model.wavefront { mesh_obj, obj_mesh }
 import from .model.document { ModelDoc, Part, Reshape }
@@ -216,10 +216,10 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
     (
         "ed_model",
-        "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame copy|drop|name] [check] [match] [box] [axes] [undo|redo] [close]",
+        "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame ...] [tag ...] [skin ...] [check] [match] [box] [axes] [undo|redo] [close]",
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
-    ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none", "pick points or triangles of the model's part in hand"),
+    ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces", "pick points or triangles of the model's part in hand, or say which a click picks"),
     (
         "ed_mesh",
         "ed_mesh move|turn|scale|mirror|flip|subdivide|extrude ...",
@@ -745,6 +745,12 @@ obj Studio(Workbench) {
         model_seen: int = -1,
         model_box: bool = False,
         model_axes: bool = False,
+        # What a click in the model's view picks ("faces" or "points"), how
+        # far the pointer has gone since it was pressed there, and how far
+        # the picked points are being dragged.
+        model_pick: str = "faces",
+        model_travel: int = 0,
+        model_drag: Vec3 = Vec3(),
         look_rate: float = 1.0,
         look_flipped: bool = False,
         wheel_rate: float = 1.0,
@@ -2962,6 +2968,11 @@ obj Studio(Workbench) {
     """Fill the explorer's file panel for the model being edited. False
     when that is not what the panel shows."""
     def show_model_form(ui: StudioUi) -> bool;
+    """Pick the point or triangle under a place in the model's view."""
+    def pick_in_model(x: int, y: int, add: bool);
+    """A pointer event in the model's view: true when it was a click or a
+    drag for the model being edited, not for turning the view."""
+    def model_event(event: UiEvent) -> bool;
     def model_words -> str;
     """What is picked of the model, its box, its axes and its tags."""
     def draw_model_marks;

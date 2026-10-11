@@ -117,7 +117,90 @@ impl Studio.show_model_form(ui: StudioUi) -> bool {
     shape.adopt(PushButton(text="Turn round", command="ed_mesh flip", hint="Turn the picked triangles to face the other way"));
     shape.adopt(PushButton(text="Cut in 4", command="ed_mesh subdivide 4", hint="Cut each picked triangle into four"));
     shape.adopt(PushButton(text="Push out", command="ed_mesh extrude 8", hint="Push the picked triangles out eight units on walls"));
+    clicks = Box(across=True, gap=4);
+    form.adopt(clicks);
+    clicks.adopt(
+        PushButton(
+            text="Click picks points" if self.model_pick == "faces" else "Click picks triangles",
+            command="ed_pick mode " + ("points" if self.model_pick == "faces" else "faces"),
+            hint="What a click in the view picks (Shift adds; Ctrl and a drag moves the picked points)"
+        )
+    );
+    clicks.adopt(PushButton(text="Pick nothing", command="ed_pick none", hint="Let go of what is picked"));
     return True;
+}
+
+impl Studio.pick_in_model(x: int, y: int, add: bool) {
+    doc = self.model_doc;
+    ui = self.ui;
+    if doc is None or ui is None {
+        return;
+    }
+    part = doc.part();
+    if part is None {
+        return;
+    }
+    line = self.model_camera.sight(ui_model_area(ui), x, y);
+    mesh = doc.mesh(part);
+    found = -1;
+    if self.model_pick == "points" {
+        found = point_under(mesh, line[0], line[1], 0.03);
+        if found >= 0 {
+            doc.pick_points([found], add);
+            part.picked_faces = [];
+        } elif not add {
+            doc.pick_points([]);
+        }
+    } else {
+        found = face_under(mesh, line[0], line[1]);
+        if found >= 0 {
+            doc.pick_faces([found], add);
+        } elif not add {
+            doc.pick_faces([]);
+        }
+    }
+    print("studio: clicked " + self.model_pick + " " + str(found));
+}
+
+impl Studio.model_event(event: UiEvent) -> bool {
+    doc = self.model_doc;
+    figure = self.model_now;
+    ui = self.ui;
+    if doc is None or figure is None or figure.game != "" or ui is None {
+        return False;
+    }
+    part = doc.part();
+    if event.kind == "press" and event.button == 0 {
+        self.model_travel = 0;
+        self.model_drag = Vec3();
+        return False;
+    }
+    if event.kind == "drag" {
+        self.model_travel += abs(event.dx) + abs(event.dy);
+        if event.ctrl and part is not None and len(part.picked_points) > 0 {
+            # With Ctrl the picked points go with the pointer, in the
+            # plane of the view; they are moved when the button is let go.
+            through = self.model_camera;
+            unit = 2.0 * self.model_reach * through.slope() / float(max(1, ui_model_area(ui).h));
+            self.model_drag = self.model_drag.add(through.right().scale(float(event.dx) * unit)).sub(
+                through.up().scale(float(event.dy) * unit)
+            );
+            return True;
+        }
+        return False;
+    }
+    if event.kind == "release" and event.button == 0 and self.model_drag.length() > 0.01 and part is not None {
+        doc.reshape(Reshape(kind="move", picks=list(part.picked_points), vector=self.model_drag, only=doc.frame), "Drag points");
+        self.model_drag = Vec3();
+        return True;
+    }
+    if event.kind == "click" and event.button == 0 {
+        if self.model_travel <= 3 {
+            self.pick_in_model(event.x, event.y, event.shift);
+        }
+        return True;
+    }
+    return False;
 }
 
 impl Studio.fresh_model {
@@ -153,7 +236,8 @@ impl Studio.model_words -> str {
         + str(points) + " triangles=" + str(triangles) + " picked=" + picked + " volume=" + str(int(round(holds)))
         + " open=" + str(loose) + " low=" + str(int(round(box[0].x))) + "," + str(int(round(box[0].y))) + ","
         + str(int(round(box[0].z))) + " high=" + str(int(round(box[1].x))) + "," + str(int(round(box[1].y))) + ","
-        + str(int(round(box[1].z))) + " tags=" + str(len(doc.tags())) + " undo=" + str(len(doc.done));
+        + str(int(round(box[1].z))) + " tags=" + str(len(doc.tags())) + " undo=" + str(len(doc.done)) + " skins="
+        + str(len(part.skins) if part is not None else 0) + " pick=" + self.model_pick;
 }
 
 impl Studio.draw_model_marks {
@@ -200,6 +284,10 @@ impl Studio.draw_model_marks {
             wire_line(at.sub(Vec3(x=tick)), at.add(Vec3(x=tick)), ink(0xffffff));
             wire_line(at.sub(Vec3(y=tick)), at.add(Vec3(y=tick)), ink(0xffffff));
             wire_line(at.sub(Vec3(z=tick)), at.add(Vec3(z=tick)), ink(0xffffff));
+            if self.model_drag.length() > 0.01 {
+                # Where the drag would leave it.
+                wire_line(at, at.add(self.model_drag), ink(0xff7a18));
+            }
         }
     }
 }
@@ -356,11 +444,71 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
                 }
             } elif what == "name" and len(args) > 3 {
                 doc.name_frame(doc.frame, " ".join(args[3:]));
+            } elif what == "move" and len(args) > 3 and args[3].isdigit() {
+                if not doc.move_frame(doc.frame, int(args[3])) {
+                    self.say("ed_model frame move <to>: a place from 0 to " + str(doc.frames() - 1) + " other than its own");
+                    return True;
+                }
             } else {
-                self.say("ed_model frame copy [name] | drop | name <words>  (ed_frame <number|next|prev> goes to another)");
+                self.say("ed_model frame copy [name] | drop | name <words> | move <to>  (ed_frame <number|next|prev> goes to another)");
                 return True;
             }
             self.say("Frame " + str(doc.frame) + " of " + str(doc.frames()) + ": " + doc.frame_name(doc.frame));
+        } elif how == "tag" {
+            what = args[2] if len(args) > 2 else "";
+            label = args[3] if len(args) > 3 else "";
+            spot = model_numbers(args[4:]);
+            if what == "add" and label {
+                # Where it is told, or in the middle of what is picked.
+                at = Vec3(x=spot[0], y=spot[1], z=spot[2]) if len(spot) >= 3 else doc.picked_middle();
+                if doc.add_tag(label, at) is None {
+                    self.say("There is a tag called " + label + " already");
+                    return True;
+                }
+            } elif what == "drop" and label {
+                if not doc.drop_tag(label) {
+                    self.say("There is no tag called " + label);
+                    return True;
+                }
+            } elif what == "at" and label and len(spot) >= 3 {
+                if not doc.move_tag(label, Vec3(x=spot[0], y=spot[1], z=spot[2]), len(args) > 7 and args[7] == "all") {
+                    self.say("There is no tag called " + label);
+                    return True;
+                }
+            } elif what {
+                self.say("ed_model tag [add <name> [x y z] | drop <name> | at <name> <x y z> [all]]");
+                return True;
+            }
+            for tag in doc.tags() {
+                stands = tag.origins[doc.frame] if doc.frame < len(tag.origins) else Vec3();
+                print(
+                    "studio: tag " + tag.name + " at=" + str(int(round(stands.x))) + "," + str(int(round(stands.y))) + ","
+                        + str(int(round(stands.z))) + " frames=" + str(len(tag.origins))
+                );
+            }
+            self.say(str(len(doc.tags())) + " tags: " + ", ".join([tag.name for tag in doc.tags()]) if doc.tags() else "The model has no tags");
+        } elif how == "skin" {
+            what = args[2] if len(args) > 2 else "";
+            if part is None {
+                self.say("The model has no part to skin");
+                return True;
+            }
+            if what == "add" and len(args) > 3 {
+                part.skins.append(args[3]);
+                doc.dirty = True;
+                doc.revision += 1;
+            } elif what == "drop" and len(args) > 3 and args[3].isdigit() and int(args[3]) < len(part.skins) {
+                part.skins.pop(int(args[3]));
+                doc.dirty = True;
+                doc.revision += 1;
+            } elif what {
+                self.say("ed_model skin [add <name> | drop <number>]: the skins of the part in hand");
+                return True;
+            }
+            for (index, skin) in enumerate(part.skins) {
+                print("studio: skin " + str(index) + " " + skin);
+            }
+            self.say(part.name + " has " + str(len(part.skins)) + " skins: " + ", ".join(part.skins) if part.skins else part.name + " names no skin");
         } elif how == "match" {
             self.say("Gave " + str(doc.match_frames()) + " parts the frames the first has");
         } elif how == "box" or how == "axes" {
@@ -408,7 +556,7 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             print("studio: saved model " + path + " bytes=" + str(len(data)));
             self.say("Saved " + path);
         } else {
-            self.say("ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame copy|drop|name] [check] [match] [box] [axes] [undo|redo] [close]");
+            self.say("ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame copy|drop|name|move] [tag ...] [skin ...] [check] [match] [box] [axes] [undo|redo] [close]");
         }
         return True;
     }
@@ -431,13 +579,17 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
                 rest = list(range(mesh.triangles()));
             }
             doc.pick_faces(rest, adding);
+        } elif how == "mode" and len(args) > 2 and args[2] in ["points", "faces"] {
+            # What a click in the view picks.
+            self.model_pick = args[2];
+            doc.revision += 1;
         } elif how == "front" or how == "back" {
             doc.pick_facing(self.model_camera.forward(), how == "front");
         } elif how == "none" or not how {
             doc.pick_faces([]);
             doc.pick_points([]);
         } else {
-            self.say("ed_pick points|faces <numbers|all> [add] | front | back | none");
+            self.say("ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces");
             return True;
         }
         self.say("Picked " + str(len(part.picked_points)) + " points and " + str(len(part.picked_faces)) + " triangles");
