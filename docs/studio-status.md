@@ -204,6 +204,21 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Entities' games**: a scene of the studio's own is no one game's, and
+  a pickup, a monster or a fixture in it is spawned by the rules of the
+  game named in its `asset_game` field, as in a generated level (without
+  one it is not spawned at all). An entity of such a class carries its
+  game from the moment it is added (the open project's game when the
+  class is that game's too, else the class's first); the field is a
+  dropdown in the inspector; `ed_assetgame <q1|q2|q3|none>` sets it on
+  the selection and `ed_assetgame fill` gives every entity that lacks one
+  its class's. The check lists entities that carry no game, or a game
+  that has no such class. So one scene can hold Quake's ogre beside
+  Quake III's railgun.
+- **Camp spots**: `info_camp` (how far a bot camps from it, how much bots
+  want it, how long one stays) and `item_botroam` are classes like any
+  other; a ring is drawn in the views at each camp spot's range, and
+  `ed_camps` lists them.
 - **Fine work on a terrain**: `ed_touch <x> <y> <amount> [variance]`
   moves the corner of the terrain's grid nearest a place and the corners
   that stand with it: those joined to it along the grid within the
@@ -1093,6 +1108,11 @@ editor/impl/                 the workbench's scenes and brushes
   cells of the low ground picked as a plot, outlined, lifted and painted;
   a plot picked by Alt and a press in sculpt mode; the top moved up, the
   underside down with the base thicker, and the whole of it up).
+  `scripts/studio/games_session.cfg` (6 steps: a health pack and an
+  ogre added, each carrying Quake as its game; an armour left with none,
+  found by the check, the player start not; filled; a camp spot and a
+  roam spot listed; the scene played, with its pickups and its ogre
+  spawned).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

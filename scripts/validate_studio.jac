@@ -1309,6 +1309,59 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The forty-fourth session: entities that carry their game, camp spots,
+and the level played with what was placed spawned."""
+def games_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "games_camps.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-games-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/games_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "games.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The games session failed: {output / 'games.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["health", "ogre", "stray", "filled", "spots", "playing"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'games.log'}";
+    }
+    # A pickup and a monster added to a scene of no one game carry their own.
+    assert "classname=item_health" in selected(steps["health"])[0] and "asset_game=q1" in selected(steps["health"])[0];
+    assert "classname=monster_ogre" in selected(steps["ogre"])[0] and "asset_game=q1" in selected(steps["ogre"])[0];
+    # One left with none is found, and only it: a player start is every game's.
+    assert "asset_game" not in selected(steps["stray"])[0] , str(selected(steps["stray"]));
+    found = [line for line in steps["stray"] if line.startswith("finding ") and "carries no game" in line];
+    assert len(found) == 1 and found[0].startswith("finding item_armor2 ") , str(steps["stray"]);
+    assert "asset games set=1" in steps["stray"] , str(steps["stray"]);
+    assert not [line for line in steps["filled"] if "carries no game" in line] , str(steps["filled"]);
+    # Camp spots are listed with how far and how much.
+    spots = [line for line in steps["spots"] if line.startswith("camp ")];
+    assert len(spots) == 2 and spots[0].startswith("camp info_camp ") and spots[0].endswith("range=96 weight=2") , str(spots);
+    assert "camps 2" in steps["spots"];
+    # Played, they are spawned: the two pickups at least, and the ogre.
+    live = [line for line in steps["playing"] if line.startswith("live pickups=")];
+    assert live , str(steps["playing"]);
+    pickups = int(live[0].split("pickups=")[1].split()[0]);
+    opponents = int(live[0].split("opponents=")[1].split()[0]);
+    assert pickups >= 2 and opponents == 1 , live[0];
+    source = repo / "games_camps.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "games_camps.png");
+    source.unlink();
+    print(
+        f"GAMES PASS: {len(steps) - 1} steps, entities carrying their game as they are added, one found without and "
+            + f"given its class's, two spots for bots, and {pickups} pickups and {opponents} monster spawned in play"
+    );
+}
+
 """A terrain's heights from a step's dump."""
 def heights_of(lines: list[str]) -> list[int] {
     found = [line for line in lines if line.startswith("selected ") and "_heights=" in line];
@@ -3246,6 +3299,7 @@ def main() {
         "drop": drop_session,
         "links": links_session,
         "touch": touch_session,
+        "games": games_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3392,6 +3446,7 @@ def main() {
     drop_session(repo, binary, env, output);
     links_session(repo, binary, env, output);
     touch_session(repo, binary, env, output);
+    games_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

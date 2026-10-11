@@ -361,6 +361,9 @@ impl Studio.check(scene: Scene, args: list[str]) {
             self.findings.append(hanging);
         }
     }
+    for stray in self.game_findings(scene) {
+        self.findings.append(stray);
+    }
     # Materials named as a game's that no archive holds draw as swatches.
     stock = self.archive;
     if stock is not None {

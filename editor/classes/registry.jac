@@ -57,11 +57,14 @@ glob COMMON_FIELDS: str = "origin:v::Where it is|angle:a::The way it faces, in d
     + "sounds:n::Which set of sounds it uses|light:n:300:How bright it is|_color:c:1 1 1:Its colour|"
     + "style:n::The light style it flickers by|count:n::How many|map:t::The level it leads to|"
     + "model:t::The map model or file it draws|noise:t::The sound it plays|"
-    + "_group_name:t::What the group is called|prefab:t::The prefab file it stands for";
+    + "_group_name:t::What the group is called|prefab:t::The prefab file it stands for|"
+    + "asset_game:o::q1=Quake;q2=Quake II;q3=Quake III Arena";
 
 glob DOOR_SOUNDS: str = "0=silent;1=stone;2=machine;3=stone chain;4=screechy metal";
 
 glob CLASS_TABLE: list[str] = [
+    "info_camp|point|q3|A spot a bot may camp at|range:n:128:How far from it a bot camps,weight:n:1:How much bots want it,wait:n::Seconds a bot stays,message:t::What the spot is called|",
+    "item_botroam|point|q3|Draws bots through a place nothing else would bring them to|weight:n:1:How strongly it draws them|",
     "worldspawn|brush|q1 q2 q3|The level itself: its brushes are the world|message:t::The level's name,worldtype:o:0:0=medieval;1=metal;2=base,sounds:n::The CD track,wad:t::Texture files a compiler reads,sky:t::Quake II: the sky's name,gravity:n:800:|",
     "info_player_start|point|q1 q2 q3|Where the player begins|angle:a::|",
     "info_player_start2|point|q1|Where the player begins after the episode's rune|angle:a::|",

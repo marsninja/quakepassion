@@ -142,6 +142,10 @@ impl Studio.live_command(args: list[str]) -> bool {
         "studio: live player at=" + str(int(round(at.x))) + "," + str(int(round(at.y))) + "," + str(int(round(at.z)))
             + " health=" + str(player.health) + " held=" + ("1" if self.holding else "0")
     );
+    print(
+        "studio: live pickups=" + str(len([app.world->:HasPickup:->][?:Pickup])) + " opponents="
+            + str(len([app.world->:HasOpponent:->][?:Opponent]))
+    );
     shown = 0;
     for signal in signals {
         if len(signal.entities) == 0 or signal.entities[0] >= len(entities) or shown >= 60 {

@@ -120,6 +120,8 @@ import from .geometry.mapping { spun_about, axis_vector }
 import from .camera { EditCamera, ray_enters_box, axis_camera }
 import from engine.world.signals { Signal, Fire, HasSignal }
 import from engine.world.doors { Door, HasDoor }
+import from engine.world.pickups { Pickup, HasPickup }
+import from engine.world.combat { Opponent, HasOpponent }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
@@ -215,6 +217,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
+    ("ed_camps", "ed_camps", "list the spots bots camp at and roam through"),
     ("ed_touch", "ed_touch <x> <y> <amount> [variance]", "move the corner of the terrain nearest a place, and the corners that stand with it"),
     (
         "ed_plot",
@@ -2527,6 +2531,7 @@ obj Studio(Workbench) {
             self.draw_transform_preview(scene);
         }
         self.draw_paths();
+        self.draw_camps();
         for shape in chosen {
             if self.moving {
                 # Where the drag would leave it, over where it is.
@@ -3000,6 +3005,18 @@ obj Studio(Workbench) {
     def sweep_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Entities' games and bots' camp spots (impl/studio.games.impl.jac)
+
+    """The game an entity of a class is spawned by in this scene ("" when
+    the scene is one game's, or the class is every game's)."""
+    def game_for(scene: Scene, classname: str) -> str;
+    """Entities that carry no game, or one that has no such class."""
+    def game_findings(scene: Scene) -> list[Finding];
+    def draw_camps;
+    """Run an asset-game or camp-spot command. False when it is not one."""
+    def games_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Linked faces, seams and merged corners (impl/studio.links.impl.jac)
 
     """Run a link, mitre or merge command (and carve or glue with a link).
@@ -3263,7 +3280,7 @@ obj Studio(Workbench) {
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
-            and not self.model_command(scene, args)
+            and not self.model_command(scene, args) and not self.games_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
@@ -3377,8 +3394,14 @@ obj Studio(Workbench) {
         ahead = self.main.forward();
         trace = app.level.collision.trace_point(eye, eye.add(ahead.scale(192.0)));
         at = eye.add(ahead.scale(max(32.0, 192.0 * trace.fraction - 24.0)));
-        scene.create(classname, Vec3(x=float(round(at.x)), y=float(round(at.y)), z=float(round(at.z))));
-        self.say("Added " + classname);
+        made = scene.create(classname, Vec3(x=float(round(at.x)), y=float(round(at.y)), z=float(round(at.z))));
+        carried = self.game_for(scene, classname);
+        if carried {
+            # In a scene of no one game it is spawned by its own game's rules.
+            made.fields["asset_game"] = carried;
+            scene.revision += 1;
+        }
+        self.say("Added " + classname + (" (" + carried + "'s)" if carried else ""));
     }
 
     def dump(scene: Scene) {
@@ -3546,6 +3569,7 @@ obj Studio(Workbench) {
         if self.model_doc is not None {
             lines.append(self.model_words());
         }
+
         if scene.link_count() > 0 {
             lines.append("studio: links=" + str(scene.link_count()));
         }
