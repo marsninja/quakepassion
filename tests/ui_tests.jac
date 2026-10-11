@@ -27,7 +27,13 @@ import from editor.ui.widgets {
     Picture,
     Palette,
     PaletteEntry,
-    palette_score
+    palette_score,
+    Slider,
+    Spinner,
+    Radio,
+    VectorField,
+    ColourBars,
+    number_words
 }
 
 """Run frames until the scripted steps are played, plus one to settle."""
@@ -611,4 +617,106 @@ test "a palette finds commands by what is typed and runs the one that is lit" {
     source.script(UiStep(kind="key", words="ESCAPE"));
     play(stage, source, 800, 600);
     assert len(stage.layers()) == 1 and len(stage.take_commands()) == 0;
+}
+
+test "a slider's knob follows a drag and its number goes out when it is let go" {
+    top = Box();
+    knob = Slider(low=0.0, high=100.0, value=0.0, step=10.0, command="set light");
+    top.adopt(knob);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    assert knob.area.w == 300 and knob.fraction() == 0.0;
+    # The bar runs from 6 to 294: its middle is fifty, on a step of ten.
+    script_drag(source, 6, 10, 150, 10);
+    play(stage, source, 300, 200);
+    assert knob.value == 50.0 and stage.take_commands() == ["set light 50"];
+    # Dragged past the end it stops there; let go where it was taken, it says nothing.
+    script_drag(source, 150, 10, 900, 10);
+    play(stage, source, 300, 200);
+    assert knob.value == 100.0 and stage.take_commands() == ["set light 100"];
+    script_drag(source, 294, 10, 294, 12);
+    play(stage, source, 300, 200);
+    assert stage.take_commands() == [];
+    assert number_words(2.0) == "2" and number_words(0.25) == "0.25";
+}
+
+test "a spinner is scrubbed by a drag and stepped by the wheel" {
+    top = Box();
+    turn = Spinner(value=5.0, step=1.0, low=0.0, high=20.0, command="set angle");
+    top.adopt(turn);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    # Forty pixels to the right: ten steps.
+    script_drag(source, 100, 10, 140, 10);
+    play(stage, source, 300, 200);
+    assert turn.value == 15.0 and stage.take_commands() == ["set angle 15"];
+    # Back past its lowest it stops there.
+    script_drag(source, 140, 10, 0, 10);
+    play(stage, source, 300, 200);
+    assert turn.value == 0.0 and stage.take_commands() == ["set angle 0"];
+    source.script(UiStep(kind="move", x=50, y=10));
+    source.script(UiStep(kind="wheel", amount=1.0));
+    play(stage, source, 300, 200);
+    assert turn.value == 1.0 and stage.take_commands() == ["set angle 1"];
+}
+
+test "a radio runs the command of the one clicked, and nothing for the one it is on" {
+    canvas = TraceCanvas();
+    top = Box();
+    handles = Radio(labels=["move", "turn", "size"], commands=["g move", "g turn", "g size"], chosen=0);
+    top.adopt(handles);
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    stage.paint();
+    assert "turn" in canvas.words() and handles.part_at(150) == 1 and handles.part_at(299) == 2;
+    script_click(source, 150, 10);
+    play(stage, source, 300, 200);
+    assert handles.chosen == 1 and stage.take_commands() == ["g turn"];
+    script_click(source, 160, 10);
+    play(stage, source, 300, 200);
+    assert stage.take_commands() == [];
+    script_click(source, 20, 10);
+    play(stage, source, 300, 200);
+    assert handles.chosen == 0 and stage.take_commands() == ["g move"];
+}
+
+test "a vector field changes the number whose cell is dragged, and sends all three" {
+    top = Box();
+    place = VectorField(x=0.0, y=0.0, z=24.0, step=8.0, command="set origin");
+    top.adopt(place);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    # The third cell: twenty pixels are five steps of eight.
+    script_drag(source, 250, 10, 270, 10);
+    play(stage, source, 300, 200);
+    assert place.z == 64.0 and place.x == 0.0 and stage.take_commands() == ["set origin \"0 0 64\""];
+    script_drag(source, 50, 10, 42, 10);
+    play(stage, source, 300, 200);
+    assert place.x == -16.0 and stage.take_commands() == ["set origin \"-16 0 64\""];
+}
+
+test "colour bars mix a colour from three shares" {
+    canvas = TraceCanvas();
+    top = Box();
+    mix = ColourBars(red=1.0, green=1.0, blue=1.0, command="set _color");
+    top.adopt(mix);
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    assert mix.area.h == 48 and mix.bar(1).y == 17 and mix.bar(1).w == 254;
+    # Halfway along the green bar.
+    script_drag(source, 40 + 127, 23, 40 + 127, 24);
+    play(stage, source, 300, 200);
+    assert mix.green == 0.5 and mix.red == 1.0 and stage.take_commands() == ["set _color \"1 0.5 1\""];
+    # The blue bar, to nothing.
+    script_drag(source, 100, 37, 0, 37);
+    play(stage, source, 300, 200);
+    assert mix.blue == 0.0 and stage.take_commands() == ["set _color \"1 0.5 0\""];
+    stage.paint();
+    patches = [stroke for stroke in canvas.strokes if stroke.kind == "fill" and stroke.color.r == 255 and stroke.color.g == 127 and stroke.color.b == 0];
+    assert len(patches) >= 1;
 }

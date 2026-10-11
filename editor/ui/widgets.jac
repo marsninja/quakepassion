@@ -1859,3 +1859,383 @@ node Palette(Widget) {
         return True;
     }
 }
+
+"""A number as a control shows and sends it: whole when it is whole."""
+def number_words(value: float) -> str {
+    nearest = float(round(value));
+    return str(int(nearest)) if abs(value - nearest) < 0.0005 else str(round(value, 2));
+}
+
+"""A number chosen by dragging a knob along a bar, between `low` and `high`
+in steps of `step` (any value when it is zero). The command goes out, with
+the number after it, when the knob is let go."""
+node Slider(Widget) {
+    has low: float = 0.0,
+        high: float = 1.0,
+        value: float = 0.0,
+        step: float = 0.0,
+        command: str = "",
+        # What it had when the knob was taken, to tell whether it changed.
+        taken: float = 0.0;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        return 120 if across else canvas.theme.row;
+    }
+
+    """How far along the bar the knob is, from 0 to 1."""
+    def fraction -> float {
+        if self.high <= self.low {
+            return 0.0;
+        }
+        return max(0.0, min(1.0, (self.value - self.low) / (self.high - self.low)));
+    }
+
+    """Put the knob under a point of the window."""
+    def follow(x: int) {
+        run = max(1, self.area.w - 12);
+        share = max(0.0, min(1.0, float(x - self.area.x - 6) / float(run)));
+        fresh = self.low + (self.high - self.low) * share;
+        if self.step > 0.0 {
+            fresh = self.low + float(round((fresh - self.low) / self.step)) * self.step;
+        }
+        self.value = max(self.low, min(self.high, fresh));
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        middle = self.area.y + self.area.h // 2;
+        bar = Rect(x=self.area.x + 6, y=middle - 2, w=max(1, self.area.w - 12), h=4);
+        canvas.fill(bar, theme.field);
+        canvas.fill(Rect(x=bar.x, y=bar.y, w=int(float(bar.w) * self.fraction()), h=bar.h), theme.accent);
+        knob = Rect(x=bar.x + int(float(bar.w) * self.fraction()) - 5, y=middle - 7, w=10, h=14);
+        canvas.fill(knob, theme.hover if self.hovered or self.held else theme.raised);
+        canvas.outline(knob, theme.border);
+        canvas.label(number_words(self.value), self.area, theme.dim, 1, 14, theme.small);
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "press" and event.button == 0 {
+            self.taken = self.value;
+            self.follow(event.x);
+            return True;
+        }
+        if event.kind == "drag" {
+            self.follow(event.x);
+            return True;
+        }
+        if event.kind == "release" and event.button == 0 {
+            if self.command and self.value != self.taken {
+                stage.emit(self.command + " " + number_words(self.value));
+            }
+            return True;
+        }
+        return event.kind in ["click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
+"""A number shown in a field and changed by dragging across it (a step a
+few pixels, ten with Shift) or by the wheel. The command goes out, with the
+number after it, when the drag ends or the wheel turns."""
+node Spinner(Widget) {
+    has value: float = 0.0,
+        step: float = 1.0,
+        low: float = -1000000.0,
+        high: float = 1000000.0,
+        command: str = "",
+        text: str = "",
+        # Where the drag began, and what the number was then.
+        from_x: int = 0,
+        taken: float = 0.0;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        return 72 if across else canvas.theme.row;
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(self.area, theme.hover if self.hovered or self.held else theme.field);
+        canvas.outline(self.area, theme.border);
+        if self.text {
+            canvas.label(self.text, self.area, theme.dim, -1, 6, theme.small);
+        }
+        canvas.label(number_words(self.value), self.area, theme.text, 1, 6);
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "press" and event.button == 0 {
+            self.from_x = event.x;
+            self.taken = self.value;
+            return True;
+        }
+        if event.kind == "drag" {
+            # A step every four pixels the pointer has gone from where it began.
+            notches = float((event.x - self.from_x) // 4);
+            self.value = max(
+                self.low, min(self.high, self.taken + notches * self.step * (10.0 if event.shift else 1.0))
+            );
+            return True;
+        }
+        if event.kind == "release" and event.button == 0 {
+            if self.command and self.value != self.taken {
+                stage.emit(self.command + " " + number_words(self.value));
+            }
+            return True;
+        }
+        if event.kind == "wheel" {
+            before = self.value;
+            self.value = max(self.low, min(self.high, self.value + self.step * (1.0 if event.wheel > 0.0 else -1.0)));
+            if self.command and self.value != before {
+                stage.emit(self.command + " " + number_words(self.value));
+            }
+            return True;
+        }
+        return event.kind in ["click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
+"""One of several, side by side: a click on another makes it the one, and
+runs that one's command."""
+node Radio(Widget) {
+    has labels: list[str] = [],
+        commands: list[str] = [],
+        chosen: int = 0;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        if across {
+            wide = 0;
+            for label in self.labels {
+                wide += canvas.text_width(label) + 2 * canvas.theme.pad + 6;
+            }
+            return wide;
+        }
+        return canvas.theme.row;
+    }
+
+    """Which label a point of the window is on, or -1."""
+    def part_at(x: int) -> int {
+        count = len(self.labels);
+        if count == 0 or x < self.area.x or x >= self.area.right() {
+            return -1;
+        }
+        return min(count - 1, (x - self.area.x) * count // max(1, self.area.w));
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        count = max(1, len(self.labels));
+        for (index, label) in enumerate(self.labels) {
+            cell = Rect(
+                x=self.area.x + self.area.w * index // count,
+                y=self.area.y,
+                w=self.area.w * (index + 1) // count - self.area.w * index // count,
+                h=self.area.h
+            );
+            canvas.fill(cell.inset(1), theme.accent if index == self.chosen else theme.raised);
+            canvas.label(label, cell, theme.header if index == self.chosen else theme.text, 0);
+        }
+        canvas.outline(self.area, theme.border);
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "click" and event.button == 0 {
+            picked = self.part_at(event.x);
+            if picked >= 0 and picked != self.chosen {
+                self.chosen = picked;
+                if picked < len(self.commands) and self.commands[picked] {
+                    stage.emit(self.commands[picked]);
+                }
+            }
+            return True;
+        }
+        return event.kind in ["press", "release", "double", "drag"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
+"""Three numbers side by side, each changed by dragging across its own
+cell; the command goes out with all three, as one word, when a drag ends."""
+node VectorField(Widget) {
+    has x: float = 0.0,
+        y: float = 0.0,
+        z: float = 0.0,
+        step: float = 1.0,
+        command: str = "",
+        # Which cell a drag is in, where it began and what that number was.
+        part: int = -1,
+        from_x: int = 0,
+        taken: float = 0.0;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        return 180 if across else canvas.theme.row;
+    }
+
+    def number(index: int) -> float {
+        return self.x if index == 0 else (self.y if index == 1 else self.z);
+    }
+
+    def put(index: int, value: float) {
+        if index == 0 {
+            self.x = value;
+        } elif index == 1 {
+            self.y = value;
+        } else {
+            self.z = value;
+        }
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        for index in range(3) {
+            cell = Rect(
+                x=self.area.x + self.area.w * index // 3,
+                y=self.area.y,
+                w=self.area.w * (index + 1) // 3 - self.area.w * index // 3,
+                h=self.area.h
+            );
+            canvas.fill(cell.inset(1), theme.hover if self.held and index == self.part else theme.field);
+            canvas.label(["x", "y", "z"][index], cell, theme.faint, -1, 5, theme.small);
+            canvas.label(number_words(self.number(index)), cell, theme.text, 1, 5);
+        }
+        canvas.outline(self.area, theme.border);
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "press" and event.button == 0 {
+            self.part = max(0, min(2, (event.x - self.area.x) * 3 // max(1, self.area.w)));
+            self.from_x = event.x;
+            self.taken = self.number(self.part);
+            return True;
+        }
+        if event.kind == "drag" and self.part >= 0 {
+            notches = float((event.x - self.from_x) // 4);
+            self.put(self.part, self.taken + notches * self.step * (10.0 if event.shift else 1.0));
+            return True;
+        }
+        if event.kind == "release" and event.button == 0 {
+            if self.part >= 0 and self.command and self.number(self.part) != self.taken {
+                stage.emit(
+                    self.command + " "
+                        + quote_command_word(
+                            number_words(self.x) + " " + number_words(self.y) + " " + number_words(self.z)
+                        )
+                );
+            }
+            self.part = -1;
+            return True;
+        }
+        return event.kind in ["click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
+"""A colour mixed from three bars, red, green and blue, each dragged along;
+its patch shows the mix. The command goes out with the three shares (0 to
+1), as one word, when a drag ends."""
+node ColourBars(Widget) {
+    has red: float = 1.0,
+        green: float = 1.0,
+        blue: float = 1.0,
+        command: str = "",
+        part: int = -1,
+        taken: float = 0.0;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        if self.fixed(across) > 0 {
+            return self.size;
+        }
+        return 160 if across else 3 * 14 + 6;
+    }
+
+    def share(index: int) -> float {
+        return self.red if index == 0 else (self.green if index == 1 else self.blue);
+    }
+
+    """The bar a row of the window is on, and the area of bar `index`."""
+    def bar(index: int) -> Rect {
+        return Rect(x=self.area.x + 40, y=self.area.y + 3 + index * 14, w=max(1, self.area.w - 46), h=12);
+    }
+
+    def follow(x: int) {
+        where = self.bar(self.part);
+        value = max(0.0, min(1.0, float(x - where.x) / float(where.w)));
+        value = float(round(value * 100.0)) / 100.0;
+        if self.part == 0 {
+            self.red = value;
+        } elif self.part == 1 {
+            self.green = value;
+        } elif self.part == 2 {
+            self.blue = value;
+        }
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        canvas.fill(
+            Rect(x=self.area.x + 2, y=self.area.y + 3, w=32, h=self.area.h - 6),
+            Ink(r=int(self.red * 255.0), g=int(self.green * 255.0), b=int(self.blue * 255.0), a=255)
+        );
+        canvas.outline(Rect(x=self.area.x + 2, y=self.area.y + 3, w=32, h=self.area.h - 6), theme.border);
+        tones = [Ink(r=229, g=72, b=77, a=255), Ink(r=76, g=195, b=138, a=255), Ink(r=91, g=141, b=239, a=255)];
+        for index in range(3) {
+            where = self.bar(index);
+            canvas.fill(where, theme.field);
+            canvas.fill(Rect(x=where.x, y=where.y, w=int(float(where.w) * self.share(index)), h=where.h), tones[index]);
+        }
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "press" and event.button == 0 {
+            self.part = max(0, min(2, (event.y - self.area.y - 3) // 14));
+            self.taken = self.share(self.part);
+            self.follow(event.x);
+            return True;
+        }
+        if event.kind == "drag" and self.part >= 0 {
+            self.follow(event.x);
+            return True;
+        }
+        if event.kind == "release" and event.button == 0 {
+            if self.part >= 0 and self.command and self.share(self.part) != self.taken {
+                stage.emit(
+                    self.command + " "
+                        + quote_command_word(
+                            number_words(self.red) + " " + number_words(self.green) + " " + number_words(self.blue)
+                        )
+                );
+            }
+            self.part = -1;
+            return True;
+        }
+        return event.kind in ["click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
