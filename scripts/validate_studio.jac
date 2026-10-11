@@ -1070,6 +1070,64 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The thirtieth session: an entity's facing and a light's reach dragged by
+their handles, a path drawn, logic added from the library, a favourite."""
+def marks_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["faced", "light", "path"];
+    for shot in shots {
+        (repo / f"marks_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-marks-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/marks_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "marks.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The marks session failed: {output / 'marks.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["start", "faced", "lamp", "brighter", "clicked", "counter", "favourite"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'marks.log'}";
+    }
+    # The arrow's tip swung a quarter round: from facing +y to facing +x.
+    assert "angle=90" in selected(steps["start"])[0] and "angle=0" in selected(steps["faced"])[0] , (
+        f"{selected(steps['start'])} {selected(steps['faced'])}"
+    );
+    # The light's reach pulled out from 200 units to 400: its value from 100 to 200.
+    lamp = selected(steps["lamp"])[0];
+    brighter = selected(steps["brighter"])[0];
+    assert "classname=light" in lamp and "light=100" in lamp and "light=200" in brighter , f"{lamp} {brighter}";
+    # A handle clicked and not dragged leaves it be.
+    assert steps["clicked"][0] == steps["brighter"][0] and "light=200" in selected(steps["clicked"])[0];
+    # The game's pieces of logic are listed, and a counter is one of its classes, named so it shows in the graph.
+    kinds = [line.split()[-1] for line in ran.stdout.splitlines() if line.startswith("studio: logic kind ")];
+    assert "relay" in kinds and "counter" in kinds and "delay" in kinds , str(kinds);
+    counter = selected(steps["counter"])[0];
+    assert "classname=trigger_counter" in counter and "targetname=counter1" in counter and "count=2" in counter , counter;
+    # The favourite is kept in the settings and adds one of its class.
+    favourite = selected(steps["favourite"])[0];
+    assert "classname=item_health" in favourite and "ed_fav item_health" in kept , f"{favourite} {kept}";
+    for shot in shots {
+        source = repo / f"marks_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"marks_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"MARKS PASS: {len(steps) - 1} steps, an entity turned by its arrow and a light's reach pulled out, a "
+            + "path drawn, logic from the library and a favourite class"
+    );
+}
+
 """The twenty-ninth session: keys bound by hand, the settings list, the
 grid hidden, flat tones, and the developer's readout, kept between runs."""
 def settings_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2246,6 +2304,7 @@ def main() {
         "controls": controls_session,
         "wrap": wrap_session,
         "settings": settings_session,
+        "marks": marks_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2378,6 +2437,7 @@ def main() {
     controls_session(repo, binary, env, output);
     wrap_session(repo, binary, env, output);
     settings_session(repo, binary, env, output);
+    marks_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

@@ -352,6 +352,9 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
             found.append((900, heart.add(Vec3(x=arm))));
             found.append((901, heart.add(Vec3(y=arm))));
             found.append((902, heart.add(Vec3(z=arm))));
+            for mark in self.mark_handles(scene) {
+                found.append(mark);
+            }
         }
         return found;
     }
@@ -416,8 +419,9 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
         }
         centre = self.camera.project(area, hub.add(self.move_by) if self.moving else hub);
         tones = [ink(0xe5484d), ink(0x4cc38a), ink(0x5b8def)];
+        self.draw_mark_handles(scene, area);
         for (index, spot) in self.handles(scene) {
-            if index < 900 {
+            if index < 900 or index >= 910 {
                 continue;
             }
             at = self.camera.project(area, spot.add(self.move_by) if self.moving else spot);
@@ -484,7 +488,7 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
     centre = self.camera.project(area, hub) if hub is not None else None;
     for (index, middle) in self.handles(scene) {
         at = self.camera.project(area, middle);
-        if index >= 900 and index != 930 and at is not None and centre is not None
+        if index >= 900 and index < 930 and at is not None and centre is not None
             and abs(at[0] - centre[0]) + abs(at[1] - centre[1]) < 6 {
             # An arrow seen end on cannot be taken hold of.
             continue;
@@ -494,7 +498,8 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             self.resize_side = index;
             self.resize_by = 0.0;
             self.corner_by = Vec3();
-            self.turn_by = 0.0;
+            # A mark's handle says nothing until it has been dragged.
+            self.turn_by = -1.0 if index >= 940 else 0.0;
             self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
             return True;
         }

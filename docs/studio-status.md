@@ -98,6 +98,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_fire <targetname>` sets off whatever has that name, as if something
   that targets it had gone off: a door opened or a chain started without
   walking to its trigger.
+- **Handles on an entity**: one selected entity that faces a way has a
+  handle at the tip of its arrow; dragged round it in the plan or the 3D
+  view, it turns the entity, in steps of the angle snap. A selected light
+  has a handle at the edge of its reach; pulled in or out, it sets the
+  light's value. Each drag is one edit. Paths are drawn corner to corner
+  in every view.
+- **Logic from a library**: `ed_logic` lists the pieces of logic the
+  scene's game has (a relay, a delay, a counter, a trigger that fires once
+  or many times, a message, a timer, a change of level) and `ed_logic
+  <kind>` adds one as that game's own class, with the fields that make it
+  that piece and a name, so it shows in the logic graph ready to be wired.
+- **Favourites**: `ed_fav <classname>` keeps a class in a Favourites list
+  at the end of the Library tab, a click from being added; the same
+  command stops keeping it.
 - **As it would spawn**: `ed_spawn <easy|normal|hard|deathmatch>` (Play
   menu) hides the entities that skill or mode leaves out, by the
   spawnflags every game shares (and Quake III's `notsingle` and
@@ -713,6 +727,11 @@ editor/impl/                 the workbench's scenes and brushes
   its line that hides the grid; flat tones and back; the developer's
   readout; then the studio opened again to find the key and settings
   kept).
+  `scripts/studio/marks_session.cfg` (6 steps: the player start turned from
+  facing +y to +x by the tip of its arrow; a light's reach pulled from two
+  hundred units to four hundred; a handle clicked without a drag, which
+  changes nothing; two path corners joined by a line; a counter from the
+  logic library; a favourite class kept and added).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

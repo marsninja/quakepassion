@@ -160,6 +160,10 @@ impl Studio.list_library(ui: StudioUi) {
     for path in lately {
         rows.append(TreeRow(key="recent:" + path, text=os.path.basename(path), depth=1));
     }
+    rows.append(TreeRow(key="shelf:Favourites", text="Favourites", tone="accent", note=str(len(self.favourites))));
+    for kept_class in self.favourites {
+        rows.append(TreeRow(key="fav:" + kept_class, text=kept_class, depth=1));
+    }
     ui.library.rows = rows;
 }
 
@@ -372,6 +376,8 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.open_map(self.autosave_path(word[5:]));
         } elif word.startswith("prefab:") {
             self.library_command(scene, ["ed_prefab", "add", word[7:]]);
+        } elif word.startswith("fav:") {
+            self.class_command(scene, ["ed_class", word[4:]]);
         } elif word.startswith("doc:") {
             self.show_doc(word[4:]);
         } elif word.startswith("recent:") {

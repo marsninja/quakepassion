@@ -352,6 +352,9 @@ impl Studio.keep_settings {
         "ed_anglesnap " + str(int(self.angle_snap)),
         "ed_texlock " + ("on" if self.tex_lock else "off")
     ];
+    for kept_class in self.favourites {
+        lines.append("ed_fav " + kept_class);
+    }
     for chord in sorted(self.user_keys.keys()) {
         lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
     }

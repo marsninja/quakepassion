@@ -188,6 +188,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
     ("ed_caulk", "ed_caulk [material]", "give the faces the selected brushes cover of each other a material that is not drawn"),
     ("ed_autocaulk", "ed_autocaulk [on|off]", "whether shapes are built with their inner faces caulked"),
+    ("ed_logic", "ed_logic [kind]", "add a piece of logic (a relay, a delay, a counter ...) as the scene's game has it, or list the kinds"),
+    ("ed_fav", "ed_fav <classname>", "keep a class as a favourite, or stop keeping it"),
     ("ed_bind", "ed_bind <key> <command>", "give a key (a, ctrl+k, shift+f2) an editor command of your own"),
     ("ed_unbind", "ed_unbind <key>", "give a key back what the studio gives it"),
     ("ed_binds", "ed_binds", "list the keys bound by hand"),
@@ -637,6 +639,8 @@ obj Studio(Workbench) {
         # Playing only what is selected; and how coarse the light is baked
         # (world units to a lightmap texel).
         play_only: bool = False,
+        # The classes kept as favourites.
+        favourites: list[str] = [],
         # The axis views' grid shown, with numbers along its edges; levels
         # drawn in flat tones in place of their textures; keys bound by
         # hand; and the developer's readout in the status bar.
@@ -1709,8 +1713,9 @@ obj Studio(Workbench) {
                 }
                 if event.button == 0 and self.resizing and self.resize_side >= 910 {
                     # A turn or size handle let go: the drag becomes its command.
+                    # A press on a handle is never a click on what lies under it.
                     self.resizing = False;
-                    self.moved = abs(event.x - self.press_x) + abs(event.y - self.press_y) > 3;
+                    self.moved = True;
                     order = self.transform_words(scene);
                     self.turn_by = 0.0;
                     self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
@@ -2296,9 +2301,10 @@ obj Studio(Workbench) {
         # the walls.
         rlDrawRenderBatchActive();
         rlDisableDepthTest();
-        if self.resizing and self.resize_side >= 910 {
+        if self.resizing and self.resize_side >= 910 and self.resize_side < 940 {
             self.draw_transform_preview(scene);
         }
+        self.draw_paths();
         for shape in chosen {
             if self.moving {
                 # Where the drag would leave it, over where it is.
@@ -2653,6 +2659,14 @@ obj Studio(Workbench) {
     def entity_command(scene: Scene, args: list[str]) -> bool;
     """The options every class shares: which skills and modes leave it out."""
     def fill_skill(scene: Scene, ui: StudioUi, chosen: list[Item]);
+    """The handles one selected entity has beside its arrows: the tip of
+    the arrow it faces along (940) and the edge of a light's reach (941)."""
+    def mark_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    def draw_mark_handles(scene: Scene, area: Rect);
+    """A drag of one of those: the angle or the reach it would leave."""
+    def drag_mark(scene: Scene, x: int, y: int, free: bool);
+    """Lines along every path, corner to corner."""
+    def draw_paths;
     """Controls to drag for what the selection has: where it is, which way
     it faces, and a light's strength and colour."""
     def fill_controls(scene: Scene, ui: StudioUi, chosen: list[Item]);

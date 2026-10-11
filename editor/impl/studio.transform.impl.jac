@@ -107,6 +107,10 @@ impl Studio.dragged_point(point: Vec3, middle: Vec3) -> Vec3 {
 
 impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
     held = self.resize_side;
+    if held == 940 or held == 941 {
+        self.drag_mark(scene, x, y, free);
+        return;
+    }
     middle = self.turn_hub(scene);
     if middle is None {
         return;
@@ -172,6 +176,13 @@ impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
 
 impl Studio.transform_words(scene: Scene) -> str {
     held = self.resize_side;
+    if held == 940 or held == 941 {
+        # The way it faces, or how far it lights, as the drag left it.
+        if self.turn_by < 0.0 {
+            return "";
+        }
+        return ("ed_set angle " if held == 940 else "ed_set light ") + str(int(round(self.turn_by)));
+    }
     if held >= 910 and held <= 912 {
         if self.turn_by == 0.0 {
             return "";
