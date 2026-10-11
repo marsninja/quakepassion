@@ -217,6 +217,34 @@ impl Studio.fill_face_form(scene: Scene, ui: StudioUi) {
         PushButton(text="Same plane", command="ed_faces extend", grow=1, hint="Pick every face that lies in this face's plane")
     );
     spread.adopt(PushButton(text="Tag", command="ed_tag", grow=1, hint="Remember this face, to glue brushes against"));
+    # What stands on the face, and the face itself taken off or turned.
+    form.adopt(Spacer(size=6));
+    builds = Box(across=True, gap=4);
+    form.adopt(builds);
+    builds.adopt(PushButton(text="Extrude", command="ed_extrude", grow=1, hint="Push the face out into a brush of its own"));
+    builds.adopt(PushButton(text="Cone", command="ed_cone", grow=1, hint="Stand a cone on the face"));
+    builds.adopt(PushButton(text="Walls", command="ed_walls", grow=1, hint="Stand walls round the face's edge"));
+    edits = Box(across=True, gap=4);
+    form.adopt(edits);
+    edits.adopt(
+        PushButton(
+            text="Delete face", command="ed_face_delete", grow=1, hint="Take the face off, where the others close without it"
+        )
+    );
+    edits.adopt(
+        PushButton(text="Turn round", command="ed_face_flip", grow=1, hint="Leave what lay beyond the face instead")
+    );
+    marks = Box(across=True, gap=4);
+    form.adopt(marks);
+    marks.adopt(Label(text="flags", tone="dim", size=104));
+    marks.adopt(
+        TextField(
+            value=str(side.contents) + " " + str(side.flags) + " " + str(side.value),
+            command="ed_sideflag all",
+            grow=1,
+            hint="The side's contents, surface flags and value, as the game's own tools number them"
+        )
+    );
 }
 
 """A number as a form shows it: whole numbers without a point."""

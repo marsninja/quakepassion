@@ -65,7 +65,7 @@ import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
-import from .document.generate { duplicates, image_brushes, with_images, DUPLICATOR_KEYS }
+import from .document.generate { duplicates, image_brushes, with_images, DUPLICATOR_KEYS, with_holes, digs, DIGGER_KEY }
 import from .document.scene {
     Scene,
     Item,
@@ -158,6 +158,18 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_face_delete", "ed_face_delete", "take the picked faces off their brushes, where the others close without them"),
+    ("ed_face_flip", "ed_face_flip", "turn the picked face to face the other way, leaving what lay beyond it"),
+    ("ed_cone", "ed_cone [height]", "stand a cone on each picked face"),
+    ("ed_extrude", "ed_extrude [depth]", "push each picked face out into a brush of its own"),
+    ("ed_walls", "ed_walls [depth] [thickness]", "stand walls round the edge of each picked face"),
+    (
+        "ed_sideflag",
+        "ed_sideflag <contents|flags|value> <number> [set|clear|put]",
+        "set, clear or replace bits on the picked faces or the selected brushes' sides"
+    ),
+    ("ed_detail", "ed_detail [on|off]", "mark the selected brushes as detail, or as structural again"),
+    ("ed_digger", "ed_digger [on|off]", "make the selected brushes holes, cut out of the rest when the level is built"),
     ("ed_keep", "ed_keep [name]", "keep the selection as a named set (the sets, without a name)"),
     ("ed_recall", "ed_recall <name> [add]", "select a set kept before, alone or added to the selection"),
     ("ed_forget", "ed_forget <name>", "drop a kept set"),
@@ -863,6 +875,15 @@ obj Studio(Workbench) {
                     MenuItem(text="Merge", command="ed_merge"),
                     MenuItem(rule=True),
                     MenuItem(text="Snap to the grid", command="ed_snap"),
+                    MenuItem(text="Delete the picked faces", command="ed_face_delete"),
+                    MenuItem(text="Turn the picked face round", command="ed_face_flip"),
+                    MenuItem(text="Cone on the picked faces", command="ed_cone"),
+                    MenuItem(text="Extrude the picked faces", command="ed_extrude"),
+                    MenuItem(text="Walls round the picked faces", command="ed_walls"),
+                    MenuItem(text="Make detail", command="ed_detail"),
+                    MenuItem(text="Make structural", command="ed_detail off"),
+                    MenuItem(text="Dig: make these brushes holes", command="ed_digger"),
+                    MenuItem(text="Fill in: solid again", command="ed_digger off"),
                     MenuItem(text="Tag the picked face", command="ed_tag"),
                     MenuItem(text="Glue to the tagged face", command="ed_glue"),
                     MenuItem(text="Group", command="ed_group", keys="Ctrl+G"),
@@ -2349,6 +2370,12 @@ obj Studio(Workbench) {
     def transform_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
+    # Faces dropped, turned and built on; side flags; diggers (impl/studio.faces.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def face_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Clicks through, kin, sets, the tour and the swap (impl/studio.select.impl.jac)
 
     """Everything on the line of sight through a point of the view: what a
@@ -2519,7 +2546,7 @@ obj Studio(Workbench) {
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
             and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
             and not self.patch_command(scene, args) and not self.transform_command(scene, args)
-            and not self.selection_command(scene, args) {
+            and not self.selection_command(scene, args) and not self.face_command(scene, args) {
             self.utility_command(scene, args);
         }
     }
@@ -2683,6 +2710,12 @@ obj Studio(Workbench) {
                     + str(self.built_geometry)
             );
         }
+        built_now = self.live;
+        if scene.solids() and built_now is not None {
+            # How many brushes the level was built from: more than the
+            # document's where copies are made, other where holes are dug.
+            lines.append("studio: made brushes=" + str(built_now.brushes));
+        }
         for brush in scene.selected_solids() {
             box = brush.bounds();
             holder = scene.owner_of(brush);
@@ -2705,6 +2738,11 @@ obj Studio(Workbench) {
                     + " shift=" + str(round(lay.s_shift, 2)) + "," + str(round(lay.t_shift, 2)) + " scale="
                     + str(round(lay.s_scale, 3)) + "," + str(round(lay.t_scale, 3)) + " turn="
                     + str(round(lay.rotation, 1))
+                    + (
+                        " contents=" + str(side.contents) + " flags=" + str(side.flags) + " value=" + str(side.value)
+                        if side.contents != 0 or side.flags != 0 or side.value != 0
+                        else ""
+                    )
             );
         }
         placed = scene.logic_nodes();

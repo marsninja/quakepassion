@@ -1067,6 +1067,89 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""How many brushes the level was built from at a step."""
+def made(lines: list[str]) -> int {
+    found = [line for line in lines if line.startswith("made brushes=")];
+    return int(found[0].split("=")[1]) if found else -1;
+}
+
+"""The seventeenth session: walls, a cone and a pushed-out brush stood on a
+picked face, side flags, and a digger that leaves a shaft in what is built."""
+def faces_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["walls", "cone", "dug"];
+    for shot in shots {
+        (repo / f"faces_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-faces-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/faces_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "faces.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The faces session failed: {output / 'faces.log'}";
+        saved = Path(home) / "scenes/faces.map";
+        assert saved.exists() , "Save wrote no map";
+        text = saved.read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["drawn", "picked", "walled", "coned", "extruded", "flagged", "inner", "dug", "filled", "dug_again"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'faces.log'}";
+    }
+    box = brush_box(brushes(steps["drawn"])[0]);
+    assert box == [[-288, 112, 0], [-96, 208, 64]] , str(box);
+    # The floor and the box.
+    assert made(steps["drawn"]) == 2 , str(steps["drawn"]);
+    assert len(faces(steps["picked"])) == 1 , str(steps["picked"]);
+    # Four walls round the top's edge, thirty-two high and sixteen thick, inside its outline.
+    walls = [brush_box(line) for line in brushes(steps["walled"])];
+    assert len(walls) == 4 and made(steps["walled"]) == 6 , str(steps["walled"]);
+    for wall in walls {
+        assert wall[0][2] == 64 and wall[1][2] == 96 , str(wall);
+        assert wall[0][0] >= -288 and wall[1][0] <= -96 and wall[0][1] >= 112 and wall[1][1] <= 208 , str(wall);
+        assert min(wall[1][0] - wall[0][0], wall[1][1] - wall[0][1]) == 16 , str(wall);
+    }
+    # A cone: the top for a base, a point forty-eight above its middle.
+    cone = brushes(steps["coned"]);
+    assert len(cone) == 1 and "sides=5" in cone[0] , str(cone);
+    assert brush_box(cone[0]) == [[-288, 112, 64], [-96, 208, 112]] , cone[0];
+    # The face pushed out: a brush of its own on top of the first.
+    pushed = brushes(steps["extruded"]);
+    assert len(pushed) == 1 and brush_box(pushed[0]) == [[-288, 112, 64], [-96, 208, 96]] , str(pushed);
+    assert "mode=brush" in steps["extruded"][-1] and made(steps["extruded"]) == 3;
+    # Detail on every side of it, and a surface flag on the one face picked afterwards.
+    flagged = faces(steps["flagged"]);
+    assert len(flagged) == 1 and "contents=134217728 flags=4 value=0" in flagged[0] , str(flagged);
+    assert " 134217728 4 0" in text and text.count(" 134217728 0 0") == 5 , "The map lost the side flags";
+    # A box inside the first, then made a digger: the first is built as four pieces round a shaft.
+    inner = brush_box(brushes(steps["inner"])[0]);
+    assert inner == [[-240, 128, 0], [-144, 176, 64]] and made(steps["inner"]) == 4 , f"{inner} {steps['inner']}";
+    dug = selected(steps["dug"]);
+    assert len(dug) == 1 and "_digger=1" in dug[0] and "owns=1" in dug[0] , str(dug);
+    assert made(steps["dug"]) == 6 , str(steps["dug"]);
+    # The document still holds the four brushes it did.
+    assert tally(steps["dug"]).startswith("brushes=4 ") , tally(steps["dug"]);
+    assert made(steps["filled"]) == 4 and "_digger" not in selected(steps["filled"])[0];
+    assert made(steps["dug_again"]) == 6 and '"_digger" "1"' in text;
+    for shot in shots {
+        source = repo / f"faces_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"faces_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"FACES PASS: {len(steps) - 1} steps, walls, a cone and a pushed-out brush on a picked face, side flags "
+            + "kept in the map, and a digger's shaft in what is built"
+    );
+}
+
 """The line of a step that names the kept sets."""
 def kept_sets(lines: list[str]) -> str {
     found = [line for line in lines if line.startswith("sets=")];
@@ -1343,6 +1426,7 @@ def main() {
         "material": material_session,
         "transform": transform_session,
         "select": select_session,
+        "faces": faces_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -1462,6 +1546,7 @@ def main() {
     material_session(repo, binary, env, output);
     transform_session(repo, binary, env, output);
     select_session(repo, binary, env, output);
+    faces_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

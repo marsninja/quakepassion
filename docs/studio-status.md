@@ -88,6 +88,24 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the pivot for itself, as its `_center` field: it is saved with the group,
   moves, turns and stretches with it, and undoes. `ed_rotate`, `ed_resize`
   and `ed_mirror` go about the pivot too.
+- **By a picked face** (face mode, the face's form and the Brush menu):
+  `ed_extrude [depth]` pushes the face out into a brush of its own,
+  `ed_cone [height]` stands a cone on it and `ed_walls [depth] [thickness]`
+  stands walls round its edge; what is made is left selected.
+  `ed_face_delete` takes a face off where the brush's other sides close
+  without it, and `ed_face_flip` turns one round to leave what lay beyond
+  it, where that is closed too.
+- **Side flags**: a face's form shows its contents, surface flags and value
+  as the game's own tools number them, to type over;
+  `ed_sideflag <contents|flags|value> <number> [set|clear|put]` changes
+  bits on the picked faces or on every side of the selected brushes, and
+  `ed_detail [on|off]` marks brushes as detail or structural. They are
+  written with the map whenever a side has any.
+- **Diggers**: `ed_digger` makes the selected brushes a group of holes
+  (`_digger 1`). The level is built with them cut out of every brush they
+  reach, and with no brush of their own; the document keeps the digger and
+  what it cuts whole, so moving the digger moves the hole and
+  `ed_digger off` fills it in.
 - `ed_inflate <units|up|down>` pushes every side of the selected brushes
   out, or in; a brush that would be left with nothing stays as it is.
 - `ed_texlock [on|off]` (Brush menu) says whether materials go with the
@@ -368,6 +386,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_document_tests.jac`: entity lumps round-trip; selection;
   every edit and its undo; any run of edits undone in full restores the
   document.
+- `tests/studio_faces_tests.jac`: a side dropped or turned only where the
+  rest close; a cone, a prism and walls on a face; the same through the
+  document with undo; side flags by brush and by face, through a map and
+  back; a digger's shaft cut from what is built, the input left whole.
 - `tests/studio_select_tests.jac`: sets kept, picked, replaced and dropped;
   a deleted member leaving a set and coming back with undo; sets written
   with the map and read from it; the steps to owner, brushes and
@@ -462,6 +484,11 @@ editor/impl/                 the workbench's scenes and brushes
   again; a brush by number; its owner and the owner's brushes; two sets
   kept, one picked again; a box and the player start swapped; a tour of the
   two; then the saved map opened again to find its sets).
+  `scripts/studio/faces_session.cfg` (10 steps: a box's top picked in the
+  top view; walls, a cone and a pushed-out brush stood on it; detail and a
+  surface flag, found again in the saved map; a box drawn inside the first
+  made a digger, so the level is built from six brushes while the document
+  holds four, then filled in and dug again by undo).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
