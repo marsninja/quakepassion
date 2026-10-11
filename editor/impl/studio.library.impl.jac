@@ -180,6 +180,15 @@ impl Studio.fill_graph(scene: Scene, ui: StudioUi) {
         if fired {
             words = (name + "  ->  " + fired) if name else ("->  " + fired);
         }
+        # In the game last played from here: how often it fired, and
+        # whether its firing holds the game.
+        times = self.fired_names.get(self.signal_label(item.fields), 0);
+        if times > 0 {
+            words += "   fired x" + str(times);
+        }
+        if self.signal_label(item.fields) in self.breaks {
+            words += "   [holds]";
+        }
         boxes.append(
             GraphNode(
                 key=str(item.serial),
@@ -187,6 +196,7 @@ impl Studio.fill_graph(scene: Scene, ui: StudioUi) {
                 note=words,
                 column=node.column,
                 row=node.row,
+                tone="good" if times > 0 else "text",
                 picked=scene.is_selected(item)
             )
         );

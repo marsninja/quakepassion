@@ -935,6 +935,9 @@ impl App.step() -> bool {
             dt = 1.0 / 60.0;
         }
     }
+    if not self.workbench.active {
+        self.workbench.played(dt);
+    }
     self.renderer.sync();
     self.console.advance(self.renderer.frame_time());
     escape = False;

@@ -128,7 +128,9 @@ node Signal {
         pathtarget: str = "",
         routed: bool = False,
         calls: list[str] = [],
-        key_wait: float = 0.0;
+        key_wait: float = 0.0,
+        # How many times a firing has come to it: for a workbench to watch.
+        fired: int = 0;
 
     def sample(base: float) -> float {
         duration = base;
@@ -191,6 +193,7 @@ walker Fire {
             return;
         }
         self.seen.append(here);
+        here.fired += 1;
         if self.emit {
             self.emit = False;
             if here.delay > 0.0 and not self.scheduled {

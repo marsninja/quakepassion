@@ -52,6 +52,10 @@ obj Workbench {
     typed, and the modifiers held."""
     def frame(dt: float, keys: list[str], text: str, shift: bool, ctrl: bool, alt: bool) abst;
 
+    """One frame of a game while the workbench is not active: the game time
+    that frame moves by. For watching a game played from the workbench."""
+    def played(dt: float) abst;
+
     """The cameras to draw the level from this frame."""
     def views -> list[SceneView] abst;
 
@@ -74,6 +78,8 @@ obj NoWorkbench(Workbench) {
     def command(args: list[str]) {}
 
     def frame(dt: float, keys: list[str], text: str, shift: bool, ctrl: bool, alt: bool) {}
+
+    def played(dt: float) {}
 
     def views -> list[SceneView] {
         return [];

@@ -1221,6 +1221,61 @@ def steps_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The thirty-eighth session: a played game's firings counted, a firing
+that holds the game, and the live player and signals changed while held."""
+def live_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "live_graph.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-live-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/live_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "live.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The live session failed: {output / 'live.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "quiet", "broke", "after", "changed", "again", "stopped", "graph"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'live.log'}";
+    }
+    assert [line for line in steps["made"] if line == "breaks first"] or "studio: breaks first" in ran.stdout;
+    # Nothing has fired until the first relay is set off; then all three have, and the game is held.
+    assert "signals none" in steps["quiet"] , str(steps["quiet"]);
+    assert [line for line in steps["quiet"] if line == "break first"] , str(steps["quiet"]);
+    assert played_word(steps["broke"], "held") == "1" , str(steps["broke"]);
+    assert "signals door1=1 first=1 start=1" in steps["after"] , str(steps["after"]);
+    order = [line for line in steps["after"] if line.startswith("order ")][0][6:].split(",");
+    assert sorted(order) == ["door1", "first", "start"] , str(order);
+    # The live game as it stood, and as changed: the player's health and place, a relay switched off.
+    stood = [line for line in steps["after"] if line.startswith("live player ")];
+    assert stood and "health=100" in stood[0] and "held=1" in stood[0] , str(steps["after"]);
+    was = [line for line in steps["after"] if line.startswith("live signal first ")];
+    assert was and was[0] == "live signal first class=trigger_relay enabled=1 fired=1" , str(steps["after"]);
+    now = [line for line in steps["changed"] if line.startswith("live player ")];
+    assert now and now[0] == "live player at=0,-200,40 health=37 held=1" , str(steps["changed"]);
+    off_now = [line for line in steps["changed"] if line.startswith("live signal first ")];
+    assert off_now and off_now[0] == "live signal first class=trigger_relay enabled=0 fired=1" , str(steps["changed"]);
+    # Fired again, the firing stops at the relay that is off; the counts outlast the game.
+    assert "signals door1=1 first=1 start=2" in steps["again"] , str(steps["again"]);
+    assert "signals door1=1 first=1 start=2" in steps["stopped"] , str(steps["stopped"]);
+    assert "breaks first" in steps["stopped"] , str(steps["stopped"]);
+    source = repo / "live_graph.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "live_graph.png");
+    source.unlink();
+    print(
+        f"LIVE PASS: {len(steps) - 1} steps, three signals counted as they fired, the game held when one of them did, "
+            + "the player's health and place and a relay changed while it was held, and the firing stopped there after"
+    );
+}
+
 """The thirty-seventh session: outlines swept along a line and a path, a
 sweep swept again after its path moved, and a brush's own outline swept."""
 def sweep_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2833,6 +2888,7 @@ def main() {
         "depth": depth_session,
         "layers": layers_session,
         "sweep": sweep_session,
+        "live": live_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2973,6 +3029,7 @@ def main() {
     depth_session(repo, binary, env, output);
     layers_session(repo, binary, env, output);
     sweep_session(repo, binary, env, output);
+    live_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

@@ -244,6 +244,10 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_pause", "ed_pause [on|off]", "hold a game played from the studio still, or let it run"),
     ("ed_tick", "ed_tick [count]", "let a held game's time move by so many sixtieths of a second"),
     ("ed_played", "ed_played [label]", "print how a game played from the studio stands"),
+    ("ed_break", "ed_break [targetname|clear]", "hold a played game still when what has that name fires; or stop doing so; or list them"),
+    ("ed_trace", "ed_trace [on|off]", "name each firing in a played game as it happens"),
+    ("ed_fired", "ed_fired [label]", "print what has fired in the game played from here, how often and in what order"),
+    ("ed_live", "ed_live [player health <n> | player at <x y z> | signal <name> on|off]", "look at a played game's player and signals, or change them"),
     (
         "ed_build",
         "ed_build [full|quick|flat|fresh]",
@@ -708,6 +712,14 @@ obj Studio(Workbench) {
         # ("whole", "grey" or "hide"), and the camera of the view being drawn.
         outside: str = "grey",
         lens_now: EditCamera | None = None,
+        # A played game watched: each signal's count when last looked at,
+        # how often each name has fired and in what order, the names whose
+        # firing holds the game, and whether each firing is named aloud.
+        fired_seen: list[int] = [],
+        fired_names: dict[str, int] = {},
+        fire_log: list[str] = [],
+        breaks: list[str] = [],
+        tracing: bool = False,
         look_rate: float = 1.0,
         look_flipped: bool = False,
         wheel_rate: float = 1.0,
@@ -874,10 +886,10 @@ obj Studio(Workbench) {
         # What is hidden while editing is in the level that is played.
         self.play_build = True;
         self.play_only = only;
-        played = self.load(scene.game, scene.name);
+        loaded_now = self.load(scene.game, scene.name);
         self.play_build = False;
         self.play_only = False;
-        if not played {
+        if not loaded_now {
             # The document does not load: back to it.
             self.enter(reset_camera=False);
             return;
@@ -885,6 +897,10 @@ obj Studio(Workbench) {
         self.playing = True;
         self.holding = False;
         self.steps_owed = 0;
+        # What fires is counted from the start of each game.
+        self.fired_seen = [];
+        self.fired_names = {};
+        self.fire_log = [];
         if here or only {
             player = app.player;
             level = app.level;
@@ -1143,7 +1159,11 @@ obj Studio(Workbench) {
                     MenuItem(text="Build as one again", command="ed_bake off"),
                     MenuItem(text="Show the bake's cells", command="ed_cells"),
                     MenuItem(rule=True),
-                    MenuItem(text="Recipes", command="ed_recipe")
+                    MenuItem(text="Recipes", command="ed_recipe"),
+                    MenuItem(rule=True),
+                    MenuItem(text="What fired in the last game", command="ed_fired"),
+                    MenuItem(text="Name each firing as it happens", command="ed_trace"),
+                    MenuItem(text="Firings that hold the game", command="ed_break")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -2810,6 +2830,16 @@ obj Studio(Workbench) {
     def build_mode_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # A played game watched (impl/studio.live.impl.jac)
+
+    """What a signal is known by: its entity's name, else its class and target."""
+    def signal_label(fields: dict[str, str]) -> str;
+    """One frame of a game played from here: note what has fired."""
+    def played(dt: float);
+    """Run a breakpoint, trace, fired or live command. False when it is not one."""
+    def live_command(args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # A bake seen, recipes, and other programs' steps (impl/studio.steps.impl.jac)
 
     """The cell the bake's cells are shown from (-1 when nothing is baked)."""
@@ -2967,6 +2997,11 @@ obj Studio(Workbench) {
         if name == "ed_pause" or name == "ed_tick" or name == "ed_played" or name == "ed_fire" {
             # These are for a game being played from here.
             self.play_command(args);
+            return;
+        }
+        if name == "ed_break" or name == "ed_trace" or name == "ed_fired" or name == "ed_live" {
+            # And these watch one, while it is played and after.
+            self.live_command(args);
             return;
         }
         if name == "ed_exec" {

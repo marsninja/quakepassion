@@ -204,6 +204,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **A played game watched**: while a game is played from the studio, what
+  fires is counted, by the name it is fired by (or its class and what it
+  fires, when it has no name). `ed_fired` says how often each has fired
+  and in what order, during the game and after it; back in the studio
+  the logic graph marks what fired and how often. `ed_break <name>`
+  holds the game still the moment that name fires (`ed_break` lists
+  them, `ed_break clear` forgets them; the graph marks them `[holds]`),
+  and `ed_trace on` names each firing on screen as it happens. While a
+  game is played, `ed_live` says where the player stands, with what
+  health, and how every signal stands; `ed_live player health <n>` and
+  `ed_live player at <x y z>` change the player, and `ed_live signal
+  <name> on|off` switches a signal, before `ed_pause` lets the game run
+  on. (The engine counts firings on its signals and calls the workbench
+  each frame of a game it is not showing; nothing else of it changed.)
 - **Sweeps**: `ed_sweep <outline> [wide tall] [count] along <name>`
   carries an outline along a path of entities, from the one of that
   targetname through each one's `target` (a path that comes back to its
@@ -934,6 +948,13 @@ editor/impl/                 the workbench's scenes and brushes
   them into six brushes; the last corner moved and the rail swept again
   to reach it, then the sweep undone; a drawn brush's outline swept round
   a closed line into a ring of four).
+  `scripts/studio/live_session.cfg` (8 steps: a door, a relay that opens
+  it and a relay that fires that one; the game played, nothing yet
+  fired; the first relay set off by hand, all three counted and the game
+  held because the middle one holds it; the player's health and place
+  and the middle relay changed while held; fired again, the firing
+  stopping at the relay switched off; the counts still there after the
+  game, and on the logic graph).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
