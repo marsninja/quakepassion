@@ -61,5 +61,8 @@ make -C "$tmp/raylib-${RAYLIB_VERSION}/src" -j4 \
   PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=SHARED \
   CUSTOM_CFLAGS="-DSUPPORT_FILEFORMAT_JPG=1 -DSUPPORT_FILEFORMAT_TGA=1"
 mkdir -p "$VENDOR"
+# Remove the old library first: macOS keeps the signature it saw for a file,
+# and kills whatever loads one that was overwritten in place.
+rm -f "$VENDOR"/$lib_glob
 cp -P "$tmp/raylib-${RAYLIB_VERSION}/src/"$lib_glob "$VENDOR/"
 echo "Staged raylib $RAYLIB_VERSION with JPG/TGA support in $VENDOR"
