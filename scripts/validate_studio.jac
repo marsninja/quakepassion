@@ -1067,6 +1067,105 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The line of a step that names the kept sets."""
+def kept_sets(lines: list[str]) -> str {
+    found = [line for line in lines if line.startswith("sets=")];
+    return found[0][5:] if found else "";
+}
+
+"""The sixteenth session: clicks through two stacked boxes to the floor,
+steps to the owner and back to its brushes, a brush by number, kept sets, a
+swap and a tour; then the saved map opened again with its sets."""
+def select_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["through", "swapped"];
+    for shot in shots {
+        (repo / f"select_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-select-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/select_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "select.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The select session failed: {output / 'select.log'}";
+        saved = Path(home) / "scenes/picks.map";
+        assert saved.exists() , "Save wrote no map";
+        text = saved.read_text();
+        again = subprocess.run(
+            [
+                str(binary), "+edit", "+ed_open", str(saved), "+ed_recall", "walls", "+ed_dump", "reopened",
+                "+quit"
+            ],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "select_reopen.log").write_text(again.stdout + again.stderr);
+        assert again.returncode == 0 , f"Reopening the map failed: {output / 'select_reopen.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "first", "second", "third", "round", "numbered", "owner", "children", "picked", "pair", "swapped", "toured",
+        "onward"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'select.log'}";
+    }
+    # The first click picks the box on top; the next two go down through it.
+    first = brushes(steps["first"]);
+    second = brushes(steps["second"]);
+    third = brushes(steps["third"]);
+    assert len(first) == 1 and len(second) == 1 and len(third) == 1 , f"{first} {second} {third}";
+    upper = brush_box(first[0]);
+    lower = brush_box(second[0]);
+    assert upper == [[-288, 112, 96], [-96, 208, 160]] and lower == [[-288, 112, 0], [-96, 208, 64]] , f"{upper} {lower}";
+    assert brush_box(third[0])[1][2] == 0 , third[0];
+    assert brushes(steps["round"]) == first , str(steps["round"]);
+    # Entity 0's third brush is the lower box.
+    assert brushes(steps["numbered"]) == second , str(steps["numbered"]);
+    assert "sets=upper:1" in "sets=" + kept_sets(steps["numbered"]);
+    # Its owner is the world, whose brushes are the floor and the two boxes.
+    owner = selected(steps["owner"]);
+    assert len(owner) == 1 and "classname=worldspawn" in owner[0] and not brushes(steps["owner"]) , str(owner);
+    assert len(brushes(steps["children"])) == 3 and not selected(steps["children"]) , str(steps["children"]);
+    assert brushes(steps["picked"]) == first and kept_sets(steps["picked"]) == "upper:1,walls:3";
+    # The player start and the upper box, swapped: each stands where the other's middle was.
+    pair = selected(steps["pair"]);
+    assert len(pair) == 1 and "origin=0 0 24" in pair[0] and brushes(steps["pair"]) == first , str(steps["pair"]);
+    swapped = selected(steps["swapped"]);
+    assert len(swapped) == 1 and "origin=-192 160 128" in swapped[0] , str(swapped);
+    moved = brush_box(brushes(steps["swapped"])[0]);
+    assert moved == [[-96, -48, -8], [96, 48, 56]] , str(moved);
+    # The tour looks at one, then the other: the camera moves each time.
+    cameras = [
+        [line for line in steps[name] if line.startswith("camera ")][0] for name in ["swapped", "toured", "onward"]
+    ];
+    assert cameras[0] != cameras[1] and cameras[1] != cameras[2] , str(cameras);
+    # The sets are in the map as places in it, and come back when it is opened.
+    assert '"_set_upper" "0:1"' in text and '"_set_walls" "0:0 0:1 0:2"' in text , text[:400];
+    back = studio_steps(again.stdout)["reopened"];
+    assert kept_sets(back) == "upper:1,walls:3" and len(brushes(back)) == 3 , str(back);
+    for shot in shots {
+        source = repo / f"select_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"select_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"SELECT PASS: {len(steps) - 1} steps, clicks through two boxes to the floor, the owner and its brushes, "
+            + "a brush by number, sets kept and reopened, a swap and a tour"
+    );
+}
+
 """The line of a step that tells which handles show and how they snap."""
 def handles(lines: list[str]) -> str {
     found = [line for line in lines if line.startswith("handles=")];
@@ -1243,6 +1342,7 @@ def main() {
         "draw": draw_session,
         "material": material_session,
         "transform": transform_session,
+        "select": select_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -1361,6 +1461,7 @@ def main() {
     draw_session(repo, binary, env, output);
     material_session(repo, binary, env, output);
     transform_session(repo, binary, env, output);
+    select_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

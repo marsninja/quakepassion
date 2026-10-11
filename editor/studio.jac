@@ -97,7 +97,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_stop", "ed_stop", "stop playing and return to the document"),
     (
         "ed_select",
-        "ed_select [serial|solid:<n>|class:<name>|material:<name>|all|brushes|entities|invert] [add]",
+        "ed_select [serial|solid:<n>|class:<name>|material:<name>|all|brushes|entities|invert|parent|child|next|prev|brush <e> [b]] [add]",
         "select an entity, a brush, a class, everything of a kind, the rest, or nothing"
     ),
     ("ed_fold", "ed_fold <class>", "open or close a class in the scene list"),
@@ -158,6 +158,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_keep", "ed_keep [name]", "keep the selection as a named set (the sets, without a name)"),
+    ("ed_recall", "ed_recall <name> [add]", "select a set kept before, alone or added to the selection"),
+    ("ed_forget", "ed_forget <name>", "drop a kept set"),
+    ("ed_swap", "ed_swap", "the two selected things change places"),
+    ("ed_browse", "ed_browse [next|prev]", "look at each selected thing in turn"),
     ("ed_gizmo", "ed_gizmo <move|turn|size|next>", "which handles a selection shows: arrows, rings or boxes"),
     ("ed_pivot", "ed_pivot [x y z | middle | clear]", "what the selection turns and stretches about; a group keeps its own"),
     ("ed_anglesnap", "ed_anglesnap [degrees]", "what a dragged turn snaps to"),
@@ -472,6 +477,14 @@ obj Studio(Workbench) {
         pivot_picks: int = -1,
         # Whether materials go with the faces a move, turn or stretch carries.
         tex_lock: bool = True,
+        # Where the last click was and how deep it went, so another there
+        # goes to what is behind; and where a tour of the selection has got to.
+        click_x: int = -100,
+        click_y: int = -100,
+        click_port: int = -1,
+        click_turn: int = 0,
+        browse_turn: int = -1,
+        browse_picks: int = -1,
         # The group the materials tab shows, and pictures still to load.
         shelf: str = "",
         thumbs: list[str] = [],
@@ -766,6 +779,10 @@ obj Studio(Workbench) {
                     MenuItem(text="Select nothing", command="ed_select", keys="Esc"),
                     MenuItem(rule=True),
                     MenuItem(text="Next entity", command="ed_step next", keys="Tab"),
+                    MenuItem(text="The owner of the selected brushes", command="ed_select parent"),
+                    MenuItem(text="The brushes of the selected entities", command="ed_select child"),
+                    MenuItem(text="Look at each selected in turn", command="ed_browse", keys="N"),
+                    MenuItem(text="Swap the two selected", command="ed_swap"),
                     MenuItem(text="Freeze the selection", command="ed_freeze"),
                     MenuItem(text="Hide the selection", command="ed_hide", keys="H"),
                     MenuItem(text="Hide everything else", command="ed_hide others", keys="Ctrl+H"),
@@ -1578,6 +1595,12 @@ obj Studio(Workbench) {
                     }
                     continue;
                 }
+                if self.mode == "brush" and not (event.ctrl or event.shift) {
+                    # Clicked again in the same place, a click goes to what is behind.
+                    deeper = self.aim_through(event.x, event.y);
+                    found_item = deeper.item;
+                    found_solid = deeper.solid;
+                }
                 words = "ed_select";
                 if found_solid is not None {
                     words += " solid:" + str(found_solid.serial);
@@ -1691,6 +1714,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_rotate 90");
             } elif key == "g" and not ctrl {
                 stage.emit("ed_gizmo next");
+            } elif key == "n" and not ctrl {
+                stage.emit("ed_browse prev" if shift else "ed_browse next");
             } elif ctrl and key == "p" {
                 stage.emit("ed_palette");
             } elif ctrl and key == "h" {
@@ -2324,6 +2349,20 @@ obj Studio(Workbench) {
     def transform_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
+    # Clicks through, kin, sets, the tour and the swap (impl/studio.select.impl.jac)
+
+    """Everything on the line of sight through a point of the view: what a
+    click picks first, then what lies behind it, nearest first."""
+    def aim_all(x: int, y: int) -> list[Aim];
+    """What a click picks: what is in front, or, clicked again in the same
+    place, the next thing behind."""
+    def aim_through(x: int, y: int) -> Aim;
+    """`ed_select parent|child|next|prev|brush`. False for other words."""
+    def select_more(scene: Scene, args: list[str]) -> bool;
+    """Run a set, swap or tour command. False when it is not one."""
+    def selection_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Materials replaced, snapping, lining up, face picks, glue, counts (impl/studio.utility.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -2479,7 +2518,8 @@ obj Studio(Workbench) {
             and not self.library_command(scene, args) and not self.class_command(scene, args)
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
             and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
-            and not self.patch_command(scene, args) and not self.transform_command(scene, args) {
+            and not self.patch_command(scene, args) and not self.transform_command(scene, args)
+            and not self.selection_command(scene, args) {
             self.utility_command(scene, args);
         }
     }
@@ -2490,7 +2530,7 @@ obj Studio(Workbench) {
             scene.select(None);
             return;
         }
-        if self.select_wide(scene, args) {
+        if self.select_wide(scene, args) or self.select_more(scene, args) {
             return;
         }
         if args[1].startswith("solid:") and args[1][6:].isdigit() {
@@ -2613,6 +2653,15 @@ obj Studio(Workbench) {
             "studio: camera " + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z)),
             "studio: view " + str(self.view_area().x) + " " + str(self.view_area().y) + " "
                 + str(self.view_area().w) + " " + str(self.view_area().h) + " of " + str(self.showing()),
+            "studio: sets="
+                + (
+                    ",".join(
+                        [each + ":" + str(len(scene.set_items(each)) + len(scene.set_solids(each)))
+                            for each in scene.set_names]
+                    )
+                    if scene.set_names
+                    else "none"
+                ),
             "studio: handles=" + self.gizmo + " anglesnap=" + str(int(self.angle_snap)) + " texlock="
                 + ("1" if self.tex_lock else "0") + " pivot="
                 + (

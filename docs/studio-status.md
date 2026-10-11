@@ -26,6 +26,23 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   by their outlines, and a shipped map by the edges of its triangles.
 - **A rectangle selects**: a drag that starts on nothing selected draws a
   rectangle in any view and selects what lies in it (Ctrl or Shift adds).
+- **A click goes through**: clicked again in the same place, a click picks
+  what lies behind what it picked before, nearest first, and comes round to
+  the front again. So a brush under another in the top view, or an entity
+  inside a room, is two clicks away.
+- **From the selection to its kin** (Edit menu): the entity that owns the
+  selected brushes (`ed_select parent`), an entity's brushes
+  (`ed_select child`), and the neighbour of the one selected thing in map
+  order (`ed_select next`, `prev`). `ed_select brush <entity> [brush]`
+  picks by number, counted from 0 as a compiler's message counts them.
+- **Sets**: `ed_keep <name>` keeps the selection under a name,
+  `ed_recall <name> [add]` selects it again and `ed_forget <name>` drops
+  it; `ed_keep` alone lists them. A set is saved with the scene's map and
+  comes back with it; what is deleted leaves it, and returns to it when the
+  delete is undone.
+- **N** looks at each selected thing in turn (Shift+N the other way,
+  `ed_browse`), leaving the selection as it is. `ed_swap` has the two
+  selected things change places.
   Ctrl+A selects everything, Ctrl+I the rest, `ed_select material:<name>`
   every brush with a side of that material.
 - **Scene** (left): the map's entities by class. A click selects, a click on
@@ -351,6 +368,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_document_tests.jac`: entity lumps round-trip; selection;
   every edit and its undo; any run of edits undone in full restores the
   document.
+- `tests/studio_select_tests.jac`: sets kept, picked, replaced and dropped;
+  a deleted member leaving a set and coming back with undo; sets written
+  with the map and read from it; the steps to owner, brushes and
+  neighbours; brushes by number; the swap and its undo.
 - `tests/studio_transform_tests.jac`: turns and stretches about a given
   pivot, the texture lock, inflating, a group's own pivot carried through a
   move, a turn and a stretch, and a patch's control points turning and
@@ -436,6 +457,11 @@ editor/impl/                 the workbench's scenes and brushes
   by the knob on its ring, turned to a 45 degree snap, doubled by a size
   handle about its middle and again about a pivot at its corner, inflated,
   and grouped with a pivot of its own that goes where the group goes).
+  `scripts/studio/select_session.cfg` (12 steps: two boxes stacked over the
+  floor clicked through from the top view, one after another and round
+  again; a brush by number; its owner and the owner's brushes; two sets
+  kept, one picked again; a box and the player start swapped; a tour of the
+  two; then the saved map opened again to find its sets).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
