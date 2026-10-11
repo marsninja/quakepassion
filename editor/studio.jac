@@ -69,6 +69,13 @@ import from .classes.registry {
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
+import from .model.mesh { Mesh, mesh_volume, open_edges }
+import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
+import from .model.wavefront { mesh_obj, obj_mesh }
+import from .model.document { ModelDoc, Part, Reshape }
+import from .model.files { doc_from_model, model_of, write_md3, md3_limits, write_md2, md2_limits }
+import from engine.formats.q3.model { parse_md3 }
+import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
 import from .compile.light { bake_light }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
@@ -207,6 +214,17 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    (
+        "ed_model",
+        "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame copy|drop|name] [check] [match] [box] [axes] [undo|redo] [close]",
+        "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
+    ),
+    ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none", "pick points or triangles of the model's part in hand"),
+    (
+        "ed_mesh",
+        "ed_mesh move|turn|scale|mirror|flip|subdivide|extrude ...",
+        "move, turn or stretch the picked points; mirror the part; turn triangles round, cut them in 2, 3 or 4, or push them out"
+    ),
     (
         "ed_sweep",
         "ed_sweep <outline|brush> [wide tall] [count] along <name> | line <points> [closed] | again",
@@ -720,6 +738,13 @@ obj Studio(Workbench) {
         fire_log: list[str] = [],
         breaks: list[str] = [],
         tracing: bool = False,
+        # The model being edited (none when the explorer only shows one),
+        # the revision of it that is drawn, and whether its box and its axes
+        # are drawn with it.
+        model_doc: ModelDoc | None = None,
+        model_seen: int = -1,
+        model_box: bool = False,
+        model_axes: bool = False,
         look_rate: float = 1.0,
         look_flipped: bool = False,
         wheel_rate: float = 1.0,
@@ -1185,7 +1210,11 @@ obj Studio(Workbench) {
                     MenuItem(text="The mouse", command="ed_mouse"),
                     MenuItem(text="Programs kept for files", command="ed_assoc"),
                     MenuItem(text="Open the material's file", command="ed_openwith"),
-                    MenuItem(text="Read image files again", command="ed_reload")
+                    MenuItem(text="Read image files again", command="ed_reload"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Edit the model shown", command="ed_model edit"),
+                    MenuItem(text="Check the model", command="ed_model check"),
+                    MenuItem(text="Undo in the model", command="ed_model undo")
                 ]
             ]
         );
@@ -2424,6 +2453,7 @@ obj Studio(Workbench) {
             for pair in self.model_edges {
                 wire_line(pair[0], pair[1], ink(0xe6dfd4));
             }
+            self.draw_model_marks();
             return;
         }
         self.lens_now = self.lens_of(view);
@@ -2921,6 +2951,24 @@ obj Studio(Workbench) {
     def sweep_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # The model editor (impl/studio.model.impl.jac)
+
+    """Where models named without a path are kept."""
+    def model_path(name: str) -> str;
+    """Show the model being edited in the explorer's model view."""
+    def show_model_doc(reframe: bool);
+    """Show it again if it has changed since it was drawn."""
+    def fresh_model;
+    """Fill the explorer's file panel for the model being edited. False
+    when that is not what the panel shows."""
+    def show_model_form(ui: StudioUi) -> bool;
+    def model_words -> str;
+    """What is picked of the model, its box, its axes and its tags."""
+    def draw_model_marks;
+    """Run a model, pick or mesh command. False when it is not one."""
+    def model_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
 
     """Run a group command. False when it is not one."""
@@ -3143,6 +3191,7 @@ obj Studio(Workbench) {
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
+            and not self.model_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
@@ -3421,6 +3470,9 @@ obj Studio(Workbench) {
                     + str(seen_asset.size) + " note=" + seen_asset.note.replace(" ", "") + " lines="
                     + str(len(seen_asset.lines)) + " material=" + seen_asset.material
             );
+        }
+        if self.model_doc is not None {
+            lines.append(self.model_words());
         }
         if scene.layers_off {
             lines.append("studio: layers off=" + ",".join(sorted(scene.layers_off)));

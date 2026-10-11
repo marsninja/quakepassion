@@ -204,6 +204,36 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **The model editor** (the start of it): a model is edited as a graph of
+  its parts (each a mesh with skins of its own), each part's poses (where
+  its points stand at each frame) and its tags. `ed_model new <kind> [w d
+  h] [sides]` makes one from a primitive (`sphere`, `dome`, `cone`,
+  `bicone`, `cylinder`, `fan`, `torus`), `ed_model add <kind> ...` adds
+  another part, `ed_model edit` takes up the model the explorer is
+  showing (MDL, MD2 or MD3), and `ed_model open <file>` reads an OBJ or
+  MD3 from disk. The model is drawn in the explorer's model view with a
+  panel of its own (frames, undo, check, box, axes and four tools).
+  `ed_pick points|faces <numbers|all> [add]`, `ed_pick front|back` (the
+  triangles that face the view, or away) and `ed_pick none` choose what
+  the tools work on; what is picked is drawn over the model. `ed_mesh
+  move <dx dy dz>`, `turn <x|y|z> <degrees>` and `scale <f>` (or `<fx fy
+  fz>`) move the picked points at the frame in hand, or at every frame
+  with `all`; `ed_mesh mirror <x|y|z>`, `flip`, `subdivide <2|3|4>` and
+  `extrude <distance> [bulk]` change the triangles, and are carried to
+  every pose alike by a walker, so that each frame keeps the same points
+  in the same order. `ed_model frame copy [name]|drop|name <words>`
+  works on the frame in hand (`ed_frame` goes from one to another),
+  `ed_model part <n>` takes another part in hand, `ed_model check` looks
+  for what is wrong (triangles with no area or a corner nowhere, unused
+  points, parts with other frames than the first), `ed_model match`
+  gives every part the first's frames, and `ed_model undo|redo` undo a
+  part's edits whole. `ed_model save <file>` writes an MD3, an MD2 (the
+  parts as one mesh, with a command list for renderers that want one) or
+  an OBJ (the part in hand) under `QP_MODELS`, a project's `models/` or
+  `./models`; the games' files wind triangles the other way round from
+  the editor, and are turned on the way in and out. Not there yet:
+  picking by clicks in the view, drag handles, the skin view and
+  painting, tags made and moved, bones, MDL writing and glTF.
 - **A played game watched**: while a game is played from the studio, what
   fires is counted, by the name it is fired by (or its class and what it
   fires, when it has no name). `ed_fired` says how often each has fired
@@ -715,6 +745,17 @@ editor/impl/                 the workbench's scenes and brushes
   what would mislead refused; an add-on's class lines. (An add-on's
   classes joining the table, replaced when read again and leaving it are
   in `tests/studio_class_tests.jac`.)
+- `tests/studio_mesh_tests.jac`: what a mesh holds, where it is open and
+  what is wrong with it; points and triangles picked by each other and by
+  the way they face; points moved, turned, stretched and mirrored;
+  triangles cut in two, three and four; triangles pushed out with and
+  without bulkheads; every primitive closed, facing outward and filling
+  its box; OBJ text written and read back, and other programs' files read.
+- `tests/studio_model_tests.jac`: a model's parts, poses and frames; a
+  tool that changes the triangles carried to every pose alike; edits
+  undone and redone; picking; a model of several parts checked and its
+  frames matched; MD3 and MD2 written and read back by the engine's own
+  readers, and taken up again as a graph.
 - `tests/studio_extrude_tests.jac`: every outline's pieces within its
   square; a square along a line as a beam of the line's length; stretches
   meeting at a turn on the plane that halves it, with no gap and no
@@ -955,6 +996,12 @@ editor/impl/                 the workbench's scenes and brushes
   and the middle relay changed while held; fired again, the firing
   stopping at the relay switched off; the counts still there after the
   game, and on the logic graph).
+  `scripts/studio/model_session.cfg` (13 steps: an eight-sided cylinder
+  made, closed and holding what one would; its top's triangles picked and
+  pushed out; a second frame with the model higher in it; every triangle
+  cut in four, turned round and that undone; a ball added as a second
+  part; the panel's Cut in 4 and Undo buttons clicked; saved as MD3 and
+  OBJ; closed, and opened again from the MD3 with both parts and frames).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

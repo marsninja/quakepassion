@@ -130,6 +130,10 @@ impl Studio.show_asset(ui: StudioUi) {
         row.clear();
     }
     form.clear();
+    if self.show_model_form(ui) {
+        # The model being edited has the panel.
+        return;
+    }
     seen = self.asset_now;
     if seen is None {
         form.adopt(Label(text="Nothing is shown.", tone="dim"));
@@ -276,6 +280,7 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_frame" or name == "ed_orbit" {
+        self.fresh_model();
         figure = self.model_now;
         if figure is None {
             self.say("Show a model in the explorer first");
@@ -443,10 +448,16 @@ impl Studio.set_frame(frame: int) {
     }
     self.model_frame = max(0, min(frame, figure.frames - 1));
     self.model_edges = figure.edges(self.model_frame);
+    edited = self.model_doc;
+    if edited is not None {
+        # The model being edited goes to the frame the view shows.
+        edited.frame = self.model_frame;
+    }
 }
 
 impl Studio.turn_model(dt: float) {
     ui = self.ui;
+    self.fresh_model();
     figure = self.model_now;
     if ui is None {
         return;

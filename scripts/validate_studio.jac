@@ -1221,6 +1221,94 @@ def steps_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A word of a step's `modeldoc` line: what follows `key=`."""
+def model_word(lines: list[str], key: str) -> str {
+    found = [line for line in lines if line.startswith("modeldoc ")];
+    return found[0].split(" " + key + "=")[1].split()[0] if found and (" " + key + "=") in found[0] else "";
+}
+
+"""The thirty-ninth session: a model made, reshaped, given a frame and a
+second part, checked, saved as MD3 and OBJ, and opened again."""
+def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["new", "marks"];
+    for shot in shots {
+        (repo / f"model_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-model-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/model_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "model.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The model session failed: {output / 'model.log'}";
+        md3 = (Path(home) / "models/tower.md3").read_bytes();
+        wavefront = (Path(home) / "models/tower.obj").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "made", "picked", "extruded", "second", "first", "cut", "inside_out", "righted", "two", "clicked", "unclicked",
+        "closed", "reopened"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'model.log'}";
+    }
+    # An eight-sided cylinder 64 across and 96 tall: closed, and holding what one would.
+    made_now = steps["made"];
+    assert model_word(made_now, "parts") == "1" and model_word(made_now, "points") == "18" and model_word(made_now, "triangles") == "32" , str(
+        made_now
+    );
+    assert model_word(made_now, "open") == "0" and abs(int(model_word(made_now, "volume")) - 278045) <= 2 and model_word(made_now, "high") == "32,32,96";
+    # Its top's eight triangles and their nine points picked, and pushed out 32 on walls.
+    assert model_word(steps["picked"], "picked") == "9/8" , str(steps["picked"]);
+    pushed = steps["extruded"];
+    assert model_word(pushed, "triangles") == "48" and model_word(pushed, "points") == "26" and model_word(pushed, "open") == "0";
+    assert model_word(pushed, "high") == "32,32,128" and abs(int(model_word(pushed, "volume")) - 370727) <= 2 , str(pushed);
+    # A second frame, sixteen higher; the first where it was.
+    assert model_word(steps["second"], "frames") == "2" and model_word(steps["second"], "frame") == "1:raised";
+    assert model_word(steps["second"], "low") == "-32,-32,16" and model_word(steps["second"], "high") == "32,32,144" , str(steps["second"]);
+    assert model_word(steps["first"], "frame").startswith("0:") and model_word(steps["first"], "low") == "-32,-32,0";
+    # Cut in four it holds the same; turned round, less than nothing; undone, the same again.
+    assert model_word(steps["cut"], "triangles") == "192" and model_word(steps["cut"], "open") == "0";
+    assert abs(int(model_word(steps["cut"], "volume")) - 370727) <= 2 and abs(int(model_word(steps["inside_out"], "volume")) + 370727) <= 2;
+    assert abs(int(model_word(steps["righted"], "volume")) - 370727) <= 2 and model_word(steps["righted"], "triangles") == "192";
+    # A ball as a second part, in hand; nothing wrong; both files written.
+    assert model_word(steps["two"], "parts") == "2" and model_word(steps["two"], "part") == "1" and model_word(steps["two"], "triangles") == "48";
+    listed = [line for line in steps["righted"] if line.startswith("part ")];
+    assert len(listed) == 2 and listed[1].endswith("in hand") , str(steps["righted"]);
+    assert "faults 0" in steps["two"] , str(steps["two"]);
+    # The panel's buttons: Cut in 4 on the ball, then Undo.
+    assert model_word(steps["clicked"], "triangles") == "192" and model_word(steps["clicked"], "part") == "1" , str(steps["clicked"]);
+    assert model_word(steps["unclicked"], "triangles") == "48" , str(steps["unclicked"]);
+    assert md3[:4] == b"IDP3" and int.from_bytes(md3[76:80], "little") == 2 and int.from_bytes(md3[84:88], "little") == 2;
+    assert wavefront.startswith("# Written by the QuakePassion studio.") and wavefront.count("\nf ") == 48;
+    # Closed, and opened again from the MD3: both parts and both frames, the second as high as it was.
+    assert not [line for line in steps["closed"] if line.startswith("modeldoc ")];
+    again = steps["reopened"];
+    assert model_word(again, "parts") == "2" and model_word(again, "frames") == "2" and model_word(again, "frame") == "1:raised";
+    assert model_word(again, "triangles") == "192" and model_word(again, "high") == "32,32,144" and model_word(again, "open") == "0" , str(
+        again
+    );
+    for shot in shots {
+        source = repo / f"model_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"model_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"MODEL PASS: {len(steps) - 1} steps, a cylinder made, its top pushed out, a second frame, triangles cut and turned "
+            + "round and that undone, a second part, and the model saved as MD3 and OBJ and opened again"
+    );
+}
+
 """The thirty-eighth session: a played game's firings counted, a firing
 that holds the game, and the live player and signals changed while held."""
 def live_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2889,6 +2977,7 @@ def main() {
         "layers": layers_session,
         "sweep": sweep_session,
         "live": live_session,
+        "model": model_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3030,6 +3119,7 @@ def main() {
     layers_session(repo, binary, env, output);
     sweep_session(repo, binary, env, output);
     live_session(repo, binary, env, output);
+    model_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
