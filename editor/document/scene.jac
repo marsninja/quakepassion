@@ -84,6 +84,25 @@ edge Member: Scene --> Item | Solid {
     has name: str = "";
 }
 
+"""A side of one brush is linked to a side of another: the two are kept in
+one plane, so pushing either pushes both. `side` is which side of the brush
+the edge leaves; the side it reaches is the one that lies in that plane."""
+edge Linked: Solid --> Solid {
+    has side: int = 0;
+}
+
+"""The field that keeps a document's linked faces in a map file."""
+glob LINKS_KEY: str = "_links";
+
+"""Whether two planes are one plane, facing the same way or opposite ways."""
+def planes_meet(first: Plane3, second: Plane3) -> bool {
+    lean = first.normal.dot(second.normal);
+    if abs(lean) < 0.9999 {
+        return False;
+    }
+    return abs(first.dist - (second.dist if lean > 0.0 else -second.dist)) < 0.05;
+}
+
 """One selected face: the brush it is a side of, and which side."""
 edge Faced: Scene --> Solid {
     has side: int = -1;
@@ -1638,15 +1657,66 @@ node Scene {
         return self.commit(Step(label=label, changes=[change]));
     }
 
-    """Move one side of a brush along its normal."""
+    """Move one side of a brush along its normal, and with it every side
+    linked to it."""
     def push_side(solid: Solid, index: int, distance: float) -> bool {
         if index < 0 or index >= len(solid.sides) or distance == 0.0 {
             return False;
         }
-        after = list(solid.sides);
-        after[index] = side_moved(solid.sides[index], solid.sides[index].plane.normal.scale(distance));
-        return self.reshape(solid, after, "Resize");
+        delta = solid.sides[index].plane.normal.scale(distance);
+        tied = self.linked_sides(solid, index);
+        if len(tied) == 0 {
+            after = list(solid.sides);
+            after[index] = side_moved(solid.sides[index], delta);
+            return self.reshape(solid, after, "Resize");
+        }
+        # All of them or none: a brush left with nothing inside stops the push.
+        step = Step(label="Resize");
+        for pick in [FacePick(solid=solid, side=index)] + tied {
+            moved = list(pick.solid.sides);
+            moved[pick.side] = side_moved(pick.solid.sides[pick.side], delta);
+            if not sides_enclose(moved) {
+                for earlier in step.changes {
+                    earlier.undo();
+                }
+                return False;
+            }
+            change = SidesChange(solid=pick.solid, before=pick.solid.sides, after=moved);
+            change.redo();
+            step.changes.append(change);
+        }
+        return self.commit(step);
     }
+
+    # Linked faces, mitred seams and merged corners (impl/scene.links.impl.jac)
+
+    """The side of a brush that lies in a plane (-1 when none does)."""
+    def side_in(solid: Solid, plane: Plane3) -> int;
+    """Every side linked to a side, through however many links: each brush
+    still in the document, with the side of it that is still in the plane."""
+    def linked_sides(solid: Solid, index: int) -> list[FacePick];
+    """Link a side of one brush to a side of another. They must lie in one
+    plane. False when they do not, or are linked already."""
+    def link_sides(first: Solid, index: int, second: Solid, other: int) -> bool;
+    """Take a side out of every link it is in. Answers how many links went."""
+    def unlink_side(solid: Solid, index: int) -> int;
+    """Link the selected faces that lie in one plane with the first of them.
+    Answers how many links were made."""
+    def link_faces -> int;
+    """Link every pair of sides, among these brushes, that lie in one plane
+    facing the same way: the faces a cut left in several pieces. Answers
+    how many links were made."""
+    def link_coplanar(solids: list[Solid]) -> int;
+    """How many links there are between brushes still in the document."""
+    def link_count -> int;
+    """The links as a map file keeps them, and back."""
+    def links_words -> str;
+    def restore_links(words: str, placed: list[Item]);
+    """Cut the two selected brushes on the plane that halves the angle
+    between them where they overlap, so that they meet in a seam."""
+    def miter_selection -> bool;
+    """Move one corner of a brush onto another, leaving one where two were."""
+    def merge_corners(solid: Solid, first: Vec3, second: Vec3) -> bool;
 
     """Cut the selected brushes along a plane, keeping "back", "front" or
     "both"; with both, the new halves join the selection."""
@@ -1995,6 +2065,10 @@ def scene_map(scene: Scene) -> list[MapItem] {
         if len(scene.layers_off) > 0 {
             written[0].fields[LAYERS_KEY] = " ".join(sorted(scene.layers_off));
         }
+        linked = scene.links_words();
+        if linked {
+            written[0].fields[LINKS_KEY] = linked;
+        }
     }
     return written;
 }
@@ -2041,6 +2115,9 @@ def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
             scene.show_layer(name, False);
         }
         first.fields.pop(LAYERS_KEY, None);
+        # And the faces that were linked are linked again.
+        scene.restore_links(first.fields.get(LINKS_KEY, ""), placed);
+        first.fields.pop(LINKS_KEY, None);
         scene.dirty = False;
     }
     return scene;

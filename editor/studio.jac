@@ -162,7 +162,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_rotate", "ed_rotate [degrees] [x|y|z]", "turn the selection about its middle (90 about z without words)"),
     ("ed_mirror", "ed_mirror <x|y|z>", "mirror the selection along an axis through its middle"),
     ("ed_resize", "ed_resize <fx> [fy fz]", "stretch the selection about its middle by a factor along each axis"),
-    ("ed_carve", "ed_carve", "cut the selected brushes out of every other brush they reach"),
+    ("ed_carve", "ed_carve [link]", "cut the selected brushes out of every other brush they reach; with link, the faces the cut divides stay linked"),
     ("ed_intersect", "ed_intersect", "replace the selected brushes with what they all share"),
     ("ed_hollow", "ed_hollow [thickness]", "turn the selected brushes into shells of walls (16 thick)"),
     ("ed_merge", "ed_merge", "join the selected brushes into one, when together they are convex"),
@@ -197,7 +197,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "spread the face pick over the whole brush, to its other faces or across the plane; or step to the next face"
     ),
     ("ed_tag", "ed_tag [clear]", "remember the picked face, to glue brushes against and take its material from; or forget it"),
-    ("ed_glue", "ed_glue [face]", "move the selection against the tagged face, or put the picked face in its plane"),
+    ("ed_glue", "ed_glue [face [link]]", "move the selection against the tagged face, or put the picked face in its plane (and link it to what lies there)"),
     ("ed_paintface", "ed_paintface <brush> <side>", "give one face the material in hand (Alt and a drag, in face mode)"),
     ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
     ("ed_caulk", "ed_caulk [material]", "give the faces the selected brushes cover of each other a material that is not drawn"),
@@ -214,6 +214,9 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    ("ed_facelink", "ed_facelink [clear]", "link the picked faces, or the selected brushes' faces that lie in one plane, so that pushing one pushes all; or take the links away"),
+    ("ed_miter", "ed_miter", "cut the two selected brushes to meet in a seam where they overlap"),
+    ("ed_merge", "ed_merge <x y z> <x y z>", "move a corner of the selected brush onto another of its corners"),
     (
         "ed_model",
         "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame ...] [tag ...] [skin ...] [check] [match] [box] [axes] [undo|redo] [close]",
@@ -1170,7 +1173,12 @@ obj Studio(Workbench) {
                     MenuItem(text="Put the picked face in the tagged plane", command="ed_glue face"),
                     MenuItem(text="Forget the tagged face", command="ed_tag clear"),
                     MenuItem(rule=True),
-                    MenuItem(text="Sweep the sweeps along their paths again", command="ed_sweep again")
+                    MenuItem(text="Sweep the sweeps along their paths again", command="ed_sweep again"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Link the picked faces, or the selected brushes' shared planes", command="ed_facelink"),
+                    MenuItem(text="Take their links away", command="ed_facelink clear"),
+                    MenuItem(text="Carve, keeping divided faces linked", command="ed_carve link"),
+                    MenuItem(text="Mitre the two selected brushes", command="ed_miter")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -2965,6 +2973,13 @@ obj Studio(Workbench) {
     def sweep_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Linked faces, seams and merged corners (impl/studio.links.impl.jac)
+
+    """Run a link, mitre or merge command (and carve or glue with a link).
+    False when it is not one."""
+    def links_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Things dropped in a view (impl/studio.drops.impl.jac)
 
     """Where in the level a point of the view is: what the line of sight
@@ -3209,7 +3224,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.scene_command(scene, args) and not self.tool_command(scene, args)
+        } elif not self.links_command(scene, args) and not self.scene_command(scene, args)
+            and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
             and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
@@ -3501,6 +3517,9 @@ obj Studio(Workbench) {
         }
         if self.model_doc is not None {
             lines.append(self.model_words());
+        }
+        if scene.link_count() > 0 {
+            lines.append("studio: links=" + str(scene.link_count()));
         }
         if scene.layers_off {
             lines.append("studio: layers off=" + ",".join(sorted(scene.layers_off)));

@@ -204,6 +204,24 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Linked faces**: `ed_facelink` links the picked faces that lie in one
+  plane with the first of them, or, with brushes selected and no faces
+  picked, every pair of their sides that lie in one plane facing the same
+  way. Linked sides are kept in one plane: pushing one (a side handle, or
+  `ed_push`) pushes every side tied to it, through however many links, as
+  one step, and not at all if any brush would be left with nothing
+  inside. `ed_facelink clear` takes the picked faces, or every side of
+  the selected brushes, out of their links. `ed_carve link` carves and
+  links the faces the cut divided between the pieces it leaves, and
+  `ed_glue face link` puts the picked face in the tagged plane and links
+  it to what lies there. Links are edges between brushes in the document
+  (a side of one to the side of another that lies in its plane); they are
+  saved with the map (`_links`) and a brush that is deleted drops out of
+  them until it is brought back.
+- **Seams and corners**: `ed_miter` (Brush menu) cuts the two selected
+  brushes, where they overlap, on the plane that halves the angle
+  between them, so that they meet in a seam; `ed_merge <x y z> <x y z>`
+  moves a corner of the selected brush onto another of its corners.
 - **Dragging from the side panels**: a material's picture, a class or a
   prefab is dragged from its tab and let go in a view; its name follows
   the pointer while it is carried. A material lands on the face under the
@@ -767,6 +785,12 @@ editor/impl/                 the workbench's scenes and brushes
   what would mislead refused; an add-on's class lines. (An add-on's
   classes joining the table, replaced when read again and leaving it are
   in `tests/studio_class_tests.jac`.)
+- `tests/studio_links_tests.jac`: planes that are one plane; linked faces
+  pushed together through several links and undone together, and not
+  pushed when any brush would be emptied; a side taken out of its links,
+  a deleted brush dropping out and coming back; the faces a cut left in
+  pieces linked, and links kept in the map; two overlapping brushes cut
+  to a seam; a corner merged onto another.
 - `tests/studio_mesh_tests.jac`: what a mesh holds, where it is open and
   what is wrong with it; points and triangles picked by each other and by
   the way they face; points moved, turned, stretched and mirrored;
@@ -1038,6 +1062,12 @@ editor/impl/                 the workbench's scenes and brushes
   dragged from the Materials tab onto one face of a box; a light dragged
   from the Classes tab onto the floor; a prefab dragged from the Library
   tab onto the top of the box).
+  `scripts/studio/links_session.cfg` (9 steps: two boxes drawn side by
+  side, their four shared planes linked; the top of one pushed and the
+  other's rising with it, undone together; the links taken away; a
+  cutter drawn across a box and carved with links, the two pieces tied
+  on four planes and the map saying so; two walls through one corner cut
+  to a seam; a top corner of a box merged onto the one beneath it).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

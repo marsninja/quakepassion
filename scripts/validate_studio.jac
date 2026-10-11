@@ -1309,6 +1309,72 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The forty-second session: faces linked and pushed together, a carve
+that keeps divided faces linked, a mitred seam and a merged corner."""
+def links_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["miter", "merged"];
+    for shot in shots {
+        (repo / f"links_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-links-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/links_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "links.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The links session failed: {output / 'links.log'}";
+        saved = (Path(home) / "scenes/joined.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["both", "linked", "pushed", "unpushed", "cleared", "carved", "walls", "mitred", "merged"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'links.log'}";
+    }
+    count = links_counted(steps["linked"]);
+    # Two boxes side by side share four planes: linked, the top of one pushed lifts the other's.
+    assert "linked 4 total=4" in steps["both"] and count == 4 , str(steps["both"]);
+    lifted = brushes(steps["pushed"]);
+    assert len(lifted) == 1 and brush_box(lifted[0])[1][2] == 96 and brush_box(lifted[0])[0][0] == 40 , str(lifted);
+    back = brushes(steps["unpushed"]);
+    assert len(back) == 1 and brush_box(back[0])[1][2] == 64 , str(back);
+    assert "linked 4 total=0" in steps["unpushed"] and links_counted(steps["cleared"]) == 0 , str(steps["unpushed"]);
+    # Carved in two with links: the two pieces keep their four divided faces as one, and the map says so.
+    assert "carved pieces=2 linked=4 total=4" in steps["cleared"] , str(steps["cleared"]);
+    assert links_counted(steps["carved"]) == 4 and '"_links" "' in saved , str(steps["carved"]);
+    # Two walls through one corner: each gains the seam as a seventh side, as one step.
+    before = brushes(steps["walls"]);
+    after = brushes(steps["mitred"]);
+    assert len(before) == 2 and len(after) == 2 and " sides=6 " in before[0] and " sides=6 " in before[1] , str(before);
+    assert " sides=7 " in after[0] and " sides=7 " in after[1] , str(after);
+    assert brush_box(after[0]) == brush_box(before[0]) and brush_box(after[1]) == brush_box(before[1]);
+    # A top corner moved onto the one beneath: the box keeps its extent and its top is two faces.
+    merged = brushes(steps["merged"]);
+    assert len(merged) == 1 and " sides=7 " in merged[0] and brush_box(merged[0]) == [[40, 112, 0], [232, 208, 64]] , str(merged);
+    for shot in shots {
+        source = repo / f"links_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"links_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"LINKS PASS: {len(steps) - 1} steps, two boxes' shared planes linked and pushed together, a carve keeping "
+            + "divided faces linked, two walls mitred and a corner merged"
+    );
+}
+
+"""How many links a step's dump counts (none when it has no line for them)."""
+def links_counted(lines: list[str]) -> int {
+    found = [line for line in lines if line.startswith("links=")];
+    return int(found[0][6:]) if found else 0;
+}
+
 """The forty-first session: a material, a class and a prefab dragged from
 the side panels and dropped in the view."""
 def drop_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3115,6 +3181,7 @@ def main() {
         "model": model_session,
         "rig": rig_session,
         "drop": drop_session,
+        "links": links_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3259,6 +3326,7 @@ def main() {
     model_session(repo, binary, env, output);
     rig_session(repo, binary, env, output);
     drop_session(repo, binary, env, output);
+    links_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
