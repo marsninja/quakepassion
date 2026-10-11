@@ -108,6 +108,9 @@ import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
 import from .project { Project, MANIFEST_NAME, read_project, write_project, addon_classes, file_name }
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
+import from .compile.navigation { Floor, Way, floor_ways, floor_middle, nav_data, ways_count, route_time, NAV_STEP }
+import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
+import from engine.formats.aas { TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate {
@@ -278,6 +281,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    (
+        "ed_nav",
+        "ed_nav [bake [cell] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
+        "navigation for bots: bake the built scene's floors into the areas and ways the games' bots route over, check what can be reached, and draw the ways"
+    ),
     (
         "ed_window",
         "ed_window [list] | new [outlines] | close <n|all> | <n> outlines|solid | <n> at <x> <y> [w h] | <n> cam <x y z> [yaw pitch] | <n> here",
@@ -670,6 +678,15 @@ obj Studio(Workbench) {
         ports: list[Port] = [],
         # How many floating windows have been opened, to number the next.
         floats_made: int = 0,
+        # Navigation baked for the scene: its floors, the ways between
+        # them, the grid they are on, the engine's mesh, and whether the
+        # ways are drawn.
+        nav_floors: list[Floor] = [],
+        nav_ways: list[Way] = [],
+        nav_origin: Vec3 = Vec3(),
+        nav_cell: float = 32.0,
+        nav_mesh: NavMesh | None = None,
+        nav_shown: bool = False,
         # The part of a view its overlays are drawn in, when a floating
         # window covers the rest (the whole of it when this has no size).
         over_piece: Rect = Rect(),
@@ -1365,7 +1382,11 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="What fired in the last game", command="ed_fired"),
                     MenuItem(text="Name each firing as it happens", command="ed_trace"),
-                    MenuItem(text="Firings that hold the game", command="ed_break")
+                    MenuItem(text="Firings that hold the game", command="ed_break"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Bake navigation for bots", command="ed_nav bake"),
+                    MenuItem(text="What the baked navigation cannot reach", command="ed_nav check"),
+                    MenuItem(text="Draw the baked ways", command="ed_nav show")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -2703,6 +2724,7 @@ obj Studio(Workbench) {
         }
         self.draw_paths();
         self.draw_camps();
+        self.draw_nav();
         self.draw_entity_models(scene);
         for shape in chosen {
             if self.moving {
@@ -3324,6 +3346,22 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Navigation for bots, baked (impl/studio.nav.impl.jac)
+
+    """Run a navigation command. False when it is not one."""
+    def nav_command(scene: Scene, args: list[str]) -> bool;
+    """The places to stand in the built scene, sampled on a grid: floor
+    under the whole of a cell and room for a head over it."""
+    def nav_floors_of(scene: Scene, cell: float) -> list[Floor];
+    """Of the ways the floors' heights allow, those nothing stands in."""
+    def nav_clear_ways(floors: list[Floor], ways: list[Way], cell: float) -> list[Way];
+    """What is baked, as a line of the dump; the ways drawn in a view; and
+    what cannot be reached from the first player start."""
+    def nav_words -> str;
+    def draw_nav;
+    def nav_findings(scene: Scene) -> list[Finding];
+
+    # ------------------------------------------------------------------
     # Floating 3D windows (impl/studio.windows.impl.jac)
 
     """Run a window command. False when it is not one."""
@@ -3616,6 +3654,7 @@ obj Studio(Workbench) {
             and not self.model_command(scene, args) and not self.skin_command(scene, args)
             and not self.bone_command(scene, args) and not self.figure_command(scene, args)
             and not self.district_command(scene, args) and not self.window_command(scene, args)
+            and not self.nav_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
@@ -3909,6 +3948,9 @@ obj Studio(Workbench) {
         }
         for window_line in self.window_lines() {
             lines.append(window_line);
+        }
+        if self.nav_mesh is not None {
+            lines.append(self.nav_words());
         }
         handles_line = self.lay_line(scene);
         if handles_line {

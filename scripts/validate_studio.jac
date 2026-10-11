@@ -1880,6 +1880,66 @@ def float_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A `nav` line's numbers by key."""
+def nav_words(line: str) -> dict[str, int] {
+    return {word.split("=")[0]: int(word.split("=")[1]) for word in line.split()[1:] if "=" in word};
+}
+
+"""The fifty-seventh session: navigation for bots, baked."""
+def nav_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "nav_baked.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-nav-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/nav_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "nav.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The nav session failed: {output / 'nav.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["built", "baked", "checked", "coarse", "cleared"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'nav.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: nav")];
+    # Nothing is baked for a shipped level, nor for a scene until it is asked for.
+    assert said[0] == "nav none" and said[1] == "nav none" , str(said[:3]);
+    # A floor 512 square in cells of 32 is sixteen by sixteen: the two boxes' tops stand in for the
+    # floor under them, so the places to stand are as many as that.
+    baked = nav_words([line for line in steps["baked"] if line.startswith("nav cell=")][0]);
+    assert baked["cell"] == 32 and baked["floors"] == 256 and baked["areas"] == 256 and baked["shown"] == 1 , str(baked);
+    # Each box is two cells by two, with eight ways across its edge: the low one is jumped onto and
+    # dropped from, the tall one only dropped from; everything else is walked.
+    assert baked["jump"] == 8 and baked["drop"] == 16 and baked["walk"] + 24 == baked["ways"] and baked["walk"] > 800 , str(baked);
+    routes = [int(line.split("time=")[1]) for line in said if line.startswith("nav route ")];
+    assert len(routes) == 5 , str(routes);
+    # Across the floor there is a way; up the tall box none, down from it one; onto the low box one,
+    # longer than the walk; and none to a place off the level.
+    assert routes[0] > 0 and routes[1] == -1 and routes[2] > 0 and routes[3] > routes[0] and routes[4] == -1 , str(routes);
+    # Of two things added, the one on the tall box cannot be reached.
+    lost = [line for line in said if line.startswith("nav lost ")];
+    assert "nav checked lost=1" in said and len(lost) == 1 and "info_notnull" in lost[0] and "cannot be reached" in lost[0] , str(lost);
+    # A coarser bake: cells of 64, fewer places and ways.
+    coarse = nav_words([line for line in steps["coarse"] if line.startswith("nav cell=")][0]);
+    assert coarse["cell"] == 64 and 40 < coarse["floors"] < 70 and coarse["ways"] < baked["ways"] and coarse["jump"] == 4 , str(coarse);
+    # Forgotten: nothing is baked, and there is nothing to ask the way of.
+    assert said[-1] == "nav none" and not [line for line in steps["cleared"] if line.startswith("nav ")];
+    source = repo / "nav_baked.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "nav_baked.png");
+    source.unlink();
+    print(
+        f"NAV PASS: {len(steps) - 1} steps, {baked['floors']} places to stand and {baked['ways']} ways baked, routes found "
+            + "by the engine's router, one thing out of reach named"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4234,6 +4294,7 @@ def main() {
         "figure": figure_session,
         "district": district_session,
         "float": float_session,
+        "nav": nav_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4405,6 +4466,7 @@ def main() {
     figure_session(repo, binary, env, output);
     district_session(repo, binary, env, output);
     float_session(repo, binary, env, output);
+    nav_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

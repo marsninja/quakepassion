@@ -160,6 +160,24 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_cells` (Play menu) draws the cells in every view: the one looked
   from in yellow (where the 3D camera is, or where a lone selected entity
   stands), the cells it sees in green, the rest in red.
+- **Navigation for bots, baked** (`ed_nav bake [cell]`, Play menu): the
+  games' bots route over areas and the ways between them, read from an
+  arena's own file; a scene made here has none, so its floors are
+  sampled on a grid (cells of 32 units unless told otherwise): a place
+  to stand wherever there is floor under the whole of a cell and room
+  for a head over it, on up to four storeys. Neighbouring places are
+  joined by a way that is walked (a step of 18 or less), jumped up (a
+  ledge of 44 or less) or dropped down (a fall of 256 or less), where
+  nothing stands between them. The result is the engine's own
+  navigation data and mesh, so its own router answers: `ed_nav route
+  <from> <to>` says how long the way is, or that there is none, and
+  `ed_nav check` names what cannot be reached from the first player
+  start (they join the Checks tab's findings). `ed_nav show` draws the
+  ways: walked green, jumped yellow, dropped red. `ed_nav clear`
+  forgets it. Not there yet: the mesh is not handed to the bots of a
+  game played from the scene, it is not written as an arena's file, and
+  it knows floors only (no ladders, water, lifts, jump pads or
+  teleporters).
 - **A bake is worked out once**: a level is compiled afresh every time it
   is loaded, since a game played in it writes on it, but its light and its
   cells are kept apart under a mark of what it was built of (the scene's
@@ -1120,6 +1138,11 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_navigation_tests.jac`: ways between neighbouring floors by
+  their heights; floors as areas with ways out and a tree that places a
+  point (stacked floors, off the grid, under the floor); and the
+  engine's router over the result: round by a bridge, cut off without
+  it, down a ledge and not up it, onto a low one at a cost.
 - `tests/studio_compile_tests.jac`: a compiled scene's models, faces and
   entities, and that it prepares as a level that holds the player up;
   lamps, shadows and the lightmap a light gives the world.
@@ -1293,6 +1316,11 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/nav_session.cfg` (5 steps: nothing baked for a shipped
+  level; a floor with a tall box and a low one baked into 256 places to
+  stand; ways across the floor, none up the tall box, a drop from it, a
+  jump onto the low one, none off the level; of two things added the
+  one on the tall box named as out of reach; a coarser bake; forgotten).
   `scripts/studio/bake_session.cfg` (5 steps: a hall with a wall across
   its middle opened from a map, cut into thirty cells of which some are
   out of sight of others; played from one side of the wall, 32 faces are
@@ -1450,7 +1478,7 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   they fire in play; a scene too large for the light budget stays flat.
 - Not yet built: the rest of the bake (a partition by the brushes' own
   planes with portals between its leaves, in place of cells of the plan;
-  bounced light; bot navigation); patches written back as
+  bounced light); patches written back as
   `patchDef2`; the Passion tools; user walkers.
 - Within the shell: generated (Passion) levels can be edited but not saved as
   they are (`ed_convert` is meant to turn one into a scene, but expeditions

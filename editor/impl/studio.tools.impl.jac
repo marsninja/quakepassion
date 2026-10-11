@@ -364,6 +364,10 @@ impl Studio.check(scene: Scene, args: list[str]) {
     for stray in self.game_findings(scene) {
         self.findings.append(stray);
     }
+    for lost in self.nav_findings(scene) {
+        # What the baked navigation says cannot be reached.
+        self.findings.append(lost);
+    }
     # Materials named as a game's that no archive holds draw as swatches.
     stock = self.archive;
     if stock is not None {
