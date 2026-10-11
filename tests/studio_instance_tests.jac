@@ -1,7 +1,9 @@
 import from engine.math.vec3 { Vec3 }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { box_sides, brush_windings, windings_bounds }
-import from editor.document.generate { map_box, prefab_placed, prefab_change, prefab_yaw, map_remapped, with_prefabs }
+import from editor.document.generate {
+    map_box, prefab_placed, prefab_change, prefab_yaw, prefab_turns, map_remapped, with_prefabs
+}
 import from editor.geometry.linear { linear_turn }
 
 def about(a: float, b: float) -> bool {
@@ -88,4 +90,27 @@ test "instances within a prefab are turned and sized where they stand in it" {
     moved = map_remapped(bench(), Vec3(x=32.0, y=0.0, z=0.0), linear_turn(0, 1, 90.0), 90.0);
     assert moved[2].fields["origin"] == "32 -64 8" and moved[1].fields["origin"] == "32 0 8";
     assert map_box(moved) is not None;
+}
+
+test "an instance is tipped nose down and rolled about its length, as its angles say" {
+    assert prefab_turns({"angle": "90"}) == [0.0, 90.0, 0.0] and prefab_turns({"angles": "30 90 15", "angle": "45"}) == [30.0, 90.0, 15.0];
+    assert prefab_turns({"angles": "30 north 15", "angle": "45"}) == [0.0, 45.0, 0.0] and prefab_turns({"angles": "30 90"}) == [0.0, 0.0, 0.0];
+    assert prefab_yaw({"angles": "30 90 15"}) == 90.0;
+    # Nose down a quarter: what lay along x hangs down from the origin, and its top faces along x.
+    down = prefab_placed(bench(), {"classname": "misc_prefab", "origin": "0 0 0", "angles": "90 0 0"});
+    box = seat_box(down);
+    assert about(box[0].x, 0.0) and about(box[1].x, 8.0) and about(box[0].y, -8.0) and about(box[1].y, 8.0);
+    assert about(box[0].z, -32.0) and about(box[1].z, 32.0);
+    assert down[1].fields["origin"] == "8 0 -32";
+    # Rolled a quarter: its depth stands up, its top faces the other side.
+    over = prefab_placed(bench(), {"classname": "misc_prefab", "origin": "0 0 0", "angles": "0 0 90"});
+    box = seat_box(over);
+    assert about(box[0].x, -32.0) and about(box[1].x, 32.0) and about(box[0].y, -8.0) and about(box[1].y, 0.0);
+    assert about(box[0].z, -8.0) and about(box[1].z, 8.0);
+    # Pitched and then turned round: nose down first, so it still hangs straight down.
+    both = prefab_placed(bench(), {"classname": "misc_prefab", "origin": "0 0 0", "angles": "90 90 0"});
+    box = seat_box(both);
+    assert about(box[0].z, -32.0) and about(box[1].z, 32.0) and about(box[0].y, 0.0) and about(box[1].y, 8.0) and about(box[0].x, -8.0);
+    # The entities inside face only as much further round as the instance is turned about the upright.
+    assert both[1].fields["angle"] == "90" and down[1].fields["angle"] == "0";
 }

@@ -462,7 +462,7 @@ impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
     first = chosen[0];
     told: dict[str, str | None] = {};
     if how == "plain" {
-        told = {"_swap": None, "_put": None, "_names": None, "_scale": None, "angle": None};
+        told = {"_swap": None, "_put": None, "_names": None, "_scale": None, "angle": None, "angles": None};
     } elif how == "turn" and len(args) > 2 {
         # Round the upright through where it stands, by so much more.
         try {
@@ -471,7 +471,20 @@ impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
             self.say("ed_prefab turn <degrees>");
             return True;
         }
-        told = {"angle": instance_number((prefab_yaw(first.fields) + more) % 360.0)};
+        about = args[3] if len(args) > 3 else "yaw";
+        if about not in ["pitch", "yaw", "roll"] {
+            self.say("ed_prefab turn <degrees> [pitch|roll]: round the upright, or tipped nose down, or rolled about its length");
+            return True;
+        }
+        tipped = prefab_turns(first.fields);
+        place = ["pitch", "yaw", "roll"].index(about);
+        tipped[place] = (tipped[place] + more) % 360.0;
+        if tipped[0] == 0.0 and tipped[2] == 0.0 {
+            # Only round the upright: the one number every entity has.
+            told = {"angle": instance_number(tipped[1]) if tipped[1] != 0.0 else None, "angles": None};
+        } else {
+            told = {"angles": " ".join([instance_number(turn) for turn in tipped]), "angle": None};
+        }
     } elif how == "scale" and len(args) > 2 {
         sizes: list[float] = [];
         for word in args[2:5] {
@@ -502,7 +515,7 @@ impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
     } elif how == "names" and len(args) > 2 {
         told = {"_names": args[2]};
     } else {
-        self.say("ed_prefab swap <old> <new> | put <classname|name> <key> <value> | names <word> | turn <degrees> | scale <times>|<x y z> | plain");
+        self.say("ed_prefab swap <old> <new> | put <classname|name> <key> <value> | names <word> | turn <degrees> [pitch|roll] | scale <times>|<x y z> | plain");
         return True;
     }
     if not scene.set_fields(told, "Prefab instance") {

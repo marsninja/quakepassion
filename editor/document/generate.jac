@@ -448,8 +448,9 @@ def with_prefabs(items: list[MapItem], inner: dict[str, list[MapItem]]) -> list[
 
 """How an instance of a prefab turns and sizes what it stands for: `_scale`
 times as large (one number, or three for x, y and z; a negative one
-mirrors), and then turned `angle` degrees about the upright. None when it
-does neither, or when its size would flatten what it holds."""
+mirrors), and then turned: rolled about its length, pitched nose down, and
+turned about the upright, as its `angles` or its `angle` says. None when
+it does neither, or when its size would flatten what it holds."""
 def prefab_change(fields: dict[str, str]) -> Linear | None {
     factors = Vec3(x=1.0, y=1.0, z=1.0);
     numbers: list[float] = [];
@@ -469,19 +470,44 @@ def prefab_change(fields: dict[str, str]) -> Linear | None {
     if abs(factors.x * factors.y * factors.z) < 0.000001 {
         return None;
     }
-    change = linear_size(factors).followed(linear_turn(0, 1, prefab_yaw(fields)));
+    turns = prefab_turns(fields);
+    # As the games turn a thing: rolled (y toward z), then pitched nose down (x toward -z), then round.
+    change = linear_size(factors).followed(linear_turn(1, 2, turns[2])).followed(linear_turn(0, 2, -turns[0])).followed(
+        linear_turn(0, 1, turns[1])
+    );
     return None if change.idle() else change;
 }
 
-"""The degrees an instance is turned about the upright (its `angle`)."""
-def prefab_yaw(fields: dict[str, str]) -> float {
+"""The turns an instance asks for, in degrees: [pitch, yaw, roll]. Its
+`angles` says all three, in that order as the games write them; without
+one its `angle` is the turn about the upright."""
+def prefab_turns(fields: dict[str, str]) -> list[float] {
+    words = fields.get("angles", "").split();
+    if len(words) == 3 {
+        said: list[float] = [];
+        for word in words {
+            try {
+                said.append(float(word));
+            } except ValueError {
+                break;
+            }
+        }
+        if len(said) == 3 {
+            return said;
+        }
+    }
     try {
         turned = float(fields.get("angle", "0").strip());
     } except ValueError {
-        return 0.0;
+        return [0.0, 0.0, 0.0];
     }
     # Up and down are ways for a thing to face, not turns of what it holds.
-    return turned if turned >= 0.0 else 0.0;
+    return [0.0, turned if turned >= 0.0 else 0.0, 0.0];
+}
+
+"""The degrees an instance is turned about the upright."""
+def prefab_yaw(fields: dict[str, str]) -> float {
+    return prefab_turns(fields)[1];
 }
 
 """A map's entities and brushes carried through a change of the world about
