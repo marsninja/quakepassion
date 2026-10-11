@@ -185,7 +185,7 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_assetfind" {
-        self.asset_filter = args[1].strip().lower() if len(args) > 1 else "";
+        self.asset_filter = " ".join(args[1:]).strip().lower();
         self.folds += 1;
         return True;
     }

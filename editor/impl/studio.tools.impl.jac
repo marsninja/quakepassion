@@ -276,7 +276,8 @@ def:priv numbers_in(words: list[str]) -> list[float] {
 impl Studio.fill_gallery(ui: StudioUi) {
     scene = self.scene;
     shelf = self.archive;
-    wanted = self.material_filter.lower();
+    asked = search_of(self.material_filter);
+    wanted = " ".join(asked.words);
     names: list[str] = [];
     if (not self.shelf or self.shelf == "scene" or shelf is None) {
         names.append("blockout");
@@ -305,9 +306,18 @@ impl Studio.fill_gallery(ui: StudioUi) {
         names = list(shelf.names(self.shelf));
     }
     tiles: list[Tile] = [];
+    sized = 0;
     for name in names {
         if wanted and wanted not in name.lower() {
             continue;
+        }
+        if asked.size {
+            # Only those of the size asked for: each is read to know its size.
+            picture = self.materials.texture(name);
+            if not size_fits(asked.size, picture.width, picture.height) {
+                continue;
+            }
+            sized += 1;
         }
         tiles.append(Tile(key=name, text=name.split("/")[-1].split(":")[-1], picked=name == self.material));
         if not self.canvas.has_picture(name) and name not in self.thumbs {
@@ -315,6 +325,12 @@ impl Studio.fill_gallery(ui: StudioUi) {
         }
     }
     ui.gallery.tiles = tiles;
+    if not asked.size {
+        self.sized_shown = -1;
+    } elif sized != self.sized_shown {
+        self.sized_shown = sized;
+        print("studio: sized " + asked.size + " shown=" + str(sized) + " of " + str(len(names)));
+    }
 }
 
 impl Studio.load_thumbs {

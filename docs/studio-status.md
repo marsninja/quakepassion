@@ -1012,6 +1012,21 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   in `/`. The new archive is written beside the old and put in its
   place. One of an installed game's own archives is refused: copy it and
   change the copy.
+- **Finding**: `ed_assetfind` takes more than words: `kind:<image|text|
+  sound|model|map>` for the kind of file, `game:<q1|q2|q3>` for the game,
+  and `tag:<word>` for a tag, in any order beside the words every name
+  must hold (`ed_assetfind metal kind:image game:q2`). A tag is a word
+  hung on the file the explorer shows, to find it by again: `ed_assettag
+  <word>` hangs one, `ed_assettag drop <word>` takes it off, `ed_assettag
+  list` names every tagged file; they are kept in `asset_tags.txt` beside
+  the studio's settings. The Materials tab's filter takes a size beside
+  its words (`ed_matfilter size:64x64`, `size:64` for either side,
+  `size:>=128` or `size:<=32` for the longer side): each texture of the
+  shelf is read for its size. `ed_texinfo [material]` says what there is
+  to know of a texture: its size, a Quake II texture's flags and contents
+  by name with its value and the texture that follows it, how many
+  frames it is one of, whether a script draws a Quake III one, and how
+  many colours it uses and how many of its texels are clear.
 - **WADs**: a WAD among a game's files (Quake's `gfx.wad`) is a folder of
   its lumps in the explorer as well as a file. A lump that is a picture
   (its size before its texels) is shown as one, the console's letters as
@@ -1241,6 +1256,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_finding_tests.jac`: a search read from what is typed and
+  answered by a file's name, kind, game and tags; a size asked exactly,
+  by one side and by the longer side; tags hung, taken off and kept as
+  text; a picture's colours counted.
 - `tests/studio_repack_tests.jac`: a PAK's files read out, one put in
   place of another or added, one and a folder dropped, and read again by
   the engine; the same of a PK3 on disk; a WAD's lumps as files inside
@@ -1450,6 +1469,13 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/finding_session.cfg` (11 steps: 230 of Quake II's
+  pictures named for metal, ten sounds named for a menu, one soldier
+  among Quake's models, and nothing of a kind that is none; two files
+  tagged with one word found by it, one of them when a kind is asked too,
+  and none by a tag taken off; a texture of each game told of; 42 of a
+  level's 81 textures at 64 by 64, and eight named for tech and 128 or
+  more).
   `scripts/studio/repack_session.cfg` (6 steps: the status bar and the
   console's letters shown from Quake's `gfx.wad`, the first written out;
   a PAK made of three files, one replaced and a folder dropped; a PK3 the

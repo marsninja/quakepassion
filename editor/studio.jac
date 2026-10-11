@@ -73,6 +73,7 @@ import from .ui.widgets {
     ColourBars
 }
 import from .assets.explorer { AssetIndex, AssetLook }
+import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
@@ -456,7 +457,9 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_stats", "ed_stats [file]", "count what the document holds, or write the materials it uses to a file"),
     ("ed_step", "ed_step <next|prev>", "select the entity after, or before, the selected one"),
     ("ed_freeze", "ed_freeze [on|off]", "keep clicks in the level from changing the selection, or let them"),
-    ("ed_assetfind", "ed_assetfind <text>", "list the files of every game whose names hold some text"),
+    ("ed_assetfind", "ed_assetfind <words> [kind:<image|text|sound|model|map>] [game:<q1|q2|q3>] [tag:<word>]", "list the files of every game whose names hold the words, of a kind, of a game, or with a tag"),
+    ("ed_assettag", "ed_assettag <word> | drop <word> | list", "hang a word on the file the explorer shows, to find it by again; or take one off; or list every tagged file"),
+    ("ed_texinfo", "ed_texinfo [material]", "what there is to know of a texture: its size, its flags and contents, its frames, the colours it uses"),
     (
         "ed_patch",
         "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n> | uv [fit [n [m]] | project | point <col> <row> <s> <t> | row <n> <ds> <dt> | col <n> <ds> <dt> | all <ds> <dt> | clear]",
@@ -478,7 +481,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_material", "ed_material <name> [side] | recent", "set the material of the selected brushes, and of new ones; or list those lately in hand"),
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
-    ("ed_matfilter", "ed_matfilter <text>", "show only matching materials in the materials list"),
+    ("ed_matfilter", "ed_matfilter <text> [size:<WxH|N|>=N|<=N>]", "show only matching materials in the materials list, and only those of a size"),
     (
         "ed_layout",
         "ed_layout <1|2|3|4|4b|logic|assets>",
@@ -852,6 +855,9 @@ obj Studio(Workbench) {
         model_smooth: bool = False,
         model_between: int = 0,
         bits_game: str = "q2",
+        asset_tags: dict[str, list[str]] = {},
+        tags_read: bool = False,
+        sized_shown: int = -1,
         model_backs: bool = True,
         model_ticks: float = 0.0,
         model_playing: bool = False,
@@ -3422,6 +3428,9 @@ obj Studio(Workbench) {
     they share). False when it is not one."""
     def playview_command(scene: Scene, args: list[str]) -> bool;
     def archive_command(scene: Scene, args: list[str]) -> bool;
+    def finding_command(scene: Scene, args: list[str]) -> bool;
+    def tags_path -> str;
+    def read_tags;
     """The edges of a frame as they are to be drawn: all, or those of the
     triangles that face the eye."""
     def shown_edges(frame: int) -> list[list[Vec3]];
@@ -3735,7 +3744,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.archive_command(scene, args) and not self.playview_command(scene, args)
+        } elif not self.finding_command(scene, args) and not self.archive_command(scene, args)
+            and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)
             and not self.scene_command(scene, args)

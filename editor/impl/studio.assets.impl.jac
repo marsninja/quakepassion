@@ -38,11 +38,13 @@ impl Studio.list_assets(ui: StudioUi) {
     seen = self.asset_now;
     titles = {"q1": "Quake", "q2": "Quake II", "q3": "Quake III Arena"};
     if self.asset_filter {
-        # A search: every file whose name holds the text, flat, a few hundred at most.
+        # A search: every file that answers it, flat, a few hundred at most.
+        self.read_tags();
+        asked = search_of(self.asset_filter);
         hits = 0;
         for game in known.games() {
             for name in known.names(game) {
-                if self.asset_filter not in name.lower() {
+                if not name_found(asked, game, name, self.asset_tags.get(game + ":" + name, [])) {
                     continue;
                 }
                 if hits >= 400 {

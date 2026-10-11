@@ -896,7 +896,7 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_matfilter" {
-        self.material_filter = args[1] if len(args) > 1 else "";
+        self.material_filter = " ".join(args[1:]).strip();
         self.materials_changed += 1;
         return True;
     }
@@ -961,7 +961,8 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
 
 impl Studio.list_materials(ui: StudioUi) {
     rows: list[TreeRow] = [];
-    wanted = self.material_filter.lower();
+    # The words of the filter; what it says of size is the gallery's to answer.
+    wanted = " ".join(search_of(self.material_filter).words);
     rows.append(
         TreeRow(key="scene", text="in this scene", picked=self.shelf == "scene" or not self.shelf, tone="accent")
     );

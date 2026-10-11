@@ -2494,6 +2494,85 @@ def repack_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     );
 }
 
+"""The sixty-sixth session: files found by kind, game and tag, a texture's details, materials of a size."""
+def finding_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    kept = "";
+    with tempfile.TemporaryDirectory(prefix="qp-finding-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/finding_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "finding.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The finding session failed: {output / 'finding.log'}";
+        kept = (Path(home) / "overrides/asset_tags.txt").read_text();
+    }
+    # What a command prints comes before the step that follows it: gathered here under that step.
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    names = [
+        "pictures", "sounds", "models", "nothing", "tagged", "tagged_models", "untagged", "known", "square", "large", "all"
+    ];
+    for name in names {
+        assert name in said , f"The session never reached '{name}': {output / 'finding.log'}";
+    }
+    found: dict[str, int] = {};
+    for name in ["pictures", "sounds", "models", "nothing", "tagged", "tagged_models", "untagged"] {
+        counts = [int(line.split()[1]) for line in said[name] if line.startswith("found ")];
+        assert len(counts) >= 1 , f"No search answered at '{name}'";
+        found[name] = counts[-1];
+    }
+    # Quake II's pictures named for metal are many; sounds named for a menu a few; Quake has one model
+    # named for a soldier; and a kind that is none finds nothing.
+    assert found["pictures"] > 50 and 1 <= found["sounds"] < 40 and found["models"] == 1 and found["nothing"] == 0 , str(found);
+    # Two files tagged with one word are found by it, one of them when a kind is asked as well; the
+    # tag taken off is found on nothing. A tag of more than a word was not kept.
+    assert found["tagged"] == 2 and found["tagged_models"] == 1 and found["untagged"] == 0 , str(found);
+    assert kept == "q1:progs/soldier.mdl grunt\nq2:textures/e1u1/metal1_1.wal grunt\n" , kept;
+    assert "tags q2:textures/e1u1/metal1_1.wal grunt trim" in said["tagged"] and "tagged q1:progs/soldier.mdl grunt" in said["tagged"];
+    # A texture of each game: Quake II's with its flags and contents by name, Quake's sliding
+    # texture as one of seven frames, a plain one as one, Quake III's by its true size.
+    facts: dict[str, str] = {};
+    for line in said["known"] {
+        if line.startswith("texinfo ") {
+            facts[line.split()[1]] = line;
+        }
+    }
+    assert len(facts) == 4 , str(facts);
+    assert " size=64x64 flags=none contents=none value=0 next=none frames=1 colours=" in facts["q2:e1u1/metal1_1"] , str(facts);
+    assert " size=64x64 frames=7 colours=" in facts["q1:e1m1/+0slip"] and " size=128x16 frames=1 " in facts["q1:e1m1/tech04_1"];
+    assert " size=256x512 shader=" in facts["q3:textures/base_wall/archpipe2_k_tall3fin"] , str(facts);
+    assert 1 < int(facts["q1:e1m1/tech04_1"].split("colours=")[1].split()[0]) <= 256;
+    # The level's textures of one size are some of them, and those named for tech and large are fewer.
+    square = [line for line in said["square"] if line.startswith("sized 64x64 ")];
+    large = [line for line in said["large"] if line.startswith("sized >=128 ")];
+    assert len(square) >= 1 and len(large) >= 1 , str(said["square"]);
+    whole = int(square[-1].split(" of ")[1]);
+    some = int(square[-1].split("shown=")[1].split()[0]);
+    fewer = int(large[-1].split("shown=")[1].split()[0]);
+    assert whole > 40 and 0 < some < whole and 0 < fewer < some , f"{square} {large}";
+    assert len([line for line in said["all"] if line.startswith("sized ")]) == 0;
+    print(
+        f"FINDING PASS: {len(names)} steps, {found['pictures']} of Quake II's pictures named for metal and one soldier among "
+            + f"Quake's models found, two files found by a tag, a texture of each game told of, and {some} of {whole} of a "
+            + f"level's textures at 64 by 64"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4857,6 +4936,7 @@ def main() {
         "stuck": stuck_session,
         "turned": turned_session,
         "repack": repack_session,
+        "finding": finding_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5037,6 +5117,7 @@ def main() {
     stuck_session(repo, binary, env, output);
     turned_session(repo, binary, env, output);
     repack_session(repo, binary, env, output);
+    finding_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
