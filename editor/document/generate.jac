@@ -12,7 +12,8 @@ counted up. The copies are images: they follow the group whenever it is
 edited, and exist only in what is built until they are made real."""
 import math;
 import from engine.math.vec3 { Vec3 }
-import from ..formats.map { MapItem }
+import from ..formats.map { MapItem, MapPatch }
+import from ..geometry.patch { points_from, places_from }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, side_turned }
 import from ..geometry.mapping { side_stretched, side_spun, side_like }
 import from .scene { read_vector, write_vector, side_moved, field_number }
@@ -561,4 +562,45 @@ def prefab_placed(held: list[MapItem], fields: dict[str, str]) -> list[MapItem] 
         moved = map_remapped(moved, at, change, prefab_yaw(fields));
     }
     return prefab_overridden(moved, fields);
+}
+
+"""A map with its patches as curved patches again. In a scene a patch is a
+group of thin prisms with its control points in its fields; a Quake III
+map keeps the control points themselves. Each such group gives way to a
+patch of the first entity (the world), with the material of its prisms and
+its places on that material when it has any."""
+def with_patches(items: list[MapItem]) -> list[MapItem] {
+    made: list[MapItem] = [];
+    bent: list[MapPatch] = [];
+    for item in items {
+        lay = item.fields.get("_patch", "").split();
+        if item.fields.get("classname", "") != "func_group" or len(lay) < 2 or not lay[0].isdigit() or not lay[1].isdigit() {
+            made.append(MapItem(fields=dict(item.fields), brushes=item.brushes, patches=list(item.patches)));
+            continue;
+        }
+        width = int(lay[0]);
+        height = int(lay[1]);
+        control = points_from(item.fields.get("_points", ""), width * height);
+        if control is None {
+            made.append(MapItem(fields=dict(item.fields), brushes=item.brushes, patches=list(item.patches)));
+            continue;
+        }
+        material = "";
+        if len(item.brushes) > 0 and len(item.brushes[0]) > 0 {
+            material = item.brushes[0][0].material;
+        }
+        bent.append(
+            MapPatch(
+                width=width, height=height, points=control, material=material,
+                places=places_from(item.fields.get("_st", ""), width * height)
+            )
+        );
+    }
+    if len(bent) > 0 {
+        if len(made) == 0 {
+            made.append(MapItem(fields={"classname": "worldspawn"}));
+        }
+        made[0].patches.extend(bent);
+    }
+    return made;
 }

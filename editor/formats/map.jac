@@ -8,6 +8,7 @@ studio's own scenes are .map files in the Valve 220 form, so every other
 Quake editor can open them."""
 import from engine.math.vec3 { Vec3 }
 import from ..geometry.brush { Side, Mapping, Plane3, plane_through, classic_mapping, brush_windings }
+import from ..geometry.primitive { mapping_of_primitive, primitive_of_mapping }
 
 """A curved patch as a Quake III map keeps it: `width` by `height` control
 points, row by row, and its material."""
@@ -15,7 +16,10 @@ obj MapPatch {
     has width: int = 0,
         height: int = 0,
         points: list[Vec3] = [],
-        material: str = "";
+        material: str = "",
+        # Where each control point lies on the material, in texels, two
+        # numbers a point in the order of `points`; empty when not said.
+        places: list[float] = [];
 }
 
 """One entity of a map: its fields in order, its brushes (each the list of
@@ -29,9 +33,10 @@ obj MapItem {
 """A map as read: its entities, and what could not be read."""
 obj MapFile {
     has items: list[MapItem] = [],
-        # "valve" when any face was written with texture axes, else "classic".
+        # "valve" when any face was written with texture axes, "primitives"
+        # when any brush was a Quake III brushDef, else "classic".
         form: str = "classic",
-        # Blocks left out: Quake III's brushDef and patchDef2 are not read yet.
+        # Blocks of a kind that is not read.
         skipped: int = 0;
 }
 
@@ -220,7 +225,7 @@ def map_number(word: str) -> bool {
 }
 
 """Read a map's text."""
-def read_map(text: str) -> MapFile {
+def read_map(text: str, sizes: dict[str, list[int]] = {}) -> MapFile {
     found = MapFile();
     cursor = MapCursor(tokens=map_tokens(text));
     while cursor.more() {
@@ -237,7 +242,7 @@ def read_map(text: str) -> MapFile {
             } elif word == "{" {
                 if cursor.peek() == "patchDef2" {
                     cursor.take();
-                    patch = read_patch(cursor);
+                    patch = read_patch(cursor, sizes);
                     cursor.expect("}");
                     if patch is not None {
                         item.patches.append(patch);
@@ -248,8 +253,9 @@ def read_map(text: str) -> MapFile {
                 }
                 if cursor.peek() == "brushDef" {
                     cursor.take();
-                    primitive = read_primitive(cursor);
+                    primitive = read_primitive(cursor, sizes);
                     cursor.expect("}");
+                    found.form = "primitives";
                     if len(primitive) >= 4 {
                         item.brushes.append(primitive);
                     }
@@ -286,7 +292,7 @@ def read_map(text: str) -> MapFile {
 that closes it: the material, the size, then `width` rows of `height`
 control points, each a place and two texture coordinates. Kept row by row
 of `width` points. None when the size is not odd by odd."""
-def read_patch(cursor: MapCursor) -> MapPatch | None {
+def read_patch(cursor: MapCursor, sizes: dict[str, list[int]] = {}) -> MapPatch | None {
     cursor.expect("{");
     material = cursor.take();
     if material.startswith("\"") {
@@ -300,14 +306,21 @@ def read_patch(cursor: MapCursor) -> MapPatch | None {
     }
     cursor.expect(")");
     columns: list[list[Vec3]] = [];
+    # Beside each point, where it lies on the texture, in whole repeats of it.
+    shares: list[list[Vec3]] = [];
     cursor.expect("(");
     while cursor.more() and cursor.peek() == "(" {
         cursor.expect("(");
         column: list[Vec3] = [];
+        laid: list[Vec3] = [];
         while cursor.more() and cursor.peek() == "(" {
             cursor.expect("(");
             column.append(Vec3(x=cursor.number(), y=cursor.number(), z=cursor.number()));
-            # Its texture coordinates, and anything a later format adds.
+            if cursor.more() and map_number(cursor.peek()) {
+                across = cursor.number();
+                laid.append(Vec3(x=across, y=cursor.number() if cursor.more() and map_number(cursor.peek()) else 0.0));
+            }
+            # Anything a later format adds.
             while cursor.more() and cursor.peek() != ")" {
                 cursor.take();
             }
@@ -315,6 +328,7 @@ def read_patch(cursor: MapCursor) -> MapPatch | None {
         }
         cursor.expect(")");
         columns.append(column);
+        shares.append(laid);
     }
     cursor.expect(")");
     cursor.expect("}");
@@ -322,21 +336,30 @@ def read_patch(cursor: MapCursor) -> MapPatch | None {
         return None;
     }
     points: list[Vec3] = [];
+    places: list[float] = [];
+    size = sizes.get(material, [64, 64]);
+    said = len([laid for laid in shares if len(laid) == height]) == width;
     for row in range(height) {
-        for column in columns {
+        for (place, column) in enumerate(columns) {
             if len(column) != height {
                 return None;
             }
             points.append(column[row]);
+            if said {
+                places.append(shares[place][row].x * float(size[0]));
+                places.append(shares[place][row].y * float(size[1]));
+            }
         }
     }
-    return MapPatch(width=width, height=height, points=points, material=material);
+    return MapPatch(width=width, height=height, points=points, material=material, places=places);
 }
 
 """A Quake III brush written as `brushDef`: each side three points, a
-texture matrix and a material. The matrix is not kept: the material lies as
-it would on a new brush."""
-def read_primitive(cursor: MapCursor) -> list[Side] {
+texture matrix and a material. The matrix says how the material lies in
+repeats of its texture, so the texture's size is wanted to read it: `sizes`
+gives it by the material's name as the file has it (64 by 64 when it does
+not)."""
+def read_primitive(cursor: MapCursor, sizes: dict[str, list[int]] = {}) -> list[Side] {
     sides: list[Side] = [];
     cursor.expect("{");
     while cursor.more() and cursor.peek() == "(" {
@@ -344,10 +367,14 @@ def read_primitive(cursor: MapCursor) -> list[Side] {
         b = cursor.point();
         c = cursor.point();
         cursor.expect("(");
+        matrix: list[float] = [];
         for row in range(2) {
             cursor.expect("(");
             while cursor.more() and cursor.peek() != ")" {
-                cursor.take();
+                word = cursor.take();
+                if map_number(word) {
+                    matrix.append(float(word));
+                }
             }
             cursor.expect(")");
         }
@@ -357,17 +384,25 @@ def read_primitive(cursor: MapCursor) -> list[Side] {
             material = material[1:];
         }
         # Its contents, flags and value, when it has them.
+        extras: list[int] = [];
         while cursor.more() and cursor.peek() != "(" and cursor.peek() != "}" {
-            cursor.take();
+            word = cursor.take();
+            if map_number(word) {
+                extras.append(int(float(word)));
+            }
         }
         plane = plane_through(a, b, c);
         if plane is not None {
+            size = sizes.get(material, [64, 64]);
             sides.append(
                 Side(
                     plane=plane,
                     points=[a, b, c],
                     material=material,
-                    mapping=classic_mapping(plane.normal, 0.0, 0.0, 0.0, 1.0, 1.0)
+                    mapping=mapping_of_primitive(plane, matrix, size[0], size[1]),
+                    contents=extras[0] if len(extras) > 0 else 0,
+                    flags=extras[1] if len(extras) > 1 else 0,
+                    value=extras[2] if len(extras) > 2 else 0
                 )
             );
         }
@@ -393,6 +428,19 @@ def map_decimal(value: float) -> str {
     return text;
 }
 
+"""A number of a texture matrix: to ten places, since a step of a unit is a
+small share of a texture and maps are large."""
+def:priv map_fine(value: float) -> str {
+    text = str(round(value, 10));
+    if "e" in text or "E" in text {
+        return "0";
+    }
+    if "." in text {
+        text = text.rstrip("0").rstrip(".");
+    }
+    return "0" if text in ["-0", ""] else text;
+}
+
 def:priv map_point(point: Vec3) -> str {
     return "( " + map_decimal(point.x) + " " + map_decimal(point.y) + " " + map_decimal(point.z) + " )";
 }
@@ -409,12 +457,63 @@ def side_points(side: Side, outline: list[Vec3]) -> list[Vec3] {
     return [];
 }
 
-"""Write a map. `form` is "valve" (texture axes on every face) or "classic";
+"""The materials a map names, each once, in the order met: its brushes'
+sides and its patches."""
+def map_materials(items: list[MapItem]) -> list[str] {
+    found: list[str] = [];
+    for item in items {
+        for sides in item.brushes {
+            for side in sides {
+                if side.material not in found {
+                    found.append(side.material);
+                }
+            }
+        }
+        for patch in item.patches {
+            if patch.material not in found {
+                found.append(patch.material);
+            }
+        }
+    }
+    return found;
+}
+
+"""A patch as a `patchDef2` block's lines: its material, its size, and its
+control points a column at a time, each with its place on the texture in
+repeats. Without places of its own the texture is spread once over it."""
+def:priv patch_lines(patch: MapPatch, size: list[int]) -> list[str] {
+    lines = ["{", "patchDef2", "{", patch.material if patch.material else "__TB_empty"];
+    lines.append("( " + str(patch.width) + " " + str(patch.height) + " 0 0 0 )");
+    lines.append("(");
+    said = len(patch.places) == patch.width * patch.height * 2;
+    for column in range(patch.width) {
+        words = "(";
+        for row in range(patch.height) {
+            at = row * patch.width + column;
+            point = patch.points[at];
+            across = patch.places[at * 2] / float(max(1, size[0])) if said else float(column) / float(max(1, patch.width - 1));
+            down = patch.places[at * 2 + 1] / float(max(1, size[1])) if said else float(row) / float(max(1, patch.height - 1));
+            words += " ( " + map_decimal(point.x) + " " + map_decimal(point.y) + " " + map_decimal(point.z) + " "
+                + map_fine(across) + " " + map_fine(down) + " )";
+        }
+        lines.append(words + " )");
+    }
+    lines.append(")");
+    lines.append("}");
+    lines.append("}");
+    return lines;
+}
+
+"""Write a map. `form` is "valve" (texture axes on every face), "classic",
+or "primitives" (Quake III's `brushDef`, a matrix a face, for which `sizes`
+gives each material's texture size by its name; 64 by 64 when it does not);
 `quake2` adds each face's contents, flags and value. Without `comments` the
 lines that number entities and brushes are left out, and with `whole` every
-plane point is written as whole numbers, for tools that read nothing else."""
+plane point is written as whole numbers, for tools that read nothing else.
+An entity's curved patches are written as `patchDef2` in any form."""
 def write_map(
-    items: list[MapItem], form: str = "valve", quake2: bool = False, comments: bool = True, whole: bool = False
+    items: list[MapItem], form: str = "valve", quake2: bool = False, comments: bool = True, whole: bool = False,
+    sizes: dict[str, list[int]] = {}
 ) -> str {
     lines: list[str] = [];
     if form == "valve" {
@@ -441,6 +540,10 @@ def write_map(
                 lines.append("// brush " + str(number));
             }
             lines.append("{");
+            if form == "primitives" {
+                lines.append("brushDef");
+                lines.append("{");
+            }
             for (which, side) in enumerate(sides) {
                 points = side_points(side, outlines[which]);
                 if len(points) != 3 {
@@ -452,6 +555,18 @@ def write_map(
                         Vec3(x=float(round(point.x)), y=float(round(point.y)), z=float(round(point.z)))
                         for point in points
                     ];
+                }
+                if form == "primitives" {
+                    size = sizes.get(side.material, [64, 64]);
+                    matrix = primitive_of_mapping(side.plane, mapping, size[0], size[1]);
+                    lines.append(
+                        map_point(points[0]) + " " + map_point(points[1]) + " " + map_point(points[2]) + " ( ( "
+                            + map_fine(matrix[0]) + " " + map_fine(matrix[1]) + " " + map_fine(matrix[2]) + " ) ( "
+                            + map_fine(matrix[3]) + " " + map_fine(matrix[4]) + " " + map_fine(matrix[5]) + " ) ) "
+                            + (side.material if side.material else "__TB_empty") + " " + str(side.contents) + " "
+                            + str(side.flags) + " " + str(side.value)
+                    );
+                    continue;
                 }
                 words = map_point(points[0]) + " " + map_point(points[1]) + " " + map_point(points[2]) + " "
                     + (side.material if side.material else "__TB_empty");
@@ -471,9 +586,51 @@ def write_map(
                 }
                 lines.append(words);
             }
+            if form == "primitives" {
+                lines.append("}");
+            }
             lines.append("}");
+        }
+        for patch in item.patches {
+            if patch.width * patch.height == len(patch.points) and patch.width >= 3 and patch.height >= 3 {
+                lines.extend(patch_lines(patch, sizes.get(patch.material, [64, 64])));
+            }
         }
         lines.append("}");
     }
     return "\n".join(lines) + "\n";
+}
+
+"""A map with its materials called other names: every side and patch whose
+material `names` has takes the name it gives; the rest keep theirs."""
+def map_renamed(items: list[MapItem], names: dict[str, str]) -> list[MapItem] {
+    made: list[MapItem] = [];
+    for item in items {
+        brushes: list[list[Side]] = [];
+        for sides in item.brushes {
+            brushes.append(
+                [
+                    Side(
+                        plane=side.plane,
+                        points=side.points,
+                        material=names.get(side.material, side.material),
+                        mapping=side.mapping,
+                        contents=side.contents,
+                        flags=side.flags,
+                        value=side.value
+                    )
+                    for side in sides
+                ]
+            );
+        }
+        patches = [
+            MapPatch(
+                width=bent.width, height=bent.height, points=bent.points, material=names.get(bent.material, bent.material),
+                places=bent.places
+            )
+            for bent in item.patches
+        ];
+        made.append(MapItem(fields=dict(item.fields), brushes=brushes, patches=patches));
+    }
+    return made;
 }

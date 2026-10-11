@@ -112,6 +112,17 @@ impl Studio.open_map(path: str) {
     }
     try {
         found = read_map(text);
+        if found.form == "primitives" or len([item for item in found.items if len(item.patches) > 0]) > 0 {
+            # A Quake III map says how a material lies in repeats of its texture: read again
+            # knowing each texture's size, and call the materials what the game's archives do.
+            used = map_materials(found.items);
+            found = read_map(text, self.texture_sizes(used, False));
+            renames: dict[str, str] = {};
+            for each in used {
+                renames[each] = self.scene_material(each);
+            }
+            found.items = map_renamed(found.items, renames);
+        }
     } except ValueError as error {
         self.say(str(error));
         return;

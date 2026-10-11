@@ -2248,18 +2248,22 @@ def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
         # A curved patch of the map becomes a patch of the scene: a group
         # of its own, its control points in its fields.
         for bent in read.patches {
-            prisms = patch_brushes(bent.points, bent.width, bent.height, 4, 8.0, bent.material);
+            said = len(bent.places) == bent.width * bent.height * 2;
+            prisms = patch_brushes(bent.points, bent.width, bent.height, 4, 8.0, bent.material, [], bent.places if said else []);
             if len(prisms) == 0 {
                 continue;
             }
-            group = scene.add_item(
-                {
-                    "classname": "func_group",
-                    "_group_name": "patch",
-                    "_patch": str(bent.width) + " " + str(bent.height) + " 4 8",
-                    "_points": points_text(bent.points)
-                }
-            );
+            kept_fields = {
+                "classname": "func_group",
+                "_group_name": "patch",
+                "_patch": str(bent.width) + " " + str(bent.height) + " 4 8",
+                "_points": points_text(bent.points)
+            };
+            if said {
+                # Where the file laid its material, a control point at a time.
+                kept_fields["_st"] = places_text(bent.places);
+            }
+            group = scene.add_item(kept_fields);
             for sides in prisms {
                 scene.add_solid(group, sides);
             }

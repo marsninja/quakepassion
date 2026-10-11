@@ -2869,6 +2869,85 @@ def snapto_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     );
 }
 
+"""The seventy-second session: a scene written in Quake III's own map form and opened again."""
+def q3map_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    work = repo / ".jac/studio-q3map";
+    shutil.rmtree(work, ignore_errors=True);
+    work.mkdir(parents=True);
+    with tempfile.TemporaryDirectory(prefix="qp-q3map-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/q3map_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "q3map.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The q3map session failed: {output / 'q3map.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["made", "bent", "opened", "patched"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'q3map.log'}";
+    }
+    wall = "q3:textures/base_wall/archpipe2_k_tall3fin";
+    # Three files are written, and not a file that is no map or a form that is none. Quake III's has
+    # the floor and the box as brushDef and the sheet as one patchDef2 in place of its 32 prisms.
+    wrote = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: exported ")];
+    assert len(wrote) == 3 and wrote[0].startswith("exported bend_q3.map form=q3 brushes=2 primitives=2 patches=1 ") , str(wrote);
+    assert wrote[1].startswith("exported bend_valve.map form=valve brushes=34 primitives=0 patches=0 ") , str(wrote);
+    assert wrote[2].startswith("exported bend_classic.map form=classic brushes=34 primitives=0 patches=0 ") , str(wrote);
+    assert sorted([found.name for found in work.iterdir()]) == ["bend_classic.map", "bend_q3.map", "bend_valve.map"];
+    q3 = (work / "bend_q3.map").read_text();
+    valve = (work / "bend_valve.map").read_text();
+    assert q3.count("brushDef") == 2 and q3.count("patchDef2") == 1 and "func_group" not in q3 and "q3:" not in q3;
+    assert "base_wall/archpipe2_k_tall3fin" in q3 and "( 3 3 0 0 0 )" in q3 and "// Format: Valve" in valve;
+    # The box's top in both files, worked out here the way each form says: the same texel at each
+    # of the three points the side is written with (the texture is 256 by 512).
+    top = "( -64 128 64 ) ( -64 192 64 ) ( 64 192 64 )";
+    matrix_line = [line for line in q3.splitlines() if line.startswith(top)][0];
+    axes_line = [line for line in valve.splitlines() if line.startswith(top) and "archpipe" in line][0];
+    matrix = [float(word) for word in matrix_line.split(") ( (")[1].split(") )")[0].replace("(", " ").replace(")", " ").split()];
+    first = [float(word) for word in axes_line.split("[")[1].split("]")[0].split()];
+    second = [float(word) for word in axes_line.split("[")[2].split("]")[0].split()];
+    scales = [float(word) for word in axes_line.split("]")[2].split()[1:3]];
+    for point in [(-64.0, 128.0, 64.0), (-64.0, 192.0, 64.0), (64.0, 192.0, 64.0)] {
+        # On a floor Quake III's tools measure the texture along +y and then +x.
+        share = [matrix[0] * point[1] + matrix[1] * point[0] + matrix[2], matrix[3] * point[1] + matrix[4] * point[0] + matrix[5]];
+        texel = [
+            (point[0] * first[0] + point[1] * first[1] + point[2] * first[2]) / scales[0] + first[3],
+            (point[0] * second[0] + point[1] * second[1] + point[2] * second[2]) / scales[1] + second[3]
+        ];
+        assert abs(share[0] * 256.0 - texel[0]) < 0.01 and abs(share[1] * 512.0 - texel[1]) < 0.01 , f"{point} {share} {texel}";
+    }
+    # Opened again, the texture is the game's own by the name the file has for it, and the material
+    # lies on the top as it did: slid, stretched and turned.
+    made = [line for line in steps["made"] if line.startswith("face #3/4 ")];
+    opened = [line for line in steps["opened"] if line.startswith("face #2/4 ")];
+    assert len(made) == 1 and len(opened) == 1 and f"material={wall} shift=8.0,4.0 scale=0.5,0.25 " in made[0] , str(made);
+    assert f"material={wall} shift=8.0,4.0 scale=0.5,0.25 " in opened[0] , str(opened);
+    lay_made = [line.split(" ", 2)[2] for line in steps["made"] if line.startswith("lay #3/4 ")];
+    lay_opened = [line.split(" ", 2)[2] for line in steps["opened"] if line.startswith("lay #2/4 ")];
+    assert len(lay_made) == 1 and lay_made == lay_opened and "s=110.851,-64.0,0" in lay_made[0] , f"{lay_made} {lay_opened}";
+    # And the sheet is a patch still, with its control points and their places on the material.
+    def places(lines: list[str]) -> str {
+        found = [line for line in lines if line.startswith("studio: patch places ")];
+        return found[-1] if found else "";
+    }
+    before = places(ran.stdout.split("STEP bent")[0].splitlines());
+    after = places(ran.stdout.split("STEP opened")[1].splitlines());
+    assert before.startswith("studio: patch places 3x3 -16 -8 256 0 512 0 ") and before == after , f"{before} | {after}";
+    assert len([line for line in steps["patched"] if line.startswith("patch #3 3x3 top=80 prisms=32")]) == 1 , str(steps["patched"]);
+    shutil.rmtree(work, ignore_errors=True);
+    print(
+        f"Q3MAP PASS: {len(steps) - 1} steps, a scene written as Quake III's brush primitives and a patch, as Valve's form and "
+            + "the classic one, the two forms agreeing texel for texel on a turned face, and the Quake III map opened again as it was"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5242,6 +5321,7 @@ def main() {
         "gltf": gltf_session,
         "adjoin": adjoin_session,
         "snapto": snapto_session,
+        "q3map": q3map_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5428,6 +5508,7 @@ def main() {
     gltf_session(repo, binary, env, output);
     adjoin_session(repo, binary, env, output);
     snapto_session(repo, binary, env, output);
+    q3map_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

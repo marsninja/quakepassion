@@ -1038,6 +1038,20 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   writes are the result, and screenshots are still taken. It needs a
   desktop session for the graphics all the same. `jac run
   scripts/validate_studio.jac --hidden` runs every session this way.
+- **Maps for other tools** (`ed_export <file.map> [valve|classic|q3]`):
+  the scene written as a map in Valve's form (the form scenes are saved
+  in), the classic one, or Quake III's own. In Quake III's a brush is a
+  `brushDef` with a matrix a side: how the texture runs across the face,
+  in repeats of it, measured along two axes the tools take from the face's
+  normal. The matrix is worked out from how the material lies and the
+  texture's true size, so every texel stays where it was. A patch is
+  written as a `patchDef2` (its control points and where each lies on the
+  texture) in place of the prisms the scene builds it from, and materials
+  are named as Quake III's tools name them (`base_wall/concrete` for
+  `q3:textures/base_wall/concrete`). `ed_open` reads such a map the other
+  way: each matrix becomes a lie by the size of the texture it names,
+  names are found among the game's own, and a patch keeps its places on
+  its material.
 - **A loop round a selection**: in brush mode, Alt and a drag in any view
   draws a loop freehand; what lies inside it when the button is let go is
   selected (with Shift or Ctrl, added), where a rectangle would take what
@@ -1314,6 +1328,14 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_primitive_tests.jac`: the two axes Quake III's tools
+  measure a face's texture along; a matrix read as a lie by the texture's
+  size; a lie turned, stretched, slid and leaning out of its face taken to
+  a matrix and back with every texel where it was.
+- `tests/studio_q3map_tests.jac`: a brush written as `brushDef` and read
+  back; a map from Valve's form to Quake III's and back; a patch written
+  as `patchDef2` with its places and read back; a patch read into a scene
+  as prisms and written out a patch again.
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
@@ -1542,6 +1564,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/q3map_session.cfg` (4 steps: a box in a Quake III
+  texture with its top slid, stretched and turned, and a curved sheet,
+  written in Quake III's form, Valve's and the classic one; the first two
+  agreeing texel for texel on the turned face when worked out by hand; the
+  Quake III map opened again with the texture found, the material where
+  it lay and the sheet a patch still).
   `scripts/studio/snapto_session.cfg` (9 steps: three tiles taken by a
   loop drawn with Alt held, which leaves the box beside them, and again
   by command; a tile moved seven short of its neighbour as asked, then on
@@ -1771,16 +1799,14 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
 - Left over in what is built: the handles work along the world's axes only
   (not a brush's own); a shipped
-  map takes new brushes only once it is turned into a scene; Quake III's
-  `brushDef` sides open without their texture alignment, and a level's
+  map takes new brushes only once it is turned into a scene; a level's
   patches are left behind by `ed_convert` (a map file's `patchDef2` patches
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
   curve faces the same way round; the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
 - Not yet built: the rest of the bake (a partition by the brushes' own
   planes with portals between its leaves, in place of cells of the plan;
-  bounced light); patches written back as
-  `patchDef2`; the Passion tools; user walkers.
+  bounced light); the Passion tools; user walkers.
 - Within the shell: generated (Passion) levels can be edited but not saved as
   they are (`ed_convert` is meant to turn one into a scene, but expeditions
   do not load in the test environment at present: #76).

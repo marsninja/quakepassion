@@ -153,7 +153,8 @@ import from .document.generate {
     prefab_overridden,
     with_prefabs,
     prefab_placed,
-    prefab_turns
+    prefab_turns,
+    with_patches
 }
 import from .document.scene {
     Scene,
@@ -192,7 +193,7 @@ import from engine.world.combat { Opponent, HasOpponent }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
-import from .formats.map { read_map, write_map, MapItem, MapFile }
+import from .formats.map { read_map, write_map, MapItem, MapFile, map_materials, map_renamed }
 import from .geometry.brush { brush_windings, windings_bounds, Side, Mapping }
 import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
 
@@ -388,6 +389,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines]", "show the console's last lines"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
+    ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
     ("ed_refield", "ed_refield <key> <old> <new> [all]", "replace part of a field's value across the selection, or every entity"),
@@ -3475,6 +3477,10 @@ obj Studio(Workbench) {
     def rows_command(scene: Scene, args: list[str]) -> bool;
     def prune_command(scene: Scene, args: list[str]) -> bool;
     def snapto_command(scene: Scene, args: list[str]) -> bool;
+    def q3map_command(scene: Scene, args: list[str]) -> bool;
+    def file_material(name: str) -> str;
+    def scene_material(name: str) -> str;
+    def texture_sizes(names: list[str], as_file: bool) -> dict[str, list[int]];
     def snap_delta(scene: Scene, delta: Vec3) -> Vec3;
     def select_in_loop(scene: Scene, port: int, loop: list[int], add: bool);
     def tags_path -> str;
@@ -3795,7 +3801,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.snapto_command(scene, args) and not self.prune_command(scene, args)
+        } elif not self.q3map_command(scene, args) and not self.snapto_command(scene, args)
+            and not self.prune_command(scene, args)
             and not self.rows_command(scene, args)
             and not self.finding_command(scene, args)
             and not self.archive_command(scene, args)
