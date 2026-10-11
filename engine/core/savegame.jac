@@ -1364,13 +1364,13 @@ def restore(
             if row[4] <= 0.0 or row[4] > 30.0 or row[6] not in [0.0, 1.0] {
                 raise ValueError("Invalid saved dropped item");
             }
-            place = Vec3(x=row[0], y=row[1], z=row[2]);
+            spot = Vec3(x=row[0], y=row[1], z=row[2]);
             restore_drop(
                 world,
                 words[1],
-                place,
+                spot,
                 row[3],
-                level.areas[level.locate(place)] if level.areas else None,
+                level.areas[level.locate(spot)] if level.areas else None,
                 row[4],
                 row[5],
                 Vec3(x=row[7], y=row[8], z=row[9]) if row[6] != 0.0 else None
