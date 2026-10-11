@@ -33,13 +33,13 @@ Assets are not included. Put your own archives here:
 
 ### Compiler
 
-QuakePassion builds with the released [Jac 0.37.23](https://github.com/jaseci-labs/jac/releases/tag/v0.37.23)
+QuakePassion builds with the released [Jac 0.37.25](https://github.com/jaseci-labs/jac/releases/tag/v0.37.25)
 binary, compiling with newer compiler source pinned in the `jaseci` submodule.
-The pin carries upstream fixes that 0.37.23 lacks (see
+The pin carries upstream work that 0.37.25 lacks (see
 [docs/jac-native-fixes.md](docs/jac-native-fixes.md)).
 
 ```bash
-jac --version                                  # 0.37.23
+jac --version                                  # 0.37.25
 export $(./scripts/stage_compiler.sh)          # inits the submodule, prints JAC_DEV_SOURCE
 ```
 
@@ -68,6 +68,26 @@ X11/OpenGL development packages). Run it again after pulling a change to it:
 a binary built against a newer script does not start with an older library. If the loader cannot find
 raylib, run with `DYLD_LIBRARY_PATH=vendor ./qp` (Linux: `LD_LIBRARY_PATH`).
 Development and graphical validation happen on macOS; CI builds and tests on Linux.
+
+### Windows
+
+A Windows build is cross-compiled from Linux or macOS; the compiler writes the
+executable itself, so there is no Windows toolchain to install.
+
+```bash
+./scripts/build_windows.sh                     # dist/windows: qp.exe, raylib.dll, z.dll
+```
+
+Copy `dist/windows` to the Windows machine and run `qp.exe` there. It looks for
+the assets under `%USERPROFILE%\quake-assets`, laid out as above, and keeps its
+settings and saves in `%USERPROFILE%`. The script needs
+[zig](https://ziglang.org/download/) as its C cross-compiler for the two DLLs
+(`scripts/stage_windows_libs.sh`): raylib as above, built without gamepad
+support (see the script), and zlib, which other platforms link into the
+executable.
+
+Under WSL, build in Linux and run the Windows executable: a Linux `qp` shown
+through WSLg cannot capture the mouse, and draws with a software renderer.
 
 ## Running
 
