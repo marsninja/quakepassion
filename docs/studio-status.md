@@ -413,10 +413,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   part's edits whole. `ed_model save <file>` writes, by the file's ending,
   an MD3, an MD2 (the parts as one mesh, with a command list for renderers
   that want one), a Quake MDL (one mesh too, with the skin in hand inside
-  it in Quake's own colours, or one grey), an OBJ (the part in hand) or
-  a work file (`.qpm`) under `QP_MODELS`, a project's `models/` or
+  it in Quake's own colours, or one grey), an OBJ (the part in hand), a
+  glTF (`.glb`: every part as it stands at the frame in hand, a
+  primitive each with its points, the ways they face, its places on the
+  skin and its triangles, turned so that y is up) or a work file
+  (`.qpm`) under `QP_MODELS`, a project's `models/` or
   `./models`, and `ed_model open <file>` reads any of them back (an MDL's
-  skin becomes the skin in hand). The games' files wind triangles the
+  skin becomes the skin in hand; of a glTF, a `.glb` or a `.gltf` that
+  keeps its numbers inside itself, every triangle primitive as a part,
+  without following where the file stands its meshes in a scene). The games' files wind triangles the
   other way round from the editor, and are turned on the way in and out;
   they keep points as bytes or sixty-fourths and know nothing of bones,
   so a model's bones go in a `.rig` file beside them. The work file is
@@ -436,8 +441,8 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_model tag drop <name>` drops it and `ed_model tag` lists them; a
   tag goes with its frames when they are copied, dropped or moved. `ed_model frame move <to>` puts the frame in hand elsewhere in
   the order, and `ed_model skin [add <name>|drop <number>]` keeps the
-  skins the part in hand names. Not there yet: glTF, and dragging tags
-  in the view.
+  skins the part in hand names. Not there yet: dragging tags in the
+  view.
 - **The model's skin**: where each point of the part in hand lies on its
   picture is changed for the picked points (all of them when none are
   picked): `ed_skin move <du dv>`, `scale <f> [fv]` and `turn <degrees>`
@@ -1272,6 +1277,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_gltf_tests.jac`: JSON read into values and what is not
+  JSON refused; base64; a model written as a glb and read back part for
+  part; a `.gltf` with its numbers inside it, y up, read; what is not
+  glTF refused.
 - `tests/studio_meshcut_tests.jac`: a box's triangles cut along a plane
   (new points on the plane, shared where triangles share a side, closed
   and of the same volume), a plane through a corner, a cut that falls on
@@ -1490,6 +1499,9 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/gltf_session.cfg` (4 steps: a cylinder and a box round
+  it written as a glb that reads as glTF 2.0 with y up, and opened again
+  as the same two parts).
   `scripts/studio/meshcut_session.cfg` (5 steps: a cylinder of two
   frames cut across its height, sixteen wall triangles into forty-eight
   at both frames, closed and of the same volume; a plane that misses;

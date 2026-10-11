@@ -2684,6 +2684,63 @@ def meshcut_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     );
 }
 
+"""The sixty-ninth session: a model written as a glb and read back."""
+def gltf_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    import json;
+    import struct;
+    data = b"";
+    with tempfile.TemporaryDirectory(prefix="qp-gltf-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/gltf_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "gltf.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The gltf session failed: {output / 'gltf.log'}";
+        data = (Path(home) / "models/keep.glb").read_bytes();
+    }
+    steps = studio_steps(ran.stdout);
+    docs: dict[str, str] = {};
+    for name in ["made", "closed", "back", "box"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'gltf.log'}";
+        found = [line for line in steps[name] if line.startswith("modeldoc ")];
+        docs[name] = found[0] if found else "";
+    }
+    # The file as another program would read it: a glb whose description is JSON, one mesh of a
+    # primitive a part, with its points (y up), the ways they face, their places on the skin and
+    # its triangles.
+    assert data[:4] == b"glTF" and int(struct.unpack("<I", data[8:12])[0]) == len(data) and len(data) % 4 == 0;
+    long = int(struct.unpack("<I", data[12:16])[0]);
+    told = json.loads(data[20:20 + long].decode("utf-8"));
+    assert told["asset"]["version"] == "2.0" and len(told["meshes"]) == 1 and len(told["meshes"][0]["primitives"]) == 2;
+    first = told["meshes"][0]["primitives"][0];
+    assert sorted(first["attributes"].keys()) == ["NORMAL", "POSITION", "TEXCOORD_0"] and first["extras"]["part"] == "cylinder";
+    assert told["meshes"][0]["primitives"][1]["extras"]["part"] == "bbox";
+    points = told["accessors"][first["attributes"]["POSITION"]];
+    assert points["count"] == 18 and points["min"] == [-32, 0, -32] and points["max"] == [32, 96, 32] , str(points);
+    assert told["accessors"][first["indices"]]["count"] == 96;
+    # Read back it is the two parts under their names, each as it was: the same points and
+    # triangles, closed, of the same volume and in the same place.
+    assert docs["closed"] == "" and " parts=2 part=0 frames=1 " in docs["made"];
+    tail = docs["made"].split(" parts=")[1];
+    assert docs["back"].startswith("modeldoc keep parts=") and docs["back"].split(" parts=")[1] == tail , docs["back"];
+    assert " part=1 " in docs["box"] and " points=8 triangles=12 " in docs["box"] and " volume=393216 open=0 " in docs["box"] , docs["box"];
+    named = [line for line in ran.stdout.splitlines() if line.startswith("studio: part ")];
+    assert "studio: part 0 cylinder triangles=32" in named and "studio: part 1 bbox triangles=12 in hand" in named , str(named);
+    print(
+        f"GLTF PASS: {len(steps) - 1} steps, a cylinder and its box written as a glb of {len(data)} bytes that reads as glTF "
+            + "2.0 with y up, and opened again as the same two parts"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5050,6 +5107,7 @@ def main() {
         "finding": finding_session,
         "treebox": treebox_session,
         "meshcut": meshcut_session,
+        "gltf": gltf_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5233,6 +5291,7 @@ def main() {
     finding_session(repo, binary, env, output);
     treebox_session(repo, binary, env, output);
     meshcut_session(repo, binary, env, output);
+    gltf_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

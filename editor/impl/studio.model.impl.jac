@@ -381,12 +381,12 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
     if name == "ed_model" and how == "open" {
         path = self.model_path(args[2]) if len(args) > 2 else "";
         if not path or not os.path.isfile(path) {
-            self.say("ed_model open <file.qpm|file.md3|file.md2|file.mdl|file.obj>: no such file " + path);
+            self.say("ed_model open <file.qpm|file.md3|file.md2|file.mdl|file.obj|file.glb|file.gltf>: no such file " + path);
             return True;
         }
         opened_doc = self.model_file_doc(path);
         if opened_doc is None {
-            self.say("ed_model open: " + path + " is not a work file or an MD3, MD2, MDL or OBJ model this reads");
+            self.say("ed_model open: " + path + " is not a work file or an MD3, MD2, MDL, OBJ or glTF model this reads");
             return True;
         }
         if os.path.isfile(path + ".rig") and not path.lower().endswith(".qpm") {
@@ -567,7 +567,7 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             path = self.model_path(args[2]);
             data = self.model_file_bytes(doc, path);
             if len(data) == 0 {
-                self.say("ed_model save <file.qpm|file.md3|file.md2|file.mdl|file.obj>: nothing to write there (ed_model check)");
+                self.say("ed_model save <file.qpm|file.md3|file.md2|file.mdl|file.obj|file.glb>: nothing to write there (ed_model check)");
                 return True;
             }
             try {

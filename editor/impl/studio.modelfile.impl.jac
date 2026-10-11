@@ -44,6 +44,13 @@ impl Studio.model_file_bytes(doc: ModelDoc, path: str) -> bytes {
         }
     } elif kind == "qpm" {
         data = work_text(doc).encode("utf-8");
+    } elif kind == "glb" {
+        # Every part as it stands at the frame in hand.
+        held: list[tuple[str, Mesh]] = [];
+        for each in doc.parts() {
+            held.append((each.name, doc.mesh(each)));
+        }
+        data = write_glb(held, doc.name);
     }
     for limit in limits {
         print("studio: limit " + limit);
@@ -70,6 +77,20 @@ impl Studio.model_file_doc(path: str) -> ModelDoc | None {
                     made.add_part(label, read);
                     made.dirty = False;
                 }
+            }
+        } elif kind == "glb" or kind == "gltf" {
+            packed = b"";
+            with open(path, "rb") as file {
+                packed = file.read();
+            }
+            pieces = read_gltf(packed);
+            if pieces is not None {
+                made = ModelDoc(name=label);
+                for (called, piece) in pieces {
+                    made.add_part(called, piece);
+                }
+                made.part_now = 0;
+                made.dirty = False;
             }
         } elif kind in ["md3", "md2", "mdl"] {
             data = b"";

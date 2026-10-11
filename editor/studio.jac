@@ -126,6 +126,7 @@ import from .model.files {
     grey_palette
 }
 import from .model.work { work_text, doc_from_work }
+import from .model.gltf { write_glb, read_gltf }
 import from engine.formats.q1.model { parse_mdl }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }

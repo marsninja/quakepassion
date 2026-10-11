@@ -62,6 +62,12 @@ Found in QuakePassion work but not needed by it (not in the pin):
 
 ## Reported, not yet fixed
 
+- [jaseci-labs/jac#9999](https://github.com/jaseci-labs/jac/issues/9999):
+  `struct.unpack` with a format chosen at run time does not lower natively
+  (the backend wants a literal format). The glTF reader
+  (`editor/model/gltf.jac`) reads each of glTF's six kinds of number in an
+  arm of its own with a literal format; a request, not a wrong result.
+
 - [jaseci-labs/jac#9998](https://github.com/jaseci-labs/jac/issues/9998):
   `jac test` dies with SIGABRT or SIGSEGV and prints nothing when a native
   test calls a function that an imported module demoted to its Python
