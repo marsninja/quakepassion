@@ -240,7 +240,28 @@ node Stage {
         loose_keys: list[str] = [],
         loose_text: str = "",
         input: UiInput = UiInput(),
-        clock: float = 0.0;
+        clock: float = 0.0,
+        # Something a widget offers to be dragged elsewhere: what it is (as
+        # a command's words), what to call it while it is carried, where
+        # the pointer was pressed, and whether it has been dragged far
+        # enough to be carried.
+        offered: str = "",
+        offered_words: str = "",
+        offered_x: int = 0,
+        offered_y: int = 0,
+        carrying: bool = False;
+
+    """Offer what was just pressed to be dragged to another widget. It is
+    carried once the pointer has gone a little way with the button down,
+    and dropped (a "drop" event, its text what was offered) on the widget
+    under the pointer when the button is let go."""
+    def offer(what: str, words: str = "") {
+        self.offered = what;
+        self.offered_words = words if words else what;
+        self.offered_x = self.input.x;
+        self.offered_y = self.input.y;
+        self.carrying = False;
+    }
 
     def layers -> list[Widget] {
         return [self->:Layer:->][?:Widget];
@@ -411,17 +432,37 @@ node Stage {
         if holder is not None and (input.dx != 0 or input.dy != 0) {
             self.send(holder, self.pointer_event("drag", 0));
         }
+        if self.offered and holder is not None and not self.carrying
+            and abs(input.x - self.offered_x) + abs(input.y - self.offered_y) > 6 {
+            # Dragged far enough to be meant: it is carried now.
+            self.carrying = True;
+        }
         for button in range(3) {
             if input.released[button] {
                 holder = self.held;
                 if holder is not None {
                     self.send(holder, self.pointer_event("release", button));
-                    if self.pick(input.x, input.y) is holder {
+                    landed = self.pick(input.x, input.y);
+                    if landed is holder {
                         self.send(holder, self.pointer_event("click", button));
+                    } elif button == 0 and self.carrying and landed is not None {
+                        # What was carried is dropped on what is under the pointer.
+                        dropped = self.pointer_event("drop", 0);
+                        dropped.text = self.offered;
+                        self.send(landed, dropped);
                     }
                     self.release_hold();
                 }
+                if button == 0 {
+                    self.offered = "";
+                    self.carrying = False;
+                }
             }
+        }
+        if self.held is None and self.offered {
+            # The button came up somewhere this did not see.
+            self.offered = "";
+            self.carrying = False;
         }
         if input.wheel != 0.0 {
             target = self.hover;
@@ -473,6 +514,15 @@ node Stage {
             drawn += pass_over.drawn;
         }
         self.canvas.unclip();
+        if self.carrying and self.offered {
+            # What is being carried, beside the pointer.
+            theme = self.canvas.theme;
+            wide = self.canvas.text_width(self.offered_words, theme.small) + 12;
+            tag = Rect(x=self.input.x + 14, y=self.input.y + 10, w=wide, h=theme.row - 4);
+            self.canvas.fill(tag, theme.header);
+            self.canvas.outline(tag, theme.accent);
+            self.canvas.text(self.offered_words, tag.x + 6, tag.y + 3, theme.text, theme.small);
+        }
         return drawn;
     }
 }

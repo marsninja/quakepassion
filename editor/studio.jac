@@ -1308,8 +1308,9 @@ obj Studio(Workbench) {
         material_page.adopt(material_tree);
         gallery = Gallery(
             pick="ed_material",
+            drag="material",
             grow=1,
-            hint="Click a material to give it to the selected faces or brushes, and to new brushes"
+            hint="Click a material to give it to the selected faces or brushes, and to new brushes; drag it onto a face"
         );
         material_page.adopt(gallery);
         check_page = Box();
@@ -1334,8 +1335,9 @@ obj Studio(Workbench) {
         library = TreeView(
             pick="ed_library",
             toggle="ed_fold",
+            drag="library",
             grow=1,
-            hint="Click a scene to open it, or a prefab to add a copy where the camera looks"
+            hint="Click a scene to open it, or a prefab to add a copy where the camera looks; drag a prefab into a view"
         );
         library_page.adopt(library);
         class_page = Box();
@@ -1348,8 +1350,9 @@ obj Studio(Workbench) {
         class_list = TreeView(
             pick="ed_class",
             toggle="ed_fold",
+            drag="class",
             grow=1,
-            hint="Click a class to add one where the camera looks; a brush class takes the selected brushes"
+            hint="Click a class to add one where the camera looks, or drag it into a view; a brush class takes the selected brushes"
         );
         class_page.adopt(class_list);
         sheet = GraphView(
@@ -1754,6 +1757,11 @@ obj Studio(Workbench) {
         for (index, event) in happened {
             # The pointer's code looks through the view the event was in.
             self.watch(index);
+            if event.kind == "drop" {
+                # Something dragged from a side panel and let go here.
+                self.dropped(scene, event.x, event.y, event.text);
+                continue;
+            }
             if event.kind == "press" and event.button == 1 {
                 self.looking = True;
                 self.right_x = event.x;
@@ -2955,6 +2963,15 @@ obj Studio(Workbench) {
     """The brushes a sweep's fields make, with its path as it now stands."""
     def swept(scene: Scene, fields: dict[str, str], material: str) -> list[list[Side]];
     def sweep_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
+    # Things dropped in a view (impl/studio.drops.impl.jac)
+
+    """Where in the level a point of the view is: what the line of sight
+    first meets, `back` short of it, on the grid."""
+    def drop_point(scene: Scene, x: int, y: int, back: float) -> Vec3;
+    """Put what was dragged from a side panel where it was dropped."""
+    def dropped(scene: Scene, x: int, y: int, what: str);
 
     # ------------------------------------------------------------------
     # The model editor (impl/studio.model.impl.jac)

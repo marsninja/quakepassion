@@ -726,6 +726,9 @@ node TreeView(Widget) {
         pick: str = "",
         toggle: str = "",
         open_command: str = "",
+        # When set, a row that is not a heading is offered when pressed, to
+        # be dragged elsewhere, as this word and the row's key.
+        drag: str = "",
         offset: int = 0,
         grabbing: bool = False,
         hover_row: int = -1,
@@ -844,6 +847,10 @@ node TreeView(Widget) {
                     self.pick + " " + quote_command_word(row.key) + (" add" if event.ctrl or event.shift else "")
                 );
             }
+            if self.drag and not row.branch {
+                # A row that is a thing, not a heading, can be dragged elsewhere.
+                stage.offer(self.drag + " " + row.key, row.text);
+            }
             return True;
         }
         if kind == "drag" {
@@ -883,6 +890,9 @@ as fit. A click asks for `pick` and the tile's key."""
 node Gallery(Widget) {
     has tiles: list[Tile] = [],
         pick: str = "",
+        # When set, a tile pressed is offered to be dragged elsewhere, as
+        # this word and the tile's key.
+        drag: str = "",
         offset: int = 0,
         tile: int = 72,
         gap: int = 6,
@@ -1007,6 +1017,9 @@ node Gallery(Widget) {
             index = self.tile_at(event.x, event.y);
             if index >= 0 and self.pick {
                 stage.emit(self.pick + " " + quote_command_word(self.tiles[index].key));
+            }
+            if index >= 0 and self.drag {
+                stage.offer(self.drag + " " + self.tiles[index].key, self.tiles[index].key);
             }
             return True;
         }

@@ -720,3 +720,45 @@ test "colour bars mix a colour from three shares" {
     patches = [stroke for stroke in canvas.strokes if stroke.kind == "fill" and stroke.color.r == 255 and stroke.color.g == 127 and stroke.color.b == 0];
     assert len(patches) >= 1;
 }
+
+test "a tile or a row pressed and dragged away is dropped on the widget it is let go over" {
+    top = Box(across=True);
+    tiles = Gallery(pick="take", drag="material", size=200);
+    tiles.tiles = [Tile(key="brick", text="brick"), Tile(key="slate", text="slate")];
+    rows = TreeView(pick="choose", drag="thing", size=200);
+    rows.rows = [TreeRow(key="heading", text="Heading", branch=True), TreeRow(key="door", text="A door", depth=1)];
+    view = ViewArea(grow=1);
+    top.adopt(tiles);
+    top.adopt(rows);
+    top.adopt(view);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source);
+    # A tile dragged into the view: picked as a press picks it, and dropped where the button comes up.
+    script_drag(source, 20, 20, 600, 300);
+    play(stage, source);
+    assert stage.take_commands() == ["take \"brick\""];
+    drops = [event for event in view.take() if event.kind == "drop"];
+    assert len(drops) == 1 and drops[0].text == "material brick" and drops[0].x == 600 and drops[0].y == 300;
+    assert not stage.carrying and stage.offered == "";
+    # A row of the tree likewise; a heading is not something to carry.
+    script_drag(source, 260, 30, 620, 200);
+    play(stage, source);
+    drops = [event for event in view.take() if event.kind == "drop"];
+    assert len(drops) == 1 and drops[0].text == "thing door";
+    script_drag(source, 260, 10, 620, 200);
+    play(stage, source);
+    assert len([event for event in view.take() if event.kind == "drop"]) == 0;
+    # A click that goes nowhere drops nothing, and neither does a drag let go where it began.
+    stage.take_commands();
+    script_click(source, 20, 20);
+    play(stage, source);
+    assert stage.take_commands() == ["take \"brick\""] and len([event for event in view.take() if event.kind == "drop"]) == 0;
+    # While it is carried its name is drawn beside the pointer.
+    canvas = TraceCanvas();
+    carried = staged(Box(), canvas);
+    carried.offer("material slate", "slate");
+    carried.carrying = True;
+    carried.paint();
+    assert len([stroke for stroke in canvas.strokes if stroke.kind == "text" and stroke.words == "slate"]) == 1;
+}

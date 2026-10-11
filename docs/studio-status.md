@@ -204,6 +204,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Dragging from the side panels**: a material's picture, a class or a
+  prefab is dragged from its tab and let go in a view; its name follows
+  the pointer while it is carried. A material lands on the face under the
+  pointer and no other; a class's entity stands where the line of sight
+  first meets a brush, a little toward the eye (a brush class stands on
+  it); a prefab stands on what it was dropped on. The press that begins
+  the drag does what a click does, as before (takes the material in
+  hand, adds the entity or the prefab where the camera looks): the drop
+  then puts it where it was dropped. In the toolkit a widget offers
+  what was pressed (`Stage.offer`), and the stage sends a `drop` event
+  to whatever is under the pointer when the button comes up.
 - **The model editor** (the start of it): a model is edited as a graph of
   its parts (each a mesh with skins of its own), each part's poses (where
   its points stand at each frame) and its tags. `ed_model new <kind> [w d
@@ -1023,6 +1034,10 @@ editor/impl/                 the workbench's scenes and brushes
   at a copied frame only; the copied frame moved to the front; a tag
   dropped; two skins named and one dropped; saved as an MD3 with its
   frames, tag and skin).
+  `scripts/studio/drop_session.cfg` (4 steps: the project's image
+  dragged from the Materials tab onto one face of a box; a light dragged
+  from the Classes tab onto the floor; a prefab dragged from the Library
+  tab onto the top of the box).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

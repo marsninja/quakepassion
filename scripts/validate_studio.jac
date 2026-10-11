@@ -1309,6 +1309,70 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The forty-first session: a material, a class and a prefab dragged from
+the side panels and dropped in the view."""
+def drop_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["materials", "classes", "library"];
+    for shot in shots {
+        (repo / f"drop_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-drop-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PREFABS"] = home + "/prefabs";
+        env["QP_TEXTURES"] = home + "/textures";
+        (Path(home) / "textures").mkdir();
+        (Path(home) / "textures/crate.png").write_bytes(checker_png(4));
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/drop_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_TEXTURES");
+        env.pop("QP_PREFABS");
+        (output / "drop.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The drop session failed: {output / 'drop.log'}";
+        saved = (Path(home) / "scenes/drops.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "painted", "lit", "stacked"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'drop.log'}";
+    }
+    # The image dragged from the Materials tab lies on one face of the box, and on no other.
+    onto = [line for line in steps["made"] if line.startswith("dropped material file:crate.png on #")];
+    assert len(onto) == 1 , str(steps["made"]);
+    assert len([line for line in saved.splitlines() if " file:crate.png [" in line]) == 1 , saved[:800];
+    # A light dragged from the Classes tab stands where it was dropped: on the floor, off to one side.
+    lamp = [line for line in steps["painted"] if line.startswith("dropped class light at ")];
+    assert len(lamp) == 1 , str(steps["painted"]);
+    place = [int(part) for part in lamp[0].split(" at ")[1].split(",")];
+    assert place[0] < -64 and place[1] < 0 and 0 < place[2] and place[2] <= 32 , str(place);
+    chosen = selected(steps["lit"]);
+    assert len(chosen) == 1 and "classname=light" in chosen[0] and f"origin={place[0]} {place[1]} {place[2]}" in chosen[0] , str(
+        chosen
+    );
+    # The prefab dragged from the Library tab stands on top of the box, not where the camera looked.
+    crate = [line for line in steps["lit"] if line.startswith("dropped prefab crate at ")];
+    assert len(crate) == 1 and crate[0].endswith(",64") , str(steps["lit"]);
+    group = selected(steps["stacked"]);
+    assert len(group) == 1 and "_group_name=crate" in group[0] and [line for line in steps["stacked"] if line.startswith("brushes=3 ")];
+    for shot in shots {
+        source = repo / f"drop_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"drop_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"DROP PASS: {len(steps) - 1} steps, a material dragged onto a face, a light onto the floor at {place[0]} {place[1]} "
+            + f"{place[2]}, and a prefab onto the top of a box"
+    );
+}
+
 """The fortieth session: a model's triangles and points picked by clicks,
 a point dragged, tags, a frame moved in the order, and skins."""
 def rig_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3050,6 +3114,7 @@ def main() {
         "live": live_session,
         "model": model_session,
         "rig": rig_session,
+        "drop": drop_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3193,6 +3258,7 @@ def main() {
     live_session(repo, binary, env, output);
     model_session(repo, binary, env, output);
     rig_session(repo, binary, env, output);
+    drop_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
