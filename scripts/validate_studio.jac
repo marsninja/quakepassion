@@ -6,7 +6,12 @@ dragged by scripted input, the document is printed after each step, and
 screenshots are taken along the way. A second run without the studio checks
 that the saved entities are what the level loads.
 
-    jac run scripts/validate_studio.jac [--binary ./qp] [--only <session>]
+    jac run scripts/validate_studio.jac [--binary ./qp] [--only <session>] [--jobs <n>]
+
+`--only shell` is the first session alone. `--jobs <n>` runs the sessions
+`n` at a time, each as a run of this script with `--only`: they keep their
+settings and scenes in folders of their own, so they do not meet (the three
+that pack archives into one folder go one after another).
 
 Output: .jac/screenshots/studio/."""
 import os;
@@ -14,6 +19,8 @@ import shutil;
 import subprocess;
 import sys;
 import tempfile;
+import time;
+import from concurrent.futures { ThreadPoolExecutor }
 import from pathlib { Path }
 import from scripts.png_checks { read_png }
 
@@ -3795,6 +3802,55 @@ def material_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     print(f"MATERIAL PASS: {len(steps) - 1} steps, a Quake III texture and a project image fitted at their true sizes");
 }
 
+"""Run some sessions one after another, each as a run of this script with
+`--only`. Answers (name, whether it passed, what it said last) for each."""
+def run_lane(names: list[str], binary: Path) -> list[tuple[str, bool, str]] {
+    told: list[tuple[str, bool, str]] = [];
+    for name in names {
+        ran = subprocess.run(
+            ["jac", "run", str(Path(__file__).resolve()), "--binary", str(binary), "--only", name],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=1800
+        );
+        said = [line for line in (ran.stdout + ran.stderr).splitlines() if line.strip()];
+        # What a session says of itself: that it passed, and what it had to leave out.
+        result = [line for line in said if " PASS: " in line or " SKIPPED " in line];
+        passed = ran.returncode == 0 and len([line for line in result if " PASS: " in line]) > 0;
+        told.append((name, passed, "\n".join(result) if passed else "\n".join(said[-14:])));
+    }
+    return told;
+}
+
+"""Run every session, `jobs` lanes at a time. Answers how many failed."""
+def run_lanes(names: list[str], binary: Path, jobs: int) -> int {
+    # Sessions that write the same folder of the repository go in one lane.
+    together = [name for name in ["assets", "terrain", "tidy"] if name in names];
+    lanes = [[name] for name in names if name not in together];
+    if together {
+        lanes.insert(0, together);
+    }
+    began = time.time();
+    failed: list[str] = [];
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool {
+        waiting = [pool.submit(run_lane, lane, binary) for lane in lanes];
+        for one in waiting {
+            for (name, passed, said) in one.result() {
+                print(said if passed else f"{name} FAILED:\n{said}", flush=True);
+                if not passed {
+                    failed.append(name);
+                }
+            }
+        }
+    }
+    print(
+        f"{len(names) - len(failed)} of {len(names)} sessions passed in {int(time.time() - began)} s, {jobs} at a time"
+            + (": failed " + ", ".join(failed) if failed else "")
+    );
+    return len(failed);
+}
+
 def main() {
     repo = Path(__file__).resolve().parent.parent;
     binary = repo / "qp";
@@ -3857,7 +3913,16 @@ def main() {
         "arms": arms_session,
         "convert": convert_session
     };
-    if "--only" in sys.argv {
+    if "--jobs" in sys.argv {
+        failed = run_lanes(["shell"] + list(sessions.keys()), binary, int(sys.argv[sys.argv.index("--jobs") + 1]));
+        print(f"Screenshots and logs: {output}");
+        if failed > 0 {
+            sys.exit(1);
+        }
+        return;
+    }
+    only_shell = "--only" in sys.argv and sys.argv[sys.argv.index("--only") + 1] == "shell";
+    if "--only" in sys.argv and not only_shell {
         # One session alone, while working on what it covers.
         wanted = sys.argv[sys.argv.index("--only") + 1];
         assert wanted in sessions , f"No session '{wanted}': " + ", ".join(sessions.keys());
@@ -3960,6 +4025,9 @@ def main() {
         source.unlink();
     }
     print(f"STUDIO PASS: {len(steps) - 1} steps, {count} entities, saved and reloaded");
+    if only_shell {
+        return;
+    }
     scene_session(repo, binary, env, output);
     tools_session(repo, binary, env, output);
     logic_session(repo, binary, env, output);

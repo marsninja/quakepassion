@@ -1054,7 +1054,11 @@ editor/impl/                 the workbench's scenes and brushes
   with a scripted session saved to a screenshot.
 - `jac run scripts/validate_studio.jac`: drives the real studio in `qp` by
   scripted clicks, drags, typing and shortcuts, printing the document after
-  each step. `scripts/studio/shell_session.cfg` edits e1m1's entities (15
+  each step. `--only <session>` runs one session (`shell` is the first);
+  `--jobs <n>` runs them `n` at a time, each with settings and scenes of
+  its own: every session in about two and a half minutes with eight at a
+  time, where one after another they take about forty.
+  `scripts/studio/shell_session.cfg` edits e1m1's entities (15
   steps, then a second run confirms the saved entities load);
   `scripts/studio/scene_session.cfg` builds a scene of brushes (20 steps:
   box, pick, resize by a handle, drag, material, tie to a door, undo, redo,
