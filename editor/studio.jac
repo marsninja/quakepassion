@@ -69,6 +69,7 @@ import from .classes.registry {
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
+import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
 import from .compile.light { bake_light }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
 import from .project { Project, MANIFEST_NAME, read_project, write_project, addon_classes, file_name }
@@ -206,6 +207,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    (
+        "ed_sweep",
+        "ed_sweep <outline|brush> [wide tall] [count] along <name> | line <points> [closed] | again",
+        "carry an outline (square, round, ridge, ell, tee, channel, rail, or the selected brush's) along a path of named entities or a line of points; or sweep the sweeps again"
+    ),
     ("ed_layer", "ed_layer [name|all] [hide|show|only]", "a kept set as a layer: hide or show what it holds, show it alone, or list the layers"),
     ("ed_depth", "ed_depth [top|front|side] <low> <high> | selection | off", "hold an axis view to a band of depth, measured along the axis it looks along"),
     ("ed_outside", "ed_outside [whole|grey|hide]", "how a view held to a band of depth shows what lies outside it"),
@@ -1115,7 +1121,9 @@ obj Studio(Workbench) {
                     MenuItem(text="Wrap the tagged face's material round", command="ed_tex wrap"),
                     MenuItem(text="Lay the tagged face's material on", command="ed_tex project"),
                     MenuItem(text="Put the picked face in the tagged plane", command="ed_glue face"),
-                    MenuItem(text="Forget the tagged face", command="ed_tag clear")
+                    MenuItem(text="Forget the tagged face", command="ed_tag clear"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Sweep the sweeps along their paths again", command="ed_sweep again")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -2873,6 +2881,16 @@ obj Studio(Workbench) {
     def depth_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Sweeps: an outline carried along a path (impl/studio.sweep.impl.jac)
+
+    """Where a path's entities stand, from the name of its first; its first
+    point again at the end when the path comes back to it."""
+    def path_of(scene: Scene, name: str) -> list[Vec3];
+    """The brushes a sweep's fields make, with its path as it now stands."""
+    def swept(scene: Scene, fields: dict[str, str], material: str) -> list[list[Side]];
+    def sweep_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
 
     """Run a group command. False when it is not one."""
@@ -3089,7 +3107,7 @@ obj Studio(Workbench) {
             and not self.view_command(scene, args) and not self.group_command(scene, args)
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
-            and not self.depth_command(scene, args)
+            and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);

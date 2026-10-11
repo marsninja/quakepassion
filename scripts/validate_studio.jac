@@ -1221,6 +1221,65 @@ def steps_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The thirty-seventh session: outlines swept along a line and a path, a
+sweep swept again after its path moved, and a brush's own outline swept."""
+def sweep_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["rail", "ring"];
+    for shot in shots {
+        (repo / f"sweep_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-sweep-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/sweep_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "sweep.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The sweep session failed: {output / 'sweep.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["beam", "rail", "again", "piece", "undone", "ring"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'sweep.log'}";
+    }
+    # A square along a line with one turn: a group of two brushes that keeps what it was swept from.
+    beam = selected(steps["beam"]);
+    assert len(beam) == 1 and "_group_name=sweep" in beam[0] and "_sweep=square 32.0 16.0 8" in beam[0]
+        and beam[0].endswith("owns=2") , str(beam);
+    # A rail, three pieces, along two stretches of a path of named corners.
+    rail = selected(steps["rail"]);
+    assert len(rail) == 1 and "_along=c1" in rail[0] and "_sweep=rail 24.0 48.0 8" in rail[0] and rail[0].endswith("owns=6") , str(
+        rail
+    );
+    assert [line for line in steps["rail"] if line == "swept again brushes=6"] , str(steps["rail"]);
+    # Its last corner moved out and up: swept again, its last piece reaches there; undone, it is back.
+    moved = brushes(steps["piece"]);
+    assert len(moved) == 1 and brush_box(moved[0])[1][0] >= 120 and brush_box(moved[0])[1][2] >= 100 , str(moved);
+    back = brushes(steps["undone"]);
+    assert len(back) == 1 and brush_box(back[0])[1][0] <= 16 and brush_box(back[0])[1][2] <= 76 , str(back);
+    # A drawn brush's outline round a closed line: four brushes, mitred at every corner.
+    ring = selected(steps["ring"]);
+    assert len(ring) == 1 and "_sweep=brush " in ring[0] and "_closed=1" in ring[0] and "_outline=" in ring[0]
+        and ring[0].endswith("owns=4") , str(ring);
+    assert [line for line in steps["ring"] if line.startswith("brushes=14 ")] , str(steps["ring"]);
+    for shot in shots {
+        source = repo / f"sweep_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"sweep_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"SWEEP PASS: {len(steps) - 1} steps, a beam along a line, a rail along a path of corners and again after one "
+            + "moved, and a brush's own outline round a closed line"
+    );
+}
+
 """A step's line of the layers that are off, if it has one."""
 def off(lines: list[str]) -> list[str] {
     return [line for line in lines if line.startswith("layers off=")];
@@ -2773,6 +2832,7 @@ def main() {
         "outside": outside_session,
         "depth": depth_session,
         "layers": layers_session,
+        "sweep": sweep_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2912,6 +2972,7 @@ def main() {
     outside_session(repo, binary, env, output);
     depth_session(repo, binary, env, output);
     layers_session(repo, binary, env, output);
+    sweep_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

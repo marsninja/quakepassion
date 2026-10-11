@@ -204,6 +204,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Sweeps**: `ed_sweep <outline> [wide tall] [count] along <name>`
+  carries an outline along a path of entities, from the one of that
+  targetname through each one's `target` (a path that comes back to its
+  start is a ring), and `ed_sweep <outline> [wide tall] line <x y z> <x y
+  z> ... [closed]` along a line of points. The outlines are `square`,
+  `round` (of `count` sides), `ridge`, `ell`, `tee`, `channel` and `rail`,
+  or `brush`: the selected brush's own outline as seen from the front, at
+  its own size unless one is given. Each convex piece of the outline
+  leaves a brush along each stretch of the path, and where the path
+  turns the stretches are cut on the plane that halves the turn, so they
+  meet without a gap or an overlap. The result is a group that keeps what
+  it was swept from (`_sweep`, `_along` or `_line`): `ed_sweep again`
+  (Brush menu) sweeps the selected sweeps, or all of them, along their
+  paths as those now stand, as one step that can be undone.
 - **Layers**: every kept set (`ed_keep <name>`) is a layer too, whatever
   owns its members: `ed_layer <name> hide|show` hides or shows what it
   holds as one, `ed_layer <name>` alone toggles it, `ed_layer <name>
@@ -687,6 +701,11 @@ editor/impl/                 the workbench's scenes and brushes
   what would mislead refused; an add-on's class lines. (An add-on's
   classes joining the table, replaced when read again and leaving it are
   in `tests/studio_class_tests.jac`.)
+- `tests/studio_extrude_tests.jac`: every outline's pieces within its
+  square; a square along a line as a beam of the line's length; stretches
+  meeting at a turn on the plane that halves it, with no gap and no
+  overlap, level and climbing; a rail's three pieces along two stretches
+  and a closed path as a ring; a brush's own outline swept.
 - `tests/studio_steps_tests.jac`: a recipe's commands apart at semicolons
   and a step's line with the map put in; a compiler's words read for the
   entities and brushes they name; a line of the map's text placed in its
@@ -910,6 +929,11 @@ editor/impl/                 the workbench's scenes and brushes
   finding the floor; the layer of both hidden and the first shown again,
   both boxes staying out of sight; the list of layers; one shown alone;
   the layers that are off written into the saved map; everything shown).
+  `scripts/studio/sweep_session.cfg` (6 steps: a square beam along a
+  line with one turn; three path corners added and a rail swept along
+  them into six brushes; the last corner moved and the rail swept again
+  to reach it, then the sweep undone; a drawn brush's outline swept round
+  a closed line into a ring of four).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
