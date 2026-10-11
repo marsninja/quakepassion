@@ -446,7 +446,7 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     ] {
         assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'build.log'}";
     }
-    # Stairs and an arch are groups of eight brushes; a cone is one brush of thirteen sides.
+    # Stairs and an arch are groups of eight brushes; a cone is a group of one, with its numbers kept.
     stairs = selected(steps["stairs"]);
     assert len(stairs) == 1 and "_group_name=stairs " in stairs[0] and stairs[0].endswith(" owns=8") , str(stairs);
     # A shape of several brushes keeps the numbers it was built from.
@@ -454,8 +454,8 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     arch = selected(steps["arch"]);
     assert len(arch) == 1 and "_group_name=arch " in arch[0] and arch[0].endswith(" owns=8") , str(arch);
     assert "brushes=17" in tally(steps["arch"]);
-    cone = brushes(steps["cone"]);
-    assert len(cone) == 1 and "sides=13" in cone[0] and brush_box(cone[0])[1][2] == 96 , str(cone);
+    cone = selected(steps["cone"]);
+    assert len(cone) == 1 and "_group_name=cone " in cone[0] and "_shape=cone 64 64 96 0 16" in cone[0] and cone[0].endswith(" owns=1") , str(cone);
     # No light, no lightmap; a light lights the level; flat and lit again on request.
     assert lit(steps["cone"]) == 0 and lit(steps["lit"]) > 1000 , str(steps["lit"]);
     assert lit(steps["flat"]) == 0 and lit(steps["relit"]) == lit(steps["lit"]);
@@ -2948,6 +2948,60 @@ def q3map_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The seventy-third session: copies tiled along a path, a fan, and a one-brush shape that keeps its numbers."""
+def fan_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "fan_tiled.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-fan-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/fan_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "fan.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The fan session failed: {output / 'fan.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["cornered", "tiled", "untiled", "fan", "finer", "cone", "taller", "its_brush"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'fan.log'}";
+    }
+    # The floor, the post and an image of it on each of the path's three corners; laid a tile apart
+    # there are seven (three to a leg, half a tile clear of the bend, and an elbow on it); a tile of
+    # nothing is refused, and with the tile taken off it is three again.
+    assert made(steps["cornered"]) == 5 and made(steps["tiled"]) == 9 and made(steps["untiled"]) == 5 , str(made(steps["tiled"]));
+    assert selected(steps["tiled"])[0].endswith("_path=p1 _tile=64 owns=1") and "_tile" not in selected(steps["untiled"])[0];
+    rows = [line for line in ran.stdout.splitlines() if line.startswith("studio: row ")];
+    assert rows == ["studio: row 1 4 post  (duplicator: along p1) [1] *"] , str(rows);
+    # A fan is a group of eight wedges that keeps its numbers, and is built again as twelve.
+    fan = selected(steps["fan"])[0];
+    finer = selected(steps["finer"])[0];
+    assert "_group_name=fan _shape=fan 128 128 32 8 16 owns=8" in fan and "_shape=fan 128 128 32 12 16 owns=12" in finer , finer;
+    assert made(steps["finer"]) - made(steps["fan"]) == 4;
+    # A cone is one brush and a shape still: built again taller with six sides round it, which as a
+    # brush is seven sides and 160 high.
+    cone = selected(steps["cone"])[0];
+    taller = selected(steps["taller"])[0];
+    assert "_group_name=cone _shape=cone 64 64 96 0 16 owns=1" in cone and "_shape=cone 64 64 160 6 16 owns=1" in taller , taller;
+    inner = [line for line in steps["its_brush"] if line.startswith("brush #")];
+    assert len(inner) == 1 and " sides=7 " in inner[0] and inner[0].endswith("owner=func_group") , str(inner);
+    box = brush_box(inner[0]);
+    assert box[1][2] - box[0][2] == 160 and box[1][0] - box[0][0] == 64 , inner[0];
+    source = repo / "fan_tiled.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "fan_tiled.png");
+    source.unlink();
+    print(
+        f"FAN PASS: {len(steps) - 1} steps, a post laid seven times along a bent path in place of three, a fan of eight "
+            + "wedges built again as twelve, and a cone of one brush built again taller from its numbers"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5322,6 +5376,7 @@ def main() {
         "adjoin": adjoin_session,
         "snapto": snapto_session,
         "q3map": q3map_session,
+        "fan": fan_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5509,6 +5564,7 @@ def main() {
     adjoin_session(repo, binary, env, output);
     snapto_session(repo, binary, env, output);
     q3map_session(repo, binary, env, output);
+    fan_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

@@ -527,7 +527,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),
     (
         "ed_shape",
-        "ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe> [w d h] [count] [thickness]",
+        "ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe|bicone|torus|xtree|cap|corner|bevel|column|landing|fan|free> [w d h] [count] [thickness]",
         "add a shape built of brushes where the camera looks"
     ),
     ("ed_class", "ed_class <classname>", "add an entity of a class, or make the selected brushes one"),

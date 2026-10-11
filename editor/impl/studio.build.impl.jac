@@ -193,6 +193,17 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
             scene.set_fields({"_grow": " ".join([str(round(factor, 4)) for factor in factors])}, "Grow copies");
             return True;
         }
+        if how == "tile" {
+            lengths = dup_numbers(args[2:]);
+            if len(args) > 2 and args[2] in ["off", "none"] {
+                scene.set_fields({"_tile": None}, "No tiles");
+            } elif len(lengths) != 1 or lengths[0] <= 0.0 {
+                self.say("ed_dup tile <length|off>: lay the copies along the path so far apart, with one turned at each bend");
+            } else {
+                scene.set_fields({"_tile": str(round(lengths[0], 3) + 0.0).rstrip("0").rstrip(".")}, "Tile along path");
+            }
+            return True;
+        }
         if how == "at" or how == "path" {
             if len(args) < 3 {
                 self.say("ed_dup " + how + " <targetname|none>");

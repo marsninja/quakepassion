@@ -784,7 +784,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   rounded corner, in wedges) and `bevel` (one wedge of it), `column` (a
   shaft between a foot and a head) and `landing` (stairs that go up one
   side to a landing and come back up the other).
-- **A shape of several brushes keeps its numbers**, as a group with a
+- **A fan** (`ed_shape fan <w d h> [count]`): wedges round the middle of
+  its box, each a brush of its own from the middle to the rim: a round
+  floor cut like a cake, each slice to raise or texture alone.
+- **Every shape keeps its numbers**, one brush (a cone, a ball) as much as
+  many, as a group with a
   `_shape` field: `ed_reshape <w d h> [count] [thickness]` builds it again
   from other numbers where it stands, as one undoable step, and
   `ed_shape free` leaves it as the plain brushes it is made of.
@@ -980,7 +984,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
     one corner of a room becomes four, or eight.
   - `ed_dup at <targetname>`: an image at every entity of that name,
     facing as it does; `ed_dup path <targetname>`: one at every corner of
-    a path, facing along it.
+    a path, facing along it. With `ed_dup tile <length>` the images are
+    laid along the path instead, so far apart: as many to a leg as fit,
+    spaced evenly and facing along it, and at each bend one turned half
+    way between the two legs, with half a tile kept clear of it on either
+    side (`ed_dup tile off` goes back to the corners).
   - `ed_dup materials <names>`: the images take those materials in turn.
   - `ed_dup each` (on an entity made of brushes, a door say): each image
     is an entity of its own, with the number in its `targetname` and
@@ -1328,6 +1336,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_fanpath_tests.jac`: a fan's wedges filling the round of
+  its box; where copies lie along a path a tile apart, straight, round a
+  bend and up a slope; a duplicator's images with and without a tile.
 - `tests/studio_primitive_tests.jac`: the two axes Quake III's tools
   measure a face's texture along; a matrix read as a lie by the texture's
   size; a lie turned, stretched, slid and leaning out of its face taken to
@@ -1564,6 +1575,10 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/fan_session.cfg` (8 steps: a post on each of a path's
+  three corners, then laid seven times along it a tile apart with an
+  elbow at the bend, and back; a fan of eight wedges built again as
+  twelve; a cone of one brush built again taller from its numbers).
   `scripts/studio/q3map_session.cfg` (4 steps: a box in a Quake III
   texture with its top slid, stretched and turned, and a curved sheet,
   written in Quake III's form, Valve's and the classic one; the first two

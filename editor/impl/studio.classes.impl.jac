@@ -332,22 +332,19 @@ impl Studio.class_command(scene: Scene, args: list[str]) -> bool {
         if self.autocaulk {
             made = caulked(made);
         }
-        found = [MapItem(fields={"classname": "worldspawn"}, brushes=made)];
-        if len(made) > 1 {
-            # A shape of several brushes is a group that keeps its numbers,
-            # to be built again from others.
-            found = [
-                MapItem(
-                    fields={
-                        "classname": "func_group",
-                        "_group_name": kind,
-                        "_shape": kind + " " + str(int(size.x)) + " " + str(int(size.y)) + " " + str(int(size.z)) + " "
-                            + str(count) + " " + str(int(thickness))
-                    },
-                    brushes=made
-                )
-            ];
-        }
+        # A shape is a group that keeps its numbers, to be built again from
+        # others: one brush (a cone, a ball) as much as many.
+        found = [
+            MapItem(
+                fields={
+                    "classname": "func_group",
+                    "_group_name": kind,
+                    "_shape": kind + " " + str(int(size.x)) + " " + str(int(size.y)) + " " + str(int(size.z)) + " "
+                        + str(count) + " " + str(int(thickness))
+                },
+                brushes=made
+            )
+        ];
         if self.place_fragment(scene, found, "Add " + kind, "") {
             self.say("Added a " + kind + " of " + str(len(made)) + (" brush" if len(made) == 1 else " brushes"));
         }
