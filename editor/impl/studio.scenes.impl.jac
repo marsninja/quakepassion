@@ -17,14 +17,21 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     }
     began = time.time();
     source = scene;
-    if scene.filtered(self.play_build) {
+    if self.play_only {
+        # Only what is selected, in a world of its own.
+        alone = scene.selection_map();
+        if len(alone) == 0 or alone[0].fields.get("classname", "") != "worldspawn" {
+            alone = [MapItem(fields={"classname": "worldspawn"}, brushes=[])] + alone;
+        }
+        source = scene_from_map(scene.game, scene.name, MapFile(items=alone));
+    } elif scene.filtered(self.play_build) {
         # What builds are told to skip is left out; while editing, so is
         # what is hidden or shown as outlines only.
         source = scene_from_map(scene.game, scene.name, MapFile(items=scene.built_map(self.play_build)));
     }
     whole = self.expanded(source);
     made = compile_scene(whole, self.materials);
-    self.lit_samples = bake_light(whole, made) if self.lit else 0;
+    self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
     self.live = made;
     self.build_ms = int((time.time() - began) * 1000.0);
     self.built_geometry = scene.geometry;

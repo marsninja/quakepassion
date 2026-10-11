@@ -329,6 +329,8 @@ impl Studio.keep_settings {
     lines = [
         "// The studio's settings, written when one changes.",
         "ed_grid " + str(int(self.grid)),
+        # How finely, before whether at all: the second has the last word.
+        "ed_build " + ("quick" if self.luxel > 16.0 else "full"),
         "ed_light " + ("on" if self.lit else "off"),
         "ed_display " + ("wire" if self.wire_axis else "textured") + " axis",
         "ed_display " + ("wire" if self.wire_main else "textured") + " 3d",

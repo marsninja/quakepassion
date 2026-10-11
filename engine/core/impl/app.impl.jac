@@ -926,6 +926,15 @@ impl App.load_destination(
 impl App.step() -> bool {
     dt = 0.0 if self.skip_time else (self.fixed_dt if self.fixed_dt > 0.0 else self.renderer.frame_time());
     self.skip_time = False;
+    if self.workbench.holding and not self.workbench.active {
+        # Played from the workbench and held still there: the game's time
+        # moves a sixtieth of a second for each tick asked for, and not otherwise.
+        dt = 0.0;
+        if self.workbench.steps_owed > 0 {
+            self.workbench.steps_owed -= 1;
+            dt = 1.0 / 60.0;
+        }
+    }
     self.renderer.sync();
     self.console.advance(self.renderer.frame_time());
     escape = False;

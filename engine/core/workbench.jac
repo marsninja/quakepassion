@@ -35,7 +35,11 @@ through the base: a class nothing in its own module derives from or declares
 abstract is laid out without a vtable, and calls on it bind to its own
 bodies."""
 obj Workbench {
-    has active: bool = False;
+    has active: bool = False,
+        # A game being played from the workbench is held still: its time
+        # moves only by the ticks still owed to it.
+        holding: bool = False,
+        steps_owed: int = 0;
 
     """Declare the workbench's commands and cvars. Its commands are owned by
     "studio", and come back through `command`."""
