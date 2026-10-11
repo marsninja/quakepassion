@@ -27,7 +27,9 @@ import from ..geometry.patch {
     points_from,
     points_shifted,
     points_carried,
-    points_reversed
+    points_reversed,
+    grid_grown,
+    grid_shrunk
 }
 import from ..geometry.csg { hull_sides }
 import from ..geometry.faces { sides_dropped, side_flipped, cone_on, prism_on, walls_on, outline_width }
@@ -1334,6 +1336,15 @@ node Scene {
     `size` out and `thickness` in). The new brushes are left selected.
     Answers how many were made."""
     def build_on_faces(shape: str, size: float, thickness: float = 16.0) -> int;
+    """Build a patch again with another grid of control points, another
+    fineness (prisms a curve) or another thickness; zero or less keeps what
+    it has."""
+    def remake_patch(
+        item: Item, points: list[Vec3], width: int, height: int, steps: int = 0, thickness: float = 0.0,
+        label: str = "Patch"
+    ) -> bool;
+    """One more curve across ("u") or up ("v") a patch, or one fewer."""
+    def grow_patch(item: Item, way: str, more: bool = True) -> bool;
     """Lift (or lower) a terrain inside a rectangle of the world, with a
     falloff outside it."""
     def lift_terrain(item: Item, low: Vec3, high: Vec3, amount: float, falloff: float = 0.0) -> bool;

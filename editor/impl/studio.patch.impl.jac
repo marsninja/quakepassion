@@ -16,8 +16,48 @@ impl Studio.patch_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_patch" {
         kind = args[1] if len(args) > 1 else "";
+        if kind in ["grow", "shrink", "thick", "fine"] {
+            curved = self.patch_now(scene);
+            if curved is None {
+                self.say("Select the patch to change");
+                return True;
+            }
+            if kind == "grow" or kind == "shrink" {
+                way = args[2] if len(args) > 2 else "";
+                if way not in ["u", "v"] {
+                    self.say("ed_patch " + kind + " <u|v>: across the patch or up it");
+                } elif not scene.grow_patch(curved, way, kind == "grow") {
+                    self.say("That patch cannot " + kind + " that way");
+                }
+                return True;
+            }
+            number = 0.0;
+            try {
+                number = float(args[2]) if len(args) > 2 else 0.0;
+            } except ValueError {
+                number = 0.0;
+            }
+            control = scene.patch_control(curved);
+            lay = scene.patch_grid(curved);
+            if number <= 0.0 or control is None or lay is None {
+                self.say("ed_patch thick <units> | fine <prisms a curve>");
+                return True;
+            }
+            if not scene.remake_patch(
+                curved,
+                control,
+                int(lay[0]),
+                int(lay[1]),
+                int(number) if kind == "fine" else 0,
+                number if kind == "thick" else 0.0,
+                "Patch " + ("thickness" if kind == "thick" else "fineness")
+            ) {
+                self.say("That patch has no surface that way");
+            }
+            return True;
+        }
         if kind not in PATCH_KINDS {
-            self.say("ed_patch <" + "|".join(PATCH_KINDS) + "> [w d h]");
+            self.say("ed_patch <" + "|".join(PATCH_KINDS) + "> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n>");
             return True;
         }
         if not self.is_built_scene() {

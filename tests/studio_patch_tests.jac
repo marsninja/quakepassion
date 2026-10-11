@@ -1,7 +1,16 @@
 import math;
 import from engine.math.vec3 { Vec3 }
 import from editor.geometry.brush { Side, brush_volume, brush_windings, windings_bounds, brush_holds }
-import from editor.geometry.patch { points_text, points_from, patch_surface, patch_brushes, patch_points, PATCH_KINDS }
+import from editor.geometry.patch {
+    points_text,
+    points_from,
+    patch_surface,
+    patch_brushes,
+    patch_points,
+    grid_grown,
+    grid_shrunk,
+    PATCH_KINDS
+}
 
 def near(a: float, b: float, slack: float = 0.5) -> bool {
     return abs(a - b) < slack;
@@ -87,4 +96,32 @@ test "every kind of patch builds, and a cone's tip makes no prisms of nothing" {
     }
     cone = patch_points("cone", box[0], box[1]);
     assert len(patch_brushes(cone[2], 9, 3, 3, 8.0)) < len(walls);
+}
+
+test "a grid of control points grows by a curve across or up, and shrinks again" {
+    made = patch_points("sheet", Vec3(), Vec3(x=128.0, y=128.0, z=32.0));
+    wider = grid_grown(made[2], 3, 3, "u");
+    assert wider[0] == 5 and wider[1] == 3 and len(wider[2]) == 15;
+    # The new columns carry on as the last two were going: 64 apart, to 192 and 256.
+    assert wider[2][3].x == 192.0 and wider[2][4].x == 256.0 and wider[2][4].y == wider[2][2].y;
+    assert wider[2][8].x == 192.0 and wider[2][0].x == 0.0;
+    taller = grid_grown(wider[2], 5, 3, "v");
+    assert taller[0] == 5 and taller[1] == 5 and taller[2][20].y == 256.0 and taller[2][15].y == 192.0;
+    # Twice as many curves across make about twice the prisms.
+    assert len(patch_brushes(wider[2], 5, 3, 3, 8.0, "wall")) == 2 * len(patch_brushes(made[2], 3, 3, 3, 8.0, "wall"));
+    back = grid_shrunk(taller[2], 5, 5, "v");
+    assert back[1] == 3 and back[2] == wider[2];
+    back = grid_shrunk(back[2], 5, 3, "u");
+    assert back[0] == 3 and len(back[2]) == 9 and back[2][2].x == 128.0;
+    # One curve cannot shrink.
+    assert grid_shrunk(made[2], 3, 3, "u")[0] == 3 and grid_shrunk(made[2], 3, 3, "v")[1] == 3;
+}
+
+test "an endcap is half a pipe, open to the near side" {
+    made = patch_points("endcap", Vec3(), Vec3(x=128.0, y=64.0, z=96.0));
+    assert made[0] == 5 and made[1] == 3;
+    surface = patch_surface(made[2], 5, 3, 4)[2];
+    reach_y = max([point.y for point in surface]);
+    # It bulges to the far side and both ends are at the near one.
+    assert reach_y > 40.0 and surface[0].y == 0.0 and surface[patch_surface(made[2], 5, 3, 4)[0] - 1].y == 0.0;
 }

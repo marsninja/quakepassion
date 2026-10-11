@@ -197,3 +197,34 @@ test "a mirrored patch built again thickens toward the side it did" {
     assert scene.set_patch(patch, nudged);
     assert about(floor_of(scene, patch), before, 1.5);
 }
+
+test "a patch takes another curve, another thickness and another fineness, undoably" {
+    scene = room();
+    made = patch_points("sheet", Vec3(x=0.0, y=0.0, z=64.0), Vec3(x=128.0, y=128.0, z=64.0));
+    patch = scene.make_patch(made[2], made[0], made[1], "wall");
+    assert patch is not None;
+    prisms = len(scene.solids_of(patch));
+    assert scene.grow_patch(patch, "u");
+    grid = scene.patch_grid(patch);
+    control = scene.patch_control(patch);
+    assert grid is not None and grid[0] == 5.0 and grid[1] == 3.0 and control is not None and len(control) == 15;
+    assert len(scene.solids_of(patch)) == 2 * prisms;
+    assert scene.undo() == "Grow patch" and len(scene.solids_of(patch)) == prisms;
+    grid = scene.patch_grid(patch);
+    assert grid is not None and grid[0] == 3.0;
+    # One curve cannot shrink, and a way that is neither is refused.
+    assert not scene.grow_patch(patch, "u", False) and not scene.grow_patch(patch, "w");
+    assert scene.grow_patch(patch, "v") and scene.grow_patch(patch, "v", False);
+    grid = scene.patch_grid(patch);
+    assert grid is not None and grid[1] == 3.0;
+    # Thicker: the sheet lies at 64 and reaches twenty-four under it.
+    control = scene.patch_control(patch);
+    assert control is not None and scene.remake_patch(patch, control, 3, 3, 0, 24.0, "Patch thickness");
+    assert about(floor_of(scene, patch), 40.0, 0.5);
+    grid = scene.patch_grid(patch);
+    assert grid is not None and grid[3] == 24.0 and grid[2] == 4.0;
+    # Finer: more prisms from the same points.
+    assert scene.remake_patch(patch, control, 3, 3, 8, 0.0, "Patch fineness");
+    assert len(scene.solids_of(patch)) > prisms and scene.undo() == "Patch fineness";
+    assert len(scene.solids_of(patch)) == prisms;
+}

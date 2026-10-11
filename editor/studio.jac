@@ -244,8 +244,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_assetfind", "ed_assetfind <text>", "list the files of every game whose names hold some text"),
     (
         "ed_patch",
-        "ed_patch <sheet|arch|bevel|cylinder|cone> [w d h]",
-        "add a curved patch where the camera looks"
+        "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n>",
+        "add a curved patch where the camera looks; or give the selected one another curve, thickness or fineness"
     ),
     ("ed_patch_point", "ed_patch_point <patch> <point> <dx> <dy> <dz>", "move one control point of a patch"),
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),

@@ -342,3 +342,45 @@ impl Scene.paint_terrain(item: Item, x: float, y: float, radius: float, material
     }
     return count;
 }
+
+impl Scene.remake_patch(
+    item: Item, points: list[Vec3], width: int, height: int, steps: int = 0, thickness: float = 0.0,
+    label: str = "Patch"
+) -> bool {
+    lay = self.patch_grid(item);
+    if lay is None or width < 3 or height < 3 or len(points) != width * height {
+        return False;
+    }
+    fine = steps if steps > 0 else int(lay[2]);
+    thick = thickness if thickness > 0.0 else lay[3];
+    owned = self.solids_of(item);
+    like: list[Side] = owned[0].sides if len(owned) > 0 else [];
+    brushes = patch_brushes(points, width, height, min(16, fine), thick, "", like);
+    return self.rebuild_item(
+        item,
+        brushes,
+        {
+            "_patch": str(width) + " " + str(height) + " " + str(min(16, fine)) + " " + field_number(thick),
+            "_points": points_text(points)
+        },
+        label
+    );
+}
+
+impl Scene.grow_patch(item: Item, way: str, more: bool = True) -> bool {
+    lay = self.patch_grid(item);
+    control = self.patch_control(item);
+    if lay is None or control is None or way not in ["u", "v"] {
+        return False;
+    }
+    width = int(lay[0]);
+    height = int(lay[1]);
+    made = grid_grown(control, width, height, way) if more else grid_shrunk(control, width, height, way);
+    if made[0] == width and made[1] == height {
+        return False;
+    }
+    if made[0] > 31 or made[1] > 31 {
+        return False;
+    }
+    return self.remake_patch(item, made[2], made[0], made[1], 0, 0.0, "Grow patch" if more else "Shrink patch");
+}

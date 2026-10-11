@@ -145,15 +145,25 @@ def patch_brushes(
 }
 
 """The kinds `patch_points` knows."""
-glob PATCH_KINDS: list[str] = ["sheet", "arch", "bevel", "cylinder", "cone"];
+glob PATCH_KINDS: list[str] = ["sheet", "arch", "bevel", "cylinder", "cone", "endcap"];
 
 """The control points of a patch of a kind, filling a box: (width, height,
 points). A sheet lies flat across the top of the box; an arch spans it
 along x and runs its depth; a bevel rounds one upright corner; a cylinder
-and a cone stand in it."""
+and a cone stand in it; an endcap is half a pipe standing upright, open
+toward the box's near side."""
 def patch_points(kind: str, low: Vec3, high: Vec3) -> tuple[int, int, list[Vec3]] {
     middle = low.add(high).scale(0.5);
     points: list[Vec3] = [];
+    if kind == "endcap" {
+        # Five points round the far half of the box, at each of three heights.
+        for z in [low.z, middle.z, high.z] {
+            for (x, y) in [(low.x, low.y), (low.x, high.y), (middle.x, high.y), (high.x, high.y), (high.x, low.y)] {
+                points.append(Vec3(x=x, y=y, z=z));
+            }
+        }
+        return (5, 3, points);
+    }
     if kind == "sheet" {
         for y in [low.y, middle.y, high.y] {
             for x in [low.x, middle.x, high.x] {
@@ -239,4 +249,57 @@ def points_reversed(text: str, width: int) -> str {
         }
     }
     return points_text(turned);
+}
+
+"""A grid of control points with one more curve across it ("u": two more
+columns) or up it ("v": two more rows), each carrying on from the last two
+as they were going: (width, height, points)."""
+def grid_grown(points: list[Vec3], width: int, height: int, way: str) -> tuple[int, int, list[Vec3]] {
+    if width < 3 or height < 3 or len(points) != width * height {
+        return (width, height, points);
+    }
+    grown: list[Vec3] = [];
+    if way == "u" {
+        for row in range(height) {
+            last = points[row * width + width - 1];
+            step = last.sub(points[row * width + width - 2]);
+            for column in range(width) {
+                grown.append(points[row * width + column]);
+            }
+            grown.append(last.add(step));
+            grown.append(last.add(step.scale(2.0)));
+        }
+        return (width + 2, height, grown);
+    }
+    for point in points {
+        grown.append(point);
+    }
+    for more in [1.0, 2.0] {
+        for column in range(width) {
+            last = points[(height - 1) * width + column];
+            grown.append(last.add(last.sub(points[(height - 2) * width + column]).scale(more)));
+        }
+    }
+    return (width, height + 2, grown);
+}
+
+"""A grid without its last curve across ("u") or up ("v"). Unchanged when
+that would leave less than one curve."""
+def grid_shrunk(points: list[Vec3], width: int, height: int, way: str) -> tuple[int, int, list[Vec3]] {
+    if len(points) != width * height or (way == "u" and width < 5) or (way != "u" and height < 5) {
+        return (width, height, points);
+    }
+    kept: list[Vec3] = [];
+    if way == "u" {
+        for row in range(height) {
+            for column in range(width - 2) {
+                kept.append(points[row * width + column]);
+            }
+        }
+        return (width - 2, height, kept);
+    }
+    for index in range(width * (height - 2)) {
+        kept.append(points[index]);
+    }
+    return (width, height - 2, kept);
 }

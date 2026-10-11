@@ -326,6 +326,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   touches are built again, and each stroke undoes. `ed_terrain export
   <file.pgm>` writes the heights as a grey image and `ed_terrain import`
   reads one back. Its faces take materials like any others.
+- **More for patches**: `ed_patch endcap` is half a pipe standing upright.
+  The selected patch takes another curve across it or up it
+  (`ed_patch grow <u|v>`, the new points carrying on as the last were
+  going) and gives one up (`ed_patch shrink <u|v>`); `ed_patch thick
+  <units>` changes how thick it is built and `ed_patch fine <n>` how many
+  prisms a curve it is built of. Each is one undoable step.
 - **More for terrain**: `ed_sculpt erode` wears down what stands above its
   lowest neighbour, and `ed_sculpt paint` gives the tops under the brush
   the material in hand. `ed_terrain lift <x0> <y0> <x1> <y1> <amount>
@@ -659,6 +665,9 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/land_session.cfg` (7 steps: a terrain lifted whole by a
   rectangle that takes it in, split along alternate diagonals, given a
   peak and worn down, its tops painted, and freed into plain brushes).
+  `scripts/studio/quilt_session.cfg` (6 steps: a curved sheet grown by a
+  curve across and a curve up, shrunk by one, made thicker and finer, and
+  an endcap added).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

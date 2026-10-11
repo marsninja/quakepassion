@@ -1070,6 +1070,66 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""How many prisms a step's patch line counts, and its grid as "WxH"."""
+def patch_shape(lines: list[str]) -> list[str] {
+    found = patches(lines);
+    return [found[-1].split()[2], found[-1].split("prisms=")[1].split()[0]] if found else ["", "0"];
+}
+
+"""The twenty-sixth session: a curved sheet grown across and up, shrunk,
+thickened and made finer; and an endcap."""
+def quilt_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["grown", "endcap"];
+    for shot in shots {
+        (repo / f"quilt_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-quilt-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/quilt_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "quilt.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The quilt session failed: {output / 'quilt.log'}";
+        text = (Path(home) / "scenes/quilt.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "wider", "taller", "narrower", "fine", "endcap"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'quilt.log'}";
+    }
+    made = patch_shape(steps["made"]);
+    wider = patch_shape(steps["wider"]);
+    taller = patch_shape(steps["taller"]);
+    narrower = patch_shape(steps["narrower"]);
+    fine = patch_shape(steps["fine"]);
+    assert made[0] == "3x3" and wider[0] == "5x3" and taller[0] == "5x5" and narrower[0] == "3x5" , (
+        f"{made} {wider} {taller} {narrower}"
+    );
+    # Each curve more doubles the prisms that way; one fewer halves them.
+    assert int(wider[1]) == 2 * int(made[1]) and int(taller[1]) == 4 * int(made[1]) and int(narrower[1]) == 2 * int(made[1]);
+    # Thicker and finer: its fields say so, and it is made of more prisms.
+    assert "_patch=3 5 8 24" in selected(steps["fine"])[0] and int(fine[1]) > int(narrower[1]) , str(steps["fine"]);
+    assert patch_shape(steps["endcap"])[0] == "5x3" and len(patches(steps["endcap"])) == 2;
+    assert '"_patch" "3 5 8 24"' in text and text.count('"_patch"') == 2;
+    for shot in shots {
+        source = repo / f"quilt_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"quilt_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"QUILT PASS: {len(steps) - 1} steps, a curved sheet grown across and up, shrunk, thickened and made "
+            + "finer, and an endcap"
+    );
+}
+
 """The twenty-fifth session: a terrain lifted in a rectangle, split another
 way, worn down, painted, and left as plain brushes."""
 def land_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2002,6 +2062,7 @@ def main() {
         "dups": dups_session,
         "shapes": shapes_session,
         "land": land_session,
+        "quilt": quilt_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2130,6 +2191,7 @@ def main() {
     dups_session(repo, binary, env, output);
     shapes_session(repo, binary, env, output);
     land_session(repo, binary, env, output);
+    quilt_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
