@@ -113,6 +113,27 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   world while the faces move through them. It is kept between sessions.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
+- **Layouts** (View menu, `ed_layout <1|2|3|4|4b>`): the 3D view alone;
+  beside the plan; beside the plan and the front view; all four in a
+  square; or the 3D view beside the three axis views in a column. The
+  layout is kept between sessions.
+- **The ruler**: with something selected, each axis view shows how far the
+  selection runs across it and up it, along its edges (`ed_ruler`).
+  **Zoom**: the wheel, `=` and `-` over an axis view (twice as near or as
+  far; the 3D camera moves instead), and `ed_zoom <units>` sets how many
+  units fit the axis views' height. **Names** (`ed_names`) puts every
+  entity's name over it, not only the selection's.
+- **Remembered views**: `ed_mark [name]` keeps where the 3D camera stands,
+  in the document; `ed_goto <name|next|prev>` goes back, `ed_marks` lists
+  them and `ed_unmark <name>` forgets one.
+- **A backdrop**: `ed_backdrop <file> [top|front|side] [across up]
+  [units per pixel] [alpha]` lays a PNG, JPEG or TGA picture behind an axis
+  view, to draw a level over a sketch or a map; the document remembers it
+  (`ed_backdrop off` takes it away).
+- **Round the selection**: Alt with the look button swings the 3D camera
+  round what is selected, at the distance it stands (`ed_swing <yaw>
+  <pitch>`); `ed_behind` takes it behind the picked face, looking at the
+  face's back.
 - **The grid** moves and resizes snap to is 8 units to begin with; `[` and
   `]` halve and double it (`ed_grid <size|up|down>`), and the axis views
   draw it.
@@ -399,7 +420,8 @@ editor/impl/                 the workbench's scenes and brushes
   move, a turn and a stretch, and a patch's control points turning and
   stretching with its brushes.
 - `tests/studio_camera_tests.jac`: the ray through a point of the view lands
-  back on that point; framing; ray and box.
+  back on that point; framing; ray and box; the swing round a point and
+  facing one point from another.
 - `tests/studio_brush_tests.jac`, `tests/studio_map_tests.jac`: outlines,
   clipping, volumes, rays and mappings; maps read and written in both forms.
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
@@ -489,6 +511,12 @@ editor/impl/                 the workbench's scenes and brushes
   surface flag, found again in the saved map; a box drawn inside the first
   made a digger, so the level is built from six brushes while the document
   holds four, then filled in and dug again by undo).
+  `scripts/studio/views_session.cfg` (11 steps: two, three and four views
+  and the column of axis views; the ruler on a drawn box; zoom by command
+  and by key; names; two views remembered, one gone back to, one
+  forgotten; a picture laid behind the plan; the camera swung a quarter
+  round the box and taken under its top; then the studio opened again to
+  find the layout, the ruler and the names kept).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

@@ -105,3 +105,27 @@ test "an orthographic view pans by screen units, zooms within limits and frames"
     front.frame(Vec3(x=10.0, y=20.0, z=30.0), 100.0);
     assert near(front.eye.x, 10.0) and near(front.eye.z, 30.0) and near(front.span, 260.0);
 }
+
+test "the camera swings round a point at its distance, and faces a point from another" {
+    camera = EditCamera();
+    camera.look_from(Vec3(x=-192.0, y=-340.0, z=32.0), Vec3(x=-192.0, y=160.0, z=32.0));
+    # Looking along +y, level.
+    ahead = camera.forward();
+    assert abs(ahead.x) < 0.001 and abs(ahead.y - 1.0) < 0.001 and abs(ahead.z) < 0.001;
+    pivot = Vec3(x=-192.0, y=160.0, z=32.0);
+    camera.orbit(pivot, math.radians(90.0), 0.0);
+    # A quarter round: facing -x from the +x side, as far off as before.
+    assert abs(camera.eye.x - 308.0) < 0.01 and abs(camera.eye.y - 160.0) < 0.01 and abs(camera.eye.z - 32.0) < 0.01;
+    assert abs(camera.eye.sub(pivot).length() - 500.0) < 0.01;
+    assert abs(camera.forward().x + 1.0) < 0.001;
+    # Up over it: the pivot stays dead ahead.
+    camera.orbit(pivot, 0.0, math.radians(-45.0));
+    toward = pivot.sub(camera.eye).normalized();
+    assert toward.sub(camera.forward()).length() < 0.001 and camera.eye.z > 300.0;
+    # From below, looking up, as far as the camera tips.
+    camera.look_from(Vec3(z=-100.0), Vec3(x=1.0));
+    assert camera.forward().z > 0.9 and camera.eye.z == -100.0;
+    # A point to face that is where it stands changes nothing.
+    camera.look_from(Vec3(x=5.0), Vec3(x=5.0));
+    assert camera.eye.z == -100.0;
+}

@@ -1067,6 +1067,102 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A word of a step's line about the views (`span`, `layout`, ...)."""
+def view_word(lines: list[str], key: str) -> str {
+    found = [line for line in lines if line.startswith("views ")];
+    return found[0].split(key + "=")[1].split()[0] if found else "";
+}
+
+"""Where the 3D camera stands at a step."""
+def camera_at(lines: list[str]) -> list[int] {
+    found = [line for line in lines if line.startswith("camera ")];
+    return [int(part) for part in found[0].split()[1:4]];
+}
+
+"""The eighteenth session: the layouts, the ruler, zoom, names, remembered
+views, a backdrop picture, and the camera swung round and taken behind a
+face; then the studio opened again with its settings."""
+def views_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["two", "column", "ruler", "backdrop"];
+    for shot in shots {
+        (repo / f"views_{shot}.png").unlink(missing_ok=True);
+    }
+    (output / "backdrop.png").write_bytes(checker_png(64));
+    with tempfile.TemporaryDirectory(prefix="qp-views-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/views_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "views.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The views session failed: {output / 'views.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+        again = subprocess.run(
+            [str(binary), "+edit", "+wait", "+wait", "+ed_dump", "again", "+quit"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "views_again.log").write_text(again.stdout + again.stderr);
+        assert again.returncode == 0 , f"Opening the studio again failed: {output / 'views_again.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["two", "three", "column", "measured", "far", "nearer", "back", "laid", "before", "swung", "behind"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'views.log'}";
+    }
+    # Two views, three, and four with the axis views in a column.
+    shown = [[line for line in steps[name] if line.startswith("view ")][0] for name in ["two", "three", "column"]];
+    assert shown[0].endswith(" of 2") and shown[1].endswith(" of 3") and shown[2].endswith(" of 4") , str(shown);
+    assert view_word(steps["column"], "layout") == "4b" and view_word(steps["measured"], "layout") == "4";
+    assert view_word(steps["measured"], "ruler") == "1" and view_word(steps["measured"], "span") == "1024";
+    # Zoom sets every axis view, then = brings the one under the pointer twice as near.
+    assert view_word(steps["far"], "span") == "2048" and view_word(steps["nearer"], "span") == "1024" , str(steps["nearer"]);
+    # The view remembered first is gone back to.
+    assert camera_at(steps["back"]) == camera_at(steps["measured"]) and camera_at(steps["back"])[1] != -600 , str(
+        steps["back"]
+    );
+    assert view_word(steps["back"], "names") == "1";
+    # The world keeps the view still remembered and the picture's place; the forgotten one is gone.
+    world = selected(steps["laid"]);
+    assert len(world) == 1 and "_view_there=0 -600 400 90 -30" in world[0] and "_view_here" not in world[0] , str(world);
+    assert "_backdrop=.jac/screenshots/studio/backdrop.png" in world[0] , world[0];
+    assert view_word(steps["laid"], "backdrop") == "top,0,0,2.0,150" , str(steps["laid"]);
+    # Swung a quarter round the box, the camera is as far from its middle as it was.
+    before = camera_at(steps["before"]);
+    swung = camera_at(steps["swung"]);
+    middle = [-192, 160, 32];
+    far_before = sum([(before[axis] - middle[axis]) ** 2 for axis in range(3)]) ** 0.5;
+    far_after = sum([(swung[axis] - middle[axis]) ** 2 for axis in range(3)]) ** 0.5;
+    assert before == [-192, -340, 32] and abs(far_before - far_after) < 3.0 , f"{before} {swung}";
+    # It faced along +y; turned a quarter to face -x, it stands on the +x side.
+    assert abs(swung[0] - 308) <= 3 and abs(swung[1] - 160) <= 3 and swung[2] == 32 , str(swung);
+    # Behind the top face: under it, on the line through its middle.
+    under = camera_at(steps["behind"]);
+    assert under[0] == -192 and under[1] == 160 and under[2] < 0 , str(under);
+    assert "ed_ruler on" in kept and "ed_names on" in kept and "ed_layout 4" in kept , kept;
+    back = studio_steps(again.stdout)["again"];
+    assert view_word(back, "names") == "1" and view_word(back, "layout") == "4" , str(back);
+    for shot in shots {
+        source = repo / f"views_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"views_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"VIEWS PASS: {len(steps) - 1} steps, two, three and four views, a ruler, zoom, names, remembered views, "
+            + "a backdrop, and the camera swung round a box and taken behind its top"
+    );
+}
+
 """How many brushes the level was built from at a step."""
 def made(lines: list[str]) -> int {
     found = [line for line in lines if line.startswith("made brushes=")];
@@ -1427,6 +1523,7 @@ def main() {
         "transform": transform_session,
         "select": select_session,
         "faces": faces_session,
+        "views": views_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -1547,6 +1644,7 @@ def main() {
     transform_session(repo, binary, env, output);
     select_session(repo, binary, env, output);
     faces_session(repo, binary, env, output);
+    views_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

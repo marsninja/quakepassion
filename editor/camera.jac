@@ -34,6 +34,28 @@ obj EditCamera {
         self.pitch = max(-CAMERA_PITCH_LIMIT, min(CAMERA_PITCH_LIMIT, self.pitch + pitch));
     }
 
+    """Swing round a point by angles in radians, at the distance the camera
+    stands from it and facing it."""
+    def orbit(pivot: Vec3, yaw: float, pitch: float) {
+        reach = self.eye.sub(pivot).length();
+        self.turn(yaw, pitch);
+        self.eye = pivot.sub(self.forward().scale(reach));
+    }
+
+    """Stand at a point and face another."""
+    def look_from(stand: Vec3, target: Vec3) {
+        way = target.sub(stand);
+        if way.length() < 0.001 {
+            return;
+        }
+        way = way.normalized();
+        self.eye = stand;
+        self.yaw = math.atan2(way.y, way.x);
+        self.pitch = max(
+            -CAMERA_PITCH_LIMIT, min(CAMERA_PITCH_LIMIT, math.asin(max(-1.0, min(1.0, way.z))))
+        );
+    }
+
     """Move along the camera's own axes."""
     def fly(ahead: float, side: float, rise: float) {
         self.eye = self.eye.add(self.forward().scale(ahead)).add(self.right().scale(side)).add(

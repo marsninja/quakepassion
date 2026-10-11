@@ -160,8 +160,8 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         }
         wanted = args[1].strip() if len(args) > 1 else "next";
         key = "_view_" + wanted;
-        if wanted == "next" {
-            self.marks_at = (self.marks_at + 1) % len(marks);
+        if wanted == "next" or wanted == "prev" {
+            self.marks_at = (self.marks_at + (1 if wanted == "next" else -1)) % len(marks);
             key = marks[self.marks_at];
         }
         parts = world.fields.get(key, "").split();
@@ -333,7 +333,9 @@ impl Studio.keep_settings {
         "ed_display " + ("wire" if self.wire_axis else "textured") + " axis",
         "ed_display " + ("wire" if self.wire_main else "textured") + " 3d",
         "ed_brush " + str(int(self.brush_radius)) + " " + str(int(self.brush_amount)),
-        "ed_layout " + str(self.layout),
+        "ed_layout " + ("4b" if self.layout == 5 else str(self.layout)),
+        "ed_ruler " + ("on" if self.ruler else "off"),
+        "ed_names " + ("on" if self.names else "off"),
         "ed_anglesnap " + str(int(self.angle_snap)),
         "ed_texlock " + ("on" if self.tex_lock else "off")
     ];

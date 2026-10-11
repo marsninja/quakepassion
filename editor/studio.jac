@@ -158,6 +158,18 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_zoom", "ed_zoom <in|out|units>", "zoom the axis views (so many units fit their height), or move the 3D camera"),
+    ("ed_ruler", "ed_ruler [on|off]", "show the selection's size along its edges in the axis views"),
+    ("ed_names", "ed_names [on|off]", "show every entity's name in the views"),
+    (
+        "ed_backdrop",
+        "ed_backdrop <file|off> [top|front|side] [across up] [units per pixel] [alpha]",
+        "lay a picture behind an axis view, to draw over"
+    ),
+    ("ed_marks", "ed_marks", "list the remembered views"),
+    ("ed_unmark", "ed_unmark <name>", "forget a remembered view"),
+    ("ed_behind", "ed_behind", "take the 3D camera behind the picked face, looking at its back"),
+    ("ed_swing", "ed_swing <yaw> <pitch>", "swing the 3D camera round the selection (degrees)"),
     ("ed_face_delete", "ed_face_delete", "take the picked faces off their brushes, where the others close without them"),
     ("ed_face_flip", "ed_face_flip", "turn the picked face to face the other way, leaving what lay beyond it"),
     ("ed_cone", "ed_cone [height]", "stand a cone on each picked face"),
@@ -208,7 +220,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_matfilter", "ed_matfilter <text>", "show only matching materials in the materials list"),
     (
         "ed_layout",
-        "ed_layout <1|4|logic|assets>",
+        "ed_layout <1|2|3|4|4b|logic|assets>",
         "one level view, four (3D, top, front and side), the logic graph, or the asset explorer"
     ),
     ("ed_palette", "ed_palette", "open the list of every studio command, to find one by typing"),
@@ -489,6 +501,11 @@ obj Studio(Workbench) {
         pivot_picks: int = -1,
         # Whether materials go with the faces a move, turn or stretch carries.
         tex_lock: bool = True,
+        # A ruler along the selection in the axis views, a name on every
+        # entity, and the picture laid behind an axis view.
+        ruler: bool = True,
+        names: bool = False,
+        backdrop_seen: str = "",
         # Where the last click was and how deep it went, so another there
         # goes to what is behind; and where a tour of the selection has got to.
         click_x: int = -100,
@@ -814,7 +831,18 @@ obj Studio(Workbench) {
                 ],
                 [
                     MenuItem(text="One view", command="ed_layout 1"),
+                    MenuItem(text="Two views", command="ed_layout 2"),
+                    MenuItem(text="Three views", command="ed_layout 3"),
                     MenuItem(text="Four views", command="ed_layout 4"),
+                    MenuItem(text="Four views, the axis views in a column", command="ed_layout 4b"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Zoom in", command="ed_zoom in", keys="="),
+                    MenuItem(text="Zoom out", command="ed_zoom out", keys="-"),
+                    MenuItem(text="Ruler on the selection", command="ed_ruler"),
+                    MenuItem(text="Names on every entity", command="ed_names"),
+                    MenuItem(text="Behind the picked face", command="ed_behind"),
+                    MenuItem(text="The remembered views", command="ed_marks"),
+                    MenuItem(rule=True),
                     MenuItem(text="Logic graph", command="ed_layout logic", keys="L"),
                     MenuItem(text="Asset explorer", command="ed_layout assets"),
                     MenuItem(rule=True),
@@ -1571,6 +1599,9 @@ obj Studio(Workbench) {
                     if self.looking or self.panning {
                         self.camera.pan(self.view_area(), event.dx, event.dy);
                     }
+                } elif self.looking and event.alt {
+                    # With Alt the camera goes round what is selected.
+                    self.swing(scene, -float(event.dx) * 0.005, -float(event.dy) * 0.005);
                 } elif self.looking {
                     self.camera.turn(-float(event.dx) * 0.005, -float(event.dy) * 0.005);
                 } elif self.panning {
@@ -1735,6 +1766,10 @@ obj Studio(Workbench) {
                 stage.emit("ed_rotate 90");
             } elif key == "g" and not ctrl {
                 stage.emit("ed_gizmo next");
+            } elif key == "=" or key == "+" {
+                stage.emit("ed_zoom in");
+            } elif key == "-" and not ctrl {
+                stage.emit("ed_zoom out");
             } elif key == "n" and not ctrl {
                 stage.emit("ed_browse prev" if shift else "ed_browse next");
             } elif ctrl and key == "p" {
@@ -1848,7 +1883,8 @@ obj Studio(Workbench) {
         if self.logic_shown or self.assets_shown {
             return 0;
         }
-        return len(self.ports) if self.layout == 4 else min(1, len(self.ports));
+        # Two and three views are the first ports; both layouts of four show all.
+        return min(len(self.ports), 4 if self.layout >= 4 else self.layout);
     }
 
     """Lay the level views out: one, or four in a square."""
@@ -1865,7 +1901,7 @@ obj Studio(Workbench) {
             row.clear();
         }
         ui.center.clear();
-        self.layout = 4 if count == 4 else 1;
+        self.layout = count if count in [2, 3, 4, 5] else 1;
         self.watch(0);
         if self.logic_shown {
             ui.center.adopt(ui.logic);
@@ -1882,10 +1918,24 @@ obj Studio(Workbench) {
             return;
         }
         upper = Box(across=True, grow=1, gap=3);
-        lower = Box(across=True, grow=1, gap=3);
         ui.center.adopt(upper);
-        ui.center.adopt(lower);
         upper.adopt(self.ports[0].view);
+        if self.layout == 2 {
+            # The classic pair: the 3D view beside the plan.
+            upper.adopt(self.ports[1].view);
+            return;
+        }
+        if self.layout == 3 or self.layout == 5 {
+            # The 3D view beside a column of axis views: two, or all three.
+            column = Box(grow=1, gap=3);
+            upper.adopt(column);
+            for index in range(1, 3 if self.layout == 3 else 4) {
+                column.adopt(self.ports[index].view);
+            }
+            return;
+        }
+        lower = Box(across=True, grow=1, gap=3);
+        ui.center.adopt(lower);
         upper.adopt(self.ports[1].view);
         lower.adopt(self.ports[2].view);
         lower.adopt(self.ports[3].view);
@@ -2128,7 +2178,7 @@ obj Studio(Workbench) {
         watched = self.port_now;
         for index in range(self.showing()) {
             self.watch(index);
-            self.draw_over_view(scene, self.ports[index].title if self.layout == 4 else "");
+            self.draw_over_view(scene, self.ports[index].title if self.layout != 1 else "");
         }
         self.watch(watched);
         self.canvas.unclip();
@@ -2140,6 +2190,7 @@ obj Studio(Workbench) {
         area = self.view_area();
         canvas = self.canvas;
         canvas.clip(area);
+        self.draw_view_extras(scene, area);
         if title {
             canvas.text(title, area.x + 8, area.y + 6, canvas.theme.dim, canvas.theme.small);
         }
@@ -2370,6 +2421,19 @@ obj Studio(Workbench) {
     def transform_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
+    # Zoom, the ruler, names, a backdrop, remembered views, orbit (impl/studio.views.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def view_command(scene: Scene, args: list[str]) -> bool;
+    """The box round everything selected, or none."""
+    def selection_box(scene: Scene) -> list[Vec3] | None;
+    """What is drawn over a view before its labels and handles: the
+    backdrop picture, the ruler, the names."""
+    def draw_view_extras(scene: Scene, area: Rect);
+    """Swing the 3D camera round the selection (or what it looks at)."""
+    def swing(scene: Scene, yaw: float, pitch: float);
+
+    # ------------------------------------------------------------------
     # Faces dropped, turned and built on; side flags; diggers (impl/studio.faces.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -2533,7 +2597,10 @@ obj Studio(Workbench) {
             if self.logic_shown or self.assets_shown {
                 self.arrange_views(self.layout);
             } else {
-                self.arrange_views(4 if len(args) > 1 and args[1] == "4" else 1);
+                wanted_layout = args[1] if len(args) > 1 else "1";
+                self.arrange_views(
+                    5 if wanted_layout == "4b" else (int(wanted_layout) if wanted_layout in ["2", "3", "4"] else 1)
+                );
                 self.keep_settings();
             }
         } elif name == "ed_dump" {
@@ -2546,7 +2613,8 @@ obj Studio(Workbench) {
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
             and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
             and not self.patch_command(scene, args) and not self.transform_command(scene, args)
-            and not self.selection_command(scene, args) and not self.face_command(scene, args) {
+            and not self.selection_command(scene, args) and not self.face_command(scene, args)
+            and not self.view_command(scene, args) {
             self.utility_command(scene, args);
         }
     }
@@ -2680,6 +2748,10 @@ obj Studio(Workbench) {
             "studio: camera " + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z)),
             "studio: view " + str(self.view_area().x) + " " + str(self.view_area().y) + " "
                 + str(self.view_area().w) + " " + str(self.view_area().h) + " of " + str(self.showing()),
+            "studio: views layout=" + ("4b" if self.layout == 5 else str(self.layout)) + " span="
+                + str(int(self.ports[1].camera.span) if len(self.ports) > 1 else 0) + " ruler="
+                + ("1" if self.ruler else "0") + " names=" + ("1" if self.names else "0") + " backdrop="
+                + (scene.world().fields.get("_backdrop_at", "none").replace(" ", ",")),
             "studio: sets="
                 + (
                     ",".join(
