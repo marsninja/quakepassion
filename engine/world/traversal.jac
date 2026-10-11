@@ -1,4 +1,5 @@
 """Shared swept-contact traversal, with map-defined destinations and launches."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Player }
 import from .damage { Damage }
@@ -445,7 +446,7 @@ def load_traversal(world: World, bsp: Bsp) {
         if not point_pad and kind not in ["trigger_teleport", "trigger_push"] {
             continue;
         }
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         allowed = 3840 if bsp.game == "q1" else (7936 if bsp.game == "q2" else 0);
         if bsp.game != "q3" and not point_pad {
             allowed |= 3 if kind == "trigger_teleport" else 1;
@@ -581,7 +582,7 @@ def load_traversal(world: World, bsp: Bsp) {
             if target {
                 continue;
             }
-            speed = float(fields.get("speed", "0"));
+            speed = atof(fields.get("speed", "0"));
             if speed == 0.0 {
                 speed = 1000.0;
             }

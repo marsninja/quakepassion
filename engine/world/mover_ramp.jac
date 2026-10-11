@@ -5,6 +5,7 @@ Q2 func_plat always ramps (accel and decel 5 by default); doors and
 func_water only when their accel or decel is authored. Rotating doors and
 trains keep a constant speed, as in the original. Distances here are units
 per 0.1 s frame, as in moveinfo_t."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 
 """moveinfo_t's acceleration state for one mover."""
@@ -29,8 +30,8 @@ the authored values by 0.1 and default to 5; doors default to their speed,
 which makes the move constant (Move_Calc's check). The same 0.1 scaling
 turns a door's authored values into per-frame units."""
 def q2_mover_ramp(kind: str, fields: dict[str, str], speed: float) -> MoverRamp | None {
-    accel = float(fields.get("accel", "0"));
-    decel = float(fields.get("decel", "0"));
+    accel = atof(fields.get("accel", "0"));
+    decel = atof(fields.get("decel", "0"));
     if kind == "func_plat" {
         return MoverRamp(
             accel=accel * 0.1 if accel != 0.0 else 5.0,

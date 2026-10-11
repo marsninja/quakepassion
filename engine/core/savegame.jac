@@ -1,4 +1,5 @@
 """Versioned text snapshots, restored only into a newly loaded world."""
+import from engine.assets.content { playing }
 import from .save_format { SNAPSHOT_HEADER }
 import from engine.world.gibs { Gib, HasGib }
 import from engine.world.patrols { Patrols, Holds }
@@ -215,6 +216,11 @@ def snapshot(world: World, level: Level, player: Player, combat: CombatState) ->
     }
     # Loading must rebuild the entity set of the skill that was saved.
     lines.append("SKILL " + str(level.skill));
+    # The content pack the map came from: packs share map names (`start`).
+    pack = playing(level.bsp.game);
+    if pack is not None {
+        lines.append("PACK " + pack.id);
+    }
     lines.append("CLOCK " + numbers([level.clock]));
     for item in [player.inventory->:InventorySlot:->][?:ItemStack] {
         lines.append(

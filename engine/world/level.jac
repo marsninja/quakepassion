@@ -1,7 +1,9 @@
 """BSP spatial graph and Quake 1 asset loading."""
+import from engine.formats.numbers { atof, atoi }
 import os;
 import math;
 import from ..assets.pak { open_pak, PakArchive }
+import from ..assets.content { archive_paths }
 import from ..formats.q1.bsp { parse_bsp }
 import from ..formats.bsp {
     Bsp,
@@ -844,10 +846,8 @@ def load_level(
         level.palette = bytes(colors);
     } elif game == "q1" or game == "q2" {
         paks: list[PakArchive] = [];
-        for filename in sorted(os.listdir(directory)) {
-            if filename.lower().endswith(".pak") {
-                paks.append(open_pak(directory + "/" + filename));
-            }
+        for path in archive_paths(directory, ".pak") {
+            paks.append(open_pak(path));
         }
         data = asset(paks, "maps/" + map_name + ".bsp");
         if game == "q2" {
@@ -867,7 +867,7 @@ def load_level(
                     sky_name = entity.fields.get("sky", "unit1_");
                     # SP_worldspawn CS_SKYROTATE and CS_SKYAXIS: the sky box
                     # turns `skyrotate` degrees a second about `skyaxis`.
-                    level.sky_rotate = float(entity.fields.get("skyrotate", "0") or "0");
+                    level.sky_rotate = atof(entity.fields.get("skyrotate", "0") or "0");
                     axis = entity.fields.get("skyaxis", "").split();
                     if len(axis) == 3 {
                         level.sky_axis = Vec3(x=float(axis[0]), y=float(axis[1]), z=float(axis[2]));
@@ -1106,7 +1106,7 @@ def spawn_player(level: Level, spawnpoint: str = "", returning: bool = False) ->
             );
             player = Player(
                 pos=origin.add(Vec3(z=level.collision.eye_height)),
-                yaw=float(ent.fields.get("angle", "0")) * math.pi / 180.0
+                yaw=atof(ent.fields.get("angle", "0")) * math.pi / 180.0
             );
             move_to_area(player, level.areas[level.locate(player.pos)]);
             return player;

@@ -1,4 +1,5 @@
 """Campaign gates derive their collision and visibility from persistent inventory."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World }
 import from .inventory { Inventory, quantity }
 import from ..formats.bsp { Bsp }
@@ -57,7 +58,7 @@ def load_gates(world: World, bsp: Bsp, collision: CollisionMap) {
         model = bsp.models[index];
         faces = list(range(model.first_face, model.first_face + model.face_count));
         gate = CampaignGate(
-            mask=int(entity.fields.get("spawnflags", "0")) & 15,
+            mask=atoi(entity.fields.get("spawnflags", "0")) & 15,
             boss=kind == "func_bossgate",
             faces=faces,
             hidden=[bsp.faces[face].hidden for face in faces],

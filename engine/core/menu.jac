@@ -1,9 +1,20 @@
-"""Pause menu and archive-backed map catalogue."""
+"""Pause menu and archive-backed map catalogue: a tab for each game, the
+content packs installed for it, and the maps of the pack chosen."""
 import os;
 import time;
 import from zipfile { ZipFile }
 import from ..assets.pak { open_pak }
+import from ..assets.content {
+    ContentPack,
+    shelf,
+    game_packs,
+    playing,
+    pack_folder,
+    archive_paths,
+    game_directory as content_directory
+}
 import from ..formats.bsp { i32_at, require_range, parse_entities }
+import from ..formats.q1.bsp { is_q1_bsp }
 import from ..render.renderer { Color }
 import from ..input.input { IsKeyPressed, IsMouseButtonPressed, GetMouseX, GetMouseY }
 import from vendor.raylib {
@@ -15,15 +26,9 @@ import from vendor.raylib {
 import from games.arenas { ArenaProgress, parse_arenas, ladder }
 import from ..world.arena { ordinal }
 
+"""The search path of what a game is playing (engine/assets/content.jac)."""
 def game_directory(game: str) -> str {
-    if game == os.getenv("QP_GAME", "q1") and os.getenv("QP_ASSETS", "") != "" {
-        return os.getenv("QP_ASSETS", "");
-    }
-    if game == "passion" {
-        return os.path.expanduser("~") + "/quake-assets";
-    }
-    folder = "id1" if game == "q1" else ("baseq2" if game == "q2" else "baseq3");
-    return os.path.expanduser("~") + "/quake-assets/" + folder;
+    return content_directory(game);
 }
 
 def map_names(names: list[str]) -> list[str] {
@@ -36,21 +41,40 @@ def map_names(names: list[str]) -> list[str] {
     return sorted(maps);
 }
 
+"""A map file's entities: Quake's lump table follows its four-byte version,
+Quake II's follows its magic and version. Their text is bytes, not UTF-8."""
+def map_entity_text(data: bytes, game: str) -> str {
+    at = 8 if game == "q2" else 4;
+    offset = i32_at(data, at);
+    length = i32_at(data, at + 4);
+    require_range(data, offset, length);
+    return data[offset:offset + length].decode("latin-1");
+}
+
 # Quake also stores standalone brush models under maps/*.bsp.
 def is_q1_level(data: bytes) -> bool {
-    if i32_at(data, 0) != 29 {
+    if not is_q1_bsp(data) {
         return False;
     }
-    offset = i32_at(data, 4);
-    length = i32_at(data, 8);
-    require_range(data, offset, length);
-    for entity in parse_entities(data[offset:offset + length].decode("utf-8")) {
+    for entity in parse_entities(map_entity_text(data, "q1")) {
         if entity.fields.get("classname", "")
             in ["info_player_start", "info_player_deathmatch"] {
             return True;
         }
     }
     return False;
+}
+
+"""The name a map gives itself, its worldspawn's `message`: "" when it has
+none, or only a key into the re-release's string tables ($map_...)."""
+def map_title(data: bytes, game: str) -> str {
+    for entity in parse_entities(map_entity_text(data, game)) {
+        if entity.fields.get("classname", "") == "worldspawn" {
+            title = entity.fields.get("message", "").replace("\\n", " ").strip();
+            return "" if title.startswith("$") else title;
+        }
+    }
+    return "";
 }
 
 """The pause menu: the level list, the settings and the controls (Q1/Q2
@@ -77,59 +101,135 @@ obj LevelMenu {
         labels: list[str] = [],
         message: str = "",
         seed_cursor: int = 0,
-        games: list[str] = ["q1", "q2", "q3", "passion"];
+        games: list[str] = ["q1", "q2", "q3", "passion"],
+        # The chosen game's installed packs, and the one whose maps are listed.
+        pack: int = 0,
+        packs: list[str] = [],
+        pack_titles: list[str] = [],
+        # A pack's maps and their titles, by pack id, once listed.
+        listed_maps: dict[str, list[str]] = {},
+        listed_titles: dict[str, list[str]] = {},
+        arena_texts: dict[str, str] = {};
 
+    """List the chosen game: its installed packs, and the maps of the one it
+    is playing."""
     def scan() {
+        self.packs = [];
+        self.pack_titles = [];
+        self.pack = 0;
+        game = self.games[self.game];
+        if game != "passion" {
+            current = playing(game);
+            for pack in game_packs(game) {
+                if current is not None and pack.id == current.id {
+                    self.pack = len(self.packs);
+                }
+                self.packs.append(pack.id);
+                self.pack_titles.append(pack.title);
+            }
+        }
+        self.list_maps();
+    }
+
+    """The id of the pack whose maps are listed; "" for Passion."""
+    def chosen_pack() -> str {
+        return self.packs[self.pack] if self.pack < len(self.packs) else "";
+    }
+
+    """List another of the game's packs."""
+    def choose_pack(index: int) {
+        if index >= 0 and index < len(self.packs) and index != self.pack {
+            self.pack = index;
+            self.list_maps();
+        }
+    }
+
+    """List the chosen pack's own maps: those in its folder, not the ones
+    beneath it. Each is named by its file and titled by its worldspawn, with
+    a pack's start map first."""
+    def list_maps() {
         self.maps = [];
         self.labels = [];
         self.selected = 0;
         self.offset = 0;
         self.message = "";
-        if self.games[self.game] == "passion" {
+        game = self.games[self.game];
+        if game == "passion" {
             seed = max(int(time.time()), self.seed_cursor + 12) % 2147483000 + 1;
             self.seed_cursor = seed;
             self.maps = ["v2-" + str(seed + i) for i in range(12)];
+            self.labels = list(self.maps);
             self.message = "Seeded expeditions | Click Passion for fresh seeds";
             return;
         }
-        names: list[str] = [];
-        arena_text = "";
+        pack = shelf().find(self.chosen_pack());
+        if pack is None {
+            self.message = "No maps found in " + game_directory(game);
+            return;
+        }
         try {
-            directory = game_directory(self.games[self.game]);
-            for filename in sorted(os.listdir(directory)) {
-                path = directory + "/" + filename;
-                if self.game == 2 and filename.lower().endswith(".pk3") {
-                    with ZipFile(path) as archive {
-                        listed = archive.namelist();
-                        names.extend(listed);
-                        if "scripts/arenas.txt" in listed {
-                            arena_text = archive.read("scripts/arenas.txt").decode("utf-8");
-                        }
-                    }
-                } elif self.game != 2 and filename.lower().endswith(".pak") {
-                    pak = open_pak(path);
-                    for name in pak.names() {
-                        if self.game != 0
-                            or not name.startswith("maps/")
-                            or not name.lower().endswith(".bsp") {
-                            names.append(name);
-                        } elif is_q1_level(pak.read_file(name)) {
-                            names.append(name);
-                        }
-                    }
-                }
+            if pack.id not in self.listed_maps {
+                self.read_pack(pack);
             }
-            self.maps = map_names(names);
-            self.labels = list(self.maps);
-            if arena_text {
-                self.order_arenas(arena_text);
+            self.maps = list(self.listed_maps[pack.id]);
+            self.labels = list(self.listed_titles[pack.id]);
+            if self.arena_texts.get(pack.id, "") {
+                self.order_arenas(self.arena_texts[pack.id]);
             }
             if len(self.maps) == 0 {
-                self.message = "No maps found in " + directory;
+                self.message = "No maps found in " + pack_folder(pack);
             }
         } except Exception as error {
             self.message = "Cannot list maps: " + str(error);
         }
+    }
+
+    """Read a pack's archives for its maps and their titles."""
+    def read_pack(pack: ContentPack) {
+        folder = pack_folder(pack);
+        names: list[str] = [];
+        titles: dict[str, str] = {};
+        arena_text = "";
+        if pack.game == "q3" {
+            for path in archive_paths(folder, ".pk3") {
+                with ZipFile(path) as archive {
+                    listed = archive.namelist();
+                    names.extend(listed);
+                    if "scripts/arenas.txt" in listed {
+                        arena_text = archive.read("scripts/arenas.txt").decode("latin-1");
+                    }
+                }
+            }
+        } else {
+            for path in archive_paths(folder, ".pak") {
+                pak = open_pak(path);
+                for name in pak.names() {
+                    if not name.startswith("maps/") or not name.lower().endswith(".bsp") {
+                        continue;
+                    }
+                    data = pak.read_file(name);
+                    if pack.game == "q1" and not is_q1_level(data) {
+                        continue;
+                    }
+                    names.append(name);
+                    try {
+                        titles[name[5:-4]] = map_title(data, pack.game);
+                    } except ValueError {
+                        titles[name[5:-4]] = "";
+                    }
+                }
+            }
+        }
+        maps = map_names(names);
+        if "start" in maps {
+            maps.remove("start");
+            maps.insert(0, "start");
+        }
+        self.listed_maps[pack.id] = maps;
+        self.listed_titles[pack.id] = [
+            name + ("  " + titles[name] if titles.get(name, "") else "") for name in maps
+        ];
+        self.arena_texts[pack.id] = arena_text;
     }
 
     """Q3 lists its single-player ladder first, with names and best finishes."""
@@ -250,6 +350,17 @@ obj LevelMenu {
                 self.scan();
             }
         }
+        for row in range(len(self.packs)) {
+            if click and self.hit(750, 205 + row * 30, 210, 28) {
+                self.choose_pack(row);
+            }
+        }
+        if IsKeyPressed(i32(262)) {
+            self.choose_pack(self.pack + 1);
+        }
+        if IsKeyPressed(i32(263)) {
+            self.choose_pack(self.pack - 1);
+        }
         self.offset -= int(GetMouseWheelMove()) * 3;
         if IsKeyPressed(i32(264)) {
             self.selected += 1;
@@ -271,7 +382,7 @@ obj LevelMenu {
             index = self.offset + row;
             if index < len(self.maps)
                 and click
-                and self.hit(310, 205 + row * 30, 650, 28) {
+                and self.hit(310, 205 + row * 30, 425, 28) {
                 self.selected = index;
             }
         }
@@ -390,18 +501,25 @@ obj LevelMenu {
                 break;
             }
             if index == self.selected {
-                self.box(310, 205 + row * 30, 650, 28, brown);
+                self.box(310, 205 + row * 30, 425, 28, brown);
             }
             self.label(
-                self.labels[index] if index < len(self.labels) else self.maps[index],
+                (self.labels[index] if index < len(self.labels) else self.maps[index])[:38],
                 322,
                 209 + row * 30,
                 20,
                 white
             );
         }
+        # The game's packs, beside its maps.
+        for row in range(len(self.packs)) {
+            color = brown if row == self.pack else Color(r=48, g=45, b=41, a=255);
+            self.box(750, 205 + row * 30, 210, 28, color);
+            self.label(self.pack_titles[row][:26], 758, 211 + row * 30, 16, white);
+        }
         self.label(
-            str(len(self.maps)) + " maps | Scroll / Up / Down | Enter: load",
+            str(len(self.maps))
+                + " maps | Up / Down: map | Left / Right: pack | Enter: load",
             310,
             550,
             18,

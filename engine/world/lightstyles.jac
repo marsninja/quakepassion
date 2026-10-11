@@ -3,6 +3,7 @@ SP_worldspawn). A style is a string of brightness letters played at 10 Hz, 'a'
 for dark and 'm' for normal up to 'z'; lightmaps store one layer per style.
 Lights a mapper made switchable (styles 32-62) toggle between 'm' and 'a' when
 triggered, and start dark when flagged START_OFF."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World }
 import from .signals { Signal, HasSignal }
 import from ..formats.bsp { Bsp }
@@ -148,8 +149,8 @@ def load_light_styles(world: World, bsp: Bsp) -> LightStyles | None {
         if not fields.get("classname", "").startswith("light") or not fields.get("targetname", "") {
             continue;
         }
-        style = int(float(fields.get("style", "0")));
-        start_off = int(fields.get("spawnflags", "0")) & 1 != 0;
+        style = int(atof(fields.get("style", "0")));
+        start_off = atoi(fields.get("spawnflags", "0")) & 1 != 0;
         # A named light without a switchable style still receives its uses,
         # so trigger chains through it resolve, but changes nothing.
         switchable = style >= 32 and style <= 62;
@@ -174,7 +175,7 @@ def load_light_styles(world: World, bsp: Bsp) -> LightStyles | None {
         style = -1;
         for other in bsp.entities {
             if other.fields.get("targetname", "") == target and other.fields.get("classname", "").startswith("light") {
-                style = int(float(other.fields.get("style", "0")));
+                style = int(atof(other.fields.get("style", "0")));
             }
         }
         if style < 32 {
@@ -184,8 +185,8 @@ def load_light_styles(world: World, bsp: Bsp) -> LightStyles | None {
             style=style,
             first=ord(message[0].lower()) - 97,
             last=ord(message[1].lower()) - 97,
-            speed=float(fields.get("speed", "1")),
-            toggle=int(fields.get("spawnflags", "0")) & 1 != 0,
+            speed=atof(fields.get("speed", "1")),
+            toggle=atoi(fields.get("spawnflags", "0")) & 1 != 0,
             activation=Signal(entities=[index])
         );
         world +>:HasSignal:+> ramp.activation;
