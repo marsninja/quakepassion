@@ -3,6 +3,8 @@ import from editor.document.scene { Scene }
 import from editor.geometry.brush { box_sides }
 import from editor.compile.live { compile_scene, SwatchMaterials }
 import from editor.compile.bake { bake_cells, leaf_at, cell_sees, scene_occluder }
+import from editor.compile.light { bake_light }
+import from editor.compile.kept { keep_bake, give_bake }
 
 """A hall 512 long and 256 deep with a floor, a roof and walls all round,
 and across its middle a wall with (or without) a doorway."""
@@ -79,4 +81,50 @@ test "a level that fits one cell stays one leaf, and a budget spent leaves the r
     spent = bake_cells(scene, hurried, 128.0, 10);
     assert spent.capped and spent.hidden == 0;
     assert len(scene_occluder(scene).brushes) == 7;
+}
+
+test "a bake kept from one build is given whole to a level compiled of the same again" {
+    scene = hall(False);
+    scene.add_item({"classname": "light", "origin": "-128 0 128", "light": "300"});
+    scene.add_item({"classname": "light", "origin": "128 0 128", "light": "300"});
+    door = scene.add_item({"classname": "func_door", "angle": "-1"});
+    scene.add_solid(door, box_sides(Vec3(x=-200.0, y=-16.0, z=0.0), Vec3(x=-184.0, y=16.0, z=96.0), "wall"));
+    first = compile_scene(scene, SwatchMaterials());
+    plane_base = len(first.bsp.planes);
+    lit = bake_light(scene, first, 32.0);
+    cut = bake_cells(scene, first, 128.0);
+    assert lit > 0 and cut.cells >= 8 and cut.hidden > 0;
+    kept = keep_bake(first, "mark", plane_base, len(first.warnings), lit, cut);
+    assert kept.face_count == len(first.bsp.faces) and kept.clusters == cut.cells and kept.lit_samples == lit;
+    # A game played in the first writes on it; what was kept is its own.
+    first.bsp.leaves[0].faces.append(0);
+    first.bsp.faces[0].light_uv[0] = -5.0;
+    again = compile_scene(scene, SwatchMaterials());
+    assert len(again.bsp.leaves) == 1 and again.bsp.clusters == 1 and len(again.bsp.lighting) == 0;
+    assert give_bake(again, kept);
+    bsp = again.bsp;
+    assert bsp.clusters == cut.cells and len(bsp.leaves) == cut.cells and bsp.models[0].head == first.bsp.models[0].head;
+    assert bsp.visibility == first.bsp.visibility and bsp.lighting == first.bsp.lighting and bsp.light_channels == 3;
+    assert len(bsp.planes) == len(first.bsp.planes) and len(bsp.branches) == len(first.bsp.branches);
+    west = leaf_at(bsp, bsp.models[0].head, Vec3(x=-200.0, y=0.0, z=32.0));
+    east = leaf_at(bsp, bsp.models[0].head, Vec3(x=200.0, y=0.0, z=32.0));
+    assert west == leaf_at(first.bsp, first.bsp.models[0].head, Vec3(x=-200.0, y=0.0, z=32.0));
+    assert not cell_sees(bsp, west, east) and cell_sees(bsp, west, west);
+    total = 0;
+    for leaf in bsp.leaves {
+        total += len(leaf.faces);
+    }
+    assert total == len(first.bsp.leaves[0].faces) - 1 + sum([len(leaf.faces) for leaf in first.bsp.leaves[1:]]);
+    for (index, face) in enumerate(bsp.faces) {
+        was = first.bsp.faces[index];
+        assert face.light_width == was.light_width and face.light_offset == was.light_offset;
+        assert face.colors == was.colors and len(face.light_uv) == len(was.light_uv);
+    }
+    assert bsp.faces[0].light_uv[0] != -5.0;
+    # A level with another count of faces is left as it was compiled (the
+    # mark is what says two are the same; this only stops a misfit).
+    bigger = hall(True);
+    bigger.add_solid(bigger.world(), box_sides(Vec3(x=64.0, y=-16.0, z=0.0), Vec3(x=96.0, y=16.0, z=32.0), "wall"));
+    other = compile_scene(bigger, SwatchMaterials());
+    assert not give_bake(other, kept) and other.bsp.clusters == 1 and len(other.bsp.leaves) == 1;
 }

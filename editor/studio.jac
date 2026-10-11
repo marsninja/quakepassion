@@ -68,7 +68,9 @@ import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
-import from .compile.bake { bake_cells, VisReport }
+import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
+import from .compile.kept { KeptBake, keep_bake, give_bake }
+import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate {
@@ -194,6 +196,10 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_bake [cell|off]",
         "cut the built level into cells that know which others they see (256 units wide unless told), or build it as one again"
     ),
+    ("ed_cells", "ed_cells [on|off]", "draw the cells of a bake: the one looked from, what it sees and what it does not"),
+    ("ed_recipe", "ed_recipe [name] [commands]", "keep a row of commands, apart at semicolons, under a name; forget one; or list them"),
+    ("ed_make", "ed_make <name>", "run a recipe's commands"),
+    ("ed_run", "ed_run <command line>", "run another program over the scene written as a map (%map%), and list what it says of entities and brushes"),
     ("ed_logic", "ed_logic [kind]", "add a piece of logic (a relay, a delay, a counter ...) as the scene's game has it, or list the kinds"),
     ("ed_fav", "ed_fav <classname>", "keep a class as a favourite, or stop keeping it"),
     ("ed_bind", "ed_bind <key> <command>", "give a key (a, ctrl+k, shift+f2) an editor command of your own"),
@@ -215,8 +221,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_played", "ed_played [label]", "print how a game played from the studio stands"),
     (
         "ed_build",
-        "ed_build [full|quick|flat]",
-        "build the level again now; or how it is lit: finely, coarsely, or not at all"
+        "ed_build [full|quick|flat|fresh]",
+        "build the level again now; how it is lit: finely, coarsely, or not at all; or fresh, forgetting what was built before"
     ),
     ("ed_group_view", "ed_group_view <shown|grey|hidden>", "how the selected groups show: whole, as outlines only, or not at all"),
     ("ed_group_lock", "ed_group_lock [on|off]", "keep clicks in the views from selecting the selected groups"),
@@ -649,6 +655,13 @@ obj Studio(Workbench) {
         # it is zero: the level is one leaf), and what the last bake did.
         vis_cell: float = 0.0,
         vis_done: VisReport = VisReport(),
+        # The bake's cells drawn; recipes of commands by name; and the
+        # light and cells of levels already built, by a mark of what they
+        # were built of.
+        cells_shown: bool = False,
+        recipes: dict[str, str] = {},
+        built_copies: list[KeptBake] = [],
+        built_reused: bool = False,
         # The classes kept as favourites.
         favourites: list[str] = [],
         # The axis views' grid shown, with numbers along its edges; levels
@@ -1069,7 +1082,10 @@ obj Studio(Workbench) {
                     MenuItem(text="No light (quickest)", command="ed_build flat"),
                     MenuItem(rule=True),
                     MenuItem(text="Bake what each part can see", command="ed_bake"),
-                    MenuItem(text="Build as one again", command="ed_bake off")
+                    MenuItem(text="Build as one again", command="ed_bake off"),
+                    MenuItem(text="Show the bake's cells", command="ed_cells"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Recipes", command="ed_recipe")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -2372,6 +2388,7 @@ obj Studio(Workbench) {
         for i in range(1, len(self.leak)) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
         }
+        self.draw_cells(scene);
         rlDrawRenderBatchActive();
         rlEnableDepthTest();
         self.draw_solids(scene);
@@ -2693,6 +2710,21 @@ obj Studio(Workbench) {
     def build_mode_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # A bake seen, recipes, and other programs' steps (impl/studio.steps.impl.jac)
+
+    """The cell the bake's cells are shown from (-1 when nothing is baked)."""
+    def eye_cell(scene: Scene) -> int;
+    """How many cells that one sees, itself among them."""
+    def cells_seen(scene: Scene) -> int;
+    def draw_cells(scene: Scene);
+    """What a level built of this scene now would be known by."""
+    def build_mark(whole: Scene) -> str;
+    """List what a program said of entities and brushes as findings."""
+    def show_said(scene: Scene, places: list[Place], plain: bool);
+    """Run a cells, recipe or outside-step command. False when it is not one."""
+    def step_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
 
     """Run a group command. False when it is not one."""
@@ -2907,7 +2939,8 @@ obj Studio(Workbench) {
             and not self.patch_command(scene, args) and not self.transform_command(scene, args)
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)
-            and not self.build_mode_command(scene, args) and not self.entity_command(scene, args)
+            and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
+            and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
         }
@@ -3082,6 +3115,17 @@ obj Studio(Workbench) {
             lines.append(
                 "studio: bake cell=" + str(int(self.vis_cell)) + " cells=" + str(done.cells) + " hidden=" + str(done.hidden)
                     + " pairs=" + str(done.pairs) + " capped=" + ("1" if done.capped else "0")
+            );
+        }
+        if self.cells_shown {
+            lines.append(
+                "studio: cells from=" + str(self.eye_cell(scene)) + " sees=" + str(self.cells_seen(scene)) + " of="
+                    + str(self.vis_done.cells)
+            );
+        }
+        if scene.solids() {
+            lines.append(
+                "studio: build from=" + ("copy" if self.built_reused else "new") + " copies=" + str(len(self.built_copies))
             );
         }
         built_now = self.live;

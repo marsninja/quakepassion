@@ -1122,6 +1122,105 @@ def bake_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A number from a step's line that begins with `prefix`: the word after `key=`."""
+def line_word(lines: list[str], prefix: str, key: str) -> str {
+    found = [line for line in lines if line.startswith(prefix)];
+    return found[0].split(key + "=")[1].split()[0] if found else "";
+}
+
+"""The thirty-second session: a bake's cells shown from where one looks, a
+bake kept and given back, recipes, and another program run over the map."""
+def steps_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["cells", "recipes"];
+    for shot in shots {
+        (repo / f"steps_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-steps-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/steps_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "steps.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The steps session failed: {output / 'steps.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+        written = (Path(home) / "scenes/hall.build.map").read_text();
+        heard = (Path(home) / "scenes/hall.build.map.log").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "opened", "west", "east", "start", "moved", "undone", "inside", "stopped", "recipes", "quick", "fine", "forgot",
+        "ran", "first", "second", "third"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'steps.log'}";
+    }
+    # Cells: looked from the west room and from the east, each sees itself
+    # and its own side, not everything; the player start stands in the west.
+    cells = bake_word(steps["west"], "cells");
+    west = int(line_word(steps["west"], "cells ", "from"));
+    east = int(line_word(steps["east"], "cells ", "from"));
+    seen = int(line_word(steps["west"], "cells ", "sees"));
+    assert cells >= 8 and int(line_word(steps["west"], "cells ", "of")) == cells , str(steps["west"]);
+    assert west >= 0 and east >= 0 and west != east and 1 < seen and seen < cells , str(steps["west"]);
+    assert int(line_word(steps["start"], "cells ", "from")) == west , str(steps["start"]);
+    assert not [line for line in steps["opened"] if line.startswith("cells ")];
+    # A bake is worked out once for a thing: after the undo, and after a
+    # game played and stopped, the one kept is given back.
+    assert line_word(steps["west"], "build ", "from") == "new" , str(steps["west"]);
+    assert line_word(steps["moved"], "build ", "from") == "new" , str(steps["moved"]);
+    assert line_word(steps["undone"], "build ", "from") == "copy" , str(steps["undone"]);
+    assert line_word(steps["stopped"], "build ", "from") == "copy" , str(steps["stopped"]);
+    for name in ["undone", "stopped"] {
+        assert bake_word(steps[name], "cells") == cells;
+        assert bake_word(steps[name], "hidden") == bake_word(steps["west"], "hidden") , str(steps[name]);
+    }
+    # Played with the bake given back, less than all of it is drawn from the west.
+    drawn = int(played_word(steps["inside"], "drawn"));
+    assert 0 < drawn and drawn < 42 , str(steps["inside"]);
+    # Recipes: both listed, each run, one forgotten, the other kept in the settings.
+    listed = [line for line in steps["recipes"] if line.startswith("recipe ")];
+    assert listed == ["recipe fine = ed_build full; ed_bake 128", "recipe quick = ed_build quick; ed_bake off"] , str(listed);
+    assert bake_word(steps["quick"], "cells") == -1 and bake_word(steps["fine"], "cells") == cells , str(steps["fine"]);
+    assert [line for line in steps["quick"] if line.startswith("making quick steps=2")] or [
+        line for line in steps["recipes"] if line.startswith("making quick steps=2")
+    ];
+    left = [line for line in steps["forgot"] if line.startswith("recipe ")];
+    assert left == ["recipe fine = ed_build full; ed_bake 128"] , str(left);
+    assert 'ed_recipe fine "ed_build full; ed_bake 128"' in kept and "ed_recipe quick" not in kept , kept;
+    # Another program: it was given the scene as a map, stopped with its own
+    # code, and what it said of an entity, a brush and a line is gone to.
+    assert "// brush 6" in written and "fakebsp" in heard and "brushes: 7" in heard , heard;
+    told = [line for line in steps["ran"] if line.startswith("ran ")];
+    assert told and "code=3" in told[0] and "lines=6" in told[0] and "places=3" in told[0] and "plain=1" in told[0] , str(
+        steps["ran"]
+    );
+    said = [line for line in steps["ran"] if line.startswith("said ")];
+    assert len(said) == 3 and said[0].startswith("said entity=0 brush=3 Entity 0, Brush 3") , str(said);
+    assert said[1].startswith("said entity=1 brush=-1") and said[2].startswith("said entity=0 brush=5") , str(said);
+    assert len(brushes(steps["first"])) == 1 and brushes(steps["first"])[0].startswith("brush #4 low=256,-128,0 ") , str(steps["first"]);
+    assert len(selected(steps["second"])) == 1 and "info_player_start" in selected(steps["second"])[0] , str(
+        steps["second"]
+    );
+    assert len(brushes(steps["third"])) == 1 and brushes(steps["third"])[0].startswith("brush #6 ") , str(steps["third"]);
+    for shot in shots {
+        source = repo / f"steps_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"steps_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"STEPS PASS: {len(steps) - 1} steps, {seen} of {cells} cells seen from the west room, a bake given back after "
+            + "an undo and a game, recipes kept and run, and a compiler's three complaints gone to"
+    );
+}
+
 """The thirtieth session: an entity's facing and a light's reach dragged by
 their handles, a path drawn, logic added from the library, a favourite."""
 def marks_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2358,6 +2457,7 @@ def main() {
         "settings": settings_session,
         "marks": marks_session,
         "bake": bake_session,
+        "steps": steps_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2492,6 +2592,7 @@ def main() {
     settings_session(repo, binary, env, output);
     marks_session(repo, binary, env, output);
     bake_session(repo, binary, env, output);
+    steps_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

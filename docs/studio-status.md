@@ -139,8 +139,33 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   of another, with the scene's fixed brushes in the way. Cells that touch
   always see each other, and what one sees sees it back, so it errs toward
   drawing more; what no entity can reach (under the floor, outside the
-  walls) is seen by nothing. `ed_bake off` builds it as one again. The
-  level is cut again every time it is built while this is on.
+  walls) is seen by nothing. `ed_bake off` builds it as one again.
+  `ed_cells` (Play menu) draws the cells in every view: the one looked
+  from in yellow (where the 3D camera is, or where a lone selected entity
+  stands), the cells it sees in green, the rest in red.
+- **A bake is worked out once**: a level is compiled afresh every time it
+  is loaded, since a game played in it writes on it, but its light and its
+  cells are kept apart under a mark of what it was built of (the scene's
+  map as built, how it is lit, how wide its cells are) and given to a
+  level compiled of the same thing again: after an undo, or when a game
+  is played or stopped. The last six are kept; `ed_build fresh` forgets
+  them. A dump's `build from=` line says whether the last build worked
+  its bake out (`new`) or was given it (`copy`).
+- **Recipes**: `ed_recipe <name> "<command>; <command>"` keeps a row of
+  editor commands under a name (in the settings, between sessions),
+  `ed_make <name>` runs them, `ed_recipe <name>` alone forgets one, and
+  `ed_recipe` (Play menu, Recipes) lists them to click.
+- **Other programs**: `ed_run <command line>` writes the scene as a map
+  beside its own file (`<name>.build.map`, with copies and prefabs made
+  real) and runs the command line over it, with `%map%` for the file,
+  `%dir%` for its folder and `%name%` for its name without the ending. The
+  last lines of what the program says go to the console and the whole of
+  it to `<name>.build.map.log`; every line that names an entity and
+  brush by number (`Entity 4, Brush 12: ...`) or a line of the map
+  (`hall.map:310: ...`) is listed in the Checks tab, where a click goes to
+  the brush or entity it means (when the scene has no copies or prefabs,
+  so that the map's numbers are the document's). A recipe may hold such a
+  step.
 - **Building**: `ed_build` builds the level again now; `ed_build full`
   lights it finely (a lightmap texel to 16 units), `ed_build quick`
   coarsely (to 32, about a third of the work), and `ed_build flat` not at
@@ -569,9 +594,15 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_bake_tests.jac`: a level cut into cells with every face in
   one; a wall across a hall hiding one side from the other, and a doorway
   letting it be seen; a level that fits one cell left as it was; a budget
-  spent leaving the rest in sight. (`tests/studio_compile_tests.jac` has
+  spent leaving the rest in sight; a bake kept from one build and given
+  whole to a level compiled of the same thing again.
+  (`tests/studio_compile_tests.jac` has
   a baked level prepared by the engine, the player's cell found in it and
   fewer faces listed from behind the wall.)
+- `tests/studio_steps_tests.jac`: a recipe's commands apart at semicolons
+  and a step's line with the map put in; a compiler's words read for the
+  entities and brushes they name; a line of the map's text placed in its
+  entity and brush; a text's mark the same for the same text only.
 - `tests/studio_duplicator_tests.jac`: copies that grow and turn about
   each axis; mirrors on two and three axes; images at named entities and
   along a path's corners; the material cycle; a door's images as doors
@@ -755,6 +786,13 @@ editor/impl/                 the workbench's scenes and brushes
   its middle opened from a map, cut into thirty cells of which some are
   out of sight of others; played from one side of the wall, 32 faces are
   drawn; built as one again and played from the same place, 42).
+  `scripts/studio/steps_session.cfg` (15 steps: the hall's cells shown
+  from its west room, its east and where the player start stands; a wall
+  moved and the move undone, and a game played and stopped, each given
+  the bake kept from before; two recipes kept, listed, run and one
+  forgotten; a stand-in compiler run over the map, stopping with its own
+  code, and its three complaints, by entity, by brush and by line, each
+  gone to).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

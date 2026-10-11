@@ -102,14 +102,17 @@ impl Studio.build_mode_command(scene: Scene, args: list[str]) -> bool {
     } elif how == "flat" {
         self.lit = False;
         self.keep_settings();
+    } elif how == "fresh" {
+        # Nothing built before is taken on trust.
+        self.built_copies = [];
     } elif how {
-        self.say("ed_build [full|quick|flat]");
+        self.say("ed_build [full|quick|flat|fresh]");
         return True;
     }
     # Built again whatever has changed.
     self.built_geometry = -1;
     self.say(
-        "Building" + (" lit finely" if how == "full" else (" lit coarsely" if how == "quick" else (" without light" if how == "flat" else " again")))
+        "Building" + (" lit finely" if how == "full" else (" lit coarsely" if how == "quick" else (" without light" if how == "flat" else (" from nothing" if how == "fresh" else " again"))))
     );
     return True;
 }

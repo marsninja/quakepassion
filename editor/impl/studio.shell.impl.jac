@@ -358,6 +358,9 @@ impl Studio.keep_settings {
     for chord in sorted(self.user_keys.keys()) {
         lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
     }
+    for kept_recipe in sorted(self.recipes.keys()) {
+        lines.append("ed_recipe " + kept_recipe + " " + quote_command_word(self.recipes[kept_recipe]));
+    }
     path = self.settings_path();
     try {
         os.makedirs(os.path.dirname(path), exist_ok=True);

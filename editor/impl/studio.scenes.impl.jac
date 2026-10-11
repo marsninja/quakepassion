@@ -30,11 +30,32 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
         source = scene_from_map(scene.game, scene.name, MapFile(items=scene.built_map(self.play_build)));
     }
     whole = self.expanded(source);
+    mark = self.build_mark(whole);
     made = compile_scene(whole, self.materials);
-    self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
-    if self.vis_cell > 0.0 {
-        # Cut into cells, each with what it can see.
-        self.vis_done = bake_cells(whole, made, self.vis_cell);
+    kept: KeptBake | None = None;
+    for copy in self.built_copies {
+        if copy.mark == mark {
+            kept = copy;
+        }
+    }
+    # Built of this before (an undo, a game played and stopped): its light
+    # and cells are taken as they were worked out then.
+    self.built_reused = kept is not None and give_bake(made, kept);
+    if self.built_reused and kept is not None {
+        self.lit_samples = kept.lit_samples;
+        self.vis_done = kept.vis;
+    } else {
+        plane_base = len(made.bsp.planes);
+        warned = len(made.warnings);
+        self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
+        if self.vis_cell > 0.0 {
+            # Cut into cells, each with what it can see.
+            self.vis_done = bake_cells(whole, made, self.vis_cell);
+        }
+        self.built_copies.append(keep_bake(made, mark, plane_base, warned, self.lit_samples, self.vis_done));
+        if len(self.built_copies) > 6 {
+            self.built_copies = self.built_copies[1:];
+        }
     }
     self.live = made;
     self.build_ms = int((time.time() - began) * 1000.0);
