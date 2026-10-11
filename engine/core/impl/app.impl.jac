@@ -139,6 +139,9 @@ impl App.render_bench() {
         # (jaseci-labs/jac#9969: a local named `culling` here is taken for the method.)
         pvs = self.culling() and not view.everything;
         faces = self.level.visible(self.world, view.eye, pvs);
+        if view.over {
+            self.renderer.clear_rect(view.x, view.y, view.width, view.height);
+        }
         self.renderer.begin_view(
             view.x, view.y, view.width, view.height, view.eye, view.yaw, view.pitch, view.span
         );

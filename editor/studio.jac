@@ -35,7 +35,7 @@ import from engine.formats.animated { AnimatedModel }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
 }
-import from .ui.canvas { ScreenCanvas, Rect, Ink, ink }
+import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.widgets {
@@ -54,6 +54,7 @@ import from .ui.widgets {
     MenuItem,
     MenuPopup,
     ViewArea,
+    Floater,
     Gallery,
     Tile,
     GraphView,
@@ -277,6 +278,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    (
+        "ed_window",
+        "ed_window [list] | new [outlines] | close <n|all> | <n> outlines|solid | <n> at <x> <y> [w h] | <n> cam <x y z> [yaw pitch] | <n> here",
+        "floating 3D windows: further views of the level, each with a camera and a way of drawing of its own"
+    ),
     (
         "ed_district",
         "ed_district [list] | <n> <floor|wall|ceiling|trim|accent> [material] | <n> name <words> | check | reset [n]",
@@ -605,7 +611,12 @@ an axis."""
 obj Port {
     has view: ViewArea,
         camera: EditCamera,
-        title: str = "3D";
+        title: str = "3D",
+        # A floating window's: the window it is in, its number, and whether
+        # it draws the level as outlines.
+        window: Floater | None = None,
+        number: int = 0,
+        wire: bool = False;
 }
 
 """The studio's widgets, kept by name so its code can reach them."""
@@ -657,6 +668,11 @@ obj Studio(Workbench) {
         main: EditCamera = EditCamera(),
         camera: EditCamera = EditCamera(),
         ports: list[Port] = [],
+        # How many floating windows have been opened, to number the next.
+        floats_made: int = 0,
+        # The part of a view its overlays are drawn in, when a floating
+        # window covers the rest (the whole of it when this has no size).
+        over_piece: Rect = Rect(),
         port_now: int = 0,
         layout: int = 1,
         # A play session started from the document, to return from.
@@ -1388,7 +1404,11 @@ obj Studio(Workbench) {
                     MenuItem(text="Quake's shotgun as held in view", command="ed_viewweapon q1 2"),
                     MenuItem(rule=True),
                     MenuItem(text="The districts' materials", command="ed_district"),
-                    MenuItem(text="Check the districts' materials", command="ed_district check")
+                    MenuItem(text="Check the districts' materials", command="ed_district check"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Another 3D window", command="ed_window new"),
+                    MenuItem(text="Another 3D window, in outlines", command="ed_window new outlines"),
+                    MenuItem(text="Close the floating windows", command="ed_window close all")
                 ]
             ]
         );
@@ -2291,7 +2311,7 @@ obj Studio(Workbench) {
             } elif key == "F6" {
                 stage.emit("ed_play here");
             } elif key == "ESCAPE" {
-                if len(stage.layers()) > 1 {
+                if self.over_layers(stage) > 0 {
                     stage.dismiss();
                 } else {
                     stage.emit("ed_select");
@@ -2593,6 +2613,10 @@ obj Studio(Workbench) {
                 )
             );
         }
+        # The floating windows after, so that they are drawn over the rest.
+        for floating in self.float_views(built) {
+            seen.append(floating);
+        }
         return seen;
     }
 
@@ -2752,15 +2776,32 @@ obj Studio(Workbench) {
         self.draw_skin_marks();
         # Over each level view, through its own camera: unless a menu, a
         # list or the palette is open over them.
-        if len(stage.layers()) > 1 {
+        if self.over_layers(stage) > 0 {
             self.canvas.unclip();
             return;
         }
         watched = self.port_now;
+        covered = [port.window.area for port in self.float_ports() if port.window is not None];
         for index in range(self.showing()) {
             self.watch(index);
-            self.draw_over_view(scene, self.ports[index].title if self.layout != 1 else "");
+            # Only where no floating window covers the view.
+            for piece in rects_outside(self.view_area(), covered) {
+                self.over_piece = piece;
+                self.draw_over_view(scene, self.ports[index].title if self.layout != 1 else "");
+            }
         }
+        self.over_piece = Rect();
+        for index in range(4, len(self.ports)) {
+            # A floating window says its own name on its bar; and it draws
+            # nothing where a window opened after it floats above it.
+            self.watch(index);
+            above = [port.window.area for port in self.ports[index + 1:] if port.window is not None];
+            for piece in rects_outside(self.view_area(), above) {
+                self.over_piece = piece;
+                self.draw_over_view(scene, "");
+            }
+        }
+        self.over_piece = Rect();
         self.watch(watched);
         self.canvas.unclip();
     }
@@ -2770,7 +2811,7 @@ obj Studio(Workbench) {
     def draw_over_view(scene: Scene, title: str) {
         area = self.view_area();
         canvas = self.canvas;
-        canvas.clip(area);
+        canvas.clip(area.within(self.over_piece) if self.over_piece.w > 0 else area);
         self.draw_view_extras(scene, area);
         if title {
             canvas.text(title, area.x + 8, area.y + 6, canvas.theme.dim, canvas.theme.small);
@@ -3283,6 +3324,24 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Floating 3D windows (impl/studio.windows.impl.jac)
+
+    """Run a window command. False when it is not one."""
+    def window_command(scene: Scene, args: list[str]) -> bool;
+    """The views that float: those after the four that are laid out."""
+    def float_ports -> list[Port];
+    """How many layers are open over the views (menus, lists, the palette):
+    the floating windows are not counted."""
+    def over_layers(stage: Stage) -> int;
+    """Open a floating window looking where the first 3D view looks, and
+    close the one with a number."""
+    def open_float(wire: bool) -> Port | None;
+    def close_float(number: int) -> bool;
+    """What the engine draws in the floating windows, and they as lines of the dump."""
+    def float_views(built: bool) -> list[SceneView];
+    def window_lines -> list[str];
+
+    # ------------------------------------------------------------------
     # The Passion districts' materials (impl/studio.districts.impl.jac)
 
     """Run a district command. False when it is not one."""
@@ -3556,7 +3615,7 @@ obj Studio(Workbench) {
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
             and not self.model_command(scene, args) and not self.skin_command(scene, args)
             and not self.bone_command(scene, args) and not self.figure_command(scene, args)
-            and not self.district_command(scene, args)
+            and not self.district_command(scene, args) and not self.window_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
@@ -3847,6 +3906,9 @@ obj Studio(Workbench) {
         }
         if self.models_shown {
             lines.append("studio: models shown=1 drawn=" + str(self.models_drawn));
+        }
+        for window_line in self.window_lines() {
+            lines.append(window_line);
         }
         handles_line = self.lay_line(scene);
         if handles_line {

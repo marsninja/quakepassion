@@ -202,6 +202,15 @@ impl Renderer.end_view() {
     rlViewport(i32(0), i32(0), GetRenderWidth(), GetRenderHeight());
 }
 
+impl Renderer.clear_rect(x: int, y: int, width: int, height: int) {
+    if width <= 0 or height <= 0 {
+        return;
+    }
+    BeginScissorMode(i32(x), i32(y), i32(width), i32(height));
+    ClearBackground(Color(r=21, g=20, b=18, a=255));
+    EndScissorMode();
+}
+
 impl Renderer.draw_area(area: Area) {
     for s in area.surfaces {
         pos = Vector3(x=f32(s.center.x), y=f32(s.center.y), z=f32(s.center.z));

@@ -623,6 +623,24 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   that number entities and brushes, and `ed_mapopts whole on` writes every
   plane point in whole numbers, for tools that read nothing else. Both are
   kept between sessions.
+- **Floating 3D windows** (Window > Another 3D window, `ed_window new
+  [outlines]`): a further view of the level in a window of its own over
+  the others, up to four of them. Each has its own camera (it starts
+  where the first 3D view looks; `ed_window <n> cam <x y z> [yaw pitch]`
+  and `ed_window <n> here` put it elsewhere) and its own way of drawing
+  (`ed_window <n> outlines|solid`). It is flown, dollied and clicked in
+  like the first view: a click selects through its camera, and handles
+  are dragged in it. Its bar moves it, the corner at its bottom right
+  sizes it, its cross closes it (`ed_window close <n|all>`), and it
+  stays within the level views (`ed_window <n> at <x> <y> [w h]`). Its
+  foot says where its camera is. A window opened later lies over one
+  opened earlier, and nothing of a view is drawn over a window that
+  covers it. In the toolkit it is a `Floater`, a layer of its own; the
+  engine clears a view that lies over others before drawing it.
+- **Long menus**: a menu with more entries than the window is tall goes
+  on in further columns under its title, so every entry can be reached
+  (the Brush menu, of seventy entries, is three columns on a window 720
+  high; it used to run off the bottom). One that fits is as it was.
 - **Layouts** (View menu, `ed_layout <1|2|3|4|4b>`): the 3D view alone;
   beside the plan; beside the plan and the front view; all four in a
   square; or the 3D view beside the three axis views in a column. The
@@ -970,6 +988,12 @@ editor/impl/                 the workbench's scenes and brushes
 
 ## Validation
 
+- `tests/studio_floater_tests.jac`: a floating window laying out what is
+  inside it, taking the pointer only where it is, moved by its bar, sized
+  by its corner, kept on the stage or within bounds, closed by its
+  cross, and painting nothing inside; a rectangle with others cut out.
+- `tests/ui_tests.jac` (also): a menu too long for the window laid out in
+  columns, an entry of a later column clicked.
 - `tests/ui_tests.jac`: layout, picking, clicks, text editing, the tree,
   scrolling, splitters, tabs, menus and hints, and the slider, spinner,
   radio, vector field and colour bars, through a recording canvas and
@@ -1201,6 +1225,12 @@ editor/impl/                 the workbench's scenes and brushes
   surface flag, found again in the saved map; a box drawn inside the first
   made a digger, so the level is built from six brushes while the document
   holds four, then filled in and dug again by undo).
+  `scripts/studio/float_session.cfg` (11 steps: a floating 3D window
+  opened, put somewhere and given a camera; dragged by its bar and sized
+  by its corner; the wheel moving its camera and not the first view's; a
+  click in it picking the box it looks at; Escape letting go of the
+  selection; a second in outlines over it, closed by its cross; one sent
+  off the edge kept within the views; all closed).
   `scripts/studio/views_session.cfg` (11 steps: two, three and four views
   and the column of axis views; the ruler on a drawn box; zoom by command
   and by key; names; two views remembered, one gone back to, one

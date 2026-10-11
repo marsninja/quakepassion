@@ -762,3 +762,42 @@ test "a tile or a row pressed and dragged away is dropped on the widget it is le
     carried.paint();
     assert len([stroke for stroke in canvas.strokes if stroke.kind == "text" and stroke.words == "slate"]) == 1;
 }
+
+test "a menu too long for the window goes on in columns, and one that fits is as it was" {
+    stage = staged(Box());
+    source = UiSource();
+    play(stage, source, 800, 400);
+    # Five items fit: one column where it was asked for.
+    short = MenuPopup(items=[MenuItem(text="Item " + str(index), command="short " + str(index)) for index in range(5)]);
+    short.open_at(stage, 100, 30);
+    assert short.starts == [0] and len(short.widths) == 1 and short.area.same(Rect(x=100, y=30, w=short.widths[0], h=118));
+    assert short.item_at(110, 30 + 4 + 22 * 3 + 5) == 3 and short.item_at(110, 400) == -1;
+    stage.close(short);
+    # Twelve fit the window though not under the point: moved up, still one column.
+    middling = MenuPopup(items=[MenuItem(text="Item " + str(index), command="mid " + str(index)) for index in range(12)]);
+    middling.open_at(stage, 100, 300);
+    assert middling.starts == [0] and middling.area.y == 400 - (8 + 12 * 22) and middling.area.h == 8 + 12 * 22;
+    stage.close(middling);
+    # Forty do not fit the window at all: columns under the point, each as long as there is room for.
+    items = [MenuItem(text="Item " + str(index), command="long " + str(index)) for index in range(40)];
+    items.insert(20, MenuItem(rule=True));
+    long = MenuPopup(items=items);
+    long.open_at(stage, 100, 30);
+    room = 400 - 30 - 8;
+    assert len(long.starts) == 3 and long.starts[0] == 0 and long.area.y == 30 and long.area.h <= room;
+    assert long.area.w == sum(long.widths) and long.area.right() <= 800;
+    first = long.starts[1];
+    assert first == 16 , str(long.starts);
+    # The first item of the second column is at the top of that column; a click there runs it.
+    left = long.area.x + long.widths[0];
+    assert long.item_at(left + 10, 30 + 4 + 5) == first and long.item_at(long.area.x + 10, 30 + 4 + 5) == 0;
+    assert long.item_at(left + 10, 30 + 4 + 22 * 4 + 5) == first + 4;
+    play(stage, source, 800, 400);
+    script_click(source, left + 10, 30 + 4 + 5);
+    play(stage, source, 800, 400);
+    assert stage.take_commands() == ["long " + str(first)] and len(stage.layers()) == 1;
+    # Near the right edge it is moved left so that every column shows.
+    wide = MenuPopup(items=items);
+    wide.open_at(stage, 780, 30);
+    assert wide.area.right() == 800 and len(wide.starts) == 3;
+}

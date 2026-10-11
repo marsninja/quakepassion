@@ -27,7 +27,10 @@ obj SceneView {
         # Draw the level as the edges of its triangles, or not at all (the
         # workbench then draws what it wants of it).
         wire: bool = False,
-        bare: bool = False;
+        bare: bool = False,
+        # It lies over views drawn before it: what they drew in its
+        # rectangle, and how deep, is cleared first.
+        over: bool = False;
 }
 
 """The methods are abstract so that a workbench in another module is reached

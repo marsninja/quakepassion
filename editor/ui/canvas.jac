@@ -316,6 +316,35 @@ obj TraceCanvas(Canvas) {
     }
 }
 
+"""What is left of a rectangle with others cut out of it, as rectangles that
+do not overlap: to draw in what is not covered."""
+def rects_outside(area: Rect, holes: list[Rect]) -> list[Rect] {
+    pieces = [area] if area.w > 0 and area.h > 0 else [];
+    for hole in holes {
+        left: list[Rect] = [];
+        for piece in pieces {
+            cut = piece.within(hole);
+            if cut.w <= 0 or cut.h <= 0 {
+                left.append(piece);
+                continue;
+            }
+            # A band above the hole, one below, and what is beside it between them.
+            for part in [
+                Rect(x=piece.x, y=piece.y, w=piece.w, h=cut.y - piece.y),
+                Rect(x=piece.x, y=cut.bottom(), w=piece.w, h=piece.bottom() - cut.bottom()),
+                Rect(x=piece.x, y=cut.y, w=cut.x - piece.x, h=cut.h),
+                Rect(x=cut.right(), y=cut.y, w=piece.right() - cut.right(), h=cut.h)
+            ] {
+                if part.w > 0 and part.h > 0 {
+                    left.append(part);
+                }
+            }
+        }
+        pieces = left;
+    }
+    return pieces;
+}
+
 """Font files tried in order when ed_font names none: the first that exists
 is used, else raylib's built-in font."""
 glob UI_FONT_PATHS: list[str] = [

@@ -2,7 +2,7 @@
 column, and the labels, buttons, fields, lists, menus and splitters inside
 them. Each is a Widget node; see widget.jac for how they are laid out, drawn
 and fed input."""
-import from .canvas { Canvas, Rect, Ink }
+import from .canvas { Canvas, Rect, Ink, rects_outside }
 import from .widget { Widget, Stage, UiEvent }
 import from engine.console.shell { quote_command_word }
 
@@ -1127,41 +1127,92 @@ obj MenuItem {
 """A list of commands that opens as a layer and closes on a choice."""
 node MenuPopup(Widget) {
     has items: list[MenuItem] = [],
-        hover_item: int = -1;
+        hover_item: int = -1,
+        # A menu too long for the window goes on in further columns: the
+        # item each column begins with, and how wide each column is.
+        starts: list[int] = [0],
+        widths: list[int] = [];
 
     def line_height(item: MenuItem) -> int {
         return 7 if item.rule else 22;
     }
 
+    """How wide an item needs the popup to be."""
+    def line_width(canvas: Canvas, item: MenuItem) -> int {
+        wide = canvas.text_width(item.text) + 44;
+        if item.keys {
+            wide += canvas.text_width(item.keys, canvas.theme.small) + 24;
+        }
+        return wide;
+    }
+
     """Size the popup to its items and put its corner at a point, kept on
-    the screen."""
+    the screen. One too long for the window is laid out in columns under
+    that point, each as long as the window leaves room for."""
     def open_at(stage: Stage, x: int, y: int) {
         canvas = stage.canvas;
-        width = 140;
         height = 8;
         for item in self.items {
             height += self.line_height(item);
-            wide = canvas.text_width(item.text) + 44;
-            if item.keys {
-                wide += canvas.text_width(item.keys, canvas.theme.small) + 24;
-            }
-            width = max(width, wide);
         }
+        self.starts = [0];
+        tallest = height;
+        if height > stage.height and stage.height > 0 {
+            room = max(120, stage.height - y - 8);
+            used = 8;
+            tallest = 8;
+            for (index, item) in enumerate(self.items) {
+                tall = self.line_height(item);
+                if used + tall > room and index > self.starts[-1] {
+                    self.starts.append(index);
+                    used = 8;
+                }
+                used += tall;
+                tallest = max(tallest, used);
+            }
+        }
+        self.widths = [];
+        for (place, first) in enumerate(self.starts) {
+            last = self.starts[place + 1] if place + 1 < len(self.starts) else len(self.items);
+            width = 140;
+            for item in self.items[first:last] {
+                width = max(width, self.line_width(canvas, item));
+            }
+            self.widths.append(width);
+        }
+        across = sum(self.widths);
         self.transient = True;
         self.area = Rect(
-            x=max(0, min(x, stage.width - width)), y=max(0, min(y, stage.height - height)), w=width, h=height
+            x=max(0, min(x, stage.width - across)), y=max(0, min(y, stage.height - tallest)), w=across, h=tallest
         );
         stage.open(self);
     }
 
-    def item_at(y: int) -> int {
-        top = self.area.y + 4;
-        for i in range(len(self.items)) {
-            tall = self.line_height(self.items[i]);
-            if y >= top and y < top + tall {
-                return i;
+    """A column's items (first, one past the last) and where it begins across."""
+    def column(place: int) -> list[int] {
+        first = self.starts[place];
+        last = self.starts[place + 1] if place + 1 < len(self.starts) else len(self.items);
+        left = self.area.x;
+        for width in self.widths[:place] {
+            left += width;
+        }
+        return [first, last, left];
+    }
+
+    def item_at(x: int, y: int) -> int {
+        for place in range(min(len(self.starts), len(self.widths))) {
+            span = self.column(place);
+            if x < span[2] or x >= span[2] + self.widths[place] {
+                continue;
             }
-            top += tall;
+            top = self.area.y + 4;
+            for i in range(span[0], span[1]) {
+                tall = self.line_height(self.items[i]);
+                if y >= top and y < top + tall {
+                    return i;
+                }
+                top += tall;
+            }
         }
         return -1;
     }
@@ -1170,36 +1221,42 @@ node MenuPopup(Widget) {
         theme = canvas.theme;
         canvas.fill(self.area, theme.raised);
         canvas.outline(self.area, theme.border);
-        top = self.area.y + 4;
-        for i in range(len(self.items)) {
-            item = self.items[i];
-            tall = self.line_height(item);
-            line = Rect(x=self.area.x + 1, y=top, w=self.area.w - 2, h=tall);
-            if item.rule {
-                canvas.line(line.x + 6, top + 3, line.right() - 6, top + 3, theme.border);
-            } else {
-                lit = i == self.hover_item and item.enabled;
-                if lit {
-                    canvas.fill(line, theme.accent);
-                }
-                front = theme.on_accent if lit else (theme.text if item.enabled else theme.faint);
-                if item.ticked {
-                    draw_glyph(canvas, "check", line.x + 6, top + 6, 10, front);
-                }
-                canvas.label(item.text, Rect(x=line.x + 24, y=top, w=line.w - 30, h=tall), front);
-                if item.keys {
-                    canvas.label(
-                        item.keys, line, theme.on_accent if lit else theme.faint, 1, 10, theme.small
-                    );
-                }
+        for place in range(min(len(self.starts), len(self.widths))) {
+            span = self.column(place);
+            top = self.area.y + 4;
+            if place > 0 {
+                canvas.line(span[2], self.area.y + 4, span[2], self.area.bottom() - 4, theme.border);
             }
-            top += tall;
+            for i in range(span[0], span[1]) {
+                item = self.items[i];
+                tall = self.line_height(item);
+                line = Rect(x=span[2] + 1, y=top, w=self.widths[place] - 2, h=tall);
+                if item.rule {
+                    canvas.line(line.x + 6, top + 3, line.right() - 6, top + 3, theme.border);
+                } else {
+                    lit = i == self.hover_item and item.enabled;
+                    if lit {
+                        canvas.fill(line, theme.accent);
+                    }
+                    front = theme.on_accent if lit else (theme.text if item.enabled else theme.faint);
+                    if item.ticked {
+                        draw_glyph(canvas, "check", line.x + 6, top + 6, 10, front);
+                    }
+                    canvas.label(item.text, Rect(x=line.x + 24, y=top, w=line.w - 30, h=tall), front);
+                    if item.keys {
+                        canvas.label(
+                            item.keys, line, theme.on_accent if lit else theme.faint, 1, 10, theme.small
+                        );
+                    }
+                }
+                top += tall;
+            }
         }
     }
 
     def on(event: UiEvent, stage: Stage) -> bool {
         if event.kind == "click" or event.kind == "release" {
-            index = self.item_at(event.y);
+            index = self.item_at(event.x, event.y);
             if index >= 0 and self.area.holds(event.x, event.y) {
                 item = self.items[index];
                 if item.enabled and not item.rule {
@@ -1215,7 +1272,7 @@ node MenuPopup(Widget) {
     """Called every frame while open: which item the pointer is over."""
     def track(stage: Stage) {
         inside = self.area.holds(stage.input.x, stage.input.y);
-        self.hover_item = self.item_at(stage.input.y) if inside else -1;
+        self.hover_item = self.item_at(stage.input.x, stage.input.y) if inside else -1;
     }
 
     def solid -> bool {
@@ -1335,7 +1392,10 @@ node MenuBar(Widget) {
 """The part of the window a scene shows through. It keeps the events that
 reached it for the studio to read each frame."""
 node ViewArea(Widget) {
-    has events: list[UiEvent] = [];
+    has events: list[UiEvent] = [],
+        # Whether it shows that it has the keyboard (a view inside a
+        # floating window does not: another window may lie over it).
+        plain: bool = False;
 
     def on(event: UiEvent, stage: Stage) -> bool {
         # Keys are the studio's shortcuts whether or not the view has the
@@ -1354,7 +1414,7 @@ node ViewArea(Widget) {
     }
 
     def draw(canvas: Canvas) {
-        if self.focused {
+        if self.focused and not self.plain {
             canvas.outline(self.area, canvas.theme.accent.faded(140));
         }
     }
@@ -2246,6 +2306,142 @@ node ColourBars(Widget) {
             return True;
         }
         return event.kind in ["click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
+"""A window that floats over the rest as a layer of its own, with one widget
+inside it. It is dragged by the bar along its top, sized by the corner at
+its bottom right, and its cross asks for `command`. What is inside is left
+unpainted, for a view to show through."""
+node Floater(Widget) {
+    has title: str = "",
+        command: str = "",
+        # What it says along its bottom edge, beside the corner.
+        note: str = "",
+        bar: int = 20,
+        foot: int = 14,
+        least_wide: int = 140,
+        least_tall: int = 100,
+        # Where it may go: the whole stage, unless this has a size.
+        bounds: Rect = Rect(),
+        # What lies over it (other windows that float above): it paints
+        # nothing there, having left its inside unpainted for them too.
+        covered: list[Rect] = [],
+        # What a press took hold of: "move", "size" or "".
+        taken: str = "";
+
+    """The cross at the end of the bar."""
+    def cross -> Rect {
+        return Rect(x=self.area.right() - self.bar, y=self.area.y, w=self.bar, h=self.bar);
+    }
+
+    """The corner it is sized by."""
+    def corner -> Rect {
+        return Rect(x=self.area.right() - self.foot, y=self.area.bottom() - self.foot, w=self.foot, h=self.foot);
+    }
+
+    """Where the widget inside goes: under the bar, over the foot."""
+    def inside -> Rect {
+        return Rect(
+            x=self.area.x + 1,
+            y=self.area.y + self.bar,
+            w=max(0, self.area.w - 2),
+            h=max(0, self.area.h - self.bar - self.foot)
+        );
+    }
+
+    def place(canvas: Canvas) {
+        for kid in self.kids() {
+            kid.area = self.inside();
+        }
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        top = Rect(x=self.area.x, y=self.area.y, w=self.area.w, h=self.bar);
+        base = Rect(x=self.area.x, y=self.area.bottom() - self.foot, w=self.area.w, h=self.foot);
+        for piece in rects_outside(self.clip, self.covered) {
+            canvas.clip(piece);
+            canvas.fill(top, theme.header);
+            canvas.label(
+                self.title, Rect(x=top.x + 6, y=top.y, w=max(0, top.w - self.bar - 8), h=top.h), theme.text, -1, 0, theme.small
+            );
+            draw_glyph(canvas, "cross", self.cross().x + 6, self.cross().y + 6, self.bar - 12, theme.dim);
+            canvas.fill(base, theme.header);
+            canvas.label(
+                self.note, Rect(x=base.x + 6, y=base.y, w=max(0, base.w - self.foot - 8), h=base.h), theme.faint, -1, 0, theme.small
+            );
+        }
+        canvas.clip(self.clip);
+    }
+
+    def draw_over(canvas: Canvas) {
+        theme = canvas.theme;
+        grip = self.corner();
+        for piece in rects_outside(self.clip, self.covered) {
+            canvas.clip(piece);
+            canvas.outline(self.area, theme.accent if self.taken else theme.border);
+            for step in [3, 7, 11] {
+                canvas.line(grip.right() - step, grip.bottom() - 2, grip.right() - 2, grip.bottom() - step, theme.dim);
+            }
+        }
+        canvas.clip(self.clip);
+    }
+
+    """Keep it where it may go (on the stage, or within its bounds), and no
+    smaller than it may be."""
+    def settle(stage: Stage) {
+        room = self.bounds if self.bounds.w > 0 and self.bounds.h > 0 else Rect(x=0, y=0, w=stage.width, h=stage.height);
+        wide = max(self.least_wide, min(self.area.w, room.w));
+        tall = max(self.least_tall, min(self.area.h, room.h));
+        self.area = Rect(
+            x=max(room.x, min(self.area.x, room.right() - wide)),
+            y=max(room.y, min(self.area.y, room.bottom() - tall)),
+            w=wide,
+            h=tall
+        );
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        if event.kind == "press" and event.button == 0 {
+            self.taken = "";
+            if self.corner().holds(event.x, event.y) {
+                self.taken = "size";
+            } elif event.y < self.area.y + self.bar and not self.cross().holds(event.x, event.y) {
+                self.taken = "move";
+            }
+            return True;
+        }
+        if event.kind == "drag" {
+            if self.taken == "move" {
+                self.area = Rect(x=self.area.x + event.dx, y=self.area.y + event.dy, w=self.area.w, h=self.area.h);
+                self.settle(stage);
+            } elif self.taken == "size" {
+                self.area = Rect(
+                    x=self.area.x,
+                    y=self.area.y,
+                    w=max(self.least_wide, self.area.w + event.dx),
+                    h=max(self.least_tall, self.area.h + event.dy)
+                );
+                self.settle(stage);
+            }
+            return True;
+        }
+        if event.kind == "release" {
+            self.taken = "";
+            return True;
+        }
+        if event.kind == "click" and event.button == 0 {
+            if self.cross().holds(event.x, event.y) {
+                stage.emit(self.command);
+            }
+            return True;
+        }
+        return event.kind in ["press", "double", "wheel"];
     }
 
     def solid -> bool {

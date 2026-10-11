@@ -1797,6 +1797,89 @@ def district_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     );
 }
 
+"""A step's floating windows by number: their words by key."""
+def float_rows(lines: list[str]) -> dict[int, dict[str, str]] {
+    found: dict[int, dict[str, str]] = {};
+    for line in lines {
+        if line.startswith("window ") {
+            words = line.split();
+            found[int(words[1])] = {word.split("=")[0]: word.split("=")[1] for word in words[2:] if "=" in word};
+        }
+    }
+    return found;
+}
+
+"""The fifty-sixth session: floating 3D windows."""
+def float_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["one", "two"];
+    for shot in shots {
+        (repo / f"float_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-float-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/float_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "float.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The float session failed: {output / 'float.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["none", "opened", "moved", "sized", "dollied", "picked", "escaped", "two", "closed", "kept", "gone"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'float.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
+    rows: dict[str, dict[int, dict[str, str]]] = {};
+    cameras: dict[str, str] = {};
+    for name in names {
+        rows[name] = float_rows(steps[name]);
+        cameras[name] = [line for line in steps[name] if line.startswith("camera ")][0];
+    }
+    # None to begin with; then one, numbered after the first view, where it was put, looking from where it was told.
+    assert rows["none"] == {} and said.count("windows 0") == 2;
+    opened = rows["opened"];
+    assert list(opened.keys()) == [2] and opened[2]["at"] == "600,300" and opened[2]["size"] == "340x240" , str(opened);
+    assert opened[2]["eye"] == "300,-300,200" and opened[2]["yaw"] == "135" and opened[2]["pitch"] == "-20" and opened[2]["outlines"] == "0";
+    # Dragged by its bar two hundred left and a hundred and fifty up; then its corner out sixty by forty.
+    assert rows["moved"][2]["at"] == "400,150" and rows["moved"][2]["size"] == "340x240" , str(rows["moved"]);
+    assert rows["sized"][2]["at"] == "400,150" and rows["sized"][2]["size"] == "400x280" , str(rows["sized"]);
+    # The wheel over it moved its own camera: the first view's stayed where it was.
+    assert rows["dollied"][2]["eye"] != rows["sized"][2]["eye"] and rows["dollied"][2]["yaw"] == "135";
+    assert cameras["dollied"] == cameras["sized"] and cameras["sized"] == cameras["opened"] , cameras["dollied"];
+    # Looking straight at the box from its own camera, a click in the window picked the box.
+    assert not brushes(steps["escaped"]) and len(brushes(steps["picked"])) == 1 , str(steps["picked"]);
+    assert brushes(steps["picked"])[0].startswith("brush #3 ") and rows["picked"][2]["eye"] == "-150,160,32";
+    # Escape let go of the selection and left the window.
+    assert list(rows["escaped"].keys()) == [2];
+    # A second, in outlines, over the first; its cross closes it and leaves the other.
+    two = rows["two"];
+    assert list(two.keys()) == [2, 3] and two[3]["at"] == "560,260" and two[3]["size"] == "300x220" and two[3]["outlines"] == "1";
+    assert list(rows["closed"].keys()) == [2] and rows["closed"][2] == two[2];
+    # Sent far off, it stays within the views; told to draw in outlines, it does; a window that is not there changes nothing.
+    kept = rows["kept"][2];
+    corner = [int(part) for part in kept["at"].split(",")];
+    reach = [int(part) for part in kept["size"].split("x")];
+    assert reach == [400, 280] and corner[0] > 400 and corner[1] > 150 and corner[0] + reach[0] <= 1000 and corner[1] + reach[1] <= 720 , str(kept);
+    assert kept["outlines"] == "1" and list(rows["kept"].keys()) == [2] and rows["gone"] == {};
+    for shot in shots {
+        source = repo / f"float_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"float_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"FLOAT PASS: {len(steps) - 1} steps, a floating 3D window moved, sized, flown and clicked through with its own "
+            + "camera, a second in outlines closed by its cross, and both kept within the views"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4150,6 +4233,7 @@ def main() {
         "bones": bones_session,
         "figure": figure_session,
         "district": district_session,
+        "float": float_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4320,6 +4404,7 @@ def main() {
     bones_session(repo, binary, env, output);
     figure_session(repo, binary, env, output);
     district_session(repo, binary, env, output);
+    float_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
