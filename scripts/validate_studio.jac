@@ -2185,6 +2185,78 @@ def playview_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     );
 }
 
+"""The sixty-second session: a model kept in a work file, and written as Quake's and Quake II's own."""
+def modelfiles_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "modelfiles_quake.png").unlink(missing_ok=True);
+    heads: dict[str, bytes] = {};
+    beside: list[str] = [];
+    with tempfile.TemporaryDirectory(prefix="qp-modelfiles-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/modelfiles_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "modelfiles.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The model files session failed: {output / 'modelfiles.log'}";
+        beside = sorted([found.name for found in Path(home + "/models").iterdir()]);
+        for name in ["keep.qpm", "keep.mdl", "keep.md2"] {
+            heads[name] = (Path(home + "/models") / name).read_bytes()[:64];
+        }
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "closed", "work", "quake", "second"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'modelfiles.log'}";
+    }
+    docs: dict[str, str] = {};
+    bones: dict[str, list[str]] = {};
+    skins: dict[str, str] = {};
+    for name in ["made", "work", "quake", "second"] {
+        docs[name] = [line for line in steps[name] if line.startswith("modeldoc ")][0];
+        bones[name] = [line for line in steps[name] if line.startswith("bone ") or line.startswith("bones ")];
+        skins[name] = [line for line in steps[name] if line.startswith("skin ")][0];
+    }
+    # As it was made: two frames with the second in hand, the top picked, a tag, two bones.
+    assert " parts=1 part=0 frames=2 frame=1:raised points=18 triangles=32 picked=9/8 " in docs["made"] , docs["made"];
+    assert " tags=1 " in docs["made"] and len(bones["made"]) == 3 and bones["made"][0].startswith("bones 2 ");
+    whole = int(docs["made"].split("volume=")[1].split()[0]);
+    # Three files are written (and nothing as a kind of file this does not write). The games' files
+    # keep no bones, so theirs lie beside them; the work file has its own inside it.
+    saved = [line for line in ran.stdout.splitlines() if line.startswith("studio: saved model ")];
+    assert len(saved) == 3 and beside == ["keep.md2", "keep.md2.rig", "keep.mdl", "keep.mdl.rig", "keep.qpm"] , beside;
+    assert heads["keep.qpm"].startswith(b"qpmodel 1\nmodel cylinder\nhand 1 0\npart cylinder\n");
+    assert heads["keep.mdl"][:4] == b"IDPO" and heads["keep.md2"][:4] == b"IDP2";
+    assert len([line for line in steps["closed"] if line.startswith("modeldoc ")]) == 0;
+    # The work file opens as the model was left, but for its undo list: the frame and pick in hand,
+    # the tag, and the bones with what each carries.
+    assert docs["work"] == docs["made"].replace(" undo=1 ", " undo=0 ") and bones["work"] == bones["made"] , docs["work"];
+    # Quake's file is one mesh of both frames, a point a byte an axis: within a hundredth of the
+    # volume. Its skin was inside it, and is the skin in hand in place of the small one made before.
+    for (name, part) in [("quake", "mdl"), ("second", "md2")] {
+        assert " keep parts=1 part=0 frames=2 frame=0:frame_0 points=18 triangles=32 picked=0/0 " in docs[name] , docs[name];
+        assert " open=0 low=-32,-32,0 high=32,32,96 tags=0 " in docs[name] , docs[name];
+        assert abs(int(docs[name].split("volume=")[1].split()[0]) - whole) < whole // 100 , docs[name];
+        assert skins[name].startswith(f"skin part={part} placed=1 ") , skins[name];
+    }
+    assert " image=64x32 " in skins["quake"] and " skins=1 " in docs["quake"] , skins["quake"];
+    source = repo / "modelfiles_quake.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "modelfiles_quake.png");
+    source.unlink();
+    print(
+        f"MODELFILES PASS: {len(steps) - 1} steps, a model of two frames, a tag and two bones kept in a work file and "
+            + "opened as it was left, and written as Quake's MDL with its skin and as Quake II's MD2 and read back"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4544,6 +4616,7 @@ def main() {
         "finds": finds_session,
         "whole": whole_session,
         "playview": playview_session,
+        "modelfiles": modelfiles_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4720,6 +4793,7 @@ def main() {
     finds_session(repo, binary, env, output);
     whole_session(repo, binary, env, output);
     playview_session(repo, binary, env, output);
+    modelfiles_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

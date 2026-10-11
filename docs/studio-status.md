@@ -380,11 +380,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   for what is wrong (triangles with no area or a corner nowhere, unused
   points, parts with other frames than the first), `ed_model match`
   gives every part the first's frames, and `ed_model undo|redo` undo a
-  part's edits whole. `ed_model save <file>` writes an MD3, an MD2 (the
-  parts as one mesh, with a command list for renderers that want one) or
-  an OBJ (the part in hand) under `QP_MODELS`, a project's `models/` or
-  `./models`; the games' files wind triangles the other way round from
-  the editor, and are turned on the way in and out.
+  part's edits whole. `ed_model save <file>` writes, by the file's ending,
+  an MD3, an MD2 (the parts as one mesh, with a command list for renderers
+  that want one), a Quake MDL (one mesh too, with the skin in hand inside
+  it in Quake's own colours, or one grey), an OBJ (the part in hand) or
+  a work file (`.qpm`) under `QP_MODELS`, a project's `models/` or
+  `./models`, and `ed_model open <file>` reads any of them back (an MDL's
+  skin becomes the skin in hand). The games' files wind triangles the
+  other way round from the editor, and are turned on the way in and out;
+  they keep points as bytes or sixty-fourths and know nothing of bones,
+  so a model's bones go in a `.rig` file beside them. The work file is
+  the model as the editor has it, as text: every pose to the last
+  decimal, what is picked of each part, the tags, the bones with what
+  they carry, and the frame and part in hand, so work is taken up where
+  it was left.
   A click in the model's view picks the triangle under the pointer, or
   with `ed_pick mode points` (the panel's last row) the point it passes
   nearest, the nearest to the eye; Shift adds to what is picked, and Ctrl
@@ -1186,6 +1195,11 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_modelfile_tests.jac`: a model of two parts written as a
+  Quake MDL and read by the engine (points, places on the skin, the skin
+  itself in the palette's colours, frames' names); a work file that gives
+  back poses, picks, tags, bones and what was in hand, writes the same
+  text again, and is refused when it is not one.
 - `tests/studio_playback_tests.jac`: the frame after one within a range,
   round and once, and with a range that is no range; the edges of the
   faces toward an eye; a box as a mesh of twelve triangles facing out; a
@@ -1374,6 +1388,11 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/modelfiles_session.cfg` (5 steps: a cylinder of two
+  frames with a tag, two bones and its top picked, saved as a work file,
+  an MDL and an MD2; the work file opened as the model was left; the MDL
+  and the MD2 read back as one mesh within a hundredth of its volume,
+  the MDL's skin taken in hand).
   `scripts/studio/playview_session.cfg` (12 steps: a soldier's frames
   eight to fourteen stepped round and played once; 269 of its 492 edges
   drawn without the faces turned away, every point ticked, and all put

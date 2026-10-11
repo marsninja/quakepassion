@@ -381,38 +381,15 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
     if name == "ed_model" and how == "open" {
         path = self.model_path(args[2]) if len(args) > 2 else "";
         if not path or not os.path.isfile(path) {
-            self.say("ed_model open <file.obj|file.md3>: no such file " + path);
+            self.say("ed_model open <file.qpm|file.md3|file.md2|file.mdl|file.obj>: no such file " + path);
             return True;
         }
-        label = os.path.basename(path).split(".")[0];
-        opened_doc: ModelDoc | None = None;
-        try {
-            if path.lower().endswith(".obj") {
-                text = "";
-                with open(path, "r") as file {
-                    text = file.read();
-                }
-                read = obj_mesh(text);
-                if read.triangles() > 0 {
-                    opened_doc = ModelDoc(name=label);
-                    opened_doc.add_part(label, read);
-                    opened_doc.dirty = False;
-                }
-            } elif path.lower().endswith(".md3") {
-                data = b"";
-                with open(path, "rb") as file {
-                    data = file.read();
-                }
-                opened_doc = doc_from_model(parse_md3(data), label);
-            }
-        } except Exception {
-            opened_doc = None;
-        }
+        opened_doc = self.model_file_doc(path);
         if opened_doc is None {
-            self.say("ed_model open: " + path + " is not an OBJ or MD3 model this reads");
+            self.say("ed_model open: " + path + " is not a work file or an MD3, MD2, MDL or OBJ model this reads");
             return True;
         }
-        if os.path.isfile(path + ".rig") {
+        if os.path.isfile(path + ".rig") and not path.lower().endswith(".qpm") {
             # Its bones, kept beside it.
             try {
                 with open(path + ".rig", "r") as file {
@@ -572,18 +549,9 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             self.say(("Undid " if how == "undo" else "Redid ") + label if label else "Nothing to " + how);
         } elif how == "save" and len(args) > 2 {
             path = self.model_path(args[2]);
-            data = b"";
-            if path.lower().endswith(".obj") and part is not None {
-                data = mesh_obj(doc.mesh(part), doc.name).encode("utf-8");
-            } elif path.lower().endswith(".md3") {
-                limits = md3_limits(doc);
-                for limit in limits {
-                    print("studio: limit " + limit);
-                }
-                data = write_md3(doc);
-            }
+            data = self.model_file_bytes(doc, path);
             if len(data) == 0 {
-                self.say("ed_model save <file.obj|file.md3>: nothing to write there (ed_model check)");
+                self.say("ed_model save <file.qpm|file.md3|file.md2|file.mdl|file.obj>: nothing to write there (ed_model check)");
                 return True;
             }
             try {
@@ -595,8 +563,8 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
                 self.say("ed_model save: could not write " + path);
                 return True;
             }
-            if len(doc.bones()) > 0 {
-                # The formats keep no bones: they go in a file beside the model.
+            if len(doc.bones()) > 0 and not path.lower().endswith(".qpm") {
+                # The games' formats keep no bones: they go in a file beside the model.
                 try {
                     with open(path + ".rig", "w") as file {
                         file.write(doc.rig_text());

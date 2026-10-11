@@ -110,7 +110,20 @@ import from .assets.playback {
     share_stepped,
     SEQUENCES
 }
-import from .model.files { doc_from_model, model_of, write_md3, md3_limits, write_md2, md2_limits }
+import from .model.files {
+    doc_from_model,
+    model_of,
+    write_md3,
+    md3_limits,
+    write_md2,
+    md2_limits,
+    write_mdl,
+    mdl_limits,
+    palette_indices,
+    grey_palette
+}
+import from .model.work { work_text, doc_from_work }
+import from engine.formats.q1.model { parse_mdl }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
@@ -3377,6 +3390,9 @@ obj Studio(Workbench) {
     def model_path(name: str) -> str;
     """Show the model being edited in the explorer's model view."""
     def show_model_doc(reframe: bool);
+    def quake_palette -> bytes;
+    def model_file_bytes(doc: ModelDoc, path: str) -> bytes;
+    def model_file_doc(path: str) -> ModelDoc | None;
     """Show it again if it has changed since it was drawn."""
     def fresh_model;
     """Fill the explorer's file panel for the model being edited. False

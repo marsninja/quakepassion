@@ -431,3 +431,171 @@ def write_md2(doc: ModelDoc, wide: int = 256, tall: int = 256) -> bytes {
     out.extend(command_bytes);
     return bytes(out);
 }
+
+"""What a Quake MDL can hold of a model: a line for each thing it cannot. An
+MDL is one mesh with its skin inside it, so a model's parts are written as
+one; it has no tags."""
+def mdl_limits(doc: ModelDoc) -> list[str] {
+    found: list[str] = [];
+    frames = doc.frames();
+    points = 0;
+    triangles = 0;
+    for part in doc.parts() {
+        stood = doc.poses(part);
+        points += len(stood[0].points) if len(stood) > 0 else 0;
+        triangles += len(part.corners) // 3;
+        if len(stood) != frames {
+            found.append(part.name + " has " + str(len(stood)) + " frames, the model " + str(frames));
+        }
+    }
+    if frames < 1 or frames > 256 {
+        found.append("An MDL has from 1 to 256 frames; this has " + str(frames));
+    }
+    if points < 1 or points > 1024 or triangles < 1 or triangles > 2048 {
+        found.append(
+            "An MDL has from 1 to 1024 points and 1 to 2048 triangles; this has " + str(points) + " and " + str(triangles)
+        );
+    }
+    return found;
+}
+
+"""A palette for when Quake's own is not at hand: 256 greys, dark to light."""
+def grey_palette -> bytes {
+    made = bytearray();
+    for index in range(256) {
+        made.extend(bytes([index, index, index]));
+    }
+    return bytes(made);
+}
+
+"""A picture of four numbers a texel as numbers into a palette of 256
+colours: each texel the nearest of the first 224 (Quake draws the last 32
+unlit, whatever the light)."""
+def palette_indices(texels: bytes, palette: bytes) -> bytes {
+    made = bytearray();
+    known: dict[int, int] = {};
+    for at in range(len(texels) // 4) {
+        red = int(texels[at * 4]);
+        green = int(texels[at * 4 + 1]);
+        blue = int(texels[at * 4 + 2]);
+        key = (red << 16) | (green << 8) | blue;
+        if key not in known {
+            best = 0;
+            least = 1000000;
+            for index in range(min(224, len(palette) // 3)) {
+                off = (int(palette[index * 3]) - red) ** 2 + (int(palette[index * 3 + 1]) - green) ** 2
+                    + (int(palette[index * 3 + 2]) - blue) ** 2;
+                if off < least {
+                    least = off;
+                    best = index;
+                }
+            }
+            known[key] = best;
+        }
+        made.append(known[key]);
+    }
+    return bytes(made);
+}
+
+"""The model as a Quake MDL file's bytes, with one skin `wide` by `tall`
+texels (empty when it is more than one holds: mdl_limits says why). `skin`
+is that picture as numbers into Quake's palette, a row at a time from the
+top; without one of the right size the skin is one grey. A point is a byte
+an axis within the box round every frame, so it comes back to within a
+255th of that box's size, and a place on the skin to within a texel."""
+def write_mdl(doc: ModelDoc, wide: int = 128, tall: int = 128, skin: bytes = b"") -> bytes {
+    if len(mdl_limits(doc)) > 0 or wide < 1 or tall < 1 {
+        return b"";
+    }
+    frames = doc.frames();
+    corners: list[int] = [];
+    places: list[float] = [];
+    base = 0;
+    for part in doc.parts() {
+        count = len(doc.poses(part)[0].points);
+        for corner in turned_about(part.corners) {
+            corners.append(base + corner);
+        }
+        for at in range(count) {
+            skinned = at * 2 + 1 < len(part.uvs);
+            places.append(part.uvs[at * 2] if skinned else 0.0);
+            places.append(part.uvs[at * 2 + 1] if skinned else 0.0);
+        }
+        base += count;
+    }
+    points = base;
+    triangles = len(corners) // 3;
+    # One box for every frame: the file has one scale.
+    low = doc.bounds(0)[0];
+    high = doc.bounds(0)[1];
+    for frame in range(frames) {
+        box = doc.bounds(frame);
+        low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
+        high = Vec3(x=max(high.x, box[1].x), y=max(high.y, box[1].y), z=max(high.z, box[1].z));
+    }
+    extent = high.sub(low);
+    scale = Vec3(
+        x=extent.x / 255.0 if extent.x > 0.0001 else 1.0,
+        y=extent.y / 255.0 if extent.y > 0.0001 else 1.0,
+        z=extent.z / 255.0 if extent.z > 0.0001 else 1.0
+    );
+    reach = 0.0;
+    frame_bytes = bytearray();
+    for frame in range(frames) {
+        stood: list[Vec3] = [];
+        facing: list[Vec3] = [];
+        for part in doc.parts() {
+            pose = doc.poses(part)[frame];
+            stood.extend(pose.points);
+            facing.extend(point_normals(Mesh(points=pose.points, corners=part.corners)));
+        }
+        packed = bytearray();
+        least = [255, 255, 255];
+        most = [0, 0, 0];
+        for (at, point) in enumerate(stood) {
+            reach = max(reach, point.length());
+            trio = [
+                max(0, min(255, int(round((point.x - low.x) / scale.x)))),
+                max(0, min(255, int(round((point.y - low.y) / scale.y)))),
+                max(0, min(255, int(round((point.z - low.z) / scale.z))))
+            ];
+            for axis in range(3) {
+                least[axis] = min(least[axis], trio[axis]);
+                most[axis] = max(most[axis], trio[axis]);
+            }
+            packed.extend(bytes([trio[0], trio[1], trio[2], nearest_normal(facing[at])]));
+        }
+        # A frame on its own: the corners of its box, its name, its points.
+        frame_bytes.extend(struct.pack("<i", 0));
+        frame_bytes.extend(bytes([least[0], least[1], least[2], 0]));
+        frame_bytes.extend(bytes([most[0], most[1], most[2], 0]));
+        frame_bytes.extend(name_bytes(doc.frame_name(frame), 16));
+        frame_bytes.extend(packed);
+    }
+    out = bytearray();
+    out.extend(b"IDPO");
+    out.extend(struct.pack("<i", 6));
+    out.extend(vector_bytes(scale));
+    out.extend(vector_bytes(low));
+    out.extend(struct.pack("<f", reach));
+    out.extend(vector_bytes(Vec3(z=high.z)));
+    out.extend(struct.pack("<iiiiii", 1, wide, tall, points, triangles, frames));
+    out.extend(struct.pack("<iif", 0, 0, max(1.0, extent.length() / 16.0)));
+    out.extend(struct.pack("<i", 0));
+    out.extend(skin if len(skin) == wide * tall else bytes([8]) * (wide * tall));
+    for at in range(points) {
+        out.extend(
+            struct.pack(
+                "<iii",
+                0,
+                max(0, min(wide - 1, int(round(places[at * 2] * float(wide) - 0.5)))),
+                max(0, min(tall - 1, int(round(places[at * 2 + 1] * float(tall) - 0.5))))
+            )
+        );
+    }
+    for index in range(triangles) {
+        out.extend(struct.pack("<iiii", 1, corners[index * 3], corners[index * 3 + 1], corners[index * 3 + 2]));
+    }
+    out.extend(frame_bytes);
+    return bytes(out);
+}
