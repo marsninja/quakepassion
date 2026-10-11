@@ -351,7 +351,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_mesh",
-        "ed_mesh move|turn|scale|mirror|flip|subdivide|extrude ...",
+        "ed_mesh move|turn|scale|mirror|flip|subdivide|cut|extrude ...",
         "move, turn or stretch the picked points; mirror the part; turn triangles round, cut them in 2, 3 or 4, or push them out"
     ),
     (

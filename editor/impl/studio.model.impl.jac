@@ -495,8 +495,24 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
                     self.say("There is no tag called " + label);
                     return True;
                 }
+            } elif what == "turn" and label and len(args) > 5 and args[4] in ["x", "y", "z"] and len(model_numbers(args[5:6])) == 1 {
+                if not doc.turn_tag(label, ["x", "y", "z"].index(args[4]), model_numbers(args[5:6])[0], len(args) > 6 and args[6] == "all") {
+                    self.say("There is no tag called " + label + ", or that is no turn");
+                    return True;
+                }
+                turned_tag = doc.tag(label);
+                if turned_tag is not None and doc.frame < len(turned_tag.axes) {
+                    # The three ways it faces at this frame, a tenth at a time.
+                    faced: list[str] = [];
+                    for way in turned_tag.axes[doc.frame] {
+                        faced.append(
+                            str(round(way.x, 1) + 0.0) + "," + str(round(way.y, 1) + 0.0) + "," + str(round(way.z, 1) + 0.0)
+                        );
+                    }
+                    print("studio: tagaxes " + label + " frame=" + str(doc.frame) + " " + " ".join(faced));
+                }
             } elif what {
-                self.say("ed_model tag [add <name> [x y z] | drop <name> | at <name> <x y z> [all]]");
+                self.say("ed_model tag [add <name> [x y z] | drop <name> | at <name> <x y z> [all] | turn <name> <x|y|z> <degrees> [all]]");
                 return True;
             }
             for tag in doc.tags() {
@@ -645,13 +661,24 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
         done = doc.reshape(Reshape(kind="flip", faces=faces), "Turn triangles round");
     } elif how == "subdivide" and len(numbers) > 0 and int(numbers[0]) in [2, 3, 4] {
         done = doc.reshape(Reshape(kind="subdivide", faces=faces, count=int(numbers[0])), "Cut triangles");
+    } elif how == "cut" and axis_word in ["x", "y", "z"] {
+        # Across an axis, where told or through the middle of what is picked.
+        cut_at = model_numbers(args[3:]);
+        through = doc.picked_middle();
+        if len(cut_at) > 0 {
+            through = Vec3(
+                x=cut_at[0] if axis == 0 else through.x, y=cut_at[0] if axis == 1 else through.y, z=cut_at[0] if axis == 2 else through.z
+            );
+        }
+        across_it = Vec3(x=1.0 if axis == 0 else 0.0, y=1.0 if axis == 1 else 0.0, z=1.0 if axis == 2 else 0.0);
+        done = doc.reshape(Reshape(kind="cut", faces=faces, pivot=through, vector=across_it), "Cut along a plane");
     } elif how == "extrude" and len(numbers) > 0 and len(part.picked_faces) > 0 {
         done = doc.reshape(
             Reshape(kind="extrude", faces=faces, amount=numbers[0], bulk=len(args) > 3 and args[3] == "bulk"), "Extrude"
         );
     } else {
         self.say(
-            "ed_mesh move <dx dy dz> | turn <x|y|z> <degrees> | scale <f> or <fx fy fz> | mirror <x|y|z> | flip | subdivide <2|3|4> | extrude <distance> [bulk]  (move, turn and scale: this frame, or every frame with all)"
+            "ed_mesh move <dx dy dz> | turn <x|y|z> <degrees> | scale <f> or <fx fy fz> | mirror <x|y|z> | flip | subdivide <2|3|4> | cut <x|y|z> [at] | extrude <distance> [bulk]  (move, turn and scale: this frame, or every frame with all)"
         );
         return True;
     }

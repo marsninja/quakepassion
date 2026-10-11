@@ -396,10 +396,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the tools work on; what is picked is drawn over the model. `ed_mesh
   move <dx dy dz>`, `turn <x|y|z> <degrees>` and `scale <f>` (or `<fx fy
   fz>`) move the picked points at the frame in hand, or at every frame
-  with `all`; `ed_mesh mirror <x|y|z>`, `flip`, `subdivide <2|3|4>` and
-  `extrude <distance> [bulk]` change the triangles, and are carried to
-  every pose alike by a walker, so that each frame keeps the same points
-  in the same order. `ed_model frame copy [name]|drop|name <words>`
+  with `all`; `ed_mesh mirror <x|y|z>`, `flip`, `subdivide <2|3|4>`,
+  `cut <x|y|z> [at]` and `extrude <distance> [bulk]` change the
+  triangles, and are carried to every pose alike by a walker, so that
+  each frame keeps the same points in the same order. A cut is along the
+  plane across an axis, where told or through the middle of what is
+  picked: a triangle the plane passes through becomes three (two when it
+  goes through a corner), triangles that share a side share the new
+  point on it, and where each side is crossed is measured at the frame
+  in hand and kept as a share of the side at every other. `ed_model frame copy [name]|drop|name <words>`
   works on the frame in hand (`ed_frame` goes from one to another),
   `ed_model part <n>` takes another part in hand, `ed_model check` looks
   for what is wrong (triangles with no area or a corner nowhere, unused
@@ -426,12 +431,13 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   step when the button is let go. `ed_model tag add <name> [x y z]` adds
   a tag (in the middle of what is picked when no place is given),
   `ed_model tag at <name> <x y z> [all]` moves it at the frame in hand or
-  at every frame, `ed_model tag drop <name>` drops it and `ed_model tag`
-  lists them; a tag goes with its frames when they are copied, dropped or
-  moved. `ed_model frame move <to>` puts the frame in hand elsewhere in
+  at every frame, `ed_model tag turn <name> <x|y|z> <degrees> [all]`
+  turns it where it stands (and with it whatever a game hangs from it),
+  `ed_model tag drop <name>` drops it and `ed_model tag` lists them; a
+  tag goes with its frames when they are copied, dropped or moved. `ed_model frame move <to>` puts the frame in hand elsewhere in
   the order, and `ed_model skin [add <name>|drop <number>]` keeps the
-  skins the part in hand names. Not there yet: handles drawn on the
-  model, the skin view and painting, bones, MDL writing and glTF.
+  skins the part in hand names. Not there yet: glTF, and dragging tags
+  in the view.
 - **The model's skin**: where each point of the part in hand lies on its
   picture is changed for the picked points (all of them when none are
   picked): `ed_skin move <du dv>`, `scale <f> [fv]` and `turn <degrees>`
@@ -1266,6 +1272,11 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_meshcut_tests.jac`: a box's triangles cut along a plane
+  (new points on the plane, shared where triangles share a side, closed
+  and of the same volume), a plane through a corner, a cut that falls on
+  every pose alike and is undone whole, and a tag turned at one frame and
+  at all.
 - `tests/studio_finding_tests.jac`: a search read from what is typed and
   answered by a file's name, kind, game and tags; a size asked exactly,
   by one side and by the longer side; tags hung, taken off and kept as
@@ -1479,6 +1490,11 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/meshcut_session.cfg` (5 steps: a cylinder of two
+  frames cut across its height, sixteen wall triangles into forty-eight
+  at both frames, closed and of the same volume; a plane that misses;
+  undone and done again; a tag turned a quarter at one frame, tipped at
+  both and half round at the other).
   `scripts/studio/treebox_session.cfg` (5 steps: a drag across the floor
   in the 3D view making a box 160 by 144 by 64 on the grid, the same box
   again by command, a drag into the sky making none, and a group asked

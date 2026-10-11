@@ -8,6 +8,7 @@ A part's triangles and its places on the skin are the same at every frame;
 only the points move. So a tool that moves points works on one pose or on
 all of them, and a tool that changes the triangles is carried to every pose
 by a walker, which leaves each pose with the same points in the same order."""
+import math;
 import from engine.math.vec3 { Vec3 }
 import from .mesh {
     Mesh,
@@ -17,6 +18,7 @@ import from .mesh {
     mesh_mirrored,
     mesh_flipped,
     mesh_subdivided,
+    mesh_cut,
     mesh_extruded,
     mesh_faults,
     points_of_faces,
@@ -245,6 +247,8 @@ walker Reshape {
             made = mesh_subdivided(mesh, self.faces, self.count, self.guide);
         } elif self.kind == "extrude" {
             made = mesh_extruded(mesh, self.faces, self.amount, self.bulk);
+        } elif self.kind == "cut" {
+            made = mesh_cut(mesh, self.faces, self.pivot, self.vector, self.guide);
         }
         here.points = made.points;
         self.made_corners = made.corners;
@@ -733,6 +737,35 @@ node ModelDoc {
             if every or index == self.frame {
                 held.origins[index] = at;
             }
+        }
+        self.dirty = True;
+        self.revision += 1;
+        return True;
+    }
+
+    """Turn a tag about one of the world's axes where it stands, by degrees:
+    at the frame in hand, or at every frame. What hangs from it turns with it."""
+    def turn_tag(name: str, axis: int, degrees: float, every: bool = False) -> bool {
+        held = self.tag(name);
+        if held is None or axis < 0 or axis > 2 or degrees % 360.0 == 0.0 {
+            return False;
+        }
+        swing = math.radians(degrees);
+        first = (axis + 1) % 3;
+        second = (axis + 2) % 3;
+        for index in range(len(held.axes)) {
+            if not (every or index == self.frame) {
+                continue;
+            }
+            turned: list[Vec3] = [];
+            for way in held.axes[index] {
+                parts = [way.x, way.y, way.z];
+                kept = parts[first] * math.cos(swing) - parts[second] * math.sin(swing);
+                parts[second] = parts[first] * math.sin(swing) + parts[second] * math.cos(swing);
+                parts[first] = kept;
+                turned.append(Vec3(x=parts[0], y=parts[1], z=parts[2]));
+            }
+            held.axes[index] = turned;
         }
         self.dirty = True;
         self.revision += 1;

@@ -398,6 +398,76 @@ def mesh_subdivided(mesh: Mesh, faces: list[int], parts: int, guide: Mesh | None
     return made;
 }
 
+"""The chosen triangles cut along a plane (through `base`, across `normal`):
+a triangle the plane passes through becomes three, or two when the plane
+goes through one of its corners, with new points where its sides cross
+the plane. Sides shared by two chosen triangles are cut at one new point.
+Which sides are crossed, and how far along, is measured on `guide` when
+one is given: the same cut then falls on every pose of a model."""
+def mesh_cut(mesh: Mesh, faces: list[int], base: Vec3, normal: Vec3, guide: Mesh | None = None) -> Mesh {
+    made = mesh.copy();
+    if normal.length() < 0.000001 {
+        return made;
+    }
+    across = normal.normalized();
+    measured = guide if guide is not None and len(guide.points) == len(mesh.points) else mesh;
+    count = len(mesh.points);
+    # How far each point stands off the plane; within a hair of it is on it.
+    off: list[float] = [];
+    for point in measured.points {
+        gap = point.sub(base).dot(across);
+        off.append(0.0 if abs(gap) < 0.0001 else gap);
+    }
+    chosen: list[bool] = [False for index in range(mesh.triangles())];
+    for index in faces {
+        if index >= 0 and index < len(chosen) {
+            chosen[index] = True;
+        }
+    }
+    crossings: dict[int, int] = {};
+    corners: list[int] = [];
+    for index in range(mesh.triangles()) {
+        trio = [mesh.corners[index * 3], mesh.corners[index * 3 + 1], mesh.corners[index * 3 + 2]];
+        above = len([at for at in trio if off[at] > 0.0]);
+        below = len([at for at in trio if off[at] < 0.0]);
+        if not chosen[index] or above == 0 or below == 0 {
+            corners.extend(trio);
+            continue;
+        }
+        # Turned so that the first corner is the one alone on its side, or the one on the plane.
+        lone = 0;
+        for k in range(3) {
+            others = [off[trio[(k + 1) % 3]], off[trio[(k + 2) % 3]]];
+            if above + below == 2 {
+                if off[trio[k]] == 0.0 {
+                    lone = k;
+                }
+            } elif (off[trio[k]] > 0.0) != (others[0] > 0.0) and (off[trio[k]] > 0.0) != (others[1] > 0.0) {
+                lone = k;
+            }
+        }
+        trio = [trio[lone], trio[(lone + 1) % 3], trio[(lone + 2) % 3]];
+        cuts: list[int] = [];
+        sides = [(trio[1], trio[2])] if above + below == 2 else [(trio[0], trio[1]), (trio[0], trio[2])];
+        for (one, two) in sides {
+            low = min(one, two);
+            high = max(one, two);
+            key = low * count + high;
+            if key not in crossings {
+                crossings[key] = between(made, low, high, off[low] / (off[low] - off[high]));
+            }
+            cuts.append(crossings[key]);
+        }
+        if above + below == 2 {
+            corners.extend([trio[0], trio[1], cuts[0], trio[0], cuts[0], trio[2]]);
+        } else {
+            corners.extend([trio[0], cuts[0], cuts[1], cuts[0], trio[1], trio[2], cuts[0], trio[2], cuts[1]]);
+        }
+    }
+    made.corners = corners;
+    return made;
+}
+
 """The chosen triangles pushed out along the way they face, on average, by
 `distance`, with walls from where they stood. With `bulk` the triangles
 that were there are left in place under the new ones (bulkheads); without,

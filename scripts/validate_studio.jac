@@ -2624,6 +2624,66 @@ def treebox_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     );
 }
 
+"""The sixty-eighth session: a model's triangles cut along a plane, and a tag turned."""
+def meshcut_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "meshcut_cut.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-meshcut-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/meshcut_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "meshcut.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The meshcut session failed: {output / 'meshcut.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "cut", "cut_short", "undone", "turned"];
+    docs: dict[str, str] = {};
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'meshcut.log'}";
+        docs[name] = [line for line in steps[name] if line.startswith("modeldoc ")][0];
+    }
+    def number(line: str, key: str) -> int {
+        return int(line.split(" " + key + "=")[1].split()[0]);
+    }
+    # A cylinder of eight sides: sixteen triangles of wall and sixteen of caps, at two frames.
+    assert " frames=2 frame=1:tall points=18 triangles=32 " in docs["made"] and " open=0 " in docs["made"] , docs["made"];
+    # Cut across its height: each wall triangle becomes three, with a new point on each of the eight
+    # upright sides and each of the eight diagonals; it is closed still and holds what it held.
+    assert number(docs["cut"], "points") == 34 and number(docs["cut"], "triangles") == 64 and " open=0 " in docs["cut"] , docs["cut"];
+    assert number(docs["cut"], "volume") == number(docs["made"], "volume") and number(docs["cut"], "undo") == 2;
+    # The other frame has the same triangles and its own volume: the cut fell on both alike.
+    assert " frame=0:" in docs["cut_short"] and number(docs["cut_short"], "triangles") == 64 and " open=0 " in docs["cut_short"];
+    assert 0 < number(docs["cut_short"], "volume") < number(docs["cut"], "volume");
+    # A plane that misses is no edit; undone, the model is as it was made.
+    assert number(docs["undone"], "triangles") == 32 and number(docs["undone"], "points") == 18 and number(docs["undone"], "undo") == 1;
+    # The tag turned a quarter about the upright at one frame, tipped at both, and half round at
+    # the other: what it faces at each, a line a turn (a turn of nothing and of no tag say nothing).
+    faced = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: tagaxes ")];
+    assert faced == [
+        "tagaxes tag_top frame=0 0.0,1.0,0.0 -1.0,0.0,0.0 0.0,0.0,1.0",
+        "tagaxes tag_top frame=0 0.0,0.0,1.0 -1.0,0.0,0.0 0.0,-1.0,0.0",
+        "tagaxes tag_top frame=1 -1.0,0.0,0.0 0.0,0.0,1.0 0.0,1.0,0.0"
+    ] , str(faced);
+    assert " tags=1 " in docs["turned"] and number(docs["turned"], "triangles") == 64;
+    source = repo / "meshcut_cut.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "meshcut_cut.png");
+    source.unlink();
+    print(
+        f"MESHCUT PASS: {len(steps) - 1} steps, a cylinder's sixteen wall triangles cut into forty-eight along a plane at both "
+            + "frames, closed and of the same volume, undone and done again, and a tag turned at one frame and at all"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4989,6 +5049,7 @@ def main() {
         "repack": repack_session,
         "finding": finding_session,
         "treebox": treebox_session,
+        "meshcut": meshcut_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5171,6 +5232,7 @@ def main() {
     repack_session(repo, binary, env, output);
     finding_session(repo, binary, env, output);
     treebox_session(repo, binary, env, output);
+    meshcut_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
