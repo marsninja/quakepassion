@@ -166,6 +166,44 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the brush or entity it means (when the scene has no copies or prefabs,
   so that the map's numbers are the document's). A recipe may hold such a
   step.
+- **Projects**: a project is a folder with a manifest, `project.qp`, at
+  its top and `scenes/`, `prefabs/` and `textures/` under it. The manifest
+  is text, a line a fact (`name`, `game`, `start`, `material`, `build`,
+  `bake`, a `scene` line a scene, an `addon` line an add-on, a `recipe`
+  line a recipe), written in the same order every time so that two
+  versions of it compare line by line; a line it does not understand is
+  kept as it was. `ed_project new <folder> [name]` makes one and
+  `ed_project open <folder>` opens one (a path, or a name under
+  `QP_PROJECTS`, else `./projects`), showing its start scene. While one is
+  open, scenes and prefabs are saved under it, its image files are the
+  ones offered as materials, a scene saved among its scenes is named in
+  the manifest, `ed_recipe` keeps recipes in the manifest in place of the
+  settings, and the classes offered for its scenes are its game's.
+  `ed_project add` saves the scene in hand into it, `ed_project drop
+  <scene>` stops counting one (its file is left), `ed_project start
+  <scene>` says which opens with it, `ed_project set
+  name|game|material|build|bake <value>` sets what its scenes are made
+  and built with, `ed_project close` closes it, and `ed_project` alone
+  (Window menu, The project) says what is open.
+- **Add-ons**: `ed_addon <file>` loads a text file of entity classes, each
+  a line after the word `class` in the form the studio's own table has
+  them (`class trap_spikes | point | passion | Spikes that rise |
+  dmg:n:20:What they do | start up`; the fields and spawnflags may be left
+  off). Its classes are offered in the Classes tab and the inspector like
+  any other; one the studio has of its own is left as it is. `ed_addon
+  reload [file]` reads add-ons again without restarting, `ed_addon drop
+  <file>` takes one and its classes out, and `ed_addon` alone (Window
+  menu) lists what is loaded with a count of the studio's commands,
+  classes, recipes and bound keys. An add-on inside the open project is
+  named in its manifest and loads with it; any other is kept in the
+  settings.
+- **What a game's scenes begin with**: `ed_game <passion|q1|q2|q3>
+  <material|build|bake> [value]` sets the material new brushes are made
+  of, how levels are lit and how wide a bake's cells are for scenes of
+  that game, taken up when one is first shown outside a project and kept
+  in the settings; `ed_game` alone lists the four with the folder each is
+  read from (those folders are still set by `QP_ASSETS` and
+  `~/quake-assets`, not from the studio).
 - **Building**: `ed_build` builds the level again now; `ed_build full`
   lights it finely (a lightmap texel to 16 units), `ed_build quick`
   coarsely (to 32, about a third of the work), and `ed_build flat` not at
@@ -599,6 +637,12 @@ editor/impl/                 the workbench's scenes and brushes
   (`tests/studio_compile_tests.jac` has
   a baked level prepared by the engine, the player's cell found in it and
   fewer faces listed from behind the wall.)
+- `tests/studio_project_tests.jac`: a manifest's words with what is quoted
+  kept together; a project read from its manifest and written back the
+  same, its scenes in order; what a manifest does not understand kept and
+  what would mislead refused; an add-on's class lines. (An add-on's
+  classes joining the table, replaced when read again and leaving it are
+  in `tests/studio_class_tests.jac`.)
 - `tests/studio_steps_tests.jac`: a recipe's commands apart at semicolons
   and a step's line with the map put in; a compiler's words read for the
   entities and brushes they name; a line of the map's text placed in its
@@ -793,6 +837,14 @@ editor/impl/                 the workbench's scenes and brushes
   forgotten; a stand-in compiler run over the map, stopping with its own
   code, and its three complaints, by entity, by brush and by line, each
   gone to).
+  `scripts/studio/project_session.cfg` (10 steps: a project made, two
+  scenes saved into it, its start, build, bake, material and a recipe set,
+  and its manifest read back word for word; an add-on's two classes
+  loaded, an entity of one made with its fields and flag in the
+  inspector, the add-on read again and dropped; the project asked for
+  from the Window menu; closed, and an older project opened with its
+  scene and its own add-on, its manifest untouched; a game's material
+  and build kept in the settings and the next scene floored with it).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

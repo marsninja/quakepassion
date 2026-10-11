@@ -1221,6 +1221,104 @@ def steps_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The thirty-third session: a project made and filled, another opened,
+add-ons of classes loaded and dropped, and what a game's scenes begin with."""
+def project_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["addon", "menu"];
+    for shot in shots {
+        (repo / f"project_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-project-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PROJECTS"] = home + "/projects";
+        # A project from before: a manifest, a scene and an add-on of its own.
+        old = Path(home) / "projects/old";
+        (old / "scenes").mkdir(parents=True);
+        (old / "classes").mkdir();
+        shutil.copyfile(repo / "scripts/studio/fixtures/hall.map", old / "scenes/hall.map");
+        shutil.copyfile(repo / "scripts/studio/fixtures/traps.txt", old / "classes/traps.txt");
+        before = "// A QuakePassion project.\nname \"The old hall\"\ngame q1\nstart hall\nscene hall\naddon classes/traps.txt\n";
+        (old / "project.qp").write_text(before);
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/project_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "project.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The project session failed: {output / 'project.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+        manifest = (Path(home) / "projects/keep/project.qp").read_text();
+        after = (old / "project.qp").read_text();
+        saved = sorted([each.name for each in (Path(home) / "projects/keep/scenes").glob("*.map")]);
+        loose = (Path(home) / "scenes/loose.map").read_text();
+        yard = (Path(home) / "projects/keep/scenes/yard.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["begin", "kept", "addon", "spikes", "dropped", "menu", "closed", "old", "games", "loose"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'project.log'}";
+    }
+    # The project made: its manifest says what was set, a line a fact, in a fixed order.
+    assert not [line for line in steps["begin"] if line.startswith("project ")];
+    assert manifest == (
+        "// A QuakePassion project.\nname \"The keep\"\ngame passion\nstart yard\nmaterial brick\nbuild quick\nbake 128\n"
+            + "scene hall\nscene yard\nrecipe fine \"ed_build full; ed_bake 128\"\n"
+    ) , manifest;
+    assert saved == ["hall.map", "yard.map"] , str(saved);
+    told = [line for line in steps["kept"] if line.startswith("project ")];
+    assert told and told[0].startswith("project keep game=passion start=yard scenes=hall,yard material=brick build=quick bake=128")
+        and told[0].endswith("recipes=1 name=The keep") , str(told);
+    # The level in hand is built as the project says: cut into cells.
+    assert bake_word(steps["kept"], "cells") >= 4 , str(steps["kept"]);
+    # An add-on's classes: listed, an entity of one made, read again, dropped.
+    listed = [line for line in steps["addon"] if line.startswith("addon ")];
+    assert listed and listed[0] == "addon scripts/studio/fixtures/traps.txt classes=trap_spikes,trap_pit" , str(steps["addon"]);
+    tools = [line for line in steps["addon"] if line.startswith("tools ")];
+    assert tools and " addons=1 " in tools[0] and " recipes=1 " in tools[0] , str(tools);
+    assert len(selected(steps["spikes"])) == 1 and "classname=trap_spikes" in selected(steps["spikes"])[0] , str(
+        steps["spikes"]
+    );
+    assert [line for line in steps["spikes"] if line.startswith("reloaded scripts/studio/fixtures/traps.txt classes=2")];
+    gone = [line for line in steps["dropped"] if line.startswith("tools ")];
+    assert gone and " addons=0 " in gone[0] and not [line for line in steps["dropped"] if line.startswith("addon ")];
+    assert int(tools[0].split("classes=")[1].split()[0]) == int(gone[0].split("classes=")[1].split()[0]) + 2;
+    # Asked from the Window menu, the project says what it is: once in the
+    # step's own dump, once for the click.
+    assert len([line for line in steps["menu"] if line.startswith("project keep ")]) == 2 , str(steps["menu"]);
+    # Closed, and the older one opened: its scene shown, its add-on loaded, its manifest as it was.
+    assert not [line for line in steps["closed"] if line.startswith("project ")];
+    opened = [line for line in steps["old"] if line.startswith("project ")];
+    assert opened and opened[0].startswith("project old game=q1 start=hall scenes=hall ")
+        and opened[0].endswith("addons=1 recipes=0 name=The old hall") , str(opened);
+    assert len(brushes(steps["old"])) == 0 and tally(steps["old"]) , str(steps["old"]);
+    assert [line for line in steps["old"] if line.startswith("brushes=7 ")] , str(steps["old"]);
+    theirs = [line for line in steps["old"] if line.startswith("addon ")];
+    assert theirs and theirs[0].endswith("/projects/old/classes/traps.txt classes=trap_spikes,trap_pit") , str(steps["old"]);
+    assert after == before , after;
+    # A game's setup: kept in the settings, and the next scene made outside
+    # a project is floored with its material.
+    said = [line for line in steps["games"] if line.startswith("game passion ")];
+    assert said and said[0].startswith("game passion material=slate build=flat bake=- dir=") , str(steps["games"]);
+    assert 'ed_game passion material "slate"' in kept and 'ed_game passion build "flat"' in kept , kept;
+    assert "ed_addon" not in kept and "ed_recipe" not in kept , kept;
+    assert "slate" in loose and "brick" not in loose and "slate" not in yard , loose;
+    for shot in shots {
+        source = repo / f"project_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"project_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"PROJECT PASS: {len(steps) - 1} steps, a project made with two scenes and a recipe in its manifest, an add-on's "
+            + "classes loaded, used and dropped, an older project opened with its own, and a game's scenes floored as set"
+    );
+}
+
 """The thirtieth session: an entity's facing and a light's reach dragged by
 their handles, a path drawn, logic added from the library, a favourite."""
 def marks_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2458,6 +2556,7 @@ def main() {
         "marks": marks_session,
         "bake": bake_session,
         "steps": steps_session,
+        "project": project_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2593,6 +2692,7 @@ def main() {
     marks_session(repo, binary, env, output);
     bake_session(repo, binary, env, output);
     steps_session(repo, binary, env, output);
+    project_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

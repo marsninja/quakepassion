@@ -35,7 +35,9 @@ def:priv fragment_box(found: list[MapItem]) -> list[Vec3] | None {
 
 impl Studio.prefab_path(name: str) -> str {
     folder = os.getenv("QP_PREFABS", "");
-    if not folder {
+    if self.project_folder {
+        folder = self.project_folder + "/prefabs";
+    } elif not folder {
         folder = os.getcwd() + "/prefabs";
     }
     return folder + "/" + name.replace("/", "_") + ".map";

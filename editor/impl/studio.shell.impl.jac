@@ -358,6 +358,13 @@ impl Studio.keep_settings {
     for chord in sorted(self.user_keys.keys()) {
         lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
     }
+    for setting in sorted(self.game_setup.keys()) {
+        halves = setting.split(".", 1);
+        lines.append("ed_game " + halves[0] + " " + halves[1] + " " + quote_command_word(self.game_setup[setting]));
+    }
+    for addon in self.user_addons {
+        lines.append("ed_addon " + quote_command_word(addon));
+    }
     for kept_recipe in sorted(self.recipes.keys()) {
         lines.append("ed_recipe " + kept_recipe + " " + quote_command_word(self.recipes[kept_recipe]));
     }

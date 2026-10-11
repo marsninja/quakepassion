@@ -77,7 +77,10 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
 
 impl Studio.scene_path(name: str) -> str {
     folder = os.getenv("QP_SCENES", "");
-    if not folder {
+    if self.project_folder {
+        # A project keeps its scenes with it.
+        folder = self.project_folder + "/scenes";
+    } elif not folder {
         folder = os.getcwd() + "/scenes";
     }
     return folder + "/" + name.replace("/", "_") + ".map";
@@ -87,6 +90,7 @@ impl Studio.new_scene(name: str) {
     scene = Scene(game="passion", name="studio:" + name);
     world = scene.world();
     world.fields["message"] = name;
+    self.apply_game(scene.game);
     scene.add_solid(
         world, box_sides(Vec3(x=-256.0, y=-256.0, z=-16.0), Vec3(x=256.0, y=256.0, z=0.0), self.material)
     );
@@ -157,6 +161,7 @@ impl Studio.show_scene(scene: Scene) {
             self.say(warning);
         }
     }
+    self.apply_game(scene.game);
 }
 
 impl Studio.save_scene(path: str = "") {
@@ -178,6 +183,7 @@ impl Studio.save_scene(path: str = "") {
     scene.path = target;
     scene.dirty = False;
     self.note_recent(target);
+    self.project_took(target);
     self.say("Saved " + target);
 }
 

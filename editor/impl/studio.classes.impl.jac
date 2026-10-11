@@ -193,7 +193,7 @@ impl Studio.list_classes(ui: StudioUi) {
     wanted = self.class_filter.lower();
     families: dict[str, list[str]] = {};
     order: list[str] = [];
-    for name in class_names(scene_game(self.scene)) {
+    for name in class_names(self.class_game()) {
         if wanted and wanted not in name.lower() {
             continue;
         }

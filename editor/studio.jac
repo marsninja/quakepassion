@@ -63,12 +63,15 @@ import from .ui.widgets {
 import from .assets.explorer { AssetIndex, AssetLook }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .formats.archive { write_pak, write_zip, file_kind }
-import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
+import from .classes.registry {
+    ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes
+}
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
+import from .project { Project, MANIFEST_NAME, read_project, write_project, addon_classes, file_name }
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.leak { find_leak, LeakReport }
@@ -196,6 +199,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_bake [cell|off]",
         "cut the built level into cells that know which others they see (256 units wide unless told), or build it as one again"
     ),
+    (
+        "ed_project",
+        "ed_project [new|open <folder>] [close] [add] [drop|start <scene>] [set <what> <value>]",
+        "a project: a folder with a manifest and scenes, prefabs and textures of its own; with no word, the one open"
+    ),
+    ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
+    ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
     ("ed_cells", "ed_cells [on|off]", "draw the cells of a bake: the one looked from, what it sees and what it does not"),
     ("ed_recipe", "ed_recipe [name] [commands]", "keep a row of commands, apart at semicolons, under a name; forget one; or list them"),
     ("ed_make", "ed_make <name>", "run a recipe's commands"),
@@ -662,6 +672,15 @@ obj Studio(Workbench) {
         recipes: dict[str, str] = {},
         built_copies: list[KeptBake] = [],
         built_reused: bool = False,
+        # The project open and its folder; the add-ons loaded (each file's
+        # classes), those of them kept in the settings; and what each game
+        # is set up with ("q1.material" and the like).
+        project: Project | None = None,
+        project_folder: str = "",
+        addons: dict[str, list[str]] = {},
+        user_addons: list[str] = [],
+        game_setup: dict[str, str] = {},
+        game_applied: str = "",
         # The classes kept as favourites.
         favourites: list[str] = [],
         # The axis views' grid shown, with numbers along its edges; levels
@@ -1098,7 +1117,11 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Settings", command="ed_settings"),
                     MenuItem(text="Keys bound by hand", command="ed_binds"),
-                    MenuItem(text="Developer's readout", command="ed_dev")
+                    MenuItem(text="Developer's readout", command="ed_dev"),
+                    MenuItem(rule=True),
+                    MenuItem(text="The project", command="ed_project"),
+                    MenuItem(text="Add-ons", command="ed_addon"),
+                    MenuItem(text="Games", command="ed_game")
                 ]
             ]
         );
@@ -1595,7 +1618,7 @@ obj Studio(Workbench) {
         for layer in stage.layers() {
             layer.track(stage);
         }
-        signature = scene_game(self.scene) + "|" + self.class_filter + "|" + str(self.folds);
+        signature = self.class_game() + "|" + self.class_filter + "|" + str(self.folds);
         if signature != self.classes_seen {
             self.list_classes(ui);
             self.classes_seen = signature;
@@ -2725,6 +2748,30 @@ obj Studio(Workbench) {
     def step_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Projects, add-ons and what each game is set up with (impl/studio.project.impl.jac)
+
+    """The game whose classes are offered: the open project's for a scene of
+    brushes, else the scene's own."""
+    def class_game -> str;
+    """Where projects named without a path are kept."""
+    def projects_folder -> str;
+    def save_project;
+    """A scene was saved there: one of the project's when among its scenes."""
+    def project_took(path: str);
+    """The recipes kept in the settings and the open project's, by name."""
+    def all_recipes -> dict[str, str];
+    """Read an add-on's classes (again). How many it added; -1 when it cannot be read."""
+    def load_addon(path: str) -> int;
+    def drop_addon(path: str);
+    """Take up what a game is set up with, when a scene of it is first shown."""
+    def apply_game(game: str);
+    def close_project;
+    def open_project(folder: str) -> bool;
+    def project_words -> str;
+    """Run a project, add-on or game command. False when it is not one."""
+    def project_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
 
     """Run a group command. False when it is not one."""
@@ -2940,6 +2987,7 @@ obj Studio(Workbench) {
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
+            and not self.project_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
@@ -3116,6 +3164,9 @@ obj Studio(Workbench) {
                 "studio: bake cell=" + str(int(self.vis_cell)) + " cells=" + str(done.cells) + " hidden=" + str(done.hidden)
                     + " pairs=" + str(done.pairs) + " capped=" + ("1" if done.capped else "0")
             );
+        }
+        if self.project is not None {
+            lines.append(self.project_words());
         }
         if self.cells_shown {
             lines.append(

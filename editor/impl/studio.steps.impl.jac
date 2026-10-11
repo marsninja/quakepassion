@@ -113,9 +113,10 @@ impl Studio.step_command(scene: Scene, args: list[str]) -> bool {
     if name == "ed_recipe" {
         if len(args) < 2 {
             listed: list[MenuItem] = [];
-            for kept in sorted(self.recipes.keys()) {
-                listed.append(MenuItem(text=kept + ": " + self.recipes[kept], command="ed_make " + kept));
-                print("studio: recipe " + kept + " = " + self.recipes[kept]);
+            known = self.all_recipes();
+            for kept in sorted(known.keys()) {
+                listed.append(MenuItem(text=kept + ": " + known[kept], command="ed_make " + kept));
+                print("studio: recipe " + kept + " = " + known[kept]);
             }
             if len(listed) == 0 {
                 self.say("No recipes are kept: ed_recipe <name> \"<command>; <command>\" keeps one, ed_make <name> runs it");
@@ -131,30 +132,36 @@ impl Studio.step_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         steps = recipe_steps(" ".join(args[2:]));
+        # A project's recipes are kept in its manifest, to go where it goes.
+        held = self.project;
+        book = held.recipes if held is not None else self.recipes;
         if len(steps) == 0 {
-            if label in self.recipes {
-                self.recipes.pop(label, None);
-                self.keep_settings();
+            if label in book {
+                book.pop(label, None);
                 self.say("The recipe " + label + " is forgotten");
             } else {
                 self.say("ed_recipe " + label + " \"<command>; <command>\": the commands it runs");
+                return True;
             }
-            return True;
+        } else {
+            book[label] = "; ".join(steps);
+            self.say("ed_make " + label + " runs " + book[label]);
         }
-        self.recipes[label] = "; ".join(steps);
-        self.keep_settings();
-        self.say("ed_make " + label + " runs " + self.recipes[label]);
+        if held is not None {
+            self.save_project();
+        } else {
+            self.keep_settings();
+        }
         return True;
     }
     if name == "ed_make" {
         wanted = args[1] if len(args) > 1 else "";
-        if wanted not in self.recipes {
-            self.say(
-                "ed_make <name>: " + (", ".join(sorted(self.recipes.keys())) if self.recipes else "no recipes are kept (ed_recipe)")
-            );
+        known = self.all_recipes();
+        if wanted not in known {
+            self.say("ed_make <name>: " + (", ".join(sorted(known.keys())) if known else "no recipes are kept (ed_recipe)"));
             return True;
         }
-        steps = recipe_steps(self.recipes[wanted]);
+        steps = recipe_steps(known[wanted]);
         if app is not None {
             # Ahead of whatever waits, each in its turn.
             app.shell.insert_text("\n".join(steps));

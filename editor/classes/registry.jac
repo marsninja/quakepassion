@@ -227,32 +227,79 @@ def common_field(key: str) -> FieldInfo {
     return FieldInfo(name=key);
 }
 
+"""A class from a line of the table, or none when the line is not one. A
+line may stop after what the class is: its fields and spawnflags are then
+none."""
+def read_class(line: str) -> ClassInfo | None {
+    parts = [part.strip() for part in line.split("|")];
+    if len(parts) < 4 or not parts[0] or " " in parts[0] {
+        return None;
+    }
+    while len(parts) < 6 {
+        parts.append("");
+    }
+    known = ClassInfo(name=parts[0], solid=parts[1] == "brush", games=parts[2], help=parts[3]);
+    for words in parts[4].split(",") {
+        if not words.strip() {
+            continue;
+        }
+        read = read_field(words);
+        if not read.help and read.kind != "choice" {
+            read.help = common_field(read.name).help;
+        }
+        known.fields.append(read);
+    }
+    if parts[5] {
+        known.flags = [name.strip() for name in parts[5].split(",")];
+    }
+    return known;
+}
+
 def classes -> dict[str, ClassInfo] {
     if len(CLASS_CACHE) > 0 {
         return CLASS_CACHE;
     }
     for line in CLASS_TABLE {
-        parts = line.split("|");
-        if len(parts) < 6 {
-            continue;
+        known = read_class(line);
+        if known is not None {
+            CLASS_CACHE[known.name] = known;
         }
-        known = ClassInfo(name=parts[0], solid=parts[1] == "brush", games=parts[2], help=parts[3]);
-        for words in parts[4].split(",") {
-            if not words.strip() {
-                continue;
-            }
-            read = read_field(words);
-            if not read.help and read.kind != "choice" {
-                read.help = common_field(read.name).help;
-            }
-            known.fields.append(read);
-        }
-        if parts[5].strip() {
-            known.flags = [name.strip() for name in parts[5].split(",")];
-        }
-        CLASS_CACHE[known.name] = known;
     }
     return CLASS_CACHE;
+}
+
+"""The classes added to the table by add-ons, by name."""
+glob ADDED_CLASSES: list[str] = [];
+
+"""Add classes to the table from lines in its form, as an add-on has them.
+Answers the names taken: a class the studio has of its own is left as it
+is, and one added before is replaced."""
+def add_classes(lines: list[str]) -> list[str] {
+    table = classes();
+    taken: list[str] = [];
+    for line in lines {
+        known = read_class(line);
+        if known is None or (known.name in table and known.name not in ADDED_CLASSES) {
+            continue;
+        }
+        table[known.name] = known;
+        if known.name not in ADDED_CLASSES {
+            ADDED_CLASSES.append(known.name);
+        }
+        taken.append(known.name);
+    }
+    return taken;
+}
+
+"""Take classes an add-on added out of the table again."""
+def drop_classes(names: list[str]) {
+    table = classes();
+    for name in names {
+        if name in ADDED_CLASSES {
+            ADDED_CLASSES.remove(name);
+            table.pop(name, None);
+        }
+    }
 }
 
 def class_info(name: str) -> ClassInfo | None {
