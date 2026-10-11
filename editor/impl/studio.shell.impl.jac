@@ -333,7 +333,9 @@ impl Studio.keep_settings {
         "ed_display " + ("wire" if self.wire_axis else "textured") + " axis",
         "ed_display " + ("wire" if self.wire_main else "textured") + " 3d",
         "ed_brush " + str(int(self.brush_radius)) + " " + str(int(self.brush_amount)),
-        "ed_layout " + str(self.layout)
+        "ed_layout " + str(self.layout),
+        "ed_anglesnap " + str(int(self.angle_snap)),
+        "ed_texlock " + ("on" if self.tex_lock else "off")
     ];
     path = self.settings_path();
     try {

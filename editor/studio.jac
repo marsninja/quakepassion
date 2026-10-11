@@ -81,6 +81,7 @@ import from .document.scene {
     scene_from_map
 }
 import from .geometry.csg { brush_corners, brush_edges }
+import from .geometry.mapping { spun_about, axis_vector }
 import from .camera { EditCamera, ray_enters_box, axis_camera }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
 import from .assets.materials { ArchiveMaterials, small_picture }
@@ -157,6 +158,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_gizmo", "ed_gizmo <move|turn|size|next>", "which handles a selection shows: arrows, rings or boxes"),
+    ("ed_pivot", "ed_pivot [x y z | middle | clear]", "what the selection turns and stretches about; a group keeps its own"),
+    ("ed_anglesnap", "ed_anglesnap [degrees]", "what a dragged turn snaps to"),
+    ("ed_inflate", "ed_inflate <units|up|down>", "push every side of the selected brushes out (or in) by a distance"),
+    ("ed_texlock", "ed_texlock [on|off]", "whether materials go with the faces a move, turn or stretch carries"),
     ("ed_stats", "ed_stats [file]", "count what the document holds, or write the materials it uses to a file"),
     ("ed_step", "ed_step <next|prev>", "select the entity after, or before, the selected one"),
     ("ed_freeze", "ed_freeze [on|off]", "keep clicks in the level from changing the selection, or let them"),
@@ -242,6 +248,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ui_click", "ui_click <x> <y> [button]", "script: click"),
     ("ui_double", "ui_double <x> <y>", "script: double click"),
     ("ui_drag", "ui_drag <x0> <y0> <x1> <y1> [button] [frames]", "script: drag"),
+    ("ui_press", "ui_press <x> <y> [button]", "script: press a button and hold it"),
+    ("ui_release", "ui_release <x> <y> [button]", "script: let the held button go"),
     ("ui_wheel", "ui_wheel <amount>", "script: turn the wheel"),
     ("ui_key", "ui_key <name>", "script: press a key"),
     ("ui_type", "ui_type <text>", "script: type text"),
@@ -452,6 +460,18 @@ obj Studio(Workbench) {
         box_port: int = 0,
         # How far a dragged corner or edge has gone.
         corner_by: Vec3 = Vec3(),
+        # Which handles a selection shows (move, turn or size), how far a
+        # dragged one has turned or stretched it, and what a turn snaps to.
+        gizmo: str = "move",
+        turn_by: float = 0.0,
+        size_by: Vec3 = Vec3(x=1.0, y=1.0, z=1.0),
+        angle_snap: float = 15.0,
+        # A pivot set by hand, and whether it is in force.
+        pivot_at: Vec3 = Vec3(),
+        pivot_set: bool = False,
+        pivot_picks: int = -1,
+        # Whether materials go with the faces a move, turn or stretch carries.
+        tex_lock: bool = True,
         # The group the materials tab shows, and pictures still to load.
         shelf: str = "",
         thumbs: list[str] = [],
@@ -810,6 +830,15 @@ obj Studio(Workbench) {
                     MenuItem(text="Mirror along x", command="ed_mirror x"),
                     MenuItem(text="Mirror along y", command="ed_mirror y"),
                     MenuItem(text="Mirror along z", command="ed_mirror z"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Handles that move", command="ed_gizmo move"),
+                    MenuItem(text="Handles that turn", command="ed_gizmo turn"),
+                    MenuItem(text="Handles that size", command="ed_gizmo size", keys="G"),
+                    MenuItem(text="Pivot at the selection's middle", command="ed_pivot middle"),
+                    MenuItem(text="No pivot", command="ed_pivot clear"),
+                    MenuItem(text="Grow by a grid step", command="ed_inflate up"),
+                    MenuItem(text="Shrink by a grid step", command="ed_inflate down"),
+                    MenuItem(text="Materials stay with their faces", command="ed_texlock"),
                     MenuItem(rule=True),
                     MenuItem(text="Carve out of the others", command="ed_carve"),
                     MenuItem(text="Keep what they share", command="ed_intersect"),
@@ -1434,6 +1463,18 @@ obj Studio(Workbench) {
                         );
                     }
                 }
+                if event.button == 0 and self.resizing and self.resize_side >= 910 {
+                    # A turn or size handle let go: the drag becomes its command.
+                    self.resizing = False;
+                    self.moved = abs(event.x - self.press_x) + abs(event.y - self.press_y) > 3;
+                    order = self.transform_words(scene);
+                    self.turn_by = 0.0;
+                    self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
+                    self.corner_by = Vec3();
+                    if order {
+                        stage.emit(order);
+                    }
+                }
                 if event.button == 0 and self.resizing {
                     self.resizing = False;
                     self.moved = abs(event.x - self.press_x) + abs(event.y - self.press_y) > 3;
@@ -1648,6 +1689,8 @@ obj Studio(Workbench) {
                 stage.emit("ed_box");
             } elif key == "r" {
                 stage.emit("ed_rotate 90");
+            } elif key == "g" and not ctrl {
+                stage.emit("ed_gizmo next");
             } elif ctrl and key == "p" {
                 stage.emit("ed_palette");
             } elif ctrl and key == "h" {
@@ -1961,6 +2004,9 @@ obj Studio(Workbench) {
         # the walls.
         rlDrawRenderBatchActive();
         rlDisableDepthTest();
+        if self.resizing and self.resize_side >= 910 {
+            self.draw_transform_preview(scene);
+        }
         for shape in chosen {
             if self.moving {
                 # Where the drag would leave it, over where it is.
@@ -2254,6 +2300,30 @@ obj Studio(Workbench) {
     def patch_now(scene: Scene) -> Item | None;
 
     # ------------------------------------------------------------------
+    # Turn and size handles, the pivot, inflating and the texture lock (impl/studio.transform.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def transform_command(scene: Scene, args: list[str]) -> bool;
+    """The pivot in force: one set by hand, else the selected group's own."""
+    def pivot_for(scene: Scene) -> Vec3 | None;
+    """Where the selection turns and stretches about."""
+    def turn_hub(scene: Scene) -> Vec3 | None;
+    """How long a handle's arm is, for the view looked through."""
+    def arm_of(middle: Vec3) -> float;
+    """The turn or size handles: a knob on each ring that faces the view
+    (910-912), or a box along each axis and one for all three (920-923), and
+    the pivot itself (930)."""
+    def transform_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    def draw_transform_handles(scene: Scene, area: Rect);
+    def drag_transform(scene: Scene, x: int, y: int, free: bool);
+    """Where a point goes under the turn or stretch being dragged."""
+    def dragged_point(point: Vec3, middle: Vec3) -> Vec3;
+    """The selection as the drag would leave it, drawn as edges."""
+    def draw_transform_preview(scene: Scene);
+    """The command a finished drag of a turn or size handle stands for."""
+    def transform_words(scene: Scene) -> str;
+
+    # ------------------------------------------------------------------
     # Materials replaced, snapping, lining up, face picks, glue, counts (impl/studio.utility.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -2371,7 +2441,7 @@ obj Studio(Workbench) {
             }
         } elif name == "ed_move" {
             if len(args) > 3 {
-                scene.shift_selection(Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3])));
+                scene.shift_selection(Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3])), self.tex_lock);
             }
         } elif name == "ed_undo" {
             label = scene.undo();
@@ -2409,7 +2479,7 @@ obj Studio(Workbench) {
             and not self.library_command(scene, args) and not self.class_command(scene, args)
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
             and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
-            and not self.patch_command(scene, args) {
+            and not self.patch_command(scene, args) and not self.transform_command(scene, args) {
             self.utility_command(scene, args);
         }
     }
@@ -2542,7 +2612,14 @@ obj Studio(Workbench) {
                 + str(len(scene.journal.undone)),
             "studio: camera " + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z)),
             "studio: view " + str(self.view_area().x) + " " + str(self.view_area().y) + " "
-                + str(self.view_area().w) + " " + str(self.view_area().h) + " of " + str(self.showing())
+                + str(self.view_area().w) + " " + str(self.view_area().h) + " of " + str(self.showing()),
+            "studio: handles=" + self.gizmo + " anglesnap=" + str(int(self.angle_snap)) + " texlock="
+                + ("1" if self.tex_lock else "0") + " pivot="
+                + (
+                    str(int(self.pivot_at.x)) + "," + str(int(self.pivot_at.y)) + "," + str(int(self.pivot_at.z))
+                    if self.pivot_set
+                    else "none"
+                )
         ];
         for item in scene.selection() {
             pairs = " ".join([key + "=" + value for (key, value) in item.fields.items()]);
@@ -2685,6 +2762,17 @@ obj Studio(Workbench) {
                 numbers[3],
                 numbers[4] if len(numbers) > 4 else 0,
                 numbers[5] if len(numbers) > 5 else 6
+            );
+        } elif name == "ui_press" and len(numbers) >= 2 {
+            # Half a drag: the button goes down and stays down.
+            self.source.script(UiStep(kind="move", x=numbers[0], y=numbers[1]));
+            self.source.script(
+                UiStep(kind="down", x=numbers[0], y=numbers[1], button=numbers[2] if len(numbers) > 2 else 0)
+            );
+        } elif name == "ui_release" and len(numbers) >= 2 {
+            self.source.script(UiStep(kind="move", x=numbers[0], y=numbers[1]));
+            self.source.script(
+                UiStep(kind="up", x=numbers[0], y=numbers[1], button=numbers[2] if len(numbers) > 2 else 0)
             );
         } elif name == "ui_wheel" and len(args) > 1 {
             self.source.script(UiStep(kind="wheel", amount=float(args[1])));

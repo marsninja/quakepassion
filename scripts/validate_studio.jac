@@ -6,7 +6,7 @@ dragged by scripted input, the document is printed after each step, and
 screenshots are taken along the way. A second run without the studio checks
 that the saved entities are what the level loads.
 
-    jac run scripts/validate_studio.jac [--binary ./qp]
+    jac run scripts/validate_studio.jac [--binary ./qp] [--only <session>]
 
 Output: .jac/screenshots/studio/."""
 import os;
@@ -1067,6 +1067,95 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The line of a step that tells which handles show and how they snap."""
+def handles(lines: list[str]) -> str {
+    found = [line for line in lines if line.startswith("handles=")];
+    return found[0] if found else "";
+}
+
+"""The fifteenth session: a box turned by the knob on its ring, stretched by
+a handle about its middle and about a pivot, inflated, and grouped with a
+pivot of its own."""
+def transform_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["rings", "turning", "sized", "pivot"];
+    for shot in shots {
+        (repo / f"transform_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-transform-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/transform_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "transform.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The transform session failed: {output / 'transform.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "drawn", "rings", "turned", "slanted", "boxes", "doubled", "pivoted", "grown", "inflated", "grouped",
+        "swung", "left"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'transform.log'}";
+    }
+    # A box twice as long as it is deep, with its near corner where the pivot will go.
+    drawn = brushes(steps["drawn"]);
+    assert len(drawn) == 1 , str(steps["drawn"]);
+    box = brush_box(drawn[0]);
+    assert box == [[-288, 112, 0], [-96, 208, 64]] , str(box);
+    assert "handles=move" in handles(steps["drawn"]) and "anglesnap=15" in handles(steps["drawn"]);
+    assert "handles=turn" in handles(steps["rings"]) , handles(steps["rings"]);
+    # The knob taken a quarter of the way round its ring: the box stands the other way about its middle.
+    turned = brush_box(brushes(steps["turned"])[0]);
+    assert turned == [[-240, 64, 0], [-144, 256, 64]] , str(turned);
+    # With turns snapping to forty-five degrees, a drag of about forty lands there.
+    slanted = brush_box(brushes(steps["slanted"])[0]);
+    assert "anglesnap=45" in handles(steps["slanted"]);
+    for axis in [0, 1] {
+        assert abs(slanted[1][axis] - slanted[0][axis] - 204) <= 2 , str(slanted);
+    }
+    assert slanted[0][2] == 0 and slanted[1][2] == 64 and "sides=6" in brushes(steps["slanted"])[0];
+    assert "handles=size" in handles(steps["boxes"]) , handles(steps["boxes"]);
+    # The red box pulled out by the arm's length: twice as long, about the middle.
+    doubled = brush_box(brushes(steps["doubled"])[0]);
+    assert doubled == [[-384, 112, 0], [0, 208, 64]] , str(doubled);
+    # About a pivot at the near corner, the same pull grows it one way only.
+    assert "pivot=-288,112,0" in handles(steps["pivoted"]) , handles(steps["pivoted"]);
+    grown = brush_box(brushes(steps["grown"])[0]);
+    assert grown == [[-288, 112, 0], [96, 208, 64]] , str(grown);
+    inflated = brush_box(brushes(steps["inflated"])[0]);
+    assert inflated == [[-304, 96, -16], [-80, 224, 80]] , str(inflated);
+    assert "pivot=none" in handles(steps["inflated"]);
+    # The group's own pivot is a field of the group, and went with it when it moved.
+    grouped = selected(steps["grouped"]);
+    assert len(grouped) == 1 and "_group_name=pillar" in grouped[0] and "_center=16 0 0" in grouped[0] , str(grouped);
+    assert "owns=1" in grouped[0];
+    # Turned about that pivot, the pivot stays where it is.
+    swung = selected(steps["swung"]);
+    assert len(swung) == 1 and "_center=16 0 0" in swung[0] , str(swung);
+    assert tally(steps["swung"]) != tally(steps["grouped"]);
+    left = handles(steps["left"]);
+    assert "handles=move" in left and "texlock=0" in left and "anglesnap=45" in left , left;
+    assert "ed_anglesnap 45" in kept and "ed_texlock off" in kept , kept;
+    for shot in shots {
+        source = repo / f"transform_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"transform_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"TRANSFORM PASS: {len(steps) - 1} steps, a box turned by its ring, sized by a handle about its middle and "
+            + "about a pivot, inflated, and grouped with a pivot of its own"
+    );
+}
+
 """A small PNG: `size` texels a side, a checker of two colours."""
 def checker_png(size: int = 4) -> bytes {
     import zlib;
@@ -1140,6 +1229,35 @@ def main() {
     assert binary.exists() , f"Build qp first: {binary} is missing";
     output = repo / ".jac/screenshots/studio";
     output.mkdir(parents=True, exist_ok=True);
+    sessions = {
+        "scene": scene_session,
+        "tools": tools_session,
+        "logic": logic_session,
+        "build": build_session,
+        "images": images_session,
+        "assets": assets_session,
+        "handy": handy_session,
+        "terrain": terrain_session,
+        "patch": patch_session,
+        "tidy": tidy_session,
+        "draw": draw_session,
+        "material": material_session,
+        "transform": transform_session,
+        "convert": convert_session
+    };
+    if "--only" in sys.argv {
+        # One session alone, while working on what it covers.
+        wanted = sys.argv[sys.argv.index("--only") + 1];
+        assert wanted in sessions , f"No session '{wanted}': " + ", ".join(sessions.keys());
+        alone = dict(os.environ);
+        for key in ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"] {
+            alone[key] = str(repo / "vendor") + (os.pathsep + alone[key] if alone.get(key) else "");
+        }
+        alone["QP_GAME"] = "q1";
+        alone["QP_MAP"] = "e1m1";
+        sessions[wanted](repo, binary, alone, output);
+        return;
+    }
     shots = ["open", "listed", "looked", "picked", "edited", "menu", "playing", "returned"];
     for shot in shots {
         (repo / f"studio_{shot}.png").unlink(missing_ok=True);
@@ -1242,6 +1360,7 @@ def main() {
     tidy_session(repo, binary, env, output);
     draw_session(repo, binary, env, output);
     material_session(repo, binary, env, output);
+    transform_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

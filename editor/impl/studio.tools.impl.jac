@@ -515,7 +515,7 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         factors = Vec3(
             x=-1.0 if args[1] == "x" else 1.0, y=-1.0 if args[1] == "y" else 1.0, z=-1.0 if args[1] == "z" else 1.0
         );
-        if not scene.stretch_selection(factors, self.grid, "Mirror") {
+        if not scene.stretch_selection(factors, self.grid, "Mirror", self.pivot_for(scene), self.tex_lock) {
             self.say("Nothing to mirror");
         }
         return True;
@@ -530,7 +530,7 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         if len(numbers) > 2 {
             factors = Vec3(x=numbers[0], y=numbers[1], z=numbers[2]);
         }
-        if not scene.stretch_selection(factors, self.grid, "Resize") {
+        if not scene.stretch_selection(factors, self.grid, "Resize", self.pivot_for(scene), self.tex_lock) {
             self.say("Nothing to resize (a factor cannot be nothing)");
         }
         return True;

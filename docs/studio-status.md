@@ -52,6 +52,30 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
 - A selection that is not one lone brush shows three arrows from its
   middle, red, green and blue for x, y and z; dragging one moves the
   selection along that axis alone, on the grid.
+- **G** changes those handles (`ed_gizmo <move|turn|size|next>`, Brush
+  menu), for any selection, a lone brush included:
+  - *Rings that turn.* Each ring that faces the view has a knob; taking the
+    knob round the ring turns the selection about that ring's axis. The
+    axis views show the one ring that faces them, the 3D view all three.
+    A turn snaps to 15 degrees (`ed_anglesnap <degrees>`, kept between
+    sessions); Ctrl turns by single degrees.
+  - *Boxes that size.* A box on each axis stretches the selection along it,
+    and a fourth stretches all three at once; a pull as long as the arm
+    doubles it. Sizes go in quarters, or freely with Ctrl.
+  - While a handle is held the views show the selection as it would be
+    left, and say by how much.
+- **The pivot** is the cross the handles stand on: the selection's middle,
+  put on the grid, until it is dragged somewhere else or set by
+  `ed_pivot <x y z>` (`ed_pivot middle`, `ed_pivot clear`). A pivot set by
+  hand lasts as long as the selection does. A group selected alone keeps
+  the pivot for itself, as its `_center` field: it is saved with the group,
+  moves, turns and stretches with it, and undoes. `ed_rotate`, `ed_resize`
+  and `ed_mirror` go about the pivot too.
+- `ed_inflate <units|up|down>` pushes every side of the selected brushes
+  out, or in; a brush that would be left with nothing stays as it is.
+- `ed_texlock [on|off]` (Brush menu) says whether materials go with the
+  faces a move, turn or stretch carries, or stay where they lie in the
+  world while the faces move through them. It is kept between sessions.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
 - **The grid** moves and resizes snap to is 8 units to begin with; `[` and
@@ -327,6 +351,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_document_tests.jac`: entity lumps round-trip; selection;
   every edit and its undo; any run of edits undone in full restores the
   document.
+- `tests/studio_transform_tests.jac`: turns and stretches about a given
+  pivot, the texture lock, inflating, a group's own pivot carried through a
+  move, a turn and a stretch, and a patch's control points turning and
+  stretching with its brushes.
 - `tests/studio_camera_tests.jac`: the ray through a point of the view lands
   back on that point; framing; ray and box.
 - `tests/studio_brush_tests.jac`, `tests/studio_map_tests.jac`: outlines,
@@ -404,6 +432,10 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/material_session.cfg` (3 steps: a 256 by 512 Quake III
   texture and a 4-texel image of the project's own, each fitted to a face
   at its true size, and the image picked from the Materials tab).
+  `scripts/studio/transform_session.cfg` (12 steps: a box turned a quarter
+  by the knob on its ring, turned to a 45 degree snap, doubled by a size
+  handle about its middle and again about a pivot at its corner, inflated,
+  and grouped with a pivot of its own that goes where the group goes).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -415,14 +447,15 @@ Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3
 (views and texturing), 4 (brush tools) and 5 (logic and reuse), with parts
 of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
-- Left over in what is built: there are arrows to move by but no gizmos for
-  free rotation and scaling; face-to-face
+- Left over in what is built: the handles work along the world's axes only
+  (not a brush's own, nor the view's), and there is no single handle that
+  shears; face-to-face
   tools (tag, glue, wrap a texture round a corner) are not built; a shipped
   map takes new brushes only once it is turned into a scene; Quake III's
   `brushDef` sides open without their texture alignment, and a level's
   patches are left behind by `ed_convert` (a map file's `patchDef2` patches
-  do open, as patches of the scene); a patch turned or mirrored keeps its old
-  control points; a linked prefab stands as its file has it (it
+  do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
+  curve faces the same way round; a linked prefab stands as its file has it (it
   does not turn); the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
 - Not yet built: a solid-colour display mode; the bake proper (partition,

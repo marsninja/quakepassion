@@ -309,6 +309,9 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
         }
         return found;
     }
+    if self.mode == "brush" and self.gizmo != "move" {
+        return self.transform_handles(scene);
+    }
     chosen = scene.selected_solids();
     if len(chosen) != 1 or scene.selection() {
         # Anything but one lone brush: three arrows from the selection's
@@ -371,6 +374,10 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
             canvas.fill(box, canvas.theme.accent if grabbed else canvas.theme.good);
             canvas.outline(box, canvas.theme.header);
         }
+        return;
+    }
+    if self.mode == "brush" and self.gizmo != "move" {
+        self.draw_transform_handles(scene, area);
         return;
     }
     chosen = scene.selected_solids();
@@ -443,10 +450,13 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
 impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
     area = self.view_area();
     hub = scene.selection_middle();
+    if self.mode == "brush" and self.gizmo != "move" {
+        hub = self.turn_hub(scene);
+    }
     centre = self.camera.project(area, hub) if hub is not None else None;
     for (index, middle) in self.handles(scene) {
         at = self.camera.project(area, middle);
-        if index >= 900 and at is not None and centre is not None
+        if index >= 900 and index != 930 and at is not None and centre is not None
             and abs(at[0] - centre[0]) + abs(at[1] - centre[1]) < 6 {
             # An arrow seen end on cannot be taken hold of.
             continue;
@@ -456,6 +466,8 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             self.resize_side = index;
             self.resize_by = 0.0;
             self.corner_by = Vec3();
+            self.turn_by = 0.0;
+            self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
             return True;
         }
     }
@@ -463,6 +475,10 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
 }
 
 impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
+    if self.resize_side >= 910 {
+        self.drag_transform(scene, x, y, free);
+        return;
+    }
     if self.resize_side >= 900 {
         # An arrow of the selection's own: move along its axis, as far as
         # the pointer has gone along the arrow as seen.
@@ -690,7 +706,7 @@ impl Studio.fill_solid_form(scene: Scene, ui: StudioUi) {
             Label(
                 text="Drag a corner or the middle of an edge."
                     if self.mode == "corner"
-                    else "Drag a square to push that side.",
+                    else "Drag a square to push that side. G: rings that turn, boxes that size.",
                 tone="faint",
                 small=True
             )
@@ -776,7 +792,7 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         if len(args) > 2 and args[2] in ["x", "y"] {
             about = 0 if args[2] == "x" else 1;
         }
-        if not scene.turn_selection(degrees, self.grid, about) {
+        if not scene.turn_selection(degrees, self.grid, about, self.pivot_for(scene), self.tex_lock) {
             self.say("Nothing to turn");
         }
         return True;
