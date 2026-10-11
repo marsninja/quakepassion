@@ -855,6 +855,15 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   whose name holds what is typed (`ed_assetfind`). The check also reports
   materials named as a game's that no archive holds, and `ed_stats <file>`
   writes the names of the materials in use.
+- **Faces put right** (Brush menu): `ed_integral [grid]` lays the picked
+  faces through whole points again (each face's corners are put on the
+  grid and the face goes through them), or every face of the selected
+  brushes when none is picked: for planes that have drifted a hair off
+  whole numbers. `ed_faceangle [degrees]` tilts the picked faces to
+  whole steps of heading and of slope (the angle snap, unless told),
+  each about the middle of its own outline. Both leave the material as
+  it lay, are one undoable step a brush, and refuse what would leave a
+  brush with no inside.
 - **Materials found and lately used**: `ed_matfind <text>` looks through
   every game's materials (and the project's own files) for names that
   hold the text and shows what it finds as a shelf of its own in the
@@ -1159,6 +1168,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_integral_tests.jac`: a drifted face laid through whole
+  points and left alone when asked again; a direction put on whole
+  angles; a face tilted about its own middle.
 - `tests/studio_grid_tests.jac`: what of a map is off a grid, the whole map
   forced on to it as one step, a sliver that would fall flat left alone.
 - `tests/studio_navigation_tests.jac`: ways between neighbouring floors by
@@ -1339,6 +1351,10 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/whole_session.cfg` (5 steps: a ramp's slope tilted to a
+  whole angle, an upright side left; the slope laid through whole
+  points; both undone and one done again; every face of the selected
+  brush asked at once).
   `scripts/studio/finds_session.cfg` (6 steps: a map file imported as a
   group of seven brushes with its start and lights, and a missing file
   refused; thirty-two materials named for crates found across the games

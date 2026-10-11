@@ -148,6 +148,7 @@ import from .document.scene {
 import from .geometry.csg { brush_corners, brush_edges }
 import from .geometry.mapping { spun_about, axis_vector, mapping_bad }
 import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
+import from .geometry.integral { faces_astray, sides_integral, sides_angled }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
@@ -281,6 +282,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    ("ed_integral", "ed_integral [grid]", "lay the picked faces (or every face of the selected brushes) through whole points again"),
+    ("ed_faceangle", "ed_faceangle [degrees]", "tilt the picked faces to whole steps of heading and of slope, each about its own middle"),
     ("ed_matfind", "ed_matfind <text>", "find materials by name across every game, and show them as a shelf in the Materials tab"),
     ("ed_pickmode", "ed_pickmode <all|brushes|entities>", "what a click in a view picks: everything, brushes only, or entities only"),
     ("ed_restrict", "ed_restrict [on|off]", "keep editing to the selection: everything else is put away, and brought back when it is let go"),
@@ -1377,7 +1380,10 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="One handle that moves, turns, sizes and shears", command="ed_gizmo box"),
                     MenuItem(text="Lean a quarter along x", command="ed_shear x z 0.25"),
-                    MenuItem(text="Handles on the picked face for its material", command="ed_texhandles")
+                    MenuItem(text="Handles on the picked face for its material", command="ed_texhandles"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Lay the picked faces through whole points", command="ed_integral"),
+                    MenuItem(text="Tilt the picked faces to whole angles", command="ed_faceangle")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -3365,6 +3371,12 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Faces on whole points and whole angles (impl/studio.integral.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def integral_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # What clicks pick, and editing kept to the selection (impl/studio.restrict.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -3680,6 +3692,7 @@ obj Studio(Workbench) {
             and not self.bone_command(scene, args) and not self.figure_command(scene, args)
             and not self.district_command(scene, args) and not self.window_command(scene, args)
             and not self.nav_command(scene, args) and not self.restrict_command(scene, args)
+            and not self.integral_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)

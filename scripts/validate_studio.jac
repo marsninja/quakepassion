@@ -2047,6 +2047,56 @@ def finds_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The sixtieth session: faces tilted to whole angles and laid through whole points."""
+def whole_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-whole-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/whole_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "whole.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The whole session failed: {output / 'whole.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "tilted", "whole", "undone", "brush"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'whole.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
+    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in names];
+    # A ramp 96 long and 40 high. Its upright side stands at whole angles; its slope is tilted to one,
+    # as one step; asked again there is nothing to tilt.
+    assert brush_box(brushes(steps["made"])[0]) == [[-32, 112, 0], [32, 208, 40]] and "sides=5" in brushes(steps["made"])[0];
+    tilts = [line for line in said if line.startswith("faceangle ")];
+    assert tilts[:3] == [
+        "faceangle faces=0 step=15.0 refused=0", "faceangle faces=1 step=15.0 refused=0", "faceangle faces=0 step=15.0 refused=0"
+    ] , str(tilts);
+    assert undone[1] == undone[0] + 1 , str(undone);
+    # Turned about its middle its corners are off whole numbers: laid through whole points, as another
+    # step; asked again there is nothing astray.
+    lays = [line for line in said if line.startswith("integral ")];
+    astray = float(lays[0].split("astray=")[1].split()[0]);
+    assert lays[0].startswith("integral faces=1 ") and 0.01 < astray < 1.0 and lays[1] == "integral faces=0 astray=0.0 refused=0" , str(lays);
+    assert undone[2] == undone[1] + 1 and undone[3] == undone[0] , str(undone);
+    # One of the two done again; then with the brush selected every face is asked, and the one needs it.
+    assert lays[2] == lays[0] and undone[4] == undone[2] , str(lays);
+    mended = brush_box(brushes(steps["brush"])[0]);
+    assert mended[0][2] == 0 and mended[1][1] == 208 and mended != [[-32, 112, 0], [32, 208, 40]] and "sides=5" in brushes(steps["brush"])[0];
+    # With nothing picked or selected neither does anything.
+    assert len(lays) == 3 and len(tilts) == 3 , str(lays) + str(tilts);
+    print(
+        f"WHOLE PASS: {len(steps) - 1} steps, a slope tilted to a whole angle and laid through whole points, each a "
+            + "step, and a brush's faces asked together"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4404,6 +4454,7 @@ def main() {
         "nav": nav_session,
         "restrict": restrict_session,
         "finds": finds_session,
+        "whole": whole_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4578,6 +4629,7 @@ def main() {
     nav_session(repo, binary, env, output);
     restrict_session(repo, binary, env, output);
     finds_session(repo, binary, env, output);
+    whole_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
