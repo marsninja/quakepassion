@@ -20,10 +20,10 @@ def game_directory(game: str) -> str {
         return os.getenv("QP_ASSETS", "");
     }
     if game == "passion" {
-        return os.getenv("HOME", "") + "/quake-assets";
+        return os.path.expanduser("~") + "/quake-assets";
     }
     folder = "id1" if game == "q1" else ("baseq2" if game == "q2" else "baseq3");
-    return os.getenv("HOME", "") + "/quake-assets/" + folder;
+    return os.path.expanduser("~") + "/quake-assets/" + folder;
 }
 
 def map_names(names: list[str]) -> list[str] {

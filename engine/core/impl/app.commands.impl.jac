@@ -580,7 +580,7 @@ impl App.save_bindings() {
 
 impl App.save_file(slot: str) -> str {
     if not slot or slot == "quick" {
-        return self.save_path or os.getenv("HOME", ".") + "/.quakepassion-save.txt";
+        return self.save_path or os.path.expanduser("~") + "/.quakepassion-save.txt";
     }
-    return os.getenv("HOME", ".") + "/.quakepassion-save-" + slot.replace("/", "_") + ".txt";
+    return os.path.expanduser("~") + "/.quakepassion-save-" + slot.replace("/", "_") + ".txt";
 }

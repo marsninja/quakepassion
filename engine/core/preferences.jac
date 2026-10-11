@@ -20,7 +20,7 @@ obj Preferences {
             return self.home;
         }
         configured = os.getenv("QP_CONFIG_DIR", "");
-        return configured if configured else os.getenv("HOME", ".");
+        return configured if configured else os.path.expanduser("~");
     }
 
     def path -> str {
