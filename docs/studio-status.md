@@ -497,6 +497,18 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   a face's material). `ed_glue face` puts the picked face in the tagged
   face's plane, and `ed_tag clear` forgets the tag. The check names sides
   whose material is smeared into a line.
+- **Handles on a face for its material** (`ed_texhandles`, Brush menu):
+  with one face picked in face mode, a dot stands at the face's middle
+  and an arm runs from it along each way the material runs, each a repeat
+  of the material long (`s` and `t`). Taking the dot somewhere slides the
+  material with it. Taking the end of an arm somewhere stretches the
+  material that way and swings that way round, the other staying as it
+  was, so the two need not stay square (a shear); swings go in steps of
+  the angle snap, so an arm pulled straight out only stretches. With
+  Shift an arm turns both ways together and stretches neither. Drags go
+  by the grid, or freely with Ctrl, and the handles show in every view.
+  `ed_texlay <s axis> <t axis> <s shift> <t shift> <s scale> <t scale>`
+  lays the material on the picked faces exactly so, in numbers.
 - **By a picked face** (face mode, the face's form and the Brush menu):
   `ed_extrude [depth]` pushes the face out into a brush of its own,
   `ed_cone [height]` stands a cone on it and `ed_walls [depth] [thickness]`
@@ -834,6 +846,7 @@ editor/geometry/brush.jac    brushes: planes, outlines, clipping, mappings, rays
 editor/geometry/csg.jac      brushes cut by brushes, hulls of corners
 editor/geometry/mapping.jac  materials slid, scaled, turned and fitted; sides mirrored and turned
 editor/geometry/linear.jac   turns, sizes and shears as one kind of change; the box handle's drags
+editor/geometry/layhandle.jac  a face's material as a dot and two arms, and what a drag of each asks
 editor/formats/map.jac       the .map text format, classic and Valve 220
 editor/formats/bspmap.jac    a built level's brushes back as a map
 editor/compile/leak.jac      the flood that finds a way out to the void
@@ -996,6 +1009,9 @@ editor/impl/                 the workbench's scenes and brushes
   with the map and read from it; the steps to owner, brushes and
   neighbours; brushes by number; the swap and its undo; what a build is
   made from under each of a group's switches.
+- `tests/studio_layhandle_tests.jac`: the arms of a material on a floor, a
+  wall and a slope; the dot sliding it; an arm stretching and swinging one
+  way alone, turning both, going in steps, and only stretching.
 - `tests/studio_linear_tests.jac`: a change as what it makes of the axes,
   one after another and undone; a box sheared keeping its volume and its
   material; turns and stretches agreeing with the ones already there; each
@@ -1092,6 +1108,11 @@ editor/impl/                 the workbench's scenes and brushes
   by the knob on its ring, turned to a 45 degree snap, doubled by a size
   handle about its middle and again about a pivot at its corner, inflated,
   and grouped with a pivot of its own that goes where the group goes).
+  `scripts/studio/arms_session.cfg` (10 steps: the handles on a box's top;
+  the first arm taken to twice its length, swung an eighth round by
+  itself, and with Shift turning both; the dot sliding the material; the
+  second arm pulled in to half; the lie said in numbers, and one whose
+  two ways run together refused).
   `scripts/studio/lean_session.cfg` (15 steps: the box handle round a
   drawn box; its right edge taken along itself shearing it, and the shear
   taken back by number; a corner turning it a quarter, and with Shift

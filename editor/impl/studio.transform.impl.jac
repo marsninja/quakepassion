@@ -121,6 +121,10 @@ impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
         self.drag_box(scene, x, y, free);
         return;
     }
+    if held >= 960 and held <= 962 {
+        self.drag_lay(scene, x, y, free);
+        return;
+    }
     middle = self.turn_hub(scene);
     if middle is None {
         return;
@@ -195,6 +199,9 @@ impl Studio.transform_words(scene: Scene) -> str {
     }
     if held >= 950 and held <= 958 {
         return self.box_words();
+    }
+    if held >= 960 and held <= 962 {
+        return self.lay_words();
     }
     if held >= 910 and held <= 912 {
         if self.turn_by == 0.0 {

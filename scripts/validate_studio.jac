@@ -1475,6 +1475,85 @@ def lean_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A `lay` line's handles: where they stand and the two arms, as number lists."""
+def lay_handles(lines: list[str]) -> list[list[float]] {
+    found = [line for line in lines if line.startswith("lay #")];
+    if not found {
+        return [];
+    }
+    return [[float(part) for part in found[0].split(" " + key + "=")[1].split()[0].split(",")] for key in ["at", "s", "t"]];
+}
+
+"""The fifty-second session: handles on a face for its material."""
+def arms_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["stretching", "aslant"];
+    for shot in shots {
+        (repo / f"arms_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-arms-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/arms_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "arms.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The arms session failed: {output / 'arms.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["picked", "shown", "stretched", "aslant", "turned", "slid", "finer", "numeric", "refused", "hidden"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'arms.log'}";
+    }
+    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in names];
+    # The top of the box picked: no handles until they are asked for; then a dot at its middle
+    # and an arm a repeat of the material long each way it runs.
+    assert len(faces(steps["picked"])) == 1 and lay_handles(steps["picked"]) == [];
+    shown = lay_handles(steps["shown"]);
+    assert shown == [[-192.0, 160.0, 64.0], [64.0, 0.0, 0.0], [0.0, -64.0, 0.0]] , str(shown);
+    plain = faces(steps["shown"])[0];
+    assert face_word(plain, "shift") == "0.0,0.0" and face_word(plain, "scale") == "1.0,1.0";
+    # The first arm taken out to twice its length: twice as coarse that way, the other as it was,
+    # and the material where the handles stand has not moved (so its shift takes that up).
+    stretched = lay_handles(steps["stretched"]);
+    assert stretched[1:] == [[128.0, 0.0, 0.0], [0.0, -64.0, 0.0]] and undone[2] == undone[1] + 1 , str(stretched);
+    assert face_word(faces(steps["stretched"])[0], "scale") == "2.0,1.0" and face_word(faces(steps["stretched"])[0], "shift") == "-96.0,0.0";
+    # Swung an eighth of the way round by itself: that way runs aslant, the other as it did.
+    aslant = lay_handles(steps["aslant"]);
+    assert aslant[1:] == [[48.0, 48.0, 0.0], [0.0, -64.0, 0.0]] , str(aslant);
+    # With Shift both go round together and neither grows.
+    turned = lay_handles(steps["turned"]);
+    assert turned[1:] == [[0.0, 64.0, 0.0], [64.0, 0.0, 0.0]] and face_word(faces(steps["turned"])[0], "scale") == "1.0,1.0" , str(turned);
+    # The dot slides the material thirty-two units along with it.
+    slid = faces(steps["slid"])[0];
+    assert face_word(slid, "shift") == "-32.0,0.0" and face_word(slid, "scale") == "1.0,1.0" and lay_handles(steps["slid"]) == shown , slid;
+    # The second arm pulled in to half its length.
+    finer = lay_handles(steps["finer"]);
+    assert finer[1:] == [[64.0, 0.0, 0.0], [0.0, -32.0, 0.0]] and face_word(faces(steps["finer"])[0], "scale") == "1.0,0.5" , str(finer);
+    assert undone[3:7] == [undone[2]] * 4 , str(undone);
+    # In numbers: slid, and twice as fine both ways. A lie whose ways run together is refused.
+    numeric = faces(steps["numeric"])[0];
+    assert face_word(numeric, "shift") == "8.0,4.0" and face_word(numeric, "scale") == "0.5,0.5" , numeric;
+    assert lay_handles(steps["numeric"])[1:] == [[32.0, 0.0, 0.0], [0.0, -32.0, 0.0]];
+    assert faces(steps["refused"])[0] == numeric and undone[8] == undone[7];
+    assert lay_handles(steps["hidden"]) == [] and faces(steps["hidden"])[0] == numeric;
+    for shot in shots {
+        source = repo / f"arms_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"arms_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"ARMS PASS: {len(steps) - 1} steps, a face's material stretched, swung one way alone, turned and slid by "
+            + "handles on the face, and laid by number"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3775,6 +3854,7 @@ def main() {
         "preview": preview_session,
         "lay": lay_session,
         "lean": lean_session,
+        "arms": arms_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3929,6 +4009,7 @@ def main() {
     preview_session(repo, binary, env, output);
     lay_session(repo, binary, env, output);
     lean_session(repo, binary, env, output);
+    arms_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

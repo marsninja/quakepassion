@@ -366,6 +366,9 @@ impl Studio.draw_solids(scene: Scene) {
 
 impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
     found: list[tuple[int, Vec3]] = [];
+    if self.lay_face(scene) is not None {
+        return self.lay_handles(scene);
+    }
     bent = self.patch_now(scene);
     if self.mode == "corner" and bent is not None {
         # A patch shows the points that bend it.
@@ -434,6 +437,10 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
 
 impl Studio.draw_handles(scene: Scene, area: Rect) {
     canvas = self.canvas;
+    if self.lay_face(scene) is not None {
+        self.draw_lay_handles(scene, area);
+        return;
+    }
     if self.mode == "corner" and self.patch_now(scene) is not None {
         for (index, spot) in self.handles(scene) {
             grabbed = self.resizing and index == self.resize_side;
@@ -540,6 +547,7 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             self.corner_by = Vec3();
             self.box_pull = BoxDrag();
             self.box_said = "";
+            self.lay_pull = None;
             # A mark's handle says nothing until it has been dragged.
             self.turn_by = -1.0 if index >= 940 else 0.0;
             self.size_by = Vec3(x=1.0, y=1.0, z=1.0);

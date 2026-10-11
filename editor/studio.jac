@@ -132,7 +132,8 @@ import from .document.scene {
     TINT_KEY
 }
 import from .geometry.csg { brush_corners, brush_edges }
-import from .geometry.mapping { spun_about, axis_vector }
+import from .geometry.mapping { spun_about, axis_vector, mapping_bad }
+import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
@@ -145,7 +146,7 @@ import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
 import from .formats.map { read_map, write_map, MapItem, MapFile }
-import from .geometry.brush { brush_windings, windings_bounds, Side }
+import from .geometry.brush { brush_windings, windings_bounds, Side, Mapping }
 import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
 
 """The studio's commands: name, usage, description."""
@@ -360,6 +361,12 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_gizmo",
         "ed_gizmo <move|turn|size|box|next>",
         "which handles a selection shows: arrows, rings, boxes, or one box round it all that moves, turns, sizes and shears"
+    ),
+    ("ed_texhandles", "ed_texhandles [on|off]", "show handles on the one picked face for its material: a dot that slides it and two arms that stretch, swing and turn it"),
+    (
+        "ed_texlay",
+        "ed_texlay <s axis: x y z> <t axis: x y z> <s shift> <t shift> <s scale> <t scale>",
+        "lay the material on the picked faces exactly so"
     ),
     ("ed_shear", "ed_shear <x|y|z> <x|y|z> <amount>", "shear the selection: slide it along one axis by so much for each unit along another"),
     (
@@ -680,6 +687,10 @@ obj Studio(Workbench) {
         box_pull: BoxDrag = BoxDrag(),
         box_said: str = "",
         held_shift: bool = False,
+        # Whether a picked face shows handles for its material, and how the
+        # material would lie as a drag of one stands.
+        lay_shown: bool = False,
+        lay_pull: Mapping | None = None,
         turn_by: float = 0.0,
         size_by: Vec3 = Vec3(x=1.0, y=1.0, z=1.0),
         angle_snap: float = 15.0,
@@ -1279,7 +1290,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Lay the tagged face's material on the selected patch", command="ed_patch uv project"),
                     MenuItem(rule=True),
                     MenuItem(text="One handle that moves, turns, sizes and shears", command="ed_gizmo box"),
-                    MenuItem(text="Lean a quarter along x", command="ed_shear x z 0.25")
+                    MenuItem(text="Lean a quarter along x", command="ed_shear x z 0.25"),
+                    MenuItem(text="Handles on the picked face for its material", command="ed_texhandles")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -2011,6 +2023,7 @@ obj Studio(Workbench) {
                     self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
                     self.corner_by = Vec3();
                     self.box_pull = BoxDrag();
+                    self.lay_pull = None;
                     if order {
                         stage.emit(order);
                     }
@@ -2616,7 +2629,8 @@ obj Studio(Workbench) {
         # the walls.
         rlDrawRenderBatchActive();
         rlDisableDepthTest();
-        if self.resizing and self.resize_side >= 910 and (self.resize_side < 940 or self.resize_side >= 950) {
+        if self.resizing and self.resize_side >= 910
+            and (self.resize_side < 940 or (self.resize_side >= 950 and self.resize_side <= 958)) {
             self.draw_transform_preview(scene);
         }
         self.draw_paths();
@@ -2972,6 +2986,28 @@ obj Studio(Workbench) {
     def box_words -> str;
     def box_says -> str;
     def draw_box_handle(scene: Scene, area: Rect);
+
+    # ------------------------------------------------------------------
+    # Handles on a face for its material (impl/studio.layhandle.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def lay_command(scene: Scene, args: list[str]) -> bool;
+    """The one picked face, when faces show handles for their material."""
+    def lay_face(scene: Scene) -> FacePick | None;
+    """Where the handles stand on a face: the middle of its outline."""
+    def lay_stand(face: FacePick) -> Vec3 | None;
+    """A side's material's size in texels."""
+    def lay_sizes(side: Side) -> list[float];
+    """The handles: the dot (960), and the ends of the arms along the
+    material's first way (961) and its second (962), each a repeat long."""
+    def lay_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    def drag_lay(scene: Scene, x: int, y: int, free: bool);
+    """The command a finished drag stands for, what the drag says of itself
+    meanwhile, and the handles as a line of the dump."""
+    def lay_words -> str;
+    def lay_says(scene: Scene) -> str;
+    def lay_line(scene: Scene) -> str;
+    def draw_lay_handles(scene: Scene, area: Rect);
 
     # ------------------------------------------------------------------
     # Keys bound by hand, the settings list, flat tones, grid numbers, readouts (impl/studio.settings.impl.jac)
@@ -3435,7 +3471,7 @@ obj Studio(Workbench) {
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
             and not self.shell_command(scene, args) and not self.touchup_command(scene, args)
             and not self.terrain_command(scene, args)
-            and not self.patch_command(scene, args) and not self.transform_command(scene, args) and not self.linear_command(scene, args)
+            and not self.patch_command(scene, args) and not self.transform_command(scene, args) and not self.linear_command(scene, args) and not self.lay_command(scene, args)
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
@@ -3732,6 +3768,10 @@ obj Studio(Workbench) {
         }
         if self.models_shown {
             lines.append("studio: models shown=1 drawn=" + str(self.models_drawn));
+        }
+        handles_line = self.lay_line(scene);
+        if handles_line {
+            lines.append(handles_line);
         }
         if self.model_doc is not None {
             lines.append(self.model_words());
