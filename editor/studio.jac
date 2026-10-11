@@ -180,6 +180,7 @@ import from .geometry.mapping { spun_about, axis_vector, mapping_bad }
 import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
 import from .geometry.integral { faces_astray, sides_integral, sides_angled }
 import from .geometry.bits { bit_names, bit_of, bits_named }
+import from .geometry.snapto { loop_inside, loop_thinned, snapped_move }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
@@ -477,6 +478,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_pickmat", "ed_pickmat [brush side]", "take the material of a face as the one new brushes and faces get"),
     ("ed_boxselect", "ed_boxselect <view> <x0> <y0> <x1> <y1> [add]", "select what lies in a rectangle of a view"),
+    ("ed_lasso", "ed_lasso <view> <x> <y> <x> <y> ... [add]", "select what lies inside a loop drawn in a view (Alt and a drag draws one)"),
+    ("ed_snapto", "ed_snapto <grid|corners|edges|faces> [reach]", "what a move ends on: where it is asked, or a corner, edge or face of another brush it comes within reach of"),
     ("ed_corner", "ed_corner <dx> <dy> <dz> <x> <y> <z> [...]", "move the corners of the selected brush at those points"),
     ("ed_display", "ed_display <wire|textured> [3d|axis|all]", "draw views as edges or textured (the axis views without a word)"),
     ("ed_check", "ed_check [number]", "list what is wrong with the document, or select the thing a finding is about"),
@@ -787,6 +790,10 @@ obj Studio(Workbench) {
         settings_read: bool = False,
         # A rectangle dragged out over a view, to select what is in it.
         boxing: bool = False,
+        lassoing: bool = False,
+        lasso: list[int] = [],
+        snap_to: str = "grid",
+        snap_reach: float = 16.0,
         box_port: int = 0,
         # How far a dragged corner or edge has gone.
         corner_by: Vec3 = Vec3(),
@@ -2132,6 +2139,11 @@ obj Studio(Workbench) {
                     # A press on nothing selected may become a rectangle.
                     self.boxing = True;
                     self.box_port = index;
+                } elif self.mode == "brush" {
+                    # With Alt it becomes a loop drawn freehand round what is wanted.
+                    self.lassoing = True;
+                    self.lasso = [event.x, event.y];
+                    self.box_port = index;
                 }
             } elif event.kind == "release" {
                 if event.button == 1 {
@@ -2158,6 +2170,17 @@ obj Studio(Workbench) {
                             stage.emit("ed_box_draw " + ends);
                         }
                     }
+                }
+                if event.button == 0 and self.lassoing {
+                    self.lassoing = False;
+                    if len(self.lasso) >= 8 {
+                        self.moved = True;
+                        stage.emit(
+                            "ed_lasso " + str(self.box_port) + " " + " ".join([str(value) for value in loop_thinned(self.lasso, 48)])
+                                + (" add" if event.ctrl or event.shift else "")
+                        );
+                    }
+                    self.lasso = [];
                 }
                 if event.button == 0 and self.boxing {
                     self.boxing = False;
@@ -2250,6 +2273,12 @@ obj Studio(Workbench) {
             } elif event.kind == "drag" and self.resizing {
                 self.held_shift = event.shift;
                 self.drag_handle(scene, event.x, event.y, event.ctrl);
+            } elif event.kind == "drag" and self.lassoing {
+                # A point of the loop wherever the pointer has gone a little way on.
+                if abs(event.x - self.lasso[-2]) + abs(event.y - self.lasso[-1]) >= 4 {
+                    self.lasso.append(event.x);
+                    self.lasso.append(event.y);
+                }
             } elif event.kind == "drag" and self.moving {
                 self.drag_selection(event.x, event.y, event.shift, event.ctrl);
             } elif event.kind == "drag" {
@@ -2947,6 +2976,17 @@ obj Studio(Workbench) {
                 canvas.outline(drawn, canvas.theme.accent);
             }
         }
+        if self.lassoing and self.port_now == self.box_port and len(self.lasso) >= 4 {
+            # The loop as drawn so far, and the line that would close it.
+            turns = len(self.lasso) // 2;
+            for at in range(turns) {
+                onward = (at + 1) % turns;
+                canvas.line(
+                    self.lasso[at * 2], self.lasso[at * 2 + 1], self.lasso[onward * 2], self.lasso[onward * 2 + 1],
+                    canvas.theme.accent if onward != 0 else canvas.theme.accent.faded(110)
+                );
+            }
+        }
         if self.boxing and stage is not None and self.port_now == self.box_port {
             x0 = min(self.press_x, stage.input.x);
             y0 = min(self.press_y, stage.input.y);
@@ -3434,6 +3474,9 @@ obj Studio(Workbench) {
     def finding_command(scene: Scene, args: list[str]) -> bool;
     def rows_command(scene: Scene, args: list[str]) -> bool;
     def prune_command(scene: Scene, args: list[str]) -> bool;
+    def snapto_command(scene: Scene, args: list[str]) -> bool;
+    def snap_delta(scene: Scene, delta: Vec3) -> Vec3;
+    def select_in_loop(scene: Scene, port: int, loop: list[int], add: bool);
     def tags_path -> str;
     def read_tags;
     """The edges of a frame as they are to be drawn: all, or those of the
@@ -3707,7 +3750,10 @@ obj Studio(Workbench) {
             }
         } elif name == "ed_move" {
             if len(args) > 3 {
-                scene.shift_selection(Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3])), self.tex_lock);
+                # Where asked, or on to a corner, edge or face it comes within reach of.
+                scene.shift_selection(
+                    self.snap_delta(scene, Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3]))), self.tex_lock
+                );
             }
         } elif name == "ed_undo" {
             label = scene.undo();
@@ -3749,7 +3795,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.prune_command(scene, args) and not self.rows_command(scene, args)
+        } elif not self.snapto_command(scene, args) and not self.prune_command(scene, args)
+            and not self.rows_command(scene, args)
             and not self.finding_command(scene, args)
             and not self.archive_command(scene, args)
             and not self.playview_command(scene, args)
@@ -4103,6 +4150,9 @@ obj Studio(Workbench) {
         }
         for words in self.depth_words() {
             lines.append(words);
+        }
+        if self.snap_to != "grid" {
+            lines.append("studio: snapto " + self.snap_to + " reach=" + str(int(round(self.snap_reach))));
         }
         # The mode's line stays the last: sessions look for it there.
         lines.append(self.mouse_words());

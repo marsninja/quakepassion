@@ -2813,6 +2813,62 @@ def adjoin_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     );
 }
 
+"""The seventy-first session: a loop drawn round a selection, and moves that end on what is there."""
+def snapto_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "snapto_looped.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-snapto-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/snapto_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "snapto.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The snapto session failed: {output / 'snapto.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["brought", "looped", "again", "asked", "cornered", "no_corner", "edged", "faced", "plain"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'snapto.log'}";
+    }
+    def held(name: str) -> list[str] {
+        return [line.split()[1] for line in steps[name] if line.startswith("brush #")];
+    }
+    def far(name: str) -> list[list[int]] {
+        return brush_box([line for line in steps[name] if line.startswith("brush #6 ")][0]);
+    }
+    # A loop drawn with Alt held in the top view takes the three tiles that stand together and leaves
+    # the lower box that a rectangle round them would have taken; the same loop by command is the same.
+    assert held("brought") == [] and held("looped") == ["#3", "#4", "#5"] and held("again") == ["#3", "#4", "#5"] , str(held("looped"));
+    loops = [line for line in ran.stdout.splitlines() if line.startswith("studio: lasso ")];
+    assert loops == ["studio: lasso points=7 selected=3", "studio: lasso points=7 selected=3"] , str(loops);
+    # Moved as asked the tile stops seven short of the nearest; with corners in reach it ends corner
+    # to corner with it.
+    assert far("asked") == [[7, 190, 0], [71, 254, 64]] and far("cornered") == [[0, 192, 0], [64, 256, 64]] , str(far("cornered"));
+    # Further along that tile's side no corner is in reach, and the move is as asked; an edge is, and
+    # then a face, each taking it straight across the gap and no further.
+    assert far("no_corner") == [[7, 205, 0], [71, 269, 64]] and far("edged") == [[0, 205, 0], [64, 269, 64]] , str(far("edged"));
+    assert far("faced") == [[0, 205, 10], [64, 269, 74]] and far("plain") == [[128, 160, 0], [192, 224, 64]] , str(far("faced"));
+    snaps = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: snapped ")];
+    assert snaps == ["snapped corners by=-7.0,2.0,0.0", "snapped edges by=-7.0,0.0,0.0", "snapped faces by=-7.0,0.0,0.0"] , str(snaps);
+    # What a move ends on is said while it is not the plain way, and not after.
+    assert len([line for line in steps["faced"] if line.startswith("snapto faces reach=8")]) == 1;
+    assert len([line for line in steps["plain"] if line.startswith("snapto ")]) == 0;
+    source = repo / "snapto_looped.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "snapto_looped.png");
+    source.unlink();
+    print(
+        f"SNAPTO PASS: {len(steps) - 1} steps, three tiles taken by a loop that leaves the box beside them, and a tile moved "
+            + "on to a corner, along an edge and against a face of its neighbour"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5185,6 +5241,7 @@ def main() {
         "meshcut": meshcut_session,
         "gltf": gltf_session,
         "adjoin": adjoin_session,
+        "snapto": snapto_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5370,6 +5427,7 @@ def main() {
     meshcut_session(repo, binary, env, output);
     gltf_session(repo, binary, env, output);
     adjoin_session(repo, binary, env, output);
+    snapto_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

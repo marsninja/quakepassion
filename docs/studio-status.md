@@ -1038,6 +1038,18 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   writes are the result, and screenshots are still taken. It needs a
   desktop session for the graphics all the same. `jac run
   scripts/validate_studio.jac --hidden` runs every session this way.
+- **A loop round a selection**: in brush mode, Alt and a drag in any view
+  draws a loop freehand; what lies inside it when the button is let go is
+  selected (with Shift or Ctrl, added), where a rectangle would take what
+  stands in its corners too. `ed_lasso <view> <x> <y> ...` is the same
+  by command.
+- **Moves that end on something** (`ed_snapto <grid|corners|edges|faces>
+  [reach]`): a move of the selection, dragged or by `ed_move`, ends where
+  it is asked unless a corner of what is moving comes within reach (16
+  units unless told) of a corner of another brush, of a point along one
+  of its edges, or of a point on one of its faces; then it ends there,
+  by the least change that puts it there. Edges take corners too, and
+  faces take both.
 - **Faces that meet** (`ed_faces adjoining`, `ed_faces beside`): from a
   picked face the pick spreads to the faces that lie in its plane and
   share a length of edge with it or lie over it, and to those that adjoin
@@ -1302,6 +1314,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
+  drawn either way round; a long loop thinned; a move that ends on a
+  corner, an edge or a face within reach, and is left alone out of reach.
 - `tests/studio_adjoin_tests.jac`: outlines in one plane that adjoin
   along an edge or over one another and not at a corner; the four faces
   beside a face of a box; a side that makes no face.
@@ -1527,6 +1542,10 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/snapto_session.cfg` (9 steps: three tiles taken by a
+  loop drawn with Alt held, which leaves the box beside them, and again
+  by command; a tile moved seven short of its neighbour as asked, then on
+  to its corner, along its edge and against its face).
   `scripts/studio/adjoin_session.cfg` (8 steps: a pick spread from one
   tile's top to the two that adjoin it and not to one across the room,
   then across the whole plane, then to the four faces beside it; a side
