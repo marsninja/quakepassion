@@ -138,7 +138,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the selected entities, or on every entity: a set of doors renamed, a
   texture prefix changed, in one undoable step.
 - `ed_check logic` adds a deeper look to the check: entities that wait for
-  a name nothing fires.
+  a name nothing fires, and softlocks, where the logic can leave a player
+  with no way on. A walker carries "this is set off" down the graph of what
+  fires what, from everything that sets itself off (a trigger walked into,
+  a button, a monster that dies); what waits to be fired (a relay, a
+  counter, a target, a named door, platform or train) and is fired only by
+  things the walker never reaches is never set off, and is named with what
+  fires it. A counter that more must fire than ever can (its count against
+  the things that fire it once each) is named, and so is a Quake door
+  that wants a gold or silver key the level has not got, and a Quake II
+  lock (`trigger_key`) whose key is not in the level.
 - What is pasted, or added from a prefab, keeps a gadget's names apart: a
   name the pasted entities give themselves and fire among themselves
   becomes a new one when the document already uses it, and what fires it
@@ -603,7 +612,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_sideflag <contents|flags|value> <number> [set|clear|put]` changes
   bits on the picked faces or on every side of the selected brushes, and
   `ed_detail [on|off]` marks brushes as detail or structural. They are
-  written with the map whenever a side has any.
+  written with the map whenever a side has any. A bit goes by its name
+  too: `ed_sideflag contents ladder`, `ed_sideflag flags slick off`.
+  Quake II and Quake III give the bits different names (bit twenty-nine
+  of the contents is a ladder in one and translucent in the other), so
+  the names are the scene's own game's; a scene made here is of no one
+  game and is read as Quake II's unless told (`ed_sideflag as q3`), and
+  `q3:nodrop` says whose name is meant. `ed_sideflag names` lists the
+  game's names, and `ed_sideflag` alone says what the picked faces or
+  the selected brushes' sides have, by name (a bit the game has no name
+  for by its number). Quake's own maps keep no such numbers.
 - **Diggers**: `ed_digger` makes the selected brushes a group of holes
   (`_digger 1`). The level is built with them cut out of every brush they
   reach, and with no brush of their own; the document keeps the digger and
@@ -1195,6 +1213,12 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_softlock_tests.jac`: a door behind a relay nothing sets
+  off, and put right by a trigger that fires it (killing a thing does not
+  set it off); a counter of three with two deaths to fire it; doors that
+  want keys, by game.
+- `tests/studio_bits_tests.jac`: each game's names for the bits of a
+  side's contents and flags, and a number said by them.
 - `tests/studio_modelfile_tests.jac`: a model of two parts written as a
   Quake MDL and read by the engine (points, places on the skin, the skin
   itself in the palette's colours, frames' names); a work file that gives
@@ -1388,6 +1412,13 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/stuck_session.cfg` (9 steps: a button, a relay and a
+  door with nothing stuck; the door a softlock once the button is gone;
+  a counter of three that two soldiers' deaths cannot make up, and a
+  trigger that does; a lock without its key, and with it; a brush's sides
+  made a ladder and slick by Quake II's names, a name of Quake III's
+  refused and then taken as Quake III's, and the same numbers read as
+  Quake III has them).
   `scripts/studio/modelfiles_session.cfg` (5 steps: a cylinder of two
   frames with a tag, two bones and its top picked, saved as a work file,
   an MDL and an MD2; the work file opened as the model was left; the MDL

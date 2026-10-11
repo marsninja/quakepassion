@@ -365,6 +365,10 @@ impl Studio.check(scene: Scene, args: list[str]) {
         for hanging in scene.audit() {
             self.findings.append(hanging);
         }
+        # And where it can leave a player stuck.
+        for stuck in scene.softlocks() {
+            self.findings.append(stuck);
+        }
     }
     for stray in self.game_findings(scene) {
         self.findings.append(stray);

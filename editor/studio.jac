@@ -173,6 +173,7 @@ import from .geometry.csg { brush_corners, brush_edges }
 import from .geometry.mapping { spun_about, axis_vector, mapping_bad }
 import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
 import from .geometry.integral { faces_astray, sides_integral, sides_angled }
+import from .geometry.bits { bit_names, bit_of, bits_named }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
@@ -417,8 +418,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_walls", "ed_walls [depth] [thickness]", "stand walls round the edge of each picked face"),
     (
         "ed_sideflag",
-        "ed_sideflag <contents|flags|value> <number> [set|clear|put]",
-        "set, clear or replace bits on the picked faces or the selected brushes' sides"
+        "ed_sideflag [names] [as q2|q3] | <contents|flags> <name> [on|off] | <contents|flags|value> <number> [set|clear|put]",
+        "set, clear or replace bits on the picked faces or the selected brushes' sides, by number or by the name a game has for the bit"
     ),
     ("ed_detail", "ed_detail [on|off]", "mark the selected brushes as detail, or as structural again"),
     ("ed_digger", "ed_digger [on|off]", "make the selected brushes holes, cut out of the rest when the level is built"),
@@ -846,6 +847,7 @@ obj Studio(Workbench) {
         model_loops: bool = True,
         model_smooth: bool = False,
         model_between: int = 0,
+        bits_game: str = "q2",
         model_backs: bool = True,
         model_ticks: float = 0.0,
         model_playing: bool = False,

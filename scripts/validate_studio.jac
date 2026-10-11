@@ -2257,6 +2257,76 @@ def modelfiles_session(repo: Path, binary: Path, env: dict[str, str], output: Pa
     );
 }
 
+"""The sixty-third session: where a map's logic leaves a player stuck, and a side's bits by name."""
+def stuck_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-stuck-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/stuck_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "stuck.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The stuck session failed: {output / 'stuck.log'}";
+    }
+    # What a command prints comes before the step that follows it: gathered here under that step.
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    names = ["sound", "dead", "short", "counted", "keyless", "keyed", "named", "renamed", "third"];
+    for name in names {
+        assert name in said , f"The session never reached '{name}': {output / 'stuck.log'}";
+    }
+    stuck: dict[str, list[str]] = {};
+    sides: dict[str, list[str]] = {};
+    for name in names {
+        stuck[name] = [line[8:] for line in said[name] if line.startswith("finding ")];
+        sides[name] = [line[9:] for line in said[name] if line.startswith("sidebits ")];
+    }
+    # A button, a relay and a door in a row: nothing hangs and nothing is stuck.
+    assert stuck["sound"] == [] , stuck["sound"];
+    # Without the button the relay is the audit's to name, and the door behind it a softlock.
+    assert stuck["dead"] == [
+        "trigger_relay (pass) waits for pass, which nothing fires",
+        "func_door (door1) is never set off: what fires it (trigger_relay (pass)) is never set off itself"
+    ] , stuck["dead"];
+    # A counter of three fired by two deaths: the door is reached now, the count never made; a
+    # trigger that can be walked into again makes it up.
+    assert stuck["short"] == ["trigger_counter (tally) counts to 3, and only 2 things ever fire it, once each"] , stuck["short"];
+    assert stuck["counted"] == [] and stuck["keyed"] == [] , stuck["counted"];
+    assert stuck["keyless"] == ["trigger_key wants key_data_cd, and this level has none (unless it is carried in from another)"];
+    # A scene is of no one game: its sides' bits go by Quake II's names until told otherwise.
+    assert [line for line in said["named"] if line.startswith("bits q2 flags ")] == [
+        "bits q2 flags light slick sky warp trans33 trans66 flowing nodraw hint skip"
+    ];
+    assert len([line for line in said["named"] if line.startswith("bits q2 contents solid window aux lava ")]) == 1;
+    assert sides["named"] == ["q2 contents=monsterclip,ladder flags=slick value=0"] , sides["named"];
+    # One name off again; a name Quake II has not got changes nothing, and is taken as Quake III's
+    # when said to be (a bit Quake II has no name for is given by its number).
+    assert sides["renamed"] == [
+        "q2 contents=ladder flags=slick value=0", "q2 contents=ladder,2147483648 flags=slick value=0"
+    ] , sides["renamed"];
+    # The same numbers as Quake III reads them: its bit twenty-nine is another thing.
+    assert len([line for line in said["third"] if line.startswith("bits q3 contents solid lava slime water fog ")]) == 1;
+    assert sides["third"] == ["q3 contents=translucent,nodrop flags=slick value=0"] , sides["third"];
+    print(
+        f"STUCK PASS: {len(names)} steps, a door behind a relay nothing sets off, a counter of three with two to fire it "
+            + "and a lock with no key found and put right, and a brush's sides flagged by Quake II's names and read by Quake III's"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4617,6 +4687,7 @@ def main() {
         "whole": whole_session,
         "playview": playview_session,
         "modelfiles": modelfiles_session,
+        "stuck": stuck_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4794,6 +4865,7 @@ def main() {
     whole_session(repo, binary, env, output);
     playview_session(repo, binary, env, output);
     modelfiles_session(repo, binary, env, output);
+    stuck_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

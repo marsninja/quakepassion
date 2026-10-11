@@ -1308,6 +1308,20 @@ walker Reach {
     }
 }
 
+"""Carries "this is set off" down the logic graph from what sets itself
+off. A thing killed is not set off, so only what is fired is followed."""
+walker Wake {
+    has woken: list[Item] = [];
+
+    can follow with Item entry {
+        if here in self.woken or not here.held {
+            return;
+        }
+        self.woken.append(here);
+        visit [here->:Fires:key == "target":->];
+    }
+}
+
 """Where an entity stands in the logic graph: how many firings from a
 source, and which place down that column."""
 obj LogicNode {
@@ -1572,6 +1586,17 @@ node Scene {
     """What the map's logic leaves hanging, beyond what `problems` reports:
     names nothing fires."""
     def audit -> list[Finding];
+    """Whether an entity does nothing until it is fired: a relay, a counter,
+    a target, a path corner, or a named door, platform or train."""
+    def waits(item: Item) -> bool;
+    """Everything that is ever set off: what sets itself off (a trigger
+    walked into, a button, a monster that dies), and whatever that fires,
+    and so on down."""
+    def woken -> list[Item];
+    """Where the map's logic can leave a player stuck: what waits on things
+    that are never set off themselves, counters that more must fire than
+    ever can, and doors that want a key the level does not have."""
+    def softlocks -> list[Finding];
 
     # Groups' own switches and what a build is made from (impl/scene.select.impl.jac)
 
