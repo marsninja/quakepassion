@@ -15,7 +15,7 @@ def override_folder -> str {
         return chosen;
     }
     configured = os.getenv("QP_CONFIG_DIR", "");
-    return (configured if configured else os.getenv("HOME", ".")) + "/.quakepassion-overrides";
+    return (configured if configured else os.path.expanduser("~")) + "/.quakepassion-overrides";
 }
 
 """The file holding a map's edited entities."""

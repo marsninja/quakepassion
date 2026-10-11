@@ -8,40 +8,33 @@ tracked the local patch stacks used while each fix was in review.
 
 ## Current compiler
 
-The `jaseci` submodule pins the compiler source. It points at the `qp-pin`
-branch of `marsninja/jac`: upstream main `842dbbc05` plus eight fixes that
-have all since merged upstream (#9565, #9633, #9634, #9635, #9636, #9638,
-#9639, #9640) and shipped in jac 0.37.25. `scripts/stage_compiler.sh`
-prepares that source (and the typeshed stubs it needs) and prints the
-`JAC_DEV_SOURCE` to export, so the released `jac` 0.37.23 binary compiles
-QuakePassion with the pinned source. CI (`.github/workflows/jac-test.yml`)
-does the same and caches the native compiler kernel per pin. No local patch
-stacks or compiler worktrees are needed. Nothing the pin carries is still in
-review, so the submodule can return to `jaseci-labs/jac` main (or the build to
-a plain 0.37.25 or later) at the next pin change.
+The `jaseci` submodule pins the compiler source. It points at the
+`qp-pin-v3` branch of `marsninja/jac`: upstream main `5bb05689a` plus the
+Windows target work of [jaseci-labs/jac#9991](https://github.com/jaseci-labs/jac/pull/9991),
+which is in review. Everything earlier pins carried has merged upstream.
+`scripts/stage_compiler.sh` prepares that source (and the typeshed stubs it
+needs) and prints the `JAC_DEV_SOURCE` to export, so the released `jac`
+0.37.25 binary compiles QuakePassion with the pinned source. CI
+(`.github/workflows/jac-test.yml`) does the same and caches the native
+compiler kernel per pin. No local patch stacks or compiler worktrees are
+needed. Once #9991 merges, the submodule can return to `jaseci-labs/jac` main.
 
 ## Open upstream
 
-Needed on macOS and not in the pin:
+In the pin, in review upstream:
 
 | Defect | Upstream PR | Found by |
 | --- | --- | --- |
-| The Mach-O linker merged same-named sections from different units but kept the first unit's alignment, so a later unit's 16-byte constant could land 8 bytes off a 16-byte boundary and a vectorised loop's `ldr q` read it 8 bytes early. Whether a binary is hit depends on how its units happen to pack: one program fails, a one-line change to it passes | [#9924](https://github.com/jaseci-labs/jac/pull/9924) | `scripts/validate_doors.jac` on Q3: `zipfile` raising "Invalid central directory bounds" on every pk3 |
+| A Windows target (`--target-triple x86_64-pc-windows-msvc`) wrote an image that did not load: it imported pthread keys, `printf`, the standard streams and `setjmp` from `msvcrt.dll`, and nothing that touched a file, a directory or the clock built. Records crossed to C functions by the System V convention, `hashlib` needed OpenSSL, and the PE linker refused an object with more than 65,534 relocations | [#9991](https://github.com/jaseci-labs/jac/pull/9991) | Building `qp.exe`: a Linux `qp` under WSLg cannot capture the mouse |
 
-| `set()` and `frozenset()` over a range, a numeric tuple or an int-keyed dict had no native lowering (E5092); under `jac test` the function holding the line aborted the process | [#9929](https://github.com/jaseci-labs/jac/pull/9929) | Brush-model culling's `set(range(1, n + 1))` in `engine/world/level.jac`, which waits on this fix |
-
-Until the pin carries #9924, a natively built script or `qp` that fails that way
-(or with any result that flips when an unrelated line changes) is rebuilt
-with a copy of the pinned source that has the PR's linker change applied.
-`jac test` runs are not affected.
-
-Needed by the studio (`editor/`) and not in the pin, so CI cannot build
-`qp` from a branch that has the studio until the pin carries it:
+Merged upstream and in the pin, not yet in a release:
 
 | Defect | Upstream PR | Found by |
 | --- | --- | --- |
 | `for (i, row) in enumerate(rows)` over a list of lists (or of dicts or sets) bound `row` as an untyped pointer, which later code took for a `str`: `len(row)` returned a wrong count and a nested `enumerate(row)` crashed. `zip` did the same | [#9971](https://github.com/jaseci-labs/jac/pull/9971) | The studio's `.map` writer (`editor/formats/map.jac`), which loops over an entity's brushes and each brush's sides |
 | A C record passed by value to a C function from a variable whose slot is optional (`font: Font \| None`, narrowed or defaulted before the call) emitted invalid LLVM IR; the build failed with only "native product emission failed" | [#9942](https://github.com/jaseci-labs/jac/pull/9942) | The studio's canvas (`editor/ui/canvas.jac`), which keeps its font as `UiFont \| None` |
+| The Mach-O linker merged same-named sections from different units but kept the first unit's alignment, so a later unit's 16-byte constant could land 8 bytes off a 16-byte boundary and a vectorised loop's `ldr q` read it 8 bytes early. Whether a binary is hit depends on how its units happen to pack: one program fails, a one-line change to it passes | [#9924](https://github.com/jaseci-labs/jac/pull/9924) | `scripts/validate_doors.jac` on Q3: `zipfile` raising "Invalid central directory bounds" on every pk3 |
+| `set()` and `frozenset()` over a range, a numeric tuple or an int-keyed dict had no native lowering (E5092); under `jac test` the function holding the line aborted the process | [#9929](https://github.com/jaseci-labs/jac/pull/9929) | Brush-model culling's `set(range(1, n + 1))` in `engine/world/level.jac`, which waits on this fix |
 
 Found in QuakePassion work but not needed by it (not in the pin):
 

@@ -172,7 +172,7 @@ obj ArenaProgress {
     has best: dict[str, int] = {};
 
     def path() -> str {
-        return os.getenv("HOME", ".") + "/.quakepassion-arena.txt";
+        return os.path.expanduser("~") + "/.quakepassion-arena.txt";
     }
 
     def load() {
@@ -326,7 +326,7 @@ obj AwardLog {
     has totals: dict[str, int] = {};
 
     def path() -> str {
-        return os.getenv("HOME", ".") + "/.quakepassion-awards.txt";
+        return os.path.expanduser("~") + "/.quakepassion-awards.txt";
     }
 
     def load() {
