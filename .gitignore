@@ -11,3 +11,6 @@
 
 # locally built raylib (see scripts/stage_raylib.sh; not committed)
 vendor/
+
+# Files the studio extracts from the games' archives (ed_extract): never the repo's.
+/extracted/

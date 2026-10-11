@@ -7,6 +7,7 @@ cross the FFI by value; sized casts specify the C parameter widths.
 Method and ability bodies live in impl/renderer.impl.jac.
 """
 
+import os;
 import from vendor.raylib {
     def DrawLine3D(startPos: Vector3, endPos: Vector3, color: Color) -> None;  def DrawRectangle(
         x: i32, y: i32, width: i32, height: i32, color: Color
@@ -117,7 +118,8 @@ glob BATCH_ATTRIBUTES_VS: str = "#version 330\nin vec3 vertexPosition; in vec2 v
 # raylib ConfigFlags.
 glob WINDOW_RESIZABLE_FLAG: int = 4,
      WINDOW_HIGHDPI_FLAG: int = 8192,
-     WINDOW_UNDECORATED_FLAG: int = 8;
+     WINDOW_UNDECORATED_FLAG: int = 8,
+     WINDOW_HIDDEN_FLAG: int = 128;
 
 """The cvars the renderer owns: the view angle, the frame rate cap, PVS
 culling, Q3 curve detail and the window (Q1/Q2 vid_*, Q3 r_* names)."""

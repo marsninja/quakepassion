@@ -1027,6 +1027,13 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   in `/`. The new archive is written beside the old and put in its
   place. One of an installed game's own archives is refused: copy it and
   change the copy.
+- **Without a window**: with `QP_HEADLESS=1` in the environment the game
+  opens its window hidden and runs as ever, so a script of editor commands
+  (`./qp +ed_exec batch.cfg`, ending in `quit`) opens, converts, checks,
+  builds and saves with nothing shown: what it prints and the files it
+  writes are the result, and screenshots are still taken. It needs a
+  desktop session for the graphics all the same. `jac run
+  scripts/validate_studio.jac --hidden` runs every session this way.
 - **The tree in words**: `ed_tree [text]` says every row the scene tree
   shows (its depth, its key, its words and its note, and a star when it
   is selected), or those that hold some text. A group that is a

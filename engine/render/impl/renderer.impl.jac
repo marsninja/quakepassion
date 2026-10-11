@@ -22,6 +22,10 @@ impl Renderer.open_window() {
     if self.cvars.highdpi.on() {
         flags = flags | WINDOW_HIGHDPI_FLAG;
     }
+    if os.getenv("QP_HEADLESS", "") not in ["", "0"] {
+        # Run without showing a window: scripts drive it and read what it prints and captures.
+        flags = flags | WINDOW_HIDDEN_FLAG;
+    }
     SetConfigFlags(u32(flags));
     InitWindow(i32(self.cvars.width.integer), i32(self.cvars.height.integer), self.title);
     if not IsWindowReady() {

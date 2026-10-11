@@ -6,12 +6,14 @@ dragged by scripted input, the document is printed after each step, and
 screenshots are taken along the way. A second run without the studio checks
 that the saved entities are what the level loads.
 
-    jac run scripts/validate_studio.jac [--binary ./qp] [--only <session>] [--jobs <n>]
+    jac run scripts/validate_studio.jac [--binary ./qp] [--only <session>] [--jobs <n>] [--hidden]
 
 `--only shell` is the first session alone. `--jobs <n>` runs the sessions
 `n` at a time, each as a run of this script with `--only`: they keep their
 settings and scenes in folders of their own, so they do not meet (the three
-that pack archives into one folder go one after another).
+that pack archives into one folder go one after another). `--hidden` runs
+them with no window shown (QP_HEADLESS=1): a desktop is still needed for
+the graphics, but nothing appears on it.
 
 Output: .jac/screenshots/studio/."""
 import os;
@@ -5033,6 +5035,10 @@ def run_lanes(names: list[str], binary: Path, jobs: int) -> int {
 
 def main() {
     repo = Path(__file__).resolve().parent.parent;
+    if "--hidden" in sys.argv {
+        # No window is shown: the studio draws and captures as ever, out of sight.
+        os.environ["QP_HEADLESS"] = "1";
+    }
     binary = repo / "qp";
     if "--binary" in sys.argv {
         binary = Path(sys.argv[sys.argv.index("--binary") + 1]).resolve();
