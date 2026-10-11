@@ -129,7 +129,58 @@ impl App.fly(intent: Intent, dt: float) {
     }
 }
 
+impl App.render_bench() {
+    p = self.player;
+    self.audio.update(self.world, p.pos, p.yaw, paused=True);
+    self.renderer.begin_views();
+    self.quake.time = self.simulation_time;
+    self.quake.blend = self.tick_blend;
+    for view in self.workbench.views() {
+        # (jaseci-labs/jac#9969: a local named `culling` here is taken for the method.)
+        pvs = self.culling() and not view.everything;
+        faces = self.level.visible(self.world, view.eye, pvs);
+        self.renderer.begin_view(
+            view.x, view.y, view.width, view.height, view.eye, view.yaw, view.pitch, view.span
+        );
+        if not view.bare {
+            if view.wire {
+                self.renderer.wire(True);
+            }
+            self.quake.view_forward = forward_from(view.yaw, view.pitch);
+            self.last_drawn = self.quake.draw(self.level, faces, view.eye);
+            self.models.draw(
+                self.world,
+                view.eye,
+                self.simulation_time,
+                culling=pvs,
+                yaw=view.yaw,
+                pitch=view.pitch,
+                fov=self.renderer.fov,
+                aspect=float(max(1, view.width)) / float(max(1, view.height)),
+                lighting=self.level.lighting,
+                fogs=self.level.bsp.fogs,
+                fog_image=self.quake.fog_image,
+                blend=self.tick_blend
+            );
+            if view.wire {
+                self.renderer.wire(False);
+            }
+        }
+        self.workbench.draw_scene(view);
+        self.renderer.end_view();
+    }
+    self.workbench.draw(self.renderer.width, self.renderer.height);
+    self.console.draw(
+        self.hud, self.shell.log, self.level.bsp.game, self.renderer.width, self.renderer.height
+    );
+    self.renderer.end_frame();
+}
+
 impl App.render_frame() {
+    if self.workbench.active and self.level.active and not self.cinematic.active {
+        self.render_bench();
+        return;
+    }
     if self.menu.opened {
         self.refresh_settings();
         self.refresh_controls();
@@ -641,7 +692,9 @@ impl App.load_destination(
     session: Campaign | None = None,
     preserve_progress: bool = False
 ) {
-    self.draw_loading(game, name);
+    if not self.quiet_load {
+        self.draw_loading(game, name);
+    }
     next_renderer = QuakeRenderer();
     next_models = ModelScene();
     next_effects = EffectScene(cvars=self.effects.cvars);
@@ -651,7 +704,9 @@ impl App.load_destination(
         skill = self.host.skill.integer;
         level = open_level(
             world, game_directory(game), name, game, skill if game == "q3" else min(3, skill),
-            subdivisions=self.renderer.cvars.subdivisions.number
+            subdivisions=self.renderer.cvars.subdivisions.number,
+            entities=self.staged_entities.get(game + "/" + name),
+            built=self.workbench.build_level(game, name)
         );
         runes = quantity(self.player.inventory, "runes")
             if game == "q1"
@@ -884,6 +939,20 @@ impl App.step() -> bool {
     if self.level is not loaded {
         self.render_frame();
         return True;
+    }
+    if self.workbench.active and self.level.active and not self.cinematic.active {
+        # The simulation stands still while the studio has the window.
+        self.jump_pending = False;
+        self.physics_clock.accumulator = 0.0;
+        keys = self.bench_keys;
+        text = self.bench_text;
+        self.bench_keys = [];
+        self.bench_text = "";
+        self.workbench.frame(
+            self.renderer.frame_time(), keys, text, self.bench_shift, self.bench_ctrl, self.bench_alt
+        );
+        self.render_frame();
+        return not self.quitting;
     }
     if escape and self.cinematic.escape_skips() and not self.menu.opened {
         # Q3 CL_KeyEvent: Escape stops a film like any other key.

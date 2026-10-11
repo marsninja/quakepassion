@@ -133,6 +133,75 @@ impl Renderer.begin_screen() {
     ClearBackground(Color(r=0, g=0, b=0, a=255));
 }
 
+impl Renderer.begin_views() {
+    BeginDrawing();
+    ClearBackground(Color(r=21, g=20, b=18, a=255));
+}
+
+impl Renderer.begin_view(
+    x: int, y: int, width: int, height: int, eye: Vec3, yaw: float, pitch: float, span: float = 0.0
+) {
+    ahead = forward_from(yaw, pitch);
+    target = eye.add(ahead);
+    # Looking straight up or down, "up" on screen is the way the yaw faces.
+    up = Vec3(z=1.0);
+    if abs(ahead.z) > 0.999 {
+        up = Vec3(x=math.cos(yaw), y=math.sin(yaw));
+        if ahead.z > 0.0 {
+            up = up.scale(-1.0);
+        }
+    }
+    cam = Camera3D(
+        position=Vector3(x=f32(eye.x), y=f32(eye.y), z=f32(eye.z)),
+        target=Vector3(x=f32(target.x), y=f32(target.y), z=f32(target.z)),
+        up=Vector3(x=f32(up.x), y=f32(up.y), z=f32(up.z)),
+        fovy=f32(self.fov),
+        projection=i32(CAMERA_PERSPECTIVE)
+    );
+    near = 1.0;
+    far = 32768.0;
+    rlSetClipPlanes(f64(near), f64(far));
+    BeginMode3D(cam);
+    # The rectangle in framebuffer pixels, counted from the bottom.
+    scale = float(GetRenderWidth()) / float(max(1, self.width));
+    rlViewport(
+        i32(int(float(x) * scale)),
+        i32(int(float(self.height - y - height) * scale)),
+        i32(max(1, int(float(width) * scale))),
+        i32(max(1, int(float(height) * scale)))
+    );
+    aspect = float(max(1, width)) / float(max(1, height));
+    projection = Matrix(
+        m0=f32(0.0), m4=f32(0.0), m8=f32(0.0), m12=f32(0.0),
+        m1=f32(0.0), m5=f32(0.0), m9=f32(0.0), m13=f32(0.0),
+        m2=f32(0.0), m6=f32(0.0), m10=f32(0.0), m14=f32(0.0),
+        m3=f32(0.0), m7=f32(0.0), m11=f32(0.0), m15=f32(0.0)
+    );
+    if span > 0.0 {
+        # Orthographic views see both ways along their axis.
+        near = -far;
+        projection.m0 = f32(2.0 / (span * aspect));
+        projection.m5 = f32(2.0 / span);
+        projection.m10 = f32(-2.0 / (far - near));
+        projection.m14 = f32(-(far + near) / (far - near));
+        projection.m15 = f32(1.0);
+    } else {
+        f = 1.0 / math.tan(math.radians(self.fov) * 0.5);
+        projection.m0 = f32(f / aspect);
+        projection.m5 = f32(f);
+        projection.m10 = f32(-(far + near) / (far - near));
+        projection.m14 = f32(-2.0 * far * near / (far - near));
+        projection.m11 = f32(-1.0);
+    }
+    rlSetMatrixProjection(projection);
+}
+
+impl Renderer.end_view() {
+    EndMode3D();
+    rlDrawRenderBatchActive();
+    rlViewport(i32(0), i32(0), GetRenderWidth(), GetRenderHeight());
+}
+
 impl Renderer.draw_area(area: Area) {
     for s in area.surfaces {
         pos = Vector3(x=f32(s.center.x), y=f32(s.center.y), z=f32(s.center.z));
@@ -469,5 +538,14 @@ impl Renderer.draw_powerups(lines: list[str]) {
     for line in lines {
         DrawText(line, i32(self.width - 360), i32(y), 20, Color(r=140, g=200, b=255, a=255));
         y += 24;
+    }
+}
+
+impl Renderer.wire(on: bool) {
+    rlDrawRenderBatchActive();
+    if on {
+        rlEnableWireMode();
+    } else {
+        rlDisableWireMode();
     }
 }

@@ -49,5 +49,8 @@ covers building, running and the architecture.
 - [validation-tooling-status.md](validation-tooling-status.md): tests, validators, the map sweep and walkthroughs
 - [performance-status.md](performance-status.md): profiling harnesses and dated measurements
 
+## Studio
+- [studio-status.md](studio-status.md): the in-engine editor: what works, how it is built and validated, what remains
+
 ## Passion
 - [passion.md](passion.md): the generated fourth mode

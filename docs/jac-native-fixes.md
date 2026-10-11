@@ -35,6 +35,14 @@ Until the pin carries #9924, a natively built script or `qp` that fails that way
 with a copy of the pinned source that has the PR's linker change applied.
 `jac test` runs are not affected.
 
+Needed by the studio (`editor/`) and not in the pin, so CI cannot build
+`qp` from a branch that has the studio until the pin carries it:
+
+| Defect | Upstream PR | Found by |
+| --- | --- | --- |
+| `for (i, row) in enumerate(rows)` over a list of lists (or of dicts or sets) bound `row` as an untyped pointer, which later code took for a `str`: `len(row)` returned a wrong count and a nested `enumerate(row)` crashed. `zip` did the same | [#9971](https://github.com/jaseci-labs/jac/pull/9971) | The studio's `.map` writer (`editor/formats/map.jac`), which loops over an entity's brushes and each brush's sides |
+| A C record passed by value to a C function from a variable whose slot is optional (`font: Font \| None`, narrowed or defaulted before the call) emitted invalid LLVM IR; the build failed with only "native product emission failed" | [#9942](https://github.com/jaseci-labs/jac/pull/9942) | The studio's canvas (`editor/ui/canvas.jac`), which keeps its font as `UiFont \| None` |
+
 Found in QuakePassion work but not needed by it (not in the pin):
 
 | Defect | Upstream PR | Found by |
@@ -43,8 +51,28 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | An override in another module of a base class compiled without a vtable was silently skipped by the base's own methods; the fix reports E5113 | [#9631](https://github.com/jaseci-labs/jac/pull/9631) | |
 | A variable named like a public function of an imported module was read, or called, as that function: every public function of an imported module was bound under its bare name ahead of the module's own bindings. Entry-block variables and globals read wrongly; any variable holding a callable was called wrongly | [#9925](https://github.com/jaseci-labs/jac/pull/9925) | `scripts/player_death_smoke.jac`: a variable `burst` beside `combat.jac`'s `def burst` segfaulted |
 | Any `def drop` was taken for the destructor hook, so one that takes a parameter crashed `jac check` ("list index out of range") and was called without its argument on the Python side | [#9927](https://github.com/jaseci-labs/jac/pull/9927) | A `drop(name)` method on `HudRenderer`, which is named `forget` meanwhile |
+| A C record with a field typed by a C record that another module declares failed to lower natively (E5092), because a unit laid out its own records before those of the modules it imports; and on the Python side the import of the embedded record was dropped as unused, so the module raised `NameError: C type ... is not bound` as it loaded | [#9935](https://github.com/jaseci-labs/jac/pull/9935) | A first cut of the studio's canvas that imported raylib's `Texture2D` from `engine/render/quake.jac`. The canvas now declares the records it needs beside its own calls, as the renderer does, so that the interface toolkit builds without the engine |
 | `sum()` over `bytes` had no native lowering (E5092), and over a `bytearray` it sign-extended each byte | [#9928](https://github.com/jaseci-labs/jac/pull/9928) | A scratch probe of the RoQ decoder |
+| `list.reverse()` and the keyed `list.sort()` swapped two elements through the list's set helper, which releases the element it overwrites: half of a reversed list of objects (or of lists or dicts) pointed at freed elements, and a keyed sort of objects aborted | [#9973](https://github.com/jaseci-labs/jac/pull/9973) | The studio's leak finder returns the way out as a list of points and reverses it; the level crashed a few frames after the line was drawn (`editor/compile/leak.jac`) |
 | `==` between two lists of different native element types (one of tagged values, as `list(struct.unpack(...))` gives, against a `list[int]`; a `list[int]` against a `list[float]`) compared the two pointers and was always False | [#9931](https://github.com/jaseci-labs/jac/pull/9931) | A flare test's assertion |
+
+## Reported, not yet fixed
+
+- [jaseci-labs/jac#9969](https://github.com/jaseci-labs/jac/issues/9969): the
+  checker takes a local that is first assigned inside a loop in an `impl`
+  body for the archetype's method of the same name (E1001). Found in
+  `App.render_bench`, whose local is named `pvs` rather than `culling` for
+  that reason.
+- [jaseci-labs/jac#9972](https://github.com/jaseci-labs/jac/issues/9972): a
+  for-loop target that rebinds a variable to another type is not reported by
+  the checker, and the native binary then stores through the wrong object.
+  Found when a loop variable named `title` replaced a widget in
+  `Studio.build`.
+- [jaseci-labs/jac#9970](https://github.com/jaseci-labs/jac/issues/9970): a
+  module that only declares C records for other modules to import has its C
+  block dropped from its Python side (nothing in the module names the records
+  there), so `import from that_module { Record }` fails under `jac test`.
+  Nothing in the tree depends on it.
 
 ## Known open defect
 

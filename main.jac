@@ -15,7 +15,7 @@ import os;
 import sys;
 
 import from engine.world.level { Level, spawn_player }
-import from games.levels { open_level }
+import from games.levels { open_level, saved_entities, override_path }
 import from engine.core.preferences { Preferences }
 import from engine.core.menu { game_directory }
 import from engine.core.app { App, HostCvars }
@@ -24,6 +24,7 @@ import from engine.core.clock { Clock }
 import from engine.render.renderer { Renderer }
 import from engine.world.world { World }
 import from games.dev.arena { build_arena }
+import from editor.studio { attach_studio }
 
 
 with entry {
@@ -58,15 +59,31 @@ with entry {
         if game == "passion" {
             map_name = "v2-" + os.getenv("QP_SEED", "1");
         }
-        level = open_level(
-            world,
-            game_directory(game),
-            os.getenv("QP_MAP", map_name),
-            game,
-            # Q1 and Q2 play the fifth skill (Q3's Nightmare!) as Nightmare.
-            skill if game == "q3" else min(3, skill)
-        );
-        player = spawn_player(level);
+        opened = os.getenv("QP_MAP", map_name);
+        # Q1 and Q2 play the fifth skill (Q3's Nightmare!) as Nightmare.
+        played = skill if game == "q3" else min(3, skill);
+        try {
+            level = open_level(world, game_directory(game), opened, game, played);
+            player = spawn_player(level);
+        } except Exception as error {
+            if not saved_entities(game, opened) {
+                raise error;
+            }
+            # Entities saved from the studio that do not load must not take
+            # the map with them: fall back to the map as shipped.
+            print(
+                "quakepassion: the saved entities for "
+                    + opened
+                    + " do not load ("
+                    + str(error)
+                    + "); playing the map as shipped. Fix or delete "
+                    + override_path(game, opened),
+                file=sys.stderr
+            );
+            world = World();
+            level = open_level(world, game_directory(game), opened, game, played, entities="");
+            player = spawn_player(level);
+        }
     } else {
         player = build_arena(world);
     }
@@ -80,8 +97,13 @@ with entry {
         shell=shell,
         host=host
     );
+    # The editing studio (`edit`, F8); QP_EDIT=1 starts in it.
+    attach_studio(app);
     # quake.rc's stuffcmds: `./qp +map e1m2 +god`.
     app.stuffed = command_line_text(sys.argv[1:]);
+    if os.getenv("QP_EDIT", "") != "" {
+        app.stuffed = "edit\n" + app.stuffed;
+    }
     # Quake II's newgame is "map *ntro.cin+base1": the introduction first.
     if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q2" and os.getenv("QP_MAP", "") == "" {
         app.opening = "*ntro.cin+base1";
