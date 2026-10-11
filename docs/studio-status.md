@@ -235,6 +235,20 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **Shapes** (`ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe> [w d
   h] [count] [thickness]`): a cone, a pyramid, a ball or a dome is one brush;
   stairs, spiral stairs, an arch and a pipe are several, held as a group.
+- **More shapes**: `bicone` (two cones base to base), `torus` (a ring of
+  blocks), `xtree` (thin walls crossed at the middle, as a tree is
+  faked), `cap` (the half disc an arch leaves open, filled), `corner` (a
+  rounded corner, in wedges) and `bevel` (one wedge of it), `column` (a
+  shaft between a foot and a head) and `landing` (stairs that go up one
+  side to a landing and come back up the other).
+- **A shape of several brushes keeps its numbers**, as a group with a
+  `_shape` field: `ed_reshape <w d h> [count] [thickness]` builds it again
+  from other numbers where it stands, as one undoable step, and
+  `ed_shape free` leaves it as the plain brushes it is made of.
+- **Caulk**: `ed_caulk [material]` gives the faces the selected brushes
+  cover of each other a material that is not drawn (a step's back against
+  the next step, a ring's blocks against each other); `ed_autocaulk on`
+  builds every shape that way from the start.
 - **Light**: a scene with `light` entities is lit from them when it is
   built: a lightmap on every face of the world, a sample every 16 units,
   shadows cast by the world's brushes, and doors lit where they stand. A
@@ -312,6 +326,14 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   touches are built again, and each stroke undoes. `ed_terrain export
   <file.pgm>` writes the heights as a grey image and `ed_terrain import`
   reads one back. Its faces take materials like any others.
+- **More for terrain**: `ed_sculpt erode` wears down what stands above its
+  lowest neighbour, and `ed_sculpt paint` gives the tops under the brush
+  the material in hand. `ed_terrain lift <x0> <y0> <x1> <y1> <amount>
+  [falloff]` raises (or lowers) every corner inside a rectangle, and
+  those within the falloff of it by less the farther out they are.
+  `ed_terrain pattern <same|alt|other>` splits the cells along the other
+  diagonal, or along each in turn so ridges run either way.
+  `ed_terrain free` leaves the terrain as the plain brushes it is made of.
 - **Clip** (5): a line drawn across any view cuts the selected brushes
   along it, in the plane the line and the view's line of sight make; Shift
   keeps only what is behind the line and Ctrl only what is in front
@@ -630,6 +652,13 @@ editor/impl/                 the workbench's scenes and brushes
   shown; an image at each of two named entities, then at three path
   corners, then made real; a door with two images played as three doors,
   the second opened by firing `door2`).
+  `scripts/studio/shapes_session.cfg` (7 steps: stairs with a landing, built
+  again taller and of twelve steps where they stand, undone and redone,
+  caulked, then freed; a bicone, a torus, crossed walls, a cap, a corner,
+  a bevel and a column; and stairs that come caulked with the setting on).
+  `scripts/studio/land_session.cfg` (7 steps: a terrain lifted whole by a
+  rectangle that takes it in, split along alternate diagonals, given a
+  peak and worn down, its tops painted, and freed into plain brushes).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

@@ -439,9 +439,12 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     }
     # Stairs and an arch are groups of eight brushes; a cone is one brush of thirteen sides.
     stairs = selected(steps["stairs"]);
-    assert len(stairs) == 1 and "_group_name=stairs owns=8" in stairs[0] , str(stairs);
+    assert len(stairs) == 1 and "_group_name=stairs " in stairs[0] and stairs[0].endswith(" owns=8") , str(stairs);
+    # A shape of several brushes keeps the numbers it was built from.
+    assert "_shape=stairs 64 128 64 8 16" in stairs[0] , stairs[0];
     arch = selected(steps["arch"]);
-    assert len(arch) == 1 and "_group_name=arch owns=8" in arch[0] and "brushes=17" in tally(steps["arch"]);
+    assert len(arch) == 1 and "_group_name=arch " in arch[0] and arch[0].endswith(" owns=8") , str(arch);
+    assert "brushes=17" in tally(steps["arch"]);
     cone = brushes(steps["cone"]);
     assert len(cone) == 1 and "sides=13" in cone[0] and brush_box(cone[0])[1][2] == 96 , str(cone);
     # No light, no lightmap; a light lights the level; flat and lit again on request.
@@ -1064,6 +1067,119 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(
         f"DRAW PASS: {len(steps) - 1} steps, a box drawn and cut along drawn lines, an entity moved by its arrow, "
             + "the settings kept"
+    );
+}
+
+"""The twenty-fifth session: a terrain lifted in a rectangle, split another
+way, worn down, painted, and left as plain brushes."""
+def land_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "land_worn.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-land-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/land_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "land.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The land session failed: {output / 'land.log'}";
+        text = (Path(home) / "scenes/land.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "lifted", "split", "peak", "worn", "painted", "freed"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'land.log'}";
+    }
+    assert terrain(steps["made"]) == [0, 0] and "owns=32" in selected(steps["made"])[0];
+    # Lifted whole: each of its twenty-five corners is thirty-two up.
+    assert terrain(steps["lifted"]) == [32, 25] , str(terrain(steps["lifted"]));
+    # Split along alternate diagonals: as many brushes, as high, and the group says how.
+    split = selected(steps["split"])[0];
+    assert "_pattern=alt" in split and "owns=32" in split and terrain(steps["split"]) == [32, 25] , split;
+    # A peak, then worn: the tallest corner comes down, and nothing goes up.
+    peak = terrain(steps["peak"])[0];
+    worn = terrain(steps["worn"])[0];
+    assert peak > 100 and 32 <= worn < peak , f"{peak} {worn}";
+    # Painted: every prism's top has the material in hand.
+    assert text.count(" moss ") == 32 , str(text.count(" moss "));
+    # Freed: a group of thirty-two plain brushes, with no grid to sculpt.
+    freed = selected(steps["freed"])[0];
+    assert "_terrain" not in freed and "_heights" not in freed and "owns=32" in freed , freed;
+    assert terrain(steps["freed"]) == [-1, -1] and steps["freed"][0] == steps["painted"][0].replace("undo=6", "undo=7");
+    source = repo / "land_worn.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "land_worn.png");
+    source.unlink();
+    print(
+        f"LAND PASS: {len(steps) - 1} steps, a terrain lifted in a rectangle, split another way, worn down, "
+            + "painted and left as plain brushes"
+    );
+}
+
+"""The twenty-fourth session: stairs with a landing built again from other
+numbers, caulked and freed; one of each new kind of shape; and shapes made
+with their inner faces caulked."""
+def shapes_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["landing", "kinds"];
+    for shot in shots {
+        (repo / f"shapes_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-shapes-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/shapes_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "shapes.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The shapes session failed: {output / 'shapes.log'}";
+        text = (Path(home) / "scenes/shapes.map").read_text();
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["landing", "rebuilt", "undone", "caulked", "freed", "kinds", "auto"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'shapes.log'}";
+    }
+    # Four steps, a landing and four more, as a group that keeps its numbers.
+    landing = selected(steps["landing"]);
+    assert len(landing) == 1 and "_shape=landing 128 192 128 8 16" in landing[0] and "owns=9" in landing[0] , str(landing);
+    # Built again from other numbers: twelve steps and the landing; undone, the nine again.
+    rebuilt = selected(steps["rebuilt"])[0];
+    assert "_shape=landing 128 192 192 12 16" in rebuilt and "owns=13" in rebuilt , rebuilt;
+    assert "owns=9" in selected(steps["undone"])[0] and "_shape=landing 128 192 128 8 16" in selected(steps["undone"])[0];
+    # Caulked: some of its brushes now begin with a face that is not drawn, and the map says so.
+    assert len(brushes(steps["caulked"])) == 13 , str(len(brushes(steps["caulked"])));
+    assert text.count(" caulk ") >= 10 , str(text.count(" caulk "));
+    # Freed, it keeps no numbers, and cannot be built again.
+    freed = selected(steps["freed"])[0];
+    assert "_shape" not in freed and "owns=13" in freed , freed;
+    # Seven more shapes: the floor, the landing's thirteen, and theirs.
+    count = int(tally(steps["kinds"]).split()[0].split("=")[1]);
+    assert count == 1 + 13 + 1 + 12 + 3 + 8 + 6 + 1 + 3 , str(count);
+    # With the setting on, new stairs come caulked where a step backs onto the next.
+    auto = brushes(steps["auto"]);
+    assert len(auto) == 4 and "ed_autocaulk on" in kept , str(auto);
+    assert text.count(" caulk ") >= 13 , str(text.count(" caulk "));
+    for shot in shots {
+        source = repo / f"shapes_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"shapes_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"SHAPES PASS: {len(steps) - 1} steps, stairs with a landing built again, caulked and freed, seven more "
+            + "kinds of shape, and shapes that come caulked"
     );
 }
 
@@ -1884,6 +2000,8 @@ def main() {
         "entities": entities_session,
         "docs": docs_session,
         "dups": dups_session,
+        "shapes": shapes_session,
+        "land": land_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2010,6 +2128,8 @@ def main() {
     entities_session(repo, binary, env, output);
     docs_session(repo, binary, env, output);
     dups_session(repo, binary, env, output);
+    shapes_session(repo, binary, env, output);
+    land_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

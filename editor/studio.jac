@@ -59,7 +59,7 @@ import from .assets.explorer { AssetIndex, AssetLook }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .formats.archive { write_pak, write_zip, file_kind }
 import from .classes.registry { ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set }
-import from .geometry.shapes { shape_brushes, SHAPE_KINDS }
+import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
@@ -160,12 +160,12 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_box_draw", "ed_box_draw <view> <x0> <y0> <x1> <y1>", "add a box over a rectangle drawn in an axis view"),
     (
         "ed_terrain",
-        "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest]",
-        "add a terrain where the camera looks, or write or read its heights as a grey image"
+        "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest] | lift <x0> <y0> <x1> <y1> <amount> [falloff] | pattern <same|alt|other> | free",
+        "add a terrain where the camera looks; write or read its heights as a grey image; lift a rectangle of it; split its cells another way; or leave it as plain brushes"
     ),
     (
         "ed_sculpt",
-        "ed_sculpt <raise|lower|smooth|flatten|noise> [radius] [amount] [at <x> <y>]",
+        "ed_sculpt <raise|lower|smooth|flatten|noise|erode|paint> [radius] [amount] [at <x> <y>]",
         "a stroke of the sculpting brush on a terrain, where the camera looks or at a point"
     ),
     ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
@@ -179,6 +179,9 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
+    ("ed_caulk", "ed_caulk [material]", "give the faces the selected brushes cover of each other a material that is not drawn"),
+    ("ed_autocaulk", "ed_autocaulk [on|off]", "whether shapes are built with their inner faces caulked"),
     ("ed_docs", "ed_docs", "list the open documents"),
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
@@ -617,6 +620,8 @@ obj Studio(Workbench) {
         # Playing only what is selected; and how coarse the light is baked
         # (world units to a lightmap texel).
         play_only: bool = False,
+        # Whether a shape is built with the faces inside it caulked.
+        autocaulk: bool = False,
         # Whether duplicators' images are in what is built.
         images_shown: bool = True,
         # Where each open document's 3D camera was left, how maps are

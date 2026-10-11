@@ -336,6 +336,7 @@ impl Studio.keep_settings {
         "ed_display " + ("wire" if self.wire_main else "textured") + " 3d",
         "ed_brush " + str(int(self.brush_radius)) + " " + str(int(self.brush_amount)),
         "ed_layout " + ("4b" if self.layout == 5 else str(self.layout)),
+        "ed_autocaulk " + ("on" if self.autocaulk else "off"),
         "ed_mapopts comments " + ("on" if self.map_comments else "off"),
         "ed_mapopts whole " + ("on" if self.map_whole else "off"),
         "ed_ruler " + ("on" if self.ruler else "off"),

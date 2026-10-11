@@ -93,6 +93,44 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_terrain" {
         how = args[1] if len(args) > 1 else "";
+        if how == "lift" or how == "pattern" or how == "free" {
+            ground = self.terrain_now(scene);
+            if ground is None or scene.terrain_grid(ground) is None {
+                self.say("Select the terrain to change");
+                return True;
+            }
+            if how == "free" {
+                # Left as the plain brushes it is made of.
+                scene.select(ground);
+                scene.set_fields({"_terrain": None, "_heights": None, "_pattern": None}, "Free terrain");
+                self.say("That terrain is plain brushes now");
+                return True;
+            }
+            if how == "pattern" {
+                wanted = args[2] if len(args) > 2 else "";
+                if wanted not in ["same", "alt", "other"] {
+                    self.say("ed_terrain pattern <same|alt|other>: which way each cell is split");
+                } elif not scene.set_pattern(ground, "" if wanted == "same" else wanted) {
+                    self.say("The terrain is split that way already");
+                }
+                return True;
+            }
+            lift_box = terrain_numbers(args[2:]);
+            if len(lift_box) < 5 {
+                self.say("ed_terrain lift <x0> <y0> <x1> <y1> <amount> [falloff]");
+                return True;
+            }
+            if not scene.lift_terrain(
+                ground,
+                Vec3(x=min(lift_box[0], lift_box[2]), y=min(lift_box[1], lift_box[3])),
+                Vec3(x=max(lift_box[0], lift_box[2]), y=max(lift_box[1], lift_box[3])),
+                lift_box[4],
+                lift_box[5] if len(lift_box) > 5 else 0.0
+            ) {
+                self.say("No corner of the terrain is in that rectangle");
+            }
+            return True;
+        }
         if how == "export" or how == "import" {
             if len(args) < 3 {
                 self.say("ed_terrain " + how + " <file.pgm>");
@@ -178,8 +216,8 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_sculpt" {
         how = args[1] if len(args) > 1 else "";
-        if how not in ["raise", "lower", "smooth", "flatten", "noise"] {
-            self.say("ed_sculpt <raise|lower|smooth|flatten|noise> [radius] [amount] [at <x> <y>]");
+        if how not in ["raise", "lower", "smooth", "flatten", "noise", "erode", "paint"] {
+            self.say("ed_sculpt <raise|lower|smooth|flatten|noise|erode|paint> [radius] [amount] [at <x> <y>]");
             return True;
         }
         # Words up to "at" are the brush; after it, the point; after "on", the terrain.
@@ -220,6 +258,12 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
             trace = app.level.collision.trace_point(eye, eye.add(ahead.scale(4096.0)));
             x = eye.x + ahead.x * 4096.0 * trace.fraction;
             y = eye.y + ahead.y * 4096.0 * trace.fraction;
+        }
+        if how == "paint" {
+            # The material new brushes get, on the tops within the brush.
+            painted = scene.paint_terrain(land, x, y, radius, self.material);
+            self.say("Painted " + str(painted) + " cells' halves" if painted else "Nothing there to paint (or it has that material)");
+            return True;
         }
         strength = amount;
         kind = how;

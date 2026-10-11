@@ -192,3 +192,153 @@ impl Scene.step_face(pace: int = 1) -> bool {
     self.select_face(solid, index);
     return True;
 }
+
+impl Scene.rebuild_item(item: Item, brushes: list[list[Side]], fields: dict[str, str | None], label: str) -> bool {
+    sound = [sides for sides in brushes if sides_enclose(sides)];
+    if len(sound) == 0 {
+        return False;
+    }
+    step = Step(label=label);
+    for solid in self.solids_of(item) {
+        gone = SolidHold(solid=solid, held=False);
+        gone.redo();
+        step.changes.append(gone);
+    }
+    for sides in sound {
+        made = self.add_solid(item, sides);
+        step.changes.append(SolidHold(solid=made, held=True));
+    }
+    for (key, value) in fields.items() {
+        before = item.fields.get(key);
+        if before == value {
+            continue;
+        }
+        kept = FieldChange(item=item, key=key, before=before, after=value);
+        kept.redo();
+        step.changes.append(kept);
+    }
+    return self.commit(step);
+}
+
+impl Scene.caulk_selection(material: str = "caulk") -> int {
+    chosen = self.selected_solids();
+    for item in self.selection() {
+        for solid in self.solids_of(item) {
+            if solid not in chosen {
+                chosen.append(solid);
+            }
+        }
+    }
+    if len(chosen) < 2 {
+        return 0;
+    }
+    covered = caulked([solid.sides for solid in chosen], material);
+    step = Step(label="Caulk");
+    count = 0;
+    for index in range(len(chosen)) {
+        changed = 0;
+        for which in range(len(chosen[index].sides)) {
+            if covered[index][which].material != chosen[index].sides[which].material {
+                changed += 1;
+            }
+        }
+        if changed == 0 {
+            continue;
+        }
+        change = SidesChange(solid=chosen[index], before=chosen[index].sides, after=covered[index]);
+        change.redo();
+        step.changes.append(change);
+        count += changed;
+    }
+    if count > 0 {
+        self.commit(step);
+    }
+    return count;
+}
+
+impl Scene.terrain_origin(item: Item) -> Vec3 {
+    far = 1000000.0;
+    low = Vec3(x=far, y=far, z=far);
+    for solid in self.solids_of(item) {
+        box = solid.bounds();
+        if box is not None {
+            low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
+        }
+    }
+    return low;
+}
+
+impl Scene.lift_terrain(item: Item, low: Vec3, high: Vec3, amount: float, falloff: float = 0.0) -> bool {
+    grid = self.terrain_grid(item);
+    if grid is None or amount == 0.0 {
+        return False;
+    }
+    cols = int(grid[0]);
+    rows = int(grid[1]);
+    old = heights_from(item.fields.get("_heights", ""), cols, rows);
+    if old is None {
+        return False;
+    }
+    return self.set_heights(
+        item,
+        lifted(old, self.terrain_origin(item), cols, rows, grid[2], low, high, amount, falloff),
+        "Lift terrain" if amount > 0.0 else "Lower terrain"
+    );
+}
+
+impl Scene.set_pattern(item: Item, pattern: str) -> bool {
+    grid = self.terrain_grid(item);
+    if grid is None or pattern not in ["", "alt", "other"] or item.fields.get("_pattern", "") == pattern {
+        return False;
+    }
+    cols = int(grid[0]);
+    rows = int(grid[1]);
+    heights = heights_from(item.fields.get("_heights", ""), cols, rows);
+    owned = self.solids_of(item);
+    if heights is None or len(owned) != cols * rows * 2 {
+        return False;
+    }
+    brushes = terrain_brushes(
+        self.terrain_origin(item), cols, rows, grid[2], heights, grid[3], "", [solid.sides for solid in owned], pattern
+    );
+    return self.rebuild_item(item, brushes, {"_pattern": pattern if pattern else None}, "Terrain pattern");
+}
+
+impl Scene.paint_terrain(item: Item, x: float, y: float, radius: float, material: str) -> int {
+    if self.terrain_grid(item) is None or not material or radius <= 0.0 {
+        return 0;
+    }
+    step = Step(label="Paint terrain");
+    count = 0;
+    for solid in self.solids_of(item) {
+        box = solid.bounds();
+        if box is None {
+            continue;
+        }
+        middle = box[0].add(box[1]).scale(0.5);
+        if math.sqrt((middle.x - x) ** 2 + (middle.y - y) ** 2) > radius {
+            continue;
+        }
+        after: list[Side] = [];
+        touched = False;
+        for side in solid.sides {
+            # The prism's top: the one side that faces up.
+            if side.plane.normal.z > 0.1 and side.material != material {
+                after.append(side_like(side, material));
+                touched = True;
+            } else {
+                after.append(side);
+            }
+        }
+        if touched {
+            change = SidesChange(solid=solid, before=solid.sides, after=after);
+            change.redo();
+            step.changes.append(change);
+            count += 1;
+        }
+    }
+    if count > 0 {
+        self.commit(step);
+    }
+    return count;
+}

@@ -934,7 +934,9 @@ impl Scene.set_heights(item: Item, heights: list[float], label: str = "Sculpt") 
             low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
         }
     }
-    fresh = terrain_brushes(low, cols, rows, grid[2], heights, grid[3], "", [solid.sides for solid in owned]);
+    fresh = terrain_brushes(
+        low, cols, rows, grid[2], heights, grid[3], "", [solid.sides for solid in owned], item.fields.get("_pattern", "")
+    );
     step = Step(label=label);
     for row in range(rows) {
         for col in range(cols) {

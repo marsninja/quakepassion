@@ -299,8 +299,18 @@ impl Studio.class_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_shape" {
         kind = args[1] if len(args) > 1 else "";
+        if kind == "free" {
+            # A shape left as the plain brushes it is made of.
+            shaped = [item for item in scene.selection() if "_shape" in item.fields];
+            if len(shaped) == 0 or not scene.set_fields({"_shape": None}, "Free shape") {
+                self.say("Select a shape that still keeps its numbers");
+            } else {
+                self.say("Those are plain brushes now");
+            }
+            return True;
+        }
         if kind not in SHAPE_KINDS {
-            self.say("ed_shape <" + "|".join(SHAPE_KINDS) + "> [w d h] [count] [thickness]");
+            self.say("ed_shape <" + "|".join(SHAPE_KINDS) + "|free> [w d h] [count] [thickness]");
             return True;
         }
         if not self.is_built_scene() {
@@ -319,10 +329,88 @@ impl Studio.class_command(scene: Scene, args: list[str]) -> bool {
             self.say("That " + kind + " encloses nothing");
             return True;
         }
+        if self.autocaulk {
+            made = caulked(made);
+        }
         found = [MapItem(fields={"classname": "worldspawn"}, brushes=made)];
-        if self.place_fragment(scene, found, "Add " + kind, kind if len(made) > 1 else "") {
+        if len(made) > 1 {
+            # A shape of several brushes is a group that keeps its numbers,
+            # to be built again from others.
+            found = [
+                MapItem(
+                    fields={
+                        "classname": "func_group",
+                        "_group_name": kind,
+                        "_shape": kind + " " + str(int(size.x)) + " " + str(int(size.y)) + " " + str(int(size.z)) + " "
+                            + str(count) + " " + str(int(thickness))
+                    },
+                    brushes=made
+                )
+            ];
+        }
+        if self.place_fragment(scene, found, "Add " + kind, "") {
             self.say("Added a " + kind + " of " + str(len(made)) + (" brush" if len(made) == 1 else " brushes"));
         }
+        return True;
+    }
+    if name == "ed_reshape" {
+        shaped = [item for item in scene.selection() if "_shape" in item.fields];
+        if len(shaped) != 1 {
+            self.say("Select one shape that still keeps its numbers (ed_shape makes them)");
+            return True;
+        }
+        kept_words = shaped[0].fields["_shape"].split();
+        old_numbers = shape_numbers(kept_words[1:]);
+        new_numbers = shape_numbers(args[1:]);
+        if len(kept_words) < 6 or kept_words[0] not in SHAPE_KINDS or len(old_numbers) < 5 or len(new_numbers) not in [3, 4, 5] {
+            self.say("ed_reshape <w d h> [count] [thickness]");
+            return True;
+        }
+        new_size = Vec3(x=max(8.0, new_numbers[0]), y=max(8.0, new_numbers[1]), z=max(8.0, new_numbers[2]));
+        new_count = int(new_numbers[3]) if len(new_numbers) > 3 else int(old_numbers[3]);
+        new_thickness = new_numbers[4] if len(new_numbers) > 4 else old_numbers[4];
+        # Where it stands: the low_corner corner of the brushes it has now.
+        stood = scene.solids_of(shaped[0]);
+        low_corner = Vec3(x=1000000.0, y=1000000.0, z=1000000.0);
+        for solid in stood {
+            stood_box = solid.bounds();
+            if stood_box is not None {
+                low_corner = Vec3(x=min(low_corner.x, stood_box[0].x), y=min(low_corner.y, stood_box[0].y), z=min(low_corner.z, stood_box[0].z));
+            }
+        }
+        if len(stood) == 0 {
+            self.say("That shape has no brushes left to stand where they stood");
+            return True;
+        }
+        rebuilt = shape_brushes(kept_words[0], low_corner, low_corner.add(new_size), new_count, new_thickness, stood[0].sides[0].material);
+        if self.autocaulk {
+            rebuilt = caulked(rebuilt);
+        }
+        shape_told = kept_words[0] + " " + str(int(new_size.x)) + " " + str(int(new_size.y)) + " " + str(int(new_size.z)) + " " + str(new_count)
+            + " " + str(int(new_thickness));
+        if len(rebuilt) == 0 or not scene.rebuild_item(shaped[0], rebuilt, {"_shape": shape_told}, "Reshape") {
+            self.say("That " + kept_words[0] + " encloses nothing");
+        } else {
+            self.say("Built the " + kept_words[0] + " rebuilt: " + str(len(rebuilt)) + " brushes");
+        }
+        return True;
+    }
+    if name == "ed_caulk" {
+        count = scene.caulk_selection(args[1] if len(args) > 1 else "caulk");
+        self.say(
+            "Caulked " + str(count) + " faces the selected brushes cover of each other"
+            if count
+            else "No selected brush covers a face of another (select two or more)"
+        );
+        return True;
+    }
+    if name == "ed_autocaulk" {
+        self.autocaulk = not self.autocaulk;
+        if len(args) > 1 and args[1] in ["on", "off", "1", "0"] {
+            self.autocaulk = args[1] in ["on", "1"];
+        }
+        self.keep_settings();
+        self.say("Shapes are built with their inner faces caulked" if self.autocaulk else "Shapes are built in one material");
         return True;
     }
     return False;

@@ -20,7 +20,7 @@ import from ..geometry.brush {
 import math;
 import from ..formats.map { MapItem, MapFile }
 import from ..classes.registry { flag_put }
-import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted }
+import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted, lifted }
 import from ..geometry.patch {
     patch_brushes,
     points_text,
@@ -31,6 +31,7 @@ import from ..geometry.patch {
 }
 import from ..geometry.csg { hull_sides }
 import from ..geometry.faces { sides_dropped, side_flipped, cone_on, prism_on, walls_on, outline_width }
+import from ..geometry.shapes { caulked }
 import from ..geometry.csg {
     carve_sides,
     common_sides,
@@ -1333,6 +1334,23 @@ node Scene {
     `size` out and `thickness` in). The new brushes are left selected.
     Answers how many were made."""
     def build_on_faces(shape: str, size: float, thickness: float = 16.0) -> int;
+    """Lift (or lower) a terrain inside a rectangle of the world, with a
+    falloff outside it."""
+    def lift_terrain(item: Item, low: Vec3, high: Vec3, amount: float, falloff: float = 0.0) -> bool;
+    """Split a terrain's cells along the same diagonal (""), the other
+    ("other") or each in turn ("alt")."""
+    def set_pattern(item: Item, pattern: str) -> bool;
+    """Give the top of every prism of a terrain within `radius` of a point
+    a material. Answers how many prisms changed."""
+    def paint_terrain(item: Item, x: float, y: float, radius: float, material: str) -> int;
+    """Where a terrain stands: the low corner of its brushes."""
+    def terrain_origin(item: Item) -> Vec3;
+    """Give an entity other brushes in place of its own, and set fields on
+    it, as one step: a shape built again from other numbers."""
+    def rebuild_item(item: Item, brushes: list[list[Side]], fields: dict[str, str | None], label: str) -> bool;
+    """Give the faces of the selected brushes that another selected brush
+    covers a material that is not drawn. Answers how many faces changed."""
+    def caulk_selection(material: str = "caulk") -> int;
     """Go from the one picked face to the brush's next (or, with -1, the one
     before). False when it is not one face that is picked."""
     def step_face(pace: int = 1) -> bool;
