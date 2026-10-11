@@ -163,9 +163,19 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_replace", "ed_replace <old> <new> [all]", "give sides of one material another, in the selection or everywhere"),
     ("ed_snap", "ed_snap [size]", "put the selection's corners and origins on the grid"),
     ("ed_align", "ed_align <x|y|z> <low|high|middle>", "line the selected brushes up along an axis"),
-    ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
+    (
+        "ed_faces",
+        "ed_faces <all|invert|extend|next|prev>",
+        "spread the face pick over the whole brush, to its other faces or across the plane; or step to the next face"
+    ),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_docs", "ed_docs", "list the open documents"),
+    ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
+    ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
+    ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
+    ("ed_log", "ed_log [lines]", "show the console's last lines"),
+    ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
     ("ed_refield", "ed_refield <key> <old> <new> [all]", "replace part of a field's value across the selection, or every entity"),
@@ -598,6 +608,13 @@ obj Studio(Workbench) {
         # Playing only what is selected; and how coarse the light is baked
         # (world units to a lightmap texel).
         play_only: bool = False,
+        # Where each open document's 3D camera was left, how maps are
+        # written, and where a right press began.
+        doc_views: dict[str, list[float]] = {},
+        map_comments: bool = True,
+        map_whole: bool = False,
+        right_x: int = 0,
+        right_y: int = 0,
         # The skill or mode the level is shown as it would spawn for, and
         # what that hides.
         spawn_mode: str = "all",
@@ -832,7 +849,7 @@ obj Studio(Workbench) {
         stage = Stage(canvas=self.canvas);
         top = Box();
         menu = MenuBar(
-            titles=["File", "Edit", "View", "Brush", "Play"],
+            titles=["File", "Edit", "View", "Brush", "Play", "Window"],
             menus=[
                 [
                     MenuItem(text="Save", command="ed_save", keys="Ctrl+S"),
@@ -956,6 +973,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Merge", command="ed_merge"),
                     MenuItem(rule=True),
                     MenuItem(text="Snap to the grid", command="ed_snap"),
+                    MenuItem(text="The brush's next face", command="ed_faces next"),
+                    MenuItem(text="The brush's face before", command="ed_faces prev"),
                     MenuItem(text="Delete the picked faces", command="ed_face_delete"),
                     MenuItem(text="Turn the picked face round", command="ed_face_flip"),
                     MenuItem(text="Cone on the picked faces", command="ed_cone"),
@@ -987,6 +1006,15 @@ obj Studio(Workbench) {
                     MenuItem(text="Light finely", command="ed_build full"),
                     MenuItem(text="Light coarsely (quicker)", command="ed_build quick"),
                     MenuItem(text="No light (quickest)", command="ed_build flat")
+                ],
+                [
+                    MenuItem(text="Next document", command="ed_doc next"),
+                    MenuItem(text="The document before", command="ed_doc prev"),
+                    MenuItem(text="Save all", command="ed_save all"),
+                    MenuItem(text="Close this document", command="ed_close"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Recent files", command="ed_recent"),
+                    MenuItem(text="The console's last lines", command="ed_log")
                 ]
             ]
         );
@@ -1517,8 +1545,22 @@ obj Studio(Workbench) {
             self.watch(index);
             if event.kind == "press" and event.button == 1 {
                 self.looking = True;
+                self.right_x = event.x;
+                self.right_y = event.y;
             } elif event.kind == "press" and event.button == 2 {
                 self.panning = True;
+            } elif event.kind == "click" and event.button == 1 {
+                # A right click that did not travel, on something selected:
+                # the selection's menu.
+                if abs(event.x - self.right_x) + abs(event.y - self.right_y) <= 3 {
+                    under_click = self.aim(event.x, event.y);
+                    clicked_solid = under_click.solid;
+                    clicked_item = under_click.item;
+                    if (clicked_solid is not None and scene.is_solid_selected(clicked_solid))
+                        or (clicked_item is not None and scene.is_selected(clicked_item)) {
+                        self.selection_menu(scene, event.x, event.y);
+                    }
+                }
             } elif event.kind == "press" and event.button == 0 {
                 # A press on a side handle resizes; one on something selected
                 # starts moving the selection.
@@ -2493,6 +2535,26 @@ obj Studio(Workbench) {
     def transform_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
+    # Open documents, recent files, the selection's menu, the log (impl/studio.docs.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def doc_command(scene: Scene, args: list[str]) -> bool;
+    """The open documents' keys, in a settled order."""
+    def doc_keys -> list[str];
+    """Go to another open document, leaving this one's camera to come back to."""
+    def show_doc(key: str) -> bool;
+    """Save every open document that has been edited. Answers how many."""
+    def save_all -> int;
+    def recent_path -> str;
+    """The files opened and saved lately, newest first."""
+    def recent_files -> list[str];
+    def note_recent(path: str);
+    """Open the selection's menu at a point of the window."""
+    def selection_menu(scene: Scene, x: int, y: int);
+    """The map text a scene is written as, by the studio's own options."""
+    def map_text(scene: Scene) -> str;
+
+    # ------------------------------------------------------------------
     # Entities by skill and mode, values replaced, the logic audit (impl/studio.entities.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -2683,7 +2745,12 @@ obj Studio(Workbench) {
             label = scene.redo();
             self.say("Redid " + label if label else "Nothing to redo");
         } elif name == "ed_save" {
-            self.save();
+            if len(args) > 1 and args[1] == "all" {
+                count = self.save_all();
+                self.say("Saved " + str(count) + " documents" if count else "Nothing open has been edited");
+            } else {
+                self.save();
+            }
         } elif name == "ed_revert" {
             self.revert();
         } elif name == "ed_cam" {
@@ -2718,7 +2785,8 @@ obj Studio(Workbench) {
             and not self.patch_command(scene, args) and not self.transform_command(scene, args)
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)
-            and not self.build_mode_command(scene, args) and not self.entity_command(scene, args) {
+            and not self.build_mode_command(scene, args) and not self.entity_command(scene, args)
+            and not self.doc_command(scene, args) {
             self.utility_command(scene, args);
         }
     }

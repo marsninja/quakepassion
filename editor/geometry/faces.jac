@@ -60,6 +60,27 @@ def side_flipped(sides: list[Side], index: int) -> list[Side] {
     return pruned_sides(turned);
 }
 
+"""How wide a face is at its narrowest: the least, over its edges, of how
+far the face reaches from that edge's line."""
+def outline_width(outline: list[Vec3]) -> float {
+    narrowest = 1000000.0;
+    for index in range(len(outline)) {
+        start = outline[index];
+        run = outline[(index + 1) % len(outline)].sub(start);
+        if run.length() < 0.0001 {
+            continue;
+        }
+        along = run.normalized();
+        reach = 0.0;
+        for point in outline {
+            away = point.sub(start);
+            reach = max(reach, away.sub(along.scale(away.dot(along))).length());
+        }
+        narrowest = min(narrowest, reach);
+    }
+    return narrowest;
+}
+
 def:priv outline_middle(outline: list[Vec3]) -> Vec3 {
     middle = Vec3();
     for point in outline {

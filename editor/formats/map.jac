@@ -410,15 +410,21 @@ def side_points(side: Side, outline: list[Vec3]) -> list[Vec3] {
 }
 
 """Write a map. `form` is "valve" (texture axes on every face) or "classic";
-`quake2` adds each face's contents, flags and value."""
-def write_map(items: list[MapItem], form: str = "valve", quake2: bool = False) -> str {
+`quake2` adds each face's contents, flags and value. Without `comments` the
+lines that number entities and brushes are left out, and with `whole` every
+plane point is written as whole numbers, for tools that read nothing else."""
+def write_map(
+    items: list[MapItem], form: str = "valve", quake2: bool = False, comments: bool = True, whole: bool = False
+) -> str {
     lines: list[str] = [];
     if form == "valve" {
         # What other editors look for to pick the form.
         lines.append("// Format: Valve");
     }
     for (index, item) in enumerate(items) {
-        lines.append("// entity " + str(index));
+        if comments {
+            lines.append("// entity " + str(index));
+        }
         lines.append("{");
         for (key, value) in item.fields.items() {
             if form == "valve" and index == 0 and key == "mapversion" {
@@ -431,7 +437,9 @@ def write_map(items: list[MapItem], form: str = "valve", quake2: bool = False) -
         }
         for (number, sides) in enumerate(item.brushes) {
             outlines = brush_windings(sides);
-            lines.append("// brush " + str(number));
+            if comments {
+                lines.append("// brush " + str(number));
+            }
             lines.append("{");
             for (which, side) in enumerate(sides) {
                 points = side_points(side, outlines[which]);
@@ -439,6 +447,12 @@ def write_map(items: list[MapItem], form: str = "valve", quake2: bool = False) -
                     continue;
                 }
                 mapping = side.mapping;
+                if whole {
+                    points = [
+                        Vec3(x=float(round(point.x)), y=float(round(point.y)), z=float(round(point.z)))
+                        for point in points
+                    ];
+                }
                 words = map_point(points[0]) + " " + map_point(points[1]) + " " + map_point(points[2]) + " "
                     + (side.material if side.material else "__TB_empty");
                 if form == "valve" {

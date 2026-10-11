@@ -1067,6 +1067,93 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The twenty-second session: several documents open, switched between,
+saved together, closed and reopened from the recent files; the selection's
+menu on a right click; a brush's faces stepped through; a map written
+without comments and in whole numbers."""
+def docs_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["log", "menu"];
+    for shot in shots {
+        (repo / f"docs_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-docs-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/docs_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "docs.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The docs session failed: {output / 'docs.log'}";
+        first = Path(home) / "scenes/one.map";
+        second = Path(home) / "scenes/two.map";
+        assert first.exists() and second.exists() , "Save all left a scene unsaved";
+        text = first.read_text();
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+        recent = (Path(home) / "overrides/studio_recent.txt").read_text().splitlines();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "two", "one", "next", "closed", "reopened", "drawn", "duplicated", "face", "stepped", "stepped_back"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'docs.log'}";
+    }
+    # Three documents: the level the game began in, and the two scenes, both edited.
+    listed = [line for line in ran.stdout.splitlines() if line.startswith("studio: doc ")];
+    assert "studio: doc passion/studio:one dirty=1 current=0" in listed , str(listed[:6]);
+    assert "studio: doc passion/studio:two dirty=1 current=1" in listed and "studio: doc q1/e1m1 dirty=0 current=0" in listed;
+    # Back in the first, the camera is where it was left there; next goes on to the second.
+    assert steps["one"][0].startswith("passion/studio:one ") and camera_at(steps["one"]) == [100, 100, 300] , str(steps["one"][:2]);
+    assert steps["next"][0].startswith("passion/studio:two ") , steps["next"][0];
+    # Saved together, then the second closed: it is no longer listed, and another is shown.
+    after = listed[3:];
+    assert "studio: doc passion/studio:one dirty=0 current=1" in after or "studio: doc passion/studio:one dirty=0 current=0" in after , str(after);
+    assert not [line for line in after if "studio:two" in line] , str(after);
+    assert not steps["closed"][0].startswith("passion/studio:two ") , steps["closed"][0];
+    # The recent files, newest first; the first of them opened again.
+    said = [line[len("studio: recent "):] for line in ran.stdout.splitlines() if line.startswith("studio: recent ")];
+    assert len(said) == 2 and said[0].endswith("two.map") and said[1].endswith("one.map") , str(said);
+    assert steps["reopened"][0].startswith("passion/studio:two ") and "dirty=0" in steps["reopened"][0];
+    assert "studio: log lines=5" in ran.stdout;
+    # A right click on the selected box opens its menu; its second line duplicates the box.
+    drawn = brushes(steps["drawn"]);
+    copies = brushes(steps["duplicated"]);
+    assert len(drawn) == 1 and len(copies) == 1 and copies != drawn , f"{drawn} {copies}";
+    assert int(tally(steps["duplicated"]).split()[0].split("=")[1]) == int(tally(steps["drawn"]).split()[0].split("=")[1]) + 1;
+    # One face picked; the next is another face of the same brush; the one before is the first again.
+    face = faces(steps["face"]);
+    stepped = faces(steps["stepped"]);
+    assert len(face) == 1 and len(stepped) == 1 and face != stepped , f"{face} {stepped}";
+    assert face[0].split("/")[0] == stepped[0].split("/")[0] and faces(steps["stepped_back"]) == face;
+    # The map as asked: no numbered comments, and every plane point whole.
+    assert "// brush" not in text and "// entity" not in text and '"classname" "worldspawn"' in text;
+    for line in text.splitlines() {
+        if line.startswith("( ") {
+            for word in line.split(" [ ")[0].replace("(", " ").replace(")", " ").split()[:9] {
+                assert "." not in word , line;
+            }
+        }
+    }
+    assert "ed_mapopts comments off" in kept and "ed_mapopts whole on" in kept , kept;
+    assert len(recent) >= 2 and recent[0].endswith("one.map") , str(recent);
+    for shot in shots {
+        source = repo / f"docs_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"docs_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"DOCS PASS: {len(steps) - 1} steps, three documents open, saved together, one closed and reopened from "
+            + "the recent files, the selection's menu, faces stepped, a map written bare and whole"
+    );
+}
+
 """How many things are hidden at a step."""
 def hidden(lines: list[str]) -> int {
     found = [line for line in lines if line.startswith("mode=")];
@@ -1728,6 +1815,7 @@ def main() {
         "groups": groups_session,
         "play": play_session,
         "entities": entities_session,
+        "docs": docs_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -1852,6 +1940,7 @@ def main() {
     groups_session(repo, binary, env, output);
     play_session(repo, binary, env, output);
     entities_session(repo, binary, env, output);
+    docs_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

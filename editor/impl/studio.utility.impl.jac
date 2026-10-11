@@ -42,6 +42,12 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
     if name == "ed_faces" {
         how = args[1] if len(args) > 1 else "";
         count = -1;
+        if how == "next" or how == "prev" {
+            if not scene.step_face(1 if how == "next" else -1) {
+                self.say("Pick one face to step from (2)");
+            }
+            return True;
+        }
         if how == "all" {
             count = scene.pick_all_faces();
         } elif how == "invert" {
@@ -50,7 +56,7 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
             count = scene.extend_faces();
         }
         if count < 0 {
-            self.say("ed_faces <all|invert|extend>");
+            self.say("ed_faces <all|invert|extend|next|prev>");
         } else {
             self.mode = "face";
             self.say("Picked " + str(count) + " more faces" if count else "No more faces to pick");

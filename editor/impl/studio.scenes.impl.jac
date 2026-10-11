@@ -94,6 +94,7 @@ impl Studio.open_map(path: str) {
     scene = scene_from_map("passion", "studio:" + name, found);
     scene.path = path;
     self.scenes["passion/" + scene.name] = scene;
+    self.note_recent(path);
     self.show_scene(scene);
     self.say(
         "Opened " + path + ": " + str(len(scene.items())) + " entities, " + str(len(scene.solids())) + " brushes"
@@ -105,6 +106,12 @@ impl Studio.show_scene(scene: Scene) {
     app = self.app;
     if app is None {
         return;
+    }
+    left = self.scene;
+    if left is not None and left is not scene {
+        # Where the camera stands in the document being left, to come back to.
+        eye = self.main.eye;
+        self.doc_views[left.game + "/" + left.name] = [eye.x, eye.y, eye.z, self.main.yaw, self.main.pitch];
     }
     if not self.load(scene.game, scene.name) {
         return;
@@ -141,10 +148,11 @@ impl Studio.save_scene(path: str = "") {
         os.makedirs(folder, exist_ok=True);
     }
     with open(target, "w") as file {
-        file.write(write_map(scene_map(scene)));
+        file.write(self.map_text(scene));
     }
     scene.path = target;
     scene.dirty = False;
+    self.note_recent(target);
     self.say("Saved " + target);
 }
 

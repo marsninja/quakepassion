@@ -140,6 +140,26 @@ impl Studio.list_library(ui: StudioUi) {
             rows.append(TreeRow(key=lead + known, text=known, depth=1));
         }
     }
+    # After the shelves of files: what is open now, and what was lately.
+    current = self.scene;
+    docs = self.doc_keys();
+    rows.append(TreeRow(key="shelf:Open now", text="Open now", tone="accent", note=str(len(docs))));
+    for key in docs {
+        held = self.scenes[key];
+        rows.append(
+            TreeRow(
+                key="doc:" + key,
+                text=held.name + ("  (edited)" if held.dirty else ""),
+                depth=1,
+                picked=held is current
+            )
+        );
+    }
+    lately = self.recent_files();
+    rows.append(TreeRow(key="shelf:Recent", text="Recent", tone="accent", note=str(len(lately))));
+    for path in lately {
+        rows.append(TreeRow(key="recent:" + path, text=os.path.basename(path), depth=1));
+    }
     ui.library.rows = rows;
 }
 
@@ -352,6 +372,10 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.open_map(self.autosave_path(word[5:]));
         } elif word.startswith("prefab:") {
             self.library_command(scene, ["ed_prefab", "add", word[7:]]);
+        } elif word.startswith("doc:") {
+            self.show_doc(word[4:]);
+        } elif word.startswith("recent:") {
+            self.open_map(word[7:]);
         } else {
             self.list_library(ui);
         }

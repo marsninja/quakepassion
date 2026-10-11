@@ -136,6 +136,7 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_extrude [depth]` pushes the face out into a brush of its own,
   `ed_cone [height]` stands a cone on it and `ed_walls [depth] [thickness]`
   stands walls round its edge; what is made is left selected.
+  `ed_faces next` and `prev` step the pick round the brush's faces.
   `ed_face_delete` takes a face off where the brush's other sides close
   without it, and `ed_face_flip` turns one round to leave what lay beyond
   it, where that is closed too.
@@ -157,6 +158,22 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   world while the faces move through them. It is kept between sessions.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
+- **Several documents** are open at once: the level the game began in and
+  every scene made or opened since. `ed_docs` lists them, `ed_doc
+  <name|next|prev>` goes to another (its camera is where it was left),
+  `ed_save all` saves every one that has been edited and `ed_close` closes
+  the one being edited (`ed_close force` when it has unsaved edits); the
+  Window menu has them. The
+  Library tab ends with what is open now and with the files opened and
+  saved lately (`ed_recent`), each a click away.
+- **A right click on the selection** opens its menu: look at, duplicate,
+  delete, copy, cut, hide, drop, and for brushes group, hollow, carve and
+  the owner. A right click elsewhere is still the look or slide button.
+- `ed_log [lines]` shows the console's last lines without opening it.
+- **How maps are written**: `ed_mapopts comments off` leaves out the lines
+  that number entities and brushes, and `ed_mapopts whole on` writes every
+  plane point in whole numbers, for tools that read nothing else. Both are
+  kept between sessions.
 - **Layouts** (View menu, `ed_layout <1|2|3|4|4b>`): the 3D view alone;
   beside the plan; beside the plan and the front view; all four in a
   square; or the 3D view beside the three axis views in a column. The
@@ -457,7 +474,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_faces_tests.jac`: a side dropped or turned only where the
   rest close; a cone, a prism and walls on a face; the same through the
   document with undo; side flags by brush and by face, through a map and
-  back; a digger's shaft cut from what is built, the input left whole.
+  back; a digger's shaft cut from what is built, the input left whole; a
+  map written without comments and in whole numbers; a face's narrowest
+  width and the check's finding for a sliver; the face pick stepped round
+  a brush.
 - `tests/studio_select_tests.jac`: sets kept, picked, replaced and dropped;
   a deleted member leaving a set and coming back with undo; sets written
   with the map and read from it; the steps to owner, brushes and
@@ -581,6 +601,12 @@ editor/impl/                 the workbench's scenes and brushes
   finding; the door and button pasted with names of their own; then the
   scene played and held still, the door shut until `ed_fire` names it and
   twenty ticks pass).
+  `scripts/studio/docs_session.cfg` (10 steps: two scenes made beside the
+  shipped level, listed, switched between with the camera kept, saved
+  together; one closed and opened again from the recent files; the
+  console's last lines; a right click on a drawn box and Duplicate from its
+  menu; the box's faces stepped through; the scene saved without comments
+  and in whole numbers).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

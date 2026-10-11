@@ -30,7 +30,7 @@ import from ..geometry.patch {
     points_reversed
 }
 import from ..geometry.csg { hull_sides }
-import from ..geometry.faces { sides_dropped, side_flipped, cone_on, prism_on, walls_on }
+import from ..geometry.faces { sides_dropped, side_flipped, cone_on, prism_on, walls_on, outline_width }
 import from ..geometry.csg {
     carve_sides,
     common_sides,
@@ -1108,6 +1108,19 @@ walker Inspect {
             size = box[1].sub(box[0]);
             if min(size.x, min(size.y, size.z)) < 1.0 {
                 self.findings.append(Finding(words=label + " is thinner than a unit", solid=here));
+            } else {
+                # A sliver of a face on a brush that is not itself a sliver.
+                slivers = 0;
+                for outline in outlines {
+                    if len(outline) >= 3 and outline_width(outline) < 1.0 {
+                        slivers += 1;
+                    }
+                }
+                if slivers > 0 {
+                    self.findings.append(
+                        Finding(words=label + " has " + str(slivers) + " faces thinner than a unit", solid=here)
+                    );
+                }
             }
         }
         whole = True;
@@ -1320,6 +1333,9 @@ node Scene {
     `size` out and `thickness` in). The new brushes are left selected.
     Answers how many were made."""
     def build_on_faces(shape: str, size: float, thickness: float = 16.0) -> int;
+    """Go from the one picked face to the brush's next (or, with -1, the one
+    before). False when it is not one face that is picked."""
+    def step_face(pace: int = 1) -> bool;
     """Set (or clear, or replace) bits of the contents, the surface flags or
     the value of the picked faces, or of every side of the selected brushes.
     `how` is "set", "clear" or "put". Answers how many sides changed."""

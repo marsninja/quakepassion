@@ -173,3 +173,22 @@ impl Scene.flag_sides(key: str, bits: int, how: str = "set") -> int {
     }
     return count;
 }
+
+impl Scene.step_face(pace: int = 1) -> bool {
+    picks = self.faces();
+    if len(picks) != 1 {
+        return False;
+    }
+    solid = picks[0].solid;
+    # Past sides that make no face.
+    outlines = solid.outlines();
+    index = picks[0].side;
+    for attempt in range(len(solid.sides)) {
+        index = (index + pace) % len(solid.sides);
+        if index < len(outlines) and len(outlines[index]) >= 3 {
+            break;
+        }
+    }
+    self.select_face(solid, index);
+    return True;
+}

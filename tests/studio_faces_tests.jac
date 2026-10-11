@@ -10,7 +10,15 @@ import from editor.geometry.brush {
     windings_bounds,
     classic_mapping
 }
-import from editor.geometry.faces { brush_bounded, sides_dropped, side_flipped, cone_on, prism_on, walls_on }
+import from editor.geometry.faces {
+    brush_bounded,
+    sides_dropped,
+    side_flipped,
+    cone_on,
+    prism_on,
+    walls_on,
+    outline_width
+}
 import from editor.formats.map { MapItem, read_map, write_map }
 
 def near(a: float, b: float, slack: float = 0.5) -> bool {
@@ -186,4 +194,60 @@ test "a digger's brushes are holes in what is built, and the document keeps them
     );
     untouched = with_holes([whole, far]);
     assert len(untouched) == 1 and len(untouched[0].brushes) == 1;
+}
+
+test "a map is written without comments, or in whole numbers, when asked" {
+    scene = blockout();
+    plain = write_map(scene_map(scene));
+    assert "// entity 0" in plain and "// brush 1" in plain;
+    bare = write_map(scene_map(scene), "valve", False, False);
+    assert "// entity" not in bare and "// brush" not in bare and bare.startswith("// Format: Valve");
+    # The same map either way.
+    assert write_map(scene_map(scene_from_map("passion", "studio:test", read_map(bare)))) == plain;
+    # A brush turned off the grid has corners that are not whole; written whole, every plane point is.
+    wall = scene.solids()[1];
+    scene.select_solid(wall);
+    assert scene.turn_selection(30.0, 8.0, 2, Vec3(x=32.0, y=32.0));
+    exact = write_map(scene_map(scene));
+    rounded = write_map(scene_map(scene), "valve", False, True, True);
+    assert exact != rounded;
+    for line in rounded.splitlines() {
+        if line.startswith("( ") {
+            points = line.split(" [ ")[0];
+            for word in points.replace("(", " ").replace(")", " ").split()[:9] {
+                assert "." not in word , line;
+            }
+        }
+    }
+}
+
+test "a face's width is what it is at its narrowest, and the check names slivers" {
+    square = [Vec3(), Vec3(x=64.0), Vec3(x=64.0, y=64.0), Vec3(y=64.0)];
+    strip = [Vec3(), Vec3(x=64.0), Vec3(x=64.0, y=0.5), Vec3(y=0.5)];
+    wedge = [Vec3(), Vec3(x=64.0), Vec3(x=64.0, y=0.25)];
+    assert near(outline_width(square), 64.0) and near(outline_width(strip), 0.5, 0.01);
+    assert outline_width(wedge) < 0.3;
+    scene = blockout();
+    assert [finding.words for finding in scene.problems() if "thinner" in finding.words] == [];
+    # A cube with a corner shaved by half a unit has a sliver of a face.
+    shaved = scene.add_solid(scene.world(), cube() + [extra(Vec3(x=1.0, y=1.0).normalized(), 90.2)]);
+    words = [finding.words for finding in scene.problems() if "thinner" in finding.words];
+    assert len(words) == 1 and words[0] == "Brush #" + str(shaved.serial) + " has 1 faces thinner than a unit" , str(words);
+}
+
+test "the face pick steps round a brush's faces and back" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    assert not scene.step_face();
+    scene.select_face(wall, 0);
+    seen: list[int] = [0];
+    for turn in range(5) {
+        assert scene.step_face();
+        seen.append(scene.faces()[0].side);
+    }
+    assert sorted(seen) == [0, 1, 2, 3, 4, 5] and len(scene.faces()) == 1;
+    assert scene.step_face() and scene.faces()[0].side == 0;
+    assert scene.step_face(-1) and scene.faces()[0].side == 5;
+    scene.select_face(wall, 2, True);
+    assert not scene.step_face();
 }
