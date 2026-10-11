@@ -88,6 +88,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the pivot for itself, as its `_center` field: it is saved with the group,
   moves, turns and stretches with it, and undoes. `ed_rotate`, `ed_resize`
   and `ed_mirror` go about the pivot too.
+- **Groups** have a row of their own in the scene list, under
+  `func_group`: the group's name, how many brushes it holds, and its
+  brushes under it when it is opened. A group selected alone keeps
+  switches of its own, in fields saved with the scene, from buttons in its
+  form or by command:
+  - how it shows (`ed_group_view <shown|grey|hidden>`): whole; as outlines
+    only, out of the level while editing and out of a click's way; or not
+    at all. What is played has it either way.
+  - `ed_group_lock`: clicks and rectangles in the views pass it by; it is
+    still selected from the list.
+  - `ed_group_skip`: builds leave it out, when editing and when playing,
+    to try part of a level alone.
+  - `ed_group_tint <r g b>`: the colour of its outlines.
+  `ed_groups` lists the groups with their switches.
 - **By a picked face** (face mode, the face's form and the Brush menu):
   `ed_extrude [depth]` pushes the face out into a brush of its own,
   `ed_cone [height]` stands a cone on it and `ed_walls [depth] [thickness]`
@@ -414,7 +428,8 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_select_tests.jac`: sets kept, picked, replaced and dropped;
   a deleted member leaving a set and coming back with undo; sets written
   with the map and read from it; the steps to owner, brushes and
-  neighbours; brushes by number; the swap and its undo.
+  neighbours; brushes by number; the swap and its undo; what a build is
+  made from under each of a group's switches.
 - `tests/studio_transform_tests.jac`: turns and stretches about a given
   pivot, the texture lock, inflating, a group's own pivot carried through a
   move, a turn and a stretch, and a patch's control points turning and
@@ -517,6 +532,11 @@ editor/impl/                 the workbench's scenes and brushes
   forgotten; a picture laid behind the plan; the camera swung a quarter
   round the box and taken under its top; then the studio opened again to
   find the layout, the ruler and the names kept).
+  `scripts/studio/groups_session.cfg` (10 steps: a box made a group; shown
+  as outlines only, so the level is built without it and a click where it
+  stands takes the floor; locked, built but still passed by; unlocked and
+  taken by the same click; skipped by builds; tinted, its row opened onto
+  its brush; hidden; its fields found in the saved map).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

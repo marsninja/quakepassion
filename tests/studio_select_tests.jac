@@ -1,5 +1,14 @@
 import from engine.math.vec3 { Vec3 }
-import from editor.document.scene { Scene, scene_map, scene_from_map }
+import from editor.document.scene {
+    Scene,
+    scene_map,
+    scene_from_map,
+    item_veil,
+    item_switched,
+    VIEW_KEY,
+    LOCK_KEY,
+    SKIP_KEY
+}
 import from editor.geometry.brush { box_sides }
 import from editor.formats.map { read_map, write_map }
 
@@ -129,4 +138,36 @@ test "two selected things change places, and change back" {
     scene.select(lamp, True);
     assert scene.swap_selection();
     assert start.fields["origin"] == "0 0 96" and lamp.fields["origin"] == "-64 -64 24";
+}
+
+test "a group's own switches decide what a build is made from" {
+    scene = room();
+    wall = scene.solids()[1];
+    scene.select_solid(wall);
+    pillar = scene.group_selection("pillar");
+    assert pillar is not None and scene.groups() == [pillar];
+    # Nothing is left out to begin with.
+    assert not scene.filtered(False) and not scene.filtered(True);
+    assert len(scene.built_map(False)) == 4 and len(scene.built_map(True)) == 4;
+    # Shown as outlines only, or hidden: out of the level while editing, in it when played.
+    scene.select(pillar);
+    assert scene.set_fields({VIEW_KEY: "grey"}, "Group view") and item_veil(pillar) == "grey";
+    assert scene.filtered(False) and not scene.filtered(True);
+    assert len(scene.built_map(False)) == 3 and len(scene.built_map(True)) == 4;
+    assert scene.set_fields({VIEW_KEY: "hidden"}, "Group view") and item_veil(pillar) == "hidden";
+    assert len(scene.built_map(False)) == 3 and len(scene.built_map(True)) == 4;
+    assert scene.set_fields({VIEW_KEY: "sideways"}, "Group view") and item_veil(pillar) == "";
+    # Skipped in builds: out of both.
+    assert scene.set_fields({VIEW_KEY: None, SKIP_KEY: "1"}, "Group build") and item_switched(pillar, SKIP_KEY);
+    assert scene.filtered(False) and scene.filtered(True);
+    assert len(scene.built_map(True)) == 3 and len(scene.built_map(False)) == 3;
+    assert scene.undo() == "Group build" and not item_switched(pillar, SKIP_KEY);
+    # Locked changes nothing that is built.
+    assert scene.set_fields({LOCK_KEY: "1", VIEW_KEY: None}, "Group lock") and item_switched(pillar, LOCK_KEY);
+    assert not scene.filtered(False) and len(scene.built_map(False)) == 4;
+    # A brush hidden while editing is in what is played.
+    scene.select_solid(scene.solids()[0]);
+    scene.hide_selection();
+    assert scene.filtered(False) and not scene.filtered(True);
+    assert len(scene.built_map(False)[0].brushes) == 0 and len(scene.built_map(True)[0].brushes) == 1;
 }

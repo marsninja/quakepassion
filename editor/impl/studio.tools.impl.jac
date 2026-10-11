@@ -83,6 +83,9 @@ impl Studio.select_in_box(scene: Scene, port: int, area: Rect, add: bool) {
     }
     count = 0;
     for shape in self.shapes {
+        if item_veil(shape.item) != "" or item_switched(shape.item, LOCK_KEY) {
+            continue;
+        }
         at = camera.project(view, shape.center());
         if at is not None and area.holds(at[0], at[1]) and not scene.is_selected(shape.item) {
             scene.select(shape.item, True);
@@ -92,7 +95,7 @@ impl Studio.select_in_box(scene: Scene, port: int, area: Rect, add: bool) {
     for seen in self.looks {
         holder = scene.owner_of(seen.solid);
         # A brush entity's brushes come with the entity.
-        if holder is None or holder.classname() != "worldspawn" {
+        if holder is None or holder.classname() != "worldspawn" or seen.dim or seen.locked {
             continue;
         }
         at = camera.project(view, seen.center());

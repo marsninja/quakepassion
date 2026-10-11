@@ -1067,6 +1067,79 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""How many rows the scene list has at a step."""
+def tree_rows(lines: list[str]) -> int {
+    found = [line for line in lines if line.startswith("tree rows=")];
+    return int(found[0].split("=")[1]) if found else -1;
+}
+
+"""The nineteenth session: a group shown as outlines only, locked, skipped
+by builds, tinted and hidden, and its row in the scene list."""
+def groups_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["grey", "tinted", "hidden"];
+    for shot in shots {
+        (repo / f"groups_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-groups-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/groups_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "groups.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The groups session failed: {output / 'groups.log'}";
+        saved = Path(home) / "scenes/groups.map";
+        assert saved.exists() , "Save wrote no map";
+        text = saved.read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "grouped", "grey", "through", "locked", "passed", "taken", "skipped", "tinted", "opened", "hidden"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'groups.log'}";
+    }
+    group = selected(steps["grouped"]);
+    assert len(group) == 1 and "_group_name=pillar" in group[0] and "owns=1" in group[0] , str(group);
+    assert made(steps["grouped"]) == 2;
+    # As outlines only it is out of the level, and a click where it stands takes the floor.
+    assert "_view=grey" in selected(steps["grey"])[0] and made(steps["grey"]) == 1 , str(steps["grey"]);
+    floor = brushes(steps["through"]);
+    assert len(floor) == 1 and brush_box(floor[0])[1][2] == 0 and not selected(steps["through"]) , str(steps["through"]);
+    # Locked it is built, and still passed by.
+    locked = selected(steps["locked"])[0];
+    assert "_locked=1" in locked and "_view" not in locked and made(steps["locked"]) == 2 , locked;
+    assert brushes(steps["passed"]) == floor , str(steps["passed"]);
+    # Unlocked, the same click takes its brush.
+    taken = brushes(steps["taken"]);
+    assert len(taken) == 1 and brush_box(taken[0]) == [[-288, 112, 0], [-96, 208, 64]] , str(taken);
+    assert "owner=func_group" in taken[0];
+    # Skipped by builds.
+    assert "_skip=1" in selected(steps["skipped"])[0] and made(steps["skipped"]) == 1 , str(steps["skipped"]);
+    tinted = selected(steps["tinted"])[0];
+    assert "_tint=255 128 0" in tinted and "_skip" not in tinted and made(steps["tinted"]) == 2 , tinted;
+    # Opened, the group's row has its brush under it.
+    assert tree_rows(steps["opened"]) == tree_rows(steps["tinted"]) + 1 , f"{steps['tinted']} {steps['opened']}";
+    assert "_view=hidden" in selected(steps["hidden"])[0] and made(steps["hidden"]) == 1;
+    assert '"_view" "hidden"' in text and '"_tint" "255 128 0"' in text , text[:600];
+    for shot in shots {
+        source = repo / f"groups_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"groups_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"GROUPS PASS: {len(steps) - 1} steps, a group shown as outlines, locked, skipped by builds, tinted and "
+            + "hidden, with its row in the scene list"
+    );
+}
+
 """A word of a step's line about the views (`span`, `layout`, ...)."""
 def view_word(lines: list[str], key: str) -> str {
     found = [line for line in lines if line.startswith("views ")];
@@ -1524,6 +1597,7 @@ def main() {
         "select": select_session,
         "faces": faces_session,
         "views": views_session,
+        "groups": groups_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -1645,6 +1719,7 @@ def main() {
     select_session(repo, binary, env, output);
     faces_session(repo, binary, env, output);
     views_session(repo, binary, env, output);
+    groups_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

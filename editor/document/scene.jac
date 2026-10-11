@@ -111,9 +111,14 @@ node Item {
         return -1;
     }
 
-    """What lists call it: its targetname when it has one."""
+    """What lists call it: its targetname when it has one, and a group by
+    the name it was given."""
     def title -> str {
         name = self.fields.get("targetname", "");
+        group = self.fields.get("_group_name", "");
+        if group and not name and self.classname() == "func_group" {
+            return group;
+        }
         return self.classname() + (" (" + name + ")" if name else "");
     }
 }
@@ -137,6 +142,25 @@ node Solid {
     def bounds -> list[Vec3] | None {
         return windings_bounds(self.outlines());
     }
+}
+
+"""The fields a group keeps its own switches in: how it shows in the views
+("grey" for outlines only, "hidden" for nothing), whether clicks pass it
+by, whether builds leave it out, and the colour of its outlines."""
+glob VIEW_KEY: str = "_view",
+     LOCK_KEY: str = "_locked",
+     SKIP_KEY: str = "_skip",
+     TINT_KEY: str = "_tint";
+
+"""How an entity shows in the views: "", "grey" or "hidden"."""
+def item_veil(item: Item) -> str {
+    how = item.fields.get(VIEW_KEY, "");
+    return how if how in ["grey", "hidden"] else "";
+}
+
+"""Whether an entity has one of its switches on."""
+def item_switched(item: Item, key: str) -> bool {
+    return item.fields.get(key, "0").strip() == "1";
 }
 
 """What the fields that keep a document's sets in a map file begin with."""
@@ -1300,6 +1324,17 @@ node Scene {
     the value of the picked faces, or of every side of the selected brushes.
     `how` is "set", "clear" or "put". Answers how many sides changed."""
     def flag_sides(key: str, bits: int, how: str = "set") -> int;
+
+    # Groups' own switches and what a build is made from (impl/scene.select.impl.jac)
+
+    """The document's groups, in map order."""
+    def groups -> list[Item];
+    """What a build is made from: without the groups that builds skip and,
+    unless it is to be played, without what is hidden or shown as outlines
+    only."""
+    def built_map(play: bool) -> list[MapItem];
+    """Whether `built_map` leaves anything of the document out."""
+    def filtered(play: bool) -> bool;
 
     # Kept selections and wider picks (impl/scene.select.impl.jac)
 

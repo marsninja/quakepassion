@@ -78,7 +78,13 @@ import from .document.scene {
     read_vector,
     scene_of,
     scene_map,
-    scene_from_map
+    scene_from_map,
+    item_veil,
+    item_switched,
+    VIEW_KEY,
+    LOCK_KEY,
+    SKIP_KEY,
+    TINT_KEY
 }
 import from .geometry.csg { brush_corners, brush_edges }
 import from .geometry.mapping { spun_about, axis_vector }
@@ -158,6 +164,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_group_view", "ed_group_view <shown|grey|hidden>", "how the selected groups show: whole, as outlines only, or not at all"),
+    ("ed_group_lock", "ed_group_lock [on|off]", "keep clicks in the views from selecting the selected groups"),
+    ("ed_group_skip", "ed_group_skip [on|off]", "leave the selected groups out of what is built and played"),
+    ("ed_group_tint", "ed_group_tint <r g b|none>", "the colour of the selected groups' outlines (0 to 255 each)"),
+    ("ed_groups", "ed_groups", "list the groups and their switches"),
     ("ed_zoom", "ed_zoom <in|out|units>", "zoom the axis views (so many units fit their height), or move the 3D camera"),
     ("ed_ruler", "ed_ruler [on|off]", "show the selection's size along its edges in the axis views"),
     ("ed_names", "ed_names [on|off]", "show every entity's name in the views"),
@@ -366,7 +377,12 @@ obj SolidLook {
     has solid: Solid,
         outlines: list[list[Vec3]],
         low: Vec3,
-        high: Vec3;
+        high: Vec3,
+        # Its group shows it as outlines only, or keeps clicks off it, or
+        # gives its outlines a colour of the group's own (-1 for none).
+        dim: bool = False,
+        locked: bool = False,
+        tint: int = -1;
 
     def center -> Vec3 {
         return self.low.add(self.high).scale(0.5);
@@ -512,6 +528,8 @@ obj Studio(Workbench) {
         click_y: int = -100,
         click_port: int = -1,
         click_turn: int = 0,
+        click_serial: int = -1,
+        click_solid: bool = False,
         browse_turn: int = -1,
         browse_picks: int = -1,
         # The group the materials tab shows, and pictures still to load.
@@ -1181,7 +1199,7 @@ obj Studio(Workbench) {
             self.shapes = [];
             built = self.is_built_scene();
             for item in scene.items() {
-                if item.hidden {
+                if item.hidden or item_veil(item) == "hidden" {
                     continue;
                 }
                 owned = [solid for solid in scene.solids_of(item) if not solid.hidden];
@@ -1296,6 +1314,12 @@ obj Studio(Workbench) {
                 if picked and first_picked < 0 {
                     first_picked = len(rows);
                 }
+                if name == "func_group" {
+                    # A group by its own name, with its switches, and its
+                    # brushes under it when it is opened.
+                    self.list_group(scene, rows, item, picked);
+                    continue;
+                }
                 rows.append(
                     TreeRow(key=str(item.serial), text=words, depth=1, picked=picked, note="#" + str(item.serial))
                 );
@@ -1358,6 +1382,7 @@ obj Studio(Workbench) {
         actions.adopt(PushButton(text="Duplicate", command="ed_duplicate", grow=1, hint="Copy the selection (Ctrl+D)"));
         actions.adopt(PushButton(text="Delete", command="ed_delete", grow=1, hint="Delete the selection (Del)"));
         self.fill_class(scene, ui, chosen);
+        self.fill_group(scene, ui, chosen);
     }
 
     # ------------------------------------------------------------------
@@ -1649,7 +1674,7 @@ obj Studio(Workbench) {
                 }
                 if self.mode == "brush" and not (event.ctrl or event.shift) {
                     # Clicked again in the same place, a click goes to what is behind.
-                    deeper = self.aim_through(event.x, event.y);
+                    deeper = self.aim_through(scene, event.x, event.y);
                     found_item = deeper.item;
                     found_solid = deeper.solid;
                 }
@@ -1956,7 +1981,8 @@ obj Studio(Workbench) {
             best: Shape | None = None;
             reach = 1000000.0;
             for shape in self.shapes {
-                if shape.item in tried {
+                if shape.item in tried or item_veil(shape.item) != "" or item_switched(shape.item, LOCK_KEY) {
+                    # What is tried, shown as outlines only, or locked.
                     continue;
                 }
                 enters = ray_enters_box(eye, along, shape.low, shape.high);
@@ -2421,6 +2447,16 @@ obj Studio(Workbench) {
     def transform_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
+    # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
+
+    """Run a group command. False when it is not one."""
+    def group_command(scene: Scene, args: list[str]) -> bool;
+    """A group's row in the scene tree, and its brushes' when it is open."""
+    def list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bool);
+    """The buttons for a selection that is all groups."""
+    def fill_group(scene: Scene, ui: StudioUi, chosen: list[Item]);
+
+    # ------------------------------------------------------------------
     # Zoom, the ruler, names, a backdrop, remembered views, orbit (impl/studio.views.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -2447,7 +2483,7 @@ obj Studio(Workbench) {
     def aim_all(x: int, y: int) -> list[Aim];
     """What a click picks: what is in front, or, clicked again in the same
     place, the next thing behind."""
-    def aim_through(x: int, y: int) -> Aim;
+    def aim_through(scene: Scene, x: int, y: int) -> Aim;
     """`ed_select parent|child|next|prev|brush`. False for other words."""
     def select_more(scene: Scene, args: list[str]) -> bool;
     """Run a set, swap or tour command. False when it is not one."""
@@ -2614,7 +2650,7 @@ obj Studio(Workbench) {
             and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
             and not self.patch_command(scene, args) and not self.transform_command(scene, args)
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
-            and not self.view_command(scene, args) {
+            and not self.view_command(scene, args) and not self.group_command(scene, args) {
             self.utility_command(scene, args);
         }
     }
@@ -2752,6 +2788,7 @@ obj Studio(Workbench) {
                 + str(int(self.ports[1].camera.span) if len(self.ports) > 1 else 0) + " ruler="
                 + ("1" if self.ruler else "0") + " names=" + ("1" if self.names else "0") + " backdrop="
                 + (scene.world().fields.get("_backdrop_at", "none").replace(" ", ",")),
+            "studio: tree rows=" + str(len(self.ui.tree.rows) if self.ui is not None else 0),
             "studio: sets="
                 + (
                     ",".join(

@@ -17,9 +17,10 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     }
     began = time.time();
     source = scene;
-    if not self.play_build and scene.hidden_count() > 0 {
-        # While editing, what is hidden is left out of the level.
-        source = scene_from_map(scene.game, scene.name, MapFile(items=scene.shown_map()));
+    if scene.filtered(self.play_build) {
+        # What builds are told to skip is left out; while editing, so is
+        # what is hidden or shown as outlines only.
+        source = scene_from_map(scene.game, scene.name, MapFile(items=scene.built_map(self.play_build)));
     }
     whole = self.expanded(source);
     made = compile_scene(whole, self.materials);
@@ -165,7 +166,7 @@ impl Studio.outline_solids(scene: Scene) {
     self.looks = [];
     for brush in scene.solids() {
         holder = scene.owner_of(brush);
-        if brush.hidden or (holder is not None and holder.hidden) {
+        if brush.hidden or (holder is not None and (holder.hidden or item_veil(holder) == "hidden")) {
             continue;
         }
         outlines = brush.outlines();
@@ -178,7 +179,16 @@ impl Studio.outline_solids(scene: Scene) {
             }
         }
         if low.x <= high.x {
-            self.looks.append(SolidLook(solid=brush, outlines=outlines, low=low, high=high));
+            look = SolidLook(solid=brush, outlines=outlines, low=low, high=high);
+            if holder is not None {
+                look.dim = item_veil(holder) == "grey";
+                look.locked = item_switched(holder, LOCK_KEY);
+                shade = [part for part in holder.fields.get(TINT_KEY, "").split() if part.isdigit()];
+                if len(shade) == 3 {
+                    look.tint = (min(255, int(shade[0])) << 16) | (min(255, int(shade[1])) << 8) | min(255, int(shade[2]));
+                }
+            }
+            self.looks.append(look);
         }
     }
 }
@@ -218,7 +228,8 @@ impl Studio.aim(x: int, y: int) -> Aim {
     along = line[1];
     nearest = 1000000.0;
     for seen in self.looks {
-        if ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
+        if seen.dim or seen.locked or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
+            # A click passes what is shown as outlines only, and what is locked.
             continue;
         }
         entered = ray_enters_brush(seen.solid.sides, eye, along);
@@ -253,9 +264,11 @@ impl Studio.draw_solids(scene: Scene) {
         if scene.is_solid_selected(seen.solid) {
             continue;
         }
+        # A group's own colour; outlines only are all there is of a grey group.
+        tone = ink(seen.tint, 230) if seen.tint >= 0 else (ink(0x8a8378, 200) if seen.dim else faint);
         for outline in seen.outlines {
             for i in range(len(outline)) {
-                wire_line(outline[i], outline[(i + 1) % len(outline)], faint);
+                wire_line(outline[i], outline[(i + 1) % len(outline)], tone);
             }
         }
     }

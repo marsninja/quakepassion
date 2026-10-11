@@ -13,7 +13,8 @@ impl Studio.aim_all(x: int, y: int) -> list[Aim] {
     along = line[1];
     behind: list[Aim] = [];
     for seen in self.looks {
-        if seen.solid is front.solid or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
+        if seen.solid is front.solid or seen.dim or seen.locked
+            or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
             continue;
         }
         entered = ray_enters_brush(seen.solid.sides, eye, along);
@@ -23,7 +24,8 @@ impl Studio.aim_all(x: int, y: int) -> list[Aim] {
     }
     for shape in self.shapes {
         # An entity made of brushes is clicked by its brushes.
-        if shape.item is front.item or shape.item.origin() is None {
+        if shape.item is front.item or shape.item.origin() is None or item_veil(shape.item) != ""
+            or item_switched(shape.item, LOCK_KEY) {
             continue;
         }
         enters = ray_enters_box(eye, along, shape.low, shape.high);
@@ -45,19 +47,40 @@ impl Studio.aim_all(x: int, y: int) -> list[Aim] {
     return found;
 }
 
-impl Studio.aim_through(x: int, y: int) -> Aim {
+impl Studio.aim_through(scene: Scene, x: int, y: int) -> Aim {
     hits = self.aim_all(x, y);
     again = abs(x - self.click_x) <= 2 and abs(y - self.click_y) <= 2 and self.port_now == self.click_port;
+    if again {
+        # Only while what the last click took is still what is selected:
+        # a selection changed some other way starts from the front again.
+        held = False;
+        if self.click_solid {
+            last_brush = scene.find_solid(self.click_serial);
+            held = last_brush is not None and scene.is_solid_selected(last_brush);
+        } else {
+            last_item = scene.find(self.click_serial);
+            held = last_item is not None and scene.is_selected(last_item);
+        }
+        again = held;
+    }
     self.click_x = x;
     self.click_y = y;
     self.click_port = self.port_now;
     if len(hits) == 0 {
         self.click_turn = 0;
+        self.click_serial = -1;
         return Aim();
     }
     # A click where the last one was goes one deeper, and round again.
     self.click_turn = (self.click_turn + 1) % len(hits) if again else 0;
-    return hits[self.click_turn];
+    taken = hits[self.click_turn];
+    taken_solid = taken.solid;
+    taken_item = taken.item;
+    self.click_solid = taken_solid is not None;
+    self.click_serial = taken_solid.serial
+        if taken_solid is not None
+        else (taken_item.serial if taken_item is not None else -1);
+    return taken;
 }
 
 impl Studio.select_more(scene: Scene, args: list[str]) -> bool {

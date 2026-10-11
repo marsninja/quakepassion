@@ -262,3 +262,46 @@ impl Scene.swap_selection -> bool {
     }
     return self.commit(step);
 }
+
+impl Scene.groups -> list[Item] {
+    return [item for item in self.items() if item.classname() == "func_group"];
+}
+
+impl Scene.filtered(play: bool) -> bool {
+    for item in self.items() {
+        if item_switched(item, SKIP_KEY) {
+            return True;
+        }
+        if not play and (item.hidden or item_veil(item) != "") {
+            return True;
+        }
+    }
+    if play {
+        return False;
+    }
+    for solid in self.solids() {
+        if solid.hidden {
+            return True;
+        }
+    }
+    return False;
+}
+
+impl Scene.built_map(play: bool) -> list[MapItem] {
+    result: list[MapItem] = [];
+    for item in self.items() {
+        if item_switched(item, SKIP_KEY) {
+            continue;
+        }
+        if not play and (item.hidden or item_veil(item) != "") {
+            continue;
+        }
+        result.append(
+            MapItem(
+                fields=dict(item.fields),
+                brushes=[solid.sides for solid in self.solids_of(item) if play or not solid.hidden]
+            )
+        );
+    }
+    return result;
+}
