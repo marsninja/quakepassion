@@ -27,7 +27,10 @@ obj SceneView {
         # Draw the level as the edges of its triangles, or not at all (the
         # workbench then draws what it wants of it).
         wire: bool = False,
-        bare: bool = False;
+        bare: bool = False,
+        # It lies over views drawn before it: what they drew in its
+        # rectangle, and how deep, is cleared first.
+        over: bool = False;
 }
 
 """The methods are abstract so that a workbench in another module is reached
@@ -35,7 +38,11 @@ through the base: a class nothing in its own module derives from or declares
 abstract is laid out without a vtable, and calls on it bind to its own
 bodies."""
 obj Workbench {
-    has active: bool = False;
+    has active: bool = False,
+        # A game being played from the workbench is held still: its time
+        # moves only by the ticks still owed to it.
+        holding: bool = False,
+        steps_owed: int = 0;
 
     """Declare the workbench's commands and cvars. Its commands are owned by
     "studio", and come back through `command`."""
@@ -47,6 +54,10 @@ obj Workbench {
     """One frame while active: the keys that went down or repeated, the text
     typed, and the modifiers held."""
     def frame(dt: float, keys: list[str], text: str, shift: bool, ctrl: bool, alt: bool) abst;
+
+    """One frame of a game while the workbench is not active: the game time
+    that frame moves by. For watching a game played from the workbench."""
+    def played(dt: float) abst;
 
     """The cameras to draw the level from this frame."""
     def views -> list[SceneView] abst;
@@ -70,6 +81,8 @@ obj NoWorkbench(Workbench) {
     def command(args: list[str]) {}
 
     def frame(dt: float, keys: list[str], text: str, shift: bool, ctrl: bool, alt: bool) {}
+
+    def played(dt: float) {}
 
     def views -> list[SceneView] {
         return [];

@@ -7,6 +7,7 @@ cross the FFI by value; sized casts specify the C parameter widths.
 Method and ability bodies live in impl/renderer.impl.jac.
 """
 
+import os;
 import from vendor.raylib {
     def DrawLine3D(startPos: Vector3, endPos: Vector3, color: Color) -> None;  def DrawRectangle(
         x: i32, y: i32, width: i32, height: i32, color: Color
@@ -31,7 +32,9 @@ import from vendor.raylib {
         fileName: str
     ) -> None;  def DrawFPS(posX: i32, posY: i32) -> None;  def ClearBackground(
         color: Color
-    ) -> None;  def BeginMode3D(camera: Camera3D) -> None;  def EndMode3D -> None;  def DrawCube(
+    ) -> None;  def BeginMode3D(camera: Camera3D) -> None;  def EndMode3D -> None;  def BeginScissorMode(
+        x: i32, y: i32, width: i32, height: i32
+    ) -> None;  def EndScissorMode -> None;  def DrawCube(
         position: Vector3, width: f32, height: f32, length: f32, color: Color
     ) -> None;  def DrawCubeWires(
         position: Vector3, width: f32, height: f32, length: f32, color: Color
@@ -115,7 +118,8 @@ glob BATCH_ATTRIBUTES_VS: str = "#version 330\nin vec3 vertexPosition; in vec2 v
 # raylib ConfigFlags.
 glob WINDOW_RESIZABLE_FLAG: int = 4,
      WINDOW_HIGHDPI_FLAG: int = 8192,
-     WINDOW_UNDECORATED_FLAG: int = 8;
+     WINDOW_UNDECORATED_FLAG: int = 8,
+     WINDOW_HIDDEN_FLAG: int = 128;
 
 """The cvars the renderer owns: the view angle, the frame rate cap, PVS
 culling, Q3 curve detail and the window (Q1/Q2 vid_*, Q3 r_* names)."""
@@ -238,6 +242,9 @@ obj Renderer {
     );
     """End a view: back to the whole window and screen space."""
     def end_view();
+    """Clear a rectangle of the window, in screen units: its colour and how
+    deep anything in it was drawn, for a view that lies over others."""
+    def clear_rect(x: int, y: int, width: int, height: int);
     """Draw what follows in a view as the edges of its triangles, or go back
     to filling them."""
     def wire(on: bool);

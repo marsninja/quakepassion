@@ -17,13 +17,46 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     }
     began = time.time();
     source = scene;
-    if not self.play_build and scene.hidden_count() > 0 {
-        # While editing, what is hidden is left out of the level.
-        source = scene_from_map(scene.game, scene.name, MapFile(items=scene.shown_map()));
+    if self.play_only {
+        # Only what is selected, in a world of its own.
+        alone = scene.selection_map();
+        if len(alone) == 0 or alone[0].fields.get("classname", "") != "worldspawn" {
+            alone = [MapItem(fields={"classname": "worldspawn"}, brushes=[])] + alone;
+        }
+        source = scene_from_map(scene.game, scene.name, MapFile(items=alone));
+    } elif scene.filtered(self.play_build) {
+        # What builds are told to skip is left out; while editing, so is
+        # what is hidden or shown as outlines only.
+        source = scene_from_map(scene.game, scene.name, MapFile(items=scene.built_map(self.play_build)));
     }
     whole = self.expanded(source);
+    mark = self.build_mark(whole);
     made = compile_scene(whole, self.materials);
-    self.lit_samples = bake_light(whole, made) if self.lit else 0;
+    kept: KeptBake | None = None;
+    for copy in self.built_copies {
+        if copy.mark == mark {
+            kept = copy;
+        }
+    }
+    # Built of this before (an undo, a game played and stopped): its light
+    # and cells are taken as they were worked out then.
+    self.built_reused = kept is not None and give_bake(made, kept);
+    if self.built_reused and kept is not None {
+        self.lit_samples = kept.lit_samples;
+        self.vis_done = kept.vis;
+    } else {
+        plane_base = len(made.bsp.planes);
+        warned = len(made.warnings);
+        self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
+        if self.vis_cell > 0.0 {
+            # Cut into cells, each with what it can see.
+            self.vis_done = bake_cells(whole, made, self.vis_cell);
+        }
+        self.built_copies.append(keep_bake(made, mark, plane_base, warned, self.lit_samples, self.vis_done));
+        if len(self.built_copies) > 6 {
+            self.built_copies = self.built_copies[1:];
+        }
+    }
     self.live = made;
     self.build_ms = int((time.time() - began) * 1000.0);
     self.built_geometry = scene.geometry;
@@ -44,7 +77,10 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
 
 impl Studio.scene_path(name: str) -> str {
     folder = os.getenv("QP_SCENES", "");
-    if not folder {
+    if self.project_folder {
+        # A project keeps its scenes with it.
+        folder = self.project_folder + "/scenes";
+    } elif not folder {
         folder = os.getcwd() + "/scenes";
     }
     return folder + "/" + name.replace("/", "_") + ".map";
@@ -54,6 +90,7 @@ impl Studio.new_scene(name: str) {
     scene = Scene(game="passion", name="studio:" + name);
     world = scene.world();
     world.fields["message"] = name;
+    self.apply_game(scene.game);
     scene.add_solid(
         world, box_sides(Vec3(x=-256.0, y=-256.0, z=-16.0), Vec3(x=256.0, y=256.0, z=0.0), self.material)
     );
@@ -86,6 +123,7 @@ impl Studio.open_map(path: str) {
     scene = scene_from_map("passion", "studio:" + name, found);
     scene.path = path;
     self.scenes["passion/" + scene.name] = scene;
+    self.note_recent(path);
     self.show_scene(scene);
     self.say(
         "Opened " + path + ": " + str(len(scene.items())) + " entities, " + str(len(scene.solids())) + " brushes"
@@ -97,6 +135,12 @@ impl Studio.show_scene(scene: Scene) {
     app = self.app;
     if app is None {
         return;
+    }
+    left = self.scene;
+    if left is not None and left is not scene {
+        # Where the camera stands in the document being left, to come back to.
+        eye = self.main.eye;
+        self.doc_views[left.game + "/" + left.name] = [eye.x, eye.y, eye.z, self.main.yaw, self.main.pitch];
     }
     if not self.load(scene.game, scene.name) {
         return;
@@ -117,6 +161,7 @@ impl Studio.show_scene(scene: Scene) {
             self.say(warning);
         }
     }
+    self.apply_game(scene.game);
 }
 
 impl Studio.save_scene(path: str = "") {
@@ -133,10 +178,12 @@ impl Studio.save_scene(path: str = "") {
         os.makedirs(folder, exist_ok=True);
     }
     with open(target, "w") as file {
-        file.write(write_map(scene_map(scene)));
+        file.write(self.map_text(scene));
     }
     scene.path = target;
     scene.dirty = False;
+    self.note_recent(target);
+    self.project_took(target);
     self.say("Saved " + target);
 }
 
@@ -165,7 +212,7 @@ impl Studio.outline_solids(scene: Scene) {
     self.looks = [];
     for brush in scene.solids() {
         holder = scene.owner_of(brush);
-        if brush.hidden or (holder is not None and holder.hidden) {
+        if brush.hidden or (holder is not None and (holder.hidden or item_veil(holder) == "hidden")) {
             continue;
         }
         outlines = brush.outlines();
@@ -178,7 +225,16 @@ impl Studio.outline_solids(scene: Scene) {
             }
         }
         if low.x <= high.x {
-            self.looks.append(SolidLook(solid=brush, outlines=outlines, low=low, high=high));
+            look = SolidLook(solid=brush, outlines=outlines, low=low, high=high);
+            if holder is not None {
+                look.dim = item_veil(holder) == "grey";
+                look.locked = item_switched(holder, LOCK_KEY);
+                shade = [part for part in holder.fields.get(TINT_KEY, "").split() if part.isdigit()];
+                if len(shade) == 3 {
+                    look.tint = (min(255, int(shade[0])) << 16) | (min(255, int(shade[1])) << 8) | min(255, int(shade[2]));
+                }
+            }
+            self.looks.append(look);
         }
     }
 }
@@ -218,7 +274,13 @@ impl Studio.aim(x: int, y: int) -> Aim {
     along = line[1];
     nearest = 1000000.0;
     for seen in self.looks {
-        if ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
+        if self.pick_kind == "entities" {
+            # Clicks pass every brush.
+            break;
+        }
+        if seen.dim or seen.locked or self.unpickable(seen.low, seen.high)
+            or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
+            # A click passes what is shown as outlines only, and what is locked.
             continue;
         }
         entered = ray_enters_brush(seen.solid.sides, eye, along);
@@ -229,7 +291,7 @@ impl Studio.aim(x: int, y: int) -> Aim {
             target.reach = entered[0];
         }
     }
-    under = self.pick(x, y);
+    under = self.pick(x, y) if self.pick_kind != "brushes" else None;
     if under is not None {
         boxed = self.shape_of(under);
         reach = ray_enters_box(eye, along, boxed.low, boxed.high) if boxed is not None else -1.0;
@@ -253,9 +315,19 @@ impl Studio.draw_solids(scene: Scene) {
         if scene.is_solid_selected(seen.solid) {
             continue;
         }
+        veil = self.veiled(seen.low, seen.high);
+        if veil == 2 {
+            continue;
+        }
+        # A group's own colour; outlines only are all there is of a grey group.
+        tone = ink(seen.tint, 230) if seen.tint >= 0 else (ink(0x8a8378, 200) if seen.dim else faint);
+        if veil == 1 {
+            # Outside the band of depth this view is held to.
+            tone = ink(0x8a8378, 55);
+        }
         for outline in seen.outlines {
             for i in range(len(outline)) {
-                wire_line(outline[i], outline[(i + 1) % len(outline)], faint);
+                wire_line(outline[i], outline[(i + 1) % len(outline)], tone);
             }
         }
     }
@@ -298,6 +370,9 @@ impl Studio.draw_solids(scene: Scene) {
 
 impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
     found: list[tuple[int, Vec3]] = [];
+    if self.lay_face(scene) is not None {
+        return self.lay_handles(scene);
+    }
     bent = self.patch_now(scene);
     if self.mode == "corner" and bent is not None {
         # A patch shows the points that bend it.
@@ -308,6 +383,9 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
             }
         }
         return found;
+    }
+    if self.mode == "brush" and self.gizmo != "move" {
+        return self.transform_handles(scene);
     }
     chosen = scene.selected_solids();
     if len(chosen) != 1 or scene.selection() {
@@ -321,6 +399,9 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
             found.append((900, heart.add(Vec3(x=arm))));
             found.append((901, heart.add(Vec3(y=arm))));
             found.append((902, heart.add(Vec3(z=arm))));
+            for mark in self.mark_handles(scene) {
+                found.append(mark);
+            }
         }
         return found;
     }
@@ -360,6 +441,10 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
 
 impl Studio.draw_handles(scene: Scene, area: Rect) {
     canvas = self.canvas;
+    if self.lay_face(scene) is not None {
+        self.draw_lay_handles(scene, area);
+        return;
+    }
     if self.mode == "corner" and self.patch_now(scene) is not None {
         for (index, spot) in self.handles(scene) {
             grabbed = self.resizing and index == self.resize_side;
@@ -373,6 +458,10 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
         }
         return;
     }
+    if self.mode == "brush" and self.gizmo != "move" {
+        self.draw_transform_handles(scene, area);
+        return;
+    }
     chosen = scene.selected_solids();
     if len(chosen) != 1 or scene.selection() {
         hub = scene.selection_middle();
@@ -381,8 +470,9 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
         }
         centre = self.camera.project(area, hub.add(self.move_by) if self.moving else hub);
         tones = [ink(0xe5484d), ink(0x4cc38a), ink(0x5b8def)];
+        self.draw_mark_handles(scene, area);
         for (index, spot) in self.handles(scene) {
-            if index < 900 {
+            if index < 900 or index >= 910 {
                 continue;
             }
             at = self.camera.project(area, spot.add(self.move_by) if self.moving else spot);
@@ -443,10 +533,13 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
 impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
     area = self.view_area();
     hub = scene.selection_middle();
+    if self.mode == "brush" and self.gizmo != "move" {
+        hub = self.turn_hub(scene);
+    }
     centre = self.camera.project(area, hub) if hub is not None else None;
     for (index, middle) in self.handles(scene) {
         at = self.camera.project(area, middle);
-        if index >= 900 and at is not None and centre is not None
+        if index >= 900 and index < 930 and at is not None and centre is not None
             and abs(at[0] - centre[0]) + abs(at[1] - centre[1]) < 6 {
             # An arrow seen end on cannot be taken hold of.
             continue;
@@ -456,6 +549,12 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             self.resize_side = index;
             self.resize_by = 0.0;
             self.corner_by = Vec3();
+            self.box_pull = BoxDrag();
+            self.box_said = "";
+            self.lay_pull = None;
+            # A mark's handle says nothing until it has been dragged.
+            self.turn_by = -1.0 if index >= 940 else 0.0;
+            self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
             return True;
         }
     }
@@ -463,6 +562,10 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
 }
 
 impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
+    if self.resize_side >= 910 {
+        self.drag_transform(scene, x, y, free);
+        return;
+    }
     if self.resize_side >= 900 {
         # An arrow of the selection's own: move along its axis, as far as
         # the pointer has gone along the arrow as seen.
@@ -690,7 +793,7 @@ impl Studio.fill_solid_form(scene: Scene, ui: StudioUi) {
             Label(
                 text="Drag a corner or the middle of an edge."
                     if self.mode == "corner"
-                    else "Drag a square to push that side.",
+                    else "Drag a square to push that side. G: rings that turn, boxes that size.",
                 tone="faint",
                 small=True
             )
@@ -726,6 +829,17 @@ impl Studio.fill_solid_form(scene: Scene, ui: StudioUi) {
     lays.adopt(PushButton(text="Fit", command="ed_tex fit", grow=1, hint="Fit the material to every side"));
     lays.adopt(PushButton(text="Flat", command="ed_tex flat", grow=1, hint="Lay the material flat on every side"));
     lays.adopt(PushButton(text="Reset", command="ed_tex reset", grow=1, hint="Lay the material as a new brush has it"));
+    # Which handles the selection shows.
+    form.adopt(Spacer(size=6));
+    form.adopt(Label(text="Handles", tone="dim"));
+    form.adopt(
+        Radio(
+            labels=["Move", "Turn", "Size", "Box"],
+            commands=["ed_gizmo move", "ed_gizmo turn", "ed_gizmo size", "ed_gizmo box"],
+            chosen=["move", "turn", "size", "box"].index(self.gizmo) if self.gizmo in ["move", "turn", "size", "box"] else 0,
+            hint="Arrows that move the selection, rings that turn it, boxes that size it, or one box that does all and shears (G)"
+        )
+    );
 }
 
 impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
@@ -776,13 +890,13 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         if len(args) > 2 and args[2] in ["x", "y"] {
             about = 0 if args[2] == "x" else 1;
         }
-        if not scene.turn_selection(degrees, self.grid, about) {
+        if not scene.turn_selection(degrees, self.grid, about, self.pivot_for(scene), self.tex_lock) {
             self.say("Nothing to turn");
         }
         return True;
     }
     if name == "ed_matfilter" {
-        self.material_filter = args[1] if len(args) > 1 else "";
+        self.material_filter = " ".join(args[1:]).strip();
         self.materials_changed += 1;
         return True;
     }
@@ -791,8 +905,19 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_material <name> [side]");
             return True;
         }
+        if args[1].strip() == "recent" {
+            print("studio: recent materials " + (" ".join(self.recent_materials) if len(self.recent_materials) > 0 else "none"));
+            self.say(
+                str(len(self.recent_materials)) + " materials taken in hand lately (ed_shelf recent shows them)"
+                if len(self.recent_materials) > 0
+                else "No material has been taken in hand yet"
+            );
+            return True;
+        }
         self.material = args[1].strip();
         self.materials_changed += 1;
+        # Kept among those lately in hand, the latest first.
+        self.recent_materials = [self.material] + [each for each in self.recent_materials if each != self.material][:23];
         side = int(args[2]) if len(args) > 2 and args[2].isdigit() else -1;
         if side >= 0 and scene.selected_solids() {
             if not scene.paint_selection(self.material, side) {
@@ -836,7 +961,8 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
 
 impl Studio.list_materials(ui: StudioUi) {
     rows: list[TreeRow] = [];
-    wanted = self.material_filter.lower();
+    # The words of the filter; what it says of size is the gallery's to answer.
+    wanted = " ".join(search_of(self.material_filter).words);
     rows.append(
         TreeRow(key="scene", text="in this scene", picked=self.shelf == "scene" or not self.shelf, tone="accent")
     );
@@ -866,6 +992,13 @@ impl Studio.list_materials(ui: StudioUi) {
             }
             rows.append(TreeRow(key=group, text=group, picked=group == self.shelf));
         }
+    }
+    # After the games' own: what was lately in hand, and what a search found.
+    if len(self.recent_materials) > 0 {
+        rows.append(TreeRow(key="recent", text="recently used", picked=self.shelf == "recent", tone="accent"));
+    }
+    if len(self.found_materials) > 0 {
+        rows.append(TreeRow(key="found", text="found: " + self.found_words, picked=self.shelf == "found", tone="accent"));
     }
     ui.materials.rows = rows;
     self.fill_gallery(ui);

@@ -175,8 +175,9 @@ obj Canvas {
     """A kept image's width and height ([0, 0] when no image has that name)."""
     def picture_size(key: str) -> list[int] abst;
     def has_picture(key: str) -> bool abst;
-    """Draw a kept image over `area`. False when no image has that name."""
-    def picture(key: str, area: Rect) -> bool abst;
+    """Draw a kept image over `area`, as solid as `alpha` of 255. False when
+    no image has that name."""
+    def picture(key: str, area: Rect, alpha: int = 255) -> bool abst;
 
     """Text centred on the height of `area`: at its left edge (`align` -1,
     after `pad`), its middle (0) or its right edge (1)."""
@@ -258,7 +259,7 @@ obj TraceCanvas(Canvas) {
         return [64, 64] if key in self.kept else [0, 0];
     }
 
-    def picture(key: str, area: Rect) -> bool {
+    def picture(key: str, area: Rect, alpha: int = 255) -> bool {
         if key not in self.kept {
             return False;
         }
@@ -313,6 +314,35 @@ obj TraceCanvas(Canvas) {
     def words -> list[str] {
         return [stroke.words for stroke in self.strokes if stroke.kind == "text"];
     }
+}
+
+"""What is left of a rectangle with others cut out of it, as rectangles that
+do not overlap: to draw in what is not covered."""
+def rects_outside(area: Rect, holes: list[Rect]) -> list[Rect] {
+    pieces = [area] if area.w > 0 and area.h > 0 else [];
+    for hole in holes {
+        left: list[Rect] = [];
+        for piece in pieces {
+            cut = piece.within(hole);
+            if cut.w <= 0 or cut.h <= 0 {
+                left.append(piece);
+                continue;
+            }
+            # A band above the hole, one below, and what is beside it between them.
+            for part in [
+                Rect(x=piece.x, y=piece.y, w=piece.w, h=cut.y - piece.y),
+                Rect(x=piece.x, y=cut.bottom(), w=piece.w, h=piece.bottom() - cut.bottom()),
+                Rect(x=piece.x, y=cut.y, w=cut.x - piece.x, h=cut.h),
+                Rect(x=cut.right(), y=cut.y, w=piece.right() - cut.right(), h=cut.h)
+            ] {
+                if part.w > 0 and part.h > 0 {
+                    left.append(part);
+                }
+            }
+        }
+        pieces = left;
+    }
+    return pieces;
 }
 
 """Font files tried in order when ed_font names none: the first that exists
@@ -478,7 +508,7 @@ obj ScreenCanvas(Canvas) {
         return self.pictures.get(key, 0) != 0;
     }
 
-    def picture(key: str, area: Rect) -> bool {
+    def picture(key: str, area: Rect, alpha: int = 255) -> bool {
         known = self.pictures.get(key, 0);
         if known == 0 {
             return False;
@@ -489,7 +519,7 @@ obj ScreenCanvas(Canvas) {
         bottom = f32(area.y + area.h);
         rlSetTexture(u32(known));
         rlBegin(i32(7));
-        rlColor4ub(u8(255), u8(255), u8(255), u8(255));
+        rlColor4ub(u8(255), u8(255), u8(255), u8(max(0, min(255, alpha))));
         rlTexCoord2f(f32(0.0), f32(0.0));
         rlVertex2f(left, top);
         rlTexCoord2f(f32(0.0), f32(1.0));

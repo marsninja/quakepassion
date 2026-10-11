@@ -38,11 +38,13 @@ impl Studio.list_assets(ui: StudioUi) {
     seen = self.asset_now;
     titles = {"q1": "Quake", "q2": "Quake II", "q3": "Quake III Arena"};
     if self.asset_filter {
-        # A search: every file whose name holds the text, flat, a few hundred at most.
+        # A search: every file that answers it, flat, a few hundred at most.
+        self.read_tags();
+        asked = search_of(self.asset_filter);
         hits = 0;
         for game in known.games() {
             for name in known.names(game) {
-                if self.asset_filter not in name.lower() {
+                if not name_found(asked, game, name, self.asset_tags.get(game + ":" + name, [])) {
                     continue;
                 }
                 if hits >= 400 {
@@ -130,6 +132,10 @@ impl Studio.show_asset(ui: StudioUi) {
         row.clear();
     }
     form.clear();
+    if self.show_model_form(ui) {
+        # The model being edited has the panel.
+        return;
+    }
     seen = self.asset_now;
     if seen is None {
         form.adopt(Label(text="Nothing is shown.", tone="dim"));
@@ -138,7 +144,8 @@ impl Studio.show_asset(ui: StudioUi) {
     }
     form.adopt(Label(text=seen.name.split("/")[-1], tone="accent"));
     form.adopt(Label(text=seen.game + ":" + seen.name, tone="dim", small=True));
-    words = seen.kind + ", " + str(seen.size) + " bytes" + (", " + seen.note if seen.note else "");
+    words = seen.kind + (", " + str(seen.size) + " bytes" if seen.size > 0 or seen.kind != "figure" else "")
+        + (", " + seen.note if seen.note else "");
     form.adopt(Label(text=words, tone="dim", small=True));
     figure = self.model_now;
     if figure is not None and figure.game == seen.game and figure.name == seen.name {
@@ -276,6 +283,7 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_frame" or name == "ed_orbit" {
+        self.fresh_model();
         figure = self.model_now;
         if figure is None {
             self.say("Show a model in the explorer first");
@@ -297,7 +305,8 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         if word == "play" or word == "stop" {
             self.model_playing = word == "play";
         } elif word == "next" {
-            self.set_frame((self.model_frame + 1) % figure.frames);
+            # On through the frames that are played: round again, or to the last of them.
+            self.set_frame(frame_after(self.model_frame, self.model_first, self.model_last, figure.frames, self.model_loops));
         } elif word == "prev" {
             self.set_frame((self.model_frame + figure.frames - 1) % figure.frames);
         } elif word.isdigit() {
@@ -327,6 +336,49 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         app.audio.play_path(heard.name);
         self.say("Playing " + heard.name);
         print("studio: played " + heard.name);
+        return True;
+    }
+    if name == "ed_extract" and len(args) > 1 and args[1] == "folder" {
+        # Everything under a folder of a game's archives: ed_extract folder <game>:<folder> [to].
+        stock_now = self.archive;
+        parts = args[2].split(":", 1) if len(args) > 2 else [];
+        if stock_now is None or len(parts) != 2 or parts[0] not in ["q1", "q2", "q3"] or not parts[1].strip("/") {
+            self.say("ed_extract folder <q1|q2|q3>:<folder> [to]: write every file under a folder of a game's archives");
+            return True;
+        }
+        listing = self.asset_index;
+        if listing is None {
+            listing = AssetIndex(shelf=stock_now);
+            self.asset_index = listing;
+        }
+        out_folder = args[3] if len(args) > 3 else os.getenv("QP_EXTRACT", "");
+        if not out_folder {
+            out_folder = os.getcwd() + "/extracted";
+        }
+        under = parts[1].strip("/").lower() + "/";
+        wrote = 0;
+        total = 0;
+        for path in listing.names(parts[0]) {
+            if not path.lower().startswith(under) {
+                continue;
+            }
+            content = listing.read(parts[0], path);
+            if content is None {
+                continue;
+            }
+            target_path = out_folder + "/" + parts[0] + "/" + path;
+            os.makedirs(os.path.dirname(target_path), exist_ok=True);
+            with open(target_path, "wb") as file {
+                file.write(content);
+            }
+            wrote += 1;
+            total += len(content);
+        }
+        print("studio: extracted folder " + parts[0] + ":" + under + " files=" + str(wrote) + " bytes=" + str(total));
+        self.say(
+            "Wrote " + str(wrote) + " files to " + out_folder + "/" + parts[0] + "/" + under if wrote > 0
+            else "Nothing lies under " + args[2]
+        );
         return True;
     }
     if name == "ed_extract" {
@@ -442,16 +494,26 @@ impl Studio.set_frame(frame: int) {
         return;
     }
     self.model_frame = max(0, min(frame, figure.frames - 1));
-    self.model_edges = figure.edges(self.model_frame);
+    self.model_edges = self.shown_edges(self.model_frame);
+    edited = self.model_doc;
+    if edited is not None {
+        # The model being edited goes to the frame the view shows.
+        edited.frame = self.model_frame;
+    }
 }
 
 impl Studio.turn_model(dt: float) {
     ui = self.ui;
+    self.fresh_model();
     figure = self.model_now;
     if ui is None {
         return;
     }
     for event in ui.model_view.take() {
+        if self.model_event(event) {
+            # A click or a drag that was for the model being edited.
+            continue;
+        }
         if event.kind == "drag" {
             self.model_yaw -= float(event.dx) * 0.01;
             self.model_pitch = max(-1.5, min(1.5, self.model_pitch - float(event.dy) * 0.01));
@@ -462,14 +524,8 @@ impl Studio.turn_model(dt: float) {
     if figure is None {
         return;
     }
-    if self.model_playing {
-        # Ten frames a second, as the games play most of them.
-        self.model_clock += dt;
-        if self.model_clock >= 0.1 {
-            self.model_clock = 0.0;
-            self.set_frame((self.model_frame + 1) % figure.frames);
-        }
-    }
+    # At its own pace (ten frames a second unless told, as the games play most of them).
+    self.play_model(dt);
     camera = self.model_camera;
     camera.span = 0.0;
     camera.yaw = self.model_yaw;

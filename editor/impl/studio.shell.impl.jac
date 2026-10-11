@@ -1,6 +1,19 @@
 """The studio's grid, remembered views, hiding, history and autosave.
 Declarations live in studio.jac."""
 
+"""Where a line of sight comes down on a level height, ahead of the eye and
+no further than a level is wide. None when it never does."""
+def:priv level_point(line: list[Vec3], height: float) -> Vec3 | None {
+    if abs(line[1].z) < 0.0001 {
+        return None;
+    }
+    along = (height - line[0].z) / line[1].z;
+    if along <= 0.0 or along > 65536.0 {
+        return None;
+    }
+    return line[0].add(line[1].scale(along));
+}
+
 impl Studio.autosave_path(name: str) -> str {
     return os.path.dirname(self.scene_path("x")) + "/autosave/" + name.replace("/", "_") + ".map";
 }
@@ -73,8 +86,34 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
             }
             return True;
         }
-        if self.ports[numbers[0]].camera.span <= 0.0 or not self.is_built_scene() {
-            self.say("Boxes are drawn in the axis views of a scene");
+        if not self.is_built_scene() {
+            self.say("Boxes are drawn in a scene of brushes");
+            return True;
+        }
+        if self.ports[numbers[0]].camera.span <= 0.0 {
+            # In the 3D view the rectangle is drawn on the level it would stand on: the height of
+            # the selection's middle, or of the origin, on the grid.
+            notch = max(1.0, self.grid);
+            floor_at = float(round(anchor.z / notch)) * notch;
+            watched = self.port_now;
+            self.watch(numbers[0]);
+            corner = level_point(self.camera.sight(self.view_area(), numbers[1], numbers[2]), floor_at);
+            other = level_point(self.camera.sight(self.view_area(), numbers[3], numbers[4]), floor_at);
+            self.watch(watched);
+            if corner is None or other is None {
+                self.say("That drag leaves the level the box would stand on: draw it on the floor");
+                return True;
+            }
+            west = float(round(min(corner.x, other.x) / notch)) * notch;
+            east = float(round(max(corner.x, other.x) / notch)) * notch;
+            south = float(round(min(corner.y, other.y) / notch)) * notch;
+            north = float(round(max(corner.y, other.y) / notch)) * notch;
+            if east - west < notch or north - south < notch
+                or scene.create_solid(
+                    box_sides(Vec3(x=west, y=south, z=floor_at), Vec3(x=east, y=north, z=floor_at + 64.0), self.material)
+                ) is None {
+                self.say("That rectangle encloses nothing");
+            }
             return True;
         }
         # The rectangle, and sixty-four units along the line of sight: up
@@ -115,6 +154,12 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
     if name == "ed_grid" {
         word = args[1] if len(args) > 1 else "";
         size = self.grid;
+        if word == "show" or word == "hide" or word == "toggle" {
+            self.grid_shown = (not self.grid_shown) if word == "toggle" else word == "show";
+            self.say("The grid is shown" if self.grid_shown else "The grid is hidden");
+            self.keep_settings();
+            return True;
+        }
         if word == "up" {
             size = size * 2.0;
         } elif word == "down" {
@@ -123,7 +168,7 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
             try {
                 size = float(word);
             } except ValueError {
-                self.say("ed_grid <size|up|down>");
+                self.say("ed_grid <size|up|down|show|hide>");
                 return True;
             }
         }
@@ -160,8 +205,8 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         }
         wanted = args[1].strip() if len(args) > 1 else "next";
         key = "_view_" + wanted;
-        if wanted == "next" {
-            self.marks_at = (self.marks_at + 1) % len(marks);
+        if wanted == "next" or wanted == "prev" {
+            self.marks_at = (self.marks_at + (1 if wanted == "next" else -1)) % len(marks);
             key = marks[self.marks_at];
         }
         parts = world.fields.get(key, "").split();
@@ -186,6 +231,10 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_show" {
+        # Every layer that was off is on again too.
+        for each in list(scene.layers_off) {
+            scene.show_layer(each, True);
+        }
         count = scene.show_all();
         self.say("Showed " + str(count) if count else "Nothing is hidden");
         return True;
@@ -329,12 +378,48 @@ impl Studio.keep_settings {
     lines = [
         "// The studio's settings, written when one changes.",
         "ed_grid " + str(int(self.grid)),
+        # How finely, before whether at all: the second has the last word.
+        "ed_build " + ("quick" if self.luxel > 16.0 else "full"),
         "ed_light " + ("on" if self.lit else "off"),
         "ed_display " + ("wire" if self.wire_axis else "textured") + " axis",
         "ed_display " + ("wire" if self.wire_main else "textured") + " 3d",
         "ed_brush " + str(int(self.brush_radius)) + " " + str(int(self.brush_amount)),
-        "ed_layout " + str(self.layout)
+        "ed_layout " + ("4b" if self.layout == 5 else str(self.layout)),
+        "ed_grid " + ("show" if self.grid_shown else "hide"),
+        "ed_dev " + ("on" if self.dev_shown else "off"),
+        "ed_autocaulk " + ("on" if self.autocaulk else "off"),
+        "ed_mapopts comments " + ("on" if self.map_comments else "off"),
+        "ed_mapopts whole " + ("on" if self.map_whole else "off"),
+        "ed_ruler " + ("on" if self.ruler else "off"),
+        "ed_names " + ("on" if self.names else "off"),
+        "ed_anglesnap " + str(int(self.angle_snap)),
+        "ed_texlock " + ("on" if self.tex_lock else "off")
     ];
+    for kept_class in self.favourites {
+        lines.append("ed_fav " + kept_class);
+    }
+    for chord in sorted(self.user_keys.keys()) {
+        lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
+    }
+    lines.append("ed_outside " + self.outside);
+    lines.append("ed_models " + ("on" if self.models_shown else "off"));
+    lines.append("ed_mouse look " + str(round(self.look_rate, 2)));
+    lines.append("ed_mouse invert " + ("on" if self.look_flipped else "off"));
+    lines.append("ed_mouse wheel " + str(round(self.wheel_rate, 2)));
+    lines.append("ed_mouse reverse " + ("on" if self.wheel_flipped else "off"));
+    for ending in sorted(self.assoc.keys()) {
+        lines.append("ed_assoc " + ending + " " + quote_command_word(self.assoc[ending]));
+    }
+    for setting in sorted(self.game_setup.keys()) {
+        halves = setting.split(".", 1);
+        lines.append("ed_game " + halves[0] + " " + halves[1] + " " + quote_command_word(self.game_setup[setting]));
+    }
+    for addon in self.user_addons {
+        lines.append("ed_addon " + quote_command_word(addon));
+    }
+    for kept_recipe in sorted(self.recipes.keys()) {
+        lines.append("ed_recipe " + kept_recipe + " " + quote_command_word(self.recipes[kept_recipe]));
+    }
     path = self.settings_path();
     try {
         os.makedirs(os.path.dirname(path), exist_ok=True);

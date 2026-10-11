@@ -83,6 +83,9 @@ impl Studio.select_in_box(scene: Scene, port: int, area: Rect, add: bool) {
     }
     count = 0;
     for shape in self.shapes {
+        if item_veil(shape.item) != "" or item_switched(shape.item, LOCK_KEY) {
+            continue;
+        }
         at = camera.project(view, shape.center());
         if at is not None and area.holds(at[0], at[1]) and not scene.is_selected(shape.item) {
             scene.select(shape.item, True);
@@ -92,7 +95,7 @@ impl Studio.select_in_box(scene: Scene, port: int, area: Rect, add: bool) {
     for seen in self.looks {
         holder = scene.owner_of(seen.solid);
         # A brush entity's brushes come with the entity.
-        if holder is None or holder.classname() != "worldspawn" {
+        if holder is None or holder.classname() != "worldspawn" or seen.dim or seen.locked {
             continue;
         }
         at = camera.project(view, seen.center());
@@ -217,6 +220,34 @@ impl Studio.fill_face_form(scene: Scene, ui: StudioUi) {
         PushButton(text="Same plane", command="ed_faces extend", grow=1, hint="Pick every face that lies in this face's plane")
     );
     spread.adopt(PushButton(text="Tag", command="ed_tag", grow=1, hint="Remember this face, to glue brushes against"));
+    # What stands on the face, and the face itself taken off or turned.
+    form.adopt(Spacer(size=6));
+    builds = Box(across=True, gap=4);
+    form.adopt(builds);
+    builds.adopt(PushButton(text="Extrude", command="ed_extrude", grow=1, hint="Push the face out into a brush of its own"));
+    builds.adopt(PushButton(text="Cone", command="ed_cone", grow=1, hint="Stand a cone on the face"));
+    builds.adopt(PushButton(text="Walls", command="ed_walls", grow=1, hint="Stand walls round the face's edge"));
+    edits = Box(across=True, gap=4);
+    form.adopt(edits);
+    edits.adopt(
+        PushButton(
+            text="Delete face", command="ed_face_delete", grow=1, hint="Take the face off, where the others close without it"
+        )
+    );
+    edits.adopt(
+        PushButton(text="Turn round", command="ed_face_flip", grow=1, hint="Leave what lay beyond the face instead")
+    );
+    marks = Box(across=True, gap=4);
+    form.adopt(marks);
+    marks.adopt(Label(text="flags", tone="dim", size=104));
+    marks.adopt(
+        TextField(
+            value=str(side.contents) + " " + str(side.flags) + " " + str(side.value),
+            command="ed_sideflag all",
+            grow=1,
+            hint="The side's contents, surface flags and value, as the game's own tools number them"
+        )
+    );
 }
 
 """A number as a form shows it: whole numbers without a point."""
@@ -245,7 +276,8 @@ def:priv numbers_in(words: list[str]) -> list[float] {
 impl Studio.fill_gallery(ui: StudioUi) {
     scene = self.scene;
     shelf = self.archive;
-    wanted = self.material_filter.lower();
+    asked = search_of(self.material_filter);
+    wanted = " ".join(asked.words);
     names: list[str] = [];
     if (not self.shelf or self.shelf == "scene" or shelf is None) {
         names.append("blockout");
@@ -265,13 +297,27 @@ impl Studio.fill_gallery(ui: StudioUi) {
         }
     } elif self.shelf == "files" {
         names = shelf.file_names();
+    } elif self.shelf == "recent" {
+        # What has been taken in hand, the latest first.
+        names = list(self.recent_materials);
+    } elif self.shelf == "found" {
+        names = list(self.found_materials);
     } else {
         names = list(shelf.names(self.shelf));
     }
     tiles: list[Tile] = [];
+    sized = 0;
     for name in names {
         if wanted and wanted not in name.lower() {
             continue;
+        }
+        if asked.size {
+            # Only those of the size asked for: each is read to know its size.
+            picture = self.materials.texture(name);
+            if not size_fits(asked.size, picture.width, picture.height) {
+                continue;
+            }
+            sized += 1;
         }
         tiles.append(Tile(key=name, text=name.split("/")[-1].split(":")[-1], picked=name == self.material));
         if not self.canvas.has_picture(name) and name not in self.thumbs {
@@ -279,6 +325,12 @@ impl Studio.fill_gallery(ui: StudioUi) {
         }
     }
     ui.gallery.tiles = tiles;
+    if not asked.size {
+        self.sized_shown = -1;
+    } elif sized != self.sized_shown {
+        self.sized_shown = sized;
+        print("studio: sized " + asked.size + " shown=" + str(sized) + " of " + str(len(names)));
+    }
 }
 
 impl Studio.load_thumbs {
@@ -324,6 +376,23 @@ impl Studio.check(scene: Scene, args: list[str]) {
         return;
     }
     self.findings = scene.problems();
+    if len(args) > 1 and args[1] == "logic" {
+        # The deeper look at what fires what.
+        for hanging in scene.audit() {
+            self.findings.append(hanging);
+        }
+        # And where it can leave a player stuck.
+        for stuck in scene.softlocks() {
+            self.findings.append(stuck);
+        }
+    }
+    for stray in self.game_findings(scene) {
+        self.findings.append(stray);
+    }
+    for lost in self.nav_findings(scene) {
+        # What the baked navigation says cannot be reached.
+        self.findings.append(lost);
+    }
     # Materials named as a game's that no archive holds draw as swatches.
     stock = self.archive;
     if stock is not None {
@@ -439,11 +508,19 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
             change = FaceEdit(how="turn_to", s=first);
         } elif how == "fit" {
             change = FaceEdit(how="fit", s=first, t=second, sizes=self.material_sizes(scene));
+        } elif how == "minfit" {
+            change = FaceEdit(how="minfit", sizes=self.material_sizes(scene));
+        } elif how == "wrap" or how == "project" {
+            if self.tagged_side is None {
+                self.say("Tag the face to take the material from first (ed_tag)");
+                return True;
+            }
+            change = FaceEdit(how=how, source=self.tagged_side);
         } elif how == "flat" or how == "reset" {
             change = FaceEdit(how=how);
         }
         if change is None {
-            self.say("ed_tex <shift|shiftto|scale|turn|turnto|fit|flat|reset> [a] [b]");
+            self.say("ed_tex <shift|shiftto|scale|turn|turnto|fit|minfit|flat|reset|wrap|project> [a] [b]");
         } elif not scene.faces() and not scene.selected_solids() and not scene.selection() {
             self.say("Select faces or brushes first");
         } elif not scene.reface(change, "Material " + how) {
@@ -515,7 +592,7 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         factors = Vec3(
             x=-1.0 if args[1] == "x" else 1.0, y=-1.0 if args[1] == "y" else 1.0, z=-1.0 if args[1] == "z" else 1.0
         );
-        if not scene.stretch_selection(factors, self.grid, "Mirror") {
+        if not scene.stretch_selection(factors, self.grid, "Mirror", self.pivot_for(scene), self.tex_lock) {
             self.say("Nothing to mirror");
         }
         return True;
@@ -530,7 +607,7 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         if len(numbers) > 2 {
             factors = Vec3(x=numbers[0], y=numbers[1], z=numbers[2]);
         }
-        if not scene.stretch_selection(factors, self.grid, "Resize") {
+        if not scene.stretch_selection(factors, self.grid, "Resize", self.pivot_for(scene), self.tex_lock) {
             self.say("Nothing to resize (a factor cannot be nothing)");
         }
         return True;
@@ -564,9 +641,27 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_display" {
-        if len(args) < 2 or args[1] not in ["wire", "textured"] {
-            self.say("ed_display <wire|textured> [3d|axis|all]");
+        if len(args) > 1 and args[1] == "solid" {
+            # Flat tones in place of textures, a tone a material.
+            self.solid_tones = True;
+            self.materials = SwatchMaterials();
+            self.materials_changed += 1;
+            self.built_geometry = -1;
+            self.say("Materials are shown as flat tones");
             return True;
+        }
+        if len(args) < 2 or args[1] not in ["wire", "textured"] {
+            self.say("ed_display <wire|textured|solid> [3d|axis|all]");
+            return True;
+        }
+        stock = self.archive;
+        if args[1] == "textured" and self.solid_tones {
+            self.solid_tones = False;
+            if stock is not None {
+                self.materials = stock;
+            }
+            self.materials_changed += 1;
+            self.built_geometry = -1;
         }
         which = args[2] if len(args) > 2 else "axis";
         if which == "axis" or which == "all" {

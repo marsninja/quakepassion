@@ -105,3 +105,73 @@ test "an orthographic view pans by screen units, zooms within limits and frames"
     front.frame(Vec3(x=10.0, y=20.0, z=30.0), 100.0);
     assert near(front.eye.x, 10.0) and near(front.eye.z, 30.0) and near(front.span, 260.0);
 }
+
+test "the camera swings round a point at its distance, and faces a point from another" {
+    camera = EditCamera();
+    camera.look_from(Vec3(x=-192.0, y=-340.0, z=32.0), Vec3(x=-192.0, y=160.0, z=32.0));
+    # Looking along +y, level.
+    ahead = camera.forward();
+    assert abs(ahead.x) < 0.001 and abs(ahead.y - 1.0) < 0.001 and abs(ahead.z) < 0.001;
+    pivot = Vec3(x=-192.0, y=160.0, z=32.0);
+    camera.orbit(pivot, math.radians(90.0), 0.0);
+    # A quarter round: facing -x from the +x side, as far off as before.
+    assert abs(camera.eye.x - 308.0) < 0.01 and abs(camera.eye.y - 160.0) < 0.01 and abs(camera.eye.z - 32.0) < 0.01;
+    assert abs(camera.eye.sub(pivot).length() - 500.0) < 0.01;
+    assert abs(camera.forward().x + 1.0) < 0.001;
+    # Up over it: the pivot stays dead ahead.
+    camera.orbit(pivot, 0.0, math.radians(-45.0));
+    toward = pivot.sub(camera.eye).normalized();
+    assert toward.sub(camera.forward()).length() < 0.001 and camera.eye.z > 300.0;
+    # From below, looking up, as far as the camera tips.
+    camera.look_from(Vec3(z=-100.0), Vec3(x=1.0));
+    assert camera.forward().z > 0.9 and camera.eye.z == -100.0;
+    # A point to face that is where it stands changes nothing.
+    camera.look_from(Vec3(x=5.0), Vec3(x=5.0));
+    assert camera.eye.z == -100.0;
+}
+
+test "a view held to a band of depth leaves out what lies wholly outside it" {
+    top = axis_camera("top");
+    low_box = [Vec3(x=0.0, y=0.0, z=0.0), Vec3(x=64.0, y=64.0, z=32.0)];
+    high_box = [Vec3(x=0.0, y=0.0, z=200.0), Vec3(x=64.0, y=64.0, z=232.0)];
+    # Not held to a band, a view shows everything.
+    assert not top.out_of_depth(low_box[0], low_box[1]) and not top.out_of_depth(high_box[0], high_box[1]);
+    top.bounded = True;
+    top.depth_low = -32.0;
+    top.depth_high = 64.0;
+    axis = top.depth_axis();
+    assert axis.z == 1.0 and axis.x == 0.0;
+    assert not top.out_of_depth(low_box[0], low_box[1]) and top.out_of_depth(high_box[0], high_box[1]);
+    # What only reaches into the band is in it.
+    assert not top.out_of_depth(Vec3(z=48.0), Vec3(x=8.0, y=8.0, z=400.0));
+    assert top.out_of_depth(Vec3(z=-200.0), Vec3(x=8.0, y=8.0, z=-40.0));
+    # The side view looks along -x: its band is still in the world's x.
+    side = axis_camera("side");
+    side.bounded = True;
+    side.depth_low = 100.0;
+    side.depth_high = 300.0;
+    assert side.depth_axis().x == 1.0;
+    assert side.out_of_depth(low_box[0], low_box[1]) and not side.out_of_depth(Vec3(x=250.0), Vec3(x=260.0, y=8.0, z=8.0));
+    # A camera with perspective has no band.
+    free = EditCamera(bounded=True, depth_low=0.0, depth_high=1.0);
+    assert not free.out_of_depth(high_box[0], high_box[1]);
+}
+
+test "an orthographic view turned off the axes is oblique, and measures depth along its sight" {
+    top = axis_camera("top");
+    front = axis_camera("front");
+    assert not top.oblique() and not front.oblique() and not axis_camera("side").oblique();
+    assert not EditCamera(yaw=0.7, pitch=-0.4).oblique();
+    front.turn(math.radians(45.0), math.radians(-30.0));
+    assert front.oblique();
+    axis = front.depth_axis();
+    ahead = front.forward();
+    assert abs(axis.x - ahead.x) < 0.0001 and abs(axis.z - ahead.z) < 0.0001;
+    front.bounded = True;
+    front.depth_low = -50.0;
+    front.depth_high = 50.0;
+    # A box about the origin is in the band; one far along the line of sight is not.
+    assert not front.out_of_depth(Vec3(x=-8.0, y=-8.0, z=-8.0), Vec3(x=8.0, y=8.0, z=8.0));
+    far = ahead.scale(400.0);
+    assert front.out_of_depth(far.sub(Vec3(x=8.0, y=8.0, z=8.0)), far.add(Vec3(x=8.0, y=8.0, z=8.0)));
+}

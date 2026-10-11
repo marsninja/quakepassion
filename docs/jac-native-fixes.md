@@ -47,10 +47,42 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | A C record with a field typed by a C record that another module declares failed to lower natively (E5092), because a unit laid out its own records before those of the modules it imports; and on the Python side the import of the embedded record was dropped as unused, so the module raised `NameError: C type ... is not bound` as it loaded | [#9935](https://github.com/jaseci-labs/jac/pull/9935) | A first cut of the studio's canvas that imported raylib's `Texture2D` from `engine/render/quake.jac`. The canvas now declares the records it needs beside its own calls, as the renderer does, so that the interface toolkit builds without the engine |
 | `sum()` over `bytes` had no native lowering (E5092), and over a `bytearray` it sign-extended each byte | [#9928](https://github.com/jaseci-labs/jac/pull/9928) | A scratch probe of the RoQ decoder |
 | `list.reverse()` and the keyed `list.sort()` swapped two elements through the list's set helper, which releases the element it overwrites: half of a reversed list of objects (or of lists or dicts) pointed at freed elements, and a keyed sort of objects aborted | [#9973](https://github.com/jaseci-labs/jac/pull/9973) | The studio's leak finder returns the way out as a list of points and reverses it; the level crashed a few frames after the line was drawn (`editor/compile/leak.jac`) |
+| A dict literal whose first key is a string held in a variable (a parameter, a module global) failed to lower when it was the first literal of its dict type in the module: the first value was normalised from a string view and the first key was not, so the key was taken for an integer one and the dict's helpers could not be emitted. The function fell back to Python and the native build failed (E5092) | [#9975](https://github.com/jaseci-labs/jac/pull/9975) | The studio's digger command sets or clears one field named by a constant: `scene.set_fields({DIGGER_KEY: None if off else "1"})` (`editor/impl/studio.faces.impl.jac`) |
+| In the body of `impl Arch.method`, a name first assigned inside a nested block (a `for` or `if` body) was bound to the archetype's method or field of that name: the assignment failed with E1001, and under `jac test` the module ran interpreted. A shallow scope lookup through an impl's declaration climbed into the archetype | [#9978](https://github.com/jaseci-labs/jac/pull/9978) (reported as [#9969](https://github.com/jaseci-labs/jac/issues/9969)) | Met again and again in the studio (`aim`, `opened`, `shelf`, `grid`, `reach`, `changed`), each time by a local that happened to share a member's name; the last made `editor/document/scene.jac` run interpreted in its tests without failing one |
 | `==` between two lists of different native element types (one of tagged values, as `list(struct.unpack(...))` gives, against a `list[int]`; a `list[int]` against a `list[float]`) compared the two pointers and was always False | [#9931](https://github.com/jaseci-labs/jac/pull/9931) | A flare test's assertion |
+| A statement that ends an `if` body with a comprehension was never joined to what follows the `if` (the link into the comprehension was taken for the statement's way out), so a guard asked again after it (`if x is not None { x.a = [..]; } if x is not None { x.b }`) narrowed from `None` alone and every use under it raised E1099 | [#9990](https://github.com/jaseci-labs/jac/pull/9990) | The studio's floating windows (`Studio.float_views`) |
+| `dict(x)` was typed as a bare `dict`: typeshed gives `dict` a `__new__(cls, *args, **kwargs)`, the checker stopped at it, and the `__init__` overloads that carry the key and value types were never asked. A value read from the copy had no type, so a string's method on it (`dict(item.fields).get("angle", "0").strip()`) could not be lowered and the function fell back to Python | [#9997](https://github.com/jaseci-labs/jac/pull/9997) | Linked prefabs turned and sized (`map_remapped` in `editor/document/generate.jac`) |
 
 ## Reported, not yet fixed
 
+- [jaseci-labs/jac#9999](https://github.com/jaseci-labs/jac/issues/9999):
+  `struct.unpack` with a format chosen at run time does not lower natively
+  (the backend wants a literal format). The glTF reader
+  (`editor/model/gltf.jac`) reads each of glTF's six kinds of number in an
+  arm of its own with a literal format; a request, not a wrong result.
+
+- [jaseci-labs/jac#9998](https://github.com/jaseci-labs/jac/issues/9998):
+  `jac test` dies with SIGABRT or SIGSEGV and prints nothing when a native
+  test calls a function that an imported module demoted to its Python
+  implementation (inside one module the test is demoted and passes, and
+  `jac build --native` refuses with E5092). It is how the defect above first
+  showed: every test of the prefab files ended in exit 134 with no output.
+  A five-line program that imports and calls the functions, built with
+  `jac build --native`, names the function, the line and the construct.
+
+- [jaseci-labs/jac#9992](https://github.com/jaseci-labs/jac/issues/9992): a
+  flow lookup for a local that walks back to an assignment of it from itself
+  (`toward = Vec3(x=round(toward.x))`) refuses the reference inside that
+  right-hand side, which is then checked un-narrowed (E1099), when a later
+  statement is asked about before the checker has met the assignment, as the
+  interface writer does. It shows only on a cold build: from the commit that
+  added `Studio.drag_lay` (`editor/impl/studio.layhandle.impl.jac`) the
+  studio does not build from an empty cache without the fix, and warm
+  incremental builds hid that. A fix that keys the checker's re-entrancy
+  guard by symbol and statement is on the branch
+  `fix/checker-flow-lookup-reentry` of `marsninja/jac` and is applied to the
+  compiler this tree is built with; it has no regression test yet, so it is
+  not a pull request.
 - [jaseci-labs/jac#9969](https://github.com/jaseci-labs/jac/issues/9969): the
   checker takes a local that is first assigned inside a loop in an `impl`
   body for the archetype's method of the same name (E1001). Found in

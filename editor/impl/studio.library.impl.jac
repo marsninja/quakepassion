@@ -33,9 +33,16 @@ def:priv fragment_box(found: list[MapItem]) -> list[Vec3] | None {
     return [low, high];
 }
 
+def:priv instance_number(value: float) -> str {
+    near = round(value, 4);
+    return str(int(near)) if near == float(int(near)) else str(near);
+}
+
 impl Studio.prefab_path(name: str) -> str {
     folder = os.getenv("QP_PREFABS", "");
-    if not folder {
+    if self.project_folder {
+        folder = self.project_folder + "/prefabs";
+    } elif not folder {
         folder = os.getcwd() + "/prefabs";
     }
     return folder + "/" + name.replace("/", "_") + ".map";
@@ -85,7 +92,7 @@ impl Studio.place_fragment(scene: Scene, found: list[MapItem], label: str, group
 impl Studio.expanded(scene: Scene) -> Scene {
     linked = False;
     for item in scene.items() {
-        if item.classname() == "misc_prefab" or duplicates(item.fields) {
+        if item.classname() == "misc_prefab" or duplicates(item.fields) or digs(item.fields) {
             linked = True;
         }
     }
@@ -93,7 +100,7 @@ impl Studio.expanded(scene: Scene) -> Scene {
         return scene;
     }
     plain: list[MapItem] = [];
-    for read in with_images(scene_map(scene)) {
+    for read in with_holes(with_images(scene_map(scene)) if self.images_shown else scene_map(scene)) {
         if read.fields.get("classname", "") != "misc_prefab" {
             plain.append(read);
         }
@@ -103,18 +110,16 @@ impl Studio.expanded(scene: Scene) -> Scene {
         if item.classname() != "misc_prefab" {
             continue;
         }
-        found = self.read_fragment(self.prefab_path(item.fields.get("prefab", "")));
-        at = item.origin();
-        if found is None or at is None {
+        # With the prefabs it holds put in, and changed as this instance says.
+        found = self.prefab_items(item.fields.get("prefab", ""), []);
+        if found is None {
             continue;
         }
-        box = fragment_box(found);
-        if box is None {
-            continue;
+        # A linked prefab stands with the middle of its underside on its origin, sized and turned as it says.
+        stood = prefab_placed(found, item.fields);
+        if len(stood) > 0 {
+            whole.insert_map(stood, Vec3());
         }
-        # A linked prefab stands with the middle of its underside on its origin.
-        middle = box[0].add(box[1]).scale(0.5);
-        whole.insert_map(found, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z));
     }
     return whole;
 }
@@ -140,6 +145,30 @@ impl Studio.list_library(ui: StudioUi) {
             rows.append(TreeRow(key=lead + known, text=known, depth=1));
         }
     }
+    # After the shelves of files: what is open now, and what was lately.
+    current = self.scene;
+    docs = self.doc_keys();
+    rows.append(TreeRow(key="shelf:Open now", text="Open now", tone="accent", note=str(len(docs))));
+    for key in docs {
+        held = self.scenes[key];
+        rows.append(
+            TreeRow(
+                key="doc:" + key,
+                text=held.name + ("  (edited)" if held.dirty else ""),
+                depth=1,
+                picked=held is current
+            )
+        );
+    }
+    lately = self.recent_files();
+    rows.append(TreeRow(key="shelf:Recent", text="Recent", tone="accent", note=str(len(lately))));
+    for path in lately {
+        rows.append(TreeRow(key="recent:" + path, text=os.path.basename(path), depth=1));
+    }
+    rows.append(TreeRow(key="shelf:Favourites", text="Favourites", tone="accent", note=str(len(self.favourites))));
+    for kept_class in self.favourites {
+        rows.append(TreeRow(key="fav:" + kept_class, text=kept_class, depth=1));
+    }
     ui.library.rows = rows;
 }
 
@@ -154,6 +183,15 @@ impl Studio.fill_graph(scene: Scene, ui: StudioUi) {
         if fired {
             words = (name + "  ->  " + fired) if name else ("->  " + fired);
         }
+        # In the game last played from here: how often it fired, and
+        # whether its firing holds the game.
+        times = self.fired_names.get(self.signal_label(item.fields), 0);
+        if times > 0 {
+            words += "   fired x" + str(times);
+        }
+        if self.signal_label(item.fields) in self.breaks {
+            words += "   [holds]";
+        }
         boxes.append(
             GraphNode(
                 key=str(item.serial),
@@ -161,6 +199,7 @@ impl Studio.fill_graph(scene: Scene, ui: StudioUi) {
                 note=words,
                 column=node.column,
                 row=node.row,
+                tone="good" if times > 0 else "text",
                 picked=scene.is_selected(item)
             )
         );
@@ -286,18 +325,18 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
                 if item.classname() != "misc_prefab" or at is None {
                     continue;
                 }
-                inside = self.read_fragment(self.prefab_path(item.fields.get("prefab", "")));
+                inside = self.prefab_items(item.fields.get("prefab", ""), []);
                 if inside is None {
                     continue;
                 }
-                box = fragment_box(inside);
-                if box is None {
+                # What it stood for, where it stood, sized and turned as it was.
+                changed_copy = prefab_placed(inside, item.fields);
+                if len(changed_copy) == 0 {
                     continue;
                 }
-                middle = box[0].add(box[1]).scale(0.5);
                 scene.select(item);
                 scene.remove_selection();
-                scene.insert_map(inside, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z), "Unlink prefab");
+                scene.insert_map(changed_copy, Vec3(), "Unlink prefab");
                 done += 1;
             }
             self.say("Turned " + str(done) + " linked prefabs into copies" if done else "Select linked prefabs first");
@@ -352,6 +391,12 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.open_map(self.autosave_path(word[5:]));
         } elif word.startswith("prefab:") {
             self.library_command(scene, ["ed_prefab", "add", word[7:]]);
+        } elif word.startswith("fav:") {
+            self.class_command(scene, ["ed_class", word[4:]]);
+        } elif word.startswith("doc:") {
+            self.show_doc(word[4:]);
+        } elif word.startswith("recent:") {
+            self.open_map(word[7:]);
         } else {
             self.list_library(ui);
         }
@@ -378,4 +423,105 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.prefab_items(name: str, trail: list[str]) -> list[MapItem] | None {
+    found = self.read_fragment(self.prefab_path(name));
+    if found is None {
+        return None;
+    }
+    # The prefabs it holds, each read the same way: not one that holds
+    # itself, however far down, and no deeper than eight.
+    inner: dict[str, list[MapItem]] = {};
+    for item in found {
+        wanted = item.fields.get("prefab", "");
+        if item.fields.get("classname", "") != "misc_prefab" or not wanted or wanted in inner {
+            continue;
+        }
+        if wanted == name or wanted in trail or len(trail) >= 8 {
+            continue;
+        }
+        held = self.prefab_items(wanted, trail + [name]);
+        if held is not None {
+            inner[wanted] = held;
+        }
+    }
+    return with_prefabs(found, inner);
+}
+
+impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
+    how = args[1] if len(args) > 1 else "";
+    if args[0] != "ed_prefab" or how not in ["swap", "put", "names", "plain", "turn", "scale"] {
+        return False;
+    }
+    chosen = [item for item in scene.selection() if item.classname() == "misc_prefab"];
+    if len(chosen) == 0 {
+        self.say("Select the linked prefabs to change (ed_prefab link <name> adds one)");
+        return True;
+    }
+    first = chosen[0];
+    told: dict[str, str | None] = {};
+    if how == "plain" {
+        told = {"_swap": None, "_put": None, "_names": None, "_scale": None, "angle": None, "angles": None};
+    } elif how == "turn" and len(args) > 2 {
+        # Round the upright through where it stands, by so much more.
+        try {
+            more = float(args[2]);
+        } except ValueError {
+            self.say("ed_prefab turn <degrees>");
+            return True;
+        }
+        about = args[3] if len(args) > 3 else "yaw";
+        if about not in ["pitch", "yaw", "roll"] {
+            self.say("ed_prefab turn <degrees> [pitch|roll]: round the upright, or tipped nose down, or rolled about its length");
+            return True;
+        }
+        tipped = prefab_turns(first.fields);
+        place = ["pitch", "yaw", "roll"].index(about);
+        tipped[place] = (tipped[place] + more) % 360.0;
+        if tipped[0] == 0.0 and tipped[2] == 0.0 {
+            # Only round the upright: the one number every entity has.
+            told = {"angle": instance_number(tipped[1]) if tipped[1] != 0.0 else None, "angles": None};
+        } else {
+            told = {"angles": " ".join([instance_number(turn) for turn in tipped]), "angle": None};
+        }
+    } elif how == "scale" and len(args) > 2 {
+        sizes: list[float] = [];
+        for word in args[2:5] {
+            try {
+                sizes.append(float(word));
+            } except ValueError {
+                sizes = [];
+                break;
+            }
+        }
+        flat = len([size for size in sizes if abs(size) < 0.001]) > 0;
+        if (len(sizes) != 1 and len(sizes) != 3) or flat {
+            self.say("ed_prefab scale <times> | <x> <y> <z>: how many times as large (not nothing)");
+            return True;
+        }
+        whole_size = len(sizes) == 1 or (sizes[0] == sizes[1] and sizes[1] == sizes[2]);
+        if whole_size and sizes[0] == 1.0 {
+            told = {"_scale": None};
+        } else {
+            told = {"_scale": instance_number(sizes[0]) if whole_size else " ".join([instance_number(size) for size in sizes])};
+        }
+    } elif how == "swap" and len(args) > 3 {
+        # One more pair, after those it has.
+        told = {"_swap": (first.fields.get("_swap", "") + " " + args[2] + " " + args[3]).strip()};
+    } elif how == "put" and len(args) > 4 {
+        before = first.fields.get("_put", "");
+        told = {"_put": (before + "; " if before else "") + args[2] + " " + args[3] + " " + " ".join(args[4:])};
+    } elif how == "names" and len(args) > 2 {
+        told = {"_names": args[2]};
+    } else {
+        self.say("ed_prefab swap <old> <new> | put <classname|name> <key> <value> | names <word> | turn <degrees> [pitch|roll] | scale <times>|<x y z> | plain");
+        return True;
+    }
+    if not scene.set_fields(told, "Prefab instance") {
+        self.say("It is so already");
+    } else {
+        self.say("This instance differs from its prefab: " + how);
+    }
+    return True;
 }

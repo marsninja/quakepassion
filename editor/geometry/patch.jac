@@ -10,6 +10,8 @@ import math;
 import from engine.math.vec3 { Vec3 }
 import from .brush { Side }
 import from .csg { hull_sides }
+import from .mapping { side_like, mapping_through, mapping_place }
+import from .brush { Mapping }
 
 """Control points as a field keeps them: three numbers each."""
 def points_text(points: list[Vec3]) -> str {
@@ -83,9 +85,18 @@ def patch_brushes(
     steps: int = 4,
     thickness: float = 8.0,
     material: str = "",
-    like: list[Side] = []
+    like: list[Side] = [],
+    places: list[float] = []
 ) -> list[list[Side]] {
     grid = patch_surface(points, width, height, steps);
+    # Where each point of the surface lies on the material, when the
+    # control points say where they do: bent between them as the surface is.
+    skin: list[Vec3] = [];
+    if len(places) == width * height * 2 {
+        skin = patch_surface(
+            [Vec3(x=places[index * 2], y=places[index * 2 + 1]) for index in range(width * height)], width, height, steps
+        )[2];
+    }
     columns = grid[0];
     rows = grid[1];
     surface = grid[2];
@@ -135,6 +146,21 @@ def patch_brushes(
                     corners.append(backs[index]);
                 }
                 prism = hull_sides(corners, like, material);
+                if len(prism) >= 4 and len(skin) == len(surface) {
+                    # Its face of the surface takes the material as its three corners say.
+                    out = surface[trio[1]].sub(surface[trio[0]]).cross(surface[trio[2]].sub(surface[trio[0]])).normalized();
+                    laid = mapping_through(
+                        [surface[trio[0]], surface[trio[1]], surface[trio[2]]],
+                        [skin[trio[0]].x, skin[trio[0]].y, skin[trio[1]].x, skin[trio[1]].y, skin[trio[2]].x, skin[trio[2]].y]
+                    );
+                    if laid is not None {
+                        for (number, side) in enumerate(prism) {
+                            if abs(side.plane.normal.dot(out)) > 0.999 and abs(side.plane.side(surface[trio[0]])) < 0.1 {
+                                prism[number] = side_like(side, None, laid);
+                            }
+                        }
+                    }
+                }
                 if len(prism) >= 4 {
                     made.append(prism);
                 }
@@ -145,15 +171,25 @@ def patch_brushes(
 }
 
 """The kinds `patch_points` knows."""
-glob PATCH_KINDS: list[str] = ["sheet", "arch", "bevel", "cylinder", "cone"];
+glob PATCH_KINDS: list[str] = ["sheet", "arch", "bevel", "cylinder", "cone", "endcap"];
 
 """The control points of a patch of a kind, filling a box: (width, height,
 points). A sheet lies flat across the top of the box; an arch spans it
 along x and runs its depth; a bevel rounds one upright corner; a cylinder
-and a cone stand in it."""
+and a cone stand in it; an endcap is half a pipe standing upright, open
+toward the box's near side."""
 def patch_points(kind: str, low: Vec3, high: Vec3) -> tuple[int, int, list[Vec3]] {
     middle = low.add(high).scale(0.5);
     points: list[Vec3] = [];
+    if kind == "endcap" {
+        # Five points round the far half of the box, at each of three heights.
+        for z in [low.z, middle.z, high.z] {
+            for (x, y) in [(low.x, low.y), (low.x, high.y), (middle.x, high.y), (high.x, high.y), (high.x, low.y)] {
+                points.append(Vec3(x=x, y=y, z=z));
+            }
+        }
+        return (5, 3, points);
+    }
     if kind == "sheet" {
         for y in [low.y, middle.y, high.y] {
             for x in [low.x, middle.x, high.x] {
@@ -205,4 +241,152 @@ def points_shifted(text: str, delta: Vec3) -> str {
         return text;
     }
     return points_text([point.add(delta) for point in points]);
+}
+
+"""Control points kept as a field, every one carried by a change of the
+world that sends a point p to pivot + M (p - pivot): `across`, `along` and
+`upward` are what M makes of the x, y and z axes."""
+def points_carried(text: str, pivot: Vec3, across: Vec3, along: Vec3, upward: Vec3) -> str {
+    words = text.split();
+    points = points_from(text, len(words) // 3);
+    if points is None {
+        return text;
+    }
+    moved: list[Vec3] = [];
+    for point in points {
+        away = point.sub(pivot);
+        moved.append(pivot.add(across.scale(away.x)).add(along.scale(away.y)).add(upward.scale(away.z)));
+    }
+    return points_text(moved);
+}
+
+"""Control points kept as a field, each row of `width` turned end for end: a
+mirrored patch laid out this way faces the way its mirror image should."""
+def points_reversed(text: str, width: int) -> str {
+    words = text.split();
+    points = points_from(text, len(words) // 3);
+    if points is None or width < 2 or len(points) % width != 0 {
+        return text;
+    }
+    turned: list[Vec3] = [];
+    for row in range(len(points) // width) {
+        for column in range(width) {
+            turned.append(points[row * width + width - 1 - column]);
+        }
+    }
+    return points_text(turned);
+}
+
+"""A grid of control points with one more curve across it ("u": two more
+columns) or up it ("v": two more rows), each carrying on from the last two
+as they were going: (width, height, points)."""
+def grid_grown(points: list[Vec3], width: int, height: int, way: str) -> tuple[int, int, list[Vec3]] {
+    if width < 3 or height < 3 or len(points) != width * height {
+        return (width, height, points);
+    }
+    grown: list[Vec3] = [];
+    if way == "u" {
+        for row in range(height) {
+            last = points[row * width + width - 1];
+            step = last.sub(points[row * width + width - 2]);
+            for column in range(width) {
+                grown.append(points[row * width + column]);
+            }
+            grown.append(last.add(step));
+            grown.append(last.add(step.scale(2.0)));
+        }
+        return (width + 2, height, grown);
+    }
+    for point in points {
+        grown.append(point);
+    }
+    for more in [1.0, 2.0] {
+        for column in range(width) {
+            last = points[(height - 1) * width + column];
+            grown.append(last.add(last.sub(points[(height - 2) * width + column]).scale(more)));
+        }
+    }
+    return (width, height + 2, grown);
+}
+
+"""A grid without its last curve across ("u") or up ("v"). Unchanged when
+that would leave less than one curve."""
+def grid_shrunk(points: list[Vec3], width: int, height: int, way: str) -> tuple[int, int, list[Vec3]] {
+    if len(points) != width * height or (way == "u" and width < 5) or (way != "u" and height < 5) {
+        return (width, height, points);
+    }
+    kept: list[Vec3] = [];
+    if way == "u" {
+        for row in range(height) {
+            for column in range(width - 2) {
+                kept.append(points[row * width + column]);
+            }
+        }
+        return (width - 2, height, kept);
+    }
+    for index in range(width * (height - 2)) {
+        kept.append(points[index]);
+    }
+    return (width, height - 2, kept);
+}
+
+"""Places on a material as a field keeps them: two numbers a control point."""
+def places_text(places: list[float]) -> str {
+    return " ".join([str(int(each)) if each == float(int(each)) else str(round(each, 3)) for each in places]);
+}
+
+"""Places from a field: two numbers for each of `count` control points, or
+none when the field is not that."""
+def places_from(text: str, count: int) -> list[float] {
+    found: list[float] = [];
+    for word in text.split() {
+        try {
+            found.append(float(word));
+        } except ValueError {
+            return [];
+        }
+    }
+    return found if len(found) == count * 2 else [];
+}
+
+"""Places that spread a material evenly over a patch: `wide` texels from its
+first column of control points to its last, `tall` from its first row to
+its last."""
+def places_even(width: int, height: int, wide: float, tall: float) -> list[float] {
+    found: list[float] = [];
+    for row in range(height) {
+        for column in range(width) {
+            found.append(wide * float(column) / float(max(1, width - 1)));
+            found.append(tall * float(row) / float(max(1, height - 1)));
+        }
+    }
+    return found;
+}
+
+"""Places that lay a material on a patch as it lies on a plane: each control
+point where the mapping puts it."""
+def places_projected_from(points: list[Vec3], mapping: Mapping) -> list[float] {
+    found: list[float] = [];
+    for point in points {
+        spot = mapping_place(mapping, point);
+        found.append(spot[0]);
+        found.append(spot[1]);
+    }
+    return found;
+}
+
+"""Places with some control points' moved: those of a row, of a column, or
+all (`which` below zero)."""
+def places_slid(places: list[float], width: int, height: int, way: str, which: int, across: float, down: float) -> list[float] {
+    made = list(places);
+    for row in range(height) {
+        for column in range(width) {
+            chosen = way == "all" or (way == "row" and row == which) or (way == "col" and column == which);
+            if chosen and (row * width + column) * 2 + 1 < len(made) {
+                made[(row * width + column) * 2] += across;
+                made[(row * width + column) * 2 + 1] += down;
+            }
+        }
+    }
+    return made;
 }

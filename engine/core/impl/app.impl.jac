@@ -139,6 +139,9 @@ impl App.render_bench() {
         # (jaseci-labs/jac#9969: a local named `culling` here is taken for the method.)
         pvs = self.culling() and not view.everything;
         faces = self.level.visible(self.world, view.eye, pvs);
+        if view.over {
+            self.renderer.clear_rect(view.x, view.y, view.width, view.height);
+        }
         self.renderer.begin_view(
             view.x, view.y, view.width, view.height, view.eye, view.yaw, view.pitch, view.span
         );
@@ -926,6 +929,18 @@ impl App.load_destination(
 impl App.step() -> bool {
     dt = 0.0 if self.skip_time else (self.fixed_dt if self.fixed_dt > 0.0 else self.renderer.frame_time());
     self.skip_time = False;
+    if self.workbench.holding and not self.workbench.active {
+        # Played from the workbench and held still there: the game's time
+        # moves a sixtieth of a second for each tick asked for, and not otherwise.
+        dt = 0.0;
+        if self.workbench.steps_owed > 0 {
+            self.workbench.steps_owed -= 1;
+            dt = 1.0 / 60.0;
+        }
+    }
+    if not self.workbench.active {
+        self.workbench.played(dt);
+    }
     self.renderer.sync();
     self.console.advance(self.renderer.frame_time());
     escape = False;

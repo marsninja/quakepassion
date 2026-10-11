@@ -1,0 +1,3 @@
+// Traps: an add-on of entity classes, for the project session.
+class trap_spikes | point | passion | Spikes that rise from the floor | dmg:n:20:What they do to who stands on them, wait:n:2 | start up
+class trap_pit | brush | passion | A floor that falls away

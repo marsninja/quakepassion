@@ -55,7 +55,8 @@ def terrain_brushes(
     heights: list[float],
     base: float = 16.0,
     material: str = "",
-    like: list[list[Side]] = []
+    like: list[list[Side]] = [],
+    pattern: str = ""
 ) -> list[list[Side]] {
     made: list[list[Side]] = [];
     if cols < 1 or rows < 1 or len(heights) != (cols + 1) * (rows + 1) {
@@ -70,8 +71,11 @@ def terrain_brushes(
                 spots.append(Vec3(x=origin.x + float(col + dx) * cell, y=origin.y + float(row + dy) * cell));
                 tops.append(floor + base + max(0.0, heights[(row + dy) * (cols + 1) + col + dx]));
             }
-            # Split along the diagonal from the cell's low corner to its far one.
-            for trio in [[0, 1, 2], [0, 2, 3]] {
+            # Split along the diagonal from the cell's low corner to its far
+            # one; or along the other; or one and then the other, cell by
+            # cell, so ridges run either way.
+            crossed = pattern == "other" or (pattern == "alt" and (row + col) % 2 == 1);
+            for trio in ([[0, 1, 3], [1, 2, 3]] if crossed else [[0, 1, 2], [0, 2, 3]]) {
                 corners: list[Vec3] = [];
                 for index in trio {
                     corners.append(Vec3(x=spots[index].x, y=spots[index].y, z=floor));
@@ -135,12 +139,60 @@ def sculpted(
                 if count > 0 {
                     now = was + (total / float(count) - was) * weight * max(0.0, min(1.0, amount));
                 }
+            } elif how == "erode" {
+                # What stands above its lowest neighbour slumps toward it.
+                lowest = was;
+                for (dc, dr) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    if 0 <= col + dc and col + dc <= cols and 0 <= row + dr and row + dr <= rows {
+                        lowest = min(lowest, heights[(row + dr) * (cols + 1) + col + dc]);
+                    }
+                }
+                now = was - weight * min(abs(amount), (was - lowest) * 0.5);
             } elif how == "noise" {
                 # The same roughness for the same corner, every time.
                 seed = (col * 73856093) ^ (row * 19349663);
                 now = was + amount * weight * (float(seed % 2001) / 1000.0 - 1.0);
             }
             result[index] = max(0.0, float(round(now)));
+        }
+    }
+    return result;
+}
+
+"""Heights with every corner inside a rectangle of the world lifted by
+`amount` (lowered, when it is negative), and those within `falloff` of the
+rectangle by less the farther they are from it."""
+def lifted(
+    heights: list[float],
+    origin: Vec3,
+    cols: int,
+    rows: int,
+    cell: float,
+    low: Vec3,
+    high: Vec3,
+    amount: float,
+    falloff: float = 0.0
+) -> list[float] {
+    result = list(heights);
+    if len(heights) != (cols + 1) * (rows + 1) {
+        return result;
+    }
+    for row in range(rows + 1) {
+        for col in range(cols + 1) {
+            x = origin.x + float(col) * cell;
+            y = origin.y + float(row) * cell;
+            # How far outside the rectangle the corner is.
+            out_x = max(0.0, max(low.x - x, x - high.x));
+            out_y = max(0.0, max(low.y - y, y - high.y));
+            away = math.sqrt(out_x * out_x + out_y * out_y);
+            share = 1.0;
+            if away > 0.001 {
+                share = 1.0 - away / falloff if falloff > 0.0 and away < falloff else 0.0;
+            }
+            if share > 0.0 {
+                index = row * (cols + 1) + col;
+                result[index] = max(0.0, float(round(heights[index] + amount * share)));
+            }
         }
     }
     return result;

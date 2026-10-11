@@ -15,14 +15,30 @@ import from ..geometry.brush {
     windings_bounds,
     clip_sides,
     side_turned,
+    side_on,
     turned_z
 }
 import math;
 import from ..formats.map { MapItem, MapFile }
 import from ..classes.registry { flag_put }
-import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted }
-import from ..geometry.patch { patch_brushes, points_text, points_from, points_shifted }
+import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted, lifted }
+import from ..geometry.touchup { corner_near, kin_corners, cells_corners, corners_lifted }
+import from ..geometry.patch {
+    patch_brushes,
+    points_text,
+    points_from,
+    points_shifted,
+    points_carried,
+    points_reversed,
+    grid_grown,
+    grid_shrunk,
+    places_text,
+    places_from,
+    patch_surface
+}
 import from ..geometry.csg { hull_sides }
+import from ..geometry.faces { sides_dropped, side_flipped, cone_on, prism_on, walls_on, outline_width }
+import from ..geometry.shapes { caulked }
 import from ..geometry.csg {
     carve_sides,
     common_sides,
@@ -33,8 +49,10 @@ import from ..geometry.csg {
     joined_pieces,
     pruned_sides
 }
+import from ..geometry.linear { Linear, point_remapped, sides_remapped }
 import from ..geometry.mapping {
     side_like,
+    mapping_place,
     mapping_slid,
     mapping_sized,
     mapping_spun,
@@ -45,7 +63,10 @@ import from ..geometry.mapping {
     side_stretched,
     side_spun,
     spun_about,
-    axis_vector
+    axis_vector,
+    mapping_min_fitted,
+    mapping_wrapped,
+    mapping_bad
 }
 
 edge Holds: Scene --> Item {}
@@ -61,6 +82,31 @@ edge Selected: Scene --> Item | Solid {}
 map's logic is a graph that walkers travel."""
 edge Fires: Item --> Item {
     has key: str = "target";
+}
+
+"""An entity or a brush belongs to a named set: a selection kept with the
+document, to pick again later."""
+edge Member: Scene --> Item | Solid {
+    has name: str = "";
+}
+
+"""A side of one brush is linked to a side of another: the two are kept in
+one plane, so pushing either pushes both. `side` is which side of the brush
+the edge leaves; the side it reaches is the one that lies in that plane."""
+edge Linked: Solid --> Solid {
+    has side: int = 0;
+}
+
+"""The field that keeps a document's linked faces in a map file."""
+glob LINKS_KEY: str = "_links";
+
+"""Whether two planes are one plane, facing the same way or opposite ways."""
+def planes_meet(first: Plane3, second: Plane3) -> bool {
+    lean = first.normal.dot(second.normal);
+    if abs(lean) < 0.9999 {
+        return False;
+    }
+    return abs(first.dist - (second.dist if lean > 0.0 else -second.dist)) < 0.05;
 }
 
 """One selected face: the brush it is a side of, and which side."""
@@ -97,9 +143,14 @@ node Item {
         return -1;
     }
 
-    """What lists call it: its targetname when it has one."""
+    """What lists call it: its targetname when it has one, and a group by
+    the name it was given."""
     def title -> str {
         name = self.fields.get("targetname", "");
+        group = self.fields.get("_group_name", "");
+        if group and not name and self.classname() == "func_group" {
+            return group;
+        }
         return self.classname() + (" (" + name + ")" if name else "");
     }
 }
@@ -123,6 +174,50 @@ node Solid {
     def bounds -> list[Vec3] | None {
         return windings_bounds(self.outlines());
     }
+}
+
+"""The fields a group keeps its own switches in: how it shows in the views
+("grey" for outlines only, "hidden" for nothing), whether clicks pass it
+by, whether builds leave it out, and the colour of its outlines."""
+glob VIEW_KEY: str = "_view",
+     LOCK_KEY: str = "_locked",
+     SKIP_KEY: str = "_skip",
+     TINT_KEY: str = "_tint";
+
+"""How an entity shows in the views: "", "grey" or "hidden"."""
+def item_veil(item: Item) -> str {
+    how = item.fields.get(VIEW_KEY, "");
+    return how if how in ["grey", "hidden"] else "";
+}
+
+"""Whether an entity has one of its switches on."""
+def item_switched(item: Item, key: str) -> bool {
+    return item.fields.get(key, "0").strip() == "1";
+}
+
+"""What the fields that keep a document's sets in a map file begin with."""
+glob SET_PREFIX: str = "_set_";
+
+"""The field that keeps, in a map file, the names of the sets switched off
+as layers."""
+glob LAYERS_KEY: str = "_layers_off";
+
+"""The field a group keeps its own pivot in: what it turns and stretches
+about, in place of its middle."""
+glob PIVOT_KEY: str = "_center";
+
+"""A side as a change left it, with the material lying as it did before:
+where it was in the world, the face having moved through it."""
+def side_loose(after: Side, before: Side) -> Side {
+    return Side(
+        plane=after.plane,
+        points=after.points,
+        material=after.material,
+        mapping=before.mapping,
+        contents=after.contents,
+        flags=after.flags,
+        value=after.value
+    );
 }
 
 """A side moved by `delta`, its material staying where it lies on the face
@@ -391,7 +486,10 @@ walker Shift {
     has delta: Vec3,
         step: Step,
         # Brushes already moved, so one selected with its entity moves once.
-        slid: list[Solid] = [];
+        slid: list[Solid] = [],
+        # Whether materials go with their faces, or stay where they lie in
+        # the world while the faces move through them.
+        locked: bool = True;
 
     can start with Scene entry {
         visit [here->:Selected:->];
@@ -406,6 +504,13 @@ walker Shift {
                 carried = FieldChange(item=here, key="_points", before=bent, after=points_shifted(bent, self.delta));
                 carried.redo();
                 self.step.changes.append(carried);
+            }
+            hub = here.fields.get(PIVOT_KEY);
+            if hub is not None {
+                # A group's own pivot goes with the group.
+                kept = FieldChange(item=here, key=PIVOT_KEY, before=hub, after=points_shifted(hub, self.delta));
+                kept.redo();
+                self.step.changes.append(kept);
             }
             visit [here->:Owns:->];
             return;
@@ -423,7 +528,12 @@ walker Shift {
         }
         self.slid.append(here);
         change = SidesChange(
-            solid=here, before=here.sides, after=[side_moved(side, self.delta) for side in here.sides]
+            solid=here,
+            before=here.sides,
+            after=[
+                (side_moved(side, self.delta) if self.locked else side_loose(side_moved(side, self.delta), side))
+                for side in here.sides
+            ]
         );
         change.redo();
         self.step.changes.append(change);
@@ -586,7 +696,8 @@ walker Turn {
         step: Step,
         # 0, 1 or 2: the x, y or vertical axis.
         axis: int = 2,
-        turned: list[Solid] = [];
+        turned: list[Solid] = [],
+        locked: bool = True;
 
     can start with Scene entry {
         visit [here->:Selected:->];
@@ -595,6 +706,27 @@ walker Turn {
     can swing with Item entry {
         at = here.origin();
         if at is None {
+            about = axis_vector(self.axis);
+            for key in ["_points", PIVOT_KEY] {
+                # A patch's control points, and a group's pivot, turn with it.
+                held = here.fields.get(key);
+                if held is not None {
+                    carried = FieldChange(
+                        item=here,
+                        key=key,
+                        before=held,
+                        after=points_carried(
+                            held,
+                            self.pivot,
+                            spun_about(Vec3(x=1.0), about, self.angle),
+                            spun_about(Vec3(y=1.0), about, self.angle),
+                            spun_about(Vec3(z=1.0), about, self.angle)
+                        )
+                    );
+                    carried.redo();
+                    self.step.changes.append(carried);
+                }
+            }
             visit [here->:Owns:->];
             return;
         }
@@ -629,16 +761,16 @@ walker Turn {
             return;
         }
         self.turned.append(here);
-        change = SidesChange(
-            solid=here,
-            before=here.sides,
-            after=[
-                (side_turned(side, self.pivot, self.angle) if self.axis == 2 else side_spun(
-                    side, self.pivot, self.axis, self.angle
-                ))
-                for side in here.sides
-            ]
-        );
+        spun = [
+            (side_turned(side, self.pivot, self.angle) if self.axis == 2 else side_spun(
+                side, self.pivot, self.axis, self.angle
+            ))
+            for side in here.sides
+        ];
+        if not self.locked {
+            spun = [side_loose(spun[index], here.sides[index]) for index in range(len(spun))];
+        }
+        change = SidesChange(solid=here, before=here.sides, after=spun);
         change.redo();
         self.step.changes.append(change);
     }
@@ -651,13 +783,32 @@ obj FaceEdit {
         s: float = 0.0,
         t: float = 0.0,
         material: str = "",
-        sizes: dict[str, list[int]] = {};
+        sizes: dict[str, list[int]] = {},
+        # The face a wrap or a projection takes its material and mapping from.
+        source: Side | None = None;
 
     """The side as the edit leaves it: the same side when it changes
     nothing."""
     def apply(side: Side, outline: list[Vec3]) -> Side {
         if self.how == "material" {
             return side if side.material == self.material else side_like(side, self.material);
+        }
+        given = self.source;
+        if (self.how == "wrap" or self.how == "project") and given is not None {
+            # The tagged face's material, carried round the corner onto
+            # this face, or laid on it just as it lies on that one.
+            carried = given.mapping;
+            if self.how == "wrap" {
+                round_edge = mapping_wrapped(given.mapping, given.plane, side.plane);
+                if round_edge is None {
+                    return side;
+                }
+                carried = round_edge;
+            }
+            if side.material == given.material and mapping_same(side.mapping, carried) {
+                return side;
+            }
+            return side_like(side, given.material, carried);
         }
         old = side.mapping;
         fresh = old;
@@ -675,6 +826,9 @@ obj FaceEdit {
             fresh = mapping_plain(side.plane.normal);
         } elif self.how == "flat" {
             fresh = mapping_flat(side.plane.normal);
+        } elif self.how == "minfit" {
+            least = self.sizes.get(side.material, [64, 64]);
+            fresh = mapping_min_fitted(old, outline, least[0], least[1]);
         } elif self.how == "fit" {
             size = self.sizes.get(side.material, [64, 64]);
             fresh = mapping_fitted(
@@ -748,7 +902,8 @@ walker Stretch {
     has pivot: Vec3,
         factors: Vec3,
         step: Step,
-        seen: list[Solid] = [];
+        seen: list[Solid] = [],
+        locked: bool = True;
 
     can start with Scene entry {
         visit [here->:Selected:->];
@@ -757,6 +912,25 @@ walker Stretch {
     can place with Item entry {
         at = here.origin();
         if at is None {
+            for key in ["_points", PIVOT_KEY] {
+                # A patch's control points, and a group's pivot, stretch with it.
+                held = here.fields.get(key);
+                if held is not None {
+                    stretched = points_carried(
+                        held, self.pivot, Vec3(x=self.factors.x), Vec3(y=self.factors.y), Vec3(z=self.factors.z)
+                    );
+                    lay = here.fields.get("_patch", "").split();
+                    if key == "_points" and self.factors.x * self.factors.y * self.factors.z < 0.0
+                        and len(lay) > 0 and lay[0].isdigit() {
+                        # Mirrored, a patch built again would thicken toward its
+                        # other side: its rows are turned end for end to keep it.
+                        stretched = points_reversed(stretched, int(lay[0]));
+                    }
+                    carried = FieldChange(item=here, key=key, before=held, after=stretched);
+                    carried.redo();
+                    self.step.changes.append(carried);
+                }
+            }
             visit [here->:Owns:->];
             return;
         }
@@ -800,9 +974,100 @@ walker Stretch {
         if not sides_enclose(after) {
             return;
         }
+        if not self.locked {
+            after = [side_loose(after[index], here.sides[index]) for index in range(len(after))];
+        }
         change = SidesChange(solid=here, before=here.sides, after=after);
         change.redo();
         self.step.changes.append(change);
+    }
+}
+
+"""Carry the selection through a change of the world about a pivot (a turn,
+a change of size, a shear, or any of them at once): brushes with their
+materials, patches by their control points, point entities by where they
+are and, when the change turns the floor under them, by the way they face."""
+walker Remap {
+    has pivot: Vec3,
+        change: Linear,
+        step: Step,
+        seen: list[Solid] = [],
+        locked: bool = True;
+
+    can start with Scene entry {
+        visit [here->:Selected:->];
+    }
+
+    can place with Item entry {
+        at = here.origin();
+        if at is None {
+            for key in ["_points", PIVOT_KEY] {
+                # A patch's control points, and a group's pivot, go through it too.
+                held = here.fields.get(key);
+                if held is not None {
+                    remade = points_carried(held, self.pivot, self.change.x, self.change.y, self.change.z);
+                    lay = here.fields.get("_patch", "").split();
+                    if key == "_points" and self.change.volume() < 0.0 and len(lay) > 0 and lay[0].isdigit() {
+                        # Mirrored, a patch built again would thicken toward its
+                        # other side: its rows are turned end for end to keep it.
+                        remade = points_reversed(remade, int(lay[0]));
+                    }
+                    carried = FieldChange(item=here, key=key, before=held, after=remade);
+                    carried.redo();
+                    self.step.changes.append(carried);
+                }
+            }
+            visit [here->:Owns:->];
+            return;
+        }
+        put = FieldChange(
+            item=here,
+            key="origin",
+            before=here.fields.get("origin"),
+            after=write_vector(point_remapped(at, self.pivot, self.change))
+        );
+        put.redo();
+        self.step.changes.append(put);
+        facing = here.fields.get("angle");
+        if facing is None {
+            return;
+        }
+        try {
+            # Up (-1) and down (-2) are not directions to turn.
+            way = float(facing);
+            if way < 0.0 {
+                return;
+            }
+            ahead = self.change.carry(Vec3(x=math.cos(math.radians(way)), y=math.sin(math.radians(way))));
+            if abs(ahead.x) + abs(ahead.y) < 0.0001 {
+                return;
+            }
+            faced = round(math.degrees(math.atan2(ahead.y, ahead.x)) % 360.0, 3) % 360.0;
+            if abs(faced - way) > 0.001 {
+                face = FieldChange(item=here, key="angle", before=facing, after=field_number(faced));
+                face.redo();
+                self.step.changes.append(face);
+            }
+        } except ValueError {
+            return;
+        }
+    }
+
+    can reshape with Solid entry {
+        if not here.held or here in self.seen {
+            return;
+        }
+        self.seen.append(here);
+        after = sides_remapped(here.sides, self.pivot, self.change);
+        if len(after) != len(here.sides) or not sides_enclose(after) {
+            return;
+        }
+        if not self.locked {
+            after = [side_loose(after[index], here.sides[index]) for index in range(len(after))];
+        }
+        reshaped = SidesChange(solid=here, before=here.sides, after=after);
+        reshaped.redo();
+        self.step.changes.append(reshaped);
     }
 }
 
@@ -989,6 +1254,19 @@ walker Inspect {
             size = box[1].sub(box[0]);
             if min(size.x, min(size.y, size.z)) < 1.0 {
                 self.findings.append(Finding(words=label + " is thinner than a unit", solid=here));
+            } else {
+                # A sliver of a face on a brush that is not itself a sliver.
+                slivers = 0;
+                for outline in outlines {
+                    if len(outline) >= 3 and outline_width(outline) < 1.0 {
+                        slivers += 1;
+                    }
+                }
+                if slivers > 0 {
+                    self.findings.append(
+                        Finding(words=label + " has " + str(slivers) + " faces thinner than a unit", solid=here)
+                    );
+                }
             }
         }
         whole = True;
@@ -1003,6 +1281,17 @@ walker Inspect {
         if not whole {
             self.findings.append(Finding(words=label + " has corners off the unit grid", solid=here));
         }
+        smeared = 0;
+        for side in here.sides {
+            if mapping_bad(side.mapping) {
+                smeared += 1;
+            }
+        }
+        if smeared > 0 {
+            self.findings.append(
+                Finding(words=label + " has " + str(smeared) + " sides whose material is smeared into a line", solid=here)
+            );
+        }
     }
 }
 
@@ -1016,6 +1305,20 @@ walker Reach {
         }
         self.seen.append(here);
         visit [here->:Fires:->];
+    }
+}
+
+"""Carries "this is set off" down the logic graph from what sets itself
+off. A thing killed is not set off, so only what is fired is followed."""
+walker Wake {
+    has woken: list[Item] = [];
+
+    can follow with Item entry {
+        if here in self.woken or not here.held {
+            return;
+        }
+        self.woken.append(here);
+        visit [here->:Fires:key == "target":->];
     }
 }
 
@@ -1086,7 +1389,11 @@ node Scene {
         # The revision the Fires edges were drawn at.
         linked: int = -1,
         next_serial: int = 0,
-        journal: Journal = Journal();
+        journal: Journal = Journal(),
+        # The names of the selections kept as sets, in the order made; and
+        # those of them switched off as layers, their members hidden.
+        set_names: list[str] = [],
+        layers_off: list[str] = [];
 
     """Every item in the document, in map order."""
     def items -> list[Item] {
@@ -1183,7 +1490,168 @@ node Scene {
     def select_material(material: str) -> int;
     """Stretch the selection about its middle by a factor along each axis
     (-1 mirrors)."""
-    def stretch_selection(factors: Vec3, grid: float = 8.0, label: str = "Stretch") -> bool;
+    def stretch_selection(
+        factors: Vec3, grid: float = 8.0, label: str = "Stretch", about: Vec3 | None = None, locked: bool = True
+    ) -> bool;
+    """Carry the selection through a change of the world (a turn, a change
+    of size, a shear, or any of them at once) about a point: its own middle
+    put on the grid when none is given."""
+    def remap_selection(
+        change: Linear, about: Vec3 | None = None, label: str = "Shear", grid: float = 8.0, locked: bool = True
+    ) -> bool;
+    # Faces dropped, turned and built on; side flags (impl/scene.faces.impl.jac)
+
+    """Take the picked faces off their brushes, where the other sides close
+    without them. Answers how many faces went."""
+    def drop_faces -> int;
+    """Turn each picked face to face the other way, where the other sides
+    still close a brush. Answers how many turned."""
+    def flip_faces -> int;
+    """Stand a brush on each picked face: "cone" (to a point `size` out),
+    "prism" (the face pushed out by `size`) or "walls" (round its edge,
+    `size` out and `thickness` in). The new brushes are left selected.
+    Answers how many were made."""
+    def build_on_faces(shape: str, size: float, thickness: float = 16.0) -> int;
+    """Build a patch again with another grid of control points, another
+    fineness (prisms a curve) or another thickness; zero or less keeps what
+    it has."""
+    def remake_patch(
+        item: Item, points: list[Vec3], width: int, height: int, steps: int = 0, thickness: float = 0.0,
+        label: str = "Patch"
+    ) -> bool;
+    """One more curve across ("u") or up ("v") a patch, or one fewer."""
+    def grow_patch(item: Item, way: str, more: bool = True) -> bool;
+    """Where a patch's control points lie on its material, in texels, two
+    numbers a point (none when it has not been told)."""
+    def patch_places(item: Item) -> list[float];
+    """Tell a patch where its control points lie on its material (none
+    forgets them), and build it again so that its surface takes the
+    material as they say."""
+    def set_patch_places(item: Item, places: list[float], label: str = "Lay material") -> bool;
+    """Where a patch's built surface has its material at its first corner
+    and at its last, as its brushes' own faces say: four numbers, or none
+    when a corner is pinched to a point."""
+    def patch_lies(item: Item) -> list[float];
+    """Lift (or lower) a terrain inside a rectangle of the world, with a
+    falloff outside it."""
+    def lift_terrain(item: Item, low: Vec3, high: Vec3, amount: float, falloff: float = 0.0) -> bool;
+    """Split a terrain's cells along the same diagonal (""), the other
+    ("other") or each in turn ("alt")."""
+    def set_pattern(item: Item, pattern: str) -> bool;
+    """Give the top of every prism of a terrain within `radius` of a point
+    a material. Answers how many prisms changed."""
+    def paint_terrain(item: Item, x: float, y: float, radius: float, material: str) -> int;
+    """Where a terrain stands: the low corner of its brushes."""
+    def terrain_origin(item: Item) -> Vec3;
+    """Move the corner of a terrain's grid nearest a place, and the corners
+    that go with it (joined to it along the grid, within `variance` of its
+    height). Answers how many corners moved."""
+    def touch_terrain(item: Item, x: float, y: float, amount: float, variance: float = 0.0) -> int;
+    """Move the corners of some of a terrain's cells up or down."""
+    def lift_cells(item: Item, cells: list[int], amount: float) -> bool;
+    """Move a terrain's top (every height) or its bottom (the underside of
+    its base, its top staying where it is)."""
+    def move_terrain(item: Item, part: str, amount: float) -> bool;
+    """Give an entity other brushes in place of its own, and set fields on
+    it, as one step: a shape built again from other numbers."""
+    def rebuild_item(item: Item, brushes: list[list[Side]], fields: dict[str, str | None], label: str) -> bool;
+    """Give the faces of the selected brushes that another selected brush
+    covers a material that is not drawn. Answers how many faces changed."""
+    def caulk_selection(material: str = "caulk") -> int;
+    """Give one side of a brush a material."""
+    def paint_face(solid: Solid, index: int, material: str) -> bool;
+    """Put the one picked face in a plane (facing as it does): its brush
+    reaches to that plane, or back to it. False when that leaves nothing."""
+    def glue_face(plane: Plane3) -> bool;
+    """Go from the one picked face to the brush's next (or, with -1, the one
+    before). False when it is not one face that is picked."""
+    def step_face(pace: int = 1) -> bool;
+    """Set (or clear, or replace) bits of the contents, the surface flags or
+    the value of the picked faces, or of every side of the selected brushes.
+    `how` is "set", "clear" or "put". Answers how many sides changed."""
+    def flag_sides(key: str, bits: int, how: str = "set") -> int;
+
+    # Entities by skill and mode, values replaced, the deeper audit (impl/scene.entities.impl.jac)
+
+    """The entities a skill or mode leaves out: "easy", "normal", "hard" or
+    "deathmatch" (the spawnflags every game shares, and Quake III's
+    `notsingle` and `notfree`)."""
+    def spawn_excluded(mode: str) -> list[Item];
+    """Hide what a skill or mode leaves out, and show again what the last
+    one hid. Answers what is hidden for it now."""
+    def spawn_preview(mode: str, before: list[Item]) -> list[Item];
+    """In a field of the selected entities (of every entity, when
+    `everywhere`), put `fresh` where `old` stands. Answers how many changed."""
+    def replace_values(key: str, old: str, fresh: str, everywhere: bool = False) -> int;
+    """What the map's logic leaves hanging, beyond what `problems` reports:
+    names nothing fires."""
+    def audit -> list[Finding];
+    """Whether an entity does nothing until it is fired: a relay, a counter,
+    a target, a path corner, or a named door, platform or train."""
+    def waits(item: Item) -> bool;
+    """Everything that is ever set off: what sets itself off (a trigger
+    walked into, a button, a monster that dies), and whatever that fires,
+    and so on down."""
+    def woken -> list[Item];
+    """Where the map's logic can leave a player stuck: what waits on things
+    that are never set off themselves, counters that more must fire than
+    ever can, and doors that want a key the level does not have."""
+    def softlocks -> list[Finding];
+
+    # Groups' own switches and what a build is made from (impl/scene.select.impl.jac)
+
+    """The document's groups, in map order."""
+    def groups -> list[Item];
+    """What a build is made from: without the groups that builds skip and,
+    unless it is to be played, without what is hidden or shown as outlines
+    only."""
+    def built_map(play: bool) -> list[MapItem];
+    """Whether `built_map` leaves anything of the document out."""
+    def filtered(play: bool) -> bool;
+
+    # Kept selections and wider picks (impl/scene.select.impl.jac)
+
+    """Keep the selection as a set of that name, in place of any there was.
+    Answers how many it holds."""
+    def keep_set(name: str) -> int;
+    """What a set holds that is still in the document."""
+    def set_items(name: str) -> list[Item];
+    def set_solids(name: str) -> list[Solid];
+    """Select a set's members, alone or added. Answers how many."""
+    def pick_set(name: str, add: bool = False) -> int;
+    def drop_set(name: str) -> bool;
+    """A set is a layer too: whether its members are shown."""
+    def layer_shown(name: str) -> bool;
+    """Show or hide a set's members as a layer. What another layer still
+    hides stays hidden. Answers how many changed."""
+    def show_layer(name: str, shown: bool) -> int;
+    """Show one layer and hide every other. Answers how many changed."""
+    def only_layer(name: str) -> int;
+    """A set as words a map file keeps: an entity by its place in the map
+    (`4`), a brush by its entity's place and its own (`0:12`)."""
+    def set_words(name: str) -> str;
+    """Make a set again from those words, over the entities in map order."""
+    def restore_set(name: str, words: str, placed: list[Item]);
+    """Step from the selection to its kin: "parent" (the entities that own
+    the selected brushes), "child" (the selected entities' brushes), "next"
+    or "prev" (the one selected thing's neighbour in the map). Answers how
+    many are selected afterwards, or 0 when there is nowhere to step."""
+    def select_kin(how: str) -> int;
+    """Select a brush by its entity's place in the map and its own within
+    it, as a compiler names them (the entity itself when `brush` is below 0)."""
+    def select_numbered(entity: int, brush: int = -1) -> bool;
+    """The two selected things change places."""
+    def swap_selection -> bool;
+    """The pivot the one selected group keeps for itself, when it keeps one."""
+    def selection_pivot -> Vec3 | None;
+    """Where the selection turns and stretches about when nothing says
+    otherwise: its middle, put on the grid."""
+    def selection_hub(grid: float = 8.0) -> Vec3 | None;
+    """Give the one selected group a pivot of its own, or take it away."""
+    def set_pivot(at: Vec3 | None) -> bool;
+    """Push every side of the selected brushes out by a distance (in, when it
+    is negative). Answers how many brushes changed."""
+    def inflate_selection(amount: float) -> int;
     """Cut the selected brushes out of every other. Answers how many brushes
     changed."""
     def carve_selection(lined: bool = False) -> int;
@@ -1216,7 +1684,9 @@ node Scene {
     def replace_material(old: str, fresh: str, everywhere: bool = False) -> int;
     """Put the corners of the selected brushes, and the origins of the
     selected entities, on a grid. Answers how many things moved."""
-    def snap_selection(size: float = 8.0) -> int;
+    def snap_selection(size: float = 8.0, whole: bool = False) -> int;
+    """How many brushes have a corner, and entities an origin, off a grid."""
+    def off_grid(size: float = 8.0) -> int;
     """Line the selected brushes up along an axis: their low sides, their
     high sides or their middles brought to the selection's own."""
     def align_selection(axis: int, how: str = "low") -> bool;
@@ -1334,15 +1804,66 @@ node Scene {
         return self.commit(Step(label=label, changes=[change]));
     }
 
-    """Move one side of a brush along its normal."""
+    """Move one side of a brush along its normal, and with it every side
+    linked to it."""
     def push_side(solid: Solid, index: int, distance: float) -> bool {
         if index < 0 or index >= len(solid.sides) or distance == 0.0 {
             return False;
         }
-        after = list(solid.sides);
-        after[index] = side_moved(solid.sides[index], solid.sides[index].plane.normal.scale(distance));
-        return self.reshape(solid, after, "Resize");
+        delta = solid.sides[index].plane.normal.scale(distance);
+        tied = self.linked_sides(solid, index);
+        if len(tied) == 0 {
+            after = list(solid.sides);
+            after[index] = side_moved(solid.sides[index], delta);
+            return self.reshape(solid, after, "Resize");
+        }
+        # All of them or none: a brush left with nothing inside stops the push.
+        step = Step(label="Resize");
+        for pick in [FacePick(solid=solid, side=index)] + tied {
+            moved = list(pick.solid.sides);
+            moved[pick.side] = side_moved(pick.solid.sides[pick.side], delta);
+            if not sides_enclose(moved) {
+                for earlier in step.changes {
+                    earlier.undo();
+                }
+                return False;
+            }
+            change = SidesChange(solid=pick.solid, before=pick.solid.sides, after=moved);
+            change.redo();
+            step.changes.append(change);
+        }
+        return self.commit(step);
     }
+
+    # Linked faces, mitred seams and merged corners (impl/scene.links.impl.jac)
+
+    """The side of a brush that lies in a plane (-1 when none does)."""
+    def side_in(solid: Solid, plane: Plane3) -> int;
+    """Every side linked to a side, through however many links: each brush
+    still in the document, with the side of it that is still in the plane."""
+    def linked_sides(solid: Solid, index: int) -> list[FacePick];
+    """Link a side of one brush to a side of another. They must lie in one
+    plane. False when they do not, or are linked already."""
+    def link_sides(first: Solid, index: int, second: Solid, other: int) -> bool;
+    """Take a side out of every link it is in. Answers how many links went."""
+    def unlink_side(solid: Solid, index: int) -> int;
+    """Link the selected faces that lie in one plane with the first of them.
+    Answers how many links were made."""
+    def link_faces -> int;
+    """Link every pair of sides, among these brushes, that lie in one plane
+    facing the same way: the faces a cut left in several pieces. Answers
+    how many links were made."""
+    def link_coplanar(solids: list[Solid]) -> int;
+    """How many links there are between brushes still in the document."""
+    def link_count -> int;
+    """The links as a map file keeps them, and back."""
+    def links_words -> str;
+    def restore_links(words: str, placed: list[Item]);
+    """Cut the two selected brushes on the plane that halves the angle
+    between them where they overlap, so that they meet in a seam."""
+    def miter_selection -> bool;
+    """Move one corner of a brush onto another, leaving one where two were."""
+    def merge_corners(solid: Solid, first: Vec3, second: Vec3) -> bool;
 
     """Cut the selected brushes along a plane, keeping "back", "front" or
     "both"; with both, the new halves join the selection."""
@@ -1397,7 +1918,9 @@ node Scene {
 
     """Turn the selection by an angle in degrees about the vertical line
     through its middle (snapped to `grid`, so quarter turns stay on it)."""
-    def turn_selection(degrees: float, grid: float = 8.0, axis: int = 2) -> bool {
+    def turn_selection(
+        degrees: float, grid: float = 8.0, axis: int = 2, about: Vec3 | None = None, locked: bool = True
+    ) -> bool {
         middle = self.selection_middle();
         if middle is None or degrees == 0.0 {
             return False;
@@ -1408,8 +1931,11 @@ node Scene {
             y=float(round(middle.y / step_size)) * step_size,
             z=middle.z if axis == 2 else float(round(middle.z / step_size)) * step_size
         );
+        if about is not None {
+            pivot = about;
+        }
         step = Step(label="Turn");
-        self spawn Turn(pivot=pivot, angle=math.radians(degrees), step=step, axis=axis);
+        self spawn Turn(pivot=pivot, angle=math.radians(degrees), step=step, axis=axis, locked=locked);
         return self.commit(step);
     }
 
@@ -1588,9 +2114,9 @@ node Scene {
         return self.commit(step);
     }
 
-    def shift_selection(delta: Vec3) -> bool {
+    def shift_selection(delta: Vec3, locked: bool = True) -> bool {
         step = Step(label="Move");
-        self spawn Shift(delta=delta, step=step);
+        self spawn Shift(delta=delta, step=step, locked=locked);
         return self.commit(step);
     }
 
@@ -1671,17 +2197,36 @@ node Scene {
 
 """The document as a map: every entity with its brushes."""
 def scene_map(scene: Scene) -> list[MapItem] {
-    return [
+    written = [
         MapItem(fields=dict(item.fields), brushes=[solid.sides for solid in scene.solids_of(item)])
         for item in scene.items()
     ];
+    if len(written) > 0 {
+        # The kept selections ride in the first entity's fields.
+        for name in scene.set_names {
+            words = scene.set_words(name);
+            if words {
+                written[0].fields[SET_PREFIX + name] = words;
+            }
+        }
+        if len(scene.layers_off) > 0 {
+            written[0].fields[LAYERS_KEY] = " ".join(sorted(scene.layers_off));
+        }
+        linked = scene.links_words();
+        if linked {
+            written[0].fields[LINKS_KEY] = linked;
+        }
+    }
+    return written;
 }
 
 """A document of a map file's entities and brushes."""
 def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
     scene = Scene(game=game, name=name);
+    placed: list[Item] = [];
     for read in found.items {
         item = scene.add_item(dict(read.fields));
+        placed.append(item);
         for sides in read.brushes {
             scene.add_solid(item, sides);
         }
@@ -1704,6 +2249,23 @@ def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
                 scene.add_solid(group, sides);
             }
         }
+    }
+    if len(placed) > 0 {
+        # Kept selections come back as sets, and leave the fields.
+        first = placed[0];
+        for key in [key for key in first.fields.keys() if key.startswith(SET_PREFIX)] {
+            scene.restore_set(key[len(SET_PREFIX):], first.fields[key], placed);
+            first.fields.pop(key, None);
+        }
+        # And the layers that were off are off again.
+        for name in first.fields.get(LAYERS_KEY, "").split() {
+            scene.show_layer(name, False);
+        }
+        first.fields.pop(LAYERS_KEY, None);
+        # And the faces that were linked are linked again.
+        scene.restore_links(first.fields.get(LINKS_KEY, ""), placed);
+        first.fields.pop(LINKS_KEY, None);
+        scene.dirty = False;
     }
     return scene;
 }

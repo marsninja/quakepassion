@@ -144,7 +144,9 @@ impl Scene.select_material(material: str) -> int {
     return count;
 }
 
-impl Scene.stretch_selection(factors: Vec3, grid: float = 8.0, label: str = "Stretch") -> bool {
+impl Scene.stretch_selection(
+    factors: Vec3, grid: float = 8.0, label: str = "Stretch", about: Vec3 | None = None, locked: bool = True
+) -> bool {
     middle = self.selection_middle();
     if middle is None or factors.x == 0.0 or factors.y == 0.0 or factors.z == 0.0 {
         return False;
@@ -158,9 +160,82 @@ impl Scene.stretch_selection(factors: Vec3, grid: float = 8.0, label: str = "Str
         y=float(round(middle.y / step_size)) * step_size,
         z=float(round(middle.z / step_size)) * step_size
     );
+    if about is not None {
+        pivot = about;
+    }
     step = Step(label=label);
-    self spawn Stretch(pivot=pivot, factors=factors, step=step);
+    self spawn Stretch(pivot=pivot, factors=factors, step=step, locked=locked);
     return self.commit(step);
+}
+
+impl Scene.selection_pivot -> Vec3 | None {
+    chosen = self.selection();
+    if len(chosen) != 1 or self.selected_solids() {
+        return None;
+    }
+    kept = chosen[0].fields.get(PIVOT_KEY);
+    return read_vector(kept) if kept is not None else None;
+}
+
+impl Scene.selection_hub(grid: float = 8.0) -> Vec3 | None {
+    middle = self.selection_middle();
+    if middle is None {
+        return None;
+    }
+    size = grid if grid > 0.0 else 1.0;
+    return Vec3(
+        x=float(round(middle.x / size)) * size,
+        y=float(round(middle.y / size)) * size,
+        z=float(round(middle.z / size)) * size
+    );
+}
+
+impl Scene.set_pivot(at: Vec3 | None) -> bool {
+    chosen = self.selection();
+    if len(chosen) != 1 or self.selected_solids() or chosen[0].origin() is not None {
+        return False;
+    }
+    before = chosen[0].fields.get(PIVOT_KEY);
+    after = write_vector(at) if at is not None else None;
+    if before == after {
+        return True;
+    }
+    step = Step(label="Pivot");
+    change = FieldChange(item=chosen[0], key=PIVOT_KEY, before=before, after=after);
+    change.redo();
+    step.changes.append(change);
+    return self.commit(step);
+}
+
+impl Scene.inflate_selection(amount: float) -> int {
+    if amount == 0.0 {
+        return 0;
+    }
+    swollen = self.selected_solids();
+    for item in self.selection() {
+        for solid in self.solids_of(item) {
+            if solid not in swollen {
+                swollen.append(solid);
+            }
+        }
+    }
+    step = Step(label="Inflate" if amount > 0.0 else "Deflate");
+    count = 0;
+    for solid in swollen {
+        after = [side_moved(side, side.plane.normal.scale(amount)) for side in solid.sides];
+        if not sides_enclose(after) {
+            # Pushed in until nothing is left: this one stays as it is.
+            continue;
+        }
+        change = SidesChange(solid=solid, before=solid.sides, after=after);
+        change.redo();
+        step.changes.append(change);
+        count += 1;
+    }
+    if count > 0 {
+        self.commit(step);
+    }
+    return count;
 }
 
 impl Scene.carve_selection(lined: bool = False) -> int {
@@ -471,8 +546,45 @@ impl Scene.insert_map(found: list[MapItem], offset: Vec3, label: str = "Paste", 
     step = Step(label=label);
     items: list[Item] = [];
     solids: list[Solid] = [];
+    # A gadget pasted twice is two gadgets, not one wired to the first: a
+    # name the pasted entities give themselves and fire among themselves
+    # gets a new one when the document already uses it, and what fires it
+    # among them follows. A name nothing pasted fires is left alone, so a
+    # door pasted by itself is still opened by what opened the first.
+    taken: list[str] = [item.fields.get("targetname", "") for item in self.items()];
+    fired_within: list[str] = [];
+    for read in found {
+        for key in ["target", "killtarget"] {
+            aim = read.fields.get(key, "");
+            if aim and aim not in fired_within {
+                fired_within.append(aim);
+            }
+        }
+    }
+    renamed: dict[str, str] = {};
+    for read in found {
+        named = read.fields.get("targetname", "");
+        if named and named in taken and named in fired_within and named not in renamed {
+            stem = named.rstrip("0123456789");
+            if not stem {
+                stem = "t";
+            }
+            number = 1;
+            while stem + str(number) in taken {
+                number += 1;
+            }
+            renamed[named] = stem + str(number);
+            taken.append(stem + str(number));
+        }
+    }
     for read in found {
         fields: dict[str, str] = dict(read.fields);
+        for key in ["targetname", "target", "killtarget"] {
+            said = fields.get(key, "");
+            if said in renamed {
+                fields[key] = renamed[said];
+            }
+        }
         if fields.get("classname", "") == "worldspawn" {
             if len(read.brushes) == 0 {
                 continue;
@@ -822,7 +934,9 @@ impl Scene.set_heights(item: Item, heights: list[float], label: str = "Sculpt") 
             low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
         }
     }
-    fresh = terrain_brushes(low, cols, rows, grid[2], heights, grid[3], "", [solid.sides for solid in owned]);
+    fresh = terrain_brushes(
+        low, cols, rows, grid[2], heights, grid[3], "", [solid.sides for solid in owned], item.fields.get("_pattern", "")
+    );
     step = Step(label=label);
     for row in range(rows) {
         for col in range(cols) {
@@ -942,7 +1056,10 @@ impl Scene.set_patch(item: Item, points: list[Vec3], label: str = "Bend") -> boo
     }
     owned = self.solids_of(item);
     like: list[Side] = owned[0].sides if len(owned) > 0 else [];
-    brushes = patch_brushes(points, int(lay[0]), int(lay[1]), int(lay[2]), lay[3], "", like);
+    brushes = patch_brushes(
+        points, int(lay[0]), int(lay[1]), int(lay[2]), lay[3], "", like,
+        places_from(item.fields.get("_st", ""), int(lay[0]) * int(lay[1]))
+    );
     if len(brushes) == 0 {
         return False;
     }
@@ -1010,12 +1127,13 @@ impl Scene.replace_material(old: str, fresh: str, everywhere: bool = False) -> i
     return count;
 }
 
-impl Scene.snap_selection(size: float = 8.0) -> int {
+impl Scene.snap_selection(size: float = 8.0, whole: bool = False) -> int {
     grid = size if size > 0.0 else 1.0;
     step = Step(label="Snap to grid");
     count = 0;
-    brushes = self.selected_solids();
-    for item in self.selection() {
+    # The whole document when asked: every brush, and every entity that stands somewhere.
+    brushes = self.solids() if whole else self.selected_solids();
+    for item in (self.items() if whole else self.selection()) {
         at = item.origin();
         if at is None {
             for solid in self.solids_of(item) {

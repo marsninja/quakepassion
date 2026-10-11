@@ -10,6 +10,14 @@ import from editor.geometry.shapes {
     arch_brushes,
     pipe_brushes,
     shape_brushes,
+    bicone_brushes,
+    torus_brushes,
+    xtree_brushes,
+    cap_brushes,
+    corner_brushes,
+    column_brushes,
+    landing_brushes,
+    caulked,
     SHAPE_KINDS
 }
 
@@ -126,4 +134,105 @@ test "every kind of shape makes brushes that enclose something" {
         }
     }
     assert len(shape_brushes("nothing", box[0], box[1])) == 0;
+}
+
+def total(brushes: list[list[Side]]) -> float {
+    volume = 0.0;
+    for brush in brushes {
+        volume += brush_volume(brush);
+    }
+    return volume;
+}
+
+test "two cones, a ring, crossed walls, a cap, a corner and a column fill their boxes" {
+    box = room();
+    # Two cones base to base: a third of the cylinder they stand in.
+    bicone = bicone_brushes(box[0], box[1], 16, "wall");
+    # (Its base has sixteen sides, so it is a little less than the round one.)
+    assert len(bicone) == 1 and near(total(bicone), math.pi * 64.0 * 64.0 * 64.0 / 3.0, 8000.0);
+    span = reach(bicone);
+    assert near(span[0].z, 0.0) and near(span[1].z, 64.0) and near(span[1].x, 128.0);
+    # A ring: twelve blocks, open in the middle, within the box.
+    ring = torus_brushes(box[0], box[1], 12, 32.0, "wall");
+    assert len(ring) == 12;
+    for block in ring {
+        assert not brush_holds(block, Vec3(x=64.0, y=64.0, z=32.0));
+    }
+    span = reach(ring);
+    assert span[0].x > -0.5 and span[1].x < 128.5 and span[1].z < 64.5 and span[0].z > -0.5;
+    assert near(span[1].z - span[0].z, 32.0, 1.0);
+    # Three thin walls crossed at the middle, each as tall as the box.
+    tree = xtree_brushes(box[0], box[1], 3, "leaf");
+    assert len(tree) == 3;
+    for wall in tree {
+        assert brush_holds(wall, Vec3(x=64.0, y=64.0, z=32.0)) and near(brush_volume(wall), 128.0 * 2.0 * 64.0, 300.0);
+    }
+    # A cap: half a disc, filled, as deep as the box.
+    cap = cap_brushes(box[0], box[1], 16, "wall");
+    assert len(cap) == 16 and near(total(cap), math.pi * 64.0 * 64.0 * 0.5 * 128.0, 12000.0);
+    assert brush_holds(cap[8], Vec3(x=60.0, y=64.0, z=30.0)) or brush_holds(cap[7], Vec3(x=60.0, y=64.0, z=30.0));
+    # A rounded corner: a quarter disc from the box's low corner; one wedge of it is a bevel.
+    corner = corner_brushes(box[0], box[1], 6, "wall");
+    assert len(corner) == 6 and near(total(corner), math.pi * 128.0 * 64.0 * 0.25 * 128.0, 12000.0);
+    bevel = shape_brushes("bevel", box[0], box[1], 0, 16.0, "wall");
+    assert len(bevel) == 1 and near(total(bevel), 128.0 * 64.0 * 0.5 * 128.0, 10.0);
+    # A column: a foot, a head and a shaft between them.
+    column = column_brushes(box[0], box[1], 8, "stone");
+    assert len(column) == 3 and near(brush_volume(column[0]), 128.0 * 128.0 * 8.0, 1.0);
+    shaft = reach([column[2]]);
+    assert near(shaft[0].z, 8.0) and near(shaft[1].z, 56.0) and shaft[1].x < 113.0;
+}
+
+test "stairs with a landing go up one side and come back up the other" {
+    box = [Vec3(), Vec3(x=128.0, y=192.0, z=128.0)];
+    flight = landing_brushes(box[0], box[1], 8, "wood");
+    # Four steps, the landing, four more.
+    assert len(flight) == 9;
+    landing = reach([flight[4]]);
+    assert near(landing[0].y, 144.0) and near(landing[1].y, 192.0) and near(landing[1].z, 64.0);
+    assert near(landing[0].x, 0.0) and near(landing[1].x, 128.0);
+    first = reach([flight[0]]);
+    last = reach([flight[8]]);
+    # The first step is at the near end on the left; the last, at the near end on the right, reaches the top.
+    assert near(first[0].y, 0.0) and near(first[1].x, 64.0) and near(first[1].z, 16.0);
+    assert near(last[0].y, 0.0) and near(last[0].x, 64.0) and near(last[1].z, 128.0);
+    assert near(reach(flight)[1].z, 128.0);
+}
+
+test "the faces a shape's own brushes cover are caulked, and no others" {
+    box = room();
+    steps = stair_brushes(box[0], box[1], 4, "wood");
+    hidden = caulked(steps);
+    assert len(hidden) == 4;
+    count = 0;
+    for brush in hidden {
+        for side in brush {
+            if side.material == "caulk" {
+                count += 1;
+            }
+        }
+    }
+    # Each step's back is against the next, taller, step: three faces; no step covers another's front or top.
+    assert count == 3 , str(count);
+    for index in range(4) {
+        for which in range(len(hidden[index])) {
+            side = hidden[index][which];
+            if side.plane.normal.z > 0.9 or side.plane.normal.y < -0.9 {
+                assert side.material == "wood";
+            }
+        }
+    }
+    # Brushes apart cover nothing of each other.
+    apart = caulked([steps[0], steps[3]]);
+    assert [side.material for side in apart[0]] == ["wood"] * 6;
+    # A box wholly against a bigger one: the small one's touching face goes, the big one's does not.
+    pair = caulked(
+        [
+            shape_brushes("pyramid", Vec3(), Vec3(x=64.0, y=64.0, z=32.0), 0, 16.0, "wall")[0],
+            stair_brushes(Vec3(x=-64.0, y=-64.0, z=-16.0), Vec3(x=128.0, y=128.0, z=0.0), 1, "floor")[0]
+        ],
+        "nodraw"
+    );
+    assert len([side for side in pair[0] if side.material == "nodraw"]) == 1;
+    assert len([side for side in pair[1] if side.material == "nodraw"]) == 0;
 }

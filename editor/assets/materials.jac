@@ -20,7 +20,9 @@ obj ArchiveMaterials(Materials) {
         found: dict[str, Texture] = {},
         # Names asked for that no archive holds.
         missing: list[str] = [],
-        listed: dict[str, list[str]] = {};
+        listed: dict[str, list[str]] = {},
+        # Where image files used as materials are kept, when a project says.
+        folder: str = "";
 
     def reader -> Loader {
         loader = self.loader;
@@ -47,6 +49,9 @@ obj ArchiveMaterials(Materials) {
 
     """Where a project keeps image files of its own to use as materials."""
     def files_folder -> str {
+        if self.folder {
+            return self.folder;
+        }
         folder = os.getenv("QP_TEXTURES", "");
         return folder if folder else os.getcwd() + "/textures";
     }

@@ -8,7 +8,8 @@ import from editor.geometry.terrain {
     heights_from,
     sculpted,
     heights_image,
-    image_heights
+    image_heights,
+    lifted
 }
 
 def near(a: float, b: float) -> bool {
@@ -97,4 +98,50 @@ test "heights go out as a grey image and come back" {
     read = image_heights(raw, 100.0);
     assert read is not None and read[0] == 1 and read[1] == 1 and read[2][3] == 100.0 and read[2][0] == 50.0;
     assert image_heights(b"JUNK", 1.0) is None and image_heights(b"P2\n2 2\n255\n0 1\n", 1.0) is None;
+}
+
+test "erosion slumps what stands above its lowest neighbour" {
+    heights = flat_heights(4, 4);
+    heights[12] = 64.0;
+    worn = sculpted(heights, Vec3(), 4, 4, 32.0, 64.0, 64.0, 96.0, 16.0, "erode");
+    # The peak in the middle comes down by the brush's strength; the flat round it stays.
+    assert worn[12] == 48.0 and worn[0] == 0.0 and worn[11] == 0.0;
+    # A gentle bump comes down by half its height over its lowest neighbour, no more.
+    heights[12] = 8.0;
+    assert sculpted(heights, Vec3(), 4, 4, 32.0, 64.0, 64.0, 96.0, 16.0, "erode")[12] == 4.0;
+}
+
+test "a rectangle of terrain is lifted, with a falloff outside it" {
+    heights = flat_heights(4, 4);
+    # Corners at 0, 32, 64, 96, 128 each way: those from 32 to 64 are inside.
+    up = lifted(heights, Vec3(), 4, 4, 32.0, Vec3(x=32.0, y=32.0), Vec3(x=64.0, y=64.0), 40.0);
+    assert up[6] == 40.0 and up[7] == 40.0 and up[11] == 40.0 and up[12] == 40.0;
+    assert up[5] == 0.0 and up[8] == 0.0 and up[0] == 0.0 and sum(up) == 160.0;
+    # With a falloff of 64, a corner 32 outside gets half.
+    soft = lifted(heights, Vec3(), 4, 4, 32.0, Vec3(x=32.0, y=32.0), Vec3(x=64.0, y=64.0), 40.0, 64.0);
+    assert soft[6] == 40.0 and soft[5] == 20.0 and soft[8] == 20.0 and soft[1] == 20.0;
+    # Diagonally out by 32 each way is 45 away: a little under a third.
+    assert soft[0] == 12.0;
+    # Lowering never goes under the floor.
+    assert lifted(up, Vec3(), 4, 4, 32.0, Vec3(x=32.0, y=32.0), Vec3(x=64.0, y=64.0), -100.0)[6] == 0.0;
+}
+
+test "cells are split along either diagonal, or each in turn" {
+    heights = flat_heights(2, 2);
+    heights[4] = 32.0;
+    same = terrain_brushes(Vec3(), 2, 2, 64.0, heights, 16.0, "grass");
+    other = terrain_brushes(Vec3(), 2, 2, 64.0, heights, 16.0, "grass", [], "other");
+    alt = terrain_brushes(Vec3(), 2, 2, 64.0, heights, 16.0, "grass", [], "alt");
+    assert len(same) == 8 and len(other) == 8 and len(alt) == 8;
+    # The same ground either way, to within what the diagonal of a cell with a raised corner makes of it.
+    volume_same = 0.0;
+    volume_other = 0.0;
+    for index in range(8) {
+        volume_same += brush_volume(same[index]);
+        volume_other += brush_volume(other[index]);
+    }
+    assert abs(volume_same - volume_other) < 64.0 * 64.0 * 32.0;
+    # The first cell is split the first way in both; the second cell differs in the alternating one.
+    assert abs(brush_volume(alt[0]) - brush_volume(same[0])) < 0.01;
+    assert abs(brush_volume(alt[2]) - brush_volume(other[2])) < 0.01;
 }

@@ -10,6 +10,9 @@ import from editor.classes.registry {
     read_field,
     flag_set,
     flag_put,
+    read_class,
+    add_classes,
+    drop_classes,
     CLASS_TABLE
 }
 
@@ -83,4 +86,34 @@ test "spawnflags bits are read and written one at a time" {
     assert flag_put("", 3, True) == "8" and flag_put("8", 0, True) == "9";
     assert flag_put("9", 3, False) == "1" and flag_put("1", 0, False) == "0";
     assert flag_put("words", 1, True) == "2";
+}
+
+test "an add-on's classes join the table, are replaced when read again, and leave it" {
+    before = len(classes());
+    taken = add_classes(
+        [
+            "trap_spikes | point | passion | Spikes that rise | dmg:n:20:What they do, wait:n:2 | start up",
+            "trap_pit | brush | passion | A floor that falls away",
+            "func_door | brush | q1 | Not the studio's own door",
+            "no class at all"
+        ]
+    );
+    # The studio's own door is left as it is; a line that is not a class is passed over.
+    assert taken == ["trap_spikes", "trap_pit"] and len(classes()) == before + 2;
+    spikes = class_info("trap_spikes");
+    assert spikes is not None and not spikes.solid and spikes.flags == ["start up"];
+    assert field_of("trap_spikes", "dmg").preset == "20" and field_of("trap_spikes", "dmg").help == "What they do";
+    # A field it does not explain means what it does everywhere.
+    assert field_of("trap_spikes", "wait").help == common_field("wait").help;
+    pit = class_info("trap_pit");
+    assert pit is not None and pit.solid and pit.fields == [] and "trap_pit" in class_names("passion");
+    door = class_info("func_door");
+    assert door is not None and door.help != "Not the studio's own door";
+    assert read_class("one | two") is None and read_class("has space | point | q1 | x") is None;
+    # Read again with other words, it is replaced, not added twice.
+    assert add_classes(["trap_spikes | point | passion | Spikes that fall"]) == ["trap_spikes"];
+    again = class_info("trap_spikes");
+    assert again is not None and again.help == "Spikes that fall" and len(classes()) == before + 2;
+    drop_classes(["trap_spikes", "trap_pit", "func_door"]);
+    assert len(classes()) == before and class_info("trap_pit") is None and class_info("func_door") is not None;
 }

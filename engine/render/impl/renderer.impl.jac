@@ -22,6 +22,10 @@ impl Renderer.open_window() {
     if self.cvars.highdpi.on() {
         flags = flags | WINDOW_HIGHDPI_FLAG;
     }
+    if os.getenv("QP_HEADLESS", "") not in ["", "0"] {
+        # Run without showing a window: scripts drive it and read what it prints and captures.
+        flags = flags | WINDOW_HIDDEN_FLAG;
+    }
     SetConfigFlags(u32(flags));
     InitWindow(i32(self.cvars.width.integer), i32(self.cvars.height.integer), self.title);
     if not IsWindowReady() {
@@ -200,6 +204,15 @@ impl Renderer.end_view() {
     EndMode3D();
     rlDrawRenderBatchActive();
     rlViewport(i32(0), i32(0), GetRenderWidth(), GetRenderHeight());
+}
+
+impl Renderer.clear_rect(x: int, y: int, width: int, height: int) {
+    if width <= 0 or height <= 0 {
+        return;
+    }
+    BeginScissorMode(i32(x), i32(y), i32(width), i32(height));
+    ClearBackground(Color(r=21, g=20, b=18, a=255));
+    EndScissorMode();
 }
 
 impl Renderer.draw_area(area: Area) {

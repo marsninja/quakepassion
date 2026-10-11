@@ -27,7 +27,13 @@ import from editor.ui.widgets {
     Picture,
     Palette,
     PaletteEntry,
-    palette_score
+    palette_score,
+    Slider,
+    Spinner,
+    Radio,
+    VectorField,
+    ColourBars,
+    number_words
 }
 
 """Run frames until the scripted steps are played, plus one to settle."""
@@ -611,4 +617,187 @@ test "a palette finds commands by what is typed and runs the one that is lit" {
     source.script(UiStep(kind="key", words="ESCAPE"));
     play(stage, source, 800, 600);
     assert len(stage.layers()) == 1 and len(stage.take_commands()) == 0;
+}
+
+test "a slider's knob follows a drag and its number goes out when it is let go" {
+    top = Box();
+    knob = Slider(low=0.0, high=100.0, value=0.0, step=10.0, command="set light");
+    top.adopt(knob);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    assert knob.area.w == 300 and knob.fraction() == 0.0;
+    # The bar runs from 6 to 294: its middle is fifty, on a step of ten.
+    script_drag(source, 6, 10, 150, 10);
+    play(stage, source, 300, 200);
+    assert knob.value == 50.0 and stage.take_commands() == ["set light 50"];
+    # Dragged past the end it stops there; let go where it was taken, it says nothing.
+    script_drag(source, 150, 10, 900, 10);
+    play(stage, source, 300, 200);
+    assert knob.value == 100.0 and stage.take_commands() == ["set light 100"];
+    script_drag(source, 294, 10, 294, 12);
+    play(stage, source, 300, 200);
+    assert stage.take_commands() == [];
+    assert number_words(2.0) == "2" and number_words(0.25) == "0.25";
+}
+
+test "a spinner is scrubbed by a drag and stepped by the wheel" {
+    top = Box();
+    turn = Spinner(value=5.0, step=1.0, low=0.0, high=20.0, command="set angle");
+    top.adopt(turn);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    # Forty pixels to the right: ten steps.
+    script_drag(source, 100, 10, 140, 10);
+    play(stage, source, 300, 200);
+    assert turn.value == 15.0 and stage.take_commands() == ["set angle 15"];
+    # Back past its lowest it stops there.
+    script_drag(source, 140, 10, 0, 10);
+    play(stage, source, 300, 200);
+    assert turn.value == 0.0 and stage.take_commands() == ["set angle 0"];
+    source.script(UiStep(kind="move", x=50, y=10));
+    source.script(UiStep(kind="wheel", amount=1.0));
+    play(stage, source, 300, 200);
+    assert turn.value == 1.0 and stage.take_commands() == ["set angle 1"];
+}
+
+test "a radio runs the command of the one clicked, and nothing for the one it is on" {
+    canvas = TraceCanvas();
+    top = Box();
+    handles = Radio(labels=["move", "turn", "size"], commands=["g move", "g turn", "g size"], chosen=0);
+    top.adopt(handles);
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    stage.paint();
+    assert "turn" in canvas.words() and handles.part_at(150) == 1 and handles.part_at(299) == 2;
+    script_click(source, 150, 10);
+    play(stage, source, 300, 200);
+    assert handles.chosen == 1 and stage.take_commands() == ["g turn"];
+    script_click(source, 160, 10);
+    play(stage, source, 300, 200);
+    assert stage.take_commands() == [];
+    script_click(source, 20, 10);
+    play(stage, source, 300, 200);
+    assert handles.chosen == 0 and stage.take_commands() == ["g move"];
+}
+
+test "a vector field changes the number whose cell is dragged, and sends all three" {
+    top = Box();
+    place = VectorField(x=0.0, y=0.0, z=24.0, step=8.0, command="set origin");
+    top.adopt(place);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    # The third cell: twenty pixels are five steps of eight.
+    script_drag(source, 250, 10, 270, 10);
+    play(stage, source, 300, 200);
+    assert place.z == 64.0 and place.x == 0.0 and stage.take_commands() == ["set origin \"0 0 64\""];
+    script_drag(source, 50, 10, 42, 10);
+    play(stage, source, 300, 200);
+    assert place.x == -16.0 and stage.take_commands() == ["set origin \"-16 0 64\""];
+}
+
+test "colour bars mix a colour from three shares" {
+    canvas = TraceCanvas();
+    top = Box();
+    mix = ColourBars(red=1.0, green=1.0, blue=1.0, command="set _color");
+    top.adopt(mix);
+    stage = staged(top, canvas);
+    source = UiSource();
+    play(stage, source, 300, 200);
+    assert mix.area.h == 48 and mix.bar(1).y == 17 and mix.bar(1).w == 254;
+    # Halfway along the green bar.
+    script_drag(source, 40 + 127, 23, 40 + 127, 24);
+    play(stage, source, 300, 200);
+    assert mix.green == 0.5 and mix.red == 1.0 and stage.take_commands() == ["set _color \"1 0.5 1\""];
+    # The blue bar, to nothing.
+    script_drag(source, 100, 37, 0, 37);
+    play(stage, source, 300, 200);
+    assert mix.blue == 0.0 and stage.take_commands() == ["set _color \"1 0.5 0\""];
+    stage.paint();
+    patches = [stroke for stroke in canvas.strokes if stroke.kind == "fill" and stroke.color.r == 255 and stroke.color.g == 127 and stroke.color.b == 0];
+    assert len(patches) >= 1;
+}
+
+test "a tile or a row pressed and dragged away is dropped on the widget it is let go over" {
+    top = Box(across=True);
+    tiles = Gallery(pick="take", drag="material", size=200);
+    tiles.tiles = [Tile(key="brick", text="brick"), Tile(key="slate", text="slate")];
+    rows = TreeView(pick="choose", drag="thing", size=200);
+    rows.rows = [TreeRow(key="heading", text="Heading", branch=True), TreeRow(key="door", text="A door", depth=1)];
+    view = ViewArea(grow=1);
+    top.adopt(tiles);
+    top.adopt(rows);
+    top.adopt(view);
+    stage = staged(top);
+    source = UiSource();
+    play(stage, source);
+    # A tile dragged into the view: picked as a press picks it, and dropped where the button comes up.
+    script_drag(source, 20, 20, 600, 300);
+    play(stage, source);
+    assert stage.take_commands() == ["take \"brick\""];
+    drops = [event for event in view.take() if event.kind == "drop"];
+    assert len(drops) == 1 and drops[0].text == "material brick" and drops[0].x == 600 and drops[0].y == 300;
+    assert not stage.carrying and stage.offered == "";
+    # A row of the tree likewise; a heading is not something to carry.
+    script_drag(source, 260, 30, 620, 200);
+    play(stage, source);
+    drops = [event for event in view.take() if event.kind == "drop"];
+    assert len(drops) == 1 and drops[0].text == "thing door";
+    script_drag(source, 260, 10, 620, 200);
+    play(stage, source);
+    assert len([event for event in view.take() if event.kind == "drop"]) == 0;
+    # A click that goes nowhere drops nothing, and neither does a drag let go where it began.
+    stage.take_commands();
+    script_click(source, 20, 20);
+    play(stage, source);
+    assert stage.take_commands() == ["take \"brick\""] and len([event for event in view.take() if event.kind == "drop"]) == 0;
+    # While it is carried its name is drawn beside the pointer.
+    canvas = TraceCanvas();
+    carried = staged(Box(), canvas);
+    carried.offer("material slate", "slate");
+    carried.carrying = True;
+    carried.paint();
+    assert len([stroke for stroke in canvas.strokes if stroke.kind == "text" and stroke.words == "slate"]) == 1;
+}
+
+test "a menu too long for the window goes on in columns, and one that fits is as it was" {
+    stage = staged(Box());
+    source = UiSource();
+    play(stage, source, 800, 400);
+    # Five items fit: one column where it was asked for.
+    short = MenuPopup(items=[MenuItem(text="Item " + str(index), command="short " + str(index)) for index in range(5)]);
+    short.open_at(stage, 100, 30);
+    assert short.starts == [0] and len(short.widths) == 1 and short.area.same(Rect(x=100, y=30, w=short.widths[0], h=118));
+    assert short.item_at(110, 30 + 4 + 22 * 3 + 5) == 3 and short.item_at(110, 400) == -1;
+    stage.close(short);
+    # Twelve fit the window though not under the point: moved up, still one column.
+    middling = MenuPopup(items=[MenuItem(text="Item " + str(index), command="mid " + str(index)) for index in range(12)]);
+    middling.open_at(stage, 100, 300);
+    assert middling.starts == [0] and middling.area.y == 400 - (8 + 12 * 22) and middling.area.h == 8 + 12 * 22;
+    stage.close(middling);
+    # Forty do not fit the window at all: columns under the point, each as long as there is room for.
+    items = [MenuItem(text="Item " + str(index), command="long " + str(index)) for index in range(40)];
+    items.insert(20, MenuItem(rule=True));
+    long = MenuPopup(items=items);
+    long.open_at(stage, 100, 30);
+    room = 400 - 30 - 8;
+    assert len(long.starts) == 3 and long.starts[0] == 0 and long.area.y == 30 and long.area.h <= room;
+    assert long.area.w == sum(long.widths) and long.area.right() <= 800;
+    first = long.starts[1];
+    assert first == 16 , str(long.starts);
+    # The first item of the second column is at the top of that column; a click there runs it.
+    left = long.area.x + long.widths[0];
+    assert long.item_at(left + 10, 30 + 4 + 5) == first and long.item_at(long.area.x + 10, 30 + 4 + 5) == 0;
+    assert long.item_at(left + 10, 30 + 4 + 22 * 4 + 5) == first + 4;
+    play(stage, source, 800, 400);
+    script_click(source, left + 10, 30 + 4 + 5);
+    play(stage, source, 800, 400);
+    assert stage.take_commands() == ["long " + str(first)] and len(stage.layers()) == 1;
+    # Near the right edge it is moved left so that every column shows.
+    wide = MenuPopup(items=items);
+    wide.open_at(stage, 780, 30);
+    assert wide.area.right() == 800 and len(wide.starts) == 3;
 }
