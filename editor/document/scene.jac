@@ -15,6 +15,7 @@ import from ..geometry.brush {
     windings_bounds,
     clip_sides,
     side_turned,
+    side_on,
     turned_z
 }
 import math;
@@ -56,7 +57,10 @@ import from ..geometry.mapping {
     side_stretched,
     side_spun,
     spun_about,
-    axis_vector
+    axis_vector,
+    mapping_min_fitted,
+    mapping_wrapped,
+    mapping_bad
 }
 
 edge Holds: Scene --> Item {}
@@ -750,13 +754,32 @@ obj FaceEdit {
         s: float = 0.0,
         t: float = 0.0,
         material: str = "",
-        sizes: dict[str, list[int]] = {};
+        sizes: dict[str, list[int]] = {},
+        # The face a wrap or a projection takes its material and mapping from.
+        source: Side | None = None;
 
     """The side as the edit leaves it: the same side when it changes
     nothing."""
     def apply(side: Side, outline: list[Vec3]) -> Side {
         if self.how == "material" {
             return side if side.material == self.material else side_like(side, self.material);
+        }
+        given = self.source;
+        if (self.how == "wrap" or self.how == "project") and given is not None {
+            # The tagged face's material, carried round the corner onto
+            # this face, or laid on it just as it lies on that one.
+            carried = given.mapping;
+            if self.how == "wrap" {
+                round_edge = mapping_wrapped(given.mapping, given.plane, side.plane);
+                if round_edge is None {
+                    return side;
+                }
+                carried = round_edge;
+            }
+            if side.material == given.material and mapping_same(side.mapping, carried) {
+                return side;
+            }
+            return side_like(side, given.material, carried);
         }
         old = side.mapping;
         fresh = old;
@@ -774,6 +797,9 @@ obj FaceEdit {
             fresh = mapping_plain(side.plane.normal);
         } elif self.how == "flat" {
             fresh = mapping_flat(side.plane.normal);
+        } elif self.how == "minfit" {
+            least = self.sizes.get(side.material, [64, 64]);
+            fresh = mapping_min_fitted(old, outline, least[0], least[1]);
         } elif self.how == "fit" {
             size = self.sizes.get(side.material, [64, 64]);
             fresh = mapping_fitted(
@@ -1138,6 +1164,17 @@ walker Inspect {
         if not whole {
             self.findings.append(Finding(words=label + " has corners off the unit grid", solid=here));
         }
+        smeared = 0;
+        for side in here.sides {
+            if mapping_bad(side.mapping) {
+                smeared += 1;
+            }
+        }
+        if smeared > 0 {
+            self.findings.append(
+                Finding(words=label + " has " + str(smeared) + " sides whose material is smeared into a line", solid=here)
+            );
+        }
     }
 }
 
@@ -1362,6 +1399,11 @@ node Scene {
     """Give the faces of the selected brushes that another selected brush
     covers a material that is not drawn. Answers how many faces changed."""
     def caulk_selection(material: str = "caulk") -> int;
+    """Give one side of a brush a material."""
+    def paint_face(solid: Solid, index: int, material: str) -> bool;
+    """Put the one picked face in a plane (facing as it does): its brush
+    reaches to that plane, or back to it. False when that leaves nothing."""
+    def glue_face(plane: Plane3) -> bool;
     """Go from the one picked face to the brush's next (or, with -1, the one
     before). False when it is not one face that is picked."""
     def step_face(pace: int = 1) -> bool;

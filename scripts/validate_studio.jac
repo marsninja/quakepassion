@@ -1070,6 +1070,67 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A word of a face line (`material`, `shift`, `scale`)."""
+def face_word(line: str, key: str) -> str {
+    return line.split(key + "=")[1].split()[0];
+}
+
+"""The twenty-eighth session: a material wrapped round a corner from a
+tagged face, projected, fitted in whole repeats and painted by a drag; and
+a face put in the tagged plane."""
+def wrap_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "wrap_painted.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-wrap-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/wrap_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "wrap.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The wrap session failed: {output / 'wrap.log'}";
+        text = (Path(home) / "scenes/wrap.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["tagged", "wrapped", "projected", "fitted", "painted", "glued"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'wrap.log'}";
+    }
+    tagged = faces(steps["tagged"]);
+    assert len(tagged) == 1 and face_word(tagged[0], "material") == "tile" and face_word(tagged[0], "shift") == "8.0,4.0" , str(tagged);
+    # The next face has the tagged one's material, carried round: another face, laid another way.
+    wrapped = faces(steps["wrapped"]);
+    assert len(wrapped) == 1 and wrapped[0].split()[1] != tagged[0].split()[1] , f"{tagged} {wrapped}";
+    assert face_word(wrapped[0], "material") == "tile" and face_word(wrapped[0], "scale") == "1.0,1.0" , wrapped[0];
+    # The one after has it exactly as the tagged face does.
+    projected = faces(steps["projected"]);
+    assert face_word(projected[0], "material") == "tile" and face_word(projected[0], "shift") == "8.0,4.0" , projected[0];
+    assert projected[0].split()[1] not in [tagged[0].split()[1], wrapped[0].split()[1]];
+    # Fitted in whole repeats: a texel is still near a unit each way.
+    scales = [abs(float(part)) for part in face_word(faces(steps["fitted"])[0], "scale").split(",")];
+    assert 0.6 < scales[0] < 1.5 and 0.6 < scales[1] < 1.5 , str(scales);
+    # The drag painted two faces: the box's top and the floor's.
+    assert text.count(" moss ") == 2 , str(text.count(" moss "));
+    edits = int(steps["painted"][0].split("undo=")[1].split()[0]) - int(steps["fitted"][0].split("undo=")[1].split()[0]);
+    assert edits == 2 , str(edits);
+    # The floor's top in the tagged plane: the floor reaches up to the box's top.
+    floor = brush_box(brushes(steps["glued"])[0]);
+    assert floor[0][2] == -16 and floor[1][2] == 64 , str(floor);
+    source = repo / "wrap_painted.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "wrap_painted.png");
+    source.unlink();
+    print(
+        f"WRAP PASS: {len(steps) - 1} steps, a material wrapped round a corner, projected, fitted in whole "
+            + "repeats and painted by a drag, and a face put in the tagged plane"
+    );
+}
+
 """The twenty-seventh session: a slider, colour bars, a field of three
 numbers and a radio, each dragged or clicked in the inspector."""
 def controls_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2115,6 +2176,7 @@ def main() {
         "land": land_session,
         "quilt": quilt_session,
         "controls": controls_session,
+        "wrap": wrap_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2245,6 +2307,7 @@ def main() {
     land_session(repo, binary, env, output);
     quilt_session(repo, binary, env, output);
     controls_session(repo, binary, env, output);
+    wrap_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

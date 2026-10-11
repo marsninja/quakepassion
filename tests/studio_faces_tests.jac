@@ -1,5 +1,6 @@
 import from engine.math.vec3 { Vec3 }
-import from editor.document.scene { Scene, scene_map, scene_from_map }
+import from editor.document.scene { Scene, FaceEdit, scene_map, scene_from_map }
+import from editor.geometry.mapping { mapping_min_fitted, mapping_wrapped, mapping_bad, mapping_same }
 import from editor.document.generate { with_holes, digs, DIGGER_KEY }
 import from editor.geometry.brush {
     Side,
@@ -8,7 +9,8 @@ import from editor.geometry.brush {
     brush_volume,
     brush_windings,
     windings_bounds,
-    classic_mapping
+    classic_mapping,
+    Mapping
 }
 import from editor.geometry.faces {
     brush_bounded,
@@ -250,4 +252,72 @@ test "the face pick steps round a brush's faces and back" {
     assert scene.step_face(-1) and scene.faces()[0].side == 5;
     scene.select_face(wall, 2, True);
     assert not scene.step_face();
+}
+
+test "a material is fitted in whole repeats, wrapped round an edge and found when smeared" {
+    sides = box_sides(Vec3(), Vec3(x=128.0, y=64.0, z=64.0), "wall");
+    top = facing(sides, Vec3(z=1.0));
+    east = facing(sides, Vec3(x=1.0));
+    outlines = brush_windings(sides);
+    # A 64-texel picture on a 128 by 64 face: twice across, once down, a texel a unit.
+    fitted = mapping_min_fitted(sides[top].mapping, outlines[top], 64, 64);
+    assert near(abs(fitted.s_scale), 1.0, 0.001) and near(abs(fitted.t_scale), 1.0, 0.001);
+    # A 48-texel one: three across (42.7 a repeat) rather than stretched to one.
+    close = mapping_min_fitted(sides[top].mapping, outlines[top], 48, 48);
+    assert near(abs(close.s_scale), 128.0 / (48.0 * 3.0), 0.001) and near(abs(close.t_scale), 64.0 / 48.0, 0.001);
+    # Wrapped from the top onto the east face: along the edge they share, both give a point the same place in the picture.
+    wrapped = mapping_wrapped(sides[top].mapping, sides[top].plane, sides[east].plane);
+    assert wrapped is not None;
+    for point in [Vec3(x=128.0, y=0.0, z=64.0), Vec3(x=128.0, y=64.0, z=64.0), Vec3(x=128.0, y=20.0, z=64.0)] {
+        was = sides[top].mapping;
+        assert near(point.dot(was.s_axis) / was.s_scale + was.s_shift, point.dot(wrapped.s_axis) / wrapped.s_scale + wrapped.s_shift, 0.01);
+        assert near(point.dot(was.t_axis) / was.t_scale + was.t_shift, point.dot(wrapped.t_axis) / wrapped.t_scale + wrapped.t_shift, 0.01);
+    }
+    # On the east face it runs on down the wall: the axis that ran along x now runs down z.
+    assert near(abs(wrapped.s_axis.z) + abs(wrapped.t_axis.z), 1.0, 0.001) and near(wrapped.s_axis.x, 0.0, 0.001);
+    # Faces that do not meet have no edge to wrap round.
+    assert mapping_wrapped(sides[top].mapping, sides[top].plane, sides[facing(sides, Vec3(z=-1.0))].plane) is None;
+    assert not mapping_bad(sides[top].mapping);
+    assert mapping_bad(Mapping(s_axis=Vec3(x=1.0), t_axis=Vec3(x=1.0, y=0.01)));
+    assert mapping_bad(Mapping(s_axis=Vec3(x=1.0), t_axis=Vec3(y=1.0), s_scale=0.0));
+}
+
+test "the document wraps and projects from a face, paints one, and glues one into a plane" {
+    scene = blockout();
+    wall = scene.solids()[1];
+    top = facing(wall.sides, Vec3(z=1.0));
+    east = facing(wall.sides, Vec3(x=1.0));
+    scene.select_face(wall, top);
+    assert scene.reface(FaceEdit(how="material", material="tile"), "Set material");
+    assert scene.reface(FaceEdit(how="shift", s=8.0, t=4.0), "Material shift");
+    tagged = wall.sides[top];
+    scene.select_face(wall, east);
+    assert scene.reface(FaceEdit(how="wrap", source=tagged), "Material wrap");
+    assert wall.sides[east].material == "tile" and not mapping_same(wall.sides[east].mapping, tagged.mapping);
+    assert not scene.reface(FaceEdit(how="wrap", source=tagged), "Material wrap");
+    assert scene.undo() == "Material wrap" and wall.sides[east].material == "wall";
+    # Projected, it lies on the other face exactly as on the tagged one.
+    assert scene.reface(FaceEdit(how="project", source=tagged), "Material project");
+    assert wall.sides[east].material == "tile" and mapping_same(wall.sides[east].mapping, tagged.mapping);
+    # One face painted.
+    north = facing(wall.sides, Vec3(y=1.0));
+    assert scene.paint_face(wall, north, "moss") and wall.sides[north].material == "moss";
+    assert not scene.paint_face(wall, north, "moss") and not scene.paint_face(wall, 99, "moss");
+    assert scene.undo() == "Paint face";
+    # The east face put in the plane x = 96: the cube reaches to it.
+    scene.select_face(wall, east);
+    assert scene.glue_face(Plane3(normal=Vec3(x=-1.0), dist=-96.0));
+    box = wall.bounds();
+    assert box is not None and near(box[1].x, 96.0) and near(box[0].x, 0.0);
+    assert not scene.glue_face(Plane3(normal=Vec3(x=1.0), dist=96.0));
+    # Pulled back behind its own far side, nothing would be left.
+    assert not scene.glue_face(Plane3(normal=Vec3(x=1.0), dist=-8.0));
+    assert scene.undo() == "Glue face";
+    # The check finds a side whose material is smeared.
+    smeared = scene.add_solid(scene.world(), cube());
+    smeared.sides[0] = Side(
+        plane=smeared.sides[0].plane, material="wall", mapping=Mapping(s_axis=Vec3(x=1.0), t_axis=Vec3(x=1.0))
+    );
+    words = [finding.words for finding in scene.problems() if "smeared" in finding.words];
+    assert len(words) == 1 and words[0].startswith("Brush #" + str(smeared.serial) + " has 1 sides");
 }

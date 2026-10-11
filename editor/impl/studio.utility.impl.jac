@@ -63,6 +63,22 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
         }
         return True;
     }
+    if name == "ed_paintface" {
+        brush = scene.find_solid(int(args[1])) if len(args) > 2 and args[1].isdigit() else None;
+        if brush is None or not args[2].isdigit() {
+            self.say("ed_paintface <brush> <side>");
+        } else {
+            scene.paint_face(brush, int(args[2]), self.material);
+        }
+        return True;
+    }
+    if name == "ed_tag" and len(args) > 1 and args[1] == "clear" {
+        self.tagged = None;
+        self.tagged_side = None;
+        self.tagged_words = "";
+        self.say("No face is tagged");
+        return True;
+    }
     if name == "ed_tag" {
         picks = scene.faces();
         if len(picks) != 1 {
@@ -70,6 +86,7 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         self.tagged = picks[0].solid.sides[picks[0].side].plane;
+        self.tagged_side = picks[0].solid.sides[picks[0].side];
         self.tagged_words = "face " + str(picks[0].side) + " of brush #" + str(picks[0].solid.serial);
         self.say("Tagged " + self.tagged_words);
         return True;
@@ -78,6 +95,12 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
         plane = self.tagged;
         if plane is None {
             self.say("Tag a face first (ed_tag)");
+            return True;
+        }
+        if len(args) > 1 and args[1] == "face" {
+            if not scene.glue_face(plane) {
+                self.say("Pick one face to put in the plane of " + self.tagged_words + " (or it is there, or nothing would be left)");
+            }
             return True;
         }
         if not scene.glue_selection(plane) {

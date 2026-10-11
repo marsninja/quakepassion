@@ -236,19 +236,19 @@ impl Scene.caulk_selection(material: str = "caulk") -> int {
     step = Step(label="Caulk");
     count = 0;
     for index in range(len(chosen)) {
-        changed = 0;
+        swapped = 0;
         for which in range(len(chosen[index].sides)) {
             if covered[index][which].material != chosen[index].sides[which].material {
-                changed += 1;
+                swapped += 1;
             }
         }
-        if changed == 0 {
+        if swapped == 0 {
             continue;
         }
         change = SidesChange(solid=chosen[index], before=chosen[index].sides, after=covered[index]);
         change.redo();
         step.changes.append(change);
-        count += changed;
+        count += swapped;
     }
     if count > 0 {
         self.commit(step);
@@ -383,4 +383,35 @@ impl Scene.grow_patch(item: Item, way: str, more: bool = True) -> bool {
         return False;
     }
     return self.remake_patch(item, made[2], made[0], made[1], 0, 0.0, "Grow patch" if more else "Shrink patch");
+}
+
+impl Scene.paint_face(solid: Solid, index: int, material: str) -> bool {
+    if not solid.held or index < 0 or index >= len(solid.sides) or not material
+        or solid.sides[index].material == material {
+        return False;
+    }
+    after = list(solid.sides);
+    after[index] = side_like(solid.sides[index], material);
+    step = Step(label="Paint face");
+    change = SidesChange(solid=solid, before=solid.sides, after=after);
+    change.redo();
+    step.changes.append(change);
+    return self.commit(step);
+}
+
+impl Scene.glue_face(plane: Plane3) -> bool {
+    picks = self.faces();
+    if len(picks) != 1 {
+        return False;
+    }
+    solid = picks[0].solid;
+    side = solid.sides[picks[0].side];
+    # The plane, facing the way the face does.
+    onto = plane if side.plane.normal.dot(plane.normal) >= 0.0 else plane.flipped();
+    if side.plane.normal.dot(onto.normal) > 0.99999 and abs(side.plane.dist - onto.dist) < 0.01 {
+        return False;
+    }
+    after = list(solid.sides);
+    after[picks[0].side] = side_on(side, onto);
+    return self.reshape(solid, after, "Glue face");
 }

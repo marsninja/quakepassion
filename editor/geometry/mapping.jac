@@ -230,3 +230,62 @@ def mapping_same(first: Mapping, second: Mapping) -> bool {
         and abs(first.s_scale - second.s_scale) < 0.000001
         and abs(first.t_scale - second.t_scale) < 0.000001;
 }
+
+"""A mapping scaled and slid so the texture repeats a whole number of times
+across a face's outline each way, as near one texel to a unit as that
+allows: the fit that distorts least."""
+def mapping_min_fitted(mapping: Mapping, outline: list[Vec3], width: int, height: int) -> Mapping {
+    if len(outline) < 3 or width <= 0 or height <= 0 {
+        return mapping;
+    }
+    s_low = outline[0].dot(mapping.s_axis);
+    s_high = s_low;
+    t_low = outline[0].dot(mapping.t_axis);
+    t_high = t_low;
+    for point in outline {
+        s_low = min(s_low, point.dot(mapping.s_axis));
+        s_high = max(s_high, point.dot(mapping.s_axis));
+        t_low = min(t_low, point.dot(mapping.t_axis));
+        t_high = max(t_high, point.dot(mapping.t_axis));
+    }
+    across = max(1.0, float(round((s_high - s_low) / float(width))));
+    down = max(1.0, float(round((t_high - t_low) / float(height))));
+    return mapping_fitted(mapping, outline, width, height, across, down);
+}
+
+"""A mapping carried from one face round the edge it shares with another:
+turned about the line where the two planes meet, by the angle between
+them, so the material runs on unbroken across the corner. None when the
+planes do not meet (they are parallel)."""
+def mapping_wrapped(mapping: Mapping, source: Plane3, target: Plane3) -> Mapping | None {
+    hinge = source.normal.cross(target.normal);
+    if hinge.length() < 0.0001 {
+        return None;
+    }
+    along = hinge.normalized();
+    angle = math.atan2(hinge.length(), source.normal.dot(target.normal));
+    # A point on both planes, to turn about: where the hinge line passes
+    # nearest the origin.
+    between = source.normal.dot(target.normal);
+    span = 1.0 - between * between;
+    first = (source.dist - target.dist * between) / span;
+    second = (target.dist - source.dist * between) / span;
+    pivot = source.normal.scale(first).add(target.normal.scale(second));
+    return mapping_carried(
+        mapping, pivot, spun_about(mapping.s_axis, along, angle), spun_about(mapping.t_axis, along, angle)
+    );
+}
+
+"""Whether a mapping's two axes run nearly the same way, or it has no scale:
+a material laid like that is smeared into a line."""
+def mapping_bad(mapping: Mapping) -> bool {
+    if abs(mapping.s_scale) < 0.0001 or abs(mapping.t_scale) < 0.0001 {
+        return True;
+    }
+    s_long = mapping.s_axis.length();
+    t_long = mapping.t_axis.length();
+    if s_long < 0.0001 or t_long < 0.0001 {
+        return True;
+    }
+    return mapping.s_axis.cross(mapping.t_axis).length() / (s_long * t_long) < 0.05;
+}

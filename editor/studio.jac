@@ -182,8 +182,9 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_faces <all|invert|extend|next|prev>",
         "spread the face pick over the whole brush, to its other faces or across the plane; or step to the next face"
     ),
-    ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
-    ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_tag", "ed_tag [clear]", "remember the picked face, to glue brushes against and take its material from; or forget it"),
+    ("ed_glue", "ed_glue [face]", "move the selection against the tagged face, or put the picked face in its plane"),
+    ("ed_paintface", "ed_paintface <brush> <side>", "give one face the material in hand (Alt and a drag, in face mode)"),
     ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
     ("ed_caulk", "ed_caulk [material]", "give the faces the selected brushes cover of each other a material that is not drawn"),
     ("ed_autocaulk", "ed_autocaulk [on|off]", "whether shapes are built with their inner faces caulked"),
@@ -256,8 +257,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
     (
         "ed_tex",
-        "ed_tex <shift|shiftto|scale|turn|turnto|fit|flat|reset> [a] [b]",
-        "change how the material lies on the selected faces, or on every side of the selected brushes"
+        "ed_tex <shift|shiftto|scale|turn|turnto|fit|minfit|flat|reset|wrap|project> [a] [b]",
+        "change how the material lies on the selected faces, or on every side of the selected brushes; wrap and project take it from the tagged face"
     ),
     ("ed_pickmat", "ed_pickmat [brush side]", "take the material of a face as the one new brushes and faces get"),
     ("ed_boxselect", "ed_boxselect <view> <x0> <y0> <x1> <y1> [add]", "select what lies in a rectangle of a view"),
@@ -609,6 +610,12 @@ obj Studio(Workbench) {
         build_ms: int = 0,
         # The face brushes are glued against, as its plane and what it was.
         tagged: Plane3 | None = None,
+        # The tagged face itself, for its material and how it lies; and a
+        # stroke of the material in hand across faces, with the last one it touched.
+        tagged_side: Side | None = None,
+        painting: bool = False,
+        painted_solid: int = -1,
+        painted_side: int = -1,
         tagged_words: str = "",
         # The sculpting brush, whether a stroke is being drawn, drags since
         # its last dab, and where on a terrain the pointer is.
@@ -1012,7 +1019,13 @@ obj Studio(Workbench) {
                     MenuItem(text="Four round the middle", command="ed_dup 3 0 0 0 90"),
                     MenuItem(text="Mirror image along x", command="ed_dup mirror x"),
                     MenuItem(text="Make the copies real", command="ed_dup apply"),
-                    MenuItem(text="Hand to the world", command="ed_tie")
+                    MenuItem(text="Hand to the world", command="ed_tie"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Fit the material, keeping its scale", command="ed_tex minfit"),
+                    MenuItem(text="Wrap the tagged face's material round", command="ed_tex wrap"),
+                    MenuItem(text="Lay the tagged face's material on", command="ed_tex project"),
+                    MenuItem(text="Put the picked face in the tagged plane", command="ed_glue face"),
+                    MenuItem(text="Forget the tagged face", command="ed_tag clear")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -1595,6 +1608,13 @@ obj Studio(Workbench) {
                     self.box_port = index;
                     continue;
                 }
+                if self.mode == "face" and event.alt {
+                    # Alt and a drag paints the material in hand across faces.
+                    self.painting = True;
+                    self.painted_solid = -1;
+                    self.painted_side = -1;
+                    continue;
+                }
                 if self.mode == "sculpt" {
                     # The first dab of a stroke.
                     self.sculpting = True;
@@ -1664,6 +1684,9 @@ obj Studio(Workbench) {
                         );
                     }
                 }
+                if event.button == 0 and self.painting {
+                    self.painting = False;
+                }
                 if event.button == 0 and self.resizing and self.resize_side >= 910 {
                     # A turn or size handle let go: the drag becomes its command.
                     self.resizing = False;
@@ -1717,6 +1740,17 @@ obj Studio(Workbench) {
                             "ed_move " + str(int(shift.x)) + " " + str(int(shift.y)) + " " + str(int(shift.z))
                         );
                     }
+                }
+            } elif event.kind == "drag" and self.painting {
+                brushed = self.aim(event.x, event.y);
+                brushed_solid = brushed.solid;
+                if brushed_solid is not None
+                    and (brushed_solid.serial != self.painted_solid or brushed.side != self.painted_side) {
+                    # Each face once, as the pointer comes onto it.
+                    self.painted_solid = brushed_solid.serial;
+                    self.painted_side = brushed.side;
+                    self.moved = True;
+                    stage.emit("ed_paintface " + str(brushed_solid.serial) + " " + str(brushed.side));
                 }
             } elif event.kind == "drag" and self.sculpting {
                 # A dab every few moves of the pointer, so a stroke builds up evenly.

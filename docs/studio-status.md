@@ -132,6 +132,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
     to try part of a level alone.
   - `ed_group_tint <r g b>`: the colour of its outlines.
   `ed_groups` lists the groups with their switches.
+- **A material from the tagged face**: `ed_tag` remembers a face;
+  `ed_tex wrap` gives the picked faces its material carried round the edge
+  they share with it, so it runs on unbroken across the corner, and
+  `ed_tex project` lays it on them exactly as it lies on the tagged face.
+  `ed_tex minfit` fits a material in whole repeats, as near a texel to a
+  unit as that allows. In face mode, Alt and a drag paints the material in
+  hand onto each face the pointer passes over (Alt and a click still takes
+  a face's material). `ed_glue face` puts the picked face in the tagged
+  face's plane, and `ed_tag clear` forgets the tag. The check names sides
+  whose material is smeared into a line.
 - **By a picked face** (face mode, the face's form and the Brush menu):
   `ed_extrude [depth]` pushes the face out into a brush of its own,
   `ed_cone [height]` stands a cone on it and `ed_walls [depth] [thickness]`
@@ -530,7 +540,9 @@ editor/impl/                 the workbench's scenes and brushes
   back; a digger's shaft cut from what is built, the input left whole; a
   map written without comments and in whole numbers; a face's narrowest
   width and the check's finding for a sliver; the face pick stepped round
-  a brush.
+  a brush; a material fitted in whole repeats, wrapped so both faces agree
+  along their shared edge, projected, painted on one face; a face glued
+  into a plane; the check's finding for a smeared material.
 - `tests/studio_select_tests.jac`: sets kept, picked, replaced and dropped;
   a deleted member leaving a set and coming back with undo; sets written
   with the map and read from it; the steps to owner, brushes and
@@ -679,6 +691,11 @@ editor/impl/                 the workbench's scenes and brushes
   to five hundred, its green bar to half, the third number of its place
   dragged up five grid steps, three edits in all; then a brush's handles
   chosen on the radio).
+  `scripts/studio/wrap_session.cfg` (6 steps: a box's top given a material,
+  slid and tagged; the face beside it takes that material round the edge,
+  the next takes it as it lies; fitted in whole repeats; Alt and a drag in
+  the plan paints the box's top and the floor; the floor's top put in the
+  tagged plane, so the floor rises to it).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

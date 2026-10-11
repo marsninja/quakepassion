@@ -476,11 +476,19 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
             change = FaceEdit(how="turn_to", s=first);
         } elif how == "fit" {
             change = FaceEdit(how="fit", s=first, t=second, sizes=self.material_sizes(scene));
+        } elif how == "minfit" {
+            change = FaceEdit(how="minfit", sizes=self.material_sizes(scene));
+        } elif how == "wrap" or how == "project" {
+            if self.tagged_side is None {
+                self.say("Tag the face to take the material from first (ed_tag)");
+                return True;
+            }
+            change = FaceEdit(how=how, source=self.tagged_side);
         } elif how == "flat" or how == "reset" {
             change = FaceEdit(how=how);
         }
         if change is None {
-            self.say("ed_tex <shift|shiftto|scale|turn|turnto|fit|flat|reset> [a] [b]");
+            self.say("ed_tex <shift|shiftto|scale|turn|turnto|fit|minfit|flat|reset|wrap|project> [a] [b]");
         } elif not scene.faces() and not scene.selected_solids() and not scene.selection() {
             self.say("Select faces or brushes first");
         } elif not scene.reface(change, "Material " + how) {
