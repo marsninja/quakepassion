@@ -57,9 +57,23 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | A dict literal whose first key is a string held in a variable (a parameter, a module global) failed to lower when it was the first literal of its dict type in the module: the first value was normalised from a string view and the first key was not, so the key was taken for an integer one and the dict's helpers could not be emitted. The function fell back to Python and the native build failed (E5092) | [#9975](https://github.com/jaseci-labs/jac/pull/9975) | The studio's digger command sets or clears one field named by a constant: `scene.set_fields({DIGGER_KEY: None if off else "1"})` (`editor/impl/studio.faces.impl.jac`) |
 | In the body of `impl Arch.method`, a name first assigned inside a nested block (a `for` or `if` body) was bound to the archetype's method or field of that name: the assignment failed with E1001, and under `jac test` the module ran interpreted. A shallow scope lookup through an impl's declaration climbed into the archetype | [#9978](https://github.com/jaseci-labs/jac/pull/9978) (reported as [#9969](https://github.com/jaseci-labs/jac/issues/9969)) | Met again and again in the studio (`aim`, `opened`, `shelf`, `grid`, `reach`, `changed`), each time by a local that happened to share a member's name; the last made `editor/document/scene.jac` run interpreted in its tests without failing one |
 | `==` between two lists of different native element types (one of tagged values, as `list(struct.unpack(...))` gives, against a `list[int]`; a `list[int]` against a `list[float]`) compared the two pointers and was always False | [#9931](https://github.com/jaseci-labs/jac/pull/9931) | A flare test's assertion |
+| A statement that ends an `if` body with a comprehension was never joined to what follows the `if` (the link into the comprehension was taken for the statement's way out), so a guard asked again after it (`if x is not None { x.a = [..]; } if x is not None { x.b }`) narrowed from `None` alone and every use under it raised E1099 | [#9990](https://github.com/jaseci-labs/jac/pull/9990) | The studio's floating windows (`Studio.float_views`) |
 
 ## Reported, not yet fixed
 
+- [jaseci-labs/jac#9992](https://github.com/jaseci-labs/jac/issues/9992): a
+  flow lookup for a local that walks back to an assignment of it from itself
+  (`toward = Vec3(x=round(toward.x))`) refuses the reference inside that
+  right-hand side, which is then checked un-narrowed (E1099), when a later
+  statement is asked about before the checker has met the assignment, as the
+  interface writer does. It shows only on a cold build: from the commit that
+  added `Studio.drag_lay` (`editor/impl/studio.layhandle.impl.jac`) the
+  studio does not build from an empty cache without the fix, and warm
+  incremental builds hid that. A fix that keys the checker's re-entrancy
+  guard by symbol and statement is on the branch
+  `fix/checker-flow-lookup-reentry` of `marsninja/jac` and is applied to the
+  compiler this tree is built with; it has no regression test yet, so it is
+  not a pull request.
 - [jaseci-labs/jac#9969](https://github.com/jaseci-labs/jac/issues/9969): the
   checker takes a local that is first assigned inside a loop in an `impl`
   body for the archetype's method of the same name (E1001). Found in
