@@ -397,6 +397,19 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   over it, and `ed_skin save <file.tga>` writes it. Not there yet:
   picking and dragging on the skin view itself, patterns, and the
   picture drawn on the model.
+- **Bodies and weapons put together** (Window menu): `ed_body
+  [character] [weapon|none] [legs <sequence>] [torso <sequence>]` shows
+  a Quake III body as the game joins it, through the engine's own rig:
+  the torso on the legs' `tag_torso`, the head on the torso's `tag_head`
+  and a weapon in its hand on `tag_weapon`, at each frame of the legs'
+  sequence and the torso's (idle, run, jump, swim, ...; stand, attack,
+  gesture, ...). `ed_body list` names the bodies the archives hold.
+  `ed_viewweapon <q1|q2|q3> [slot] [out]` shows a game's weapon as it is
+  held in view, seen from where the player's eye is (from outside, with
+  `out`), at rest and through the frames of a shot; Quake III's rides its
+  hand's `tag_weapon`, with its barrel, as it does in play. Either is one
+  model in the explorer's model view: its frames are stepped and played
+  there, and `ed_model edit` takes it into the model editor.
 - **Bones** (`ed_bone`, Window menu): a model being edited may have bones
   to pose it by. `ed_bone add <name> <head> <tail> [parent]` makes one,
   `ed_bone chain <name> <tail>` carries a chain on from the end of the
@@ -1001,6 +1014,10 @@ editor/impl/                 the workbench's scenes and brushes
   frames matched; MD3 and MD2 written and read back by the engine's own
   readers, and taken up again as a graph; tags added, moved a frame at a
   time and dropped, going with their frames; a frame moved in the order.
+- `tests/studio_assembly_tests.jac`: points carried to where a model is
+  placed; a body of legs, torso, head and weapon joined by their tags at
+  each frame, a tag turning what hangs from it; a sequence's frames and
+  a weapon's; a weapon riding a hand's tag with its barrel.
 - `tests/studio_bones_tests.jac`, `tests/studio_rig_tests.jac`: points
   turned and moved by their shares; a grip taking, sharing and letting go
   points; the nearest bone; frames spread; colours mixed; and in a
@@ -1331,6 +1348,12 @@ editor/impl/                 the workbench's scenes and brushes
   brushes; the instance given a swap and names of its own; the built map
   written out, with the gate's blockout in brass and the inner post
   still slate).
+  `scripts/studio/figure_session.cfg` (9 steps: Quake III's bodies named;
+  Sarge at rest with a machinegun, then running while he attacks, empty
+  handed; Visor with a rocket launcher; Quake's shotgun as held, at rest
+  and firing; Quake II's; Quake III's machinegun on its hand with its
+  barrel, from outside; what is not there refused; a body taken into
+  the model editor).
   `scripts/studio/bones_session.cfg` (12 steps: two bones up a column, the
   second carrying on from the first; every point given to the nearer;
   two points shared half and half, let go and taken whole; the forearm

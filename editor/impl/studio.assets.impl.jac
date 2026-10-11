@@ -142,7 +142,8 @@ impl Studio.show_asset(ui: StudioUi) {
     }
     form.adopt(Label(text=seen.name.split("/")[-1], tone="accent"));
     form.adopt(Label(text=seen.game + ":" + seen.name, tone="dim", small=True));
-    words = seen.kind + ", " + str(seen.size) + " bytes" + (", " + seen.note if seen.note else "");
+    words = seen.kind + (", " + str(seen.size) + " bytes" if seen.size > 0 or seen.kind != "figure" else "")
+        + (", " + seen.note if seen.note else "");
     form.adopt(Label(text=words, tone="dim", small=True));
     figure = self.model_now;
     if figure is not None and figure.game == seen.game and figure.name == seen.name {

@@ -24,6 +24,10 @@ import from games.levels { override_path, override_folder }
 import from games.items { pickup_rule }
 import from games.enemies { enemy_rule }
 import from games.fixtures { fixture_rule }
+import from games.arena_character { character_rig }
+import from games.viewweapons { view_weapons }
+import from engine.world.weapons { ViewWeaponRule }
+import from engine.formats.animated { AnimatedModel }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
 }
@@ -89,6 +93,7 @@ import from .model.skin {
 }
 import from .model.document { ModelDoc, Part, Reshape, Bone }
 import from .model.bones { point_swung }
+import from .model.assembly { body_model, held_model, clip_frames, rule_frames }
 import from .model.files { doc_from_model, model_of, write_md3, md3_limits, write_md2, md2_limits }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }
@@ -268,6 +273,12 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    (
+        "ed_body",
+        "ed_body [character|list] [weapon|none] [legs <sequence>] [torso <sequence>]",
+        "show a Quake III body put together as the game joins it: legs, torso and head by their tags, a weapon in its hand, through the frames of two sequences"
+    ),
+    ("ed_viewweapon", "ed_viewweapon <q1|q2|q3> [slot] [out]", "show a game's weapon as it is held in view, at rest and through a shot"),
     (
         "ed_bone",
         "ed_bone [list] | add <name> <head> <tail> [parent] | chain <name> <tail> | pick <name> | hold [weight] | release [all] | auto | weights | tint <rrggbb> | turn <x|y|z> <degrees> | move <d> | end <head|tail> <at> [all] | drop [name] | spread <first> <last> | colours [on|off] | save|load [file]",
@@ -1362,7 +1373,10 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="The model's bones", command="ed_bone"),
                     MenuItem(text="Give every point to the bone nearest it", command="ed_bone auto"),
-                    MenuItem(text="Points in their bones' colours", command="ed_bone colours")
+                    MenuItem(text="Points in their bones' colours", command="ed_bone colours"),
+                    MenuItem(rule=True),
+                    MenuItem(text="A Quake III body, put together", command="ed_body"),
+                    MenuItem(text="Quake's shotgun as held in view", command="ed_viewweapon q1 2")
                 ]
             ]
         );
@@ -3257,6 +3271,15 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Bodies and weapons in view, put together (impl/studio.figures.impl.jac)
+
+    """Run a figure command. False when it is not one."""
+    def figure_command(scene: Scene, args: list[str]) -> bool;
+    """Show a model made here in the explorer's model view, from outside or
+    from where the player's eye would be. False when it has no frames."""
+    def show_figure(game: str, name: str, model: AnimatedModel, words: str, from_eye: bool) -> bool;
+
+    # ------------------------------------------------------------------
     # The model's bones (impl/studio.bones.impl.jac)
 
     """Run a bone command. False when it is not one."""
@@ -3512,7 +3535,7 @@ obj Studio(Workbench) {
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
             and not self.model_command(scene, args) and not self.skin_command(scene, args)
-            and not self.bone_command(scene, args)
+            and not self.bone_command(scene, args) and not self.figure_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)

@@ -1667,6 +1667,81 @@ def bones_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The fifty-fourth session: a body put together, and weapons as held in view."""
+def figure_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["stood", "shotgun", "machinegun"];
+    for shot in shots {
+        (repo / f"figure_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-figure-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/figure_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "figure.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The figure session failed: {output / 'figure.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["stood", "running", "other", "shotgun", "firing", "second", "third", "refused", "edited"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'figure.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
+    shown: dict[str, str] = {};
+    for name in names {
+        shown[name] = [line for line in steps[name] if line.startswith("model ")][0];
+    }
+    # Quake III's bodies are found by their legs; Sarge is one, Visor another.
+    bodies = [line for line in said if line.startswith("bodies ")][0].split()[1:];
+    assert "sarge" in bodies and "visor" in bodies and len(bodies) >= 20 , str(bodies);
+    made = [line for line in said if line.startswith("body ")];
+    # At rest with a machinegun: legs, torso, head and gun, the frames of the legs' idling
+    # (the torso stands on one frame, held through them).
+    assert made[0].startswith("body sarge legs=idle:") and "torso=stand:" in made[0] and made[0].endswith("weapon=machinegun surfaces=6") , made[0];
+    idle = int(made[0].split("legs=idle:")[1].split()[0].split("+")[1]);
+    assert made[0].split("torso=stand:")[1].split()[0].endswith("+1") and idle > 1;
+    assert shown["stood"].startswith("model q3:body/sarge/idle+stand+machinegun surfaces=6 frames=" + str(idle) + " ") , shown["stood"];
+    triangles = int(shown["stood"].split("triangles=")[1].split()[0]);
+    # Running while it attacks, empty handed: as many frames as the longer of the two, and fewer triangles.
+    run = int(made[1].split("legs=run:")[1].split()[0].split("+")[1]);
+    attack = int(made[1].split("torso=attack:")[1].split()[0].split("+")[1]);
+    assert made[1].endswith("weapon=none surfaces=5") and f"frames={max(run, attack)} " in shown["running"] and "frame=3 " in shown["running"];
+    assert 0 < int(shown["running"].split("triangles=")[1].split()[0]) < triangles , shown["running"];
+    # Another body with another weapon.
+    assert made[2].startswith("body visor ") and "weapon=rocketl" in made[2] and shown["other"].startswith("model q3:body/visor/idle+stand+rocketl ");
+    # Quake's shotgun as held: its rest and the six frames of a shot, seen from the eye (no turn).
+    held = [line for line in said if line.startswith("viewweapon ")];
+    assert held[0] == "viewweapon q1 slot=2 model=progs/v_shot.mdl frames=7 hand=0 barrel=0 surfaces=1" , held[0];
+    assert shown["shotgun"].startswith("model q1:held/progs/v_shot.mdl surfaces=1 frames=7 ") and " yaw=0 " in shown["shotgun"];
+    assert "frame=4 " in shown["firing"] , shown["firing"];
+    # Quake II's shotgun; Quake III's machinegun on its hand, with its barrel, seen from outside.
+    assert held[1].startswith("viewweapon q2 slot=2 model=models/weapons/v_shotg/tris.md2 ") and "hand=0" in held[1] and " yaw=0 " in shown["second"];
+    assert held[2] == "viewweapon q3 slot=2 model=models/weapons2/machinegun/machinegun.md3 frames=7 hand=1 barrel=1 surfaces=2" , held[2];
+    assert " yaw=0 " not in shown["third"] and "surfaces=2 frames=7 " in shown["third"];
+    # A body, a sequence, a game and a slot that are not there change nothing.
+    assert shown["refused"] == shown["third"] and len(made) == 4 and len(held) == 3 and "viewweapons q1 1 2 3 4 5 6 7 8" in said;
+    # Taken into the model editor it is a model of five parts with the body's frames.
+    edited = [line for line in steps["edited"] if line.startswith("modeldoc ")][0];
+    assert " parts=5 " in edited and f" frames={idle} " in edited and made[3].endswith("weapon=none surfaces=5") , edited;
+    for shot in shots {
+        source = repo / f"figure_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"figure_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"FIGURE PASS: {len(steps) - 1} steps, a body of {len(bodies)} put together at rest and running, and three games' "
+            + "weapons as held in view"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4018,6 +4093,7 @@ def main() {
         "lean": lean_session,
         "arms": arms_session,
         "bones": bones_session,
+        "figure": figure_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4186,6 +4262,7 @@ def main() {
     lean_session(repo, binary, env, output);
     arms_session(repo, binary, env, output);
     bones_session(repo, binary, env, output);
+    figure_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
