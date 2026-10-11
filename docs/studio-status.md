@@ -128,6 +128,19 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   among them follows. A button pasted without its door still opens the
   door it did, and a door pasted alone is still opened by what opened the
   first.
+- **Baking what can be seen**: a built scene is one leaf, all of it drawn
+  from anywhere. `ed_bake [cell]` (Play menu) cuts its plan into cells up
+  to that wide (256 units unless told), each a leaf of the level's tree
+  with the faces that lie in it, and gives each cell the cells it can see,
+  so the engine draws only those from inside it, as it does for a shipped
+  map. What can be seen is found by looking: from the points a player
+  could come to in one cell (those reached, in plain sight point to point,
+  from where the scene's entities stand) to such points and to the faces
+  of another, with the scene's fixed brushes in the way. Cells that touch
+  always see each other, and what one sees sees it back, so it errs toward
+  drawing more; what no entity can reach (under the floor, outside the
+  walls) is seen by nothing. `ed_bake off` builds it as one again. The
+  level is cut again every time it is built while this is on.
 - **Building**: `ed_build` builds the level again now; `ed_build full`
   lights it finely (a lightmap texel to 16 units), `ed_build quick`
   coarsely (to 32, about a third of the work), and `ed_build flat` not at
@@ -553,6 +566,12 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_document_tests.jac`: entity lumps round-trip; selection;
   every edit and its undo; any run of edits undone in full restores the
   document.
+- `tests/studio_bake_tests.jac`: a level cut into cells with every face in
+  one; a wall across a hall hiding one side from the other, and a doorway
+  letting it be seen; a level that fits one cell left as it was; a budget
+  spent leaving the rest in sight. (`tests/studio_compile_tests.jac` has
+  a baked level prepared by the engine, the player's cell found in it and
+  fewer faces listed from behind the wall.)
 - `tests/studio_duplicator_tests.jac`: copies that grow and turn about
   each axis; mirrors on two and three axes; images at named entities and
   along a path's corners; the material cycle; a door's images as doors
@@ -732,6 +751,10 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/bake_session.cfg` (5 steps: a hall with a wall across
+  its middle opened from a map, cut into thirty cells of which some are
+  out of sight of others; played from one side of the wall, 32 faces are
+  drawn; built as one again and played from the same place, 42).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -754,8 +777,9 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   curve faces the same way round; a linked prefab stands as its file has it (it
   does not turn); the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
-- Not yet built: a solid-colour display mode; the bake proper (partition,
-  visibility, bounced light, bot navigation); patches written back as
+- Not yet built: the rest of the bake (a partition by the brushes' own
+  planes with portals between its leaves, in place of cells of the plan;
+  bounced light; bot navigation); patches written back as
   `patchDef2`, and texture coordinates per control point; the rest of the
   asset studio (models textured and assembled, sounds played, shader and
   texture authoring); the

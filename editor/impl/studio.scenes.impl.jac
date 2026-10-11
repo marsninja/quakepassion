@@ -32,6 +32,10 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     whole = self.expanded(source);
     made = compile_scene(whole, self.materials);
     self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
+    if self.vis_cell > 0.0 {
+        # Cut into cells, each with what it can see.
+        self.vis_done = bake_cells(whole, made, self.vis_cell);
+    }
     self.live = made;
     self.build_ms = int((time.time() - began) * 1000.0);
     self.built_geometry = scene.geometry;

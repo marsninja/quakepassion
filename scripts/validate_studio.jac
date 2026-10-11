@@ -1070,6 +1070,58 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A word of the line that says what the last bake did."""
+def bake_word(lines: list[str], key: str) -> int {
+    found = [line for line in lines if line.startswith("bake ")];
+    return int(found[0].split(key + "=")[1].split()[0]) if found else -1;
+}
+
+"""The thirty-first session: a walled hall cut into cells that know what
+they see, and played with less drawn from one side of its wall."""
+def bake_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "bake_cells.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-bake-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/bake_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "bake.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The bake session failed: {output / 'bake.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["opened", "baked", "inside", "whole", "unbaked"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'bake.log'}";
+    }
+    assert made(steps["opened"]) == 7 and bake_word(steps["opened"], "cells") == -1 , str(steps["opened"]);
+    # Cut into cells: more than one, some out of sight of others, and no budget spent.
+    cells = bake_word(steps["baked"], "cells");
+    assert cells >= 8 and bake_word(steps["baked"], "hidden") > 0 and bake_word(steps["baked"], "capped") == 0 , str(
+        steps["baked"]
+    );
+    assert bake_word(steps["baked"], "pairs") == cells * (cells - 1) // 2;
+    # Played from one side of the wall, fewer faces are drawn than when the level is one leaf.
+    inside = int(played_word(steps["inside"], "drawn"));
+    whole = int(played_word(steps["unbaked"], "drawn"));
+    assert 0 < inside and inside < whole , f"{inside} of {whole}";
+    assert bake_word(steps["whole"], "cells") == -1;
+    source = repo / "bake_cells.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "bake_cells.png");
+    source.unlink();
+    print(
+        f"BAKE PASS: {len(steps) - 1} steps, a hall cut into {cells} cells with some out of sight of others, "
+            + f"{inside} faces drawn from one side of its wall against {whole} built as one"
+    );
+}
+
 """The thirtieth session: an entity's facing and a light's reach dragged by
 their handles, a path drawn, logic added from the library, a favourite."""
 def marks_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2305,6 +2357,7 @@ def main() {
         "wrap": wrap_session,
         "settings": settings_session,
         "marks": marks_session,
+        "bake": bake_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2438,6 +2491,7 @@ def main() {
     wrap_session(repo, binary, env, output);
     settings_session(repo, binary, env, output);
     marks_session(repo, binary, env, output);
+    bake_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

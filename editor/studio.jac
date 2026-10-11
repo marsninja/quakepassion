@@ -68,6 +68,7 @@ import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
+import from .compile.bake { bake_cells, VisReport }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate {
@@ -188,6 +189,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
     ("ed_caulk", "ed_caulk [material]", "give the faces the selected brushes cover of each other a material that is not drawn"),
     ("ed_autocaulk", "ed_autocaulk [on|off]", "whether shapes are built with their inner faces caulked"),
+    (
+        "ed_bake",
+        "ed_bake [cell|off]",
+        "cut the built level into cells that know which others they see (256 units wide unless told), or build it as one again"
+    ),
     ("ed_logic", "ed_logic [kind]", "add a piece of logic (a relay, a delay, a counter ...) as the scene's game has it, or list the kinds"),
     ("ed_fav", "ed_fav <classname>", "keep a class as a favourite, or stop keeping it"),
     ("ed_bind", "ed_bind <key> <command>", "give a key (a, ctrl+k, shift+f2) an editor command of your own"),
@@ -639,6 +645,10 @@ obj Studio(Workbench) {
         # Playing only what is selected; and how coarse the light is baked
         # (world units to a lightmap texel).
         play_only: bool = False,
+        # How wide the cells are that a built level is cut into (none when
+        # it is zero: the level is one leaf), and what the last bake did.
+        vis_cell: float = 0.0,
+        vis_done: VisReport = VisReport(),
         # The classes kept as favourites.
         favourites: list[str] = [],
         # The axis views' grid shown, with numbers along its edges; levels
@@ -1056,7 +1066,10 @@ obj Studio(Workbench) {
                     MenuItem(text="Build again now", command="ed_build"),
                     MenuItem(text="Light finely", command="ed_build full"),
                     MenuItem(text="Light coarsely (quicker)", command="ed_build quick"),
-                    MenuItem(text="No light (quickest)", command="ed_build flat")
+                    MenuItem(text="No light (quickest)", command="ed_build flat"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Bake what each part can see", command="ed_bake"),
+                    MenuItem(text="Build as one again", command="ed_bake off")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -3062,6 +3075,13 @@ obj Studio(Workbench) {
             lines.append(
                 "studio: brushes=" + str(len(scene.solids())) + " geometry=" + str(scene.geometry) + " built="
                     + str(self.built_geometry)
+            );
+        }
+        if self.vis_cell > 0.0 {
+            done = self.vis_done;
+            lines.append(
+                "studio: bake cell=" + str(int(self.vis_cell)) + " cells=" + str(done.cells) + " hidden=" + str(done.hidden)
+                    + " pairs=" + str(done.pairs) + " capped=" + ("1" if done.capped else "0")
             );
         }
         built_now = self.live;

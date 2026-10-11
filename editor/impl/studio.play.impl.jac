@@ -17,6 +17,7 @@ impl Studio.play_command(args: list[str]) {
             "studio: play playing=" + ("1" if self.playing else "0") + " held=" + ("1" if self.holding else "0")
                 + " owed=" + str(self.steps_owed) + " player=" + str(round(at.x, 1)) + "," + str(round(at.y, 1))
                 + "," + str(round(at.z, 1)) + " made=" + str(built_now.brushes if built_now is not None else 0)
+                + " drawn=" + str(app.last_drawn)
                 + " doors=" + ",".join([door.state for door in [app.world->:HasDoor:->][?:Door]])
         );
         return;
@@ -75,6 +76,21 @@ impl Studio.play_command(args: list[str]) {
 }
 
 impl Studio.build_mode_command(scene: Scene, args: list[str]) -> bool {
+    if args[0] == "ed_bake" {
+        wanted = args[1] if len(args) > 1 else "256";
+        if wanted == "off" {
+            self.vis_cell = 0.0;
+            self.say("The level is built as one, all of it drawn from anywhere");
+        } elif wanted.isdigit() and int(wanted) >= 32 {
+            self.vis_cell = float(int(wanted));
+            self.say("The level is cut into cells up to " + wanted + " wide, each drawing what it can see");
+        } else {
+            self.say("ed_bake [cell|off]: a cell is 32 units wide or more");
+            return True;
+        }
+        self.built_geometry = -1;
+        return True;
+    }
     if args[0] != "ed_build" {
         return False;
     }

@@ -5,6 +5,7 @@ import from editor.document.scene { Scene }
 import from editor.geometry.brush { box_sides }
 import from editor.compile.live { compile_scene, SwatchMaterials, swatch_texture, material_hidden }
 import from editor.compile.light { bake_light, scene_lamps, BrushOccluder }
+import from editor.compile.bake { bake_cells, leaf_at }
 
 """A room: a floor, two walls, a door of one brush, a trigger and a start."""
 def room -> Scene {
@@ -186,4 +187,35 @@ test "a lit scene prepares as a level" {
     prepare_level(world, level);
     assert level.bsp.light_channels == 3 and len(level.bsp.lighting) > 0;
     assert len(level.visible(world, Vec3(x=-64.0, y=0.0, z=32.0), True)) == 12;
+}
+
+"""A hall with walls all round, a roof, and a wall across its middle."""
+def walled_hall -> Scene {
+    scene = Scene(game="passion", name="studio:test");
+    world = scene.world();
+    scene.add_solid(world, box_sides(Vec3(x=-256.0, y=-128.0, z=-16.0), Vec3(x=256.0, y=128.0, z=0.0), "floor"));
+    scene.add_solid(world, box_sides(Vec3(x=-256.0, y=-128.0, z=192.0), Vec3(x=256.0, y=128.0, z=208.0), "roof"));
+    scene.add_solid(world, box_sides(Vec3(x=-272.0, y=-128.0, z=0.0), Vec3(x=-256.0, y=128.0, z=192.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=256.0, y=-128.0, z=0.0), Vec3(x=272.0, y=128.0, z=192.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=-272.0, y=-144.0, z=0.0), Vec3(x=272.0, y=-128.0, z=192.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=-272.0, y=128.0, z=0.0), Vec3(x=272.0, y=144.0, z=192.0), "wall"));
+    scene.add_solid(world, box_sides(Vec3(x=-8.0, y=-128.0, z=0.0), Vec3(x=8.0, y=128.0, z=192.0), "wall"));
+    scene.add_item({"classname": "info_player_start", "origin": "-192 0 24"});
+    return scene;
+}
+
+test "a baked level prepares, finds the player's cell and draws less behind a wall" {
+    scene = walled_hall();
+    made = compile_scene(scene, SwatchMaterials());
+    total = len(made.bsp.leaves[0].faces);
+    bake_cells(scene, made, 128.0);
+    world = World();
+    level = Level(active=True, name="studio:test", bsp=made.bsp);
+    prepare_level(world, level);
+    leaf = level.locate(Vec3(x=-192.0, y=0.0, z=56.0));
+    assert leaf == leaf_at(made.bsp, made.bsp.models[0].head, Vec3(x=-192.0, y=0.0, z=56.0));
+    # From the west room, the faces of the east room's cells are left out.
+    drawn = level.visible(world, Vec3(x=-192.0, y=0.0, z=56.0), True);
+    everything = level.visible(world, Vec3(x=-192.0, y=0.0, z=56.0), False);
+    assert 0 < len(drawn) and len(drawn) < len(everything) and len(everything) == total;
 }
