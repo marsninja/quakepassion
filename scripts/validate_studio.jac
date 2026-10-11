@@ -2390,6 +2390,110 @@ def turned_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     );
 }
 
+"""The sixty-fifth session: a WAD's lumps in the explorer, and archives changed in place."""
+def repack_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    import struct;
+    import zipfile;
+    (repo / "repack_lump.png").unlink(missing_ok=True);
+    work = repo / ".jac/studio-repack";
+    shutil.rmtree(work, ignore_errors=True);
+    (work / "seed").mkdir(parents=True);
+    (work / "seed/note.txt").write_text("a note\n");
+    (work / "seed/wall.txt").write_text("the wall, in words\n");
+    (work / "seed/floor.txt").write_text("floor\n");
+    # Quake read from a copy of its archives, so that the game's own are never the ones at stake.
+    quake = Path(env.get("QP_ASSETS", "") or (os.getenv("HOME", "") + "/quake-assets/id1"));
+    (work / "id1").mkdir();
+    for found in sorted(quake.iterdir()) {
+        if found.name.lower().endswith(".pak") {
+            shutil.copyfile(found, work / "id1" / found.name);
+        }
+    }
+    before = (work / "id1/pak0.pak").read_bytes();
+    kept_assets = env.get("QP_ASSETS", "");
+    with tempfile.TemporaryDirectory(prefix="qp-repack-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_EXTRACT"] = str(work / "extract");
+        env["QP_ASSETS"] = ".jac/studio-repack/id1";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/repack_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_EXTRACT");
+        if kept_assets {
+            env["QP_ASSETS"] = kept_assets;
+        } else {
+            env.pop("QP_ASSETS");
+        }
+        (output / "repack.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The repack session failed: {output / 'repack.log'}";
+    }
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["lump", "letters", "made", "changed", "zipped", "kept"] {
+        assert name in steps and name in said , f"The session never reached '{name}': {output / 'repack.log'}";
+    }
+    # A lump of Quake's gfx.wad is a file in a folder: the status bar as the picture it is, written
+    # out as the WAD has it (its size, then a byte a texel); the console's letters as a sheet.
+    lump = [line for line in steps["lump"] if line.startswith("asset ")];
+    assert lump == ["asset q1:gfx.wad/sbar kind=image size=7688 note=320x24 lines=0 material="] , str(lump);
+    written = (work / "extract/q1/gfx.wad/sbar").read_bytes();
+    assert len(written) == 7688 and struct.unpack("<ii", written[:8]) == (320, 24) and "studio: extracted 7688 bytes" in ran.stdout;
+    letters = [line for line in steps["letters"] if line.startswith("asset ")];
+    assert letters == ["asset q1:gfx.wad/conchars kind=image size=16384 note=128x128 lines=0 material="] , str(letters);
+    # A PAK made a file at a time holds the three under the names given.
+    assert [line for line in said["made"] if line.startswith("packed ")] == [
+        "packed note.txt 7", "packed textures/yard/wall.txt 19", "packed textures/yard/floor.txt 6"
+    ] , str(said["made"]);
+    assert len([line for line in said["made"] if line.startswith("archive yard.pak files=") and " add=" in line]) == 3;
+    # The note replaced by the wall's words under its own name, the folder gone, nothing else changed.
+    changes = [line for line in said["changed"] if line.startswith("archive ") and (" add=" in line or " drop=" in line)];
+    assert len(changes) == 2 and changes[0].endswith("add=NOTE.TXT was=3") and " files=3 " in changes[0] , str(changes);
+    assert changes[1].endswith("drop=textures/ was=3") and " files=1 " in changes[1] , str(changes);
+    pak = (work / "yard.pak").read_bytes();
+    where = struct.unpack("<ii", pak[4:12]);
+    start = int(where[0]);
+    size = int(where[1]);
+    assert pak[:4] == b"PACK" and size == 64 and pak[start:start + 8] == b"note.txt" and pak[12:31] == b"the wall, in words\n";
+    # The PK3: one name put in twice is one file with the later contents, and the other dropped.
+    with zipfile.ZipFile(work / "yard.pk3") as packed {
+        assert packed.namelist() == ["scripts/note.txt"] and packed.read("scripts/note.txt") == b"floor\n" and packed.testzip() is None;
+    }
+    assert [line for line in said["zipped"] if line.startswith("packed ")] == ["packed scripts/note.txt 6"] , str(said["zipped"]);
+    # What is not an archive, or is not there, is listed as nothing; Quake's own PAK (here a copy the
+    # run reads the game from) is refused twice, still listed, and not a byte of it changed.
+    assert len([line for line in said["zipped"] if line.startswith("archive none.pak") or line.startswith("archive note.txt")]) == 0;
+    assert [line for line in said["kept"] if "refused" in line] == ["archive pak0.pak refused", "archive pak0.pak refused"] , str(said["kept"]);
+    listed = [line for line in said["kept"] if line.startswith("archive pak0.pak files=")];
+    assert len(listed) == 1 and int(listed[0].split("files=")[1].split()[0]) > 300 , str(listed);
+    assert (work / "id1/pak0.pak").read_bytes() == before and not (work / "id1/pak0.pak.new").exists();
+    source = repo / "repack_lump.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "repack_lump.png");
+    source.unlink();
+    shutil.rmtree(work, ignore_errors=True);
+    print(
+        f"REPACK PASS: {len(steps) - 1} steps, the status bar and the console's letters shown from Quake's gfx.wad and one "
+            + "written out, a PAK and a PK3 made a file at a time with a file replaced and a folder dropped, and a game's own "
+            + "PAK left as it was"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4752,6 +4856,7 @@ def main() {
         "modelfiles": modelfiles_session,
         "stuck": stuck_session,
         "turned": turned_session,
+        "repack": repack_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4931,6 +5036,7 @@ def main() {
     modelfiles_session(repo, binary, env, output);
     stuck_session(repo, binary, env, output);
     turned_session(repo, binary, env, output);
+    repack_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

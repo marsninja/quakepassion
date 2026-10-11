@@ -1004,6 +1004,18 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **Packing** (`ed_pack <folder> <out.pak|out.pk3>`): a folder's files as a
   PAK or a PK3 the games' own readers take. `ed_pack scene <out.pk3>` packs
   the scene's map with the texture files its materials name.
+  An archive is changed in place too: `ed_pack list <archive>` says what
+  it holds, `ed_pack add <archive> <file> [name inside]` puts a file in
+  (in place of the file of that name, whatever its case, or after the
+  rest; the archive is made if it is not there), and `ed_pack drop
+  <archive> <name>` takes one out, or a whole folder when the name ends
+  in `/`. The new archive is written beside the old and put in its
+  place. One of an installed game's own archives is refused: copy it and
+  change the copy.
+- **WADs**: a WAD among a game's files (Quake's `gfx.wad`) is a folder of
+  its lumps in the explorer as well as a file. A lump that is a picture
+  (its size before its texels) is shown as one, the console's letters as
+  the sheet they are, and Extract writes a lump out as the WAD has it.
 
 A scene is a "passion" level: it plays by the rules generated expeditions do
 and may hold any game's entities.
@@ -1229,6 +1241,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_repack_tests.jac`: a PAK's files read out, one put in
+  place of another or added, one and a folder dropped, and read again by
+  the engine; the same of a PK3 on disk; a WAD's lumps as files inside
+  it; a file known to lie in a folder however the two are written.
 - `tests/studio_instance_tests.jac`: an instance of a prefab stood on its
   origin as its file has it, turned a quarter round (brushes, entities'
   places and facings, materials still along their faces), sized by one
@@ -1434,7 +1450,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
-  `scripts/studio/turned_session.cfg` (9 steps: a linked bench as its
+  `scripts/studio/repack_session.cfg` (6 steps: the status bar and the
+  console's letters shown from Quake's `gfx.wad`, the first written out;
+  a PAK made of three files, one replaced and a folder dropped; a PK3 the
+  same; and Quake's own PAK, read here from a copy, refused twice and not
+  a byte of it changed).
+  `scripts/studio/turned_session.cfg` (12 steps: a linked bench as its
   file has it, turned a quarter round by two turns, made twice as large
   and then only longer, each seen as the plain brushes it stands for
   (ninety-six long along x, then along y, then 192 by 64 by 32 on the

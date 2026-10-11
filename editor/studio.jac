@@ -77,7 +77,9 @@ import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
 }
-import from .formats.archive { write_pak, write_zip, file_kind }
+import from .formats.archive {
+    write_pak, write_zip, file_kind, pak_files, zip_files, files_with, files_without, lies_in
+}
 import from .formats.sound { sound_facts, converted_sound }
 import from .formats.wal { WalFacts, wal_facts, wal_with, flag_names, flag_named, quake_frames }
 import from .classes.registry {
@@ -498,7 +500,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_orbit", "ed_orbit <yaw> <pitch> [distance]", "turn the model view (angles in degrees)"),
     (
         "ed_pack",
-        "ed_pack <folder|scene> <out.pak|out.pk3>",
+        "ed_pack <folder|scene> <out.pak|out.pk3> | list <archive> | add <archive> <file> [name inside] | drop <archive> <name, or folder/>",
         "pack a folder's files, or the scene with the textures it uses, into an archive"
     ),
     ("ed_copy", "ed_copy", "copy the selection (as map text)"),
@@ -3419,6 +3421,7 @@ obj Studio(Workbench) {
     """Run one of those commands (asked before the model's own, whose words
     they share). False when it is not one."""
     def playview_command(scene: Scene, args: list[str]) -> bool;
+    def archive_command(scene: Scene, args: list[str]) -> bool;
     """The edges of a frame as they are to be drawn: all, or those of the
     triangles that face the eye."""
     def shown_edges(frame: int) -> list[list[Vec3]];
@@ -3732,7 +3735,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.playview_command(scene, args) and not self.links_command(scene, args)
+        } elif not self.archive_command(scene, args) and not self.playview_command(scene, args)
+            and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)
             and not self.scene_command(scene, args)
             and not self.tool_command(scene, args)

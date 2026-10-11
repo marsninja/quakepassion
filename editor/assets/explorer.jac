@@ -8,7 +8,8 @@ import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q2.model { parse_pcx }
 import from engine.formats.wav { parse_wav_pcm }
-import from ..formats.archive { folder_children, file_kind }
+import from engine.formats.q1.wad { indexed_rgba }
+import from ..formats.archive { folder_children, file_kind, wad_member, wad_names, wad_lump }
 import from .materials { ArchiveMaterials }
 
 """What the explorer shows of one file."""
@@ -58,7 +59,18 @@ obj AssetIndex {
         } except Exception {
             seen = {};
         }
-        found = sorted([name for name in seen.keys() if name and not name.endswith("/")]);
+        found = [name for name in seen.keys() if name and not name.endswith("/")];
+        # A WAD is a folder of its lumps as well as a file.
+        inside: list[str] = [];
+        for name in found {
+            if name.lower().endswith(".wad") {
+                held = self.read(game, name);
+                if held is not None {
+                    inside.extend(wad_names(name, held));
+                }
+            }
+        }
+        found = sorted(found + inside);
         self.listed[game] = found;
         return found;
     }
@@ -69,8 +81,45 @@ obj AssetIndex {
 
     """A file's bytes, or none when it cannot be read."""
     def read(game: str, name: str) -> bytes | None {
+        within = wad_member(name);
         try {
+            if within is not None {
+                lump = wad_lump(self.shelf.reader().catalog.source(game).read(within[0]), within[1]);
+                return lump[0] if lump is not None else None;
+            }
             return self.shelf.reader().catalog.source(game).read(name);
+        } except Exception {
+            return None;
+        }
+    }
+
+    """A lump of a WAD as a picture: a picture with its size before it, or
+    the console's sheet of letters. None for any other lump."""
+    def lump_image(game: str, name: str) -> Texture | None {
+        within = wad_member(name);
+        if within is None {
+            return None;
+        }
+        try {
+            source = self.shelf.reader().catalog.source(game);
+            lump = wad_lump(source.read(within[0]), within[1]);
+            palette = source.read("gfx/palette.lmp");
+            if lump is None or len(palette) < 768 {
+                return None;
+            }
+            data = lump[0];
+            if within[1].lower() == "conchars" and len(data) >= 128 * 128 {
+                return Texture(name=name, width=128, height=128, rgba=indexed_rgba(data[:128 * 128], palette));
+            }
+            if lump[1] != 66 or len(data) < 8 {
+                return None;
+            }
+            wide = int.from_bytes(data[0:4], "little");
+            tall = int.from_bytes(data[4:8], "little");
+            if wide <= 0 or tall <= 0 or wide > 1024 or tall > 1024 or 8 + wide * tall > len(data) {
+                return None;
+            }
+            return Texture(name=name, width=wide, height=tall, rgba=indexed_rgba(data[8:8 + wide * tall], palette));
         } except Exception {
             return None;
         }
@@ -87,6 +136,14 @@ obj AssetIndex {
         }
         shown.size = len(data);
         low = name.lower();
+        if wad_member(name) is not None {
+            # A lump of a WAD: a picture when it is one.
+            picture = self.lump_image(game, name);
+            shown.kind = "image" if picture is not None else "other";
+            shown.image = picture;
+            shown.note = str(picture.width) + " x " + str(picture.height) if picture is not None else "a lump of a WAD";
+            return shown;
+        }
         if shown.kind == "image" {
             image: Texture | None = None;
             if game == "q2" and low.startswith("textures/") and low.endswith(".wal") {
