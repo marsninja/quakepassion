@@ -140,13 +140,15 @@ def respawn_wait(item: Pickup) -> float {
 
 """The view that traces an item's own box. Q1 items.qc gives every item
 setsize('0 0 0', '32 32 56'), the player hull's size with its origin at the
-box's low corner; Q2 droptofloor and Q3 ITEM_RADIUS make it 15 each way."""
+box's low corner; Q2 droptofloor and Q3 ITEM_RADIUS make it 15 each way.
+Q2 droptofloor and SV_Push and Q3 FinishSpawningItem and G_MoverPush trace
+an item with MASK_SOLID, which no clip brush stops."""
 def item_view(collision: CollisionMap, game: str) -> CollisionMap {
     if game == "q1" {
         return collision.for_body(0.0);
     }
     return collision.for_body(
-        0.0, 0.0, Vec3(x=-15.0, y=-15.0, z=-15.0), Vec3(x=15.0, y=15.0, z=15.0)
+        0.0, 0.0, Vec3(x=-15.0, y=-15.0, z=-15.0), Vec3(x=15.0, y=15.0, z=15.0), "solid"
     );
 }
 

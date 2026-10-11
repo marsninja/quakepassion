@@ -285,6 +285,22 @@ test "a face's lightmap block corner is packed in the atlas's units" {
     assert q[29] == float(2500 * 4096 + 3001);
 }
 
+test "a face with vertex normals packs each vertex's own" {
+    face = square(8.0);
+    face.normal = Vec3(x=1.0);
+    out = bytearray(4 * WORLD_VERTEX_STRIDE);
+    pack_world_face(out, 0, face, 0, 0, 2048, 0.0, 0, -1, False);
+    for i in range(4) {
+        assert struct.unpack_from("<fff", bytes(out), i * WORLD_VERTEX_STRIDE + 32) == (1.0, 0.0, 0.0);
+    }
+    # A Q3 patch's MakeMeshNormals normals.
+    face.normals = [Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0), Vec3(y=-1.0)];
+    pack_world_face(out, 0, face, 0, 0, 2048, 0.0, 0, -1, False);
+    assert struct.unpack_from("<fff", bytes(out), 32) == (1.0, 0.0, 0.0);
+    assert struct.unpack_from("<fff", bytes(out), WORLD_VERTEX_STRIDE + 32) == (0.0, 1.0, 0.0);
+    assert struct.unpack_from("<fff", bytes(out), 3 * WORLD_VERTEX_STRIDE + 32) == (0.0, -1.0, 0.0);
+}
+
 test "the world shaders hold as many fog volumes as the original numbers" {
     assert WORLD_FOG_LIMIT == 31;
     assert "fogPlane[31]" in WORLD_FOG_GLSL and "fogColor[31]" in WORLD_FOG_GLSL;

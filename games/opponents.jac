@@ -11,7 +11,9 @@ import from engine.world.arena { ArenaMatch, HasMatch, Competes, SpawnPoint, Has
 import from engine.formats.bsp { MapEntity }
 import from engine.world.world { World, move_to_area }
 import from engine.world.level { Level, spawn_player }
-import from engine.world.combat { Opponent, HasOpponent, Drops, Bloodied, ensure_profiles, arm_bot }
+import from engine.world.combat {
+    Opponent, HasOpponent, Drops, Bloodied, Sheds, ensure_profiles, arm_bot
+}
 import from engine.world.pickups { Pickup, HasPickup }
 import from .items { monster_drop, item_spin, item_light_flags }
 import from engine.world.bot_tactics { Q3_FIRE_SOUNDS, Arms, hold_weapon }
@@ -24,7 +26,7 @@ import from engine.world.podium { Podium, HasPodium, Figure, Poses, Portrays, Wi
 import from engine.world.reflection { HasBody, Carries, player_body }
 import from .botfiles { BotFiles, load_bot_character }
 import from engine.world.finale { TeleportTrain, HasTeleportTrain, LeftStanding }
-import from engine.world.fixtures { Fixture, HasFixture }
+import from engine.world.fixtures { Fixture, HasFixture, Hums }
 import from engine.world.speakers { Speaker, HasSpeaker }
 import from engine.world.signals { Signal, HasSignal }
 import from engine.world.models { ModelResource, HasModelResource, UsesModel, HasVisual, attach_model }
@@ -219,6 +221,68 @@ def arena_entities(world: World, roster: list[BotInfo], player_start: Vec3) -> l
         );
     }
     return result;
+}
+
+"""Stand what a monster's death leaves beside it (a death frame's `leaves`,
+the Makron's torso) in the world: its own model on the frames named, hidden,
+with its looping sound silent, until that frame sets it down
+(combat.jac leave_behind)."""
+def attach_leaving(
+    world: World,
+    level: Level,
+    enemy: Opponent,
+    frames: list[AnimationFrame],
+    resource: ModelResource,
+    path: str
+) {
+    for sequence in enemy.rule.deaths {
+        for event in sequence.events {
+            leaves = event.leaves;
+            if leaves is None or [enemy->:Sheds:->] {
+                continue;
+            }
+            spot = enemy.pos.add(enemy.visual.offset);
+            figure = Fixture(
+                pos=spot, yaw=enemy.yaw, frames=frame_indices(frames, leaves.frames, path, "leaving")
+            );
+            figure.visual = attach_model(figure, resource);
+            figure.visual.first = figure.frames[0];
+            figure.visual.second = figure.frames[0];
+            figure.visual.visible = False;
+            move_to_area(figure, level.areas[level.locate(spot)]);
+            world +>:HasFixture:+> figure;
+            enemy +>:Sheds:+> figure;
+            if leaves.sound {
+                # A Q2 entity's looping sound (s.sound), at the looping falloff.
+                hum = Speaker(
+                    path=leaves.sound, origin=spot.add(Vec3()), attenuation=3.0, looping=True
+                );
+                world +>:HasSpeaker:+> hum;
+                figure +>:Hums:+> hum;
+            }
+        }
+    }
+}
+
+"""The form a monster leaves to fight on when it dies (Jorg's Makron),
+waiting unseen where the first stands: a monster of the same game, skill
+and box rules, of its own class."""
+def successor_body(enemy: Opponent, follower: OpponentRule, kind: str, seed: int) -> Opponent {
+    return Opponent(
+        pos=enemy.pos.add(Vec3()),
+        eye_height=enemy.eye_height,
+        dormant=True,
+        home=enemy.pos.add(Vec3()),
+        shot_random=seed,
+        rule=follower,
+        health=follower.health,
+        max_health=follower.health,
+        yaw=enemy.yaw,
+        game=enemy.game,
+        kind=kind,
+        skill=enemy.skill,
+        own_hull=enemy.own_hull
+    );
 }
 
 def populate_opponents(world: World, level: Level, directory: str) -> int {
@@ -535,6 +599,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 if not enemy.animation {
                     enemy.animation = enemy.idle_animation;
                 }
+                attach_leaving(world, level, enemy, frames, resources[key], path);
                 enemy.modeled = True;
             }
             if arena {
@@ -618,18 +683,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 if follower is None {
                     raise ValueError("Unknown successor: " + rule.successor);
                 }
-                heir = Opponent(
-                    pos=position,
-                    eye_height=level.collision.eye_height,
-                    dormant=True,
-                    home=position,
-                    shot_random=1 + count * 7919,
-                    rule=follower,
-                    health=follower.health,
-                    max_health=follower.health,
-                    yaw=enemy.yaw,
-                    own_hull=enemy.own_hull
-                );
+                heir = successor_body(enemy, follower, rule.successor, 1 + count * 7919);
                 ensure_profiles(heir);
                 for profile in heir.profiles {
                     register_speaker(world, heir, profile.sound);
@@ -676,6 +730,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                         frame_indices(heir_frames, profile.frames, follower.model, profile.name)
                     );
                 }
+                attach_leaving(world, level, heir, heir_frames, resources[heir_key], follower.model);
                 heir.modeled = True;
                 heir.visual.visible = False;
                 move_to_area(heir, level.areas[level.locate(position)]);

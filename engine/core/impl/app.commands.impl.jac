@@ -59,7 +59,9 @@ impl App.configure_game(game: str) {
     self.configured_game = game;
     defaults = self.read_config("default.cfg");
     script = defaults + "\n" + binding_layer(game, bool(defaults.strip())) + "\n";
-    if not self.smoke {
+    if self.smoke {
+        script += SMOKE_VIDEO;
+    } else {
         preferences = Preferences();
         try {
             script += preferences.settings_text() + "\n" + preferences.bindings_text(game) + "\n";

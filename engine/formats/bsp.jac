@@ -56,6 +56,19 @@ obj Face {
         patch_width: int = 0,
         patch_height: int = 0,
         patch_points: list[Vec3] = [],
+        # A Q3 patch's drawn grid (srfGridMesh_t): its size, the error each
+        # column and row was added for, and its LOD group's origin and
+        # radius. The renderer leaves out the columns and rows a distant
+        # view does not need (tr_surface.c RB_SurfaceGrid).
+        grid_width: int = 0,
+        grid_height: int = 0,
+        width_errors: list[float] = [],
+        height_errors: list[float] = [],
+        lod_origin: Vec3 = Vec3(),
+        lod_radius: float = 0.0,
+        # A normal for each vertex where they differ (a patch's, from
+        # MakeMeshNormals); empty when every vertex takes `normal`.
+        normals: list[Vec3] = [],
         alpha_test: int = 0,
         additive: bool = False,
         two_sided: bool = False,
@@ -151,7 +164,9 @@ obj FlareSurface {
     has face: int,
         origin: Vec3,
         color: Vec3,
-        normal: Vec3;
+        normal: Vec3,
+        # The fog volume the surface lies in (dsurface_t fogNum), or -1.
+        fog: int = -1;
 }
 
 obj Bsp {

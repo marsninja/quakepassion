@@ -183,7 +183,7 @@ import from ..console.console { Console }
 import from games.controls { binding_layer, control_actions }
 import from ..world.damage { Damage }
 import from ..math.vec3 { Vec3, forward_from, right_from }
-import from ..render.renderer { Renderer, RenderPass }
+import from ..render.renderer { Renderer, RenderPass, SMOKE_VIDEO }
 import from .workbench { Workbench, NoWorkbench, SceneView }
 import from ..world.world {
     World,

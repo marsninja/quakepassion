@@ -5,6 +5,7 @@ import from engine.input.keys { Keyboard, key_event_commands, key_canonical_name
 import from engine.input.input { Controls, Intent }
 import from engine.core.preferences { Preferences, legacy_settings }
 import from games.controls { control_actions, binding_layer }
+import from engine.render.renderer { Renderer, SMOKE_VIDEO }
 
 """Cbuf_Execute as the app runs it: the shell's own commands, then the keys'
 and the input layer's."""
@@ -86,6 +87,18 @@ test "a game's default.cfg binds keys, and the layer and the console rebind them
     assert again[1].binding_lines() == lines;
     run_config(shell, keyboard, controls, "unbindall");
     assert keyboard.binding_lines() == ["unbindall"];
+}
+
+test "a smoke run keeps the validation window whatever default.cfg asks for" {
+    (shell, keyboard, controls) = fresh_input();
+    renderer = Renderer();
+    renderer.declare(shell);
+    # Quake II's default.cfg asks for fullscreen.
+    run_config(shell, keyboard, controls, "set\tvid_fullscreen\t1\nset vid_width 640\n");
+    assert renderer.cvars.fullscreen.on() and renderer.cvars.width.integer == 640;
+    run_config(shell, keyboard, controls, SMOKE_VIDEO);
+    assert not renderer.cvars.fullscreen.on();
+    assert renderer.cvars.width.integer == 1280 and renderer.cvars.height.integer == 720;
 }
 
 test "button bindings send their release; other bindings run on the press" {

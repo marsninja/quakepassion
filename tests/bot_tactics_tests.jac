@@ -7,7 +7,8 @@ import from engine.world.bot_ai { BotTactics }
 import from engine.world.bot_tactics { choose_weapon, change_view, steer_view, look_at, bot_fire, rule_for }
 import from engine.world.bot_character { BotCharacter, BotState, bot_skill, bot_handicap, bot_aggression, enemy_view, entity_visible, Q3_SKILL_NAMES }
 import from engine.world.bot_weights { bot_inventory, battle_inventory }
-import from engine.world.bot_tactics { attack_move }
+import from engine.world.bot_tactics { attack_move, can_step, walk_in_direction }
+import from engine.world.bot_travel { predict_jump }
 import from engine.formats.botscript { precompile }
 import from engine.formats.botconfig { WeightConfig, read_weight_config }
 import from engine.world.inventory { quantity, AdjustInventory }
@@ -295,4 +296,55 @@ test "the reaction time runs from finding an enemy, not from each glimpse" {
         world spawn BotTactics(player=human, collision=collision, state=CombatState(game="q3"), rules=rules, dt=0.01);
     }
     assert shooter.bot_state.enemy is other and shooter.enemy_sight < 0.2;
+}
+
+test "a fighting bot does not step toward a gap" {
+    # A floor that ends 60 units to the bot's left (+y), with nothing beyond.
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-2000.0, y=-2000.0, z=-64.0), Vec3(x=2000.0, y=60.0, z=0.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=26.0), eye_height=26.0, grounded=True);
+    # There is floor 40 units on; the gap (BotGapDistance, up to 100 units
+    # ahead) is just past it.
+    assert not can_step(bot, Vec3(y=1.0), collision);
+    assert can_step(bot, Vec3(y=-1.0), collision) and can_step(bot, Vec3(x=1.0), collision);
+}
+
+test "a fight's jump is predicted, and refused when it would not land" {
+    # A floor that ends 60 units to the bot's left (+y), with nothing beyond.
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-2000.0, y=-2000.0, z=-64.0), Vec3(x=2000.0, y=60.0, z=0.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=26.0), eye_height=26.0, grounded=True, velocity=Vec3(y=320.0));
+    # Running for the edge: friction leaves 128 of its 320, the frame's air
+    # acceleration adds 32, and 16 units a frame carry the jump past it.
+    over = predict_jump(collision, Vec3(), bot.velocity, Vec3(y=1.0));
+    assert over.frames == 30 and not over.ground;
+    assert walk_in_direction(bot, Vec3(y=1.0), collision, None, True) == 0;
+    # Away from the edge it comes down on the floor after seven frames.
+    bot.velocity = Vec3(y=-320.0);
+    back = predict_jump(collision, Vec3(), bot.velocity, Vec3(y=-1.0));
+    assert back.ground and back.frames == 6 and abs(back.point.y + 112.0) < 0.01;
+    assert walk_in_direction(bot, Vec3(y=-1.0), collision, None, True) == 2;
+    assert walk_in_direction(bot, Vec3(y=-1.0), collision) == 1;
+    # A walk toward a gap is tried as a jump: across a 40-unit slot at a
+    # run, refused from a standstill (it would land short, the gap ahead).
+    slot = CollisionMap();
+    slot.add_box(Vec3(x=-2000.0, y=-2000.0, z=-64.0), Vec3(x=2000.0, y=60.0, z=0.0), Vec3(), Vec3(), Vec3());
+    slot.add_box(Vec3(x=-2000.0, y=100.0, z=-64.0), Vec3(x=2000.0, y=2000.0, z=0.0), Vec3(), Vec3(), Vec3());
+    slot.reindex();
+    bot.velocity = Vec3(y=320.0);
+    assert walk_in_direction(bot, Vec3(y=1.0), slot) == 2;
+    bot.velocity = Vec3();
+    assert walk_in_direction(bot, Vec3(y=1.0), slot) == 0;
+    assert not can_step(bot, Vec3(y=1.0), slot);
+    # Off the ground a fighting bot makes no move of its own.
+    foe = Opponent(arena=True, health=100, pos=Vec3(x=600.0, z=26.0));
+    arm_bot(bot);
+    bot.grounded = False;
+    attack_move(bot, BotCharacter(attack_skill=0.3), foe, collision);
+    assert bot.steering.length() == 0.0;
+    bot.grounded = True;
+    attack_move(bot, BotCharacter(attack_skill=0.3), foe, collision);
+    assert bot.steering.x > 0.99;
 }

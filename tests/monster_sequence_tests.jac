@@ -16,9 +16,14 @@ import from engine.world.combat {
     ensure_profiles,
     pain_length,
     pain_stagger,
+    StepField,
     death_stride,
-    corpse_settled
+    corpse_settled,
+    Sheds,
+    leaving_of
 }
+import from engine.world.fixtures { Fixture, HasFixture, Hums, FixtureTick }
+import from engine.world.speakers { HasSpeaker }
 import from engine.world.opponent_rule { OpponentRule, Reaction }
 import from engine.world.gibs { GibRule }
 import from engine.world.speakers { Speaker }
@@ -167,11 +172,14 @@ def strip(back: float, front: float) -> CollisionMap {
     return collision;
 }
 
-"""Play out the pain a monster is in, in 20 Hz slices, and return its x."""
+"""Play out the pain a monster is in, in 20 Hz slices, and return its x.
+Each frame's step is carried over the frame's slices, as the combat tick
+carries it."""
 def stagger(enemy: Opponent, collision: CollisionMap, seconds: float = 100.0) -> float {
     elapsed = 0.0;
     while enemy.pain_wait > 0.000001 and elapsed < seconds - 0.000001 {
         pain_stagger(enemy, collision, 0.05);
+        enemy.advance(0.05);
         enemy.pain_wait = max(0.0, enemy.pain_wait - 0.05);
         elapsed += 0.05;
     }
@@ -420,13 +428,16 @@ test "pain frames stagger a monster along its facing without leaving its ground"
     soldier.pain_variant = 2;
     soldier.pain_wait = pain_length(soldier);
     assert abs(soldier.pain_wait - 0.7) < 0.0001;
-    assert abs(stagger(soldier, open_floor, 0.1) + 13.0 * 1.2) < 0.01;
+    # The first frame's step is taken as the frame begins.
+    stagger(soldier, open_floor, 0.05);
+    assert abs(soldier.standing().x + 13.0 * 1.2) < 0.01;
     assert abs(stagger(soldier, open_floor) + 1.0 * 1.2) < 0.01;
     # army_painb: ai_painforward 13 and 9, then ai_pain 2.
     grunt = sequenced("q1", "monster_army");
     grunt.pain_variant = 2;
     grunt.pain_wait = pain_length(grunt);
-    assert abs(stagger(grunt, open_floor, 0.3) - 22.0) < 0.01;
+    stagger(grunt, open_floor, 0.25);
+    assert abs(grunt.standing().x - 22.0) < 0.01;
     assert abs(stagger(grunt, open_floor) - 20.0) < 0.01;
     # The stride follows the facing.
     turned = sequenced("q1", "monster_dog");
@@ -436,9 +447,8 @@ test "pain frames stagger a monster along its facing without leaving its ground"
     stagger(turned, open_floor);
     assert abs(turned.pos.y + 44.0) < 0.01 and abs(turned.pos.x) < 0.01;
     # mutant_move_pain2 throws it 24 back in its first frame. With the
-    # floor ending, or a wall standing, 18 behind it, it takes the half of
-    # that stride that keeps it on the ground and out of the wall and no
-    # more (a stride is taken whole or not at all).
+    # floor ending, or a wall standing, 18 behind it, it takes none of that
+    # step (M_walkmove: the whole step or nothing).
     for obstacle in ["ledge", "wall"] {
         ground = strip(-18.0 if obstacle == "ledge" else -400.0, 400.0);
         if obstacle == "wall" {
@@ -449,15 +459,22 @@ test "pain frames stagger a monster along its facing without leaving its ground"
         mutant = sequenced("q2", "monster_mutant");
         mutant.pain_variant = 2;
         mutant.pain_wait = pain_length(mutant);
-        lowest = 0.0;
-        while mutant.pain_wait > 0.000001 {
-            pain_stagger(mutant, ground, 0.05);
-            mutant.pain_wait = max(0.0, mutant.pain_wait - 0.05);
-            lowest = min(lowest, mutant.pos.x);
-            assert abs(mutant.pos.z - 22.01) < 0.5;
-        }
-        assert abs(lowest + 12.0) < 0.01 , obstacle + " " + str(lowest);
+        pain_stagger(mutant, ground, 0.05);
+        mutant.advance(0.05);
+        assert mutant.pos.x == 0.0 and mutant.standing().x == 0.0 , obstacle;
+        assert abs(mutant.pos.z - 22.01) < 0.5;
     }
+    # On open ground the step is taken at once and the body carried
+    # through it over the frame.
+    mutant = sequenced("q2", "monster_mutant");
+    mutant.pain_variant = 2;
+    mutant.pain_wait = pain_length(mutant);
+    pain_stagger(mutant, open_floor, 0.05);
+    assert mutant.standing().x == -24.0 and mutant.pos.x == 0.0;
+    mutant.advance(0.05);
+    assert abs(mutant.pos.x + 12.0) < 0.001;
+    mutant.advance(0.05);
+    assert mutant.pos.x == -24.0;
     # A monster in the air does not stride.
     falling = sequenced("q2", "monster_soldier");
     falling.grounded = False;
@@ -490,11 +507,13 @@ test "pain frames stagger a monster along its facing without leaving its ground"
     damage_opponent(victim, 5);
     state = CombatState(game="q2");
     player = Player(pos=Vec3(x=3000.0, z=22.01), god_mode=True);
-    for tick in range(6) {
+    for tick in range(3) {
         world spawn CombatTick(player=player, collision=open_floor, state=state, dt=1.0 / 60.0);
     }
-    # infantry_move_pain1 and pain2 both start 3 back.
-    assert abs(victim.pos.x + 3.0) < 0.05 , str(victim.pos.x);
+    # infantry_move_pain1 and pain2 both start 3 back: the step is taken
+    # with the frame and the body is half-way through it half a frame on.
+    assert abs(victim.standing().x + 3.0) < 0.0001 , str(victim.standing().x);
+    assert abs(victim.pos.x + 1.5) < 0.05 , str(victim.pos.x);
 }
 
 test "a monster thrown into the air takes its airborne pain" {
@@ -609,6 +628,7 @@ test "death frames carry their strides and stay on the ground" {
         body.death_variant = 1 + [sequence.name for sequence in body.rule.deaths].index(row[2]);
         for tick in range(100) {
             death_stride(body, floor, 0.05);
+            body.advance(0.05);
             body.animation_time += 0.5;
         }
         assert abs(body.pos.x - row[3]) < 0.01 , row[1] + " " + str(body.pos.x);
@@ -621,9 +641,10 @@ test "death frames carry their strides and stay on the ground" {
     body.death_variant = 2;
     for tick in range(100) {
         death_stride(body, brink, 0.05);
+        body.advance(0.05);
         body.animation_time += 0.5;
     }
-    assert body.pos.x >= -12.01 and body.pos.x < -8.99 and abs(body.pos.z - 22.01) < 0.01;
+    assert body.pos.x >= -12.01 and body.pos.x < -8.99 and abs(body.pos.z - 22.01) < 0.05;
     # The combat tick plays the death it drew and strides it.
     world = World();
     grunt = sequenced("q1", "monster_army", 3);
@@ -775,11 +796,13 @@ test "pain and death frames make the sounds their frame functions do" {
     assert heard(zombie, "sound/zombie/z_fall.wav") == 1;
     downed = sequenced("q1", "monster_zombie");
     damage_opponent(downed, 30);
-    stagger(downed, nothing, 0.95);
+    # It gets up by walkmove(0, 0), which wants a floor under it.
+    ground = strip(-400.0, 400.0);
+    stagger(downed, ground, 0.95);
     assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 0;
-    stagger(downed, nothing, 5.0);
+    stagger(downed, ground, 5.0);
     assert heard(downed, "sound/zombie/z_idle.wav") == 0;
-    stagger(downed, nothing, 0.3);
+    stagger(downed, ground, 0.3);
     assert heard(downed, "sound/zombie/z_fall.wav") == 1 and heard(downed, "sound/zombie/z_idle.wav") == 1;
     # tank_thud on death128, and the Makron's nine steps, makron_hit and
     # makron_brainsplorch through makron_move_death2.
@@ -893,28 +916,47 @@ test "a Q1 body blocks until the frame its die function clears it" {
     assert actor_overlap(soldier.pos.sub(Vec3(x=20.0, z=22.0)), 0.0, soldier) is None;
     # zombie_paine10 to paine12: flat on the ground the zombie is passable,
     # and it gets up only if nothing stands where it lies.
-    nothing = CollisionMap();
+    flat = strip(-400.0, 400.0);
     zombie = sequenced("q1", "monster_zombie");
     zombie.visual.visible = True;
     over = zombie.pos.sub(Vec3(x=20.0, z=22.0));
     damage_opponent(zombie, 30);
-    stagger(zombie, nothing, 0.85);
+    stagger(zombie, flat, 0.85);
     assert actor_overlap(over, 0.0, zombie) is not None;
-    stagger(zombie, nothing, 0.1);
+    stagger(zombie, flat, 0.1);
     assert actor_overlap(over, 0.0, zombie) is None;
-    stagger(zombie, nothing, 5.0);
+    stagger(zombie, flat, 5.0);
     assert actor_overlap(over, 0.0, zombie) is None;
     blocker = Player(pos=zombie.pos.add(Vec3(x=10.0)));
     for tick in range(4) {
-        pain_stagger(zombie, nothing, 0.05, blocker);
+        pain_stagger(zombie, flat, 0.05, blocker);
         zombie.pain_wait = max(0.0, zombie.pain_wait - 0.05);
     }
     # Blocked: back on the ground for another five seconds.
     assert zombie.pain_wait > 6.5 and actor_overlap(over, 0.0, zombie) is None;
     assert heard(zombie, "sound/zombie/z_idle.wav") == 0;
-    stagger(zombie, nothing, 5.3);
+    stagger(zombie, flat, 5.3);
     assert heard(zombie, "sound/zombie/z_idle.wav") == 1;
     assert actor_overlap(over, 0.0, zombie) is not None;
+    # Another monster standing where it lies keeps it down as the player
+    # does, and with nobody there it gets up.
+    for crowded in [True, False] {
+        lying = sequenced("q1", "monster_zombie");
+        damage_opponent(lying, 30);
+        stagger(lying, flat, 5.95);
+        dog = sequenced("q1", "monster_dog");
+        dog.visual.visible = True;
+        dog.pos = lying.pos.add(Vec3(x=10.0));
+        crowd = StepField();
+        if crowded {
+            crowd.file(dog);
+        }
+        for tick in range(4) {
+            pain_stagger(lying, flat, 0.05, None, crowd);
+            lying.pain_wait = max(0.0, lying.pain_wait - 0.05);
+        }
+        assert (lying.pain_wait > 6.5) == crowded;
+    }
 }
 
 test "an insane marine cries with the player's voice for its health" {
@@ -1062,4 +1104,99 @@ test "a dying soldier's and a dying infantry's guns go off as they fall" {
     assert rounds.requests == 1 and unlucky.health == 97;
     fall(field, infantry, "death2", unlucky, 2.0);
     assert rounds.requests == 12;
+}
+
+test "the dying Makron leaves its torso twitching beside it" {
+    # m_boss32.c makron_die: a torso is put down 84 units along -y from the
+    # Makron, facing as it does, as its death begins. makron_torso: the
+    # rider's frames 346 to 364 (death301-death319) round at 10 Hz, with
+    # makron/spine.wav looping.
+    rule = enemy_rule("q2", "monster_makron");
+    assert rule is not None and len(rule.deaths) == 1;
+    left = [event for event in rule.deaths[0].events if event.leaves is not None];
+    assert len(left) == 1 and left[0].frame == 0 and left[0].leaves is not None;
+    torso_rule = left[0].leaves;
+    assert torso_rule.frames == ["death" + str(301 + i) for i in range(19)];
+    assert [torso_rule.offset.x, torso_rule.offset.y, torso_rule.offset.z] == [0.0, -84.0, 0.0];
+    assert torso_rule.sound == "sound/makron/spine.wav";
+    # Nothing else in either game leaves a part of itself.
+    for key in ORIGINAL_SEQUENCES {
+        other = enemy_rule(key.split(":")[0], key.split(":")[1]);
+        assert other is not None;
+        for sequence in other.pains + other.deaths {
+            for event in sequence.events {
+                assert event.leaves is None or key == "q2:monster_makron" , key;
+            }
+        }
+    }
+    world = World();
+    level = Level(name="torso");
+    level.bsp.game = "q2";
+    state = CombatState(game="q2");
+    player = Player(pos=Vec3(x=3000.0, z=22.0), god_mode=True);
+    makron = sequenced("q2", "monster_makron");
+    makron.pos = Vec3(x=100.0, y=50.0, z=22.01);
+    ground = strip(-400.0, 400.0);
+    makron.visual.offset = Vec3(z=-22.0);
+    makron.yaw = 1.0;
+    torso = Fixture(pos=Vec3(), frames=[346 + i for i in range(19)]);
+    torso.visual.visible = False;
+    hum = Speaker(path="sound/makron/spine.wav", origin=Vec3(), looping=True);
+    world +>:HasOpponent:+> makron;
+    world +>:HasFixture:+> torso;
+    world +>:HasSpeaker:+> hum;
+    torso +>:Hums:+> hum;
+    makron +>:Sheds:+> torso;
+    assert leaving_of(makron) is torso;
+    # While the Makron lives the torso is unseen and silent.
+    world spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    world spawn FixtureTick(dt=1.0 / 60.0);
+    assert not torso.visual.visible and not hum.playing;
+    makron.health = 1;
+    damage_opponent(makron, 50);
+    assert makron.health == 0 and makron.death_variant == 1;
+    world spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    assert torso.visual.visible and hum.playing;
+    assert abs(torso.pos.x - 100.0) < 0.0001 and abs(torso.pos.y + 34.0) < 0.0001;
+    assert abs(torso.pos.z - 0.01) < 0.0001 and torso.yaw == 1.0;
+    assert hum.origin.sub(torso.pos).length() == 0.0;
+    # It plays its nineteen frames round.
+    shown: list[int] = [];
+    for frame in range(21) {
+        world spawn FixtureTick(dt=0.1);
+        shown.append(torso.visual.first);
+    }
+    assert shown == [347 + i for i in range(18)] + [346, 347, 348];
+    # The death goes on without setting it down again.
+    torso.pos = Vec3(x=7.0);
+    for tick in range(120) {
+        world spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    }
+    assert torso.pos.x == 7.0;
+    torso.pos = Vec3(x=100.0, y=-34.0, z=0.01);
+    # A save keeps where it lies and how far round it is.
+    saved = snapshot(world, level, player, state);
+    assert "LEFT" in [line.split()[0] for line in saved.splitlines()[3:]];
+    turned = torso.clock;
+    torso.visual.visible = False;
+    torso.pos = Vec3();
+    torso.yaw = 0.0;
+    torso.clock = 0.0;
+    hum.origin = Vec3();
+    restore(world, level, player, state, saved);
+    assert torso.visual.visible and hum.playing and torso.yaw == 1.0;
+    assert abs(torso.pos.y + 34.0) < 0.0001 and abs(torso.clock - turned) < 0.0001;
+    assert abs(hum.origin.y + 34.0) < 0.0001;
+    # One torn apart outright leaves none.
+    blown = sequenced("q2", "monster_makron", 2);
+    spare = Fixture(pos=Vec3(), frames=[346 + i for i in range(19)]);
+    spare.visual.visible = False;
+    scene = World();
+    scene +>:HasOpponent:+> blown;
+    scene +>:HasFixture:+> spare;
+    blown +>:Sheds:+> spare;
+    blown.gibbed = True;
+    blown.health = 0;
+    scene spawn CombatTick(player=player, collision=ground, state=state, dt=1.0 / 60.0);
+    assert not spare.visual.visible;
 }

@@ -165,7 +165,7 @@ view, one a frame, as `R_SortDrawSurfs` does (`engine/world/portals.jac`,
   - `alphaGen` const, wave, vertex, portal and `lightingSpecular`.
   - `tcMod` scroll, scale, rotate, turb, stretch and transform, in order;
     `tcGen environment` and `tcGen vector`.
-  - `alphaFunc` and `depthWrite`.
+  - `alphaFunc`, `depthWrite` and `depthFunc equal`.
 - `deformVertexes` runs in the vertex shader, on world surfaces and models
   alike (`RB_DeformTessGeometry`, `engine/render/world_mesh.jac`
   `SHADER_DEFORM_GLSL`): `wave`, `move` and `bulge` sway vertices;

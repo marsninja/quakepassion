@@ -1,4 +1,7 @@
-"""Original maps: Q3 mirrors and portals render the view through them."""
+"""Original maps: Q3 mirrors and portals render the view through them, with
+r_flares on: the view through each draws its own light flares
+(RB_RenderFlares runs after every view), and the counts of those it added,
+tested and drew are printed."""
 import math;
 import from engine.core.menu { game_directory }
 import from engine.world.level { Level, load_level }
@@ -7,6 +10,7 @@ import from engine.world.portals { PortalSurface, HasPortal, surface_plane }
 import from engine.render.quake { QuakeRenderer }
 import from engine.render.models { ModelScene }
 import from engine.render.effects { EffectScene }
+import from engine.render.flares { FlareRenderer }
 import from engine.render.portal { PortalTarget, draw_portal_view }
 import from engine.render.renderer { Renderer }
 import from engine.math.vec3 { Vec3, forward_from }
@@ -23,6 +27,9 @@ with entry {
         models = ModelScene();
         models.upload(world);
         effects = EffectScene();
+        flares = FlareRenderer();
+        flares.upload(level);
+        flares.cvars.flares.assign("1");
         portals = [world->:HasPortal:->][?:PortalSurface];
         print("PORTAL", name, "entities", len(portals), "mirrors", len([p for p in portals if p.mirror]), "portal shaders", len(level.portal_ranges));
         assert portals and level.portal_ranges;
@@ -59,7 +66,10 @@ with entry {
                     yaw = math.atan2(toward.y, toward.x);
                     pitch = math.atan2(toward.z, math.sqrt(toward.x * toward.x + toward.y * toward.y));
                     for frame in range(3) {
-                        rendered = draw_portal_view(target, level, world, drawing, models, effects, faces, eye, yaw, pitch, renderer.fov, float(frame) * 0.1);
+                        rendered = draw_portal_view(
+                            target, level, world, drawing, models, effects, faces, eye, yaw, pitch, renderer.fov,
+                            float(frame) * 0.1, flares=flares
+                        );
                         renderer.begin_frame(eye, yaw, pitch);
                         drawing.view_forward = forward_from(yaw, pitch);
                         drawing.draw(level, faces, eye);
@@ -72,13 +82,17 @@ with entry {
                     }
                 }
             }
-            print("PORTAL", name, level.bsp.textures[texture].name, "rendered", rendered, "->", shot);
+            print(
+                "PORTAL", name, level.bsp.textures[texture].name, "rendered", rendered, "flares added", flares.adds,
+                "tested", flares.tests, "drawn", flares.renders, "->", shot
+            );
             if rendered {
                 shots += 1;
             }
         }
         assert shots > 0;
         drawing.close();
+        flares.close();
         print("PORTAL PASS", name);
     }
     target.release();

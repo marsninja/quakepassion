@@ -284,3 +284,42 @@ test "dropped items are kept in saves: where they lie, the time they have left a
     # Bots are told of them again (BotUpdateEntityItems watches the serial).
     assert fresh.item_serial > 0;
 }
+
+test "a thrown item rests on player clip in Q3 and falls through it in Q2" {
+    # Q3 G_RunItem traces with MASK_PLAYERSOLID less bodies; Q2
+    # SV_Physics_Toss traces an item with MASK_SOLID.
+    for game in ["q3", "q2"] {
+        world = World();
+        area = Area(name="0", bounds=AABB(mins=Vec3(), maxs=Vec3()));
+        world ++> area;
+        drop_table(world);
+        # Brushes as a Q2 or Q3 map loads them: a floor with its top at 0
+        # and a sheet of player clip from 92 to 100 over it.
+        collision = CollisionMap();
+        sides = [Vec3(x=1.0), Vec3(x=-1.0), Vec3(y=1.0), Vec3(y=-1.0), Vec3(z=1.0), Vec3(z=-1.0)];
+        for span in [[0.0, 64.0], [100.0, -92.0]] {
+            collision.add_brush(
+                sides,
+                [2000.0, 2000.0, 2000.0, 2000.0, span[0], span[1]],
+                Vec3(x=-16.0, y=-16.0, z=-24.0),
+                Vec3(x=16.0, y=16.0, z=32.0),
+                Vec3()
+            );
+        }
+        collision.models = [0, 0];
+        collision.hulls[1].point_blocking = False;
+        collision.clips.add(1);
+        collision.reindex();
+        thrown = restore_drop(world, "quad", Vec3(z=200.0), 0.0, area, 29.0, 7.0, Vec3(x=10.0));
+        assert thrown is not None and in_flight(thrown);
+        for step in range(300) {
+            world spawn TossTick(collision=collision, dt=0.01, game=game);
+        }
+        assert not in_flight(thrown);
+        if game == "q3" {
+            assert abs(thrown.pos.z - 116.0) < 0.5 , str(thrown.pos.z);
+        } else {
+            assert thrown.pos.z < 20.0 , str(thrown.pos.z);
+        }
+    }
+}

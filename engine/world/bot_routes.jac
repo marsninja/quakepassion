@@ -75,6 +75,62 @@ node Passage {
 edge Exits: NavArea --> Passage {}
 edge Enters: Passage --> NavArea {}
 
+# be_ai_move.h avoid spot types.
+glob AVOID_ALWAYS: int = 1,
+    AVOID_DONTBLOCK: int = 2;
+
+"""be_ai_move.h bot_avoidspot_t: somewhere a bot keeps its way clear of (a
+live grenade), within `radius`."""
+obj AvoidSpot {
+    has origin: Vec3,
+        radius: float,
+        kind: int = AVOID_ALWAYS;
+}
+
+"""be_ai_move.c DistanceFromLineSquared: the squared distance from `point`
+to the stretch from `a` to `b` (to the nearer end beyond either)."""
+def line_distance_squared(point: Vec3, a: Vec3, b: Vec3) -> float {
+    along = b.sub(a);
+    span = along.dot(along);
+    t = point.sub(a).dot(along) / span if span > 0.000001 else 0.0;
+    nearest = a.add(along.scale(max(0.0, min(1.0, t))));
+    gap = point.sub(nearest);
+    return gap.dot(gap);
+}
+
+"""be_ai_move.c BotAvoidSpots: the type of avoid spot a passage would take
+a bot at `origin` into, 0 for none. A spot counts when the way to the
+passage's start runs within its radius and toward it; for the travel types
+that go straight (walk, crouch, barrier jump, ladder, swim, water jump) also
+when the passage itself does; for the others the original tests the first
+distance against the passage's start once more."""
+def avoid_spot_type(origin: Vec3, passage: Passage, spots: list[AvoidSpot]) -> int {
+    between = passage.kind not in [
+        TRAVEL_WALKOFFLEDGE, TRAVEL_JUMP, TRAVEL_TELEPORT, TRAVEL_ELEVATOR, TRAVEL_ROCKETJUMP, TRAVEL_BFGJUMP, TRAVEL_JUMPPAD, TRAVEL_FUNCBOB
+    ];
+    kind = 0;
+    for spot in spots {
+        reach = spot.radius * spot.radius;
+        near = line_distance_squared(spot.origin, origin, passage.start);
+        from_start = spot.origin.sub(passage.start);
+        from_origin = spot.origin.sub(origin);
+        if near < reach and from_origin.dot(from_origin) > near {
+            kind = spot.kind;
+        } elif between {
+            along = line_distance_squared(spot.origin, passage.start, passage.finish);
+            if along < reach and from_start.dot(from_start) > along {
+                kind = spot.kind;
+            }
+        } elif near < reach and from_start.dot(from_start) > near {
+            kind = spot.kind;
+        }
+        if kind == AVOID_ALWAYS {
+            return kind;
+        }
+    }
+    return kind;
+}
+
 """be_ai_move.c's avoid-reachability list of a bot's move state (avoidreach,
 avoidreachtimes, avoidreachtries; MAX_AVOIDREACH is 1, so it holds a single
 passage). Each passage the bot sets out on is added: the one already held
@@ -543,7 +599,13 @@ obj BotRoute {
         leg_started: float = -1.0,
         jumped: bool = False,
         # Whether the leg under way has been added to the avoid list.
-        noted: bool = False;
+        noted: bool = False,
+        # The gap found ahead on a walking leg (BotGapDistance) and when it
+        # was last looked for.
+        gap: float = 0.0,
+        gap_checked: float = -1000.0,
+        # Whether the bot has come to the start of the walk under way.
+        begun: bool = False;
 
     def add(point: Vec3, area: int, launch: Vec3 = Vec3(), passage: Passage | None = None) {
         self.points.append(point);
@@ -565,6 +627,9 @@ obj BotRoute {
         self.leg_started = clock;
         self.jumped = False;
         self.noted = False;
+        self.gap = 0.0;
+        self.gap_checked = -1000.0;
+        self.begun = False;
     }
 
     """Give the route up where the bot stands, so that its way is chosen
@@ -589,7 +654,8 @@ def best_exit(
     flags: int,
     avoid: AvoidReach | None = None,
     now: float = 0.0,
-    came_from: int = 0
+    came_from: int = 0,
+    spots: list[AvoidSpot] = []
 ) -> Passage | None {
     best: Passage | None = None;
     best_cost = UNREACHED;
@@ -599,6 +665,10 @@ def best_exit(
         }
         # "do not go back to the previous area if the goal didn't change"
         if came_from > 0 and passage.target == came_from {
+            continue;
+        }
+        # "if the bot should not use this reachability to avoid bad spots"
+        if spots and avoid_spot_type(position, passage, spots) != 0 {
             continue;
         }
         # "check if it isn't an reachability to avoid"
@@ -670,7 +740,8 @@ def plan_route(
     flags: int = TFL_DEFAULT,
     goal_area: int = 0,
     avoid: AvoidReach | None = None,
-    now: float = 0.0
+    now: float = 0.0,
+    spots: list[AvoidSpot] = []
 ) -> BotRoute {
     route = BotRoute();
     here_area = mesh.locate(origin);
@@ -699,7 +770,7 @@ def plan_route(
     while area != goal_area and steps < limit {
         # The way out of the area the bot is in keeps clear of the passage
         # it avoids; the later ones are chosen as it gets there.
-        best = best_exit(mesh, area, position, times, flags, avoid if steps == 0 else None, now, came_from);
+        best = best_exit(mesh, area, position, times, flags, avoid if steps == 0 else None, now, came_from, spots);
         if best is None {
             return route;
         }

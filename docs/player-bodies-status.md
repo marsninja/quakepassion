@@ -91,6 +91,11 @@ part of a rig shares one sample.
   `markShadow` shader is laid as one of `CG_ImpactMark`'s temporary marks: 24
   units in radius, cut to the faces it lies on, turned with the legs and
   fading with the height the player is at. An invisible player casts none.
+  A body whose mark could not be in the view's cone is passed over, and one
+  that has not moved since the last frame keeps the polygons its mark was
+  cut into, which shows the same. `scripts/render_benchmark.jac`
+  (2026-10-10): the shadows cost 0.1 to 0.25 ms a frame on the Q3 benchmark
+  maps (the effects stage is 0.02 ms with `cg_shadows 0`).
 - Head sprites (`CG_PlayerSprites`, `CG_PlayerFloatSprite`), 10 units in
   radius 48 units over a bot's origin: `sprites/balloon3` while it types a
   chat line (`EF_TALK`); otherwise the medal of an award it just earned
@@ -120,7 +125,9 @@ part of a rig shares one sample.
 - `scripts/bot_bodies_smoke.jac`: captures a bot running, strafing,
   backpedalling, firing with a flash, aiming up and down, dying, a body left
   behind, a quad shell, a dropped item, an award's medal and the spawn effect,
-  each on its blob shadow.
+  each on its blob shadow. A match that short earns awards only by chance, so
+  the script gives a living bot one outright (`show_award`) and fails unless
+  the medal over its head is captured.
 - `scripts/bot_render_profile.jac`: model-pass cost with every bot drawn each
   frame (culling off, 1280x720). Measured 2026-09-24 against the baked bodies
   the rig replaced:

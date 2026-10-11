@@ -80,7 +80,7 @@ def tick_world(app: App, player: Player, contacts: ArenaContactIndex, seconds: f
         world spawn CombatTick(player=player, collision=level.collision, state=app.combat, dt=dt, arena_live=True);
         world spawn BotTactics(player=player, collision=level.collision, state=app.combat, rules=app.combat.rules, dt=dt, level=level);
         world spawn ProjectileTick(player=player, collision=level.collision, state=app.combat, dt=dt);
-        world spawn TossTick(collision=level.collision, dt=dt);
+        world spawn TossTick(collision=level.collision, dt=dt, game=level.bsp.game);
         world spawn GibTick(collision=level.collision, dt=dt);
         world spawn ArenaNavigationTick(collision=level.collision, index=contacts, dt=dt, contacts=True);
         if contest is not None and not contest.finished {

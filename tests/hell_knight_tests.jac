@@ -256,6 +256,7 @@ test "a knight swings close by and slashes past from further out" {
     player = Player(pos=Vec3(x=100.0, z=22.0));
     runner = Opponent(
         rule=q1_rule("monster_knight"),
+        game="q1",
         pos=Vec3(z=22.0),
         grounded=True,
         alert=8.0,

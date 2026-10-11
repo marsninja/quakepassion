@@ -109,8 +109,10 @@ glob SHADER_CULL_FRONT: int = 0,
 identity, wave, const, vertex, diffuse (lightingDiffuse) or entity and
 oneminusentity (the drawn entity's shaderRGBA); `alpha` its alphaGen:
 identity, wave, const, vertex, portal, specular (lightingSpecular), entity
-or oneminusentity. `cull` and `deforms` are the whole shader's, the same on
-each of its stages."""
+or oneminusentity. `alpha_test` is its alphaFunc (1 GT0, 2 GE128, 3 LT128)
+and `depth_equal` its depthFunc equal: it draws only where the depth buffer
+already holds this surface. `cull` and `deforms` are the whole shader's, the
+same on each of its stages."""
 obj ModelStage {
     has texture: Texture = Texture(),
         frames: list[Texture] = [],
@@ -130,6 +132,7 @@ obj ModelStage {
         mods: list[TexMod] = [],
         alpha_test: int = 0,
         depth_write: bool = False,
+        depth_equal: bool = False,
         vectors: list[Vec3] = [],
         clamp: bool = False,
         cull: int = 0,

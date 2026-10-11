@@ -139,6 +139,15 @@ obj Gait {
         branch_chance: float = 0.0;
 }
 
+"""What a dying monster leaves beside it (Q2 makron_die's makron_torso):
+frames of its own model played round at 10 Hz, set down `offset` from its
+origin along the map's axes and facing as it does, with a looping sound."""
+obj Leaving {
+    has frames: list[str] = [],
+        offset: Vec3 = Vec3(),
+        sound: str = "";
+}
+
 """What a frame of a pain or death does besides show: the think of a Q2
 mframe_t, the body of a Q1 frame function. It happens as the sequence enters
 `frame`."""
@@ -158,6 +167,8 @@ obj FrameEvent {
         aim_pitch: float = 0.0,
         aim_yaw: float = 0.0,
         held: bool = False;
+    # Death: what the monster leaves beside it as the frame begins.
+    has leaves: Leaving | None = None;
 }
 
 """One sequence a monster plays when it is hurt or killed: its model frames

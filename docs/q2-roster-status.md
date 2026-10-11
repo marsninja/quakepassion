@@ -79,10 +79,18 @@ Details that follow the originals:
   - The mutant strides 17 units on attack02 before it leaps.
   - A soldier sights with `solsght1` or `solsrch1`, half the time each.
 - **Jorg and Makron** (`m_boss31.c`, `m_boss32.c`): Jorg's rule names
-  `monster_makron` as its `successor`. The Makron is built dormant at load and
-  takes over Jorg's targets. When Jorg's death animation ends it bursts apart
+  `monster_makron` as its `successor`. The Makron is built dormant at load
+  (`successor_body`), a Q2 `monster_makron` at the level's skill like one
+  the map places, and takes over Jorg's targets. When Jorg's death animation ends it bursts apart
   (`BossExplode`), and 0.8 s later the Makron is thrown toward the player at
-  400 units a second plus 200 up (`MakronToss`, `MakronSpawn`).
+  400 units a second plus 200 up (`MakronToss`, `MakronSpawn`). As a
+  Makron's death begins it leaves its torso 84 units along -y, facing as it
+  does (`makron_die`, `makron_torso`): the rider model's death301-death319
+  played round at 10 Hz with `makron/spine.wav` looping. The torso is a
+  hidden `Fixture` linked to each Makron at load (`Sheds`, with its `Hums`
+  speaker), for one the map places and for Jorg's alike; the first frame
+  event of its death (`FrameEvent.leaves`) sets it down, and a save keeps
+  where it lies and how far round it is (`LEFT`).
 - **Hostile BFG** (Jorg, Makron): the orb lasers targets in reach and bursts at
   impact.
 - **Gladiator** (`m_gladiator.c`): aim locks when the windup begins, so dodging
@@ -158,12 +166,14 @@ Details that follow the originals:
 
 - `tests/monster_sequence_tests.jac`: every pain and death table against the
   `mmove_t` frame counts and distances, each `*_pain` and `*_die` branch,
-  sounds and Nightmare, airborne pain, strides, corpse boxes, saves.
+  sounds and Nightmare, airborne pain, strides, corpse boxes, saves, the
+  Makron's torso set down, looping and saved.
 - `tests/q2_roster_tests.jac`: berserker windups and damage, gladiator locked aim
   and saves, rail occlusion and safe zone, cleaver escape, sound cues.
 - `tests/q2_roster_expansion_tests.jac`: gunner bursts, grenades and pain by
   damage, flyer, mutant, parasite drain, brain pull/push, tank and Supertank
-  choices, Hornet volley and Jorg spawning Makron, Makron sweep and rail,
+  choices, Hornet volley and Jorg spawning Makron (a monster of its own
+  class at the level's skill), Makron sweep and rail,
   hostile BFG, flipper, static bodies.
 - `tests/chick_tests.jac`, `tests/q2_attack_tests.jac` (the soldier's attack
   tables, its choice of `attack1` or `attack2`, each refire branch, the
@@ -181,13 +191,10 @@ Details that follow the originals:
 
 ## Limitations
 
-- The Makron leaves no torso as it dies (`makron_torso`).
 - The insane marines' cries carry as far as any other sound; the original
   plays them at `ATTN_IDLE`. A standing marine that has lain down by itself
   (`insane_checkdown`) is not modelled, so only marines spawned crawling take
   the crawling pain and death.
-- Attack strides head at the target; Q2 `ai_charge` walks along the monster's
-  own facing while it turns.
 - `misc_actor` is not implemented; no campaign map has one (see
   [map mechanics](map-mechanics-status.md#limitations)).
 

@@ -8,6 +8,7 @@ import from engine.formats.aas {
     AREACONTENTS_LAVA,
     TRAVEL_WALK,
     TRAVEL_SWIM,
+    TRAVEL_JUMPPAD,
     TRAVEL_CROUCH,
     PRESENCE_CROUCH,
     TRAVEL_TELEPORT,
@@ -21,7 +22,7 @@ import from engine.formats.aas {
     TFL_ROCKETJUMP,
     TFL_LAVA
 }
-import from engine.world.bot_routes { best_exit, AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
+import from engine.world.bot_routes { avoid_spot_type, line_distance_squared, AvoidSpot, AVOID_ALWAYS, AVOID_DONTBLOCK, best_exit, AvoidReach, NavMesh, Passage, Exits, BotRoute, build_navmesh, plan_route, area_travel_time, bob_ends, UNREACHED }
 import from engine.world.bot_travel {
     FollowRoute,
     TravelResult,
@@ -29,6 +30,9 @@ import from engine.world.bot_travel {
     travel_funcbob,
     travel_water_jump,
     goal_area_speed,
+    finish_jump_pad,
+    came_through,
+    gap_distance,
     fall_speed,
     travel_walk_off_ledge,
     finish_walk_off_ledge,
@@ -37,8 +41,9 @@ import from engine.world.bot_travel {
     mover_box
 }
 import math;
-import from engine.world.combat { Opponent }
-import from engine.world.world { World }
+import from engine.world.liquids { LiquidProbe }
+import from engine.world.combat { Opponent, CombatState, CombatTick, HasOpponent }
+import from engine.world.world { World, Player }
 import from engine.physics.collision { CollisionMap }
 import from engine.math.vec3 { Vec3 }
 import from engine.math.aabb { AABB }
@@ -405,4 +410,176 @@ test "a bot ducks into an area only the crouching box fits, along a crouch reach
     assert under.result.crouch;
     clear = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=open_route, eye_height=26.0, clock=0.0, ducked=True);
     assert not clear.result.crouch;
+}
+
+"""Water wherever it is asked."""
+obj Flooded(LiquidProbe) {
+    def kind_at(point: Vec3) -> int {
+        return 1;
+    }
+}
+
+test "a walking bot slows up to a gap ahead, but not to water" {
+    # A floor that ends at x = 50, with nothing beyond.
+    collision = CollisionMap();
+    collision.add_box(Vec3(x=-500.0, y=-500.0, z=-64.0), Vec3(x=50.0, y=500.0, z=0.0), Vec3(), Vec3(), Vec3());
+    collision.reindex();
+    gap = gap_distance(collision, Vec3(), Vec3(x=1.0));
+    assert gap >= 48.0 and gap <= 64.0;
+    assert gap_distance(collision, Vec3(), Vec3(x=-1.0)) == 0.0;
+    # A pool under the edge is no gap; no floor under the bot at all is 1.
+    assert gap_distance(collision, Vec3(), Vec3(x=1.0), Flooded()) == 0.0;
+    assert gap_distance(collision, Vec3(x=300.0), Vec3(x=1.0)) == 1.0;
+    # BotTravel_Walk: 400 - (360 - 2 * dist) on a walk leg.
+    mesh = build_navmesh(World(), strip_aas(2, [(1, 2, TRAVEL_WALK)]));
+    mesh.times_to(2);
+    bot = Opponent(arena=True, health=100, pos=Vec3(z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(), Vec3(x=128.0));
+    walk = bot spawn FollowRoute(mesh=mesh, collision=collision, route=route, eye_height=26.0, clock=0.0);
+    assert walk.result.speed == 40.0 + 2.0 * gap and route.gap == gap;
+    wade = bot spawn FollowRoute(mesh=mesh, collision=collision, route=plan_route(mesh, Vec3(), Vec3(x=128.0)), eye_height=26.0, clock=0.0, liquids=Flooded());
+    assert wade.result.speed == 400.0;
+}
+
+test "a bot's way keeps clear of live grenades" {
+    # Two ways from 1 to 3: straight, and round by 2.
+    aas = strip_aas(3, [(1, 3, TRAVEL_WALK), (1, 2, TRAVEL_WALK), (2, 3, TRAVEL_WALK)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    exits = [mesh.areas[1]->:Exits:->][?:Passage];
+    direct = [passage for passage in exits if passage.target == 3][0];
+    round_way = [passage for passage in exits if passage.target == 2][0];
+    # The round way leaves to the side, clear of the straight one.
+    round_way.start = Vec3(x=64.0, y=400.0);
+    round_way.finish = Vec3(x=128.0, y=400.0);
+    onward = [mesh.areas[2]->:Exits:->][?:Passage][0];
+    onward.start = Vec3(x=140.0, y=400.0);
+    onward.finish = Vec3(x=192.0, y=400.0);
+    # DistanceFromLineSquared: to the stretch, or to its nearer end.
+    assert line_distance_squared(Vec3(x=50.0, y=30.0), Vec3(), Vec3(x=100.0)) == 900.0;
+    assert line_distance_squared(Vec3(x=130.0, y=40.0), Vec3(), Vec3(x=100.0)) == 2500.0;
+    # A grenade on the straight passage: BotAvoidSpots finds the walk runs
+    # within its 160 units; the side way does not.
+    grenade = [AvoidSpot(origin=Vec3(x=150.0), radius=160.0)];
+    assert avoid_spot_type(Vec3(x=64.0), direct, grenade) == AVOID_ALWAYS;
+    assert avoid_spot_type(Vec3(x=64.0, y=300.0), round_way, [AvoidSpot(origin=Vec3(x=150.0, y=-200.0), radius=160.0)]) == 0;
+    assert avoid_spot_type(Vec3(x=64.0), direct, [AvoidSpot(origin=Vec3(x=150.0), radius=160.0, kind=AVOID_DONTBLOCK)]) == AVOID_DONTBLOCK;
+    # A grenade far behind the bot's back is none of its way's business.
+    assert avoid_spot_type(Vec3(x=64.0), direct, [AvoidSpot(origin=Vec3(x=-400.0), radius=160.0)]) == 0;
+    # BotGetReachabilityToGoal passes the straight passage over.
+    usual = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0));
+    assert usual.found and usual.areas[0] == 3;
+    far_grenade = [AvoidSpot(origin=Vec3(x=150.0, y=-150.0), radius=160.0)];
+    assert avoid_spot_type(Vec3(x=64.0), direct, far_grenade) == AVOID_ALWAYS;
+    assert avoid_spot_type(Vec3(x=64.0), round_way, far_grenade) == 0;
+    detour = plan_route(mesh, Vec3(x=64.0), Vec3(x=192.0), spots=far_grenade);
+    assert detour.found and detour.areas[0] == 2;
+}
+
+test "a walk goes by the reachability's start, then on to its end" {
+    mesh = build_navmesh(World(), strip_aas(2, [(1, 2, TRAVEL_WALK)]));
+    mesh.times_to(2);
+    # From the side of area 1 the far end (x = 128) lies ahead and to the
+    # right; the bot makes for the start (x = 80, y = 0) first.
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=80.0, y=30.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=80.0, y=30.0), Vec3(x=128.0));
+    first = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert first.result.direction.y < -0.99 and not route.begun;
+    # Within 10 units of the start: on for the far end, and no turning back.
+    bot.pos = Vec3(x=80.0, y=6.0, z=26.0);
+    on = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert on.result.direction.x > 0.99 and route.begun;
+    bot.pos = Vec3(x=92.0, y=6.0, z=26.0);
+    still = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert still.result.direction.x > 0.98;
+}
+
+test "a bot thrown by a jump pad steers for where the pad lands it, not back for the pad" {
+    aas = strip_aas(2, [(1, 2, TRAVEL_JUMPPAD)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(2);
+    passage = [mesh.areas[1]->:Exits:->][?:Passage][0];
+    passage.finish = Vec3(x=128.0, z=200.0);
+    # On the ground: for the pad (BotTravel_JumpPad).
+    bot = Opponent(arena=True, health=100, pos=Vec3(x=40.0, z=26.0), eye_height=26.0, grounded=True);
+    route = plan_route(mesh, Vec3(x=40.0), Vec3(x=128.0, z=200.0), goal_area=2);
+    walking = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert walking.result.direction.x > 0.99 and not walking.result.air_control;
+    # In the air past the pad, still on its leg: on for the landing.
+    bot.grounded = False;
+    bot.pos = Vec3(x=90.0, z=326.0);
+    bot.velocity = Vec3(x=20.0, z=100.0);
+    flying = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.1);
+    assert flying.result.air_control and flying.result.direction.x > 0.9;
+    # BotAirControl by itself, and the straight line when it has no answer
+    # (too high to come down to the landing within its five seconds).
+    assert finish_jump_pad(Vec3(x=90.0, z=300.0), Vec3(x=20.0, z=100.0), passage).air_control;
+    high = finish_jump_pad(Vec3(x=90.0, z=100000.0), Vec3(z=10.0), passage);
+    assert high.air_control and high.speed == 400.0 and high.direction.x > 0.99;
+}
+
+test "a bot falling toward a jump pad steers for the pad until it has been through the pad's area" {
+    # The pad throws from area 2 to a landing off to the side of area 3.
+    aas = strip_aas(3, [(1, 2, TRAVEL_WALK), (2, 3, TRAVEL_JUMPPAD)]);
+    mesh = build_navmesh(World(), aas);
+    mesh.times_to(3);
+    pad = [mesh.areas[2]->:Exits:->][?:Passage][0];
+    pad.finish = Vec3(x=192.0, y=300.0);
+    route = plan_route(mesh, Vec3(x=120.0), pad.finish, goal_area=3);
+    assert route.found and route.passages[0] is pad;
+    # Dropping in from over area 1, not yet through the pad's area: for the
+    # pad's start (x = 144), not the landing.
+    bot = Opponent(
+        arena=True, health=100, pos=Vec3(x=60.0, z=326.0), eye_height=26.0, velocity=Vec3(z=-300.0), grounded=False
+    );
+    falling = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.0);
+    assert falling.result.air_control and falling.result.direction.x > 0.99 and not route.jumped;
+    # Thrown from inside the pad's area: on for the landing.
+    bot.pos = Vec3(x=130.0, z=46.0);
+    bot.velocity = Vec3(z=500.0);
+    thrown = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.1);
+    assert thrown.result.air_control and thrown.result.direction.y > 0.9 and route.jumped;
+    assert came_through(mesh, Vec3(x=90.0, z=200.0), Vec3(x=-400.0, z=300.0), 2);
+    assert not came_through(mesh, Vec3(x=60.0, z=200.0), Vec3(z=-300.0), 2);
+    # Down again somewhere else than the landing's area: its way is chosen again.
+    bot.grounded = True;
+    bot.pos = Vec3(x=60.0, z=26.0);
+    bot.velocity = Vec3();
+    short = bot spawn FollowRoute(mesh=mesh, collision=CollisionMap(), route=route, eye_height=26.0, clock=0.2);
+    assert not route.points and short.result.speed == 0.0;
+}
+
+test "a bot with the map's AAS and no route to its goal makes no move of its own" {
+    floor = CollisionMap();
+    floor.add_box(Vec3(x=-2000.0, y=-2000.0, z=-64.0), Vec3(x=2000.0, y=2000.0, z=0.0), Vec3(), Vec3(), Vec3());
+    floor.reindex();
+    goal = Vec3(x=128.0, z=22.03125);
+    # Two areas with no way between them: it stays where it is, where a
+    # straight line for the goal would have carried it across.
+    apart = World();
+    mesh = build_navmesh(apart, strip_aas(2, []));
+    mesh.times_to(2);
+    stuck = Opponent(
+        arena=True, grounded=True, pos=Vec3(x=40.0, z=22.03125), last_seen=goal, arena_goal=goal, alert=100.0,
+        attack_wait=1000.0
+    );
+    apart +>:HasOpponent:+> stuck;
+    state = CombatState(game="q3");
+    for i in range(120) {
+        apart spawn CombatTick(player=Player(health=0, pos=Vec3(x=9000.0)), collision=floor, state=state, dt=1.0 / 120.0);
+    }
+    assert abs(stuck.pos.x - 40.0) < 1.0 and abs(stuck.pos.y) < 1.0;
+    # With a walk between them it goes by its route.
+    joined = World();
+    linked = build_navmesh(joined, strip_aas(2, [(1, 2, TRAVEL_WALK)]));
+    linked.times_to(2);
+    roamer = Opponent(
+        arena=True, grounded=True, pos=Vec3(x=40.0, z=22.03125), last_seen=goal, arena_goal=goal, alert=100.0,
+        attack_wait=1000.0
+    );
+    joined +>:HasOpponent:+> roamer;
+    for i in range(120) {
+        joined spawn CombatTick(player=Player(health=0, pos=Vec3(x=9000.0)), collision=floor, state=CombatState(game="q3"), dt=1.0 / 120.0);
+    }
+    assert roamer.pos.x > 80.0;
 }

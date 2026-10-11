@@ -255,6 +255,7 @@ obj Pk3Assets {
                     mods=stage.mods,
                     alpha_test=stage.alpha_test,
                     depth_write=stage.depth_write,
+                    depth_equal=stage.depth_equal,
                     vectors=stage.vectors,
                     clamp=stage.clamp,
                     cull=material.cull,

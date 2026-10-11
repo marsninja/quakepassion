@@ -8,6 +8,12 @@ and columns that run straight are dropped. R_StitchAllPatches then gives
 neighbouring patches of one LOD group the same vertices along the edges they
 share, so no crack shows between a finely and a coarsely subdivided one.
 
+Every row and column keeps the error it was added for (widthLodError,
+heightLodError): the renderer leaves out those a distant view does not need
+(tr_surface.c RB_SurfaceGrid; engine/render/world_mesh.jac). MakeMeshNormals
+gives each vertex its normal from the grid around it, and
+R_FixSharedVertexLodError makes vertices that neighbours share drop together.
+
 Collision keeps its own facets from the control points
 (physics/patch_collide.jac, cm_patch.c)."""
 import math;
@@ -24,9 +30,10 @@ glob CURVE_SUBDIVISIONS: float = 4.0;
 # points all lie on the line of their neighbours.
 glob CURVE_COLINEAR: float = 999.0;
 
-"""A drawVert_t: position, texture and lightmap coordinates, colour."""
+"""A drawVert_t: position, normal, texture and lightmap coordinates, colour."""
 obj Vertex {
     has pos: Vec3 = Vec3(),
+        normal: Vec3 = Vec3(),
         s: float = 0.0,
         t: float = 0.0,
         ls: float = 0.0,
@@ -48,14 +55,22 @@ def lerp_vertex(a: Vertex, b: Vertex) -> Vertex {
 }
 
 """A patch's vertices row by row (srfGridMesh_t) and the LOD group q3map put
-it in: patches with the same origin and radius must subdivide alike."""
+it in: patches with the same origin and radius must subdivide alike.
+`width_errors` and `height_errors` hold, for each column and row, the error
+it was added for (widthLodError, heightLodError; 0 for one always drawn):
+it is drawn while that is no more than the view's allowance."""
 obj CurveGrid {
     has width: int = 0,
         height: int = 0,
         rows: list[list[Vertex]] = [],
+        width_errors: list[float] = [],
+        height_errors: list[float] = [],
         lod_origin: Vec3 = Vec3(),
         lod_radius: float = 0.0,
-        stitched: bool = False;
+        lod_fixed: int = 0,
+        stitched: bool = False,
+        # Vertices were added since the normals were last made.
+        reshaped: bool = False;
 
     """One of the grid's four borders, in order: 0 the first row, 1 the last,
     2 the first column, 3 the last."""
@@ -71,8 +86,11 @@ obj CurveGrid {
     }
 
     """tr_curve.c R_GridInsertColumn: a column before `column`, half way
-    between its neighbours, with `point` in row `row`."""
-    def insert_column(column: int, row: int, point: Vec3) {
+    between its neighbours, with `point` in row `row`, drawn while `error`
+    is allowed. The normals are made again once the stitching is done
+    (stitch_all_patches); the original makes them after every insert, to
+    the same end."""
+    def insert_column(column: int, row: int, point: Vec3, error: float = 0.0) {
         for j in range(self.height) {
             fresh = lerp_vertex(self.rows[j][column - 1], self.rows[j][column]);
             if j == row {
@@ -80,16 +98,106 @@ obj CurveGrid {
             }
             self.rows[j].insert(column, fresh);
         }
+        self.width_errors.insert(column, error);
         self.width += 1;
+        self.reshaped = True;
     }
 
     """tr_curve.c R_GridInsertRow: a row before `row`, half way between its
-    neighbours, with `point` in column `column`."""
-    def insert_row(row: int, column: int, point: Vec3) {
+    neighbours, with `point` in column `column`, drawn while `error` is
+    allowed."""
+    def insert_row(row: int, column: int, point: Vec3, error: float = 0.0) {
         fresh = [lerp_vertex(self.rows[row - 1][i], self.rows[row][i]) for i in range(self.width)];
         fresh[column].pos = point;
         self.rows.insert(row, fresh);
+        self.height_errors.insert(row, error);
         self.height += 1;
+        self.reshaped = True;
+    }
+}
+
+# tr_curve.c MakeMeshNormals' neighbors: the eight grid directions round a
+# vertex, in turn.
+glob CURVE_NEIGHBORS: list[list[int]] = [[0, 1], [1, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1]];
+
+"""Whether a grid's first and last columns coincide (MakeMeshNormals'
+wrapWidth: a tube), or with `rows` its first and last rows (wrapHeight)."""
+def grid_wraps(grid: CurveGrid, rows: bool) -> bool {
+    for i in range(grid.width if rows else grid.height) {
+        first = grid.rows[0][i].pos if rows else grid.rows[i][0].pos;
+        last = grid.rows[grid.height - 1][i].pos if rows else grid.rows[i][grid.width - 1].pos;
+        delta = first.sub(last);
+        if delta.dot(delta) > 1.0 {
+            return False;
+        }
+    }
+    return True;
+}
+
+"""tr_curve.c MakeMeshNormals: each vertex's normal, the sum of the normals
+of the up to eight triangles it makes with its neighbours round it. A
+neighbour that coincides with the vertex is looked for up to three steps
+out, and round the seam of a grid that wraps."""
+def make_mesh_normals(grid: CurveGrid) {
+    width = grid.width;
+    height = grid.height;
+    wrap_width = grid_wraps(grid, False);
+    wrap_height = grid_wraps(grid, True);
+    for i in range(width) {
+        for j in range(height) {
+            base = grid.rows[j][i].pos;
+            around: list[Vec3] = [];
+            good: list[bool] = [];
+            for step in CURVE_NEIGHBORS {
+                found = Vec3();
+                usable = False;
+                for dist in range(1, 4) {
+                    x = i + step[0] * dist;
+                    y = j + step[1] * dist;
+                    if wrap_width {
+                        if x < 0 {
+                            x = width - 1 + x;
+                        } elif x >= width {
+                            x = 1 + x - width;
+                        }
+                    }
+                    if wrap_height {
+                        if y < 0 {
+                            y = height - 1 + y;
+                        } elif y >= height {
+                            y = 1 + y - height;
+                        }
+                    }
+                    if x < 0 or x >= width or y < 0 or y >= height {
+                        # The edge of the patch.
+                        break;
+                    }
+                    toward = grid.rows[y][x].pos.sub(base);
+                    if toward.length() == 0.0 {
+                        # A degenerate edge: look further out.
+                        continue;
+                    }
+                    found = toward.normalized();
+                    usable = True;
+                    break;
+                }
+                around.append(found);
+                good.append(usable);
+            }
+            total = Vec3();
+            for k in range(8) {
+                after = (k + 1) & 7;
+                if not good[k] or not good[after] {
+                    continue;
+                }
+                normal = around[after].cross(around[k]);
+                if normal.length() == 0.0 {
+                    continue;
+                }
+                total = total.add(normal.normalized());
+            }
+            grid.rows[j][i].normal = total.normalized() if total.length() > 0.0 else Vec3();
+        }
     }
 }
 
@@ -182,7 +290,13 @@ def subdivide_patch(width: int, height: int, points: list[Vertex], subdivisions:
         }
         i += 1;
     }
-    return CurveGrid(width=width, height=height, rows=rows);
+    # The original also transposes a grid taller than wide for longer
+    # triangle strips, which shows no difference and is left out.
+    grid = CurveGrid(
+        width=width, height=height, rows=rows, width_errors=errors[0][:width], height_errors=errors[1][:height]
+    );
+    make_mesh_normals(grid);
+    return grid;
 }
 
 """Whether two points are within `slack` on every axis."""
@@ -205,7 +319,7 @@ def merged_points(rim: list[Vertex]) -> bool {
 
 """tr_bsp.c R_StitchPatches: where `first` has a vertex between two that are
 neighbours on a border of `second`, give `second` that vertex too (one
-column or row a call). True when it did."""
+column or row a call), drawn as long as `first`'s is. True when it did."""
 def stitch_patches(first: CurveGrid, second: CurveGrid) -> bool {
     for backwards in [False, True] {
         for side in range(4) {
@@ -213,6 +327,7 @@ def stitch_patches(first: CurveGrid, second: CurveGrid) -> bool {
             if merged_points(rim) {
                 continue;
             }
+            rim_errors = first.width_errors if side < 2 else first.height_errors;
             count = len(rim);
             step = -2 if backwards else 2;
             k = count - 1 if backwards else 0;
@@ -220,6 +335,10 @@ def stitch_patches(first: CurveGrid, second: CurveGrid) -> bool {
                 near = rim[k].pos;
                 far = rim[k + step].pos;
                 middle = rim[k + step // 2].pos;
+                # The vertex between them and its error. (Walking backwards
+                # the original reads the table at k + 1, past its end for the
+                # first pair; the vertex's own entry is what it means.)
+                error = rim_errors[k + step // 2];
                 for other in range(4) {
                     across = other < 2;
                     if (second.width if across else second.height) >= CURVE_GRID_LIMIT {
@@ -235,9 +354,9 @@ def stitch_patches(first: CurveGrid, second: CurveGrid) -> bool {
                         }
                         # A crack at the highest detail: close it.
                         if across {
-                            second.insert_column(l + 1, second.height - 1 if other == 1 else 0, middle);
+                            second.insert_column(l + 1, second.height - 1 if other == 1 else 0, middle, error);
                         } else {
-                            second.insert_row(l + 1, second.width - 1 if other == 3 else 0, middle);
+                            second.insert_row(l + 1, second.width - 1 if other == 3 else 0, middle, error);
                         }
                         second.stitched = False;
                         return True;
@@ -251,7 +370,8 @@ def stitch_patches(first: CurveGrid, second: CurveGrid) -> bool {
 }
 
 """tr_bsp.c R_StitchAllPatches: stitch every grid against the grids of its
-LOD group (itself included) until none changes. Returns the stitches made."""
+LOD group (itself included) until none changes, then make the normals of
+the grids that gained vertices. Returns the stitches made."""
 def stitch_all_patches(grids: list[CurveGrid]) -> int {
     groups: dict[str, list[CurveGrid]] = {};
     for grid in grids {
@@ -280,5 +400,71 @@ def stitch_all_patches(grids: list[CurveGrid]) -> int {
             }
         }
     }
+    for grid in grids {
+        if grid.reshaped {
+            make_mesh_normals(grid);
+            grid.reshaped = False;
+        }
+    }
     return stitches;
+}
+
+"""Whether two grids are in one LOD group: the same origin and radius."""
+def same_lod_group(first: CurveGrid, second: CurveGrid) -> bool {
+    return first.lod_radius == second.lod_radius
+        and first.lod_origin.x == second.lod_origin.x
+        and first.lod_origin.y == second.lod_origin.y
+        and first.lod_origin.z == second.lod_origin.z;
+}
+
+"""tr_bsp.c R_FixSharedVertexLodError_r: every later grid of `first`'s LOD
+group takes `first`'s errors for the inner border vertices they share, so
+both drop them at the same distance; a grid that took any passes its own on
+in turn. Borders with merged points are never synced."""
+def fix_shared_lod_errors(grids: list[CurveGrid], start: int, first: CurveGrid) {
+    for j in range(start, len(grids)) {
+        second = grids[j];
+        if second.lod_fixed == 2 or not same_lod_group(first, second) {
+            continue;
+        }
+        touched = False;
+        for side in range(4) {
+            rim = first.border(side);
+            if merged_points(rim) {
+                continue;
+            }
+            rim_errors = first.width_errors if side < 2 else first.height_errors;
+            for k in range(1, len(rim) - 1) {
+                for other in range(4) {
+                    facing = second.border(other);
+                    if merged_points(facing) {
+                        continue;
+                    }
+                    facing_errors = second.width_errors if other < 2 else second.height_errors;
+                    for l in range(1, len(facing) - 1) {
+                        if points_meet(rim[k].pos, facing[l].pos, 0.1) {
+                            facing_errors[l] = rim_errors[k];
+                            touched = True;
+                        }
+                    }
+                }
+            }
+        }
+        if touched {
+            second.lod_fixed = 2;
+            fix_shared_lod_errors(grids, start, second);
+        }
+    }
+}
+
+"""tr_bsp.c R_FixSharedVertexLodError: sync the LOD errors of every group's
+shared border vertices, once the groups are stitched at full detail."""
+def fix_all_shared_lod_errors(grids: list[CurveGrid]) {
+    for i in range(len(grids)) {
+        if grids[i].lod_fixed != 0 {
+            continue;
+        }
+        grids[i].lod_fixed = 2;
+        fix_shared_lod_errors(grids, i + 1, grids[i]);
+    }
 }

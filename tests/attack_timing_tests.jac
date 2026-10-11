@@ -125,9 +125,11 @@ test "dog charge follows frame distance and cannot cross a blocking wall" {
     }
     assert enemy.pos.x > 9.0 and enemy.pos.x < 11.0;
     assert player.health == 100;
+    # (Thicker than the dog's 10 unit steps: a step is tested where it
+    # ends, as SV_movestep tests it.)
     collision.add_box(
         Vec3(x=15.0, y=-100.0, z=-1.0),
-        Vec3(x=16.0, y=100.0, z=100.0),
+        Vec3(x=60.0, y=100.0, z=100.0),
         Vec3(),
         Vec3(),
         Vec3()
