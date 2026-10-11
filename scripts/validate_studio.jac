@@ -1309,6 +1309,63 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The forty-seventh session: a prefab that holds prefabs, and an instance
+that differs from its prefab."""
+def nest_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "nest_gate.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-nest-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PREFABS"] = home + "/prefabs";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/nest_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_PREFABS");
+        (output / "nest.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The nest session failed: {output / 'nest.log'}";
+        gate = (Path(home) / "prefabs/gate.map").read_text();
+        built = (Path(home) / "scenes/nesting.build.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["parts", "bare", "gate", "differs", "written"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'nest.log'}";
+    }
+    # The gate is kept as two instances of the post, one with a swap of its own, and a lintel.
+    parts = selected(steps["parts"]);
+    assert len(parts) == 3 and "prefab=post" in parts[0] and "_swap=blockout slate" in parts[1] and "_group_name=lintel" in parts[2] , str(parts);
+    assert gate.count('"classname" "misc_prefab"') == 2 and '"_swap" "blockout slate"' in gate;
+    # With everything taken out only the floor is built; the gate linked in builds a lintel and two posts with it.
+    assert made(steps["bare"]) == 1 and made(steps["gate"]) == 4 , str(steps["gate"]);
+    assert len(selected(steps["gate"])) == 1 and "prefab=gate" in selected(steps["gate"])[0];
+    # The instance's own swap changes what the gate left as it was; the post that was slate inside it stays slate.
+    assert "_swap=blockout brass" in selected(steps["differs"])[0] and "_names=_north" in selected(steps["differs"])[0];
+    sides = material_sides(built);
+    assert sides == [12, 6, 6] , str(sides);
+    assert "misc_prefab" not in built;
+    source = repo / "nest_gate.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "nest_gate.png");
+    source.unlink();
+    print(
+        f"NEST PASS: {len(steps) - 1} steps, a gate kept as a prefab of two posts and a lintel, built from one instance, "
+            + "and the instance's material swapped over what the gate itself swapped"
+    );
+}
+
+"""How many sides of a written map are brass, slate and blockout."""
+def material_sides(text: str) -> list[int] {
+    return [
+        len([line for line in text.splitlines() if line.startswith("(") and " " + name + " [" in line])
+        for name in ["brass", "slate", "blockout"]
+    ];
+}
+
 """The forty-sixth session: a sound converted, a wall texture's facts
 changed in a copy, and animated textures' frames listed."""
 def sounds_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3432,6 +3489,7 @@ def main() {
         "games": games_session,
         "shader": shader_session,
         "sounds": sounds_session,
+        "nest": nest_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3581,6 +3639,7 @@ def main() {
     games_session(repo, binary, env, output);
     shader_session(repo, binary, env, output);
     sounds_session(repo, binary, env, output);
+    nest_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

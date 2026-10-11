@@ -204,6 +204,18 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Prefabs within prefabs**: a prefab may hold linked prefabs
+  (`misc_prefab` entities) of its own; when a linked prefab is built, or
+  unlinked into a copy, the prefabs it holds are put in too, each
+  standing on its instance's place, however deep (no deeper than eight,
+  and never a prefab inside itself). An instance may differ from its
+  prefab: `ed_prefab swap <old> <new>` gives every side of one material
+  another, `ed_prefab put <classname|name> <key> <value>` sets a field
+  on its entities of that class or name, `ed_prefab names <word>` adds a
+  word to every name in it (so two instances of a gadget do not fire
+  each other), and `ed_prefab plain` takes those away. They are kept in
+  the instance's own fields (`_swap`, `_put`, `_names`), and an
+  instance's changes are made after those of the instances inside it.
 - **Sounds**: `ed_sound info <file>` says what a WAV file is, and
   `ed_sound convert <file> <name> [rate] [bits] [loud]` makes it what
   the games play (its channels mixed into one, at 22050 samples a second
@@ -853,6 +865,10 @@ editor/impl/                 the workbench's scenes and brushes
   what would mislead refused; an add-on's class lines. (An add-on's
   classes joining the table, replaced when read again and leaving it are
   in `tests/studio_class_tests.jac`.)
+- `tests/studio_prefab_tests.jac`: a map's box and the whole of it moved;
+  an instance swapping materials, setting fields and taking names of its
+  own; prefabs within a prefab standing on their instances, each changed
+  as its instance says.
 - `tests/studio_sound_tests.jac`: a sound written as a WAV the engine
   reads, at either width; a stereo sound mixed to one channel and played
   at the games' rates; a wall texture's facts read, changed and written
@@ -1170,6 +1186,12 @@ editor/impl/                 the workbench's scenes and brushes
   texture's flags, value and next frame changed in a copy whose pictures
   are the same bytes; Quake's slipgate texture found to be a row of
   seven).
+  `scripts/studio/nest_session.cfg` (5 steps: a post kept as a prefab;
+  two linked posts, one with a material swap, and a lintel kept together
+  as a gate; the gate linked into an empty scene and built as four
+  brushes; the instance given a swap and names of its own; the built map
+  written out, with the gate's blockout in brass and the inner post
+  still slate).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

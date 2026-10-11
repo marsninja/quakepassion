@@ -15,7 +15,7 @@ import from engine.math.vec3 { Vec3 }
 import from ..formats.map { MapItem }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, side_turned }
 import from ..geometry.mapping { side_stretched, side_spun, side_like }
-import from .scene { read_vector, side_moved }
+import from .scene { read_vector, write_vector, side_moved }
 import from ..geometry.csg { carve_sides, joined_pieces }
 
 """The keys that make a group a duplicator."""
@@ -323,4 +323,130 @@ def with_holes(items: list[MapItem]) -> list[MapItem] {
         result.append(MapItem(fields=read.fields, brushes=left));
     }
     return result;
+}
+
+# ----------------------------------------------------------------------
+# Prefabs within prefabs, and instances that differ
+
+"""The box round a map's brushes and the places of its entities: [low,
+high], or none when it has neither."""
+def map_box(items: list[MapItem]) -> list[Vec3] | None {
+    far = 1000000.0;
+    low = Vec3(x=far, y=far, z=far);
+    high = Vec3(x=-far, y=-far, z=-far);
+    for item in items {
+        for sides in item.brushes {
+            box = windings_bounds(brush_windings(sides));
+            if box is not None {
+                low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
+                high = Vec3(x=max(high.x, box[1].x), y=max(high.y, box[1].y), z=max(high.z, box[1].z));
+            }
+        }
+        stands = read_vector(item.fields.get("origin", ""));
+        if stands is not None {
+            low = Vec3(x=min(low.x, stands.x), y=min(low.y, stands.y), z=min(low.z, stands.z));
+            high = Vec3(x=max(high.x, stands.x), y=max(high.y, stands.y), z=max(high.z, stands.z));
+        }
+    }
+    return [low, high] if low.x <= high.x else None;
+}
+
+"""A map's entities and brushes moved."""
+def map_shifted(items: list[MapItem], delta: Vec3) -> list[MapItem] {
+    made: list[MapItem] = [];
+    for item in items {
+        fields = dict(item.fields);
+        stands = read_vector(fields.get("origin", ""));
+        if stands is not None {
+            fields["origin"] = write_vector(stands.add(delta));
+        }
+        made.append(MapItem(fields=fields, brushes=placed(item.brushes, Vec3(), 0.0, delta)));
+    }
+    return made;
+}
+
+"""An instance of a prefab as its own fields change it. `_swap` gives
+materials in pairs, each old one's sides taking the new; `_put` sets fields
+on its entities, "who key value" apart at semicolons, who being a classname
+or a targetname; `_names` is a word added to every name in it, so that two
+instances of a gadget do not fire each other."""
+def prefab_overridden(items: list[MapItem], fields: dict[str, str]) -> list[MapItem] {
+    pairs = fields.get("_swap", "").split();
+    puts: list[list[str]] = [];
+    for part in fields.get("_put", "").split(";") {
+        words = part.split();
+        if len(words) >= 3 {
+            puts.append([words[0], words[1], " ".join(words[2:])]);
+        }
+    }
+    suffix = fields.get("_names", "").strip();
+    if len(pairs) < 2 and len(puts) == 0 and not suffix {
+        return items;
+    }
+    made: list[MapItem] = [];
+    for item in items {
+        kept = dict(item.fields);
+        # By the name it had before any word was added to it.
+        for put in puts {
+            if kept.get("classname", "") == put[0] or kept.get("targetname", "") == put[0] {
+                kept[put[1]] = put[2];
+            }
+        }
+        if suffix {
+            for key in ["targetname", "target", "killtarget"] {
+                if kept.get(key, "") {
+                    kept[key] = kept[key] + suffix;
+                }
+            }
+        }
+        brushes: list[list[Side]] = [];
+        for sides in item.brushes {
+            if len(pairs) < 2 {
+                brushes.append(sides);
+                continue;
+            }
+            dressed: list[Side] = [];
+            for side in sides {
+                taken = side;
+                for index in range(len(pairs) // 2) {
+                    if side.material == pairs[index * 2] {
+                        taken = side_like(side, pairs[index * 2 + 1]);
+                    }
+                }
+                dressed.append(taken);
+            }
+            brushes.append(dressed);
+        }
+        made.append(MapItem(fields=kept, brushes=brushes));
+    }
+    return made;
+}
+
+"""Prefabs within a prefab put in: each `misc_prefab` among the items gives
+way to what `inner` holds for its name, standing with the middle of its
+underside on the instance's origin and changed as the instance says. A
+prefab `inner` does not hold is left out."""
+def with_prefabs(items: list[MapItem], inner: dict[str, list[MapItem]]) -> list[MapItem] {
+    made: list[MapItem] = [];
+    for item in items {
+        if item.fields.get("classname", "") != "misc_prefab" {
+            made.append(item);
+            continue;
+        }
+        held = inner.get(item.fields.get("prefab", ""));
+        at = read_vector(item.fields.get("origin", ""));
+        if held is None or at is None {
+            continue;
+        }
+        box = map_box(held);
+        if box is None {
+            continue;
+        }
+        middle = box[0].add(box[1]).scale(0.5);
+        moved = map_shifted(held, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z));
+        for each in prefab_overridden(moved, item.fields) {
+            made.append(each);
+        }
+    }
+    return made;
 }

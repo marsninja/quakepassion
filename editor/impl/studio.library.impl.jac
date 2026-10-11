@@ -105,7 +105,8 @@ impl Studio.expanded(scene: Scene) -> Scene {
         if item.classname() != "misc_prefab" {
             continue;
         }
-        found = self.read_fragment(self.prefab_path(item.fields.get("prefab", "")));
+        # With the prefabs it holds put in, and changed as this instance says.
+        found = self.prefab_items(item.fields.get("prefab", ""), []);
         at = item.origin();
         if found is None or at is None {
             continue;
@@ -116,7 +117,9 @@ impl Studio.expanded(scene: Scene) -> Scene {
         }
         # A linked prefab stands with the middle of its underside on its origin.
         middle = box[0].add(box[1]).scale(0.5);
-        whole.insert_map(found, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z));
+        whole.insert_map(
+            prefab_overridden(found, item.fields), Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z)
+        );
     }
     return whole;
 }
@@ -322,7 +325,7 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
                 if item.classname() != "misc_prefab" or at is None {
                     continue;
                 }
-                inside = self.read_fragment(self.prefab_path(item.fields.get("prefab", "")));
+                inside = self.prefab_items(item.fields.get("prefab", ""), []);
                 if inside is None {
                     continue;
                 }
@@ -331,9 +334,10 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
                     continue;
                 }
                 middle = box[0].add(box[1]).scale(0.5);
+                changed_copy = prefab_overridden(inside, item.fields);
                 scene.select(item);
                 scene.remove_selection();
-                scene.insert_map(inside, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z), "Unlink prefab");
+                scene.insert_map(changed_copy, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z), "Unlink prefab");
                 done += 1;
             }
             self.say("Turned " + str(done) + " linked prefabs into copies" if done else "Select linked prefabs first");
@@ -420,4 +424,62 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.prefab_items(name: str, trail: list[str]) -> list[MapItem] | None {
+    found = self.read_fragment(self.prefab_path(name));
+    if found is None {
+        return None;
+    }
+    # The prefabs it holds, each read the same way: not one that holds
+    # itself, however far down, and no deeper than eight.
+    inner: dict[str, list[MapItem]] = {};
+    for item in found {
+        wanted = item.fields.get("prefab", "");
+        if item.fields.get("classname", "") != "misc_prefab" or not wanted or wanted in inner {
+            continue;
+        }
+        if wanted == name or wanted in trail or len(trail) >= 8 {
+            continue;
+        }
+        held = self.prefab_items(wanted, trail + [name]);
+        if held is not None {
+            inner[wanted] = held;
+        }
+    }
+    return with_prefabs(found, inner);
+}
+
+impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
+    how = args[1] if len(args) > 1 else "";
+    if args[0] != "ed_prefab" or how not in ["swap", "put", "names", "plain"] {
+        return False;
+    }
+    chosen = [item for item in scene.selection() if item.classname() == "misc_prefab"];
+    if len(chosen) == 0 {
+        self.say("Select the linked prefabs to change (ed_prefab link <name> adds one)");
+        return True;
+    }
+    first = chosen[0];
+    told: dict[str, str | None] = {};
+    if how == "plain" {
+        told = {"_swap": None, "_put": None, "_names": None};
+    } elif how == "swap" and len(args) > 3 {
+        # One more pair, after those it has.
+        told = {"_swap": (first.fields.get("_swap", "") + " " + args[2] + " " + args[3]).strip()};
+    } elif how == "put" and len(args) > 4 {
+        before = first.fields.get("_put", "");
+        told = {"_put": (before + "; " if before else "") + args[2] + " " + args[3] + " " + " ".join(args[4:])};
+    } elif how == "names" and len(args) > 2 {
+        told = {"_names": args[2]};
+    } else {
+        self.say("ed_prefab swap <old> <new> | put <classname|name> <key> <value> | names <word> | plain");
+        return True;
+    }
+    if not scene.set_fields(told, "Prefab instance") {
+        self.say("It is so already");
+    } else {
+        self.say("This instance differs from its prefab: " + how);
+    }
+    return True;
 }

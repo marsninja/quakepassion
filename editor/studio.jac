@@ -98,7 +98,9 @@ import from .document.generate {
     DUPLICATOR_KEYS,
     with_holes,
     digs,
-    DIGGER_KEY
+    DIGGER_KEY,
+    prefab_overridden,
+    with_prefabs
 }
 import from .document.scene {
     Scene,
@@ -2772,6 +2774,11 @@ obj Studio(Workbench) {
     def prefab_path(name: str) -> str;
     """A map file's entities and brushes, or none (and why is said)."""
     def read_fragment(path: str) -> list[MapItem] | None;
+    """A prefab's entities and brushes with the prefabs it holds put in."""
+    def prefab_items(name: str, trail: list[str]) -> list[MapItem] | None;
+    """Change how the selected instances differ from their prefab. False
+    when the command is not one of those."""
+    def prefab_change(scene: Scene, args: list[str]) -> bool;
     """Add a map's contents so they rest where the camera looks."""
     def place_fragment(scene: Scene, found: list[MapItem], label: str, group: str = "") -> bool;
     """The scene with every linked prefab put in as its entities and
@@ -3316,7 +3323,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.links_command(scene, args) and not self.scene_command(scene, args)
+        } elif not self.links_command(scene, args) and not self.prefab_change(scene, args)
+            and not self.scene_command(scene, args)
             and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
