@@ -78,6 +78,10 @@ import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under }
 import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
 import from .model.wavefront { mesh_obj, obj_mesh }
+import from .model.skin {
+    Skin, places_box, places_moved, places_scaled, places_turned, places_flipped, places_projected, skin_filled, skin_dab,
+    place_under, skin_tga, tga_skin
+}
 import from .model.document { ModelDoc, Part, Reshape }
 import from .model.files { doc_from_model, model_of, write_md3, md3_limits, write_md2, md2_limits }
 import from engine.formats.q3.model { parse_md3 }
@@ -252,7 +256,12 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame ...] [tag ...] [skin ...] [check] [match] [box] [axes] [undo|redo] [close]",
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
-    ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces", "pick points or triangles of the model's part in hand, or say which a click picks"),
+    ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    (
+        "ed_skin",
+        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>] [colour <r g b>] [brush <radius> [soft]] [dab <u v>] [show]",
+        "the model's skin: move, stretch, turn, flip or lay flat where the picked points lie on it; make, open, paint and save its picture"
+    ),
     (
         "ed_mesh",
         "ed_mesh move|turn|scale|mirror|flip|subdivide|extrude ...",
@@ -795,6 +804,19 @@ obj Studio(Workbench) {
         # What a click in the model's view picks ("faces" or "points"), how
         # far the pointer has gone since it was pressed there, and how far
         # the picked points are being dragged.
+        # The picture being painted for the model, the colour and brush it
+        # is painted with, how many dabs it has had, whether it is shown
+        # under the model, and the widget that shows it.
+        model_skin: Skin | None = None,
+        skin_color: list[int] = [255, 122, 24],
+        skin_radius: float = 4.0,
+        skin_soft: bool = False,
+        skin_strength: float = 1.0,
+        skin_dabs: int = 0,
+        skin_stale: bool = False,
+        skin_shown: bool = False,
+        skin_view: Picture | None = None,
+        model_painting: bool = False,
         model_pick: str = "faces",
         model_travel: int = 0,
         model_drag: Vec3 = Vec3(),
@@ -2631,6 +2653,7 @@ obj Studio(Workbench) {
             return;
         }
         stage.paint();
+        self.draw_skin_marks();
         # Over each level view, through its own camera: unless a menu, a
         # list or the palette is open over them.
         if len(stage.layers()) > 1 {
@@ -3111,6 +3134,19 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # The model's skin (impl/studio.skin.impl.jac)
+
+    def skin_words -> str;
+    """Paint where a place in the model's view meets the model's skin."""
+    def paint_in_model(x: int, y: int) -> bool;
+    """Hand the painted picture to the canvas when it has changed."""
+    def fresh_skin;
+    """The part's triangles and picked points as they lie on its picture."""
+    def draw_skin_marks;
+    """Run a skin command. False when it is not one."""
+    def skin_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
 
     """Run a group command. False when it is not one."""
@@ -3336,7 +3372,8 @@ obj Studio(Workbench) {
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
-            and not self.model_command(scene, args) and not self.games_command(scene, args)
+            and not self.model_command(scene, args) and not self.skin_command(scene, args)
+            and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
@@ -3625,6 +3662,7 @@ obj Studio(Workbench) {
         }
         if self.model_doc is not None {
             lines.append(self.model_words());
+            lines.append(self.skin_words());
         }
         if self.shader_file {
             lines.append(self.shader_words());

@@ -261,6 +261,30 @@ node ModelDoc {
         return True;
     }
 
+    """Give the part in hand other places on its skin, as one edit. False
+    when there are not two numbers for each of its points, or nothing changed."""
+    def reskin(uvs: list[float], label: str) -> bool {
+        part = self.part();
+        if part is None {
+            return False;
+        }
+        stood = self.poses(part);
+        count = len(stood[0].points) if len(stood) > 0 else 0;
+        if len(uvs) != count * 2 or uvs == part.uvs {
+            return False;
+        }
+        before = self.state(part);
+        part.uvs = list(uvs);
+        self.done.append(ModelStep(label=label, part=part, before=before, after=self.state(part)));
+        if len(self.done) > self.limit {
+            self.done = self.done[1:];
+        }
+        self.undone = [];
+        self.dirty = True;
+        self.revision += 1;
+        return True;
+    }
+
     """Undo the last edit. Answers what it was called ("" when there is none)."""
     def undo -> str {
         if len(self.done) == 0 {

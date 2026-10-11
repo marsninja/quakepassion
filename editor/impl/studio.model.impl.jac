@@ -127,6 +127,13 @@ impl Studio.show_model_form(ui: StudioUi) -> bool {
         )
     );
     clicks.adopt(PushButton(text="Pick nothing", command="ed_pick none", hint="Let go of what is picked"));
+    self.skin_view = None;
+    if self.skin_shown and self.model_skin is not None {
+        # The picture being painted, with the part's triangles over it.
+        shown_skin = Picture(key="modelskin", size=168);
+        form.adopt(shown_skin);
+        self.skin_view = shown_skin;
+    }
     return True;
 }
 
@@ -170,6 +177,25 @@ impl Studio.model_event(event: UiEvent) -> bool {
         return False;
     }
     part = doc.part();
+    if self.model_pick == "paint" and self.model_skin is not None {
+        # The left button paints through the model; any other turns the view.
+        if event.kind == "press" and event.button == 0 {
+            self.model_painting = True;
+            self.paint_in_model(event.x, event.y);
+            return True;
+        }
+        if event.kind == "release" and event.button == 0 {
+            self.model_painting = False;
+            return True;
+        }
+        if event.kind == "drag" and self.model_painting {
+            self.paint_in_model(event.x, event.y);
+            return True;
+        }
+        if event.kind == "click" and event.button == 0 {
+            return True;
+        }
+    }
     if event.kind == "press" and event.button == 0 {
         self.model_travel = 0;
         self.model_drag = Vec3();
@@ -204,6 +230,7 @@ impl Studio.model_event(event: UiEvent) -> bool {
 }
 
 impl Studio.fresh_model {
+    self.fresh_skin();
     doc = self.model_doc;
     if doc is not None and doc.revision != self.model_seen {
         # The model being edited has changed: drawn as it now is.
@@ -579,7 +606,7 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
                 rest = list(range(mesh.triangles()));
             }
             doc.pick_faces(rest, adding);
-        } elif how == "mode" and len(args) > 2 and args[2] in ["points", "faces"] {
+        } elif how == "mode" and len(args) > 2 and args[2] in ["points", "faces", "paint"] {
             # What a click in the view picks.
             self.model_pick = args[2];
             doc.revision += 1;

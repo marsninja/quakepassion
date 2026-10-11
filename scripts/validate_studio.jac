@@ -1309,6 +1309,74 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A step's `skin` line, the dump's own."""
+def skin_line(lines: list[str]) -> str {
+    found = [line for line in lines if line.startswith("skin part=")];
+    return found[0] if found else "";
+}
+
+"""The forty-eighth session: a part laid on its skin and its places changed,
+a picture painted on the skin and through the model, shown and saved."""
+def skin_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "skin_view.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-skin-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/skin_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "skin.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The skin session failed: {output / 'skin.log'}";
+        picture = (Path(home) / "models/tower.tga").read_bytes();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "laid", "shaped", "turned", "dabbed", "painted", "saved"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'skin.log'}";
+    }
+    # Laid flat into the left half of the skin; then half the size, a quarter across.
+    assert " box=0.0,0.0,0.5,1.0 " in skin_line(steps["laid"]) , skin_line(steps["laid"]);
+    assert " box=0.375,0.25,0.625,0.75 " in skin_line(steps["shaped"]) , skin_line(steps["shaped"]);
+    # A quarter turn swaps how wide and tall it lies; the flip after it was undone.
+    assert " box=0.25,0.375,0.75,0.625 " in skin_line(steps["turned"]) , skin_line(steps["turned"]);
+    assert model_word(steps["turned"], "undo") == "4" , str(steps["turned"]);
+    # A picture, a dab on the skin, and a dab where a click on the model lands on it.
+    assert " image=64x64 dabs=1 " in skin_line(steps["dabbed"]) and " image=64x64 dabs=2 " in skin_line(steps["painted"]);
+    landed = [line for line in steps["dabbed"] if line.startswith("painted at ")];
+    assert len(landed) == 1 , str(steps["dabbed"]);
+    place = [float(part) for part in landed[0][11:].split(",")];
+    assert 0.25 <= place[0] and place[0] <= 0.75 and 0.375 <= place[1] and place[1] <= 0.625 , str(place);
+    assert model_word(steps["painted"], "pick") == "paint" and " shown=1" in skin_line(steps["saved"]);
+    # The saved picture: red where it was dabbed on the skin, green where the click landed, grey elsewhere.
+    assert len(picture) == 18 + 64 * 64 * 4 and picture[2] == 2;
+    texel = tga_texel(picture, int(0.9 * 64), int(0.9 * 64));
+    assert texel == [255, 0, 0] , str(texel);
+    assert tga_texel(picture, int(place[0] * 64), int(place[1] * 64)) == [0, 255, 0];
+    assert tga_texel(picture, 2, 2) == [40, 40, 40];
+    source = repo / "skin_view.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "skin_view.png");
+    source.unlink();
+    print(
+        f"SKIN PASS: {len(steps) - 1} steps, a part laid flat on its skin, stretched, moved and turned there, and a picture "
+            + f"painted on the skin and through the model at {place[0]}, {place[1]}"
+    );
+}
+
+"""The colour of a texel of an uncompressed 32-bit TGA written top row first: [red, green, blue]."""
+def tga_texel(data: bytes, x: int, y: int) -> list[int] {
+    at = 18 + (y * 64 + x) * 4;
+    return [data[at + 2], data[at + 1], data[at]];
+}
+
 """The forty-seventh session: a prefab that holds prefabs, and an instance
 that differs from its prefab."""
 def nest_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3490,6 +3558,7 @@ def main() {
         "shader": shader_session,
         "sounds": sounds_session,
         "nest": nest_session,
+        "skin": skin_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3640,6 +3709,7 @@ def main() {
     shader_session(repo, binary, env, output);
     sounds_session(repo, binary, env, output);
     nest_session(repo, binary, env, output);
+    skin_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

@@ -354,6 +354,23 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the order, and `ed_model skin [add <name>|drop <number>]` keeps the
   skins the part in hand names. Not there yet: handles drawn on the
   model, the skin view and painting, bones, MDL writing and glTF.
+- **The model's skin**: where each point of the part in hand lies on its
+  picture is changed for the picked points (all of them when none are
+  picked): `ed_skin move <du dv>`, `scale <f> [fv]` and `turn <degrees>`
+  about the middle of their own box, `flip u|v` within it, and `project
+  x|y|z [u0 v0 u1 v1]`, which lays them flat by looking along an axis
+  into a rectangle of the skin. Each is an edit of the model, undone
+  with the rest. `ed_skin new <w> <h> [r g b]` makes a picture to paint
+  (`ed_skin open <file.tga>` reads one), `ed_skin colour <r g b>` and
+  `ed_skin brush <radius> [soft] [strength]` choose what it is painted
+  with (soft is an airbrush, strongest at its middle), `ed_skin dab <u>
+  <v>` paints on the skin, and with `ed_pick mode paint` the left button
+  in the model's view paints through the model, where the line of sight
+  meets the part's skin. `ed_skin show` puts the picture under the
+  model in its panel with the part's triangles and picked points drawn
+  over it, and `ed_skin save <file.tga>` writes it. Not there yet:
+  picking and dragging on the skin view itself, patterns, and the
+  picture drawn on the model.
 - **A played game watched**: while a game is played from the studio, what
   fires is counted, by the name it is fired by (or its class and what it
   fires, when it has no name). `ed_fired` says how often each has fired
@@ -902,6 +919,11 @@ editor/impl/                 the workbench's scenes and brushes
   frames matched; MD3 and MD2 written and read back by the engine's own
   readers, and taken up again as a graph; tags added, moved a frame at a
   time and dropped, going with their frames; a frame moved in the order.
+- `tests/studio_skin_tests.jac`: places on a skin moved, stretched,
+  turned and flipped about their own box; points laid flat by looking
+  along an axis; a skin filled, dabbed solid and soft, and kept as a
+  TGA; painting through the model landing where the line of sight meets
+  its skin.
 - `tests/studio_extrude_tests.jac`: every outline's pieces within its
   square; a square along a line as a beam of the line's length; stretches
   meeting at a turn on the plane that halves it, with no gap and no
@@ -1192,6 +1214,12 @@ editor/impl/                 the workbench's scenes and brushes
   brushes; the instance given a swap and names of its own; the built map
   written out, with the gate's blockout in brass and the inner post
   still slate).
+  `scripts/studio/skin_session.cfg` (7 steps: a cylinder laid flat into
+  the left half of its skin, stretched to half, moved, turned a quarter
+  and flipped, the flip undone; a picture made and dabbed on the skin; a
+  click on the model painting where it lands on the skin; the picture
+  shown under the model with the triangles over it, and saved as a TGA
+  with the two dabs in it).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

@@ -2,6 +2,7 @@ import from engine.math.vec3 { Vec3 }
 import from editor.model.mesh { Mesh, mesh_volume, open_edges }
 import from editor.model.primitives { primitive_mesh }
 import from editor.model.document { ModelDoc, Part, Pose, Tag, Reshape, HasPose, HasTag }
+import from editor.model.skin { places_projected, places_moved }
 import from editor.model.files { doc_from_model, model_of, write_md3, md3_limits, write_md2, md2_limits, turned_about }
 import from engine.formats.q2.model { parse_md2 }
 import from engine.formats.q3.model { parse_md3 }
@@ -250,4 +251,19 @@ test "a frame is moved to another place in the order" {
     assert doc.frame == 0 and about(mesh_volume(doc.mesh(part, 0)), 65536.0);
     assert doc.move_frame(0, 2) and [pose.name for pose in doc.poses(part)] == ["frame 0", "half", "open"];
     assert not doc.move_frame(1, 1) and not doc.move_frame(0, 9) and not doc.move_frame(-1, 0);
+}
+
+test "a part's places on its skin are changed as one edit and undone" {
+    doc = lifting();
+    part = doc.parts()[0];
+    before = list(part.uvs);
+    laid = places_projected(doc.mesh(part), [], 2);
+    assert doc.reshape(Reshape(kind="extrude", faces=[2, 3], amount=8.0), "Extrude");
+    # The part has more points now: places for the old count do not fit it.
+    assert not doc.reskin(laid, "Lay flat") and len(part.uvs) == 24;
+    flat = places_projected(doc.mesh(part), [], 2);
+    assert doc.reskin(flat, "Lay flat") and part.uvs == flat and not doc.reskin(flat, "Lay flat");
+    assert doc.reskin(places_moved(part.uvs, [0, 1], 0.1, 0.0), "Move on skin");
+    assert doc.undo() == "Move on skin" and part.uvs == flat;
+    assert doc.undo() == "Lay flat" and doc.undo() == "Extrude" and part.uvs == before;
 }
