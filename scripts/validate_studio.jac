@@ -1309,6 +1309,69 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A terrain's heights from a step's dump."""
+def heights_of(lines: list[str]) -> list[int] {
+    found = [line for line in lines if line.startswith("selected ") and "_heights=" in line];
+    return [int(float(word)) for word in found[0].split("_heights=")[1].split(" owns=")[0].split()] if found else [];
+}
+
+"""The forty-third session: fine work on a terrain."""
+def touch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "touch_plot.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-touch-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/touch_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "touch.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The touch session failed: {output / 'touch.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "terrace", "touched", "plot", "plotlift", "cleared", "pressed", "top", "bottom", "under", "both"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'touch.log'}";
+    }
+    # A terrace of fifteen corners at 32; touched, they all go up eight and the low ground stays.
+    terrace = heights_of(steps["terrace"]);
+    assert len(terrace) == 25 and terrace.count(32) == 15 and terrace.count(0) == 10 , str(terrace);
+    assert "touched 15" in steps["terrace"] , str(steps["terrace"]);
+    touched = heights_of(steps["touched"]);
+    assert touched.count(40) == 15 and touched.count(0) == 10 , str(touched);
+    # The plot: the four cells of the low ground; lifted, their ten corners go up sixteen.
+    assert "plot cells=4" in steps["touched"] , str(steps["touched"]);
+    lifted = heights_of(steps["plotlift"]);
+    assert lifted.count(16) == 10 and lifted.count(40) == 15 , str(lifted);
+    assert "plot painted 8" in steps["plotlift"] and "plot cells=0" in steps["plotlift"] , str(steps["plotlift"]);
+    # Alt and a press in sculpt mode picks a plot where the pointer is.
+    pressed = [line for line in steps["cleared"] if line.startswith("plot cells=")];
+    assert pressed and int(pressed[0].split("=")[1]) > 0 , str(steps["cleared"]);
+    # The top up eight; the underside down sixteen with the base that much thicker; then all of it up.
+    top = heights_of(steps["top"]);
+    assert top.count(24) == 10 and top.count(48) == 15 , str(top);
+    assert "_terrain=4 4 64 32" in selected(steps["bottom"])[0] and heights_of(steps["bottom"]) == top , str(steps["bottom"]);
+    under = brushes(steps["under"]);
+    assert len(under) == 1 and brush_box(under[0])[0][2] == -16 , str(under);
+    raised = brushes(steps["both"]);
+    assert len(raised) == 1 and brush_box(raised[0])[0][2] == 16 and brush_box(raised[0])[1][2] == brush_box(under[0])[1][2] + 32 , str(
+        raised
+    );
+    source = repo / "touch_plot.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "touch_plot.png");
+    source.unlink();
+    print(
+        f"TOUCH PASS: {len(steps) - 1} steps, a terrace's corners moved together, a plot of cells outlined, lifted and "
+            + "painted, a plot picked by a press, and the terrain's top and bottom moved apart"
+    );
+}
+
 """The forty-second session: faces linked and pushed together, a carve
 that keeps divided faces linked, a mitred seam and a merged corner."""
 def links_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3182,6 +3245,7 @@ def main() {
         "rig": rig_session,
         "drop": drop_session,
         "links": links_session,
+        "touch": touch_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3327,6 +3391,7 @@ def main() {
     rig_session(repo, binary, env, output);
     drop_session(repo, binary, env, output);
     links_session(repo, binary, env, output);
+    touch_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

@@ -68,6 +68,7 @@ import from .classes.registry {
 }
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
+import from .geometry.touchup { cell_at, kin_cells, cells_outline }
 import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under }
 import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
@@ -214,6 +215,12 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    ("ed_touch", "ed_touch <x> <y> <amount> [variance]", "move the corner of the terrain nearest a place, and the corners that stand with it"),
+    (
+        "ed_plot",
+        "ed_plot <x> <y> [variance] [add] | clear | variance <units> | lift <amount> | paint",
+        "pick the cells of the terrain that adjoin one at about its height (outlined), and lift them or paint their tops"
+    ),
     ("ed_facelink", "ed_facelink [clear]", "link the picked faces, or the selected brushes' faces that lie in one plane, so that pushing one pushes all; or take the links away"),
     ("ed_miter", "ed_miter", "cut the two selected brushes to meet in a seam where they overlap"),
     ("ed_merge", "ed_merge <x y z> <x y z>", "move a corner of the selected brush onto another of its corners"),
@@ -744,6 +751,12 @@ obj Studio(Workbench) {
         # The model being edited (none when the explorer only shows one),
         # the revision of it that is drawn, and whether its box and its axes
         # are drawn with it.
+        # A plot of a terrain: the cells picked to work on, whose terrain
+        # they are, and how far apart in height cells and corners may be
+        # and still go together.
+        plot: list[int] = [],
+        plot_land: Item | None = None,
+        plot_variance: float = 0.0,
         model_doc: ModelDoc | None = None,
         model_seen: int = -1,
         model_box: bool = False,
@@ -1816,6 +1829,15 @@ obj Studio(Workbench) {
                     self.painted_side = -1;
                     continue;
                 }
+                if self.mode == "sculpt" and event.alt {
+                    # With Alt a press picks the plot of cells there.
+                    spot = self.drop_point(scene, event.x, event.y, 0.0);
+                    stage.emit(
+                        "ed_plot " + str(int(spot.x)) + " " + str(int(spot.y)) + (" add" if event.shift else "")
+                    );
+                    self.moved = True;
+                    continue;
+                }
                 if self.mode == "sculpt" {
                     # The first dab of a stroke.
                     self.sculpting = True;
@@ -2560,6 +2582,7 @@ obj Studio(Workbench) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
         }
         self.draw_cells(scene);
+        self.draw_plot(scene);
         self.draw_depth_lines(view);
         rlDrawRenderBatchActive();
         rlEnableDepthTest();
@@ -2784,6 +2807,10 @@ obj Studio(Workbench) {
 
     """Run a terrain or sculpting command. False when it is not one."""
     def terrain_command(scene: Scene, args: list[str]) -> bool;
+    """The edge of the plot picked on a terrain (impl/studio.touchup.impl.jac)."""
+    def draw_plot(scene: Scene);
+    """Run a touch-up, plot or top-and-bottom command. False when it is not one."""
+    def touchup_command(scene: Scene, args: list[str]) -> bool;
     """The terrain a stroke goes to: the selected one, else the only one."""
     def terrain_now(scene: Scene) -> Item | None;
     """Where on a terrain the line of sight through a point of the view
@@ -3228,7 +3255,8 @@ obj Studio(Workbench) {
             and not self.tool_command(scene, args)
             and not self.library_command(scene, args) and not self.class_command(scene, args)
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
-            and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
+            and not self.shell_command(scene, args) and not self.touchup_command(scene, args)
+            and not self.terrain_command(scene, args)
             and not self.patch_command(scene, args) and not self.transform_command(scene, args)
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)

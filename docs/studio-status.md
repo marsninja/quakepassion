@@ -204,6 +204,21 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Fine work on a terrain**: `ed_touch <x> <y> <amount> [variance]`
+  moves the corner of the terrain's grid nearest a place and the corners
+  that stand with it: those joined to it along the grid within the
+  variance of its height (a terrace, a floor, a ridge's top). `ed_plot
+  <x> <y> [variance] [add]` picks the plot of cells that adjoin the one
+  there at about its height (in sculpt mode, Alt and a press picks the
+  plot under the pointer; Shift adds); the plot's edge is drawn along
+  the terrain in yellow until it is cleared, to show what the next thing
+  will be done to. `ed_plot lift <amount>` moves its corners, `ed_plot
+  paint` gives its tops the material in hand, `ed_plot variance <units>`
+  sets how far apart in height things may be and still go together, and
+  `ed_plot clear` lets it go. `ed_terrain top <amount>` moves every
+  height, `ed_terrain bottom <amount>` the underside of the base (the
+  top staying where it is), and `ed_terrain both <amount>` the whole of
+  it.
 - **Linked faces**: `ed_facelink` links the picked faces that lie in one
   plane with the first of them, or, with brushes selected and no faces
   picked, every pair of their sides that lie in one plane facing the same
@@ -785,6 +800,11 @@ editor/impl/                 the workbench's scenes and brushes
   what would mislead refused; an add-on's class lines. (An add-on's
   classes joining the table, replaced when read again and leaving it are
   in `tests/studio_class_tests.jac`.)
+- `tests/studio_touchup_tests.jac`: a place as the nearest corner and
+  the cell it is in; corners that go together within a variance; cells
+  that go together, their corners and their edge; on a scene, a corner
+  moved with its kin, cells lifted, and a terrain's top and bottom moved
+  apart and undone.
 - `tests/studio_links_tests.jac`: planes that are one plane; linked faces
   pushed together through several links and undone together, and not
   pushed when any brush would be emptied; a side taken out of its links,
@@ -1068,6 +1088,11 @@ editor/impl/                 the workbench's scenes and brushes
   cutter drawn across a box and carved with links, the two pieces tied
   on four planes and the map saying so; two walls through one corner cut
   to a seam; a top corner of a box merged onto the one beneath it).
+  `scripts/studio/touch_session.cfg` (11 steps: a terrain with a
+  terrace of fifteen corners, touched so that all fifteen rise; the four
+  cells of the low ground picked as a plot, outlined, lifted and painted;
+  a plot picked by Alt and a press in sculpt mode; the top moved up, the
+  underside down with the base thicker, and the whole of it up).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

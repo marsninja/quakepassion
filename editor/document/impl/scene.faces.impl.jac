@@ -415,3 +415,76 @@ impl Scene.glue_face(plane: Plane3) -> bool {
     after[picks[0].side] = side_on(side, onto);
     return self.reshape(solid, after, "Glue face");
 }
+
+impl Scene.touch_terrain(item: Item, x: float, y: float, amount: float, variance: float = 0.0) -> int {
+    grid = self.terrain_grid(item);
+    if grid is None or amount == 0.0 {
+        return 0;
+    }
+    cols = int(grid[0]);
+    rows = int(grid[1]);
+    old = heights_from(item.fields.get("_heights", ""), cols, rows);
+    if old is None {
+        return 0;
+    }
+    near = corner_near(self.terrain_origin(item), cols, rows, grid[2], x, y);
+    kin = kin_corners(old, cols, rows, near[0], near[1], variance);
+    if len(kin) == 0 or not self.set_heights(item, corners_lifted(old, kin, amount), "Touch up") {
+        return 0;
+    }
+    return len(kin);
+}
+
+impl Scene.lift_cells(item: Item, cells: list[int], amount: float) -> bool {
+    grid = self.terrain_grid(item);
+    if grid is None or amount == 0.0 or len(cells) == 0 {
+        return False;
+    }
+    cols = int(grid[0]);
+    rows = int(grid[1]);
+    old = heights_from(item.fields.get("_heights", ""), cols, rows);
+    if old is None {
+        return False;
+    }
+    return self.set_heights(
+        item, corners_lifted(old, cells_corners(cols, rows, cells), amount), "Lift cells" if amount > 0.0 else "Lower cells"
+    );
+}
+
+impl Scene.move_terrain(item: Item, part: str, amount: float) -> bool {
+    grid = self.terrain_grid(item);
+    if grid is None or amount == 0.0 or part not in ["top", "bottom"] {
+        return False;
+    }
+    cols = int(grid[0]);
+    rows = int(grid[1]);
+    old = heights_from(item.fields.get("_heights", ""), cols, rows);
+    owned = self.solids_of(item);
+    if old is None or len(owned) != cols * rows * 2 {
+        return False;
+    }
+    if part == "top" {
+        return self.set_heights(item, [max(0.0, height + amount) for height in old], "Move top");
+    }
+    # The underside goes down (or up) and the base grows (or thins) by as
+    # much, so the top stays where it is.
+    thick = grid[3] - amount;
+    if thick < 1.0 {
+        return False;
+    }
+    stands = self.terrain_origin(item);
+    rebuilt = terrain_brushes(
+        Vec3(x=stands.x, y=stands.y, z=stands.z + amount),
+        cols,
+        rows,
+        grid[2],
+        old,
+        thick,
+        "",
+        [solid.sides for solid in owned],
+        item.fields.get("_pattern", "")
+    );
+    told = str(cols) + " " + str(rows) + " " + item.fields.get("_terrain", "").split()[2] + " "
+        + (str(int(thick)) if thick == float(int(thick)) else str(round(thick, 3)));
+    return len(rebuilt) == len(owned) and self.rebuild_item(item, rebuilt, {"_terrain": told}, "Move bottom");
+}

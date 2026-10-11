@@ -22,6 +22,7 @@ import math;
 import from ..formats.map { MapItem, MapFile }
 import from ..classes.registry { flag_put }
 import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted, lifted }
+import from ..geometry.touchup { corner_near, kin_corners, cells_corners, corners_lifted }
 import from ..geometry.patch {
     patch_brushes,
     points_text,
@@ -1418,6 +1419,15 @@ node Scene {
     def paint_terrain(item: Item, x: float, y: float, radius: float, material: str) -> int;
     """Where a terrain stands: the low corner of its brushes."""
     def terrain_origin(item: Item) -> Vec3;
+    """Move the corner of a terrain's grid nearest a place, and the corners
+    that go with it (joined to it along the grid, within `variance` of its
+    height). Answers how many corners moved."""
+    def touch_terrain(item: Item, x: float, y: float, amount: float, variance: float = 0.0) -> int;
+    """Move the corners of some of a terrain's cells up or down."""
+    def lift_cells(item: Item, cells: list[int], amount: float) -> bool;
+    """Move a terrain's top (every height) or its bottom (the underside of
+    its base, its top staying where it is)."""
+    def move_terrain(item: Item, part: str, amount: float) -> bool;
     """Give an entity other brushes in place of its own, and set fields on
     it, as one step: a shape built again from other numbers."""
     def rebuild_item(item: Item, brushes: list[list[Side]], fields: dict[str, str | None], label: str) -> bool;
