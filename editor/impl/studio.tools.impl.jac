@@ -355,6 +355,12 @@ impl Studio.check(scene: Scene, args: list[str]) {
         return;
     }
     self.findings = scene.problems();
+    if len(args) > 1 and args[1] == "logic" {
+        # The deeper look at what fires what.
+        for hanging in scene.audit() {
+            self.findings.append(hanging);
+        }
+    }
     # Materials named as a game's that no archive holds draw as swatches.
     stock = self.archive;
     if stock is not None {

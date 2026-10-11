@@ -88,6 +88,36 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the pivot for itself, as its `_center` field: it is saved with the group,
   moves, turns and stretches with it, and undoes. `ed_rotate`, `ed_resize`
   and `ed_mirror` go about the pivot too.
+- **Playing** (Play menu): F5 plays the scene, F6 from where the camera
+  is, and `ed_play selection` plays only what is selected, in a level of
+  its own, from where the camera is. While a game played from the studio
+  runs, `ed_pause` holds it still and `ed_tick [count]` lets its time move
+  on by sixtieths of a second, so a door, a fall or a trap can be watched
+  a step at a time; `ed_pause` again lets it run, and F8 returns to the
+  studio. `ed_played` prints how the game stands, its doors among it, and
+  `ed_fire <targetname>` sets off whatever has that name, as if something
+  that targets it had gone off: a door opened or a chain started without
+  walking to its trigger.
+- **As it would spawn**: `ed_spawn <easy|normal|hard|deathmatch>` (Play
+  menu) hides the entities that skill or mode leaves out, by the
+  spawnflags every game shares (and Quake III's `notsingle` and
+  `notfree`); `ed_spawn all` shows everything again. An entity's form ends
+  with those four options to tick, whatever its class.
+- `ed_refield <key> <old> <new> [all]` replaces part of a field's value on
+  the selected entities, or on every entity: a set of doors renamed, a
+  texture prefix changed, in one undoable step.
+- `ed_check logic` adds a deeper look to the check: entities that wait for
+  a name nothing fires.
+- What is pasted, or added from a prefab, keeps a gadget's names apart: a
+  name the pasted entities give themselves and fire among themselves
+  becomes a new one when the document already uses it, and what fires it
+  among them follows. A button pasted without its door still opens the
+  door it did, and a door pasted alone is still opened by what opened the
+  first.
+- **Building**: `ed_build` builds the level again now; `ed_build full`
+  lights it finely (a lightmap texel to 16 units), `ed_build quick`
+  coarsely (to 32, about a third of the work), and `ed_build flat` not at
+  all. The choice is kept between sessions.
 - **Groups** have a row of their own in the scene list, under
   `func_group`: the group's name, how many brushes it holds, and its
   brushes under it when it is opened. A group selected alone keeps
@@ -421,6 +451,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_document_tests.jac`: entity lumps round-trip; selection;
   every edit and its undo; any run of edits undone in full restores the
   document.
+- `tests/studio_entities_tests.jac`: what each skill and mode leaves out;
+  the preview hiding and showing; values replaced and refused; the audit;
+  pasted entities renamed apart from the document's.
 - `tests/studio_faces_tests.jac`: a side dropped or turned only where the
   rest close; a cone, a prism and walls on a face; the same through the
   document with undo; side flags by brush and by face, through a map and
@@ -537,6 +570,17 @@ editor/impl/                 the workbench's scenes and brushes
   stands takes the floor; locked, built but still passed by; unlocked and
   taken by the same click; skipped by builds; tinted, its row opened onto
   its brush; hidden; its fields found in the saved map).
+  `scripts/studio/play_session.cfg` (11 steps: a lit scene built coarsely,
+  finely and without light; played from high over the floor and held
+  still, the player hanging there until thirty ticks let it fall half a
+  second, then hanging again, then let run; the selected box played
+  alone, as a level of one brush).
+  `scripts/studio/entities_session.cfg` (10 steps: a door, its button, a
+  monster and a pickup; the level as easy and as deathmatch spawn it; an
+  option ticked by command; a value replaced on every entity; the audit's
+  finding; the door and button pasted with names of their own; then the
+  scene played and held still, the door shut until `ed_fire` names it and
+  twenty ticks pass).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

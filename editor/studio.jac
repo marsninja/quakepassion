@@ -89,6 +89,8 @@ import from .document.scene {
 import from .geometry.csg { brush_corners, brush_edges }
 import from .geometry.mapping { spun_about, axis_vector }
 import from .camera { EditCamera, ray_enters_box, axis_camera }
+import from engine.world.signals { Signal, Fire, HasSignal }
+import from engine.world.doors { Door, HasDoor }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
@@ -164,6 +166,17 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_faces", "ed_faces <all|invert|extend>", "spread the face pick: over the whole brush, to its other faces, across the plane"),
     ("ed_tag", "ed_tag", "remember the picked face, to glue brushes against"),
     ("ed_glue", "ed_glue", "move the selection against the tagged face"),
+    ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
+    ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
+    ("ed_refield", "ed_refield <key> <old> <new> [all]", "replace part of a field's value across the selection, or every entity"),
+    ("ed_pause", "ed_pause [on|off]", "hold a game played from the studio still, or let it run"),
+    ("ed_tick", "ed_tick [count]", "let a held game's time move by so many sixtieths of a second"),
+    ("ed_played", "ed_played [label]", "print how a game played from the studio stands"),
+    (
+        "ed_build",
+        "ed_build [full|quick|flat]",
+        "build the level again now; or how it is lit: finely, coarsely, or not at all"
+    ),
     ("ed_group_view", "ed_group_view <shown|grey|hidden>", "how the selected groups show: whole, as outlines only, or not at all"),
     ("ed_group_lock", "ed_group_lock [on|off]", "keep clicks in the views from selecting the selected groups"),
     ("ed_group_skip", "ed_group_skip [on|off]", "leave the selected groups out of what is built and played"),
@@ -582,6 +595,14 @@ obj Studio(Workbench) {
         # A build for playing takes everything; one for editing leaves out
         # what is hidden.
         play_build: bool = False,
+        # Playing only what is selected; and how coarse the light is baked
+        # (world units to a lightmap texel).
+        play_only: bool = False,
+        # The skill or mode the level is shown as it would spawn for, and
+        # what that hides.
+        spawn_mode: str = "all",
+        spawn_hidden: list[Item] = [],
+        luxel: float = 16.0,
         marks_at: int = -1,
         # Seconds since the scene was last autosaved, and the revision it was at.
         autosave_clock: float = 0.0,
@@ -697,10 +718,18 @@ obj Studio(Workbench) {
     }
 
     """Rebuild the world from the document and play it."""
-    def play(here: bool) {
+    def play(here: bool, only: bool = False) {
         app = self.app;
         scene = self.scene;
         if app is None or scene is None {
+            return;
+        }
+        if only and not (scene.selection() or scene.selected_solids()) {
+            self.say("Select what to play alone");
+            return;
+        }
+        if only and not self.is_built_scene() {
+            self.say("Only a scene of brushes can be played in part");
             return;
         }
         if scene.game != "passion" {
@@ -709,15 +738,19 @@ obj Studio(Workbench) {
         self.leave();
         # What is hidden while editing is in the level that is played.
         self.play_build = True;
+        self.play_only = only;
         played = self.load(scene.game, scene.name);
         self.play_build = False;
+        self.play_only = False;
         if not played {
             # The document does not load: back to it.
             self.enter(reset_camera=False);
             return;
         }
         self.playing = True;
-        if here {
+        self.holding = False;
+        self.steps_owed = 0;
+        if here or only {
             player = app.player;
             level = app.level;
             player.pos = Vec3(
@@ -742,6 +775,8 @@ obj Studio(Workbench) {
         if app is None or scene is None {
             return;
         }
+        self.holding = False;
+        self.steps_owed = 0;
         self.load(scene.game, scene.name);
         self.enter(reset_camera=False);
     }
@@ -941,7 +976,17 @@ obj Studio(Workbench) {
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
-                    MenuItem(text="Play from here", command="ed_play here", keys="F6")
+                    MenuItem(text="Play from here", command="ed_play here", keys="F6"),
+                    MenuItem(text="Play only the selection", command="ed_play selection"),
+                    MenuItem(text="Show as on easy", command="ed_spawn easy"),
+                    MenuItem(text="Show as on hard", command="ed_spawn hard"),
+                    MenuItem(text="Show as in deathmatch", command="ed_spawn deathmatch"),
+                    MenuItem(text="Show everything that spawns", command="ed_spawn all"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Build again now", command="ed_build"),
+                    MenuItem(text="Light finely", command="ed_build full"),
+                    MenuItem(text="Light coarsely (quicker)", command="ed_build quick"),
+                    MenuItem(text="No light (quickest)", command="ed_build flat")
                 ]
             ]
         );
@@ -1383,6 +1428,7 @@ obj Studio(Workbench) {
         actions.adopt(PushButton(text="Delete", command="ed_delete", grow=1, hint="Delete the selection (Del)"));
         self.fill_class(scene, ui, chosen);
         self.fill_group(scene, ui, chosen);
+        self.fill_skill(scene, ui, chosen);
     }
 
     # ------------------------------------------------------------------
@@ -2447,6 +2493,22 @@ obj Studio(Workbench) {
     def transform_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
+    # Entities by skill and mode, values replaced, the logic audit (impl/studio.entities.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def entity_command(scene: Scene, args: list[str]) -> bool;
+    """The options every class shares: which skills and modes leave it out."""
+    def fill_skill(scene: Scene, ui: StudioUi, chosen: list[Item]);
+
+    # ------------------------------------------------------------------
+    # A played game held still and stepped; how the level is built (impl/studio.play.impl.jac)
+
+    """`ed_pause`, `ed_tick` and `ed_played`, for a game played from here."""
+    def play_command(args: list[str]);
+    """Run a build command. False when it is not one."""
+    def build_mode_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
 
     """Run a group command. False when it is not one."""
@@ -2520,6 +2582,11 @@ obj Studio(Workbench) {
             }
             return;
         }
+        if name == "ed_pause" or name == "ed_tick" or name == "ed_played" or name == "ed_fire" {
+            # These are for a game being played from here.
+            self.play_command(args);
+            return;
+        }
         if name == "ed_exec" {
             if len(args) > 1 and os.path.isfile(args[1]) {
                 with open(args[1], "r") as file {
@@ -2552,7 +2619,7 @@ obj Studio(Workbench) {
             return;
         }
         if name == "ed_play" {
-            self.play(len(args) > 1 and args[1] == "here");
+            self.play(len(args) > 1 and args[1] == "here", len(args) > 1 and args[1] == "selection");
         } elif name == "ed_select" {
             self.select(scene, args);
         } elif name == "ed_fold" {
@@ -2650,7 +2717,8 @@ obj Studio(Workbench) {
             and not self.shell_command(scene, args) and not self.terrain_command(scene, args)
             and not self.patch_command(scene, args) and not self.transform_command(scene, args)
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
-            and not self.view_command(scene, args) and not self.group_command(scene, args) {
+            and not self.view_command(scene, args) and not self.group_command(scene, args)
+            and not self.build_mode_command(scene, args) and not self.entity_command(scene, args) {
             self.utility_command(scene, args);
         }
     }

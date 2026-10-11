@@ -1067,6 +1067,134 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""How many things are hidden at a step."""
+def hidden(lines: list[str]) -> int {
+    found = [line for line in lines if line.startswith("mode=")];
+    return int(found[0].split("hidden=")[1].split()[0]) if found else -1;
+}
+
+"""The twenty-first session: the level as a skill or a mode would spawn it,
+a value replaced across entities, the logic audit, a pasted gadget with
+names of its own, and a door fired by hand in a game held still."""
+def entities_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "entities_skill.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-entities-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/entities_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "entities.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The entities session failed: {output / 'entities.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "made", "easy", "deathmatch", "everything", "flagged", "replaced", "pasted", "shut", "fired", "back"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'entities.log'}";
+    }
+    # One entity is left out on easy, one in deathmatch, none when everything is shown.
+    assert hidden(steps["made"]) == 0 and hidden(steps["easy"]) == 1 and hidden(steps["deathmatch"]) == 1;
+    assert hidden(steps["everything"]) == 0 , str(steps["everything"]);
+    flagged = selected(steps["flagged"]);
+    assert len(flagged) == 1 and "classname=monster_ogre" in flagged[0] and "spawnflags=1280" in flagged[0] , str(flagged);
+    replaced = selected(steps["replaced"]);
+    assert len(replaced) == 1 and "target=gate1" in replaced[0] , str(replaced);
+    # The audit says what hangs; the plain check does not.
+    assert "studio: finding item_health (vault) waits for vault, which nothing fires" in ran.stdout;
+    # The pasted pair: a door named anew, and a button that fires that one.
+    pasted = selected(steps["pasted"]);
+    assert len(pasted) == 2 , str(pasted);
+    door = [line for line in pasted if "classname=func_door" in line][0];
+    button = [line for line in pasted if "classname=func_button" in line][0];
+    assert "targetname=door2" in door and "target=door2" in button and "owns=1" in door , str(pasted);
+    # Held still the door is shut; fired by its name and given time, it is not.
+    assert played_word(steps["shut"], "doors").split(",")[0] == "closed" , str(steps["shut"]);
+    assert "closed" not in played_word(steps["fired"], "doors").split(",")[0] , str(steps["fired"]);
+    assert "studio: fired door1 1" in ran.stdout and "studio: fired nothing_named_this 0" in ran.stdout;
+    assert "mode=brush" in steps["back"][-1];
+    source = repo / "entities_skill.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "entities_skill.png");
+    source.unlink();
+    print(
+        f"ENTITIES PASS: {len(steps) - 1} steps, the level as easy and deathmatch spawn it, a value replaced, the "
+            + "logic audit, a pasted gadget with its own names, and a door fired by hand"
+    );
+}
+
+"""A word of the line a played game prints about itself (`held`, `owed`,
+`made`), and where its player is."""
+def played_word(lines: list[str], key: str) -> str {
+    found = [line for line in lines if line.startswith("play ")];
+    return found[0].split(key + "=")[1].split()[0] if found else "";
+}
+
+def played_at(lines: list[str]) -> list[float] {
+    return [float(part) for part in played_word(lines, "player").split(",")];
+}
+
+"""The twentieth session: the level lit coarsely, finely and not at all; a
+game played from the studio held still, stepped by ticks and let run; and
+the selection played alone."""
+def play_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-play-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/play_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "play.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The play session failed: {output / 'play.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "boxed", "quick", "full", "flat", "start", "hanging", "stepped", "still", "running", "back", "alone",
+        "stopped"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'play.log'}";
+    }
+    # Lit coarsely there are fewer samples than lit finely, and without light none.
+    assert 0 < lit(steps["quick"]) < lit(steps["full"]) and lit(steps["flat"]) == 0 , (
+        f"{lit(steps['quick'])} {lit(steps['full'])} {lit(steps['flat'])}"
+    );
+    assert made(steps["boxed"]) == 2;
+    # Held still, the player hangs where the camera was.
+    start = played_at(steps["start"]);
+    hanging = played_at(steps["hanging"]);
+    assert played_word(steps["start"], "held") == "1" and played_word(steps["start"], "playing") == "1";
+    assert start[0] == 0.0 and start[1] == 0.0 and 200.0 < start[2] < 300.0 and hanging == start , f"{start} {hanging}";
+    # Thirty ticks are half a second of falling; then it hangs again.
+    stepped = played_at(steps["stepped"]);
+    assert stepped[2] < start[2] - 20.0 and played_word(steps["stepped"], "owed") == "0" , f"{start} {stepped}";
+    assert played_at(steps["still"]) == stepped , str(steps["still"]);
+    assert played_word(steps["running"], "held") == "0";
+    assert "mode=brush" in steps["back"][-1] and made(steps["back"]) == 2;
+    # Played alone, the box is all the level is built from; back in the studio the whole scene is.
+    assert played_word(steps["alone"], "made") == "1" and played_word(steps["start"], "made") == "2" , str(steps["alone"]);
+    assert made(steps["stopped"]) == 2 and len(brushes(steps["stopped"])) == 1;
+    assert "ed_build full" in kept , kept;
+    print(
+        f"PLAY PASS: {len(steps) - 1} steps, the level lit three ways, a played game held still and stepped by "
+            + "ticks, and the selection played alone"
+    );
+}
+
 """How many rows the scene list has at a step."""
 def tree_rows(lines: list[str]) -> int {
     found = [line for line in lines if line.startswith("tree rows=")];
@@ -1598,6 +1726,8 @@ def main() {
         "faces": faces_session,
         "views": views_session,
         "groups": groups_session,
+        "play": play_session,
+        "entities": entities_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -1720,6 +1850,8 @@ def main() {
     faces_session(repo, binary, env, output);
     views_session(repo, binary, env, output);
     groups_session(repo, binary, env, output);
+    play_session(repo, binary, env, output);
+    entities_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

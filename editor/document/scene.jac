@@ -1325,6 +1325,22 @@ node Scene {
     `how` is "set", "clear" or "put". Answers how many sides changed."""
     def flag_sides(key: str, bits: int, how: str = "set") -> int;
 
+    # Entities by skill and mode, values replaced, the deeper audit (impl/scene.entities.impl.jac)
+
+    """The entities a skill or mode leaves out: "easy", "normal", "hard" or
+    "deathmatch" (the spawnflags every game shares, and Quake III's
+    `notsingle` and `notfree`)."""
+    def spawn_excluded(mode: str) -> list[Item];
+    """Hide what a skill or mode leaves out, and show again what the last
+    one hid. Answers what is hidden for it now."""
+    def spawn_preview(mode: str, before: list[Item]) -> list[Item];
+    """In a field of the selected entities (of every entity, when
+    `everywhere`), put `fresh` where `old` stands. Answers how many changed."""
+    def replace_values(key: str, old: str, fresh: str, everywhere: bool = False) -> int;
+    """What the map's logic leaves hanging, beyond what `problems` reports:
+    names nothing fires."""
+    def audit -> list[Finding];
+
     # Groups' own switches and what a build is made from (impl/scene.select.impl.jac)
 
     """The document's groups, in map order."""

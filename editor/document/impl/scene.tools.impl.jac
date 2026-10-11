@@ -546,8 +546,45 @@ impl Scene.insert_map(found: list[MapItem], offset: Vec3, label: str = "Paste", 
     step = Step(label=label);
     items: list[Item] = [];
     solids: list[Solid] = [];
+    # A gadget pasted twice is two gadgets, not one wired to the first: a
+    # name the pasted entities give themselves and fire among themselves
+    # gets a new one when the document already uses it, and what fires it
+    # among them follows. A name nothing pasted fires is left alone, so a
+    # door pasted by itself is still opened by what opened the first.
+    taken: list[str] = [item.fields.get("targetname", "") for item in self.items()];
+    fired_within: list[str] = [];
+    for read in found {
+        for key in ["target", "killtarget"] {
+            aim = read.fields.get(key, "");
+            if aim and aim not in fired_within {
+                fired_within.append(aim);
+            }
+        }
+    }
+    renamed: dict[str, str] = {};
+    for read in found {
+        named = read.fields.get("targetname", "");
+        if named and named in taken and named in fired_within and named not in renamed {
+            stem = named.rstrip("0123456789");
+            if not stem {
+                stem = "t";
+            }
+            number = 1;
+            while stem + str(number) in taken {
+                number += 1;
+            }
+            renamed[named] = stem + str(number);
+            taken.append(stem + str(number));
+        }
+    }
     for read in found {
         fields: dict[str, str] = dict(read.fields);
+        for key in ["targetname", "target", "killtarget"] {
+            said = fields.get(key, "");
+            if said in renamed {
+                fields[key] = renamed[said];
+            }
+        }
         if fields.get("classname", "") == "worldspawn" {
             if len(read.brushes) == 0 {
                 continue;
