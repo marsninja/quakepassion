@@ -147,7 +147,9 @@ import from .document.generate {
     digs,
     DIGGER_KEY,
     prefab_overridden,
-    with_prefabs
+    with_prefabs,
+    prefab_placed,
+    prefab_yaw
 }
 import from .document.scene {
     Scene,
@@ -505,8 +507,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_group", "ed_group [name]", "hold the selected brushes together as a group"),
     (
         "ed_prefab",
-        "ed_prefab <save|add|link|unlink> [name]",
-        "keep the selection as a prefab, add a copy of one, place a linked one, or turn linked ones into copies"
+        "ed_prefab <save|add|link|unlink> [name] | swap|put|names|plain ... | turn <degrees> | scale <times>|<x y z>",
+        "keep the selection as a prefab, add a copy of one, place a linked one, turn linked ones into copies, or change, turn and size the selected linked ones"
     ),
     ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
     ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),

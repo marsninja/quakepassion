@@ -260,6 +260,18 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   each other), and `ed_prefab plain` takes those away. They are kept in
   the instance's own fields (`_swap`, `_put`, `_names`), and an
   instance's changes are made after those of the instances inside it.
+  An instance is turned and sized where it stands: `ed_prefab turn
+  <degrees>` turns it that much further about the upright through its
+  origin (its `angle`, which the inspector's angle buttons and the
+  handle at its arrow change too), and `ed_prefab scale <times>` or
+  `<x> <y> <z>` makes it that many times as large about its origin (its
+  `_scale`; a negative size mirrors, nothing is refused). It is sized
+  as its file lies and then turned, so `scale 2 1 1` doubles the
+  prefab's own length whichever way the instance faces. Its brushes'
+  materials stay on their faces, the entities inside go where their
+  places are carried and face as much further round, and instances
+  inside instances are each turned and sized in their own place first.
+  `ed_prefab plain` takes the turn and the size away with the rest.
 - **Sounds**: `ed_sound info <file>` says what a WAV file is, and
   `ed_sound convert <file> <name> [rate] [bits] [loud]` makes it what
   the games play (its channels mixed into one, at 22050 samples a second
@@ -1213,6 +1225,11 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_instance_tests.jac`: an instance of a prefab stood on its
+  origin as its file has it, turned a quarter round (brushes, entities'
+  places and facings, materials still along their faces), sized by one
+  number and by three, mirrored, and refused a size of nothing;
+  instances inside a prefab each turned and sized in place.
 - `tests/studio_softlock_tests.jac`: a door behind a relay nothing sets
   off, and put right by a trigger that fires it (killing a thing does not
   set it off); a counter of three with two deaths to fire it; doors that
@@ -1412,6 +1429,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/turned_session.cfg` (9 steps: a linked bench as its
+  file has it, turned a quarter round by two turns, made twice as large
+  and then only longer, each seen as the plain brushes it stands for
+  (ninety-six long along x, then along y, then 192 by 64 by 32 on the
+  floor, then 192 long and as deep and high as before); sizes of nothing
+  and of no number refused; and put back as its file has it).
   `scripts/studio/stuck_session.cfg` (9 steps: a button, a relay and a
   door with nothing stuck; the door a softlock once the button is gone;
   a counter of three that two soldiers' deaths cannot make up, and a
@@ -1604,8 +1627,8 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   `brushDef` sides open without their texture alignment, and a level's
   patches are left behind by `ed_convert` (a map file's `patchDef2` patches
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
-  curve faces the same way round; a linked prefab stands as its file has it (it
-  does not turn); the logic graph neither reorders nor shows signals as
+  curve faces the same way round; a linked prefab turns about the upright only;
+  the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
 - Not yet built: the rest of the bake (a partition by the brushes' own
   planes with portals between its leaves, in place of cells of the plan;

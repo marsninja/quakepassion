@@ -33,6 +33,11 @@ def:priv fragment_box(found: list[MapItem]) -> list[Vec3] | None {
     return [low, high];
 }
 
+def:priv instance_number(value: float) -> str {
+    near = round(value, 4);
+    return str(int(near)) if near == float(int(near)) else str(near);
+}
+
 impl Studio.prefab_path(name: str) -> str {
     folder = os.getenv("QP_PREFABS", "");
     if self.project_folder {
@@ -107,19 +112,14 @@ impl Studio.expanded(scene: Scene) -> Scene {
         }
         # With the prefabs it holds put in, and changed as this instance says.
         found = self.prefab_items(item.fields.get("prefab", ""), []);
-        at = item.origin();
-        if found is None or at is None {
+        if found is None {
             continue;
         }
-        box = fragment_box(found);
-        if box is None {
-            continue;
+        # A linked prefab stands with the middle of its underside on its origin, sized and turned as it says.
+        stood = prefab_placed(found, item.fields);
+        if len(stood) > 0 {
+            whole.insert_map(stood, Vec3());
         }
-        # A linked prefab stands with the middle of its underside on its origin.
-        middle = box[0].add(box[1]).scale(0.5);
-        whole.insert_map(
-            prefab_overridden(found, item.fields), Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z)
-        );
     }
     return whole;
 }
@@ -329,15 +329,14 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
                 if inside is None {
                     continue;
                 }
-                box = fragment_box(inside);
-                if box is None {
+                # What it stood for, where it stood, sized and turned as it was.
+                changed_copy = prefab_placed(inside, item.fields);
+                if len(changed_copy) == 0 {
                     continue;
                 }
-                middle = box[0].add(box[1]).scale(0.5);
-                changed_copy = prefab_overridden(inside, item.fields);
                 scene.select(item);
                 scene.remove_selection();
-                scene.insert_map(changed_copy, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z), "Unlink prefab");
+                scene.insert_map(changed_copy, Vec3(), "Unlink prefab");
                 done += 1;
             }
             self.say("Turned " + str(done) + " linked prefabs into copies" if done else "Select linked prefabs first");
@@ -452,7 +451,7 @@ impl Studio.prefab_items(name: str, trail: list[str]) -> list[MapItem] | None {
 
 impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
     how = args[1] if len(args) > 1 else "";
-    if args[0] != "ed_prefab" or how not in ["swap", "put", "names", "plain"] {
+    if args[0] != "ed_prefab" or how not in ["swap", "put", "names", "plain", "turn", "scale"] {
         return False;
     }
     chosen = [item for item in scene.selection() if item.classname() == "misc_prefab"];
@@ -463,7 +462,37 @@ impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
     first = chosen[0];
     told: dict[str, str | None] = {};
     if how == "plain" {
-        told = {"_swap": None, "_put": None, "_names": None};
+        told = {"_swap": None, "_put": None, "_names": None, "_scale": None, "angle": None};
+    } elif how == "turn" and len(args) > 2 {
+        # Round the upright through where it stands, by so much more.
+        try {
+            more = float(args[2]);
+        } except ValueError {
+            self.say("ed_prefab turn <degrees>");
+            return True;
+        }
+        told = {"angle": instance_number((prefab_yaw(first.fields) + more) % 360.0)};
+    } elif how == "scale" and len(args) > 2 {
+        sizes: list[float] = [];
+        for word in args[2:5] {
+            try {
+                sizes.append(float(word));
+            } except ValueError {
+                sizes = [];
+                break;
+            }
+        }
+        flat = len([size for size in sizes if abs(size) < 0.001]) > 0;
+        if (len(sizes) != 1 and len(sizes) != 3) or flat {
+            self.say("ed_prefab scale <times> | <x> <y> <z>: how many times as large (not nothing)");
+            return True;
+        }
+        whole_size = len(sizes) == 1 or (sizes[0] == sizes[1] and sizes[1] == sizes[2]);
+        if whole_size and sizes[0] == 1.0 {
+            told = {"_scale": None};
+        } else {
+            told = {"_scale": instance_number(sizes[0]) if whole_size else " ".join([instance_number(size) for size in sizes])};
+        }
     } elif how == "swap" and len(args) > 3 {
         # One more pair, after those it has.
         told = {"_swap": (first.fields.get("_swap", "") + " " + args[2] + " " + args[3]).strip()};
@@ -473,7 +502,7 @@ impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
     } elif how == "names" and len(args) > 2 {
         told = {"_names": args[2]};
     } else {
-        self.say("ed_prefab swap <old> <new> | put <classname|name> <key> <value> | names <word> | plain");
+        self.say("ed_prefab swap <old> <new> | put <classname|name> <key> <value> | names <word> | turn <degrees> | scale <times>|<x y z> | plain");
         return True;
     }
     if not scene.set_fields(told, "Prefab instance") {

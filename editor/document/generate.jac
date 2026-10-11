@@ -15,8 +15,9 @@ import from engine.math.vec3 { Vec3 }
 import from ..formats.map { MapItem }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, side_turned }
 import from ..geometry.mapping { side_stretched, side_spun, side_like }
-import from .scene { read_vector, write_vector, side_moved }
+import from .scene { read_vector, write_vector, side_moved, field_number }
 import from ..geometry.csg { carve_sides, joined_pieces }
+import from ..geometry.linear { Linear, linear_turn, linear_size, point_remapped, sides_remapped }
 
 """The keys that make a group a duplicator."""
 glob DUPLICATOR_KEYS: list[str] = [
@@ -438,15 +439,100 @@ def with_prefabs(items: list[MapItem], inner: dict[str, list[MapItem]]) -> list[
         if held is None or at is None {
             continue;
         }
-        box = map_box(held);
-        if box is None {
-            continue;
-        }
-        middle = box[0].add(box[1]).scale(0.5);
-        moved = map_shifted(held, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z));
-        for each in prefab_overridden(moved, item.fields) {
+        for each in prefab_placed(held, item.fields) {
             made.append(each);
         }
     }
     return made;
+}
+
+"""How an instance of a prefab turns and sizes what it stands for: `_scale`
+times as large (one number, or three for x, y and z; a negative one
+mirrors), and then turned `angle` degrees about the upright. None when it
+does neither, or when its size would flatten what it holds."""
+def prefab_change(fields: dict[str, str]) -> Linear | None {
+    factors = Vec3(x=1.0, y=1.0, z=1.0);
+    numbers: list[float] = [];
+    for word in fields.get("_scale", "").split() {
+        try {
+            numbers.append(float(word));
+        } except ValueError {
+            numbers = [];
+            break;
+        }
+    }
+    if len(numbers) == 1 {
+        factors = Vec3(x=numbers[0], y=numbers[0], z=numbers[0]);
+    } elif len(numbers) >= 3 {
+        factors = Vec3(x=numbers[0], y=numbers[1], z=numbers[2]);
+    }
+    if abs(factors.x * factors.y * factors.z) < 0.000001 {
+        return None;
+    }
+    change = linear_size(factors).followed(linear_turn(0, 1, prefab_yaw(fields)));
+    return None if change.idle() else change;
+}
+
+"""The degrees an instance is turned about the upright (its `angle`)."""
+def prefab_yaw(fields: dict[str, str]) -> float {
+    try {
+        turned = float(fields.get("angle", "0").strip());
+    } except ValueError {
+        return 0.0;
+    }
+    # Up and down are ways for a thing to face, not turns of what it holds.
+    return turned if turned >= 0.0 else 0.0;
+}
+
+"""A map's entities and brushes carried through a change of the world about
+a point, materials staying on their faces; what faces a way faces `yaw`
+degrees further round. A brush the change would flatten is left out."""
+def map_remapped(items: list[MapItem], pivot: Vec3, change: Linear, yaw: float = 0.0) -> list[MapItem] {
+    made: list[MapItem] = [];
+    for item in items {
+        fields = dict(item.fields);
+        stands = read_vector(fields.get("origin", ""));
+        if stands is not None {
+            fields["origin"] = write_vector(point_remapped(stands, pivot, change));
+        }
+        if yaw != 0.0 and len(item.brushes) == 0 and fields.get("classname", "") != "worldspawn" {
+            try {
+                faced = float(fields.get("angle", "0").strip());
+            } except ValueError {
+                faced = 0.0;
+            }
+            if faced >= 0.0 {
+                fields["angle"] = field_number((faced + yaw) % 360.0);
+            }
+        }
+        brushes: list[list[Side]] = [];
+        for sides in item.brushes {
+            carried = sides_remapped(sides, pivot, change);
+            if len(carried) >= 4 {
+                brushes.append(carried);
+            }
+        }
+        made.append(MapItem(fields=fields, brushes=brushes));
+    }
+    return made;
+}
+
+"""A prefab's contents as an instance of it places them: standing with the
+middle of the underside on the instance's origin, sized and turned about
+that point as the instance says, and then changed as it says (materials,
+fields, names). Nothing when the instance has no place or the prefab no
+size."""
+def prefab_placed(held: list[MapItem], fields: dict[str, str]) -> list[MapItem] {
+    at = read_vector(fields.get("origin", ""));
+    box = map_box(held);
+    if at is None or box is None {
+        return [];
+    }
+    middle = box[0].add(box[1]).scale(0.5);
+    moved = map_shifted(held, Vec3(x=at.x - middle.x, y=at.y - middle.y, z=at.z - box[0].z));
+    change = prefab_change(fields);
+    if change is not None {
+        moved = map_remapped(moved, at, change, prefab_yaw(fields));
+    }
+    return prefab_overridden(moved, fields);
 }

@@ -58,8 +58,18 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | In the body of `impl Arch.method`, a name first assigned inside a nested block (a `for` or `if` body) was bound to the archetype's method or field of that name: the assignment failed with E1001, and under `jac test` the module ran interpreted. A shallow scope lookup through an impl's declaration climbed into the archetype | [#9978](https://github.com/jaseci-labs/jac/pull/9978) (reported as [#9969](https://github.com/jaseci-labs/jac/issues/9969)) | Met again and again in the studio (`aim`, `opened`, `shelf`, `grid`, `reach`, `changed`), each time by a local that happened to share a member's name; the last made `editor/document/scene.jac` run interpreted in its tests without failing one |
 | `==` between two lists of different native element types (one of tagged values, as `list(struct.unpack(...))` gives, against a `list[int]`; a `list[int]` against a `list[float]`) compared the two pointers and was always False | [#9931](https://github.com/jaseci-labs/jac/pull/9931) | A flare test's assertion |
 | A statement that ends an `if` body with a comprehension was never joined to what follows the `if` (the link into the comprehension was taken for the statement's way out), so a guard asked again after it (`if x is not None { x.a = [..]; } if x is not None { x.b }`) narrowed from `None` alone and every use under it raised E1099 | [#9990](https://github.com/jaseci-labs/jac/pull/9990) | The studio's floating windows (`Studio.float_views`) |
+| `dict(x)` was typed as a bare `dict`: typeshed gives `dict` a `__new__(cls, *args, **kwargs)`, the checker stopped at it, and the `__init__` overloads that carry the key and value types were never asked. A value read from the copy had no type, so a string's method on it (`dict(item.fields).get("angle", "0").strip()`) could not be lowered and the function fell back to Python | [#9997](https://github.com/jaseci-labs/jac/pull/9997) | Linked prefabs turned and sized (`map_remapped` in `editor/document/generate.jac`) |
 
 ## Reported, not yet fixed
+
+- [jaseci-labs/jac#9998](https://github.com/jaseci-labs/jac/issues/9998):
+  `jac test` dies with SIGABRT or SIGSEGV and prints nothing when a native
+  test calls a function that an imported module demoted to its Python
+  implementation (inside one module the test is demoted and passes, and
+  `jac build --native` refuses with E5092). It is how the defect above first
+  showed: every test of the prefab files ended in exit 134 with no output.
+  A five-line program that imports and calls the functions, built with
+  `jac build --native`, names the function, the line and the construct.
 
 - [jaseci-labs/jac#9992](https://github.com/jaseci-labs/jac/issues/9992): a
   flow lookup for a local that walks back to an assignment of it from itself

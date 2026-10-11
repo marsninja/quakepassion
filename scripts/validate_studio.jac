@@ -2327,6 +2327,62 @@ def stuck_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The sixty-fourth session: linked prefabs turned and sized where they stand."""
+def turned_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "turned_bench.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-turned-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PREFABS"] = home + "/prefabs";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/turned_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_PREFABS");
+        (output / "turned.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The turned session failed: {output / 'turned.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["linked", "plain", "turned", "turned_plain", "sized", "sized_plain", "long", "long_plain", "again"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'turned.log'}";
+    }
+    # The instance says how it differs from its file; one entity, built as the floor and the bench.
+    held: dict[str, str] = {};
+    for name in ["linked", "turned", "sized", "long", "again"] {
+        assert len(selected(steps[name])) == 1 and made(steps[name]) == 2 , str(steps[name]);
+        held[name] = selected(steps[name])[0];
+    }
+    assert held["linked"].endswith("classname=misc_prefab prefab=bench origin=0 128 0") , held["linked"];
+    # Sixty degrees and thirty more: a quarter round. Twice as large; a size of nothing or of no number changes nothing.
+    assert held["turned"].endswith("origin=0 128 0 angle=90") and held["sized"].endswith("angle=90 _scale=2") , held["sized"];
+    assert held["long"].endswith("angle=90 _scale=2 1 1") and held["again"] == held["linked"] , held["again"];
+    # Turned into plain brushes it lies where the instance stood it: ninety-six long along x as its
+    # file has it; along y when turned; twice the size about its origin, its underside still on the
+    # floor; and with only its own length doubled, the length that now runs along y.
+    lies: dict[str, str] = {};
+    for name in ["plain", "turned_plain", "sized_plain", "long_plain"] {
+        boxes = [line.split(" sides=")[0].split(" low=")[1] for line in steps[name] if line.startswith("brush #")];
+        assert len(boxes) == 1 and made(steps[name]) == 2 and len(selected(steps[name])) == 0 , str(steps[name]);
+        lies[name] = boxes[0];
+    }
+    assert lies["plain"] == "-48,112,0 high=48,144,16" and lies["turned_plain"] == "-16,80,0 high=16,176,16" , str(lies);
+    assert lies["sized_plain"] == "-32,32,0 high=32,224,32" and lies["long_plain"] == "-16,32,0 high=16,224,16" , str(lies);
+    source = repo / "turned_bench.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "turned_bench.png");
+    source.unlink();
+    print(
+        f"TURNED PASS: {len(steps) - 1} steps, a linked bench turned a quarter round, made twice as large and made longer "
+            + "where it stands, each seen as the plain brushes it stands for, and put back as its file has it"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4688,6 +4744,7 @@ def main() {
         "playview": playview_session,
         "modelfiles": modelfiles_session,
         "stuck": stuck_session,
+        "turned": turned_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4866,6 +4923,7 @@ def main() {
     playview_session(repo, binary, env, output);
     modelfiles_session(repo, binary, env, output);
     stuck_session(repo, binary, env, output);
+    turned_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
