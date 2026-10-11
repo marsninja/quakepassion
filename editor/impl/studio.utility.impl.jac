@@ -153,6 +153,37 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
         );
         return True;
     }
+    if name == "ed_matfind" {
+        # Materials by name across every game's groups, shown as a shelf of their own.
+        wanted_words = " ".join(args[1:]).strip().lower();
+        stock_now = self.archive;
+        if not wanted_words or stock_now is None {
+            self.say("ed_matfind <text>: every material, of any game, whose name holds the text" if stock_now is not None else "No game archives were found");
+            return True;
+        }
+        matched: list[str] = [];
+        for group in stock_now.groups() {
+            for each in stock_now.names(group) {
+                if wanted_words in each.lower() and each not in matched {
+                    matched.append(each);
+                }
+            }
+        }
+        for each in stock_now.file_names() {
+            if wanted_words in each.lower() and each not in matched {
+                matched.append(each);
+            }
+        }
+        self.found_materials = sorted(matched)[:400];
+        self.found_words = wanted_words;
+        print("studio: matfind " + wanted_words.replace(" ", "_") + " found=" + str(len(matched)) + " " + " ".join(self.found_materials[:6]));
+        if len(matched) > 0 {
+            self.shelf = "found";
+        }
+        self.materials_changed += 1;
+        self.say(str(len(matched)) + " materials hold \"" + wanted_words + "\"" + (": shown in the Materials tab" if len(matched) > 0 else ""));
+        return True;
+    }
     if name == "ed_assetfind" {
         self.asset_filter = args[1].strip().lower() if len(args) > 1 else "";
         self.folds += 1;

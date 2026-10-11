@@ -905,8 +905,19 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_material <name> [side]");
             return True;
         }
+        if args[1].strip() == "recent" {
+            print("studio: recent materials " + (" ".join(self.recent_materials) if len(self.recent_materials) > 0 else "none"));
+            self.say(
+                str(len(self.recent_materials)) + " materials taken in hand lately (ed_shelf recent shows them)"
+                if len(self.recent_materials) > 0
+                else "No material has been taken in hand yet"
+            );
+            return True;
+        }
         self.material = args[1].strip();
         self.materials_changed += 1;
+        # Kept among those lately in hand, the latest first.
+        self.recent_materials = [self.material] + [each for each in self.recent_materials if each != self.material][:23];
         side = int(args[2]) if len(args) > 2 and args[2].isdigit() else -1;
         if side >= 0 and scene.selected_solids() {
             if not scene.paint_selection(self.material, side) {
@@ -980,6 +991,13 @@ impl Studio.list_materials(ui: StudioUi) {
             }
             rows.append(TreeRow(key=group, text=group, picked=group == self.shelf));
         }
+    }
+    # After the games' own: what was lately in hand, and what a search found.
+    if len(self.recent_materials) > 0 {
+        rows.append(TreeRow(key="recent", text="recently used", picked=self.shelf == "recent", tone="accent"));
+    }
+    if len(self.found_materials) > 0 {
+        rows.append(TreeRow(key="found", text="found: " + self.found_words, picked=self.shelf == "found", tone="accent"));
     }
     ui.materials.rows = rows;
     self.fill_gallery(ui);

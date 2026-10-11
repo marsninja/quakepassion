@@ -281,6 +281,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    ("ed_matfind", "ed_matfind <text>", "find materials by name across every game, and show them as a shelf in the Materials tab"),
     ("ed_pickmode", "ed_pickmode <all|brushes|entities>", "what a click in a view picks: everything, brushes only, or entities only"),
     ("ed_restrict", "ed_restrict [on|off]", "keep editing to the selection: everything else is put away, and brought back when it is let go"),
     (
@@ -442,7 +443,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_display", "ed_display <wire|textured> [3d|axis|all]", "draw views as edges or textured (the axis views without a word)"),
     ("ed_check", "ed_check [number]", "list what is wrong with the document, or select the thing a finding is about"),
     ("ed_shelf", "ed_shelf <group>", "show a group's materials in the materials tab"),
-    ("ed_material", "ed_material <name> [side]", "set the material of the selected brushes, and of new ones"),
+    ("ed_material", "ed_material <name> [side] | recent", "set the material of the selected brushes, and of new ones; or list those lately in hand"),
     ("ed_push", "ed_push <side> <distance>", "move one side of the selected brush along its normal"),
     ("ed_tie", "ed_tie [classname]", "hand the selected brushes to a new entity, or back to the world"),
     ("ed_matfilter", "ed_matfilter <text>", "show only matching materials in the materials list"),
@@ -461,7 +462,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_history", "ed_history [steps]", "list the edits made, or undo that many"),
     ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
-    ("ed_extract", "ed_extract [folder]", "write the file the explorer shows to disk"),
+    ("ed_extract", "ed_extract [to] | folder <game>:<folder> [to]", "write the file the explorer shows to disk, or every file under a folder of a game's archives"),
     ("ed_listen", "ed_listen", "play the sound the explorer shows"),
     ("ed_frame", "ed_frame <number|next|prev|play|stop>", "the frame of the model the explorer shows"),
     ("ed_orbit", "ed_orbit <yaw> <pitch> [distance]", "turn the model view (angles in degrees)"),
@@ -683,6 +684,11 @@ obj Studio(Workbench) {
         # What a click in a view picks (all, brushes or entities), and what
         # was put away to keep editing to a selection.
         pick_kind: str = "all",
+        # Materials lately taken in hand (the latest first), and those a
+        # search across the games found, with what was searched for.
+        recent_materials: list[str] = [],
+        found_materials: list[str] = [],
+        found_words: str = "",
         kept_out_items: list[Item] = [],
         kept_out_solids: list[Solid] = [],
         # Navigation baked for the scene: its floors, the ways between

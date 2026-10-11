@@ -296,6 +296,11 @@ impl Studio.fill_gallery(ui: StudioUi) {
         }
     } elif self.shelf == "files" {
         names = shelf.file_names();
+    } elif self.shelf == "recent" {
+        # What has been taken in hand, the latest first.
+        names = list(self.recent_materials);
+    } elif self.shelf == "found" {
+        names = list(self.found_materials);
     } else {
         names = list(shelf.names(self.shelf));
     }

@@ -335,6 +335,49 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         print("studio: played " + heard.name);
         return True;
     }
+    if name == "ed_extract" and len(args) > 1 and args[1] == "folder" {
+        # Everything under a folder of a game's archives: ed_extract folder <game>:<folder> [to].
+        stock_now = self.archive;
+        parts = args[2].split(":", 1) if len(args) > 2 else [];
+        if stock_now is None or len(parts) != 2 or parts[0] not in ["q1", "q2", "q3"] or not parts[1].strip("/") {
+            self.say("ed_extract folder <q1|q2|q3>:<folder> [to]: write every file under a folder of a game's archives");
+            return True;
+        }
+        listing = self.asset_index;
+        if listing is None {
+            listing = AssetIndex(shelf=stock_now);
+            self.asset_index = listing;
+        }
+        out_folder = args[3] if len(args) > 3 else os.getenv("QP_EXTRACT", "");
+        if not out_folder {
+            out_folder = os.getcwd() + "/extracted";
+        }
+        under = parts[1].strip("/").lower() + "/";
+        wrote = 0;
+        total = 0;
+        for path in listing.names(parts[0]) {
+            if not path.lower().startswith(under) {
+                continue;
+            }
+            content = listing.read(parts[0], path);
+            if content is None {
+                continue;
+            }
+            target_path = out_folder + "/" + parts[0] + "/" + path;
+            os.makedirs(os.path.dirname(target_path), exist_ok=True);
+            with open(target_path, "wb") as file {
+                file.write(content);
+            }
+            wrote += 1;
+            total += len(content);
+        }
+        print("studio: extracted folder " + parts[0] + ":" + under + " files=" + str(wrote) + " bytes=" + str(total));
+        self.say(
+            "Wrote " + str(wrote) + " files to " + out_folder + "/" + parts[0] + "/" + under if wrote > 0
+            else "Nothing lies under " + args[2]
+        );
+        return True;
+    }
     if name == "ed_extract" {
         seen = self.asset_now;
         known = self.asset_index;

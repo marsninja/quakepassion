@@ -1991,6 +1991,62 @@ def restrict_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     );
 }
 
+"""The fifty-ninth session: a map imported, materials found and lately used, a folder extracted."""
+def finds_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "finds_shelf.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-finds-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_EXTRACT"] = home + "/out";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/finds_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_EXTRACT");
+        (output / "finds.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The finds session failed: {output / 'finds.log'}";
+        written = sorted([str(path.relative_to(Path(home) / "out")) for path in (Path(home) / "out").rglob("*") if path.is_file()]);
+        sizes = sum([path.stat().st_size for path in (Path(home) / "out").rglob("*") if path.is_file()]);
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["empty", "imported", "missing", "found", "recent", "extracted"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'finds.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
+    # A new scene has a floor and a start. The hall's map brings its seven brushes, as a group,
+    # and its start and two lights: one step. A file that is not there changes nothing.
+    assert "entities=2 " in steps["empty"][0] and tally(steps["empty"]).startswith("brushes=1 ");
+    assert "entities=6 " in steps["imported"][0] and "undo=1" in steps["imported"][0] and tally(steps["imported"]).startswith("brushes=8 ");
+    assert steps["missing"][0] == steps["imported"][0] and tally(steps["missing"]) == tally(steps["imported"]);
+    # Materials named for crates, in more than one game; none for a word nothing holds.
+    finds = [line for line in said if line.startswith("matfind ")];
+    count = int(finds[0].split("found=")[1].split()[0]);
+    assert finds[0].startswith("matfind crate found=") and count >= 8 and "q1:e1m1/crate0_side" in finds[0] , finds[0];
+    assert finds[1].startswith("matfind no_such_material_anywhere found=0");
+    # Three taken in hand, one of them twice: the latest first, each once.
+    assert "recent materials blockout q1:e1m1/tech04_1 q2:e1u1/floor3_1" in said;
+    # A folder of Quake's sounds written out whole; a game or a folder that is not there writes nothing.
+    extracts = [line for line in said if line.startswith("extracted folder ")];
+    assert len(extracts) == 2 and extracts[1].endswith("files=0 bytes=0") , str(extracts);
+    wrote = int(extracts[0].split("files=")[1].split()[0]);
+    assert extracts[0].startswith("extracted folder q1:sound/doors/ ") and wrote >= 10 and len(written) == wrote , str(extracts);
+    assert all([name.startswith("q1/sound/doors/") and name.endswith(".wav") for name in written]) , str(written[:3]);
+    assert sizes == int(extracts[0].split("bytes=")[1]) , str(sizes);
+    source = repo / "finds_shelf.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "finds_shelf.png");
+    source.unlink();
+    print(
+        f"FINDS PASS: {len(steps) - 1} steps, a map imported as a group, {count} materials found by name, those lately "
+            + f"in hand listed, and {wrote} files of a folder written out"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4347,6 +4403,7 @@ def main() {
         "float": float_session,
         "nav": nav_session,
         "restrict": restrict_session,
+        "finds": finds_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4520,6 +4577,7 @@ def main() {
     float_session(repo, binary, env, output);
     nav_session(repo, binary, env, output);
     restrict_session(repo, binary, env, output);
+    finds_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

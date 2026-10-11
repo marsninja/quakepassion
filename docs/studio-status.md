@@ -855,6 +855,15 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   whose name holds what is typed (`ed_assetfind`). The check also reports
   materials named as a game's that no archive holds, and `ed_stats <file>`
   writes the names of the materials in use.
+- **Materials found and lately used**: `ed_matfind <text>` looks through
+  every game's materials (and the project's own files) for names that
+  hold the text and shows what it finds as a shelf of its own in the
+  Materials tab, after the games' groups. Materials taken in hand are
+  kept, the latest first, as a "recently used" shelf beside it
+  (`ed_shelf recent`; `ed_material recent` lists them).
+- **A folder out of an archive**: `ed_extract folder <game>:<folder> [to]`
+  writes every file under a folder of a game's archives, as the
+  explorer's Extract button writes one.
 - **A map forced on to the grid**: `ed_snap all [size]` (Edit menu) puts
   every brush's corners and every entity's origin on the grid, as one
   undoable step, and says how many things were off it, how many it
@@ -1330,6 +1339,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/finds_session.cfg` (6 steps: a map file imported as a
+  group of seven brushes with its start and lights, and a missing file
+  refused; thirty-two materials named for crates found across the games
+  and shown as a shelf; three materials taken in hand listed latest
+  first; twenty files of a folder of Quake's sounds written out, byte
+  for byte as many as it says).
   `scripts/studio/restrict_session.cfg` (9 steps: a click passing a box
   when only entities are picked, taking the floor under an entity when
   only brushes are, and the entity when both; editing kept to one box
