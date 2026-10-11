@@ -753,6 +753,10 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   how far it reaches as rings, and what it `killtarget`s in red.
 - **History** (Edit > History, `ed_history`) lists the last edits, newest
   first; choosing one undoes it and everything after it.
+  The list goes forward as well: under the edits made are those undone,
+  and choosing one does it and all before it again (`ed_history redo
+  <steps>`). `ed_history list` says both lists, the edits made oldest
+  first.
 - **Autosave**: a scene that has changed is written every half minute to
   `autosave/` beside the saved scenes, and the Library tab lists those
   files to open after a crash.
@@ -1034,6 +1038,20 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   writes are the result, and screenshots are still taken. It needs a
   desktop session for the graphics all the same. `jac run
   scripts/validate_studio.jac --hidden` runs every session this way.
+- **Faces that meet** (`ed_faces adjoining`, `ed_faces beside`): from a
+  picked face the pick spreads to the faces that lie in its plane and
+  share a length of edge with it or lie over it, and to those that adjoin
+  them, and so on (a floor of many brushes, and not a floor across the
+  room, which `ed_faces extend` would take too); or to the faces of its
+  own brush that share an edge with it.
+- **Sides that make no face** (`ed_prune [all]`): the check names a brush
+  with a side that cuts nothing off it; `ed_prune` takes such sides out of
+  the selected brushes, or of every brush, and takes out a brush that then
+  encloses nothing, as one step. A brush with linked faces is left as it
+  is, since its links go by the places of its sides.
+- **Lined up with a set** (`ed_align <x|y|z> <low|high|middle> to <set>`):
+  the selected brushes, even one, are brought to the low side, high side
+  or middle of a kept set's box, where the set stands.
 - **The tree in words**: `ed_tree [text]` says every row the scene tree
   shows (its depth, its key, its words and its note, and a star when it
   is selected), or those that hold some text. A group that is a
@@ -1284,6 +1302,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_adjoin_tests.jac`: outlines in one plane that adjoin
+  along an edge or over one another and not at a corner; the four faces
+  beside a face of a box; a side that makes no face.
 - `tests/studio_gltf_tests.jac`: JSON read into values and what is not
   JSON refused; base64; a model written as a glb and read back part for
   part; a `.gltf` with its numbers inside it, y up, read; what is not
@@ -1506,6 +1527,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/adjoin_session.cfg` (8 steps: a pick spread from one
+  tile's top to the two that adjoin it and not to one across the room,
+  then across the whole plane, then to the four faces beside it; a side
+  that made no face named by the check and pruned; a brush lined up with a
+  kept set along two axes; the history gone back three edits and forward
+  two).
   `scripts/studio/gltf_session.cfg` (4 steps: a cylinder and a box round
   it written as a glb that reads as glTF 2.0 with y up, and opened again
   as the same two parts).

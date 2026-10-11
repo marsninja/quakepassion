@@ -44,10 +44,22 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_align" {
         if len(args) < 3 or args[1] not in ["x", "y", "z"] or args[2] not in ["low", "high", "middle"] {
-            self.say("ed_align <x|y|z> <low|high|middle>");
+            self.say("ed_align <x|y|z> <low|high|middle> [to <set>]");
             return True;
         }
         axis = 0 if args[1] == "x" else (1 if args[1] == "y" else 2);
+        if len(args) > 4 and args[3] == "to" {
+            # Against a kept set: its low side, high side or middle, where it stands.
+            mark = scene.set_mark(args[4], axis, args[2]);
+            if mark is None {
+                self.say("No set called " + args[4] + " holds anything (ed_keep <name> keeps the selection as one)");
+            } elif not scene.align_selection(axis, args[2], mark) {
+                self.say("Select the brushes to line up with " + args[4] + " (they may be there already)");
+            } else {
+                self.say("Lined up with " + args[4] + " along " + args[1]);
+            }
+            return True;
+        }
         if not scene.align_selection(axis, args[2]) {
             self.say("Select two or more brushes that are not lined up");
         }
@@ -68,9 +80,13 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
             count = scene.invert_faces();
         } elif how == "extend" {
             count = scene.extend_faces();
+        } elif how == "adjoining" {
+            count = scene.adjoin_faces();
+        } elif how == "beside" {
+            count = scene.beside_faces();
         }
         if count < 0 {
-            self.say("ed_faces <all|invert|extend|next|prev>");
+            self.say("ed_faces <all|invert|extend|adjoining|beside|next|prev>");
         } else {
             self.mode = "face";
             self.say("Picked " + str(count) + " more faces" if count else "No more faces to pick");

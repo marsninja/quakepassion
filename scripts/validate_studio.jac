@@ -2743,6 +2743,76 @@ def gltf_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The seventieth session: faces that adjoin, sides pruned, brushes lined up with a set, history both ways."""
+def adjoin_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-adjoin-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/adjoin_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "adjoin.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The adjoin session failed: {output / 'adjoin.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["brought", "adjoining", "extended", "beside", "pruned", "aligned", "back", "forward"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'adjoin.log'}";
+    }
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    def picked(name: str) -> list[str] {
+        return [line.split()[1] for line in steps[name] if line.startswith("face #")];
+    }
+    # Six brushes brought in beside the floor: four tiles with their tops in one plane, a lower one,
+    # and one with a seventh side.
+    brought = [line for line in steps["brought"] if line.startswith("brush #")];
+    assert len(brought) == 6 and " sides=7 " in brought[5] and len([line for line in brought if " sides=6 " in line]) == 5 , str(brought);
+    # From the first tile's top the pick reaches the two that adjoin it, edge to edge, and not the
+    # one across the room; across the whole plane it reaches that one and the seventh-sided box too.
+    assert picked("adjoining") == ["#3/4", "#4/4", "#5/4"] , str(picked("adjoining"));
+    assert picked("extended") == ["#3/4", "#4/4", "#5/4", "#6/4", "#8/4"] , str(picked("extended"));
+    # Beside one face of a box: the four round it.
+    assert picked("beside") == ["#3/0", "#3/1", "#3/2", "#3/3", "#3/4"] , str(picked("beside"));
+    # The check names the side that makes no face; pruned once it is gone, and a second prune and a
+    # second check find nothing.
+    findings = [line for line in ran.stdout.splitlines() if line.startswith("studio: finding ") and "make no face" in line];
+    assert findings == ["studio: finding Brush #8 has 1 sides that make no face"] , str(findings);
+    pruned = [line for line in said["pruned"] if line.startswith("pruned ")];
+    assert pruned == ["pruned sides=1 brushes=0 spared=0", "pruned sides=0 brushes=0 spared=0"] , str(pruned);
+    # The far tile lined up with the kept box: its low side along y on the box's, its top at the
+    # box's top; a set that is not there moves nothing.
+    moved = [line for line in steps["aligned"] if line.startswith("brush #6 ")];
+    assert len(moved) == 1 and brush_box(moved[0]) == [[128, 224, -32], [192, 288, 32]] , str(moved);
+    # Four edits made; back three is back to the import (the tile where it was), forward two is the
+    # prune and the first lining up, with the second still waiting.
+    lists = [line for line in ran.stdout.splitlines() if line.startswith("studio: history ")];
+    assert lists == ["studio: history done=4 undone=0", "studio: history done=3 undone=1"] , str(lists);
+    edits = [line for line in said["back"] if line.startswith("edit ")];
+    assert edits == ["edit 1 Import", "edit 2 Prune sides", "edit 3 Align", "edit 4 Align"] , str(edits);
+    assert "undone 1 Align" in said["forward"] and " undo=1 redo=3" in steps["back"][0] and " undo=3 redo=1" in steps["forward"][0];
+    assert brush_box([line for line in steps["back"] if line.startswith("brush #6 ")][0]) == [[128, 160, 0], [192, 224, 64]];
+    assert brush_box([line for line in steps["forward"] if line.startswith("brush #6 ")][0]) == [[128, 224, 0], [192, 288, 64]];
+    print(
+        f"ADJOIN PASS: {len(steps) - 1} steps, a pick spread over three tiles that adjoin and not a fourth across the room, "
+            + "a side that made no face pruned, a brush lined up with a kept set, and the history gone back three and forward two"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5114,6 +5184,7 @@ def main() {
         "treebox": treebox_session,
         "meshcut": meshcut_session,
         "gltf": gltf_session,
+        "adjoin": adjoin_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5298,6 +5369,7 @@ def main() {
     treebox_session(repo, binary, env, output);
     meshcut_session(repo, binary, env, output);
     gltf_session(repo, binary, env, output);
+    adjoin_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

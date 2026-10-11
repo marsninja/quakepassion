@@ -1185,9 +1185,9 @@ impl Scene.snap_selection(size: float = 8.0, whole: bool = False) -> int {
     return count;
 }
 
-impl Scene.align_selection(axis: int, how: str = "low") -> bool {
+impl Scene.align_selection(axis: int, how: str = "low", goal: float | None = None) -> bool {
     brushes = self.selected_solids();
-    if len(brushes) < 2 or how not in ["low", "high", "middle"] {
+    if len(brushes) < (2 if goal is None else 1) or how not in ["low", "high", "middle"] {
         return False;
     }
     marks: list[float] = [];
@@ -1200,10 +1200,14 @@ impl Scene.align_selection(axis: int, how: str = "low") -> bool {
         high = [box[1].x, box[1].y, box[1].z][axis % 3];
         marks.append(low if how == "low" else (high if how == "high" else (low + high) * 0.5));
     }
-    goal = min(marks) if how == "low" else (max(marks) if how == "high" else (min(marks) + max(marks)) * 0.5);
+    # To the selection's own low, high or middle; or to where it is told.
+    line = min(marks) if how == "low" else (max(marks) if how == "high" else (min(marks) + max(marks)) * 0.5);
+    if goal is not None {
+        line = goal;
+    }
     step = Step(label="Align");
     for (index, solid) in enumerate(brushes) {
-        gap = goal - marks[index];
+        gap = line - marks[index];
         if abs(gap) < 0.0001 {
             continue;
         }

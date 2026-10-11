@@ -50,6 +50,7 @@ import from ..geometry.csg {
     pruned_sides
 }
 import from ..geometry.linear { Linear, point_remapped, sides_remapped }
+import from ..geometry.adjoin { outlines_adjoin, faces_beside, sides_used }
 import from ..geometry.mapping {
     side_like,
     mapping_place,
@@ -1689,7 +1690,10 @@ node Scene {
     def off_grid(size: float = 8.0) -> int;
     """Line the selected brushes up along an axis: their low sides, their
     high sides or their middles brought to the selection's own."""
-    def align_selection(axis: int, how: str = "low") -> bool;
+    def align_selection(axis: int, how: str = "low", goal: float | None = None) -> bool;
+    """Along an axis, the low side, high side or middle of a kept set's box.
+    None when the set holds nothing with a size."""
+    def set_mark(name: str, axis: int, how: str = "low") -> float | None;
     """Every side of the brushes that have a picked face becomes picked."""
     def pick_all_faces -> int;
     """Within the brushes that have picked faces: the others, instead."""
@@ -1697,6 +1701,17 @@ node Scene {
     """Pick, in every brush of the document, the faces that lie in the
     plane of a picked face and face its way."""
     def extend_faces -> int;
+    """Pick the faces that lie in a picked face's plane and adjoin it (share
+    a length of edge with it, or lie over it), and those that adjoin them,
+    and so on: a floor of many brushes, and not one across the room."""
+    def adjoin_faces -> int;
+    """Pick the faces of each brush that share an edge with a picked face of it."""
+    def beside_faces -> int;
+    """Take out the sides that make no face from the selected brushes (from
+    every brush when `everywhere`), and the brushes that then enclose
+    nothing, as one step. Brushes with linked faces are left as they are.
+    Answers [sides dropped, brushes dropped, brushes left alone]."""
+    def prune_sides(everywhere: bool = False) -> list[int];
     """Move the selected brushes so that the side of each that most nearly
     faces a plane lies on it (glued against the face that has that plane)."""
     def glue_selection(plane: Plane3) -> bool;

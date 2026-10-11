@@ -260,11 +260,12 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
     ("ed_replace", "ed_replace <old> <new> [all]", "give sides of one material another, in the selection or everywhere"),
     ("ed_snap", "ed_snap [all] [size]", "put the selection's corners and origins on the grid, or everything's (a map off the grid mended)"),
-    ("ed_align", "ed_align <x|y|z> <low|high|middle>", "line the selected brushes up along an axis"),
+    ("ed_align", "ed_align <x|y|z> <low|high|middle> [to <set>]", "line the selected brushes up along an axis, with one another or with a kept set"),
+    ("ed_prune", "ed_prune [all]", "take out the sides that make no face, and the brushes that enclose nothing"),
     (
         "ed_faces",
-        "ed_faces <all|invert|extend|next|prev>",
-        "spread the face pick over the whole brush, to its other faces or across the plane; or step to the next face"
+        "ed_faces <all|invert|extend|adjoining|beside|next|prev>",
+        "spread the face pick over the whole brush, to its other faces, across the plane, to the faces that adjoin it in its plane or to those beside it; or step to the next face"
     ),
     ("ed_tag", "ed_tag [clear]", "remember the picked face, to glue brushes against and take its material from; or forget it"),
     ("ed_glue", "ed_glue [face [link]]", "move the selection against the tagged face, or put the picked face in its plane (and link it to what lies there)"),
@@ -496,7 +497,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_hide", "ed_hide [others]", "put the selection, or everything else, out of sight while editing"),
     ("ed_show", "ed_show", "bring back everything hidden"),
     ("ed_drop", "ed_drop", "let the selection down onto what is beneath it"),
-    ("ed_history", "ed_history [steps]", "list the edits made, or undo that many"),
+    ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
     ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_extract", "ed_extract [to] | folder <game>:<folder> [to]", "write the file the explorer shows to disk, or every file under a folder of a game's archives"),
@@ -3432,6 +3433,7 @@ obj Studio(Workbench) {
     def archive_command(scene: Scene, args: list[str]) -> bool;
     def finding_command(scene: Scene, args: list[str]) -> bool;
     def rows_command(scene: Scene, args: list[str]) -> bool;
+    def prune_command(scene: Scene, args: list[str]) -> bool;
     def tags_path -> str;
     def read_tags;
     """The edges of a frame as they are to be drawn: all, or those of the
@@ -3747,7 +3749,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.rows_command(scene, args) and not self.finding_command(scene, args)
+        } elif not self.prune_command(scene, args) and not self.rows_command(scene, args)
+            and not self.finding_command(scene, args)
             and not self.archive_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
