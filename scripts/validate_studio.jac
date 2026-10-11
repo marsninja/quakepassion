@@ -1561,6 +1561,112 @@ def arms_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A step's `bone` lines by the bone's name: its words by key."""
+def bone_rows(lines: list[str]) -> dict[str, dict[str, str]] {
+    found: dict[str, dict[str, str]] = {};
+    for line in lines {
+        if line.startswith("bone ") {
+            words = line.split();
+            found[words[1]] = {word.split("=")[0]: word.split("=")[1] for word in words[2:] if "=" in word};
+        }
+    }
+    return found;
+}
+
+"""A bone's end from its line, as numbers."""
+def bone_end(row: dict[str, str], key: str) -> list[float] {
+    return [float(part) for part in row[key].split(",")];
+}
+
+"""The fifty-third session: a model's bones."""
+def bones_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["shared", "dragged"];
+    for shot in shots {
+        (repo / f"bones_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-bones-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/bones_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "bones.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The bones session failed: {output / 'bones.log'}";
+        kept = (Path(home) / "models/arm.md3.rig").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "made", "rigged", "shared", "freed", "turned", "undone", "dragged", "spread", "rest", "closed", "reopened",
+        "dropped"
+    ];
+    for name in names {
+        assert name in steps and (steps[name] or name == "closed") , f"The session never reached '{name}': {output / 'bones.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
+    # A column with no bones says nothing of bones; then two, the second hanging from the first
+    # and carrying on from its end, with the eighteen points shared out by which is nearer.
+    assert bone_rows(steps["made"]) == {} and "bones took 18" in said;
+    rigged = bone_rows(steps["rigged"]);
+    assert list(rigged.keys()) == ["upper", "fore"] and rigged["fore"]["parent"] == "upper" and rigged["upper"]["parent"] == "-";
+    assert rigged["upper"]["tail"] == "0,0,48" and rigged["fore"]["head"] == "0,0,48" and rigged["fore"]["tail"] == "0,0,96";
+    assert rigged["upper"]["carries"] == "9" and rigged["fore"]["carries"] == "9" and rigged["upper"]["tint"] != rigged["fore"]["tint"];
+    # Two points of the top ring half given to the lower bone: the upper keeps the other half.
+    assert "weight 8 upper:0.5 fore:0.5" in said and "weight 9 upper:0.5 fore:0.5" in said;
+    shared = bone_rows(steps["shared"]);
+    assert shared["upper"]["carries"] == "11" and shared["fore"]["carries"] == "9";
+    assert [line for line in steps["shared"] if line.startswith("bones 2 hand=upper colours=1")] , str(steps["shared"]);
+    # Let go by the lower bone, they are half carried; taken whole by the upper again.
+    assert "bones freed 2" in said and "weight 8 fore:0.5" in said and bone_rows(steps["freed"])["upper"]["carries"] == "9";
+    # The forearm thirty degrees about x: its end swings over, its joint and the other bone stay,
+    # and the top of the column goes with it.
+    turned = bone_rows(steps["turned"]);
+    assert turned["fore"]["head"] == "0,0,48" and turned["fore"]["tail"] == "0,-24,89.57" and turned["upper"] == bone_rows(steps["freed"])["upper"];
+    high = [line for line in steps["turned"] if line.startswith("modeldoc ")][0];
+    assert "high=32,32,96" not in high and "undo=1" in high and "low=-32,-52,0" in high , high;
+    undone = [line for line in steps["undone"] if line.startswith("modeldoc ")][0];
+    assert "low=-32,-32,0 high=32,32,96" in undone and "undo=0" in undone and bone_rows(steps["undone"])["fore"]["tail"] == "0,0,96";
+    # Its end dragged a quarter of the way round its joint as seen: as long as it was, its joint
+    # where it was, lying level now; and the click that ended the drag picked nothing.
+    assert "bone dragged fore 90" in said;
+    dragged = bone_rows(steps["dragged"]);
+    end = bone_end(dragged["fore"], "tail");
+    reach = (end[0] ** 2 + end[1] ** 2 + (end[2] - 48.0) ** 2) ** 0.5;
+    assert dragged["fore"]["head"] == "0,0,48" and abs(reach - 48.0) < 0.1 and abs(end[2] - 48.0) < 6.0 , str(end);
+    was_dragged = [line for line in steps["dragged"] if line.startswith("modeldoc ")][0];
+    assert "picked=0/0" in was_dragged and "undo=1" in was_dragged , was_dragged;
+    # Three frames, the last bent sixty degrees: the one between is set half way, and the first is at rest.
+    spread = bone_rows(steps["spread"]);
+    assert "frames=3 frame=1:mid" in [line for line in steps["spread"] if line.startswith("modeldoc ")][0];
+    assert spread["fore"]["tail"] == "0,-20.78,84" and bone_rows(steps["rest"])["fore"]["tail"] == "0,0,96";
+    # Kept beside the model's file, and back with it when it is opened again.
+    assert "bone upper - " in kept and "bone fore upper " in kept and "at 2 0 0 48 0 -41.5692 72" in kept and kept.count("grip 0 ") == 2;
+    assert not [line for line in steps["closed"] if line.startswith("bone")];
+    reopened = bone_rows(steps["reopened"]);
+    assert list(reopened.keys()) == ["upper", "fore"] and reopened["fore"]["parent"] == "upper" and reopened["fore"]["tail"] == "0,-41.57,72";
+    assert reopened["fore"]["carries"] == "9" and reopened["upper"]["carries"] == "9" and reopened["fore"]["tint"] == rigged["fore"]["tint"];
+    # The lower bone taken away: the other hangs from nothing, where it was.
+    dropped = bone_rows(steps["dropped"]);
+    assert list(dropped.keys()) == ["fore"] and dropped["fore"]["parent"] == "-" and dropped["fore"]["tail"] == reopened["fore"]["tail"];
+    for shot in shots {
+        source = repo / f"bones_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"bones_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"BONES PASS: {len(steps) - 1} steps, two bones jointed, points shared by weight, a bone turned by command and "
+            + "by a drag, frames spread between two poses, and the bones kept with the model"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3911,6 +4017,7 @@ def main() {
         "lay": lay_session,
         "lean": lean_session,
         "arms": arms_session,
+        "bones": bones_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4078,6 +4185,7 @@ def main() {
     lay_session(repo, binary, env, output);
     lean_session(repo, binary, env, output);
     arms_session(repo, binary, env, output);
+    bones_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

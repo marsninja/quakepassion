@@ -196,6 +196,9 @@ impl Studio.model_event(event: UiEvent) -> bool {
             return True;
         }
     }
+    if self.bone_event(event) {
+        return True;
+    }
     if event.kind == "press" and event.button == 0 {
         self.model_travel = 0;
         self.model_drag = Vec3();
@@ -293,6 +296,7 @@ impl Studio.draw_model_marks {
             wire_line(at.sub(Vec3(z=tick * 2.0)), at.add(Vec3(z=tick * 2.0)), ink(0xffd166));
         }
     }
+    self.draw_bones();
     if part is None {
         return;
     }
@@ -408,6 +412,18 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_model open: " + path + " is not an OBJ or MD3 model this reads");
             return True;
         }
+        if os.path.isfile(path + ".rig") {
+            # Its bones, kept beside it.
+            try {
+                with open(path + ".rig", "r") as file {
+                    opened_doc.read_rig(file.read());
+                }
+                opened_doc.dirty = False;
+            } except OSError {
+                print("studio: no bones read from " + path + ".rig");
+            }
+        }
+        self.bone_now = "";
         self.model_doc = opened_doc;
         self.show_model_doc(True);
         if app is not None and not self.assets_shown {
@@ -578,6 +594,16 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             } except OSError {
                 self.say("ed_model save: could not write " + path);
                 return True;
+            }
+            if len(doc.bones()) > 0 {
+                # The formats keep no bones: they go in a file beside the model.
+                try {
+                    with open(path + ".rig", "w") as file {
+                        file.write(doc.rig_text());
+                    }
+                } except OSError {
+                    print("studio: could not write " + path + ".rig");
+                }
             }
             doc.dirty = False;
             print("studio: saved model " + path + " bytes=" + str(len(data)));

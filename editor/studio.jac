@@ -87,7 +87,8 @@ import from .model.skin {
     Skin, places_box, places_moved, places_scaled, places_turned, places_flipped, places_projected, skin_filled, skin_dab,
     place_under, skin_tga, tga_skin
 }
-import from .model.document { ModelDoc, Part, Reshape }
+import from .model.document { ModelDoc, Part, Reshape, Bone }
+import from .model.bones { point_swung }
 import from .model.files { doc_from_model, model_of, write_md3, md3_limits, write_md2, md2_limits }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }
@@ -267,6 +268,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    (
+        "ed_bone",
+        "ed_bone [list] | add <name> <head> <tail> [parent] | chain <name> <tail> | pick <name> | hold [weight] | release [all] | auto | weights | tint <rrggbb> | turn <x|y|z> <degrees> | move <d> | end <head|tail> <at> [all] | drop [name] | spread <first> <last> | colours [on|off] | save|load [file]",
+        "the model's bones: make and joint them, give them points to carry by weight, pose with them, and spread the frames between two poses"
+    ),
     (
         "ed_skin",
         "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>] [colour <r g b>] [brush <radius> [soft]] [dab <u v>] [show]",
@@ -859,6 +865,14 @@ obj Studio(Workbench) {
         model_pick: str = "faces",
         model_travel: int = 0,
         model_drag: Vec3 = Vec3(),
+        # The bone in hand, whether points show their bones' colours, and a
+        # bone's end being dragged: which, from where, and how far round.
+        bone_now: str = "",
+        bones_tinted: bool = False,
+        bone_held: str = "",
+        bone_press_x: int = 0,
+        bone_press_y: int = 0,
+        bone_swept: float = 0.0,
         look_rate: float = 1.0,
         look_flipped: bool = False,
         wheel_rate: float = 1.0,
@@ -1344,7 +1358,11 @@ obj Studio(Workbench) {
                     MenuItem(text="Undo in the model", command="ed_model undo"),
                     MenuItem(rule=True),
                     MenuItem(text="The shader script's shaders", command="ed_shader"),
-                    MenuItem(text="Check the shader script", command="ed_shader check")
+                    MenuItem(text="Check the shader script", command="ed_shader check"),
+                    MenuItem(rule=True),
+                    MenuItem(text="The model's bones", command="ed_bone"),
+                    MenuItem(text="Give every point to the bone nearest it", command="ed_bone auto"),
+                    MenuItem(text="Points in their bones' colours", command="ed_bone colours")
                 ]
             ]
         );
@@ -3239,6 +3257,22 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # The model's bones (impl/studio.bones.impl.jac)
+
+    """Run a bone command. False when it is not one."""
+    def bone_command(scene: Scene, args: list[str]) -> bool;
+    """The bone commands work on: the one picked, or the last made."""
+    def bone_in_hand -> Bone | None;
+    """Where a model's bones are kept beside it."""
+    def bone_rig_path -> str;
+    """The bones as lines of the dump."""
+    def bone_lines -> list[str];
+    """A pointer event in the model's view that takes hold of a bone's end:
+    dragged round its joint, the bone turns about the line of sight."""
+    def bone_event(event: UiEvent) -> bool;
+    def draw_bones;
+
+    # ------------------------------------------------------------------
     # The model's skin (impl/studio.skin.impl.jac)
 
     def skin_words -> str;
@@ -3478,6 +3512,7 @@ obj Studio(Workbench) {
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
             and not self.model_command(scene, args) and not self.skin_command(scene, args)
+            and not self.bone_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
@@ -3776,6 +3811,9 @@ obj Studio(Workbench) {
         if self.model_doc is not None {
             lines.append(self.model_words());
             lines.append(self.skin_words());
+            for bone_line in self.bone_lines() {
+                lines.append(bone_line);
+            }
         }
         if self.shader_file {
             lines.append(self.shader_words());

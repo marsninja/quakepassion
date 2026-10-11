@@ -1,6 +1,8 @@
 """A model being edited, as a graph: the model, its parts (each a mesh of
 its own, with its own skins), each part's poses (where its points stand at
-each frame) and its tags (places other models are hung from).
+each frame) and its tags (places other models are hung from). A model may
+have bones as well: each jointed to those that hang from it, each with a
+grip on the points it carries of each part, to pose the model by.
 
 A part's triangles and its places on the skin are the same at every frame;
 only the points move. So a tool that moves points works on one pose or on
@@ -21,6 +23,19 @@ import from .mesh {
     faces_of_points,
     faces_toward
 }
+import from .bones {
+    points_swung,
+    points_carried,
+    point_swung,
+    grip_with,
+    grip_without,
+    grip_share,
+    shares_beside,
+    nearest_bones,
+    frames_spread,
+    tint_mixed,
+    BONE_TINTS
+}
 
 """A model has its parts, in order."""
 edge HasPart: ModelDoc --> Part {
@@ -33,6 +48,33 @@ edge HasPose: Part --> Pose {
 }
 
 edge HasTag: ModelDoc --> Tag {}
+
+"""A model has its bones."""
+edge HasBone: ModelDoc --> Bone {}
+
+"""A bone is jointed to each bone that hangs from it."""
+edge Jointed: Bone --> Bone {}
+
+"""A bone has a grip on each part it carries points of."""
+edge Holds: Bone --> Grip {}
+
+edge GripOf: Grip --> Part {}
+
+"""A bone: where its joint is and where it reaches to, at each frame, and
+the colour it and what it carries are shown in."""
+node Bone {
+    has name: str,
+        heads: list[Vec3] = [],
+        tails: list[Vec3] = [],
+        tint: int = 0xffc94d;
+}
+
+"""What a bone carries of one part: points by number, and how much of each
+(from nothing to all of it)."""
+node Grip {
+    has points: list[int] = [],
+        weights: list[float] = [];
+}
 
 """Where a part's points stand at one frame."""
 node Pose {
@@ -67,12 +109,84 @@ obj PartState {
         picked_faces: list[int] = [];
 }
 
-"""One edit of one part: how it stood before and after."""
+"""A bone's ends as they were, at every frame."""
+obj BoneState {
+    has bone: Bone,
+        heads: list[Vec3] = [],
+        tails: list[Vec3] = [];
+}
+
+"""One edit of one part: how it stood before and after. A pose made with
+bones changes more than one part, and the bones: the other parts as steps
+of their own in `rest`, and the bones as they stood."""
 obj ModelStep {
     has label: str,
         part: Part,
         before: PartState,
-        after: PartState;
+        after: PartState,
+        rest: list[ModelStep] = [],
+        bones_before: list[BoneState] = [],
+        bones_after: list[BoneState] = [];
+}
+
+"""Carry a turn or a move down a bone and all that hangs from it, at one
+frame. The walker starts on the bone and takes its ends where they go, then
+goes to each grip it has and on to the bones jointed to it, which go round
+whole: ends and all. Of the points it does not move any itself: it gathers,
+for each part it meets, how much of each point the bones it passed carry
+between them, for the points to be moved once by that much."""
+walker Swing {
+    has frame: int,
+        pivot: Vec3 = Vec3(),
+        axis: Vec3 = Vec3(z=1.0),
+        degrees: float = 0.0,
+        delta: Vec3 = Vec3(),
+        turning: bool = True,
+        first: bool = True,
+        carried: list[Part] = [],
+        shares: list[list[float]] = [];
+
+    can start with Bone entry {
+        if self.frame < len(here.heads) and self.frame < len(here.tails) {
+            if self.turning {
+                # The bone asked for turns about its own joint, which stays;
+                # one that hangs from it is taken round, joint and all.
+                if not self.first {
+                    here.heads[self.frame] = point_swung(here.heads[self.frame], self.pivot, self.axis, self.degrees);
+                }
+                here.tails[self.frame] = point_swung(here.tails[self.frame], self.pivot, self.axis, self.degrees);
+            } else {
+                here.heads[self.frame] = here.heads[self.frame].add(self.delta);
+                here.tails[self.frame] = here.tails[self.frame].add(self.delta);
+            }
+        }
+        self.first = False;
+        visit [here->:Holds:->];
+        visit [here->:Jointed:->];
+    }
+
+    can gather with Grip entry {
+        for part in [here->:GripOf:->][?:Part] {
+            place = -1;
+            for (index, known) in enumerate(self.carried) {
+                if known is part {
+                    place = index;
+                }
+            }
+            if place < 0 {
+                stood = [part->:HasPose:->][?:Pose];
+                self.carried.append(part);
+                self.shares.append([0.0 for point in (stood[0].points if len(stood) > 0 else [])]);
+                place = len(self.carried) - 1;
+            }
+            for (number, index) in enumerate(here.points) {
+                if index >= 0 and index < len(self.shares[place]) {
+                    share = here.weights[number] if number < len(here.weights) else 1.0;
+                    self.shares[place][index] = min(1.0, self.shares[place][index] + share);
+                }
+            }
+        }
+    }
 }
 
 """Carry a tool to every pose of a part (or to one). The walker starts on
@@ -292,6 +406,13 @@ node ModelDoc {
         }
         step = self.done.pop();
         self.restore(step.part, step.before);
+        for more in step.rest {
+            self.restore(more.part, more.before);
+        }
+        for kept in step.bones_before {
+            kept.bone.heads = list(kept.heads);
+            kept.bone.tails = list(kept.tails);
+        }
         self.undone.append(step);
         return step.label;
     }
@@ -302,6 +423,13 @@ node ModelDoc {
         }
         step = self.undone.pop();
         self.restore(step.part, step.after);
+        for more in step.rest {
+            self.restore(more.part, more.after);
+        }
+        for kept in step.bones_after {
+            kept.bone.heads = list(kept.heads);
+            kept.bone.tails = list(kept.tails);
+        }
         self.done.append(step);
         return step.label;
     }
@@ -467,6 +595,12 @@ node ModelDoc {
                 tag.axes.insert(frame + 1, list(tag.axes[frame]));
             }
         }
+        for bone in self.bones() {
+            if frame < len(bone.heads) and frame < len(bone.tails) {
+                bone.heads.insert(frame + 1, bone.heads[frame]);
+                bone.tails.insert(frame + 1, bone.tails[frame]);
+            }
+        }
         self.frame = frame + 1;
         self.dirty = True;
         self.revision += 1;
@@ -489,6 +623,12 @@ node ModelDoc {
             if frame < len(tag.origins) and frame < len(tag.axes) {
                 tag.origins.pop(frame);
                 tag.axes.pop(frame);
+            }
+        }
+        for bone in self.bones() {
+            if frame < len(bone.heads) and frame < len(bone.tails) {
+                bone.heads.pop(frame);
+                bone.tails.pop(frame);
             }
         }
         self.frame = max(0, min(self.frame, count - 2));
@@ -523,6 +663,14 @@ node ModelDoc {
                 tag.origins.insert(to, moved_at);
                 moved_axes = tag.axes.pop(frame);
                 tag.axes.insert(to, moved_axes);
+            }
+        }
+        for bone in self.bones() {
+            if frame < len(bone.heads) and to < len(bone.heads) and len(bone.tails) == len(bone.heads) {
+                moved_head = bone.heads.pop(frame);
+                bone.heads.insert(to, moved_head);
+                moved_tail = bone.tails.pop(frame);
+                bone.tails.insert(to, moved_tail);
             }
         }
         self.frame = to;
@@ -614,4 +762,66 @@ node ModelDoc {
         stood = self.poses(held[0]);
         return stood[frame].name if frame >= 0 and frame < len(stood) else "";
     }
+
+    # ------------------------------------------------------------------
+    # Bones (impl/document.rig.impl.jac)
+
+    def bones -> list[Bone] {
+        return [self->:HasBone:->][?:Bone];
+    }
+
+    def bone(name: str) -> Bone | None;
+    """The bone a bone hangs from, and those that hang from it."""
+    def bone_parent(bone: Bone) -> Bone | None;
+    def bone_children(bone: Bone) -> list[Bone];
+    """Add a bone from one place to another, the same at every frame,
+    hanging from the bone named (from none when no name is given). None
+    when the name is taken or empty, or there is no such bone to hang from."""
+    def add_bone(name: str, head: Vec3, tail: Vec3, parent: str = "") -> Bone | None;
+    """Carry a chain on: a new bone from the end of one to a place, hanging
+    from it."""
+    def continue_bone(parent: str, name: str, tail: Vec3) -> Bone | None;
+    """Take a bone away: what hung from it hangs from what it hung from,
+    and the points it carried are carried by nothing."""
+    def drop_bone(name: str) -> bool;
+    """Put one end of a bone somewhere else at the frame in hand (or at
+    every frame), leaving what it carries where it is."""
+    def set_bone_end(name: str, tail: bool, at: Vec3, every: bool = False) -> bool;
+    def tint_bone(name: str, tint: int) -> bool;
+    """The grip a bone has on a part (made when asked for and missing)."""
+    def grip(bone: Bone, part: Part, make: bool = False) -> Grip | None;
+    """Give a bone points of the part in hand to carry, each by a weight;
+    what other bones carry of them is cut down to what is left of one
+    whole. Answers how many points the bone took."""
+    def hold_points(name: str, points: list[int], weight: float = 1.0) -> int;
+    """Let go points of the part in hand: from the bone named, or from every
+    bone when no name is given. Answers how many were let go."""
+    def release_points(points: list[int], name: str = "") -> int;
+    """Give every point of every part to the bone it is nearest at the
+    frame in hand, wholly. Answers how many points were given."""
+    def hold_nearest -> int;
+    """How much of a point of the part in hand each bone carries: the bones'
+    names and their shares, for those that carry any."""
+    def point_shares(point: int) -> list[tuple[str, float]];
+    """The colour each point of a part is shown in: its bones' colours mixed
+    by their shares, what is left of one whole going to `plain`."""
+    def point_tints(part: Part, plain: int = 0x9a9a9a) -> list[int];
+    """Every part and every bone as they stand, to undo a pose to."""
+    def rig_states -> list[BoneState];
+    """Turn a bone about its joint by degrees round an axis, at the frame in
+    hand: what it carries goes with it by its shares, and all that hangs
+    from it goes round whole. One edit."""
+    def swing_bone(name: str, axis: Vec3, degrees: float) -> bool;
+    """Move a bone and all that hangs from it, at the frame in hand."""
+    def shift_bone(name: str, delta: Vec3) -> bool;
+    """Spread the frames between two evenly: points and bones' ends alike."""
+    def spread_frames(first: int, last: int) -> bool;
+    """Keep an edit that changed parts and bones: what stood before, against
+    what stands now. False when nothing changed."""
+    def keep_pose(
+        label: str, parts_before: list[PartState], bones_before: list[BoneState]
+    ) -> bool;
+    """The bones as text, to keep beside a model's file, and read back."""
+    def rig_text -> str;
+    def read_rig(text: str) -> int;
 }

@@ -397,6 +397,33 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   over it, and `ed_skin save <file.tga>` writes it. Not there yet:
   picking and dragging on the skin view itself, patterns, and the
   picture drawn on the model.
+- **Bones** (`ed_bone`, Window menu): a model being edited may have bones
+  to pose it by. `ed_bone add <name> <head> <tail> [parent]` makes one,
+  `ed_bone chain <name> <tail>` carries a chain on from the end of the
+  bone in hand (`ed_bone pick <name>`, or a click on a bone's end), and
+  `ed_bone drop` takes one away, what hung from it hanging from what it
+  hung from. A bone carries points of a part, each by a weight from
+  nothing to all: `ed_bone auto` gives every point to the bone nearest
+  it, `ed_bone hold [weight]` gives the picked points to the bone in
+  hand (what other bones carry of them is cut down to what is left of
+  one whole), `ed_bone release [all]` lets them go, and `ed_bone
+  weights` says what carries each picked point. `ed_bone turn <x|y|z>
+  <degrees>` turns the bone about its joint at the frame in hand: what
+  it carries goes by its share, and every bone that hangs from it goes
+  round whole with what that carries. Dragging the box at a bone's end
+  round its joint turns it about the line of sight, in steps of the
+  angle snap (Ctrl for single degrees). `ed_bone move` moves a bone and
+  what hangs from it, `ed_bone end <head|tail> <at> [all]` puts an end
+  elsewhere without moving any point, and `ed_bone tint <rrggbb>` gives
+  it a colour. `ed_bone spread <first> <last>` sets the frames between
+  two evenly from one to the other, points and bones alike. Turns, moves
+  and spreads are undone with the model's other edits. `ed_bone colours`
+  shows each point in the colours of the bones that carry it, mixed by
+  their shares. The model formats keep no bones, so they are written
+  beside the model's file (`<file>.rig`) when it is saved and read back
+  when it is opened (`ed_bone save|load [file]` does either alone). Not
+  there yet: a panel for the weights, colours kept on the points
+  themselves, and bones written into a format that has them.
 - **A played game watched**: while a game is played from the studio, what
   fires is counted, by the name it is fired by (or its class and what it
   fires, when it has no name). `ed_fired` says how often each has fired
@@ -974,6 +1001,12 @@ editor/impl/                 the workbench's scenes and brushes
   frames matched; MD3 and MD2 written and read back by the engine's own
   readers, and taken up again as a graph; tags added, moved a frame at a
   time and dropped, going with their frames; a frame moved in the order.
+- `tests/studio_bones_tests.jac`, `tests/studio_rig_tests.jac`: points
+  turned and moved by their shares; a grip taking, sharing and letting go
+  points; the nearest bone; frames spread; colours mixed; and in a
+  model, bones added, chained and dropped, points shared and released,
+  a bone turned with all that hangs from it, undone and redone, bones
+  kept to their frames, and the rig written as text and read back.
 - `tests/studio_skin_tests.jac`: places on a skin moved, stretched,
   turned and flipped about their own box; points laid flat by looking
   along an axis; a skin filled, dabbed solid and soft, and kept as a
@@ -1298,6 +1331,12 @@ editor/impl/                 the workbench's scenes and brushes
   brushes; the instance given a swap and names of its own; the built map
   written out, with the gate's blockout in brass and the inner post
   still slate).
+  `scripts/studio/bones_session.cfg` (12 steps: two bones up a column, the
+  second carrying on from the first; every point given to the nearer;
+  two points shared half and half, let go and taken whole; the forearm
+  turned thirty degrees and that undone; its end dragged a quarter round
+  its joint; three frames with the one between two poses set half way;
+  the model saved, closed and opened with its bones; a bone dropped).
   `scripts/studio/skin_session.cfg` (7 steps: a cylinder laid flat into
   the left half of its skin, stretched to half, moved, turned a quarter
   and flipped, the flip undone; a picture made and dabbed on the skin; a
@@ -1337,8 +1376,7 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
 - Not yet built: the rest of the bake (a partition by the brushes' own
   planes with portals between its leaves, in place of cells of the plan;
   bounced light; bot navigation); patches written back as
-  `patchDef2`; bones and weights in the model editor; the Passion tools;
-  user walkers.
+  `patchDef2`; the Passion tools; user walkers.
 - Within the shell: generated (Passion) levels can be edited but not saved as
   they are (`ed_convert` is meant to turn one into a scene, but expeditions
   do not load in the test environment at present: #76).
