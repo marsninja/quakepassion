@@ -204,6 +204,22 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Sounds**: `ed_sound info <file>` says what a WAV file is, and
+  `ed_sound convert <file> <name> [rate] [bits] [loud]` makes it what
+  the games play (its channels mixed into one, at 22050 samples a second
+  and 16 bits unless told otherwise, as loud as it can be without
+  clipping with `loud`) and writes it under `QP_SOUNDS`, a project's
+  `sounds/` or `./sounds`.
+- **Texture sets**: `ed_wal <file.wal|q2:name>` says what a Quake II wall
+  texture says of itself (its flags, contents and value, which a
+  compiler gives every face that uses it, and the texture that follows
+  it in an animation); with `flag <name> on|off`, `flags`, `contents`,
+  `value <number>` or `next <name>|none` it writes a copy with those
+  changed, its pictures untouched, among the project's textures.
+  `ed_frames [material]` lists the frames of an animated texture: a
+  Quake `+0name`'s row from its map, or a Quake II texture's chain.
+  (Quake's WAD files are not written, and the frames are listed, not
+  played in the browser.)
 - **Shader scripts**: `ed_shader open <file>` opens a Quake III shader
   script from `QP_SHADERS`, a project's `scripts/` or `./scripts` (a
   file that is not there is a new one), and `ed_shader take` takes the
@@ -837,6 +853,10 @@ editor/impl/                 the workbench's scenes and brushes
   what would mislead refused; an add-on's class lines. (An add-on's
   classes joining the table, replaced when read again and leaving it are
   in `tests/studio_class_tests.jac`.)
+- `tests/studio_sound_tests.jac`: a sound written as a WAV the engine
+  reads, at either width; a stereo sound mixed to one channel and played
+  at the games' rates; a wall texture's facts read, changed and written
+  back with its pictures untouched; a Quake animated texture's row.
 - `tests/studio_shader_tests.jac`: a script read into shaders, their lines
   and their stages; written and read back the same; a directive set,
   changed among several of its kind and taken out; a broken script's
@@ -1145,6 +1165,11 @@ editor/impl/                 the workbench's scenes and brushes
   check, then mended; the script saved, a second shader added, and the
   file opened again as two; a script broken by hand, its five faults
   said by line).
+  `scripts/studio/sounds_session.cfg` (3 steps: a stereo sound at 44100
+  made one channel at 22050 and 16 bits, and at 11025 and 8; a wall
+  texture's flags, value and next frame changed in a copy whose pictures
+  are the same bytes; Quake's slipgate texture found to be a row of
+  seven).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

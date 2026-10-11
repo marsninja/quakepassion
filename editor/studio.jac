@@ -66,6 +66,8 @@ import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
 }
 import from .formats.archive { write_pak, write_zip, file_kind }
+import from .formats.sound { sound_facts, converted_sound }
+import from .formats.wal { WalFacts, wal_facts, wal_with, flag_names, flag_named, quake_frames }
 import from .classes.registry {
     ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes
 }
@@ -220,6 +222,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    ("ed_sound", "ed_sound info <file> | convert <file> <name> [rate] [bits] [loud]", "say what a WAV file is, or make it one channel at a game's rate and width among the project's sounds"),
+    (
+        "ed_wal",
+        "ed_wal <file.wal|q2:name> [flag <name> on|off] [flags|contents|value <number>] [next <name>|none]",
+        "a Quake II texture's own flags, contents, value and the texture that follows it: read, or changed in a copy among the project's textures"
+    ),
+    ("ed_frames", "ed_frames [material]", "the frames of an animated texture: a Quake + name's row, or a Quake II texture's chain"),
     (
         "ed_shader",
         "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save]",
@@ -3024,6 +3033,16 @@ obj Studio(Workbench) {
     def sweep_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Sounds, texture facts and animated textures (impl/studio.sounds.impl.jac)
+
+    """Where converted sounds are kept."""
+    def sound_path(name: str) -> str;
+    """A Quake II texture's bytes: a file's, or a material's from the archives."""
+    def wal_bytes(source: str) -> bytes;
+    """Run a sound, texture-facts or frames command. False when it is not one."""
+    def sound_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Shader scripts (impl/studio.shaders.impl.jac)
 
     """Where shader scripts named without a path are kept."""
@@ -3310,7 +3329,7 @@ obj Studio(Workbench) {
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
             and not self.model_command(scene, args) and not self.games_command(scene, args)
-            and not self.shader_command(scene, args)
+            and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);

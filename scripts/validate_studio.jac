@@ -1309,6 +1309,59 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The forty-sixth session: a sound converted, a wall texture's facts
+changed in a copy, and animated textures' frames listed."""
+def sounds_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-sounds-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_SOUNDS"] = home + "/sounds";
+        env["QP_TEXTURES"] = home + "/textures";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/sounds_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_SOUNDS");
+        env.pop("QP_TEXTURES");
+        (output / "sounds.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The sounds session failed: {output / 'sounds.log'}";
+        blip = (Path(home) / "sounds/blip.wav").read_bytes();
+        quiet = (Path(home) / "sounds/quiet.wav").read_bytes();
+        plate = (Path(home) / "textures/lab/plate.wal").read_bytes();
+    }
+    before = (repo / "scripts/studio/fixtures/plate.wal").read_bytes();
+    steps = studio_steps(ran.stdout);
+    for name in ["begin", "wal", "frames"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'sounds.log'}";
+    }
+    # Two channels at 44100 made one at the games' rates: 22050 at 16 bits, 11025 at 8.
+    said = [line for line in steps["begin"] if line.startswith("sound ")];
+    assert said[0] == "sound blip.wav 44100 Hz, 16 bits, 2 channels, 0.1 s" , str(said);
+    assert said[1].startswith("sound blip.wav 22050 Hz, 16 bits, one channel, 0.1 s from ") , str(said);
+    assert said[2].startswith("sound quiet.wav 11025 Hz, 8 bits, one channel, 0.1 s from ") , str(said);
+    assert blip[:4] == b"RIFF" and int.from_bytes(blip[22:24], "little") == 1 and int.from_bytes(blip[24:28], "little") == 22050;
+    assert int.from_bytes(blip[40:44], "little") == 2205 * 2 and int.from_bytes(quiet[24:28], "little") == 11025;
+    assert int.from_bytes(quiet[34:36], "little") == 8;
+    # The texture's facts as they were, and as changed in the copy: its pictures untouched.
+    facts = [line for line in steps["wal"] if line.startswith("wal name=")];
+    assert facts[0] == "wal name=lab/plate size=32x32 flags=0 names=- contents=0 value=0 next=-" , str(facts);
+    assert facts[1] == "wal name=lab/plate size=32x32 flags=9 names=light,warp contents=0 value=300 next=lab/plate2" , str(facts);
+    assert len(plate) == len(before) and plate[100:] == before[100:] and plate[:56] == before[:56];
+    assert int.from_bytes(plate[88:92], "little") == 9 and int.from_bytes(plate[96:100], "little") == 300 and plate[56:66] == b"lab/plate2";
+    # Quake's slipgate texture is a row of seven; a plain name is one.
+    rows = [line for line in steps["frames"] if line.startswith("frames ")];
+    assert rows[0].startswith("frames 7 q1:e1m1/+0slip q1:e1m1/+1slip ") and rows[1] == "frames 1 nothing_animated" , str(rows);
+    print(
+        f"SOUNDS PASS: {len(steps) - 1} steps, a stereo sound made one channel at 22050 and at 11025, a wall texture's "
+            + "flags and value changed in a copy, and a row of seven animated frames found"
+    );
+}
+
 """A word of a step's `shaders` line: what follows `key=`."""
 def shader_word(lines: list[str], key: str) -> str {
     found = [line for line in lines if line.startswith("shaders file=")];
@@ -3378,6 +3431,7 @@ def main() {
         "touch": touch_session,
         "games": games_session,
         "shader": shader_session,
+        "sounds": sounds_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3526,6 +3580,7 @@ def main() {
     touch_session(repo, binary, env, output);
     games_session(repo, binary, env, output);
     shader_session(repo, binary, env, output);
+    sounds_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
