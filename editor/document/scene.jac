@@ -21,7 +21,14 @@ import math;
 import from ..formats.map { MapItem, MapFile }
 import from ..classes.registry { flag_put }
 import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted }
-import from ..geometry.patch { patch_brushes, points_text, points_from, points_shifted, points_carried }
+import from ..geometry.patch {
+    patch_brushes,
+    points_text,
+    points_from,
+    points_shifted,
+    points_carried,
+    points_reversed
+}
 import from ..geometry.csg { hull_sides }
 import from ..geometry.csg {
     carve_sides,
@@ -61,6 +68,12 @@ edge Selected: Scene --> Item | Solid {}
 map's logic is a graph that walkers travel."""
 edge Fires: Item --> Item {
     has key: str = "target";
+}
+
+"""An entity or a brush belongs to a named set: a selection kept with the
+document, to pick again later."""
+edge Member: Scene --> Item | Solid {
+    has name: str = "";
 }
 
 """One selected face: the brush it is a side of, and which side."""
@@ -124,6 +137,9 @@ node Solid {
         return windings_bounds(self.outlines());
     }
 }
+
+"""What the fields that keep a document's sets in a map file begin with."""
+glob SET_PREFIX: str = "_set_";
 
 """The field a group keeps its own pivot in: what it turns and stretches
 about, in place of its middle."""
@@ -817,18 +833,17 @@ walker Stretch {
                 # A patch's control points, and a group's pivot, stretch with it.
                 held = here.fields.get(key);
                 if held is not None {
-                    carried = FieldChange(
-                        item=here,
-                        key=key,
-                        before=held,
-                        after=points_carried(
-                            held,
-                            self.pivot,
-                            Vec3(x=self.factors.x),
-                            Vec3(y=self.factors.y),
-                            Vec3(z=self.factors.z)
-                        )
+                    stretched = points_carried(
+                        held, self.pivot, Vec3(x=self.factors.x), Vec3(y=self.factors.y), Vec3(z=self.factors.z)
                     );
+                    lay = here.fields.get("_patch", "").split();
+                    if key == "_points" and self.factors.x * self.factors.y * self.factors.z < 0.0
+                        and len(lay) > 0 and lay[0].isdigit() {
+                        # Mirrored, a patch built again would thicken toward its
+                        # other side: its rows are turned end for end to keep it.
+                        stretched = points_reversed(stretched, int(lay[0]));
+                    }
+                    carried = FieldChange(item=here, key=key, before=held, after=stretched);
                     carried.redo();
                     self.step.changes.append(carried);
                 }
@@ -1165,7 +1180,9 @@ node Scene {
         # The revision the Fires edges were drawn at.
         linked: int = -1,
         next_serial: int = 0,
-        journal: Journal = Journal();
+        journal: Journal = Journal(),
+        # The names of the selections kept as sets, in the order made.
+        set_names: list[str] = [];
 
     """Every item in the document, in map order."""
     def items -> list[Item] {
@@ -1265,6 +1282,32 @@ node Scene {
     def stretch_selection(
         factors: Vec3, grid: float = 8.0, label: str = "Stretch", about: Vec3 | None = None, locked: bool = True
     ) -> bool;
+    # Kept selections and wider picks (impl/scene.select.impl.jac)
+
+    """Keep the selection as a set of that name, in place of any there was.
+    Answers how many it holds."""
+    def keep_set(name: str) -> int;
+    """What a set holds that is still in the document."""
+    def set_items(name: str) -> list[Item];
+    def set_solids(name: str) -> list[Solid];
+    """Select a set's members, alone or added. Answers how many."""
+    def pick_set(name: str, add: bool = False) -> int;
+    def drop_set(name: str) -> bool;
+    """A set as words a map file keeps: an entity by its place in the map
+    (`4`), a brush by its entity's place and its own (`0:12`)."""
+    def set_words(name: str) -> str;
+    """Make a set again from those words, over the entities in map order."""
+    def restore_set(name: str, words: str, placed: list[Item]);
+    """Step from the selection to its kin: "parent" (the entities that own
+    the selected brushes), "child" (the selected entities' brushes), "next"
+    or "prev" (the one selected thing's neighbour in the map). Answers how
+    many are selected afterwards, or 0 when there is nowhere to step."""
+    def select_kin(how: str) -> int;
+    """Select a brush by its entity's place in the map and its own within
+    it, as a compiler names them (the entity itself when `brush` is below 0)."""
+    def select_numbered(entity: int, brush: int = -1) -> bool;
+    """The two selected things change places."""
+    def swap_selection -> bool;
     """The pivot the one selected group keeps for itself, when it keeps one."""
     def selection_pivot -> Vec3 | None;
     """Where the selection turns and stretches about when nothing says
@@ -1767,17 +1810,29 @@ node Scene {
 
 """The document as a map: every entity with its brushes."""
 def scene_map(scene: Scene) -> list[MapItem] {
-    return [
+    written = [
         MapItem(fields=dict(item.fields), brushes=[solid.sides for solid in scene.solids_of(item)])
         for item in scene.items()
     ];
+    if len(written) > 0 {
+        # The kept selections ride in the first entity's fields.
+        for name in scene.set_names {
+            words = scene.set_words(name);
+            if words {
+                written[0].fields[SET_PREFIX + name] = words;
+            }
+        }
+    }
+    return written;
 }
 
 """A document of a map file's entities and brushes."""
 def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
     scene = Scene(game=game, name=name);
+    placed: list[Item] = [];
     for read in found.items {
         item = scene.add_item(dict(read.fields));
+        placed.append(item);
         for sides in read.brushes {
             scene.add_solid(item, sides);
         }
@@ -1800,6 +1855,15 @@ def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
                 scene.add_solid(group, sides);
             }
         }
+    }
+    if len(placed) > 0 {
+        # Kept selections come back as sets, and leave the fields.
+        first = placed[0];
+        for key in [key for key in first.fields.keys() if key.startswith(SET_PREFIX)] {
+            scene.restore_set(key[len(SET_PREFIX):], first.fields[key], placed);
+            first.fields.pop(key, None);
+        }
+        scene.dirty = False;
     }
     return scene;
 }

@@ -1,8 +1,8 @@
 import from engine.math.vec3 { Vec3 }
-import from editor.document.scene { Scene }
+import from editor.document.scene { Scene, Item }
 import from editor.geometry.brush { box_sides, brush_volume }
 import from editor.geometry.mapping { mapping_same }
-import from editor.geometry.patch { patch_points, points_carried }
+import from editor.geometry.patch { patch_points, points_carried, points_reversed }
 
 def about(a: float, b: float, slack: float = 0.01) -> bool {
     return abs(a - b) < slack;
@@ -163,4 +163,37 @@ test "a patch's control points turn and stretch with its brushes" {
     assert taller is not None and about(taller[0].z, before[0].z * 2.0);
     carried = points_carried("1 2 3", Vec3(x=1.0), Vec3(x=2.0), Vec3(y=1.0), Vec3(z=1.0));
     assert carried == "1 2 3";
+}
+
+"""The lowest any of an entity's brushes reaches."""
+def floor_of(scene: Scene, item: Item) -> float {
+    low = 1000000.0;
+    for solid in scene.solids_of(item) {
+        box = solid.bounds();
+        if box is not None {
+            low = min(low, box[0].z);
+        }
+    }
+    return low;
+}
+
+test "a mirrored patch built again thickens toward the side it did" {
+    assert points_reversed("0 0 0 1 0 0 2 0 0 0 1 0 1 1 0 2 1 0", 3) == "2 0 0 1 0 0 0 0 0 2 1 0 1 1 0 0 1 0";
+    assert points_reversed("0 0 0 1 0 0", 4) == "0 0 0 1 0 0";
+    scene = room();
+    made = patch_points("sheet", Vec3(x=32.0, z=64.0), Vec3(x=160.0, y=64.0, z=64.0));
+    patch = scene.make_patch(made[2], made[0], made[1], "wall");
+    assert patch is not None;
+    scene.select(patch);
+    before = floor_of(scene, patch);
+    assert scene.stretch_selection(Vec3(x=-1.0, y=1.0, z=1.0), 8.0, "Mirror", Vec3());
+    assert floor_of(scene, patch) == before;
+    mirrored = scene.patch_control(patch);
+    # Each row runs the other way now, so the sheet faces the way it did.
+    assert mirrored is not None and about(mirrored[0].x, -160.0) and about(mirrored[2].x, -32.0);
+    # Bent a little, it is built again from its points: as thick, the same way.
+    nudged = [Vec3(x=point.x, y=point.y, z=point.z) for point in mirrored];
+    nudged[4] = Vec3(x=nudged[4].x, y=nudged[4].y, z=nudged[4].z - 1.0);
+    assert scene.set_patch(patch, nudged);
+    assert about(floor_of(scene, patch), before, 1.5);
 }

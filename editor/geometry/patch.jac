@@ -223,3 +223,20 @@ def points_carried(text: str, pivot: Vec3, across: Vec3, along: Vec3, upward: Ve
     }
     return points_text(moved);
 }
+
+"""Control points kept as a field, each row of `width` turned end for end: a
+mirrored patch laid out this way faces the way its mirror image should."""
+def points_reversed(text: str, width: int) -> str {
+    words = text.split();
+    points = points_from(text, len(words) // 3);
+    if points is None or width < 2 or len(points) % width != 0 {
+        return text;
+    }
+    turned: list[Vec3] = [];
+    for row in range(len(points) // width) {
+        for column in range(width) {
+            turned.append(points[row * width + width - 1 - column]);
+        }
+    }
+    return points_text(turned);
+}
