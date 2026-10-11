@@ -1070,6 +1070,74 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The twenty-ninth session: keys bound by hand, the settings list, the
+grid hidden, flat tones, and the developer's readout, kept between runs."""
+def settings_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["list", "nogrid", "solid", "dev"];
+    for shot in shots {
+        (repo / f"settings_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-settings-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/settings_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "settings.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The settings session failed: {output / 'settings.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+        again = subprocess.run(
+            [str(binary), "+edit", "+wait", "+wait", "+ed_binds", "+ed_dump", "again", "+quit"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "settings_again.log").write_text(again.stdout + again.stderr);
+        assert again.returncode == 0 , f"Opening the studio again failed: {output / 'settings_again.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["column", "cap", "unbound", "solid", "textured"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'settings.log'}";
+    }
+    # K made a column (a group of three brushes); Shift+K a cap (eight); unbound, Shift+K makes nothing.
+    column = selected(steps["column"]);
+    cap = selected(steps["cap"]);
+    assert len(column) == 1 and "_group_name=column" in column[0] and "owns=3" in column[0] , str(column);
+    assert len(cap) == 1 and "_group_name=cap" in cap[0] and "owns=8" in cap[0] , str(cap);
+    assert tally(steps["unbound"]).split()[0] == tally(steps["cap"]).split()[0] , f"{tally(steps['cap'])} {tally(steps['unbound'])}";
+    assert "studio: key k ed_shape column 64 64 128" in ran.stdout and "studio: key shift+k ed_shape cap 128 32 64" in ran.stdout;
+    # The settings list says what is so; its second line hid the grid.
+    said = [line[len("studio: setting "):] for line in ran.stdout.splitlines() if line.startswith("studio: setting ")];
+    assert len(said) == 24 and said[1] == "Grid shown" and said[13] == "Grid hidden" , str(said[:14]);
+    assert said[0] == "Grid 16 (coarser)" and "Materials as textures" in said;
+    # Flat tones build the level again from other materials, and textures bring it back.
+    solid = tally(steps["solid"]);
+    assert solid.split("geometry=")[1].split()[0] == solid.split("built=")[1].split()[0] , solid;
+    # Kept: the key, the grid shown again, the readout on.
+    assert 'ed_bind k "ed_shape column 64 64 128"' in kept and "ed_bind shift+k" not in kept , kept;
+    assert "ed_grid show" in kept and "ed_dev on" in kept , kept;
+    assert "studio: key k ed_shape column 64 64 128" in again.stdout;
+    for shot in shots {
+        source = repo / f"settings_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"settings_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"SETTINGS PASS: {len(steps) - 1} steps, keys bound by hand and kept, the settings list, the grid hidden, "
+            + "materials as flat tones, and the developer's readout"
+    );
+}
+
 """A word of a face line (`material`, `shift`, `scale`)."""
 def face_word(line: str, key: str) -> str {
     return line.split(key + "=")[1].split()[0];
@@ -2177,6 +2245,7 @@ def main() {
         "quilt": quilt_session,
         "controls": controls_session,
         "wrap": wrap_session,
+        "settings": settings_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2308,6 +2377,7 @@ def main() {
     quilt_session(repo, binary, env, output);
     controls_session(repo, binary, env, output);
     wrap_session(repo, binary, env, output);
+    settings_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

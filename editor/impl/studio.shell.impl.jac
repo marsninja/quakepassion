@@ -115,6 +115,12 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
     if name == "ed_grid" {
         word = args[1] if len(args) > 1 else "";
         size = self.grid;
+        if word == "show" or word == "hide" or word == "toggle" {
+            self.grid_shown = (not self.grid_shown) if word == "toggle" else word == "show";
+            self.say("The grid is shown" if self.grid_shown else "The grid is hidden");
+            self.keep_settings();
+            return True;
+        }
         if word == "up" {
             size = size * 2.0;
         } elif word == "down" {
@@ -123,7 +129,7 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
             try {
                 size = float(word);
             } except ValueError {
-                self.say("ed_grid <size|up|down>");
+                self.say("ed_grid <size|up|down|show|hide>");
                 return True;
             }
         }
@@ -336,6 +342,8 @@ impl Studio.keep_settings {
         "ed_display " + ("wire" if self.wire_main else "textured") + " 3d",
         "ed_brush " + str(int(self.brush_radius)) + " " + str(int(self.brush_amount)),
         "ed_layout " + ("4b" if self.layout == 5 else str(self.layout)),
+        "ed_grid " + ("show" if self.grid_shown else "hide"),
+        "ed_dev " + ("on" if self.dev_shown else "off"),
         "ed_autocaulk " + ("on" if self.autocaulk else "off"),
         "ed_mapopts comments " + ("on" if self.map_comments else "off"),
         "ed_mapopts whole " + ("on" if self.map_whole else "off"),
@@ -344,6 +352,9 @@ impl Studio.keep_settings {
         "ed_anglesnap " + str(int(self.angle_snap)),
         "ed_texlock " + ("on" if self.tex_lock else "off")
     ];
+    for chord in sorted(self.user_keys.keys()) {
+        lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
+    }
     path = self.settings_path();
     try {
         os.makedirs(os.path.dirname(path), exist_ok=True);

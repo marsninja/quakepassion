@@ -174,6 +174,18 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   its reach on a slider and its colour on red, green and blue bars. Each
   drag is one undoable edit, made when the drag ends. A brush's form ends
   with which handles it shows (Move, Turn, Size).
+- **Keys of your own**: `ed_bind <key> <command>` gives a key (a letter,
+  or `ctrl+` and `shift+` before one) any editor command, ahead of what
+  the studio gives it; `ed_unbind` gives it back and `ed_binds` lists
+  them. They are kept in the studio's settings, apart from every game's
+  bindings.
+- **Settings** (Window > Settings, `ed_settings`) lists what is so, each
+  line a click to change. The axis views' grid can be hidden
+  (`ed_grid hide`), and when shown has the world's numbers along its
+  edges. `ed_display solid` shows materials as flat tones in place of
+  their textures. `ed_dev` puts frame and build times, how many brushes
+  the level was built from, and how many entities and light samples there
+  are, in the status bar.
 - **Several documents** are open at once: the level the game began in and
   every scene made or opened since. `ed_docs` lists them, `ed_doc
   <name|next|prev>` goes to another (its camera is where it was left),
@@ -696,6 +708,11 @@ editor/impl/                 the workbench's scenes and brushes
   the next takes it as it lies; fitted in whole repeats; Alt and a drag in
   the plan paints the box's top and the floor; the floor's top put in the
   tagged plane, so the floor rises to it).
+  `scripts/studio/settings_session.cfg` (5 steps: K bound to add a column
+  and Shift+K a cap, pressed, listed, one unbound; the settings list and
+  its line that hides the grid; flat tones and back; the developer's
+  readout; then the studio opened again to find the key and settings
+  kept).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

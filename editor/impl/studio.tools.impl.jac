@@ -609,9 +609,27 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_display" {
-        if len(args) < 2 or args[1] not in ["wire", "textured"] {
-            self.say("ed_display <wire|textured> [3d|axis|all]");
+        if len(args) > 1 and args[1] == "solid" {
+            # Flat tones in place of textures, a tone a material.
+            self.solid_tones = True;
+            self.materials = SwatchMaterials();
+            self.materials_changed += 1;
+            self.built_geometry = -1;
+            self.say("Materials are shown as flat tones");
             return True;
+        }
+        if len(args) < 2 or args[1] not in ["wire", "textured"] {
+            self.say("ed_display <wire|textured|solid> [3d|axis|all]");
+            return True;
+        }
+        stock = self.archive;
+        if args[1] == "textured" and self.solid_tones {
+            self.solid_tones = False;
+            if stock is not None {
+                self.materials = stock;
+            }
+            self.materials_changed += 1;
+            self.built_geometry = -1;
         }
         which = args[2] if len(args) > 2 else "axis";
         if which == "axis" or which == "all" {

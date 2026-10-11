@@ -188,6 +188,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
     ("ed_caulk", "ed_caulk [material]", "give the faces the selected brushes cover of each other a material that is not drawn"),
     ("ed_autocaulk", "ed_autocaulk [on|off]", "whether shapes are built with their inner faces caulked"),
+    ("ed_bind", "ed_bind <key> <command>", "give a key (a, ctrl+k, shift+f2) an editor command of your own"),
+    ("ed_unbind", "ed_unbind <key>", "give a key back what the studio gives it"),
+    ("ed_binds", "ed_binds", "list the keys bound by hand"),
+    ("ed_settings", "ed_settings", "list the studio's settings, each a click to change"),
+    ("ed_dev", "ed_dev [on|off]", "show frame and build times and counts in the status bar"),
     ("ed_docs", "ed_docs", "list the open documents"),
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
@@ -632,6 +637,14 @@ obj Studio(Workbench) {
         # Playing only what is selected; and how coarse the light is baked
         # (world units to a lightmap texel).
         play_only: bool = False,
+        # The axis views' grid shown, with numbers along its edges; levels
+        # drawn in flat tones in place of their textures; keys bound by
+        # hand; and the developer's readout in the status bar.
+        grid_shown: bool = True,
+        solid_tones: bool = False,
+        user_keys: dict[str, str] = {},
+        dev_shown: bool = False,
+        frame_ms: float = 0.0,
         # Whether a shape is built with the faces inside it caulked.
         autocaulk: bool = False,
         # Whether duplicators' images are in what is built.
@@ -1048,7 +1061,11 @@ obj Studio(Workbench) {
                     MenuItem(text="Close this document", command="ed_close"),
                     MenuItem(rule=True),
                     MenuItem(text="Recent files", command="ed_recent"),
-                    MenuItem(text="The console's last lines", command="ed_log")
+                    MenuItem(text="The console's last lines", command="ed_log"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Settings", command="ed_settings"),
+                    MenuItem(text="Keys bound by hand", command="ed_binds"),
+                    MenuItem(text="Developer's readout", command="ed_dev")
                 ]
             ]
         );
@@ -1370,7 +1387,8 @@ obj Studio(Workbench) {
         }
         eye = self.main.eye;
         concealed = scene.hidden_count();
-        ui.place.text = ("frozen   " if self.frozen else "") + (str(concealed) + " hidden   " if concealed else "")
+        ui.place.text = self.dev_words(scene) + ("frozen   " if self.frozen else "")
+            + (str(concealed) + " hidden   " if concealed else "")
             + (str(self.build_ms) + " ms   " if self.build_ms > 0 else "") + "grid " + str(int(self.grid)) + "   "
             + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
     }
@@ -1504,6 +1522,8 @@ obj Studio(Workbench) {
         if app is None or stage is None or ui is None {
             return;
         }
+        # A running mean of how long a frame takes, for the developer's readout.
+        self.frame_ms = self.frame_ms * 0.9 + dt * 100.0;
         if self.source.pending() > 0 {
             self.quiet = 0;
         } else {
@@ -1890,6 +1910,12 @@ obj Studio(Workbench) {
             return;
         }
         for key in keys {
+            # A key bound by hand comes before what the studio gives it.
+            chord = ("ctrl+" if ctrl else "") + ("shift+" if shift else "") + key.lower();
+            if chord in self.user_keys {
+                stage.emit(self.user_keys[chord]);
+                continue;
+            }
             if key == "F8" {
                 stage.emit("edit");
             } elif key == "F5" {
@@ -2254,7 +2280,7 @@ obj Studio(Workbench) {
             }
             return;
         }
-        if view.span > 0.0 {
+        if view.span > 0.0 and self.grid_shown {
             self.draw_grid(view);
         }
         self.bare_now = view.bare;
@@ -2591,6 +2617,16 @@ obj Studio(Workbench) {
     def transform_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
+    # Keys bound by hand, the settings list, flat tones, grid numbers, readouts (impl/studio.settings.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def settings_command(scene: Scene, args: list[str]) -> bool;
+    """What the developer's readout says, when it is shown."""
+    def dev_words(scene: Scene) -> str;
+    """Numbers along the edges of an axis view, at the grid's stronger lines."""
+    def draw_grid_numbers(area: Rect);
+
+    # ------------------------------------------------------------------
     # Open documents, recent files, the selection's menu, the log (impl/studio.docs.impl.jac)
 
     """Run one of those commands. False when it is not one."""
@@ -2845,7 +2881,7 @@ obj Studio(Workbench) {
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)
             and not self.build_mode_command(scene, args) and not self.entity_command(scene, args)
-            and not self.doc_command(scene, args) {
+            and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
         }
     }
