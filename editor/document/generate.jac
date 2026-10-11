@@ -12,6 +12,7 @@ import from ..formats.map { MapItem }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, side_turned }
 import from ..geometry.mapping { side_stretched }
 import from .scene { read_vector, side_moved }
+import from ..geometry.csg { carve_sides, joined_pieces }
 
 """The keys that make a group a duplicator."""
 glob DUPLICATOR_KEYS: list[str] = ["_copies", "_offset", "_turn", "_pivot", "_mirror"];
@@ -93,6 +94,63 @@ def with_images(items: list[MapItem]) -> list[MapItem] {
             continue;
         }
         result.append(MapItem(fields=read.fields, brushes=read.brushes + image_brushes(read.fields, read.brushes)));
+    }
+    return result;
+}
+
+"""The field that makes a group a digger: its brushes are holes, cut out of
+everything else when the level is built and never built themselves."""
+glob DIGGER_KEY: str = "_digger";
+
+"""Whether an entity's fields make its brushes holes."""
+def digs(fields: dict[str, str]) -> bool {
+    return fields.get(DIGGER_KEY, "0").strip() == "1";
+}
+
+"""A map with its diggers' brushes cut out of every other brush, and the
+diggers themselves left out. The document keeps them whole: move a digger
+and the hole moves."""
+def with_holes(items: list[MapItem]) -> list[MapItem] {
+    cutters: list[list[Side]] = [];
+    for read in items {
+        if digs(read.fields) {
+            for brush in read.brushes {
+                cutters.append(brush);
+            }
+        }
+    }
+    if len(cutters) == 0 {
+        return items;
+    }
+    result: list[MapItem] = [];
+    for read in items {
+        if digs(read.fields) {
+            continue;
+        }
+        left: list[list[Side]] = [];
+        for brush in read.brushes {
+            pieces: list[list[Side]] = [brush];
+            cut = False;
+            for cutter in cutters {
+                after: list[list[Side]] = [];
+                for piece in pieces {
+                    carved = carve_sides(piece, cutter);
+                    if carved is None {
+                        after.append(piece);
+                    } else {
+                        cut = True;
+                        for part in carved {
+                            after.append(part);
+                        }
+                    }
+                }
+                pieces = after;
+            }
+            for piece in (joined_pieces(pieces) if cut else pieces) {
+                left.append(piece);
+            }
+        }
+        result.append(MapItem(fields=read.fields, brushes=left));
     }
     return result;
 }

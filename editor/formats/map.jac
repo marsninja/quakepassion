@@ -451,7 +451,8 @@ def write_map(items: list[MapItem], form: str = "valve", quake2: bool = False) -
                 }
                 words += " " + map_decimal(mapping.rotation) + " " + map_decimal(mapping.s_scale) + " "
                     + map_decimal(mapping.t_scale);
-                if quake2 {
+                if quake2 or side.contents != 0 or side.flags != 0 or side.value != 0 {
+                    # A side that carries any of the three keeps them, whatever the map is for.
                     words += " " + str(side.contents) + " " + str(side.flags) + " " + str(side.value);
                 }
                 lines.append(words);

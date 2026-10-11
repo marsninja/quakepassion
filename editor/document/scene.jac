@@ -30,6 +30,7 @@ import from ..geometry.patch {
     points_reversed
 }
 import from ..geometry.csg { hull_sides }
+import from ..geometry.faces { sides_dropped, side_flipped, cone_on, prism_on, walls_on }
 import from ..geometry.csg {
     carve_sides,
     common_sides,
@@ -1282,6 +1283,24 @@ node Scene {
     def stretch_selection(
         factors: Vec3, grid: float = 8.0, label: str = "Stretch", about: Vec3 | None = None, locked: bool = True
     ) -> bool;
+    # Faces dropped, turned and built on; side flags (impl/scene.faces.impl.jac)
+
+    """Take the picked faces off their brushes, where the other sides close
+    without them. Answers how many faces went."""
+    def drop_faces -> int;
+    """Turn each picked face to face the other way, where the other sides
+    still close a brush. Answers how many turned."""
+    def flip_faces -> int;
+    """Stand a brush on each picked face: "cone" (to a point `size` out),
+    "prism" (the face pushed out by `size`) or "walls" (round its edge,
+    `size` out and `thickness` in). The new brushes are left selected.
+    Answers how many were made."""
+    def build_on_faces(shape: str, size: float, thickness: float = 16.0) -> int;
+    """Set (or clear, or replace) bits of the contents, the surface flags or
+    the value of the picked faces, or of every side of the selected brushes.
+    `how` is "set", "clear" or "put". Answers how many sides changed."""
+    def flag_sides(key: str, bits: int, how: str = "set") -> int;
+
     # Kept selections and wider picks (impl/scene.select.impl.jac)
 
     """Keep the selection as a set of that name, in place of any there was.
