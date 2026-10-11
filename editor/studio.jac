@@ -21,6 +21,9 @@ import from engine.input.input { _capture, _release, mouse_captured }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
 import from games.levels { override_path, override_folder }
+import from games.items { pickup_rule }
+import from games.enemies { enemy_rule }
+import from games.fixtures { fixture_rule }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
 }
@@ -228,6 +231,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    ("ed_models", "ed_models [on|off|list]", "draw entities in the 3D view as the models their game would show them as, or list those models"),
     ("ed_sound", "ed_sound info <file> | convert <file> <name> [rate] [bits] [loud]", "say what a WAV file is, or make it one channel at a game's rate and width among the project's sounds"),
     (
         "ed_wal",
@@ -797,6 +801,11 @@ obj Studio(Workbench) {
         plot: list[int] = [],
         plot_land: Item | None = None,
         plot_variance: float = 0.0,
+        # Entities drawn as their game's models in the 3D view: whether,
+        # each model's edges once read, and how many were drawn last.
+        models_shown: bool = False,
+        preview_models: dict[str, list[list[Vec3]]] = {},
+        models_drawn: int = 0,
         model_doc: ModelDoc | None = None,
         model_seen: int = -1,
         model_box: bool = False,
@@ -1170,7 +1179,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Show every depth in this view", command="ed_depth off"),
                     MenuItem(text="Outside the depth: whole, grey or hidden", command="ed_outside"),
                     MenuItem(text="Straighten this view", command="ed_oblique off"),
-                    MenuItem(text="Layers", command="ed_layer")
+                    MenuItem(text="Layers", command="ed_layer"),
+                    MenuItem(text="Entities as their models", command="ed_models")
                 ],
                 [
                     MenuItem(text="Box", command="ed_box", keys="B"),
@@ -2584,6 +2594,7 @@ obj Studio(Workbench) {
         }
         self.draw_paths();
         self.draw_camps();
+        self.draw_entity_models(scene);
         for shape in chosen {
             if self.moving {
                 # Where the drag would leave it, over where it is.
@@ -3073,6 +3084,16 @@ obj Studio(Workbench) {
     def sound_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Entities as their game's models (impl/studio.previews.impl.jac)
+
+    """The model an entity's game would show it as: "game:path", or ""."""
+    def entity_model_name(scene: Scene, item: Item) -> str;
+    """A model's edges at its first frame, read once."""
+    def preview_edges(name: str) -> list[list[Vec3]];
+    def draw_entity_models(scene: Scene);
+    def preview_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Shader scripts (impl/studio.shaders.impl.jac)
 
     """Where shader scripts named without a path are kept."""
@@ -3375,6 +3396,7 @@ obj Studio(Workbench) {
             and not self.model_command(scene, args) and not self.skin_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
+            and not self.preview_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
@@ -3659,6 +3681,9 @@ obj Studio(Workbench) {
                     + str(seen_asset.size) + " note=" + seen_asset.note.replace(" ", "") + " lines="
                     + str(len(seen_asset.lines)) + " material=" + seen_asset.material
             );
+        }
+        if self.models_shown {
+            lines.append("studio: models shown=1 drawn=" + str(self.models_drawn));
         }
         if self.model_doc is not None {
             lines.append(self.model_words());

@@ -254,6 +254,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_shader save` writes the script, a tab a brace. There is no text
   editor for it yet, and a changed shader is not shown in the renderer
   until the game loads the script.
+- **Entities as their models**: `ed_models` (View menu) draws each
+  pickup, monster and fixture in the 3D view as the model its own game's
+  rules give it (the engine's own rules are asked: the game is the
+  level's, or the entity's `asset_game` in a scene of no one game),
+  standing where the entity is and turned the way it faces, in the
+  entity's colour and through the walls like the other overlays;
+  `ed_models list` says which model each entity has. The models are
+  drawn as their edges at their first frame; pickups that are little
+  maps of their own (Quake's health and ammo boxes) keep their boxes.
 - **Entities' games**: a scene of the studio's own is no one game's, and
   a pickup, a monster or a fixture in it is spawned by the rules of the
   game named in its `asset_game` field, as in a generated level (without
@@ -1220,6 +1229,10 @@ editor/impl/                 the workbench's scenes and brushes
   click on the model painting where it lands on the skin; the picture
   shown under the model with the triangles over it, and saved as a TGA
   with the two dabs in it).
+  `scripts/studio/preview_session.cfg` (3 steps: the models of e1m1's
+  monsters and pickups listed, fifty-four of them, the soldier's and the
+  armour's among them; drawn in the 3D view near the camera; turned off
+  again, and the choice kept in the settings).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

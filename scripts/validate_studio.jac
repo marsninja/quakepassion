@@ -1309,6 +1309,52 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The forty-ninth session: a shipped level's entities listed and drawn as
+their game's models."""
+def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "preview_models.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-preview-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/preview_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "preview.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The preview session failed: {output / 'preview.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["boxes", "models", "off"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'preview.log'}";
+    }
+    # The level's monsters and pickups each have the model their game gives them.
+    listed = [line for line in steps["boxes"] if line.startswith("model of ")];
+    known = [line for line in steps["boxes"] if line.startswith("models known=")];
+    assert known and int(known[0].split("=")[1]) == len(listed) and len(listed) >= 30 , str(known);
+    soldiers = [line for line in listed if line.startswith("model of monster_army q1:progs/soldier.mdl edges=")];
+    assert soldiers and int(soldiers[0].split("edges=")[1]) > 100 , str(listed[:4]);
+    assert [line for line in listed if line.startswith("model of item_armor1 q1:progs/armor.mdl ")];
+    assert not [line for line in steps["boxes"] if line.startswith("models shown=")];
+    # Drawn in the 3D view near the camera; and not once it is turned off.
+    shown = [line for line in steps["models"] if line.startswith("models shown=1 drawn=")];
+    assert shown and int(shown[0].split("drawn=")[1]) >= 1 , str(steps["models"]);
+    assert not [line for line in steps["off"] if line.startswith("models shown=")] and "ed_models off" in kept;
+    source = repo / "preview_models.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "preview_models.png");
+    source.unlink();
+    print(
+        f"PREVIEW PASS: {len(steps) - 1} steps, {len(listed)} entities of a shipped level given their game's models, "
+            + f"{shown[0].split('drawn=')[1]} of them drawn in the 3D view"
+    );
+}
+
 """A step's `skin` line, the dump's own."""
 def skin_line(lines: list[str]) -> str {
     found = [line for line in lines if line.startswith("skin part=")];
@@ -3559,6 +3605,7 @@ def main() {
         "sounds": sounds_session,
         "nest": nest_session,
         "skin": skin_session,
+        "preview": preview_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3710,6 +3757,7 @@ def main() {
     sounds_session(repo, binary, env, output);
     nest_session(repo, binary, env, output);
     skin_session(repo, binary, env, output);
+    preview_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
