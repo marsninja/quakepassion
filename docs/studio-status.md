@@ -69,7 +69,7 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
 - A selection that is not one lone brush shows three arrows from its
   middle, red, green and blue for x, y and z; dragging one moves the
   selection along that axis alone, on the grid.
-- **G** changes those handles (`ed_gizmo <move|turn|size|next>`, Brush
+- **G** changes those handles (`ed_gizmo <move|turn|size|box|next>`, Brush
   menu), for any selection, a lone brush included:
   - *Rings that turn.* Each ring that faces the view has a knob; taking the
     knob round the ring turns the selection about that ring's axis. The
@@ -79,8 +79,25 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   - *Boxes that size.* A box on each axis stretches the selection along it,
     and a fourth stretches all three at once; a pull as long as the arm
     doubles it. Sizes go in quarters, or freely with Ctrl.
+  - *One box round it all.* A single handle round everything selected,
+    lying along the two axes of the view looked through (level, across
+    the selection's middle, in the 3D view). Its middle moves the
+    selection. A corner turns it about the box's middle, in steps of the
+    angle snap; with Shift the corner sizes it instead, each way by its
+    own factor, the far corner staying put. The middle of an edge taken
+    along the edge shears: that edge slides, the far edge stays and
+    everything between goes in proportion; pulled outward it sizes that
+    way alone. Drags go by the grid, or freely with Ctrl.
   - While a handle is held the views show the selection as it would be
     left, and say by how much.
+- **Shears and other changes by number**: `ed_shear <x|y|z> <x|y|z>
+  <amount>` slides the selection along the first axis by so much for each
+  unit along the second (Brush > Lean a quarter along x), and `ed_linear
+  <nine numbers> [about <x> <y> <z>]` carries it through any change that
+  keeps lines straight, said as what the x, y and z axes become. Brushes
+  go with their materials (or leave them where they lay, with the texture
+  lock off), patches by their control points, and entities by where they
+  are and the way they face.
 - **The pivot** is the cross the handles stand on: the selection's middle,
   put on the grid, until it is dragged somewhere else or set by
   `ed_pivot <x y z>` (`ed_pivot middle`, `ed_pivot clear`). A pivot set by
@@ -816,6 +833,7 @@ editor/document/scene.jac    the document graph
 editor/geometry/brush.jac    brushes: planes, outlines, clipping, mappings, rays
 editor/geometry/csg.jac      brushes cut by brushes, hulls of corners
 editor/geometry/mapping.jac  materials slid, scaled, turned and fitted; sides mirrored and turned
+editor/geometry/linear.jac   turns, sizes and shears as one kind of change; the box handle's drags
 editor/formats/map.jac       the .map text format, classic and Valve 220
 editor/formats/bspmap.jac    a built level's brushes back as a map
 editor/compile/leak.jac      the flood that finds a way out to the void
@@ -978,6 +996,11 @@ editor/impl/                 the workbench's scenes and brushes
   with the map and read from it; the steps to owner, brushes and
   neighbours; brushes by number; the swap and its undo; what a build is
   made from under each of a group's switches.
+- `tests/studio_linear_tests.jac`: a change as what it makes of the axes,
+  one after another and undone; a box sheared keeping its volume and its
+  material; turns and stretches agreeing with the ones already there; each
+  part of the box handle and what a drag of it asks; a selection sheared
+  with its entities and the way they face, and a patch with its points.
 - `tests/studio_transform_tests.jac`: turns and stretches about a given
   pivot, the texture lock, inflating, a group's own pivot carried through a
   move, a turn and a stretch, and a patch's control points turning and
@@ -1069,6 +1092,13 @@ editor/impl/                 the workbench's scenes and brushes
   by the knob on its ring, turned to a 45 degree snap, doubled by a size
   handle about its middle and again about a pivot at its corner, inflated,
   and grouped with a pivot of its own that goes where the group goes).
+  `scripts/studio/lean_session.cfg` (15 steps: the box handle round a
+  drawn box; its right edge taken along itself shearing it, and the shear
+  taken back by number; a corner turning it a quarter, and with Shift
+  sizing it from the far corner; its top edge sizing it and shearing it
+  the other way; its middle moving it; its top edge in the front view
+  leaning it over; two brushes sheared as one by the handle round both;
+  a shear and a quarter turn by number, and two changes refused).
   `scripts/studio/select_session.cfg` (12 steps: two boxes stacked over the
   floor clicked through from the top view, one after another and round
   again; a brush by number; its owner and the owner's brushes; two sets
@@ -1122,10 +1152,10 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/quilt_session.cfg` (6 steps: a curved sheet grown by a
   curve across and a curve up, shrunk by one, made thicker and finer, and
   an endcap added).
-  `scripts/studio/controls_session.cfg` (5 steps: a light's slider dragged
+  `scripts/studio/controls_session.cfg` (6 steps: a light's slider dragged
   to five hundred, its green bar to half, the third number of its place
   dragged up five grid steps, three edits in all; then a brush's handles
-  chosen on the radio).
+  chosen on the radio, the one box handle among them).
   `scripts/studio/wrap_session.cfg` (6 steps: a box's top given a material,
   slid and tagged; the face beside it takes that material round the edge,
   the next takes it as it lies; fitted in whole repeats; Alt and a drag in
@@ -1271,9 +1301,7 @@ Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3
 of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
 - Left over in what is built: the handles work along the world's axes only
-  (not a brush's own, nor the view's), and there is no single handle that
-  shears; face-to-face
-  tools (tag, glue, wrap a texture round a corner) are not built; a shipped
+  (not a brush's own); a shipped
   map takes new brushes only once it is turned into a scene; Quake III's
   `brushDef` sides open without their texture alignment, and a level's
   patches are left behind by `ed_convert` (a map file's `patchDef2` patches

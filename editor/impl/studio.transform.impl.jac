@@ -65,6 +65,9 @@ impl Studio.arm_of(middle: Vec3) -> float {
 
 impl Studio.transform_handles(scene: Scene) -> list[tuple[int, Vec3]] {
     found: list[tuple[int, Vec3]] = [];
+    if self.gizmo == "box" {
+        return self.box_handles(scene);
+    }
     middle = self.turn_hub(scene);
     if middle is None {
         return found;
@@ -93,6 +96,9 @@ impl Studio.transform_handles(scene: Scene) -> list[tuple[int, Vec3]] {
 
 impl Studio.dragged_point(point: Vec3, middle: Vec3) -> Vec3 {
     held = self.resize_side;
+    if held >= 950 and held <= 958 {
+        return point_remapped(point, self.box_pull.pivot, self.box_pull.change).add(self.box_pull.move);
+    }
     if held >= 920 and held <= 923 {
         away = point.sub(middle);
         return middle.add(
@@ -109,6 +115,10 @@ impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
     held = self.resize_side;
     if held == 940 or held == 941 {
         self.drag_mark(scene, x, y, free);
+        return;
+    }
+    if held >= 950 and held <= 958 {
+        self.drag_box(scene, x, y, free);
         return;
     }
     middle = self.turn_hub(scene);
@@ -183,6 +193,9 @@ impl Studio.transform_words(scene: Scene) -> str {
         }
         return ("ed_set angle " if held == 940 else "ed_set light ") + str(int(round(self.turn_by)));
     }
+    if held >= 950 and held <= 958 {
+        return self.box_words();
+    }
     if held >= 910 and held <= 912 {
         if self.turn_by == 0.0 {
             return "";
@@ -253,6 +266,10 @@ impl Studio.draw_transform_preview(scene: Scene) {
 }
 
 impl Studio.draw_transform_handles(scene: Scene, area: Rect) {
+    if self.gizmo == "box" {
+        self.draw_box_handle(scene, area);
+        return;
+    }
     canvas = self.canvas;
     middle = self.turn_hub(scene);
     if middle is None {
@@ -358,16 +375,25 @@ impl Studio.draw_transform_handles(scene: Scene, area: Rect) {
 impl Studio.transform_command(scene: Scene, args: list[str]) -> bool {
     name = args[0];
     if name == "ed_gizmo" {
-        kinds = ["move", "turn", "size"];
+        kinds = ["move", "turn", "size", "box"];
         if len(args) > 1 and args[1] in kinds {
             self.gizmo = args[1];
         } elif len(args) > 1 and args[1] == "next" {
-            self.gizmo = "turn" if self.gizmo == "move" else ("size" if self.gizmo == "turn" else "move");
+            self.gizmo = kinds[(kinds.index(self.gizmo) + 1) % len(kinds)] if self.gizmo in kinds else "move";
         } else {
-            self.say("ed_gizmo <move|turn|size|next>");
+            self.say("ed_gizmo <move|turn|size|box|next>");
             return True;
         }
-        self.say("Handles that " + self.gizmo + (" (in brush mode, 1)" if self.mode != "brush" else ""));
+        self.say(
+            (
+                "One handle: its middle moves, its corners turn (Shift sizes), its edges shear and size"
+                if self.gizmo == "box"
+                else "Handles that " + self.gizmo
+            )
+                + (" (in brush mode, 1)" if self.mode != "brush" else "")
+        );
+        # The inspector's own choice of handles follows.
+        self.seen_revision = -1;
         return True;
     }
     if name == "ed_pivot" {

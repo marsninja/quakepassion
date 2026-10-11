@@ -49,6 +49,7 @@ import from ..geometry.csg {
     joined_pieces,
     pruned_sides
 }
+import from ..geometry.linear { Linear, point_remapped, sides_remapped }
 import from ..geometry.mapping {
     side_like,
     mapping_place,
@@ -982,6 +983,94 @@ walker Stretch {
     }
 }
 
+"""Carry the selection through a change of the world about a pivot (a turn,
+a change of size, a shear, or any of them at once): brushes with their
+materials, patches by their control points, point entities by where they
+are and, when the change turns the floor under them, by the way they face."""
+walker Remap {
+    has pivot: Vec3,
+        change: Linear,
+        step: Step,
+        seen: list[Solid] = [],
+        locked: bool = True;
+
+    can start with Scene entry {
+        visit [here->:Selected:->];
+    }
+
+    can place with Item entry {
+        at = here.origin();
+        if at is None {
+            for key in ["_points", PIVOT_KEY] {
+                # A patch's control points, and a group's pivot, go through it too.
+                held = here.fields.get(key);
+                if held is not None {
+                    remade = points_carried(held, self.pivot, self.change.x, self.change.y, self.change.z);
+                    lay = here.fields.get("_patch", "").split();
+                    if key == "_points" and self.change.volume() < 0.0 and len(lay) > 0 and lay[0].isdigit() {
+                        # Mirrored, a patch built again would thicken toward its
+                        # other side: its rows are turned end for end to keep it.
+                        remade = points_reversed(remade, int(lay[0]));
+                    }
+                    carried = FieldChange(item=here, key=key, before=held, after=remade);
+                    carried.redo();
+                    self.step.changes.append(carried);
+                }
+            }
+            visit [here->:Owns:->];
+            return;
+        }
+        put = FieldChange(
+            item=here,
+            key="origin",
+            before=here.fields.get("origin"),
+            after=write_vector(point_remapped(at, self.pivot, self.change))
+        );
+        put.redo();
+        self.step.changes.append(put);
+        facing = here.fields.get("angle");
+        if facing is None {
+            return;
+        }
+        try {
+            # Up (-1) and down (-2) are not directions to turn.
+            way = float(facing);
+            if way < 0.0 {
+                return;
+            }
+            ahead = self.change.carry(Vec3(x=math.cos(math.radians(way)), y=math.sin(math.radians(way))));
+            if abs(ahead.x) + abs(ahead.y) < 0.0001 {
+                return;
+            }
+            faced = round(math.degrees(math.atan2(ahead.y, ahead.x)) % 360.0, 3) % 360.0;
+            if abs(faced - way) > 0.001 {
+                face = FieldChange(item=here, key="angle", before=facing, after=field_number(faced));
+                face.redo();
+                self.step.changes.append(face);
+            }
+        } except ValueError {
+            return;
+        }
+    }
+
+    can reshape with Solid entry {
+        if not here.held or here in self.seen {
+            return;
+        }
+        self.seen.append(here);
+        after = sides_remapped(here.sides, self.pivot, self.change);
+        if len(after) != len(here.sides) or not sides_enclose(after) {
+            return;
+        }
+        if not self.locked {
+            after = [side_loose(after[index], here.sides[index]) for index in range(len(after))];
+        }
+        reshaped = SidesChange(solid=here, before=here.sides, after=after);
+        reshaped.redo();
+        self.step.changes.append(reshaped);
+    }
+}
+
 """Cut the `cutters` out of every other brush of the document. A brush they
 reach is left as the convex pieces outside them; one they swallow goes."""
 walker Carve {
@@ -1389,6 +1478,12 @@ node Scene {
     (-1 mirrors)."""
     def stretch_selection(
         factors: Vec3, grid: float = 8.0, label: str = "Stretch", about: Vec3 | None = None, locked: bool = True
+    ) -> bool;
+    """Carry the selection through a change of the world (a turn, a change
+    of size, a shear, or any of them at once) about a point: its own middle
+    put on the grid when none is given."""
+    def remap_selection(
+        change: Linear, about: Vec3 | None = None, label: str = "Shear", grid: float = 8.0, locked: bool = True
     ) -> bool;
     # Faces dropped, turned and built on; side flags (impl/scene.faces.impl.jac)
 

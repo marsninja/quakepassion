@@ -538,6 +538,8 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             self.resize_side = index;
             self.resize_by = 0.0;
             self.corner_by = Vec3();
+            self.box_pull = BoxDrag();
+            self.box_said = "";
             # A mark's handle says nothing until it has been dragged.
             self.turn_by = -1.0 if index >= 940 else 0.0;
             self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
@@ -820,10 +822,10 @@ impl Studio.fill_solid_form(scene: Scene, ui: StudioUi) {
     form.adopt(Label(text="Handles", tone="dim"));
     form.adopt(
         Radio(
-            labels=["Move", "Turn", "Size"],
-            commands=["ed_gizmo move", "ed_gizmo turn", "ed_gizmo size"],
-            chosen=0 if self.gizmo == "move" else (1 if self.gizmo == "turn" else 2),
-            hint="Arrows that move the selection, rings that turn it, or boxes that size it (G)"
+            labels=["Move", "Turn", "Size", "Box"],
+            commands=["ed_gizmo move", "ed_gizmo turn", "ed_gizmo size", "ed_gizmo box"],
+            chosen=["move", "turn", "size", "box"].index(self.gizmo) if self.gizmo in ["move", "turn", "size", "box"] else 0,
+            hint="Arrows that move the selection, rings that turn it, boxes that size it, or one box that does all and shears (G)"
         )
     );
 }

@@ -133,6 +133,9 @@ import from .document.scene {
 }
 import from .geometry.csg { brush_corners, brush_edges }
 import from .geometry.mapping { spun_about, axis_vector }
+import from .geometry.linear {
+    Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
+}
 import from .camera { EditCamera, ray_enters_box, axis_camera }
 import from engine.world.signals { Signal, Fire, HasSignal }
 import from engine.world.doors { Door, HasDoor }
@@ -353,7 +356,17 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_forget", "ed_forget <name>", "drop a kept set"),
     ("ed_swap", "ed_swap", "the two selected things change places"),
     ("ed_browse", "ed_browse [next|prev]", "look at each selected thing in turn"),
-    ("ed_gizmo", "ed_gizmo <move|turn|size|next>", "which handles a selection shows: arrows, rings or boxes"),
+    (
+        "ed_gizmo",
+        "ed_gizmo <move|turn|size|box|next>",
+        "which handles a selection shows: arrows, rings, boxes, or one box round it all that moves, turns, sizes and shears"
+    ),
+    ("ed_shear", "ed_shear <x|y|z> <x|y|z> <amount>", "shear the selection: slide it along one axis by so much for each unit along another"),
+    (
+        "ed_linear",
+        "ed_linear <nine numbers> [about <x> <y> <z>] [Turn|Stretch|Shear]",
+        "carry the selection through a change of the world: what the x, y and z axes become, about a point"
+    ),
     ("ed_pivot", "ed_pivot [x y z | middle | clear]", "what the selection turns and stretches about; a group keeps its own"),
     ("ed_anglesnap", "ed_anglesnap [degrees]", "what a dragged turn snaps to"),
     ("ed_inflate", "ed_inflate <units|up|down>", "push every side of the selected brushes out (or in) by a distance"),
@@ -663,6 +676,10 @@ obj Studio(Workbench) {
         # Which handles a selection shows (move, turn or size), how far a
         # dragged one has turned or stretched it, and what a turn snaps to.
         gizmo: str = "move",
+        # What a drag of the box handle asks so far, and whether Shift is held on it.
+        box_pull: BoxDrag = BoxDrag(),
+        box_said: str = "",
+        held_shift: bool = False,
         turn_by: float = 0.0,
         size_by: Vec3 = Vec3(x=1.0, y=1.0, z=1.0),
         angle_snap: float = 15.0,
@@ -1259,7 +1276,10 @@ obj Studio(Workbench) {
                     MenuItem(text="Mitre the two selected brushes", command="ed_miter"),
                     MenuItem(rule=True),
                     MenuItem(text="Spread the material over the selected patch", command="ed_patch uv fit"),
-                    MenuItem(text="Lay the tagged face's material on the selected patch", command="ed_patch uv project")
+                    MenuItem(text="Lay the tagged face's material on the selected patch", command="ed_patch uv project"),
+                    MenuItem(rule=True),
+                    MenuItem(text="One handle that moves, turns, sizes and shears", command="ed_gizmo box"),
+                    MenuItem(text="Lean a quarter along x", command="ed_shear x z 0.25")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -1990,6 +2010,7 @@ obj Studio(Workbench) {
                     self.turn_by = 0.0;
                     self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
                     self.corner_by = Vec3();
+                    self.box_pull = BoxDrag();
                     if order {
                         stage.emit(order);
                     }
@@ -2054,6 +2075,7 @@ obj Studio(Workbench) {
                     self.dab(scene, event.x, event.y, event.shift, event.ctrl);
                 }
             } elif event.kind == "drag" and self.resizing {
+                self.held_shift = event.shift;
                 self.drag_handle(scene, event.x, event.y, event.ctrl);
             } elif event.kind == "drag" and self.moving {
                 self.drag_selection(event.x, event.y, event.shift, event.ctrl);
@@ -2594,7 +2616,7 @@ obj Studio(Workbench) {
         # the walls.
         rlDrawRenderBatchActive();
         rlDisableDepthTest();
-        if self.resizing and self.resize_side >= 910 and self.resize_side < 940 {
+        if self.resizing and self.resize_side >= 910 and (self.resize_side < 940 or self.resize_side >= 950) {
             self.draw_transform_preview(scene);
         }
         self.draw_paths();
@@ -2929,6 +2951,27 @@ obj Studio(Workbench) {
     def draw_transform_preview(scene: Scene);
     """The command a finished drag of a turn or size handle stands for."""
     def transform_words(scene: Scene) -> str;
+
+    # ------------------------------------------------------------------
+    # The box handle, and shears and other changes by number (impl/studio.linear.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def linear_command(scene: Scene, args: list[str]) -> bool;
+    """The two axes the box handle lies along in the view looked through:
+    the view's own when it looks along an axis, else x and y."""
+    def box_axes -> list[int];
+    """The box round everything selected: its low and high corners."""
+    def box_bounds(scene: Scene) -> list[Vec3] | None;
+    """The box handle's parts (950-958, three to a row from the low corner):
+    its middle moves, its corners turn (with Shift, size) and the middles of
+    its edges shear along the edge and size across it."""
+    def box_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    def drag_box(scene: Scene, x: int, y: int, free: bool);
+    """The command a finished drag of the box handle stands for, and what
+    the drag says of itself while it goes on (in the view it is made in)."""
+    def box_words -> str;
+    def box_says -> str;
+    def draw_box_handle(scene: Scene, area: Rect);
 
     # ------------------------------------------------------------------
     # Keys bound by hand, the settings list, flat tones, grid numbers, readouts (impl/studio.settings.impl.jac)
@@ -3392,7 +3435,7 @@ obj Studio(Workbench) {
             and not self.build_command(scene, args) and not self.asset_command(scene, args)
             and not self.shell_command(scene, args) and not self.touchup_command(scene, args)
             and not self.terrain_command(scene, args)
-            and not self.patch_command(scene, args) and not self.transform_command(scene, args)
+            and not self.patch_command(scene, args) and not self.transform_command(scene, args) and not self.linear_command(scene, args)
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)

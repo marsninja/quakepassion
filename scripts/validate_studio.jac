@@ -1388,6 +1388,93 @@ def lay_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The fifty-first session: one box handle that moves, turns, sizes and
+shears, and the same by number."""
+def lean_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["shearing", "pair", "3d"];
+    for shot in shots {
+        (repo / f"lean_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-lean-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/lean_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "lean.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The lean session failed: {output / 'lean.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "boxed", "sheared", "squared", "turned", "sized", "taller", "leant", "moved", "tipped", "pair", "both",
+        "numeric", "linear", "refused", "level"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'lean.log'}";
+    }
+    boxes: dict[str, list[list[list[int]]]] = {};
+    for name in names {
+        boxes[name] = [brush_box(line) for line in brushes(steps[name])];
+        assert len([line for line in brushes(steps[name]) if "sides=6" in line]) == len(boxes[name]) , str(steps[name]);
+    }
+    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in names];
+    # A box twice as long as it is deep, with the one handle round it.
+    assert boxes["boxed"] == [[[-288, 112, 0], [-96, 208, 64]]] and "handles=box" in handles(steps["boxed"]) , str(steps["boxed"]);
+    # Its right edge taken forty-eight units along itself: the far end of the box is that much further
+    # up the plan and the near end where it was. A shear, for sheared back by a quarter it is a box
+    # of the size it had (a size would have left it half as deep again).
+    assert boxes["sheared"] == [[[-288, 112, 0], [-96, 256, 64]]] and undone[1] == undone[0] + 1 , str(boxes["sheared"]);
+    assert boxes["squared"] == [[[-288, 136, 0], [-96, 232, 64]]] , str(boxes["squared"]);
+    # A corner taken a quarter of the way round: the box stands the other way about its middle.
+    assert boxes["turned"] == [[[-240, 64, 0], [-144, 256, 64]]] , str(boxes["turned"]);
+    # With Shift the same corner sizes it, the far corner staying put.
+    assert boxes["sized"] == [[[-288, 112, 0], [0, 208, 64]]] , str(boxes["sized"]);
+    # The top edge pulled outward sizes that way alone; taken along itself it shears the other way.
+    assert boxes["taller"] == [[[-288, 112, 0], [-96, 256, 64]]] , str(boxes["taller"]);
+    assert boxes["leant"] == [[[-288, 112, 0], [-48, 208, 64]]] , str(boxes["leant"]);
+    # The middle moves it; and each drag was one step, undone before the next.
+    assert boxes["moved"] == [[[-224, 112, 0], [-32, 208, 64]]] , str(boxes["moved"]);
+    assert undone[3:9] == [undone[1]] * 6 , str(undone);
+    # In the front view the handle lies along x and z: its top taken along leans the box over.
+    assert boxes["tipped"] == [[[-288, 112, 0], [-64, 208, 64]]] , str(boxes["tipped"]);
+    # Two brushes under one handle, sheared as one: the far end of the far one goes the whole way,
+    # the near end of the near one nowhere, and what lies between in proportion.
+    pair = sorted(boxes["pair"]);
+    both = sorted(boxes["both"]);
+    assert len(pair) == 2 and pair[0] == [[-288, 112, 0], [-96, 208, 64]] , str(pair);
+    wide = pair[1][1][0] - pair[0][0][0];
+    assert both[1][1][1] == pair[1][1][1] + 48 and both[0][0][1] == pair[0][0][1] , str(both);
+    assert abs(both[0][1][1] - (208 + 48 * 192 / wide)) <= 1 and abs(both[1][0][1] - (112 + 48 * (pair[1][0][0] + 288) / wide)) <= 1;
+    assert [box[0][0] for box in both] == [box[0][0] for box in pair] and [box[1][0] for box in both] == [box[1][0] for box in pair];
+    # By number: half a unit along x for each unit of height, about the pair's middle.
+    numeric = sorted(boxes["numeric"]);
+    for (index, box) in enumerate(numeric) {
+        assert box[1][0] - box[0][0] == pair[index][1][0] - pair[index][0][0] + 32 , str(numeric);
+        assert box[0][1:] == pair[index][0][1:] and box[1][1:] == pair[index][1][1:] , str(numeric);
+    }
+    # A quarter turn said as what the axes become, about the world's middle.
+    turned = sorted(boxes["linear"]);
+    assert [[-208, -288, 0], [-112, -96, 64]] in turned and len(turned) == 2 , str(turned);
+    # A change that would flatten the selection, and a shear of an axis along itself, change nothing.
+    assert sorted(boxes["refused"]) == pair and sorted(boxes["level"]) == pair , str(boxes["refused"]);
+    for shot in shots {
+        source = repo / f"lean_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"lean_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"LEAN PASS: {len(steps) - 1} steps, one box handle shearing, turning, sizing and moving a brush in two views, "
+            + "two brushes sheared as one, and shears and turns by number"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2641,7 +2728,7 @@ def controls_session(repo: Path, binary: Path, env: dict[str, str], output: Path
         assert ran.returncode == 0 , f"The controls session failed: {output / 'controls.log'}";
     }
     steps = studio_steps(ran.stdout);
-    names = ["start", "bright", "tinted", "moved", "turn", "size"];
+    names = ["start", "bright", "tinted", "moved", "turn", "size", "box"];
     for name in names {
         assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'controls.log'}";
     }
@@ -2657,6 +2744,7 @@ def controls_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     edits = int(steps["moved"][0].split("undo=")[1].split()[0]) - int(steps["start"][0].split("undo=")[1].split()[0]);
     assert edits == 3 , str(edits);
     assert "handles=turn" in handles(steps["turn"]) and "handles=size" in handles(steps["size"]);
+    assert "handles=box" in handles(steps["box"]) , handles(steps["box"]);
     for shot in shots {
         source = repo / f"controls_{shot}.png";
         check_capture(source, 6);
@@ -3686,6 +3774,7 @@ def main() {
         "skin": skin_session,
         "preview": preview_session,
         "lay": lay_session,
+        "lean": lean_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3839,6 +3928,7 @@ def main() {
     skin_session(repo, binary, env, output);
     preview_session(repo, binary, env, output);
     lay_session(repo, binary, env, output);
+    lean_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
