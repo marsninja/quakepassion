@@ -1309,6 +1309,83 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A word of a step's `shaders` line: what follows `key=`."""
+def shader_word(lines: list[str], key: str) -> str {
+    found = [line for line in lines if line.startswith("shaders file=")];
+    return found[0].split(" " + key + "=")[1].split()[0] if found else "";
+}
+
+"""The forty-fifth session: a shader script made, changed, checked, mended,
+saved and opened again, and a broken one's faults listed."""
+def shader_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "shader_faults.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-shader-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_SHADERS"] = home + "/scripts";
+        (Path(home) / "scripts").mkdir();
+        (Path(home) / "scripts/broken.shader").write_text(
+            "textures/a\n{\n\tcull sideways\n\t{\n\t\tblendFunc add\n\t}\n\ntextures/b\n{\n}\n"
+        );
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/shader_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_SHADERS");
+        (output / "shader.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The shader session failed: {output / 'shader.log'}";
+        written = (Path(home) / "scripts/keep.shader").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "shaped", "wrong", "mended", "reopened", "picked", "broken"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'shader.log'}";
+    }
+    # A new shader: a picture lit by the level's light, two stages.
+    assert shader_word(steps["made"], "count") == "1" and shader_word(steps["made"], "stages") == "2";
+    shown = [line[2:] for line in steps["made"] if line.startswith("| ")];
+    assert shown[0] == "textures/keep/water" and "        map $lightmap" in shown , str(shown);
+    # Three lines of its own, three stages, the added one first; and nothing the game would trip on.
+    assert shader_word(steps["shaped"], "lines") == "3" and shader_word(steps["shaped"], "stages") == "3";
+    shaped = [line[2:] for line in steps["shaped"] if line.startswith("| ")];
+    assert shaped[5:8] == ["    {", "        map textures/keep/foam.tga", "        blendFunc add"] , str(shaped);
+    assert "        tcMod scroll 0.2 0" in shaped and "        tcMod scroll 0.1 0.05" not in shaped and "        tcMod turb 0 0.2 0 0.1" in shaped;
+    assert "shader faults 0" in steps["shaped"] , str(steps["shaped"]);
+    # Two mistakes, each said; mended, none.
+    faults = [line for line in steps["wrong"] if line.startswith("shader fault ")];
+    assert len(faults) == 2 and "shader faults 2" in steps["wrong"] , str(steps["wrong"]);
+    assert [line for line in faults if "A shader has no glitter" in line] and [line for line in faults if "stage 0: rgbGen takes one of" in line];
+    assert "shader faults 0" in steps["mended"] and shader_word(steps["mended"], "lines") == "3";
+    # What was saved is the script, a tab a brace, and it opens again as two shaders.
+    assert written.startswith(
+        "textures/keep/water\n{\n\tsurfaceparm trans\n\tsurfaceparm water\n\tcull none\n\t{\n\t\tmap textures/keep/foam.tga\n"
+            + "\t\tblendFunc add\n\t\trgbGen identity\n\t}\n\t{\n\t\tmap $lightmap\n\t\trgbGen identity\n\t}\n"
+    ) , written;
+    assert "textures/keep/glow\n{\n" in written and written.count("\n}\n") == 2;
+    assert shader_word(steps["reopened"], "count") == "2" and shader_word(steps["reopened"], "edited") == "0";
+    listed = [line for line in steps["reopened"] if line.startswith("shader 0 ") or line.startswith("shader 1 ")];
+    assert len(listed) == 2 and listed[0].startswith("shader 0 textures/keep/water lines=3 stages=3") , str(listed);
+    assert shader_word(steps["picked"], "now") == "textures/keep/water";
+    # A script broken by hand: what is wrong is said with the line it is at.
+    broken = [line for line in steps["broken"] if line.startswith("shader fault ")];
+    assert len(broken) >= 4 , str(steps["broken"]);
+    assert [line for line in broken if line.startswith("shader fault line 1: The shader textures/a is not closed")] , str(broken);
+    assert [line for line in broken if "cull takes one of" in line] and [line for line in broken if "has no picture" in line];
+    source = repo / "shader_faults.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "shader_faults.png");
+    source.unlink();
+    print(
+        f"SHADER PASS: {len(steps) - 1} steps, a shader made and shaped by lines and stages, two mistakes found and mended, "
+            + f"the script saved and opened again, and a broken one's {len(broken)} faults said by line"
+    );
+}
+
 """The forty-fourth session: entities that carry their game, camp spots,
 and the level played with what was placed spawned."""
 def games_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3300,6 +3377,7 @@ def main() {
         "links": links_session,
         "touch": touch_session,
         "games": games_session,
+        "shader": shader_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3447,6 +3525,7 @@ def main() {
     links_session(repo, binary, env, output);
     touch_session(repo, binary, env, output);
     games_session(repo, binary, env, output);
+    shader_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

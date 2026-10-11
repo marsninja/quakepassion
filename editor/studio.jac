@@ -62,6 +62,9 @@ import from .ui.widgets {
 }
 import from .assets.explorer { AssetIndex, AssetLook }
 import from .assets.models { ModelLook, load_model, is_model }
+import from .assets.shaders {
+    ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
+}
 import from .formats.archive { write_pak, write_zip, file_kind }
 import from .classes.registry {
     ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes
@@ -217,6 +220,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    (
+        "ed_shader",
+        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save]",
+        "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages, check it for what the game would trip on, and save it"
+    ),
     ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
     ("ed_camps", "ed_camps", "list the spots bots camp at and roam through"),
     ("ed_touch", "ed_touch <x> <y> <amount> [variance]", "move the corner of the terrain nearest a place, and the corners that stand with it"),
@@ -758,6 +766,14 @@ obj Studio(Workbench) {
         # A plot of a terrain: the cells picked to work on, whose terrain
         # they are, and how far apart in height cells and corners may be
         # and still go together.
+        # The shader script open: its file, its shaders, which is in hand,
+        # what was wrong with how it was put together when read, and
+        # whether it has been changed since.
+        shader_file: str = "",
+        shader_list: list[ShaderText] = [],
+        shader_now: int = -1,
+        shader_broken: list[ShaderFault] = [],
+        shader_dirty: bool = False,
         plot: list[int] = [],
         plot_land: Item | None = None,
         plot_variance: float = 0.0,
@@ -1245,7 +1261,10 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Edit the model shown", command="ed_model edit"),
                     MenuItem(text="Check the model", command="ed_model check"),
-                    MenuItem(text="Undo in the model", command="ed_model undo")
+                    MenuItem(text="Undo in the model", command="ed_model undo"),
+                    MenuItem(rule=True),
+                    MenuItem(text="The shader script's shaders", command="ed_shader"),
+                    MenuItem(text="Check the shader script", command="ed_shader check")
                 ]
             ]
         );
@@ -3005,6 +3024,16 @@ obj Studio(Workbench) {
     def sweep_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Shader scripts (impl/studio.shaders.impl.jac)
+
+    """Where shader scripts named without a path are kept."""
+    def shader_path(name: str) -> str;
+    def shader_in_hand -> ShaderText | None;
+    def shader_words -> str;
+    """Run a shader command. False when it is not one."""
+    def shader_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Entities' games and bots' camp spots (impl/studio.games.impl.jac)
 
     """The game an entity of a class is spawned by in this scene ("" when
@@ -3281,6 +3310,7 @@ obj Studio(Workbench) {
             and not self.project_command(scene, args) and not self.outside_command(scene, args)
             and not self.depth_command(scene, args) and not self.sweep_command(scene, args)
             and not self.model_command(scene, args) and not self.games_command(scene, args)
+            and not self.shader_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
@@ -3569,7 +3599,9 @@ obj Studio(Workbench) {
         if self.model_doc is not None {
             lines.append(self.model_words());
         }
-
+        if self.shader_file {
+            lines.append(self.shader_words());
+        }
         if scene.link_count() > 0 {
             lines.append("studio: links=" + str(scene.link_count()));
         }

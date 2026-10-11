@@ -204,6 +204,28 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Shader scripts**: `ed_shader open <file>` opens a Quake III shader
+  script from `QP_SHADERS`, a project's `scripts/` or `./scripts` (a
+  file that is not there is a new one), and `ed_shader take` takes the
+  script the asset explorer is showing, to change a copy of. A script is
+  kept as its shaders, each as its own lines and its stages' lines, so
+  that what is not understood is still written back. `ed_shader new
+  <name>` adds a shader (a picture lit by the level's light), `ed_shader
+  pick <name>` takes one in hand, `ed_shader set <key> <value>` and
+  `unset <key>` change its own lines (`surfaceparm`, `cull`, `sort`,
+  `deformVertexes`, sky and fog lines), and `ed_shader stage add
+  [picture]`, `stage <n> set <key> <value>`, `unset <key>`, `drop` and
+  `move <to>` its stages (`map`, `animMap`, `blendFunc`, `rgbGen`,
+  `alphaGen`, `tcMod`, `tcGen`, `depthFunc`, `alphaFunc`); a line a
+  shader may have several of (`surfaceparm`, `tcMod`) is told apart by
+  its next word. `ed_shader show` prints the shader in hand as it would
+  be written. `ed_shader check` lists in the Checks tab what the game
+  would trip on, by line: braces that do not match, names with no
+  braces, lines it does not know or that belong to a stage (or to the
+  shader), words a line does not take, and stages with no picture.
+  `ed_shader save` writes the script, a tab a brace. There is no text
+  editor for it yet, and a changed shader is not shown in the renderer
+  until the game loads the script.
 - **Entities' games**: a scene of the studio's own is no one game's, and
   a pickup, a monster or a fixture in it is spawned by the rules of the
   game named in its `asset_game` field, as in a generated level (without
@@ -815,6 +837,10 @@ editor/impl/                 the workbench's scenes and brushes
   what would mislead refused; an add-on's class lines. (An add-on's
   classes joining the table, replaced when read again and leaving it are
   in `tests/studio_class_tests.jac`.)
+- `tests/studio_shader_tests.jac`: a script read into shaders, their lines
+  and their stages; written and read back the same; a directive set,
+  changed among several of its kind and taken out; a broken script's
+  faults said by line; what the game would trip on inside a shader.
 - `tests/studio_touchup_tests.jac`: a place as the nearest corner and
   the cell it is in; corners that go together within a variance; cells
   that go together, their corners and their edge; on a scene, a corner
@@ -1113,6 +1139,12 @@ editor/impl/                 the workbench's scenes and brushes
   found by the check, the player start not; filled; a camp spot and a
   roam spot listed; the scene played, with its pickups and its ogre
   spawned).
+  `scripts/studio/shader_session.cfg` (7 steps: a shader made in a new
+  script; three lines of its own and a stage's `tcMod`s set, a stage
+  added and moved to the front; two mistakes made and listed by the
+  check, then mended; the script saved, a second shader added, and the
+  file opened again as two; a script broken by hand, its five faults
+  said by line).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
