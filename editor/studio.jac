@@ -244,7 +244,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_clip_line <view> <x0> <y0> <x1> <y1> [back|front|both]",
         "cut the selected brushes along a line drawn across a view"
     ),
-    ("ed_box_draw", "ed_box_draw <view> <x0> <y0> <x1> <y1>", "add a box over a rectangle drawn in an axis view"),
+    ("ed_box_draw", "ed_box_draw <view> <x0> <y0> <x1> <y1>", "add a box over a rectangle drawn in a view: in the 3D view, on the level it stands on"),
+    ("ed_tree", "ed_tree [text]", "say every row the scene tree shows, or those that hold some text"),
     (
         "ed_terrain",
         "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest] | lift <x0> <y0> <x1> <y1> <amount> [falloff] | pattern <same|alt|other> | free",
@@ -3429,6 +3430,7 @@ obj Studio(Workbench) {
     def playview_command(scene: Scene, args: list[str]) -> bool;
     def archive_command(scene: Scene, args: list[str]) -> bool;
     def finding_command(scene: Scene, args: list[str]) -> bool;
+    def rows_command(scene: Scene, args: list[str]) -> bool;
     def tags_path -> str;
     def read_tags;
     """The edges of a frame as they are to be drawn: all, or those of the
@@ -3744,7 +3746,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.finding_command(scene, args) and not self.archive_command(scene, args)
+        } elif not self.rows_command(scene, args) and not self.finding_command(scene, args)
+            and not self.archive_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)

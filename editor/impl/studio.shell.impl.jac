@@ -1,6 +1,19 @@
 """The studio's grid, remembered views, hiding, history and autosave.
 Declarations live in studio.jac."""
 
+"""Where a line of sight comes down on a level height, ahead of the eye and
+no further than a level is wide. None when it never does."""
+def:priv level_point(line: list[Vec3], height: float) -> Vec3 | None {
+    if abs(line[1].z) < 0.0001 {
+        return None;
+    }
+    along = (height - line[0].z) / line[1].z;
+    if along <= 0.0 or along > 65536.0 {
+        return None;
+    }
+    return line[0].add(line[1].scale(along));
+}
+
 impl Studio.autosave_path(name: str) -> str {
     return os.path.dirname(self.scene_path("x")) + "/autosave/" + name.replace("/", "_") + ".map";
 }
@@ -73,8 +86,34 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
             }
             return True;
         }
-        if self.ports[numbers[0]].camera.span <= 0.0 or not self.is_built_scene() {
-            self.say("Boxes are drawn in the axis views of a scene");
+        if not self.is_built_scene() {
+            self.say("Boxes are drawn in a scene of brushes");
+            return True;
+        }
+        if self.ports[numbers[0]].camera.span <= 0.0 {
+            # In the 3D view the rectangle is drawn on the level it would stand on: the height of
+            # the selection's middle, or of the origin, on the grid.
+            notch = max(1.0, self.grid);
+            floor_at = float(round(anchor.z / notch)) * notch;
+            watched = self.port_now;
+            self.watch(numbers[0]);
+            corner = level_point(self.camera.sight(self.view_area(), numbers[1], numbers[2]), floor_at);
+            other = level_point(self.camera.sight(self.view_area(), numbers[3], numbers[4]), floor_at);
+            self.watch(watched);
+            if corner is None or other is None {
+                self.say("That drag leaves the level the box would stand on: draw it on the floor");
+                return True;
+            }
+            west = float(round(min(corner.x, other.x) / notch)) * notch;
+            east = float(round(max(corner.x, other.x) / notch)) * notch;
+            south = float(round(min(corner.y, other.y) / notch)) * notch;
+            north = float(round(max(corner.y, other.y) / notch)) * notch;
+            if east - west < notch or north - south < notch
+                or scene.create_solid(
+                    box_sides(Vec3(x=west, y=south, z=floor_at), Vec3(x=east, y=north, z=floor_at + 64.0), self.material)
+                ) is None {
+                self.say("That rectangle encloses nothing");
+            }
             return True;
         }
         # The rectangle, and sixty-four units along the line of sight: up

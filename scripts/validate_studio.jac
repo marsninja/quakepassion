@@ -2573,6 +2573,57 @@ def finding_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     );
 }
 
+"""The sixty-seventh session: a box drawn in the 3D view, and the scene tree said in words."""
+def treebox_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-treebox-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/treebox_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "treebox.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The treebox session failed: {output / 'treebox.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    for name in ["bare", "drawn", "again", "sky", "grouped"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'treebox.log'}";
+    }
+    counts: dict[str, int] = {};
+    for name in ["bare", "drawn", "again", "sky", "grouped"] {
+        counts[name] = int([line for line in steps[name] if line.startswith("brushes=")][0].split("=")[1].split()[0]);
+    }
+    # A drag across the floor in the one 3D view makes one brush: on the grid, standing on the floor,
+    # sixty-four high, with some width and depth.
+    drawn = [line for line in steps["drawn"] if line.startswith("brush #")];
+    assert counts["bare"] == 1 and counts["drawn"] == 2 and len(drawn) == 1 and "mode=draw " in steps["drawn"][-1] , str(steps["drawn"]);
+    box = brush_box(drawn[0]);
+    assert box[0][2] == 0 and box[1][2] == 64 and box[1][0] - box[0][0] >= 16 and box[1][1] - box[0][1] >= 16 , drawn[0];
+    assert all([value % 16 == 0 for value in box[0] + box[1]]) , drawn[0];
+    # It lies under where the drag was: ahead of the camera, which stands at y -420 looking along +y.
+    assert box[0][1] > -420 and box[0][0] < 0 < box[1][0] , drawn[0];
+    # The same rectangle by command is the same box; one that ends in the sky is none.
+    again = [line for line in steps["again"] if line.startswith("brush #")];
+    assert counts["again"] == 3 and len(again) == 1 and brush_box(again[0]) == box , str(again);
+    assert counts["sky"] == 3 and len([line for line in steps["sky"] if line.startswith("brush #")]) == 0;
+    # The tree in words: the group is a row under its class, marked as the duplicator it is.
+    rows = [line[12:] for line in ran.stdout.splitlines() if line.startswith("studio: row ")];
+    marked = [row for row in rows if "posts  (duplicator: 3 copies and mirrored)" in row];
+    assert len(marked) == 2 and marked[0].startswith("1 ") and marked[0].endswith("[1] *") , str(rows);
+    assert len([row for row in rows if row.startswith("0 class:func_group func_group")]) == 1 and len(rows) == 6 , str(rows);
+    assert len([row for row in rows if row.startswith("0 class:brushes brushes [4]")]) == 1 , str(rows);
+    print(
+        f"TREEBOX PASS: {len(steps) - 1} steps, a box {box[1][0] - box[0][0]} by {box[1][1] - box[0][1]} by 64 drawn on the "
+            + "floor by a drag in the 3D view and again by command, a drag into the sky refused, and a duplicator named in "
+            + "the scene tree"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4937,6 +4988,7 @@ def main() {
         "turned": turned_session,
         "repack": repack_session,
         "finding": finding_session,
+        "treebox": treebox_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5118,6 +5170,7 @@ def main() {
     turned_session(repo, binary, env, output);
     repack_session(repo, binary, env, output);
     finding_session(repo, binary, env, output);
+    treebox_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

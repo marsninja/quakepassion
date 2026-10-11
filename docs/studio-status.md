@@ -887,7 +887,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   along it, in the plane the line and the view's line of sight make; Shift
   keeps only what is behind the line and Ctrl only what is in front
   (`ed_clip_line`). **Draw** (6): a rectangle dragged in an axis view
-  becomes a box on the grid, sixty-four units deep (`ed_box_draw`).
+  becomes a box on the grid, sixty-four units deep (`ed_box_draw`). In
+  the 3D view the drag is taken on the level the box would stand on (the
+  height of the selection's middle, or of the origin, on the grid): the
+  box stands there, sixty-four high, and a drag that leaves that level
+  (into the sky) makes nothing.
 - **Settings** are kept between sessions beside the entity overrides
   (`studio.cfg`): the grid, one view or four, how views are drawn, the
   light and the sculpting brush.
@@ -1012,6 +1016,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   in `/`. The new archive is written beside the old and put in its
   place. One of an installed game's own archives is refused: copy it and
   change the copy.
+- **The tree in words**: `ed_tree [text]` says every row the scene tree
+  shows (its depth, its key, its words and its note, and a star when it
+  is selected), or those that hold some text. A group that is a
+  duplicator is marked as one in the tree, with what it makes its images
+  by (`posts  (duplicator: 3 copies and mirrored)`), beside the marks
+  groups had (outlines, locked, not built, digs).
 - **Finding**: `ed_assetfind` takes more than words: `kind:<image|text|
   sound|model|map>` for the kind of file, `game:<q1|q2|q3>` for the game,
   and `tag:<word>` for a tag, in any order beside the words every name
@@ -1469,6 +1479,10 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/treebox_session.cfg` (5 steps: a drag across the floor
+  in the 3D view making a box 160 by 144 by 64 on the grid, the same box
+  again by command, a drag into the sky making none, and a group asked
+  for three copies and a mirror image named as a duplicator in the tree).
   `scripts/studio/finding_session.cfg` (11 steps: 230 of Quake II's
   pictures named for metal, ten sounds named for a menu, one soldier
   among Quake's models, and nothing of a kind that is none; two files

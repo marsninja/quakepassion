@@ -18,6 +18,24 @@ def:priv group_marks(item: Item) -> str {
     if digs(item.fields) {
         marks.append("digs");
     }
+    if duplicates(item.fields) {
+        # A duplicator, and what it makes its images by.
+        ways: list[str] = [];
+        count = item.fields.get("_copies", "").strip();
+        if count.isdigit() and int(count) > 0 {
+            ways.append(count + (" copy" if count == "1" else " copies"));
+        }
+        if item.fields.get("_mirror", "").strip() {
+            ways.append("mirrored");
+        }
+        if item.fields.get("_at", "").strip() {
+            ways.append("at " + item.fields["_at"].strip());
+        }
+        if item.fields.get("_path", "").strip() {
+            ways.append("along " + item.fields["_path"].strip());
+        }
+        marks.append("duplicator: " + " and ".join(ways) if len(ways) > 0 else "duplicator");
+    }
     return "  (" + ", ".join(marks) + ")" if marks else "";
 }
 
