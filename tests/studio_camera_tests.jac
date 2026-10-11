@@ -129,3 +129,49 @@ test "the camera swings round a point at its distance, and faces a point from an
     camera.look_from(Vec3(x=5.0), Vec3(x=5.0));
     assert camera.eye.z == -100.0;
 }
+
+test "a view held to a band of depth leaves out what lies wholly outside it" {
+    top = axis_camera("top");
+    low_box = [Vec3(x=0.0, y=0.0, z=0.0), Vec3(x=64.0, y=64.0, z=32.0)];
+    high_box = [Vec3(x=0.0, y=0.0, z=200.0), Vec3(x=64.0, y=64.0, z=232.0)];
+    # Not held to a band, a view shows everything.
+    assert not top.out_of_depth(low_box[0], low_box[1]) and not top.out_of_depth(high_box[0], high_box[1]);
+    top.bounded = True;
+    top.depth_low = -32.0;
+    top.depth_high = 64.0;
+    axis = top.depth_axis();
+    assert axis.z == 1.0 and axis.x == 0.0;
+    assert not top.out_of_depth(low_box[0], low_box[1]) and top.out_of_depth(high_box[0], high_box[1]);
+    # What only reaches into the band is in it.
+    assert not top.out_of_depth(Vec3(z=48.0), Vec3(x=8.0, y=8.0, z=400.0));
+    assert top.out_of_depth(Vec3(z=-200.0), Vec3(x=8.0, y=8.0, z=-40.0));
+    # The side view looks along -x: its band is still in the world's x.
+    side = axis_camera("side");
+    side.bounded = True;
+    side.depth_low = 100.0;
+    side.depth_high = 300.0;
+    assert side.depth_axis().x == 1.0;
+    assert side.out_of_depth(low_box[0], low_box[1]) and not side.out_of_depth(Vec3(x=250.0), Vec3(x=260.0, y=8.0, z=8.0));
+    # A camera with perspective has no band.
+    free = EditCamera(bounded=True, depth_low=0.0, depth_high=1.0);
+    assert not free.out_of_depth(high_box[0], high_box[1]);
+}
+
+test "an orthographic view turned off the axes is oblique, and measures depth along its sight" {
+    top = axis_camera("top");
+    front = axis_camera("front");
+    assert not top.oblique() and not front.oblique() and not axis_camera("side").oblique();
+    assert not EditCamera(yaw=0.7, pitch=-0.4).oblique();
+    front.turn(math.radians(45.0), math.radians(-30.0));
+    assert front.oblique();
+    axis = front.depth_axis();
+    ahead = front.forward();
+    assert abs(axis.x - ahead.x) < 0.0001 and abs(axis.z - ahead.z) < 0.0001;
+    front.bounded = True;
+    front.depth_low = -50.0;
+    front.depth_high = 50.0;
+    # A box about the origin is in the band; one far along the line of sight is not.
+    assert not front.out_of_depth(Vec3(x=-8.0, y=-8.0, z=-8.0), Vec3(x=8.0, y=8.0, z=8.0));
+    far = ahead.scale(400.0);
+    assert front.out_of_depth(far.sub(Vec3(x=8.0, y=8.0, z=8.0)), far.add(Vec3(x=8.0, y=8.0, z=8.0)));
+}

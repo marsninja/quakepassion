@@ -274,7 +274,8 @@ impl Studio.aim(x: int, y: int) -> Aim {
     along = line[1];
     nearest = 1000000.0;
     for seen in self.looks {
-        if seen.dim or seen.locked or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
+        if seen.dim or seen.locked or self.unpickable(seen.low, seen.high)
+            or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
             # A click passes what is shown as outlines only, and what is locked.
             continue;
         }
@@ -310,8 +311,16 @@ impl Studio.draw_solids(scene: Scene) {
         if scene.is_solid_selected(seen.solid) {
             continue;
         }
+        veil = self.veiled(seen.low, seen.high);
+        if veil == 2 {
+            continue;
+        }
         # A group's own colour; outlines only are all there is of a grey group.
         tone = ink(seen.tint, 230) if seen.tint >= 0 else (ink(0x8a8378, 200) if seen.dim else faint);
+        if veil == 1 {
+            # Outside the band of depth this view is held to.
+            tone = ink(0x8a8378, 55);
+        }
         for outline in seen.outlines {
             for i in range(len(outline)) {
                 wire_line(outline[i], outline[(i + 1) % len(outline)], tone);

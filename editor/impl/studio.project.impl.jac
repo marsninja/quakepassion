@@ -250,10 +250,10 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         if how == "reload" {
-            wanted = args[2] if len(args) > 2 else "";
+            sought = args[2] if len(args) > 2 else "";
             count = 0;
             for path in sorted(self.addons.keys()) {
-                if not wanted or path == wanted or os.path.basename(path) == wanted {
+                if not sought or path == sought or os.path.basename(path) == sought {
                     taken = self.load_addon(path);
                     print("studio: reloaded " + path + " classes=" + str(taken));
                     count += 1;
@@ -263,9 +263,9 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         if how == "drop" {
-            wanted = args[2] if len(args) > 2 else "";
+            sought = args[2] if len(args) > 2 else "";
             for path in sorted(self.addons.keys()) {
-                if path == wanted or os.path.basename(path) == wanted {
+                if path == sought or os.path.basename(path) == sought {
                     self.drop_addon(path);
                     if path in self.user_addons {
                         self.user_addons.remove(path);
@@ -349,13 +349,13 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_project: no project in " + folder);
             return True;
         }
-        opened = self.project;
-        if opened is not None {
-            first = folder + "/scenes/" + opened.start + ".map";
-            if opened.start and os.path.isfile(first) {
+        at_hand = self.project;
+        if at_hand is not None {
+            first = folder + "/scenes/" + at_hand.start + ".map";
+            if at_hand.start and os.path.isfile(first) {
                 self.open_map(first);
             }
-            self.say("Project " + opened.name + ": " + str(len(opened.scenes)) + " scenes, in " + folder);
+            self.say("Project " + at_hand.name + ": " + str(len(at_hand.scenes)) + " scenes, in " + folder);
         }
         return True;
     }
@@ -371,26 +371,26 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
         self.save_scene(self.project_folder + "/scenes/" + file_name(scene.name[7:]) + ".map");
         return True;
     }
-    wanted = file_name(args[2]) if len(args) > 2 else "";
+    sought = file_name(args[2]) if len(args) > 2 else "";
     if how == "drop" {
-        if wanted in project.scenes {
+        if sought in project.scenes {
             # The file stays where it is; the project no longer counts it.
-            project.scenes.remove(wanted);
-            if project.start == wanted {
+            project.scenes.remove(sought);
+            if project.start == sought {
                 project.start = sorted(project.scenes)[0] if project.scenes else "";
             }
             self.save_project();
-            self.say(wanted + " is no longer one of the project's scenes (its file is left)");
+            self.say(sought + " is no longer one of the project's scenes (its file is left)");
         } else {
             self.say("ed_project drop <scene>: " + ", ".join(sorted(project.scenes)));
         }
         return True;
     }
     if how == "start" {
-        if wanted in project.scenes {
-            project.start = wanted;
+        if sought in project.scenes {
+            project.start = sought;
             self.save_project();
-            self.say("The project opens with " + wanted);
+            self.say("The project opens with " + sought);
         } else {
             self.say("ed_project start <scene>: " + ", ".join(sorted(project.scenes)));
         }

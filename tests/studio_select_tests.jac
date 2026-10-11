@@ -171,3 +171,56 @@ test "a group's own switches decide what a build is made from" {
     assert scene.filtered(False) and not scene.filtered(True);
     assert len(scene.built_map(False)[0].brushes) == 0 and len(scene.built_map(True)[0].brushes) == 1;
 }
+
+test "a set is a layer: hidden and shown as one, and what another layer hides stays hidden" {
+    scene = room();
+    floor = scene.solids()[0];
+    wall = scene.solids()[1];
+    start = scene.items()[1];
+    lamp = scene.items()[2];
+    scene.select_solid(wall);
+    scene.select(start, True);
+    assert scene.keep_set("walls") == 2;
+    scene.select_solid(wall);
+    scene.select(lamp, True);
+    assert scene.keep_set("lit") == 2;
+    assert scene.layer_shown("walls") and scene.layer_shown("lit") and scene.layer_shown("nothing");
+    # Hidden, its members go out of sight and out of the selection.
+    scene.select_solid(wall);
+    before = scene.geometry;
+    assert scene.show_layer("walls", False) == 2 and not scene.layer_shown("walls");
+    assert wall.hidden and start.hidden and not lamp.hidden and not floor.hidden;
+    assert len(scene.selected_solids()) == 0 and scene.geometry > before and scene.hidden_count() == 2;
+    assert scene.show_layer("walls", False) == 0 and scene.show_layer("nothing", False) == 0;
+    # What is built for editing leaves them out; what is built for play does not.
+    assert scene.filtered(False) and len(scene.built_map(False)) == 2 and len(scene.built_map(True)) == 3;
+    # The wall is in both layers: with the other off too, showing one does not bring it back.
+    assert scene.show_layer("lit", False) == 1 and lamp.hidden;
+    assert scene.show_layer("walls", True) == 1 and not start.hidden and wall.hidden;
+    assert scene.show_layer("lit", True) == 2 and not wall.hidden and not lamp.hidden and scene.hidden_count() == 0;
+    # One alone: every other layer off, and with it what the two share.
+    assert scene.only_layer("lit") == 2 and start.hidden and wall.hidden and not lamp.hidden;
+    assert scene.layers_off == ["walls"];
+    # A layer forgotten shows what it hid.
+    assert scene.drop_set("walls") and not start.hidden and not wall.hidden and scene.layers_off == [];
+}
+
+test "the layers that are off are written with the map and are off when it is read" {
+    scene = room();
+    scene.select_solid(scene.solids()[1]);
+    scene.select(scene.items()[1], True);
+    scene.keep_set("walls");
+    scene.select(scene.items()[2]);
+    scene.keep_set("lit");
+    scene.show_layer("walls", False);
+    text = write_map(scene_map(scene));
+    assert "\"_layers_off\" \"walls\"" in text;
+    # The document's own fields are not touched by the writing.
+    assert "_layers_off" not in scene.world().fields;
+    again = scene_from_map("passion", "studio:again", read_map(text));
+    assert again.layers_off == ["walls"] and not again.layer_shown("walls") and again.layer_shown("lit");
+    assert again.solids()[1].hidden and again.items()[1].hidden and not again.items()[2].hidden;
+    assert "_layers_off" not in again.world().fields and not again.dirty;
+    assert again.show_layer("walls", True) == 2 and again.hidden_count() == 0;
+    assert "_layers_off" not in write_map(scene_map(again));
+}

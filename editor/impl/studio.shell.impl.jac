@@ -192,6 +192,10 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_show" {
+        # Every layer that was off is on again too.
+        for each in list(scene.layers_off) {
+            scene.show_layer(each, True);
+        }
         count = scene.show_all();
         self.say("Showed " + str(count) if count else "Nothing is hidden");
         return True;
@@ -357,6 +361,14 @@ impl Studio.keep_settings {
     }
     for chord in sorted(self.user_keys.keys()) {
         lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
+    }
+    lines.append("ed_outside " + self.outside);
+    lines.append("ed_mouse look " + str(round(self.look_rate, 2)));
+    lines.append("ed_mouse invert " + ("on" if self.look_flipped else "off"));
+    lines.append("ed_mouse wheel " + str(round(self.wheel_rate, 2)));
+    lines.append("ed_mouse reverse " + ("on" if self.wheel_flipped else "off"));
+    for ending in sorted(self.assoc.keys()) {
+        lines.append("ed_assoc " + ending + " " + quote_command_word(self.assoc[ending]));
     }
     for setting in sorted(self.game_setup.keys()) {
         halves = setting.split(".", 1);

@@ -173,6 +173,10 @@ def item_switched(item: Item, key: str) -> bool {
 """What the fields that keep a document's sets in a map file begin with."""
 glob SET_PREFIX: str = "_set_";
 
+"""The field that keeps, in a map file, the names of the sets switched off
+as layers."""
+glob LAYERS_KEY: str = "_layers_off";
+
 """The field a group keeps its own pivot in: what it turns and stretches
 about, in place of its middle."""
 glob PIVOT_KEY: str = "_center";
@@ -1259,8 +1263,10 @@ node Scene {
         linked: int = -1,
         next_serial: int = 0,
         journal: Journal = Journal(),
-        # The names of the selections kept as sets, in the order made.
-        set_names: list[str] = [];
+        # The names of the selections kept as sets, in the order made; and
+        # those of them switched off as layers, their members hidden.
+        set_names: list[str] = [],
+        layers_off: list[str] = [];
 
     """Every item in the document, in map order."""
     def items -> list[Item] {
@@ -1450,6 +1456,13 @@ node Scene {
     """Select a set's members, alone or added. Answers how many."""
     def pick_set(name: str, add: bool = False) -> int;
     def drop_set(name: str) -> bool;
+    """A set is a layer too: whether its members are shown."""
+    def layer_shown(name: str) -> bool;
+    """Show or hide a set's members as a layer. What another layer still
+    hides stays hidden. Answers how many changed."""
+    def show_layer(name: str, shown: bool) -> int;
+    """Show one layer and hide every other. Answers how many changed."""
+    def only_layer(name: str) -> int;
     """A set as words a map file keeps: an entity by its place in the map
     (`4`), a brush by its entity's place and its own (`0:12`)."""
     def set_words(name: str) -> str;
@@ -1979,6 +1992,9 @@ def scene_map(scene: Scene) -> list[MapItem] {
                 written[0].fields[SET_PREFIX + name] = words;
             }
         }
+        if len(scene.layers_off) > 0 {
+            written[0].fields[LAYERS_KEY] = " ".join(sorted(scene.layers_off));
+        }
     }
     return written;
 }
@@ -2020,6 +2036,11 @@ def scene_from_map(game: str, name: str, found: MapFile) -> Scene {
             scene.restore_set(key[len(SET_PREFIX):], first.fields[key], placed);
             first.fields.pop(key, None);
         }
+        # And the layers that were off are off again.
+        for name in first.fields.get(LAYERS_KEY, "").split() {
+            scene.show_layer(name, False);
+        }
+        first.fields.pop(LAYERS_KEY, None);
         scene.dirty = False;
     }
     return scene;

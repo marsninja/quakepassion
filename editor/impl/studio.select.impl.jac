@@ -13,7 +13,7 @@ impl Studio.aim_all(x: int, y: int) -> list[Aim] {
     along = line[1];
     behind: list[Aim] = [];
     for seen in self.looks {
-        if seen.solid is front.solid or seen.dim or seen.locked
+        if seen.solid is front.solid or seen.dim or seen.locked or self.unpickable(seen.low, seen.high)
             or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
             continue;
         }
@@ -111,6 +111,55 @@ impl Studio.select_more(scene: Scene, args: list[str]) -> bool {
 
 impl Studio.selection_command(scene: Scene, args: list[str]) -> bool {
     name = args[0];
+    if name == "ed_layer" {
+        label = args[1] if len(args) > 1 else "";
+        how = args[2] if len(args) > 2 else "toggle";
+        if not label {
+            # Every set is a layer: what each holds, and whether it shows.
+            listed: list[MenuItem] = [];
+            for each in scene.set_names {
+                held = len(scene.set_items(each)) + len(scene.set_solids(each));
+                state = "shown" if scene.layer_shown(each) else "hidden";
+                print("studio: layer " + each + " " + state + " holds=" + str(held));
+                listed.append(
+                    MenuItem(
+                        text=each + " (" + str(held) + "): " + state + ", click to " + ("hide" if state == "shown" else "show"),
+                        command="ed_layer " + each
+                    )
+                );
+            }
+            board = self.stage;
+            if len(listed) == 0 {
+                self.say("No layers: ed_keep <name> keeps the selection as one, ed_layer <name> hides and shows it");
+            } elif board is not None {
+                sheet = MenuPopup(items=listed);
+                sheet.open_at(board, 300, 80);
+            }
+            return True;
+        }
+        count = 0;
+        if label == "all" {
+            for each in list(scene.layers_off) {
+                count += scene.show_layer(each, True);
+            }
+            self.say("Every layer shows");
+        } elif label not in scene.set_names {
+            self.say("ed_layer [name|all] [hide|show|only]: " + (", ".join(scene.set_names) if scene.set_names else "no sets are kept (ed_keep <name>)"));
+            return True;
+        } elif how == "only" {
+            count = scene.only_layer(label);
+            self.say("Only the layer " + label + " shows of the layers");
+        } elif how in ["hide", "show", "toggle"] {
+            shown = how == "show" or (how == "toggle" and not scene.layer_shown(label));
+            count = scene.show_layer(label, shown);
+            self.say("The layer " + label + (" shows" if shown else " is hidden"));
+        } else {
+            self.say("ed_layer " + label + " [hide|show|only]");
+            return True;
+        }
+        print("studio: layered changed=" + str(count));
+        return True;
+    }
     if name == "ed_keep" or name == "ed_recall" or name == "ed_forget" {
         if len(args) < 2 {
             kept = [each + " (" + str(len(scene.set_items(each)) + len(scene.set_solids(each))) + ")"

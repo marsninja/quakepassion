@@ -1221,6 +1221,219 @@ def steps_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""A step's line of the layers that are off, if it has one."""
+def off(lines: list[str]) -> list[str] {
+    return [line for line in lines if line.startswith("layers off=")];
+}
+
+"""The thirty-sixth session: kept sets hidden and shown as layers."""
+def layers_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["hidden", "list"];
+    for shot in shots {
+        (repo / f"layers_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-layers-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/layers_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "layers.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The layers session failed: {output / 'layers.log'}";
+        saved = (Path(home) / "scenes/tiers.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["kept", "hid", "through", "both", "back", "only", "shown"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'layers.log'}";
+    }
+    assert [line for line in steps["kept"] if line == "sets=west:1,east:1,boxes:2"] , str(steps["kept"]);
+    assert not off(steps["kept"]) and hidden(steps["kept"]) == 0 and made(steps["kept"]) == 3 , str(steps["kept"]);
+    # One layer off: its box is hidden and is not in what the views are built from.
+    assert off(steps["hid"]) == ["layers off=west"] and hidden(steps["hid"]) == 1 and made(steps["hid"]) == 2 , str(
+        steps["hid"]
+    );
+    # A click where it stood finds the floor.
+    under = brushes(steps["through"]);
+    assert len(under) == 1 and under[0].split()[1] == "#1" , str(steps["through"]);
+    # The layer of both off, the first on again: both boxes stay hidden.
+    assert off(steps["both"]) == ["layers off=boxes"] and hidden(steps["both"]) == 2 and made(steps["both"]) == 1 , str(
+        steps["both"]
+    );
+    listed = [line for line in steps["both"] if line.startswith("layer ")];
+    assert listed == ["layer west shown holds=1", "layer east shown holds=1", "layer boxes hidden holds=2"] , str(listed);
+    # Toggled back, everything shows; one alone hides what the others hold, shared or not.
+    assert not off(steps["back"]) and hidden(steps["back"]) == 0 and made(steps["back"]) == 3 , str(steps["back"]);
+    assert off(steps["only"]) == ["layers off=boxes,west"] and hidden(steps["only"]) == 2 , str(steps["only"]);
+    assert '"_layers_off" "boxes west"' in saved and '"_set_east"' in saved , saved[:600];
+    # Showing everything turns every layer on.
+    assert not off(steps["shown"]) and hidden(steps["shown"]) == 0 and made(steps["shown"]) == 3 , str(steps["shown"]);
+    for shot in shots {
+        source = repo / f"layers_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"layers_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"LAYERS PASS: {len(steps) - 1} steps, three layers of two boxes hidden, shown and shown alone, what two share "
+            + "kept hidden while either is off, and the layers that are off saved with the map"
+    );
+}
+
+"""The thirty-fifth session: an axis view held to a band of depth, what is
+outside it greyed or left out, and axis views turned off their axes."""
+def depth_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["grey", "hidden", "oblique"];
+    for shot in shots {
+        (repo / f"depth_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-depth-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/depth_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "depth.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The depth session failed: {output / 'depth.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "made", "banded", "greyclick", "hideclick", "fitted", "unbanded", "oblique", "turned", "straight", "done"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'depth.log'}";
+    }
+    # The second box, lifted: 192 to 256 up.
+    lifted = brushes(steps["made"]);
+    assert len(lifted) == 1 and brush_box(lifted[0])[0][2] == 192 and brush_box(lifted[0])[1][2] == 256 , str(lifted);
+    high = lifted[0].split()[1];
+    # Held to -32..96, the top view has one brush outside its band; greyed, it is still clicked.
+    band = [line for line in steps["banded"] if line.startswith("depth ")];
+    assert band == ["depth top=-32..96/1 outside=grey"] , str(steps["banded"]);
+    assert len(brushes(steps["greyclick"])) == 1 and brushes(steps["greyclick"])[0].split()[1] == high , str(
+        steps["greyclick"]
+    );
+    # Left out, the click goes to the floor beneath it.
+    under = brushes(steps["hideclick"]);
+    assert len(under) == 1 and under[0].split()[1] == "#1" and brush_box(under[0])[1][2] == 0 , str(steps["hideclick"]);
+    assert [line for line in steps["hideclick"] if line.startswith("depth top=-32..96/1 outside=hide")];
+    # From the selection: its own depths and eight more each way, the other two brushes outside.
+    assert [line for line in steps["fitted"] if line == "depth top=184..264/2 outside=hide"] , str(steps["fitted"]);
+    assert not [line for line in steps["unbanded"] if line.startswith("depth ")];
+    assert "ed_outside hide" in kept , kept;
+    # Oblique: the top view by command, the front by Alt and a hundred pixels of right drag.
+    assert [line for line in steps["oblique"] if line == "oblique top=45,-35"] , str(steps["oblique"]);
+    both = [line for line in steps["turned"] if line.startswith("oblique ")];
+    assert both and both[0].startswith("oblique top=45,-35 front=") , str(steps["turned"]);
+    front = [int(part) for part in both[0].split("front=")[1].split(",")];
+    assert 27 <= abs(front[0] - 90) and abs(front[0] - 90) <= 30 and front[1] == 0 , str(front);
+    # A press on the compass straightens the top view; a command the front.
+    one = [line for line in steps["straight"] if line.startswith("oblique ")];
+    assert one and one[0].startswith("oblique front=") , str(steps["straight"]);
+    assert not [line for line in steps["done"] if line.startswith("oblique ")];
+    for shot in shots {
+        source = repo / f"depth_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"depth_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"DEPTH PASS: {len(steps) - 1} steps, the top view held to a band with a box above it greyed, then left out and "
+            + "clicked through, the band taken from the selection, and two views turned off their axes and straightened"
+    );
+}
+
+"""The thirty-fourth session: a file opened with the program kept for its
+ending, an image changed outside read again, and the mouse's options."""
+def outside_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "outside_changed.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-outside-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_TEXTURES"] = home + "/textures";
+        (Path(home) / "textures").mkdir();
+        (Path(home) / "spare").mkdir();
+        # The image as it begins, four texels a side, and what the stand-in
+        # editor turns it into, eight.
+        (Path(home) / "textures/crate.png").write_bytes(checker_png(4));
+        (Path(home) / "spare/crate.png").write_bytes(checker_png(8));
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/outside_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_TEXTURES");
+        (output / "outside.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The outside session failed: {output / 'outside.log'}";
+        kept = (Path(home) / "overrides/studio.cfg").read_text();
+        edited = (Path(home) / "textures/crate.png").read_bytes() == checker_png(8);
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["own", "kept", "changed", "level", "turned", "faster", "wheeled", "reversed"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'outside.log'}";
+    }
+    # The image as it was: four texels across 128 units.
+    assert "scale=32.0,24.0" in faces(steps["own"])[0] , str(faces(steps["own"]));
+    # One program kept, the other forgotten; the material's file opened with it.
+    listed = [line for line in steps["kept"] if line.startswith("assoc ")];
+    assert listed == ["assoc png = sh scripts/studio/fixtures/fake_editor.sh %file%"] , str(listed);
+    opened = [line for line in steps["kept"] if line.startswith("opened ")];
+    assert opened and opened[0].endswith("/textures/crate.png with sh scripts/studio/fixtures/fake_editor.sh %file%") , str(
+        steps["kept"]
+    );
+    # It changed the file; the studio read it again unasked, and it fits at its new size.
+    assert edited , "The stand-in editor did not change the image";
+    again = [line for line in steps["kept"] if line.startswith("reloaded ")];
+    assert again == ["reloaded file:crate.png 8x8"] , str(steps["kept"]);
+    assert "scale=16.0,12.0" in faces(steps["changed"])[0] , str(faces(steps["changed"]));
+    assert 'ed_assoc png "sh scripts/studio/fixtures/fake_editor.sh %file%"' in kept and "ed_assoc tga" not in kept , kept;
+    # The mouse: a hundred pixels across and twenty down turn the camera
+    # about 29 degrees and 6; at twice the rate, 57 and 11, and upside down
+    # the other way up.
+    level_yaw = int(line_word(steps["level"], "mouse ", "yaw"));
+    level_pitch = int(line_word(steps["level"], "mouse ", "pitch"));
+    assert level_yaw == 90 and level_pitch == 0 , str(steps["level"]);
+    yaw = int(line_word(steps["turned"], "mouse ", "yaw")) - level_yaw;
+    pitch = int(line_word(steps["turned"], "mouse ", "pitch")) - level_pitch;
+    assert 27 <= abs(yaw) and abs(yaw) <= 30 and 5 <= abs(pitch) and abs(pitch) <= 7 , f"{yaw} {pitch}";
+    fast_yaw = int(line_word(steps["faster"], "mouse ", "yaw")) - level_yaw;
+    fast_pitch = int(line_word(steps["faster"], "mouse ", "pitch")) - level_pitch;
+    assert 56 <= abs(fast_yaw) and abs(fast_yaw) <= 59 and fast_yaw * yaw > 0 , f"{fast_yaw} against {yaw}";
+    assert 10 <= abs(fast_pitch) and abs(fast_pitch) <= 13 and fast_pitch * pitch < 0 , f"{fast_pitch} against {pitch}";
+    assert line_word(steps["faster"], "mouse ", "look") == "2.0" and line_word(steps["faster"], "mouse ", "invert") == "1";
+    # The wheel: sixty-four units forward a notch; twice as far and backward when told.
+    assert camera_at(steps["wheeled"]) == [0, -356, 260] , str(camera_at(steps["wheeled"]));
+    assert camera_at(steps["reversed"]) == [0, -548, 260] , str(camera_at(steps["reversed"]));
+    assert "ed_mouse look 2.0" in kept and "ed_mouse invert on" in kept and "ed_mouse wheel 2.0" in kept
+        and "ed_mouse reverse on" in kept , kept;
+    source = repo / "outside_changed.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "outside_changed.png");
+    source.unlink();
+    print(
+        f"OUTSIDE PASS: {len(steps) - 1} steps, an image opened with the program kept for it and read again when that "
+            + f"changed it, the camera turned {abs(yaw)} then {abs(fast_yaw)} degrees by the same drag, and the wheel reversed"
+    );
+}
+
 """The thirty-third session: a project made and filled, another opened,
 add-ons of classes loaded and dropped, and what a game's scenes begin with."""
 def project_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -2557,6 +2770,9 @@ def main() {
         "bake": bake_session,
         "steps": steps_session,
         "project": project_session,
+        "outside": outside_session,
+        "depth": depth_session,
+        "layers": layers_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2693,6 +2909,9 @@ def main() {
     bake_session(repo, binary, env, output);
     steps_session(repo, binary, env, output);
     project_session(repo, binary, env, output);
+    outside_session(repo, binary, env, output);
+    depth_session(repo, binary, env, output);
+    layers_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

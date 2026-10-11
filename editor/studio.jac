@@ -206,6 +206,15 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
+    ("ed_layer", "ed_layer [name|all] [hide|show|only]", "a kept set as a layer: hide or show what it holds, show it alone, or list the layers"),
+    ("ed_depth", "ed_depth [top|front|side] <low> <high> | selection | off", "hold an axis view to a band of depth, measured along the axis it looks along"),
+    ("ed_outside", "ed_outside [whole|grey|hide]", "how a view held to a band of depth shows what lies outside it"),
+    ("ed_oblique", "ed_oblique [top|front|side] <yaw> <pitch> | off", "turn an axis view off its axis, or straighten it"),
+    ("ed_mouse", "ed_mouse [look <rate>] [invert on|off] [wheel <rate>] [reverse on|off]", "how fast and which way the mouse turns the camera and the wheel moves it"),
+    ("ed_assoc", "ed_assoc [ending] [command line]", "keep a program for files of an ending (%file% is the file), forget one, or list them"),
+    ("ed_openwith", "ed_openwith [file]", "open a file, or the image file that is the material in hand, with the program kept for its ending"),
+    ("ed_reload", "ed_reload", "read the project's image files again and build the level afresh"),
+    ("ed_watch", "ed_watch [on|off]", "whether image files are read again when they change on disk"),
     ("ed_cells", "ed_cells [on|off]", "draw the cells of a bake: the one looked from, what it sees and what it does not"),
     ("ed_recipe", "ed_recipe [name] [commands]", "keep a row of commands, apart at semicolons, under a name; forget one; or list them"),
     ("ed_make", "ed_make <name>", "run a recipe's commands"),
@@ -681,6 +690,22 @@ obj Studio(Workbench) {
         user_addons: list[str] = [],
         game_setup: dict[str, str] = {},
         game_applied: str = "",
+        # The program kept for each ending of file; the image files in use
+        # and when each was last changed, looked at twice a second; and how
+        # the mouse turns the camera and the wheel moves it.
+        assoc: dict[str, str] = {},
+        watching: bool = True,
+        watched: dict[str, float] = {},
+        watch_clock: float = 0.0,
+        watch_count: int = 0,
+        # How a view held to a band of depth shows what lies outside it
+        # ("whole", "grey" or "hide"), and the camera of the view being drawn.
+        outside: str = "grey",
+        lens_now: EditCamera | None = None,
+        look_rate: float = 1.0,
+        look_flipped: bool = False,
+        wheel_rate: float = 1.0,
+        wheel_flipped: bool = False,
         # The classes kept as favourites.
         favourites: list[str] = [],
         # The axis views' grid shown, with numbers along its edges; levels
@@ -1017,7 +1042,13 @@ obj Studio(Workbench) {
                     MenuItem(text="Next remembered view", command="ed_goto next"),
                     MenuItem(text="Finer grid", command="ed_grid down", keys="["),
                     MenuItem(text="Coarser grid", command="ed_grid up", keys="]"),
-                    MenuItem(text="Console", command="toggleconsole", keys="`")
+                    MenuItem(text="Console", command="toggleconsole", keys="`"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Hold this view to the selection's depth", command="ed_depth selection"),
+                    MenuItem(text="Show every depth in this view", command="ed_depth off"),
+                    MenuItem(text="Outside the depth: whole, grey or hidden", command="ed_outside"),
+                    MenuItem(text="Straighten this view", command="ed_oblique off"),
+                    MenuItem(text="Layers", command="ed_layer")
                 ],
                 [
                     MenuItem(text="Box", command="ed_box", keys="B"),
@@ -1121,7 +1152,12 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="The project", command="ed_project"),
                     MenuItem(text="Add-ons", command="ed_addon"),
-                    MenuItem(text="Games", command="ed_game")
+                    MenuItem(text="Games", command="ed_game"),
+                    MenuItem(rule=True),
+                    MenuItem(text="The mouse", command="ed_mouse"),
+                    MenuItem(text="Programs kept for files", command="ed_assoc"),
+                    MenuItem(text="Open the material's file", command="ed_openwith"),
+                    MenuItem(text="Read image files again", command="ed_reload")
                 ]
             ]
         );
@@ -1630,6 +1666,7 @@ obj Studio(Workbench) {
         self.load_thumbs();
         self.keep_built();
         self.autosave(dt, False);
+        self.watch_files(dt);
         hint = stage.hint();
         ui.hint.text = hint if hint else self.note;
         ui.stop.enabled = self.playing;
@@ -1678,6 +1715,15 @@ obj Studio(Workbench) {
                 self.moved = False;
                 self.press_x = event.x;
                 self.press_y = event.y;
+                if self.camera.oblique() {
+                    dial = self.compass_at(self.view_area());
+                    if abs(event.x - dial[0]) <= dial[2] and abs(event.y - dial[1]) <= dial[2] {
+                        # A press on the compass straightens the view.
+                        stage.emit("ed_oblique " + self.ports[index].title.split()[0].lower() + " off");
+                        self.moved = True;
+                        continue;
+                    }
+                }
                 if self.mode == "clip" or self.mode == "draw" {
                     # A line, or a rectangle, from here to where the button is let go.
                     self.lining = True;
@@ -1841,15 +1887,28 @@ obj Studio(Workbench) {
                 self.drag_selection(event.x, event.y, event.shift, event.ctrl);
             } elif event.kind == "drag" {
                 if self.camera.span > 0.0 {
-                    # An axis view slides under either button.
-                    if self.looking or self.panning {
+                    if self.looking and event.alt {
+                        # With Alt an axis view is turned off its axis.
+                        self.camera.turn(
+                            -float(event.dx) * 0.005 * self.look_rate,
+                            -float(event.dy) * 0.005 * self.look_rate * (-1.0 if self.look_flipped else 1.0)
+                        );
+                    } elif self.looking or self.panning {
+                        # An axis view slides under either button.
                         self.camera.pan(self.view_area(), event.dx, event.dy);
                     }
                 } elif self.looking and event.alt {
                     # With Alt the camera goes round what is selected.
-                    self.swing(scene, -float(event.dx) * 0.005, -float(event.dy) * 0.005);
+                    self.swing(
+                        scene,
+                        -float(event.dx) * 0.005 * self.look_rate,
+                        -float(event.dy) * 0.005 * self.look_rate * (-1.0 if self.look_flipped else 1.0)
+                    );
                 } elif self.looking {
-                    self.camera.turn(-float(event.dx) * 0.005, -float(event.dy) * 0.005);
+                    self.camera.turn(
+                        -float(event.dx) * 0.005 * self.look_rate,
+                        -float(event.dy) * 0.005 * self.look_rate * (-1.0 if self.look_flipped else 1.0)
+                    );
                 } elif self.panning {
                     scale = 1.0 if not event.shift else 4.0;
                     self.camera.eye = self.camera.eye.sub(self.camera.right().scale(float(event.dx) * scale)).add(
@@ -1857,10 +1916,11 @@ obj Studio(Workbench) {
                     );
                 }
             } elif event.kind == "wheel" {
+                turned = event.wheel * self.wheel_rate * (-1.0 if self.wheel_flipped else 1.0);
                 if self.camera.span > 0.0 {
-                    self.camera.zoom(0.85 ** event.wheel);
+                    self.camera.zoom(0.85 ** turned);
                 } else {
-                    self.camera.fly(event.wheel * (256.0 if event.shift else 64.0), 0.0, 0.0);
+                    self.camera.fly(turned * (256.0 if event.shift else 64.0), 0.0, 0.0);
                 }
             } elif event.kind == "click" and event.button == 0 {
                 if self.moved {
@@ -2208,8 +2268,9 @@ obj Studio(Workbench) {
             best: Shape | None = None;
             reach = 1000000.0;
             for shape in self.shapes {
-                if shape.item in tried or item_veil(shape.item) != "" or item_switched(shape.item, LOCK_KEY) {
-                    # What is tried, shown as outlines only, or locked.
+                if shape.item in tried or item_veil(shape.item) != "" or item_switched(shape.item, LOCK_KEY)
+                    or self.unpickable(shape.low, shape.high) {
+                    # What is tried, shown as outlines only, locked, or left out of this view.
                     continue;
                 }
                 enters = ray_enters_box(eye, along, shape.low, shape.high);
@@ -2337,7 +2398,10 @@ obj Studio(Workbench) {
             }
             return;
         }
-        if view.span > 0.0 and self.grid_shown {
+        self.lens_now = self.lens_of(view);
+        seeing = self.lens_now;
+        if view.span > 0.0 and self.grid_shown and (seeing is None or not seeing.oblique()) {
+            # A view off its axis has no plane of its own to rule.
             self.draw_grid(view);
         }
         self.bare_now = view.bare;
@@ -2346,7 +2410,11 @@ obj Studio(Workbench) {
             if scene.is_selected(shape.item) {
                 chosen.append(shape);
             } else {
-                wire_box(shape.low, shape.high, shape.tone.faded(200));
+                # Outside the band of depth this view is held to: fainter, or not there.
+                veil = self.veiled(shape.low, shape.high);
+                if veil < 2 {
+                    wire_box(shape.low, shape.high, shape.tone.faded(200 if veil == 0 else 45));
+                }
             }
         }
         # The selection, what it targets and what is pointed at show through
@@ -2412,6 +2480,7 @@ obj Studio(Workbench) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
         }
         self.draw_cells(scene);
+        self.draw_depth_lines(view);
         rlDrawRenderBatchActive();
         rlEnableDepthTest();
         self.draw_solids(scene);
@@ -2772,6 +2841,38 @@ obj Studio(Workbench) {
     def project_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # Programs outside the studio, files that change, the mouse (impl/studio.outside.impl.jac)
+
+    """The file something names: a path, or a `file:` material's image ("" when neither)."""
+    def file_of(scene: Scene, what: str) -> str;
+    """Read an image file's material again, and build with it."""
+    def reread(name: str) -> bool;
+    """Read again the image files that have changed since they were read."""
+    def watch_files(dt: float);
+    def mouse_words -> str;
+    """Run a mouse, program or reload command. False when it is not one."""
+    def outside_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
+    # Bands of depth and oblique views (impl/studio.depth.impl.jac)
+
+    """The camera of the view the engine is drawing."""
+    def lens_of(view: SceneView) -> EditCamera | None;
+    """The axis view whose title begins so (-1 when none does)."""
+    def port_named(word: str) -> int;
+    """How the view being drawn shows a box: 0 as ever, 1 greyed, 2 not at all."""
+    def veiled(low: Vec3, high: Vec3) -> int;
+    def unpickable(low: Vec3, high: Vec3) -> bool;
+    """The edges of the other views' bands of depth, across this one."""
+    def draw_depth_lines(view: SceneView);
+    """Where an oblique view's compass is: its middle and its radius."""
+    def compass_at(area: Rect) -> list[int];
+    def draw_compass(area: Rect);
+    def depth_words -> list[str];
+    """Run a depth or oblique-view command. False when it is not one."""
+    def depth_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Groups: their rows in the tree and their own switches (impl/studio.groups.impl.jac)
 
     """Run a group command. False when it is not one."""
@@ -2987,7 +3088,8 @@ obj Studio(Workbench) {
             and not self.selection_command(scene, args) and not self.face_command(scene, args)
             and not self.view_command(scene, args) and not self.group_command(scene, args)
             and not self.build_mode_command(scene, args) and not self.step_command(scene, args)
-            and not self.project_command(scene, args)
+            and not self.project_command(scene, args) and not self.outside_command(scene, args)
+            and not self.depth_command(scene, args)
             and not self.entity_command(scene, args)
             and not self.doc_command(scene, args) and not self.settings_command(scene, args) {
             self.utility_command(scene, args);
@@ -3267,6 +3369,14 @@ obj Studio(Workbench) {
                     + str(len(seen_asset.lines)) + " material=" + seen_asset.material
             );
         }
+        if scene.layers_off {
+            lines.append("studio: layers off=" + ",".join(sorted(scene.layers_off)));
+        }
+        for words in self.depth_words() {
+            lines.append(words);
+        }
+        # The mode's line stays the last: sessions look for it there.
+        lines.append(self.mouse_words());
         lines.append(
             "studio: mode=" + self.mode + " material=" + self.material + " wire="
                 + ("1" if self.wire_axis else "0") + ("1" if self.wire_main else "0") + " lit="

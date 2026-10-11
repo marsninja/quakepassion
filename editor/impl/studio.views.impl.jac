@@ -81,7 +81,9 @@ impl Studio.draw_view_extras(scene: Scene, area: Rect) {
             }
         }
     }
-    if lens.span > 0.0 and self.grid_shown {
+    if lens.oblique() {
+        self.draw_compass(area);
+    } elif lens.span > 0.0 and self.grid_shown {
         self.draw_grid_numbers(area);
     }
     if self.names {

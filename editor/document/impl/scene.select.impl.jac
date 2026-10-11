@@ -28,10 +28,89 @@ impl Scene.set_solids(name: str) -> list[Solid] {
     return [solid for solid in [self->:Member:name == name:->][?:Solid] if solid.held];
 }
 
+impl Scene.layer_shown(name: str) -> bool {
+    return name not in self.layers_off;
+}
+
+impl Scene.show_layer(name: str, shown: bool) -> int {
+    if name not in self.set_names or shown == self.layer_shown(name) {
+        return 0;
+    }
+    if shown {
+        self.layers_off = [other for other in self.layers_off if other != name];
+    } else {
+        self.layers_off.append(name);
+    }
+    # What the layers still off hold stays out of sight.
+    kept_items: list[Item] = [];
+    kept_solids: list[Solid] = [];
+    for other in self.layers_off {
+        kept_items.extend(self.set_items(other));
+        kept_solids.extend(self.set_solids(other));
+    }
+    count = 0;
+    for item in self.set_items(name) {
+        veiled = False;
+        for held in kept_items {
+            if held is item {
+                veiled = True;
+            }
+        }
+        if item.hidden != veiled {
+            item.hidden = veiled;
+            count += 1;
+        }
+    }
+    for solid in self.set_solids(name) {
+        covered = False;
+        for held_solid in kept_solids {
+            if held_solid is solid {
+                covered = True;
+            }
+        }
+        if solid.hidden != covered {
+            solid.hidden = covered;
+            count += 1;
+        }
+    }
+    if not shown {
+        # What is out of sight is not selected.
+        for item in self.set_items(name) {
+            if self.is_selected(item) {
+                self.select(item, True);
+            }
+        }
+        for solid in self.set_solids(name) {
+            if self.is_solid_selected(solid) {
+                self.select_solid(solid, True);
+            }
+        }
+    }
+    self.dirty = True;
+    self.geometry += 1;
+    self.revision += 1;
+    return count;
+}
+
+impl Scene.only_layer(name: str) -> int {
+    if name not in self.set_names {
+        return 0;
+    }
+    count = 0;
+    for other in self.set_names {
+        if other != name {
+            count += self.show_layer(other, False);
+        }
+    }
+    return count + self.show_layer(name, True);
+}
+
 impl Scene.drop_set(name: str) -> bool {
     if name not in self.set_names {
         return False;
     }
+    # A layer that was off shows its members again as it goes.
+    self.show_layer(name, True);
     for member in [self->:Member:name == name:->] {
         self del->:Member:name == name:-> member;
     }

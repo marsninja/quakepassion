@@ -155,18 +155,18 @@ impl Studio.step_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_make" {
-        wanted = args[1] if len(args) > 1 else "";
+        sought = args[1] if len(args) > 1 else "";
         known = self.all_recipes();
-        if wanted not in known {
+        if sought not in known {
             self.say("ed_make <name>: " + (", ".join(sorted(known.keys())) if known else "no recipes are kept (ed_recipe)"));
             return True;
         }
-        steps = recipe_steps(known[wanted]);
+        steps = recipe_steps(known[sought]);
         if app is not None {
             # Ahead of whatever waits, each in its turn.
             app.shell.insert_text("\n".join(steps));
         }
-        print("studio: making " + wanted + " steps=" + str(len(steps)));
+        print("studio: making " + sought + " steps=" + str(len(steps)));
         return True;
     }
     if name != "ed_run" {

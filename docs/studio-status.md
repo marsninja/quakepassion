@@ -204,6 +204,50 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the settings; `ed_game` alone lists the four with the folder each is
   read from (those folders are still set by `QP_ASSETS` and
   `~/quake-assets`, not from the studio).
+- **Layers**: every kept set (`ed_keep <name>`) is a layer too, whatever
+  owns its members: `ed_layer <name> hide|show` hides or shows what it
+  holds as one, `ed_layer <name>` alone toggles it, `ed_layer <name>
+  only` shows it and hides every other, `ed_layer all` shows them all
+  (as `ed_show` does), and `ed_layer` (View menu, Layers) lists them with
+  what each holds, to click. What two layers share stays hidden while
+  either is off. A hidden layer is out of the views, of what a click
+  finds and of what the views are built from, and in what is built for
+  play; the layers that are off are saved with the map (`_layers_off`).
+- **Bands of depth**: `ed_depth [top|front|side] <low> <high>` holds an
+  axis view to a band of depth, measured along the world axis it looks
+  along (z for the top view), `ed_depth <view> selection` takes the band
+  from what is selected with eight units to spare, and `ed_depth <view>
+  off` lets it go; with no view named it is the one last pointed at. What
+  lies wholly outside a view's band is greyed there, left out and no
+  longer clicked there, or drawn as ever: `ed_outside grey|hide|whole`
+  (kept in the settings; with no word it steps through them). The edges
+  of each band are drawn as red lines across the other axis views. The
+  textured picture of the level in an axis view is not cut to the band:
+  it is the outlines, the entities' boxes and what a click finds that are.
+- **Oblique views**: Alt and a right drag turns an axis view off its
+  axis, and `ed_oblique [top|front|side] <yaw> <pitch>` sets how it looks
+  in degrees. A view so turned has no grid; a compass in its corner shows
+  the world's three axes as it sees them, and a press on the compass, or
+  `ed_oblique <view> off`, straightens it. (View menu: the selection's
+  depth, every depth, what is outside, straighten.)
+- **Programs outside the studio**: `ed_assoc <ending> "<command line>
+  %file%"` keeps a program for files of an ending (`png`, `map`, or `*`
+  for any other), `ed_assoc <ending>` alone forgets one and `ed_assoc`
+  lists them; they are kept in the settings. `ed_openwith [file]` opens a
+  file with the program kept for its ending and leaves it running beside
+  the studio: a path, a `file:` material, or with no word the image file
+  that is the material in hand (else the scene's own map).
+- **Files that change**: the project's image files in use as materials are
+  looked at twice a second by the clock, and one changed on disk (saved from an image
+  editor) is read again, its picture in the Materials tab drawn again and
+  the level built with it, at its new size if that changed. `ed_watch
+  off` stops that; `ed_reload` reads them all again and builds the level
+  afresh whether or not they changed.
+- **The mouse**: `ed_mouse look <rate>` is how fast a right drag turns the
+  3D camera (1 unless told), `ed_mouse invert on` turns it up for a drag
+  down, `ed_mouse wheel <rate>` is how far a notch of the wheel moves or
+  zooms a view and `ed_mouse reverse on` sends it the other way. Kept in
+  the settings; `ed_mouse` alone (Window menu) says how it stands.
 - **Building**: `ed_build` builds the level again now; `ed_build full`
   lights it finely (a lightmap texel to 16 units), `ed_build quick`
   coarsely (to 32, about a third of the work), and `ed_build flat` not at
@@ -845,6 +889,27 @@ editor/impl/                 the workbench's scenes and brushes
   from the Window menu; closed, and an older project opened with its
   scene and its own add-on, its manifest untouched; a game's material
   and build kept in the settings and the next scene floored with it).
+  `scripts/studio/outside_session.cfg` (8 steps: a four-texel image
+  fitted to a face; a program kept for `.png` files and another
+  forgotten; the material's file opened with it, a stand-in editor that
+  puts an eight-texel image in its place, which the studio reads again
+  unasked so that the face fits at sixteen units a texel; a right drag
+  turning the camera 29 degrees, then 57 and the other way up at twice
+  the rate inverted; the wheel moving the camera 64 units forward, then
+  128 back).
+  `scripts/studio/depth_session.cfg` (10 steps: two boxes drawn, one
+  lifted; the top view held to the depths about the floor, with one brush
+  outside its band, greyed and still clicked; left out instead, and a
+  click where it was going to the floor beneath; the band taken from the
+  selection and let go; the top view turned off its axis by command and
+  the front by Alt and a right drag; the top straightened by a press on
+  its compass and the front by command).
+  `scripts/studio/layers_session.cfg` (7 steps: two boxes drawn, each
+  kept as a layer and both as a third; one hidden, its box out of the
+  views and of what they are built from, and a click where it stood
+  finding the floor; the layer of both hidden and the first shown again,
+  both boxes staying out of sight; the list of layers; one shown alone;
+  the layers that are off written into the saved map; everything shown).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

@@ -14,7 +14,13 @@ obj EditCamera {
         fov: float = 73.74,
         # Above zero the camera is orthographic: this many world units fit
         # the view's height, and everything along the line of sight shows.
-        span: float = 0.0;
+        span: float = 0.0,
+        # An orthographic view held to a band of depth: what lies wholly
+        # outside `depth_low` to `depth_high`, measured along the axis the
+        # view looks along, is out of it.
+        bounded: bool = False,
+        depth_low: float = 0.0,
+        depth_high: float = 0.0;
 
     def forward -> Vec3 {
         return forward_from(self.yaw, self.pitch);
@@ -26,6 +32,38 @@ obj EditCamera {
 
     def up -> Vec3 {
         return self.right().cross(self.forward());
+    }
+
+    """The axis depth is measured along: the world's own when the view looks
+    along one (z for a view from above, whichever way it faces), else the
+    line of sight."""
+    def depth_axis -> Vec3 {
+        ahead = self.forward();
+        for axis in [Vec3(x=1.0), Vec3(y=1.0), Vec3(z=1.0)] {
+            if abs(ahead.dot(axis)) > 0.9999 {
+                return axis;
+            }
+        }
+        return ahead;
+    }
+
+    """Whether an orthographic camera looks along none of the world's axes."""
+    def oblique -> bool {
+        ahead = self.forward();
+        return self.span > 0.0 and max(abs(ahead.x), max(abs(ahead.y), abs(ahead.z))) <= 0.9999;
+    }
+
+    """Whether a box lies wholly outside the band of depth the view is held to."""
+    def out_of_depth(low: Vec3, high: Vec3) -> bool {
+        if not self.bounded or self.span <= 0.0 {
+            return False;
+        }
+        axis = self.depth_axis();
+        least = min(low.x * axis.x, high.x * axis.x) + min(low.y * axis.y, high.y * axis.y)
+            + min(low.z * axis.z, high.z * axis.z);
+        most = max(low.x * axis.x, high.x * axis.x) + max(low.y * axis.y, high.y * axis.y)
+            + max(low.z * axis.z, high.z * axis.z);
+        return most < self.depth_low or least > self.depth_high;
     }
 
     """Turn by angles in radians, without rolling over the poles."""
