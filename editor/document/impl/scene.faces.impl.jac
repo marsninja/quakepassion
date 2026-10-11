@@ -355,16 +355,52 @@ impl Scene.remake_patch(
     thick = thickness if thickness > 0.0 else lay[3];
     owned = self.solids_of(item);
     like: list[Side] = owned[0].sides if len(owned) > 0 else [];
-    brushes = patch_brushes(points, width, height, min(16, fine), thick, "", like);
-    return self.rebuild_item(
-        item,
-        brushes,
-        {
-            "_patch": str(width) + " " + str(height) + " " + str(min(16, fine)) + " " + field_number(thick),
-            "_points": points_text(points)
-        },
-        label
-    );
+    # Its places on the material, while it has as many as control points.
+    laid = places_from(item.fields.get("_st", ""), width * height);
+    brushes = patch_brushes(points, width, height, min(16, fine), thick, "", like, laid);
+    told: dict[str, str | None] = {
+        "_patch": str(width) + " " + str(height) + " " + str(min(16, fine)) + " " + field_number(thick),
+        "_points": points_text(points)
+    };
+    if len(laid) == 0 and "_st" in item.fields {
+        # Another grid of control points: the places kept were for the old one.
+        told["_st"] = None;
+    }
+    return self.rebuild_item(item, brushes, told, label);
+}
+
+impl Scene.patch_places(item: Item) -> list[float] {
+    lay = self.patch_grid(item);
+    if lay is None {
+        return [];
+    }
+    return places_from(item.fields.get("_st", ""), int(lay[0]) * int(lay[1]));
+}
+
+impl Scene.set_patch_places(item: Item, places: list[float], label: str = "Lay material") -> bool {
+    lay = self.patch_grid(item);
+    control = self.patch_control(item);
+    if lay is None or control is None {
+        return False;
+    }
+    width = int(lay[0]);
+    height = int(lay[1]);
+    if len(places) != 0 and len(places) != width * height * 2 {
+        return False;
+    }
+    after = places_text(places) if len(places) > 0 else "";
+    if after == item.fields.get("_st", "") {
+        return False;
+    }
+    owned = self.solids_of(item);
+    like: list[Side] = owned[0].sides if len(owned) > 0 else [];
+    material = like[0].material if len(like) > 0 else "";
+    if len(places) == 0 {
+        # Forgotten: its faces go back to the material's plain lie, not the one they were given.
+        like = [];
+    }
+    brushes = patch_brushes(control, width, height, int(lay[2]), lay[3], material, like, places);
+    return self.rebuild_item(item, brushes, {"_st": after if after else None}, label);
 }
 
 impl Scene.grow_patch(item: Item, way: str, more: bool = True) -> bool {
@@ -487,4 +523,47 @@ impl Scene.move_terrain(item: Item, part: str, amount: float) -> bool {
     told = str(cols) + " " + str(rows) + " " + item.fields.get("_terrain", "").split()[2] + " "
         + (str(int(thick)) if thick == float(int(thick)) else str(round(thick, 3)));
     return len(rebuilt) == len(owned) and self.rebuild_item(item, rebuilt, {"_terrain": told}, "Move bottom");
+}
+
+impl Scene.patch_lies(item: Item) -> list[float] {
+    lay = self.patch_grid(item);
+    control = self.patch_control(item);
+    if lay is None or control is None {
+        return [];
+    }
+    grid = patch_surface(control, int(lay[0]), int(lay[1]), int(lay[2]));
+    columns = grid[0];
+    surface = grid[2];
+    if columns < 2 or len(surface) < columns * 2 {
+        return [];
+    }
+    last = len(surface) - 1;
+    found: list[float] = [];
+    # Each corner with the two points beside it, which say which way the surface faces there.
+    for trio in [[0, 1, columns], [last, last - 1, last - columns]] {
+        corner = surface[trio[0]];
+        out = surface[trio[1]].sub(corner).cross(surface[trio[2]].sub(corner));
+        if out.length() < 0.000001 {
+            return [];
+        }
+        facing = out.normalized();
+        place: list[float] = [];
+        for solid in self.solids_of(item) {
+            # The prism the corner is a corner of: no side of it has the point outside.
+            if len(place) > 0 or len([side for side in solid.sides if side.plane.side(corner) > 0.1]) > 0 {
+                continue;
+            }
+            for side in solid.sides {
+                if len(place) == 0 and abs(side.plane.side(corner)) < 0.1 and abs(side.plane.normal.dot(facing)) > 0.9 {
+                    place = mapping_place(side.mapping, corner);
+                }
+            }
+        }
+        if len(place) != 2 {
+            return [];
+        }
+        found.append(place[0]);
+        found.append(place[1]);
+    }
+    return found;
 }

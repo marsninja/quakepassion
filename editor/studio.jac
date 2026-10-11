@@ -77,7 +77,9 @@ import from .classes.registry {
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights }
 import from .geometry.touchup { cell_at, kin_cells, cells_outline }
-import from .geometry.patch { patch_points, PATCH_KINDS }
+import from .geometry.patch {
+    patch_points, PATCH_KINDS, places_text, places_even, places_projected_from, places_slid
+}
 import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under }
 import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
 import from .model.wavefront { mesh_obj, obj_mesh }
@@ -362,8 +364,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_assetfind", "ed_assetfind <text>", "list the files of every game whose names hold some text"),
     (
         "ed_patch",
-        "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n>",
-        "add a curved patch where the camera looks; or give the selected one another curve, thickness or fineness"
+        "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n> | uv [fit [n [m]] | project | point <col> <row> <s> <t> | row <n> <ds> <dt> | col <n> <ds> <dt> | all <ds> <dt> | clear]",
+        "add a curved patch where the camera looks; give the selected one another curve, thickness or fineness; or say where its control points lie on its material"
     ),
     ("ed_patch_point", "ed_patch_point <patch> <point> <dx> <dy> <dz>", "move one control point of a patch"),
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
@@ -1254,7 +1256,10 @@ obj Studio(Workbench) {
                     MenuItem(text="Link the picked faces, or the selected brushes' shared planes", command="ed_facelink"),
                     MenuItem(text="Take their links away", command="ed_facelink clear"),
                     MenuItem(text="Carve, keeping divided faces linked", command="ed_carve link"),
-                    MenuItem(text="Mitre the two selected brushes", command="ed_miter")
+                    MenuItem(text="Mitre the two selected brushes", command="ed_miter"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Spread the material over the selected patch", command="ed_patch uv fit"),
+                    MenuItem(text="Lay the tagged face's material on the selected patch", command="ed_patch uv project")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),

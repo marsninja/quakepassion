@@ -1309,6 +1309,85 @@ def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The numbers of a `patch lies` or `patch places` line."""
+def lay_numbers(line: str) -> list[float] {
+    words = line.split()[4:] if line.startswith("studio: patch places") else line.split()[3:];
+    return [] if words in [["none"], ["nowhere"]] else [float(word) for word in words];
+}
+
+"""The fiftieth session: a patch told where its control points lie on its
+material."""
+def lay_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "lay_bent.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-lay-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/lay_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "lay.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The lay session failed: {output / 'lay.log'}";
+        saved_text = (Path(home) / "scenes/lay.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "boxed", "made", "fitted", "twice", "slid", "row", "column", "point", "bent", "tagged", "projected", "grown",
+        "shrunk", "cleared", "refused", "back"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'lay.log'}";
+    }
+    # Every time the patch says where its points lie, and where its built faces have the material.
+    told = [lay_numbers(line) for line in ran.stdout.splitlines() if line.startswith("studio: patch places ")];
+    lies = [lay_numbers(line) for line in ran.stdout.splitlines() if line.startswith("studio: patch lies ")];
+    assert len(told) == 13 and len(lies) == 13 , f"{len(told)} {len(lies)}";
+    # New, it has been told nothing: its faces take the material plainly, a texel a unit of the world.
+    assert told[0] == [] and lies[0] == [-64.0, -96.0, 64.0, -224.0] , f"{told[0]} {lies[0]}";
+    assert "_st=" not in selected(steps["made"])[0];
+    # Spread once: the material's own size from its first corner to its last.
+    wide = lies[1][2];
+    tall = lies[1][3];
+    assert lies[1][:2] == [0.0, 0.0] and wide >= 8.0 and tall >= 8.0 , str(lies[1]);
+    assert told[1] == [0.0, 0.0, wide / 2, 0.0, wide, 0.0, 0.0, tall / 2, wide / 2, tall / 2, wide, tall / 2, 0.0, tall, wide / 2, tall, wide, tall];
+    assert "_st=" + " ".join([str(int(each)) for each in told[1]]) + " owns=32" in selected(steps["fitted"])[0];
+    # Twice across; all of it slid; its last row; its first column; one corner.
+    assert lies[2] == [0.0, 0.0, wide * 2, tall] , str(lies[2]);
+    assert lies[3] == [16.0, 8.0, wide * 2 + 16, tall + 8] , str(lies[3]);
+    assert lies[4] == [16.0, 8.0, wide * 2 + 16, tall + 40] and told[4][:6] == told[3][:6] and told[4][13] == told[3][13] + 32;
+    assert lies[5] == [12.0, 8.0, wide * 2 + 16, tall + 40] and [told[5][i] - told[4][i] for i in [0, 6, 12, 2, 8]] == [-4.0, -4.0, -4.0, 0.0, 0.0];
+    assert lies[6] == [-16.0, -8.0, wide * 2 + 16, tall + 40] and told[6][2:] == told[5][2:] , str(lies[6]);
+    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in ["made", "fitted", "twice", "slid", "row", "column", "point", "bent"]];
+    assert undone == [undone[0] + count for count in range(8)] , str(undone);
+    # Bent, the patch keeps its places: its corners lie where they did, and the file has them.
+    assert patches(steps["bent"])[0] == "patch #4 3x3 top=96 prisms=32" and told[7] == told[6] and lies[7] == lies[6];
+    assert "\"_st\" \"" + " ".join([str(int(each)) for each in told[6]]) + "\"" in saved_text;
+    # From the tagged top of the box: each point where the box's material would have it.
+    tagged = faces(steps["tagged"]);
+    assert len(tagged) == 1 and face_word(tagged[0], "shift") == "8.0,4.0" and face_word(tagged[0], "scale") == "1.0,1.0";
+    assert told[8][:6] == [-56.0, -92.0, 8.0, -92.0, 72.0, -92.0] and lies[8] == [-56.0, -92.0, 72.0, -220.0] , str(told[8]);
+    # A wider grid has no places; undone, they are back.
+    assert patches(steps["grown"])[0].startswith("patch #4 5x3 ") and "_st=" not in selected(steps["grown"])[0] and told[9] == [];
+    assert told[10] == told[8] and lies[10] == lies[8] and "_st=" in selected(steps["shrunk"])[0];
+    # Forgotten: plain again, and there is nothing then to slide or forget.
+    assert told[11] == [] and lies[11] == lies[0] and "_st=" not in selected(steps["cleared"])[0];
+    assert steps["refused"][0] == steps["cleared"][0] and selected(steps["refused"])[0] == selected(steps["cleared"])[0];
+    assert told[12] == told[8] and lies[12] == lies[8] and "_st=" in selected(steps["back"])[0];
+    source = repo / "lay_bent.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "lay_bent.png");
+    source.unlink();
+    print(
+        f"LAY PASS: {len(steps) - 1} steps, a patch's material spread, slid by rows, columns and a point, kept through "
+            + "a bend, taken from a tagged face, and forgotten"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3606,6 +3685,7 @@ def main() {
         "nest": nest_session,
         "skin": skin_session,
         "preview": preview_session,
+        "lay": lay_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -3758,6 +3838,7 @@ def main() {
     nest_session(repo, binary, env, output);
     skin_session(repo, binary, env, output);
     preview_session(repo, binary, env, output);
+    lay_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

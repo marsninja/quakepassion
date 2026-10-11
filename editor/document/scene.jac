@@ -31,7 +31,10 @@ import from ..geometry.patch {
     points_carried,
     points_reversed,
     grid_grown,
-    grid_shrunk
+    grid_shrunk,
+    places_text,
+    places_from,
+    patch_surface
 }
 import from ..geometry.csg { hull_sides }
 import from ..geometry.faces { sides_dropped, side_flipped, cone_on, prism_on, walls_on, outline_width }
@@ -48,6 +51,7 @@ import from ..geometry.csg {
 }
 import from ..geometry.mapping {
     side_like,
+    mapping_place,
     mapping_slid,
     mapping_sized,
     mapping_spun,
@@ -1408,6 +1412,17 @@ node Scene {
     ) -> bool;
     """One more curve across ("u") or up ("v") a patch, or one fewer."""
     def grow_patch(item: Item, way: str, more: bool = True) -> bool;
+    """Where a patch's control points lie on its material, in texels, two
+    numbers a point (none when it has not been told)."""
+    def patch_places(item: Item) -> list[float];
+    """Tell a patch where its control points lie on its material (none
+    forgets them), and build it again so that its surface takes the
+    material as they say."""
+    def set_patch_places(item: Item, places: list[float], label: str = "Lay material") -> bool;
+    """Where a patch's built surface has its material at its first corner
+    and at its last, as its brushes' own faces say: four numbers, or none
+    when a corner is pinched to a point."""
+    def patch_lies(item: Item) -> list[float];
     """Lift (or lower) a terrain inside a rectangle of the world, with a
     falloff outside it."""
     def lift_terrain(item: Item, low: Vec3, high: Vec3, amount: float, falloff: float = 0.0) -> bool;

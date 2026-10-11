@@ -10,6 +10,8 @@ import math;
 import from engine.math.vec3 { Vec3 }
 import from .brush { Side }
 import from .csg { hull_sides }
+import from .mapping { side_like, mapping_through, mapping_place }
+import from .brush { Mapping }
 
 """Control points as a field keeps them: three numbers each."""
 def points_text(points: list[Vec3]) -> str {
@@ -83,9 +85,18 @@ def patch_brushes(
     steps: int = 4,
     thickness: float = 8.0,
     material: str = "",
-    like: list[Side] = []
+    like: list[Side] = [],
+    places: list[float] = []
 ) -> list[list[Side]] {
     grid = patch_surface(points, width, height, steps);
+    # Where each point of the surface lies on the material, when the
+    # control points say where they do: bent between them as the surface is.
+    skin: list[Vec3] = [];
+    if len(places) == width * height * 2 {
+        skin = patch_surface(
+            [Vec3(x=places[index * 2], y=places[index * 2 + 1]) for index in range(width * height)], width, height, steps
+        )[2];
+    }
     columns = grid[0];
     rows = grid[1];
     surface = grid[2];
@@ -135,6 +146,21 @@ def patch_brushes(
                     corners.append(backs[index]);
                 }
                 prism = hull_sides(corners, like, material);
+                if len(prism) >= 4 and len(skin) == len(surface) {
+                    # Its face of the surface takes the material as its three corners say.
+                    out = surface[trio[1]].sub(surface[trio[0]]).cross(surface[trio[2]].sub(surface[trio[0]])).normalized();
+                    laid = mapping_through(
+                        [surface[trio[0]], surface[trio[1]], surface[trio[2]]],
+                        [skin[trio[0]].x, skin[trio[0]].y, skin[trio[1]].x, skin[trio[1]].y, skin[trio[2]].x, skin[trio[2]].y]
+                    );
+                    if laid is not None {
+                        for (number, side) in enumerate(prism) {
+                            if abs(side.plane.normal.dot(out)) > 0.999 and abs(side.plane.side(surface[trio[0]])) < 0.1 {
+                                prism[number] = side_like(side, None, laid);
+                            }
+                        }
+                    }
+                }
                 if len(prism) >= 4 {
                     made.append(prism);
                 }
@@ -302,4 +328,65 @@ def grid_shrunk(points: list[Vec3], width: int, height: int, way: str) -> tuple[
         kept.append(points[index]);
     }
     return (width, height - 2, kept);
+}
+
+"""Places on a material as a field keeps them: two numbers a control point."""
+def places_text(places: list[float]) -> str {
+    return " ".join([str(int(each)) if each == float(int(each)) else str(round(each, 3)) for each in places]);
+}
+
+"""Places from a field: two numbers for each of `count` control points, or
+none when the field is not that."""
+def places_from(text: str, count: int) -> list[float] {
+    found: list[float] = [];
+    for word in text.split() {
+        try {
+            found.append(float(word));
+        } except ValueError {
+            return [];
+        }
+    }
+    return found if len(found) == count * 2 else [];
+}
+
+"""Places that spread a material evenly over a patch: `wide` texels from its
+first column of control points to its last, `tall` from its first row to
+its last."""
+def places_even(width: int, height: int, wide: float, tall: float) -> list[float] {
+    found: list[float] = [];
+    for row in range(height) {
+        for column in range(width) {
+            found.append(wide * float(column) / float(max(1, width - 1)));
+            found.append(tall * float(row) / float(max(1, height - 1)));
+        }
+    }
+    return found;
+}
+
+"""Places that lay a material on a patch as it lies on a plane: each control
+point where the mapping puts it."""
+def places_projected_from(points: list[Vec3], mapping: Mapping) -> list[float] {
+    found: list[float] = [];
+    for point in points {
+        spot = mapping_place(mapping, point);
+        found.append(spot[0]);
+        found.append(spot[1]);
+    }
+    return found;
+}
+
+"""Places with some control points' moved: those of a row, of a column, or
+all (`which` below zero)."""
+def places_slid(places: list[float], width: int, height: int, way: str, which: int, across: float, down: float) -> list[float] {
+    made = list(places);
+    for row in range(height) {
+        for column in range(width) {
+            chosen = way == "all" or (way == "row" and row == which) or (way == "col" and column == which);
+            if chosen and (row * width + column) * 2 + 1 < len(made) {
+                made[(row * width + column) * 2] += across;
+                made[(row * width + column) * 2 + 1] += down;
+            }
+        }
+    }
+    return made;
 }

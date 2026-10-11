@@ -1056,7 +1056,10 @@ impl Scene.set_patch(item: Item, points: list[Vec3], label: str = "Bend") -> boo
     }
     owned = self.solids_of(item);
     like: list[Side] = owned[0].sides if len(owned) > 0 else [];
-    brushes = patch_brushes(points, int(lay[0]), int(lay[1]), int(lay[2]), lay[3], "", like);
+    brushes = patch_brushes(
+        points, int(lay[0]), int(lay[1]), int(lay[2]), lay[3], "", like,
+        places_from(item.fields.get("_st", ""), int(lay[0]) * int(lay[1]))
+    );
     if len(brushes) == 0 {
         return False;
     }

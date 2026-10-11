@@ -289,3 +289,52 @@ def mapping_bad(mapping: Mapping) -> bool {
     }
     return mapping.s_axis.cross(mapping.t_axis).length() / (s_long * t_long) < 0.05;
 }
+
+"""How a material must lie on a plane for three points of it to have three
+places on the material, in texels: none when the points are in a line, or
+two of them are given one place."""
+def mapping_through(points: list[Vec3], texels: list[float]) -> Mapping | None {
+    if len(points) != 3 or len(texels) != 6 {
+        return None;
+    }
+    first = points[1].sub(points[0]);
+    second = points[2].sub(points[0]);
+    aa = first.dot(first);
+    ab = first.dot(second);
+    bb = second.dot(second);
+    det = aa * bb - ab * ab;
+    if abs(det) < 0.000001 {
+        return None;
+    }
+    axes: list[Vec3] = [];
+    for k in range(2) {
+        # The way along the plane that the material's s (then t) grows,
+        # as long as it grows in a unit of the world.
+        one = texels[2 + k] - texels[k];
+        two = texels[4 + k] - texels[k];
+        axes.append(first.scale((one * bb - two * ab) / det).add(second.scale((two * aa - one * ab) / det)));
+    }
+    if axes[0].length() < 0.0000001 or axes[1].length() < 0.0000001 {
+        return None;
+    }
+    s_scale = 1.0 / axes[0].length();
+    t_scale = 1.0 / axes[1].length();
+    s_axis = axes[0].normalized();
+    t_axis = axes[1].normalized();
+    return Mapping(
+        s_axis=s_axis,
+        t_axis=t_axis,
+        s_shift=texels[0] - points[0].dot(s_axis) / s_scale,
+        t_shift=texels[1] - points[0].dot(t_axis) / t_scale,
+        s_scale=s_scale,
+        t_scale=t_scale
+    );
+}
+
+"""Where a point lies on a material laid by a mapping, in texels: [s, t]."""
+def mapping_place(mapping: Mapping, point: Vec3) -> list[float] {
+    return [
+        point.dot(mapping.s_axis) / mapping.s_scale + mapping.s_shift,
+        point.dot(mapping.t_axis) / mapping.t_scale + mapping.t_shift
+    ];
+}

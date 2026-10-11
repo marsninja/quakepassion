@@ -698,6 +698,21 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   going) and gives one up (`ed_patch shrink <u|v>`); `ed_patch thick
   <units>` changes how thick it is built and `ed_patch fine <n>` how many
   prisms a curve it is built of. Each is one undoable step.
+- **A patch's material by its control points**: `ed_patch uv` says where
+  each control point of the selected patch lies on its material, in
+  texels, and where its built faces have the material at its first corner
+  and its last. `ed_patch uv fit [across] [up]` spreads the material over
+  the patch in so many repeats (Brush > Spread the material over the
+  selected patch); `ed_patch uv project` lays it as it lies on the tagged
+  face, each point taking the place the face's material would have there
+  (Brush > Lay the tagged face's material on the selected patch).
+  `ed_patch uv point <column> <row> <s> <t>` puts one point somewhere
+  else, `ed_patch uv row|col <n> <ds> <dt>` slides a row or a column of
+  them and `ed_patch uv all <ds> <dt>` all of them; `ed_patch uv clear`
+  forgets them, and the faces lie plainly again. The places bend between
+  the control points as the surface does, are kept in the scene (`_st`)
+  through every bend and move, and are let go when the patch takes
+  another grid of points. Each is one undoable step.
 - **More for terrain**: `ed_sculpt erode` wears down what stands above its
   lowest neighbour, and `ed_sculpt paint` gives the tops under the brush
   the material in hand. `ed_terrain lift <x0> <y0> <x1> <y1> <amount>
@@ -988,6 +1003,11 @@ editor/impl/                 the workbench's scenes and brushes
   back.
 - `tests/studio_patch_tests.jac`: control points as a field, the surface
   through its corner points, a sheet's prisms, a lifted point, every kind.
+- `tests/studio_patchskin_tests.jac`: a material laid on a plane through
+  three points and their places; places as a field, spread, projected and
+  slid; a patch's prisms taking the material where the control points
+  say, in step with their neighbours; places kept through a bend, read
+  back from the built faces, let go with the grid and forgotten.
 - `tests/studio_shape_tests.jac`, `tests/studio_class_tests.jac`: each
   shape's size, volume and gaps; the class table read whole, fields by
   kind, classes by game, option bits.
@@ -1233,6 +1253,12 @@ editor/impl/                 the workbench's scenes and brushes
   monsters and pickups listed, fifty-four of them, the soldier's and the
   armour's among them; drawn in the 3D view near the camera; turned off
   again, and the choice kept in the settings).
+  `scripts/studio/lay_session.cfg` (16 steps: a sheet's material spread
+  once and then twice across, slid whole, by its last row, its first
+  column and one corner, each read back from the built faces; kept
+  through a bend and in the saved map; taken from the tagged top of a
+  box; let go when the patch grows a curve and back when that is undone;
+  forgotten, and back again).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
@@ -1258,11 +1284,8 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
 - Not yet built: the rest of the bake (a partition by the brushes' own
   planes with portals between its leaves, in place of cells of the plan;
   bounced light; bot navigation); patches written back as
-  `patchDef2`, and texture coordinates per control point; the rest of the
-  asset studio (models textured and assembled, sounds played, shader and
-  texture authoring); the
-  model editor; the Passion tools; user walkers.
-- Within the shell: entity previews are boxes rather than the entity's
-  model, and generated (Passion) levels can be edited but not saved as
+  `patchDef2`; bones and weights in the model editor; the Passion tools;
+  user walkers.
+- Within the shell: generated (Passion) levels can be edited but not saved as
   they are (`ed_convert` is meant to turn one into a scene, but expeditions
   do not load in the test environment at present: #76).
