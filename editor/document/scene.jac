@@ -21,7 +21,7 @@ import math;
 import from ..formats.map { MapItem, MapFile }
 import from ..classes.registry { flag_put }
 import from ..geometry.terrain { terrain_brushes, flat_heights, heights_text, heights_from, sculpted }
-import from ..geometry.patch { patch_brushes, points_text, points_from, points_shifted }
+import from ..geometry.patch { patch_brushes, points_text, points_from, points_shifted, points_carried }
 import from ..geometry.csg { hull_sides }
 import from ..geometry.csg {
     carve_sides,
@@ -123,6 +123,24 @@ node Solid {
     def bounds -> list[Vec3] | None {
         return windings_bounds(self.outlines());
     }
+}
+
+"""The field a group keeps its own pivot in: what it turns and stretches
+about, in place of its middle."""
+glob PIVOT_KEY: str = "_center";
+
+"""A side as a change left it, with the material lying as it did before:
+where it was in the world, the face having moved through it."""
+def side_loose(after: Side, before: Side) -> Side {
+    return Side(
+        plane=after.plane,
+        points=after.points,
+        material=after.material,
+        mapping=before.mapping,
+        contents=after.contents,
+        flags=after.flags,
+        value=after.value
+    );
 }
 
 """A side moved by `delta`, its material staying where it lies on the face
@@ -391,7 +409,10 @@ walker Shift {
     has delta: Vec3,
         step: Step,
         # Brushes already moved, so one selected with its entity moves once.
-        slid: list[Solid] = [];
+        slid: list[Solid] = [],
+        # Whether materials go with their faces, or stay where they lie in
+        # the world while the faces move through them.
+        locked: bool = True;
 
     can start with Scene entry {
         visit [here->:Selected:->];
@@ -406,6 +427,13 @@ walker Shift {
                 carried = FieldChange(item=here, key="_points", before=bent, after=points_shifted(bent, self.delta));
                 carried.redo();
                 self.step.changes.append(carried);
+            }
+            hub = here.fields.get(PIVOT_KEY);
+            if hub is not None {
+                # A group's own pivot goes with the group.
+                kept = FieldChange(item=here, key=PIVOT_KEY, before=hub, after=points_shifted(hub, self.delta));
+                kept.redo();
+                self.step.changes.append(kept);
             }
             visit [here->:Owns:->];
             return;
@@ -423,7 +451,12 @@ walker Shift {
         }
         self.slid.append(here);
         change = SidesChange(
-            solid=here, before=here.sides, after=[side_moved(side, self.delta) for side in here.sides]
+            solid=here,
+            before=here.sides,
+            after=[
+                (side_moved(side, self.delta) if self.locked else side_loose(side_moved(side, self.delta), side))
+                for side in here.sides
+            ]
         );
         change.redo();
         self.step.changes.append(change);
@@ -586,7 +619,8 @@ walker Turn {
         step: Step,
         # 0, 1 or 2: the x, y or vertical axis.
         axis: int = 2,
-        turned: list[Solid] = [];
+        turned: list[Solid] = [],
+        locked: bool = True;
 
     can start with Scene entry {
         visit [here->:Selected:->];
@@ -595,6 +629,27 @@ walker Turn {
     can swing with Item entry {
         at = here.origin();
         if at is None {
+            about = axis_vector(self.axis);
+            for key in ["_points", PIVOT_KEY] {
+                # A patch's control points, and a group's pivot, turn with it.
+                held = here.fields.get(key);
+                if held is not None {
+                    carried = FieldChange(
+                        item=here,
+                        key=key,
+                        before=held,
+                        after=points_carried(
+                            held,
+                            self.pivot,
+                            spun_about(Vec3(x=1.0), about, self.angle),
+                            spun_about(Vec3(y=1.0), about, self.angle),
+                            spun_about(Vec3(z=1.0), about, self.angle)
+                        )
+                    );
+                    carried.redo();
+                    self.step.changes.append(carried);
+                }
+            }
             visit [here->:Owns:->];
             return;
         }
@@ -629,16 +684,16 @@ walker Turn {
             return;
         }
         self.turned.append(here);
-        change = SidesChange(
-            solid=here,
-            before=here.sides,
-            after=[
-                (side_turned(side, self.pivot, self.angle) if self.axis == 2 else side_spun(
-                    side, self.pivot, self.axis, self.angle
-                ))
-                for side in here.sides
-            ]
-        );
+        spun = [
+            (side_turned(side, self.pivot, self.angle) if self.axis == 2 else side_spun(
+                side, self.pivot, self.axis, self.angle
+            ))
+            for side in here.sides
+        ];
+        if not self.locked {
+            spun = [side_loose(spun[index], here.sides[index]) for index in range(len(spun))];
+        }
+        change = SidesChange(solid=here, before=here.sides, after=spun);
         change.redo();
         self.step.changes.append(change);
     }
@@ -748,7 +803,8 @@ walker Stretch {
     has pivot: Vec3,
         factors: Vec3,
         step: Step,
-        seen: list[Solid] = [];
+        seen: list[Solid] = [],
+        locked: bool = True;
 
     can start with Scene entry {
         visit [here->:Selected:->];
@@ -757,6 +813,26 @@ walker Stretch {
     can place with Item entry {
         at = here.origin();
         if at is None {
+            for key in ["_points", PIVOT_KEY] {
+                # A patch's control points, and a group's pivot, stretch with it.
+                held = here.fields.get(key);
+                if held is not None {
+                    carried = FieldChange(
+                        item=here,
+                        key=key,
+                        before=held,
+                        after=points_carried(
+                            held,
+                            self.pivot,
+                            Vec3(x=self.factors.x),
+                            Vec3(y=self.factors.y),
+                            Vec3(z=self.factors.z)
+                        )
+                    );
+                    carried.redo();
+                    self.step.changes.append(carried);
+                }
+            }
             visit [here->:Owns:->];
             return;
         }
@@ -799,6 +875,9 @@ walker Stretch {
         after = [side_stretched(side, self.pivot, self.factors) for side in here.sides];
         if not sides_enclose(after) {
             return;
+        }
+        if not self.locked {
+            after = [side_loose(after[index], here.sides[index]) for index in range(len(after))];
         }
         change = SidesChange(solid=here, before=here.sides, after=after);
         change.redo();
@@ -1183,7 +1262,19 @@ node Scene {
     def select_material(material: str) -> int;
     """Stretch the selection about its middle by a factor along each axis
     (-1 mirrors)."""
-    def stretch_selection(factors: Vec3, grid: float = 8.0, label: str = "Stretch") -> bool;
+    def stretch_selection(
+        factors: Vec3, grid: float = 8.0, label: str = "Stretch", about: Vec3 | None = None, locked: bool = True
+    ) -> bool;
+    """The pivot the one selected group keeps for itself, when it keeps one."""
+    def selection_pivot -> Vec3 | None;
+    """Where the selection turns and stretches about when nothing says
+    otherwise: its middle, put on the grid."""
+    def selection_hub(grid: float = 8.0) -> Vec3 | None;
+    """Give the one selected group a pivot of its own, or take it away."""
+    def set_pivot(at: Vec3 | None) -> bool;
+    """Push every side of the selected brushes out by a distance (in, when it
+    is negative). Answers how many brushes changed."""
+    def inflate_selection(amount: float) -> int;
     """Cut the selected brushes out of every other. Answers how many brushes
     changed."""
     def carve_selection(lined: bool = False) -> int;
@@ -1397,7 +1488,9 @@ node Scene {
 
     """Turn the selection by an angle in degrees about the vertical line
     through its middle (snapped to `grid`, so quarter turns stay on it)."""
-    def turn_selection(degrees: float, grid: float = 8.0, axis: int = 2) -> bool {
+    def turn_selection(
+        degrees: float, grid: float = 8.0, axis: int = 2, about: Vec3 | None = None, locked: bool = True
+    ) -> bool {
         middle = self.selection_middle();
         if middle is None or degrees == 0.0 {
             return False;
@@ -1408,8 +1501,11 @@ node Scene {
             y=float(round(middle.y / step_size)) * step_size,
             z=middle.z if axis == 2 else float(round(middle.z / step_size)) * step_size
         );
+        if about is not None {
+            pivot = about;
+        }
         step = Step(label="Turn");
-        self spawn Turn(pivot=pivot, angle=math.radians(degrees), step=step, axis=axis);
+        self spawn Turn(pivot=pivot, angle=math.radians(degrees), step=step, axis=axis, locked=locked);
         return self.commit(step);
     }
 
@@ -1588,9 +1684,9 @@ node Scene {
         return self.commit(step);
     }
 
-    def shift_selection(delta: Vec3) -> bool {
+    def shift_selection(delta: Vec3, locked: bool = True) -> bool {
         step = Step(label="Move");
-        self spawn Shift(delta=delta, step=step);
+        self spawn Shift(delta=delta, step=step, locked=locked);
         return self.commit(step);
     }
 

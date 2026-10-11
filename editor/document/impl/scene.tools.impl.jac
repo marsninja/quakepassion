@@ -144,7 +144,9 @@ impl Scene.select_material(material: str) -> int {
     return count;
 }
 
-impl Scene.stretch_selection(factors: Vec3, grid: float = 8.0, label: str = "Stretch") -> bool {
+impl Scene.stretch_selection(
+    factors: Vec3, grid: float = 8.0, label: str = "Stretch", about: Vec3 | None = None, locked: bool = True
+) -> bool {
     middle = self.selection_middle();
     if middle is None or factors.x == 0.0 or factors.y == 0.0 or factors.z == 0.0 {
         return False;
@@ -158,9 +160,82 @@ impl Scene.stretch_selection(factors: Vec3, grid: float = 8.0, label: str = "Str
         y=float(round(middle.y / step_size)) * step_size,
         z=float(round(middle.z / step_size)) * step_size
     );
+    if about is not None {
+        pivot = about;
+    }
     step = Step(label=label);
-    self spawn Stretch(pivot=pivot, factors=factors, step=step);
+    self spawn Stretch(pivot=pivot, factors=factors, step=step, locked=locked);
     return self.commit(step);
+}
+
+impl Scene.selection_pivot -> Vec3 | None {
+    chosen = self.selection();
+    if len(chosen) != 1 or self.selected_solids() {
+        return None;
+    }
+    kept = chosen[0].fields.get(PIVOT_KEY);
+    return read_vector(kept) if kept is not None else None;
+}
+
+impl Scene.selection_hub(grid: float = 8.0) -> Vec3 | None {
+    middle = self.selection_middle();
+    if middle is None {
+        return None;
+    }
+    size = grid if grid > 0.0 else 1.0;
+    return Vec3(
+        x=float(round(middle.x / size)) * size,
+        y=float(round(middle.y / size)) * size,
+        z=float(round(middle.z / size)) * size
+    );
+}
+
+impl Scene.set_pivot(at: Vec3 | None) -> bool {
+    chosen = self.selection();
+    if len(chosen) != 1 or self.selected_solids() or chosen[0].origin() is not None {
+        return False;
+    }
+    before = chosen[0].fields.get(PIVOT_KEY);
+    after = write_vector(at) if at is not None else None;
+    if before == after {
+        return True;
+    }
+    step = Step(label="Pivot");
+    change = FieldChange(item=chosen[0], key=PIVOT_KEY, before=before, after=after);
+    change.redo();
+    step.changes.append(change);
+    return self.commit(step);
+}
+
+impl Scene.inflate_selection(amount: float) -> int {
+    if amount == 0.0 {
+        return 0;
+    }
+    swollen = self.selected_solids();
+    for item in self.selection() {
+        for solid in self.solids_of(item) {
+            if solid not in swollen {
+                swollen.append(solid);
+            }
+        }
+    }
+    step = Step(label="Inflate" if amount > 0.0 else "Deflate");
+    count = 0;
+    for solid in swollen {
+        after = [side_moved(side, side.plane.normal.scale(amount)) for side in solid.sides];
+        if not sides_enclose(after) {
+            # Pushed in until nothing is left: this one stays as it is.
+            continue;
+        }
+        change = SidesChange(solid=solid, before=solid.sides, after=after);
+        change.redo();
+        step.changes.append(change);
+        count += 1;
+    }
+    if count > 0 {
+        self.commit(step);
+    }
+    return count;
 }
 
 impl Scene.carve_selection(lined: bool = False) -> int {

@@ -206,3 +206,20 @@ def points_shifted(text: str, delta: Vec3) -> str {
     }
     return points_text([point.add(delta) for point in points]);
 }
+
+"""Control points kept as a field, every one carried by a change of the
+world that sends a point p to pivot + M (p - pivot): `across`, `along` and
+`upward` are what M makes of the x, y and z axes."""
+def points_carried(text: str, pivot: Vec3, across: Vec3, along: Vec3, upward: Vec3) -> str {
+    words = text.split();
+    points = points_from(text, len(words) // 3);
+    if points is None {
+        return text;
+    }
+    moved: list[Vec3] = [];
+    for point in points {
+        away = point.sub(pivot);
+        moved.append(pivot.add(across.scale(away.x)).add(along.scale(away.y)).add(upward.scale(away.z)));
+    }
+    return points_text(moved);
+}
