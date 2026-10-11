@@ -93,7 +93,7 @@ impl Studio.expanded(scene: Scene) -> Scene {
         return scene;
     }
     plain: list[MapItem] = [];
-    for read in with_holes(with_images(scene_map(scene))) {
+    for read in with_holes(with_images(scene_map(scene)) if self.images_shown else scene_map(scene)) {
         if read.fields.get("classname", "") != "misc_prefab" {
             plain.append(read);
         }

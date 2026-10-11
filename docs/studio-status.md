@@ -352,7 +352,21 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   mirror <x|y|z>`): a group that asks for copies is built with them, each an
   offset on and a turn more than the last, or its mirror image; they follow
   the group as it is edited. `ed_dup apply` makes them real brushes and
-  `ed_dup off` stops them.
+  `ed_dup off` stops them. More of what a duplicator can ask for:
+  - `ed_dup grow <factor>` (or a factor an axis): each copy that much the
+    size of the last. `ed_dup axis <x|y|z>`: what each copy's turn goes
+    about, so a ring can stand upright.
+  - `ed_dup mirror xy` (or `xyz`): every combination of the axes named, so
+    one corner of a room becomes four, or eight.
+  - `ed_dup at <targetname>`: an image at every entity of that name,
+    facing as it does; `ed_dup path <targetname>`: one at every corner of
+    a path, facing along it.
+  - `ed_dup materials <names>`: the images take those materials in turn.
+  - `ed_dup each` (on an entity made of brushes, a door say): each image
+    is an entity of its own, with the number in its `targetname` and
+    `target` counted up, so three doors open one by one.
+  - `ed_dup hide` builds the level without any images, and `show` with
+    them.
 - **The leak finder** (Edit > Look for a leak, `ed_leak`): floods from the
   entities through the space the world's brushes leave; when it reaches
   the void, the way it took is drawn in red in every view.
@@ -468,6 +482,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_document_tests.jac`: entity lumps round-trip; selection;
   every edit and its undo; any run of edits undone in full restores the
   document.
+- `tests/studio_duplicator_tests.jac`: copies that grow and turn about
+  each axis; mirrors on two and three axes; images at named entities and
+  along a path's corners; the material cycle; a door's images as doors
+  with counted names.
 - `tests/studio_entities_tests.jac`: what each skill and mode leaves out;
   the preview hiding and showing; values replaced and refused; the audit;
   pasted entities renamed apart from the document's.
@@ -607,6 +625,11 @@ editor/impl/                 the workbench's scenes and brushes
   console's last lines; a right click on a drawn box and Duplicate from its
   menu; the box's faces stepped through; the scene saved without comments
   and in whole numbers).
+  `scripts/studio/dups_session.cfg` (11 steps: a post copied in a row,
+  grown and mirrored on two axes into seventeen built brushes; hidden and
+  shown; an image at each of two named entities, then at three path
+  corners, then made real; a door with two images played as three doors,
+  the second opened by firing `door2`).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

@@ -65,7 +65,16 @@ import from .geometry.patch { patch_points, PATCH_KINDS }
 import from .compile.light { bake_light }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
-import from .document.generate { duplicates, image_brushes, with_images, DUPLICATOR_KEYS, with_holes, digs, DIGGER_KEY }
+import from .document.generate {
+    duplicates,
+    image_brushes,
+    image_sets,
+    with_images,
+    DUPLICATOR_KEYS,
+    with_holes,
+    digs,
+    DIGGER_KEY
+}
 import from .document.scene {
     Scene,
     Item,
@@ -301,8 +310,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_leak", "ed_leak [clear]", "look for a way from the entities out to the void, and draw it"),
     (
         "ed_dup",
-        "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <x|y|z> | off | apply",
-        "make the selected group build copies of itself, stop it, or make the copies real"
+        "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <axes> | axis <x|y|z> | grow <f> | at <name> | path <name> | materials <names> | each [on|off] | hide | show | off | apply",
+        "make the selected group build copies of itself (in a row, mirrored, at named points, along a path), stop it, or make the copies real"
     ),
     ("ed_link", "ed_link <from> <to>", "make one entity fire another"),
     ("ed_unlink", "ed_unlink <from> [to]", "stop an entity firing another, or anything"),
@@ -608,6 +617,8 @@ obj Studio(Workbench) {
         # Playing only what is selected; and how coarse the light is baked
         # (world units to a lightmap texel).
         play_only: bool = False,
+        # Whether duplicators' images are in what is built.
+        images_shown: bool = True,
         # Where each open document's 3D camera was left, how maps are
         # written, and where a right press began.
         doc_views: dict[str, list[float]] = {},

@@ -1067,6 +1067,73 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The twenty-third session: copies that grow, mirror on two axes, hide and
+show; images at named points and along a path, made real; and a door whose
+images are doors of their own."""
+def dups_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["mirrored", "path"];
+    for shot in shots {
+        (repo / f"dups_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-dups-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/dups_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "dups.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The dups session failed: {output / 'dups.log'}";
+        text = (Path(home) / "scenes/dups.map").read_text();
+    }
+    steps = studio_steps(ran.stdout);
+    names = [
+        "row", "mirrored", "hidden", "shown", "stopped", "torches", "pathed", "real", "doors", "three", "second"
+    ];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'dups.log'}";
+    }
+    # The floor, the post and its three copies.
+    row = selected(steps["row"]);
+    assert len(row) == 1 and "_copies=3" in row[0] and "_offset=32 0 0" in row[0] and made(steps["row"]) == 5 , str(row);
+    # Mirrored on x and y: the four of them four times over, and the floor.
+    mirrored = selected(steps["mirrored"])[0];
+    assert "_grow=1.5" in mirrored and "_axis=x" in mirrored and "_mirror=xy" in mirrored , mirrored;
+    assert "_materials=brick stone" in mirrored and made(steps["mirrored"]) == 17 , str(steps["mirrored"]);
+    # Hidden, only the document's two brushes are built; shown, all again; stopped, two for good.
+    assert made(steps["hidden"]) == 2 and made(steps["shown"]) == 17 and made(steps["stopped"]) == 2;
+    assert "_copies" not in selected(steps["stopped"])[0] and "_mirror" not in selected(steps["stopped"])[0];
+    # An image at each of two torches; then at each of three path corners instead.
+    assert "_at=torch" in selected(steps["torches"])[0] and made(steps["torches"]) == 4 , str(steps["torches"]);
+    pathed = selected(steps["pathed"])[0];
+    assert "_path=p1" in pathed and "_at" not in pathed and made(steps["pathed"]) == 5 , str(steps["pathed"]);
+    # Made real: the group owns four brushes and asks for no more.
+    real = selected(steps["real"])[0];
+    assert "owns=4" in real and "_path" not in real and made(steps["real"]) == 5 , real;
+    # One door in the document; three in the game, of which the second is fired by its counted name.
+    door = selected(steps["doors"])[0];
+    assert "classname=func_door" in door and "_each=1" in door and "owns=1" in door , door;
+    assert played_word(steps["three"], "doors") == "closed,closed,closed" , str(steps["three"]);
+    after = played_word(steps["second"], "doors").split(",");
+    assert len(after) == 3 and after[0] == "closed" and after[1] != "closed" and after[2] == "closed" , str(after);
+    assert "studio: fired door2 1" in ran.stdout and '"_each" "1"' in text;
+    for shot in shots {
+        source = repo / f"dups_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"dups_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"DUPS PASS: {len(steps) - 1} steps, copies that grow and mirror on two axes, hidden and shown, images at "
+            + "named points and along a path, made real, and a door copied into doors of their own"
+    );
+}
+
 """The twenty-second session: several documents open, switched between,
 saved together, closed and reopened from the recent files; the selection's
 menu on a right click; a brush's faces stepped through; a map written
@@ -1816,6 +1883,7 @@ def main() {
         "play": play_session,
         "entities": entities_session,
         "docs": docs_session,
+        "dups": dups_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -1941,6 +2009,7 @@ def main() {
     play_session(repo, binary, env, output);
     entities_session(repo, binary, env, output);
     docs_session(repo, binary, env, output);
+    dups_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

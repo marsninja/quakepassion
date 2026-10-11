@@ -115,7 +115,15 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_dup" {
         how = args[1] if len(args) > 1 else "";
-        groups = [item for item in scene.selection() if item.classname() == "func_group"];
+        if how == "hide" or how == "show" {
+            # Whether what is built has the images in it at all.
+            self.images_shown = how == "show";
+            self.built_geometry = -1;
+            self.say("Images are built" if self.images_shown else "Only what is in the document is built");
+            return True;
+        }
+        # A group, or any entity made of brushes.
+        groups = [item for item in scene.selection() if len(scene.solids_of(item)) > 0 and item.classname() != "worldspawn"];
         if len(groups) == 0 and scene.selected_solids() and how not in ["off", "apply", ""] {
             # Loose brushes are grouped first.
             made_group = scene.group_selection("");
@@ -131,8 +139,12 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
         for group in groups {
             scene.select(group, True);
         }
+        nothing: dict[str, str | None] = {};
+        for key in DUPLICATOR_KEYS {
+            nothing[key] = None;
+        }
         if how == "off" {
-            if not scene.set_fields({"_copies": None, "_offset": None, "_turn": None, "_pivot": None, "_mirror": None}, "Stop copying") {
+            if not scene.set_fields(nothing, "Stop copying") {
                 self.say("It makes no copies");
             }
             return True;
@@ -140,26 +152,81 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
         if how == "apply" {
             count = 0;
             for group in groups {
-                images = image_brushes(group.fields, [solid.sides for solid in scene.solids_of(group)]);
+                images: list[list[Side]] = [];
+                for image_set in image_sets(
+                    group.fields, [solid.sides for solid in scene.solids_of(group)], scene_map(scene)
+                ) {
+                    for sides in image_set {
+                        images.append(sides);
+                    }
+                }
                 if len(images) > 0 and scene.add_brushes(group, images, "Make copies real") {
                     count += len(images);
                 }
             }
-            scene.set_fields({"_copies": None, "_offset": None, "_turn": None, "_pivot": None, "_mirror": None}, "Stop copying");
+            scene.set_fields(nothing, "Stop copying");
             self.say("Made " + str(count) + " copies real" if count else "It makes no copies");
             return True;
         }
         if how == "mirror" {
-            if len(args) < 3 or args[2] not in ["x", "y", "z"] {
-                self.say("ed_dup mirror <x|y|z>");
+            if len(args) < 3 or not args[2] or args[2].strip("xyz") != "" {
+                self.say("ed_dup mirror <x|y|z, or several: xy, xyz>");
                 return True;
             }
             scene.set_fields({"_mirror": args[2]}, "Mirror image");
             return True;
         }
+        if how == "axis" {
+            if len(args) < 3 or args[2] not in ["x", "y", "z"] {
+                self.say("ed_dup axis <x|y|z>: what each copy turns about");
+                return True;
+            }
+            scene.set_fields({"_axis": args[2]}, "Turn axis");
+            return True;
+        }
+        if how == "grow" {
+            factors = dup_numbers(args[2:]);
+            if len(factors) not in [1, 3] or min(factors) <= 0.0 {
+                self.say("ed_dup grow <factor> or <fx fy fz>: each copy's size against the last");
+                return True;
+            }
+            scene.set_fields({"_grow": " ".join([str(round(factor, 4)) for factor in factors])}, "Grow copies");
+            return True;
+        }
+        if how == "at" or how == "path" {
+            if len(args) < 3 {
+                self.say("ed_dup " + how + " <targetname|none>");
+                return True;
+            }
+            placing: dict[str, str | None] = {"_" + how: None};
+            if args[2] != "none" {
+                placing = {"_" + how: args[2]};
+            }
+            scene.set_fields(placing, "Images at " + args[2]);
+            return True;
+        }
+        if how == "materials" {
+            cycle: dict[str, str | None] = {"_materials": None};
+            if len(args) > 2 and args[2] != "none" {
+                cycle = {"_materials": " ".join(args[2:])};
+            }
+            scene.set_fields(cycle, "Material cycle");
+            return True;
+        }
+        if how == "each" {
+            apart: dict[str, str | None] = {"_each": "1"};
+            if len(args) > 2 and args[2] in ["off", "0"] {
+                apart = {"_each": None};
+            }
+            scene.set_fields(apart, "Images as entities");
+            return True;
+        }
         numbers = dup_numbers(args[1:]);
         if len(numbers) < 1 or numbers[0] < 1.0 {
-            self.say("ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <x|y|z> | off | apply");
+            self.say(
+                "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <axes> | axis <x|y|z> | grow <f> | at <name> | "
+                    + "path <name> | materials <names> | each [on|off] | hide | show | off | apply"
+            );
             return True;
         }
         pairs: dict[str, str | None] = {"_copies": str(int(numbers[0])), "_offset": None, "_turn": None};
