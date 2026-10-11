@@ -13,8 +13,8 @@ impl Studio.aim_all(x: int, y: int) -> list[Aim] {
     along = line[1];
     behind: list[Aim] = [];
     for seen in self.looks {
-        if seen.solid is front.solid or seen.dim or seen.locked or self.unpickable(seen.low, seen.high)
-            or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
+        if self.pick_kind == "entities" or seen.solid is front.solid or seen.dim or seen.locked
+            or self.unpickable(seen.low, seen.high) or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
             continue;
         }
         entered = ray_enters_brush(seen.solid.sides, eye, along);
@@ -24,8 +24,8 @@ impl Studio.aim_all(x: int, y: int) -> list[Aim] {
     }
     for shape in self.shapes {
         # An entity made of brushes is clicked by its brushes.
-        if shape.item is front.item or shape.item.origin() is None or item_veil(shape.item) != ""
-            or item_switched(shape.item, LOCK_KEY) {
+        if self.pick_kind == "brushes" or shape.item is front.item or shape.item.origin() is None
+            or item_veil(shape.item) != "" or item_switched(shape.item, LOCK_KEY) {
             continue;
         }
         enters = ray_enters_box(eye, along, shape.low, shape.high);

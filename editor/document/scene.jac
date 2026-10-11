@@ -1659,7 +1659,9 @@ node Scene {
     def replace_material(old: str, fresh: str, everywhere: bool = False) -> int;
     """Put the corners of the selected brushes, and the origins of the
     selected entities, on a grid. Answers how many things moved."""
-    def snap_selection(size: float = 8.0) -> int;
+    def snap_selection(size: float = 8.0, whole: bool = False) -> int;
+    """How many brushes have a corner, and entities an origin, off a grid."""
+    def off_grid(size: float = 8.0) -> int;
     """Line the selected brushes up along an axis: their low sides, their
     high sides or their middles brought to the selection's own."""
     def align_selection(axis: int, how: str = "low") -> bool;

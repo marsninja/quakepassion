@@ -1127,12 +1127,13 @@ impl Scene.replace_material(old: str, fresh: str, everywhere: bool = False) -> i
     return count;
 }
 
-impl Scene.snap_selection(size: float = 8.0) -> int {
+impl Scene.snap_selection(size: float = 8.0, whole: bool = False) -> int {
     grid = size if size > 0.0 else 1.0;
     step = Step(label="Snap to grid");
     count = 0;
-    brushes = self.selected_solids();
-    for item in self.selection() {
+    # The whole document when asked: every brush, and every entity that stands somewhere.
+    brushes = self.solids() if whole else self.selected_solids();
+    for item in (self.items() if whole else self.selection()) {
         at = item.origin();
         if at is None {
             for solid in self.solids_of(item) {

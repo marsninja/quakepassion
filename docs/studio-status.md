@@ -855,6 +855,18 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   whose name holds what is typed (`ed_assetfind`). The check also reports
   materials named as a game's that no archive holds, and `ed_stats <file>`
   writes the names of the materials in use.
+- **A map forced on to the grid**: `ed_snap all [size]` (Edit menu) puts
+  every brush's corners and every entity's origin on the grid, as one
+  undoable step, and says how many things were off it, how many it
+  moved and how many it left (a brush that would have no size on that
+  grid is left as it is).
+- **What clicks pick**: `ed_pickmode <all|brushes|entities>` (Edit menu)
+  has a click in a view pick everything, brushes only (it passes an
+  entity standing in front) or entities only (it passes every brush).
+- **Editing kept to the selection**: `ed_restrict` (Edit menu) puts
+  everything but the selection away, so that nothing else is seen,
+  clicked or built; `ed_restrict off` brings back what it put away and
+  leaves alone what was hidden before.
 - **Small tools**: `ed_snap [size]` puts the selection's corners and origins
   on the grid; `ed_replace <old> <new> [all]` gives sides of one material
   another; `ed_align <x|y|z> <low|high|middle>` lines the selected brushes
@@ -1138,6 +1150,8 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_grid_tests.jac`: what of a map is off a grid, the whole map
+  forced on to it as one step, a sliver that would fall flat left alone.
 - `tests/studio_navigation_tests.jac`: ways between neighbouring floors by
   their heights; floors as areas with ways out and a tree that places a
   point (stacked floors, off the grid, under the floor); and the
@@ -1316,6 +1330,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/restrict_session.cfg` (9 steps: a click passing a box
+  when only entities are picked, taking the floor under an entity when
+  only brushes are, and the entity when both; editing kept to one box
+  with a second hidden by hand, three things put away and brought back,
+  the second left hidden; a box, an entity and the start forced back on
+  to a grid of sixteen).
   `scripts/studio/nav_session.cfg` (5 steps: nothing baked for a shipped
   level; a floor with a tall box and a low one baked into 256 places to
   stand; ways across the floor, none up the tall box, a drop from it, a

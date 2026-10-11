@@ -274,6 +274,10 @@ impl Studio.aim(x: int, y: int) -> Aim {
     along = line[1];
     nearest = 1000000.0;
     for seen in self.looks {
+        if self.pick_kind == "entities" {
+            # Clicks pass every brush.
+            break;
+        }
         if seen.dim or seen.locked or self.unpickable(seen.low, seen.high)
             or ray_enters_box(eye, along, seen.low, seen.high) < 0.0 {
             # A click passes what is shown as outlines only, and what is locked.
@@ -287,7 +291,7 @@ impl Studio.aim(x: int, y: int) -> Aim {
             target.reach = entered[0];
         }
     }
-    under = self.pick(x, y);
+    under = self.pick(x, y) if self.pick_kind != "brushes" else None;
     if under is not None {
         boxed = self.shape_of(under);
         reach = ray_enters_box(eye, along, boxed.low, boxed.high) if boxed is not None else -1.0;

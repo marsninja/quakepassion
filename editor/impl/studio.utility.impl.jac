@@ -16,13 +16,27 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_snap" {
         size = self.grid;
-        if len(args) > 1 {
+        whole = len(args) > 1 and args[1] == "all";
+        words = args[2:] if whole else args[1:];
+        if len(words) > 0 {
             try {
-                size = max(1.0, float(args[1]));
+                size = max(1.0, float(words[0]));
             } except ValueError {
-                self.say("ed_snap [size]");
+                self.say("ed_snap [all] [size]");
                 return True;
             }
+        }
+        if whole {
+            # The whole map forced onto the grid: what would fall flat is left, and counted.
+            astray = scene.off_grid(size);
+            mended = scene.snap_selection(size, True);
+            left = scene.off_grid(size);
+            print("studio: snapped all grid=" + str(int(size)) + " off=" + str(astray) + " moved=" + str(mended) + " left=" + str(left));
+            self.say(
+                "Everything is on the grid" if astray == 0
+                else "Put " + str(mended) + " things on the grid" + (", and left " + str(left) + " that would fall flat" if left > 0 else "")
+            );
+            return True;
         }
         count = scene.snap_selection(size);
         self.say("Snapped " + str(count) if count else "The selection is on the grid");

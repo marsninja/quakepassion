@@ -1940,6 +1940,57 @@ def nav_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The fifty-eighth session: what clicks pick, editing kept to the selection, and a map forced on to the grid."""
+def restrict_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    with tempfile.TemporaryDirectory(prefix="qp-restrict-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/restrict_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "restrict.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The restrict session failed: {output / 'restrict.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "passed", "floor", "entity", "kept", "released", "shown", "mended", "stood"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'restrict.log'}";
+    }
+    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
+    hidden: dict[str, int] = {};
+    for name in names {
+        hidden[name] = int([line for line in steps[name] if line.startswith("mode=")][0].split("hidden=")[1].split()[0]);
+    }
+    # Nothing selected to begin with. Told to pick entities only, a click on a box passes it.
+    assert not brushes(steps["made"]) and not selected(steps["made"]);
+    assert not brushes(steps["passed"]) and not selected(steps["passed"]) and "picks=entities put_away=0" in steps["passed"];
+    # Told to pick brushes only, a click where the entity stands takes the floor under it.
+    assert len(brushes(steps["floor"])) == 1 and brushes(steps["floor"])[0].startswith("brush #1 ") and not selected(steps["floor"]);
+    # Told to pick everything again, the same click takes the entity; and the dump no longer speaks of it.
+    assert len(selected(steps["entity"])) == 1 and "classname=info_notnull" in selected(steps["entity"])[0] and not brushes(steps["entity"]);
+    assert not [line for line in steps["entity"] if line.startswith("picks=")];
+    # One box hidden by hand; editing kept to the other puts three more things away (the floor and
+    # the two entities), and letting go brings those three back and leaves the one hidden before.
+    assert "picks=all put_away=3" in steps["kept"] and hidden["kept"] == 4 and brushes(steps["kept"])[0].startswith("brush #3 ");
+    assert hidden["released"] == 1 and not [line for line in steps["released"] if line.startswith("picks=")] and hidden["shown"] == 0;
+    # Knocked off the grid, the box and the entity (and the start, which stands off a grid of sixteen)
+    # are forced back on; asked again there is nothing to do.
+    mends = [line for line in said if line.startswith("snapped all ")];
+    assert mends == ["snapped all grid=16 off=3 moved=3 left=0", "snapped all grid=16 off=0 moved=0 left=0"] , str(mends);
+    assert brush_box(brushes(steps["mended"])[0]) == [[-288, 112, 0], [-96, 208, 64]] , str(steps["mended"]);
+    assert "origin=0 0 48" in selected(steps["stood"])[0] , str(selected(steps["stood"]));
+    print(
+        f"RESTRICT PASS: {len(steps) - 1} steps, clicks picking entities only, brushes only and both, editing kept to "
+            + "a selection and let go, and a map forced on to the grid"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4295,6 +4346,7 @@ def main() {
         "district": district_session,
         "float": float_session,
         "nav": nav_session,
+        "restrict": restrict_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -4467,6 +4519,7 @@ def main() {
     district_session(repo, binary, env, output);
     float_session(repo, binary, env, output);
     nav_session(repo, binary, env, output);
+    restrict_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

@@ -226,7 +226,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
     ("ed_replace", "ed_replace <old> <new> [all]", "give sides of one material another, in the selection or everywhere"),
-    ("ed_snap", "ed_snap [size]", "put the selection's corners and origins on the grid"),
+    ("ed_snap", "ed_snap [all] [size]", "put the selection's corners and origins on the grid, or everything's (a map off the grid mended)"),
     ("ed_align", "ed_align <x|y|z> <low|high|middle>", "line the selected brushes up along an axis"),
     (
         "ed_faces",
@@ -281,6 +281,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
+    ("ed_pickmode", "ed_pickmode <all|brushes|entities>", "what a click in a view picks: everything, brushes only, or entities only"),
+    ("ed_restrict", "ed_restrict [on|off]", "keep editing to the selection: everything else is put away, and brought back when it is let go"),
     (
         "ed_nav",
         "ed_nav [bake [cell] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
@@ -678,6 +680,11 @@ obj Studio(Workbench) {
         ports: list[Port] = [],
         # How many floating windows have been opened, to number the next.
         floats_made: int = 0,
+        # What a click in a view picks (all, brushes or entities), and what
+        # was put away to keep editing to a selection.
+        pick_kind: str = "all",
+        kept_out_items: list[Item] = [],
+        kept_out_solids: list[Solid] = [],
         # Navigation baked for the scene: its floors, the ways between
         # them, the grid they are on, the engine's mesh, and whether the
         # ways are drawn.
@@ -1237,7 +1244,13 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Check the map", command="ed_check"),
                     MenuItem(text="Count what it holds", command="ed_stats"),
-                    MenuItem(text="Look for a leak", command="ed_leak")
+                    MenuItem(text="Look for a leak", command="ed_leak"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Put everything on the grid", command="ed_snap all"),
+                    MenuItem(text="Keep editing to the selection", command="ed_restrict"),
+                    MenuItem(text="Clicks pick everything", command="ed_pickmode all"),
+                    MenuItem(text="Clicks pick brushes only", command="ed_pickmode brushes"),
+                    MenuItem(text="Clicks pick entities only", command="ed_pickmode entities")
                 ],
                 [
                     MenuItem(text="One view", command="ed_layout 1"),
@@ -3346,6 +3359,12 @@ obj Studio(Workbench) {
     def model_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
+    # What clicks pick, and editing kept to the selection (impl/studio.restrict.impl.jac)
+
+    """Run one of those commands. False when it is not one."""
+    def restrict_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
     # Navigation for bots, baked (impl/studio.nav.impl.jac)
 
     """Run a navigation command. False when it is not one."""
@@ -3654,7 +3673,7 @@ obj Studio(Workbench) {
             and not self.model_command(scene, args) and not self.skin_command(scene, args)
             and not self.bone_command(scene, args) and not self.figure_command(scene, args)
             and not self.district_command(scene, args) and not self.window_command(scene, args)
-            and not self.nav_command(scene, args)
+            and not self.nav_command(scene, args) and not self.restrict_command(scene, args)
             and not self.games_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
@@ -3951,6 +3970,12 @@ obj Studio(Workbench) {
         }
         if self.nav_mesh is not None {
             lines.append(self.nav_words());
+        }
+        if self.pick_kind != "all" or len(self.kept_out_items) + len(self.kept_out_solids) > 0 {
+            lines.append(
+                "studio: picks=" + self.pick_kind + " put_away="
+                    + str(len(self.kept_out_items) + len(self.kept_out_solids))
+            );
         }
         handles_line = self.lay_line(scene);
         if handles_line {
