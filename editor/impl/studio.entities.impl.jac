@@ -67,3 +67,72 @@ impl Studio.entity_command(scene: Scene, args: list[str]) -> bool {
     }
     return False;
 }
+
+impl Studio.fill_controls(scene: Scene, ui: StudioUi, chosen: list[Item]) {
+    if len(chosen) == 0 {
+        return;
+    }
+    first = chosen[0];
+    form = ui.form;
+    at = first.origin();
+    if at is not None {
+        form.adopt(Spacer(size=6));
+        form.adopt(Label(text="Drag to change", tone="dim"));
+        form.adopt(
+            VectorField(
+                x=at.x,
+                y=at.y,
+                z=at.z,
+                step=self.grid,
+                command="ed_set origin",
+                hint="Where it is: drag across a number to move it by grid steps (Shift: ten at a time)"
+            )
+        );
+    }
+    facing = first.fields.get("angle", "");
+    if facing.lstrip("-").replace(".", "", 1).isdigit() and float(facing) >= 0.0 {
+        form.adopt(
+            Spinner(
+                text="angle",
+                value=float(facing),
+                step=self.angle_snap,
+                low=0.0,
+                high=345.0,
+                command="ed_set angle",
+                hint="The way it faces: drag across to turn it by the angle step"
+            )
+        );
+    }
+    if not first.classname().startswith("light") {
+        return;
+    }
+    strength = first.fields.get("light", "300");
+    form.adopt(
+        Slider(
+            low=0.0,
+            high=1000.0,
+            value=float(strength) if strength.replace(".", "", 1).isdigit() else 300.0,
+            step=10.0,
+            command="ed_set light",
+            hint="How far the light reaches"
+        )
+    );
+    shares = [1.0, 1.0, 1.0];
+    parts = first.fields.get("_color", "").split();
+    if len(parts) == 3 {
+        try {
+            shares = [float(parts[0]), float(parts[1]), float(parts[2])];
+        } except ValueError {
+            shares = [1.0, 1.0, 1.0];
+        }
+    }
+    form.adopt(
+        ColourBars(
+            red=max(0.0, min(1.0, shares[0])),
+            green=max(0.0, min(1.0, shares[1])),
+            blue=max(0.0, min(1.0, shares[2])),
+            command="ed_set _color",
+            hint="The light's colour: drag along the red, green and blue bars"
+        )
+    );
+}

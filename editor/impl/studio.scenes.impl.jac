@@ -770,6 +770,17 @@ impl Studio.fill_solid_form(scene: Scene, ui: StudioUi) {
     lays.adopt(PushButton(text="Fit", command="ed_tex fit", grow=1, hint="Fit the material to every side"));
     lays.adopt(PushButton(text="Flat", command="ed_tex flat", grow=1, hint="Lay the material flat on every side"));
     lays.adopt(PushButton(text="Reset", command="ed_tex reset", grow=1, hint="Lay the material as a new brush has it"));
+    # Which handles the selection shows.
+    form.adopt(Spacer(size=6));
+    form.adopt(Label(text="Handles", tone="dim"));
+    form.adopt(
+        Radio(
+            labels=["Move", "Turn", "Size"],
+            commands=["ed_gizmo move", "ed_gizmo turn", "ed_gizmo size"],
+            chosen=0 if self.gizmo == "move" else (1 if self.gizmo == "turn" else 2),
+            hint="Arrows that move the selection, rings that turn it, or boxes that size it (G)"
+        )
+    );
 }
 
 impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {

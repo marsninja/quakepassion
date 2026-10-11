@@ -158,6 +158,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   world while the faces move through them. It is kept between sessions.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
+- **Controls to drag** end an entity's form: its place as three numbers,
+  each changed by dragging across it in grid steps (ten at a time with
+  Shift); the way it faces, in steps of the angle snap; and for a light,
+  its reach on a slider and its colour on red, green and blue bars. Each
+  drag is one undoable edit, made when the drag ends. A brush's form ends
+  with which handles it shows (Move, Turn, Size).
 - **Several documents** are open at once: the level the game began in and
   every scene made or opened since. `ed_docs` lists them, `ed_doc
   <name|next|prev>` goes to another (its camera is where it was left),
@@ -505,8 +511,9 @@ editor/impl/                 the workbench's scenes and brushes
 ## Validation
 
 - `tests/ui_tests.jac`: layout, picking, clicks, text editing, the tree,
-  scrolling, splitters, tabs, menus and hints, through a recording canvas
-  and scripted input.
+  scrolling, splitters, tabs, menus and hints, and the slider, spinner,
+  radio, vector field and colour bars, through a recording canvas and
+  scripted input.
 - `tests/studio_document_tests.jac`: entity lumps round-trip; selection;
   every edit and its undo; any run of edits undone in full restores the
   document.
@@ -668,6 +675,10 @@ editor/impl/                 the workbench's scenes and brushes
   `scripts/studio/quilt_session.cfg` (6 steps: a curved sheet grown by a
   curve across and a curve up, shrunk by one, made thicker and finer, and
   an endcap added).
+  `scripts/studio/controls_session.cfg` (5 steps: a light's slider dragged
+  to five hundred, its green bar to half, the third number of its place
+  dragged up five grid steps, three edits in all; then a brush's handles
+  chosen on the radio).
   `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the

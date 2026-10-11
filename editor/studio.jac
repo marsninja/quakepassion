@@ -53,7 +53,12 @@ import from .ui.widgets {
     Check,
     Picture,
     Palette,
-    PaletteEntry
+    PaletteEntry,
+    Slider,
+    Spinner,
+    Radio,
+    VectorField,
+    ColourBars
 }
 import from .assets.explorer { AssetIndex, AssetLook }
 import from .assets.models { ModelLook, load_model, is_model }
@@ -1473,6 +1478,7 @@ obj Studio(Workbench) {
         self.fill_class(scene, ui, chosen);
         self.fill_group(scene, ui, chosen);
         self.fill_skill(scene, ui, chosen);
+        self.fill_controls(scene, ui, chosen);
     }
 
     # ------------------------------------------------------------------
@@ -2577,6 +2583,9 @@ obj Studio(Workbench) {
     def entity_command(scene: Scene, args: list[str]) -> bool;
     """The options every class shares: which skills and modes leave it out."""
     def fill_skill(scene: Scene, ui: StudioUi, chosen: list[Item]);
+    """Controls to drag for what the selection has: where it is, which way
+    it faces, and a light's strength and colour."""
+    def fill_controls(scene: Scene, ui: StudioUi, chosen: list[Item]);
 
     # ------------------------------------------------------------------
     # A played game held still and stepped; how the level is built (impl/studio.play.impl.jac)

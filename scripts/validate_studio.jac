@@ -1070,6 +1070,57 @@ def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The twenty-seventh session: a slider, colour bars, a field of three
+numbers and a radio, each dragged or clicked in the inspector."""
+def controls_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["light", "brush"];
+    for shot in shots {
+        (repo / f"controls_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-controls-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/controls_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "controls.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The controls session failed: {output / 'controls.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["start", "bright", "tinted", "moved", "turn", "size"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'controls.log'}";
+    }
+    start = selected(steps["start"])[0];
+    assert "classname=light" in start and "origin=0 -273 179" in start and "light=" not in start , start;
+    # The knob let go halfway along a bar that runs to a thousand.
+    assert "light=500" in selected(steps["bright"])[0] , str(selected(steps["bright"]));
+    # Half the green: one edit, as one word.
+    tinted = selected(steps["tinted"])[0];
+    assert "_color=1 0.5 1" in tinted and "light=500" in tinted , tinted;
+    # Five grid steps of eight, up.
+    assert "origin=0 -273 219" in selected(steps["moved"])[0] , str(selected(steps["moved"]));
+    edits = int(steps["moved"][0].split("undo=")[1].split()[0]) - int(steps["start"][0].split("undo=")[1].split()[0]);
+    assert edits == 3 , str(edits);
+    assert "handles=turn" in handles(steps["turn"]) and "handles=size" in handles(steps["size"]);
+    for shot in shots {
+        source = repo / f"controls_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"controls_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"CONTROLS PASS: {len(steps) - 1} steps, a light's strength by a slider and colour by bars, its place by "
+            + "a field of three numbers, and a brush's handles by a radio"
+    );
+}
+
 """How many prisms a step's patch line counts, and its grid as "WxH"."""
 def patch_shape(lines: list[str]) -> list[str] {
     found = patches(lines);
@@ -2063,6 +2114,7 @@ def main() {
         "shapes": shapes_session,
         "land": land_session,
         "quilt": quilt_session,
+        "controls": controls_session,
         "convert": convert_session
     };
     if "--only" in sys.argv {
@@ -2192,6 +2244,7 @@ def main() {
     shapes_session(repo, binary, env, output);
     land_session(repo, binary, env, output);
     quilt_session(repo, binary, env, output);
+    controls_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
