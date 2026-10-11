@@ -1707,6 +1707,12 @@ node Scene {
     def adjoin_faces -> int;
     """Pick the faces of each brush that share an edge with a picked face of it."""
     def beside_faces -> int;
+    """Carry a face's material round its brush onto the brush's picked
+    faces: each takes it from the face beside it that already has it, turned
+    about the edge they share, starting from the face given. A column's
+    sides take it one after another, both ways round. Answers how many
+    faces took it."""
+    def wrap_round(solid: Solid, side: int) -> int;
     """Take out the sides that make no face from the selected brushes (from
     every brush when `everywhere`), and the brushes that then enclose
     nothing, as one step. Brushes with linked faces are left as they are.

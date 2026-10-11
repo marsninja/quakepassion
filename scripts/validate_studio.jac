@@ -3002,6 +3002,79 @@ def fan_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The seventy-fourth session: a material sent round a pillar, several tagged faces, and brushes outlined by kind."""
+def tagwrap_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["wrapped", "outlined"];
+    for shot in shots {
+        (repo / f"tagwrap_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-tagwrap-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/tagwrap_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "tagwrap.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The tagwrap session failed: {output / 'tagwrap.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["tagged", "wrapped", "east", "glued_east", "glued_west", "outlined", "plain"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'tagwrap.log'}";
+    }
+    def faces(name: str) -> list[str] {
+        return [line for line in steps[name] if line.startswith("face #3/")];
+    }
+    # One wall in its own material, slid; the other three plain. Sent round, all four have it at the
+    # first wall's height on the texture, each further along it than the one it was reached from.
+    before = faces("tagged");
+    after = faces("wrapped");
+    assert len(before) == 4 and "material=q1:e1m1/tech04_1 shift=8.0,4.0 " in before[0] and all(["material=blockout " in line for line in before[1:]]);
+    assert len(after) == 4 and all(["material=q1:e1m1/tech04_1 " in line for line in after]) and after[0] == before[0] , str(after);
+    slides = [float(line.split("shift=")[1].split(",")[0]) for line in after];
+    assert all([line.split("shift=")[1].split()[0].endswith(",4.0") for line in after]) and len(set(slides)) == 4 , str(slides);
+    took = [line for line in ran.stdout.splitlines() if line.startswith("studio: wrapped round ")];
+    assert took == ["studio: wrapped round faces=3", "studio: wrapped round faces=0"] , str(took);
+    # Two faces tagged, the pillar's east wall and its west; a box east of it is glued against the
+    # east wall, and moved west of it against the west; with the tags cleared there is nothing to glue to.
+    tags = [line for line in ran.stdout.splitlines() if line.startswith("studio: tag ")];
+    assert tags == ["studio: tag 1 face 0 of brush #3", "studio: tag 2 face 1 of brush #3"] , str(tags);
+    glued = [line for line in ran.stdout.splitlines() if line.startswith("studio: glued to ")];
+    assert glued == ["studio: glued to face 0 of brush #3", "studio: glued to face 1 of brush #3"] , str(glued);
+    def box_of(name: str) -> list[list[int]] {
+        return brush_box([line for line in steps[name] if line.startswith("brush #4 ")][0]);
+    }
+    assert box_of("east")[0][0] == 176 and box_of("glued_east")[0][0] == 32 and box_of("glued_west")[1][0] == -32 , str(box_of("glued_west"));
+    assert box_of("glued_east")[0][1:] == box_of("east")[0][1:];
+    # One trigger volume and one clip brush: counted without being shown, then each outlined in turn.
+    counted = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: overlay ")];
+    assert counted == [
+        "overlay triggers=0 unseen=0 trigger=1 clip=1 hint=0 outlined=0",
+        "overlay triggers=1 unseen=0 trigger=1 clip=1 hint=0 outlined=1",
+        "overlay triggers=1 unseen=1 trigger=1 clip=1 hint=0 outlined=2",
+        "overlay triggers=0 unseen=1 trigger=1 clip=1 hint=0 outlined=1",
+        "overlay triggers=0 unseen=0 trigger=1 clip=1 hint=0 outlined=0"
+    ] , str(counted);
+    assert len([line for line in steps["outlined"] if line.startswith("overlays triggers=1 unseen=1")]) == 1;
+    assert len([line for line in steps["plain"] if line.startswith("overlays ")]) == 0;
+    for shot in shots {
+        source = repo / f"tagwrap_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"tagwrap_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"TAGWRAP PASS: {len(steps) - 1} steps, a material sent round a pillar's four walls from one, a box glued against "
+            + "the nearer of two tagged faces each way, and a trigger volume and a clip brush counted and outlined"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5377,6 +5450,7 @@ def main() {
         "snapto": snapto_session,
         "q3map": q3map_session,
         "fan": fan_session,
+        "tagwrap": tagwrap_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5565,6 +5639,7 @@ def main() {
     snapto_session(repo, binary, env, output);
     q3map_session(repo, binary, env, output);
     fan_session(repo, binary, env, output);
+    tagwrap_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

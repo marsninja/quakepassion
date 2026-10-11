@@ -1046,6 +1046,22 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   writes are the result, and screenshots are still taken. It needs a
   desktop session for the graphics all the same. `jac run
   scripts/validate_studio.jac --hidden` runs every session this way.
+- **Round a brush** (`ed_tex wrap round`): from the tagged face the
+  material goes round its own brush onto the brush's picked faces, each
+  taking it from the face beside it that already has it, turned about the
+  edge they share: a pillar's or a column's sides in one go, both ways
+  round from the tagged one, where `ed_tex wrap` reaches only the faces
+  that touch it.
+- **Several tagged faces**: `ed_tag add` tags the picked faces beside the
+  first, `ed_tag list` says them and `ed_tag clear` forgets them all;
+  `ed_glue` moves the selection against whichever tagged face's plane it
+  stands nearest. The first is still the one a material is taken from.
+- **Brushes that are not walls** (`ed_overlay [triggers|unseen] [on|off]`):
+  the volumes that set things off (brushes of `trigger_` entities, or in
+  a trigger material) are outlined in yellow in every view, and the
+  brushes a player never sees in magenta (clip) and blue (hint, skip,
+  caulk, nodraw), told by the last word of every side's material. A group
+  with a colour of its own keeps it. `ed_overlay` alone counts each kind.
 - **Maps for other tools** (`ed_export <file.map> [valve|classic|q3]`):
   the scene written as a map in Valve's form (the form scenes are saved
   in), the classic one, or Quake III's own. In Quake III's a brush is a
@@ -1336,6 +1352,12 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_wrapround_tests.jac`: a material sent round a box's walls
+  from one, meeting without a break at each edge it crossed, onto the
+  picked faces only, and undone.
+- `tests/studio_overlay_tests.jac`: a brush known for a trigger volume, a
+  clip or a hint brush by its entity and its materials, and a brush with
+  any side that is seen left as a wall.
 - `tests/studio_fanpath_tests.jac`: a fan's wedges filling the round of
   its box; where copies lie along a path a tile apart, straight, round a
   bend and up a slope; a duplicator's images with and without a tile.
@@ -1575,6 +1597,10 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/tagwrap_session.cfg` (7 steps: one wall's material sent
+  round a pillar's four; two faces tagged and a box glued against the
+  nearer, east and then west; a trigger volume and a clip brush counted,
+  outlined one kind at a time, and plain again).
   `scripts/studio/fan_session.cfg` (8 steps: a post on each of a path's
   three corners, then laid seven times along it a tile apart with an
   elbow at the bend, and back; a fan of eight wedges built again as

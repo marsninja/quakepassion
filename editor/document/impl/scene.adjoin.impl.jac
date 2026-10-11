@@ -153,3 +153,49 @@ impl Scene.prune_sides(everywhere: bool = False) -> list[int] {
     }
     return [dropped, gone, spared];
 }
+
+impl Scene.wrap_round(solid: Solid, side: int) -> int {
+    if side < 0 or side >= len(solid.sides) {
+        return 0;
+    }
+    outlines = solid.outlines();
+    wanted = [index for index in self.face_sides(solid) if index != side];
+    source = solid.sides[side];
+    # How the material lies on each face reached so far, the given one first.
+    lies: dict[int, Mapping] = {side: source.mapping};
+    waiting = [side];
+    while len(waiting) > 0 {
+        current = waiting.pop(0);
+        for other in faces_beside(outlines, current) {
+            if other not in wanted or other in lies {
+                continue;
+            }
+            carried = mapping_wrapped(lies[current], solid.sides[current].plane, solid.sides[other].plane);
+            if carried is None {
+                continue;
+            }
+            lies[other] = carried;
+            waiting.append(other);
+        }
+    }
+    after: list[Side] = [];
+    count = 0;
+    for (index, each) in enumerate(solid.sides) {
+        if index != side and index in lies
+            and (each.material != source.material or not mapping_same(each.mapping, lies[index])) {
+            after.append(side_like(each, source.material, lies[index]));
+            count += 1;
+        } else {
+            after.append(each);
+        }
+    }
+    if count == 0 {
+        return 0;
+    }
+    step = Step(label="Wrap material round");
+    change = SidesChange(solid=solid, before=solid.sides, after=after);
+    change.redo();
+    step.changes.append(change);
+    self.commit(step);
+    return count;
+}

@@ -245,6 +245,13 @@ impl Studio.outline_solids(scene: Scene) {
                     look.tint = (min(255, int(shade[0])) << 16) | (min(255, int(shade[1])) << 8) | min(255, int(shade[2]));
                 }
             }
+            if look.tint < 0 and (self.show_triggers or self.show_unseen) {
+                # What it is for, when it is not a wall: shown in that kind's own colour.
+                purpose = brush_kind(holder.classname() if holder is not None else "", [side.material for side in brush.sides]);
+                if (purpose == "trigger" and self.show_triggers) or (purpose in ["clip", "hint"] and self.show_unseen) {
+                    look.tint = kind_tint(purpose);
+                }
+            }
             self.looks.append(look);
         }
     }

@@ -106,7 +106,32 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
         self.tagged = None;
         self.tagged_side = None;
         self.tagged_words = "";
+        self.tag_planes = [];
+        self.tag_names = [];
+        self.tagged_solid = None;
+        self.tagged_index = -1;
         self.say("No face is tagged");
+        return True;
+    }
+    if name == "ed_tag" and len(args) > 1 and args[1] == "list" {
+        for (place, called) in enumerate(self.tag_names) {
+            print("studio: tag " + str(place + 1) + " " + called);
+        }
+        self.say(str(len(self.tag_names)) + " faces tagged: " + ", ".join(self.tag_names) if len(self.tag_names) > 0 else "No face is tagged");
+        return True;
+    }
+    if name == "ed_tag" and len(args) > 1 and args[1] == "add" and self.tagged is not None {
+        # More faces beside the first: brushes are glued against the nearest of them.
+        added = 0;
+        for face in scene.faces() {
+            called = "face " + str(face.side) + " of brush #" + str(face.solid.serial);
+            if called not in self.tag_names {
+                self.tag_planes.append(face.solid.sides[face.side].plane);
+                self.tag_names.append(called);
+                added += 1;
+            }
+        }
+        self.say(str(len(self.tag_names)) + " faces tagged" if added else "Pick faces that are not tagged yet");
         return True;
     }
     if name == "ed_tag" {
@@ -118,22 +143,47 @@ impl Studio.utility_command(scene: Scene, args: list[str]) -> bool {
         self.tagged = picks[0].solid.sides[picks[0].side].plane;
         self.tagged_side = picks[0].solid.sides[picks[0].side];
         self.tagged_words = "face " + str(picks[0].side) + " of brush #" + str(picks[0].solid.serial);
+        self.tagged_solid = picks[0].solid;
+        self.tagged_index = picks[0].side;
+        self.tag_planes = [picks[0].solid.sides[picks[0].side].plane];
+        self.tag_names = [self.tagged_words];
         self.say("Tagged " + self.tagged_words);
         return True;
     }
     if name == "ed_glue" {
-        plane = self.tagged;
-        if plane is None {
+        first_tag = self.tagged;
+        if first_tag is None {
             self.say("Tag a face first (ed_tag)");
             return True;
         }
+        against: Plane3 = first_tag;
+        if len(self.tag_planes) > 1 {
+            # Of several tagged faces, the one whose plane what is to be glued stands nearest.
+            near = scene.selection_middle();
+            if near is None and len(scene.faces()) > 0 {
+                reach = scene.faces()[0].solid.bounds();
+                near = reach[0].add(reach[1]).scale(0.5) if reach is not None else None;
+            }
+            if near is not None {
+                least = 1000000000.0;
+                for (place, marked) in enumerate(self.tag_planes) {
+                    gap = abs(near.dot(marked.normal) - marked.dist);
+                    if gap < least {
+                        least = gap;
+                        against = marked;
+                        self.tagged_words = self.tag_names[place];
+                    }
+                }
+                print("studio: glued to " + self.tagged_words);
+            }
+        }
         if len(args) > 1 and args[1] == "face" {
-            if not scene.glue_face(plane) {
+            if not scene.glue_face(against) {
                 self.say("Pick one face to put in the plane of " + self.tagged_words + " (or it is there, or nothing would be left)");
             }
             return True;
         }
-        if not scene.glue_selection(plane) {
+        if not scene.glue_selection(against) {
             self.say("Select the brushes to glue against " + self.tagged_words + " (or they are there already)");
         }
         return True;

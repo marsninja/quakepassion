@@ -182,6 +182,7 @@ import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
 import from .geometry.integral { faces_astray, sides_integral, sides_angled }
 import from .geometry.bits { bit_names, bit_of, bits_named }
 import from .geometry.snapto { loop_inside, loop_thinned, snapped_move }
+import from .document.overlays { brush_kind, kind_tint }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
@@ -269,7 +270,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_faces <all|invert|extend|adjoining|beside|next|prev>",
         "spread the face pick over the whole brush, to its other faces, across the plane, to the faces that adjoin it in its plane or to those beside it; or step to the next face"
     ),
-    ("ed_tag", "ed_tag [clear]", "remember the picked face, to glue brushes against and take its material from; or forget it"),
+    ("ed_tag", "ed_tag [add|list|clear]", "remember the picked face, to glue brushes against and take its material from; add more faces to those remembered; say them; or forget them"),
     ("ed_glue", "ed_glue [face [link]]", "move the selection against the tagged face, or put the picked face in its plane (and link it to what lies there)"),
     ("ed_paintface", "ed_paintface <brush> <side>", "give one face the material in hand (Alt and a drag, in face mode)"),
     ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
@@ -389,6 +390,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines]", "show the console's last lines"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
+    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; alone, count them"),
     ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
@@ -795,6 +797,8 @@ obj Studio(Workbench) {
         lassoing: bool = False,
         lasso: list[int] = [],
         snap_to: str = "grid",
+        show_triggers: bool = False,
+        show_unseen: bool = False,
         snap_reach: float = 16.0,
         box_port: int = 0,
         # How far a dragged corner or edge has gone.
@@ -893,6 +897,11 @@ obj Studio(Workbench) {
         painted_solid: int = -1,
         painted_side: int = -1,
         tagged_words: str = "",
+        # Every tagged face: its plane and what it was called; and the first one's brush and side.
+        tag_planes: list[Plane3] = [],
+        tag_names: list[str] = [],
+        tagged_solid: Solid | None = None,
+        tagged_index: int = -1,
         # The sculpting brush, whether a stroke is being drawn, drags since
         # its last dab, and where on a terrain the pointer is.
         brush_radius: float = 96.0,
@@ -3478,6 +3487,7 @@ obj Studio(Workbench) {
     def prune_command(scene: Scene, args: list[str]) -> bool;
     def snapto_command(scene: Scene, args: list[str]) -> bool;
     def q3map_command(scene: Scene, args: list[str]) -> bool;
+    def overlay_command(scene: Scene, args: list[str]) -> bool;
     def file_material(name: str) -> str;
     def scene_material(name: str) -> str;
     def texture_sizes(names: list[str], as_file: bool) -> dict[str, list[int]];
@@ -3801,7 +3811,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.q3map_command(scene, args) and not self.snapto_command(scene, args)
+        } elif not self.overlay_command(scene, args) and not self.q3map_command(scene, args)
+            and not self.snapto_command(scene, args)
             and not self.prune_command(scene, args)
             and not self.rows_command(scene, args)
             and not self.finding_command(scene, args)
@@ -4160,6 +4171,11 @@ obj Studio(Workbench) {
         }
         if self.snap_to != "grid" {
             lines.append("studio: snapto " + self.snap_to + " reach=" + str(int(round(self.snap_reach))));
+        }
+        if self.show_triggers or self.show_unseen {
+            lines.append(
+                "studio: overlays triggers=" + ("1" if self.show_triggers else "0") + " unseen=" + ("1" if self.show_unseen else "0")
+            );
         }
         # The mode's line stays the last: sessions look for it there.
         lines.append(self.mouse_words());
