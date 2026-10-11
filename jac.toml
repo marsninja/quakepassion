@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A heartfelt 3D engine in pure Jac and raylib that plays all three Quakes"
 entry-point = "main"
 
-[dependencies]
+[dependencies.pypi]
 raylib = ">=5.5"
 
 [test]

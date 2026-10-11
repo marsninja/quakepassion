@@ -14,3 +14,5 @@ vendor/
 
 # Files the studio extracts from the games' archives (ed_extract): never the repo's.
 /extracted/
+# Windows cross-build output (scripts/build_windows.sh)
+/dist/
