@@ -15,7 +15,7 @@ import from games.passion.mission { Expedition, PATTERNS, beats_of, links_of }
 import from editor.document.missionedit {
     LINK_MODES, BEAT_KINDS, mission_copy, mission_fault, add_link, drop_link, set_link, set_grant, add_beat, lay_pattern
 }
-import from games.passion.layout { Site, rooms_of, passages_of, embed, target_heights, solve_heights }
+import from games.passion.layout { Site, rooms_of, passages_of, embed, relay, target_heights, solve_heights }
 import from games.passion.blueprint { new_blueprint, carve_rooms, carve_corridors, carve_windows }
 import from games.passion.interior { RECIPES }
 import from games.passion.director { direct }
@@ -23,6 +23,7 @@ import from games.passion.random { stream_for }
 import from games.passion.playtest { progress }
 import from editor.document.scene { Scene, scene_map, item_switched, LOCK_KEY }
 import from editor.formats.map { MapItem }
+import from editor.geometry.brush { box_sides }
 import from editor.document.expedition { room_groups, room_middle, beat_words, link_words, room_words }
 import from editor.formats.bspmap { bsp_items, level_material }
 import from editor.formats.map { write_map }
@@ -37,13 +38,17 @@ obj Expeditions(StudioTool) {
         # How many times each stage's dice have been rolled again, and how
         # many changes have been made to the mission by hand.
         salts: dict[str, int] = {},
-        edits: int = 0;
+        edits: int = 0,
+        # Where rooms are being put ([x, y, w, h] by beat) while the site is
+        # laid out again, and the floors rooms have been given by hand.
+        places: dict[int, list[int]] = {},
+        floors: dict[int, int] = {};
 
     def commands -> list[tuple[str, str, str]] {
         return [
             (
                 "ed_exp",
-                "ed_exp [open <seed> | mission | rooms | ways | proof | show [on|off] | again [rooms|population|layout] | fill <room> <recipe|any> | district <room> <n> | tension <room> <0..1> | budget <room> <threat|auto> | density <0.15..1> | niche | link <beat> <beat> [mode] [tokens] | unlink <link> | mode <link> <mode> [tokens] | grant|ungrant <beat> <token> | beat <from beat> [kind] [size] | pattern <name> <beat> <beat>]",
+                "ed_exp [open <seed> | mission | rooms | ways | proof | show [on|off] | again [rooms|population|layout] | fill <room> <recipe|any> | district <room> <n> | tension <room> <0..1> | budget <room> <threat|auto> | density <0.15..1> | niche | link <beat> <beat> [mode] [tokens] | unlink <link> | mode <link> <mode> [tokens] | grant|ungrant <beat> <token> | beat <from beat> [kind] [size] | pattern <name> <beat> <beat> | move <room> <dx> <dy> | size <room> <w> <h> | floor <room> <height|auto> | reroute]",
                 "a Passion expedition: generate a seed and open it as a document of brushes, a group a room; say its mission, rooms, ways and proof; draw the ways over the level; and make parts of it again while what is locked is kept: rooms' insides, who is in them, the layout; a room's recipe, district, tension and budget"
             )
         ];
@@ -62,7 +67,8 @@ obj Expeditions(StudioTool) {
         if bp is None or site is None or not folder {
             return False;
         }
-        bsp = compile_blueprint(bp, site).bsp;
+        compiled = compile_blueprint(bp, site);
+        bsp = compiled.bsp;
         if len(self.textures) == 0 {
             self.textures = load_materials(game_directory("passion"));
         }
@@ -83,6 +89,23 @@ obj Expeditions(StudioTool) {
             return False;
         }
         grouped = room_groups(found, rooms_of(site));
+        if len(compiled.exit_low) >= 3 and len(compiled.exit_high) >= 3 {
+            # The way out is a volume of the generator's own, not an entity
+            # of the level: in the document it is one, so that it is seen,
+            # kept and played to.
+            grouped.append(
+                MapItem(
+                    fields={"classname": "trigger_changelevel", "map": "passion_complete"},
+                    brushes=[
+                        box_sides(
+                            Vec3(x=compiled.exit_low[0], y=compiled.exit_low[1], z=compiled.exit_low[2]),
+                            Vec3(x=compiled.exit_high[0], y=compiled.exit_high[1], z=compiled.exit_high[2]),
+                            "trigger"
+                        )
+                    ]
+                )
+            );
+        }
         if len(kept) > 0 {
             # Rooms that were locked are as they were left, hand edits and all.
             names = [each.fields.get("_group_name", "") for each in kept];
@@ -145,6 +168,24 @@ obj Expeditions(StudioTool) {
                 room.district = beats[room.beat].district;
             }
             site = fresh;
+        } elif stage == "relay" {
+            # The rooms where they are said to be, the ways routed afresh,
+            # and the floors solved again.
+            moved = relay(plan, site, self.places, stream.derive(self.dice("relay")));
+            if moved.failures {
+                return "layout: " + moved.failures;
+            }
+            target_heights(moved, stream.derive(self.dice("heights")), plan.verticality);
+            for room in rooms_of(moved) {
+                if room.beat in self.floors {
+                    room.target = self.floors[room.beat];
+                    room.z = room.target;
+                }
+            }
+            if not solve_heights(moved) {
+                return "heights";
+            }
+            site = moved;
         }
         bp = new_blueprint(site);
         try {
@@ -275,6 +316,11 @@ obj Expeditions(StudioTool) {
                 return True;
             }
             self.record = made;
+            # A seed opened is as the generator makes it: nothing asked of it yet.
+            self.salts = {};
+            self.floors = {};
+            self.places = {};
+            self.edits = 0;
             if not self.open_document(host) {
                 host.say("The expedition of seed " + args[2] + " could not be opened as a document");
                 return True;
@@ -386,6 +432,62 @@ obj Expeditions(StudioTool) {
                 print("studio: expedition mission " + how + " beats=" + str(len(beats_of(plan))) + " links=" + str(len(links_of(plan))));
                 host.say(told + ": proved, and laid out again");
             }
+            return True;
+        }
+        if how in ["move", "size", "floor", "reroute"] {
+            rooms = rooms_of(site);
+            which = int(args[2]) if len(args) > 2 and args[2].isdigit() else -1;
+            amounts: list[int] = [];
+            for word in args[3:] {
+                try {
+                    amounts.append(int(float(word)));
+                } except ValueError {
+                    continue;
+                }
+            }
+            had_floor = self.floors.get(which, -100000);
+            self.places = {};
+            if how == "reroute" {
+                self.salts["relay"] = self.salts.get("relay", 0) + 1;
+            } elif which < 0 or which >= len(rooms) {
+                host.say("ed_exp move <room> <dx> <dy> | size <room> <w> <h> | floor <room> <height|auto> | reroute");
+                return True;
+            } elif how == "move" and len(amounts) >= 2 {
+                self.places[which] = [rooms[which].x + amounts[0], rooms[which].y + amounts[1], rooms[which].w, rooms[which].h];
+            } elif how == "size" and len(amounts) >= 2 {
+                self.places[which] = [rooms[which].x, rooms[which].y, amounts[0], amounts[1]];
+            } elif how == "floor" and len(amounts) >= 1 {
+                self.floors[which] = amounts[0];
+            } elif how == "floor" and len(args) > 3 and args[3] == "auto" {
+                self.floors.pop(which, None);
+            } else {
+                host.say("ed_exp move <room> <dx> <dy> | size <room> <w> <h> | floor <room> <height|auto> | reroute");
+                return True;
+            }
+            stood = self.remake(host, scene, "relay");
+            self.places = {};
+            if not stood {
+                # The site is as it was: only what was asked is put back.
+                if how == "reroute" {
+                    self.salts["relay"] = self.salts["relay"] - 1;
+                } elif how == "floor" {
+                    if had_floor == -100000 {
+                        self.floors.pop(which, None);
+                    } else {
+                        self.floors[which] = had_floor;
+                    }
+                }
+                return True;
+            }
+            after = rooms_of(record.site) if record.site is not None else rooms;
+            if which >= 0 and which < len(after) {
+                print("studio: expedition " + room_words(after[which]));
+            }
+            print("studio: expedition laid " + how + " ways=" + str(len(passages_of(record.site)) if record.site is not None else 0));
+            host.say(
+                "The ways between the rooms are routed again" if how == "reroute"
+                else "Room " + str(which) + ": " + how + " " + " ".join(args[3:]) + ", the ways routed again and the floors solved"
+            );
             return True;
         }
         if how == "again" {

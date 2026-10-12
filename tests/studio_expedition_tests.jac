@@ -1,6 +1,7 @@
 import from engine.math.vec3 { Vec3 }
 import from games.passion.mission { Beat }
-import from games.passion.layout { Room }
+import from games.passion.layout { Room, rooms_of, passages_of, embed, relay }
+import from games.passion.mission { build_mission }
 import from games.passion.interior { RECIPES, build_interior }
 import from games.passion.random { stream_for }
 import from editor.formats.map { MapItem }
@@ -76,4 +77,28 @@ test "a room asked for a recipe is made by it, and one made again rolls other di
     first = build_interior(free, [], stream_for(3, "t"), 0);
     again = build_interior(free, [], stream_for(3, "t"), 0);
     assert first.recipe == again.recipe and first.floor == again.floor;
+}
+
+test "a site is laid out again with a room moved, and refuses one laid over another" {
+    plan = build_mission(7, stream_for(7, "mission"), "keys", 1, 1, 12, 0.5);
+    site = embed(plan, stream_for(7, "layout"));
+    assert not site.failures;
+    rooms = rooms_of(site);
+    ways = len([way for way in passages_of(site) if not way.window]);
+    # Nothing asked: the same rooms in the same places, every way routed again.
+    same = relay(plan, site, {}, stream_for(7, "relay"));
+    assert not same.failures and len(rooms_of(same)) == len(rooms);
+    assert [[room.w, room.h] for room in rooms_of(same)] == [[room.w, room.h] for room in rooms];
+    assert len([way for way in passages_of(same) if not way.window]) == ways;
+    # A room put where another is: refused, and the first site is untouched.
+    first = rooms[0];
+    other = rooms[1];
+    over = relay(plan, site, {other.beat: [first.x, first.y, other.w, other.h]}, stream_for(7, "relay"));
+    assert "would lie over another" in over.failures and rooms_of(site)[1].x == other.x;
+    # No room is a sliver or a field.
+    assert "no size" in relay(plan, site, {other.beat: [other.x, other.y, 1, 9]}, stream_for(7, "relay")).failures;
+    # The last room moved well clear of the rest: laid out, or refused by the router, and it says which.
+    last = rooms[len(rooms) - 1];
+    far = relay(plan, site, {last.beat: [last.x + 40, last.y + 40, last.w, last.h]}, stream_for(7, "relay"));
+    assert far.failures != "" or len(rooms_of(far)) == len(rooms);
 }
