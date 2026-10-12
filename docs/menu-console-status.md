@@ -15,14 +15,19 @@ cvar; every key does what its binding says. Each game starts from its own
   Escape puts it away first. While the menu is open the game is paused, the
   cursor is released, and it is restored on resume. The 1280×720 panel stays
   centred in any window size.
-- **Levels.** Tabs for Quake, Quake II, Quake III and Passion. Maps are listed
-  from the installed archives (`~/quake-assets/id1`, `baseq2`, `baseq3`;
-  `QP_ASSETS` replaces the directory of the game `QP_GAME` names). Q1
-  brush-model BSPs are left out (`is_q1_level`). Quake III lists its
-  single-player ladder first, with each arena's name and best finish. Passion
-  offers twelve fresh expedition seeds. Up/Down, the wheel or a click select;
-  Enter or **Render selected level** loads. A load that fails keeps the current
-  level and shows the error. Loading is synchronous.
+- **Levels.** Tabs for Quake, Quake II, Quake III and Passion. Beside a
+  game's maps are its installed content packs (its mission packs and
+  re-release episodes; [content packs](content-packs-status.md)): a click, or
+  Left and Right, lists another pack's own maps. Maps are listed from the
+  chosen pack's archives each time it is first shown, a pack's `start` first
+  and the rest by name, with the title a Quake or Quake II map's worldspawn
+  gives it; Quake's brush-model BSPs are left out (`is_q1_level`). Quake III
+  lists its single-player ladder first, with each arena's name and best
+  finish, and Passion offers twelve fresh expedition seeds. The games'
+  folders are under `~/quake-assets` (`QP_ASSETS` replaces the base folder of
+  the game `QP_GAME` names). Up, Down and the wheel move through the list; Enter or **Render
+  selected level** loads the map and plays its pack. A load that fails keeps
+  the current level and shows the error. Loading is synchronous.
 - **Settings** (Up/Down, Left/Right or Enter, or click the arrows): movement
   (walk or fly), field of view (`fov`), mouse sensitivity (`sensitivity`),
   invert mouse (`m_pitch` sign), always run (`cl_run`), fly speed

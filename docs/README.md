@@ -20,6 +20,7 @@ covers building, running and the architecture.
 - [map-mechanics-status.md](map-mechanics-status.md): the activation graph, triggers, trains, rotators, the shared pusher, traps and fixtures
 - [doors-status.md](doors-status.md): doors, buttons, plats and riding them
 - [spawn-rules-status.md](spawn-rules-status.md): skill and mode spawn filtering
+- [content-packs-status.md](content-packs-status.md): mission packs and re-release episodes: how they are layered, listed and loaded, and what each still needs
 
 ## Combat
 - [weapons-status.md](weapons-status.md): weapons and items for each game
