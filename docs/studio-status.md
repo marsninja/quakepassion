@@ -752,6 +752,24 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   their textures. `ed_dev` puts frame and build times, how many brushes
   the level was built from, and how many entities and light samples there
   are, in the status bar.
+- **Settings by subject**: `ed_settings box` (the Window menu's last
+  entry) opens the settings in a box with a subject down its left:
+  General, Display, 3D view, Map, Model, Files, Colours. Each row is a
+  setting with the values it takes in a list, or a field for a number,
+  and its name as a console variable beside it. Files also says where
+  settings, scenes and autosaves are kept, and how often a changed scene
+  is autosaved (`ed_autosave every <seconds>`, 0 for never). Colours has
+  the theme and four of the studio's colours set by hand over it
+  (`ed_colour <accent|select|text|panel> <rrggbb|default>`, `ed_colour
+  all default` to give them up), each with a patch of what it is now.
+- **Settings as console variables**: every setting in the box is also a
+  variable (`studio_grid`, `studio_theme`, `studio_view_3d`, ...) that
+  says what is so. Typing one with a value in the console, or in a
+  config, sets the studio by the same command the box uses; a value it
+  does not take is refused and the variable put back. `ed_settings vars
+  [word]` prints them. They are one table
+  (`editor/document/settingstable.jac`), and they are kept where they
+  were: as commands in `studio.cfg`.
 - **Several documents** are open at once: the level the game began in and
   every scene made or opened since. `ed_docs` lists them, `ed_doc
   <name|next|prev>` goes to another (its camera is where it was left),

@@ -129,7 +129,7 @@ impl Studio.looks_command(scene: Scene, args: list[str]) -> bool {
         }
         if wanted != self.theme_name {
             self.theme_name = wanted;
-            self.canvas.theme = light_theme() if wanted == "light" else Theme();
+            self.apply_inks();
             self.keep_settings();
             self.say("The studio is in its " + wanted + " colours");
         }

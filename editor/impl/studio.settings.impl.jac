@@ -90,6 +90,9 @@ impl Studio.settings_command(scene: Scene, args: list[str]) -> bool {
         self.seen_revision = -1;
         return True;
     }
+    if self.settings_box_command(scene, args) {
+        return True;
+    }
     if name == "ed_settings" {
         if stage is None {
             return True;

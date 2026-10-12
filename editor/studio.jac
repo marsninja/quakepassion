@@ -15,6 +15,7 @@ import time;
 import from engine.core.workbench { Workbench, SceneView }
 import from engine.core.app { App }
 import from engine.console.shell { Shell, quote_command_word }
+import from engine.console.cvar { Cvar }
 import from engine.formats.bsp { Model, Bsp, MapEntity, Texture }
 import from engine.math.vec3 { Vec3, forward_from, right_from }
 import from engine.input.input { _capture, _release, mouse_captured }
@@ -88,6 +89,9 @@ import from .assets.shaders {
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
 import from .assets.moving { warps_name }
+import from .document.settingstable {
+    Setting, SUBJECTS, settings_table, setting_value, setting_order, colour_parts
+}
 import from .ui.passage { passage_line, passage_of }
 import from .formats.archive {
     write_pak, write_zip, file_kind, pak_files, zip_files, files_with, files_without, lies_in
@@ -398,7 +402,16 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_bind", "ed_bind <key> <command>", "give a key (a, ctrl+k, shift+f2) an editor command of your own"),
     ("ed_unbind", "ed_unbind <key>", "give a key back what the studio gives it"),
     ("ed_binds", "ed_binds", "list the keys bound by hand"),
-    ("ed_settings", "ed_settings", "list the studio's settings, each a click to change"),
+    (
+        "ed_settings",
+        "ed_settings [box [general|display|view|map|model|files|colours|close] | vars [word]]",
+        "list the studio's settings, each a click to change; open them by subject in a box; or print them as the console variables they also are"
+    ),
+    (
+        "ed_colour",
+        "ed_colour <accent|select|text|panel|all> <rrggbb|default>",
+        "one of the studio's colours set by hand over its theme, as six digits, or given back"
+    ),
     ("ed_dev", "ed_dev [on|off]", "show frame and build times and counts in the status bar"),
     ("ed_docs", "ed_docs", "list the open documents"),
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
@@ -534,7 +547,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_show", "ed_show", "bring back everything hidden"),
     ("ed_drop", "ed_drop", "let the selection down onto what is beneath it"),
     ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
-    ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
+    ("ed_autosave", "ed_autosave [every <seconds>]", "write the scene to its autosave file now, or say how often a changed scene is (0 for never)"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_framedrop", "ed_framedrop <row> <what>", "what a row of the model's frame list let go on another asks for: that frame put there in the order"),
     ("ed_assetdrop", "ed_assetdrop <row> <what>", "what a row of the explorer let go on the project's rows asks for: the file or folder copied into the project"),
@@ -1293,6 +1306,20 @@ obj Studio(Workbench) {
         marks_at: int = -1,
         # Seconds since the scene was last autosaved, and the revision it was at.
         autosave_clock: float = 0.0,
+        autosave_every: float = 30.0,
+        # The settings as a table (document/settingstable.jac): what each
+        # is now, the console variable that says so, a count of how often
+        # they have been kept and the mark the variables were last set at;
+        # the box of them by subject, and colours set by hand.
+        setting_table: list[Setting] = [],
+        setting_values: dict[str, str] = {},
+        setting_cvars: dict[str, Cvar] = {},
+        settings_rev: int = 0,
+        settings_mark: str = "",
+        settings_box: Floater | None = None,
+        settings_subject: str = "general",
+        settings_for: str = "",
+        user_inks: dict[str, str] = {},
         autosaved: int = -1,
         # The way out the leak finder last found.
         leak: list[Vec3] = [],
@@ -1832,7 +1859,8 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="The picked points' weights...", command="ed_weights open"),
                     MenuItem(text="The shader script as text...", command="ed_shader text open"),
-                    MenuItem(text="Play the materials that move", command="ed_animate")
+                    MenuItem(text="Play the materials that move", command="ed_animate"),
+                    MenuItem(text="Settings by subject...", command="ed_settings box open")
                 ]
             ]
         );
@@ -2371,6 +2399,8 @@ obj Studio(Workbench) {
         self.keep_floats();
         self.keep_weights_box();
         self.keep_script_box();
+        self.watch_settings();
+        self.keep_settings_box();
         for tool in self.tools {
             tool.tick(self.host(), dt);
         }
@@ -3598,6 +3628,21 @@ obj Studio(Workbench) {
     def settings_path -> str;
     """Write the settings: the grid, the layout, how views are drawn, the light and the brush."""
     def keep_settings;
+    """The commands that would set the studio as it stands: what the
+    settings file holds."""
+    def settings_lines -> list[str];
+    # Settings by subject and as console variables (impl/studio.settingsbox.impl.jac)
+    """The settings file's lines and, before them, what it does not keep."""
+    def setting_lines_all -> list[str];
+    """The theme, with the colours set by hand over it."""
+    def apply_inks;
+    """Keep the console variables saying what is so, and set the studio
+    to match one that was changed from the console."""
+    def watch_settings;
+    """Fill the settings box again when a setting or its subject changed."""
+    def keep_settings_box;
+    """Run ed_colour, ed_settings box or ed_settings vars. False otherwise."""
+    def settings_box_command(scene: Scene, args: list[str]) -> bool;
     """Read the settings once, when the studio is first opened."""
     def read_settings;
     """A point of a view's own plane (through `anchor`) under a point of
@@ -4679,6 +4724,12 @@ obj Studio(Workbench) {
         }
         if self.script_box is not None {
             lines.append(self.script_words());
+        }
+        if self.settings_box is not None {
+            lines.append("studio: settings box subject=" + self.settings_subject);
+        }
+        if len(self.user_inks) > 0 {
+            lines.append("studio: colours " + " ".join([each + " " + self.user_inks[each] for each in sorted(self.user_inks.keys())]));
         }
         if self.shader_file {
             lines.append(self.shader_words());

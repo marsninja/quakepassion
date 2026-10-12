@@ -24,7 +24,9 @@ impl Studio.autosave(dt: float, now: bool) {
         return;
     }
     self.autosave_clock += dt;
-    if not now and (self.autosave_clock < 30.0 or not scene.dirty or scene.revision == self.autosaved) {
+    if not now
+        and (self.autosave_every <= 0.0 or self.autosave_clock < self.autosave_every or not scene.dirty
+        or scene.revision == self.autosaved) {
         return;
     }
     self.autosave_clock = 0.0;
@@ -323,6 +325,26 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         popup.open_at(stage, 300, 80);
         return True;
     }
+    if name == "ed_autosave" and len(args) > 1 {
+        seconds = -1.0;
+        if args[1] == "every" and len(args) > 2 {
+            try {
+                seconds = float(args[2]);
+            } except ValueError {
+                seconds = -1.0;
+            }
+        }
+        if seconds < 0.0 {
+            self.say("ed_autosave [every <seconds>]: write the autosave now, or say how often (0 for never)");
+            return True;
+        }
+        self.autosave_every = float(int(seconds));
+        self.keep_settings();
+        self.say(
+            "A changed scene is autosaved every " + str(int(seconds)) + " seconds" if seconds > 0.0 else "Scenes are not autosaved"
+        );
+        return True;
+    }
     if name == "ed_autosave" {
         self.autosave(0.0, True);
         return True;
@@ -401,6 +423,20 @@ impl Studio.keep_settings {
         # Not before what was kept has been read: it would be written over.
         return;
     }
+    lines = self.settings_lines();
+    self.settings_rev += 1;
+    path = self.settings_path();
+    try {
+        os.makedirs(os.path.dirname(path), exist_ok=True);
+        with open(path, "w") as file {
+            file.write("\n".join(lines) + "\n");
+        }
+    } except OSError {
+        return;
+    }
+}
+
+impl Studio.settings_lines -> list[str] {
     lines = [
         "// The studio's settings, written when one changes.",
         "ed_grid " + str(int(self.grid)),
@@ -476,15 +512,11 @@ impl Studio.keep_settings {
     for kept_recipe in sorted(self.recipes.keys()) {
         lines.append("ed_recipe " + kept_recipe + " " + quote_command_word(self.recipes[kept_recipe]));
     }
-    path = self.settings_path();
-    try {
-        os.makedirs(os.path.dirname(path), exist_ok=True);
-        with open(path, "w") as file {
-            file.write("\n".join(lines) + "\n");
-        }
-    } except OSError {
-        return;
+    lines.append("ed_autosave every " + str(int(self.autosave_every)));
+    for which in sorted(self.user_inks.keys()) {
+        lines.append("ed_colour " + which + " " + self.user_inks[which]);
     }
+    return lines;
 }
 
 impl Studio.read_settings {
