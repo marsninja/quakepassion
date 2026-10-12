@@ -13,6 +13,7 @@ import from engine.world.lighting { Lamp, Occluder, shade }
 import from ..document.scene { Scene, Item, Solid, read_vector }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, ray_enters_brush }
 import from .live { LiveLevel, material_hidden }
+import from .spot { Cone, spot_cone }
 
 """Shadows cast by brushes: a sample sees a lamp when no brush stands
 between them."""
@@ -67,22 +68,27 @@ def:priv lamp_color(words: str) -> Vec3 {
     return found;
 }
 
+"""How far a lamp reaches at full strength: its `light` (300 when it does
+not say), or nothing for an entity that is no lamp, is nowhere, or is put out."""
+def lamp_level(item: Item) -> float {
+    if item.origin() is None or not item.classname().startswith("light") {
+        return 0.0;
+    }
+    try {
+        return max(0.0, float(item.fields.get("light", item.fields.get("_light", "300")).split()[0]));
+    } except (ValueError, IndexError) {
+        return 300.0;
+    }
+}
+
 """The scene's lamps: every `light*` entity that is somewhere. Its `light`
 is how far it reaches at full strength (300 when it does not say)."""
 def scene_lamps(scene: Scene) -> list[Lamp] {
     lamps: list[Lamp] = [];
     for item in scene.items() {
         at = item.origin();
-        if at is None or not item.classname().startswith("light") {
-            continue;
-        }
-        level = 300.0;
-        try {
-            level = float(item.fields.get("light", item.fields.get("_light", "300")).split()[0]);
-        } except (ValueError, IndexError) {
-            level = 300.0;
-        }
-        if level <= 0.0 {
+        level = lamp_level(item);
+        if at is None or level <= 0.0 {
             continue;
         }
         lamps.append(
@@ -95,6 +101,60 @@ def scene_lamps(scene: Scene) -> list[Lamp] {
         );
     }
     return lamps;
+}
+
+"""The cone a lamp shines in, or None for one that shines every way: toward
+the entity its `target` names, when one of that name is somewhere, else the
+way its `mangle` points."""
+def lamp_cone(scene: Scene, item: Item) -> Cone | None {
+    at = item.origin();
+    if at is None {
+        return None;
+    }
+    aimed_at: Vec3 | None = None;
+    wanted = item.fields.get("target", "");
+    if wanted {
+        for other in scene.items() {
+            if other is not item and other.fields.get("targetname", "") == wanted and other.origin() is not None {
+                aimed_at = other.origin();
+                break;
+            }
+        }
+    }
+    return spot_cone(dict(item.fields), at, aimed_at);
+}
+
+"""A cone for each of the scene's lamps, in the lamps' order: None for a
+lamp that shines every way."""
+def scene_cones(scene: Scene) -> list[Cone | None] {
+    cones: list[Cone | None] = [];
+    for item in scene.items() {
+        if lamp_level(item) > 0.0 {
+            cones.append(lamp_cone(scene, item));
+        }
+    }
+    return cones;
+}
+
+"""The lamps that light a point: those that shine every way, those whose
+cone it is inside, and for a point on a cone's rim that lamp at half its
+strength (`dims` has each lamp so)."""
+def lamps_at(point: Vec3, lamps: list[Lamp], dims: list[Lamp], cones: list[Cone | None]) -> list[Lamp] {
+    reaching: list[Lamp] = [];
+    for (index, lamp) in enumerate(lamps) {
+        cone = cones[index] if index < len(cones) else None;
+        if cone is None {
+            reaching.append(lamp);
+            continue;
+        }
+        share = cone.share(lamp.origin, point);
+        if share == 2 {
+            reaching.append(lamp);
+        } elif share == 1 and index < len(dims) {
+            reaching.append(dims[index]);
+        }
+    }
+    return reaching;
 }
 
 """The least light anything in a scene gets, as a part of one: the world's
@@ -123,6 +183,12 @@ of them (the level is then left flat)."""
 def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 400000) -> int {
     lamps = scene_lamps(scene);
     least = scene_floor(scene);
+    # Lamps that shine one way light only what is in their cones.
+    cones = scene_cones(scene);
+    spotted = len([cone for cone in cones if cone is not None]) > 0;
+    dims = [
+        Lamp(origin=lamp.origin, color=lamp.color, radius=lamp.radius, strength=lamp.strength * 0.5) for lamp in lamps
+    ] if spotted else [];
     bsp = made.bsp;
     if len(lamps) == 0 or len(bsp.models) == 0 {
         return 0;
@@ -201,7 +267,7 @@ def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int =
                 s = max(0.5, min(wide - 0.5, wide * float(x) / float(max(1, across - 1))));
                 t = max(0.5, min(tall - 0.5, tall * float(y) / float(max(1, down - 1))));
                 point = corner.add(u.scale(s)).add(v.scale(t)).add(face.normal.scale(0.25));
-                sample = shade(point, face.normal, lamps, occluder);
+                sample = shade(point, face.normal, lamps_at(point, lamps, dims, cones) if spotted else lamps, occluder);
                 color = sample.ambient.add(sample.directed);
                 pixels[offset] = u8(int(max(0.0, min(127.0, max(least, color.x) * 127.5))));
                 pixels[offset + 1] = u8(int(max(0.0, min(127.0, max(least, color.y) * 127.5))));
@@ -220,7 +286,10 @@ def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int =
             continue;
         }
         for (corner_index, vertex) in enumerate(face.vertices) {
-            sample = shade(vertex.add(face.normal.scale(0.25)), face.normal, lamps, occluder);
+            sample = shade(
+                vertex.add(face.normal.scale(0.25)), face.normal,
+                lamps_at(vertex, lamps, dims, cones) if spotted else lamps, occluder
+            );
             color = sample.ambient.add(sample.directed);
             face.colors[corner_index * 4] = int(max(0.0, min(255.0, max(least, color.x) * 255.0)));
             face.colors[corner_index * 4 + 1] = int(max(0.0, min(255.0, max(least, color.y) * 255.0)));

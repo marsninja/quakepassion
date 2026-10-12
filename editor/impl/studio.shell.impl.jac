@@ -395,6 +395,18 @@ impl Studio.draw_marks(shape: Shape) {
             wire_line(middle.add(Vec3(x=a, z=b)), middle.add(Vec3(x=c, z=d)), ink(0xf5d90a, 90));
             wire_line(middle.add(Vec3(y=a, z=b)), middle.add(Vec3(y=c, z=d)), ink(0xf5d90a, 90));
         }
+        beam = self.spot_of(item);
+        if beam is not None {
+            # The cone it shines in: its edge as far as it lights, and the way it points.
+            rim = cone_rim(middle, beam, far * math.cos(math.radians(beam.half)), 16);
+            for (index, point) in enumerate(rim) {
+                wire_line(point, rim[(index + 1) % len(rim)], ink(0xff9d3d, 200));
+                if index % 4 == 0 {
+                    wire_line(middle, point, ink(0xff9d3d, 200));
+                }
+            }
+            wire_line(middle, middle.add(beam.aim.scale(far)), ink(0xff9d3d, 110));
+        }
     }
 }
 

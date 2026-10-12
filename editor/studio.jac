@@ -167,7 +167,8 @@ import from engine.formats.q1.model { parse_mdl }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
-import from .compile.light { bake_light }
+import from .compile.light { bake_light, lamp_cone }
+import from .compile.spot { Cone, cone_rim, cone_through, square_to }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
 import from .project {
     Project, MANIFEST_NAME, read_project, write_project, addon_classes, addon_folders, addon_label, file_name
@@ -4015,8 +4016,14 @@ obj Studio(Workbench) {
     """The options every class shares: which skills and modes leave it out."""
     def fill_skill(scene: Scene, ui: StudioUi, chosen: list[Item]);
     """The handles one selected entity has beside its arrows: the tip of
-    the arrow it faces along (940) and the edge of a light's reach (941)."""
+    the arrow it faces along (940), the edge of a light's reach (941), and
+    the edge of the cone of a light that shines one way (942)."""
     def mark_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    """The cone a light shines in (none for one that shines every way, or
+    for what is no light), and where the handle on its edge stands when
+    half its angle is so many degrees."""
+    def spot_of(item: Item) -> Cone | None;
+    def cone_knob(middle: Vec3, cone: Cone, half: float) -> Vec3;
     def draw_mark_handles(scene: Scene, area: Rect);
     """A drag of one of those: the angle or the reach it would leave."""
     def drag_mark(scene: Scene, x: int, y: int, free: bool);

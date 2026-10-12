@@ -123,7 +123,9 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   handle at the tip of its arrow; dragged round it in the plan or the 3D
   view, it turns the entity, in steps of the angle snap. A selected light
   has a handle at the edge of its reach; pulled in or out, it sets the
-  light's value. Each drag is one edit. Paths are drawn corner to corner
+  light's value. A light that shines one way also has its cone drawn and
+  a handle on the cone's edge: pulled out or in, it sets `_cone`, half the
+  cone's angle. Each drag is one edit. Paths are drawn corner to corner
   in every view.
 - **Logic from a library**: `ed_logic` lists the pieces of logic the
   scene's game has (a relay, a delay, a counter, a trigger that fires once
@@ -1197,7 +1199,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   light's `light` is its reach and `_color` its colour; moving one builds
   the level again. Where no light reaches, the world's `_minlight` (a
   quarter of full when it names none) keeps the level readable. `ed_light off` (View > Flat light) shows the flat shade
-  a scene without lights has.
+  a scene without lights has. A light with a `target` that names an
+  entity, or with a `mangle` (yaw, pitch and roll), is a spotlight: it
+  lights only what lies within `_cone` degrees of the way it points (20
+  when it does not say), and half lights a rim of four degrees about the
+  cone's edge, as Quake II's and Quake III's light tools have it.
 - More in the Brush menu: turn about x or y (`ed_rotate 90 x`), mirror
   (`ed_mirror <x|y|z>`), stretch (`ed_resize <fx> [fy fz]`), carve the
   selection out of every brush it reaches (`ed_carve`), keep what the
