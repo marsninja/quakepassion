@@ -90,6 +90,8 @@ obj Starter(StudioTool) {
         return True;
     }
 
+    def tick(host: ToolHost, dt: float) {}
+
     def draw_through(host: ToolHost, scene: Scene) {}
 
     def dump_lines(host: ToolHost, scene: Scene) -> list[str] {

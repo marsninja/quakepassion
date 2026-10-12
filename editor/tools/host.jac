@@ -53,6 +53,17 @@ obj ToolHost {
     being edited now (a command may have changed which that is)."""
     def run(words: list[str]) abst;
     def scene_now -> Scene | None abst;
+
+    """The materials the browser lists now; the row of frames a material
+    is one of (itself alone when it does not move); and whether a
+    material is drawn warping, as the games draw their liquids."""
+    def materials_shown -> list[str] abst;
+    def frames_of(material: str) -> list[str] abst;
+    def warps(material: str) -> bool abst;
+
+    """Show a picture in the browser in place of a material's own: `rgba`
+    is four bytes a texel."""
+    def show_picture(material: str, width: int, height: int, rgba: bytes) abst;
 }
 
 """A tool: the studio asks its tools each command before its own, lets them
@@ -67,6 +78,9 @@ obj StudioTool {
 
     """Draw in a level view as its camera sees, through the walls."""
     def draw_through(host: ToolHost, scene: Scene) abst;
+
+    """A frame of the studio has passed: `dt` seconds of it."""
+    def tick(host: ToolHost, dt: float) abst;
 
     """Its lines of the dump, each beginning "studio: "; none when it has
     nothing to say."""

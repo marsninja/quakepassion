@@ -294,8 +294,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   changed, its pictures untouched, among the project's textures.
   `ed_frames [material]` lists the frames of an animated texture: a
   Quake `+0name`'s row from its map, or a Quake II texture's chain.
-  (Quake's WAD files are not written, and the frames are listed, not
-  played in the browser.)
+- **Materials that move**: `ed_animate [on|off]` (the Window menu's last
+  entry) plays them in the Materials tab. A texture that is one of a row
+  shows the row's frames one after another from itself, at its game's
+  pace (Quake five a second, Quake II two), and a liquid warps: Quake's
+  by the star its name begins with, Quake II's by the warp flag its
+  texture carries, each way across the picture pushed by a wave along
+  the other, an eighth of the picture at most, as the games draw them.
+  Off (as it starts), every picture is the still one again. It is a tool
+  in a module of its own (`editor/tools/moving.jac`). Quake III's
+  shaders are not played.
 - **Shader scripts**: `ed_shader open <file>` opens a Quake III shader
   script from `QP_SHADERS`, a project's `scripts/` or `./scripts` (a
   file that is not there is a new one), and `ed_shader take` takes the
@@ -329,7 +337,8 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   together are kept as typed with their faults beside them, and the
   script stands as it was until they are mended. `ed_shader write
   <words>` reads words given on the command line, their line breaks as
-  `\n`. Comments are not kept: the script is written from what was read.
+  `\n`. A new line begins as far in as the line it was begun from.
+  Comments are not kept: the script is written from what was read.
 - **Entities as their models**: `ed_models` (View menu) draws each
   pickup, monster and fixture in the 3D view as the model its own game's
   rules give it (the engine's own rules are asked: the game is the
@@ -1917,10 +1926,12 @@ an `obj` that derives from `StudioTool` (`editor/tools/host.jac`), keeps
 its own state, and reaches the studio only through the `ToolHost` it is
 handed (say a message, the level's navigation, draw a line, a material's
 picture, a game's colours and files, the project's folders, run one of the
-studio's own commands; more as tools
-need it, each added to `ToolHost` and to `StudioHost` in `studio.jac`).
-The studio asks its tools each command before its own, lets them draw in
-the level views, and takes their lines of the dump and of the settings.
+studio's own commands, the materials the browser lists and a picture shown
+there in place of one's own; more as tools need it, each added to
+`ToolHost` and to `StudioHost` in `studio.jac`). The studio asks its tools
+each command before its own, lets them draw in the level views, gives
+them every frame as it passes (`tick`), and takes their lines of the dump
+and of the settings.
 `editor/tools/install.jac` lists them and `main.jac` hands them over; a
 tool never imports `editor.studio`. `editor/tools/camproutes.jac` (the
 ways bots take between camp spots) is the first: a change to it rebuilds

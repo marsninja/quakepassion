@@ -247,6 +247,8 @@ node TextArea(Widget) {
         # How many rows tall it asks to be.
         rows: int = 3,
         numbered: bool = False,
+        # Whether a new line begins as far in as the line it was begun from.
+        indents: bool = False,
         cursor: int = 0,
         anchor: int = 0,
         # The first row on show.
@@ -513,7 +515,17 @@ node TextArea(Widget) {
                 stage.focus_on(None);
                 return True;
             }
-            self.replace_selection("\n");
+            lead = "";
+            if self.indents {
+                low = min(self.cursor, self.anchor);
+                begun = self.draft.rfind("\n", 0, low) + 1;
+                reach = begun;
+                while reach < low and self.draft[reach] == " " {
+                    reach += 1;
+                }
+                lead = self.draft[begun:reach];
+            }
+            self.replace_selection("\n" + lead);
             self.follow(canvas);
             return True;
         }

@@ -260,3 +260,25 @@ test "a numbered box keeps its numbers to the left of where a press lands" {
     play(stage, source);
     assert area.cursor == 0;
 }
+
+test "a box that indents begins a new line as far in as the line it was begun from" {
+    area = TextArea(command="set words", value="a\\n    bc", indents=True);
+    top = Box();
+    top.adopt(area);
+    stage = Stage(canvas=TraceCanvas());
+    stage.open(top);
+    source = UiSource();
+    # A press past the end of the second line puts the cursor at its end.
+    script_click(source, 400, 25);
+    press_key(source, "ENTER");
+    type_words(source, "d");
+    play(stage, source);
+    assert area.draft == "a\n    bc\n    d";
+    # From a line that is not set in, the new one is not either.
+    press_key(source, "a", True);
+    type_words(source, "x");
+    press_key(source, "ENTER");
+    type_words(source, "y");
+    play(stage, source);
+    assert area.draft == "x\ny";
+}

@@ -27,6 +27,7 @@ impl Studio.keep_script_box {
         command="ed_shader write",
         ghost="A shader's name, then its lines between braces",
         numbered=True,
+        indents=True,
         rows=12,
         grow=1,
         hint="The script as text: Enter begins a line; Ctrl+Enter or a click elsewhere reads it again; Escape cancels"

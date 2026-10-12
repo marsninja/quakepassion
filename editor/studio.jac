@@ -87,6 +87,7 @@ import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
+import from .assets.moving { warps_name }
 import from .ui.passage { passage_line, passage_of }
 import from .formats.archive {
     write_pak, write_zip, file_kind, pak_files, zip_files, files_with, files_without, lies_in
@@ -845,6 +846,23 @@ obj StudioHost(ToolHost) {
     def file_names(game: str) -> list[str] {
         known = self.listing();
         return known.names(game) if known is not None and game in known.games() else [];
+    }
+
+    def materials_shown -> list[str] {
+        panel = self.studio.ui;
+        return [tile.key for tile in panel.gallery.tiles] if panel is not None else [];
+    }
+
+    def frames_of(material: str) -> list[str] {
+        return self.studio.material_frames(material);
+    }
+
+    def warps(material: str) -> bool {
+        return self.studio.material_warps(material);
+    }
+
+    def show_picture(material: str, width: int, height: int, rgba: bytes) {
+        self.studio.canvas.keep_picture(material, width, height, rgba);
     }
 
     def files_changed {
@@ -1813,7 +1831,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Show or hide the status bar", command="ed_bar status"),
                     MenuItem(rule=True),
                     MenuItem(text="The picked points' weights...", command="ed_weights open"),
-                    MenuItem(text="The shader script as text...", command="ed_shader text open")
+                    MenuItem(text="The shader script as text...", command="ed_shader text open"),
+                    MenuItem(text="Play the materials that move", command="ed_animate")
                 ]
             ]
         );
@@ -2352,6 +2371,9 @@ obj Studio(Workbench) {
         self.keep_floats();
         self.keep_weights_box();
         self.keep_script_box();
+        for tool in self.tools {
+            tool.tick(self.host(), dt);
+        }
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
@@ -3065,6 +3087,10 @@ obj Studio(Workbench) {
     """Fill the weights dialog again when what it shows has changed."""
     def keep_weights_box;
     def weights_command(scene: Scene, args: list[str]) -> bool;
+    """The row of frames a material is one of (itself alone when it does
+    not move), and whether it is drawn warping (impl/studio.sounds.impl.jac)."""
+    def material_frames(wanted: str) -> list[str];
+    def material_warps(name: str) -> bool;
     # The shader script as text (impl/studio.shadertext.impl.jac)
     """Fill the script's box again when the script has changed."""
     def keep_script_box;

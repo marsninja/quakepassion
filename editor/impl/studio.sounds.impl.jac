@@ -90,27 +90,7 @@ impl Studio.sound_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_frames" {
         wanted = how if how else self.material;
-        stock = self.archive;
-        frames: list[str] = [wanted];
-        if wanted.startswith("q1:") and stock is not None {
-            group = "q1:" + wanted[3:].split("/")[0];
-            frames = quake_frames(stock.names(group), wanted);
-        } elif wanted.startswith("q2:") {
-            # Each names the one shown after it, until the chain comes round.
-            frames = [];
-            at = wanted;
-            while at and at not in frames and len(frames) < 32 {
-                facts = wal_facts(self.wal_bytes(at));
-                if facts is None {
-                    break;
-                }
-                frames.append(at);
-                at = "q2:" + facts.next_name if facts.next_name else "";
-            }
-            if len(frames) == 0 {
-                frames = [wanted];
-            }
-        }
+        frames = self.material_frames(wanted);
         print("studio: frames " + str(len(frames)) + " " + " ".join(frames));
         self.say(
             wanted + " is one of " + str(len(frames)) + " frames: " + ", ".join(frames)
@@ -184,4 +164,38 @@ impl Studio.sound_command(scene: Scene, args: list[str]) -> bool {
             + ", contents " + str(facts.contents) + ", value " + str(facts.value) + (", then " + facts.next_name if facts.next_name else "")
     );
     return True;
+}
+
+impl Studio.material_frames(wanted: str) -> list[str] {
+    stock = self.archive;
+    frames: list[str] = [wanted];
+    if wanted.startswith("q1:") and stock is not None {
+        group = "q1:" + wanted[3:].split("/")[0];
+        frames = quake_frames(stock.names(group), wanted);
+    } elif wanted.startswith("q2:") {
+        # Each names the one shown after it, until the chain comes round.
+        frames = [];
+        at = wanted;
+        while at and at not in frames and len(frames) < 32 {
+            facts = wal_facts(self.wal_bytes(at));
+            if facts is None {
+                break;
+            }
+            frames.append(at);
+            at = "q2:" + facts.next_name if facts.next_name else "";
+        }
+        if len(frames) == 0 {
+            frames = [wanted];
+        }
+    }
+    return frames;
+}
+
+impl Studio.material_warps(name: str) -> bool {
+    if name.startswith("q2:") {
+        # Quake II says it of the surface: the texture's own flags are what a face starts with.
+        facts = wal_facts(self.wal_bytes(name));
+        return facts is not None and (facts.flags & 8) != 0;
+    }
+    return name.startswith("q1:") and warps_name(name);
 }
