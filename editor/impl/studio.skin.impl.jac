@@ -45,7 +45,7 @@ impl Studio.paint_in_model(x: int, y: int) -> bool {
     if place is None {
         return False;
     }
-    skin_dab(image, place[0], place[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength);
+    skin_dab(image, place[0], place[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength, self.skin_pattern, self.skin_grain);
     self.skin_dabs += 1;
     self.skin_stale = True;
     print("studio: painted at " + str(round(place[0], 2)) + "," + str(round(place[1], 2)));
@@ -197,7 +197,7 @@ impl Studio.skin_command(scene: Scene, args: list[str]) -> bool {
         self.skin_soft = "soft" in args;
         self.skin_strength = max(0.05, min(1.0, numbers[1])) if len(numbers) > 1 else 1.0;
     } elif how == "dab" and len(numbers) >= 2 and image is not None {
-        skin_dab(image, numbers[0], numbers[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength);
+        skin_dab(image, numbers[0], numbers[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength, self.skin_pattern, self.skin_grain);
         self.skin_dabs += 1;
         self.skin_stale = True;
     } elif how == "show" {

@@ -274,8 +274,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   of, how levels are lit and how wide a bake's cells are for scenes of
   that game, taken up when one is first shown outside a project and kept
   in the settings; `ed_game` alone lists the four with the folder each is
-  read from (those folders are still set by `QP_ASSETS` and
-  `~/quake-assets`, not from the studio).
+  read from. `ed_game <game> dir <folder>` says where a game's files are
+  (`q1`, `q2`, `q3`, or a pack laid over one, such as `hipnotic`), and
+  `ed_game passion dir <folder>` where the folder they are all under is;
+  with no folder it is found as before (`QP_ASSETS`, else
+  `~/quake-assets`). The folders are kept in `.quakepassion-folders.txt`
+  beside the settings, read by the engine when it starts, so the game
+  menu looks there too; what is opened next is looked for there. The
+  Settings box lists them under Files, each in a field, with whether the
+  folder is there.
 - **Prefabs within prefabs**: a prefab may hold linked prefabs
   (`misc_prefab` entities) of its own; when a linked prefab is built, or
   unlinked into a copy, the prefabs it holds are put in too, each
@@ -537,9 +544,31 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the model's view paints through the model, where the line of sight
   meets the part's skin. `ed_skin show` puts the picture under the
   model in its panel with the part's triangles and picked points drawn
-  over it, and `ed_skin save <file.tga>` writes it. Not there yet:
-  picking and dragging on the skin view itself, patterns, and the
-  picture drawn on the model.
+  over it, and `ed_skin save <file.tga>` writes it. `ed_skin pattern
+  <solid|checks|stripes|bars|dots> [grain]` has the brush lay its colour
+  only where that pattern covers, in squares, rows, columns or discs so
+  many texels wide; `ed_skin pick <u> <v>` takes up the colour at a place
+  on the skin, as does Alt and a click on the model while painting.
+  `ed_model shade textured` draws the model with the picture as it is
+  painted. Not there yet: picking and dragging on the skin view itself.
+- **The model in its view**: `ed_model shade <wire|solid|textured>` draws
+  the model being edited as its edges, with its faces filled and lit from
+  above, or with its skin; `ed_model about <model|origin|view|free>` says
+  what the view turns about: the model's middle, its origin, where the
+  view looks (Shift and a drag moves that), or the eye itself. What is
+  picked has three handles from its middle, one along each axis: a drag
+  from a handle's tip moves the picked points along that axis alone, at
+  the frame shown. `ed_mesh lock <x|y|z|xy|...|off>` keeps drags off the
+  axes named (their handles are drawn faint and cannot be taken), for
+  Ctrl and a drag as well. `ed_model marks <cross|box|diamond>` says how
+  the marks on points and tags are drawn.
+- **Points' own colours**: `ed_mesh colour <rrggbb|none>` gives the
+  picked points a colour (undone with the model's other edits), and
+  `ed_mesh colours [on|off]` shows them: each point marked in its colour,
+  and the faces between them in those colours when the model is drawn
+  filled. A tool that makes points gives each the colour of the nearest
+  point there was. The games' model files have no place for them, so they
+  are written with the bones (`ed_bone save`), a line for each part.
 - **The districts' materials** (`ed_district`, Window menu): a generated
   (Passion) level is built of six districts, each with five slots: floor,
   wall, ceiling, trim and accent. What fills them is data now: a table
@@ -784,8 +813,9 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   (`ed_grid hide`), and when shown has the world's numbers along its
   edges. `ed_display solid` shows materials as flat tones in place of
   their textures. `ed_dev` puts frame and build times, how many brushes
-  the level was built from, and how many entities and light samples there
-  are, in the status bar.
+  the level was built from, how many entities and light samples there
+  are, and how much memory the program holds (asked of the system once a
+  second, in the background) in the status bar.
 - **Settings by subject**: `ed_settings box` (the Window menu's last
   entry) opens the settings in a box with a subject down its left:
   General, Display, 3D view, Map, Model, Files, Colours. Each row is a
@@ -1498,6 +1528,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   brushes a player never sees in magenta (clip) and blue (hint, skip,
   caulk, nodraw), told by the last word of every side's material. A group
   with a colour of its own keeps it. `ed_overlay` alone counts each kind.
+  `ed_overlay width <1..4>` says how many pixels wide the studio's own
+  lines are drawn in every view (outlines, arrows, paths, rings, a
+  model's edges): a wide line is the line drawn again to either side of
+  itself as the view sees it, so it is as wide far off as near. Kept in
+  the settings, and in the Settings box under 3D view.
 - **Maps for other tools** (`ed_export <file.map> [valve|classic|q3]`):
   the scene written as a map in Valve's form (the form scenes are saved
   in), the classic one, or Quake III's own. In Quake III's a brush is a

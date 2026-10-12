@@ -17,8 +17,18 @@ impl Studio.overlay_command(scene: Scene, args: list[str]) -> bool {
             self.show_unseen = now;
         }
         self.outline_solids(scene);
+    } elif what == "width" {
+        if not word.isdigit() or int(word) < 1 or int(word) > WIDEST_LINE {
+            self.say("ed_overlay width <1.." + str(WIDEST_LINE) + ">: how many pixels wide the studio's lines are drawn (now " + str(self.line_width) + ")");
+            return True;
+        }
+        self.line_width = int(word);
+        self.keep_settings();
+        print("studio: overlay width=" + str(self.line_width));
+        self.say("Lines are drawn " + str(self.line_width) + " wide");
+        return True;
     } elif what {
-        self.say("ed_overlay [triggers|unseen] [on|off]: outline trigger volumes, or clip, hint and caulk brushes, in colours of their own");
+        self.say("ed_overlay [triggers|unseen] [on|off] | width <1.." + str(WIDEST_LINE) + ">: outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; or how wide lines are drawn");
         return True;
     }
     # How many brushes there are of each kind, whether shown apart or not.

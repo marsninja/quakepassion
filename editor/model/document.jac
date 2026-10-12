@@ -38,6 +38,7 @@ import from .bones {
     tint_mixed,
     BONE_TINTS
 }
+import from .marks { tints_carried, tint_word, word_tint }
 
 """A model has its parts, in order."""
 edge HasPart: ModelDoc --> Part {
@@ -90,6 +91,9 @@ node Part {
         corners: list[int] = [],
         uvs: list[float] = [],
         skins: list[str] = [],
+        # A colour for each point (below zero for a point with none), or
+        # nothing when no point of the part has been given one.
+        tints: list[int] = [],
         picked_points: list[int] = [],
         picked_faces: list[int] = [];
 }
@@ -106,6 +110,7 @@ node Tag {
 obj PartState {
     has corners: list[int] = [],
         uvs: list[float] = [],
+        tints: list[int] = [],
         poses: list[list[Vec3]] = [],
         picked_points: list[int] = [],
         picked_faces: list[int] = [];
@@ -326,6 +331,7 @@ node ModelDoc {
         return PartState(
             corners=list(part.corners),
             uvs=list(part.uvs),
+            tints=list(part.tints),
             poses=[list(pose.points) for pose in self.poses(part)],
             picked_points=list(part.picked_points),
             picked_faces=list(part.picked_faces)
@@ -335,6 +341,7 @@ node ModelDoc {
     def restore(part: Part, kept: PartState) {
         part.corners = list(kept.corners);
         part.uvs = list(kept.uvs);
+        part.tints = list(kept.tints);
         part.picked_points = list(kept.picked_points);
         part.picked_faces = list(kept.picked_faces);
         for (index, pose) in enumerate(self.poses(part)) {
@@ -358,6 +365,11 @@ node ModelDoc {
         part spawn tool;
         part.corners = tool.made_corners;
         part.uvs = tool.made_uvs;
+        stood = self.poses(part);
+        if len(part.tints) > 0 and len(stood) > 0 and len(before.poses) > 0 and len(stood[0].points) != len(before.poses[0]) {
+            # Other points than there were: each keeps its colour, or takes its nearest's.
+            part.tints = tints_carried(before.poses[0], before.tints, stood[0].points);
+        }
         after = self.state(part);
         if after.corners == before.corners and after.poses == before.poses {
             return False;
@@ -370,6 +382,38 @@ node ModelDoc {
             after = self.state(part);
         }
         self.done.append(ModelStep(label=label, part=part, before=before, after=after));
+        if len(self.done) > self.limit {
+            self.done = self.done[1:];
+        }
+        self.undone = [];
+        self.dirty = True;
+        self.revision += 1;
+        return True;
+    }
+
+    """Give points of the part in hand a colour (or below zero, none), as
+    one edit. False when there is no part, no such point, or nothing changed."""
+    def tint_points(picks: list[int], tint: int, label: str) -> bool {
+        part = self.part();
+        if part is None {
+            return False;
+        }
+        stood = self.poses(part);
+        count = len(stood[0].points) if len(stood) > 0 else 0;
+        before = self.state(part);
+        held = list(part.tints) if len(part.tints) == count else [-1 for each in range(count)];
+        for index in picks {
+            if index >= 0 and index < count {
+                held[index] = tint;
+            }
+        }
+        # A part none of whose points has a colour has no colours.
+        made = held if len([each for each in held if each >= 0]) > 0 else [];
+        if made == part.tints {
+            return False;
+        }
+        part.tints = made;
+        self.done.append(ModelStep(label=label, part=part, before=before, after=self.state(part)));
         if len(self.done) > self.limit {
             self.done = self.done[1:];
         }

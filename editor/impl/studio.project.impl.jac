@@ -260,6 +260,31 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
     project = self.project;
     if name == "ed_game" {
         games = ["passion", "q1", "q2", "q3"];
+        if len(args) >= 3 and args[2] == "dir" {
+            # A game's folder, or a pack's laid over one; Passion draws on
+            # every game, so its folder is the one they are all under.
+            pack = shelf().find(args[1]);
+            if args[1] != "passion" and pack is None {
+                self.say("ed_game <game> dir [folder]: " + args[1] + " is no game or pack (q1, q2, q3, passion, hipnotic, xatrix...)");
+                return True;
+            }
+            folder = os.path.expanduser(args[3].strip()) if len(args) > 3 else "";
+            if folder and not os.path.isdir(folder) {
+                self.say("ed_game " + args[1] + " dir: there is no folder " + folder);
+                return True;
+            }
+            if not keep_folder("root" if pack is None else pack.id, folder) {
+                self.say("ed_game: could not write " + folders_path());
+                return True;
+            }
+            now = game_directory("passion") if pack is None else pack_folder(pack);
+            print("studio: game " + args[1] + " dir=" + now + " set=" + ("1" if folder else "0"));
+            self.say(
+                args[1] + "'s files are looked for in " + now + (", from the next thing opened" if folder else ", as it is found without being told")
+            );
+            self.seen_revision = -1;
+            return True;
+        }
         if len(args) < 3 or args[1] not in games or args[2] not in ["material", "build", "bake"] {
             for game in games {
                 print(
@@ -268,7 +293,10 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
                         + " dir=" + game_directory(game)
                 );
             }
-            self.say("ed_game <passion|q1|q2|q3> <material|build|bake> [value]: what a scene of that game begins with");
+            for id in sorted(set_folders().keys()) {
+                print("studio: folder " + id + "=" + set_folders()[id]);
+            }
+            self.say("ed_game <passion|q1|q2|q3> <material|build|bake> [value]: what a scene of that game begins with; ed_game <game> dir [folder]: where its files are");
             return True;
         }
         key = args[1] + "." + args[2];

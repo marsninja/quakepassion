@@ -455,7 +455,8 @@ impl Studio.settings_lines -> list[str] {
         "ed_ruler " + ("on" if self.ruler else "off"),
         "ed_names " + ("on" if self.names else "off"),
         "ed_anglesnap " + str(int(self.angle_snap)),
-        "ed_texlock " + ("on" if self.tex_lock else "off")
+        "ed_texlock " + ("on" if self.tex_lock else "off"),
+        "ed_overlay width " + str(self.line_width)
     ];
     for kept_class in self.favourites {
         lines.append("ed_fav " + kept_class);

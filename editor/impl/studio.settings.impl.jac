@@ -8,7 +8,27 @@ impl Studio.dev_words(scene: Scene) -> str {
     built_now = self.live;
     return "frame " + str(round(self.frame_ms, 1)) + " ms   build " + str(self.build_ms) + " ms   "
         + str(len(scene.solids())) + " brushes (" + str(built_now.brushes if built_now is not None else 0) + " built)   "
-        + str(len(scene.items())) + " entities   " + str(self.lit_samples if self.lit else 0) + " lit   ";
+        + str(len(scene.items())) + " entities   " + str(self.lit_samples if self.lit else 0) + " lit   "
+        + (memory_words(self.memory_mb) + " held   " if self.memory_mb > 0.0 else "");
+}
+
+impl Studio.sample_memory {
+    # The system is asked in the background, so a frame never waits for it:
+    # what is read now is what it answered to the asking before.
+    heard = os.path.dirname(folders_path()) + "/.quakepassion-memory.txt";
+    said = "";
+    try {
+        with open(heard, "r") as file {
+            said = file.read();
+        }
+    } except OSError {
+        said = "";
+    }
+    taken = resident_megabytes(said);
+    if taken > 0.0 {
+        self.memory_mb = taken;
+    }
+    os.system("( ps -o rss= -p " + str(os.getpid()) + " > \"" + heard + "\" ) 2> /dev/null &");
 }
 
 impl Studio.draw_grid_numbers(area: Rect) {

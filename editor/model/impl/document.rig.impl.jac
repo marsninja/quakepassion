@@ -401,6 +401,12 @@ impl ModelDoc.spread_frames(first: int, last: int) -> bool {
 impl ModelDoc.rig_text -> str {
     lines = ["// The bones of a model: each bone, where its ends are at each frame, and what it carries of each part."];
     held_parts = self.parts();
+    for (number, part) in enumerate(held_parts) {
+        if len(part.tints) > 0 {
+            # The colours its points were given, in the points' order.
+            lines.append("colours " + str(number) + " " + " ".join([tint_word(tint) for tint in part.tints]));
+        }
+    }
     for held in self.bones() {
         above = self.bone_parent(held);
         lines.append("bone " + held.name + " " + (above.name if above is not None else "-") + " " + str(held.tint));
@@ -442,6 +448,15 @@ impl ModelDoc.read_rig(text: str) -> int {
                 if len(words) > 3 and words[3].isdigit() {
                     reading.tint = int(words[3]) & 0xffffff;
                 }
+            }
+            continue;
+        }
+        if words[0] == "colours" and len(words) >= 3 and words[1].isdigit() and int(words[1]) < len(held_parts) {
+            tinted = held_parts[int(words[1])];
+            stood = self.poses(tinted);
+            # Only when they are the colours of the points it has.
+            if len(stood) > 0 and len(words) - 2 == len(stood[0].points) {
+                tinted.tints = [word_tint(word) for word in words[2:]];
             }
             continue;
         }

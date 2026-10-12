@@ -7,6 +7,7 @@ import math;
 import struct;
 import from engine.math.vec3 { Vec3 }
 import from .mesh { Mesh, ray_meets }
+import from .pattern { pattern_covers }
 
 """The box round the places of some points: [u low, v low, u high, v high]
 (all of them when none are named; a square of nothing when there are none)."""
@@ -160,9 +161,13 @@ def skin_filled(width: int, height: int, color: list[int]) -> Skin {
 
 """Paint a dab on a skin at a place on it: a disc of so many texels, solid
 to its edge, or with `soft` strongest at its middle and fading to nothing
-(an airbrush). `strength` from 0 to 1 is how much of the colour is laid.
+(an airbrush). `strength` from 0 to 1 is how much of the colour is laid,
+and a `pattern` lays it only on the texels that pattern covers.
 Answers how many texels it touched."""
-def skin_dab(skin: Skin, u: float, v: float, radius: float, color: list[int], soft: bool = False, strength: float = 1.0) -> int {
+def skin_dab(
+    skin: Skin, u: float, v: float, radius: float, color: list[int], soft: bool = False, strength: float = 1.0,
+    pattern: str = "solid", grain: int = 4
+) -> int {
     middle_x = u * float(skin.width);
     middle_y = v * float(skin.height);
     reach = max(0.5, radius);
@@ -170,7 +175,7 @@ def skin_dab(skin: Skin, u: float, v: float, radius: float, color: list[int], so
     for y in range(max(0, int(middle_y - reach)), min(skin.height, int(middle_y + reach) + 1)) {
         for x in range(max(0, int(middle_x - reach)), min(skin.width, int(middle_x + reach) + 1)) {
             away = math.sqrt((float(x) + 0.5 - middle_x) * (float(x) + 0.5 - middle_x) + (float(y) + 0.5 - middle_y) * (float(y) + 0.5 - middle_y));
-            if away > reach {
+            if away > reach or not pattern_covers(pattern, x, y, grain) {
                 continue;
             }
             share = strength * (1.0 - away / reach if soft else 1.0);
@@ -183,6 +188,15 @@ def skin_dab(skin: Skin, u: float, v: float, radius: float, color: list[int], so
         }
     }
     return touched;
+}
+
+"""The colour at a place on a skin: [red, green, blue], for taking up a
+colour that is already painted there."""
+def skin_colour(skin: Skin, u: float, v: float) -> list[int] {
+    found = skin.at(
+        max(0, min(skin.width - 1, int(u * float(skin.width)))), max(0, min(skin.height - 1, int(v * float(skin.height))))
+    );
+    return [found[0], found[1], found[2]];
 }
 
 """Where on its skin a line of sight meets a mesh: [u, v], or none when it
