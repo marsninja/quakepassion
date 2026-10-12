@@ -773,6 +773,84 @@ obj StudioHost(ToolHost) {
     def line(start: Vec3, finish: Vec3, color: Ink) {
         wire_line(start, finish, color);
     }
+
+    def listing -> AssetIndex | None {
+        stock = self.studio.archive;
+        known = self.studio.asset_index;
+        if known is None and stock is not None {
+            known = AssetIndex(shelf=stock);
+            self.studio.asset_index = known;
+        }
+        return known;
+    }
+
+    def picture(material: str) -> Texture | None {
+        stock = self.studio.archive;
+        found = stock.fetch(material) if stock is not None else None;
+        if found is None {
+            return None;
+        }
+        colours = texture_rgba(found);
+        wide = found.width;
+        tall = found.height;
+        if len(colours) == 0 and len(found.encoded) > 0 {
+            # Kept as a file's own bytes (a PNG, a JPEG, a packed TGA): read as the window reads it.
+            read = self.studio.canvas.decoded(found.extension, found.encoded);
+            wide = read[0][0];
+            tall = read[0][1];
+            colours = read[1];
+        }
+        if wide <= 0 or tall <= 0 or len(colours) < wide * tall * 4 {
+            return None;
+        }
+        return Texture(name=material, width=wide, height=tall, rgba=colours);
+    }
+
+    def palette(game: str) -> bytes {
+        known = self.listing();
+        if known is None {
+            return b"";
+        }
+        if game == "q1" {
+            colours = known.read("q1", "gfx/palette.lmp");
+            return colours if colours is not None and len(colours) == 768 else b"";
+        }
+        if game == "q2" {
+            # The last 768 bytes of Quake II's colour map picture are its palette.
+            held = known.read("q2", "pics/colormap.pcx");
+            return held[len(held) - 768:] if held is not None and len(held) > 769 else b"";
+        }
+        return b"";
+    }
+
+    def folder(kind: str) -> str {
+        if kind == "textures" {
+            stock = self.studio.archive;
+            return stock.files_folder() if stock is not None else "";
+        }
+        return self.studio.project_folder;
+    }
+
+    def read_file(game: str, name: str) -> bytes | None {
+        known = self.listing();
+        return known.read(game, name) if known is not None else None;
+    }
+
+    def file_names(game: str) -> list[str] {
+        known = self.listing();
+        return known.names(game) if known is not None and game in known.games() else [];
+    }
+
+    def files_changed {
+        stock = self.studio.archive;
+        if stock is not None {
+            # What the project's folder of textures holds is read again.
+            stock.found = {};
+            stock.listed = {};
+        }
+        self.studio.folds += 1;
+        self.studio.materials_changed += 1;
+    }
 }
 
 obj Studio(Workbench) {
