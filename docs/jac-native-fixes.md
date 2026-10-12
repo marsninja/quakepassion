@@ -9,18 +9,26 @@ tracked the local patch stacks used while each fix was in review.
 ## Current compiler
 
 The `jaseci` submodule pins the compiler source. It points at the
-`qp-pin-v4` branch of `marsninja/jac`: upstream main `875ef9d29` plus
+`qp-pin-v5` branch of `marsninja/jac`: upstream main `875ef9d29` plus
 [jaseci-labs/jac#10002](https://github.com/jaseci-labs/jac/pull/10002), which
-has since merged. Everything earlier pins carried has merged upstream too,
+has since merged, and
+[jaseci-labs/jac#10017](https://github.com/jaseci-labs/jac/pull/10017), which
+is open (below). Everything earlier pins carried has merged upstream too,
 the Windows target work (#9991) among it. `scripts/stage_compiler.sh` prepares
 that source (and the typeshed stubs it needs) and prints the `JAC_DEV_SOURCE`
 to export, so the released `jac` 0.37.25 binary compiles QuakePassion with
 the pinned source. CI (`.github/workflows/jac-test.yml`) does the same and
 caches the native compiler kernel per pin. No local patch stacks or compiler
 worktrees are needed, and the submodule can return to `jaseci-labs/jac` main
-at the next pin change.
+once #10017 has merged.
 
 ## Open upstream
+
+Open upstream and in the pin:
+
+| Defect | Upstream PR | Found by |
+| --- | --- | --- |
+| `assert cond, <message>` carried its message into the `AssertionError` only when the message was a string literal: one that was worked out (a concatenation, an f-string) was dropped, and the error said only `assertion failed at <file>:<line>` | [#10017](https://github.com/jaseci-labs/jac/pull/10017) | The Passion mission editor (`editor/document/missionedit.jac`), which says what the generator's own proof (`validate_mission`) found wrong with a mission changed by hand: "Mission needs an ungranted token: ..." came back as a file and a line |
 
 Merged upstream and in the pin, not yet in a release:
 
