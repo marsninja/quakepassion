@@ -337,7 +337,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
 - **Camp spots**: `info_camp` (how far a bot camps from it, how much bots
   want it, how long one stays) and `item_botroam` are classes like any
   other; a ring is drawn in the views at each camp spot's range, and
-  `ed_camps` lists them.
+  `ed_camps` lists them. `ed_camps routes [on|off]` draws the ways bots
+  take between them: a `Descend` walker is set down in the area a spot
+  stands in and goes out, passage by passage, by whichever leaves the
+  least time still to go on the router's own table, until it stands in
+  the goal's area. With nothing picked each spot is joined to the next;
+  with one thing picked (a player's start, say) the ways run from it to
+  every spot. A run is drawn pink, a jump yellow and a drop red; each way
+  is printed with its time and its legs by kind, and a spot there is no
+  way to is said to be out of reach. The ways are walked again when a
+  spot moves. They go over the navigation baked here (`ed_nav bake`), or,
+  in a shipped arena, over the arena's own.
 - **Fine work on a terrain**: `ed_touch <x> <y> <amount> [variance]`
   moves the corner of the terrain's grid nearest a place and the corners
   that stand with it: those joined to it along the grid within the
@@ -691,6 +701,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   delete, copy, cut, hide, drop, and for brushes group, hollow, carve and
   the owner. A right click elsewhere is still the look or slide button.
 - `ed_log [lines]` shows the console's last lines without opening it.
+  `ed_log panel [on|off] [rows]` keeps them in sight instead: a panel
+  along the foot of the level views (under all four when four are
+  showing) that holds the last so many lines as work goes on; `ed_log
+  panel up [n]`, `down [n]` and `end` scroll back through what was said
+  and return to the newest. Whether it is open, and how tall, is kept
+  between sessions.
 - **How maps are written**: `ed_mapopts comments off` leaves out the lines
   that number entities and brushes, and `ed_mapopts whole on` writes every
   plane point in whole numbers, for tools that read nothing else. Both are
@@ -1372,6 +1388,13 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_camproute_tests.jac`: a way walked area by area down the
+  time still to go, taking what the router said it takes and going by
+  the only bridge; no legs within one area; no route off the floors or
+  across a gap; a ledge as a jumped leg up and a dropped leg down.
+- `tests/studio_logpanel_tests.jac`: the lines a panel of so many rows
+  shows, at the newest and scrolled back, no further than the oldest;
+  a long line cut to fit.
 - `tests/studio_adjoin_tests.jac`: outlines in one plane that adjoin
   along an edge or over one another and not at a corner; the four faces
   beside a face of a box; a side that makes no face.
@@ -1597,6 +1620,17 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/camproute_session.cfg` (8 steps: four camp spots, two
+  on the floor, one on a low box and one on a tall; nothing to ask before
+  the navigation is baked; each spot to the next, with a jump onto the
+  low box and no way up the tall one; from the player's start to every
+  spot; walked again when a spot moves; from the tall box down to each of
+  the others by a drop; and put away).
+  `scripts/studio/logpanel_session.cfg` (8 steps, run twice over one
+  settings folder: the panel opened at six rows on the last thing said,
+  scrolled two lines back, to the oldest and to the newest again, made
+  twelve rows under four views, put away, and brought back at five; the
+  second run begins with it open at five).
   `scripts/studio/tagwrap_session.cfg` (7 steps: one wall's material sent
   round a pillar's four; two faces tagged and a box glued against the
   nearer, east and then west; a trigger volume and a clip brush counted,

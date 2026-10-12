@@ -37,6 +37,7 @@ import from vendor.raylib {
 }
 import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
+import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.widgets {
     Box,
@@ -136,7 +137,9 @@ import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
 import from .project { Project, MANIFEST_NAME, read_project, write_project, addon_classes, file_name }
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
-import from .compile.navigation { Floor, Way, floor_ways, floor_middle, nav_data, ways_count, route_time, NAV_STEP }
+import from .compile.navigation {
+    Floor, Way, Leg, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP
+}
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
 import from engine.formats.aas { TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE }
 import from .compile.leak { find_leak, LeakReport }
@@ -302,7 +305,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages, check it for what the game would trip on, and save it"
     ),
     ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
-    ("ed_camps", "ed_camps", "list the spots bots camp at and roam through"),
+    ("ed_camps", "ed_camps [routes [on|off]]", "list the spots bots camp at and roam through; routes draws the ways bots take between them, or from the one thing picked to each"),
     ("ed_touch", "ed_touch <x> <y> <amount> [variance]", "move the corner of the terrain nearest a place, and the corners that stand with it"),
     (
         "ed_plot",
@@ -388,7 +391,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
-    ("ed_log", "ed_log [lines]", "show the console's last lines"),
+    ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
     ("ed_overlay", "ed_overlay [triggers|unseen] [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; alone, count them"),
     ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
@@ -745,6 +748,20 @@ obj Studio(Workbench) {
         nav_cell: float = 32.0,
         nav_mesh: NavMesh | None = None,
         nav_shown: bool = False,
+        # The ways bots take between camp spots: whether they are drawn,
+        # what is drawn of them, how many were found and not, and what
+        # the scene was when they were walked.
+        camp_routes: bool = False,
+        camp_legs: list[Leg] = [],
+        camp_found: int = 0,
+        camp_lost: int = 0,
+        camp_mark: int = -1,
+        # The log panel along the foot of the views: whether it is open,
+        # how many of the console's lines it holds, and how far back it
+        # is scrolled.
+        log_panel: bool = False,
+        log_rows: int = 6,
+        log_back: int = 0,
         # The part of a view its overlays are drawn in, when a floating
         # window covers the rest (the whole of it when this has no size).
         over_piece: Rect = Rect(),
@@ -1479,7 +1496,8 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Bake navigation for bots", command="ed_nav bake"),
                     MenuItem(text="What the baked navigation cannot reach", command="ed_nav check"),
-                    MenuItem(text="Draw the baked ways", command="ed_nav show")
+                    MenuItem(text="Draw the baked ways", command="ed_nav show"),
+                    MenuItem(text="Draw the ways bots take between camp spots", command="ed_camps routes")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -1522,7 +1540,9 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Another 3D window", command="ed_window new"),
                     MenuItem(text="Another 3D window, in outlines", command="ed_window new outlines"),
-                    MenuItem(text="Close the floating windows", command="ed_window close all")
+                    MenuItem(text="Close the floating windows", command="ed_window close all"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Log panel along the foot of the views", command="ed_log panel")
                 ]
             ]
         );
@@ -2840,6 +2860,7 @@ obj Studio(Workbench) {
         }
         self.draw_paths();
         self.draw_camps();
+        self.draw_camp_routes(scene);
         self.draw_nav();
         self.draw_entity_models(scene);
         for shape in chosen {
@@ -2942,6 +2963,7 @@ obj Studio(Workbench) {
         self.over_piece = Rect();
         self.watch(watched);
         self.canvas.unclip();
+        self.draw_log_panel();
     }
 
     """Names over the selection and over what the pointer is on, the selected
@@ -3520,6 +3542,19 @@ obj Studio(Workbench) {
 
     """Run a navigation command. False when it is not one."""
     def nav_command(scene: Scene, args: list[str]) -> bool;
+    """The level's navigation: what was baked here, or a shipped arena's own."""
+    def route_mesh -> NavMesh | None;
+    def camp_pairs(scene: Scene) -> list[tuple[Item, Item]];
+    def camp_route_lines(scene: Scene) -> list[str];
+    def camp_routes_words -> str;
+    def draw_camp_routes(scene: Scene);
+    def camproute_command(scene: Scene, args: list[str]) -> bool;
+    """Where the log panel lies: along the foot of the level views."""
+    def log_area -> Rect;
+    def log_said -> list[str];
+    def draw_log_panel;
+    def log_panel_words -> str;
+    def logpanel_command(scene: Scene, args: list[str]) -> bool;
     """The places to stand in the built scene, sampled on a grid: floor
     under the whole of a cell and room for a head over it."""
     def nav_floors_of(scene: Scene, cell: float) -> list[Floor];
@@ -3811,7 +3846,9 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.overlay_command(scene, args) and not self.q3map_command(scene, args)
+        } elif not self.logpanel_command(scene, args) and not self.camproute_command(scene, args)
+            and not self.overlay_command(scene, args)
+            and not self.q3map_command(scene, args)
             and not self.snapto_command(scene, args)
             and not self.prune_command(scene, args)
             and not self.rows_command(scene, args)
@@ -4139,6 +4176,12 @@ obj Studio(Workbench) {
         }
         if self.nav_mesh is not None {
             lines.append(self.nav_words());
+        }
+        if self.camp_routes {
+            lines.append(self.camp_routes_words());
+        }
+        if self.log_panel {
+            lines.append(self.log_panel_words());
         }
         if self.pick_kind != "all" or len(self.kept_out_items) + len(self.kept_out_solids) > 0 {
             lines.append(

@@ -428,6 +428,7 @@ impl Studio.keep_settings {
         lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
     }
     lines.append("ed_outside " + self.outside);
+    lines.append("ed_log panel " + ("on" if self.log_panel else "off") + " " + str(self.log_rows));
     lines.append("ed_models " + ("on" if self.models_shown else "off"));
     lines.append("ed_mouse look " + str(round(self.look_rate, 2)));
     lines.append("ed_mouse invert " + ("on" if self.look_flipped else "off"));

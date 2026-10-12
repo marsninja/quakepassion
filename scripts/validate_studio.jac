@@ -3075,6 +3075,164 @@ def tagwrap_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     );
 }
 
+"""The seventy-fifth session: the ways bots take between camp spots, walked over the baked navigation."""
+def camproute_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["chained", "fromstart"];
+    for shot in shots {
+        (repo / f"camproute_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-camproute-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/camproute_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "camproute.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The camproute session failed: {output / 'camproute.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["placed", "unbaked", "chained", "fromstart", "moved", "fromtall", "rechained", "off"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'camproute.log'}";
+    }
+    # What each asking printed: the ways one after another, closed by their count.
+    asked: list[list[str]] = [];
+    ways: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("studio: camp route #") {
+            ways.append(line[19:]);
+        } elif line.startswith("studio: camp routes ways=") and ways {
+            asked.append(ways + [line[13:]]);
+            ways = [];
+        }
+    }
+    def took(way: str) -> dict[str, int] {
+        return {word.split("=")[0]: int(word.split("=")[1]) for word in way.split() if "=" in word};
+    }
+    def shown(name: str) -> list[str] {
+        # The step's own lines end with its mode: what a later command printed comes after.
+        dumped = steps[name];
+        ends = [place for (place, line) in enumerate(dumped) if line.startswith("mode=")];
+        return [line for line in dumped[:ends[0]] if line.startswith("camp routes ")];
+    }
+    # Before anything is baked there is nothing to ask the way of, and nothing is drawn.
+    assert not shown("placed") and not shown("unbaked");
+    assert len(asked) == 4 , str(asked);
+    # Each spot to the next: across the floor, all walked; on to the low box, with one jump and
+    # longer for it; and no way up the tall box.
+    chain = asked[0];
+    assert chain[0].startswith("#5 info_camp > #6 item_botroam ") and chain[1].startswith("#6 item_botroam > #7 info_camp ") , str(chain);
+    across = took(chain[0]);
+    hop = took(chain[1]);
+    assert across["time"] > 100 and across["legs"] == across["walk"] and across["legs"] >= 12 and across["jump"] + across["drop"] == 0 , str(across);
+    assert hop["jump"] == 1 and hop["drop"] == 0 and hop["walk"] == hop["legs"] - 1 and hop["time"] > across["time"] , str(hop);
+    assert chain[2] == "#7 info_camp > #8 info_camp time=-1" and chain[3].startswith("routes ways=2 lost=1 drawn=") , str(chain);
+    # What is drawn is each leg and the run to it, and the run from the last: two a leg and one more a way.
+    assert chain[3] == f"routes ways=2 lost=1 drawn={2 * (across['legs'] + hop['legs']) + 2}" , chain[3];
+    assert shown("chained") == ["camp " + chain[3]];
+    # With the player's start picked: from it to each of the four, without being asked.
+    start = asked[1];
+    assert len(start) == 5 and all([way.startswith("#2 info_player_start > #") for way in start[:4]]) , str(start);
+    assert start[3].endswith("time=-1") and start[4].startswith("routes ways=3 lost=1 ") and shown("fromstart") == ["camp " + start[4]];
+    assert took(start[2])["jump"] == 1 and took(start[0])["time"] < across["time"];
+    # The roaming spot moved nearer the first camp: its way there is shorter than the chain's was.
+    moved = asked[2];
+    assert moved[0].startswith("#6 item_botroam > #5 info_camp ") and took(moved[0])["time"] < across["time"] , str(moved);
+    assert shown("moved") == ["camp " + moved[3]] and moved[3] != chain[3];
+    # From the tall box every other spot is reached, each by a drop; the low box's by a jump too.
+    tall = asked[3];
+    assert len(tall) == 4 and tall[3].startswith("routes ways=3 lost=0 ") and shown("fromtall") == ["camp " + tall[3]] , str(tall);
+    assert all([took(way)["drop"] == 1 for way in tall[:3]]) and [took(way)["jump"] for way in tall[:3]] == [0, 0, 1] , str(tall);
+    # Nothing picked: the chain again, by the roaming spot's new place. Put away, nothing is said of them.
+    assert len(shown("rechained")) == 1 and shown("rechained")[0].startswith("camp routes ways=2 lost=1 ") and shown("rechained") != shown("chained");
+    assert not shown("off");
+    for shot in shots {
+        source = repo / f"camproute_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"camproute_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"CAMPROUTE PASS: {len(steps) - 1} steps, the ways between four camp spots walked over the baked floors: {across['legs']} "
+            + "legs across the floor, a jump onto the low box, none up the tall one and a drop down from it"
+    );
+}
+
+"""The seventy-sixth session: the console's last lines kept in sight in a panel, scrolled, and kept between sessions."""
+def logpanel_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["shown", "oldest", "four"];
+    for shot in shots {
+        (repo / f"logpanel_{shot}.png").unlink(missing_ok=True);
+    }
+    runs: list[dict[str, list[str]]] = [];
+    with tempfile.TemporaryDirectory(prefix="qp-logpanel-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        # Twice over one home: the second begins with what the first left.
+        for turn in ["first", "second"] {
+            ran = subprocess.run(
+                [str(binary), "+ed_exec", "scripts/studio/logpanel_session.cfg"],
+                cwd=repo,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300
+            );
+            (output / f"logpanel_{turn}.log").write_text(ran.stdout + ran.stderr);
+            assert ran.returncode == 0 , f"The logpanel session failed: {output / f'logpanel_{turn}.log'}";
+            runs.append(studio_steps(ran.stdout));
+        }
+        kept = (Path(home) / "overrides" / "studio.cfg").read_text();
+        assert "ed_log panel on 5" in kept.splitlines() , kept;
+    }
+    steps = runs[0];
+    names = ["opened", "shown", "back", "oldest", "newest", "taller", "away", "kept"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'logpanel_first.log'}";
+    }
+    def panel(held: dict[str, list[str]], name: str) -> dict[str, str] {
+        found = [line for line in held[name] if line.startswith("logpanel ")];
+        if not found {
+            return {};
+        }
+        return {word.split("=", 1)[0]: word.split("=", 1)[1] for word in found[0].split()[1:]};
+    }
+    # Shut until it is asked for; then six rows, at the newest: the last thing the studio said.
+    assert not panel(steps, "opened");
+    first = panel(steps, "shown");
+    assert first["rows"] == "6" and first["shown"] == "6" and first["back"] == "0" and int(first["lines"]) >= 6 , str(first);
+    assert first["last"].startswith("There_is_no_navigation_to_ask_the_way_of") , first["last"];
+    # Two lines back; then as far as there is to go, the oldest line at the top; then the newest again.
+    assert panel(steps, "back")["back"] == "2";
+    oldest = panel(steps, "oldest");
+    assert int(oldest["back"]) == int(oldest["lines"]) - 6 and int(oldest["back"]) > 20 , str(oldest);
+    assert panel(steps, "newest")["back"] == "0";
+    # Twelve rows; put away, it says nothing; and brought back with five.
+    taller = panel(steps, "taller");
+    assert taller["rows"] == "12" and taller["shown"] == "12" , str(taller);
+    assert not panel(steps, "away") and panel(steps, "kept")["rows"] == "5";
+    # The next session begins with it open, at the five rows the first left.
+    again = panel(runs[1], "opened");
+    assert again and again["rows"] == "5" and again["back"] == "0" , str(again);
+    for shot in shots {
+        source = repo / f"logpanel_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"logpanel_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"LOGPANEL PASS: {len(steps) - 1} steps twice, the console's last lines in a panel of six rows and twelve, scrolled "
+            + f"back {oldest['back']} lines to the oldest, and open again in the next session at five"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5451,6 +5609,8 @@ def main() {
         "q3map": q3map_session,
         "fan": fan_session,
         "tagwrap": tagwrap_session,
+        "camproute": camproute_session,
+        "logpanel": logpanel_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5640,6 +5800,8 @@ def main() {
     q3map_session(repo, binary, env, output);
     fan_session(repo, binary, env, output);
     tagwrap_session(repo, binary, env, output);
+    camproute_session(repo, binary, env, output);
+    logpanel_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }
