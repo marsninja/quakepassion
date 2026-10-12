@@ -179,7 +179,7 @@ import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
 import from .compile.light { bake_light, lamp_cone, light_job, LightJob }
 import from .compile.spot { Cone, cone_rim, cone_through, square_to }
-import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
+import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport, cell_job, CellJob }
 import from .project {
     Project, MANIFEST_NAME, read_project, write_project, addon_classes, addon_folders, addon_label, file_name
 }
@@ -2468,7 +2468,7 @@ obj Studio(Workbench) {
         concealed = scene.hidden_count();
         lighting = self.light_task;
         ui.place.text = (
-            "lighting " + str(int(lighting.job.share() * 100.0)) + "%   " if lighting is not None else ""
+            "baking " + str(int(lighting.share() * 100.0)) + "%   " if lighting is not None else ""
         ) + self.dev_words(scene) + ("frozen   " if self.frozen else "")
             + (str(concealed) + " hidden   " if concealed else "")
             + (str(self.build_ms) + " ms   " if self.build_ms > 0 else "") + "grid " + str(int(self.grid)) + "   "
@@ -5469,11 +5469,31 @@ def wire_line(start: Vec3, finish: Vec3, color: Ink) {
 """Light being baked while the studio goes on: the job, what it is the
 light of (the build's mark), and what the kept bake must measure."""
 obj LightTask {
-    has job: LightJob,
+    has job: LightJob | None = None,
+        # The scene and the copy being baked, how wide its cells are (none
+        # when it is not cut), and the cells' job once the light is done.
+        scene: Scene | None = None,
+        made: LiveLevel | None = None,
+        cell: float = 0.0,
+        cells: CellJob | None = None,
         mark: str = "",
         plane_base: int = 0,
         warned: int = 0,
-        began: float = 0.0;
+        began: float = 0.0,
+        # The light's samples once it is written (below zero until then).
+        samples: int = -1;
+
+    """How far the bake has got: the light, then the cells."""
+    def share -> float {
+        light = self.job;
+        lit = light.share() if light is not None else 1.0;
+        if self.cell <= 0.0 {
+            return lit;
+        }
+        cut = self.cells;
+        cells_share = cut.share() if cut is not None else 0.0;
+        return (lit + cells_share) * 0.5 if light is not None else cells_share;
+    }
 }
 
 """How the explorer's model view is laid out: one view, or four."""

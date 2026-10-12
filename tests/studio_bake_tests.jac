@@ -128,3 +128,26 @@ test "a bake kept from one build is given whole to a level compiled of the same 
     other = compile_scene(bigger, SwatchMaterials());
     assert not give_bake(other, kept) and other.bsp.clusters == 1 and len(other.bsp.leaves) == 1;
 }
+
+import from editor.compile.bake { cell_job }
+
+test "cells baked a few lines of sight at a time come out as cells baked at once" {
+    for doorway in [True, False] {
+        scene = hall(doorway);
+        whole = compile_scene(scene, SwatchMaterials());
+        outcome = bake_cells(scene, whole, 128.0);
+        sliced = compile_scene(scene, SwatchMaterials());
+        job = cell_job(scene, sliced, 128.0);
+        assert not job.finished() and job.share() < 0.1;
+        steps = 0;
+        last = 0.0;
+        while not job.step(40) {
+            steps += 1;
+            assert job.share() >= last;
+            last = job.share();
+        }
+        assert steps > 2 and job.finished() and job.share() == 1.0;
+        assert sliced.bsp.visibility == whole.bsp.visibility and job.outcome.hidden == outcome.hidden;
+        assert job.outcome.cells == outcome.cells;
+    }
+}

@@ -114,14 +114,171 @@ def:priv cells_touch(first: Leaf, second: Leaf) -> bool {
         and first.mins.y <= second.maxs.y + 0.5 and second.mins.y <= first.maxs.y + 0.5;
 }
 
-"""Divide a compiled scene's level into cells and work out which see which.
-`cell` is how wide a cell may be; `budget` how many lines of sight may be
-tried. A level that fits one cell is left as the one leaf it was."""
-def bake_cells(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int = 1500000) -> VisReport {
-    outcome = VisReport();
+"""Cutting a compiled scene's level into cells and finding which see which,
+a slice at a time: the plan is cut and the points to look from laid out at
+once (`cell_job`), then the flood of what a player could reach and the
+pairs of cells are looked through a budget of lines of sight at a time
+(`step`), and the rows of bits written when all are (`finish`). A bake done
+all at once is the same job stepped through at once."""
+obj CellJob {
+    has made: LiveLevel,
+        outcome: VisReport = VisReport(),
+        budget: int = 1500000,
+        occluder: BrushOccluder = BrushOccluder(),
+        count: int = 0,
+        marks: list[list[Vec3]] = [],
+        lattice: list[list[Vec3]] = [],
+        beside: list[list[int]] = [],
+        reached: list[list[bool]] = [],
+        waiting: list[tuple[int, int]] = [],
+        turn: int = 0,
+        seeded: bool = False,
+        eyes: list[list[Vec3]] = [],
+        sees: list[list[bool]] = [],
+        # "flood", then "pairs" (from the row `row`), then "done".
+        phase: str = "done",
+        row: int = 0,
+        said: float = 0.0;
+
+    def finished -> bool {
+        return self.phase == "done";
+    }
+
+    """How far it has got: from 0 to 1 (the flood its first tenth). The
+    flood's queue grows as it goes, so what is said never goes back."""
+    def share -> float {
+        now = 1.0;
+        if self.phase == "flood" {
+            now = 0.1 * float(self.turn) / float(max(1, len(self.waiting)));
+        } elif self.phase == "pairs" {
+            now = 0.1 + 0.9 * float(self.row) / float(max(1, self.count));
+        }
+        self.said = max(self.said, now);
+        return self.said;
+    }
+
+    """Look along about `limit` more lines of sight. True when all is found."""
+    def step(limit: int) -> bool {
+        bsp = self.made.bsp;
+        outcome = self.outcome;
+        occluder = self.occluder;
+        stop = outcome.rays + max(1, limit);
+        if self.phase == "flood" {
+            while self.turn < len(self.waiting) and outcome.rays < self.budget // 2 and outcome.rays < stop {
+                (cell_from, point_from) = self.waiting[self.turn];
+                self.turn += 1;
+                origin = self.lattice[cell_from][point_from];
+                for cell_index in self.beside[cell_from] {
+                    for (index, spot) in enumerate(self.lattice[cell_index]) {
+                        if self.reached[cell_index][index] {
+                            continue;
+                        }
+                        outcome.rays += 1;
+                        if occluder.visibility(origin, spot) > 0.0 {
+                            self.reached[cell_index][index] = True;
+                            self.waiting.append((cell_index, index));
+                        }
+                    }
+                }
+            }
+            if self.turn < len(self.waiting) and outcome.rays < self.budget // 2 {
+                return False;
+            }
+            flooded = self.seeded and self.turn >= len(self.waiting);
+            self.eyes = [];
+            for index in range(self.count) {
+                self.eyes.append(
+                    [
+                        self.lattice[index][place]
+                        for place in range(len(self.lattice[index]))
+                        if not flooded or self.reached[index][place]
+                    ]
+                );
+            }
+            self.sees = [[False for other in range(self.count)] for index in range(self.count)];
+            self.phase = "pairs";
+            self.row = 0;
+        }
+        if self.phase == "pairs" {
+            # Which sees which, a row of pairs at a time.
+            while self.row < self.count and outcome.rays < stop {
+                first = self.row;
+                self.row += 1;
+                self.sees[first][first] = True;
+                for second in range(first + 1, self.count) {
+                    outcome.pairs += 1;
+                    seen = cells_touch(bsp.leaves[first], bsp.leaves[second]) or outcome.capped;
+                    if not seen {
+                        # From where one could stand in either to where one could
+                        # stand in, or to the faces of, the other.
+                        for (near, far) in [(first, second), (second, first)] {
+                            if seen {
+                                break;
+                            }
+                            targets = self.eyes[far] + self.marks[far];
+                            stride = max(1, len(targets) // 48);
+                            for eye in self.eyes[near] {
+                                if seen {
+                                    break;
+                                }
+                                for pick in range(0, len(targets), stride) {
+                                    outcome.rays += 1;
+                                    if occluder.visibility(eye, targets[pick]) > 0.0 {
+                                        seen = True;
+                                        break;
+                                    }
+                                }
+                            }
+                            if outcome.rays > self.budget {
+                                # Out of patience: what is left is taken to be in sight.
+                                outcome.capped = True;
+                                seen = True;
+                            }
+                        }
+                    }
+                    self.sees[first][second] = seen;
+                    self.sees[second][first] = seen;
+                    if not seen {
+                        outcome.hidden += 1;
+                    }
+                }
+            }
+            if self.row < self.count {
+                return False;
+            }
+            self.phase = "write";
+        }
+        if self.phase == "write" {
+            # A row of bits a cluster, after the eight bytes a level's visibility begins with.
+            count = self.count;
+            width = (count + 7) // 8;
+            rows = bytearray(8 + count * width);
+            for first in range(count) {
+                for second in range(count) {
+                    if self.sees[first][second] {
+                        rows[8 + first * width + second // 8] |= 1 << (second % 8);
+                    }
+                }
+            }
+            bsp.clusters = count;
+            bsp.cluster_bytes = width;
+            bsp.visibility = bytes(rows);
+            self.phase = "done";
+        }
+        return True;
+    }
+}
+
+"""The job of cutting a compiled scene's level into cells no wider than
+`cell` and finding which see which, with `budget` lines of sight to try.
+The plan is cut and the points laid out now; a level that fits one cell is
+left as the one leaf it was, and its job is already done."""
+def cell_job(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int = 1500000) -> CellJob {
+    job = CellJob(made=made, budget=budget);
+    outcome = job.outcome;
     bsp = made.bsp;
     if len(bsp.models) == 0 or len(bsp.leaves) == 0 or cell < 16.0 {
-        return outcome;
+        return job;
     }
     room = bsp.leaves[0];
     low = room.mins;
@@ -137,10 +294,11 @@ def bake_cells(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int =
     head = cut_plan(bsp, low, high, size);
     count = len(bsp.leaves);
     outcome.cells = count;
+    job.count = count;
     if count < 2 {
         bsp.leaves[0].faces = faces;
         bsp.models[0].head = -1;
-        return outcome;
+        return job;
     }
     bsp.models[0].head = head;
     bsp.models[0].vis_leaf_count = count - 1;
@@ -164,9 +322,11 @@ def bake_cells(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int =
             marks[home].append(corner.add(middle.sub(corner).scale(0.1)).add(face.normal.scale(2.0)));
         }
     }
+    job.marks = marks;
     # Points through each cell: its middle and toward its corners, at
     # heights up through the level, where that is not in a wall.
     occluder = scene_occluder(scene);
+    job.occluder = occluder;
     lattice: list[list[Vec3]] = [];
     levels: list[float] = [];
     height = low.z + 40.0;
@@ -194,6 +354,7 @@ def bake_cells(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int =
         }
         lattice.append(through);
     }
+    job.lattice = lattice;
     # Of those, the ones a player could come to: reached from where the
     # scene's entities stand, point to point in plain sight, through cells
     # that touch. What lies under the floor, outside the walls or in a
@@ -204,6 +365,7 @@ def bake_cells(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int =
     for first in range(count) {
         beside.append([second for second in range(count) if cells_touch(bsp.leaves[first], bsp.leaves[second])]);
     }
+    job.beside = beside;
     reached: list[list[bool]] = [[False for spot in lattice[index]] for index in range(count)];
     waiting: list[tuple[int, int]] = [];
     for item in scene.items() {
@@ -224,88 +386,22 @@ def bake_cells(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int =
             }
         }
     }
-    seeded = len(waiting) > 0;
-    turn = 0;
-    while turn < len(waiting) and outcome.rays < budget // 2 {
-        (cell_from, point_from) = waiting[turn];
-        turn += 1;
-        origin = lattice[cell_from][point_from];
-        for cell_index in beside[cell_from] {
-            for (index, spot) in enumerate(lattice[cell_index]) {
-                if reached[cell_index][index] {
-                    continue;
-                }
-                outcome.rays += 1;
-                if occluder.visibility(origin, spot) > 0.0 {
-                    reached[cell_index][index] = True;
-                    waiting.append((cell_index, index));
-                }
-            }
-        }
+    job.reached = reached;
+    job.waiting = waiting;
+    job.seeded = len(waiting) > 0;
+    job.phase = "flood";
+    return job;
+}
+
+"""Divide a compiled scene's level into cells and work out which see which.
+`cell` is how wide a cell may be; `budget` how many lines of sight may be
+tried. A level that fits one cell is left as the one leaf it was."""
+def bake_cells(scene: Scene, made: LiveLevel, cell: float = 256.0, budget: int = 1500000) -> VisReport {
+    job = cell_job(scene, made, cell, budget);
+    while not job.step(budget * 4) {
+        continue;
     }
-    flooded = seeded and turn >= len(waiting);
-    eyes: list[list[Vec3]] = [];
-    for index in range(count) {
-        eyes.append(
-            [lattice[index][place] for place in range(len(lattice[index])) if not flooded or reached[index][place]]
-        );
-    }
-    # Which sees which.
-    sees: list[list[bool]] = [[False for other in range(count)] for index in range(count)];
-    for first in range(count) {
-        sees[first][first] = True;
-        for second in range(first + 1, count) {
-            outcome.pairs += 1;
-            seen = cells_touch(bsp.leaves[first], bsp.leaves[second]) or outcome.capped;
-            if not seen {
-                # From where one could stand in either to where one could
-                # stand in, or to the faces of, the other.
-                for (near, far) in [(first, second), (second, first)] {
-                    if seen {
-                        break;
-                    }
-                    targets = eyes[far] + marks[far];
-                    stride = max(1, len(targets) // 48);
-                    for eye in eyes[near] {
-                        if seen {
-                            break;
-                        }
-                        for pick in range(0, len(targets), stride) {
-                            outcome.rays += 1;
-                            if occluder.visibility(eye, targets[pick]) > 0.0 {
-                                seen = True;
-                                break;
-                            }
-                        }
-                    }
-                    if outcome.rays > budget {
-                        # Out of patience: what is left is taken to be in sight.
-                        outcome.capped = True;
-                        seen = True;
-                    }
-                }
-            }
-            sees[first][second] = seen;
-            sees[second][first] = seen;
-            if not seen {
-                outcome.hidden += 1;
-            }
-        }
-    }
-    # A row of bits a cluster, after the eight bytes a level's visibility begins with.
-    width = (count + 7) // 8;
-    rows = bytearray(8 + count * width);
-    for first in range(count) {
-        for second in range(count) {
-            if sees[first][second] {
-                rows[8 + first * width + second // 8] |= 1 << (second % 8);
-            }
-        }
-    }
-    bsp.clusters = count;
-    bsp.cluster_bytes = width;
-    bsp.visibility = bytes(rows);
-    return outcome;
+    return job.outcome;
 }
 
 """Whether, in a baked level, one cell sees another."""

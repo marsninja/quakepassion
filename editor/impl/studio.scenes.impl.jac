@@ -49,17 +49,21 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
         warned = len(made.warnings);
         # Whatever was being lit was the light of another build.
         self.light_task = None;
-        if self.lit and self.light_background and self.vis_cell <= 0.0 {
-            # Shown unlit now, and lit a slice a frame on a copy of its own:
-            # when that is done it is kept under this build's mark, and the
-            # build that follows takes it.
+        if self.light_background and (self.lit or self.vis_cell > 0.0) {
+            # Shown unbaked now, and lit and cut a slice a frame on a copy of
+            # its own: when that is done it is kept under this build's mark,
+            # and the build that follows takes it.
             aside = compile_scene(whole, self.materials);
             aside_base = len(aside.bsp.planes);
             aside_warned = len(aside.warnings);
-            job = light_job(whole, aside, self.luxel);
+            job = light_job(whole, aside, self.luxel) if self.lit else None;
             self.lit_samples = 0;
-            if job is not None {
-                self.light_task = LightTask(job=job, mark=mark, plane_base=aside_base, warned=aside_warned, began=time.time());
+            self.vis_done = VisReport();
+            if job is not None or self.vis_cell > 0.0 {
+                self.light_task = LightTask(
+                    job=job, scene=whole, made=aside, cell=self.vis_cell, mark=mark, plane_base=aside_base,
+                    warned=aside_warned, began=time.time()
+                );
             }
         } else {
             self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
@@ -1132,25 +1136,47 @@ impl Studio.list_materials(ui: StudioUi) {
 
 impl Studio.step_light {
     task = self.light_task;
-    if task is None {
+    aside = task.made if task is not None else None;
+    if task is None or aside is None {
         return;
     }
-    job = task.job;
     began = time.time();
-    while not job.finished() and time.time() - began < 0.012 {
+    job = task.job;
+    while job is not None and not job.finished() and time.time() - began < 0.012 {
         job.step(4);
     }
-    if not job.finished() {
+    if job is not None and not job.finished() {
         return;
     }
-    samples = job.finish();
-    kept = keep_bake(job.made, task.mark, task.plane_base, task.warned, samples, self.vis_done);
+    if job is not None and task.samples < 0 {
+        task.samples = job.finish();
+    }
+    if task.cell > 0.0 {
+        # Then its cells, a few lines of sight at a time.
+        cutting = task.cells;
+        if cutting is None and task.scene is not None {
+            cutting = cell_job(task.scene, aside, task.cell);
+            task.cells = cutting;
+        }
+        while cutting is not None and not cutting.finished() and time.time() - began < 0.012 {
+            cutting.step(400);
+        }
+        if cutting is not None and not cutting.finished() {
+            return;
+        }
+    }
+    samples = max(0, task.samples);
+    seen = task.cells.outcome if task.cells is not None else VisReport();
+    kept = keep_bake(aside, task.mark, task.plane_base, task.warned, samples, seen);
     self.built_copies = [copy for copy in self.built_copies if copy.mark != task.mark] + [kept];
     if len(self.built_copies) > 6 {
         self.built_copies = self.built_copies[1:];
     }
     self.light_task = None;
-    print("studio: lit in the background samples=" + str(samples) + " seconds=" + str(round(time.time() - task.began, 1)));
+    print(
+        "studio: baked in the background samples=" + str(samples) + " cells=" + str(seen.cells) + " seconds="
+            + str(round(time.time() - task.began, 1))
+    );
     # Built again: the build finds this light kept under its mark.
     self.built_geometry = -1;
 }
