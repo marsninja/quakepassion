@@ -1107,6 +1107,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   rests on is sketched above the field: its brushes' edges seen from
   above one corner, in the studio's highlight colour; it stays until the
   pointer is on another.
+- **One library of everything**: below the scenes, prefabs and
+  favourites, the Library tab has the scene's game's pieces of logic
+  (Logic: a click adds one, as `ed_logic` does) and, for what the find
+  field asks for, materials (those the Materials tab and its shelf show,
+  those lately in hand and those the scene is made of), models and
+  sounds from every installed game's archives (forty of each at most). A
+  click on a material takes it in hand, on a model or a sound shows it in
+  the explorer. Under the pointer a model is sketched as its first
+  frame's edges, a sound drawn as its shape (each column its quietest to
+  its loudest sample) and a material shown as its picture, where a
+  prefab's sketch goes.
 - **A field's file chosen from the game's own**: a field that names a
   sound or a model (`noise`, `music`, `model`, `model2`) has a `...`
   button beside it in the inspector, set or not: it opens a list of that

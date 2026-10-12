@@ -103,7 +103,8 @@ import from .assets.moving { warps_name }
 import from .document.playtest { objectives }
 import from .document.liveroll { LiveRoll, opponent_words, door_words, pickup_words }
 import from .geometry.axes { world_axes, brush_axes, facing_axes, kept_to_axis }
-import from .document.thumbs { sketch_edges, sketch }
+import from .document.thumbs { sketch_edges, sketch, waveform }
+import from engine.formats.wav { parse_wav_pcm }
 import from .document.chords { chord_parts, bind_chord, chord_command, bound_chords }
 import from .document.settingstable {
     Setting, SUBJECTS, settings_table, setting_value, setting_order, colour_parts
