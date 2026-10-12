@@ -48,6 +48,23 @@ def own_files(folder: str) -> list[str] {
     return sorted(found);
 }
 
+"""A texture's colours, four bytes a texel: its own when it has them, or its
+pixels when they are that (the games' model, sprite and PCX readers leave
+them there). Empty when it has neither."""
+def texture_rgba(image: Texture) -> bytes {
+    wanted = image.width * image.height * 4;
+    if wanted <= 0 {
+        return b"";
+    }
+    if len(image.rgba) >= wanted {
+        return image.rgba;
+    }
+    if len(image.pixels) >= wanted {
+        return image.pixels;
+    }
+    return b"";
+}
+
 """A file that is a run of pictures: a sprite's frames, all of them; or a
 film, read a picture at a time as its decoder gives them (forward only).
 `index` is the picture showing; `total` how many there are (0 for a film,
@@ -344,7 +361,7 @@ obj AssetIndex {
                 }
             }
             shown.image = image;
-            if image is not None and len(image.rgba) > 0 {
+            if image is not None and len(texture_rgba(image)) > 0 {
                 shown.note = str(image.width) + " x " + str(image.height);
             }
         } elif shown.kind == "text" {

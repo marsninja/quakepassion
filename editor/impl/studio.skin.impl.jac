@@ -149,6 +149,19 @@ impl Studio.skin_command(scene: Scene, args: list[str]) -> bool {
         self.model_skin = skin_filled(max(4, min(1024, int(numbers[0]))), max(4, min(1024, int(numbers[1]))), tint);
         self.skin_dabs = 0;
         self.skin_stale = True;
+    } elif how == "import" and len(args) > 2 {
+        # A picture out of a game's archives: a PCX, a WAL, an uncompressed TGA, or a Quake model's own skin.
+        parts = args[2].split(":", 1);
+        taken = self.skin_from(parts[0], parts[1], int(numbers[0]) if len(numbers) > 0 else 0) if len(parts) == 2 else None;
+        if taken is None {
+            self.say("ed_skin import <q1|q2|q3>:<file> [n]: a PCX, WAL or plain TGA of that game, or the n-th skin of a Quake model");
+            return True;
+        }
+        self.model_skin = taken;
+        self.skin_dabs = 0;
+        self.skin_stale = True;
+        self.skin_shown = True;
+        print("studio: skin imported " + args[2] + " " + str(taken.width) + "x" + str(taken.height));
     } elif how == "open" and len(args) > 2 {
         read: Skin | None = None;
         try {
@@ -201,4 +214,48 @@ impl Studio.skin_command(scene: Scene, args: list[str]) -> bool {
     }
     print(self.skin_words());
     return True;
+}
+
+impl Studio.skin_from(game: str, name: str, number: int) -> Skin | None {
+    stock = self.archive;
+    if stock is None or game not in ["q1", "q2", "q3"] {
+        return None;
+    }
+    listing = self.asset_index;
+    if listing is None {
+        listing = AssetIndex(shelf=stock);
+        self.asset_index = listing;
+    }
+    low = name.lower();
+    picture: Texture | None = None;
+    if low.endswith(".mdl") {
+        # A Quake model carries its skins inside it.
+        figure = load_model(stock, game, name);
+        if figure is not None and len(figure.model.surfaces) > 0 {
+            kept = figure.model.surfaces[0].embedded_skins;
+            if number >= 0 and number < len(kept) {
+                picture = kept[number];
+            }
+        }
+    } else {
+        seen = listing.look(game, name);
+        picture = seen.image;
+        if picture is not None and len(texture_rgba(picture)) == 0 and low.endswith(".tga") {
+            data = listing.read(game, name);
+            return tga_skin(data) if data is not None else None;
+        }
+    }
+    if picture is None {
+        return None;
+    }
+    colours = texture_rgba(picture);
+    if len(colours) == 0 {
+        return None;
+    }
+    texels = bytearray(colours[:picture.width * picture.height * 4]);
+    # A skin is solid all over: the games mark some colours by their alpha, which a picture to paint on has no use for.
+    for index in range(3, len(texels), 4) {
+        texels[index] = 255;
+    }
+    return Skin(width=picture.width, height=picture.height, texels=texels);
 }

@@ -219,8 +219,9 @@ impl Studio.show_asset(ui: StudioUi) {
             self.reel_kept = key + "#" + str(reel.index);
         }
         if not kept {
-            if len(image.rgba) >= image.width * image.height * 4 and image.width > 0 {
-                self.canvas.keep_picture(key, image.width, image.height, image.rgba);
+            colours = texture_rgba(image);
+            if len(colours) > 0 {
+                self.canvas.keep_picture(key, image.width, image.height, colours);
                 kept = True;
             } elif len(image.encoded) > 0 {
                 kept = self.canvas.keep_encoded(key, image.extension, image.encoded);

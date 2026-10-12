@@ -1058,6 +1058,16 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **A folder out of an archive**: `ed_extract folder <game>:<folder> [to]`
   writes every file under a folder of a game's archives, as the
   explorer's Extract button writes one.
+- **Tags dragged, weights in a dialog, skins imported** (model editor):
+  with Alt, a press on a tag in the model's view takes hold of it and a
+  drag moves it in the plane of the view, at the frame in hand (with
+  Shift at every frame); `ed_model tag` says where each tag is seen.
+  `ed_weights` opens a window with the bone in hand in a dropdown, a
+  field for the weight it takes of the picked points, buttons to take
+  them whole, let them go and show the bones' colours, and what carries
+  each picked point. `ed_skin import <game>:<file> [n]` takes a picture
+  out of a game's archives as the skin to paint on: a PCX, a WAL, a plain
+  TGA, or the n-th skin a Quake model carries inside it.
 - **Sprites and films in the explorer**: a Quake sprite (`.spr`) and a
   Quake II sprite (`.sp2`, whose frames are PCX files) show their
   pictures, and a Quake II cinematic (`.cin`) and a Quake III film

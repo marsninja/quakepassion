@@ -78,7 +78,7 @@ import from .ui.widgets {
 }
 import from .assets.explorer { AssetIndex, AssetLook }
 import from .assets.needs { needed_files, missing_files, held_names, names_file, file_field, field_choices }
-import from .assets.explorer { own_files, reel_next, reel_before }
+import from .assets.explorer { own_files, reel_next, reel_before, texture_rgba }
 import from .document.shelves { shelf_name, shelf_moved, shelf_rows }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
@@ -360,7 +360,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_skin",
-        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>] [colour <r g b>] [brush <radius> [soft]] [dab <u v>] [show]",
+        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>|import <game>:<file> [n]] [colour <r g b>] [brush <radius> [soft]] [dab <u v>] [show]",
         "the model's skin: move, stretch, turn, flip or lay flat where the picked points lie on it; make, open, paint and save its picture"
     ),
     (
@@ -398,6 +398,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_theme", "ed_theme [dark|light]", "the studio's colours: dark, or light for a bright room"),
     ("ed_bar", "ed_bar <tools|status> [show|hide] | tools <above|below>", "show or hide the row of tools and the status bar, and put the tools over or under the views"),
     ("ed_shapebox", "ed_shapebox [open|close|kind <kind>|set <w|d|h|count|thick> <value>|build|at <x> <y>]", "the shape dialog: choose a kind of shape and its sizes in a window, and build it"),
+    ("ed_weights", "ed_weights [open|close]", "the weights dialog: the bone in hand, the weight it takes of the picked points, and what carries each of them"),
     ("ed_tab", "ed_tab <doc:game/name|model|shader>", "go to an open document by its tab: a map or scene, the model being edited, or the shader script"),
     ("ed_pickfile", "ed_pickfile <noise|music|model|model2>", "choose the selected entities' sound or model from the files of their game, in a list that is typed in to find one"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
@@ -826,6 +827,11 @@ obj Studio(Workbench) {
         frames_listed: bool = False,
         # A sprite's or a film's pictures in the explorer: whether they are
         # running, the time owed to the next, and which picture is kept.
+        # The tag an Alt press took hold of in the model's view.
+        tag_held: str = "",
+        # The weights dialog while it is open, and what it was last filled for.
+        weights_box: Floater | None = None,
+        weights_for: str = "",
         reel_playing: bool = False,
         reel_clock: float = 0.0,
         reel_kept: str = "",
@@ -1701,7 +1707,9 @@ obj Studio(Workbench) {
                     MenuItem(text="Light or dark colours", command="ed_theme"),
                     MenuItem(text="Show or hide the row of tools", command="ed_bar tools"),
                     MenuItem(text="Tools over or under the views", command="ed_bar tools flip"),
-                    MenuItem(text="Show or hide the status bar", command="ed_bar status")
+                    MenuItem(text="Show or hide the status bar", command="ed_bar status"),
+                    MenuItem(rule=True),
+                    MenuItem(text="The picked points' weights...", command="ed_weights open")
                 ]
             ]
         );
@@ -2238,6 +2246,7 @@ obj Studio(Workbench) {
         }
         self.keep_tabs(ui);
         self.keep_floats();
+        self.keep_weights_box();
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
@@ -2941,6 +2950,16 @@ obj Studio(Workbench) {
     def reel_step(back: bool) -> bool;
     def play_reel(dt: float);
     def reel_command(args: list[str]) -> bool;
+    """The tag nearest a point of the model's view, within reach of the pointer ("" for none)."""
+    def tag_under(x: int, y: int) -> str;
+    """Where a place of the model shows in its view, as "x,y" ("nowhere" when it does not)."""
+    def tag_seen(at: Vec3) -> str;
+    """A picture of a game's as a skin: a PCX, WAL or plain TGA, or the
+    n-th skin a Quake model carries. None when it does not read."""
+    def skin_from(game: str, name: str, number: int) -> Skin | None;
+    """Fill the weights dialog again when what it shows has changed."""
+    def keep_weights_box;
+    def weights_command(scene: Scene, args: list[str]) -> bool;
     """What the command table says of a command: its usage and what it does."""
     def help_lines(asked: str) -> list[str];
     """Help for what the pointer is on or for a command by name, hints
@@ -4132,7 +4151,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.plugin_command(scene, args) and not self.looks_command(scene, args)
+        } elif not self.plugin_command(scene, args) and not self.weights_command(scene, args)
+            and not self.looks_command(scene, args)
             and not self.tabs_command(scene, args)
             and not self.help_command(scene, args)
             and not self.layouts_command(scene, args)

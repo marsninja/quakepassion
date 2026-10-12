@@ -2268,9 +2268,10 @@ def rig_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert int(model_word(steps["dragged"], "volume")) != before and int(model_word(steps["undragged"], "volume")) == before;
     # Tags: two, one moved at the copied frame only.
     assert model_word(steps["tagged"], "tags") == "2" and model_word(steps["tagged"], "frames") == "2";
-    raised = [line for line in steps["tagged"] if line.startswith("tag ")];
+    # Each tag's line ends with where it is seen in the view: left out of what is compared.
+    raised = [line.split(" seen=")[0] for line in steps["tagged"] if line.startswith("tag ")];
     assert raised == ["tag tag_top at=0,0,128 frames=2", "tag tag_side at=32,0,48 frames=2"] , str(raised);
-    stood = [line for line in steps["first"] if line.startswith("tag ")];
+    stood = [line.split(" seen=")[0] for line in steps["first"] if line.startswith("tag ")];
     assert stood == ["tag tag_top at=0,0,96 frames=2", "tag tag_side at=32,0,48 frames=2"] , str(stood);
     # The copied frame at the front of the order; one tag and one skin left.
     assert model_word(steps["moved"], "frame") == "0:up" , str(steps["moved"]);
