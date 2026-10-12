@@ -293,7 +293,11 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         }
         known.home = self.project_folder;
         self.asset_now = known.look(parts[1], parts[2]);
+        if self.reel_playing and self.app is not None {
+            self.app.audio.end_cinematic();
+        }
         self.reel_playing = False;
+        self.reel_heard = 0;
         self.reel_kept = "";
         self.model_now = None;
         self.model_playing = False;
@@ -635,6 +639,15 @@ impl Studio.reel_step(back: bool) -> bool {
         return False;
     }
     shown = reel_before(reel) if back else reel_next(reel, seen.name);
+    if len(reel.heard) > 0 {
+        app = self.app;
+        if app is not None and self.reel_playing {
+            # A film played has its sound played with it, through the cinematic channel.
+            app.audio.cinematic_samples(reel.heard_rate, reel.heard_width, reel.heard_channels, reel.heard);
+            self.reel_heard += len(reel.heard);
+        }
+        reel.heard = b"";
+    }
     if shown is None {
         return False;
     }
@@ -681,6 +694,10 @@ impl Studio.reel_command(args: list[str]) -> bool {
     if word == "play" or word == "stop" {
         self.reel_playing = word == "play" and not reel.ended;
         self.reel_clock = 0.0;
+        app = self.app;
+        if not self.reel_playing and app is not None {
+            app.audio.end_cinematic();
+        }
     } elif word == "next" {
         if not self.reel_step(False) {
             self.say("That was its last picture" if reel.film is not None else "It has no pictures");
@@ -704,7 +721,8 @@ impl Studio.reel_command(args: list[str]) -> bool {
     print(
         "studio: reel " + seen.game + ":" + seen.name + " picture=" + str(reel.index) + " of=" + str(reel.total) + " ended="
             + ("1" if reel.ended else "0") + " playing=" + ("1" if self.reel_playing else "0") + " size="
-            + (str(seen.image.width) + "x" + str(seen.image.height) if seen.image is not None else "0x0")
+            + (str(seen.image.width) + "x" + str(seen.image.height) if seen.image is not None else "0x0") + " heard="
+            + str(self.reel_heard)
     );
     if ui is not None {
         self.show_asset(ui);

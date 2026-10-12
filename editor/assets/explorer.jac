@@ -75,15 +75,28 @@ obj AssetReel {
         total: int = 0,
         index: int = 0,
         rate: int = 10,
-        ended: bool = False;
+        ended: bool = False,
+        # The sound read with the film's last picture, not yet played: in the
+        # layout the engine's raw channel takes.
+        heard: bytes = b"",
+        heard_rate: int = 0,
+        heard_width: int = 0,
+        heard_channels: int = 0;
 }
 
 """The picture a film's decoder gives next, as a texture: None once the
 film has run out."""
-def film_picture(film: Film, name: str) -> Texture | None {
+def film_picture(film: Film, name: str, reel: AssetReel | None = None) -> Texture | None {
     read = film.next_picture();
     if read is None or film.width <= 0 or film.height <= 0 {
         return None;
+    }
+    if reel is not None and len(read.samples) > 0 {
+        # Its sound, kept with what is still to be played.
+        reel.heard = reel.heard + read.samples;
+        reel.heard_rate = read.sound_rate;
+        reel.heard_width = read.sound_width;
+        reel.heard_channels = read.sound_channels;
     }
     pixels = cinematic_rgba(read.pixels, read.palette) if len(read.palette) == 768 else read.pixels;
     if len(pixels) < film.width * film.height * 4 {
@@ -101,7 +114,7 @@ def reel_next(reel: AssetReel, name: str = "") -> Texture | None {
         if reel.ended {
             return None;
         }
-        shown = film_picture(film, name);
+        shown = film_picture(film, name, reel);
         if shown is None {
             reel.ended = True;
             return None;

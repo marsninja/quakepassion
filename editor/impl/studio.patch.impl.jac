@@ -16,6 +16,25 @@ impl Studio.patch_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_patch" {
         kind = args[1] if len(args) > 1 else "";
+        if kind == "preview" {
+            word = args[2] if len(args) > 2 else "";
+            if word.replace(".", "", 1).isdigit() {
+                # The renderer's subdivision: smaller is finer.
+                self.patch_preview = True;
+                self.patch_fineness = max(1.0, min(64.0, float(word)));
+            } else {
+                self.patch_preview = (not self.patch_preview) if word not in ["on", "off"] else word == "on";
+            }
+            self.preview_edges_kept = {};
+            self.say(
+                "Patches show the games' own triangles (blue, subdivision " + str(round(self.patch_fineness, 1))
+                    + ") and the lattice their collision is traced against (magenta)"
+                if self.patch_preview
+                else "Patches show their prisms alone"
+            );
+            print(self.patch_preview_words(scene));
+            return True;
+        }
         if kind == "uv" {
             # Where the patch's control points lie on its material, in texels.
             bent_patch = self.patch_now(scene);
@@ -218,4 +237,59 @@ impl Studio.patch_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.patch_preview_lines(scene: Scene, item: Item) -> list[list[list[Vec3]]] {
+    lay = scene.patch_grid(item);
+    control = scene.patch_control(item);
+    if lay is None or control is None {
+        return [[], []];
+    }
+    # Worked out again only when the patch has changed.
+    key = str(item.serial) + "|" + item.fields.get("_points", "") + "|" + item.fields.get("_patch", "");
+    if key in self.preview_edges_kept {
+        return self.preview_edges_kept[key];
+    }
+    across = int(lay[0]);
+    up = int(lay[1]);
+    found: list[list[list[Vec3]]] = [
+        lattice_edges(render_rows(across, up, control, self.patch_fineness)), lattice_edges(collide_rows(across, up, control))
+    ];
+    self.preview_edges_kept[key] = found;
+    return found;
+}
+
+impl Studio.draw_patch_preview(scene: Scene) {
+    if not self.patch_preview {
+        return;
+    }
+    for item in scene.items() {
+        if item.hidden or scene.patch_grid(item) is None {
+            continue;
+        }
+        drawn = self.patch_preview_lines(scene, item);
+        for pair in drawn[0] {
+            wire_line(pair[0], pair[1], ink(0x4fb3ff, 220));
+        }
+        for pair in drawn[1] {
+            wire_line(pair[0], pair[1], ink(0xff4fd8, 150));
+        }
+    }
+}
+
+impl Studio.patch_preview_words(scene: Scene) -> str {
+    count = 0;
+    drawn = 0;
+    hit = 0;
+    for item in scene.items() {
+        if scene.patch_grid(item) is None {
+            continue;
+        }
+        lines = self.patch_preview_lines(scene, item);
+        count += 1;
+        drawn += len(lines[0]);
+        hit += len(lines[1]);
+    }
+    return "studio: patchpreview shown=" + ("1" if self.patch_preview else "0") + " patches=" + str(count) + " fineness="
+        + str(round(self.patch_fineness, 1)) + " drawn=" + str(drawn) + " collide=" + str(hit);
 }

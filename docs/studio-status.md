@@ -1306,6 +1306,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   going) and gives one up (`ed_patch shrink <u|v>`); `ed_patch thick
   <units>` changes how thick it is built and `ed_patch fine <n>` how many
   prisms a curve it is built of. Each is one undoable step.
+  `ed_patch preview [on|off|<subdivision>]` draws over every patch what
+  the games would make of it, worked out by the engine's own code: in
+  blue the triangles Quake III's renderer tessellates it into
+  (`engine/formats/q3/curve.jac`, at that `r_subdivisions`; 4 unless
+  told, smaller is finer) and in magenta the lattice its collision is
+  traced against (`engine/physics/patch_collide.jac`).
 - **A patch's material by its control points**: `ed_patch uv` says where
   each control point of the selected patch lies on its material, in
   texels, and where its built faces have the material at its first corner
@@ -1424,7 +1430,9 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   (`.RoQ`) show theirs as the engine's own decoders read them. The frame
   buttons and `ed_frame next|prev|play|stop|<n>` step and play them as
   they do a model's frames: a sprite's go round, a film is read forward
-  at its own pace and stops at its end.
+  at its own pace and stops at its end. A film played has its sound
+  played with it, through the engine's cinematic sound channel (the one
+  the games play their cinematics' sound through), and stopped with it.
 - **The project's own files in the explorer**: with a project open, its
   folder is listed under Your project beside the games', read from disk
   as it is; its files are shown as any other (an image in its textures

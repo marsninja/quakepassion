@@ -132,6 +132,7 @@ import from .model.skin {
     place_under, skin_tga, tga_skin, skin_colour
 }
 import from .model.pattern { SKIN_PATTERNS }
+import from .geometry.patchpreview { lattice_edges, render_rows, collide_rows }
 import from .document.duplicate { with_regenerated, regenerate }
 import from .model.skinpick { skin_rect, skin_place, place_nearest, triangle_at }
 import from .ui.skinpane { SkinPane }
@@ -561,7 +562,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_texinfo", "ed_texinfo [material]", "what there is to know of a texture: its size, its flags and contents, its frames, the colours it uses"),
     (
         "ed_patch",
-        "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n> | uv [fit [n [m]] | project | point <col> <row> <s> <t> | row <n> <ds> <dt> | col <n> <ds> <dt> | all <ds> <dt> | clear]",
+        "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n> | preview [on|off|<subdivision>] | uv [fit [n [m]] | project | point <col> <row> <s> <t> | row <n> <ds> <dt> | col <n> <ds> <dt> | all <ds> <dt> | clear]",
         "add a curved patch where the camera looks; give the selected one another curve, thickness or fineness; or say where its control points lie on its material"
     ),
     ("ed_patch_point", "ed_patch_point <patch> <point> <dx> <dy> <dz>", "move one control point of a patch"),
@@ -1055,6 +1056,8 @@ obj Studio(Workbench) {
         script_kept: str = "",
         shader_rev: int = 0,
         reel_playing: bool = False,
+        # How many bytes of a film's sound were handed to the engine to play.
+        reel_heard: int = 0,
         reel_clock: float = 0.0,
         reel_kept: str = "",
         # The tabs beside the menu bar: whether they are there (more than
@@ -1235,6 +1238,10 @@ obj Studio(Workbench) {
         asset_tags: dict[str, list[str]] = {},
         tags_read: bool = False,
         sized_shown: int = -1,
+        # Patches shown as the games make them, at the renderer's subdivision.
+        patch_preview: bool = False,
+        patch_fineness: float = 4.0,
+        preview_edges_kept: dict[str, list[list[list[Vec3]]]] = {},
         model_backs: bool = True,
         model_ticks: float = 0.0,
         # How the marks on the model's points are drawn; the model being
@@ -3546,6 +3553,7 @@ obj Studio(Workbench) {
         }
         self.draw_paths();
         self.draw_camps();
+        self.draw_patch_preview(scene);
         for tool in self.tools {
             tool.draw_through(self.host(), scene);
         }
@@ -3921,6 +3929,13 @@ obj Studio(Workbench) {
     def patch_command(scene: Scene, args: list[str]) -> bool;
     """The one selected entity, when it is a patch."""
     def patch_now(scene: Scene) -> Item | None;
+    """A patch as the games make it, by the engine's own code: the edges of
+    the triangles its renderer draws and of the lattice its collision is
+    traced against (kept until the patch changes); they drawn over every
+    patch; and a line of the dump saying how many."""
+    def patch_preview_lines(scene: Scene, item: Item) -> list[list[list[Vec3]]];
+    def draw_patch_preview(scene: Scene);
+    def patch_preview_words(scene: Scene) -> str;
 
     # ------------------------------------------------------------------
     # Turn and size handles, the pivot, inflating and the texture lock (impl/studio.transform.impl.jac)
@@ -5096,6 +5111,9 @@ obj Studio(Workbench) {
         }
         if self.snap_to != "grid" {
             lines.append("studio: snapto " + self.snap_to + " reach=" + str(int(round(self.snap_reach))));
+        }
+        if self.patch_preview {
+            lines.append(self.patch_preview_words(scene));
         }
         if self.show_triggers or self.show_unseen or self.line_width != 1 {
             lines.append(
