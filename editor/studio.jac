@@ -187,10 +187,13 @@ import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.navigation {
     Floor, Way, Leg, Link, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP,
-    linked_ways
+    linked_ways, swim_ways, aas_bytes
 }
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
-import from engine.formats.aas { Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
+import from engine.formats.aas {
+    Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD, TRAVEL_LADDER, TRAVEL_SWIM,
+    TRAVEL_ELEVATOR
+}
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate {
@@ -388,7 +391,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_nav",
-        "ed_nav [bake [cell] [open] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
+        "ed_nav [bake [cell] [open] | check | route <from xyz> <to xyz> | show [on|off] | write [file.aas] | clear]",
         "navigation for bots: bake the built scene's floors into the areas and ways the games' bots route over, check what can be reached, and draw the ways"
     ),
     (
@@ -4553,6 +4556,8 @@ obj Studio(Workbench) {
     """The ways the scene's teleporters and jump pads make: from where each
     trigger is to where it sends or throws."""
     def nav_links(scene: Scene) -> list[Link];
+    """The boxes of the scene's liquids: where bots swim."""
+    def nav_waters(scene: Scene) -> list[list[Vec3]];
     def draw_nav;
     def nav_findings(scene: Scene) -> list[Finding];
     """What stops a scene being finished: what its logic can never set

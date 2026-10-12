@@ -188,15 +188,25 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   <from> <to>` says how long the way is, or that there is none, and
   `ed_nav check` names what cannot be reached from the first player
   start (they join the Checks tab's findings). `ed_nav show` draws the
-  ways: walked green, jumped yellow, dropped red. `ed_nav clear`
+  ways: walked green, jumped yellow, dropped red, climbed white, swum
+  blue, lifted cyan, teleported violet, thrown orange. `ed_nav clear`
   forgets it. A teleporter (`trigger_teleport`) and a jump pad
   (`trigger_push`) whose target is somewhere make a way of their own,
   from the floor under the trigger to the floor under where it sends or
   throws (`teleport=` and `jumppad=` on the dump's line), so a place
-  reached only through one is reached. A game played from the scene
-  hands the baked mesh to its bots, who route over it. Not there yet: it
-  is not written as an arena's file, and it knows no ladders, water or
-  lifts.
+  reached only through one is reached. A ladder (a brush of a material
+  named for one) is climbed between the floors at its foot and its top,
+  both ways; a liquid (Quake's `*` materials, and those named for water,
+  slime or lava) is swum between a floor on or under it and the floors
+  beside it no higher than a player climbs out of it (the studio builds
+  liquids solid, so its top is a floor too); a `func_plat` carries what
+  stands on it at its lowest up to the floor beside its top, as the
+  games' elevator travel, with its model in the built level. A game
+  played from the scene hands the baked mesh to its bots, who route over
+  it, and `ed_nav write [file.aas]` writes it as an arena's file (Quake
+  III's AAS, version 5, with the lumps a router reads: the tree, the
+  areas and their settings, and the ways; beside the scene's map unless
+  told where), which the engine's AAS reader reads back as it was.
 - **A bake is worked out once**: a level is compiled afresh every time it
   is loaded, since a game played in it writes on it, but its light and its
   cells are kept apart under a mark of what it was built of (the scene's
