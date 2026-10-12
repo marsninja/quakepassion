@@ -702,6 +702,42 @@ node Splitter(Widget) {
     }
 }
 
+"""A bar between two widgets of a box that share its room. Dragged, it asks
+for `command` with how far along the box the pointer is, in hundredths of
+the box's length: the owner shares the room out by that."""
+node Sash(Widget) {
+    has command: str = "",
+        wide: int = 3;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        return self.wide if across == self.along else 0;
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        if self.held or self.hovered {
+            canvas.fill(self.area, theme.accent if self.held else theme.dim);
+        }
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        holder = self.parent();
+        if event.kind == "drag" and self.command and holder is not None {
+            length = holder.area.w if self.along else holder.area.h;
+            gone = (event.x - holder.area.x) if self.along else (event.y - holder.area.y);
+            if length > 0 {
+                stage.emit(self.command + " " + str(max(0, min(100, (gone * 100 + length // 2) // length))));
+            }
+            return True;
+        }
+        return event.kind in ["press", "release", "click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
 """One row of a tree: `key` is what its commands name."""
 obj TreeRow {
     has key: str,

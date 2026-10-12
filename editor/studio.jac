@@ -49,6 +49,7 @@ import from .ui.widgets {
     TextField,
     Scroll,
     Splitter,
+    Sash,
     TreeView,
     TreeRow,
     Tabs,
@@ -501,9 +502,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_matfilter", "ed_matfilter <text> [size:<WxH|N|>=N|<=N>]", "show only matching materials in the materials list, and only those of a size"),
     (
         "ed_layout",
-        "ed_layout <1|2|3|4|4b|logic|assets>",
-        "one level view, four (3D, top, front and side), the logic graph, or the asset explorer"
+        "ed_layout <1|2|3|4|4b|logic|assets> | save <name> | load <name> | drop <name> | list",
+        "one level view, four (3D, top, front and side), the logic graph, or the asset explorer; or keep the layout as it stands under a name and bring it back"
     ),
+    ("ed_split", "ed_split [x|y] <percent> | even", "how the level views share the room: the left views' share of the width, the upper views' of the height"),
+    ("ed_sides", "ed_sides [swap|left|right]", "which side the scene list is on: the inspector takes the other"),
     ("ed_palette", "ed_palette", "open the list of every studio command, to find one by typing"),
     ("ed_grid", "ed_grid <size|up|down>", "the grid moves and resizes snap to (1 to 256)"),
     ("ed_mark", "ed_mark [name]", "remember where the camera is, in the document"),
@@ -715,6 +718,9 @@ obj StudioUi {
         prefab_name: TextField,
         modes: list[PushButton],
         center: Box,
+        body: Box,
+        left: Box,
+        right: Box,
         new_key: TextField | None = None,
         new_value: TextField | None = None;
 }
@@ -771,6 +777,16 @@ obj Studio(Workbench) {
         log_back: int = 0,
         # The entity marked for what is done from the mark later (-1: none).
         marked_item: int = -1,
+        # How the level views share the room: the left views' share of the
+        # width and the upper views' of the height, in hundredths; the rows
+        # and the column they are laid in; whether the side panels have
+        # changed sides; and layouts kept by name, as the words that set them.
+        split_x: int = 50,
+        split_y: int = 50,
+        split_rows: list[Box] = [],
+        split_column: Box | None = None,
+        sides_swapped: bool = False,
+        kept_layouts: dict[str, str] = {},
         # The part of a view its overlays are drawn in, when a floating
         # window covers the rest (the whole of it when this has no size).
         over_piece: Rect = Rect(),
@@ -1808,7 +1824,10 @@ obj Studio(Workbench) {
             logic=sheet,
             prefab_name=prefab_name,
             modes=modes,
-            center=center
+            center=center,
+            body=body,
+            left=left,
+            right=right
         );
     }
 
@@ -2696,16 +2715,24 @@ obj Studio(Workbench) {
             self.assets_listed = -1;
             return;
         }
+        # A bar lies between the rows of four views, in place of the gap.
+        ui.center.gap = 0 if self.layout == 4 else 3;
         if self.layout == 1 {
             ui.center.adopt(self.ports[0].view);
             return;
         }
-        upper = Box(across=True, grow=1, gap=3);
+        # The views share the room by weight; a bar between them, where a
+        # gap was, is dragged to share it out otherwise (ed_split).
+        upper = Box(across=True, grow=1);
         ui.center.adopt(upper);
         upper.adopt(self.ports[0].view);
+        upper.adopt(Sash(command="ed_split x", hint="Drag to make the views wider or narrower"));
+        self.split_rows = [upper];
+        self.split_column = None;
         if self.layout == 2 {
             # The classic pair: the 3D view beside the plan.
             upper.adopt(self.ports[1].view);
+            self.apply_split();
             return;
         }
         if self.layout == 3 or self.layout == 5 {
@@ -2715,14 +2742,29 @@ obj Studio(Workbench) {
             for index in range(1, 3 if self.layout == 3 else 4) {
                 column.adopt(self.ports[index].view);
             }
+            self.split_column = column;
+            self.apply_split();
             return;
         }
-        lower = Box(across=True, grow=1, gap=3);
+        ui.center.adopt(Sash(command="ed_split y", hint="Drag to make the views taller or shorter"));
+        lower = Box(across=True, grow=1);
         ui.center.adopt(lower);
         upper.adopt(self.ports[1].view);
         lower.adopt(self.ports[2].view);
+        lower.adopt(Sash(command="ed_split x", hint="Drag to make the views wider or narrower"));
         lower.adopt(self.ports[3].view);
+        self.split_rows = [upper, lower];
+        self.apply_split();
     }
+
+    """Share the room among the level views by the split now set."""
+    def apply_split;
+    """The views' split, the side panels' sides and layouts kept by name."""
+    def layouts_command(scene: Scene, args: list[str]) -> bool;
+    """The layout as it stands, as the words that would set it again."""
+    def layout_words -> str;
+    """Put the side panels on the sides now set."""
+    def place_sides;
 
     """The entity under a point of the level view: the nearest whose box the
     line of sight enters before it meets a wall."""
@@ -3891,6 +3933,8 @@ obj Studio(Workbench) {
                 self.main.yaw = math.radians(float(args[4]));
                 self.main.pitch = math.radians(float(args[5]));
             }
+        } elif name == "ed_layout" and len(args) > 1 and args[1] in ["save", "load", "drop", "list", "keep"] {
+            self.layouts_command(scene, args);
         } elif name == "ed_layout" {
             self.logic_shown = len(args) > 1 and args[1] == "logic";
             self.assets_shown = len(args) > 1 and args[1] == "assets";
@@ -3908,7 +3952,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.uses_command(scene, args) and not self.marked_command(scene, args)
+        } elif not self.layouts_command(scene, args) and not self.uses_command(scene, args)
+            and not self.marked_command(scene, args)
             and not self.treedrop_command(scene, args)
             and not self.logpanel_command(scene, args)
             and not self.camproute_command(scene, args)
@@ -4247,6 +4292,12 @@ obj Studio(Workbench) {
         }
         if self.log_panel {
             lines.append(self.log_panel_words());
+        }
+        if self.split_x != 50 or self.split_y != 50 or self.sides_swapped or len(self.kept_layouts) > 0 {
+            lines.append(
+                "studio: split x=" + str(self.split_x) + " y=" + str(self.split_y) + " sides=" + ("swapped" if self.sides_swapped else "usual")
+                    + " kept=" + ",".join(sorted(self.kept_layouts.keys()))
+            );
         }
         if self.rect_brush {
             lines.append("studio: rectbrush falloff=" + (self.rect_fall if self.rect_fall else "0"));

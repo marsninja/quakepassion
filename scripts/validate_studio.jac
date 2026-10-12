@@ -3558,6 +3558,84 @@ def uses_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The eighty-first session: the views' room shared out, the side panels swapped, and layouts kept by name."""
+def layouts_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["split", "swapped", "loaded"];
+    for shot in shots {
+        (repo / f"layouts_{shot}.png").unlink(missing_ok=True);
+    }
+    runs: list[dict[str, list[str]]] = [];
+    printed: list[str] = [];
+    with tempfile.TemporaryDirectory(prefix="qp-layouts-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        # Twice over one home: the second begins with what the first left.
+        for turn in ["first", "second"] {
+            ran = subprocess.run(
+                [str(binary), "+ed_exec", "scripts/studio/layouts_session.cfg"],
+                cwd=repo,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300
+            );
+            (output / f"layouts_{turn}.log").write_text(ran.stdout + ran.stderr);
+            assert ran.returncode == 0 , f"The layouts session failed: {output / f'layouts_{turn}.log'}";
+            runs.append(studio_steps(ran.stdout));
+            if turn == "first" {
+                printed = ran.stdout.splitlines();
+            }
+        }
+        kept = (Path(home) / "overrides" / "studio.cfg").read_text().splitlines();
+    }
+    steps = runs[0];
+    names = ["opened", "four", "split", "narrowed", "levelled", "swapped", "plain", "loaded", "dropped"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'layouts_first.log'}";
+    }
+    def held_lines(held: dict[str, list[str]], name: str, start: str) -> list[str] {
+        dumped = held[name];
+        ends = [place for (place, line) in enumerate(dumped) if line.startswith("mode=")];
+        return [line for line in dumped[:ends[0]] if line.startswith(start)];
+    }
+    # Four views sharing the room evenly say nothing of a split.
+    assert held_lines(steps, "four", "views ")[0].startswith("views layout=4 ") and not held_lines(steps, "four", "split ");
+    # By numbers; then the bar between the columns dragged to a third, and the bar between the rows to the middle.
+    assert held_lines(steps, "split", "split ") == ["split x=65 y=35 sides=usual kept="] , str(held_lines(steps, "split", "split "));
+    assert held_lines(steps, "narrowed", "split ") == ["split x=32 y=35 sides=usual kept="] , str(held_lines(steps, "narrowed", "split "));
+    assert held_lines(steps, "levelled", "split ") == ["split x=32 y=50 sides=usual kept="] , str(held_lines(steps, "levelled", "split "));
+    assert held_lines(steps, "swapped", "split ") == ["split x=32 y=50 sides=swapped kept="];
+    # Kept as it stood: four views, the split, the sides and the log panel at four rows.
+    assert "studio: layout work 4 32 50 right on 4" in printed and "studio: layout plain 1 50 50 left off 4" in printed;
+    assert held_lines(steps, "plain", "views ")[0].startswith("views layout=1 ") and held_lines(steps, "plain", "split ") == [
+        "split x=50 y=50 sides=usual kept=work"
+    ] and not held_lines(steps, "plain", "logpanel ");
+    assert "studio: layouts 2" in printed and "studio: layout loaded work 4 32 50 right on 4" in printed;
+    # Brought back whole.
+    assert held_lines(steps, "loaded", "views ")[0].startswith("views layout=4 ");
+    assert held_lines(steps, "loaded", "split ") == ["split x=32 y=50 sides=swapped kept=plain,work"];
+    assert len(held_lines(steps, "loaded", "logpanel ")) == 1 and held_lines(steps, "loaded", "logpanel ")[0].startswith("logpanel rows=4 ");
+    # One dropped: it cannot be loaded, and the other is still kept.
+    assert held_lines(steps, "dropped", "split ") == ["split x=32 y=50 sides=swapped kept=work"] and printed.count("studio: layouts 1") == 1;
+    assert "ed_split x 32" in kept and "ed_split y 50" in kept and "ed_sides right" in kept and "ed_layout keep work 4 32 50 right on 4" in kept , str(kept);
+    # The next session opens as the first was left.
+    again = runs[1];
+    assert held_lines(again, "opened", "views ")[0].startswith("views layout=4 ") , str(held_lines(again, "opened", "views "));
+    assert held_lines(again, "opened", "split ") == ["split x=32 y=50 sides=swapped kept=work"] , str(held_lines(again, "opened", "split "));
+    assert len(held_lines(again, "opened", "logpanel ")) == 1 and held_lines(again, "loaded", "split ") == held_lines(steps, "loaded", "split ");
+    for shot in shots {
+        source = repo / f"layouts_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"layouts_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"LAYOUTS PASS: {len(steps) - 1} steps twice, four views split 65 to 35 by numbers and to 32 and 50 by dragging the "
+            + "bars, the side panels swapped, two layouts kept and one brought back whole, and all of it there in the next session"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5948,6 +6026,7 @@ def main() {
         "needs": needs_session,
         "rectlift": rectlift_session,
         "uses": uses_session,
+        "layouts": layouts_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -6143,6 +6222,7 @@ def main() {
     needs_session(repo, binary, env, output);
     rectlift_session(repo, binary, env, output);
     uses_session(repo, binary, env, output);
+    layouts_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

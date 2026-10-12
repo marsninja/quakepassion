@@ -429,6 +429,12 @@ impl Studio.keep_settings {
     }
     lines.append("ed_outside " + self.outside);
     lines.append("ed_log panel " + ("on" if self.log_panel else "off") + " " + str(self.log_rows));
+    lines.append("ed_split x " + str(self.split_x));
+    lines.append("ed_split y " + str(self.split_y));
+    lines.append("ed_sides " + ("right" if self.sides_swapped else "left"));
+    for kept_name in sorted(self.kept_layouts.keys()) {
+        lines.append("ed_layout keep " + kept_name + " " + self.kept_layouts[kept_name]);
+    }
     lines.append("ed_models " + ("on" if self.models_shown else "off"));
     lines.append("ed_mouse look " + str(round(self.look_rate, 2)));
     lines.append("ed_mouse invert " + ("on" if self.look_flipped else "off"));

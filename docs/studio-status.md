@@ -750,6 +750,19 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   beside the plan; beside the plan and the front view; all four in a
   square; or the 3D view beside the three axis views in a column. The
   layout is kept between sessions.
+- **Sharing the room among the views**: a bar lies between the level
+  views where there was a gap, and is dragged to give the views on one
+  side of it more of the room; `ed_split x <percent>` and `ed_split y
+  <percent>` say the left views' share of the width and the upper views'
+  of the height, and `ed_split even` halves it again. `ed_sides swap`
+  (or `left`, `right`) has the scene list and the inspector change
+  sides. `ed_layout save <name>` keeps the layout as it stands (how many
+  views, the split, the sides, the log panel) and `ed_layout load <name>`
+  brings it back; `ed_layout list` and `ed_layout drop <name>` list and
+  forget them. All of it is kept between sessions. In the toolkit a
+  `Sash` between two widgets of a box asks for its command with how far
+  along the box the pointer is, and the owner shares the room out by the
+  widgets' weights.
 - **The ruler**: with something selected, each axis view shows how far the
   selection runs across it and up it, along its edges (`ed_ruler`).
   **Zoom**: the wheel, `=` and `-` over an axis view (twice as near or as
@@ -1435,6 +1448,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_sash_tests.jac`: a bar between two views or two rows that
+  asks for the share the pointer is dragged to, and the views following
+  their weights.
 - `tests/studio_ownfiles_tests.jac`: a folder on disk listed as its files
   by their paths from it, dotted names left out, and as folders the way
   the explorer lists a game's.
@@ -1681,6 +1697,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/layouts_session.cfg` (9 steps, run twice over one
+  settings folder: four views split by numbers, then by dragging the bar
+  between the columns and the bar between the rows; the side panels
+  swapped; that layout and a plain one kept by name, listed, the first
+  brought back whole, the second dropped; the second run opens as the
+  first was left).
   `scripts/studio/uses_session.cfg` (8 steps: three materials and two
   models listed, one of each missing; what uses a material, a model and
   a name nothing uses; a drag onto no project, which writes nothing; a
