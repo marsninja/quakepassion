@@ -3636,6 +3636,83 @@ def layouts_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     );
 }
 
+"""The eighty-second session: the model editor's list of frames, and points and triangles found by number."""
+def frames_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["listed", "moved"];
+    for shot in shots {
+        (repo / f"frames_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-frames-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_MODELS"] = home + "/models";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/frames_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_MODELS");
+        (output / "frames.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The frames session failed: {output / 'frames.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["made", "clicked", "moved", "copied", "dropped", "point", "face", "none", "away"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'frames.log'}";
+    }
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    def doc(name: str) -> dict[str, str] {
+        line = [line for line in steps[name] if line.startswith("modeldoc ")][0];
+        return {word.split("=", 1)[0]: word.split("=", 1)[1] for word in line.split()[2:] if "=" in word};
+    }
+    def order(name: str) -> str {
+        return [line for line in said[name] if line.startswith("frames listed=")][-1];
+    }
+    # Four frames, each sixteen higher than the one before; the first in hand.
+    assert doc("made")["frames"] == "4" and doc("made")["frame"] == "0:frame_0" and doc("made")["low"] == "-32,-32,0";
+    # The list shown, and its third row clicked: that frame is in hand, thirty-two up.
+    assert order("clicked") == "frames listed=1 frame 0,raised,high,top" , order("clicked");
+    assert doc("clicked")["frame"] == "2:high" and doc("clicked")["low"] == "-32,-32,32" , str(doc("clicked"));
+    # The last row dragged onto the first: that frame is first, the others as they were after it.
+    assert order("moved") == "frames listed=1 top,frame 0,raised,high" , order("moved");
+    assert doc("moved")["frame"] == "0:top" and doc("moved")["low"] == "-32,-32,48" and doc("moved")["frames"] == "4";
+    # Named; copied by the panel's button, the copy after it and in hand; and the copy dropped by the other.
+    assert order("copied") == "frames listed=1 summit,summit copy,frame 0,raised,high" , order("copied");
+    assert doc("copied")["frames"] == "5" and doc("copied")["frame"] == "1:summit_copy" and doc("copied")["low"] == "-32,-32,48";
+    assert order("dropped") == "frames listed=1 summit,frame 0,raised,high" and doc("dropped")["frames"] == "4";
+    # A point by its number: where it is and the triangles it is a corner of; it is picked.
+    found = [line for line in ran.stdout.splitlines() if line.startswith("studio: found ")];
+    assert len(found) == 2 and found[0].startswith("studio: found point 3 at=") and found[0].count(",") >= 4 , str(found);
+    assert doc("point")["picked"] == "1/0";
+    # A triangle: its three points, its area and the way it faces; it is picked with its points.
+    assert found[1].startswith("studio: found triangle 2 points=") and " area=" in found[1] and " facing=" in found[1] , found[1];
+    assert doc("face")["picked"] == "3/1" and doc("none")["picked"] == "3/1";
+    assert order("away").startswith("frames listed=0 ");
+    for shot in shots {
+        source = repo / f"frames_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"frames_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"FRAMES PASS: {len(steps) - 1} steps, a frame gone to by a click on its row, the last dragged to be first, one named, "
+            + "copied and dropped from the panel, and a point and a triangle found by number"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -6027,6 +6104,7 @@ def main() {
         "rectlift": rectlift_session,
         "uses": uses_session,
         "layouts": layouts_session,
+        "frames": frames_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -6223,6 +6301,7 @@ def main() {
     rectlift_session(repo, binary, env, output);
     uses_session(repo, binary, env, output);
     layouts_session(repo, binary, env, output);
+    frames_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

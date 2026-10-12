@@ -432,8 +432,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   goes through a corner), triangles that share a side share the new
   point on it, and where each side is crossed is measured at the frame
   in hand and kept as a share of the side at every other. `ed_model frame copy [name]|drop|name <words>`
-  works on the frame in hand (`ed_frame` goes from one to another),
-  `ed_model part <n>` takes another part in hand, `ed_model check` looks
+  works on the frame in hand (`ed_frame` goes from one to another).
+  `ed_model frames` (the List button beside Play) lists every frame
+  under the view, a row each: a click goes to that frame, a row dragged
+  onto another puts its frame there in the order, and a field and two
+  buttons under the list name, copy and drop the frame in hand. A frame
+  and its name belong to the whole model, so every part's frames are
+  named alike. `ed_pick find points|faces <number>` picks a point or a
+  triangle by its number and says where the point stands and which
+  triangles it is a corner of, or the triangle's points, area and
+  facing. `ed_model part <n>` takes another part in hand, `ed_model check` looks
   for what is wrong (triangles with no area or a corner nowhere, unused
   points, parts with other frames than the first), `ed_model match`
   gives every part the first's frames, and `ed_model undo|redo` undo a
@@ -1448,6 +1456,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_meshfind_tests.jac`: a point and a triangle of a mesh
+  said by number: its place and its triangles, or its points, area and
+  facing.
 - `tests/studio_sash_tests.jac`: a bar between two views or two rows that
   asks for the share the pointer is dragged to, and the views following
   their weights.
@@ -1697,6 +1708,10 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/frames_session.cfg` (9 steps: a model of four frames;
+  its list shown and the third row clicked; the last row dragged onto the
+  first; the frame named, copied and dropped from the panel; a point and
+  a triangle found by number, and one there is none of).
   `scripts/studio/layouts_session.cfg` (9 steps, run twice over one
   settings folder: four views split by numbers, then by dragging the bar
   between the columns and the bar between the rows; the side panels

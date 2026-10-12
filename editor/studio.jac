@@ -96,7 +96,7 @@ import from .geometry.touchup { cell_at, kin_cells, cells_outline }
 import from .geometry.patch {
     patch_points, PATCH_KINDS, places_text, places_even, places_projected_from, places_slid
 }
-import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under }
+import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under, mesh_found }
 import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
 import from .model.wavefront { mesh_obj, obj_mesh }
 import from .model.skin {
@@ -517,6 +517,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
     ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
+    ("ed_framedrop", "ed_framedrop <row> <what>", "what a row of the model's frame list let go on another asks for: that frame put there in the order"),
     ("ed_assetdrop", "ed_assetdrop <row> <what>", "what a row of the explorer let go on the project's rows asks for: the file or folder copied into the project"),
     ("ed_extract", "ed_extract [to] | folder <game>:<folder> [to]", "write the file the explorer shows to disk, or every file under a folder of a game's archives"),
     ("ed_listen", "ed_listen", "play the sound the explorer shows"),
@@ -714,6 +715,7 @@ obj StudioUi {
         asset_box: Box,
         asset_form: Box,
         model_view: ViewArea,
+        frame_list: TreeView,
         logic: GraphView,
         prefab_name: TextField,
         modes: list[PushButton],
@@ -777,6 +779,8 @@ obj Studio(Workbench) {
         log_back: int = 0,
         # The entity marked for what is done from the mark later (-1: none).
         marked_item: int = -1,
+        # Whether the model editor lists the model's frames under its view.
+        frames_listed: bool = False,
         # How the level views share the room: the left views' share of the
         # width and the upper views' of the height, in hundredths; the rows
         # and the column they are laid in; whether the side panels have
@@ -1821,6 +1825,13 @@ obj Studio(Workbench) {
             asset_box=asset_box,
             asset_form=asset_form,
             model_view=model_view,
+            frame_list=TreeView(
+                pick="ed_frame",
+                drag="frame",
+                drop="ed_framedrop",
+                size=104,
+                hint="Click goes to a frame; drag one onto another to put it there in the order"
+            ),
             logic=sheet,
             prefab_name=prefab_name,
             modes=modes,
@@ -2077,6 +2088,7 @@ obj Studio(Workbench) {
         ui.library.track(stage);
         ui.classes.track(stage);
         ui.assets.track(stage);
+        ui.frame_list.track(stage);
         if self.assets_shown and self.assets_listed != self.folds {
             self.list_assets(ui);
             self.assets_listed = self.folds;
