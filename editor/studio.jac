@@ -40,6 +40,7 @@ import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
     # raylib's immediate batch, for the faces of the model being edited.
     def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;
+    def BeginBlendMode(mode: i32) -> None;  def EndBlendMode -> None;
     def rlSetTexture(id: u32) -> None;  def rlBegin(mode: i32) -> None;  def rlEnd -> None;  def rlTexCoord2f(
         x: f32, y: f32
     ) -> None;  def rlVertex3f(x: f32, y: f32, z: f32) -> None;  def rlColor4ub(
@@ -476,7 +477,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
-    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off] | width <1..4>", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; how wide the studio's lines are drawn; alone, count them"),
+    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off] | width <1..4> | overdraw [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; how wide the studio's lines are drawn; how many faces the renderer draws over each place; alone, count them"),
     ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
@@ -1272,6 +1273,10 @@ obj Studio(Workbench) {
         model_float_yaw: float = 2.4,
         model_float_pitch: float = -0.35,
         model_float_reach: float = 160.0,
+        # The overdraw view: every face the renderer would draw from the eye,
+        # added up, and how many there were in the view last drawn.
+        overdraw: bool = False,
+        overdraw_faces: int = 0,
         model_backs: bool = True,
         model_ticks: float = 0.0,
         # How the marks on the model's points are drawn; the model being
@@ -2001,6 +2006,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Bake what each part can see", command="ed_bake"),
                     MenuItem(text="Build as one again", command="ed_bake off"),
                     MenuItem(text="Show the bake's cells", command="ed_cells"),
+                    MenuItem(text="Show how much is drawn over each place", command="ed_overlay overdraw"),
                     MenuItem(rule=True),
                     MenuItem(text="Recipes", command="ed_recipe"),
                     MenuItem(rule=True),
@@ -3632,6 +3638,9 @@ obj Studio(Workbench) {
             }
         }
         self.draw_entity_skins(scene);
+        if self.overdraw and view.span <= 0.0 {
+            self.overdraw_faces = self.draw_overdraw(view);
+        }
         # The selection, what it targets and what is pointed at show through
         # the walls.
         rlDrawRenderBatchActive();
@@ -4203,6 +4212,11 @@ obj Studio(Workbench) {
     is fired a box, lit as it fires and fading after, with lines to what it
     fires, a box that holds the game marked red."""
     def draw_over_game(width: int, height: int);
+    """Every face the engine would draw from a 3D view's eye (through the
+    level's PVS when culling is on), each added over what is behind it in
+    one faint colour, depth ignored: where many lie over one another it
+    glows. Answers how many faces were drawn."""
+    def draw_overdraw(view: SceneView) -> int;
     """Run a breakpoint, trace, fired or live command. False when it is not one."""
     def live_command(args: list[str]) -> bool;
     """Call over a played game's opponents, doors and pickups, or change
@@ -5236,6 +5250,9 @@ obj Studio(Workbench) {
         }
         if self.patch_preview {
             lines.append(self.patch_preview_words(scene));
+        }
+        if self.overdraw {
+            lines.append("studio: overdraw faces=" + str(self.overdraw_faces));
         }
         if self.show_triggers or self.show_unseen or self.line_width != 1 {
             lines.append(

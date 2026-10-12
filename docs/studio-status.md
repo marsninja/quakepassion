@@ -1616,6 +1616,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   brushes a player never sees in magenta (clip) and blue (hint, skip,
   caulk, nodraw), told by the last word of every side's material. A group
   with a colour of its own keeps it. `ed_overlay` alone counts each kind.
+  `ed_overlay overdraw` (View menu) lays over the 3D view every face the
+  engine would draw from the eye (through the level's PVS when culling
+  is on), each adding a little colour where it lies whatever is in front
+  of it: where many are drawn over one another it glows, which is what
+  the renderer pays for there. The developer's readout has the frame's
+  time beside it, and `ed_cells` what a cell sees.
   `ed_overlay width <1..4>` says how many pixels wide the studio's own
   lines are drawn in every view (outlines, arrows, paths, rings, a
   model's edges): a wide line is the line drawn again to either side of
