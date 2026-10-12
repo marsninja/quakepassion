@@ -1,4 +1,5 @@
 """Authored damage volumes, activation, and game-specific contact intervals."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World, Player }
 import from .signals { Signal, HasSignal, note_chain }
 import from .damage { Damage }
@@ -110,8 +111,8 @@ def load_hazards(world: World, bsp: Bsp) {
             note_chain(world, index, "hurt without a trigger volume");
             continue;
         }
-        flags = int(fields.get("spawnflags", "0"));
-        amount = int(fields.get("dmg", "5"));
+        flags = atoi(fields.get("spawnflags", "0"));
+        amount = atoi(fields.get("dmg", "5"));
         if amount == 0 {
             amount = 5;
         }

@@ -5,6 +5,7 @@ turret_driver, an infantry soldier riding behind the gun, spots the player,
 aims the breach at their eyes and, once its reaction time has passed, fires a
 rocket from the muzzle point the breach targets. A dead driver levels the gun
 and leaves it idle."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, Projectile, HasProjectile, notices, request_sound, damage_opponent }
@@ -68,7 +69,7 @@ def turret_point(fields: dict[str, str]) -> Vec3 {
 }
 
 def turret_field(fields: dict[str, str], key: str, fallback: float) -> float {
-    value = float(fields.get(key, "0"));
+    value = atof(fields.get(key, "0"));
     return value if value != 0.0 else fallback;
 }
 
@@ -167,7 +168,7 @@ def load_turrets(world: World, bsp: Bsp, collision: CollisionMap) {
         }
         parts = model_parts(bsp, collision, fields);
         origin = turret_point(fields);
-        yaw = float(fields.get("angle", "0"));
+        yaw = atof(fields.get("angle", "0"));
         breach = Turret(
             faces=parts[0],
             hulls=parts[1],
@@ -177,7 +178,7 @@ def load_turrets(world: World, bsp: Bsp, collision: CollisionMap) {
             speed=turret_field(fields, "speed", 50.0),
             down_limit=-turret_field(fields, "minpitch", -30.0),
             up_limit=-turret_field(fields, "maxpitch", 30.0),
-            min_yaw=float(fields.get("minyaw", "0")),
+            min_yaw=atof(fields.get("minyaw", "0")),
             max_yaw=turret_field(fields, "maxyaw", 360.0),
             damage=int(turret_field(fields, "dmg", 10.0))
         );

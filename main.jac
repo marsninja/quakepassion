@@ -1,7 +1,10 @@
 """Native Quake I/II/III and generated Passion expeditions.
 
-QP_GAME selects q1 (default), q2, q3 or passion. QP_ASSETS overrides the game's
-asset directory (the common parent for Passion). QP_MAP overrides its default
+QP_GAME selects q1 (default), q2, q3 or passion. QP_PACK selects one of a
+game's content packs instead (hipnotic, rogue, q1r, dopa, mg1, mg3, q1ctf,
+xatrix, groundzero, q2ctf, teamarena; see engine/assets/content.jac) and
+starts on its `start` map when it has one. QP_ASSETS overrides the game's
+asset directory (the common parent for Passion). QP_MAP overrides the default
 map basename; QP_SEED selects Passion's expedition seed.
 QP_GRAYBOX=1 selects the development arena. QP_SMOKE=1 captures deterministic
 views and exits. QP_CAPTURE=<frame>:<file.png> plays normally and saves one
@@ -18,6 +21,7 @@ import from engine.world.level { Level, spawn_player }
 import from games.levels { open_level, saved_entities, override_path }
 import from engine.core.preferences { Preferences }
 import from engine.core.menu { game_directory }
+import from engine.assets.content { play_pack, pack_start_map }
 import from engine.core.app { App, HostCvars }
 import from engine.console.shell { Shell, command_line_text }
 import from engine.core.clock { Clock }
@@ -46,6 +50,18 @@ with entry {
     skill = host.skill.integer;
     if os.getenv("QP_GRAYBOX", "") == "" {
         game = os.getenv("QP_GAME", "q1");
+        # A content pack is played by its game's rules.
+        pack_id = os.getenv("QP_PACK", "");
+        if pack_id != "" {
+            game = play_pack(pack_id);
+            if game == "" {
+                print(
+                    "quakepassion: QP_PACK names no content pack: " + repr(pack_id),
+                    file=sys.stderr
+                );
+                sys.exit(2);
+            }
+        }
         # A mistyped game is a usage error, reported before anything loads;
         # left to load_level it would end the run as an uncaught exception.
         if game not in ["q1", "q2", "q3", "passion"] {
@@ -57,6 +73,9 @@ with entry {
             sys.exit(2);
         }
         map_name = "q3dm1" if game == "q3" else ("base1" if game == "q2" else "e1m1");
+        if pack_id != "" and pack_id != game {
+            map_name = pack_start_map(pack_id);
+        }
         if game == "passion" {
             map_name = "v2-" + os.getenv("QP_SEED", "1");
         }
@@ -109,11 +128,11 @@ with entry {
         app.stuffed = "edit\n" + app.stuffed;
     }
     # Quake II's newgame is "map *ntro.cin+base1": the introduction first.
-    if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q2" and os.getenv("QP_MAP", "") == "" {
+    if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q2" and os.getenv("QP_MAP", "") == "" and os.getenv("QP_PACK", "") == "" {
         app.opening = "*ntro.cin+base1";
     }
     # Quake III starts with the id logo (and its introduction the first time).
-    if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q3" and os.getenv("QP_MAP", "") == "" {
+    if os.getenv("QP_GRAYBOX", "") == "" and os.getenv("QP_GAME", "q1") == "q3" and os.getenv("QP_MAP", "") == "" and os.getenv("QP_PACK", "") == "" {
         app.opening = "idlogo.RoQ";
     }
     capture = os.getenv("QP_CAPTURE", "");

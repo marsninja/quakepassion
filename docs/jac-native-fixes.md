@@ -9,30 +9,26 @@ tracked the local patch stacks used while each fix was in review.
 ## Current compiler
 
 The `jaseci` submodule pins the compiler source. It points at the
-`qp-pin-v3` branch of `marsninja/jac`: upstream main `5bb05689a` plus the
-Windows target work of [jaseci-labs/jac#9991](https://github.com/jaseci-labs/jac/pull/9991),
-which is in review. Everything earlier pins carried has merged upstream.
-`scripts/stage_compiler.sh` prepares that source (and the typeshed stubs it
-needs) and prints the `JAC_DEV_SOURCE` to export, so the released `jac`
-0.37.25 binary compiles QuakePassion with the pinned source. CI
-(`.github/workflows/jac-test.yml`) does the same and caches the native
-compiler kernel per pin. The engine and the games need no local patch
-stack or compiler worktree; the studio does until the pin moves (see "Merged
-upstream after the pin's base" below). Once #9991 merges, the submodule can
-return to `jaseci-labs/jac` main.
+`qp-pin-v4` branch of `marsninja/jac`: upstream main `875ef9d29` plus
+[jaseci-labs/jac#10002](https://github.com/jaseci-labs/jac/pull/10002), which
+has since merged. Everything earlier pins carried has merged upstream too,
+the Windows target work (#9991) among it. `scripts/stage_compiler.sh` prepares
+that source (and the typeshed stubs it needs) and prints the `JAC_DEV_SOURCE`
+to export, so the released `jac` 0.37.25 binary compiles QuakePassion with
+the pinned source. CI (`.github/workflows/jac-test.yml`) does the same and
+caches the native compiler kernel per pin. No local patch stacks or compiler
+worktrees are needed, and the submodule can return to `jaseci-labs/jac` main
+at the next pin change.
 
 ## Open upstream
-
-In the pin, in review upstream:
-
-| Defect | Upstream PR | Found by |
-| --- | --- | --- |
-| A Windows target (`--target-triple x86_64-pc-windows-msvc`) wrote an image that did not load: it imported pthread keys, `printf`, the standard streams and `setjmp` from `msvcrt.dll`, and nothing that touched a file, a directory or the clock built. Records crossed to C functions by the System V convention, `hashlib` needed OpenSSL, and the PE linker refused an object with more than 65,534 relocations | [#9991](https://github.com/jaseci-labs/jac/pull/9991) | Building `qp.exe`: a Linux `qp` under WSLg cannot capture the mouse |
 
 Merged upstream and in the pin, not yet in a release:
 
 | Defect | Upstream PR | Found by |
 | --- | --- | --- |
+| A read of a variable narrowed by an earlier `if x is None { return; }` was typed with its declared type and reported (E1099) when resolving an assignment to the same variable elsewhere in the function forced its scope to be checked: the narrowing queries refused any query for a symbol already being resolved, wherever it was asked | [#10002](https://github.com/jaseci-labs/jac/pull/10002) | `Studio.drag_lay` in `editor/impl/studio.layhandle.impl.jac`: `main` did not build |
+| A block whose last statement held a comprehension lost the narrowing of what followed it | [#9990](https://github.com/jaseci-labs/jac/pull/9990) | `Studio.float_views` in `editor/impl/studio.windows.impl.jac` |
+| A Windows target (`--target-triple x86_64-pc-windows-msvc`) wrote an image that did not load, and nothing that touched a file, a directory or the clock built for it | [#9991](https://github.com/jaseci-labs/jac/pull/9991) | Building `qp.exe`: a Linux `qp` under WSLg cannot capture the mouse |
 | `for (i, row) in enumerate(rows)` over a list of lists (or of dicts or sets) bound `row` as an untyped pointer, which later code took for a `str`: `len(row)` returned a wrong count and a nested `enumerate(row)` crashed. `zip` did the same | [#9971](https://github.com/jaseci-labs/jac/pull/9971) | The studio's `.map` writer (`editor/formats/map.jac`), which loops over an entity's brushes and each brush's sides |
 | A C record passed by value to a C function from a variable whose slot is optional (`font: Font \| None`, narrowed or defaulted before the call) emitted invalid LLVM IR; the build failed with only "native product emission failed" | [#9942](https://github.com/jaseci-labs/jac/pull/9942) | The studio's canvas (`editor/ui/canvas.jac`), which keeps its font as `UiFont \| None` |
 | The Mach-O linker merged same-named sections from different units but kept the first unit's alignment, so a later unit's 16-byte constant could land 8 bytes off a 16-byte boundary and a vectorised loop's `ldr q` read it 8 bytes early. Whether a binary is hit depends on how its units happen to pack: one program fails, a one-line change to it passes | [#9924](https://github.com/jaseci-labs/jac/pull/9924) | `scripts/validate_doors.jac` on Q3: `zipfile` raising "Invalid central directory bounds" on every pk3 |
@@ -52,14 +48,6 @@ Found in QuakePassion work but not needed by it (not in the pin):
 | A dict literal whose first key is a string held in a variable (a parameter, a module global) failed to lower when it was the first literal of its dict type in the module: the first value was normalised from a string view and the first key was not, so the key was taken for an integer one and the dict's helpers could not be emitted. The function fell back to Python and the native build failed (E5092) | [#9975](https://github.com/jaseci-labs/jac/pull/9975) | The studio's digger command sets or clears one field named by a constant: `scene.set_fields({DIGGER_KEY: None if off else "1"})` (`editor/impl/studio.faces.impl.jac`) |
 | In the body of `impl Arch.method`, a name first assigned inside a nested block (a `for` or `if` body) was bound to the archetype's method or field of that name: the assignment failed with E1001, and under `jac test` the module ran interpreted. A shallow scope lookup through an impl's declaration climbed into the archetype | [#9978](https://github.com/jaseci-labs/jac/pull/9978) (reported as [#9969](https://github.com/jaseci-labs/jac/issues/9969)) | Met again and again in the studio (`aim`, `opened`, `shelf`, `grid`, `reach`, `changed`), each time by a local that happened to share a member's name; the last made `editor/document/scene.jac` run interpreted in its tests without failing one |
 | `==` between two lists of different native element types (one of tagged values, as `list(struct.unpack(...))` gives, against a `list[int]`; a `list[int]` against a `list[float]`) compared the two pointers and was always False | [#9931](https://github.com/jaseci-labs/jac/pull/9931) | A flare test's assertion |
-
-Merged upstream after the pin's base, and needed by the studio (`editor/`): a build
-from an empty cache stops without them, so the pin has to move past them
-before the studio builds in CI. The studio is built and checked meanwhile
-with the pin's source plus these two and the fix for #9992 below.
-
-| Defect | Upstream PR | Found by |
-| --- | --- | --- |
 | A statement that ends an `if` body with a comprehension was never joined to what follows the `if` (the link into the comprehension was taken for the statement's way out), so a guard asked again after it (`if x is not None { x.a = [..]; } if x is not None { x.b }`) narrowed from `None` alone and every use under it raised E1099 | [#9990](https://github.com/jaseci-labs/jac/pull/9990) | The studio's floating windows (`Studio.float_views`) |
 | `dict(x)` was typed as a bare `dict`: typeshed gives `dict` a `__new__(cls, *args, **kwargs)`, the checker stopped at it, and the `__init__` overloads that carry the key and value types were never asked. A value read from the copy had no type, so a string's method on it (`dict(item.fields).get("angle", "0").strip()`) could not be lowered and the function fell back to Python | [#9997](https://github.com/jaseci-labs/jac/pull/9997) | Linked prefabs turned and sized (`map_remapped` in `editor/document/generate.jac`) |
 
@@ -80,19 +68,20 @@ with the pin's source plus these two and the fix for #9992 below.
   A five-line program that imports and calls the functions, built with
   `jac build --native`, names the function, the line and the construct.
 
-- [jaseci-labs/jac#9992](https://github.com/jaseci-labs/jac/issues/9992): a
-  flow lookup for a local that walks back to an assignment of it from itself
-  (`toward = Vec3(x=round(toward.x))`) refuses the reference inside that
-  right-hand side, which is then checked un-narrowed (E1099), when a later
-  statement is asked about before the checker has met the assignment, as the
-  interface writer does. It shows only on a cold build: from the commit that
-  added `Studio.drag_lay` (`editor/impl/studio.layhandle.impl.jac`) the
-  studio does not build from an empty cache without the fix, and warm
-  incremental builds hid that. A fix that keys the checker's re-entrancy
-  guard by symbol and statement is on the branch
-  `fix/checker-flow-lookup-reentry` of `marsninja/jac` and is applied to the
-  compiler this tree is built with; it has no regression test yet, so it is
-  not a pull request.
+- [jaseci-labs/jac#10005](https://github.com/jaseci-labs/jac/issues/10005):
+  a native build recompiles only the units that changed, but analyses each
+  stale unit with its whole import closure read again from source (the
+  interface cache is not used under a native build). A change to a small
+  module that imports a large one costs as much as a change to the large
+  one: in this tree, about four minutes for anything that imports
+  `editor/studio.jac`, against about a minute for a module that imports
+  little. The studio's tools under `editor/tools/` are laid out to stay on
+  the cheap side of that (see `docs/studio-status.md`); a request, not a
+  wrong result.
+- [jaseci-labs/jac#9992](https://github.com/jaseci-labs/jac/issues/9992)
+  (the studio not building from an empty cache, E1099 in
+  `Studio.drag_lay`) is the defect #10002 above fixed; the issue is still
+  open upstream and can be closed against it.
 - [jaseci-labs/jac#9969](https://github.com/jaseci-labs/jac/issues/9969): the
   checker takes a local that is first assigned inside a loop in an `impl`
   body for the archetype's method of the same name (E1001). Found in

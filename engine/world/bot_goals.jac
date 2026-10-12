@@ -9,6 +9,7 @@ level item it has seen by weight over travel time, skipping those it still
 avoids (its last goals, until they respawn), and BotChooseNBGItem does the
 same for items within a short detour. Both are `ChooseItemGoal` walks over the
 level items. Goals are kept on the bot's goal stack (GoalState)."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Actor }
 import from .pickups { Pickup, HasPickup }
@@ -109,10 +110,10 @@ def init_camp_spots(items: BotItems, mesh: NavMesh, entities: list[MapEntity]) -
             origin=origin,
             area=area,
             name=fields.get("message", ""),
-            range=float(fields.get("range", "0")),
-            weight=float(fields.get("weight", "0")),
-            hold=float(fields.get("wait", "0")),
-            random=float(fields.get("random", "0"))
+            range=atof(fields.get("range", "0")),
+            weight=atof(fields.get("weight", "0")),
+            hold=atof(fields.get("wait", "0")),
+            random=atof(fields.get("random", "0"))
         );
         count += 1;
     }

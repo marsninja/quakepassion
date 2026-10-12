@@ -208,9 +208,9 @@ impl App.read_config(name: str) -> str {
         return "";
     }
     directory = game_directory(game);
-    path = directory + "/" + name;
+    path = loose_file(directory, name);
     try {
-        if os.path.isfile(path) {
+        if path and os.path.isfile(path) {
             return read_save(path);
         }
         if game not in ["q1", "q2", "q3"] {

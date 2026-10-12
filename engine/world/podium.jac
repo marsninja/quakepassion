@@ -4,6 +4,7 @@ moves to the intermission point (FindIntermissionPoint), the podium model rises
 on its pads facing the camera (SpawnModelsOnVictoryPads). Two seconds later the
 winner plays its gesture and taunt (CelebrateStart), and stands again when the
 gesture timer runs out (CelebrateStop)."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Entity, move_to_area }
 import from .models { Visual, ModelResource, UsesModel, HasVisual, PlayerRig, WeaponKit, Holds }
@@ -77,7 +78,7 @@ def arena_intermission(world: World, bsp: Bsp) -> list[Vec3] {
             continue;
         }
         origin = podium_point(fields.get("origin", "0 0 0"));
-        angles = Vec3(y=float(fields.get("angle", "0")));
+        angles = Vec3(y=atof(fields.get("angle", "0")));
         parts = fields.get("angles", "").split();
         if len(parts) == 3 {
             angles = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));

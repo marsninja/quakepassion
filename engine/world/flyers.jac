@@ -3,6 +3,7 @@ used, then fly their path_corner chain like a func_train (300 units a second
 by default), firing each corner's pathtarget. A misc_viper_bomb, when used,
 drops with the viper's velocity and bursts on impact (BecomeExplosion2) for
 its dmg in radius damage."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World, Entity, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .trains { TrackPoint, TrackNext, HasTrack }
@@ -58,8 +59,8 @@ def load_flyers(world: World, bsp: Bsp) {
             flyer = Flyer(
                 model="models/ships/viper/tris.md2" if kind == "misc_viper" else "models/ships/strogg1/tris.md2",
                 pos=entity_point(fields),
-                yaw=float(fields.get("angle", "0")) * 3.14159265 / 180.0,
-                speed=float(fields.get("speed", "0")) or 300.0,
+                yaw=atof(fields.get("angle", "0")) * 3.14159265 / 180.0,
+                speed=atof(fields.get("speed", "0")) or 300.0,
                 target=fields.get("target", ""),
                 activation=Signal(entities=[index])
             );
@@ -69,7 +70,7 @@ def load_flyers(world: World, bsp: Bsp) {
         } elif kind == "misc_viper_bomb" {
             bomb = Bomb(
                 pos=entity_point(fields),
-                damage=int(float(fields.get("dmg", "0"))) or 1000,
+                damage=int(atof(fields.get("dmg", "0"))) or 1000,
                 activation=Signal(entities=[index])
             );
             bomb.visual.visible = False;

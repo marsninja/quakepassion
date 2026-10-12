@@ -3,6 +3,7 @@ writes its time into a target_string, which spreads the text over its team of
 target_character brushes by switching each one's texture frame: digits 0-9,
 '-' 10, ':' 11, anything else 12. When a timer runs out the clock fires its
 pathtarget, and restarts if flagged MULTI_USE."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World }
 import from .signals { Signal, HasSignal, Fire }
 import from ..formats.bsp { Bsp }
@@ -152,7 +153,7 @@ def load_clocks(world: World, bsp: Bsp) {
             }
             record = bsp.models[model];
             glyph = Glyph(
-                position=int(float(fields.get("count", "0"))),
+                position=int(atof(fields.get("count", "0"))),
                 faces=list(range(record.first_face, record.first_face + record.face_count))
             );
             team = fields.get("team", "");
@@ -191,12 +192,12 @@ def load_clocks(world: World, bsp: Bsp) {
         if fields.get("classname", "") != "func_clock" {
             continue;
         }
-        flags = int(fields.get("spawnflags", "0"));
-        count = int(float(fields.get("count", "0")));
+        flags = atoi(fields.get("spawnflags", "0"));
+        count = int(atof(fields.get("count", "0")));
         clock = Clock(
             counting_up=flags & 1 != 0,
             counting_down=flags & 2 != 0,
-            style=int(float(fields.get("style", "0"))),
+            style=int(atof(fields.get("style", "0"))),
             count=count,
             multi_use=flags & 8 != 0,
             start_off=flags & 4 != 0,

@@ -2,6 +2,7 @@
 shortly after spawning, or, flagged TRIGGER_SPAWN, stays hidden and drops when
 used. It lands on the first floor below its footprint and crushes whatever it
 falls onto for its dmg (100 by default)."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World, Player }
 import from .signals { Signal, HasSignal }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
@@ -48,8 +49,8 @@ def load_falling_objects(world: World, bsp: Bsp, collision: CollisionMap) {
             model=model,
             faces=list(range(record.first_face, record.first_face + record.face_count)),
             bounds=model_bounds(bsp, model, mover_origin(fields)),
-            damage=int(float(fields.get("dmg", "0"))) or 100,
-            hidden=int(fields.get("spawnflags", "0")) & 1 != 0,
+            damage=int(atof(fields.get("dmg", "0"))) or 100,
+            hidden=atoi(fields.get("spawnflags", "0")) & 1 != 0,
             activation=Signal(entities=[index])
         );
         for i in range(len(collision.models)) {

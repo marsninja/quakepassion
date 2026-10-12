@@ -1,4 +1,7 @@
-"""Quake 1 BSP29 decoding. Disk indices remain explicit until graph assembly."""
+"""Quake 1 BSP decoding: BSP29, and BSP2, the same file with the 16-bit counts
+and indices of its faces, edges, leaves, nodes and clip nodes widened to 32
+bits (and leaf and node bounds to floats) for maps past BSP29's limits. Disk
+indices remain explicit until graph assembly."""
 import math;
 import struct;
 import from ...math.vec3 { Vec3 }
@@ -24,6 +27,11 @@ import from ..bsp {
     check_index,
     parse_entities,
     decode_pvs
+}
+
+"""A number rounded to single precision, as a C float holds it."""
+def single(value: float) -> float {
+    return float(struct.unpack("<f", struct.pack("<f", value))[0]);
 }
 
 def parse_textures(data: bytes) -> list[Texture] {
@@ -56,7 +64,7 @@ def parse_textures(data: bytes) -> list[Texture] {
         require_range(data, start + mip, width * height);
         result.append(
             Texture(
-                name=data[start:end].decode("utf-8"),
+                name=data[start:end].decode("latin-1"),
                 width=width,
                 height=height,
                 pixels=data[start + mip:start + mip + width * height]
@@ -66,11 +74,24 @@ def parse_textures(data: bytes) -> list[Texture] {
     return result;
 }
 
+"""Whether a file is a Quake 1 map this parser reads."""
+def is_q1_bsp(data: bytes) -> bool {
+    return len(data) >= 4 and (data[0:4] == b"BSP2" or i32_at(data, 0) == 29);
+}
+
 def parse_bsp(data: bytes) -> Bsp {
     require_range(data, 0, 124);
-    if i32_at(data, 0) != 29 {
-        raise ValueError("Expected Quake 1 BSP version 29");
+    if not is_q1_bsp(data) {
+        raise ValueError("Expected Quake 1 BSP version 29 or BSP2");
     }
+    # BSP2 widens these records; everything else is BSP29's.
+    wide = data[0:4] == b"BSP2";
+    face_size = 28 if wide else 20;
+    edge_size = 8 if wide else 4;
+    mark_size = 4 if wide else 2;
+    leaf_size = 44 if wide else 28;
+    node_size = 44 if wide else 24;
+    clip_size = 12 if wide else 8;
     lumps: list[bytes] = [];
     for i in range(15) {
         offset = i32_at(data, 4 + i * 8);
@@ -79,7 +100,8 @@ def parse_bsp(data: bytes) -> Bsp {
         lumps.append(data[offset:offset + size]);
     }
     bsp = Bsp(lighting=lumps[8], visibility=lumps[4]);
-    bsp.entities = parse_entities(lumps[0].decode("utf-8"));
+    # Quake's text is bytes: its high half is the conchars' bronze letters.
+    bsp.entities = parse_entities(lumps[0].decode("latin-1"));
     bsp.textures = parse_textures(lumps[2]);
     for i in range(records(lumps[1], 20)) {
         bsp.planes.append(
@@ -108,17 +130,20 @@ def parse_bsp(data: bytes) -> Bsp {
             )
         );
     }
-    edge_count = records(lumps[12], 4);
+    edge_count = records(lumps[12], edge_size);
     surf_count = records(lumps[13], 4);
-    for i in range(records(lumps[7], 20)) {
-        p = i * 20;
-        plane = u16_at(lumps[7], p);
+    for i in range(records(lumps[7], face_size)) {
+        p = i * face_size;
+        # dface_t, or dface2_t: plane, side, first edge, edge count, texinfo,
+        # four styles, light offset.
+        plane = i32_at(lumps[7], p) if wide else u16_at(lumps[7], p);
         check_index(plane, len(bsp.planes));
-        side = u16_at(lumps[7], p + 2);
-        first = i32_at(lumps[7], p + 4);
-        count = u16_at(lumps[7], p + 8);
-        ti = u16_at(lumps[7], p + 10);
+        side = i32_at(lumps[7], p + 4) if wide else u16_at(lumps[7], p + 2);
+        first = i32_at(lumps[7], p + 8) if wide else i32_at(lumps[7], p + 4);
+        count = i32_at(lumps[7], p + 12) if wide else u16_at(lumps[7], p + 8);
+        ti = i32_at(lumps[7], p + 16) if wide else u16_at(lumps[7], p + 10);
         check_index(ti, len(texinfo));
+        styles_at = p + (20 if wide else 12);
         if count < 3 or first < 0 or first + count > surf_count {
             raise ValueError("Invalid BSP face edge range");
         }
@@ -131,7 +156,7 @@ def parse_bsp(data: bytes) -> Bsp {
             warp=bsp.textures[info.texture].name.startswith("*"),
             texinfo=info,
             tiled=face_texture.name.startswith("*") or face_texture.name.startswith("sky"),
-            light_offset=i32_at(lumps[7], p + 16),
+            light_offset=i32_at(lumps[7], styles_at + 4),
             normal=bsp.planes[plane].normal,
             plane_dist=bsp.planes[plane].distance
         );
@@ -140,7 +165,7 @@ def parse_bsp(data: bytes) -> Bsp {
             face.plane_dist = -face.plane_dist;
         }
         for j in range(4) {
-            style = int(lumps[7][p + 12 + j]);
+            style = int(lumps[7][styles_at + j]);
             if style != 255 {
                 face.styles.append(style);
             }
@@ -153,11 +178,11 @@ def parse_bsp(data: bytes) -> Bsp {
             se = i32_at(lumps[13], (first + j) * 4);
             ei = abs(se);
             check_index(ei, edge_count);
-            ep = ei * 4;
+            ep = ei * edge_size;
             if se < 0 {
-                ep += 2;
+                ep += edge_size // 2;
             }
-            vi = u16_at(lumps[12], ep);
+            vi = i32_at(lumps[12], ep) if wide else u16_at(lumps[12], ep);
             check_index(vi, len(vertices));
             v = vertices[vi];
             face.vertices.append(v);
@@ -165,10 +190,17 @@ def parse_bsp(data: bytes) -> Bsp {
             t = v.dot(info.t) + info.toff;
             face.uv.append(s / float(face_texture.width));
             face.uv.append(t / float(face_texture.height));
-            min_s = min(min_s, s);
-            max_s = max(max_s, s);
-            min_t = min(min_t, t);
-            max_t = max(max_t, t);
+            # CalcSurfaceExtents keeps each coordinate in a float: the sum is
+            # rounded to single precision before the extents are taken. The
+            # light compilers did the same, so a face's lightmap is the size
+            # they wrote only with that rounding; without it a coordinate a
+            # hair past a 16-unit line adds a texel the lump does not hold.
+            extent_s = single(s);
+            extent_t = single(t);
+            min_s = min(min_s, extent_s);
+            max_s = max(max_s, extent_s);
+            min_t = min(min_t, extent_t);
+            max_t = max(max_t, extent_t);
         }
         face.light_s = int(math.floor(min_s / 16.0));
         face.light_t = int(math.floor(min_t / 16.0));
@@ -192,29 +224,33 @@ def parse_bsp(data: bytes) -> Bsp {
         }
         bsp.faces.append(face);
     }
-    mark_count = records(lumps[11], 2);
-    for i in range(records(lumps[10], 28)) {
-        p = i * 28;
+    mark_count = records(lumps[11], mark_size);
+    for i in range(records(lumps[10], leaf_size)) {
+        p = i * leaf_size;
+        # dleaf_t, or dleaf2_t with float bounds and 32-bit mark ranges.
+        ambient_at = p + (40 if wide else 24);
         leaf = Leaf(
             contents=i32_at(lumps[10], p),
             vis_offset=i32_at(lumps[10], p + 4),
-            mins=bounds_at(lumps[10], p + 8),
-            maxs=bounds_at(lumps[10], p + 14),
-            # dleaf_t ambient_level[4]: water, sky, slime, lava.
+            mins=vec_at(lumps[10], p + 8) if wide else bounds_at(lumps[10], p + 8),
+            maxs=vec_at(lumps[10], p + 20) if wide else bounds_at(lumps[10], p + 14),
+            # ambient_level[4]: water, sky, slime, lava.
             ambient=[
-                int(lumps[10][p + 24]),
-                int(lumps[10][p + 25]),
-                int(lumps[10][p + 26]),
-                int(lumps[10][p + 27])
+                int(lumps[10][ambient_at]),
+                int(lumps[10][ambient_at + 1]),
+                int(lumps[10][ambient_at + 2]),
+                int(lumps[10][ambient_at + 3])
             ]
         );
-        first = u16_at(lumps[10], p + 20);
-        count = u16_at(lumps[10], p + 22);
-        if first + count > mark_count {
+        first = i32_at(lumps[10], p + 32) if wide else u16_at(lumps[10], p + 20);
+        count = i32_at(lumps[10], p + 36) if wide else u16_at(lumps[10], p + 22);
+        if first < 0 or count < 0 or first + count > mark_count {
             raise ValueError("Invalid BSP leaf face range");
         }
         for j in range(count) {
-            fi = u16_at(lumps[11], (first + j) * 2);
+            fi = i32_at(lumps[11], (first + j) * 4)
+                if wide
+                else u16_at(lumps[11], (first + j) * 2);
             check_index(fi, len(bsp.faces));
             leaf.faces.append(fi);
         }
@@ -228,21 +264,21 @@ def parse_bsp(data: bytes) -> Bsp {
         }
         bsp.leaves.append(leaf);
     }
-    for i in range(records(lumps[5], 24)) {
-        p = i * 24;
+    for i in range(records(lumps[5], node_size)) {
+        p = i * node_size;
         plane = i32_at(lumps[5], p);
         check_index(plane, len(bsp.planes));
         # dnode_t firstface and numfaces: the faces on this node's plane.
-        first = u16_at(lumps[5], p + 20);
-        count = u16_at(lumps[5], p + 22);
-        if first + count > len(bsp.faces) {
+        first = i32_at(lumps[5], p + 36) if wide else u16_at(lumps[5], p + 20);
+        count = i32_at(lumps[5], p + 40) if wide else u16_at(lumps[5], p + 22);
+        if first < 0 or count < 0 or first + count > len(bsp.faces) {
             raise ValueError("Invalid BSP node face range");
         }
         bsp.branches.append(
             Branch(
                 plane=plane,
-                front=s16_at(lumps[5], p + 4),
-                back=s16_at(lumps[5], p + 6),
+                front=i32_at(lumps[5], p + 4) if wide else s16_at(lumps[5], p + 4),
+                back=i32_at(lumps[5], p + 8) if wide else s16_at(lumps[5], p + 6),
                 first_face=first,
                 face_count=count
             )
@@ -257,13 +293,15 @@ def parse_bsp(data: bytes) -> Bsp {
             }
         }
     }
-    for i in range(records(lumps[9], 8)) {
-        p = i * 8;
+    for i in range(records(lumps[9], clip_size)) {
+        p = i * clip_size;
         plane = i32_at(lumps[9], p);
         check_index(plane, len(bsp.planes));
         bsp.clipnodes.append(
             Branch(
-                plane=plane, front=s16_at(lumps[9], p + 4), back=s16_at(lumps[9], p + 6)
+                plane=plane,
+                front=i32_at(lumps[9], p + 4) if wide else s16_at(lumps[9], p + 4),
+                back=i32_at(lumps[9], p + 8) if wide else s16_at(lumps[9], p + 6)
             )
         );
     }

@@ -1,4 +1,5 @@
 """Map-defined campaign exit requests, separate from application loading."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World }
 import from .signals { Signal, HasSignal, Fire, note_chain }
 import from .inventory { Inventory }
@@ -138,7 +139,7 @@ def load_exits(world: World, bsp: Bsp) {
             activation=signal,
             contact=contact,
             # Q1 NO_INTERMISSION (1) goes straight to the next map.
-            intermission=not (contact and int(fields.get("spawnflags", "0")) & 1 != 0)
+            intermission=not (contact and atoi(fields.get("spawnflags", "0")) & 1 != 0)
         );
         if contact {
             model = fields.get("model", "");

@@ -170,6 +170,7 @@ import from ..world.models { PlayerRig, ModelResource, Wears }
 import from ..world.level { Level, load_level, spawn_player, Q1_SERVER_START }
 import from .save_format { SNAPSHOT_HEADER }
 import from .menu { LevelMenu, game_directory }
+import from ..assets.content { play_pack, playing, loose_file }
 import from ..render.quake { QuakeRenderer }
 import from .clock { Clock }
 import from ..math.interpolation { TickBlend }

@@ -1,4 +1,5 @@
 """Campaign rosters and local arena training bots populated from map entities."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .enemies { enemy_rule }
 import from .gibs { gib_rule, link_gibs }
@@ -169,7 +170,7 @@ def prepare_arena(
         }
         world +>:HasSpawn:+> SpawnPoint(
             pos=Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2])),
-            yaw=float(fields.get("angle", "0")) * math.pi / 180.0
+            yaw=atof(fields.get("angle", "0")) * math.pi / 180.0
         );
     }
     arena = find_arena(load_arenas(library), level.name);
@@ -325,7 +326,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             }
             source = fields.get("asset_game", level.bsp.game);
             kind = fields.get("classname", "");
-            flags = int(fields.get("spawnflags", "0"));
+            flags = atoi(fields.get("spawnflags", "0"));
             path = "";
             arena = source == "q3";
             # Arena bots run at Q3's g_speed of 320 like any player.
@@ -333,7 +334,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
             bot = BotInfo(name="Sarge");
             if arena {
                 if kind == "arena_bot" {
-                    bot = roster[int(fields.get("bot", "0"))];
+                    bot = roster[atoi(fields.get("bot", "0"))];
                 } elif level.bsp.game == "q3" or kind != "info_player_deathmatch" {
                     # Passion encounters still place Q3 characters at these spots.
                     continue;
@@ -383,7 +384,7 @@ def populate_opponents(world: World, level: Level, directory: str) -> int {
                 max_health=handicap if kind == "arena_bot" else rule.health,
                 decision_wait=float(count % 12) / 120.0,
                 support_wait=float(count % 6) / 120.0,
-                yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
+                yaw=atof(fields.get("angle", "0")) * math.pi / 180.0,
                 game=source,
                 skill=level.skill,
                 ambush=source in ["q1", "q2"] and flags & 1 != 0 and kind != "arena_bot",

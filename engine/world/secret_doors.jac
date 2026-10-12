@@ -2,6 +2,7 @@
 graph: a door steps aside, waits a second, slides back along its arrow, holds,
 and returns the same way (Q1 doors.qc fd_secret_use to fd_secret_done, Q2
 g_func.c door_secret_use to door_secret_done)."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World }
 import from .trains { Train, TrackPoint, TrackNext, HasTrack, attach_train, voice_train }
@@ -31,7 +32,7 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             raise ValueError("Invalid secret door model");
         }
         record = bsp.models[model];
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         forward = door_direction(entity);
         angles = fields.get("angles", "0 " + fields.get("angle", "0") + " 0").split();
         if len(angles) != 3 {
@@ -49,8 +50,8 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
         bounds = model_bounds(bsp, model, mover_origin(fields));
         size = bounds.maxs.sub(bounds.mins);
         # Only Q1 lets the map override the two distances.
-        width = float(fields.get("t_width", "0")) if q1 else 0.0;
-        length = float(fields.get("t_length", "0")) if q1 else 0.0;
+        width = atof(fields.get("t_width", "0")) if q1 else 0.0;
+        length = atof(fields.get("t_length", "0")) if q1 else 0.0;
         if width == 0.0 {
             width = abs((up if flags & 4 else right).dot(size));
         }
@@ -61,7 +62,7 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             if flags & 4
             else right.scale(-width if flags & 2 else width);
         second = first.add(forward.scale(length));
-        hold_time = float(fields.get("wait", "5"));
+        hold_time = atof(fields.get("wait", "5"));
         if hold_time == 0.0 {
             hold_time = 5.0;
         }
@@ -103,7 +104,7 @@ def load_secret_doors(world: World, bsp: Bsp, collision: CollisionMap) {
             current=points[0],
             running=False,
             speed=50.0,
-            damage=int(float(fields.get("dmg", "0"))) or 2,
+            damage=int(atof(fields.get("dmg", "0"))) or 2,
             shootable=shootable,
             activation=Signal(entities=[index]),
             faces=list(range(record.first_face, record.first_face + record.face_count)),
