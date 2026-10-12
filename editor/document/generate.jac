@@ -14,10 +14,11 @@ import math;
 import from engine.math.vec3 { Vec3 }
 import from ..formats.map { MapItem, MapPatch }
 import from ..geometry.patch { points_from, places_from }
-import from ..geometry.brush { Side, brush_windings, windings_bounds, side_turned }
+import from ..geometry.brush { Side, Plane3, brush_windings, windings_bounds, side_turned }
 import from ..geometry.mapping { side_stretched, side_spun, side_like }
 import from .scene { read_vector, write_vector, side_moved, field_number }
-import from ..geometry.csg { carve_sides, joined_pieces }
+import from ..geometry.csg { carve_sides, joined_pieces, hollow_sides }
+import from ..geometry.shapes { arch_brushes }
 import from ..geometry.linear { Linear, linear_turn, linear_size, point_remapped, sides_remapped }
 
 """The keys that make a group a duplicator."""
@@ -378,6 +379,98 @@ def with_holes(items: list[MapItem]) -> list[MapItem] {
             }
         }
         result.append(MapItem(fields=read.fields, brushes=left));
+    }
+    return result;
+}
+
+# ----------------------------------------------------------------------
+# Makers: groups whose brushes are built as something made from them
+
+"""The fields that make a group a maker. Its brushes are kept in the
+document as they are and built as what the field says: `_hollow <t>` as
+shells of walls so thick, `_walls <t>` as the upright walls of those shells
+alone, `_arch <count> [thickness]` as an arch of so many blocks spanning
+each brush's box."""
+glob MAKER_KEYS: list[str] = ["_hollow", "_walls", "_arch"];
+
+"""The numbers a maker's field holds (none when it has no such field, or
+its first number is not more than nothing)."""
+def:priv maker_numbers(fields: dict[str, str], key: str) -> list[float] {
+    found: list[float] = [];
+    for word in fields.get(key, "").split() {
+        try {
+            found.append(float(word));
+        } except ValueError {
+            return [];
+        }
+    }
+    return found if len(found) > 0 and found[0] > 0.0 else [];
+}
+
+"""Whether an entity's fields make its brushes something else when built."""
+def makes(fields: dict[str, str]) -> bool {
+    for key in MAKER_KEYS {
+        if len(maker_numbers(fields, key)) > 0 {
+            return True;
+        }
+    }
+    return False;
+}
+
+"""What a maker builds of one brush. A brush the maker can make nothing of
+(walls that would meet in the middle) is built as it is."""
+def made_brushes(fields: dict[str, str], sides: list[Side]) -> list[list[Side]] {
+    shell = maker_numbers(fields, "_hollow");
+    if len(shell) > 0 {
+        walls = hollow_sides(sides, shell[0]);
+        return walls if len(walls) > 0 else [sides];
+    }
+    upright = maker_numbers(fields, "_walls");
+    if len(upright) > 0 {
+        # The brush with its upright sides moved in: carved out of it, the
+        # floor and the roof go too and the walls are left.
+        inner: list[Side] = [];
+        for side in sides {
+            if abs(side.plane.normal.z) > 0.7 {
+                inner.append(side);
+            } else {
+                inner.append(
+                    Side(
+                        plane=Plane3(normal=side.plane.normal, dist=side.plane.dist - upright[0]),
+                        material=side.material,
+                        mapping=side.mapping
+                    )
+                );
+            }
+        }
+        stood = carve_sides(sides, inner);
+        return stood if stood is not None and len(stood) > 0 else [sides];
+    }
+    curve = maker_numbers(fields, "_arch");
+    box = windings_bounds(brush_windings(sides));
+    if len(curve) > 0 and box is not None {
+        return arch_brushes(box[0], box[1], int(curve[0]), curve[1] if len(curve) > 1 and curve[1] > 0.0 else 16.0, sides[0].material);
+    }
+    return [sides];
+}
+
+"""A map with every maker's brushes as it builds them, and the makers'
+own fields left off what is built."""
+def with_makers(items: list[MapItem]) -> list[MapItem] {
+    result: list[MapItem] = [];
+    for read in items {
+        if not makes(read.fields) {
+            result.append(read);
+            continue;
+        }
+        built: list[list[Side]] = [];
+        for brush in read.brushes {
+            for piece in made_brushes(read.fields, brush) {
+                built.append(piece);
+            }
+        }
+        plain = {key: value for (key, value) in read.fields.items() if key not in MAKER_KEYS};
+        result.append(MapItem(fields=plain, brushes=built, patches=read.patches));
     }
     return result;
 }

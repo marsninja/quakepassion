@@ -1068,6 +1068,17 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   each picked point. `ed_skin import <game>:<file> [n]` takes a picture
   out of a game's archives as the skin to paint on: a PCX, a WAL, a plain
   TGA, or the n-th skin a Quake model carries inside it.
+- **Makers** (`editor/tools/makers.jac`, built in
+  `editor/document/generate.jac`): a group whose brushes stay in the
+  document as they are and are built as something made from them, as a
+  digger's are cut out. `ed_maker hollow <thickness>` builds each as a
+  shell of walls, `ed_maker walls <thickness>` as its upright walls
+  alone (a room open above and below), and `ed_maker arch <count>
+  [thickness]` as an arch of so many blocks spanning its box; `ed_maker
+  off` builds them plain again and `ed_maker` lists the makers. Selected
+  brushes that are in no group are made one. Move or size the brush and
+  what is built follows; a digger cuts through a made wall as through
+  any other.
 - **A project packed to give away** (`editor/tools/packer.jac`):
   `ed_pack project <out.pak|out.pk3>` packs the open project's scenes
   and, of everything else, only what they use: the prefabs they link
@@ -1539,6 +1550,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_makers_tests.jac`: fields that make a group a maker; a box
+  built as a shell of six slabs, as four walls and as an arch of six
+  blocks; a map built with its makers' brushes made and the rest as it
+  was.
 - `tests/studio_texwrite_tests.jac`: a picture halved by the mean of each
   four texels; a WAL that reads back as the texture it was; a Quake WAD
   whose textures are found by name with their four sizes; sides that are

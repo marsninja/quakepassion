@@ -93,7 +93,7 @@ impl Studio.place_fragment(scene: Scene, found: list[MapItem], label: str, group
 impl Studio.expanded(scene: Scene) -> Scene {
     linked = False;
     for item in scene.items() {
-        if item.classname() == "misc_prefab" or duplicates(item.fields) or digs(item.fields) {
+        if item.classname() == "misc_prefab" or duplicates(item.fields) or digs(item.fields) or makes(item.fields) {
             linked = True;
         }
     }
@@ -101,7 +101,8 @@ impl Studio.expanded(scene: Scene) -> Scene {
         return scene;
     }
     plain: list[MapItem] = [];
-    for read in with_holes(with_images(scene_map(scene)) if self.images_shown else scene_map(scene)) {
+    # Makers' brushes are made before the diggers cut: a hole goes through a made wall too.
+    for read in with_holes(with_makers(with_images(scene_map(scene)) if self.images_shown else scene_map(scene))) {
         if read.fields.get("classname", "") != "misc_prefab" {
             plain.append(read);
         }

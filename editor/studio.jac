@@ -157,6 +157,8 @@ import from .document.generate {
     with_images,
     DUPLICATOR_KEYS,
     with_holes,
+    with_makers,
+    makes,
     digs,
     DIGGER_KEY,
     prefab_overridden,
