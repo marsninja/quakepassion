@@ -414,9 +414,11 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
             arm = self.camera.span * 0.08
                 if self.camera.span > 0.0
                 else max(24.0, self.camera.eye.sub(heart).length() * 0.12);
-            found.append((900, heart.add(Vec3(x=arm))));
-            found.append((901, heart.add(Vec3(y=arm))));
-            found.append((902, heart.add(Vec3(z=arm))));
+            # Along the world's axes, the selection's own, or the view's.
+            ways = self.gizmo_basis(scene);
+            found.append((900, heart.add(ways[0].scale(arm))));
+            found.append((901, heart.add(ways[1].scale(arm))));
+            found.append((902, heart.add(ways[2].scale(arm))));
             for mark in self.mark_handles(scene) {
                 found.append(mark);
             }
@@ -591,7 +593,7 @@ impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
         if hub is None {
             return;
         }
-        axis = Vec3(x=1.0) if self.resize_side == 900 else (Vec3(y=1.0) if self.resize_side == 901 else Vec3(z=1.0));
+        axis = self.gizmo_basis(scene)[self.resize_side - 900];
         view = self.view_area();
         from_at = self.camera.project(view, hub);
         to_at = self.camera.project(view, hub.add(axis.scale(64.0)));

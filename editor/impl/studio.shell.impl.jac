@@ -513,6 +513,7 @@ impl Studio.settings_lines -> list[str] {
         lines.append("ed_recipe " + kept_recipe + " " + quote_command_word(self.recipes[kept_recipe]));
     }
     lines.append("ed_autosave every " + str(int(self.autosave_every)));
+    lines.append("ed_axes " + self.gizmo_axes);
     for link in sorted(self.tex_links.keys()) {
         lines.append("ed_texlink " + link + " " + quote_command_word(self.tex_links[link]));
     }

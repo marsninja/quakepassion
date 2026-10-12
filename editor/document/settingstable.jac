@@ -35,6 +35,7 @@ glob SETTING_TABLE: list[str] = [
     "studio_texlock|general|Materials go with their faces|ed_texlock %|on,off|Whether a move, turn or stretch carries the materials along",
     "studio_autocaulk|general|Shapes come caulked|ed_autocaulk %|on,off|Whether a new shape's hidden sides are given the material no one sees",
     "studio_flyover|general|Hints beside the pointer|ed_flyover %|on,off|Whether what the pointer rests on says what it is",
+    "studio_axes|general|Move arrows run along|ed_axes %|world,local,view|The world's axes, the selection's own (a brush's sides, the way an entity faces) or across, into and up the view",
     "studio_tools|display|Row of tools|ed_bar tools %|show,hide|The row of buttons under the menus",
     "studio_tools_place|display|Tools sit|ed_bar tools %|above,below|Over the views or under them",
     "studio_status|display|Status bar|ed_bar status %|show,hide|The line along the foot of the window",

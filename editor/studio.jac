@@ -90,6 +90,7 @@ import from .assets.shaders {
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
 import from .assets.moving { warps_name }
+import from .geometry.axes { world_axes, brush_axes, facing_axes, kept_to_axis }
 import from .document.thumbs { sketch_edges, sketch }
 import from .document.chords { chord_parts, bind_chord, chord_command, bound_chords }
 import from .document.settingstable {
@@ -511,6 +512,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "carry the selection through a change of the world: what the x, y and z axes become, about a point"
     ),
     ("ed_pivot", "ed_pivot [x y z | middle | clear]", "what the selection turns and stretches about; a group keeps its own"),
+    (
+        "ed_axes",
+        "ed_axes [world|local|view] | lock <x|y|z|off>",
+        "what the move arrows run along: the world's axes, the selection's own or the view's; and keep a dragged selection to one of them"
+    ),
     ("ed_anglesnap", "ed_anglesnap [degrees]", "what a dragged turn snaps to"),
     ("ed_inflate", "ed_inflate <units|up|down>", "push every side of the selected brushes out (or in) by a distance"),
     ("ed_texlock", "ed_texlock [on|off]", "whether materials go with the faces a move, turn or stretch carries"),
@@ -1081,6 +1087,10 @@ obj Studio(Workbench) {
         # Which handles a selection shows (move, turn or size), how far a
         # dragged one has turned or stretched it, and what a turn snaps to.
         gizmo: str = "move",
+        # What the move arrows run along (world, local, view), and the one
+        # of them a dragged selection is kept to (-1 for none).
+        gizmo_axes: str = "world",
+        axis_lock: int = -1,
         # What a drag of the box handle asks so far, and whether Shift is held on it.
         box_pull: BoxDrag = BoxDrag(),
         box_said: str = "",
@@ -3034,6 +3044,11 @@ obj Studio(Workbench) {
         start = self.on_view_plane(self.press_x, self.press_y, self.move_from);
         now = self.on_view_plane(x, y, self.move_from);
         shift = now.sub(start);
+        if self.axis_lock >= 0 and self.scene is not None {
+            # Kept to one of the axes the handles run along.
+            self.move_by = kept_to_axis(shift, self.gizmo_basis(self.scene)[self.axis_lock], 1.0 if free else self.grid);
+            return;
+        }
         if one_axis {
             if abs(shift.x) >= abs(shift.y) and abs(shift.x) >= abs(shift.z) {
                 shift = Vec3(x=shift.x);
@@ -3761,6 +3776,9 @@ obj Studio(Workbench) {
     (910-912), or a box along each axis and one for all three (920-923), and
     the pivot itself (930)."""
     def transform_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    """The three ways the move arrows run now: the world's axes, the
+    selection's own, or across, into and up the view."""
+    def gizmo_basis(scene: Scene) -> list[Vec3];
     def draw_transform_handles(scene: Scene, area: Rect);
     def drag_transform(scene: Scene, x: int, y: int, free: bool);
     """Where a point goes under the turn or stretch being dragged."""
@@ -4624,6 +4642,8 @@ obj Studio(Workbench) {
                     if self.pivot_set
                     else "none"
                 )
+                + (" axes=" + self.gizmo_axes if self.gizmo_axes != "world" else "")
+                + (" lock=" + "xyz"[self.axis_lock] if self.axis_lock >= 0 else "")
         ];
         for item in scene.selection() {
             pairs = " ".join([key + "=" + value for (key, value) in item.fields.items()]);

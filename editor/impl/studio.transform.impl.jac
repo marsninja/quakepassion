@@ -403,6 +403,46 @@ impl Studio.transform_command(scene: Scene, args: list[str]) -> bool {
         self.seen_revision = -1;
         return True;
     }
+    if name == "ed_axes" {
+        word = args[1].lower() if len(args) > 1 else "";
+        if word == "lock" {
+            which = args[2].lower() if len(args) > 2 else "";
+            if which not in ["x", "y", "z", "off"] {
+                self.say("ed_axes lock <x|y|z|off>: keep a dragged selection to one of the axes its handles run along");
+                return True;
+            }
+            self.axis_lock = ["x", "y", "z"].index(which) if which != "off" else -1;
+            self.say(
+                "A dragged selection keeps to " + which + " of the " + self.gizmo_axes + " axes"
+                if self.axis_lock >= 0
+                else "A dragged selection moves freely"
+            );
+            return True;
+        }
+        kinds = ["world", "local", "view"];
+        if word and word not in kinds {
+            self.say("ed_axes [world|local|view] | lock <x|y|z|off>");
+            return True;
+        }
+        self.gizmo_axes = word if word else kinds[(kinds.index(self.gizmo_axes) + 1) % 3];
+        self.keep_settings();
+        self.seen_revision = -1;
+        ways = self.gizmo_basis(scene);
+        print(
+            "studio: axes " + self.gizmo_axes + " " + " | ".join(
+                [str(round(way.x, 3)) + " " + str(round(way.y, 3)) + " " + str(round(way.z, 3)) for way in ways]
+            )
+        );
+        self.say(
+            "The arrows run along the world's axes" if self.gizmo_axes == "world"
+            else (
+                "The arrows run along the selection's own axes (one brush's sides, or the way one entity faces)"
+                if self.gizmo_axes == "local"
+                else "The arrows run across, into and up the view"
+            )
+        );
+        return True;
+    }
     if name == "ed_pivot" {
         if len(args) == 1 {
             current = self.pivot_for(scene);
@@ -493,4 +533,29 @@ impl Studio.transform_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.gizmo_basis(scene: Scene) -> list[Vec3] {
+    if self.gizmo_axes == "view" {
+        return [self.camera.right(), self.camera.forward(), self.camera.up()];
+    }
+    if self.gizmo_axes == "local" {
+        entities = scene.tops(scene.selection());
+        brushes = scene.selected_solids();
+        if len(brushes) == 1 and len(entities) == 0 {
+            return brush_axes(brushes[0].sides);
+        }
+        if len(entities) == 1 and len(brushes) == 0 {
+            owned = scene.solids_of(entities[0]);
+            if len(owned) == 1 {
+                return brush_axes(owned[0].sides);
+            }
+            try {
+                return facing_axes(float(entities[0].fields.get("angle", "0")));
+            } except ValueError {
+                return world_axes();
+            }
+        }
+    }
+    return world_axes();
 }

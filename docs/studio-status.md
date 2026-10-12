@@ -867,6 +867,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   edited, and the shader script. A click goes to it (`ed_tab
   <doc:game/name|model|shader>`), and the x at the end closes the one
   shown.
+- **What the move arrows run along**: `ed_axes world|local|view` (alone,
+  it goes to the next; it is in Settings > General and kept between
+  sessions). Local is the selection's own: one brush's axes from its
+  sides, so a wall turned thirty degrees is pushed along itself, or the
+  way one entity faces; anything else has the world's. View is across,
+  into and up the view. A move along an arrow goes in grid steps along
+  that arrow. `ed_axes lock <x|y|z|off>` keeps a selection dragged by
+  hand to one of those axes. The rings that turn and the boxes that size
+  still go by the world's axes.
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged
