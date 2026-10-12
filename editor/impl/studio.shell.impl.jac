@@ -430,6 +430,23 @@ impl Studio.keep_settings {
     lines.append("ed_outside " + self.outside);
     lines.append("ed_log panel " + ("on" if self.log_panel else "off") + " " + str(self.log_rows));
     lines.append("ed_flyover " + ("on" if self.flyovers else "off"));
+    lines.append("ed_theme " + self.theme_name);
+    lines.append("ed_bar tools " + ("show" if self.tools_shown else "hide"));
+    lines.append("ed_bar tools " + ("below" if self.tools_below else "above"));
+    lines.append("ed_bar status " + ("show" if self.status_shown else "hide"));
+    lines.append("ed_shapebox at " + str(self.shape_at[0]) + " " + str(self.shape_at[1]));
+    lines.append("ed_shapebox kind " + self.shape_kind);
+    for held_key in ["w", "d", "h", "count", "thick"] {
+        if self.shape_sizes.get(held_key, "") {
+            lines.append("ed_shapebox set " + held_key + " " + self.shape_sizes[held_key]);
+        }
+    }
+    if self.shape_box is not None {
+        lines.append("ed_shapebox open");
+    }
+    for float_line in self.float_settings() {
+        lines.append(float_line);
+    }
     for tool in self.tools {
         for tool_line in tool.settings_lines(self.host()) {
             lines.append(tool_line);

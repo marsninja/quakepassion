@@ -758,6 +758,21 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   beside the plan; beside the plan and the front view; all four in a
   square; or the 3D view beside the three axis views in a column. The
   layout is kept between sessions.
+- **Colours, bars and windows that are kept**: `ed_theme light` gives the
+  studio light panels and dark words for a bright room, `ed_theme dark`
+  its own again. `ed_bar tools hide` and `ed_bar status hide` take the
+  row of tools and the status bar away (`show` brings them back), and
+  `ed_bar tools below` puts the tools under the views. The floating 3D
+  windows are opened again in the next session where they were, at the
+  size they were and looking where they looked. All of it is in the
+  Window menu and kept between sessions.
+- **A dialog to build a shape**: Build a shape... in the Brush menu
+  (`ed_shapebox`) opens a window that floats over the views with the
+  kind of shape in a dropdown and its width, depth, height, count and
+  thickness in fields (Tab goes from one to the next); its button builds
+  the shape where the camera looks. The window is moved by its bar, and
+  where it was left, whether it was open and what its fields held are
+  kept between sessions.
 - **Tabs for the open documents**: with more than one document open,
   each has a tab beside the menu bar (a star when it has changes not
   saved; the one shown is lit): the maps and scenes, the model being
@@ -1336,7 +1351,7 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_floater_tests.jac`: a floating window laying out what is
   inside it, taking the pointer only where it is, moved by its bar, sized
   by its corner, kept on the stage or within bounds, closed by its
-  cross, and painting nothing inside; a rectangle with others cut out.
+  cross, and painting nothing inside; a rectangle with others cut out; kept within its room once there is one, and left as put before; the light colours against the dark.
 - `tests/ui_tests.jac` (also): a menu too long for the window laid out in
   columns, an entry of a later column clicked.
 - `tests/ui_tests.jac`: layout, picking, clicks, text editing, the tree,

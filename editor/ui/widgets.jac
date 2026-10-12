@@ -2520,6 +2520,10 @@ node Floater(Widget) {
     smaller than it may be."""
     def settle(stage: Stage) {
         room = self.bounds if self.bounds.w > 0 and self.bounds.h > 0 else Rect(x=0, y=0, w=stage.width, h=stage.height);
+        if room.w <= 0 or room.h <= 0 {
+            # Nothing is laid out yet to keep it within: it stays as it was put.
+            return;
+        }
         wide = max(self.least_wide, min(self.area.w, room.w));
         tall = max(self.least_tall, min(self.area.h, room.h));
         self.area = Rect(

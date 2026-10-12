@@ -147,6 +147,29 @@ obj Theme {
         bar: int = 10;
 }
 
+"""The studio's colours for a bright room: the same metrics, light panels
+and dark words."""
+def light_theme -> Theme {
+    return Theme(
+        window=ink(0xd9d5cd),
+        panel=ink(0xebe7df),
+        raised=ink(0xf6f3ec),
+        header=ink(0xcfcac0),
+        border=ink(0xb0a99c),
+        field=ink(0xfbf9f4),
+        text=ink(0x22201c),
+        dim=ink(0x5c564c),
+        faint=ink(0x8a8377),
+        accent=ink(0xd05a00),
+        on_accent=ink(0xfff6ec),
+        hover=ink(0xe0dbd0),
+        press=ink(0xcdc6b8),
+        select=ink(0xf3c9a0),
+        warn=ink(0xc0272d),
+        good=ink(0x1f8a57)
+    );
+}
+
 """A drawing surface."""
 obj Canvas {
     has theme: Theme = Theme(),

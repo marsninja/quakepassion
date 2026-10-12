@@ -35,7 +35,7 @@ import from engine.formats.animated { AnimatedModel }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
 }
-import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside }
+import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside, Theme, light_theme }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
@@ -395,6 +395,9 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_dev", "ed_dev [on|off]", "show frame and build times and counts in the status bar"),
     ("ed_docs", "ed_docs", "list the open documents"),
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
+    ("ed_theme", "ed_theme [dark|light]", "the studio's colours: dark, or light for a bright room"),
+    ("ed_bar", "ed_bar <tools|status> [show|hide] | tools <above|below>", "show or hide the row of tools and the status bar, and put the tools over or under the views"),
+    ("ed_shapebox", "ed_shapebox [open|close|kind <kind>|set <w|d|h|count|thick> <value>|build|at <x> <y>]", "the shape dialog: choose a kind of shape and its sizes in a window, and build it"),
     ("ed_tab", "ed_tab <doc:game/name|model|shader>", "go to an open document by its tab: a map or scene, the model being edited, or the shader script"),
     ("ed_pickfile", "ed_pickfile <noise|music|model|model2>", "choose the selected entities' sound or model from the files of their game, in a list that is typed in to find one"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
@@ -723,6 +726,10 @@ obj StudioUi {
         asset_box: Box,
         asset_form: Box,
         doc_strip: Box,
+        top: Box,
+        bar_row: Box,
+        tools_row: Box,
+        status_row: Box,
         model_view: ViewArea,
         frame_list: TreeView,
         logic: GraphView,
@@ -821,6 +828,20 @@ obj Studio(Workbench) {
         # one document is open), and what they were last filled for.
         tabs_on: bool = False,
         tabs_for: str = "",
+        # The colours ("dark" or "light"); whether the row of tools and the
+        # status bar are shown, and whether the tools are under the views.
+        theme_name: str = "dark",
+        tools_shown: bool = True,
+        status_shown: bool = True,
+        tools_below: bool = False,
+        # What the floating windows were when the settings were last kept.
+        floats_kept: str = "",
+        # The shape dialog: its window while it is open, where it was left,
+        # and what its fields hold.
+        shape_box: Floater | None = None,
+        shape_at: list[int] = [360, 120],
+        shape_kind: str = "stairs",
+        shape_sizes: dict[str, str] = {"w": "128", "d": "128", "h": "96", "count": "", "thick": ""},
         # Whether hints fly beside the pointer, and the field a name is
         # being typed in over a row of the scene list.
         flyovers: bool = True,
@@ -1594,7 +1615,9 @@ obj Studio(Workbench) {
                     MenuItem(text="Handles on the picked face for its material", command="ed_texhandles"),
                     MenuItem(rule=True),
                     MenuItem(text="Lay the picked faces through whole points", command="ed_integral"),
-                    MenuItem(text="Tilt the picked faces to whole angles", command="ed_faceangle")
+                    MenuItem(text="Tilt the picked faces to whole angles", command="ed_faceangle"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Build a shape...", command="ed_shapebox open")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -1668,7 +1691,12 @@ obj Studio(Workbench) {
                     MenuItem(text="Another 3D window, in outlines", command="ed_window new outlines"),
                     MenuItem(text="Close the floating windows", command="ed_window close all"),
                     MenuItem(rule=True),
-                    MenuItem(text="Log panel along the foot of the views", command="ed_log panel")
+                    MenuItem(text="Log panel along the foot of the views", command="ed_log panel"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Light or dark colours", command="ed_theme"),
+                    MenuItem(text="Show or hide the row of tools", command="ed_bar tools"),
+                    MenuItem(text="Tools over or under the views", command="ed_bar tools flip"),
+                    MenuItem(text="Show or hide the status bar", command="ed_bar status")
                 ]
             ]
         );
@@ -1918,6 +1946,10 @@ obj Studio(Workbench) {
             asset_box=asset_box,
             asset_form=asset_form,
             doc_strip=doc_strip,
+            top=top,
+            bar_row=bar_row,
+            tools_row=tools,
+            status_row=status,
             model_view=model_view,
             frame_list=TreeView(
                 pick="ed_frame",
@@ -2200,6 +2232,7 @@ obj Studio(Workbench) {
             self.list_library(ui);
         }
         self.keep_tabs(ui);
+        self.keep_floats();
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
@@ -2887,6 +2920,17 @@ obj Studio(Workbench) {
     """Go to an open document by its tab, or choose a field's file from the
     game's own."""
     def tabs_command(scene: Scene, args: list[str]) -> bool;
+    """Put the menu bar, the tools, the views and the status bar in the
+    order now set, leaving out what is hidden."""
+    def place_bars;
+    """The floating windows as the commands that open them again."""
+    def float_settings -> list[str];
+    """Keep the settings when a floating window has been moved, sized or flown."""
+    def keep_floats;
+    """Open the shape dialog, or fill it again from what its fields hold."""
+    def show_shape_box;
+    """The colours, the bars, and the shape dialog."""
+    def looks_command(scene: Scene, args: list[str]) -> bool;
     """What the command table says of a command: its usage and what it does."""
     def help_lines(asked: str) -> list[str];
     """Help for what the pointer is on or for a command by name, hints
@@ -4078,7 +4122,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.plugin_command(scene, args) and not self.tabs_command(scene, args)
+        } elif not self.plugin_command(scene, args) and not self.looks_command(scene, args)
+            and not self.tabs_command(scene, args)
             and not self.help_command(scene, args)
             and not self.layouts_command(scene, args)
             and not self.uses_command(scene, args)
@@ -4427,6 +4472,14 @@ obj Studio(Workbench) {
             lines.append(
                 "studio: split x=" + str(self.split_x) + " y=" + str(self.split_y) + " sides=" + ("swapped" if self.sides_swapped else "usual")
                     + " kept=" + ",".join(sorted(self.kept_layouts.keys()))
+            );
+        }
+        if self.theme_name != "dark" or not self.tools_shown or not self.status_shown or self.tools_below
+            or self.shape_box is not None {
+            lines.append(
+                "studio: looks theme=" + self.theme_name + " tools=" + ("below" if self.tools_below else "above")
+                    + ("" if self.tools_shown else ",hidden") + " status=" + ("shown" if self.status_shown else "hidden")
+                    + " shapebox=" + (self.shape_kind if self.shape_box is not None else "shut")
             );
         }
         if self.tabs_on {
