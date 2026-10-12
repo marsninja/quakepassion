@@ -1916,6 +1916,12 @@ node Scene {
     """Every side linked to a side, through however many links: each brush
     still in the document, with the side of it that is still in the plane."""
     def linked_sides(solid: Solid, index: int) -> list[FacePick];
+    """Carry what a step did to sides' materials onto the sides linked to
+    them, so that faces that are linked share one material and one way of
+    laying it: each side the step changed, its links given the same edit
+    (or, with `material`, that material). Added to the step; each linked
+    side once."""
+    def share_linked(step: Step, change: FaceEdit | None, material: str = "");
     """Link a side of one brush to a side of another. They must lie in one
     plane. False when they do not, or are linked already."""
     def link_sides(first: Solid, index: int, second: Solid, other: int) -> bool;

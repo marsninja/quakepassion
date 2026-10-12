@@ -58,6 +58,8 @@ impl Scene.select_face(solid: Solid, index: int, add: bool = False) {
 impl Scene.reface(change: FaceEdit, label: str) -> bool {
     step = Step(label=label);
     self spawn Reface(change=change, step=step);
+    # Faces linked to those changed are changed with them.
+    self.share_linked(step, change);
     return self.commit(step);
 }
 

@@ -124,6 +124,10 @@ impl Studio.dragged_point(point: Vec3, middle: Vec3) -> Vec3 {
 
 impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
     held = self.resize_side;
+    if held >= 970 and held <= 977 {
+        self.drag_depth(x, y, free);
+        return;
+    }
     if held >= 940 and held <= 942 {
         self.drag_mark(scene, x, y, free);
         return;
@@ -201,6 +205,9 @@ impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
 
 impl Studio.transform_words(scene: Scene) -> str {
     held = self.resize_side;
+    if held >= 970 and held <= 977 {
+        return self.depth_order();
+    }
     if held >= 940 and held <= 942 {
         # The way it faces, how far it lights, or how wide its cone is, as the drag left it.
         if self.turn_by < 0.0 {

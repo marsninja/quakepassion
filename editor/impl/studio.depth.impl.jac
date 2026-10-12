@@ -52,7 +52,7 @@ impl Studio.draw_depth_lines(view: SceneView) {
         return;
     }
     ahead = forward_from(view.yaw, view.pitch);
-    for port in self.ports[1:self.showing()] {
+    for (number, port) in enumerate(self.ports[1:self.showing()]) {
         held = port.camera;
         if not held.bounded or held.span <= 0.0 {
             continue;
@@ -66,10 +66,83 @@ impl Studio.draw_depth_lines(view: SceneView) {
         along = ahead.cross(axis).normalized();
         base = view.eye.sub(axis.scale(view.eye.dot(axis)));
         reach = view.span * 4.0;
-        for edge in [held.depth_low, held.depth_high] {
-            spot = base.add(axis.scale(edge));
-            wire_line(spot.sub(along.scale(reach)), spot.add(along.scale(reach)), ink(0xe5484d));
+        for (side, edge) in enumerate([held.depth_low, held.depth_high]) {
+            pulled = self.resizing and self.resize_side == 970 + (number + 1) * 2 + side;
+            spot = base.add(axis.scale(self.resize_by if pulled else edge));
+            wire_line(spot.sub(along.scale(reach)), spot.add(along.scale(reach)), ink(0xff7a18) if pulled else ink(0xe5484d));
         }
+    }
+}
+
+impl Studio.depth_knobs -> list[tuple[int, Vec3]] {
+    found: list[tuple[int, Vec3]] = [];
+    lens = self.camera;
+    if lens.span <= 0.0 {
+        return found;
+    }
+    ahead = lens.forward();
+    for number in range(1, min(4, self.showing())) {
+        held = self.ports[number].camera;
+        if number == self.port_now or not held.bounded or held.span <= 0.0 {
+            continue;
+        }
+        axis = held.depth_axis();
+        if abs(axis.dot(ahead)) > 0.99 {
+            continue;
+        }
+        # A knob on each red line, a third of the way from the view's middle.
+        along = ahead.cross(axis).normalized();
+        base = lens.eye.sub(axis.scale(lens.eye.dot(axis))).add(along.scale(lens.span * 0.3));
+        for (side, edge) in enumerate([held.depth_low, held.depth_high]) {
+            index = 970 + number * 2 + side;
+            pulled = self.resizing and self.resize_side == index;
+            found.append((index, base.add(axis.scale(self.resize_by if pulled else edge))));
+        }
+    }
+    return found;
+}
+
+impl Studio.drag_depth(x: int, y: int, free: bool) {
+    number = (self.resize_side - 970) // 2;
+    if number < 1 or number >= len(self.ports) {
+        return;
+    }
+    held = self.ports[number].camera;
+    axis = held.depth_axis();
+    side = (self.resize_side - 970) % 2;
+    at = axis.scale(held.depth_low if side == 0 else held.depth_high);
+    # Where the pointer is, in the plane of this view through the line.
+    pointed = self.on_view_plane(x, y, self.camera.eye.sub(axis.scale(self.camera.eye.dot(axis))).add(at));
+    notch = 1.0 if free else max(1.0, self.grid);
+    self.resize_by = float(round(pointed.dot(axis) / notch)) * notch;
+}
+
+impl Studio.depth_order -> str {
+    number = (self.resize_side - 970) // 2;
+    if number < 1 or number >= len(self.ports) {
+        return "";
+    }
+    held = self.ports[number].camera;
+    side = (self.resize_side - 970) % 2;
+    low = self.resize_by if side == 0 else held.depth_low;
+    high = self.resize_by if side == 1 else held.depth_high;
+    if abs((held.depth_low if side == 0 else held.depth_high) - self.resize_by) < 0.001 or high - low < 1.0 {
+        # Not moved, or moved past the other edge.
+        return "";
+    }
+    return "ed_depth " + self.ports[number].title.split()[0].lower() + " " + str(int(round(low))) + " " + str(int(round(high)));
+}
+
+impl Studio.draw_depth_knobs(area: Rect) {
+    canvas = self.canvas;
+    for (index, spot) in self.depth_knobs() {
+        at = self.camera.project(area, spot);
+        if at is None {
+            continue;
+        }
+        knob = Rect(x=at[0] - 5, y=at[1] - 5, w=11, h=11);
+        canvas.fill(knob, canvas.theme.accent if self.resizing and self.resize_side == index else ink(0xe5484d));
+        canvas.outline(knob, canvas.theme.header);
     }
 }
 

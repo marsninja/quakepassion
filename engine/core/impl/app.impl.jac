@@ -146,6 +146,10 @@ impl App.render_bench() {
             view.x, view.y, view.width, view.height, view.eye, view.yaw, view.pitch, view.span
         );
         if not view.bare {
+            if view.far > view.near {
+                # The level as far as the view's band of depth reaches.
+                self.renderer.view_depth(view.near, view.far);
+            }
             if view.wire {
                 self.renderer.wire(True);
             }
@@ -167,6 +171,9 @@ impl App.render_bench() {
             );
             if view.wire {
                 self.renderer.wire(False);
+            }
+            if view.far > view.near {
+                self.renderer.view_depth(0.0, 0.0);
             }
         }
         self.workbench.draw_scene(view);

@@ -209,6 +209,7 @@ import from .document.scene {
     Step,
     FieldChange,
     read_vector,
+    write_vector,
     scene_of,
     scene_map,
     scene_from_map,
@@ -230,7 +231,7 @@ import from .document.overlays { brush_kind, kind_tint }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
-import from .camera { EditCamera, ray_enters_box, axis_camera }
+import from .camera { EditCamera, ray_enters_box, axis_camera, depth_cut, depth_of }
 import from engine.world.signals { Signal, Fire, HasSignal }
 import from engine.world.doors { Door, HasDoor }
 import from engine.world.pickups { Pickup, HasPickup }
@@ -1101,6 +1102,12 @@ obj Studio(Workbench) {
         moved: bool = False,
         move_from: Vec3 = Vec3(),
         move_by: Vec3 = Vec3(),
+        # Lights dragged: the level is lit where they would be left, coarsely,
+        # while the drag goes on (by how much, when it was last lit so, and
+        # whether the level shows such a light now).
+        preview_shift: Vec3 = Vec3(),
+        preview_at: float = 0.0,
+        previewed: bool = False,
         press_x: int = 0,
         press_y: int = 0,
         # Scenes of brushes: where their materials come from, what the scene
@@ -3407,6 +3414,9 @@ obj Studio(Workbench) {
                 continue;
             }
             edges = self.wire_main if index == 0 else self.wire_axis;
+            # A view held to a band of depth shows the level only within it
+            # (unless what lies outside is to be shown whole).
+            band = depth_cut(port.camera) if self.outside != "whole" else [0.0, 0.0];
             seen.append(
                 SceneView(
                     x=area.x,
@@ -3421,7 +3431,9 @@ obj Studio(Workbench) {
                     # A scene's own brushes are drawn by their outlines; a
                     # shipped map has only its triangles to show.
                     wire=edges and not built,
-                    bare=edges and built
+                    bare=edges and built,
+                    near=band[0],
+                    far=band[1]
                 )
             );
         }
@@ -3676,6 +3688,7 @@ obj Studio(Workbench) {
             );
         }
         self.draw_handles(scene, area);
+        self.draw_depth_knobs(area);
         stage = self.stage;
         if self.lining and stage is not None and self.port_now == self.box_port {
             if self.mode == "clip" {
@@ -3745,6 +3758,9 @@ obj Studio(Workbench) {
     def draw_handles(scene: Scene, area: Rect);
     """Start dragging a side handle under the pointer."""
     def grab_handle(scene: Scene, x: int, y: int) -> bool;
+    """While only lights are dragged, light the level as they would be left,
+    at most four times a second and coarsely. True while that is so."""
+    def preview_light(scene: Scene) -> bool;
     def drag_handle(scene: Scene, x: int, y: int, free: bool);
     """Add a brush of a shape ("box", "cylinder" or "wedge") where the
     camera looks, resting on what is beneath it."""
@@ -4131,6 +4147,13 @@ obj Studio(Workbench) {
     def unpickable(low: Vec3, high: Vec3) -> bool;
     """The edges of the other views' bands of depth, across this one."""
     def draw_depth_lines(view: SceneView);
+    """Knobs on the red lines, to drag an edge of another view's band
+    (970 + the view's number * 2, and one more for the far edge); a drag of
+    one; the command it ends in; and the knobs drawn."""
+    def depth_knobs -> list[tuple[int, Vec3]];
+    def drag_depth(x: int, y: int, free: bool);
+    def depth_order -> str;
+    def draw_depth_knobs(area: Rect);
     """Where an oblique view's compass is: its middle and its radius."""
     def compass_at(area: Rect) -> list[int];
     def draw_compass(area: Rect);

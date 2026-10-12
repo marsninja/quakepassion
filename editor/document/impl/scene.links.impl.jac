@@ -292,3 +292,55 @@ impl Scene.merge_corners(solid: Solid, first: Vec3, second: Vec3) -> bool {
     }
     return self.reshape(solid, sides, "Merge corners");
 }
+
+impl Scene.share_linked(step: Step, change: FaceEdit | None, material: str = "") {
+    # What the step left each brush with, and which of their sides it touched.
+    swaps: dict[int, SidesChange] = {};
+    done: list[str] = [];
+    touched: list[FacePick] = [];
+    for made in step.changes {
+        if not isinstance(made, SidesChange) {
+            continue;
+        }
+        swaps[made.solid.serial] = made;
+        for index in range(min(len(made.before), len(made.after))) {
+            if made.before[index] is not made.after[index] {
+                touched.append(FacePick(solid=made.solid, side=index));
+                done.append(str(made.solid.serial) + ":" + str(index));
+            }
+        }
+    }
+    for pick in touched {
+        for tied in self.linked_sides(pick.solid, pick.side) {
+            key = str(tied.solid.serial) + ":" + str(tied.side);
+            if key in done or not tied.solid.held {
+                continue;
+            }
+            done.append(key);
+            old = tied.solid.sides[tied.side];
+            fresh = old;
+            if change is not None {
+                fresh = change.apply(old, tied.solid.outlines()[tied.side]);
+            } elif material and old.material != material {
+                fresh = side_like(old, material);
+            }
+            if fresh is old {
+                continue;
+            }
+            held = swaps.get(tied.solid.serial);
+            if held is None {
+                after = list(tied.solid.sides);
+                after[tied.side] = fresh;
+                held = SidesChange(solid=tied.solid, before=tied.solid.sides, after=after);
+                swaps[tied.solid.serial] = held;
+                held.redo();
+                step.changes.append(held);
+            } else {
+                after = list(held.after);
+                after[tied.side] = fresh;
+                held.after = after;
+                held.redo();
+            }
+        }
+    }
+}

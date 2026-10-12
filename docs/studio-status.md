@@ -433,7 +433,10 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   way. Linked sides are kept in one plane: pushing one (a side handle, or
   `ed_push`) pushes every side tied to it, through however many links, as
   one step, and not at all if any brush would be left with nothing
-  inside. `ed_facelink clear` takes the picked faces, or every side of
+  inside. Linked sides share one material too: a material given to one
+  of them, by Alt and a drag or by the Faces tools, and a change of how
+  it lies (a shift, a turn, a fit), goes to every side tied to it, in the
+  same step. `ed_facelink clear` takes the picked faces, or every side of
   the selected brushes, out of their links. `ed_carve link` carves and
   links the faces the cut divided between the pieces it leaves, and
   `ed_glue face link` puts the picked face in the tagged plane and links
@@ -682,9 +685,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   lies wholly outside a view's band is greyed there, left out and no
   longer clicked there, or drawn as ever: `ed_outside grey|hide|whole`
   (kept in the settings; with no word it steps through them). The edges
-  of each band are drawn as red lines across the other axis views. The
-  textured picture of the level in an axis view is not cut to the band:
-  it is the outlines, the entities' boxes and what a click finds that are.
+  of each band are drawn as red lines across the other axis views, each
+  with a red knob: dragged, it moves that edge of the band (one step,
+  `ed_depth` with the new numbers). The level itself is cut to the band
+  in the view held to it (unless `ed_outside whole`): the engine draws
+  only what lies between the band's edges, so a floor or a ceiling
+  outside it is gone from the picture, not only from the outlines.
 - **Oblique views**: Alt and a right drag turns an axis view off its
   axis, and `ed_oblique [top|front|side] <yaw> <pitch>` sets how it looks
   in degrees. A view so turned has no grid; a compass in its corner shows
@@ -1199,7 +1205,9 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   light's `light` is its reach and `_color` its colour; moving one builds
   the level again. Where no light reaches, the world's `_minlight` (a
   quarter of full when it names none) keeps the level readable. `ed_light off` (View > Flat light) shows the flat shade
-  a scene without lights has. A light with a `target` that names an
+  a scene without lights has. While lights alone are dragged the level
+  is lit, coarsely and a few times a second, as they would be left, and
+  lit finely again where the drag ends. A light with a `target` that names an
   entity, or with a `mangle` (yaw, pitch and roll), is a spotlight: it
   lights only what lies within `_cone` degrees of the way it points (20
   when it does not say), and half lights a rim of four degrees about the

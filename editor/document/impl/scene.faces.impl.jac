@@ -432,6 +432,7 @@ impl Scene.paint_face(solid: Solid, index: int, material: str) -> bool {
     change = SidesChange(solid=solid, before=solid.sides, after=after);
     change.redo();
     step.changes.append(change);
+    self.share_linked(step, None, material);
     return self.commit(step);
 }
 

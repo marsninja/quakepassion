@@ -204,6 +204,15 @@ impl Studio.keep_built {
     if app is None or scene is None or not self.is_built_scene() {
         return;
     }
+    if self.moving and self.preview_light(scene) {
+        return;
+    }
+    if self.previewed and not self.moving {
+        # The drag is over: the level as the scene now has it, finely lit.
+        self.previewed = False;
+        self.preview_shift = Vec3();
+        self.built_geometry = -1;
+    }
     if scene.geometry == self.built_geometry or self.moving or self.resizing {
         return;
     }
@@ -217,6 +226,45 @@ impl Studio.keep_built {
         return;
     }
     self.seen_revision = -1;
+}
+
+impl Studio.preview_light(scene: Scene) -> bool {
+    picked = scene.selection();
+    if not self.lit or len(picked) == 0 or len(scene.selected_solids()) > 0 {
+        return False;
+    }
+    for item in picked {
+        if not item.classname().startswith("light") or item.origin() is None {
+            return False;
+        }
+    }
+    shift = self.move_by;
+    if shift.sub(self.preview_shift).length() < 0.5 or time.time() - self.preview_at < 0.25 {
+        return True;
+    }
+    # The lights put where the drag would leave them, the level lit, and the
+    # lights put back: the scene itself is not changed until the drag ends.
+    kept: list[str] = [];
+    for item in picked {
+        stood = item.origin();
+        kept.append(item.fields.get("origin", ""));
+        if stood is not None {
+            item.fields["origin"] = write_vector(stood.add(shift));
+        }
+    }
+    fine = self.luxel;
+    self.luxel = max(self.luxel, 32.0);
+    self.load(scene.game, scene.name, quiet=True);
+    _release();
+    self.luxel = fine;
+    for (index, item) in enumerate(picked) {
+        item.fields["origin"] = kept[index];
+    }
+    self.preview_shift = shift;
+    self.preview_at = time.time();
+    self.previewed = True;
+    print("studio: light previewed at " + write_vector(shift));
+    return True;
 }
 
 impl Studio.outline_solids(scene: Scene) {
@@ -575,7 +623,7 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
         hub = self.turn_hub(scene);
     }
     centre = self.camera.project(area, hub) if hub is not None else None;
-    for (index, middle) in self.handles(scene) {
+    for (index, middle) in self.depth_knobs() + self.handles(scene) {
         at = self.camera.project(area, middle);
         if index >= 900 and index < 930 and at is not None and centre is not None
             and abs(at[0] - centre[0]) + abs(at[1] - centre[1]) < 6 {
@@ -593,6 +641,11 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             # A mark's handle says nothing until it has been dragged.
             self.turn_by = -1.0 if index >= 940 else 0.0;
             self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
+            if index >= 970 and index <= 977 {
+                # An edge of another view's band: the drag starts where it is.
+                banded = self.ports[(index - 970) // 2].camera;
+                self.resize_by = banded.depth_low if (index - 970) % 2 == 0 else banded.depth_high;
+            }
             return True;
         }
     }

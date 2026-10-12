@@ -175,6 +175,10 @@ impl Renderer.begin_view(
         i32(max(1, int(float(height) * scale)))
     );
     aspect = float(max(1, width)) / float(max(1, height));
+    # Kept, for a band of depth set over the view.
+    self.view_span = span;
+    self.view_width = width;
+    self.view_height = height;
     projection = Matrix(
         m0=f32(0.0), m4=f32(0.0), m8=f32(0.0), m12=f32(0.0),
         m1=f32(0.0), m5=f32(0.0), m9=f32(0.0), m13=f32(0.0),
@@ -197,6 +201,24 @@ impl Renderer.begin_view(
         projection.m14 = f32(-2.0 * far * near / (far - near));
         projection.m11 = f32(-1.0);
     }
+    rlSetMatrixProjection(projection);
+}
+
+impl Renderer.view_depth(near: float, far: float) {
+    if self.view_span <= 0.0 {
+        return;
+    }
+    rlDrawRenderBatchActive();
+    deep = 32768.0;
+    low = near if far > near else -deep;
+    high = far if far > near else deep;
+    aspect = float(max(1, self.view_width)) / float(max(1, self.view_height));
+    projection = Matrix(
+        m0=f32(2.0 / (self.view_span * aspect)), m4=f32(0.0), m8=f32(0.0), m12=f32(0.0),
+        m1=f32(0.0), m5=f32(2.0 / self.view_span), m9=f32(0.0), m13=f32(0.0),
+        m2=f32(0.0), m6=f32(0.0), m10=f32(-2.0 / (high - low)), m14=f32(-(high + low) / (high - low)),
+        m3=f32(0.0), m7=f32(0.0), m11=f32(0.0), m15=f32(1.0)
+    );
     rlSetMatrixProjection(projection);
 }
 

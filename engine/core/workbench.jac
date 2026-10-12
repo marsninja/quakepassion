@@ -30,7 +30,12 @@ obj SceneView {
         bare: bool = False,
         # It lies over views drawn before it: what they drew in its
         # rectangle, and how deep, is cleared first.
-        over: bool = False;
+        over: bool = False,
+        # An orthographic view held to a band of depth: what the level draws
+        # lies between `near` and `far` along the line of sight from the eye
+        # (both nothing for every depth). The workbench's own drawing is not cut.
+        near: float = 0.0,
+        far: float = 0.0;
 }
 
 """The methods are abstract so that a workbench in another module is reached
