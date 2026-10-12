@@ -702,6 +702,23 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   its reach on a slider and its colour on red, green and blue bars. Each
   drag is one undoable edit, made when the drag ends. A brush's form ends
   with which handles it shows (Move, Turn, Size).
+- **Fields that offer what to type**: an entity's class, and every field
+  that names another entity (`target`, `killtarget`) or is the name it is
+  fired by (`targetname`), open a list under themselves: the game's
+  classes, or the names the map already uses on the other end. Typing
+  narrows the list to what begins with or holds the words, the arrows walk
+  it, Enter takes the lit row and a click takes the row clicked. What is
+  typed need not be on the list: Enter with no row lit sets the words as
+  they stand. Escape puts the list away, and again leaves the field.
+- **Words of several lines**: `message` is a box three rows tall that
+  wraps to its width. Enter begins a line, the arrows go up and down
+  keeping how far across the cursor was, the wheel scrolls a long passage,
+  and Ctrl+Enter, Tab or a click elsewhere sets it (Escape gives the
+  change up). Its line breaks are written into the map as `\n`, the way
+  the games read them.
+- Buttons that were a character standing for a mark (`<`, `>`, `x`, `+`,
+  `...`) draw the mark itself: arrows, a cross, a plus, three dots, and an
+  arrow for "select what this fires".
 - **Keys of your own**: `ed_bind <key> <command>` gives a key (a letter,
   or `ctrl+` and `shift+` before one) any editor command, ahead of what
   the studio gives it; `ed_unbind` gives it back and `ed_binds` lists

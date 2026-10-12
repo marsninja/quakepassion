@@ -162,8 +162,8 @@ impl Studio.show_asset(ui: StudioUi) {
         form.adopt(ui.model_view);
         frames = Box(across=True, gap=4);
         form.adopt(frames);
-        frames.adopt(PushButton(text="<", command="ed_frame prev", size=28, hint="The frame before"));
-        frames.adopt(PushButton(text=">", command="ed_frame next", size=28, hint="The frame after"));
+        frames.adopt(PushButton(glyph="left", command="ed_frame prev", size=28, hint="The frame before"));
+        frames.adopt(PushButton(glyph="right", command="ed_frame next", size=28, hint="The frame after"));
         frames.adopt(
             PushButton(
                 text="Stop" if self.model_playing else "Play",
@@ -191,8 +191,8 @@ impl Studio.show_asset(ui: StudioUi) {
         # A sprite's or a film's pictures: stepped and played as a model's frames are.
         frames = Box(across=True, gap=4);
         form.adopt(frames);
-        frames.adopt(PushButton(text="<", command="ed_frame prev", size=28, hint="The picture before (a sprite's)"));
-        frames.adopt(PushButton(text=">", command="ed_frame next", size=28, hint="The next picture"));
+        frames.adopt(PushButton(glyph="left", command="ed_frame prev", size=28, hint="The picture before (a sprite's)"));
+        frames.adopt(PushButton(glyph="right", command="ed_frame next", size=28, hint="The next picture"));
         frames.adopt(
             PushButton(
                 text="Stop" if self.reel_playing else "Play",

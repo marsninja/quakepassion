@@ -91,8 +91,8 @@ impl Studio.show_model_form(ui: StudioUi) -> bool {
     form.adopt(ui.model_view);
     frames = Box(across=True, gap=4);
     form.adopt(frames);
-    frames.adopt(PushButton(text="<", command="ed_frame prev", size=28, hint="The frame before"));
-    frames.adopt(PushButton(text=">", command="ed_frame next", size=28, hint="The frame after"));
+    frames.adopt(PushButton(glyph="left", command="ed_frame prev", size=28, hint="The frame before"));
+    frames.adopt(PushButton(glyph="right", command="ed_frame next", size=28, hint="The frame after"));
     frames.adopt(
         PushButton(
             text="Stop" if self.model_playing else "Play",

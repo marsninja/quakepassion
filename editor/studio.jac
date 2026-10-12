@@ -41,6 +41,7 @@ import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
 import from .tools.host { ToolHost, StudioTool }
 import from .ui.widget { Widget, Stage, UiEvent }
+import from .ui.controls { Combo, TextArea }
 import from .ui.widgets {
     Box,
     Label,
@@ -91,7 +92,8 @@ import from .formats.archive {
 import from .formats.sound { sound_facts, converted_sound }
 import from .formats.wal { WalFacts, wal_facts, wal_with, flag_names, flag_named, quake_frames }
 import from .classes.registry {
-    ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes
+    ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes,
+    names_offered
 }
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights, falloff_of }
@@ -2260,7 +2262,7 @@ obj Studio(Workbench) {
         adder.adopt(new_key);
         new_value = TextField(ghost="value", grow=1, command="ed_add", hint="Enter adds the field");
         adder.adopt(new_value);
-        adder.adopt(PushButton(text="+", command="ed_add", size=22, hint="Add the field"));
+        adder.adopt(PushButton(glyph="plus", command="ed_add", size=22, hint="Add the field"));
         ui.new_key = new_key;
         ui.new_value = new_value;
         form.adopt(Spacer(size=6));

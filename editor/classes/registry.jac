@@ -434,6 +434,26 @@ def field_of(classname: str, key: str) -> FieldInfo {
     return common_field(key);
 }
 
+"""The names a field of one kind could be given, from the fields of every
+entity of a map: for a link, each name an entity is fired by; for a name,
+each name some entity fires. In order, each once."""
+def names_offered(kind: str, entities: list[dict[str, str]]) -> list[str] {
+    wanted = "name" if kind == "link" else ("link" if kind == "name" else "");
+    found: list[str] = [];
+    if not wanted {
+        return found;
+    }
+    for fields in entities {
+        classname = fields.get("classname", "");
+        for (key, value) in fields.items() {
+            if value and value not in found and field_of(classname, key).kind == wanted {
+                found.append(value);
+            }
+        }
+    }
+    return sorted(found);
+}
+
 """The classes a game has ("" for every game), by name."""
 def class_names(game: str = "") -> list[str] {
     found: list[str] = [];

@@ -52,7 +52,7 @@ impl Studio.fill_doc_strip(ui: StudioUi) {
             )
         );
     }
-    strip.adopt(PushButton(text="x", command="ed_close", size=22, hint="Close the document shown"));
+    strip.adopt(PushButton(glyph="cross", command="ed_close", size=22, hint="Close the document shown"));
 }
 
 impl Studio.keep_tabs(ui: StudioUi) {

@@ -236,6 +236,10 @@ node PushButton(Widget) {
         at = self.area.x + theme.pad + 2;
         if self.glyph {
             side = theme.row - 10;
+            if not self.text {
+                # A button of its mark alone has it in the middle.
+                at = self.area.x + (self.area.w - side) // 2;
+            }
             draw_glyph(canvas, self.glyph, at, self.area.y + (self.area.h - side) // 2, side, front);
             at += side + 4;
         }
@@ -264,10 +268,31 @@ node PushButton(Widget) {
 }
 
 """A small mark drawn in a square: play, pause, stop, step, down (a menu's
-arrow), right and open (a tree's arrows), check, cross."""
+arrow), right and open (a tree's arrows), left, up, check, cross, plus,
+minus, dots (more to choose from) and goto (an arrow to what is meant)."""
 def draw_glyph(canvas: Canvas, name: str, x: int, y: int, side: int, color: Ink) {
     if name == "play" or name == "right" {
         canvas.triangle(x, y, x, y + side, x + side, y + side // 2, color);
+    } elif name == "left" {
+        canvas.triangle(x + side, y, x, y + side // 2, x + side, y + side, color);
+    } elif name == "up" {
+        canvas.triangle(x, y + side - side // 4, x + side, y + side - side // 4, x + side // 2, y + side // 4, color);
+    } elif name == "plus" or name == "minus" {
+        bar = max(2, side // 5);
+        canvas.fill(Rect(x=x, y=y + (side - bar) // 2, w=side, h=bar), color);
+        if name == "plus" {
+            canvas.fill(Rect(x=x + (side - bar) // 2, y=y, w=bar, h=side), color);
+        }
+    } elif name == "dots" {
+        dot = max(2, side // 5);
+        for place in range(3) {
+            canvas.fill(Rect(x=x + (place * (side - dot)) // 2, y=y + (side - dot) // 2, w=dot, h=dot), color);
+        }
+    } elif name == "goto" {
+        bar = max(2, side // 5);
+        head = side // 2;
+        canvas.fill(Rect(x=x, y=y + (side - bar) // 2, w=side - head, h=bar), color);
+        canvas.triangle(x + side - head, y + 1, x + side - head, y + side - 1, x + side, y + side // 2, color);
     } elif name == "open" or name == "down" {
         canvas.triangle(x, y + side // 4, x + side // 2, y + side - side // 4, x + side, y + side // 4, color);
     } elif name == "pause" {
