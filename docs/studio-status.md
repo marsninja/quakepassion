@@ -777,9 +777,11 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_digger off` fills it in.
 - `ed_inflate <units|up|down>` pushes every side of the selected brushes
   out, or in; a brush that would be left with nothing stays as it is.
-- `ed_texlock [on|off]` (Brush menu) says whether materials go with the
-  faces a move, turn or stretch carries, or stay where they lie in the
-  world while the faces move through them. It is kept between sessions.
+- `ed_texlock [on|off|axis]` (Brush menu) says whether materials go with
+  the faces a move, turn or stretch carries, or stay where they lie in
+  the world while the faces move through them. With `axis` they go with a
+  move, but a turn, a stretch or a shear leaves them lying along the
+  world's axes. It is kept between sessions.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
 - **Controls to drag** end an entity's form: its place as three numbers,
@@ -917,7 +919,10 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   into and up the view. A move along an arrow goes in grid steps along
   that arrow. `ed_axes lock <x|y|z|off>` keeps a selection dragged by
   hand to one of those axes. The rings that turn and the boxes that size
-  still go by the world's axes.
+  go by the same axes: a brush turned thirty degrees is turned about its
+  own upright and stretched along its own length, and stays square. (A
+  change about ways that are not the world's is carried out as the change
+  itself, `ed_linear` with its nine numbers.)
 - **Scripts: walkers of a project's own**: a project keeps Jac scripts in
   its `scripts/` folder (`ed_script new <file> [walker]` writes one to
   begin from, `ed_script` lists them with their walkers and what they
@@ -1209,7 +1214,10 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **Corners** (3): the selected brush shows its corners and the middles of
   its edges; dragging one moves it in the plane that faces the camera and
   the brush is rebuilt round its corners (`ed_corner`). A move that would
-  leave the brush flat is refused.
+  leave the brush flat is refused. With `ed_corner lock on` a corner that
+  is moved takes with it the corners of every other brush that stand at
+  the same point, as one step, so corners that are shared stay shared; if
+  that would leave any of those brushes flat, none is moved.
 - The inspector shows a brush's material (`ed_material <name>`), size and
   owner, and hands the selected brushes to a new entity (`ed_tie
   func_door`) or back to the world.
@@ -1436,7 +1444,9 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   group, so a patch draws, collides and takes materials in any game's
   scenes. With the patch selected, Corners (3) shows its control points; a
   drag moves one and the surface is built again (`ed_patch_point <patch>
-  <point> <dx> <dy> <dz>`). Moved as a whole, its control points go with it.
+  <point> <dx> <dy> <dz>`). Moved as a whole, its control points go with
+  it: the larger red handle at their middle is the whole patch's, and a
+  drag from it moves every point together.
 - **A shipped level as brushes** (File > Turn this level into brushes,
   `ed_convert`): a Quake II or Quake III level being looked at becomes a
   scene of its own brushes, each side with the material of the face drawn
@@ -2198,8 +2208,7 @@ Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3
 (views and texturing), 4 (brush tools) and 5 (logic and reuse), with parts
 of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
-- Left over in what is built: the handles work along the world's axes only
-  (not a brush's own); a shipped
+- Left over in what is built: a shipped
   map takes new brushes only once it is turned into a scene; a level's
   patches are left behind by `ed_convert` (a map file's `patchDef2` patches
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its

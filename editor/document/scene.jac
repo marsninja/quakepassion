@@ -1691,6 +1691,11 @@ node Scene {
     def merge_selection -> bool;
     """Move the corners of a brush nearest `spots`."""
     def move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool;
+    """Move those corners of a brush and, with them, the corners of every
+    other brush that stand at the same points, as one step: corners that
+    are shared stay shared. Answers how many brushes changed (none when the
+    move would leave any of them flat, and then none is changed)."""
+    def move_corners_shared(solid: Solid, spots: list[Vec3], delta: Vec3) -> int;
     """What is wrong with the document."""
     def problems -> list[Finding];
 

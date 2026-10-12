@@ -201,7 +201,18 @@ impl Studio.patch_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_patch_point: no patch " + str(int(numbers[0])));
             return True;
         }
-        if not scene.move_patch_point(bent, int(numbers[1]), Vec3(x=numbers[2], y=numbers[3], z=numbers[4])) {
+        gone = Vec3(x=numbers[2], y=numbers[3], z=numbers[4]);
+        control = scene.patch_control(bent);
+        if control is not None and int(numbers[1]) == len(control) {
+            # The handle after the last point is the whole patch's.
+            if gone.length() < 0.0001 or not scene.set_patch(bent, [point.add(gone) for point in control], "Move patch") {
+                self.say("The patch cannot go there");
+            } else {
+                print("studio: patch moved points=" + str(len(control)));
+            }
+            return True;
+        }
+        if not scene.move_patch_point(bent, int(numbers[1]), gone) {
             self.say("That point cannot go there");
         }
         return True;

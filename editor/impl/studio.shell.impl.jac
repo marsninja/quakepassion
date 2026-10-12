@@ -455,9 +455,10 @@ impl Studio.settings_lines -> list[str] {
         "ed_ruler " + ("on" if self.ruler else "off"),
         "ed_names " + ("on" if self.names else "off"),
         "ed_anglesnap " + str(int(self.angle_snap)),
-        "ed_texlock " + ("on" if self.tex_lock else "off"),
+        "ed_texlock " + ("axis" if self.tex_axis else ("on" if self.tex_lock else "off")),
         "ed_overlay width " + str(self.line_width),
-        "ed_models skins " + ("on" if self.models_skinned else "off")
+        "ed_models skins " + ("on" if self.models_skinned else "off"),
+        "ed_corner lock " + ("on" if self.corner_lock else "off")
     ];
     for kept_class in self.favourites {
         lines.append("ed_fav " + kept_class);

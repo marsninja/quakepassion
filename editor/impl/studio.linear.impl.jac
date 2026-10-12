@@ -226,7 +226,7 @@ impl Studio.linear_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         lean = linear_shear(letters.index(args[1]), letters.index(args[2]), amounts[0]);
-        if not scene.remap_selection(lean, self.pivot_for(scene), "Shear", self.grid, self.tex_lock) {
+        if not scene.remap_selection(lean, self.pivot_for(scene), "Shear", self.grid, self.tex_turns()) {
             self.say("Nothing to shear");
         } else {
             self.say("Sheared along " + args[1] + " by " + short_number(amounts[0]) + " a unit of " + args[2]);
@@ -251,7 +251,7 @@ impl Studio.linear_command(scene: Scene, args: list[str]) -> bool {
         called = rest[0] if len(rest) > 0 and rest[0] in ["Turn", "Stretch", "Shear"] else "Change";
         if wanted_change.slopes() is None {
             self.say("That would flatten the selection");
-        } elif not scene.remap_selection(wanted_change, hub, called, self.grid, self.tex_lock) {
+        } elif not scene.remap_selection(wanted_change, hub, called, self.grid, self.tex_turns()) {
             self.say("Nothing to change");
         }
         return True;

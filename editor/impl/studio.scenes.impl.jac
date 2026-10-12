@@ -399,6 +399,14 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
             for (number, point) in enumerate(control) {
                 found.append((number, point));
             }
+            if len(control) > 0 {
+                # One more, at their middle: the whole patch goes with it.
+                summed = Vec3();
+                for point in control {
+                    summed = summed.add(point);
+                }
+                found.append((len(control), summed.scale(1.0 / float(len(control)))));
+            }
         }
         return found;
     }
@@ -466,10 +474,20 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
         return;
     }
     if self.mode == "corner" and self.patch_now(scene) is not None {
-        for (index, spot) in self.handles(scene) {
+        knobs = self.handles(scene);
+        # The last is the whole patch's: while it is held every point goes with it.
+        whole = self.resizing and len(knobs) > 0 and self.resize_side == knobs[-1][0];
+        for (index, spot) in knobs {
             grabbed = self.resizing and index == self.resize_side;
-            at = self.camera.project(area, spot.add(self.corner_by) if grabbed else spot);
+            at = self.camera.project(area, spot.add(self.corner_by) if grabbed or whole else spot);
             if at is None {
+                continue;
+            }
+            if index == knobs[-1][0] {
+                # Larger, and in another colour, so that it is not taken for a point.
+                box = Rect(x=at[0] - 6, y=at[1] - 6, w=13, h=13);
+                canvas.fill(box, canvas.theme.accent if grabbed else ink(0xe5484d));
+                canvas.outline(box, canvas.theme.header);
                 continue;
             }
             box = Rect(x=at[0] - 4, y=at[1] - 4, w=9, h=9);
@@ -910,7 +928,7 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         if len(args) > 2 and args[2] in ["x", "y"] {
             about = 0 if args[2] == "x" else 1;
         }
-        if not scene.turn_selection(degrees, self.grid, about, self.pivot_for(scene), self.tex_lock) {
+        if not scene.turn_selection(degrees, self.grid, about, self.pivot_for(scene), self.tex_turns()) {
             self.say("Nothing to turn");
         }
         return True;

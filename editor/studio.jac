@@ -220,6 +220,7 @@ import from .document.scene {
 }
 import from .geometry.csg { brush_corners, brush_edges }
 import from .geometry.mapping { spun_about, axis_vector, mapping_bad }
+import from .geometry.axial { linear_about, linear_along, world_ways, point_sized }
 import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
 import from .geometry.integral { faces_astray, sides_integral, sides_angled }
 import from .geometry.bits { bit_names, bit_of, bits_named }
@@ -546,7 +547,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_anglesnap", "ed_anglesnap [degrees]", "what a dragged turn snaps to"),
     ("ed_inflate", "ed_inflate <units|up|down>", "push every side of the selected brushes out (or in) by a distance"),
-    ("ed_texlock", "ed_texlock [on|off]", "whether materials go with the faces a move, turn or stretch carries"),
+    ("ed_texlock", "ed_texlock [on|off|axis]", "whether materials go with the faces a move, turn or stretch carries; axis: with a move, but kept to the world's axes through a turn or stretch"),
     ("ed_stats", "ed_stats [file]", "count what the document holds, or write the materials it uses to a file"),
     ("ed_step", "ed_step <next|prev>", "select the entity after, or before, the selected one"),
     ("ed_freeze", "ed_freeze [on|off]", "keep clicks in the level from changing the selection, or let them"),
@@ -569,7 +570,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_boxselect", "ed_boxselect <view> <x0> <y0> <x1> <y1> [add]", "select what lies in a rectangle of a view"),
     ("ed_lasso", "ed_lasso <view> <x> <y> <x> <y> ... [add]", "select what lies inside a loop drawn in a view (Alt and a drag draws one)"),
     ("ed_snapto", "ed_snapto <grid|corners|edges|faces> [reach]", "what a move ends on: where it is asked, or a corner, edge or face of another brush it comes within reach of"),
-    ("ed_corner", "ed_corner <dx> <dy> <dz> <x> <y> <z> [...]", "move the corners of the selected brush at those points"),
+    ("ed_corner", "ed_corner <dx> <dy> <dz> <x> <y> <z> [...] | lock [on|off]", "move the corners of the selected brush at those points; with the lock on, the corners of other brushes at those points go with them"),
     ("ed_display", "ed_display <wire|textured> [3d|axis|all]", "draw views as edges or textured (the axis views without a word)"),
     ("ed_check", "ed_check [number]", "list what is wrong with the document, or select the thing a finding is about"),
     ("ed_shelf", "ed_shelf <group>", "show a group's materials in the materials tab"),
@@ -1165,6 +1166,13 @@ obj Studio(Workbench) {
         pivot_picks: int = -1,
         # Whether materials go with the faces a move, turn or stretch carries.
         tex_lock: bool = True,
+        # Materials go with a move but keep to the world's axes through a
+        # turn, a stretch or a shear (with `tex_lock`).
+        tex_axis: bool = False,
+        # The three ways the turn rings and size boxes go by, as last worked out.
+        gizmo_ways: list[Vec3] = [],
+        # A corner moved takes with it the corners of other brushes that stand at the same point.
+        corner_lock: bool = False,
         # A ruler along the selection in the axis views, a name on every
         # entity, and the picture laid behind an axis view.
         ruler: bool = True,
@@ -3908,6 +3916,12 @@ obj Studio(Workbench) {
     """The three ways the move arrows run now: the world's axes, the
     selection's own, or across, into and up the view."""
     def gizmo_basis(scene: Scene) -> list[Vec3];
+    """One of the ways the rings and boxes go by (the world's when none are worked out)."""
+    def gizmo_way(index: int) -> Vec3;
+    """Whether materials go with their faces through a turn, a stretch or a shear."""
+    def tex_turns -> bool {
+        return self.tex_lock and not self.tex_axis;
+    }
     def draw_transform_handles(scene: Scene, area: Rect);
     def drag_transform(scene: Scene, x: int, y: int, free: bool);
     """Where a point goes under the turn or stretch being dragged."""
@@ -4804,7 +4818,7 @@ obj Studio(Workbench) {
                     else "none"
                 ),
             "studio: handles=" + self.gizmo + " anglesnap=" + str(int(self.angle_snap)) + " texlock="
-                + ("1" if self.tex_lock else "0") + " pivot="
+                + ("axis" if self.tex_axis else ("1" if self.tex_lock else "0")) + " pivot="
                 + (
                     str(int(self.pivot_at.x)) + "," + str(int(self.pivot_at.y)) + "," + str(int(self.pivot_at.z))
                     if self.pivot_set

@@ -619,7 +619,7 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         factors = Vec3(
             x=-1.0 if args[1] == "x" else 1.0, y=-1.0 if args[1] == "y" else 1.0, z=-1.0 if args[1] == "z" else 1.0
         );
-        if not scene.stretch_selection(factors, self.grid, "Mirror", self.pivot_for(scene), self.tex_lock) {
+        if not scene.stretch_selection(factors, self.grid, "Mirror", self.pivot_for(scene), self.tex_turns()) {
             self.say("Nothing to mirror");
         }
         return True;
@@ -634,7 +634,7 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         if len(numbers) > 2 {
             factors = Vec3(x=numbers[0], y=numbers[1], z=numbers[2]);
         }
-        if not scene.stretch_selection(factors, self.grid, "Resize", self.pivot_for(scene), self.tex_lock) {
+        if not scene.stretch_selection(factors, self.grid, "Resize", self.pivot_for(scene), self.tex_turns()) {
             self.say("Nothing to resize (a factor cannot be nothing)");
         }
         return True;
@@ -651,6 +651,17 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         self.select_in_box(scene, int(numbers[0]), band, len(args) > 6 and args[6] == "add");
         return True;
     }
+    if name == "ed_corner" and len(args) > 1 and args[1] == "lock" {
+        self.corner_lock = (not self.corner_lock) if len(args) < 3 or args[2] not in ["on", "off"] else args[2] == "on";
+        self.keep_settings();
+        print("studio: corner lock=" + ("1" if self.corner_lock else "0"));
+        self.say(
+            "A corner moved takes with it the corners of other brushes at the same point"
+            if self.corner_lock
+            else "A corner moved leaves other brushes as they are"
+        );
+        return True;
+    }
     if name == "ed_corner" {
         numbers = numbers_in(args[1:]);
         chosen = scene.selected_solids();
@@ -661,6 +672,15 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
         spots: list[Vec3] = [];
         for i in range(1, len(numbers) // 3) {
             spots.append(Vec3(x=numbers[i * 3], y=numbers[i * 3 + 1], z=numbers[i * 3 + 2]));
+        }
+        if self.corner_lock {
+            shared = scene.move_corners_shared(chosen[0], spots, Vec3(x=numbers[0], y=numbers[1], z=numbers[2]));
+            print("studio: corner moved brushes=" + str(shared));
+            self.say(
+                "Moved the corner of " + str(shared) + " brushes" if shared > 1
+                else ("Moved the corner" if shared == 1 else "That would leave a brush flat, or it has no corner there")
+            );
+            return True;
         }
         if not scene.move_corners(chosen[0], spots, Vec3(x=numbers[0], y=numbers[1], z=numbers[2])) {
             self.say("That would leave the brush flat, or it has no corner there");

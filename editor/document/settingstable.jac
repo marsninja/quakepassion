@@ -32,7 +32,7 @@ words with commas between, `#` for a number and nothing for any words."""
 glob SETTING_TABLE: list[str] = [
     "studio_grid|general|Grid|ed_grid %|#|How far apart the grid's lines are, and what moves snap to",
     "studio_anglesnap|general|Turns snap to|ed_anglesnap %|#|Degrees a turn by hand goes in steps of",
-    "studio_texlock|general|Materials go with their faces|ed_texlock %|on,off|Whether a move, turn or stretch carries the materials along",
+    "studio_texlock|general|Materials go with their faces|ed_texlock %|on,off,axis|Whether a move, turn or stretch carries the materials along; axis: a move does, a turn or stretch leaves them along the world's axes",
     "studio_autocaulk|general|Shapes come caulked|ed_autocaulk %|on,off|Whether a new shape's hidden sides are given the material no one sees",
     "studio_flyover|general|Hints beside the pointer|ed_flyover %|on,off|Whether what the pointer rests on says what it is",
     "studio_axes|general|Move arrows run along|ed_axes %|world,local,view|The world's axes, the selection's own (a brush's sides, the way an entity faces) or across, into and up the view",
