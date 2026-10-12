@@ -39,6 +39,7 @@ import from engine.formats.animated { AnimatedModel }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
     # raylib's immediate batch, for the faces of the model being edited.
+    def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;
     def rlSetTexture(id: u32) -> None;  def rlBegin(mode: i32) -> None;  def rlEnd -> None;  def rlTexCoord2f(
         x: f32, y: f32
     ) -> None;  def rlVertex3f(x: f32, y: f32, z: f32) -> None;  def rlColor4ub(
@@ -93,6 +94,7 @@ import from .assets.explorer { own_files, reel_next, reel_before, texture_rgba }
 import from .document.shelves { shelf_name, shelf_moved, shelf_rows }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
+import from .assets.entitylook { EntityLook, PreviewLook, is_sprite, class_sprite, sprite_corners, stood_at, frame_shown }
 import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
 }
@@ -329,7 +331,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
     ("ed_game", "ed_game [game] [material|build|bake|dir] [value]", "what a scene of a game begins with and the folder its files are in, or what each game is set up with"),
-    ("ed_models", "ed_models [on|off|list]", "draw entities in the 3D view as the models their game would show them as, or list those models"),
+    ("ed_models", "ed_models [on|off|list] | skins [on|off]", "draw entities in the 3D view as the models and sprites their game would show them as, with their skins or as edges, or list them"),
     ("ed_sound", "ed_sound info <file> | convert <file> <name> [rate] [bits] [loud]", "say what a WAV file is, or make it one channel at a game's rate and width among the project's sounds"),
     (
         "ed_wal",
@@ -1351,6 +1353,12 @@ obj Studio(Workbench) {
         models_shown: bool = False,
         preview_models: dict[str, list[list[Vec3]]] = {},
         models_drawn: int = 0,
+        # Entities drawn with their skins (and sprites as their pictures),
+        # not as edges; what was read for that, by look; and how many were
+        # drawn so in the view last drawn.
+        models_skinned: bool = True,
+        preview_looks: dict[str, PreviewLook] = {},
+        skins_drawn: int = 0,
         model_doc: ModelDoc | None = None,
         model_seen: int = -1,
         model_box: bool = False,
@@ -3499,6 +3507,7 @@ obj Studio(Workbench) {
                 }
             }
         }
+        self.draw_entity_skins(scene);
         # The selection, what it targets and what is pointed at show through
         # the walls.
         rlDrawRenderBatchActive();
@@ -4136,6 +4145,13 @@ obj Studio(Workbench) {
     """A model's edges at its first frame, read once."""
     def preview_edges(name: str) -> list[list[Vec3]];
     def draw_entity_models(scene: Scene);
+    """What an entity's game shows it as when it is spawned: a model or a
+    sprite, with its skin and frame (none when its game shows nothing)."""
+    def entity_look(scene: Scene, item: Item) -> EntityLook | None;
+    """A look's model and pictures, read once."""
+    def preview_look(look: EntityLook) -> PreviewLook;
+    """Entities with their skins on, and sprites, where the level hides them as it hides anything."""
+    def draw_entity_skins(scene: Scene);
     def preview_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
@@ -4930,7 +4946,10 @@ obj Studio(Workbench) {
             );
         }
         if self.models_shown {
-            lines.append("studio: models shown=1 drawn=" + str(self.models_drawn));
+            lines.append(
+                "studio: models shown=1 drawn=" + str(self.models_drawn) + " skinned=" + str(self.skins_drawn)
+                    + ("" if self.models_skinned else " skins=off")
+            );
         }
         for window_line in self.window_lines() {
             lines.append(window_line);

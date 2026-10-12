@@ -374,11 +374,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   pickup, monster and fixture in the 3D view as the model its own game's
   rules give it (the engine's own rules are asked: the game is the
   level's, or the entity's `asset_game` in a scene of no one game),
-  standing where the entity is and turned the way it faces, in the
-  entity's colour and through the walls like the other overlays;
-  `ed_models list` says which model each entity has. The models are
-  drawn as their edges at their first frame; pickups that are little
-  maps of their own (Quake's health and ammo boxes) keep their boxes.
+  standing where the entity is and turned the way it faces. Each is
+  drawn as the game would spawn it: with the skin its rule names (the
+  yellow armour is the green one's model with another skin) at the frame
+  it starts on, hidden by walls as anything in the level is; a class the
+  game shows as a sprite (Quake's bubbles) is its picture facing the
+  eye, clear where the sprite is clear. What is selected has its edges
+  over its skin, and `ed_models skins off` draws edges alone, in the
+  entity's colour and through the walls like the other overlays.
+  `ed_models list` says which model or sprite each entity has, with its
+  skin and frame. Pickups that are little maps of their own (Quake's
+  health and ammo boxes) keep their boxes.
 - **Entities' games**: a scene of the studio's own is no one game's, and
   a pickup, a monster or a fixture in it is spawned by the rules of the
   game named in its `asset_game` field, as in a generated level (without
