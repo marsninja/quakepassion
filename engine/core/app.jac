@@ -255,7 +255,7 @@ obj HostCvars {
         ),
         overlay: Cvar = Cvar(
             name="qp_overlay",
-            reset_text="1",
+            reset_text="0",
             kind="bool",
             flags=CVAR_ARCHIVE,
             description="the diagnostic overlay"

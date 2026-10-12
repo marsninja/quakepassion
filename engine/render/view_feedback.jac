@@ -22,6 +22,9 @@ obj ScreenTint {
 
 obj ViewFeedback {
     has game: str = "",
+        # Whether a status bar covers the bottom of the view (Quake's, when
+        # its HUD is not the corner one).
+        barred: bool = True,
         damage_color: Vec3 = Vec3(),
         damage_level: float = 0.0,
         kick_pitch: float = 0.0,
@@ -390,7 +393,8 @@ obj ViewFeedback {
                 kick_pitch=self.pitch(),
                 kick_roll=self.roll(),
                 punch=punch,
-                dip=dip
+                dip=dip,
+                barred=self.barred
             ),
             clock,
             share
