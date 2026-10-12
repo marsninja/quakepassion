@@ -3,7 +3,7 @@ import from editor.ui.input { UiSource, UiStep, script_click }
 import from editor.ui.widget { Widget, Stage }
 import from editor.ui.widgets { Box }
 import from editor.ui.controls { Combo, ComboList, TextArea }
-import from editor.ui.passage { row_starts, row_of, row_span, passage_line, passage_of, combo_matches, list_first }
+import from editor.ui.passage { row_starts, row_of, row_span, row_line, passage_line, passage_of, combo_matches, list_first }
 
 """Run frames until the scripted steps are played, plus one to settle."""
 def play(stage: Stage, source: UiSource, width: int = 800, height: int = 600) {
@@ -230,4 +230,33 @@ test "a passage wraps to the width of its box, and a press elsewhere asks for it
     script_click(source, 400, 300);
     play(stage, source);
     assert stage.take_commands() == ["set message \"one two three four\""];
+}
+
+test "a row that begins a line has the line's number, and one that goes on with it has none" {
+    # "ab cd" over two rows, then a line of its own.
+    text = "ab cd\nef";
+    starts = [0, 3, 6];
+    assert row_line(text, starts, 0) == 1 and row_line(text, starts, 1) == 0 and row_line(text, starts, 2) == 2;
+    assert row_line("", [0], 0) == 1 and row_line(text, starts, 5) == 0;
+}
+
+test "a numbered box keeps its numbers to the left of where a press lands" {
+    area = TextArea(command="set words", value="abcd\\nxy", numbered=True);
+    top = Box();
+    top.adopt(area);
+    stage = Stage(canvas=TraceCanvas());
+    stage.open(top);
+    source = UiSource();
+    # The numbers take four small characters and a gap: the words begin after them.
+    script_click(source, 5 + area.gutter(stage.canvas) + 15, 25);
+    play(stage, source);
+    assert area.gutter(stage.canvas) > 20 and area.cursor == 7;
+    press_key(source, "UPARROW");
+    play(stage, source);
+    assert area.cursor == 2;
+    # A page up from the first rows ends at the passage's beginning.
+    press_key(source, "PGDN");
+    press_key(source, "PGUP");
+    play(stage, source);
+    assert area.cursor == 0;
 }

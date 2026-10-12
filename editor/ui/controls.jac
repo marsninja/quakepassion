@@ -4,7 +4,7 @@ narrows it to what is typed, and a box for a passage of several lines."""
 import from .canvas { Canvas, Rect }
 import from .widget { Widget, Stage, UiEvent }
 import from .widgets { TextField, draw_glyph }
-import from .passage { row_starts, row_of, row_span, passage_line, passage_of, combo_matches, list_first }
+import from .passage { row_starts, row_of, row_span, row_line, passage_line, passage_of, combo_matches, list_first }
 import from engine.console.shell { quote_command_word }
 
 """The list a combo holds open under itself. Clicking a row asks for
@@ -237,7 +237,8 @@ node Combo(TextField) {
 """A box for a passage of several lines, wrapped to its width. Enter begins
 a new line; Ctrl+Enter, Tab or a press elsewhere asks for `command` followed
 by the passage as one line, its line breaks written as a backslash and an n
-(the way a map's field holds them). Escape gives the change up."""
+(the way a map's field holds them). Escape gives the change up. With
+`numbered` every line has its number beside it."""
 node TextArea(Widget) {
     has value: str = "",
         draft: str = "",
@@ -245,6 +246,7 @@ node TextArea(Widget) {
         ghost: str = "",
         # How many rows tall it asks to be.
         rows: int = 3,
+        numbered: bool = False,
         cursor: int = 0,
         anchor: int = 0,
         # The first row on show.
@@ -285,6 +287,16 @@ node TextArea(Widget) {
         return self.draft if self.editing else passage_of(self.value);
     }
 
+    """How much of its left the line numbers take."""
+    def gutter(canvas: Canvas) -> int {
+        return canvas.text_width("0000", canvas.theme.small) + 8 if self.numbered else 0;
+    }
+
+    """Where the words begin, across the screen."""
+    def words_left(canvas: Canvas) -> int {
+        return self.area.x + 5 + self.gutter(canvas);
+    }
+
     """How many rows show at once."""
     def rows_seen(canvas: Canvas) -> int {
         return max(1, (self.area.h - 6) // self.line_high(canvas));
@@ -293,7 +305,7 @@ node TextArea(Widget) {
     """Break the words into rows for the width there is. Answers the words."""
     def lay(canvas: Canvas) -> str {
         text = self.text_now();
-        room = max(8, self.area.w - 16);
+        room = max(8, self.area.w - 16 - self.gutter(canvas));
         if text == self.laid and room == self.laid_room {
             return text;
         }
@@ -332,7 +344,7 @@ node TextArea(Widget) {
         text = self.lay(canvas);
         row = self.top + (y - self.area.y - 3) // self.line_high(canvas);
         row = max(0, min(len(self.starts) - 1, row));
-        return self.place_across(canvas, text, row, x - self.area.x - 5);
+        return self.place_across(canvas, text, row, x - self.words_left(canvas));
     }
 
     """Keep the cursor's row on show."""
@@ -345,9 +357,27 @@ node TextArea(Widget) {
         theme = canvas.theme;
         canvas.fill(self.area, theme.field);
         canvas.outline(self.area, theme.accent if self.focused else (theme.dim if self.hovered else theme.border));
-        inner = Rect(x=self.area.x + 5, y=self.area.y + 3, w=self.area.w - 10, h=self.area.h - 6);
+        margin = self.gutter(canvas);
+        inner = Rect(x=self.area.x + 5 + margin, y=self.area.y + 3, w=self.area.w - 10 - margin, h=self.area.h - 6);
         text = self.lay(canvas);
         high = self.line_high(canvas);
+        if margin > 0 {
+            # The numbers of the lines, each beside the row that begins it.
+            canvas.clip(self.area.within(self.clip));
+            canvas.fill(Rect(x=self.area.x + 1, y=self.area.y + 1, w=margin, h=self.area.h - 2), theme.panel);
+            for row in range(self.top, len(self.starts)) {
+                y = inner.y + (row - self.top) * high;
+                if y >= inner.bottom() {
+                    break;
+                }
+                number = row_line(text, self.starts, row);
+                if number > 0 {
+                    canvas.label(
+                        str(number), Rect(x=self.area.x + 1, y=y, w=margin - 4, h=high), theme.faint, 1, 0, theme.small
+                    );
+                }
+            }
+        }
         canvas.clip(inner.within(self.clip));
         if not text and not self.focused {
             canvas.label(self.ghost, Rect(x=inner.x, y=inner.y, w=inner.w, h=high), theme.faint);
@@ -533,6 +563,16 @@ node TextArea(Widget) {
                 }
             }
             self.replace_selection("");
+            self.follow(canvas);
+            return True;
+        }
+        if pressed == "PGUP" or pressed == "PGDN" {
+            for turn in range(self.rows_seen(canvas)) {
+                self.climb(canvas, pressed == "PGDN");
+            }
+            if not event.shift {
+                self.anchor = self.cursor;
+            }
             self.follow(canvas);
             return True;
         }

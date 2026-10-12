@@ -62,6 +62,19 @@ def row_span(text: str, starts: list[int], row: int) -> tuple[int, int] {
     return (begin, end);
 }
 
+"""The number of the line a row begins, counting from one, or 0 for a row
+that goes on with the line the row above it began."""
+def row_line(text: str, starts: list[int], row: int) -> int {
+    if row < 0 or row >= len(starts) {
+        return 0;
+    }
+    begin = starts[row];
+    if begin > 0 and text[begin - 1] != "\n" {
+        return 0;
+    }
+    return text[:begin].count("\n") + 1;
+}
+
 """A passage as the one line a map's field holds: its line breaks written
 as a backslash and an n, the way the games read them."""
 def passage_line(text: str) -> str {

@@ -315,9 +315,21 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   would trip on, by line: braces that do not match, names with no
   braces, lines it does not know or that belong to a stage (or to the
   shader), words a line does not take, and stages with no picture.
-  `ed_shader save` writes the script, a tab a brace. There is no text
-  editor for it yet, and a changed shader is not shown in the renderer
-  until the game loads the script.
+  `ed_shader save` writes the script, a tab a brace. A changed shader is
+  not shown in the renderer until the game loads the script.
+- **The script as text**: `ed_shader text` (the Window menu's last entry)
+  opens the whole script in a box of numbered lines that floats over the
+  studio. Beside it are what the game would trip on, each at its own line
+  (a line it does not know is said where it stands, a stage with no
+  picture where the stage opens), the shader in hand in brief (its stages
+  by their pictures and how they are laid on), and Check and Save.
+  Ctrl+Enter or a click outside the box reads the words again as the
+  script; the commands above go on working on what was read, and the box
+  shows what they change. Words whose braces or names do not hold
+  together are kept as typed with their faults beside them, and the
+  script stands as it was until they are mended. `ed_shader write
+  <words>` reads words given on the command line, their line breaks as
+  `\n`. Comments are not kept: the script is written from what was read.
 - **Entities as their models**: `ed_models` (View menu) draws each
   pickup, monster and fixture in the 3D view as the model its own game's
   rules give it (the engine's own rules are asked: the game is the

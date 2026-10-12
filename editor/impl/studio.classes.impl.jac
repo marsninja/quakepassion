@@ -223,6 +223,16 @@ impl Studio.fill_class(scene: Scene, ui: StudioUi, chosen: list[Item]) {
                 }
             }
             row.adopt(Dropdown(text=words, labels=labels, commands=orders, grow=1, hint=absent.help));
+        } elif absent.kind == "link" or absent.kind == "name" {
+            row.adopt(
+                Combo(
+                    ghost=absent.kind,
+                    command=placing,
+                    choices=names_offered(absent.kind, [item.fields for item in scene.items()]),
+                    grow=1,
+                    hint=(absent.help + " | " if absent.help else "") + "Enter gives the selection this field"
+                )
+            );
         } else {
             row.adopt(
                 TextField(

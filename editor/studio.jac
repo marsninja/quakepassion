@@ -86,6 +86,8 @@ import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
 }
+import from .assets.shadertext { script_shown, script_faults, shader_brief }
+import from .ui.passage { passage_line, passage_of }
 import from .formats.archive {
     write_pak, write_zip, file_kind, pak_files, zip_files, files_with, files_without, lies_in
 }
@@ -311,8 +313,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_frames", "ed_frames [material]", "the frames of an animated texture: a Quake + name's row, or a Quake II texture's chain"),
     (
         "ed_shader",
-        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save]",
-        "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages, check it for what the game would trip on, and save it"
+        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save|text [open|close]|write <words>]",
+        "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages or its text in a box with the faults by line beside it, check it for what the game would trip on, and save it"
     ),
     ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
     ("ed_camps", "ed_camps [routes [on|off]]", "list the spots bots camp at and roam through; routes draws the ways bots take between them, or from the one thing picked to each"),
@@ -922,6 +924,15 @@ obj Studio(Workbench) {
         # The weights dialog while it is open, and what it was last filled for.
         weights_box: Floater | None = None,
         weights_for: str = "",
+        # The shader script as text while its box is open: the box, the
+        # words in it, what it was last filled for, words that did not
+        # hold together (kept as typed), and a count of what was asked of
+        # the script.
+        script_box: Floater | None = None,
+        script_area: TextArea | None = None,
+        script_for: str = "",
+        script_kept: str = "",
+        shader_rev: int = 0,
         reel_playing: bool = False,
         reel_clock: float = 0.0,
         reel_kept: str = "",
@@ -1801,7 +1812,8 @@ obj Studio(Workbench) {
                     MenuItem(text="Tools over or under the views", command="ed_bar tools flip"),
                     MenuItem(text="Show or hide the status bar", command="ed_bar status"),
                     MenuItem(rule=True),
-                    MenuItem(text="The picked points' weights...", command="ed_weights open")
+                    MenuItem(text="The picked points' weights...", command="ed_weights open"),
+                    MenuItem(text="The shader script as text...", command="ed_shader text open")
                 ]
             ]
         );
@@ -2339,6 +2351,7 @@ obj Studio(Workbench) {
         self.keep_tabs(ui);
         self.keep_floats();
         self.keep_weights_box();
+        self.keep_script_box();
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
@@ -3052,6 +3065,13 @@ obj Studio(Workbench) {
     """Fill the weights dialog again when what it shows has changed."""
     def keep_weights_box;
     def weights_command(scene: Scene, args: list[str]) -> bool;
+    # The shader script as text (impl/studio.shadertext.impl.jac)
+    """Fill the script's box again when the script has changed."""
+    def keep_script_box;
+    def script_words -> str;
+    """Open or close the script's box, or read its words as the script.
+    False for every other shader command, which goes on to its own."""
+    def script_command(scene: Scene, args: list[str]) -> bool;
     """What the command table says of a command: its usage and what it does."""
     def help_lines(asked: str) -> list[str];
     """Help for what the pointer is on or for a command by name, hints
@@ -4280,6 +4300,7 @@ obj Studio(Workbench) {
             and not self.nav_command(scene, args) and not self.restrict_command(scene, args)
             and not self.integral_command(scene, args)
             and not self.games_command(scene, args)
+            and not self.script_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
             and not self.entity_command(scene, args)
@@ -4629,6 +4650,9 @@ obj Studio(Workbench) {
             for bone_line in self.bone_lines() {
                 lines.append(bone_line);
             }
+        }
+        if self.script_box is not None {
+            lines.append(self.script_words());
         }
         if self.shader_file {
             lines.append(self.shader_words());

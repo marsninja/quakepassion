@@ -212,7 +212,7 @@ def shader_named(shaders: list[ShaderText], name: str) -> ShaderText | None {
 }
 
 """What the game would trip on in a line: "" when nothing."""
-def:priv line_fault(line: str, staged: bool) -> str {
+def line_fault(line: str, staged: bool) -> str {
     words = line.split();
     key = words[0].lower();
     rest = [word.lower() for word in words[1:]];
