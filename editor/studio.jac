@@ -880,6 +880,9 @@ obj StudioHost(ToolHost) {
             stock = self.studio.archive;
             return stock.files_folder() if stock is not None else "";
         }
+        if kind == "scenes" {
+            return os.path.dirname(self.studio.scene_path("x"));
+        }
         return self.studio.project_folder;
     }
 

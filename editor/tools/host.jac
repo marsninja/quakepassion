@@ -38,8 +38,8 @@ obj ToolHost {
     def palette(game: str) -> bytes abst;
 
     """Where files of a kind are kept: "textures" for the image files that
-    are materials, "" for the open project's own folder ("" back when
-    there is none)."""
+    are materials, "scenes" for saved scenes, "" for the open project's own
+    folder ("" back when there is none)."""
     def folder(kind: str) -> str abst;
 
     """A file out of a game's archives, or None; and every file's name there."""

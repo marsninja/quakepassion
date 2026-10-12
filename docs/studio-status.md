@@ -882,6 +882,22 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   that arrow. `ed_axes lock <x|y|z|off>` keeps a selection dragged by
   hand to one of those axes. The rings that turn and the boxes that size
   still go by the world's axes.
+- **Passion expeditions**: `ed_exp open <seed>` runs the generator on a
+  seed and opens what it made as a document of brushes, saved among the
+  scenes as `expedition_<seed>.map`: its entities as they are, and the
+  world's brushes handed to a group for every room (`room 7 arena`, named
+  for its beat and its recipe) and one for the ways between, so a room is
+  picked, hidden, locked or copied into another scene as one thing. The
+  expedition's own account of itself is kept beside the document:
+  `ed_exp` says its seed, archetype and sizes, `ed_exp mission` its beats
+  and the links between them with what each needs, `ed_exp rooms` its
+  rooms and `ed_exp ways` the ways between them, `ed_exp proof` runs the
+  generator's own playtest (whether the exit is reached, in how many
+  rounds, with which tokens), and `ed_exp show` draws the ways over the
+  level, each in the colour of its kind (open, locked, one-way, shortcut,
+  secret). It is a tool in a module of its own
+  (`editor/tools/expedition.jac`); it reads the generator's graph (beats
+  and links, rooms and passages) as the generator left it.
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged
@@ -1990,8 +2006,8 @@ editor/impl/                 the workbench's scenes and brushes
   model with the triangles over it, and saved as a TGA with the two dabs in
   it). `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
-  reopens them. It tries a generated expedition too and says when the
-  expedition itself does not load.
+  reopens them, and turns a generated expedition (seed 42: 1,919 brushes)
+  into a scene too.
 
 ## Building quickly: tools in modules of their own
 
@@ -2035,5 +2051,5 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   planes with portals between its leaves, in place of cells of the plan;
   bounced light); the Passion tools; user walkers.
 - Within the shell: generated (Passion) levels can be edited but not saved as
-  they are (`ed_convert` is meant to turn one into a scene, but expeditions
-  do not load in the test environment at present: #76).
+  they are; `ed_convert` turns one into a scene of brushes, and `ed_exp open
+  <seed>` generates one and opens it so.
