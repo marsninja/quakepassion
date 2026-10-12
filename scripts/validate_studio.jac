@@ -484,7 +484,8 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert "\"_group_name\" \"stairs\"" in saved_text and "\"classname\" \"light\"" in saved_text;
     for shot in shots {
         source = repo / f"build_{shot}.png";
-        check_capture(source, 6);
+        # While it is played the real pointer may turn the view to the floor: fewer colours, and still a picture.
+        check_capture(source, 4 if shot == "playing" else 6);
         shutil.copyfile(source, output / f"build_{shot}.png");
         source.unlink();
     }
@@ -2267,9 +2268,10 @@ def rig_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert int(model_word(steps["dragged"], "volume")) != before and int(model_word(steps["undragged"], "volume")) == before;
     # Tags: two, one moved at the copied frame only.
     assert model_word(steps["tagged"], "tags") == "2" and model_word(steps["tagged"], "frames") == "2";
-    raised = [line for line in steps["tagged"] if line.startswith("tag ")];
+    # Each tag's line ends with where it is seen in the view: left out of what is compared.
+    raised = [line.split(" seen=")[0] for line in steps["tagged"] if line.startswith("tag ")];
     assert raised == ["tag tag_top at=0,0,128 frames=2", "tag tag_side at=32,0,48 frames=2"] , str(raised);
-    stood = [line for line in steps["first"] if line.startswith("tag ")];
+    stood = [line.split(" seen=")[0] for line in steps["first"] if line.startswith("tag ")];
     assert stood == ["tag tag_top at=0,0,96 frames=2", "tag tag_side at=32,0,48 frames=2"] , str(stood);
     # The copied frame at the front of the order; one tag and one skin left.
     assert model_word(steps["moved"], "frame") == "0:up" , str(steps["moved"]);
@@ -2426,7 +2428,9 @@ def project_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     assert len(brushes(steps["old"])) == 0 and tally(steps["old"]) , str(steps["old"]);
     assert [line for line in steps["old"] if line.startswith("brushes=7 ")] , str(steps["old"]);
     theirs = [line for line in steps["old"] if line.startswith("addon ")];
-    assert theirs and theirs[0].endswith("/projects/old/classes/traps.txt classes=trap_spikes,trap_pit") , str(steps["old"]);
+    # (The listing goes on to say what it brings beside classes: here, nothing.)
+    assert theirs and theirs[0].split(" name=")[0].endswith("/projects/old/classes/traps.txt classes=trap_spikes,trap_pit")
+        and theirs[0].endswith(" name=traps materials=0 prefabs=0") , str(steps["old"]);
     assert after == before , after;
     # A game's setup: kept in the settings, and the next scene made outside
     # a project is floored with its material.
@@ -2690,6 +2694,10 @@ def docs_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     listed = [line for line in ran.stdout.splitlines() if line.startswith("studio: doc ")];
     assert "studio: doc passion/studio:one dirty=1 current=0" in listed , str(listed[:6]);
     assert "studio: doc passion/studio:two dirty=1 current=1" in listed and "studio: doc q1/e1m1 dirty=0 current=0" in listed;
+    # Each has a tab beside the menu bar: the one shown marked, the edited ones starred.
+    assert "tabs 3 passion/studio:one*|passion/studio:two*<|q1/e1m1|model:|shader:|views" in steps["two"] , str(
+        [line for line in steps["two"] if line.startswith("tabs ")]
+    );
     # Back in the first, the camera is where it was left there; next goes on to the second.
     assert steps["one"][0].startswith("passion/studio:one ") and camera_at(steps["one"]) == [100, 100, 300] , str(steps["one"][:2]);
     assert steps["next"][0].startswith("passion/studio:two ") , steps["next"][0];

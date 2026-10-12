@@ -245,6 +245,30 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   classes, recipes and bound keys. An add-on inside the open project is
   named in its manifest and loads with it; any other is kept in the
   settings.
+- **What an add-on brings beside classes**: a line `textures <folder>`
+  names a folder of image files and `prefabs <folder>` a folder of
+  prefabs, each a path from the add-on's own file (nothing above it).
+  They go by the add-on's name, which is its file's name without its
+  ending: the images are a shelf of the Materials tab (`add-on castle`)
+  and materials called `addon:castle/<file>`, the prefabs a shelf of the
+  Library tab and prefabs called `addon:castle/<name>`, placed and
+  linked like any other. Dropping the add-on takes them away with its
+  classes; reloading reads its folders again. (`ed_pack project` does
+  not yet carry an add-on's files into a pack.)
+- **Folders linked to, and lists of materials**: `ed_texlink <name>
+  <folder>` uses a folder of image files as materials where it lies:
+  they are a shelf of the Materials tab (`link stone`) and are called
+  `link:stone/<file>`, and nothing is copied. `ed_texlink drop <name>`
+  lets the folder go (it is as it was) and `ed_texlink` lists the links
+  with how many materials each holds. `ed_texlist <name> add [material
+  ...]` puts the material in hand, or those named, on a list kept by
+  name; the list is a shelf too (`list walls`), in the order things were
+  put on it, of materials from anywhere: a game's, the project's, a
+  link's. `drop` takes materials off, `remove` gives the list up, and
+  the name alone shows it. With a project open both are kept in its
+  manifest (`link`, `list`; a link's folder may be a path from the
+  project's own), so the project refers to its textures and does not
+  carry copies; with none, they are kept in the studio's settings.
 - **What a game's scenes begin with**: `ed_game <passion|q1|q2|q3>
   <material|build|bake> [value]` sets the material new brushes are made
   of, how levels are lit and how wide a bake's cells are for scenes of
@@ -294,8 +318,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   changed, its pictures untouched, among the project's textures.
   `ed_frames [material]` lists the frames of an animated texture: a
   Quake `+0name`'s row from its map, or a Quake II texture's chain.
-  (Quake's WAD files are not written, and the frames are listed, not
-  played in the browser.)
+- **Materials that move**: `ed_animate [on|off]` (the Window menu's last
+  entry) plays them in the Materials tab. A texture that is one of a row
+  shows the row's frames one after another from itself, at its game's
+  pace (Quake five a second, Quake II two), and a liquid warps: Quake's
+  by the star its name begins with, Quake II's by the warp flag its
+  texture carries, each way across the picture pushed by a wave along
+  the other, an eighth of the picture at most, as the games draw them.
+  Off (as it starts), every picture is the still one again. It is a tool
+  in a module of its own (`editor/tools/moving.jac`). Quake III's
+  shaders are not played.
 - **Shader scripts**: `ed_shader open <file>` opens a Quake III shader
   script from `QP_SHADERS`, a project's `scripts/` or `./scripts` (a
   file that is not there is a new one), and `ed_shader take` takes the
@@ -315,9 +347,22 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   would trip on, by line: braces that do not match, names with no
   braces, lines it does not know or that belong to a stage (or to the
   shader), words a line does not take, and stages with no picture.
-  `ed_shader save` writes the script, a tab a brace. There is no text
-  editor for it yet, and a changed shader is not shown in the renderer
-  until the game loads the script.
+  `ed_shader save` writes the script, a tab a brace. A changed shader is
+  not shown in the renderer until the game loads the script.
+- **The script as text**: `ed_shader text` (the Window menu's last entry)
+  opens the whole script in a box of numbered lines that floats over the
+  studio. Beside it are what the game would trip on, each at its own line
+  (a line it does not know is said where it stands, a stage with no
+  picture where the stage opens), the shader in hand in brief (its stages
+  by their pictures and how they are laid on), and Check and Save.
+  Ctrl+Enter or a click outside the box reads the words again as the
+  script; the commands above go on working on what was read, and the box
+  shows what they change. Words whose braces or names do not hold
+  together are kept as typed with their faults beside them, and the
+  script stands as it was until they are mended. `ed_shader write
+  <words>` reads words given on the command line, their line breaks as
+  `\n`. A new line begins as far in as the line it was begun from.
+  Comments are not kept: the script is written from what was read.
 - **Entities as their models**: `ed_models` (View menu) draws each
   pickup, monster and fixture in the 3D view as the model its own game's
   rules give it (the engine's own rules are asked: the game is the
@@ -561,7 +606,13 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   health, and how every signal stands; `ed_live player health <n>` and
   `ed_live player at <x y z>` change the player, and `ed_live signal
   <name> on|off` switches a signal, before `ed_pause` lets the game run
-  on. (The engine counts firings on its signals and calls the workbench
+  on. The rest of what lives in the game is reached by number: `ed_live
+  opponents`, `ed_live doors` and `ed_live pickups` call them over (a
+  walker goes out from the world to what it holds of each kind), each
+  with where it is and how it stands, and `ed_live opponent <n> health
+  <h>` or `at <x y z>`, `ed_live door <n> open|lock|unlock` and `ed_live
+  pickup <n> at <x y z>` change one; a door asked to open opens when
+  the game goes on. (The engine counts firings on its signals and calls the workbench
   each frame of a game it is not showing; nothing else of it changed.)
 - **Sweeps**: `ed_sweep <outline> [wide tall] [count] along <name>`
   carries an outline along a path of entities, from the one of that
@@ -702,11 +753,32 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   its reach on a slider and its colour on red, green and blue bars. Each
   drag is one undoable edit, made when the drag ends. A brush's form ends
   with which handles it shows (Move, Turn, Size).
+- **Fields that offer what to type**: an entity's class, and every field
+  that names another entity (`target`, `killtarget`) or is the name it is
+  fired by (`targetname`), open a list under themselves: the game's
+  classes, or the names the map already uses on the other end. Typing
+  narrows the list to what begins with or holds the words, the arrows walk
+  it, Enter takes the lit row and a click takes the row clicked. What is
+  typed need not be on the list: Enter with no row lit sets the words as
+  they stand. Escape puts the list away, and again leaves the field.
+- **Words of several lines**: `message` is a box three rows tall that
+  wraps to its width. Enter begins a line, the arrows go up and down
+  keeping how far across the cursor was, the wheel scrolls a long passage,
+  and Ctrl+Enter, Tab or a click elsewhere sets it (Escape gives the
+  change up). Its line breaks are written into the map as `\n`, the way
+  the games read them.
+- Buttons that were a character standing for a mark (`<`, `>`, `x`, `+`,
+  `...`) draw the mark itself: arrows, a cross, a plus, three dots, and an
+  arrow for "select what this fires".
 - **Keys of your own**: `ed_bind <key> <command>` gives a key (a letter,
   or `ctrl+` and `shift+` before one) any editor command, ahead of what
   the studio gives it; `ed_unbind` gives it back and `ed_binds` lists
-  them. They are kept in the studio's settings, apart from every game's
-  bindings.
+  them. They are held by the engine's own binding system: a keyboard of
+  its key nodes for each way Ctrl and Shift are held, so a key goes by
+  the name every game's `bind` knows it by (`F5`, `PGUP`, `SPACE`,
+  `MOUSE3`, a letter or a digit) and one it does not know is refused.
+  The studio's keyboards are its own: no game's bindings are touched,
+  and they are kept in the studio's settings.
 - **Settings** (Window > Settings, `ed_settings`) lists what is so, each
   line a click to change. The axis views' grid can be hidden
   (`ed_grid hide`), and when shown has the world's numbers along its
@@ -714,6 +786,24 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   their textures. `ed_dev` puts frame and build times, how many brushes
   the level was built from, and how many entities and light samples there
   are, in the status bar.
+- **Settings by subject**: `ed_settings box` (the Window menu's last
+  entry) opens the settings in a box with a subject down its left:
+  General, Display, 3D view, Map, Model, Files, Colours. Each row is a
+  setting with the values it takes in a list, or a field for a number,
+  and its name as a console variable beside it. Files also says where
+  settings, scenes and autosaves are kept, and how often a changed scene
+  is autosaved (`ed_autosave every <seconds>`, 0 for never). Colours has
+  the theme and four of the studio's colours set by hand over it
+  (`ed_colour <accent|select|text|panel> <rrggbb|default>`, `ed_colour
+  all default` to give them up), each with a patch of what it is now.
+- **Settings as console variables**: every setting in the box is also a
+  variable (`studio_grid`, `studio_theme`, `studio_view_3d`, ...) that
+  says what is so. Typing one with a value in the console, or in a
+  config, sets the studio by the same command the box uses; a value it
+  does not take is refused and the variable put back. `ed_settings vars
+  [word]` prints them. They are one table
+  (`editor/document/settingstable.jac`), and they are kept where they
+  were: as commands in `studio.cfg`.
 - **Several documents** are open at once: the level the game began in and
   every scene made or opened since. `ed_docs` lists them, `ed_doc
   <name|next|prev>` goes to another (its camera is where it was left),
@@ -758,6 +848,71 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   beside the plan; beside the plan and the front view; all four in a
   square; or the 3D view beside the three axis views in a column. The
   layout is kept between sessions.
+- **Colours, bars and windows that are kept**: `ed_theme light` gives the
+  studio light panels and dark words for a bright room, `ed_theme dark`
+  its own again. `ed_bar tools hide` and `ed_bar status hide` take the
+  row of tools and the status bar away (`show` brings them back), and
+  `ed_bar tools below` puts the tools under the views. The floating 3D
+  windows are opened again in the next session where they were, at the
+  size they were and looking where they looked. All of it is in the
+  Window menu and kept between sessions.
+- **A dialog to build a shape**: Build a shape... in the Brush menu
+  (`ed_shapebox`) opens a window that floats over the views with the
+  kind of shape in a dropdown and its width, depth, height, count and
+  thickness in fields (Tab goes from one to the next); its button builds
+  the shape where the camera looks. The window is moved by its bar, and
+  where it was left, whether it was open and what its fields held are
+  kept between sessions.
+- **A path as a whole** (`editor/tools/paths.jac`): from any corner of a
+  path, `ed_path` picks every corner it leads to and is led to from (a
+  train that rides it too), and `ed_path move <dx> <dy> <dz>` moves them
+  all together as one step.
+- **Tabs for the open documents**: with more than one document open,
+  each has a tab beside the menu bar (a star when it has changes not
+  saved; the one shown is lit): the maps and scenes, the model being
+  edited, and the shader script. A click goes to it (`ed_tab
+  <doc:game/name|model|shader>`), and the x at the end closes the one
+  shown.
+- **What the move arrows run along**: `ed_axes world|local|view` (alone,
+  it goes to the next; it is in Settings > General and kept between
+  sessions). Local is the selection's own: one brush's axes from its
+  sides, so a wall turned thirty degrees is pushed along itself, or the
+  way one entity faces; anything else has the world's. View is across,
+  into and up the view. A move along an arrow goes in grid steps along
+  that arrow. `ed_axes lock <x|y|z|off>` keeps a selection dragged by
+  hand to one of those axes. The rings that turn and the boxes that size
+  still go by the world's axes.
+- **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
+  groups in another group, and a group's row dragged onto another group's
+  row in the scene list does the same; `ed_nest out`, or its row dragged
+  onto the groups' heading, takes it out again, and `ed_nest` alone lists
+  what is in what. A group that holds groups is picked, moved, turned,
+  copied, hidden and deleted with them (a click on it picks them all; a
+  group inside can still be picked alone), its row opens to show its
+  brushes and then its groups, and F2 names the group itself. A copy of
+  a group and what it holds is a group of its own. In the document it is
+  an edge from each group to the one that holds it, drawn from two
+  fields the map keeps (`_group_id`, `_group_in`), so a walker gathers
+  everything a group holds; no group can be put in itself or in one it
+  holds.
+- **Prefabs in folders**: a prefab's name may say folders (`ed_prefab save
+  props/crate`), and the Library tab lists each folder of prefabs as a
+  heading that opens and shuts, with how many it holds. `ed_prefab move
+  <name> <new name>` gives one another name or folder; a prefab's row
+  dragged onto a folder, onto a prefab in one, or onto Prefabs itself is
+  moved there. A name never leads out of the shelf.
+- **Finding in the Library, and a prefab seen before it is placed**: the
+  field at the foot of the Library tab (`ed_libfind <words>`) lists only
+  the scenes, prefabs and autosaves whose names hold the words, flat
+  under their shelves whatever folder they are in. A prefab the pointer
+  rests on is sketched above the field: its brushes' edges seen from
+  above one corner, in the studio's highlight colour; it stays until the
+  pointer is on another.
+- **A field's file chosen from the game's own**: a field that names a
+  sound or a model (`noise`, `music`, `model`, `model2`) has a `...`
+  button beside it in the inspector, set or not: it opens a list of that
+  game's sounds or models, as the field would name them, that is typed in
+  to find one (`ed_pickfile <field>`); Enter sets it on the selection.
 - **Help where the pointer is**: a control's hint is shown beside the
   pointer once it has rested there most of a second, as well as in the
   bar at the foot (`ed_flyover off` keeps it to the bar; the level views
@@ -1022,6 +1177,58 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **A folder out of an archive**: `ed_extract folder <game>:<folder> [to]`
   writes every file under a folder of a game's archives, as the
   explorer's Extract button writes one.
+- **Tags dragged, weights in a dialog, skins imported** (model editor):
+  with Alt, a press on a tag in the model's view takes hold of it and a
+  drag moves it in the plane of the view, at the frame in hand (with
+  Shift at every frame); `ed_model tag` says where each tag is seen.
+  `ed_weights` opens a window with the bone in hand in a dropdown, a
+  field for the weight it takes of the picked points, buttons to take
+  them whole, let them go and show the bones' colours, and what carries
+  each picked point. `ed_skin import <game>:<file> [n]` takes a picture
+  out of a game's archives as the skin to paint on: a PCX, a WAL, a plain
+  TGA, or the n-th skin a Quake model carries inside it.
+- **A starter project** (`editor/tools/starter.jac`): `ed_starter [name]`
+  (the last entry of the File menu) makes a project with one scene in it,
+  a lit room with walls, a crate, a pillar and a player's start, saves it
+  and makes it the scene the project opens on, so that Play has something
+  to play the first time. A project of that name that is there already
+  is left as it is.
+- **Makers** (`editor/tools/makers.jac`, built in
+  `editor/document/generate.jac`): a group whose brushes stay in the
+  document as they are and are built as something made from them, as a
+  digger's are cut out. `ed_maker hollow <thickness>` builds each as a
+  shell of walls, `ed_maker walls <thickness>` as its upright walls
+  alone (a room open above and below), and `ed_maker arch <count>
+  [thickness]` as an arch of so many blocks spanning its box; `ed_maker
+  off` builds them plain again and `ed_maker` lists the makers. Selected
+  brushes that are in no group are made one. Move or size the brush and
+  what is built follows; a digger cuts through a made wall as through
+  any other.
+- **A project packed to give away** (`editor/tools/packer.jac`):
+  `ed_pack project <out.pak|out.pk3>` packs the open project's scenes
+  and, of everything else, only what they use: the prefabs they link
+  (and what those use), the files their materials' pictures are in
+  (Quake II's WALs, Quake III's TGAs and JPEGs, the project's own image
+  files), and the sounds and models their entities name. What a scene
+  uses that is not found is named, and counted.
+- **Pictures written as the games' own textures**
+  (`editor/tools/textures.jac`): `ed_texwal <material> [name]` writes a
+  material's picture as a Quake II WAL among the project's textures, and
+  `ed_texwad <out.wad> <material ...|used>` writes several, or every one
+  the scene uses, as a Quake WAD. Each keeps the picture at four sizes
+  and in the game's own 256 colours, every texel the nearest of them. Any
+  material's picture will do: a game's texture, or an image file of the
+  project's (PNG, JPEG and packed TGA are read as the window reads them).
+  A picture whose sides are not whole sixteens is refused, and says so.
+  BMP and PCX files in the project's textures folder are materials too
+  now, beside PNG, TGA and JPEG.
+- **Sprites and films in the explorer**: a Quake sprite (`.spr`) and a
+  Quake II sprite (`.sp2`, whose frames are PCX files) show their
+  pictures, and a Quake II cinematic (`.cin`) and a Quake III film
+  (`.RoQ`) show theirs as the engine's own decoders read them. The frame
+  buttons and `ed_frame next|prev|play|stop|<n>` step and play them as
+  they do a model's frames: a sprite's go round, a film is read forward
+  at its own pace and stops at its end.
 - **The project's own files in the explorer**: with a project open, its
   folder is listed under Your project beside the games', read from disk
   as it is; its files are shown as any other (an image in its textures
@@ -1319,7 +1526,7 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_floater_tests.jac`: a floating window laying out what is
   inside it, taking the pointer only where it is, moved by its bar, sized
   by its corner, kept on the stage or within bounds, closed by its
-  cross, and painting nothing inside; a rectangle with others cut out.
+  cross, and painting nothing inside; a rectangle with others cut out; kept within its room once there is one, and left as put before; the light colours against the dark.
 - `tests/ui_tests.jac` (also): a menu too long for the window laid out in
   columns, an entry of a later column clicked.
 - `tests/ui_tests.jac`: layout, picking, clicks, text editing, the tree,
@@ -1468,6 +1675,19 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_makers_tests.jac`: fields that make a group a maker; a box
+  built as a shell of six slabs, as four walls and as an arch of six
+  blocks; a map built with its makers' brushes made and the rest as it
+  was.
+- `tests/studio_texwrite_tests.jac`: a picture halved by the mean of each
+  four texels; a WAL that reads back as the texture it was; a Quake WAD
+  whose textures are found by name with their four sizes; sides that are
+  not whole sixteens refused; the name a material's picture goes by.
+- `tests/studio_paths_tests.jac`: a path as every corner reached from one
+  of them, either way, and nothing that is not on it.
+- `tests/studio_shelves_tests.jac`: a name with folders kept inside its
+  shelf; a shelf's folders as headings, shut until opened, before its
+  files; the values a sound or model field can take from a game's files.
 - `tests/studio_flyover_tests.jac`: a hint beside the pointer after it
   has rested on a control, gone when it moves, never over a work surface
   and not when turned off; Tab from field to field and round, past what
@@ -1785,10 +2005,14 @@ that imports little rebuilds in about a minute.
 So new features are written as tools: a module under `editor/tools/` with
 an `obj` that derives from `StudioTool` (`editor/tools/host.jac`), keeps
 its own state, and reaches the studio only through the `ToolHost` it is
-handed (say a message, the level's navigation, draw a line; more as tools
-need it, each added to `ToolHost` and to `StudioHost` in `studio.jac`).
-The studio asks its tools each command before its own, lets them draw in
-the level views, and takes their lines of the dump and of the settings.
+handed (say a message, the level's navigation, draw a line, a material's
+picture, a game's colours and files, the project's folders, run one of the
+studio's own commands, the materials the browser lists and a picture shown
+there in place of one's own; more as tools need it, each added to
+`ToolHost` and to `StudioHost` in `studio.jac`). The studio asks its tools
+each command before its own, lets them draw in the level views, gives
+them every frame as it passes (`tick`), and takes their lines of the dump
+and of the settings.
 `editor/tools/install.jac` lists them and `main.jac` hands them over; a
 tool never imports `editor.studio`. `editor/tools/camproutes.jac` (the
 ways bots take between camp spots) is the first: a change to it rebuilds

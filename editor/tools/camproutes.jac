@@ -130,6 +130,8 @@ obj CampRoutes(StudioTool) {
         return True;
     }
 
+    def tick(host: ToolHost, dt: float) {}
+
     def draw_through(host: ToolHost, scene: Scene) {
         if not self.shown {
             return;

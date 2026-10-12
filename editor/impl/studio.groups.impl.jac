@@ -39,8 +39,9 @@ def:priv group_marks(item: Item) -> str {
     return "  (" + ", ".join(marks) + ")" if marks else "";
 }
 
-impl Studio.list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bool) {
+impl Studio.list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bool, depth: int = 1) {
     owned = scene.solids_of(item);
+    inner = scene.nested(item);
     key = str(item.serial);
     shown = self.opened.get(key, False);
     veil = item_veil(item);
@@ -48,12 +49,15 @@ impl Studio.list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bo
         TreeRow(
             key=key,
             text=item.fields.get("_group_name", "group") + group_marks(item),
-            depth=1,
-            branch=len(owned) > 0,
+            depth=depth,
+            branch=len(owned) > 0 or len(inner) > 0,
             opened=shown,
             picked=picked,
-            note=str(len(owned)),
-            tone="dim" if veil or item_switched(item, SKIP_KEY) else "text"
+            # Its brushes, and the groups it holds.
+            note=str(len(owned)) + (" +" + str(len(inner)) if len(inner) > 0 else ""),
+            tone="dim" if veil or item_switched(item, SKIP_KEY) else "text",
+            # It opens and shuts, and is carried onto another group to be held by it.
+            carried=True
         )
     );
     if not shown {
@@ -64,11 +68,15 @@ impl Studio.list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bo
             TreeRow(
                 key="solid:" + str(brush.serial),
                 text=brush.sides[0].material if brush.sides[0].material else "(no material)",
-                depth=2,
+                depth=depth + 1,
                 picked=scene.is_solid_selected(brush),
                 note="#" + str(brush.serial)
             )
         );
+    }
+    # The groups it holds, each under it as it is under its class.
+    for held_group in inner {
+        self.list_group(scene, rows, held_group, scene.is_selected(held_group), depth + 1);
     }
 }
 
@@ -120,6 +128,59 @@ impl Studio.fill_group(scene: Scene, ui: StudioUi, chosen: list[Item]) {
 
 impl Studio.group_command(scene: Scene, args: list[str]) -> bool {
     name = args[0];
+    if name == "ed_nest" {
+        chosen_groups = [each for each in scene.selection() if each.classname() == "func_group"];
+        # Those picked whose own group is not picked with them: the rest go where they go.
+        tops = scene.tops(chosen_groups);
+        word = " ".join(args[1:]).strip();
+        if not word {
+            for each in scene.groups() {
+                holder = scene.nested_in(each);
+                if holder is not None {
+                    print(
+                        "studio: nest " + each.fields.get("_group_name", "group") + "#" + str(each.serial) + " in "
+                            + holder.fields.get("_group_name", "group") + "#" + str(holder.serial)
+                    );
+                }
+            }
+            self.say("ed_nest <group's name|#number>: put the selected groups in that group | ed_nest out: take them out");
+            return True;
+        }
+        if len(tops) == 0 {
+            self.say("Select the groups to put in another (or take out) first");
+            return True;
+        }
+        if word == "out" {
+            if not scene.nest(tops, None) {
+                self.say("They are in no group");
+            } else {
+                self.say(str(len(tops)) + (" group" if len(tops) == 1 else " groups") + " taken out");
+            }
+            return True;
+        }
+        taker: Item | None = None;
+        for each in scene.groups() {
+            if each in chosen_groups {
+                continue;
+            }
+            if (word.startswith("#") and word[1:] == str(each.serial)) or each.fields.get("_group_name", "") == word {
+                taker = each;
+                break;
+            }
+        }
+        if taker is None {
+            self.say("There is no other group called " + word + " (ed_groups lists them)");
+            return True;
+        }
+        if not scene.nest(tops, taker) {
+            self.say("They are in " + taker.fields.get("_group_name", "it") + " already, or it is in one of them");
+            return True;
+        }
+        self.opened[str(taker.serial)] = True;
+        print("studio: nested " + str(len(tops)) + " in #" + str(taker.serial) + " " + taker.fields.get("_group_name", ""));
+        self.say(str(len(tops)) + (" group" if len(tops) == 1 else " groups") + " put in " + taker.fields.get("_group_name", "group"));
+        return True;
+    }
     if name == "ed_groups" {
         told = [each.fields.get("_group_name", "group") + " #" + str(each.serial) + group_marks(each)
             for each in scene.groups()];

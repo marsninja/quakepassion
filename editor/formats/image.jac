@@ -1,9 +1,9 @@
 """How big an image file is, read from its first bytes: PNG, TGA and JPEG,
-the kinds Quake III keeps its textures in and the kinds a project brings
-its own in."""
+the kinds Quake III keeps its textures in, and BMP and PCX beside them, the
+kinds a project brings its own in."""
 
 """An image's width and height from its file's bytes, by its kind (".png",
-".tga", ".jpg"), or (0, 0) when it does not read as one."""
+".tga", ".jpg", ".bmp", ".pcx"), or (0, 0) when it does not read as one."""
 def image_size(data: bytes, extension: str) -> tuple[int, int] {
     kind = extension.lower();
     if kind == ".png" {
@@ -50,11 +50,32 @@ def image_size(data: bytes, extension: str) -> tuple[int, int] {
         }
         return (0, 0);
     }
+    if kind == ".bmp" {
+        # "BM", then its header: the width and the height at 18 and 22, low byte first (a height below nothing is top-down).
+        if len(data) < 26 or data[0] != 66 or data[1] != 77 {
+            return (0, 0);
+        }
+        wide = data[18] | (data[19] << 8) | (data[20] << 16) | (data[21] << 24);
+        tall = data[22] | (data[23] << 8) | (data[24] << 16) | (data[25] << 24);
+        if tall >= 2147483648 {
+            tall = 4294967296 - tall;
+        }
+        return (wide, tall) if wide < 65536 and tall < 65536 else (0, 0);
+    }
+    if kind == ".pcx" {
+        # The corners of its picture, low byte first: from, and to, inclusive.
+        if len(data) < 12 or data[0] != 10 {
+            return (0, 0);
+        }
+        return (
+            (data[8] | (data[9] << 8)) - (data[4] | (data[5] << 8)) + 1, (data[10] | (data[11] << 8)) - (data[6] | (data[7] << 8)) + 1
+        );
+    }
     return (0, 0);
 }
 
-"""The kind of image a file name says it is: ".png", ".tga" or ".jpg", or
-"" when it is none of them."""
+"""The kind of image a file name says it is: ".png", ".tga", ".jpg", ".bmp"
+or ".pcx", or "" when it is none of them."""
 def image_kind(name: str) -> str {
     low = name.lower();
     if low.endswith(".png") {
@@ -65,6 +86,12 @@ def image_kind(name: str) -> str {
     }
     if low.endswith(".jpg") or low.endswith(".jpeg") {
         return ".jpg";
+    }
+    if low.endswith(".bmp") {
+        return ".bmp";
+    }
+    if low.endswith(".pcx") {
+        return ".pcx";
     }
     return "";
 }

@@ -13,6 +13,7 @@ import from editor.classes.registry {
     read_class,
     add_classes,
     drop_classes,
+    names_offered,
     CLASS_TABLE
 }
 
@@ -116,4 +117,16 @@ test "an add-on's classes join the table, are replaced when read again, and leav
     assert again is not None and again.help == "Spikes that fall" and len(classes()) == before + 2;
     drop_classes(["trap_spikes", "trap_pit", "func_door"]);
     assert len(classes()) == before and class_info("trap_pit") is None and class_info("func_door") is not None;
+}
+
+test "a link is offered the names entities are fired by, and a name those that are fired" {
+    held = [
+        {"classname": "trigger_once", "target": "door_b", "killtarget": "gate"},
+        {"classname": "func_door", "targetname": "door_b"},
+        {"classname": "func_door", "targetname": "door_a", "message": "door_c"},
+        {"classname": "func_button", "target": "door_a", "targetname": ""}
+    ];
+    assert names_offered("link", held) == ["door_a", "door_b"];
+    assert names_offered("name", held) == ["door_a", "door_b", "gate"];
+    assert names_offered("text", held) == [] and names_offered("link", []) == [];
 }

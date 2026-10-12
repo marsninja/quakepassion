@@ -8,6 +8,7 @@ import os;
 import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q1.bsp { parse_bsp }
+import from engine.formats.q2.model { parse_pcx }
 import from games.passion.materials { Loader }
 import from ..compile.live { Materials, swatch_texture }
 import from ..formats.image { image_size, image_kind }
@@ -22,7 +23,11 @@ obj ArchiveMaterials(Materials) {
         missing: list[str] = [],
         listed: dict[str, list[str]] = {},
         # Where image files used as materials are kept, when a project says.
-        folder: str = "";
+        folder: str = "",
+        # Folders of image files from elsewhere, each by what its materials'
+        # names begin with: `addon:castle` for what an add-on brings,
+        # `link:stone` for a folder used where it lies.
+        extras: dict[str, str] = {};
 
     def reader -> Loader {
         loader = self.loader;
@@ -59,8 +64,21 @@ obj ArchiveMaterials(Materials) {
     """The image files there, as material names: `file:` and the path under
     the folder."""
     def file_names -> list[str] {
+        return self.images_under(self.files_folder(), "file:");
+    }
+
+    """The image files of a folder from elsewhere, as material names: what
+    the folder goes by (`addon:castle`, `link:stone`) and the path under it."""
+    def extra_names(key: str) -> list[str] {
+        if key not in self.extras {
+            return [];
+        }
+        return self.images_under(self.extras[key], key + "/");
+    }
+
+    """The image files under a folder, each as `lead` and its path from it."""
+    def images_under(top: str, lead: str) -> list[str] {
         found: list[str] = [];
-        top = self.files_folder();
         if not os.path.isdir(top) {
             return found;
         }
@@ -73,7 +91,7 @@ obj ArchiveMaterials(Materials) {
                 if os.path.isdir(here + "/" + entry_name) {
                     waiting.append(inner);
                 } elif image_kind(entry_name) {
-                    found.append("file:" + inner);
+                    found.append(lead + inner);
                 }
             }
         }
@@ -83,9 +101,19 @@ obj ArchiveMaterials(Materials) {
     """A material's image from the archives or the project's own files, or none."""
     def fetch(name: str) -> Texture | None {
         parts = name.split(":", 1);
+        path = "";
         if len(parts) == 2 and parts[0] == "file" and parts[1] and ".." not in parts[1] {
             path = self.files_folder() + "/" + parts[1];
-            kind = image_kind(parts[1]);
+        } elif len(parts) == 2 and parts[0] in ["addon", "link"] and ".." not in parts[1] {
+            # A file of a folder from elsewhere: an add-on's, or one linked to.
+            halves = parts[1].split("/", 1);
+            if len(halves) != 2 or parts[0] + ":" + halves[0] not in self.extras or not halves[1] {
+                return None;
+            }
+            path = self.extras[parts[0] + ":" + halves[0]] + "/" + halves[1];
+        }
+        if path {
+            kind = image_kind(path);
             if not kind or not os.path.isfile(path) {
                 return None;
             }
@@ -100,6 +128,16 @@ obj ArchiveMaterials(Materials) {
             size = image_size(data, kind);
             if size[0] <= 0 or size[1] <= 0 {
                 return None;
+            }
+            if kind == ".pcx" {
+                # The window reads no PCX: its colours are read here, as the games' own are.
+                try {
+                    read = parse_pcx(data, name);
+                    # The reader leaves its colours where a level keeps numbers into a palette: here they are colours.
+                    return Texture(name=name, width=read.width, height=read.height, rgba=read.pixels);
+                } except Exception {
+                    return None;
+                }
             }
             return Texture(name=name, width=size[0], height=size[1], encoded=data, extension=kind);
         }
@@ -202,6 +240,10 @@ obj ArchiveMaterials(Materials) {
         }
         result: list[str] = [];
         parts = group.split(":", 1);
+        if len(parts) == 2 and parts[0] in ["addon", "link"] {
+            # Read each time: such a folder is changed by hand.
+            return self.extra_names(group);
+        }
         try {
             if len(parts) == 2 and parts[0] == "q1" {
                 data = self.reader().catalog.source("q1").read("maps/" + parts[1] + ".bsp");

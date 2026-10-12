@@ -162,8 +162,8 @@ impl Studio.show_asset(ui: StudioUi) {
         form.adopt(ui.model_view);
         frames = Box(across=True, gap=4);
         form.adopt(frames);
-        frames.adopt(PushButton(text="<", command="ed_frame prev", size=28, hint="The frame before"));
-        frames.adopt(PushButton(text=">", command="ed_frame next", size=28, hint="The frame after"));
+        frames.adopt(PushButton(glyph="left", command="ed_frame prev", size=28, hint="The frame before"));
+        frames.adopt(PushButton(glyph="right", command="ed_frame next", size=28, hint="The frame after"));
         frames.adopt(
             PushButton(
                 text="Stop" if self.model_playing else "Play",
@@ -186,12 +186,42 @@ impl Studio.show_asset(ui: StudioUi) {
         return;
     }
     image = seen.image;
+    reel = seen.reel;
+    if reel is not None {
+        # A sprite's or a film's pictures: stepped and played as a model's frames are.
+        frames = Box(across=True, gap=4);
+        form.adopt(frames);
+        frames.adopt(PushButton(glyph="left", command="ed_frame prev", size=28, hint="The picture before (a sprite's)"));
+        frames.adopt(PushButton(glyph="right", command="ed_frame next", size=28, hint="The next picture"));
+        frames.adopt(
+            PushButton(
+                text="Stop" if self.reel_playing else "Play",
+                command="ed_frame stop" if self.reel_playing else "ed_frame play",
+                size=56,
+                hint="Run through the pictures at their own pace"
+            )
+        );
+        frames.adopt(
+            Label(
+                text="picture " + str(reel.index) + (" of " + str(reel.total) if reel.total > 0 else "")
+                    + ("   (the end)" if reel.ended else ""),
+                tone="dim",
+                grow=1
+            )
+        );
+    }
     if image is not None {
         key = "asset:" + seen.game + ":" + seen.name;
         kept = self.canvas.has_picture(key);
+        if reel is not None and self.reel_kept != key + "#" + str(reel.index) {
+            # Another picture of the run: it takes the one picture's place.
+            kept = False;
+            self.reel_kept = key + "#" + str(reel.index);
+        }
         if not kept {
-            if len(image.rgba) >= image.width * image.height * 4 and image.width > 0 {
-                self.canvas.keep_picture(key, image.width, image.height, image.rgba);
+            colours = texture_rgba(image);
+            if len(colours) > 0 {
+                self.canvas.keep_picture(key, image.width, image.height, colours);
                 kept = True;
             } elif len(image.encoded) > 0 {
                 kept = self.canvas.keep_encoded(key, image.extension, image.encoded);
@@ -263,6 +293,8 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         }
         known.home = self.project_folder;
         self.asset_now = known.look(parts[1], parts[2]);
+        self.reel_playing = False;
+        self.reel_kept = "";
         self.model_now = None;
         self.model_playing = False;
         self.model_edges = [];
@@ -284,6 +316,10 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
             self.show_asset(ui);
         }
         return True;
+    }
+    if name == "ed_frame" and self.model_now is None and self.asset_now is not None and self.asset_now.reel is not None {
+        # A sprite's or a film's pictures, as a model's frames are stepped.
+        return self.reel_command(args);
     }
     if name == "ed_frame" or name == "ed_orbit" {
         self.fresh_model();
@@ -566,6 +602,7 @@ impl Studio.turn_model(dt: float) {
             self.model_reach = max(8.0, self.model_reach * (0.85 ** event.wheel));
         }
     }
+    self.play_reel(dt);
     if figure is None {
         return;
     }
@@ -576,4 +613,88 @@ impl Studio.turn_model(dt: float) {
     camera.yaw = self.model_yaw;
     camera.pitch = self.model_pitch;
     camera.eye = self.model_middle.sub(camera.forward().scale(self.model_reach));
+}
+
+impl Studio.reel_step(back: bool) -> bool {
+    seen = self.asset_now;
+    reel = seen.reel if seen is not None else None;
+    if seen is None or reel is None {
+        return False;
+    }
+    shown = reel_before(reel) if back else reel_next(reel, seen.name);
+    if shown is None {
+        return False;
+    }
+    seen.image = shown;
+    return True;
+}
+
+impl Studio.play_reel(dt: float) {
+    seen = self.asset_now;
+    reel = seen.reel if seen is not None else None;
+    ui = self.ui;
+    if reel is None or not self.reel_playing or ui is None {
+        return;
+    }
+    self.reel_clock += dt;
+    pace = 1.0 / float(max(1, reel.rate));
+    moved = False;
+    # No more than a few pictures a frame, however long the frame took.
+    turns = 0;
+    while self.reel_clock >= pace and turns < 4 {
+        self.reel_clock -= pace;
+        turns += 1;
+        if not self.reel_step(False) {
+            # A film that has run out stops there.
+            self.reel_playing = False;
+            moved = True;
+            break;
+        }
+        moved = True;
+    }
+    if moved {
+        self.show_asset(ui);
+    }
+}
+
+impl Studio.reel_command(args: list[str]) -> bool {
+    seen = self.asset_now;
+    reel = seen.reel if seen is not None else None;
+    ui = self.ui;
+    if seen is None or reel is None {
+        return True;
+    }
+    word = args[1] if len(args) > 1 else "";
+    if word == "play" or word == "stop" {
+        self.reel_playing = word == "play" and not reel.ended;
+        self.reel_clock = 0.0;
+    } elif word == "next" {
+        if not self.reel_step(False) {
+            self.say("That was its last picture" if reel.film is not None else "It has no pictures");
+        }
+    } elif word == "prev" {
+        if not self.reel_step(True) {
+            self.say("A film is read forward only: show it again to start it over");
+        }
+    } elif word.isdigit() and reel.film is None and reel.total > 0 {
+        reel.index = min(int(word), reel.total - 1);
+        seen.image = reel.frames[reel.index];
+    } elif word.isdigit() {
+        # A film: read on to that picture, if it is still ahead.
+        while reel.index < int(word) and self.reel_step(False) {
+            continue;
+        }
+    } else {
+        self.say("ed_frame <number|next|prev|play|stop>");
+        return True;
+    }
+    print(
+        "studio: reel " + seen.game + ":" + seen.name + " picture=" + str(reel.index) + " of=" + str(reel.total) + " ended="
+            + ("1" if reel.ended else "0") + " playing=" + ("1" if self.reel_playing else "0") + " size="
+            + (str(seen.image.width) + "x" + str(seen.image.height) if seen.image is not None else "0x0")
+    );
+    if ui is not None {
+        self.show_asset(ui);
+    }
+    return True;
 }

@@ -85,3 +85,58 @@ def names_file(game: str, fields: dict[str, str], name: str) -> bool {
     }
     return False;
 }
+
+"""What kind of file a field names, by its key: "sound", "model", or ""
+when it names none."""
+def file_field(key: str) -> str {
+    if key in ["noise", "noise1", "noise2", "noise3", "noise4", "music"] {
+        return "sound";
+    }
+    if key in ["model", "model2"] {
+        return "model";
+    }
+    return "";
+}
+
+"""The values a field of that kind can take in a game, from the game's
+files, as the field would name them: Quake and Quake II name a sound from
+`sound/` on, Quake III from the top; a model is named whole. Sorted."""
+def field_choices(game: str, kind: str, names: list[str]) -> list[str] {
+    found: list[str] = [];
+    for name in names {
+        low = name.lower();
+        if kind == "sound" and low.endswith(".wav") {
+            if game == "q3" {
+                found.append(name);
+            } elif low.startswith("sound/") {
+                found.append(name[6:]);
+            }
+        } elif kind == "model" and (low.endswith(".mdl") or low.endswith(".md2") or low.endswith(".md3") or low.endswith(".spr")
+            or low.endswith(".sp2")) {
+            found.append(name);
+        }
+    }
+    return sorted(found);
+}
+
+"""Where a material's picture is kept, as (game, file) in the order to try:
+Quake II's as a WAL under `textures/`, Quake III's as a TGA or a JPEG by
+its own name, an image file of the project's as ("file", its path under
+the project's textures). Quake's are kept inside its levels, and a plain
+name is nobody's: for those, none."""
+def material_spots(material: str) -> list[tuple[str, str]] {
+    parts = material.split(":", 1);
+    if len(parts) != 2 or not parts[1] or ".." in parts[1] {
+        return [];
+    }
+    if parts[0] == "q2" {
+        return [("q2", "textures/" + parts[1] + ".wal")];
+    }
+    if parts[0] == "q3" {
+        return [("q3", parts[1] + ".tga"), ("q3", parts[1] + ".jpg")];
+    }
+    if parts[0] == "file" {
+        return [("file", parts[1])];
+    }
+    return [];
+}

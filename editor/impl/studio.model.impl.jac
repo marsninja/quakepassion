@@ -91,8 +91,8 @@ impl Studio.show_model_form(ui: StudioUi) -> bool {
     form.adopt(ui.model_view);
     frames = Box(across=True, gap=4);
     form.adopt(frames);
-    frames.adopt(PushButton(text="<", command="ed_frame prev", size=28, hint="The frame before"));
-    frames.adopt(PushButton(text=">", command="ed_frame next", size=28, hint="The frame after"));
+    frames.adopt(PushButton(glyph="left", command="ed_frame prev", size=28, hint="The frame before"));
+    frames.adopt(PushButton(glyph="right", command="ed_frame next", size=28, hint="The frame after"));
     frames.adopt(
         PushButton(
             text="Stop" if self.model_playing else "Play",
@@ -224,6 +224,43 @@ impl Studio.model_event(event: UiEvent) -> bool {
     if self.bone_event(event) {
         return True;
     }
+    if event.kind == "press" and event.button == 0 and event.alt {
+        # With Alt a press takes the tag under the pointer, to be dragged.
+        self.tag_held = self.tag_under(event.x, event.y);
+        self.model_travel = 0;
+        self.model_drag = Vec3();
+        if self.tag_held {
+            return True;
+        }
+    }
+    if self.tag_held and event.kind == "drag" {
+        through = self.model_camera;
+        unit = 2.0 * self.model_reach * through.slope() / float(max(1, ui_model_area(ui).h));
+        self.model_drag = self.model_drag.add(through.right().scale(float(event.dx) * unit)).sub(
+            through.up().scale(float(event.dy) * unit)
+        );
+        return True;
+    }
+    if self.tag_held and event.kind in ["release", "click"] and event.button == 0 {
+        moved_tag = doc.tag(self.tag_held);
+        if event.kind == "release" and moved_tag is not None and self.model_drag.length() > 0.01 and doc.frame < len(moved_tag.origins) {
+            # Where the drag left it, at this frame (with Shift, by as much at every frame).
+            went = moved_tag.origins[doc.frame].add(self.model_drag);
+            doc.move_tag(self.tag_held, went, event.shift);
+            print(
+                "studio: tag dragged " + self.tag_held + " at=" + str(int(round(went.x))) + "," + str(int(round(went.y))) + ","
+                    + str(int(round(went.z))) + (" all" if event.shift else "")
+            );
+            self.say(self.tag_held + " moved" + (" at every frame" if event.shift else ""));
+        }
+        if event.kind == "click" or event.kind == "release" {
+            self.model_drag = Vec3();
+        }
+        if event.kind == "click" {
+            self.tag_held = "";
+        }
+        return True;
+    }
     if event.kind == "press" and event.button == 0 {
         self.model_travel = 0;
         self.model_drag = Vec3();
@@ -316,6 +353,10 @@ impl Studio.draw_model_marks {
     for tag in doc.tags() {
         if doc.frame < len(tag.origins) {
             at = tag.origins[doc.frame];
+            if tag.name == self.tag_held {
+                # Where the drag would leave it.
+                at = at.add(self.model_drag);
+            }
             wire_line(at.sub(Vec3(x=tick * 2.0)), at.add(Vec3(x=tick * 2.0)), ink(0xffd166));
             wire_line(at.sub(Vec3(y=tick * 2.0)), at.add(Vec3(y=tick * 2.0)), ink(0xffd166));
             wire_line(at.sub(Vec3(z=tick * 2.0)), at.add(Vec3(z=tick * 2.0)), ink(0xffd166));
@@ -567,7 +608,7 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
                 stands = tag.origins[doc.frame] if doc.frame < len(tag.origins) else Vec3();
                 print(
                     "studio: tag " + tag.name + " at=" + str(int(round(stands.x))) + "," + str(int(round(stands.y))) + ","
-                        + str(int(round(stands.z))) + " frames=" + str(len(tag.origins))
+                        + str(int(round(stands.z))) + " frames=" + str(len(tag.origins)) + " seen=" + self.tag_seen(stands)
                 );
             }
             self.say(str(len(doc.tags())) + " tags: " + ", ".join([tag.name for tag in doc.tags()]) if doc.tags() else "The model has no tags");
@@ -750,4 +791,39 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
     }
     self.say("Done: " + doc.done[-1].label if done and len(doc.done) > 0 else "That changed nothing");
     return True;
+}
+
+impl Studio.tag_under(x: int, y: int) -> str {
+    doc = self.model_doc;
+    ui = self.ui;
+    if doc is None or ui is None {
+        return "";
+    }
+    area = ui_model_area(ui);
+    found = "";
+    nearest = 14 * 14;
+    for tag in doc.tags() {
+        if doc.frame >= len(tag.origins) {
+            continue;
+        }
+        at = self.model_camera.project(area, tag.origins[doc.frame]);
+        if at is None {
+            continue;
+        }
+        away = (at[0] - x) * (at[0] - x) + (at[1] - y) * (at[1] - y);
+        if away < nearest {
+            nearest = away;
+            found = tag.name;
+        }
+    }
+    return found;
+}
+
+impl Studio.tag_seen(at: Vec3) -> str {
+    ui = self.ui;
+    if ui is None {
+        return "nowhere";
+    }
+    shown_at = self.model_camera.project(ui_model_area(ui), at);
+    return str(shown_at[0]) + "," + str(shown_at[1]) if shown_at is not None else "nowhere";
 }

@@ -188,10 +188,10 @@ impl Studio.fill_face_form(scene: Scene, ui: StudioUi) {
     form.adopt(Spacer(size=6));
     nudges = Box(across=True, gap=4);
     form.adopt(nudges);
-    nudges.adopt(PushButton(text="<", command="ed_tex shift -8 0", grow=1, hint="Slide the material 8 texels left"));
-    nudges.adopt(PushButton(text=">", command="ed_tex shift 8 0", grow=1, hint="Slide the material 8 texels right"));
-    nudges.adopt(PushButton(text="^", command="ed_tex shift 0 -8", grow=1, hint="Slide the material 8 texels up"));
-    nudges.adopt(PushButton(text="v", command="ed_tex shift 0 8", grow=1, hint="Slide the material 8 texels down"));
+    nudges.adopt(PushButton(glyph="left", command="ed_tex shift -8 0", grow=1, hint="Slide the material 8 texels left"));
+    nudges.adopt(PushButton(glyph="right", command="ed_tex shift 8 0", grow=1, hint="Slide the material 8 texels right"));
+    nudges.adopt(PushButton(glyph="up", command="ed_tex shift 0 -8", grow=1, hint="Slide the material 8 texels up"));
+    nudges.adopt(PushButton(glyph="down", command="ed_tex shift 0 8", grow=1, hint="Slide the material 8 texels down"));
     nudges.adopt(PushButton(text="-15", command="ed_tex turn -15", grow=1, hint="Turn the material 15 degrees back"));
     nudges.adopt(PushButton(text="+15", command="ed_tex turn 15", grow=1, hint="Turn the material 15 degrees on"));
     fits = Box(across=True, gap=4);
@@ -297,6 +297,9 @@ impl Studio.fill_gallery(ui: StudioUi) {
         }
     } elif self.shelf == "files" {
         names = shelf.file_names();
+    } elif self.shelf.startswith("list:") {
+        # A list of materials kept by name, in the order they were put on it.
+        names = list(self.all_lists().get(self.shelf[5:], []));
     } elif self.shelf == "recent" {
         # What has been taken in hand, the latest first.
         names = list(self.recent_materials);

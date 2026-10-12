@@ -53,30 +53,36 @@ impl Studio.settings_command(scene: Scene, args: list[str]) -> bool {
             self.say("ed_bind <key> <command>: a letter, or ctrl+ and shift+ before one");
             return True;
         }
-        chord = args[1].lower();
-        self.user_keys[chord] = " ".join(args[2:]);
+        # Held by keyboards of the engine's own, one for each way Ctrl and
+        # Shift are held: its keys and its names for them.
+        chord = bind_chord(self.key_layers, args[1], " ".join(args[2:]));
+        if not chord {
+            self.say("ed_bind: \"" + args[1] + "\" isn't a valid key (a letter, a digit, or a name such as F5, PGUP, SPACE)");
+            return True;
+        }
         self.keep_settings();
-        self.say(chord + " runs " + self.user_keys[chord]);
+        self.say(chord + " runs " + " ".join(args[2:]));
         return True;
     }
     if name == "ed_unbind" {
-        chord = args[1].lower() if len(args) > 1 else "";
-        if chord in self.user_keys {
-            self.user_keys.pop(chord, None);
+        parts = chord_parts(args[1] if len(args) > 1 else "");
+        if parts[1] and chord_command(self.key_layers, parts[0], parts[1]) {
+            chord = bind_chord(self.key_layers, args[1], "");
             self.keep_settings();
             self.say(chord + " does what the studio gives it");
         } else {
-            self.say("ed_unbind: " + (chord if chord else "a key") + " is not bound by hand");
+            self.say("ed_unbind: " + (args[1].lower() if len(args) > 1 else "a key") + " is not bound by hand");
         }
         return True;
     }
     if name == "ed_binds" {
-        for chord in sorted(self.user_keys.keys()) {
-            print("studio: key " + chord + " " + self.user_keys[chord]);
+        bound = bound_chords(self.key_layers);
+        for (chord, order) in bound {
+            print("studio: key " + chord + " " + order);
         }
         self.say(
-            "Bound by hand: " + ", ".join(sorted(self.user_keys.keys()))
-            if self.user_keys
+            "Bound by hand: " + ", ".join([chord for (chord, order) in bound])
+            if bound
             else "No key is bound by hand (ed_bind <key> <command>)"
         );
         return True;
@@ -88,6 +94,9 @@ impl Studio.settings_command(scene: Scene, args: list[str]) -> bool {
         }
         self.keep_settings();
         self.seen_revision = -1;
+        return True;
+    }
+    if self.settings_box_command(scene, args) {
         return True;
     }
     if name == "ed_settings" {

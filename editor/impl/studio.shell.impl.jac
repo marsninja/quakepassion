@@ -24,7 +24,9 @@ impl Studio.autosave(dt: float, now: bool) {
         return;
     }
     self.autosave_clock += dt;
-    if not now and (self.autosave_clock < 30.0 or not scene.dirty or scene.revision == self.autosaved) {
+    if not now
+        and (self.autosave_every <= 0.0 or self.autosave_clock < self.autosave_every or not scene.dirty
+        or scene.revision == self.autosaved) {
         return;
     }
     self.autosave_clock = 0.0;
@@ -323,6 +325,26 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         popup.open_at(stage, 300, 80);
         return True;
     }
+    if name == "ed_autosave" and len(args) > 1 {
+        seconds = -1.0;
+        if args[1] == "every" and len(args) > 2 {
+            try {
+                seconds = float(args[2]);
+            } except ValueError {
+                seconds = -1.0;
+            }
+        }
+        if seconds < 0.0 {
+            self.say("ed_autosave [every <seconds>]: write the autosave now, or say how often (0 for never)");
+            return True;
+        }
+        self.autosave_every = float(int(seconds));
+        self.keep_settings();
+        self.say(
+            "A changed scene is autosaved every " + str(int(seconds)) + " seconds" if seconds > 0.0 else "Scenes are not autosaved"
+        );
+        return True;
+    }
     if name == "ed_autosave" {
         self.autosave(0.0, True);
         return True;
@@ -401,6 +423,20 @@ impl Studio.keep_settings {
         # Not before what was kept has been read: it would be written over.
         return;
     }
+    lines = self.settings_lines();
+    self.settings_rev += 1;
+    path = self.settings_path();
+    try {
+        os.makedirs(os.path.dirname(path), exist_ok=True);
+        with open(path, "w") as file {
+            file.write("\n".join(lines) + "\n");
+        }
+    } except OSError {
+        return;
+    }
+}
+
+impl Studio.settings_lines -> list[str] {
     lines = [
         "// The studio's settings, written when one changes.",
         "ed_grid " + str(int(self.grid)),
@@ -424,12 +460,29 @@ impl Studio.keep_settings {
     for kept_class in self.favourites {
         lines.append("ed_fav " + kept_class);
     }
-    for chord in sorted(self.user_keys.keys()) {
-        lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
+    for (chord, order) in bound_chords(self.key_layers) {
+        lines.append("ed_bind " + chord + " " + quote_command_word(order));
     }
     lines.append("ed_outside " + self.outside);
     lines.append("ed_log panel " + ("on" if self.log_panel else "off") + " " + str(self.log_rows));
     lines.append("ed_flyover " + ("on" if self.flyovers else "off"));
+    lines.append("ed_theme " + self.theme_name);
+    lines.append("ed_bar tools " + ("show" if self.tools_shown else "hide"));
+    lines.append("ed_bar tools " + ("below" if self.tools_below else "above"));
+    lines.append("ed_bar status " + ("show" if self.status_shown else "hide"));
+    lines.append("ed_shapebox at " + str(self.shape_at[0]) + " " + str(self.shape_at[1]));
+    lines.append("ed_shapebox kind " + self.shape_kind);
+    for held_key in ["w", "d", "h", "count", "thick"] {
+        if self.shape_sizes.get(held_key, "") {
+            lines.append("ed_shapebox set " + held_key + " " + self.shape_sizes[held_key]);
+        }
+    }
+    if self.shape_box is not None {
+        lines.append("ed_shapebox open");
+    }
+    for float_line in self.float_settings() {
+        lines.append(float_line);
+    }
     for tool in self.tools {
         for tool_line in tool.settings_lines(self.host()) {
             lines.append(tool_line);
@@ -459,15 +512,20 @@ impl Studio.keep_settings {
     for kept_recipe in sorted(self.recipes.keys()) {
         lines.append("ed_recipe " + kept_recipe + " " + quote_command_word(self.recipes[kept_recipe]));
     }
-    path = self.settings_path();
-    try {
-        os.makedirs(os.path.dirname(path), exist_ok=True);
-        with open(path, "w") as file {
-            file.write("\n".join(lines) + "\n");
-        }
-    } except OSError {
-        return;
+    lines.append("ed_autosave every " + str(int(self.autosave_every)));
+    lines.append("ed_axes " + self.gizmo_axes);
+    for link in sorted(self.tex_links.keys()) {
+        lines.append("ed_texlink " + link + " " + quote_command_word(self.tex_links[link]));
     }
+    for kept_list in sorted(self.tex_lists.keys()) {
+        if len(self.tex_lists[kept_list]) > 0 {
+            lines.append("ed_texlist " + kept_list + " add " + " ".join(self.tex_lists[kept_list]));
+        }
+    }
+    for which in sorted(self.user_inks.keys()) {
+        lines.append("ed_colour " + which + " " + self.user_inks[which]);
+    }
+    return lines;
 }
 
 impl Studio.read_settings {

@@ -41,6 +41,9 @@ impl Studio.fill_fields(scene: Scene, ui: StudioUi, chosen: list[Item]) {
             }
         }
     }
+    # The names links and names are offered, worked out once when asked for.
+    names_known: dict[str, list[str]] = {};
+    offered: list[str] = [];
     for key in keys {
         first = chosen[0].fields.get(key, "");
         same = True;
@@ -67,6 +70,39 @@ impl Studio.fill_fields(scene: Scene, ui: StudioUi, chosen: list[Item]) {
                 }
             }
             row.adopt(Dropdown(text=words, labels=labels, commands=orders, grow=1, hint=known.help));
+        } elif key == "message" {
+            # Words the player reads may run to several lines.
+            row.adopt(
+                TextArea(
+                    value=first if same else "",
+                    ghost="" if same else "(mixed)",
+                    command=placing,
+                    grow=1,
+                    hint=(known.help + " | " if known.help else "")
+                    + "Enter begins a line; Ctrl+Enter or a click elsewhere sets it; Escape cancels"
+                )
+            );
+        } elif key == "classname" or known.kind == "link" or known.kind == "name" {
+            # A class of the game's, or a name the map already uses: listed
+            # under the field and narrowed by what is typed.
+            if key == "classname" {
+                offered = class_names(self.class_game());
+            } else {
+                if known.kind not in names_known {
+                    names_known[known.kind] = names_offered(known.kind, [item.fields for item in scene.items()]);
+                }
+                offered = names_known[known.kind];
+            }
+            row.adopt(
+                Combo(
+                    value=first if same else "",
+                    ghost="" if same else "(mixed)",
+                    command=placing,
+                    choices=offered,
+                    grow=1,
+                    hint=told + " | The arrows walk the list under it"
+                )
+            );
         } else {
             row.adopt(
                 TextField(
@@ -77,12 +113,15 @@ impl Studio.fill_fields(scene: Scene, ui: StudioUi, chosen: list[Item]) {
         if known.kind == "angle" {
             row.adopt(
                 PushButton(
-                    text="<", command="ed_bump " + quote_command_word(key) + " 45", size=22, hint="Turn it 45 degrees left"
+                    glyph="left", command="ed_bump " + quote_command_word(key) + " 45", size=22, hint="Turn it 45 degrees left"
                 )
             );
             row.adopt(
                 PushButton(
-                    text=">", command="ed_bump " + quote_command_word(key) + " -45", size=22, hint="Turn it 45 degrees right"
+                    glyph="right",
+                    command="ed_bump " + quote_command_word(key) + " -45",
+                    size=22,
+                    hint="Turn it 45 degrees right"
                 )
             );
         } elif known.kind == "color" and same {
@@ -93,17 +132,26 @@ impl Studio.fill_fields(scene: Scene, ui: StudioUi, chosen: list[Item]) {
                 }
                 row.adopt(Swatch(red=tint.x, green=tint.y, blue=tint.z, size=22));
             }
+        } elif file_field(key) {
+            row.adopt(
+                PushButton(
+                    glyph="dots",
+                    command="ed_pickfile " + quote_command_word(key),
+                    size=26,
+                    hint="Choose from the game's own " + ("sounds" if file_field(key) == "sound" else "models") + ": type to find one"
+                )
+            );
         } elif known.kind == "link" and same and first {
             row.adopt(
                 PushButton(
-                    text=">",
+                    glyph="goto",
                     command="ed_select " + quote_command_word("name:" + first),
                     size=22,
                     hint="Select what it fires"
                 )
             );
         }
-        row.adopt(PushButton(text="x", command="ed_unset " + quote_command_word(key), size=22, hint="Remove " + key));
+        row.adopt(PushButton(glyph="cross", command="ed_unset " + quote_command_word(key), size=22, hint="Remove " + key));
     }
 }
 
@@ -175,6 +223,16 @@ impl Studio.fill_class(scene: Scene, ui: StudioUi, chosen: list[Item]) {
                 }
             }
             row.adopt(Dropdown(text=words, labels=labels, commands=orders, grow=1, hint=absent.help));
+        } elif absent.kind == "link" or absent.kind == "name" {
+            row.adopt(
+                Combo(
+                    ghost=absent.kind,
+                    command=placing,
+                    choices=names_offered(absent.kind, [item.fields for item in scene.items()]),
+                    grow=1,
+                    hint=(absent.help + " | " if absent.help else "") + "Enter gives the selection this field"
+                )
+            );
         } else {
             row.adopt(
                 TextField(
@@ -184,6 +242,16 @@ impl Studio.fill_class(scene: Scene, ui: StudioUi, chosen: list[Item]) {
                     hint=(absent.help + " | " if absent.help else "") + "Enter gives the selection this field"
                 )
             );
+            if file_field(absent.name) {
+                row.adopt(
+                    PushButton(
+                        glyph="dots",
+                        command="ed_pickfile " + quote_command_word(absent.name),
+                        size=26,
+                        hint="Choose from the game's own " + ("sounds" if file_field(absent.name) == "sound" else "models")
+                    )
+                );
+            }
         }
     }
 }

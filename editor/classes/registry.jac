@@ -289,7 +289,7 @@ glob CLASS_TABLE: list[str] = [
     "item_haste|point|q3|Haste||",
     "item_invis|point|q3|Invisibility|wait:n::,team:t::|",
     "item_regen|point|q3|Regeneration|team:t::|",
-    "misc_model|point|q3|A model the level compiler builds into the level|angle:a::|",
+    "misc_model|point|q3|A model the level compiler builds into the level|model:t::,angle:a::|",
     "misc_portal_camera|point|q3|Where a portal surface looks from|angle:a::,target:l::,targetname:k::|SLOWROTATE,FASTROTATE",
     "misc_portal_surface|point|q3|A surface that shows what a portal camera sees, or a mirror with none|target:l::|",
     "shooter_grenade|point|q3|Fires a grenade when fired|target:l::,targetname:k::,wait:n::,random:n::|",
@@ -432,6 +432,26 @@ def field_of(classname: str, key: str) -> FieldInfo {
         }
     }
     return common_field(key);
+}
+
+"""The names a field of one kind could be given, from the fields of every
+entity of a map: for a link, each name an entity is fired by; for a name,
+each name some entity fires. In order, each once."""
+def names_offered(kind: str, entities: list[dict[str, str]]) -> list[str] {
+    wanted = "name" if kind == "link" else ("link" if kind == "name" else "");
+    found: list[str] = [];
+    if not wanted {
+        return found;
+    }
+    for fields in entities {
+        classname = fields.get("classname", "");
+        for (key, value) in fields.items() {
+            if value and value not in found and field_of(classname, key).kind == wanted {
+                found.append(value);
+            }
+        }
+    }
+    return sorted(found);
 }
 
 """The classes a game has ("" for every game), by name."""

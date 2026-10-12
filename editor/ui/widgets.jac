@@ -236,6 +236,10 @@ node PushButton(Widget) {
         at = self.area.x + theme.pad + 2;
         if self.glyph {
             side = theme.row - 10;
+            if not self.text {
+                # A button of its mark alone has it in the middle.
+                at = self.area.x + (self.area.w - side) // 2;
+            }
             draw_glyph(canvas, self.glyph, at, self.area.y + (self.area.h - side) // 2, side, front);
             at += side + 4;
         }
@@ -264,10 +268,31 @@ node PushButton(Widget) {
 }
 
 """A small mark drawn in a square: play, pause, stop, step, down (a menu's
-arrow), right and open (a tree's arrows), check, cross."""
+arrow), right and open (a tree's arrows), left, up, check, cross, plus,
+minus, dots (more to choose from) and goto (an arrow to what is meant)."""
 def draw_glyph(canvas: Canvas, name: str, x: int, y: int, side: int, color: Ink) {
     if name == "play" or name == "right" {
         canvas.triangle(x, y, x, y + side, x + side, y + side // 2, color);
+    } elif name == "left" {
+        canvas.triangle(x + side, y, x, y + side // 2, x + side, y + side, color);
+    } elif name == "up" {
+        canvas.triangle(x, y + side - side // 4, x + side, y + side - side // 4, x + side // 2, y + side // 4, color);
+    } elif name == "plus" or name == "minus" {
+        bar = max(2, side // 5);
+        canvas.fill(Rect(x=x, y=y + (side - bar) // 2, w=side, h=bar), color);
+        if name == "plus" {
+            canvas.fill(Rect(x=x + (side - bar) // 2, y=y, w=bar, h=side), color);
+        }
+    } elif name == "dots" {
+        dot = max(2, side // 5);
+        for place in range(3) {
+            canvas.fill(Rect(x=x + (place * (side - dot)) // 2, y=y + (side - dot) // 2, w=dot, h=dot), color);
+        }
+    } elif name == "goto" {
+        bar = max(2, side // 5);
+        head = side // 2;
+        canvas.fill(Rect(x=x, y=y + (side - bar) // 2, w=side - head, h=bar), color);
+        canvas.triangle(x + side - head, y + 1, x + side - head, y + side - 1, x + side, y + side // 2, color);
     } elif name == "open" or name == "down" {
         canvas.triangle(x, y + side // 4, x + side // 2, y + side - side // 4, x + side, y + side // 4, color);
     } elif name == "pause" {
@@ -763,7 +788,10 @@ obj TreeRow {
         note: str = "",
         tone: str = "text",
         # A row that stays where it is: it is not offered to be dragged.
-        fixed: bool = False;
+        fixed: bool = False,
+        # A row that opens and shuts and is a thing all the same: it is
+        # offered to be dragged though its list does not carry headings.
+        carried: bool = False;
 }
 
 """A scrolling list of rows, indented as a tree. The rows are data the owner
@@ -914,7 +942,7 @@ node TreeView(Widget) {
                     self.pick + " " + quote_command_word(row.key) + (" add" if event.ctrl or event.shift else "")
                 );
             }
-            if self.drag and (self.carry_branches or not row.branch) and not row.fixed {
+            if self.drag and (self.carry_branches or not row.branch or row.carried) and not row.fixed {
                 # A row that is a thing, not a heading, can be dragged elsewhere.
                 stage.offer(self.drag + " " + row.key, row.text);
             }
@@ -1912,7 +1940,12 @@ node Palette(Widget) {
     has entries: list[PaletteEntry] = [],
         typed: str = "",
         lit: int = 0,
-        rows: int = 12;
+        rows: int = 12,
+        # What the empty field says; and whether this is a list to choose
+        # one thing from (each entry shown by its `usage`, and Enter always
+        # takes the lit one) and not a line to type a command on.
+        prompt: str = "Type a command",
+        choosing: bool = False;
 
     """The entries the typed letters find, best first."""
     def matches -> list[PaletteEntry] {
@@ -1948,7 +1981,7 @@ node Palette(Widget) {
         if self.typed {
             canvas.label(self.typed, line, theme.text, -1, 6);
         } else {
-            canvas.label("Type a command", line, theme.faint, -1, 6);
+            canvas.label(self.prompt, line, theme.faint, -1, 6);
         }
         found = self.matches();
         self.lit = max(0, min(self.lit, len(found) - 1));
@@ -1958,8 +1991,9 @@ node Palette(Widget) {
             if shown == self.lit {
                 canvas.fill(row, theme.select);
             }
-            name_wide = canvas.text_width(found[shown].command) + 16;
-            canvas.label(found[shown].command, row, theme.text, -1, 6);
+            said = found[shown].usage if self.choosing and found[shown].usage else found[shown].command;
+            name_wide = canvas.text_width(said) + 16;
+            canvas.label(said, row, theme.text, -1, 6);
             canvas.label(
                 found[shown].about,
                 Rect(x=row.x + name_wide, y=row.y, w=row.w - name_wide, h=row.h),
@@ -1971,7 +2005,7 @@ node Palette(Widget) {
         }
         if len(found) == 0 {
             canvas.label(
-                "Nothing by that name: Enter runs what is typed",
+                "Nothing by that name" if self.choosing else "Nothing by that name: Enter runs what is typed",
                 Rect(x=self.area.x + 4, y=self.area.y + 36, w=self.area.w - 8, h=22),
                 theme.faint,
                 -1,
@@ -2012,7 +2046,9 @@ node Palette(Widget) {
             }
         } elif key == "ENTER" or key == "KP_ENTER" {
             words = self.typed.strip();
-            if " " not in words and len(found) > 0 {
+            if self.choosing {
+                words = found[max(0, min(self.lit, len(found) - 1))].command if len(found) > 0 else "";
+            } elif " " not in words and len(found) > 0 {
                 words = found[max(0, min(self.lit, len(found) - 1))].command;
             }
             stage.close(self);
@@ -2512,6 +2548,10 @@ node Floater(Widget) {
     smaller than it may be."""
     def settle(stage: Stage) {
         room = self.bounds if self.bounds.w > 0 and self.bounds.h > 0 else Rect(x=0, y=0, w=stage.width, h=stage.height);
+        if room.w <= 0 or room.h <= 0 {
+            # Nothing is laid out yet to keep it within: it stays as it was put.
+            return;
+        }
         wide = max(self.least_wide, min(self.area.w, room.w));
         tall = max(self.least_tall, min(self.area.h, room.h));
         self.area = Rect(

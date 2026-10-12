@@ -15,9 +15,11 @@ import time;
 import from engine.core.workbench { Workbench, SceneView }
 import from engine.core.app { App }
 import from engine.console.shell { Shell, quote_command_word }
+import from engine.console.cvar { Cvar }
 import from engine.formats.bsp { Model, Bsp, MapEntity, Texture }
 import from engine.math.vec3 { Vec3, forward_from, right_from }
 import from engine.input.input { _capture, _release, mouse_captured }
+import from engine.input.keys { Keyboard }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
 import from games.levels { override_path, override_folder }
@@ -35,12 +37,13 @@ import from engine.formats.animated { AnimatedModel }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
 }
-import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside }
+import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside, Theme, light_theme }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
 import from .tools.host { ToolHost, StudioTool }
 import from .ui.widget { Widget, Stage, UiEvent }
+import from .ui.controls { Combo, TextArea }
 import from .ui.widgets {
     Box,
     Label,
@@ -77,19 +80,32 @@ import from .ui.widgets {
     ColourBars
 }
 import from .assets.explorer { AssetIndex, AssetLook }
-import from .assets.needs { needed_files, missing_files, held_names, names_file }
+import from .assets.needs { needed_files, missing_files, held_names, names_file, file_field, field_choices }
+import from .assets.explorer { own_files, reel_next, reel_before, texture_rgba }
+import from .document.shelves { shelf_name, shelf_moved, shelf_rows }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
 }
+import from .assets.shadertext { script_shown, script_faults, shader_brief }
+import from .assets.moving { warps_name }
+import from .document.liveroll { LiveRoll, opponent_words, door_words, pickup_words }
+import from .geometry.axes { world_axes, brush_axes, facing_axes, kept_to_axis }
+import from .document.thumbs { sketch_edges, sketch }
+import from .document.chords { chord_parts, bind_chord, chord_command, bound_chords }
+import from .document.settingstable {
+    Setting, SUBJECTS, settings_table, setting_value, setting_order, colour_parts
+}
+import from .ui.passage { passage_line, passage_of }
 import from .formats.archive {
     write_pak, write_zip, file_kind, pak_files, zip_files, files_with, files_without, lies_in
 }
 import from .formats.sound { sound_facts, converted_sound }
 import from .formats.wal { WalFacts, wal_facts, wal_with, flag_names, flag_named, quake_frames }
 import from .classes.registry {
-    ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes
+    ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes,
+    names_offered
 }
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
 import from .geometry.terrain { heights_from, heights_image, image_heights, falloff_of }
@@ -138,7 +154,9 @@ import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
 import from .compile.light { bake_light }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
-import from .project { Project, MANIFEST_NAME, read_project, write_project, addon_classes, file_name }
+import from .project {
+    Project, MANIFEST_NAME, read_project, write_project, addon_classes, addon_folders, addon_label, file_name
+}
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.navigation {
@@ -155,6 +173,8 @@ import from .document.generate {
     with_images,
     DUPLICATOR_KEYS,
     with_holes,
+    with_makers,
+    makes,
     digs,
     DIGGER_KEY,
     prefab_overridden,
@@ -305,8 +325,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_frames", "ed_frames [material]", "the frames of an animated texture: a Quake + name's row, or a Quake II texture's chain"),
     (
         "ed_shader",
-        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save]",
-        "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages, check it for what the game would trip on, and save it"
+        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save|text [open|close]|write <words>]",
+        "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages or its text in a box with the faults by line beside it, check it for what the game would trip on, and save it"
     ),
     ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
     ("ed_camps", "ed_camps [routes [on|off]]", "list the spots bots camp at and roam through; routes draws the ways bots take between them, or from the one thing picked to each"),
@@ -358,7 +378,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_skin",
-        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>] [colour <r g b>] [brush <radius> [soft]] [dab <u v>] [show]",
+        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>|import <game>:<file> [n]] [colour <r g b>] [brush <radius> [soft]] [dab <u v>] [show]",
         "the model's skin: move, stretch, turn, flip or lay flat where the picked points lie on it; make, open, paint and save its picture"
     ),
     (
@@ -389,10 +409,35 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_bind", "ed_bind <key> <command>", "give a key (a, ctrl+k, shift+f2) an editor command of your own"),
     ("ed_unbind", "ed_unbind <key>", "give a key back what the studio gives it"),
     ("ed_binds", "ed_binds", "list the keys bound by hand"),
-    ("ed_settings", "ed_settings", "list the studio's settings, each a click to change"),
+    (
+        "ed_settings",
+        "ed_settings [box [general|display|view|map|model|files|colours|close] | vars [word]]",
+        "list the studio's settings, each a click to change; open them by subject in a box; or print them as the console variables they also are"
+    ),
+    (
+        "ed_texlink",
+        "ed_texlink [<name> <folder> | drop <name>]",
+        "use a folder of image files as materials where it lies, under a name: nothing is copied (kept in the open project, or in the settings)"
+    ),
+    (
+        "ed_texlist",
+        "ed_texlist [<name> [add|drop [material ...] | remove]]",
+        "a list of materials kept by name and shown as a shelf of the Materials tab: add the material in hand or those named, take them off, or show the list"
+    ),
+    (
+        "ed_colour",
+        "ed_colour <accent|select|text|panel|all> <rrggbb|default>",
+        "one of the studio's colours set by hand over its theme, as six digits, or given back"
+    ),
     ("ed_dev", "ed_dev [on|off]", "show frame and build times and counts in the status bar"),
     ("ed_docs", "ed_docs", "list the open documents"),
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
+    ("ed_theme", "ed_theme [dark|light]", "the studio's colours: dark, or light for a bright room"),
+    ("ed_bar", "ed_bar <tools|status> [show|hide] | tools <above|below>", "show or hide the row of tools and the status bar, and put the tools over or under the views"),
+    ("ed_shapebox", "ed_shapebox [open|close|kind <kind>|set <w|d|h|count|thick> <value>|build|at <x> <y>]", "the shape dialog: choose a kind of shape and its sizes in a window, and build it"),
+    ("ed_weights", "ed_weights [open|close]", "the weights dialog: the bone in hand, the weight it takes of the picked points, and what carries each of them"),
+    ("ed_tab", "ed_tab <doc:game/name|model|shader>", "go to an open document by its tab: a map or scene, the model being edited, or the shader script"),
+    ("ed_pickfile", "ed_pickfile <noise|music|model|model2>", "choose the selected entities' sound or model from the files of their game, in a list that is typed in to find one"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
@@ -408,7 +453,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_break", "ed_break [targetname|clear]", "hold a played game still when what has that name fires; or stop doing so; or list them"),
     ("ed_trace", "ed_trace [on|off]", "name each firing in a played game as it happens"),
     ("ed_fired", "ed_fired [label]", "print what has fired in the game played from here, how often and in what order"),
-    ("ed_live", "ed_live [player health <n> | player at <x y z> | signal <name> on|off]", "look at a played game's player and signals, or change them"),
+    (
+        "ed_live",
+        "ed_live [player health <n> | player at <x y z> | signal <name> on|off | opponents | doors | pickups | opponent <n> health <h>|at <x y z> | door <n> open|lock|unlock | pickup <n> at <x y z>]",
+        "look at a played game's player, signals, opponents, doors and pickups, or change them"
+    ),
     (
         "ed_build",
         "ed_build [full|quick|flat|fresh]",
@@ -468,6 +517,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "carry the selection through a change of the world: what the x, y and z axes become, about a point"
     ),
     ("ed_pivot", "ed_pivot [x y z | middle | clear]", "what the selection turns and stretches about; a group keeps its own"),
+    (
+        "ed_axes",
+        "ed_axes [world|local|view] | lock <x|y|z|off>",
+        "what the move arrows run along: the world's axes, the selection's own or the view's; and keep a dragged selection to one of them"
+    ),
     ("ed_anglesnap", "ed_anglesnap [degrees]", "what a dragged turn snaps to"),
     ("ed_inflate", "ed_inflate <units|up|down>", "push every side of the selected brushes out (or in) by a distance"),
     ("ed_texlock", "ed_texlock [on|off]", "whether materials go with the faces a move, turn or stretch carries"),
@@ -519,7 +573,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_show", "ed_show", "bring back everything hidden"),
     ("ed_drop", "ed_drop", "let the selection down onto what is beneath it"),
     ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
-    ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
+    ("ed_autosave", "ed_autosave [every <seconds>]", "write the scene to its autosave file now, or say how often a changed scene is (0 for never)"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_framedrop", "ed_framedrop <row> <what>", "what a row of the model's frame list let go on another asks for: that frame put there in the order"),
     ("ed_assetdrop", "ed_assetdrop <row> <what>", "what a row of the explorer let go on the project's rows asks for: the file or folder copied into the project"),
@@ -537,12 +591,18 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_paste", "ed_paste [here]", "paste what was copied: beside where it was, or where the camera looks"),
     ("ed_group", "ed_group [name]", "hold the selected brushes together as a group"),
     (
+        "ed_nest",
+        "ed_nest [<group's name|#number> | out]",
+        "put the selected groups in another group, which is then picked, moved, copied and deleted with them; or take them out; alone, list what is in what"
+    ),
+    (
         "ed_prefab",
-        "ed_prefab <save|add|link|unlink> [name] | swap|put|names|plain ... | turn <degrees> [pitch|roll] | scale <times>|<x y z>",
+        "ed_prefab <save|add|link|unlink> [name] | move <name> <new name> | swap|put|names|plain ... | turn <degrees> [pitch|roll] | scale <times>|<x y z>",
         "keep the selection as a prefab, add a copy of one, place a linked one, turn linked ones into copies, or change, turn and size the selected linked ones"
     ),
     ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
     ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),
+    ("ed_libfind", "ed_libfind [words]", "show only the scenes and prefabs of the Library tab whose names hold the words"),
     ("ed_treedrop", "ed_treedrop <row> <what>", "what a row of the scene list let go on another asks for: a brush handed to the entity on that row"),
     ("ed_libdrop", "ed_libdrop <row> <what>", "what a row of the Library tab let go on another asks for: a favourite put before another, or in the trash"),
     (
@@ -718,6 +778,11 @@ obj StudioUi {
         assets: TreeView,
         asset_box: Box,
         asset_form: Box,
+        doc_strip: Box,
+        top: Box,
+        bar_row: Box,
+        tools_row: Box,
+        status_row: Box,
         model_view: ViewArea,
         frame_list: TreeView,
         logic: GraphView,
@@ -759,6 +824,109 @@ obj StudioHost(ToolHost) {
 
     def line(start: Vec3, finish: Vec3, color: Ink) {
         wire_line(start, finish, color);
+    }
+
+    def listing -> AssetIndex | None {
+        stock = self.studio.archive;
+        known = self.studio.asset_index;
+        if known is None and stock is not None {
+            known = AssetIndex(shelf=stock);
+            self.studio.asset_index = known;
+        }
+        return known;
+    }
+
+    def picture(material: str) -> Texture | None {
+        stock = self.studio.archive;
+        found = stock.fetch(material) if stock is not None else None;
+        if found is None {
+            return None;
+        }
+        colours = texture_rgba(found);
+        wide = found.width;
+        tall = found.height;
+        if len(colours) == 0 and len(found.encoded) > 0 {
+            # Kept as a file's own bytes (a PNG, a JPEG, a packed TGA): read as the window reads it.
+            read = self.studio.canvas.decoded(found.extension, found.encoded);
+            wide = read[0][0];
+            tall = read[0][1];
+            colours = read[1];
+        }
+        if wide <= 0 or tall <= 0 or len(colours) < wide * tall * 4 {
+            return None;
+        }
+        return Texture(name=material, width=wide, height=tall, rgba=colours);
+    }
+
+    def palette(game: str) -> bytes {
+        known = self.listing();
+        if known is None {
+            return b"";
+        }
+        if game == "q1" {
+            colours = known.read("q1", "gfx/palette.lmp");
+            return colours if colours is not None and len(colours) == 768 else b"";
+        }
+        if game == "q2" {
+            # The last 768 bytes of Quake II's colour map picture are its palette.
+            held = known.read("q2", "pics/colormap.pcx");
+            return held[len(held) - 768:] if held is not None and len(held) > 769 else b"";
+        }
+        return b"";
+    }
+
+    def folder(kind: str) -> str {
+        if kind == "textures" {
+            stock = self.studio.archive;
+            return stock.files_folder() if stock is not None else "";
+        }
+        return self.studio.project_folder;
+    }
+
+    def read_file(game: str, name: str) -> bytes | None {
+        known = self.listing();
+        return known.read(game, name) if known is not None else None;
+    }
+
+    def file_names(game: str) -> list[str] {
+        known = self.listing();
+        return known.names(game) if known is not None and game in known.games() else [];
+    }
+
+    def materials_shown -> list[str] {
+        panel = self.studio.ui;
+        return [tile.key for tile in panel.gallery.tiles] if panel is not None else [];
+    }
+
+    def frames_of(material: str) -> list[str] {
+        return self.studio.material_frames(material);
+    }
+
+    def warps(material: str) -> bool {
+        return self.studio.material_warps(material);
+    }
+
+    def show_picture(material: str, width: int, height: int, rgba: bytes) {
+        self.studio.canvas.keep_picture(material, width, height, rgba);
+    }
+
+    def files_changed {
+        stock = self.studio.archive;
+        if stock is not None {
+            # What the project's folder of textures holds is read again.
+            stock.found = {};
+            stock.listed = {};
+        }
+        self.studio.folds += 1;
+        self.studio.materials_changed += 1;
+    }
+
+    def run(words: list[str]) {
+        self.studio.command(words);
+    }
+
+    def scene_now -> Scene | None {
+        return self.studio.scene;
     }
 }
 
@@ -812,6 +980,43 @@ obj Studio(Workbench) {
         marked_item: int = -1,
         # Whether the model editor lists the model's frames under its view.
         frames_listed: bool = False,
+        # A sprite's or a film's pictures in the explorer: whether they are
+        # running, the time owed to the next, and which picture is kept.
+        # The tag an Alt press took hold of in the model's view.
+        tag_held: str = "",
+        # The weights dialog while it is open, and what it was last filled for.
+        weights_box: Floater | None = None,
+        weights_for: str = "",
+        # The shader script as text while its box is open: the box, the
+        # words in it, what it was last filled for, words that did not
+        # hold together (kept as typed), and a count of what was asked of
+        # the script.
+        script_box: Floater | None = None,
+        script_area: TextArea | None = None,
+        script_for: str = "",
+        script_kept: str = "",
+        shader_rev: int = 0,
+        reel_playing: bool = False,
+        reel_clock: float = 0.0,
+        reel_kept: str = "",
+        # The tabs beside the menu bar: whether they are there (more than
+        # one document is open), and what they were last filled for.
+        tabs_on: bool = False,
+        tabs_for: str = "",
+        # The colours ("dark" or "light"); whether the row of tools and the
+        # status bar are shown, and whether the tools are under the views.
+        theme_name: str = "dark",
+        tools_shown: bool = True,
+        status_shown: bool = True,
+        tools_below: bool = False,
+        # What the floating windows were when the settings were last kept.
+        floats_kept: str = "",
+        # The shape dialog: its window while it is open, where it was left,
+        # and what its fields hold.
+        shape_box: Floater | None = None,
+        shape_at: list[int] = [360, 120],
+        shape_kind: str = "stairs",
+        shape_sizes: dict[str, str] = {"w": "128", "d": "128", "h": "96", "count": "", "thick": ""},
         # Whether hints fly beside the pointer, and the field a name is
         # being typed in over a row of the scene list.
         flyovers: bool = True,
@@ -887,6 +1092,10 @@ obj Studio(Workbench) {
         # Which handles a selection shows (move, turn or size), how far a
         # dragged one has turned or stretched it, and what a turn snaps to.
         gizmo: str = "move",
+        # What the move arrows run along (world, local, view), and the one
+        # of them a dragged selection is kept to (-1 for none).
+        gizmo_axes: str = "world",
+        axis_lock: int = -1,
         # What a drag of the box handle asks so far, and whether Shift is held on it.
         box_pull: BoxDrag = BoxDrag(),
         box_said: str = "",
@@ -1024,6 +1233,16 @@ obj Studio(Workbench) {
         project: Project | None = None,
         project_folder: str = "",
         addons: dict[str, list[str]] = {},
+        # What add-ons bring beside classes: each one's name by its file,
+        # and its folders of image files and of prefabs by its name.
+        addon_labels: dict[str, str] = {},
+        addon_textures: dict[str, str] = {},
+        addon_prefabs: dict[str, str] = {},
+        # Folders of image files used where they lie, by a name for each,
+        # and lists of materials kept by name: those of the studio's own
+        # settings (a project keeps its own in its manifest).
+        tex_links: dict[str, str] = {},
+        tex_lists: dict[str, list[str]] = {},
         user_addons: list[str] = [],
         game_setup: dict[str, str] = {},
         game_applied: str = "",
@@ -1088,6 +1307,13 @@ obj Studio(Workbench) {
         skin_stale: bool = False,
         skin_shown: bool = False,
         skin_view: Picture | None = None,
+        # The Library tab's picture of a prefab, which prefab it is of, and
+        # the words its rows are found by.
+        library_view: Picture | None = None,
+        library_previewed: str = "",
+        # The scene's count of picks when its groups' groups were last picked with them.
+        nest_picks: int = -1,
+        library_filter: str = "",
         model_painting: bool = False,
         model_pick: str = "faces",
         model_travel: int = 0,
@@ -1111,7 +1337,9 @@ obj Studio(Workbench) {
         # hand; and the developer's readout in the status bar.
         grid_shown: bool = True,
         solid_tones: bool = False,
-        user_keys: dict[str, str] = {},
+        # Keys bound by hand: a keyboard of the engine's for each way Ctrl
+        # and Shift are held (document/chords.jac), apart from every game's.
+        key_layers: dict[str, Keyboard] = {},
         dev_shown: bool = False,
         frame_ms: float = 0.0,
         # Whether a shape is built with the faces inside it caulked.
@@ -1133,6 +1361,20 @@ obj Studio(Workbench) {
         marks_at: int = -1,
         # Seconds since the scene was last autosaved, and the revision it was at.
         autosave_clock: float = 0.0,
+        autosave_every: float = 30.0,
+        # The settings as a table (document/settingstable.jac): what each
+        # is now, the console variable that says so, a count of how often
+        # they have been kept and the mark the variables were last set at;
+        # the box of them by subject, and colours set by hand.
+        setting_table: list[Setting] = [],
+        setting_values: dict[str, str] = {},
+        setting_cvars: dict[str, Cvar] = {},
+        settings_rev: int = 0,
+        settings_mark: str = "",
+        settings_box: Floater | None = None,
+        settings_subject: str = "general",
+        settings_for: str = "",
+        user_inks: dict[str, str] = {},
         autosaved: int = -1,
         # The way out the leak finder last found.
         leak: list[Vec3] = [],
@@ -1417,7 +1659,9 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Run a command", command="ed_palette", keys="Ctrl+P"),
                     MenuItem(text="Leave the studio", command="edit", keys="F8"),
-                    MenuItem(text="Quit", command="quit")
+                    MenuItem(text="Quit", command="quit"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Make a starter project to play in", command="ed_starter")
                 ],
                 [
                     MenuItem(text="Undo", command="ed_undo", keys="Ctrl+Z"),
@@ -1585,7 +1829,9 @@ obj Studio(Workbench) {
                     MenuItem(text="Handles on the picked face for its material", command="ed_texhandles"),
                     MenuItem(rule=True),
                     MenuItem(text="Lay the picked faces through whole points", command="ed_integral"),
-                    MenuItem(text="Tilt the picked faces to whole angles", command="ed_faceangle")
+                    MenuItem(text="Tilt the picked faces to whole angles", command="ed_faceangle"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Build a shape...", command="ed_shapebox open")
                 ],
                 [
                     MenuItem(text="Play", command="ed_play", keys="F5"),
@@ -1659,11 +1905,26 @@ obj Studio(Workbench) {
                     MenuItem(text="Another 3D window, in outlines", command="ed_window new outlines"),
                     MenuItem(text="Close the floating windows", command="ed_window close all"),
                     MenuItem(rule=True),
-                    MenuItem(text="Log panel along the foot of the views", command="ed_log panel")
+                    MenuItem(text="Log panel along the foot of the views", command="ed_log panel"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Light or dark colours", command="ed_theme"),
+                    MenuItem(text="Show or hide the row of tools", command="ed_bar tools"),
+                    MenuItem(text="Tools over or under the views", command="ed_bar tools flip"),
+                    MenuItem(text="Show or hide the status bar", command="ed_bar status"),
+                    MenuItem(rule=True),
+                    MenuItem(text="The picked points' weights...", command="ed_weights open"),
+                    MenuItem(text="The shader script as text...", command="ed_shader text open"),
+                    MenuItem(text="Play the materials that move", command="ed_animate"),
+                    MenuItem(text="Settings by subject...", command="ed_settings box open")
                 ]
             ]
         );
-        top.adopt(menu);
+        # The menu bar, and beside it in the same row the open documents' tabs.
+        bar_row = Box(across=True, fill="header");
+        top.adopt(bar_row);
+        bar_row.adopt(menu);
+        doc_strip = Box(across=True, gap=2, grow=1, fill="header");
+        bar_row.adopt(doc_strip);
 
         tools = Box(across=True, pad=4, gap=4, fill="panel");
         top.adopt(tools);
@@ -1782,6 +2043,21 @@ obj Studio(Workbench) {
             hint="Click a scene to open it, or a prefab to add a copy where the camera looks; drag a prefab into a view"
         );
         library_page.adopt(library);
+        # At the foot, so that the rows above stay where they were: a
+        # picture of the prefab the pointer is on, and a field to find by.
+        library_view = Picture(
+            key="library:preview", size=132, shown=False, hint="The prefab the pointer is on, seen from above one corner"
+        );
+        library_page.adopt(library_view);
+        self.library_view = library_view;
+        find_row = Box(pad=4);
+        library_page.adopt(find_row);
+        find_row.adopt(
+            TextField(
+                ghost="Find in the library", command="ed_libfind", live=True,
+                hint="Show only the scenes and prefabs whose names hold these words"
+            )
+        );
         class_page = Box();
         side.adopt(class_page);
         class_row = Box(pad=4);
@@ -1837,6 +2113,7 @@ obj Studio(Workbench) {
         if os.path.isdir(home) {
             found = ArchiveMaterials(directory=home);
             self.archive = found;
+            self.sync_addons();
             self.materials = found;
         }
         view = ViewArea(
@@ -1903,6 +2180,11 @@ obj Studio(Workbench) {
             assets=asset_tree,
             asset_box=asset_box,
             asset_form=asset_form,
+            doc_strip=doc_strip,
+            top=top,
+            bar_row=bar_row,
+            tools_row=tools,
+            status_row=status,
             model_view=model_view,
             frame_list=TreeView(
                 pick="ed_frame",
@@ -2052,6 +2334,10 @@ obj Studio(Workbench) {
                 if picked and first_picked < 0 {
                     first_picked = len(rows);
                 }
+                if name == "func_group" and scene.nested_in(item) is not None {
+                    # Listed under the group that holds it.
+                    continue;
+                }
                 if name == "func_group" {
                     # A group by its own name, with its switches, and its
                     # brushes under it when it is opened.
@@ -2110,7 +2396,7 @@ obj Studio(Workbench) {
         adder.adopt(new_key);
         new_value = TextField(ghost="value", grow=1, command="ed_add", hint="Enter adds the field");
         adder.adopt(new_value);
-        adder.adopt(PushButton(text="+", command="ed_add", size=22, hint="Add the field"));
+        adder.adopt(PushButton(glyph="plus", command="ed_add", size=22, hint="Add the field"));
         ui.new_key = new_key;
         ui.new_value = new_value;
         form.adopt(Spacer(size=6));
@@ -2165,6 +2451,7 @@ obj Studio(Workbench) {
         ui.gallery.track(stage);
         ui.checks.track(stage);
         ui.library.track(stage);
+        self.preview_library(ui);
         ui.classes.track(stage);
         ui.assets.track(stage);
         ui.frame_list.track(stage);
@@ -2183,6 +2470,21 @@ obj Studio(Workbench) {
         }
         if len(ui.library.rows) == 0 {
             self.list_library(ui);
+        }
+        self.keep_tabs(ui);
+        self.keep_floats();
+        self.keep_weights_box();
+        self.keep_script_box();
+        self.watch_settings();
+        self.keep_settings_box();
+        doc_now = self.scene;
+        if doc_now is not None and doc_now.picks != self.nest_picks {
+            # A group picked in a view or the list shows what it holds as picked.
+            doc_now.pick_nested();
+            self.nest_picks = doc_now.picks;
+        }
+        for tool in self.tools {
+            tool.tick(self.host(), dt);
         }
         ui.logic.track(stage);
         self.load_thumbs();
@@ -2615,9 +2917,9 @@ obj Studio(Workbench) {
         }
         for key in keys {
             # A key bound by hand comes before what the studio gives it.
-            chord = ("ctrl+" if ctrl else "") + ("shift+" if shift else "") + key.lower();
-            if chord in self.user_keys {
-                stage.emit(self.user_keys[chord]);
+            bound_order = chord_command(self.key_layers, ("ctrl+" if ctrl else "") + ("shift+" if shift else ""), key);
+            if bound_order {
+                stage.emit(bound_order);
                 continue;
             }
             if key == "F8" {
@@ -2747,6 +3049,11 @@ obj Studio(Workbench) {
         start = self.on_view_plane(self.press_x, self.press_y, self.move_from);
         now = self.on_view_plane(x, y, self.move_from);
         shift = now.sub(start);
+        if self.axis_lock >= 0 and self.scene is not None {
+            # Kept to one of the axes the handles run along.
+            self.move_by = kept_to_axis(shift, self.gizmo_basis(self.scene)[self.axis_lock], 1.0 if free else self.grid);
+            return;
+        }
         if one_axis {
             if abs(shift.x) >= abs(shift.y) and abs(shift.x) >= abs(shift.z) {
                 shift = Vec3(x=shift.x);
@@ -2862,6 +3169,52 @@ obj Studio(Workbench) {
     def apply_split;
     """The views' split, the side panels' sides and layouts kept by name."""
     def layouts_command(scene: Scene, args: list[str]) -> bool;
+    """The open documents and which is shown, as one line: the tab strip is
+    filled again when it changes."""
+    def tabs_words -> str;
+    def tabs_count -> int;
+    def fill_doc_strip(ui: StudioUi);
+    def keep_tabs(ui: StudioUi);
+    """Go to an open document by its tab, or choose a field's file from the
+    game's own."""
+    def tabs_command(scene: Scene, args: list[str]) -> bool;
+    """Put the menu bar, the tools, the views and the status bar in the
+    order now set, leaving out what is hidden."""
+    def place_bars;
+    """The floating windows as the commands that open them again."""
+    def float_settings -> list[str];
+    """Keep the settings when a floating window has been moved, sized or flown."""
+    def keep_floats;
+    """Open the shape dialog, or fill it again from what its fields hold."""
+    def show_shape_box;
+    """The colours, the bars, and the shape dialog."""
+    def looks_command(scene: Scene, args: list[str]) -> bool;
+    """Go to the next picture of the sprite or film shown (the one before,
+    going `back`). False when there is none to go to."""
+    def reel_step(back: bool) -> bool;
+    def play_reel(dt: float);
+    def reel_command(args: list[str]) -> bool;
+    """The tag nearest a point of the model's view, within reach of the pointer ("" for none)."""
+    def tag_under(x: int, y: int) -> str;
+    """Where a place of the model shows in its view, as "x,y" ("nowhere" when it does not)."""
+    def tag_seen(at: Vec3) -> str;
+    """A picture of a game's as a skin: a PCX, WAL or plain TGA, or the
+    n-th skin a Quake model carries. None when it does not read."""
+    def skin_from(game: str, name: str, number: int) -> Skin | None;
+    """Fill the weights dialog again when what it shows has changed."""
+    def keep_weights_box;
+    def weights_command(scene: Scene, args: list[str]) -> bool;
+    """The row of frames a material is one of (itself alone when it does
+    not move), and whether it is drawn warping (impl/studio.sounds.impl.jac)."""
+    def material_frames(wanted: str) -> list[str];
+    def material_warps(name: str) -> bool;
+    # The shader script as text (impl/studio.shadertext.impl.jac)
+    """Fill the script's box again when the script has changed."""
+    def keep_script_box;
+    def script_words -> str;
+    """Open or close the script's box, or read its words as the script.
+    False for every other shader command, which goes on to its own."""
+    def script_command(scene: Scene, args: list[str]) -> bool;
     """What the command table says of a command: its usage and what it does."""
     def help_lines(asked: str) -> list[str];
     """Help for what the pointer is on or for a command by name, hints
@@ -3311,6 +3664,8 @@ obj Studio(Workbench) {
     brushes: what is built and played."""
     def expanded(scene: Scene) -> Scene;
     def list_library(ui: StudioUi);
+    """Sketch the prefab the pointer is on in the Library tab."""
+    def preview_library(ui: StudioUi);
     def fill_graph(scene: Scene, ui: StudioUi);
 
     # ------------------------------------------------------------------
@@ -3362,6 +3717,21 @@ obj Studio(Workbench) {
     def settings_path -> str;
     """Write the settings: the grid, the layout, how views are drawn, the light and the brush."""
     def keep_settings;
+    """The commands that would set the studio as it stands: what the
+    settings file holds."""
+    def settings_lines -> list[str];
+    # Settings by subject and as console variables (impl/studio.settingsbox.impl.jac)
+    """The settings file's lines and, before them, what it does not keep."""
+    def setting_lines_all -> list[str];
+    """The theme, with the colours set by hand over it."""
+    def apply_inks;
+    """Keep the console variables saying what is so, and set the studio
+    to match one that was changed from the console."""
+    def watch_settings;
+    """Fill the settings box again when a setting or its subject changed."""
+    def keep_settings_box;
+    """Run ed_colour, ed_settings box or ed_settings vars. False otherwise."""
+    def settings_box_command(scene: Scene, args: list[str]) -> bool;
     """Read the settings once, when the studio is first opened."""
     def read_settings;
     """A point of a view's own plane (through `anchor`) under a point of
@@ -3411,6 +3781,9 @@ obj Studio(Workbench) {
     (910-912), or a box along each axis and one for all three (920-923), and
     the pivot itself (930)."""
     def transform_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    """The three ways the move arrows run now: the world's axes, the
+    selection's own, or across, into and up the view."""
+    def gizmo_basis(scene: Scene) -> list[Vec3];
     def draw_transform_handles(scene: Scene, area: Rect);
     def drag_transform(scene: Scene, x: int, y: int, free: bool);
     """Where a point goes under the turn or stretch being dragged."""
@@ -3529,6 +3902,9 @@ obj Studio(Workbench) {
     def played(dt: float);
     """Run a breakpoint, trace, fired or live command. False when it is not one."""
     def live_command(args: list[str]) -> bool;
+    """Call over a played game's opponents, doors and pickups, or change
+    one by its number (impl/studio.liveroll.impl.jac)."""
+    def live_others(args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
     # A bake seen, recipes, and other programs' steps (impl/studio.steps.impl.jac)
@@ -3561,6 +3937,19 @@ obj Studio(Workbench) {
     """Read an add-on's classes (again). How many it added; -1 when it cannot be read."""
     def load_addon(path: str) -> int;
     def drop_addon(path: str);
+    """Hand the add-ons' folders of image files to the archive, and list
+    materials and the library again."""
+    def sync_addons;
+    """An add-on's line of the listing: its classes, name, and how many
+    materials and prefabs it brings."""
+    def addon_words(path: str) -> str;
+    # Linked folders and lists of materials (impl/studio.texlinks.impl.jac)
+    """The folders linked to and the lists kept: the settings' own, and
+    over them the open project's."""
+    def all_links -> dict[str, str];
+    def all_lists -> dict[str, list[str]];
+    """Run ed_texlink or ed_texlist. False when it is neither."""
+    def texlink_command(scene: Scene, args: list[str]) -> bool;
     """Take up what a game is set up with, when a scene of it is first shown."""
     def apply_game(game: str);
     def close_project;
@@ -3841,7 +4230,7 @@ obj Studio(Workbench) {
     """Run a group command. False when it is not one."""
     def group_command(scene: Scene, args: list[str]) -> bool;
     """A group's row in the scene tree, and its brushes' when it is open."""
-    def list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bool);
+    def list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bool, depth: int = 1);
     """The buttons for a selection that is all groups."""
     def fill_group(scene: Scene, ui: StudioUi, chosen: list[Item]);
 
@@ -3946,6 +4335,12 @@ obj Studio(Workbench) {
             return;
         }
         scene = self.scene;
+        if scene is not None and scene.picks != self.nest_picks {
+            # Whatever picked a group, what it holds is picked with it
+            # before anything is done to the selection.
+            scene.pick_nested();
+            self.nest_picks = scene.picks;
+        }
         if not self.active or scene is None {
             self.say(name + ": the studio is not open (edit opens it)");
             return;
@@ -4053,7 +4448,10 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.plugin_command(scene, args) and not self.help_command(scene, args)
+        } elif not self.plugin_command(scene, args) and not self.weights_command(scene, args)
+            and not self.looks_command(scene, args)
+            and not self.tabs_command(scene, args)
+            and not self.help_command(scene, args)
             and not self.layouts_command(scene, args)
             and not self.uses_command(scene, args)
             and not self.marked_command(scene, args)
@@ -4087,6 +4485,7 @@ obj Studio(Workbench) {
             and not self.nav_command(scene, args) and not self.restrict_command(scene, args)
             and not self.integral_command(scene, args)
             and not self.games_command(scene, args)
+            and not self.script_command(scene, args) and not self.texlink_command(scene, args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
             and not self.entity_command(scene, args)
@@ -4251,6 +4650,8 @@ obj Studio(Workbench) {
                     if self.pivot_set
                     else "none"
                 )
+                + (" axes=" + self.gizmo_axes if self.gizmo_axes != "world" else "")
+                + (" lock=" + "xyz"[self.axis_lock] if self.axis_lock >= 0 else "")
         ];
         for item in scene.selection() {
             pairs = " ".join([key + "=" + value for (key, value) in item.fields.items()]);
@@ -4403,6 +4804,17 @@ obj Studio(Workbench) {
                     + " kept=" + ",".join(sorted(self.kept_layouts.keys()))
             );
         }
+        if self.theme_name != "dark" or not self.tools_shown or not self.status_shown or self.tools_below
+            or self.shape_box is not None {
+            lines.append(
+                "studio: looks theme=" + self.theme_name + " tools=" + ("below" if self.tools_below else "above")
+                    + ("" if self.tools_shown else ",hidden") + " status=" + ("shown" if self.status_shown else "hidden")
+                    + " shapebox=" + (self.shape_kind if self.shape_box is not None else "shut")
+            );
+        }
+        if self.tabs_on {
+            lines.append("studio: tabs " + str(self.tabs_count()) + " " + self.tabs_words().replace(" ", "_"));
+        }
         if self.rect_brush {
             lines.append("studio: rectbrush falloff=" + (self.rect_fall if self.rect_fall else "0"));
         }
@@ -4425,6 +4837,28 @@ obj Studio(Workbench) {
             for bone_line in self.bone_lines() {
                 lines.append(bone_line);
             }
+        }
+        if self.script_box is not None {
+            lines.append(self.script_words());
+        }
+        if self.settings_box is not None {
+            lines.append("studio: settings box subject=" + self.settings_subject);
+        }
+        if len(self.all_links()) > 0 or len(self.all_lists()) > 0 {
+            both_lists = self.all_lists();
+            lines.append(
+                "studio: materials links=" + ",".join(sorted(self.all_links().keys())) + " lists="
+                    + ",".join([each + ":" + str(len(both_lists[each])) for each in sorted(both_lists.keys())])
+            );
+        }
+        if self.library_filter or self.library_previewed {
+            lines.append(
+                "studio: library find=" + (self.library_filter if self.library_filter else "-") + " preview="
+                    + (self.library_previewed if self.library_previewed else "-")
+            );
+        }
+        if len(self.user_inks) > 0 {
+            lines.append("studio: colours " + " ".join([each + " " + self.user_inks[each] for each in sorted(self.user_inks.keys())]));
         }
         if self.shader_file {
             lines.append(self.shader_words());

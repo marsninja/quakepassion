@@ -52,7 +52,7 @@ import from vendor.raylib {
             format: i32;
     }  def LoadImageFromMemory(
         fileType: str, fileData: bytes, dataSize: i32
-    ) -> UiImage;  def LoadTextureFromImage(image: UiImage) -> Texture2D;  def UnloadImage(
+    ) -> UiImage;  def GetImageColor(image: UiImage, x: i32, y: i32) -> Color;  def LoadTextureFromImage(image: UiImage) -> Texture2D;  def UnloadImage(
         image: UiImage
     ) -> None;  def rlSetTexture(id: u32) -> None;  def rlBegin(
         mode: i32
@@ -147,6 +147,29 @@ obj Theme {
         bar: int = 10;
 }
 
+"""The studio's colours for a bright room: the same metrics, light panels
+and dark words."""
+def light_theme -> Theme {
+    return Theme(
+        window=ink(0xd9d5cd),
+        panel=ink(0xebe7df),
+        raised=ink(0xf6f3ec),
+        header=ink(0xcfcac0),
+        border=ink(0xb0a99c),
+        field=ink(0xfbf9f4),
+        text=ink(0x22201c),
+        dim=ink(0x5c564c),
+        faint=ink(0x8a8377),
+        accent=ink(0xd05a00),
+        on_accent=ink(0xfff6ec),
+        hover=ink(0xe0dbd0),
+        press=ink(0xcdc6b8),
+        select=ink(0xf3c9a0),
+        warn=ink(0xc0272d),
+        good=ink(0x1f8a57)
+    );
+}
+
 """A drawing surface."""
 obj Canvas {
     has theme: Theme = Theme(),
@@ -172,6 +195,10 @@ obj Canvas {
     """Keep an image by name from a file's bytes (`extension` as ".tga",
     ".jpg" or ".png" says which kind). False when it does not decode."""
     def keep_encoded(key: str, extension: str, data: bytes) -> bool abst;
+    """An image file's bytes as colours, four bytes a texel, a row at a time
+    from the top: [width, height] and the colours. [0, 0] and nothing when
+    the bytes are not an image of that kind."""
+    def decoded(extension: str, data: bytes) -> tuple[list[int], bytes] abst;
     """A kept image's width and height ([0, 0] when no image has that name)."""
     def picture_size(key: str) -> list[int] abst;
     def has_picture(key: str) -> bool abst;
@@ -253,6 +280,10 @@ obj TraceCanvas(Canvas) {
             self.kept.append(key);
         }
         return True;
+    }
+
+    def decoded(extension: str, data: bytes) -> tuple[list[int], bytes] {
+        return ([0, 0], b"");
     }
 
     def picture_size(key: str) -> list[int] {
@@ -498,6 +529,31 @@ obj ScreenCanvas(Canvas) {
         }
         self.pictures[key] = int(gpu.id);
         return True;
+    }
+
+    def decoded(extension: str, data: bytes) -> tuple[list[int], bytes] {
+        if len(data) == 0 {
+            return ([0, 0], b"");
+        }
+        image = LoadImageFromMemory(extension, data, i32(len(data)));
+        if image.data == u64(0) {
+            return ([0, 0], b"");
+        }
+        wide = int(image.width);
+        tall = int(image.height);
+        colours = bytearray(wide * tall * 4);
+        for y in range(tall) {
+            for x in range(wide) {
+                seen = GetImageColor(image, i32(x), i32(y));
+                at = (y * wide + x) * 4;
+                colours[at] = int(seen.r);
+                colours[at + 1] = int(seen.g);
+                colours[at + 2] = int(seen.b);
+                colours[at + 3] = int(seen.a);
+            }
+        }
+        UnloadImage(image);
+        return ([wide, tall], bytes(colours));
     }
 
     def picture_size(key: str) -> list[int] {

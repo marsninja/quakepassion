@@ -45,7 +45,15 @@ impl Studio.prefab_path(name: str) -> str {
     } elif not folder {
         folder = os.getcwd() + "/prefabs";
     }
-    return folder + "/" + name.replace("/", "_") + ".map";
+    if name.startswith("addon:") {
+        # An add-on's own prefab: under the folder its add-on named.
+        halves = name[6:].split("/", 1);
+        if len(halves) == 2 and halves[0] in self.addon_prefabs {
+            return self.addon_prefabs[halves[0]] + "/" + shelf_name(halves[1]) + ".map";
+        }
+    }
+    # A name may say folders of the shelf: no further up than the shelf itself.
+    return folder + "/" + shelf_name(name) + ".map";
 }
 
 impl Studio.read_fragment(path: str) -> list[MapItem] | None {
@@ -92,7 +100,7 @@ impl Studio.place_fragment(scene: Scene, found: list[MapItem], label: str, group
 impl Studio.expanded(scene: Scene) -> Scene {
     linked = False;
     for item in scene.items() {
-        if item.classname() == "misc_prefab" or duplicates(item.fields) or digs(item.fields) {
+        if item.classname() == "misc_prefab" or duplicates(item.fields) or digs(item.fields) or makes(item.fields) {
             linked = True;
         }
     }
@@ -100,7 +108,8 @@ impl Studio.expanded(scene: Scene) -> Scene {
         return scene;
     }
     plain: list[MapItem] = [];
-    for read in with_holes(with_images(scene_map(scene)) if self.images_shown else scene_map(scene)) {
+    # Makers' brushes are made before the diggers cut: a hole goes through a made wall too.
+    for read in with_holes(with_makers(with_images(scene_map(scene)) if self.images_shown else scene_map(scene))) {
         if read.fields.get("classname", "") != "misc_prefab" {
             plain.append(read);
         }
@@ -133,16 +142,51 @@ impl Studio.list_library(ui: StudioUi) {
     ];
     for (named, lead, folder) in shelves {
         names: list[str] = [];
-        if os.path.isdir(folder) {
+        if named == "Prefabs" {
+            # Prefabs are kept in folders: every map under the shelf, by its path from it.
+            names = [found_file[:-4] for found_file in own_files(folder) if found_file.lower().endswith(".map")];
+        } elif os.path.isdir(folder) {
             for entry_name in sorted(os.listdir(folder)) {
                 if entry_name.lower().endswith(".map") {
                     names.append(entry_name[:-4]);
                 }
             }
         }
+        sought = self.library_filter.strip().lower();
+        if sought {
+            # Found by name: listed flat under their shelf, whatever folder they are in.
+            names = [known for known in names if sought in known.lower()];
+        }
         rows.append(TreeRow(key="shelf:" + named, text=named, tone="accent", note=str(len(names))));
+        if named == "Prefabs" and not sought {
+            for shelved in shelf_rows(names, lead, "prefabdir:", self.opened) {
+                rows.append(
+                    TreeRow(
+                        key=shelved.key,
+                        text=shelved.text,
+                        depth=shelved.depth,
+                        branch=shelved.folder,
+                        opened=shelved.opened,
+                        note=str(shelved.count) if shelved.folder else ""
+                    )
+                );
+            }
+            continue;
+        }
         for known in names {
             rows.append(TreeRow(key=lead + known, text=known, depth=1));
+        }
+    }
+    # What add-ons bring: each one's prefabs under its name.
+    for label in sorted(self.addon_prefabs.keys()) {
+        brought = [
+            each[:-4]
+            for each in own_files(self.addon_prefabs[label])
+            if each.lower().endswith(".map") and self.library_filter.strip().lower() in each.lower()
+        ];
+        rows.append(TreeRow(key="shelf:addon:" + label, text="Add-on " + label, tone="accent", note=str(len(brought))));
+        for each in brought {
+            rows.append(TreeRow(key="prefab:addon:" + label + "/" + each, text=each, depth=1));
         }
     }
     # After the shelves of files: what is open now, and what was lately.
@@ -345,8 +389,30 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.say("Turned " + str(done) + " linked prefabs into copies" if done else "Select linked prefabs first");
             return True;
         }
+        if how == "move" {
+            # Another name, or another folder of the shelf: the file goes there.
+            going = shelf_name(args[3]) if len(args) > 3 else "";
+            came = self.prefab_path(named);
+            if not named or not going or not os.path.isfile(came) {
+                self.say("ed_prefab move <name> <new name>: a prefab that is there, and where it is to go (folders/name)");
+                return True;
+            }
+            went = self.prefab_path(going);
+            if os.path.exists(went) {
+                self.say("There is a prefab called " + going + " already");
+                return True;
+            }
+            os.makedirs(os.path.dirname(went), exist_ok=True);
+            os.rename(came, went);
+            print("studio: prefab moved " + shelf_name(named) + " > " + going);
+            self.say(shelf_name(named) + " is " + going + " now (entities that link it by its old name do not follow)");
+            if ui is not None {
+                self.list_library(ui);
+            }
+            return True;
+        }
         if how not in ["save", "add", "link"] or not named {
-            self.say("ed_prefab <save|add|link|unlink> [name]");
+            self.say("ed_prefab <save|add|link|unlink|move> [name]: a name may say folders (props/crate)");
             return True;
         }
         path = self.prefab_path(named);
@@ -383,6 +449,14 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
         }
         return True;
     }
+    if name == "ed_libfind" {
+        self.library_filter = " ".join(args[1:]).strip();
+        if ui is not None {
+            self.list_library(ui);
+        }
+        print("studio: library find=" + (self.library_filter if self.library_filter else "-") + " rows=" + str(len(ui.library.rows) if ui is not None else 0));
+        return True;
+    }
     if name == "ed_library" {
         if ui is None {
             return True;
@@ -392,6 +466,10 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.open_map(self.scene_path(word[6:]));
         } elif word.startswith("auto:") {
             self.open_map(self.autosave_path(word[5:]));
+        } elif word.startswith("prefabdir:") {
+            # A folder of prefabs: opened, or shut.
+            self.opened[word] = not self.opened.get(word, False);
+            self.list_library(ui);
         } elif word.startswith("prefab:") {
             self.library_command(scene, ["ed_prefab", "add", word[7:]]);
         } elif word.startswith("fav:") {
@@ -527,4 +605,36 @@ impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
         self.say("This instance differs from its prefab: " + how);
     }
     return True;
+}
+
+impl Studio.preview_library(ui: StudioUi) {
+    view = self.library_view;
+    if view is None {
+        return;
+    }
+    rows = ui.library.rows;
+    at = ui.library.hover_row;
+    key = rows[at].key if at >= 0 and at < len(rows) else "";
+    if not key.startswith("prefab:") or key == self.library_previewed {
+        # What was last looked at stays until another prefab is.
+        return;
+    }
+    self.library_previewed = key;
+    brushes: list[list[Side]] = [];
+    try {
+        with open(self.prefab_path(key[7:]), "r") as file {
+            for item in read_map(file.read()).items {
+                for sides in item.brushes {
+                    brushes.append(sides);
+                }
+            }
+        }
+    } except Exception {
+        brushes = [];
+    }
+    view.shown = len(brushes) > 0;
+    if len(brushes) > 0 {
+        tint = self.canvas.theme.accent;
+        self.canvas.keep_picture("library:preview", 240, 180, sketch(sketch_edges(brushes), 240, 180, tint.r, tint.g, tint.b));
+    }
 }

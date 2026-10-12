@@ -414,9 +414,11 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
             arm = self.camera.span * 0.08
                 if self.camera.span > 0.0
                 else max(24.0, self.camera.eye.sub(heart).length() * 0.12);
-            found.append((900, heart.add(Vec3(x=arm))));
-            found.append((901, heart.add(Vec3(y=arm))));
-            found.append((902, heart.add(Vec3(z=arm))));
+            # Along the world's axes, the selection's own, or the view's.
+            ways = self.gizmo_basis(scene);
+            found.append((900, heart.add(ways[0].scale(arm))));
+            found.append((901, heart.add(ways[1].scale(arm))));
+            found.append((902, heart.add(ways[2].scale(arm))));
             for mark in self.mark_handles(scene) {
                 found.append(mark);
             }
@@ -591,7 +593,7 @@ impl Studio.drag_handle(scene: Scene, x: int, y: int, free: bool) {
         if hub is None {
             return;
         }
-        axis = Vec3(x=1.0) if self.resize_side == 900 else (Vec3(y=1.0) if self.resize_side == 901 else Vec3(z=1.0));
+        axis = self.gizmo_basis(scene)[self.resize_side - 900];
         view = self.view_area();
         from_at = self.camera.project(view, hub);
         to_at = self.camera.project(view, hub.add(axis.scale(64.0)));
@@ -991,6 +993,25 @@ impl Studio.list_materials(ui: StudioUi) {
         # The project's own image files, when it has a folder of them.
         if len(shelf.file_names()) > 0 {
             rows.append(TreeRow(key="files", text="your files", picked=self.shelf == "files", tone="accent"));
+        }
+        # Folders from elsewhere, each under its name: what add-ons bring,
+        # and folders linked to. Then the lists of materials kept by name.
+        for label in sorted(shelf.extras.keys()) {
+            if len(shelf.extra_names(label)) > 0 {
+                rows.append(
+                    TreeRow(
+                        key=label,
+                        text=("add-on " if label.startswith("addon:") else "link ") + label.split(":", 1)[-1],
+                        picked=self.shelf == label,
+                        tone="accent"
+                    )
+                );
+            }
+        }
+        for kept_list in sorted(self.all_lists().keys()) {
+            rows.append(
+                TreeRow(key="list:" + kept_list, text="list " + kept_list, picked=self.shelf == "list:" + kept_list, tone="accent")
+            );
         }
         for group in shelf.groups() {
             # A filter looks inside the groups already listed once, so typing

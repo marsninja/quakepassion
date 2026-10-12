@@ -45,8 +45,33 @@ impl Studio.treedrop_command(scene: Scene, args: list[str]) -> bool {
         if parts[0] != "tree" or not carried or carried == target {
             return True;
         }
+        if carried.isdigit() {
+            # A group carried: onto a group to be held by it, onto the
+            # groups' heading (or the world's) to be held by none.
+            child = scene.find(int(carried));
+            if child is not None and child.classname() == "func_group" {
+                holder = scene.find(int(target)) if target.isdigit() else None;
+                if holder is not None and holder.classname() == "func_group" {
+                    if scene.nest([child], holder) {
+                        self.opened[str(holder.serial)] = True;
+                        print("studio: nested 1 in #" + str(holder.serial) + " " + holder.fields.get("_group_name", ""));
+                        self.say(child.title() + " is in " + holder.title() + " now");
+                    } else {
+                        self.say("It is there already, or the other is in it");
+                    }
+                    return True;
+                }
+                if target in ["class:func_group", "class:brushes", "class:worldspawn"] {
+                    if scene.nest([child], None) {
+                        print("studio: nested 1 out");
+                        self.say(child.title() + " is in no group now");
+                    }
+                    return True;
+                }
+            }
+        }
         if not carried.startswith("solid:") {
-            self.say("Only brushes change hands in the list: an entity is not held by another");
+            self.say("Only brushes and groups change hands in the list: an entity is not held by another");
             return True;
         }
         taker = self.drop_taker(scene, target);
@@ -61,6 +86,30 @@ impl Studio.treedrop_command(scene: Scene, args: list[str]) -> bool {
             self.seen_revision = -1;
         } else {
             self.say(str(handed) + (" brush" if handed == 1 else " brushes") + " handed to " + taker.title());
+        }
+        return True;
+    }
+    if parts[0] == "library" and carried.startswith("prefab:") {
+        # A prefab let go on a folder of prefabs, or on the shelf's own heading: kept there.
+        into = "";
+        if target.startswith("prefabdir:") {
+            into = target[10:];
+        } elif target.startswith("prefab:") and "/" in target[7:] {
+            # On a prefab: beside it.
+            into = target[7:].rsplit("/", 1)[0];
+        } elif target != "shelf:Prefabs" and not target.startswith("prefab:") {
+            self.say("Put a prefab on a folder of prefabs, on a prefab in one, or on Prefabs itself");
+            return True;
+        }
+        named = carried[7:];
+        # The press that began the drag added a copy, as a click does: carried about the panel, it is taken back.
+        placed = scene.journal;
+        if len(placed.done) > 0 and placed.done[-1].label == "Add " + named {
+            scene.undo();
+        }
+        going = shelf_moved(named, into);
+        if going != shelf_name(named) {
+            return self.library_command(scene, ["ed_prefab", "move", named, going]);
         }
         return True;
     }

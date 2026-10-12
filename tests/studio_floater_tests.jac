@@ -1,4 +1,4 @@
-import from editor.ui.canvas { TraceCanvas, Rect, rects_outside }
+import from editor.ui.canvas { TraceCanvas, Rect, rects_outside, Theme, light_theme }
 import from editor.ui.input { UiSource, script_click, script_drag }
 import from editor.ui.widget { Widget, Stage }
 import from editor.ui.widgets { Box, PushButton, ViewArea, Floater }
@@ -155,4 +155,36 @@ test "what is left of a rectangle with others cut out of it" {
     # Two holes.
     two = rects_outside(area, [hole, Rect(x=0, y=0, w=10, h=10)]);
     assert sum([piece.w * piece.h for piece in two]) == 100 * 100 - 20 * 30 - 100;
+}
+
+test "a floating window is kept within its room, once there is a room" {
+    stage = Stage(canvas=TraceCanvas());
+    stage.open(Box());
+    casing = Floater(title="Shape");
+    casing.area = Rect(x=600, y=300, w=300, h=200);
+    # Before anything is laid out there is nothing to keep it within: it stays as it was put.
+    casing.settle(stage);
+    assert casing.area.same(Rect(x=600, y=300, w=300, h=200));
+    # In a window too small for where it stands it is brought in whole.
+    stage.width = 800;
+    stage.height = 400;
+    casing.settle(stage);
+    assert casing.area.same(Rect(x=500, y=200, w=300, h=200));
+    # Within bounds of its own, when it has them; and never smaller than its least.
+    casing.bounds = Rect(x=100, y=50, w=250, h=120);
+    casing.settle(stage);
+    assert casing.area.x == 100 and casing.area.y == 50 and casing.area.w == 250 and casing.area.h == 120;
+    casing.area = Rect(x=0, y=0, w=10, h=10);
+    casing.settle(stage);
+    assert casing.area.w == casing.least_wide and casing.area.h == casing.least_tall;
+}
+
+test "the light colours differ from the dark where it matters, and share their metrics" {
+    dark = Theme();
+    light = light_theme();
+    assert light.row == dark.row and light.font == dark.font and light.pad == dark.pad;
+    # Words are dark on light panels, and light on dark ones.
+    assert light.text.r + light.text.g + light.text.b < light.panel.r + light.panel.g + light.panel.b;
+    assert dark.text.r + dark.text.g + dark.text.b > dark.panel.r + dark.panel.g + dark.panel.b;
+    assert light.field.r > 200 and dark.field.r < 60;
 }
