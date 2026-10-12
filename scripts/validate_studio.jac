@@ -2428,7 +2428,9 @@ def project_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     assert len(brushes(steps["old"])) == 0 and tally(steps["old"]) , str(steps["old"]);
     assert [line for line in steps["old"] if line.startswith("brushes=7 ")] , str(steps["old"]);
     theirs = [line for line in steps["old"] if line.startswith("addon ")];
-    assert theirs and theirs[0].endswith("/projects/old/classes/traps.txt classes=trap_spikes,trap_pit") , str(steps["old"]);
+    # (The listing goes on to say what it brings beside classes: here, nothing.)
+    assert theirs and theirs[0].split(" name=")[0].endswith("/projects/old/classes/traps.txt classes=trap_spikes,trap_pit")
+        and theirs[0].endswith(" name=traps materials=0 prefabs=0") , str(steps["old"]);
     assert after == before , after;
     # A game's setup: kept in the settings, and the next scene made outside
     # a project is floored with its material.

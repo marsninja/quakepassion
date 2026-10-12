@@ -157,3 +157,38 @@ def addon_classes(text: str) -> list[str] {
     }
     return found;
 }
+
+"""The folders an add-on's text names beside its classes: a line `textures
+<folder>` for image files to use as materials and `prefabs <folder>` for
+prefabs, each a path from the add-on's own file. What it does not name is
+not there."""
+def addon_folders(text: str) -> dict[str, str] {
+    found: dict[str, str] = {};
+    for raw in text.split("\n") {
+        words = raw.strip().split(None, 1);
+        if len(words) == 2 and words[0] in ["textures", "prefabs"] {
+            folder = words[1].strip().strip("\"").replace("\\", "/").rstrip("/");
+            # A folder of the add-on's own: nothing above its file, and nothing from the root.
+            if folder and not folder.startswith("/") and ".." not in folder.split("/") {
+                found[words[0]] = folder;
+            }
+        }
+    }
+    return found;
+}
+
+"""What an add-on's materials and prefabs are named under: its file's name
+without what follows the last dot, in small letters, with anything but
+letters, digits and underscores made an underscore."""
+def addon_label(path: str) -> str {
+    base = path.replace("\\", "/").split("/")[-1];
+    cut = base.rfind(".");
+    if cut > 0 {
+        base = base[:cut];
+    }
+    said = "";
+    for letter in base.lower() {
+        said += letter if letter.isalnum() or letter == "_" else "_";
+    }
+    return said if said else "addon";
+}

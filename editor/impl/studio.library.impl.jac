@@ -45,6 +45,13 @@ impl Studio.prefab_path(name: str) -> str {
     } elif not folder {
         folder = os.getcwd() + "/prefabs";
     }
+    if name.startswith("addon:") {
+        # An add-on's own prefab: under the folder its add-on named.
+        halves = name[6:].split("/", 1);
+        if len(halves) == 2 and halves[0] in self.addon_prefabs {
+            return self.addon_prefabs[halves[0]] + "/" + shelf_name(halves[1]) + ".map";
+        }
+    }
     # A name may say folders of the shelf: no further up than the shelf itself.
     return folder + "/" + shelf_name(name) + ".map";
 }
@@ -163,6 +170,14 @@ impl Studio.list_library(ui: StudioUi) {
         }
         for known in names {
             rows.append(TreeRow(key=lead + known, text=known, depth=1));
+        }
+    }
+    # What add-ons bring: each one's prefabs under its name.
+    for label in sorted(self.addon_prefabs.keys()) {
+        brought = [each[:-4] for each in own_files(self.addon_prefabs[label]) if each.lower().endswith(".map")];
+        rows.append(TreeRow(key="shelf:addon:" + label, text="Add-on " + label, tone="accent", note=str(len(brought))));
+        for each in brought {
+            rows.append(TreeRow(key="prefab:addon:" + label + "/" + each, text=each, depth=1));
         }
     }
     # After the shelves of files: what is open now, and what was lately.

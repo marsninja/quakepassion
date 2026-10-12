@@ -245,6 +245,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   classes, recipes and bound keys. An add-on inside the open project is
   named in its manifest and loads with it; any other is kept in the
   settings.
+- **What an add-on brings beside classes**: a line `textures <folder>`
+  names a folder of image files and `prefabs <folder>` a folder of
+  prefabs, each a path from the add-on's own file (nothing above it).
+  They go by the add-on's name, which is its file's name without its
+  ending: the images are a shelf of the Materials tab (`add-on castle`)
+  and materials called `addon:castle/<file>`, the prefabs a shelf of the
+  Library tab and prefabs called `addon:castle/<name>`, placed and
+  linked like any other. Dropping the add-on takes them away with its
+  classes; reloading reads its folders again. (`ed_pack project` does
+  not yet carry an add-on's files into a pack.)
 - **What a game's scenes begin with**: `ed_game <passion|q1|q2|q3>
   <material|build|bake> [value]` sets the material new brushes are made
   of, how levels are lit and how wide a bake's cells are for scenes of

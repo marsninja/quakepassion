@@ -992,6 +992,14 @@ impl Studio.list_materials(ui: StudioUi) {
         if len(shelf.file_names()) > 0 {
             rows.append(TreeRow(key="files", text="your files", picked=self.shelf == "files", tone="accent"));
         }
+        # What add-ons bring: each one's image files under its name.
+        for label in sorted(shelf.extras.keys()) {
+            if len(shelf.extra_names(label)) > 0 {
+                rows.append(
+                    TreeRow(key="addon:" + label, text="add-on " + label, picked=self.shelf == "addon:" + label, tone="accent")
+                );
+            }
+        }
         for group in shelf.groups() {
             # A filter looks inside the groups already listed once, so typing
             # does not read every map.

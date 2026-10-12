@@ -5,7 +5,9 @@ import from editor.project {
     manifest_words,
     manifest_word,
     file_name,
-    addon_classes
+    addon_classes,
+    addon_folders,
+    addon_label
 }
 
 test "a manifest's words keep what is quoted together" {
@@ -51,4 +53,18 @@ test "an add-on's classes are its lines after the word class" {
         + "class trap_pit | brush | passion | A floor that falls away\nclass broken | point\nprefab pit\n";
     found = addon_classes(text);
     assert len(found) == 2 and found[0].startswith("trap_spikes | point") and found[1].startswith("trap_pit | brush");
+}
+
+test "an add-on names the folders of textures and prefabs beside its file" {
+    text = "// The castle\ntextures castle/tex\nprefabs \"castle/pre/\"\nclass trap_spikes|point|q1|Spikes that fall||\n";
+    assert addon_folders(text) == {"textures": "castle/tex", "prefabs": "castle/pre"};
+    assert addon_classes(text) == ["trap_spikes|point|q1|Spikes that fall||"];
+    # Nothing above the add-on's own file, and nothing from the root.
+    assert addon_folders("textures ../other\nprefabs /usr/share") == {};
+    assert addon_folders("textures\nsounds noise") == {};
+}
+
+test "an add-on's materials and prefabs go by its file's name" {
+    assert addon_label("/home/me/addons/Castle Keep.addon") == "castle_keep";
+    assert addon_label("traps.txt") == "traps" and addon_label("plain") == "plain" and addon_label("") == "addon";
 }

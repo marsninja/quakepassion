@@ -149,7 +149,9 @@ import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
 import from .compile.light { bake_light }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
-import from .project { Project, MANIFEST_NAME, read_project, write_project, addon_classes, file_name }
+import from .project {
+    Project, MANIFEST_NAME, read_project, write_project, addon_classes, addon_folders, addon_label, file_name
+}
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.navigation {
@@ -1197,6 +1199,11 @@ obj Studio(Workbench) {
         project: Project | None = None,
         project_folder: str = "",
         addons: dict[str, list[str]] = {},
+        # What add-ons bring beside classes: each one's name by its file,
+        # and its folders of image files and of prefabs by its name.
+        addon_labels: dict[str, str] = {},
+        addon_textures: dict[str, str] = {},
+        addon_prefabs: dict[str, str] = {},
         user_addons: list[str] = [],
         game_setup: dict[str, str] = {},
         game_applied: str = "",
@@ -2042,6 +2049,7 @@ obj Studio(Workbench) {
         home = game_directory("passion");
         if os.path.isdir(home) {
             found = ArchiveMaterials(directory=home);
+            found.extras = dict(self.addon_textures);
             self.archive = found;
             self.materials = found;
         }
@@ -3842,6 +3850,12 @@ obj Studio(Workbench) {
     """Read an add-on's classes (again). How many it added; -1 when it cannot be read."""
     def load_addon(path: str) -> int;
     def drop_addon(path: str);
+    """Hand the add-ons' folders of image files to the archive, and list
+    materials and the library again."""
+    def sync_addons;
+    """An add-on's line of the listing: its classes, name, and how many
+    materials and prefabs it brings."""
+    def addon_words(path: str) -> str;
     """Take up what a game is set up with, when a scene of it is first shown."""
     def apply_game(game: str);
     def close_project;

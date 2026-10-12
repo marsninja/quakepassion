@@ -23,7 +23,9 @@ obj ArchiveMaterials(Materials) {
         missing: list[str] = [],
         listed: dict[str, list[str]] = {},
         # Where image files used as materials are kept, when a project says.
-        folder: str = "";
+        folder: str = "",
+        # Folders of image files that add-ons bring, by the add-on's name.
+        extras: dict[str, str] = {};
 
     def reader -> Loader {
         loader = self.loader;
@@ -60,8 +62,21 @@ obj ArchiveMaterials(Materials) {
     """The image files there, as material names: `file:` and the path under
     the folder."""
     def file_names -> list[str] {
+        return self.images_under(self.files_folder(), "file:");
+    }
+
+    """The image files an add-on brings, as material names: `addon:`, the
+    add-on's name and the path under its folder."""
+    def extra_names(label: str) -> list[str] {
+        if label not in self.extras {
+            return [];
+        }
+        return self.images_under(self.extras[label], "addon:" + label + "/");
+    }
+
+    """The image files under a folder, each as `lead` and its path from it."""
+    def images_under(top: str, lead: str) -> list[str] {
         found: list[str] = [];
-        top = self.files_folder();
         if not os.path.isdir(top) {
             return found;
         }
@@ -74,7 +89,7 @@ obj ArchiveMaterials(Materials) {
                 if os.path.isdir(here + "/" + entry_name) {
                     waiting.append(inner);
                 } elif image_kind(entry_name) {
-                    found.append("file:" + inner);
+                    found.append(lead + inner);
                 }
             }
         }
@@ -84,9 +99,19 @@ obj ArchiveMaterials(Materials) {
     """A material's image from the archives or the project's own files, or none."""
     def fetch(name: str) -> Texture | None {
         parts = name.split(":", 1);
+        path = "";
         if len(parts) == 2 and parts[0] == "file" and parts[1] and ".." not in parts[1] {
             path = self.files_folder() + "/" + parts[1];
-            kind = image_kind(parts[1]);
+        } elif len(parts) == 2 and parts[0] == "addon" and ".." not in parts[1] {
+            # An add-on's own file: under the folder its add-on named.
+            halves = parts[1].split("/", 1);
+            if len(halves) != 2 or halves[0] not in self.extras or not halves[1] {
+                return None;
+            }
+            path = self.extras[halves[0]] + "/" + halves[1];
+        }
+        if path {
+            kind = image_kind(path);
             if not kind or not os.path.isfile(path) {
                 return None;
             }
@@ -213,6 +238,10 @@ obj ArchiveMaterials(Materials) {
         }
         result: list[str] = [];
         parts = group.split(":", 1);
+        if len(parts) == 2 and parts[0] == "addon" {
+            # Read each time: an add-on's folder is changed by hand.
+            return self.extra_names(parts[1]);
+        }
         try {
             if len(parts) == 2 and parts[0] == "q1" {
                 data = self.reader().catalog.source("q1").read("maps/" + parts[1] + ".bsp");

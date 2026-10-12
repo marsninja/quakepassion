@@ -77,6 +77,21 @@ impl Studio.load_addon(path: str) -> int {
     taken = add_classes(addon_classes(text));
     self.addons[path] = taken;
     self.classes_seen = "";
+    # The folders it names beside its file: image files to use as
+    # materials, and prefabs. Each is known by the add-on's name.
+    label = addon_label(path);
+    self.addon_labels[path] = label;
+    self.addon_textures.pop(label, None);
+    self.addon_prefabs.pop(label, None);
+    beside = os.path.dirname(os.path.abspath(path));
+    named = addon_folders(text);
+    if "textures" in named and os.path.isdir(beside + "/" + named["textures"]) {
+        self.addon_textures[label] = beside + "/" + named["textures"];
+    }
+    if "prefabs" in named and os.path.isdir(beside + "/" + named["prefabs"]) {
+        self.addon_prefabs[label] = beside + "/" + named["prefabs"];
+    }
+    self.sync_addons();
     return len(taken);
 }
 
@@ -84,6 +99,40 @@ impl Studio.drop_addon(path: str) {
     drop_classes(self.addons.get(path, []));
     self.addons.pop(path, None);
     self.classes_seen = "";
+    label = self.addon_labels.get(path, "");
+    self.addon_labels.pop(path, None);
+    self.addon_textures.pop(label, None);
+    self.addon_prefabs.pop(label, None);
+    self.sync_addons();
+}
+
+impl Studio.sync_addons {
+    stock = self.archive;
+    if stock is not None {
+        stock.extras = dict(self.addon_textures);
+        # What was read of an add-on's files is read again.
+        stock.found = {};
+        stock.listed = {};
+    }
+    self.materials_changed += 1;
+    self.folds += 1;
+    # The library lists itself only when asked: what add-ons bring is asked for here.
+    panel = self.ui;
+    if panel is not None {
+        self.list_library(panel);
+    }
+}
+
+impl Studio.addon_words(path: str) -> str {
+    label = self.addon_labels.get(path, "");
+    stock = self.archive;
+    pictures = len(stock.extra_names(label)) if stock is not None else 0;
+    prefabs = 0;
+    if label in self.addon_prefabs {
+        prefabs = len([each for each in own_files(self.addon_prefabs[label]) if each.lower().endswith(".map")]);
+    }
+    return "studio: addon " + path + " classes=" + ",".join(self.addons.get(path, [])) + " name=" + label + " materials="
+        + str(pictures) + " prefabs=" + str(prefabs);
 }
 
 impl Studio.apply_game(game: str) {
@@ -237,7 +286,7 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
         how = args[1] if len(args) > 1 else "";
         if not how {
             for path in sorted(self.addons.keys()) {
-                print("studio: addon " + path + " classes=" + ",".join(self.addons[path]));
+                print(self.addon_words(path));
             }
             print(
                 "studio: tools commands=" + str(len(STUDIO_COMMANDS)) + " classes=" + str(len(class_names()))
@@ -247,7 +296,7 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
             self.say(
                 str(len(self.addons)) + " add-ons: " + ", ".join([os.path.basename(path) for path in sorted(self.addons.keys())])
                 if self.addons
-                else "No add-ons are loaded (ed_addon <file>: a text file of class lines)"
+                else "No add-ons are loaded (ed_addon <file>: a text file of class lines, and of the folders of textures and prefabs beside it)"
             );
             return True;
         }
