@@ -917,6 +917,23 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   picked and copied into any scene, it is edited by hand there. (The
   generator gained three things a room may be asked: a recipe, another
   roll of its own dice, and a budget.)
+- **An expedition's mission changed by hand**: the mission is the
+  generator's own graph of beats and the links between them, and the tool
+  changes that graph. `ed_exp link <beat> <beat> [mode] [tokens]` adds a
+  link (open, valve, locked, shortcut, secret, window or gate, with the
+  tokens it needs), `ed_exp unlink <link>` takes one away, `ed_exp mode
+  <link> <mode> [tokens]` changes one, `ed_exp grant|ungrant <beat>
+  <token>` says what a beat gives, `ed_exp beat <from beat> [kind]
+  [size]` adds a beat reached from another, and `ed_exp pattern <name>
+  <beat> <beat>` lays one of the generator's cycle patterns between two
+  beats (alternatives, lock_key, far_key, shortcut, hidden, foreshadow,
+  switch, gambit) and opens its arcs out into rooms. After every change
+  the generator's proof is run on the mission (every token granted, the
+  goal reached, no corner it can be played into, every beat reached) and
+  what it finds is said in its own words ("Mission needs an ungranted
+  token: key_blue"); a mission that is sound is laid out again, carved,
+  filled and played through by the generator's playtest. A change that
+  fails any of it is given up, and the expedition is as it was.
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged

@@ -11,7 +11,10 @@ import from engine.assets.content { game_directory }
 import from games.passion.generate { Survey, Candidate, survey, measure, judge }
 import from games.passion.compile { compile_blueprint }
 import from games.passion.materials { load_materials, district_names }
-import from games.passion.mission { beats_of, links_of }
+import from games.passion.mission { Expedition, PATTERNS, beats_of, links_of }
+import from editor.document.missionedit {
+    LINK_MODES, BEAT_KINDS, mission_copy, mission_fault, add_link, drop_link, set_link, set_grant, add_beat, lay_pattern
+}
 import from games.passion.layout { Site, rooms_of, passages_of, embed, target_heights, solve_heights }
 import from games.passion.blueprint { new_blueprint, carve_rooms, carve_corridors, carve_windows }
 import from games.passion.interior { RECIPES }
@@ -31,14 +34,16 @@ obj Expeditions(StudioTool) {
         # The materials every expedition is built from, read once.
         textures: list[Texture] = [],
         shown: bool = False,
-        # How many times each stage's dice have been rolled again.
-        salts: dict[str, int] = {};
+        # How many times each stage's dice have been rolled again, and how
+        # many changes have been made to the mission by hand.
+        salts: dict[str, int] = {},
+        edits: int = 0;
 
     def commands -> list[tuple[str, str, str]] {
         return [
             (
                 "ed_exp",
-                "ed_exp [open <seed> | mission | rooms | ways | proof | show [on|off] | again [rooms|population|layout] | fill <room> <recipe|any> | district <room> <n> | tension <room> <0..1> | budget <room> <threat|auto> | density <0.15..1> | niche]",
+                "ed_exp [open <seed> | mission | rooms | ways | proof | show [on|off] | again [rooms|population|layout] | fill <room> <recipe|any> | district <room> <n> | tension <room> <0..1> | budget <room> <threat|auto> | density <0.15..1> | niche | link <beat> <beat> [mode] [tokens] | unlink <link> | mode <link> <mode> [tokens] | grant|ungrant <beat> <token> | beat <from beat> [kind] [size] | pattern <name> <beat> <beat>]",
                 "a Passion expedition: generate a seed and open it as a document of brushes, a group a room; say its mission, rooms, ways and proof; draw the ways over the level; and make parts of it again while what is locked is kept: rooms' insides, who is in them, the layout; a room's recipe, district, tension and budget"
             )
         ];
@@ -209,6 +214,31 @@ obj Expeditions(StudioTool) {
         return True;
     }
 
+    """Prove a mission that was just changed by hand and lay the expedition
+    out again from it. One that is not sound, or cannot be laid out and
+    finished, is given up: `backup` (the mission as it was) is gone back
+    to. Answers whether the change stands."""
+    def mission_changed(host: ToolHost, scene: Scene, backup: Expedition) -> bool {
+        record = self.record;
+        if record is None {
+            return False;
+        }
+        plan = record.plan;
+        fault = mission_fault(plan) if plan is not None else "there is no mission";
+        if fault {
+            record.plan = backup;
+            print("studio: expedition unsound " + fault);
+            host.say("The mission would not be sound (" + fault + "): it is as it was");
+            return False;
+        }
+        if not self.remake(host, scene, "layout") {
+            record.plan = backup;
+            self.rebuild("layout");
+            return False;
+        }
+        return True;
+    }
+
     """How the expedition in hand stands, in a line."""
     def words -> str {
         record = self.record;
@@ -310,6 +340,52 @@ obj Expeditions(StudioTool) {
                 if proof.reached_exit
                 else "It cannot be finished: the exit is not reached (" + str(len(proof.rooms)) + " rooms are)"
             );
+            return True;
+        }
+        if how in ["link", "unlink", "mode", "grant", "ungrant", "beat", "pattern"] {
+            # The mission's own graph is changed, proved, and laid out again.
+            backup = mission_copy(plan);
+            self.edits += 1;
+            rolls = stream_for(record.seed, "edit").child("n", self.edits);
+            numbers = [int(word) if word.isdigit() else -1 for word in args[2:]];
+            done = False;
+            told = "";
+            if how == "link" and len(args) > 3 {
+                way = args[4].lower() if len(args) > 4 else "open";
+                done = add_link(plan, rolls, numbers[0], numbers[1], way, args[5:]);
+                told = "A link from beat " + args[2] + " to beat " + args[3] + " (" + way + ")";
+            } elif how == "unlink" and len(args) > 2 {
+                done = drop_link(plan, numbers[0]);
+                told = "Link " + args[2] + " is gone";
+            } elif how == "mode" and len(args) > 3 {
+                done = set_link(plan, numbers[0], args[3].lower(), args[4:]);
+                told = "Link " + args[2] + " is " + args[3].lower() + (", needing " + ", ".join(args[4:]) if len(args) > 4 else "");
+            } elif how in ["grant", "ungrant"] and len(args) > 3 {
+                done = set_grant(plan, numbers[0], args[3], how == "grant");
+                told = "Beat " + args[2] + (" grants " if how == "grant" else " no longer grants ") + args[3];
+            } elif how == "beat" and len(args) > 2 {
+                kind = args[3].lower() if len(args) > 3 else "room";
+                added = add_beat(plan, rolls, numbers[0], kind, numbers[2] if len(numbers) > 2 and numbers[2] >= 0 else 1);
+                done = added >= 0;
+                told = "Beat " + str(added) + " (" + kind + ") is reached from beat " + args[2];
+            } elif how == "pattern" and len(args) > 4 {
+                grown = lay_pattern(plan, rolls, args[2].lower(), numbers[1], numbers[2]);
+                done = grown >= 0;
+                told = "The pattern " + args[2].lower() + " lies between beats " + args[3] + " and " + args[4] + ", with "
+                    + str(max(0, grown)) + " beats of its own";
+            }
+            if not done {
+                host.say(
+                    "ed_exp link <beat> <beat> [" + "|".join(LINK_MODES) + "] [tokens] | unlink <link> | mode <link> <mode> [tokens] | "
+                        + "grant|ungrant <beat> <token> | beat <from beat> [" + "|".join(BEAT_KINDS) + "] [size] | pattern <"
+                        + "|".join(PATTERNS) + "> <beat> <beat>"
+                );
+                return True;
+            }
+            if self.mission_changed(host, scene, backup) {
+                print("studio: expedition mission " + how + " beats=" + str(len(beats_of(plan))) + " links=" + str(len(links_of(plan))));
+                host.say(told + ": proved, and laid out again");
+            }
             return True;
         }
         if how == "again" {
