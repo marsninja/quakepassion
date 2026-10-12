@@ -366,7 +366,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_merge", "ed_merge <x y z> <x y z>", "move a corner of the selected brush onto another of its corners"),
     (
         "ed_model",
-        "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame ...] [tag ...] [skin ...] [check] [match] [box] [axes] [marks <style>] [shade wire|solid|textured] [about model|origin|view|free] [undo|redo] [close]",
+        "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame ...] [tag ...] [skin ...] [check] [match] [box] [axes] [marks <style>] [shade wire|solid|textured] [about model|origin|view|free] [layout 1|4] [float [close]] [undo|redo] [close]",
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
@@ -1254,6 +1254,14 @@ obj Studio(Workbench) {
         patch_drag: list[float] = [0.0, 0.0],
         patch_fineness: float = 4.0,
         preview_edges_kept: dict[str, list[list[list[Vec3]]]] = {},
+        # The model's floating window: its window, its view, and its own
+        # way of looking at the model (turned and drawn nearer by itself).
+        model_float_box: Floater | None = None,
+        model_float_pane: ViewArea | None = None,
+        model_float_lens: EditCamera = EditCamera(),
+        model_float_yaw: float = 2.4,
+        model_float_pitch: float = -0.35,
+        model_float_reach: float = 160.0,
         model_backs: bool = True,
         model_ticks: float = 0.0,
         # How the marks on the model's points are drawn; the model being
@@ -3420,7 +3428,9 @@ obj Studio(Workbench) {
         built = self.is_built_scene();
         shown_model = self.model_now;
         if self.assets_shown and shown_model is not None and ui_model_area(self.ui).w > 0 {
-            # The explorer's model, alone in its own view.
+            # The explorer's model, alone in its own view (in the first of
+            # four, with views from above, the front and the side, when it is
+            # laid out so).
             spot = ui_model_area(self.ui);
             seen.append(
                 SceneView(
@@ -3436,6 +3446,43 @@ obj Studio(Workbench) {
                     bare=True
                 )
             );
+            for (kind, quarter) in model_quarters(self.ui) {
+                flat = axis_camera(kind, self.model_reach * 1.1);
+                seen.append(
+                    SceneView(
+                        x=quarter.x,
+                        y=quarter.y,
+                        width=quarter.w,
+                        height=quarter.h,
+                        eye=self.model_middle.sub(flat.forward().scale(self.model_reach * 4.0)),
+                        yaw=flat.yaw,
+                        pitch=flat.pitch,
+                        span=flat.span,
+                        everything=True,
+                        bare=True
+                    )
+                );
+            }
+            pane = self.model_float_pane;
+            if pane is not None and pane.parent() is not None and pane.area.w > 0 {
+                # The model's floating window, with its own way of looking at it.
+                lens = self.model_float_lens;
+                seen.append(
+                    SceneView(
+                        x=pane.area.x,
+                        y=pane.area.y,
+                        width=pane.area.w,
+                        height=pane.area.h,
+                        eye=lens.eye,
+                        yaw=lens.yaw,
+                        pitch=lens.pitch,
+                        span=0.0,
+                        everything=True,
+                        bare=True,
+                        over=True
+                    )
+                );
+            }
         }
         for (index, port) in enumerate(self.ports[:self.showing()]) {
             area = port.view.area;
@@ -4344,6 +4391,9 @@ obj Studio(Workbench) {
     def frame_model_about;
     """Run one of those commands (asked before the model's own). False when it is not one."""
     def modelview_command(scene: Scene, args: list[str]) -> bool;
+    """The model's floating window: its view's drags and wheel turned into
+    its own way of looking, each frame."""
+    def turn_model_float;
     def archive_command(scene: Scene, args: list[str]) -> bool;
     def finding_command(scene: Scene, args: list[str]) -> bool;
     def rows_command(scene: Scene, args: list[str]) -> bool;
@@ -5033,7 +5083,7 @@ obj Studio(Workbench) {
             lines.append(self.playview_words());
         }
         if self.model_marks != "cross" or self.model_shade != "wire" or self.model_about != "model" or self.model_lock
-            or self.points_tinted or self.skin_pattern != "solid" {
+            or self.points_tinted or self.skin_pattern != "solid" or _model_split.four or self.model_float_box is not None {
             lines.append(self.modelview_words());
         }
         seen_asset = self.asset_now;
@@ -5314,12 +5364,41 @@ def wire_line(start: Vec3, finish: Vec3, color: Ink) {
     }
 }
 
-"""Where the explorer's model view is ([0, 0, 0, 0] when it is not laid out)."""
+"""How the explorer's model view is laid out: one view, or four."""
+obj ModelSplit {
+    has four: bool = False;
+}
+
+glob _model_split: ModelSplit = ModelSplit();
+
+"""Where the explorer's model view is ([0, 0, 0, 0] when it is not laid
+out): the turning view's place, the first quarter when there are four."""
 def ui_model_area(ui: StudioUi | None) -> Rect {
     if ui is None or ui.model_view.parent() is None {
         return Rect();
     }
-    return ui.model_view.area;
+    whole = ui.model_view.area;
+    if _model_split.four {
+        # The turning view is the first of four.
+        return Rect(x=whole.x, y=whole.y, w=whole.w // 2 - 1, h=whole.h // 2 - 1);
+    }
+    return whole;
+}
+
+"""The other three of the model's four views: from above, the front and the
+side, each its quarter of the model's view (none when there is one view)."""
+def model_quarters(ui: StudioUi | None) -> list[tuple[str, Rect]] {
+    if not _model_split.four or ui is None or ui.model_view.parent() is None {
+        return [];
+    }
+    whole = ui.model_view.area;
+    half_w = whole.w // 2;
+    half_h = whole.h // 2;
+    return [
+        ("top", Rect(x=whole.x + half_w + 1, y=whole.y, w=whole.w - half_w - 1, h=half_h - 1)),
+        ("front", Rect(x=whole.x, y=whole.y + half_h + 1, w=half_w - 1, h=whole.h - half_h - 1)),
+        ("side", Rect(x=whole.x + half_w + 1, y=whole.y + half_h + 1, w=whole.w - half_w - 1, h=whole.h - half_h - 1))
+    ];
 }
 
 """The game whose classes a document may hold ("" before there is one)."""

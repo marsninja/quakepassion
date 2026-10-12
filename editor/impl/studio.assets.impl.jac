@@ -619,6 +619,7 @@ impl Studio.turn_model(dt: float) {
         }
     }
     self.skin_events();
+    self.turn_model_float();
     self.play_reel(dt);
     if figure is None {
         return;

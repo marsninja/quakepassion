@@ -62,6 +62,7 @@ glob SETTING_TABLE: list[str] = [
     "studio_model_ticks|model|Ticks on points|ed_model ticks %|#|The size of the mark on every point of the model (0 for none)",
     "studio_model_marks|model|Marks drawn as|ed_model marks %|cross,box,diamond|How the marks on a model's points and tags are drawn",
     "studio_model_shade|model|The model drawn|ed_model shade %|wire,solid,textured|The model being edited as its edges, with its faces filled, or with its skin",
+    "studio_model_layout|model|The model shown in|ed_model layout %|1,4|One view, or four: turning, from above, the front and the side",
     "studio_model_about|model|The view turns about|ed_model about %|model,origin,view,free|The model's middle, its origin, where the view looks, or the eye itself",
     "studio_autosave|files|Autosave every|ed_autosave every %|#|Seconds between autosaves of a changed scene (0 for never)",
     "studio_theme|colours|Theme|ed_theme %|dark,light|The studio's dark colours or its light ones",

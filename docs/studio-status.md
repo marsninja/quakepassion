@@ -577,7 +577,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the frame shown. `ed_mesh lock <x|y|z|xy|...|off>` keeps drags off the
   axes named (their handles are drawn faint and cannot be taken), for
   Ctrl and a drag as well. `ed_model marks <cross|box|diamond>` says how
-  the marks on points and tags are drawn.
+  the marks on points and tags are drawn. `ed_model layout 4` shows the
+  model in four views: the one that turns, and flat views from above,
+  the front and the side (`layout 1` goes back to one; kept in the
+  settings). `ed_model float` opens a floating window over the model's
+  views that looks at the model from its own angle: dragged in, it turns
+  that window's view alone, and the wheel draws it nearer.
 - **Points' own colours**: `ed_mesh colour <rrggbb|none>` gives the
   picked points a colour (undone with the model's other edits), and
   `ed_mesh colours [on|off]` shows them: each point marked in its colour,

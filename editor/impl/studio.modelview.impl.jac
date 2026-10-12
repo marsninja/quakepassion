@@ -3,13 +3,38 @@ drawn solid or with its skin, how the view turns, the three handles of what
 is picked and the axes it may not move along, how its marks are drawn, and
 its points' own colours. Declarations live in studio.jac."""
 
+impl Studio.turn_model_float {
+    pane = self.model_float_pane;
+    if pane is None {
+        return;
+    }
+    for event in pane.take() {
+        if event.kind == "drag" {
+            self.model_float_yaw -= float(event.dx) * 0.01;
+            self.model_float_pitch = max(-1.5, min(1.5, self.model_float_pitch - float(event.dy) * 0.01));
+        } elif event.kind == "wheel" {
+            self.model_float_reach = max(8.0, self.model_float_reach * (0.85 ** event.wheel));
+        }
+    }
+    lens = self.model_float_lens;
+    lens.span = 0.0;
+    lens.yaw = self.model_float_yaw;
+    lens.pitch = self.model_float_pitch;
+    lens.eye = self.model_middle.sub(lens.forward().scale(self.model_float_reach));
+}
+
 impl Studio.modelview_words -> str {
     doc = self.model_doc;
     part = doc.part() if doc is not None else None;
     coloured = len([tint for tint in part.tints if tint >= 0]) if part is not None else 0;
     return "studio: modelmarks marks=" + self.model_marks + " shade=" + self.model_shade + " about=" + self.model_about
         + " lock=" + (self.model_lock if self.model_lock else "-") + " coloured=" + str(coloured) + " colours="
-        + ("1" if self.points_tinted else "0") + " pattern=" + self.skin_pattern + ":" + str(self.skin_grain);
+        + ("1" if self.points_tinted else "0") + " pattern=" + self.skin_pattern + ":" + str(self.skin_grain) + " layout="
+        + ("4" if _model_split.four else "1") + " float=" + (
+            str(self.model_float_pane.area.w) + "x" + str(self.model_float_pane.area.h)
+            if self.model_float_pane is not None
+            else "0"
+        ) + " views=" + str(len(self.views()));
 }
 
 impl Studio.draw_mark(at: Vec3, reach: float, color: Ink) {
@@ -197,6 +222,49 @@ impl Studio.modelview_command(scene: Scene, args: list[str]) -> bool {
             "The model is drawn " + ("as its edges" if word == "wire" else ("with its faces filled" if word == "solid" else "with its skin"))
                 + (": make or open a skin to see it (ed_skin new, ed_skin open)" if word == "textured" and self.model_skin is None else "")
         );
+        return True;
+    }
+    if name == "ed_model" and how == "layout" {
+        if word not in ["1", "4"] {
+            self.say("ed_model layout <1|4>: the model in one view, or in four: turning, from above, the front and the side");
+            return True;
+        }
+        _model_split.four = word == "4";
+        self.keep_settings();
+        print(self.modelview_words());
+        self.say("The model is shown in " + ("four views" if _model_split.four else "one view"));
+        return True;
+    }
+    if name == "ed_model" and how == "float" {
+        stage = self.stage;
+        casing = self.model_float_box;
+        if word == "close" or (casing is not None and word != "open") {
+            if casing is not None and stage is not None {
+                stage.close(casing);
+            }
+            self.model_float_box = None;
+            self.model_float_pane = None;
+            print(self.modelview_words());
+            return True;
+        }
+        if casing is None and stage is not None {
+            pane = ViewArea(hint="Drag: turn | wheel: nearer or farther", plain=True);
+            casing = Floater(title="Model", command="ed_model float close", least_wide=160, least_tall=120);
+            casing.adopt(pane);
+            # It floats over the model's views, where nothing of the interface is drawn over it.
+            whole = self.ui.model_view.area if self.ui is not None else Rect();
+            casing.area = Rect(x=whole.x + whole.w // 3, y=whole.y + 8, w=max(160, whole.w * 2 // 3 - 8), h=max(120, whole.h // 2));
+            if whole.w > 0 {
+                casing.bounds = whole;
+            }
+            casing.settle(stage);
+            stage.open(casing);
+            self.model_float_box = casing;
+            self.model_float_pane = pane;
+            self.model_float_reach = self.model_reach;
+        }
+        print(self.modelview_words());
+        self.say("A floating window looks at the model: drag in it to turn it there");
         return True;
     }
     if name == "ed_model" and how == "about" {

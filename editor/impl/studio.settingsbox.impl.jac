@@ -19,7 +19,8 @@ impl Studio.setting_lines_all -> list[str] {
         "ed_model ticks " + plain_number(self.model_ticks),
         "ed_model marks " + self.model_marks,
         "ed_model shade " + self.model_shade,
-        "ed_model about " + self.model_about
+        "ed_model about " + self.model_about,
+        "ed_model layout " + ("4" if _model_split.four else "1")
     ];
     for line in self.settings_lines() {
         lines.append(line);
@@ -91,7 +92,8 @@ impl Studio.watch_settings {
         self.settings_mark = "";
     }
     mark = str(self.settings_rev) + "|" + ("1" if self.model_backs else "0") + "|" + plain_number(self.model_ticks) + "|"
-        + self.model_marks + "|" + self.model_shade + "|" + self.model_about + "|" + str(self.line_width);
+        + self.model_marks + "|" + self.model_shade + "|" + self.model_about + "|" + str(self.line_width) + "|"
+        + ("4" if _model_split.four else "1");
     if mark != self.settings_mark {
         # Something was set: every console variable says what is so now.
         self.settings_mark = mark;
