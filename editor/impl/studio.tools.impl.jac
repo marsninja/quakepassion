@@ -358,6 +358,14 @@ impl Studio.load_thumbs {
 
 impl Studio.check(scene: Scene, args: list[str]) {
     ui = self.ui;
+    if len(args) > 1 and args[1].startswith("uses:") {
+        # A row of what the scene uses: select what uses it.
+        self.uses_command(scene, ["ed_uses", args[1][5:]]);
+        return;
+    }
+    if len(args) > 1 and args[1] == "none" {
+        return;
+    }
     if len(args) > 1 and args[1].isdigit() {
         index = int(args[1]);
         if index < len(self.findings) {
@@ -388,6 +396,9 @@ impl Studio.check(scene: Scene, args: list[str]) {
     }
     for stray in self.game_findings(scene) {
         self.findings.append(stray);
+    }
+    for lacking in self.need_findings(scene) {
+        self.findings.append(lacking);
     }
     for lost in self.nav_findings(scene) {
         # What the baked navigation says cannot be reached.
@@ -510,6 +521,19 @@ impl Studio.tool_command(scene: Scene, args: list[str]) -> bool {
             change = FaceEdit(how="fit", s=first, t=second, sizes=self.material_sizes(scene));
         } elif how == "minfit" {
             change = FaceEdit(how="minfit", sizes=self.material_sizes(scene));
+        } elif how == "wrap" and len(args) > 2 and args[2] == "round" {
+            # From the tagged face on round its own brush, face to face.
+            marked_solid = self.tagged_solid;
+            if marked_solid is None or not marked_solid.held {
+                self.say("Tag a face of the brush first (ed_tag), then pick the faces the material goes round");
+                return True;
+            }
+            took = scene.wrap_round(marked_solid, self.tagged_index);
+            print("studio: wrapped round faces=" + str(took));
+            self.say(
+                "The material goes round " + str(took) + " faces" if took else "Pick faces of the tagged face's own brush that it has not gone round already"
+            );
+            return True;
         } elif how == "wrap" or how == "project" {
             if self.tagged_side is None {
                 self.say("Tag the face to take the material from first (ed_tag)");

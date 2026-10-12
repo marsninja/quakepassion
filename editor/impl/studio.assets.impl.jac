@@ -35,8 +35,10 @@ impl Studio.list_assets(ui: StudioUi) {
         known = AssetIndex(shelf=shelf);
         self.asset_index = known;
     }
+    # An open project's folder is listed with the games, and takes what is dragged onto it.
+    known.home = self.project_folder;
     seen = self.asset_now;
-    titles = {"q1": "Quake", "q2": "Quake II", "q3": "Quake III Arena"};
+    titles = {"q1": "Quake", "q2": "Quake II", "q3": "Quake III Arena", "own": "Your project"};
     if self.asset_filter {
         # A search: every file that answers it, flat, a few hundred at most.
         self.read_tags();
@@ -259,6 +261,7 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
             known = AssetIndex(shelf=stock);
             self.asset_index = known;
         }
+        known.home = self.project_folder;
         self.asset_now = known.look(parts[1], parts[2]);
         self.model_now = None;
         self.model_playing = False;
@@ -338,6 +341,47 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         print("studio: played " + heard.name);
         return True;
     }
+    if name == "ed_assetdrop" {
+        # A file or a folder of a game's archives let go on the project's own rows: copied into it.
+        target = args[1] if len(args) > 1 else "";
+        parts = (args[2] if len(args) > 2 else "").split(" ", 1);
+        carried = parts[1] if len(parts) > 1 else "";
+        if parts[0] != "asset" or carried.split(":")[0] not in ["file", "dir"] or len(carried.split(":", 2)) < 3 {
+            return True;
+        }
+        game_of = carried.split(":", 2)[1];
+        inner_path = carried.split(":", 2)[2];
+        if game_of == "own" {
+            return True;
+        }
+        if not self.project_folder {
+            self.say("Open a project to copy files into (ed_project open <folder>), or write the file out with ed_extract");
+            return True;
+        }
+        if not (target.startswith("dir:own:") or target.startswith("file:own:")) {
+            self.say("Let it go on Your project, or on anything in it");
+            return True;
+        }
+        into = self.project_folder + "/files";
+        if carried.startswith("dir:") {
+            return self.asset_command(scene, ["ed_extract", "folder", game_of + ":" + inner_path, into]);
+        }
+        listing_now = self.asset_index;
+        content_now = listing_now.read(game_of, inner_path) if listing_now is not None else None;
+        if content_now is None {
+            self.say("That file could not be read");
+            return True;
+        }
+        out_path = into + "/" + game_of + "/" + inner_path;
+        os.makedirs(os.path.dirname(out_path), exist_ok=True);
+        with open(out_path, "wb") as file {
+            file.write(content_now);
+        }
+        print("studio: copied " + game_of + ":" + inner_path + " bytes=" + str(len(content_now)) + " into files/" + game_of + "/" + inner_path);
+        self.say("Copied into the project: files/" + game_of + "/" + inner_path);
+        self.folds += 1;
+        return True;
+    }
     if name == "ed_extract" and len(args) > 1 and args[1] == "folder" {
         # Everything under a folder of a game's archives: ed_extract folder <game>:<folder> [to].
         stock_now = self.archive;
@@ -374,6 +418,7 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
             wrote += 1;
             total += len(content);
         }
+        self.folds += 1;
         print("studio: extracted folder " + parts[0] + ":" + under + " files=" + str(wrote) + " bytes=" + str(total));
         self.say(
             "Wrote " + str(wrote) + " files to " + out_folder + "/" + parts[0] + "/" + under if wrote > 0

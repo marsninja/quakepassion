@@ -413,10 +413,40 @@ def caulked(brushes: list[list[Side]], material: str = "caulk") -> list[list[Sid
     return result;
 }
 
+"""A fan filling a box: `count` wedges round the middle, each a brush of its
+own from the middle out to the rim, the full height of the box. Together
+they are a round floor or a drum cut like a cake, each slice to be raised,
+lowered or given a material of its own."""
+def level_fan_brushes(low: Vec3, high: Vec3, count: int = 8, material: str = "") -> list[list[Side]] {
+    count = max(3, min(32, count));
+    middle = low.add(high).scale(0.5);
+    made: list[list[Side]] = [];
+    for i in range(count) {
+        corners: list[Vec3] = [];
+        for height in [low.z, high.z] {
+            corners.append(spot(middle.x, middle.y, height));
+            for step in [i, i + 1] {
+                turn = 2.0 * math.pi * float(step) / float(count);
+                corners.append(
+                    spot(
+                        middle.x + (high.x - low.x) * 0.5 * math.cos(turn), middle.y + (high.y - low.y) * 0.5 * math.sin(turn),
+                        height
+                    )
+                );
+            }
+        }
+        wedge = shell(corners, material);
+        if wedge {
+            made.append(wedge);
+        }
+    }
+    return made;
+}
+
 """The kinds `shape_brushes` knows."""
 glob SHAPE_KINDS: list[str] = [
     "cone", "pyramid", "ball", "dome", "stairs", "spiral", "arch", "pipe", "bicone", "torus", "xtree", "cap",
-    "corner", "bevel", "column", "landing"
+    "corner", "bevel", "column", "landing", "fan"
 ];
 
 def shape_brushes(
@@ -466,6 +496,9 @@ def shape_brushes(
     }
     if kind == "column" {
         return column_brushes(low, high, count if count > 0 else 8, material);
+    }
+    if kind == "fan" {
+        return level_fan_brushes(low, high, count if count > 0 else 8, material);
     }
     if kind == "landing" {
         return landing_brushes(low, high, count if count > 0 else 8, material);

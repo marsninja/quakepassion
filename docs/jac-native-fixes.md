@@ -68,19 +68,20 @@ Found in QuakePassion work but not needed by it (not in the pin):
   A five-line program that imports and calls the functions, built with
   `jac build --native`, names the function, the line and the construct.
 
-- [jaseci-labs/jac#9992](https://github.com/jaseci-labs/jac/issues/9992): a
-  flow lookup for a local that walks back to an assignment of it from itself
-  (`toward = Vec3(x=round(toward.x))`) refuses the reference inside that
-  right-hand side, which is then checked un-narrowed (E1099), when a later
-  statement is asked about before the checker has met the assignment, as the
-  interface writer does. It shows only on a cold build: from the commit that
-  added `Studio.drag_lay` (`editor/impl/studio.layhandle.impl.jac`) the
-  studio does not build from an empty cache without the fix, and warm
-  incremental builds hid that. A fix that keys the checker's re-entrancy
-  guard by symbol and statement is on the branch
-  `fix/checker-flow-lookup-reentry` of `marsninja/jac` and is applied to the
-  compiler this tree is built with; it has no regression test yet, so it is
-  not a pull request.
+- [jaseci-labs/jac#10005](https://github.com/jaseci-labs/jac/issues/10005):
+  a native build recompiles only the units that changed, but analyses each
+  stale unit with its whole import closure read again from source (the
+  interface cache is not used under a native build). A change to a small
+  module that imports a large one costs as much as a change to the large
+  one: in this tree, about four minutes for anything that imports
+  `editor/studio.jac`, against about a minute for a module that imports
+  little. The studio's tools under `editor/tools/` are laid out to stay on
+  the cheap side of that (see `docs/studio-status.md`); a request, not a
+  wrong result.
+- [jaseci-labs/jac#9992](https://github.com/jaseci-labs/jac/issues/9992)
+  (the studio not building from an empty cache, E1099 in
+  `Studio.drag_lay`) is the defect #10002 above fixed; the issue is still
+  open upstream and can be closed against it.
 - [jaseci-labs/jac#9969](https://github.com/jaseci-labs/jac/issues/9969): the
   checker takes a local that is first assigned inside a loop in an `impl`
   body for the archetype's method of the same name (E1001). Found in

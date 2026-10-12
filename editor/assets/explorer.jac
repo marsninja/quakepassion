@@ -4,6 +4,7 @@ Quake and Quake II keep their files in PAKs and Quake III in PK3s, later
 archives over earlier ones. The index lists each game's files once, by
 folder, and reads any of them, through the same catalog the materials come
 from."""
+import os;
 import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q2.model { parse_pcx }
@@ -11,6 +12,36 @@ import from engine.formats.wav { parse_wav_pcm }
 import from engine.formats.q1.wad { indexed_rgba }
 import from ..formats.archive { folder_children, file_kind, wad_member, wad_names, wad_lump }
 import from .materials { ArchiveMaterials }
+
+"""Every file under a folder on disk, by its path from the folder, sorted.
+Files and folders whose names begin with a dot are left out."""
+def own_files(folder: str) -> list[str] {
+    found: list[str] = [];
+    if not folder or not os.path.isdir(folder) {
+        return found;
+    }
+    waiting = [""];
+    while len(waiting) > 0 {
+        inside = waiting.pop();
+        try {
+            entries = sorted(os.listdir(folder + "/" + inside if inside else folder));
+        } except Exception {
+            continue;
+        }
+        for found_name in entries {
+            if found_name.startswith(".") {
+                continue;
+            }
+            whole = inside + "/" + found_name if inside else found_name;
+            if os.path.isdir(folder + "/" + whole) {
+                waiting.append(whole);
+            } else {
+                found.append(whole);
+            }
+        }
+    }
+    return sorted(found);
+}
 
 """What the explorer shows of one file."""
 obj AssetLook {
@@ -30,15 +61,25 @@ obj AssetLook {
 
 obj AssetIndex {
     has shelf: ArchiveMaterials,
-        listed: dict[str, list[str]] = {};
+        listed: dict[str, list[str]] = {},
+        # A folder of the user's own (an open project's), listed beside the
+        # games as "own": its files are on disk, and are read afresh.
+        home: str = "";
 
-    """The games whose archives are there."""
+    """The games whose archives are there, and the user's own folder when there is one."""
     def games -> list[str] {
-        return [game for game in ["q1", "q2", "q3"] if self.shelf.has_game(game)];
+        found = [game for game in ["q1", "q2", "q3"] if self.shelf.has_game(game)];
+        if self.home and os.path.isdir(self.home) {
+            found.append("own");
+        }
+        return found;
     }
 
     """Every file of a game, once, sorted."""
     def names(game: str) -> list[str] {
+        if game == "own" {
+            return own_files(self.home);
+        }
         if game in self.listed {
             return self.listed[game];
         }
@@ -81,6 +122,15 @@ obj AssetIndex {
 
     """A file's bytes, or none when it cannot be read."""
     def read(game: str, name: str) -> bytes | None {
+        if game == "own" {
+            try {
+                with open(self.home + "/" + name, "rb") as file {
+                    return file.read();
+                }
+            } except Exception {
+                return None;
+            }
+        }
         within = wad_member(name);
         try {
             if within is not None {
@@ -149,6 +199,12 @@ obj AssetIndex {
             if game == "q2" and low.startswith("textures/") and low.endswith(".wal") {
                 shown.material = "q2:" + name[9:-4];
                 image = self.shelf.fetch(shown.material);
+            } elif game == "own" and (low.endswith(".tga") or low.endswith(".jpg") or low.endswith(".png")) {
+                # An image file of the project's: in its textures folder it is a material as it is.
+                if low.startswith("textures/") {
+                    shown.material = "file:" + name[9:];
+                }
+                image = Texture(name=name, encoded=data, extension=low[-4:]);
             } elif game == "q3" and (low.endswith(".tga") or low.endswith(".jpg")) {
                 if low.startswith("textures/") {
                     shown.material = "q3:" + name[:-4];

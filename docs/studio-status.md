@@ -42,7 +42,11 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   delete is undone.
 - **N** looks at each selected thing in turn (Shift+N the other way,
   `ed_browse`), leaving the selection as it is. `ed_swap` has the two
-  selected things change places.
+  selected things change places. `ed_marked set` marks the selected
+  entity (or the one that holds the selected brushes) for later:
+  `ed_marked take` hands it the brushes selected then, `ed_marked pick`
+  selects it, `ed_marked swap` has it change places with the one thing
+  selected, and `ed_marked clear` forgets it.
   Ctrl+A selects everything, Ctrl+I the rest, `ed_select material:<name>`
   every brush with a side of that material.
 - **Scene** (left): the map's entities by class. A click selects, a click on
@@ -337,7 +341,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
 - **Camp spots**: `info_camp` (how far a bot camps from it, how much bots
   want it, how long one stays) and `item_botroam` are classes like any
   other; a ring is drawn in the views at each camp spot's range, and
-  `ed_camps` lists them.
+  `ed_camps` lists them. `ed_camps routes [on|off]` draws the ways bots
+  take between them: a `Descend` walker is set down in the area a spot
+  stands in and goes out, passage by passage, by whichever leaves the
+  least time still to go on the router's own table, until it stands in
+  the goal's area. With nothing picked each spot is joined to the next;
+  with one thing picked (a player's start, say) the ways run from it to
+  every spot. A run is drawn pink, a jump yellow and a drop red; each way
+  is printed with its time and its legs by kind, and a spot there is no
+  way to is said to be out of reach. The ways are walked again when a
+  spot moves. They go over the navigation baked here (`ed_nav bake`), or,
+  in a shipped arena, over the arena's own.
 - **Fine work on a terrain**: `ed_touch <x> <y> <amount> [variance]`
   moves the corner of the terrain's grid nearest a place and the corners
   that stand with it: those joined to it along the grid within the
@@ -382,6 +396,19 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   then puts it where it was dropped. In the toolkit a widget offers
   what was pressed (`Stage.offer`), and the stage sends a `drop` event
   to whatever is under the pointer when the button comes up.
+- **Dragging within the lists**: a brush's row in the Scene tab is
+  carried onto the entity that is to hold it and the brush changes hands
+  as one step (with Ctrl, the whole selection): onto the row of an entity
+  that holds brushes, onto a brush that entity holds, onto a class's
+  heading when the class has one entity, or onto the brushes' heading for
+  the world. An entity is not held by another, and is told so. A row
+  carried on into a view is put where it is let go, as a class is. In the
+  Library tab a favourite is carried onto another to stand before it, or
+  onto the Trash row under the favourites to be forgotten (what the press
+  added to the scene is taken back), or into a view to stand there. In
+  the toolkit a list with `drop` set asks for that word with the row let
+  go on and what was carried, also when both are rows of the one list; a
+  row marked `fixed` is never carried.
 - **The model editor** (the start of it): a model is edited as a graph of
   its parts (each a mesh with skins of its own), each part's poses (where
   its points stand at each frame) and its tags. `ed_model new <kind> [w d
@@ -405,8 +432,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   goes through a corner), triangles that share a side share the new
   point on it, and where each side is crossed is measured at the frame
   in hand and kept as a share of the side at every other. `ed_model frame copy [name]|drop|name <words>`
-  works on the frame in hand (`ed_frame` goes from one to another),
-  `ed_model part <n>` takes another part in hand, `ed_model check` looks
+  works on the frame in hand (`ed_frame` goes from one to another).
+  `ed_model frames` (the List button beside Play) lists every frame
+  under the view, a row each: a click goes to that frame, a row dragged
+  onto another puts its frame there in the order, and a field and two
+  buttons under the list name, copy and drop the frame in hand. A frame
+  and its name belong to the whole model, so every part's frames are
+  named alike. `ed_pick find points|faces <number>` picks a point or a
+  triangle by its number and says where the point stands and which
+  triangles it is a corner of, or the triangle's points, area and
+  facing. `ed_model part <n>` takes another part in hand, `ed_model check` looks
   for what is wrong (triangles with no area or a corner nowhere, unused
   points, parts with other frames than the first), `ed_model match`
   gives every part the first's frames, and `ed_model undo|redo` undo a
@@ -691,6 +726,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   delete, copy, cut, hide, drop, and for brushes group, hollow, carve and
   the owner. A right click elsewhere is still the look or slide button.
 - `ed_log [lines]` shows the console's last lines without opening it.
+  `ed_log panel [on|off] [rows]` keeps them in sight instead: a panel
+  along the foot of the level views (under all four when four are
+  showing) that holds the last so many lines as work goes on; `ed_log
+  panel up [n]`, `down [n]` and `end` scroll back through what was said
+  and return to the newest. Whether it is open, and how tall, is kept
+  between sessions.
 - **How maps are written**: `ed_mapopts comments off` leaves out the lines
   that number entities and brushes, and `ed_mapopts whole on` writes every
   plane point in whole numbers, for tools that read nothing else. Both are
@@ -717,6 +758,31 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   beside the plan; beside the plan and the front view; all four in a
   square; or the 3D view beside the three axis views in a column. The
   layout is kept between sessions.
+- **Help where the pointer is**: a control's hint is shown beside the
+  pointer once it has rested there most of a second, as well as in the
+  bar at the foot (`ed_flyover off` keeps it to the bar; the level views
+  and the logic sheet never fly theirs). F1 (`ed_help`) opens a sheet
+  with the hint of what the pointer is on and the usage and description
+  of the command it asks for; `ed_help <command>` looks one up by name,
+  and `ed_help doc` opens this book in the program kept for such files.
+  Tab goes from one field to the next and Shift+Tab back, round those
+  that are showing. F2 (`ed_rename`) puts a field over the selected
+  entity's row of the scene list to type its name in (a group's own
+  name, or the name it is fired by): Enter keeps it, Esc leaves it as it
+  was, and `ed_rename <name>` says it outright.
+- **Sharing the room among the views**: a bar lies between the level
+  views where there was a gap, and is dragged to give the views on one
+  side of it more of the room; `ed_split x <percent>` and `ed_split y
+  <percent>` say the left views' share of the width and the upper views'
+  of the height, and `ed_split even` halves it again. `ed_sides swap`
+  (or `left`, `right`) has the scene list and the inspector change
+  sides. `ed_layout save <name>` keeps the layout as it stands (how many
+  views, the split, the sides, the log panel) and `ed_layout load <name>`
+  brings it back; `ed_layout list` and `ed_layout drop <name>` list and
+  forget them. All of it is kept between sessions. In the toolkit a
+  `Sash` between two widgets of a box asks for its command with how far
+  along the box the pointer is, and the owner shares the room out by the
+  widgets' weights.
 - **The ruler**: with something selected, each axis view shows how far the
   selection runs across it and up it, along its edges (`ed_ruler`).
   **Zoom**: the wheel, `=` and `-` over an axis view (twice as near or as
@@ -753,6 +819,10 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   how far it reaches as rings, and what it `killtarget`s in red.
 - **History** (Edit > History, `ed_history`) lists the last edits, newest
   first; choosing one undoes it and everything after it.
+  The list goes forward as well: under the edits made are those undone,
+  and choosing one does it and all before it again (`ed_history redo
+  <steps>`). `ed_history list` says both lists, the edits made oldest
+  first.
 - **Autosave**: a scene that has changed is written every half minute to
   `autosave/` beside the saved scenes, and the Library tab lists those
   files to open after a crash.
@@ -780,7 +850,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   rounded corner, in wedges) and `bevel` (one wedge of it), `column` (a
   shaft between a foot and a head) and `landing` (stairs that go up one
   side to a landing and come back up the other).
-- **A shape of several brushes keeps its numbers**, as a group with a
+- **A fan** (`ed_shape fan <w d h> [count]`): wedges round the middle of
+  its box, each a brush of its own from the middle to the rim: a round
+  floor cut like a cake, each slice to raise or texture alone.
+- **Every shape keeps its numbers**, one brush (a cone, a ball) as much as
+  many, as a group with a
   `_shape` field: `ed_reshape <w d h> [count] [thickness]` builds it again
   from other numbers where it stands, as one undoable step, and
   `ed_shape free` leaves it as the plain brushes it is made of.
@@ -828,7 +902,17 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   likely a mistake: no player start, a target nothing is named, an origin
   that is not three numbers, a brush entity without brushes, a brush that
   encloses nothing, is thinner than a unit or has corners off the grid. A
-  click on a finding selects what it is about.
+  click on a finding selects what it is about. It also names an entity of
+  a class the level's game does not have (a railgun in Quake), one of a
+  class no game's levels use and no add-on names (a misspelling), and a
+  sound or a model an entity's fields name that no archive of its game
+  holds (`noise`, Quake III's `music`, `model` and `model2`, each found
+  by its game's own rule for where such files are kept). In a scene of
+  the studio's own each entity is asked of the game it carries. A shipped
+  Quake III level's `misc_model`s are not asked for: the level compiler
+  built them in and their files were left out. The class table lists
+  every class the three games' own levels use (237 classes), with the
+  fields those levels give them, so the Classes tab offers them all.
 - Every edit that changes the brushes rebuilds the level at once, so the
   level view is what Play runs. Save writes the scene as a Valve 220 `.map`
   under `QP_SCENES` (default `./scenes`), which other Quake editors open.
@@ -890,7 +974,14 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   lowest neighbour, and `ed_sculpt paint` gives the tops under the brush
   the material in hand. `ed_terrain lift <x0> <y0> <x1> <y1> <amount>
   [falloff]` raises (or lowers) every corner inside a rectangle, and
-  those within the falloff of it by less the farther out they are.
+  those within the falloff of it by less the farther out they are; the
+  falloff is so many units, or with a `%` after it that share of the
+  rectangle's shorter side. `ed_brush rect on [falloff]` makes the brush
+  a rectangle: in sculpt mode a drag draws one on the terrain (and how
+  far its falloff reaches), and letting go lifts it by the brush's
+  amount, or lowers it with Shift; `ed_brush rect off` is the round
+  brush again. In face mode Alt and a drag paints the material in hand
+  onto each top the pointer passes over.
   `ed_terrain pattern <same|alt|other>` splits the cells along the other
   diagonal, or along each in turn so ridges run either way.
   `ed_terrain free` leaves the terrain as the plain brushes it is made of.
@@ -931,6 +1022,19 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **A folder out of an archive**: `ed_extract folder <game>:<folder> [to]`
   writes every file under a folder of a game's archives, as the
   explorer's Extract button writes one.
+- **The project's own files in the explorer**: with a project open, its
+  folder is listed under Your project beside the games', read from disk
+  as it is; its files are shown as any other (an image in its textures
+  folder says the material it is). A file or a folder of a game's
+  archives dragged onto Your project, or onto anything in it, is copied
+  into the project under `files/<game>/`. A folder is opened by a click
+  on it and not by the press that begins a drag.
+- **What a scene uses, and what uses a thing**: `ed_uses` lists in the
+  Checks tab every material on the scene's brushes with how many sides
+  have it, and every sound and model its entities name with how many
+  name it, each marked when no archive holds it. `ed_uses <material or
+  file>`, or a click on a row of that list, selects every brush with a
+  side of that material and every entity that names that file.
 - **A map forced on to the grid**: `ed_snap all [size]` (Edit menu) puts
   every brush's corners and every entity's origin on the grid, as one
   undoable step, and says how many things were off it, how many it
@@ -976,7 +1080,11 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
     one corner of a room becomes four, or eight.
   - `ed_dup at <targetname>`: an image at every entity of that name,
     facing as it does; `ed_dup path <targetname>`: one at every corner of
-    a path, facing along it.
+    a path, facing along it. With `ed_dup tile <length>` the images are
+    laid along the path instead, so far apart: as many to a leg as fit,
+    spaced evenly and facing along it, and at each bend one turned half
+    way between the two legs, with half a tile kept clear of it on either
+    side (`ed_dup tile off` goes back to the corners).
   - `ed_dup materials <names>`: the images take those materials in turn.
   - `ed_dup each` (on an entity made of brushes, a door say): each image
     is an entity of its own, with the number in its `targetname` and
@@ -1034,6 +1142,62 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   writes are the result, and screenshots are still taken. It needs a
   desktop session for the graphics all the same. `jac run
   scripts/validate_studio.jac --hidden` runs every session this way.
+- **Round a brush** (`ed_tex wrap round`): from the tagged face the
+  material goes round its own brush onto the brush's picked faces, each
+  taking it from the face beside it that already has it, turned about the
+  edge they share: a pillar's or a column's sides in one go, both ways
+  round from the tagged one, where `ed_tex wrap` reaches only the faces
+  that touch it.
+- **Several tagged faces**: `ed_tag add` tags the picked faces beside the
+  first, `ed_tag list` says them and `ed_tag clear` forgets them all;
+  `ed_glue` moves the selection against whichever tagged face's plane it
+  stands nearest. The first is still the one a material is taken from.
+- **Brushes that are not walls** (`ed_overlay [triggers|unseen] [on|off]`):
+  the volumes that set things off (brushes of `trigger_` entities, or in
+  a trigger material) are outlined in yellow in every view, and the
+  brushes a player never sees in magenta (clip) and blue (hint, skip,
+  caulk, nodraw), told by the last word of every side's material. A group
+  with a colour of its own keeps it. `ed_overlay` alone counts each kind.
+- **Maps for other tools** (`ed_export <file.map> [valve|classic|q3]`):
+  the scene written as a map in Valve's form (the form scenes are saved
+  in), the classic one, or Quake III's own. In Quake III's a brush is a
+  `brushDef` with a matrix a side: how the texture runs across the face,
+  in repeats of it, measured along two axes the tools take from the face's
+  normal. The matrix is worked out from how the material lies and the
+  texture's true size, so every texel stays where it was. A patch is
+  written as a `patchDef2` (its control points and where each lies on the
+  texture) in place of the prisms the scene builds it from, and materials
+  are named as Quake III's tools name them (`base_wall/concrete` for
+  `q3:textures/base_wall/concrete`). `ed_open` reads such a map the other
+  way: each matrix becomes a lie by the size of the texture it names,
+  names are found among the game's own, and a patch keeps its places on
+  its material.
+- **A loop round a selection**: in brush mode, Alt and a drag in any view
+  draws a loop freehand; what lies inside it when the button is let go is
+  selected (with Shift or Ctrl, added), where a rectangle would take what
+  stands in its corners too. `ed_lasso <view> <x> <y> ...` is the same
+  by command.
+- **Moves that end on something** (`ed_snapto <grid|corners|edges|faces>
+  [reach]`): a move of the selection, dragged or by `ed_move`, ends where
+  it is asked unless a corner of what is moving comes within reach (16
+  units unless told) of a corner of another brush, of a point along one
+  of its edges, or of a point on one of its faces; then it ends there,
+  by the least change that puts it there. Edges take corners too, and
+  faces take both.
+- **Faces that meet** (`ed_faces adjoining`, `ed_faces beside`): from a
+  picked face the pick spreads to the faces that lie in its plane and
+  share a length of edge with it or lie over it, and to those that adjoin
+  them, and so on (a floor of many brushes, and not a floor across the
+  room, which `ed_faces extend` would take too); or to the faces of its
+  own brush that share an edge with it.
+- **Sides that make no face** (`ed_prune [all]`): the check names a brush
+  with a side that cuts nothing off it; `ed_prune` takes such sides out of
+  the selected brushes, or of every brush, and takes out a brush that then
+  encloses nothing, as one step. A brush with linked faces is left as it
+  is, since its links go by the places of its sides.
+- **Lined up with a set** (`ed_align <x|y|z> <low|high|middle> to <set>`):
+  the selected brushes, even one, are brought to the low side, high side
+  or middle of a kept set's box, where the set stands.
 - **The tree in words**: `ed_tree [text]` says every row the scene tree
   shows (its depth, its key, its words and its note, and a star when it
   is selected), or those that hold some text. A group that is a
@@ -1284,6 +1448,60 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_csg_tests.jac`: carving, hollowing, merging, hulls and
   corner moves by volume; materials kept in place through a slide, a fit, a
   mirror, a stretch and a turn about each axis.
+- `tests/studio_wrapround_tests.jac`: a material sent round a box's walls
+  from one, meeting without a break at each edge it crossed, onto the
+  picked faces only, and undone.
+- `tests/studio_overlay_tests.jac`: a brush known for a trigger volume, a
+  clip or a hint brush by its entity and its materials, and a brush with
+  any side that is seen left as a wall.
+- `tests/studio_fanpath_tests.jac`: a fan's wedges filling the round of
+  its box; where copies lie along a path a tile apart, straight, round a
+  bend and up a slope; a duplicator's images with and without a tile.
+- `tests/studio_primitive_tests.jac`: the two axes Quake III's tools
+  measure a face's texture along; a matrix read as a lie by the texture's
+  size; a lie turned, stretched, slid and leaning out of its face taken to
+  a matrix and back with every texel where it was.
+- `tests/studio_q3map_tests.jac`: a brush written as `brushDef` and read
+  back; a map from Valve's form to Quake III's and back; a patch written
+  as `patchDef2` with its places and read back; a patch read into a scene
+  as prisms and written out a patch again.
+- `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
+  drawn either way round; a long loop thinned; a move that ends on a
+  corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_flyover_tests.jac`: a hint beside the pointer after it
+  has rested on a control, gone when it moves, never over a work surface
+  and not when turned off; Tab from field to field and round, past what
+  is hidden; the command a control asks for.
+- `tests/studio_meshfind_tests.jac`: a point and a triangle of a mesh
+  said by number: its place and its triangles, or its points, area and
+  facing.
+- `tests/studio_sash_tests.jac`: a bar between two views or two rows that
+  asks for the share the pointer is dragged to, and the views following
+  their weights.
+- `tests/studio_ownfiles_tests.jac`: a folder on disk listed as its files
+  by their paths from it, dotted names left out, and as folders the way
+  the explorer lists a game's.
+- `tests/studio_rectlift_tests.jac`: a falloff as units or as a share of
+  a rectangle's shorter side; a rectangle of terrain lifted and lowered
+  with one.
+- `tests/studio_needs_tests.jac`: the file a sound field names by its
+  game's rules and a model field's; the files an entity needs and those
+  a game's list does not hold, whatever their case.
+- `tests/studio_treedrop_tests.jac`: a row carried onto another row of
+  its list, onto a heading and onto none, from another list, and into a
+  view; a list that takes no drops; a row that is never carried; selected
+  brushes handed to an entity already there as one step, undone and done
+  again; a name moved before another or to the end.
+- `tests/studio_camproute_tests.jac`: a way walked area by area down the
+  time still to go, taking what the router said it takes and going by
+  the only bridge; no legs within one area; no route off the floors or
+  across a gap; a ledge as a jumped leg up and a dropped leg down.
+- `tests/studio_logpanel_tests.jac`: the lines a panel of so many rows
+  shows, at the newest and scrolled back, no further than the oldest;
+  a long line cut to fit.
+- `tests/studio_adjoin_tests.jac`: outlines in one plane that adjoin
+  along an edge or over one another and not at a corner; the four faces
+  beside a face of a box; a side that makes no face.
 - `tests/studio_gltf_tests.jac`: JSON read into values and what is not
   JSON refused; base64; a model written as a glb and read back part for
   part; a `.gltf` with its numbers inside it, y up, read; what is not
@@ -1360,362 +1578,221 @@ editor/impl/                 the workbench's scenes and brushes
   scripted clicks, drags, typing and shortcuts, printing the document after
   each step. `--only <session>` runs one session (`shell` is the first);
   `--jobs <n>` runs them `n` at a time, each with settings and scenes of
-  its own: every session in about two and a half minutes with eight at a
-  time, where one after another they take about forty.
-  `scripts/studio/shell_session.cfg` edits e1m1's entities (15
-  steps, then a second run confirms the saved entities load);
-  `scripts/studio/scene_session.cfg` builds a scene of brushes (20 steps:
-  box, pick, resize by a handle, drag, material, tie to a door, undo, redo,
-  four views with a pick and a drag in the top view, duplicate, wedge,
-  cylinder, clip, turn, save, play, return; then a second run reopens the
-  saved map). `scripts/studio/tools_session.cfg` works on faces and shapes
-  (19 steps: pick a face, give it a texture from the Materials tab's
-  pictures, fit, nudge and turn it from the inspector, add a second face,
-  hollow the brush, drag an edge and a corner in the front view, select by
-  a rectangle in the top view, carve, tip, find a broken target with the
-  check and pick it from the list, save, play, return; then reopen).
-  `scripts/studio/logic_session.cfg` wires and reuses (14 steps: link a
-  button to a relay and the relay to a door by dragging between their boxes
-  in the logic graph, pick from the graph, copy and paste the door, save it
-  as a prefab from the Library tab, add a copy by a click, place and move a
-  linked one, group two boxes, save, play, return; then reopen).
-  `scripts/studio/build_session.cfg` builds and sets up (16 steps: stairs,
-  an arch and a cone, a light that lights the level, flat and lit again, a
-  door made from the Classes tab, two options ticked, a sound chosen from
-  its list, an angle typed and turned by its button, a button's target
-  followed to the door, save, play, return).
-  `scripts/studio/images_session.cfg` (9 steps: a post copied as images,
-  moved, the copies made real; a yard that leaks, a ring of walls that
-  still leaks through the top, and the same sealed by a roof).
+  its own: the forty sessions in under two minutes with eight at a time.
+  The suite was thinned to those forty, the ones that walk the main
+  workflows end to end, so that a change can be checked quickly; what the
+  forty-two sessions taken out covered keeps its unit tests above.
+  `scripts/studio/shell_session.cfg` edits e1m1's entities (15 steps, then a
+  second run confirms the saved entities load);
+  `scripts/studio/scene_session.cfg` builds a scene of brushes (20 steps: box,
+  pick, resize by a handle, drag, material, tie to a door, undo, redo, four
+  views with a pick and a drag in the top view, duplicate, wedge, cylinder,
+  clip, turn, save, play, return; then a second run reopens the saved map).
+  `scripts/studio/tools_session.cfg` works on faces and shapes (19 steps: pick
+  a face, give it a texture from the Materials tab's pictures, fit, nudge and
+  turn it from the inspector, add a second face, hollow the brush, drag an
+  edge and a corner in the front view, select by a rectangle in the top view,
+  carve, tip, find a broken target with the check and pick it from the list,
+  save, play, return; then reopen). `scripts/studio/logic_session.cfg` wires
+  and reuses (14 steps: link a button to a relay and the relay to a door by
+  dragging between their boxes in the logic graph, pick from the graph, copy
+  and paste the door, save it as a prefab from the Library tab, add a copy by
+  a click, place and move a linked one, group two boxes, save, play, return;
+  then reopen). `scripts/studio/build_session.cfg` builds and sets up (16
+  steps: stairs, an arch and a cone, a light that lights the level, flat and
+  lit again, a door made from the Classes tab, two options ticked, a sound
+  chosen from its list, an angle typed and turned by its button, a button's
+  target followed to the door, save, play, return).
   `scripts/studio/assets_session.cfg` (6 steps: a Quake II texture shown in
-  the explorer, given to a brush and extracted by its buttons, a config and
-  a sound shown, the scene packed with its texture as a PK3 and a folder as
-  a PAK; the validator opens both archives itself).
-  `scripts/studio/handy_session.cfg` (12 steps: the grid by command and
-  by its keys, a brush lifted and dropped back with End, a view remembered
-  and returned to, hiding with H and Shift+H and everything else with a
-  command, two edits undone from the history list, a command typed into
-  the palette and another found by a few letters, an autosave, a selection
-  by field).
-  `scripts/studio/terrain_session.cfg` (7 steps: a terrain made, raised
-  by a command, raised further by dragging the brush over it, lowered with
-  Shift, flattened, given back heights written to an image, saved, played).
-  `scripts/studio/patch_session.cfg` (7 steps: an arch made, a control
-  point lifted by command, another dragged in the front view, the patch
-  moved, a cylinder and a cone, saved, played).
-  `scripts/studio/tidy_session.cfg` (7 steps: a box snapped back onto the
-  grid, a material replaced everywhere, two boxes lined up, one glued
-  against a tagged face, a face pick spread, the counts).
-  `scripts/studio/draw_session.cfg` (4 steps: a box drawn by a drag in the
-  top view, cut in two by a line drawn through it, trimmed by another with
-  Shift; then the studio opened again to find its settings kept).
-  `scripts/studio/material_session.cfg` (3 steps: a 256 by 512 Quake III
-  texture and a 4-texel image of the project's own, each fitted to a face
-  at its true size, and the image picked from the Materials tab).
-  `scripts/studio/transform_session.cfg` (12 steps: a box turned a quarter
-  by the knob on its ring, turned to a 45 degree snap, doubled by a size
-  handle about its middle and again about a pivot at its corner, inflated,
-  and grouped with a pivot of its own that goes where the group goes).
-  `scripts/studio/arms_session.cfg` (10 steps: the handles on a box's top;
-  the first arm taken to twice its length, swung an eighth round by
-  itself, and with Shift turning both; the dot sliding the material; the
-  second arm pulled in to half; the lie said in numbers, and one whose
-  two ways run together refused).
-  `scripts/studio/lean_session.cfg` (15 steps: the box handle round a
-  drawn box; its right edge taken along itself shearing it, and the shear
-  taken back by number; a corner turning it a quarter, and with Shift
-  sizing it from the far corner; its top edge sizing it and shearing it
-  the other way; its middle moving it; its top edge in the front view
-  leaning it over; two brushes sheared as one by the handle round both;
-  a shear and a quarter turn by number, and two changes refused).
-  `scripts/studio/select_session.cfg` (12 steps: two boxes stacked over the
-  floor clicked through from the top view, one after another and round
-  again; a brush by number; its owner and the owner's brushes; two sets
-  kept, one picked again; a box and the player start swapped; a tour of the
-  two; then the saved map opened again to find its sets).
-  `scripts/studio/faces_session.cfg` (10 steps: a box's top picked in the
-  top view; walls, a cone and a pushed-out brush stood on it; detail and a
-  surface flag, found again in the saved map; a box drawn inside the first
-  made a digger, so the level is built from six brushes while the document
-  holds four, then filled in and dug again by undo).
-  `scripts/studio/float_session.cfg` (11 steps: a floating 3D window
-  opened, put somewhere and given a camera; dragged by its bar and sized
-  by its corner; the wheel moving its camera and not the first view's; a
-  click in it picking the box it looks at; Escape letting go of the
-  selection; a second in outlines over it, closed by its cross; one sent
-  off the edge kept within the views; all closed).
-  `scripts/studio/views_session.cfg` (11 steps: two, three and four views
-  and the column of axis views; the ruler on a drawn box; zoom by command
-  and by key; names; two views remembered, one gone back to, one
-  forgotten; a picture laid behind the plan; the camera swung a quarter
-  round the box and taken under its top; then the studio opened again to
-  find the layout, the ruler and the names kept).
-  `scripts/studio/groups_session.cfg` (10 steps: a box made a group; shown
-  as outlines only, so the level is built without it and a click where it
-  stands takes the floor; locked, built but still passed by; unlocked and
-  taken by the same click; skipped by builds; tinted, its row opened onto
-  its brush; hidden; its fields found in the saved map).
-  `scripts/studio/play_session.cfg` (11 steps: a lit scene built coarsely,
-  finely and without light; played from high over the floor and held
-  still, the player hanging there until thirty ticks let it fall half a
-  second, then hanging again, then let run; the selected box played
-  alone, as a level of one brush).
+  the explorer, given to a brush and extracted by its buttons, a config and a
+  sound shown, the scene packed with its texture as a PK3 and a folder as a
+  PAK; the validator opens both archives itself).
+  `scripts/studio/handy_session.cfg` (12 steps: the grid by command and by its
+  keys, a brush lifted and dropped back with End, a view remembered and
+  returned to, hiding with H and Shift+H and everything else with a command,
+  two edits undone from the history list, a command typed into the palette and
+  another found by a few letters, an autosave, a selection by field).
+  `scripts/studio/terrain_session.cfg` (7 steps: a terrain made, raised by a
+  command, raised further by dragging the brush over it, lowered with Shift,
+  flattened, given back heights written to an image, saved, played).
+  `scripts/studio/patch_session.cfg` (7 steps: an arch made, a control point
+  lifted by command, another dragged in the front view, the patch moved, a
+  cylinder and a cone, saved, played). `scripts/studio/draw_session.cfg` (4
+  steps: a box drawn by a drag in the top view, cut in two by a line drawn
+  through it, trimmed by another with Shift; then the studio opened again to
+  find its settings kept). `scripts/studio/transform_session.cfg` (12 steps: a
+  box turned a quarter by the knob on its ring, turned to a 45 degree snap,
+  doubled by a size handle about its middle and again about a pivot at its
+  corner, inflated, and grouped with a pivot of its own that goes where the
+  group goes). `scripts/studio/select_session.cfg` (12 steps: two boxes
+  stacked over the floor clicked through from the top view, one after another
+  and round again; a brush by number; its owner and the owner's brushes; two
+  sets kept, one picked again; a box and the player start swapped; a tour of
+  the two; then the saved map opened again to find its sets).
+  `scripts/studio/faces_session.cfg` (10 steps: a box's top picked in the top
+  view; walls, a cone and a pushed-out brush stood on it; detail and a surface
+  flag, found again in the saved map; a box drawn inside the first made a
+  digger, so the level is built from six brushes while the document holds
+  four, then filled in and dug again by undo).
+  `scripts/studio/float_session.cfg` (11 steps: a floating 3D window opened,
+  put somewhere and given a camera; dragged by its bar and sized by its
+  corner; the wheel moving its camera and not the first view's; a click in it
+  picking the box it looks at; Escape letting go of the selection; a second in
+  outlines over it, closed by its cross; one sent off the edge kept within the
+  views; all closed). `scripts/studio/views_session.cfg` (11 steps: two, three
+  and four views and the column of axis views; the ruler on a drawn box; zoom
+  by command and by key; names; two views remembered, one gone back to, one
+  forgotten; a picture laid behind the plan; the camera swung a quarter round
+  the box and taken under its top; then the studio opened again to find the
+  layout, the ruler and the names kept). `scripts/studio/play_session.cfg` (11
+  steps: a lit scene built coarsely, finely and without light; played from
+  high over the floor and held still, the player hanging there until thirty
+  ticks let it fall half a second, then hanging again, then let run; the
+  selected box played alone, as a level of one brush).
   `scripts/studio/entities_session.cfg` (10 steps: a door, its button, a
   monster and a pickup; the level as easy and as deathmatch spawn it; an
   option ticked by command; a value replaced on every entity; the audit's
-  finding; the door and button pasted with names of their own; then the
-  scene played and held still, the door shut until `ed_fire` names it and
-  twenty ticks pass).
-  `scripts/studio/docs_session.cfg` (10 steps: two scenes made beside the
-  shipped level, listed, switched between with the camera kept, saved
-  together; one closed and opened again from the recent files; the
+  finding; the door and button pasted with names of their own; then the scene
+  played and held still, the door shut until `ed_fire` names it and twenty
+  ticks pass). `scripts/studio/docs_session.cfg` (10 steps: two scenes made
+  beside the shipped level, listed, switched between with the camera kept,
+  saved together; one closed and opened again from the recent files; the
   console's last lines; a right click on a drawn box and Duplicate from its
-  menu; the box's faces stepped through; the scene saved without comments
-  and in whole numbers).
-  `scripts/studio/dups_session.cfg` (11 steps: a post copied in a row,
-  grown and mirrored on two axes into seventeen built brushes; hidden and
-  shown; an image at each of two named entities, then at three path
-  corners, then made real; a door with two images played as three doors,
-  the second opened by firing `door2`).
-  `scripts/studio/shapes_session.cfg` (7 steps: stairs with a landing, built
-  again taller and of twelve steps where they stand, undone and redone,
-  caulked, then freed; a bicone, a torus, crossed walls, a cap, a corner,
-  a bevel and a column; and stairs that come caulked with the setting on).
-  `scripts/studio/land_session.cfg` (7 steps: a terrain lifted whole by a
-  rectangle that takes it in, split along alternate diagonals, given a
-  peak and worn down, its tops painted, and freed into plain brushes).
-  `scripts/studio/quilt_session.cfg` (6 steps: a curved sheet grown by a
-  curve across and a curve up, shrunk by one, made thicker and finer, and
-  an endcap added).
-  `scripts/studio/controls_session.cfg` (6 steps: a light's slider dragged
-  to five hundred, its green bar to half, the third number of its place
-  dragged up five grid steps, three edits in all; then a brush's handles
-  chosen on the radio, the one box handle among them).
+  menu; the box's faces stepped through; the scene saved without comments and
+  in whole numbers). `scripts/studio/dups_session.cfg` (11 steps: a post
+  copied in a row, grown and mirrored on two axes into seventeen built
+  brushes; hidden and shown; an image at each of two named entities, then at
+  three path corners, then made real; a door with two images played as three
+  doors, the second opened by firing `door2`).
   `scripts/studio/wrap_session.cfg` (6 steps: a box's top given a material,
-  slid and tagged; the face beside it takes that material round the edge,
-  the next takes it as it lies; fitted in whole repeats; Alt and a drag in
-  the plan paints the box's top and the floor; the floor's top put in the
-  tagged plane, so the floor rises to it).
-  `scripts/studio/settings_session.cfg` (5 steps: K bound to add a column
-  and Shift+K a cap, pressed, listed, one unbound; the settings list and
-  its line that hides the grid; flat tones and back; the developer's
-  readout; then the studio opened again to find the key and settings
-  kept).
-  `scripts/studio/marks_session.cfg` (6 steps: the player start turned from
-  facing +y to +x by the tip of its arrow; a light's reach pulled from two
-  hundred units to four hundred; a handle clicked without a drag, which
-  changes nothing; two path corners joined by a line; a counter from the
-  logic library; a favourite class kept and added).
-  `scripts/studio/gltf_session.cfg` (4 steps: a cylinder and a box round
-  it written as a glb that reads as glTF 2.0 with y up, and opened again
-  as the same two parts).
-  `scripts/studio/meshcut_session.cfg` (5 steps: a cylinder of two
-  frames cut across its height, sixteen wall triangles into forty-eight
-  at both frames, closed and of the same volume; a plane that misses;
-  undone and done again; a tag turned a quarter at one frame, tipped at
-  both and half round at the other).
-  `scripts/studio/treebox_session.cfg` (5 steps: a drag across the floor
-  in the 3D view making a box 160 by 144 by 64 on the grid, the same box
-  again by command, a drag into the sky making none, and a group asked
-  for three copies and a mirror image named as a duplicator in the tree).
-  `scripts/studio/finding_session.cfg` (11 steps: 230 of Quake II's
-  pictures named for metal, ten sounds named for a menu, one soldier
-  among Quake's models, and nothing of a kind that is none; two files
-  tagged with one word found by it, one of them when a kind is asked too,
-  and none by a tag taken off; a texture of each game told of; 42 of a
-  level's 81 textures at 64 by 64, and eight named for tech and 128 or
-  more).
-  `scripts/studio/repack_session.cfg` (6 steps: the status bar and the
-  console's letters shown from Quake's `gfx.wad`, the first written out;
-  a PAK made of three files, one replaced and a folder dropped; a PK3 the
-  same; and Quake's own PAK, read here from a copy, refused twice and not
-  a byte of it changed).
-  `scripts/studio/turned_session.cfg` (12 steps: a linked bench as its
-  file has it, turned a quarter round by two turns, made twice as large
-  and then only longer, each seen as the plain brushes it stands for
-  (ninety-six long along x, then along y, then 192 by 64 by 32 on the
-  floor, then 192 long and as deep and high as before); sizes of nothing
-  and of no number refused; put back as its file has it; and tipped nose
-  down a quarter, its length hanging through the floor).
-  `scripts/studio/stuck_session.cfg` (9 steps: a button, a relay and a
-  door with nothing stuck; the door a softlock once the button is gone;
-  a counter of three that two soldiers' deaths cannot make up, and a
-  trigger that does; a lock without its key, and with it; a brush's sides
-  made a ladder and slick by Quake II's names, a name of Quake III's
-  refused and then taken as Quake III's, and the same numbers read as
-  Quake III has them).
-  `scripts/studio/modelfiles_session.cfg` (5 steps: a cylinder of two
-  frames with a tag, two bones and its top picked, saved as a work file,
-  an MDL and an MD2; the work file opened as the model was left; the MDL
-  and the MD2 read back as one mesh within a hundredth of its volume,
-  the MDL's skin taken in hand).
-  `scripts/studio/playview_session.cfg` (12 steps: a soldier's frames
-  eight to fourteen stepped round and played once; 269 of its 492 edges
-  drawn without the faces turned away, every point ticked, and all put
-  back; sarge's legs running through the frames and at the speed of his
-  table, with three frames between, and the torso's shot refused; a box
-  part made for a model of two frames, as high as the model stands at
-  each, and another round one picked wall).
-  `scripts/studio/whole_session.cfg` (5 steps: a ramp's slope tilted to a
-  whole angle, an upright side left; the slope laid through whole
-  points; both undone and one done again; every face of the selected
-  brush asked at once).
-  `scripts/studio/finds_session.cfg` (6 steps: a map file imported as a
-  group of seven brushes with its start and lights, and a missing file
-  refused; thirty-two materials named for crates found across the games
-  and shown as a shelf; three materials taken in hand listed latest
-  first; twenty files of a folder of Quake's sounds written out, byte
-  for byte as many as it says).
-  `scripts/studio/restrict_session.cfg` (9 steps: a click passing a box
-  when only entities are picked, taking the floor under an entity when
-  only brushes are, and the entity when both; editing kept to one box
-  with a second hidden by hand, three things put away and brought back,
-  the second left hidden; a box, an entity and the start forced back on
-  to a grid of sixteen).
+  slid and tagged; the face beside it takes that material round the edge, the
+  next takes it as it lies; fitted in whole repeats; Alt and a drag in the
+  plan paints the box's top and the floor; the floor's top put in the tagged
+  plane, so the floor rises to it). `scripts/studio/settings_session.cfg` (5
+  steps: K bound to add a column and Shift+K a cap, pressed, listed, one
+  unbound; the settings list and its line that hides the grid; flat tones and
+  back; the developer's readout; then the studio opened again to find the key
+  and settings kept). `scripts/studio/layouts_session.cfg` (9 steps, run twice
+  over one settings folder: four views split by numbers, then by dragging the
+  bar between the columns and the bar between the rows; the side panels
+  swapped; that layout and a plain one kept by name, listed, the first brought
+  back whole, the second dropped; the second run opens as the first was left).
+  `scripts/studio/uses_session.cfg` (8 steps: three materials and two models
+  listed, one of each missing; what uses a material, a model and a name
+  nothing uses; a drag onto no project, which writes nothing; a project made,
+  a file of Quake's dragged onto it and then a folder of 57, each found on
+  disk whole; and the copy shown in the explorer from the project's own
+  files). `scripts/studio/needs_session.cfg` (7 steps: e1m1 checked, lacking
+  no class and no file; a railgun added to it; a sound Quake's archives do not
+  hold, then one they do; in a scene of the studio's own a `misc_model` with a
+  model Quake III's archives do not hold, then one they do; and a misspelt
+  class). `scripts/studio/treedrop_session.cfg` (11 steps: a box's row dragged
+  onto the row of a box a wall holds, back onto the brushes' heading, onto the
+  wall's class heading, undone, and onto the wall's own row; the player's
+  start put on the wall, which changes nothing, and carried into the view onto
+  the floor; in the Library tab one favourite dragged before another, one into
+  the trash, and one into the view). `scripts/studio/q3map_session.cfg` (4
+  steps: a box in a Quake III texture with its top slid, stretched and turned,
+  and a curved sheet, written in Quake III's form, Valve's and the classic
+  one; the first two agreeing texel for texel on the turned face when worked
+  out by hand; the Quake III map opened again with the texture found, the
+  material where it lay and the sheet a patch still).
+  `scripts/studio/stuck_session.cfg` (9 steps: a button, a relay and a door
+  with nothing stuck; the door a softlock once the button is gone; a counter
+  of three that two soldiers' deaths cannot make up, and a trigger that does;
+  a lock without its key, and with it; a brush's sides made a ladder and slick
+  by Quake II's names, a name of Quake III's refused and then taken as Quake
+  III's, and the same numbers read as Quake III has them).
   `scripts/studio/nav_session.cfg` (5 steps: nothing baked for a shipped
-  level; a floor with a tall box and a low one baked into 256 places to
-  stand; ways across the floor, none up the tall box, a drop from it, a
-  jump onto the low one, none off the level; of two things added the
-  one on the tall box named as out of reach; a coarser bake; forgotten).
-  `scripts/studio/bake_session.cfg` (5 steps: a hall with a wall across
-  its middle opened from a map, cut into thirty cells of which some are
-  out of sight of others; played from one side of the wall, 32 faces are
-  drawn; built as one again and played from the same place, 42).
-  `scripts/studio/steps_session.cfg` (15 steps: the hall's cells shown
-  from its west room, its east and where the player start stands; a wall
-  moved and the move undone, and a game played and stopped, each given
-  the bake kept from before; two recipes kept, listed, run and one
-  forgotten; a stand-in compiler run over the map, stopping with its own
-  code, and its three complaints, by entity, by brush and by line, each
-  gone to).
-  `scripts/studio/project_session.cfg` (10 steps: a project made, two
-  scenes saved into it, its start, build, bake, material and a recipe set,
-  and its manifest read back word for word; an add-on's two classes
-  loaded, an entity of one made with its fields and flag in the
-  inspector, the add-on read again and dropped; the project asked for
-  from the Window menu; closed, and an older project opened with its
-  scene and its own add-on, its manifest untouched; a game's material
-  and build kept in the settings and the next scene floored with it).
-  `scripts/studio/outside_session.cfg` (8 steps: a four-texel image
-  fitted to a face; a program kept for `.png` files and another
-  forgotten; the material's file opened with it, a stand-in editor that
-  puts an eight-texel image in its place, which the studio reads again
-  unasked so that the face fits at sixteen units a texel; a right drag
-  turning the camera 29 degrees, then 57 and the other way up at twice
-  the rate inverted; the wheel moving the camera 64 units forward, then
-  128 back).
-  `scripts/studio/depth_session.cfg` (10 steps: two boxes drawn, one
-  lifted; the top view held to the depths about the floor, with one brush
-  outside its band, greyed and still clicked; left out instead, and a
-  click where it was going to the floor beneath; the band taken from the
-  selection and let go; the top view turned off its axis by command and
-  the front by Alt and a right drag; the top straightened by a press on
-  its compass and the front by command).
-  `scripts/studio/layers_session.cfg` (7 steps: two boxes drawn, each
-  kept as a layer and both as a third; one hidden, its box out of the
-  views and of what they are built from, and a click where it stood
-  finding the floor; the layer of both hidden and the first shown again,
-  both boxes staying out of sight; the list of layers; one shown alone;
-  the layers that are off written into the saved map; everything shown).
-  `scripts/studio/sweep_session.cfg` (6 steps: a square beam along a
-  line with one turn; three path corners added and a rail swept along
-  them into six brushes; the last corner moved and the rail swept again
-  to reach it, then the sweep undone; a drawn brush's outline swept round
-  a closed line into a ring of four).
-  `scripts/studio/live_session.cfg` (8 steps: a door, a relay that opens
-  it and a relay that fires that one; the game played, nothing yet
-  fired; the first relay set off by hand, all three counted and the game
-  held because the middle one holds it; the player's health and place
-  and the middle relay changed while held; fired again, the firing
-  stopping at the relay switched off; the counts still there after the
-  game, and on the logic graph).
-  `scripts/studio/model_session.cfg` (13 steps: an eight-sided cylinder
-  made, closed and holding what one would; its top's triangles picked and
-  pushed out; a second frame with the model higher in it; every triangle
-  cut in four, turned round and that undone; a ball added as a second
-  part; the panel's Cut in 4 and Undo buttons clicked; saved as MD3 and
-  OBJ; closed, and opened again from the MD3 with both parts and frames).
-  `scripts/studio/rig_session.cfg` (10 steps: a cylinder looked down
-  on; a click picking a triangle of its top and a click with Shift
-  another; a click picking the point on its axis, dragged with Ctrl as
-  one step and that undone; two tags, one moved at every frame and one
-  at a copied frame only; the copied frame moved to the front; a tag
-  dropped; two skins named and one dropped; saved as an MD3 with its
-  frames, tag and skin).
-  `scripts/studio/drop_session.cfg` (4 steps: the project's image
-  dragged from the Materials tab onto one face of a box; a light dragged
-  from the Classes tab onto the floor; a prefab dragged from the Library
-  tab onto the top of the box).
-  `scripts/studio/links_session.cfg` (9 steps: two boxes drawn side by
-  side, their four shared planes linked; the top of one pushed and the
-  other's rising with it, undone together; the links taken away; a
-  cutter drawn across a box and carved with links, the two pieces tied
-  on four planes and the map saying so; two walls through one corner cut
-  to a seam; a top corner of a box merged onto the one beneath it).
-  `scripts/studio/touch_session.cfg` (11 steps: a terrain with a
-  terrace of fifteen corners, touched so that all fifteen rise; the four
-  cells of the low ground picked as a plot, outlined, lifted and painted;
-  a plot picked by Alt and a press in sculpt mode; the top moved up, the
-  underside down with the base thicker, and the whole of it up).
-  `scripts/studio/games_session.cfg` (6 steps: a health pack and an
-  ogre added, each carrying Quake as its game; an armour left with none,
-  found by the check, the player start not; filled; a camp spot and a
-  roam spot listed; the scene played, with its pickups and its ogre
-  spawned).
-  `scripts/studio/shader_session.cfg` (7 steps: a shader made in a new
-  script; three lines of its own and a stage's `tcMod`s set, a stage
-  added and moved to the front; two mistakes made and listed by the
-  check, then mended; the script saved, a second shader added, and the
-  file opened again as two; a script broken by hand, its five faults
-  said by line).
-  `scripts/studio/sounds_session.cfg` (3 steps: a stereo sound at 44100
-  made one channel at 22050 and 16 bits, and at 11025 and 8; a wall
-  texture's flags, value and next frame changed in a copy whose pictures
-  are the same bytes; Quake's slipgate texture found to be a row of
-  seven).
-  `scripts/studio/nest_session.cfg` (5 steps: a post kept as a prefab;
-  two linked posts, one with a material swap, and a lintel kept together
-  as a gate; the gate linked into an empty scene and built as four
-  brushes; the instance given a swap and names of its own; the built map
-  written out, with the gate's blockout in brass and the inner post
-  still slate).
-  `scripts/studio/district_session.cfg` (6 steps: the districts listed; a
-  floor from another game, a wall from the material in hand and a name;
-  a missing material, a plain word, a wrong slot and a wrong district
-  refused; every slot found and the game's own loader returning the
-  changed table; one district put back, then all).
-  `scripts/studio/figure_session.cfg` (9 steps: Quake III's bodies named;
-  Sarge at rest with a machinegun, then running while he attacks, empty
-  handed; Visor with a rocket launcher; Quake's shotgun as held, at rest
-  and firing; Quake II's; Quake III's machinegun on its hand with its
-  barrel, from outside; what is not there refused; a body taken into
-  the model editor).
+  level; a floor with a tall box and a low one baked into 256 places to stand;
+  ways across the floor, none up the tall box, a drop from it, a jump onto the
+  low one, none off the level; of two things added the one on the tall box
+  named as out of reach; a coarser bake; forgotten).
+  `scripts/studio/bake_session.cfg` (5 steps: a hall with a wall across its
+  middle opened from a map, cut into thirty cells of which some are out of
+  sight of others; played from one side of the wall, 32 faces are drawn; built
+  as one again and played from the same place, 42).
+  `scripts/studio/steps_session.cfg` (15 steps: the hall's cells shown from
+  its west room, its east and where the player start stands; a wall moved and
+  the move undone, and a game played and stopped, each given the bake kept
+  from before; two recipes kept, listed, run and one forgotten; a stand-in
+  compiler run over the map, stopping with its own code, and its three
+  complaints, by entity, by brush and by line, each gone to).
+  `scripts/studio/project_session.cfg` (10 steps: a project made, two scenes
+  saved into it, its start, build, bake, material and a recipe set, and its
+  manifest read back word for word; an add-on's two classes loaded, an entity
+  of one made with its fields and flag in the inspector, the add-on read again
+  and dropped; the project asked for from the Window menu; closed, and an
+  older project opened with its scene and its own add-on, its manifest
+  untouched; a game's material and build kept in the settings and the next
+  scene floored with it). `scripts/studio/live_session.cfg` (8 steps: a door,
+  a relay that opens it and a relay that fires that one; the game played,
+  nothing yet fired; the first relay set off by hand, all three counted and
+  the game held because the middle one holds it; the player's health and place
+  and the middle relay changed while held; fired again, the firing stopping at
+  the relay switched off; the counts still there after the game, and on the
+  logic graph). `scripts/studio/model_session.cfg` (13 steps: an eight-sided
+  cylinder made, closed and holding what one would; its top's triangles picked
+  and pushed out; a second frame with the model higher in it; every triangle
+  cut in four, turned round and that undone; a ball added as a second part;
+  the panel's Cut in 4 and Undo buttons clicked; saved as MD3 and OBJ; closed,
+  and opened again from the MD3 with both parts and frames).
+  `scripts/studio/rig_session.cfg` (10 steps: a cylinder looked down on; a
+  click picking a triangle of its top and a click with Shift another; a click
+  picking the point on its axis, dragged with Ctrl as one step and that
+  undone; two tags, one moved at every frame and one at a copied frame only;
+  the copied frame moved to the front; a tag dropped; two skins named and one
+  dropped; saved as an MD3 with its frames, tag and skin).
+  `scripts/studio/drop_session.cfg` (4 steps: the project's image dragged from
+  the Materials tab onto one face of a box; a light dragged from the Classes
+  tab onto the floor; a prefab dragged from the Library tab onto the top of
+  the box). `scripts/studio/links_session.cfg` (9 steps: two boxes drawn side
+  by side, their four shared planes linked; the top of one pushed and the
+  other's rising with it, undone together; the links taken away; a cutter
+  drawn across a box and carved with links, the two pieces tied on four planes
+  and the map saying so; two walls through one corner cut to a seam; a top
+  corner of a box merged onto the one beneath it).
+  `scripts/studio/shader_session.cfg` (7 steps: a shader made in a new script;
+  three lines of its own and a stage's `tcMod`s set, a stage added and moved
+  to the front; two mistakes made and listed by the check, then mended; the
+  script saved, a second shader added, and the file opened again as two; a
+  script broken by hand, its five faults said by line).
   `scripts/studio/bones_session.cfg` (12 steps: two bones up a column, the
-  second carrying on from the first; every point given to the nearer;
-  two points shared half and half, let go and taken whole; the forearm
-  turned thirty degrees and that undone; its end dragged a quarter round
-  its joint; three frames with the one between two poses set half way;
-  the model saved, closed and opened with its bones; a bone dropped).
-  `scripts/studio/skin_session.cfg` (7 steps: a cylinder laid flat into
-  the left half of its skin, stretched to half, moved, turned a quarter
-  and flipped, the flip undone; a picture made and dabbed on the skin; a
-  click on the model painting where it lands on the skin; the picture
-  shown under the model with the triangles over it, and saved as a TGA
-  with the two dabs in it).
-  `scripts/studio/preview_session.cfg` (3 steps: the models of e1m1's
-  monsters and pickups listed, fifty-four of them, the soldier's and the
-  armour's among them; drawn in the 3D view near the camera; turned off
-  again, and the choice kept in the settings).
-  `scripts/studio/lay_session.cfg` (16 steps: a sheet's material spread
-  once and then twice across, slid whole, by its last row, its first
-  column and one corner, each read back from the built faces; kept
-  through a bend and in the saved map; taken from the tagged top of a
-  box; let go when the patch grows a curve and back when that is undone;
-  forgotten, and back again).
-  `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
+  second carrying on from the first; every point given to the nearer; two
+  points shared half and half, let go and taken whole; the forearm turned
+  thirty degrees and that undone; its end dragged a quarter round its joint;
+  three frames with the one between two poses set half way; the model saved,
+  closed and opened with its bones; a bone dropped).
+  `scripts/studio/skin_session.cfg` (7 steps: a cylinder laid flat into the
+  left half of its skin, stretched to half, moved, turned a quarter and
+  flipped, the flip undone; a picture made and dabbed on the skin; a click on
+  the model painting where it lands on the skin; the picture shown under the
+  model with the triangles over it, and saved as a TGA with the two dabs in
+  it). `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
   reopens them. It tries a generated expedition too and says when the
   expedition itself does not load.
+
+## Building quickly: tools in modules of their own
+
+A native build recompiles only the modules that changed, but to do so it
+analyses again, from source, everything a changed module imports. The
+studio (`editor/studio.jac` and its impl files, some nineteen thousand
+lines) imports nearly everything, so any change to it, or to a module that
+imports it, costs a rebuild of three and a half to four minutes. A module
+that imports little rebuilds in about a minute.
+
+So new features are written as tools: a module under `editor/tools/` with
+an `obj` that derives from `StudioTool` (`editor/tools/host.jac`), keeps
+its own state, and reaches the studio only through the `ToolHost` it is
+handed (say a message, the level's navigation, draw a line; more as tools
+need it, each added to `ToolHost` and to `StudioHost` in `studio.jac`).
+The studio asks its tools each command before its own, lets them draw in
+the level views, and takes their lines of the dump and of the settings.
+`editor/tools/install.jac` lists them and `main.jac` hands them over; a
+tool never imports `editor.studio`. `editor/tools/camproutes.jac` (the
+ways bots take between camp spots) is the first: a change to it rebuilds
+in about seventy seconds.
 
 ## What remains
 
@@ -1725,16 +1802,14 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
 - Left over in what is built: the handles work along the world's axes only
   (not a brush's own); a shipped
-  map takes new brushes only once it is turned into a scene; Quake III's
-  `brushDef` sides open without their texture alignment, and a level's
+  map takes new brushes only once it is turned into a scene; a level's
   patches are left behind by `ed_convert` (a map file's `patchDef2` patches
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
   curve faces the same way round; the logic graph neither reorders nor shows signals as
   they fire in play; a scene too large for the light budget stays flat.
 - Not yet built: the rest of the bake (a partition by the brushes' own
   planes with portals between its leaves, in place of cells of the plan;
-  bounced light); patches written back as
-  `patchDef2`; the Passion tools; user walkers.
+  bounced light); the Passion tools; user walkers.
 - Within the shell: generated (Passion) levels can be edited but not saved as
   they are (`ed_convert` is meant to turn one into a scene, but expeditions
   do not load in the test environment at present: #76).

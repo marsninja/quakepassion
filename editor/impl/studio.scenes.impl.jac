@@ -112,6 +112,17 @@ impl Studio.open_map(path: str) {
     }
     try {
         found = read_map(text);
+        if found.form == "primitives" or len([item for item in found.items if len(item.patches) > 0]) > 0 {
+            # A Quake III map says how a material lies in repeats of its texture: read again
+            # knowing each texture's size, and call the materials what the game's archives do.
+            used = map_materials(found.items);
+            found = read_map(text, self.texture_sizes(used, False));
+            renames: dict[str, str] = {};
+            for each in used {
+                renames[each] = self.scene_material(each);
+            }
+            found.items = map_renamed(found.items, renames);
+        }
     } except ValueError as error {
         self.say(str(error));
         return;
@@ -232,6 +243,13 @@ impl Studio.outline_solids(scene: Scene) {
                 shade = [part for part in holder.fields.get(TINT_KEY, "").split() if part.isdigit()];
                 if len(shade) == 3 {
                     look.tint = (min(255, int(shade[0])) << 16) | (min(255, int(shade[1])) << 8) | min(255, int(shade[2]));
+                }
+            }
+            if look.tint < 0 and (self.show_triggers or self.show_unseen) {
+                # What it is for, when it is not a wall: shown in that kind's own colour.
+                purpose = brush_kind(holder.classname() if holder is not None else "", [side.material for side in brush.sides]);
+                if (purpose == "trigger" and self.show_triggers) or (purpose in ["clip", "hint"] and self.show_unseen) {
+                    look.tint = kind_tint(purpose);
                 }
             }
             self.looks.append(look);

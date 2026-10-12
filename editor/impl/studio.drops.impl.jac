@@ -50,6 +50,27 @@ impl Studio.dropped(scene: Scene, x: int, y: int, what: str) {
     }
     kind = parts[0];
     key = parts[1];
+    if kind == "library" and key.startswith("fav:") {
+        # A favourite is a class: the press added one, and it is put here.
+        kind = "class";
+        key = key[4:];
+    }
+    if kind == "tree" {
+        # A row of the scene list, picked by the press: put where it was let go.
+        chosen = scene.selection();
+        if key.isdigit() and len(chosen) == 1 and str(chosen[0].serial) == key and chosen[0].origin() is not None {
+            at = self.drop_point(scene, x, y, 24.0);
+            words = str(int(at.x)) + " " + str(int(at.y)) + " " + str(int(at.z));
+            if scene.set_fields({"origin": words}, "Place") {
+                print("studio: dropped entity #" + key + " at " + words.replace(" ", ","));
+                self.say(chosen[0].title() + " at " + words);
+            }
+            return;
+        }
+        if not key.startswith("solid:") and not key.isdigit() {
+            return;
+        }
+    }
     if kind == "material" {
         under = self.aim(x, y);
         held = under.solid;
@@ -79,7 +100,7 @@ impl Studio.dropped(scene: Scene, x: int, y: int, what: str) {
             return;
         }
     }
-    if kind == "class" or (kind == "library" and key.startswith("prefab:")) {
+    if kind == "class" or kind == "tree" or (kind == "library" and key.startswith("prefab:")) {
         # Brushes: standing on the place they were dropped at.
         box = self.selection_box(scene);
         if box is None {
@@ -91,7 +112,8 @@ impl Studio.dropped(scene: Scene, x: int, y: int, what: str) {
         delta = Vec3(x=float(round(delta.x / step)) * step, y=float(round(delta.y / step)) * step, z=float(round(delta.z / step)) * step);
         if scene.shift_selection(delta, self.tex_lock) {
             print(
-                "studio: dropped " + ("class " + key if kind == "class" else "prefab " + key[7:]) + " at " + str(int(spot.x)) + ","
+                "studio: dropped " + ("class " + key if kind == "class" else ("row " + key if kind == "tree" else "prefab " + key[7:]))
+                    + " at " + str(int(spot.x)) + ","
                     + str(int(spot.y)) + "," + str(int(spot.z))
             );
             self.say("Put where it was dropped");

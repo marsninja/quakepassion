@@ -74,7 +74,7 @@ def brushes(lines: list[str]) -> list[str] {
     return [line for line in lines if line.startswith("brush #")];
 }
 
-"""The second session: a scene of brushes made, shaped, saved, reopened and
+"""A session: a scene of brushes made, shaped, saved, reopened and
 played."""
 def scene_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["new", "picked", "edited", "four", "playing", "returned"];
@@ -193,7 +193,7 @@ def faces(lines: list[str]) -> list[str] {
     return [line for line in lines if line.startswith("face #")];
 }
 
-"""The third session: faces and materials, corners, a rectangle that
+"""A session: faces and materials, corners, a rectangle that
 selects, hollowing, carving and the map check."""
 def tools_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["face", "corner", "checks", "playing"];
@@ -310,7 +310,7 @@ def logic(lines: list[str]) -> str {
     return found[0] if found else "";
 }
 
-"""The fourth session: the logic graph, the clipboard, prefabs and groups."""
+"""A session: the logic graph, the clipboard, prefabs and groups."""
 def logic_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["graph", "library", "playing"];
     for shot in shots {
@@ -414,7 +414,7 @@ def lit(lines: list[str]) -> int {
     return int(found[0].split("lit=")[1].split()[0]) if found else -1;
 }
 
-"""The fifth session: shapes, light, the class list and the typed inspector."""
+"""A session: shapes, light, the class list and the typed inspector."""
 def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["lit", "inspector", "playing"];
     for shot in shots {
@@ -446,7 +446,7 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     ] {
         assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'build.log'}";
     }
-    # Stairs and an arch are groups of eight brushes; a cone is one brush of thirteen sides.
+    # Stairs and an arch are groups of eight brushes; a cone is a group of one, with its numbers kept.
     stairs = selected(steps["stairs"]);
     assert len(stairs) == 1 and "_group_name=stairs " in stairs[0] and stairs[0].endswith(" owns=8") , str(stairs);
     # A shape of several brushes keeps the numbers it was built from.
@@ -454,8 +454,8 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     arch = selected(steps["arch"]);
     assert len(arch) == 1 and "_group_name=arch " in arch[0] and arch[0].endswith(" owns=8") , str(arch);
     assert "brushes=17" in tally(steps["arch"]);
-    cone = brushes(steps["cone"]);
-    assert len(cone) == 1 and "sides=13" in cone[0] and brush_box(cone[0])[1][2] == 96 , str(cone);
+    cone = selected(steps["cone"]);
+    assert len(cone) == 1 and "_group_name=cone " in cone[0] and "_shape=cone 64 64 96 0 16" in cone[0] and cone[0].endswith(" owns=1") , str(cone);
     # No light, no lightmap; a light lights the level; flat and lit again on request.
     assert lit(steps["cone"]) == 0 and lit(steps["lit"]) > 1000 , str(steps["lit"]);
     assert lit(steps["flat"]) == 0 and lit(steps["relit"]) == lit(steps["lit"]);
@@ -491,60 +491,7 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"BUILD PASS: {len(steps) - 1} steps, shapes, a lit level, a door made and set from the inspector");
 }
 
-"""The sixth session: copies as images, and the leak finder."""
-def images_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["row", "leak"];
-    for shot in shots {
-        (repo / f"images_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-images-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_PREFABS"] = home + "/prefabs";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/images_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "images.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The images session failed: {output / 'images.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["post", "imaged", "shifted", "real", "leaking", "ringed", "open", "roofed", "sealed"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'images.log'}";
-    }
-    # A post grouped and asked for three copies: one brush in the document, built with its images.
-    imaged = selected(steps["imaged"]);
-    assert len(imaged) == 1 and "_copies=3 _offset=48 0 0 owns=1" in imaged[0] , str(imaged);
-    assert "brushes=2" in tally(steps["imaged"]);
-    for name in ["imaged", "shifted"] {
-        built = tally(steps[name]);
-        assert built.split("geometry=")[1].split()[0] == built.split("built=")[1].split()[0] , built;
-    }
-    assert tally(steps["imaged"]) != tally(steps["shifted"]);
-    # Made real, the group owns the post and its three copies and asks for no more.
-    real = selected(steps["real"]);
-    assert len(real) == 1 and real[0].endswith("owns=4") and "_copies" not in real[0] , str(real);
-    assert "brushes=5" in tally(steps["real"]);
-    # An open yard leaks; so does a ring of walls without a roof; with one it is sealed.
-    assert "leak=0" in logic(steps["real"]) and "leak=0" not in logic(steps["leaking"]) , str(steps["leaking"]);
-    assert "leak=0" in logic(steps["ringed"]) and "leak=0" not in logic(steps["open"]) , str(steps["open"]);
-    assert ran.stdout.count("studio: leak ends") == 2 and ran.stdout.count("studio: leak sealed after") == 1;
-    assert "leak=0" in logic(steps["sealed"]) and "brushes=6" in tally(steps["roofed"]);
-    for shot in shots {
-        source = repo / f"images_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"images_{shot}.png");
-        source.unlink();
-    }
-    print(f"IMAGES PASS: {len(steps) - 1} steps, a row of images made real, a leak found and sealed");
-}
-
-"""The seventh session: a shipped Quake II level and a Quake III arena
+"""A session: a shipped Quake II level and a Quake III arena
 turned into scenes of their own brushes, and a generated expedition when
 one loads."""
 def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -646,7 +593,7 @@ def convert_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     }
 }
 
-"""The eighth session: the asset explorer and archive packing."""
+"""A session: the asset explorer and archive packing."""
 def assets_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     import zipfile;
     import struct;
@@ -742,7 +689,7 @@ def setting(lines: list[str], key: str) -> int {
     return int(found[0].split(key + "=")[1].split()[0]) if found else -1;
 }
 
-"""The ninth session: the grid, remembered views, hiding, dropping, the
+"""A session: the grid, remembered views, hiding, dropping, the
 history list and the autosave."""
 def handy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["history", "palette", "light"];
@@ -824,7 +771,7 @@ def terrain(lines: list[str]) -> list[int] {
     return [int(found[0].split("tallest=")[1].split()[0]), int(found[0].split("raised=")[1].split()[0])];
 }
 
-"""The tenth session: terrain made, sculpted and read from an image."""
+"""A session: terrain made, sculpted and read from an image."""
 def terrain_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["hills", "playing"];
     for shot in shots {
@@ -888,7 +835,7 @@ def patches(lines: list[str]) -> list[str] {
     return [line for line in lines if line.startswith("patch #")];
 }
 
-"""The eleventh session: curved patches made, bent and moved."""
+"""A session: curved patches made, bent and moved."""
 def patch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["arch", "playing"];
     for shot in shots {
@@ -946,67 +893,7 @@ def patch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     print(f"PATCH PASS: {len(steps) - 1} steps, an arch bent by command and by a drag, a cylinder and a cone");
 }
 
-"""The twelfth session: snapping, a material replaced, brushes lined up
-and glued, face picks spread, and the counts."""
-def tidy_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "tidy_faces.png").unlink(missing_ok=True);
-    pack = repo / ".jac/studio-pack";
-    shutil.rmtree(pack, ignore_errors=True);
-    with tempfile.TemporaryDirectory(prefix="qp-tidy-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/tidy_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "tidy.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The tidy session failed: {output / 'tidy.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["askew", "snapped", "replaced", "aligned", "glued", "others", "every", "stepped", "frozen", "thawed"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'tidy.log'}";
-    }
-    askew = brush_box(brushes(steps["askew"])[0]);
-    snapped = brush_box(brushes(steps["snapped"])[0]);
-    # Moved (3, -2, 1) off the grid, the box snaps back to where it was made.
-    assert [snapped[0][i] - askew[0][i] for i in range(3)] == [-3, 2, -1] , f"{askew} -> {snapped}";
-    assert snapped[0][0] % 8 == 0 and snapped[0][1] % 8 == 0 and snapped[0][2] == 0;
-    assert "material=stone" in brushes(steps["replaced"])[0] , str(steps["replaced"]);
-    # Lined up by their undersides: the small box comes down to the floor.
-    aligned = [brush_box(line) for line in brushes(steps["aligned"])];
-    assert len(aligned) == 2 and aligned[0][0][2] == 0 and aligned[1][0][2] == 0 , str(aligned);
-    # Glued, the small box's low x is the big one's high x.
-    glued = brush_box(brushes(steps["glued"])[0]);
-    assert glued[0][0] == snapped[1][0] and glued[1][0] == snapped[1][0] + 32 , f"{glued} against {snapped}";
-    assert len(faces(steps["others"])) == 5 and len(faces(steps["every"])) == 6;
-    assert "studio: stat 2 entities, 3 brushes, 18 sides" in ran.stdout;
-    assert "studio: stat 6 sides of stone" in ran.stdout and "studio: stat 6 sides of brick" in ran.stdout;
-    # Tab selects the first entity; frozen, a click in the level changes nothing; thawed, it does.
-    stepped = selected(steps["stepped"]);
-    assert len(stepped) == 1 and "classname=info_player_start" in stepped[0] , str(stepped);
-    assert selected(steps["frozen"]) == stepped and setting(steps["frozen"], "frozen") == 1 , str(steps["frozen"]);
-    assert selected(steps["thawed"]) != stepped and setting(steps["thawed"], "frozen") == 0 , str(steps["thawed"]);
-    # The check names the material no archive holds, and the names in use are written a line each.
-    assert "studio: finding No archive holds the material q2:e1u1/no_such_texture (brush #4)" in ran.stdout;
-    names = (pack / "materials.txt").read_text().split();
-    assert names == sorted(names) and "q2:e1u1/no_such_texture" in names and "stone" in names , str(names);
-    shutil.rmtree(pack, ignore_errors=True);
-    source = repo / "tidy_faces.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "tidy_faces.png");
-    source.unlink();
-    print(
-        f"TIDY PASS: {len(steps) - 1} steps, snapped, replaced, lined up, glued, faces spread, counted, stepped, "
-            + "frozen, checked for materials"
-    );
-}
-
-"""The thirteenth session: a box drawn in the top view, cut along a drawn
+"""A session: a box drawn in the top view, cut along a drawn
 line, and the settings kept between runs."""
 def draw_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["box", "cut", "arrows"];
@@ -1085,7 +972,7 @@ def bake_word(lines: list[str], key: str) -> int {
     return int(found[0].split(key + "=")[1].split()[0]) if found else -1;
 }
 
-"""The thirty-first session: a walled hall cut into cells that know what
+"""A session: a walled hall cut into cells that know what
 they see, and played with less drawn from one side of its wall."""
 def bake_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     (repo / "bake_cells.png").unlink(missing_ok=True);
@@ -1137,7 +1024,7 @@ def line_word(lines: list[str], prefix: str, key: str) -> str {
     return found[0].split(key + "=")[1].split()[0] if found else "";
 }
 
-"""The thirty-second session: a bake's cells shown from where one looks, a
+"""A session: a bake's cells shown from where one looks, a
 bake kept and given back, recipes, and another program run over the map."""
 def steps_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["cells", "recipes"];
@@ -1236,7 +1123,7 @@ def model_word(lines: list[str], key: str) -> str {
     return found[0].split(" " + key + "=")[1].split()[0] if found and (" " + key + "=") in found[0] else "";
 }
 
-"""The thirty-ninth session: a model made, reshaped, given a frame and a
+"""A session: a model made, reshaped, given a frame and a
 second part, checked, saved as MD3 and OBJ, and opened again."""
 def model_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["new", "marks"];
@@ -1324,166 +1211,6 @@ def lay_numbers(line: str) -> list[float] {
     return [] if words in [["none"], ["nowhere"]] else [float(word) for word in words];
 }
 
-"""The fiftieth session: a patch told where its control points lie on its
-material."""
-def lay_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "lay_bent.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-lay-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/lay_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "lay.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The lay session failed: {output / 'lay.log'}";
-        saved_text = (Path(home) / "scenes/lay.map").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = [
-        "boxed", "made", "fitted", "twice", "slid", "row", "column", "point", "bent", "tagged", "projected", "grown",
-        "shrunk", "cleared", "refused", "back"
-    ];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'lay.log'}";
-    }
-    # Every time the patch says where its points lie, and where its built faces have the material.
-    told = [lay_numbers(line) for line in ran.stdout.splitlines() if line.startswith("studio: patch places ")];
-    lies = [lay_numbers(line) for line in ran.stdout.splitlines() if line.startswith("studio: patch lies ")];
-    assert len(told) == 13 and len(lies) == 13 , f"{len(told)} {len(lies)}";
-    # New, it has been told nothing: its faces take the material plainly, a texel a unit of the world.
-    assert told[0] == [] and lies[0] == [-64.0, -96.0, 64.0, -224.0] , f"{told[0]} {lies[0]}";
-    assert "_st=" not in selected(steps["made"])[0];
-    # Spread once: the material's own size from its first corner to its last.
-    wide = lies[1][2];
-    tall = lies[1][3];
-    assert lies[1][:2] == [0.0, 0.0] and wide >= 8.0 and tall >= 8.0 , str(lies[1]);
-    assert told[1] == [0.0, 0.0, wide / 2, 0.0, wide, 0.0, 0.0, tall / 2, wide / 2, tall / 2, wide, tall / 2, 0.0, tall, wide / 2, tall, wide, tall];
-    assert "_st=" + " ".join([str(int(each)) for each in told[1]]) + " owns=32" in selected(steps["fitted"])[0];
-    # Twice across; all of it slid; its last row; its first column; one corner.
-    assert lies[2] == [0.0, 0.0, wide * 2, tall] , str(lies[2]);
-    assert lies[3] == [16.0, 8.0, wide * 2 + 16, tall + 8] , str(lies[3]);
-    assert lies[4] == [16.0, 8.0, wide * 2 + 16, tall + 40] and told[4][:6] == told[3][:6] and told[4][13] == told[3][13] + 32;
-    assert lies[5] == [12.0, 8.0, wide * 2 + 16, tall + 40] and [told[5][i] - told[4][i] for i in [0, 6, 12, 2, 8]] == [-4.0, -4.0, -4.0, 0.0, 0.0];
-    assert lies[6] == [-16.0, -8.0, wide * 2 + 16, tall + 40] and told[6][2:] == told[5][2:] , str(lies[6]);
-    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in ["made", "fitted", "twice", "slid", "row", "column", "point", "bent"]];
-    assert undone == [undone[0] + count for count in range(8)] , str(undone);
-    # Bent, the patch keeps its places: its corners lie where they did, and the file has them.
-    assert patches(steps["bent"])[0] == "patch #4 3x3 top=96 prisms=32" and told[7] == told[6] and lies[7] == lies[6];
-    assert "\"_st\" \"" + " ".join([str(int(each)) for each in told[6]]) + "\"" in saved_text;
-    # From the tagged top of the box: each point where the box's material would have it.
-    tagged = faces(steps["tagged"]);
-    assert len(tagged) == 1 and face_word(tagged[0], "shift") == "8.0,4.0" and face_word(tagged[0], "scale") == "1.0,1.0";
-    assert told[8][:6] == [-56.0, -92.0, 8.0, -92.0, 72.0, -92.0] and lies[8] == [-56.0, -92.0, 72.0, -220.0] , str(told[8]);
-    # A wider grid has no places; undone, they are back.
-    assert patches(steps["grown"])[0].startswith("patch #4 5x3 ") and "_st=" not in selected(steps["grown"])[0] and told[9] == [];
-    assert told[10] == told[8] and lies[10] == lies[8] and "_st=" in selected(steps["shrunk"])[0];
-    # Forgotten: plain again, and there is nothing then to slide or forget.
-    assert told[11] == [] and lies[11] == lies[0] and "_st=" not in selected(steps["cleared"])[0];
-    assert steps["refused"][0] == steps["cleared"][0] and selected(steps["refused"])[0] == selected(steps["cleared"])[0];
-    assert told[12] == told[8] and lies[12] == lies[8] and "_st=" in selected(steps["back"])[0];
-    source = repo / "lay_bent.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "lay_bent.png");
-    source.unlink();
-    print(
-        f"LAY PASS: {len(steps) - 1} steps, a patch's material spread, slid by rows, columns and a point, kept through "
-            + "a bend, taken from a tagged face, and forgotten"
-    );
-}
-
-"""The fifty-first session: one box handle that moves, turns, sizes and
-shears, and the same by number."""
-def lean_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["shearing", "pair", "3d"];
-    for shot in shots {
-        (repo / f"lean_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-lean-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/lean_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "lean.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The lean session failed: {output / 'lean.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = [
-        "boxed", "sheared", "squared", "turned", "sized", "taller", "leant", "moved", "tipped", "pair", "both",
-        "numeric", "linear", "refused", "level"
-    ];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'lean.log'}";
-    }
-    boxes: dict[str, list[list[list[int]]]] = {};
-    for name in names {
-        boxes[name] = [brush_box(line) for line in brushes(steps[name])];
-        assert len([line for line in brushes(steps[name]) if "sides=6" in line]) == len(boxes[name]) , str(steps[name]);
-    }
-    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in names];
-    # A box twice as long as it is deep, with the one handle round it.
-    assert boxes["boxed"] == [[[-288, 112, 0], [-96, 208, 64]]] and "handles=box" in handles(steps["boxed"]) , str(steps["boxed"]);
-    # Its right edge taken forty-eight units along itself: the far end of the box is that much further
-    # up the plan and the near end where it was. A shear, for sheared back by a quarter it is a box
-    # of the size it had (a size would have left it half as deep again).
-    assert boxes["sheared"] == [[[-288, 112, 0], [-96, 256, 64]]] and undone[1] == undone[0] + 1 , str(boxes["sheared"]);
-    assert boxes["squared"] == [[[-288, 136, 0], [-96, 232, 64]]] , str(boxes["squared"]);
-    # A corner taken a quarter of the way round: the box stands the other way about its middle.
-    assert boxes["turned"] == [[[-240, 64, 0], [-144, 256, 64]]] , str(boxes["turned"]);
-    # With Shift the same corner sizes it, the far corner staying put.
-    assert boxes["sized"] == [[[-288, 112, 0], [0, 208, 64]]] , str(boxes["sized"]);
-    # The top edge pulled outward sizes that way alone; taken along itself it shears the other way.
-    assert boxes["taller"] == [[[-288, 112, 0], [-96, 256, 64]]] , str(boxes["taller"]);
-    assert boxes["leant"] == [[[-288, 112, 0], [-48, 208, 64]]] , str(boxes["leant"]);
-    # The middle moves it; and each drag was one step, undone before the next.
-    assert boxes["moved"] == [[[-224, 112, 0], [-32, 208, 64]]] , str(boxes["moved"]);
-    assert undone[3:9] == [undone[1]] * 6 , str(undone);
-    # In the front view the handle lies along x and z: its top taken along leans the box over.
-    assert boxes["tipped"] == [[[-288, 112, 0], [-64, 208, 64]]] , str(boxes["tipped"]);
-    # Two brushes under one handle, sheared as one: the far end of the far one goes the whole way,
-    # the near end of the near one nowhere, and what lies between in proportion.
-    pair = sorted(boxes["pair"]);
-    both = sorted(boxes["both"]);
-    assert len(pair) == 2 and pair[0] == [[-288, 112, 0], [-96, 208, 64]] , str(pair);
-    wide = pair[1][1][0] - pair[0][0][0];
-    assert both[1][1][1] == pair[1][1][1] + 48 and both[0][0][1] == pair[0][0][1] , str(both);
-    assert abs(both[0][1][1] - (208 + 48 * 192 / wide)) <= 1 and abs(both[1][0][1] - (112 + 48 * (pair[1][0][0] + 288) / wide)) <= 1;
-    assert [box[0][0] for box in both] == [box[0][0] for box in pair] and [box[1][0] for box in both] == [box[1][0] for box in pair];
-    # By number: half a unit along x for each unit of height, about the pair's middle.
-    numeric = sorted(boxes["numeric"]);
-    for (index, box) in enumerate(numeric) {
-        assert box[1][0] - box[0][0] == pair[index][1][0] - pair[index][0][0] + 32 , str(numeric);
-        assert box[0][1:] == pair[index][0][1:] and box[1][1:] == pair[index][1][1:] , str(numeric);
-    }
-    # A quarter turn said as what the axes become, about the world's middle.
-    turned = sorted(boxes["linear"]);
-    assert [[-208, -288, 0], [-112, -96, 64]] in turned and len(turned) == 2 , str(turned);
-    # A change that would flatten the selection, and a shear of an axis along itself, change nothing.
-    assert sorted(boxes["refused"]) == pair and sorted(boxes["level"]) == pair , str(boxes["refused"]);
-    for shot in shots {
-        source = repo / f"lean_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"lean_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"LEAN PASS: {len(steps) - 1} steps, one box handle shearing, turning, sizing and moving a brush in two views, "
-            + "two brushes sheared as one, and shears and turns by number"
-    );
-}
-
 """A `lay` line's handles: where they stand and the two arms, as number lists."""
 def lay_handles(lines: list[str]) -> list[list[float]] {
     found = [line for line in lines if line.startswith("lay #")];
@@ -1491,76 +1218,6 @@ def lay_handles(lines: list[str]) -> list[list[float]] {
         return [];
     }
     return [[float(part) for part in found[0].split(" " + key + "=")[1].split()[0].split(",")] for key in ["at", "s", "t"]];
-}
-
-"""The fifty-second session: handles on a face for its material."""
-def arms_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["stretching", "aslant"];
-    for shot in shots {
-        (repo / f"arms_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-arms-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/arms_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "arms.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The arms session failed: {output / 'arms.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["picked", "shown", "stretched", "aslant", "turned", "slid", "finer", "numeric", "refused", "hidden"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'arms.log'}";
-    }
-    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in names];
-    # The top of the box picked: no handles until they are asked for; then a dot at its middle
-    # and an arm a repeat of the material long each way it runs.
-    assert len(faces(steps["picked"])) == 1 and lay_handles(steps["picked"]) == [];
-    shown = lay_handles(steps["shown"]);
-    assert shown == [[-192.0, 160.0, 64.0], [64.0, 0.0, 0.0], [0.0, -64.0, 0.0]] , str(shown);
-    plain = faces(steps["shown"])[0];
-    assert face_word(plain, "shift") == "0.0,0.0" and face_word(plain, "scale") == "1.0,1.0";
-    # The first arm taken out to twice its length: twice as coarse that way, the other as it was,
-    # and the material where the handles stand has not moved (so its shift takes that up).
-    stretched = lay_handles(steps["stretched"]);
-    assert stretched[1:] == [[128.0, 0.0, 0.0], [0.0, -64.0, 0.0]] and undone[2] == undone[1] + 1 , str(stretched);
-    assert face_word(faces(steps["stretched"])[0], "scale") == "2.0,1.0" and face_word(faces(steps["stretched"])[0], "shift") == "-96.0,0.0";
-    # Swung an eighth of the way round by itself: that way runs aslant, the other as it did.
-    aslant = lay_handles(steps["aslant"]);
-    assert aslant[1:] == [[48.0, 48.0, 0.0], [0.0, -64.0, 0.0]] , str(aslant);
-    # With Shift both go round together and neither grows.
-    turned = lay_handles(steps["turned"]);
-    assert turned[1:] == [[0.0, 64.0, 0.0], [64.0, 0.0, 0.0]] and face_word(faces(steps["turned"])[0], "scale") == "1.0,1.0" , str(turned);
-    # The dot slides the material thirty-two units along with it.
-    slid = faces(steps["slid"])[0];
-    assert face_word(slid, "shift") == "-32.0,0.0" and face_word(slid, "scale") == "1.0,1.0" and lay_handles(steps["slid"]) == shown , slid;
-    # The second arm pulled in to half its length.
-    finer = lay_handles(steps["finer"]);
-    assert finer[1:] == [[64.0, 0.0, 0.0], [0.0, -32.0, 0.0]] and face_word(faces(steps["finer"])[0], "scale") == "1.0,0.5" , str(finer);
-    assert undone[3:7] == [undone[2]] * 4 , str(undone);
-    # In numbers: slid, and twice as fine both ways. A lie whose ways run together is refused.
-    numeric = faces(steps["numeric"])[0];
-    assert face_word(numeric, "shift") == "8.0,4.0" and face_word(numeric, "scale") == "0.5,0.5" , numeric;
-    assert lay_handles(steps["numeric"])[1:] == [[32.0, 0.0, 0.0], [0.0, -32.0, 0.0]];
-    assert faces(steps["refused"])[0] == numeric and undone[8] == undone[7];
-    assert lay_handles(steps["hidden"]) == [] and faces(steps["hidden"])[0] == numeric;
-    for shot in shots {
-        source = repo / f"arms_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"arms_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"ARMS PASS: {len(steps) - 1} steps, a face's material stretched, swung one way alone, turned and slid by "
-            + "handles on the face, and laid by number"
-    );
 }
 
 """A step's `bone` lines by the bone's name: its words by key."""
@@ -1580,7 +1237,7 @@ def bone_end(row: dict[str, str], key: str) -> list[float] {
     return [float(part) for part in row[key].split(",")];
 }
 
-"""The fifty-third session: a model's bones."""
+"""A session: a model's bones."""
 def bones_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["shared", "dragged"];
     for shot in shots {
@@ -1669,136 +1326,6 @@ def bones_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The fifty-fourth session: a body put together, and weapons as held in view."""
-def figure_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["stood", "shotgun", "machinegun"];
-    for shot in shots {
-        (repo / f"figure_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-figure-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/figure_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "figure.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The figure session failed: {output / 'figure.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["stood", "running", "other", "shotgun", "firing", "second", "third", "refused", "edited"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'figure.log'}";
-    }
-    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
-    shown: dict[str, str] = {};
-    for name in names {
-        shown[name] = [line for line in steps[name] if line.startswith("model ")][0];
-    }
-    # Quake III's bodies are found by their legs; Sarge is one, Visor another.
-    bodies = [line for line in said if line.startswith("bodies ")][0].split()[1:];
-    assert "sarge" in bodies and "visor" in bodies and len(bodies) >= 20 , str(bodies);
-    made = [line for line in said if line.startswith("body ")];
-    # At rest with a machinegun: legs, torso, head and gun, the frames of the legs' idling
-    # (the torso stands on one frame, held through them).
-    assert made[0].startswith("body sarge legs=idle:") and "torso=stand:" in made[0] and made[0].endswith("weapon=machinegun surfaces=6") , made[0];
-    idle = int(made[0].split("legs=idle:")[1].split()[0].split("+")[1]);
-    assert made[0].split("torso=stand:")[1].split()[0].endswith("+1") and idle > 1;
-    assert shown["stood"].startswith("model q3:body/sarge/idle+stand+machinegun surfaces=6 frames=" + str(idle) + " ") , shown["stood"];
-    triangles = int(shown["stood"].split("triangles=")[1].split()[0]);
-    # Running while it attacks, empty handed: as many frames as the longer of the two, and fewer triangles.
-    run = int(made[1].split("legs=run:")[1].split()[0].split("+")[1]);
-    attack = int(made[1].split("torso=attack:")[1].split()[0].split("+")[1]);
-    assert made[1].endswith("weapon=none surfaces=5") and f"frames={max(run, attack)} " in shown["running"] and "frame=3 " in shown["running"];
-    assert 0 < int(shown["running"].split("triangles=")[1].split()[0]) < triangles , shown["running"];
-    # Another body with another weapon.
-    assert made[2].startswith("body visor ") and "weapon=rocketl" in made[2] and shown["other"].startswith("model q3:body/visor/idle+stand+rocketl ");
-    # Quake's shotgun as held: its rest and the six frames of a shot, seen from the eye (no turn).
-    held = [line for line in said if line.startswith("viewweapon ")];
-    assert held[0] == "viewweapon q1 slot=2 model=progs/v_shot.mdl frames=7 hand=0 barrel=0 surfaces=1" , held[0];
-    assert shown["shotgun"].startswith("model q1:held/progs/v_shot.mdl surfaces=1 frames=7 ") and " yaw=0 " in shown["shotgun"];
-    assert "frame=4 " in shown["firing"] , shown["firing"];
-    # Quake II's shotgun; Quake III's machinegun on its hand, with its barrel, seen from outside.
-    assert held[1].startswith("viewweapon q2 slot=2 model=models/weapons/v_shotg/tris.md2 ") and "hand=0" in held[1] and " yaw=0 " in shown["second"];
-    assert held[2] == "viewweapon q3 slot=2 model=models/weapons2/machinegun/machinegun.md3 frames=7 hand=1 barrel=1 surfaces=2" , held[2];
-    assert " yaw=0 " not in shown["third"] and "surfaces=2 frames=7 " in shown["third"];
-    # A body, a sequence, a game and a slot that are not there change nothing.
-    assert shown["refused"] == shown["third"] and len(made) == 4 and len(held) == 3 and "viewweapons q1 1 2 3 4 5 6 7 8" in said;
-    # Taken into the model editor it is a model of five parts with the body's frames.
-    edited = [line for line in steps["edited"] if line.startswith("modeldoc ")][0];
-    assert " parts=5 " in edited and f" frames={idle} " in edited and made[3].endswith("weapon=none surfaces=5") , edited;
-    for shot in shots {
-        source = repo / f"figure_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"figure_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"FIGURE PASS: {len(steps) - 1} steps, a body of {len(bodies)} put together at rest and running, and three games' "
-            + "weapons as held in view"
-    );
-}
-
-"""The fifty-fifth session: the Passion districts' materials as data."""
-def district_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    with tempfile.TemporaryDirectory(prefix="qp-district-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/district_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "district.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The district session failed: {output / 'district.log'}";
-        left = (Path(home) / "overrides/passion/districts.txt").exists();
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["listed", "changed", "refused", "checked", "one_back", "all_back"] {
-        assert name in steps , f"The session never reached '{name}': {output / 'district.log'}";
-    }
-    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: district")];
-    # Each listing: six districts, each with its name and its five slots.
-    rows = [line for line in said if line.startswith("district ") and " floor=" in line];
-    assert len(rows) == 30 , str(len(rows));
-    lists = [rows[index:index + 6] for index in range(0, 30, 6)];
-    plain = lists[0];
-    assert plain[0] == "district 0 Stone_Keep floor=q1:e1m2/stone1_3 wall=q1:e1m2/wbrick1_5 ceiling=q1:e1m2/wizmet1_2 "
-        + "trim=q1:e1m2/wizmet1_7 accent=q1:e1m2/wizwood1_5" , plain[0];
-    assert plain[5].startswith("district 5 Arena_Works floor=q3:textures/base_floor/diamond2c ");
-    # A floor from another game, a wall from the material in hand, and a name: only that district changes.
-    changed = lists[1];
-    assert changed[0] == "district 0 The_Keep_Below floor=q2:e1u1/floor3_1 wall=q1:e1m1/tech04_1 ceiling=q1:e1m2/wizmet1_2 "
-        + "trim=q1:e1m2/wizmet1_7 accent=q1:e1m2/wizwood1_5" , changed[0];
-    assert changed[1:] == plain[1:];
-    sets = [line for line in said if line.startswith("district ") and " floor=" not in line and not line.startswith("district loads") and not line.startswith("district slot")];
-    assert sets[:3] == ["district 0 floor q2:e1u1/floor3_1", "district 0 wall q1:e1m1/tech04_1", "district 0 name The_Keep_Below"] , str(sets);
-    # A material the archives do not hold, a word that names none, a slot and a district that are not: nothing changes.
-    assert lists[2] == changed and len(sets) == 4 , str(sets);
-    # Checked: every slot's material is there, and what a level is made with (through the game's own
-    # loader, which reads the kept file) has the first district's floor and wall as they were set.
-    loads = [line for line in said if line.startswith("district loads ")];
-    assert "districts missing=0" in said and len(loads) == 6 , str(loads);
-    assert loads[0] == "district loads 0 q2:e1u1/floor3_1 q1:tech04_1 q1:wizmet1_2 q1:wizmet1_7 q1:wizwood1_5" , loads[0];
-    assert loads[2] == "district loads 2 q2:e1u1/floor3_1 q2:e1u1/metal3_2 q2:e1u1/ceil1_1 q2:e1u1/box1_3 q2:e1u1/box3_1" , loads[2];
-    assert not [line for line in said if line.startswith("district slot ")];
-    # One district put back, then (after another is changed) all of them; and the file is gone.
-    assert lists[3] == plain and sets[3] == "district 3 accent q3:textures/base_wall/concrete" and lists[4] == plain and not left;
-    print(
-        "DISTRICT PASS: 6 steps, a district's slots given other materials and a name, what is not there refused, "
-            + "the game's own loader reading the table, and the table put back"
-    );
-}
-
 """A step's floating windows by number: their words by key."""
 def float_rows(lines: list[str]) -> dict[int, dict[str, str]] {
     found: dict[int, dict[str, str]] = {};
@@ -1811,7 +1338,7 @@ def float_rows(lines: list[str]) -> dict[int, dict[str, str]] {
     return found;
 }
 
-"""The fifty-sixth session: floating 3D windows."""
+"""A session: floating 3D windows."""
 def float_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["one", "two"];
     for shot in shots {
@@ -1887,7 +1414,7 @@ def nav_words(line: str) -> dict[str, int] {
     return {word.split("=")[0]: int(word.split("=")[1]) for word in line.split()[1:] if "=" in word};
 }
 
-"""The fifty-seventh session: navigation for bots, baked."""
+"""A session: navigation for bots, baked."""
 def nav_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     (repo / "nav_baked.png").unlink(missing_ok=True);
     with tempfile.TemporaryDirectory(prefix="qp-nav-") as home {
@@ -1942,324 +1469,7 @@ def nav_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The fifty-eighth session: what clicks pick, editing kept to the selection, and a map forced on to the grid."""
-def restrict_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    with tempfile.TemporaryDirectory(prefix="qp-restrict-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/restrict_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "restrict.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The restrict session failed: {output / 'restrict.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["made", "passed", "floor", "entity", "kept", "released", "shown", "mended", "stood"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'restrict.log'}";
-    }
-    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
-    hidden: dict[str, int] = {};
-    for name in names {
-        hidden[name] = int([line for line in steps[name] if line.startswith("mode=")][0].split("hidden=")[1].split()[0]);
-    }
-    # Nothing selected to begin with. Told to pick entities only, a click on a box passes it.
-    assert not brushes(steps["made"]) and not selected(steps["made"]);
-    assert not brushes(steps["passed"]) and not selected(steps["passed"]) and "picks=entities put_away=0" in steps["passed"];
-    # Told to pick brushes only, a click where the entity stands takes the floor under it.
-    assert len(brushes(steps["floor"])) == 1 and brushes(steps["floor"])[0].startswith("brush #1 ") and not selected(steps["floor"]);
-    # Told to pick everything again, the same click takes the entity; and the dump no longer speaks of it.
-    assert len(selected(steps["entity"])) == 1 and "classname=info_notnull" in selected(steps["entity"])[0] and not brushes(steps["entity"]);
-    assert not [line for line in steps["entity"] if line.startswith("picks=")];
-    # One box hidden by hand; editing kept to the other puts three more things away (the floor and
-    # the two entities), and letting go brings those three back and leaves the one hidden before.
-    assert "picks=all put_away=3" in steps["kept"] and hidden["kept"] == 4 and brushes(steps["kept"])[0].startswith("brush #3 ");
-    assert hidden["released"] == 1 and not [line for line in steps["released"] if line.startswith("picks=")] and hidden["shown"] == 0;
-    # Knocked off the grid, the box and the entity (and the start, which stands off a grid of sixteen)
-    # are forced back on; asked again there is nothing to do.
-    mends = [line for line in said if line.startswith("snapped all ")];
-    assert mends == ["snapped all grid=16 off=3 moved=3 left=0", "snapped all grid=16 off=0 moved=0 left=0"] , str(mends);
-    assert brush_box(brushes(steps["mended"])[0]) == [[-288, 112, 0], [-96, 208, 64]] , str(steps["mended"]);
-    assert "origin=0 0 48" in selected(steps["stood"])[0] , str(selected(steps["stood"]));
-    print(
-        f"RESTRICT PASS: {len(steps) - 1} steps, clicks picking entities only, brushes only and both, editing kept to "
-            + "a selection and let go, and a map forced on to the grid"
-    );
-}
-
-"""The fifty-ninth session: a map imported, materials found and lately used, a folder extracted."""
-def finds_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "finds_shelf.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-finds-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_EXTRACT"] = home + "/out";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/finds_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_EXTRACT");
-        (output / "finds.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The finds session failed: {output / 'finds.log'}";
-        written = sorted([str(path.relative_to(Path(home) / "out")) for path in (Path(home) / "out").rglob("*") if path.is_file()]);
-        sizes = sum([path.stat().st_size for path in (Path(home) / "out").rglob("*") if path.is_file()]);
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["empty", "imported", "missing", "found", "recent", "extracted"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'finds.log'}";
-    }
-    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
-    # A new scene has a floor and a start. The hall's map brings its seven brushes, as a group,
-    # and its start and two lights: one step. A file that is not there changes nothing.
-    assert "entities=2 " in steps["empty"][0] and tally(steps["empty"]).startswith("brushes=1 ");
-    assert "entities=6 " in steps["imported"][0] and "undo=1" in steps["imported"][0] and tally(steps["imported"]).startswith("brushes=8 ");
-    assert steps["missing"][0] == steps["imported"][0] and tally(steps["missing"]) == tally(steps["imported"]);
-    # Materials named for crates, in more than one game; none for a word nothing holds.
-    finds = [line for line in said if line.startswith("matfind ")];
-    count = int(finds[0].split("found=")[1].split()[0]);
-    assert finds[0].startswith("matfind crate found=") and count >= 8 and "q1:e1m1/crate0_side" in finds[0] , finds[0];
-    assert finds[1].startswith("matfind no_such_material_anywhere found=0");
-    # Three taken in hand, one of them twice: the latest first, each once.
-    assert "recent materials blockout q1:e1m1/tech04_1 q2:e1u1/floor3_1" in said;
-    # A folder of Quake's sounds written out whole; a game or a folder that is not there writes nothing.
-    extracts = [line for line in said if line.startswith("extracted folder ")];
-    assert len(extracts) == 2 and extracts[1].endswith("files=0 bytes=0") , str(extracts);
-    wrote = int(extracts[0].split("files=")[1].split()[0]);
-    assert extracts[0].startswith("extracted folder q1:sound/doors/ ") and wrote >= 10 and len(written) == wrote , str(extracts);
-    assert all([name.startswith("q1/sound/doors/") and name.endswith(".wav") for name in written]) , str(written[:3]);
-    assert sizes == int(extracts[0].split("bytes=")[1]) , str(sizes);
-    source = repo / "finds_shelf.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "finds_shelf.png");
-    source.unlink();
-    print(
-        f"FINDS PASS: {len(steps) - 1} steps, a map imported as a group, {count} materials found by name, those lately "
-            + f"in hand listed, and {wrote} files of a folder written out"
-    );
-}
-
-"""The sixtieth session: faces tilted to whole angles and laid through whole points."""
-def whole_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    with tempfile.TemporaryDirectory(prefix="qp-whole-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/whole_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "whole.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The whole session failed: {output / 'whole.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["made", "tilted", "whole", "undone", "brush"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'whole.log'}";
-    }
-    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
-    undone = [int(steps[name][0].split("undo=")[1].split()[0]) for name in names];
-    # A ramp 96 long and 40 high. Its upright side stands at whole angles; its slope is tilted to one,
-    # as one step; asked again there is nothing to tilt.
-    assert brush_box(brushes(steps["made"])[0]) == [[-32, 112, 0], [32, 208, 40]] and "sides=5" in brushes(steps["made"])[0];
-    tilts = [line for line in said if line.startswith("faceangle ")];
-    assert tilts[:3] == [
-        "faceangle faces=0 step=15.0 refused=0", "faceangle faces=1 step=15.0 refused=0", "faceangle faces=0 step=15.0 refused=0"
-    ] , str(tilts);
-    assert undone[1] == undone[0] + 1 , str(undone);
-    # Turned about its middle its corners are off whole numbers: laid through whole points, as another
-    # step; asked again there is nothing astray.
-    lays = [line for line in said if line.startswith("integral ")];
-    astray = float(lays[0].split("astray=")[1].split()[0]);
-    assert lays[0].startswith("integral faces=1 ") and 0.01 < astray < 1.0 and lays[1] == "integral faces=0 astray=0.0 refused=0" , str(lays);
-    assert undone[2] == undone[1] + 1 and undone[3] == undone[0] , str(undone);
-    # One of the two done again; then with the brush selected every face is asked, and the one needs it.
-    assert lays[2] == lays[0] and undone[4] == undone[2] , str(lays);
-    mended = brush_box(brushes(steps["brush"])[0]);
-    assert mended[0][2] == 0 and mended[1][1] == 208 and mended != [[-32, 112, 0], [32, 208, 40]] and "sides=5" in brushes(steps["brush"])[0];
-    # With nothing picked or selected neither does anything.
-    assert len(lays) == 3 and len(tilts) == 3 , str(lays) + str(tilts);
-    print(
-        f"WHOLE PASS: {len(steps) - 1} steps, a slope tilted to a whole angle and laid through whole points, each a "
-            + "step, and a brush's faces asked together"
-    );
-}
-
-"""The sixty-first session: how the explorer's model is played and drawn, and a box kept as a part."""
-def playview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "playview_fronts.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-playview-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_MODELS"] = home + "/models";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/playview_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_MODELS");
-        (output / "playview.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The playview session failed: {output / 'playview.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = [
-        "shown", "ranged", "round", "once", "playing", "fronts", "plain", "running", "boxed", "low_box", "high_box", "picked_box"
-    ];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'playview.log'}";
-    }
-    shown: dict[str, str] = {};
-    views: dict[str, str] = {};
-    for name in names {
-        # What the commands after a step print comes before the next step: only the line under the
-        # model's own is the step's.
-        place = [index for (index, line) in enumerate(steps[name]) if line.startswith("model ")][0];
-        shown[name] = steps[name][place];
-        under = steps[name][place + 1] if place + 1 < len(steps[name]) else "";
-        views[name] = under if under.startswith("modelview ") else "";
-    }
-    # As it is shown at first nothing is said of how it is played: all its frames, ten a second.
-    frames = int(shown["shown"].split("frames=")[1].split()[0]);
-    edges = int(shown["shown"].split("edges=")[1].split()[0]);
-    assert frames > 20 and views["shown"] == "" and " frame=0 " in shown["shown"];
-    # Given frames eight to fourteen it comes in at the first; stepped on from the last it is at the
-    # first again, and told to play once it stays on the last.
-    assert " frame=8 " in shown["ranged"] and views["ranged"].startswith("modelview fps=30.0 range=8..14 loops=1 ");
-    assert " frame=8 " in shown["round"] and " frame=14 " in shown["once"] and " loops=0 " in views["once"];
-    assert " playing=1" in shown["playing"] and " frame=" in shown["playing"];
-    # Without the faces turned away there are fewer edges to draw, and every point is ticked.
-    fronts = int(views["fronts"].split("edges=")[1]);
-    assert " backs=0 ticks=2.0 " in views["fronts"] and 0 < fronts < edges and f"edges={fronts} " in shown["fronts"] , views["fronts"];
-    # Put back, nothing is said of it again; what is not an answer changes nothing.
-    assert views["plain"] == "" and f"edges={edges} " in shown["plain"] and " frame=0 " in shown["plain"];
-    said = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: ")];
-    # The legs of a Quake III player play what its table gives the legs: running is found there with
-    # its frames and its speed and goes round; the torso's shot is not the legs' to play. Three
-    # frames are drawn between each two.
-    offered = [line for line in said if line.startswith("clips sarge legs: ")][0].split(": ")[1].split();
-    assert len(offered) == 18 and "run" in offered and "death1" in offered and "attack" not in offered , offered;
-    clips = [line for line in said if line.startswith("clip ")];
-    assert len(clips) == 1 and clips[0].startswith("clip run frames=") and clips[0].endswith(" loops=1") , clips;
-    span = clips[0].split("frames=")[1].split()[0].split("..");
-    rate = clips[0].split("fps=")[1].split()[0];
-    assert int(span[1]) > int(span[0]) > 63 and f" frame={span[0]} " in shown["running"] and "sarge/lower.md3" in shown["running"];
-    assert views["running"].startswith(f"modelview fps={rate} range={span[0]}..{span[1]} loops=1 smooth=1 between=3 ") , views["running"];
-    # A model of two frames, the second sixteen higher: its box at each frame is a part of eight
-    # points and twelve triangles, as high as the model stands at that frame.
-    assert "boxpart frames=2 low=-32,-32,0 high=32,32,96" in said;
-    low = [line for line in steps["low_box"] if line.startswith("modeldoc ")][0];
-    high = [line for line in steps["high_box"] if line.startswith("modeldoc ")][0];
-    assert " parts=2 part=1 " in low and " points=8 triangles=12 " in low and " open=0 " in low and "volume=393216 " in low , low;
-    assert "low=-32,-32,0 high=32,32,96" in low and "low=-32,-32,16 high=32,32,112" in high and "volume=393216 " in high , high;
-    # Asked for with nothing picked, no box is made; round one wall of the cylinder it is a thin one,
-    # a part named for the part it was measured from.
-    assert len([line for line in said if line.startswith("boxpart ")]) == 2 and "boxpart frames=2 low=23,0,0 high=32,23,96" in said;
-    assert "part 2 bbox_cylinder triangles=12 in hand" in said;
-    thin = [line for line in steps["picked_box"] if line.startswith("modeldoc ")][0];
-    assert " parts=3 part=2 " in thin and " points=8 triangles=12 " in thin and " open=0 " in thin , thin;
-    assert 20000 < int(thin.split("volume=")[1].split()[0]) < 21000 , thin;
-    source = repo / "playview_fronts.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "playview_fronts.png");
-    source.unlink();
-    print(
-        f"PLAYVIEW PASS: {len(steps) - 1} steps, a range of a model's {frames} frames stepped round and once, "
-            + f"{fronts} of {edges} edges drawn without the faces turned away, sarge's legs running through frames "
-            + f"{span[0]} to {span[1]} at {rate} a second, and a box part for each frame of a model and of one wall of it"
-    );
-}
-
-"""The sixty-second session: a model kept in a work file, and written as Quake's and Quake II's own."""
-def modelfiles_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "modelfiles_quake.png").unlink(missing_ok=True);
-    heads: dict[str, bytes] = {};
-    beside: list[str] = [];
-    with tempfile.TemporaryDirectory(prefix="qp-modelfiles-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_MODELS"] = home + "/models";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/modelfiles_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_MODELS");
-        (output / "modelfiles.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The model files session failed: {output / 'modelfiles.log'}";
-        beside = sorted([found.name for found in Path(home + "/models").iterdir()]);
-        for name in ["keep.qpm", "keep.mdl", "keep.md2"] {
-            heads[name] = (Path(home + "/models") / name).read_bytes()[:64];
-        }
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["made", "closed", "work", "quake", "second"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'modelfiles.log'}";
-    }
-    docs: dict[str, str] = {};
-    bones: dict[str, list[str]] = {};
-    skins: dict[str, str] = {};
-    for name in ["made", "work", "quake", "second"] {
-        docs[name] = [line for line in steps[name] if line.startswith("modeldoc ")][0];
-        bones[name] = [line for line in steps[name] if line.startswith("bone ") or line.startswith("bones ")];
-        skins[name] = [line for line in steps[name] if line.startswith("skin ")][0];
-    }
-    # As it was made: two frames with the second in hand, the top picked, a tag, two bones.
-    assert " parts=1 part=0 frames=2 frame=1:raised points=18 triangles=32 picked=9/8 " in docs["made"] , docs["made"];
-    assert " tags=1 " in docs["made"] and len(bones["made"]) == 3 and bones["made"][0].startswith("bones 2 ");
-    whole = int(docs["made"].split("volume=")[1].split()[0]);
-    # Three files are written (and nothing as a kind of file this does not write). The games' files
-    # keep no bones, so theirs lie beside them; the work file has its own inside it.
-    saved = [line for line in ran.stdout.splitlines() if line.startswith("studio: saved model ")];
-    assert len(saved) == 3 and beside == ["keep.md2", "keep.md2.rig", "keep.mdl", "keep.mdl.rig", "keep.qpm"] , beside;
-    assert heads["keep.qpm"].startswith(b"qpmodel 1\nmodel cylinder\nhand 1 0\npart cylinder\n");
-    assert heads["keep.mdl"][:4] == b"IDPO" and heads["keep.md2"][:4] == b"IDP2";
-    assert len([line for line in steps["closed"] if line.startswith("modeldoc ")]) == 0;
-    # The work file opens as the model was left, but for its undo list: the frame and pick in hand,
-    # the tag, and the bones with what each carries.
-    assert docs["work"] == docs["made"].replace(" undo=1 ", " undo=0 ") and bones["work"] == bones["made"] , docs["work"];
-    # Quake's file is one mesh of both frames, a point a byte an axis: within a hundredth of the
-    # volume. Its skin was inside it, and is the skin in hand in place of the small one made before.
-    for (name, part) in [("quake", "mdl"), ("second", "md2")] {
-        assert " keep parts=1 part=0 frames=2 frame=0:frame_0 points=18 triangles=32 picked=0/0 " in docs[name] , docs[name];
-        assert " open=0 low=-32,-32,0 high=32,32,96 tags=0 " in docs[name] , docs[name];
-        assert abs(int(docs[name].split("volume=")[1].split()[0]) - whole) < whole // 100 , docs[name];
-        assert skins[name].startswith(f"skin part={part} placed=1 ") , skins[name];
-    }
-    assert " image=64x32 " in skins["quake"] and " skins=1 " in docs["quake"] , skins["quake"];
-    source = repo / "modelfiles_quake.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "modelfiles_quake.png");
-    source.unlink();
-    print(
-        f"MODELFILES PASS: {len(steps) - 1} steps, a model of two frames, a tag and two bones kept in a work file and "
-            + "opened as it was left, and written as Quake's MDL with its skin and as Quake II's MD2 and read back"
-    );
-}
-
-"""The sixty-third session: where a map's logic leaves a player stuck, and a side's bits by name."""
+"""A session: where a map's logic leaves a player stuck, and a side's bits by name."""
 def stuck_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     with tempfile.TemporaryDirectory(prefix="qp-stuck-") as home {
         env["QP_CONFIG_DIR"] = home;
@@ -2329,112 +1539,264 @@ def stuck_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The sixty-fourth session: linked prefabs turned and sized where they stand."""
-def turned_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "turned_bench.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-turned-") as home {
+"""A session: a scene written in Quake III's own map form and opened again."""
+def q3map_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    work = repo / ".jac/studio-q3map";
+    shutil.rmtree(work, ignore_errors=True);
+    work.mkdir(parents=True);
+    with tempfile.TemporaryDirectory(prefix="qp-q3map-") as home {
         env["QP_CONFIG_DIR"] = home;
         env["QP_OVERRIDES"] = home + "/overrides";
         env["QP_SCENES"] = home + "/scenes";
-        env["QP_PREFABS"] = home + "/prefabs";
         ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/turned_session.cfg"],
+            [str(binary), "+ed_exec", "scripts/studio/q3map_session.cfg"],
             cwd=repo,
             env=env,
             capture_output=True,
             text=True,
             timeout=300
         );
-        env.pop("QP_PREFABS");
-        (output / "turned.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The turned session failed: {output / 'turned.log'}";
+        (output / "q3map.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The q3map session failed: {output / 'q3map.log'}";
     }
     steps = studio_steps(ran.stdout);
-    names = [
-        "linked", "plain", "turned", "turned_plain", "sized", "sized_plain", "long", "long_plain", "again", "tipped",
-        "tipped_plain", "level"
-    ];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'turned.log'}";
+    for name in ["made", "bent", "opened", "patched"] {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'q3map.log'}";
     }
-    # The instance says how it differs from its file; one entity, built as the floor and the bench.
-    held: dict[str, str] = {};
-    for name in ["linked", "turned", "sized", "long", "again", "tipped", "level"] {
-        assert len(selected(steps[name])) == 1 and made(steps[name]) == 2 , str(steps[name]);
-        held[name] = selected(steps[name])[0];
+    wall = "q3:textures/base_wall/archpipe2_k_tall3fin";
+    # Three files are written, and not a file that is no map or a form that is none. Quake III's has
+    # the floor and the box as brushDef and the sheet as one patchDef2 in place of its 32 prisms.
+    wrote = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: exported ")];
+    assert len(wrote) == 3 and wrote[0].startswith("exported bend_q3.map form=q3 brushes=2 primitives=2 patches=1 ") , str(wrote);
+    assert wrote[1].startswith("exported bend_valve.map form=valve brushes=34 primitives=0 patches=0 ") , str(wrote);
+    assert wrote[2].startswith("exported bend_classic.map form=classic brushes=34 primitives=0 patches=0 ") , str(wrote);
+    assert sorted([found.name for found in work.iterdir()]) == ["bend_classic.map", "bend_q3.map", "bend_valve.map"];
+    q3 = (work / "bend_q3.map").read_text();
+    valve = (work / "bend_valve.map").read_text();
+    assert q3.count("brushDef") == 2 and q3.count("patchDef2") == 1 and "func_group" not in q3 and "q3:" not in q3;
+    assert "base_wall/archpipe2_k_tall3fin" in q3 and "( 3 3 0 0 0 )" in q3 and "// Format: Valve" in valve;
+    # The box's top in both files, worked out here the way each form says: the same texel at each
+    # of the three points the side is written with (the texture is 256 by 512).
+    top = "( -64 128 64 ) ( -64 192 64 ) ( 64 192 64 )";
+    matrix_line = [line for line in q3.splitlines() if line.startswith(top)][0];
+    axes_line = [line for line in valve.splitlines() if line.startswith(top) and "archpipe" in line][0];
+    matrix = [float(word) for word in matrix_line.split(") ( (")[1].split(") )")[0].replace("(", " ").replace(")", " ").split()];
+    first = [float(word) for word in axes_line.split("[")[1].split("]")[0].split()];
+    second = [float(word) for word in axes_line.split("[")[2].split("]")[0].split()];
+    scales = [float(word) for word in axes_line.split("]")[2].split()[1:3]];
+    for point in [(-64.0, 128.0, 64.0), (-64.0, 192.0, 64.0), (64.0, 192.0, 64.0)] {
+        # On a floor Quake III's tools measure the texture along +y and then +x.
+        share = [matrix[0] * point[1] + matrix[1] * point[0] + matrix[2], matrix[3] * point[1] + matrix[4] * point[0] + matrix[5]];
+        texel = [
+            (point[0] * first[0] + point[1] * first[1] + point[2] * first[2]) / scales[0] + first[3],
+            (point[0] * second[0] + point[1] * second[1] + point[2] * second[2]) / scales[1] + second[3]
+        ];
+        assert abs(share[0] * 256.0 - texel[0]) < 0.01 and abs(share[1] * 512.0 - texel[1]) < 0.01 , f"{point} {share} {texel}";
     }
-    assert held["linked"].endswith("classname=misc_prefab prefab=bench origin=0 128 0") , held["linked"];
-    # Sixty degrees and thirty more: a quarter round. Twice as large; a size of nothing or of no number changes nothing.
-    assert held["turned"].endswith("origin=0 128 0 angle=90") and held["sized"].endswith("angle=90 _scale=2") , held["sized"];
-    assert held["long"].endswith("angle=90 _scale=2 1 1") and held["again"] == held["linked"] , held["again"];
-    # Turned into plain brushes it lies where the instance stood it: ninety-six long along x as its
-    # file has it; along y when turned; twice the size about its origin, its underside still on the
-    # floor; and with only its own length doubled, the length that now runs along y.
-    lies: dict[str, str] = {};
-    for name in ["plain", "turned_plain", "sized_plain", "long_plain", "tipped_plain"] {
-        boxes = [line.split(" sides=")[0].split(" low=")[1] for line in steps[name] if line.startswith("brush #")];
-        assert len(boxes) == 1 and made(steps[name]) == 2 and len(selected(steps[name])) == 0 , str(steps[name]);
-        lies[name] = boxes[0];
+    # Opened again, the texture is the game's own by the name the file has for it, and the material
+    # lies on the top as it did: slid, stretched and turned.
+    made = [line for line in steps["made"] if line.startswith("face #3/4 ")];
+    opened = [line for line in steps["opened"] if line.startswith("face #2/4 ")];
+    assert len(made) == 1 and len(opened) == 1 and f"material={wall} shift=8.0,4.0 scale=0.5,0.25 " in made[0] , str(made);
+    assert f"material={wall} shift=8.0,4.0 scale=0.5,0.25 " in opened[0] , str(opened);
+    lay_made = [line.split(" ", 2)[2] for line in steps["made"] if line.startswith("lay #3/4 ")];
+    lay_opened = [line.split(" ", 2)[2] for line in steps["opened"] if line.startswith("lay #2/4 ")];
+    assert len(lay_made) == 1 and lay_made == lay_opened and "s=110.851,-64.0,0" in lay_made[0] , f"{lay_made} {lay_opened}";
+    # And the sheet is a patch still, with its control points and their places on the material.
+    def places(lines: list[str]) -> str {
+        found = [line for line in lines if line.startswith("studio: patch places ")];
+        return found[-1] if found else "";
     }
-    assert lies["plain"] == "-48,112,0 high=48,144,16" and lies["turned_plain"] == "-16,80,0 high=16,176,16" , str(lies);
-    assert lies["sized_plain"] == "-32,32,0 high=32,224,32" and lies["long_plain"] == "-16,32,0 high=16,224,16" , str(lies);
-    # Tipped nose down a quarter (and not turned a way that is no way): its length hangs through the
-    # floor from where it stands, and it is level again when put back.
-    assert held["tipped"].endswith("origin=0 128 0 angles=90 0 0") and held["level"] == held["linked"] , held["tipped"];
-    assert lies["tipped_plain"] == "0,112,-48 high=16,144,48" , str(lies);
-    source = repo / "turned_bench.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "turned_bench.png");
-    source.unlink();
+    before = places(ran.stdout.split("STEP bent")[0].splitlines());
+    after = places(ran.stdout.split("STEP opened")[1].splitlines());
+    assert before.startswith("studio: patch places 3x3 -16 -8 256 0 512 0 ") and before == after , f"{before} | {after}";
+    assert len([line for line in steps["patched"] if line.startswith("patch #3 3x3 top=80 prisms=32")]) == 1 , str(steps["patched"]);
+    shutil.rmtree(work, ignore_errors=True);
     print(
-        f"TURNED PASS: {len(steps) - 1} steps, a linked bench turned a quarter round, made twice as large and made longer "
-            + "where it stands and tipped nose down, each seen as the plain brushes it stands for, and put back as its file has it"
+        f"Q3MAP PASS: {len(steps) - 1} steps, a scene written as Quake III's brush primitives and a patch, as Valve's form and "
+            + "the classic one, the two forms agreeing texel for texel on a turned face, and the Quake III map opened again as it was"
     );
 }
 
-"""The sixty-fifth session: a WAD's lumps in the explorer, and archives changed in place."""
-def repack_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    import struct;
-    import zipfile;
-    (repo / "repack_lump.png").unlink(missing_ok=True);
-    work = repo / ".jac/studio-repack";
-    shutil.rmtree(work, ignore_errors=True);
-    (work / "seed").mkdir(parents=True);
-    (work / "seed/note.txt").write_text("a note\n");
-    (work / "seed/wall.txt").write_text("the wall, in words\n");
-    (work / "seed/floor.txt").write_text("floor\n");
-    # Quake read from a copy of its archives, so that the game's own are never the ones at stake.
-    quake = Path(env.get("QP_ASSETS", "") or (os.getenv("HOME", "") + "/quake-assets/id1"));
-    (work / "id1").mkdir();
-    for found in sorted(quake.iterdir()) {
-        if found.name.lower().endswith(".pak") {
-            shutil.copyfile(found, work / "id1" / found.name);
-        }
+"""A session: rows carried in the lists: brushes handed to entities, and favourites ordered and forgotten."""
+def treedrop_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["handed", "favourites"];
+    for shot in shots {
+        (repo / f"treedrop_{shot}.png").unlink(missing_ok=True);
     }
-    before = (work / "id1/pak0.pak").read_bytes();
-    kept_assets = env.get("QP_ASSETS", "");
-    with tempfile.TemporaryDirectory(prefix="qp-repack-") as home {
+    with tempfile.TemporaryDirectory(prefix="qp-treedrop-") as home {
         env["QP_CONFIG_DIR"] = home;
         env["QP_OVERRIDES"] = home + "/overrides";
         env["QP_SCENES"] = home + "/scenes";
-        env["QP_EXTRACT"] = str(work / "extract");
-        env["QP_ASSETS"] = ".jac/studio-repack/id1";
         ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/repack_session.cfg"],
+            [str(binary), "+ed_exec", "scripts/studio/treedrop_session.cfg"],
             cwd=repo,
             env=env,
             capture_output=True,
             text=True,
             timeout=300
         );
+        (output / "treedrop.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The treedrop session failed: {output / 'treedrop.log'}";
+        kept = (Path(home) / "overrides" / "studio.cfg").read_text().splitlines();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["listed", "beside", "world", "heading", "undone", "wall", "refused", "carried", "ordered", "trashed", "light"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'treedrop.log'}";
+    }
+    # What was printed before each step, under that step's name.
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    def rows(name: str) -> list[str] {
+        return [line[4:] for line in said[name] if line.startswith("row ")];
+    }
+    def handed(name: str) -> list[str] {
+        return [line for line in said[name] if line.startswith("handed ")];
+    }
+    def undo_count(name: str) -> int {
+        return int([line for line in steps[name] if " undo=" in line][0].split(" undo=")[1].split()[0]);
+    }
+    # A floor and a box of the world's, and a box a wall holds.
+    assert rows("listed")[-3:] == ["1 solid:1 blockout [#1]", "1 solid:3 blockout [#3]", "1 solid:4 blockout  in func_wall [#4]"] , str(rows("listed"));
+    # The world's box put on the wall's box is the wall's too, and is listed so; it was one step.
+    assert handed("beside") == ["handed brushes=1 to #5 func_wall"] , str(said["beside"]);
+    assert "1 solid:3 blockout  in func_wall [#3] *" in rows("beside") and "1 solid:4 blockout  in func_wall [#4]" in rows("beside");
+    assert undo_count("beside") == undo_count("listed") + 1;
+    # On the brushes' heading one goes back to the world; on the wall's class heading it is the wall's again.
+    assert handed("world") == ["handed brushes=1 to #0 worldspawn"] and handed("heading") == ["handed brushes=1 to #5 func_wall"];
+    # Undone, the step is there to do again; then put on the wall's own row.
+    assert undo_count("undone") == undo_count("heading") - 1 and not handed("undone");
+    assert handed("wall") == ["handed brushes=1 to #5 func_wall"] and undo_count("wall") == undo_count("heading");
+    # An entity put on another changes nothing.
+    assert not handed("refused") and undo_count("refused") == undo_count("wall");
+    assert not [line for line in said["refused"] if line.startswith("dropped ")];
+    # The start carried into the view stands on the floor where it was let go, off to one side.
+    put = [line for line in said["carried"] if line.startswith("dropped entity #2 at ")];
+    assert len(put) == 1 , str(said["carried"]);
+    place = [int(part) for part in put[0].split(" at ")[1].split(",")];
+    assert place[0] > 32 and 0 < place[2] and place[2] <= 32 , str(place);
+    assert f"selected #2 classname=info_player_start origin={place[0]} {place[1]} {place[2]} angle=90" in steps["carried"];
+    # Three favourites: the last put before the first; nothing was added to the scene by carrying it.
+    assert said["ordered"][-1] == "favourites monster_ogre,light,item_health" , str(said["ordered"][-3:]);
+    assert said["trashed"][-1] == "favourite dropped item_health left=monster_ogre,light" , str(said["trashed"][-3:]);
+    def entities(name: str) -> int {
+        return int([line for line in steps[name] if " entities=" in line][0].split(" entities=")[1].split()[0]);
+    }
+    assert entities("ordered") == entities("carried") and entities("trashed") == entities("carried");
+    assert [line for line in kept if line.startswith("ed_fav ")] == ["ed_fav monster_ogre", "ed_fav light"] , str(kept);
+    # A favourite carried into the view is one more entity, where it was let go.
+    lamp = [line for line in said["light"] if line.startswith("dropped class light at ")];
+    assert len(lamp) == 1 and entities("light") == entities("carried") + 1 , str(said["light"]);
+    spot = lamp[0].split(" at ")[1].replace(",", " ");
+    assert len([line for line in steps["light"] if line.startswith("selected #") and "classname=light origin=" + spot in line]) == 1;
+    for shot in shots {
+        source = repo / f"treedrop_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"treedrop_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"TREEDROP PASS: {len(steps) - 1} steps, a brush handed to a wall by its brush, its class heading and its row and "
+            + "back to the world, the start carried into the view, and favourites put in order, in the trash and in the view"
+    );
+}
+
+"""A session: classes a game does not have, and sounds and models no archive holds."""
+def needs_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "needs_checks.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-needs-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/needs_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "needs.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The needs session failed: {output / 'needs.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["shipped", "railgun", "silent", "heard", "nomodel", "model", "misspelt"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'needs.log'}";
+    }
+    # What each check found of these kinds, under the step that follows it.
+    lacking: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            lacking[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: finding ") and (" is of a class " in line or " no archive of " in line) {
+            pending.append(line[16:]);
+        }
+    }
+    # A shipped level has every class it uses and every file it names.
+    assert lacking["shipped"] == [] , str(lacking["shipped"]);
+    # A railgun in Quake; a sound Quake's archives do not hold, and one they do.
+    assert lacking["railgun"] == ["weapon_railgun is of a class q1 does not have (it is of q2 and q3)"] , str(lacking["railgun"]);
+    assert lacking["silent"] == ["ambient_drip names a sound no archive of q1 holds: sound/misc/nothere.wav"] , str(lacking["silent"]);
+    assert lacking["heard"] == [] , str(lacking["heard"]);
+    # In a scene of the studio's own the model is asked of the game the entity carries.
+    assert lacking["nomodel"] == ["misc_model names a model no archive of q3 holds: models/mapobjects/nothere/lamp.md3"] , str(lacking["nomodel"]);
+    assert lacking["model"] == [] , str(lacking["model"]);
+    assert lacking["misspelt"] == ["info_playr_start is of a class no game's levels use and no add-on names (misspelt?)"] , str(lacking["misspelt"]);
+    source = repo / "needs_checks.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "needs_checks.png");
+    source.unlink();
+    print(
+        f"NEEDS PASS: {len(steps) - 1} steps, a shipped level lacking nothing, a class of another game, a sound and a model "
+            + "no archive holds and ones they do, and a misspelt class named"
+    );
+}
+
+"""A session: what a scene uses and what uses a thing, and a project's own files in the explorer."""
+def uses_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["listed", "project"];
+    for shot in shots {
+        (repo / f"uses_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-uses-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PROJECTS"] = home + "/projects";
+        env["QP_EXTRACT"] = home + "/out";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/uses_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_PROJECTS");
         env.pop("QP_EXTRACT");
-        if kept_assets {
-            env["QP_ASSETS"] = kept_assets;
-        } else {
-            env.pop("QP_ASSETS");
-        }
-        (output / "repack.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The repack session failed: {output / 'repack.log'}";
+        (output / "uses.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The uses session failed: {output / 'uses.log'}";
+        kept = Path(home) / "projects" / "keep";
+        copied = sorted([str(path.relative_to(kept)) for path in kept.rglob("*") if path.is_file()]);
+        config = (kept / "files" / "q1" / "default.cfg").read_bytes() if (kept / "files" / "q1" / "default.cfg").exists() else b"";
+        strays = [path for path in (Path(home) / "out").rglob("*") if path.is_file()] if (Path(home) / "out").exists() else [];
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["listed", "material", "model", "nothing", "noproject", "file", "folder", "shown"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'uses.log'}";
     }
     said: dict[str, list[str]] = {};
     pending: list[str] = [];
@@ -2446,346 +1808,124 @@ def repack_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
             pending.append(line[8:]);
         }
     }
-    steps = studio_steps(ran.stdout);
-    for name in ["lump", "letters", "made", "changed", "zipped", "kept"] {
-        assert name in steps and name in said , f"The session never reached '{name}': {output / 'repack.log'}";
+    # Three materials, one of them no archive's; a model named by two entities and one that is not there.
+    used = [line for line in said["listed"] if line.startswith("uses ")];
+    assert used == [
+        "uses material blockout sides=6",
+        "uses material q1:e1m1/tech04_1 sides=6",
+        "uses material q1:nothere/thing sides=6 missing",
+        "uses model q3:models/mapobjects/nothere/lamp.md3 by=1 missing",
+        "uses model q3:models/powerups/holdable/teleporter.md3 by=2",
+        "uses materials=3 files=2 missing=2"
+    ] , str(used);
+    # What uses the material is one brush, and it is selected; the model, two entities; and nothing, nothing.
+    assert "used q1:e1m1/tech04_1 brushes=1 entities=0" in said["material"];
+    assert len([line for line in steps["material"] if line.startswith("brush #3 ")]) == 1 and not selected(steps["material"]);
+    assert "used models/powerups/holdable/teleporter.md3 brushes=0 entities=2" in said["model"];
+    chosen = selected(steps["model"]);
+    assert len(chosen) == 2 and all(["model=models/powerups/holdable/teleporter.md3" in line for line in chosen]) , str(chosen);
+    assert "used nothing/at/all brushes=0 entities=0" in said["nothing"] and not selected(steps["nothing"]);
+    # With no project there is nowhere to copy to: nothing is written anywhere.
+    assert not [line for line in said["noproject"] if line.startswith("copied ") or line.startswith("extracted ")];
+    assert strays == [] , str(strays[:3]);
+    # A file dragged onto the project is in it, whole; a folder dragged after it, with every file under it.
+    assert [line for line in said["file"] if line.startswith("copied ")] == [f"copied q1:default.cfg bytes={len(config)} into files/q1/default.cfg"];
+    assert len(config) > 1000 and b"bind" in config;
+    whole = [line for line in said["folder"] if line.startswith("extracted folder q1:gfx/ files=")];
+    assert len(whole) == 1 , str(said["folder"]);
+    count = int(whole[0].split("files=")[1].split()[0]);
+    under = [name for name in copied if name.startswith("files/q1/gfx/")];
+    assert count > 20 and len(under) == count and "project.qp" in copied and len(copied) == count + 2 , str(copied[:5]);
+    # The project's own files are in the explorer: the copy is shown from there, as the file it is.
+    shown = [line for line in steps["shown"] if line.startswith("asset own:files/q1/default.cfg ")];
+    assert len(shown) == 1 and "kind=text" in shown[0] and f"size={len(config)} " in shown[0] , str(steps["shown"]);
+    for shot in shots {
+        source = repo / f"uses_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"uses_{shot}.png");
+        source.unlink();
     }
-    # A lump of Quake's gfx.wad is a file in a folder: the status bar as the picture it is, written
-    # out as the WAD has it (its size, then a byte a texel); the console's letters as a sheet.
-    lump = [line for line in steps["lump"] if line.startswith("asset ")];
-    assert lump == ["asset q1:gfx.wad/sbar kind=image size=7688 note=320x24 lines=0 material="] , str(lump);
-    written = (work / "extract/q1/gfx.wad/sbar").read_bytes();
-    assert len(written) == 7688 and struct.unpack("<ii", written[:8]) == (320, 24) and "studio: extracted 7688 bytes" in ran.stdout;
-    letters = [line for line in steps["letters"] if line.startswith("asset ")];
-    assert letters == ["asset q1:gfx.wad/conchars kind=image size=16384 note=128x128 lines=0 material="] , str(letters);
-    # A PAK made a file at a time holds the three under the names given.
-    assert [line for line in said["made"] if line.startswith("packed ")] == [
-        "packed note.txt 7", "packed textures/yard/wall.txt 19", "packed textures/yard/floor.txt 6"
-    ] , str(said["made"]);
-    assert len([line for line in said["made"] if line.startswith("archive yard.pak files=") and " add=" in line]) == 3;
-    # The note replaced by the wall's words under its own name, the folder gone, nothing else changed.
-    changes = [line for line in said["changed"] if line.startswith("archive ") and (" add=" in line or " drop=" in line)];
-    assert len(changes) == 2 and changes[0].endswith("add=NOTE.TXT was=3") and " files=3 " in changes[0] , str(changes);
-    assert changes[1].endswith("drop=textures/ was=3") and " files=1 " in changes[1] , str(changes);
-    pak = (work / "yard.pak").read_bytes();
-    where = struct.unpack("<ii", pak[4:12]);
-    start = int(where[0]);
-    size = int(where[1]);
-    assert pak[:4] == b"PACK" and size == 64 and pak[start:start + 8] == b"note.txt" and pak[12:31] == b"the wall, in words\n";
-    # The PK3: one name put in twice is one file with the later contents, and the other dropped.
-    with zipfile.ZipFile(work / "yard.pk3") as packed {
-        assert packed.namelist() == ["scripts/note.txt"] and packed.read("scripts/note.txt") == b"floor\n" and packed.testzip() is None;
-    }
-    assert [line for line in said["zipped"] if line.startswith("packed ")] == ["packed scripts/note.txt 6"] , str(said["zipped"]);
-    # What is not an archive, or is not there, is listed as nothing; Quake's own PAK (here a copy the
-    # run reads the game from) is refused twice, still listed, and not a byte of it changed.
-    assert len([line for line in said["zipped"] if line.startswith("archive none.pak") or line.startswith("archive note.txt")]) == 0;
-    assert [line for line in said["kept"] if "refused" in line] == ["archive pak0.pak refused", "archive pak0.pak refused"] , str(said["kept"]);
-    listed = [line for line in said["kept"] if line.startswith("archive pak0.pak files=")];
-    assert len(listed) == 1 and int(listed[0].split("files=")[1].split()[0]) > 300 , str(listed);
-    assert (work / "id1/pak0.pak").read_bytes() == before and not (work / "id1/pak0.pak.new").exists();
-    source = repo / "repack_lump.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "repack_lump.png");
-    source.unlink();
-    shutil.rmtree(work, ignore_errors=True);
     print(
-        f"REPACK PASS: {len(steps) - 1} steps, the status bar and the console's letters shown from Quake's gfx.wad and one "
-            + "written out, a PAK and a PK3 made a file at a time with a file replaced and a folder dropped, and a game's own "
-            + "PAK left as it was"
+        f"USES PASS: {len(steps) - 1} steps, three materials and two models listed with what is missing, what uses one of "
+            + f"each selected, and a file and a folder of {count} files dragged out of Quake's archives into a project"
     );
 }
 
-"""The sixty-sixth session: files found by kind, game and tag, a texture's details, materials of a size."""
-def finding_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    kept = "";
-    with tempfile.TemporaryDirectory(prefix="qp-finding-") as home {
+"""A session: the views' room shared out, the side panels swapped, and layouts kept by name."""
+def layouts_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["split", "swapped", "loaded"];
+    for shot in shots {
+        (repo / f"layouts_{shot}.png").unlink(missing_ok=True);
+    }
+    runs: list[dict[str, list[str]]] = [];
+    printed: list[str] = [];
+    with tempfile.TemporaryDirectory(prefix="qp-layouts-") as home {
         env["QP_CONFIG_DIR"] = home;
         env["QP_OVERRIDES"] = home + "/overrides";
         env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/finding_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "finding.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The finding session failed: {output / 'finding.log'}";
-        kept = (Path(home) / "overrides/asset_tags.txt").read_text();
-    }
-    # What a command prints comes before the step that follows it: gathered here under that step.
-    said: dict[str, list[str]] = {};
-    pending: list[str] = [];
-    for line in ran.stdout.splitlines() {
-        if line.startswith("STEP ") {
-            said[line[5:].strip()] = pending;
-            pending = [];
-        } elif line.startswith("studio: ") {
-            pending.append(line[8:]);
+        # Twice over one home: the second begins with what the first left.
+        for turn in ["first", "second"] {
+            ran = subprocess.run(
+                [str(binary), "+ed_exec", "scripts/studio/layouts_session.cfg"],
+                cwd=repo,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300
+            );
+            (output / f"layouts_{turn}.log").write_text(ran.stdout + ran.stderr);
+            assert ran.returncode == 0 , f"The layouts session failed: {output / f'layouts_{turn}.log'}";
+            runs.append(studio_steps(ran.stdout));
+            if turn == "first" {
+                printed = ran.stdout.splitlines();
+            }
         }
+        kept = (Path(home) / "overrides" / "studio.cfg").read_text().splitlines();
     }
-    names = [
-        "pictures", "sounds", "models", "nothing", "tagged", "tagged_models", "untagged", "known", "square", "large", "all"
-    ];
+    steps = runs[0];
+    names = ["opened", "four", "split", "narrowed", "levelled", "swapped", "plain", "loaded", "dropped"];
     for name in names {
-        assert name in said , f"The session never reached '{name}': {output / 'finding.log'}";
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'layouts_first.log'}";
     }
-    found: dict[str, int] = {};
-    for name in ["pictures", "sounds", "models", "nothing", "tagged", "tagged_models", "untagged"] {
-        counts = [int(line.split()[1]) for line in said[name] if line.startswith("found ")];
-        assert len(counts) >= 1 , f"No search answered at '{name}'";
-        found[name] = counts[-1];
+    def held_lines(held: dict[str, list[str]], name: str, start: str) -> list[str] {
+        dumped = held[name];
+        ends = [place for (place, line) in enumerate(dumped) if line.startswith("mode=")];
+        return [line for line in dumped[:ends[0]] if line.startswith(start)];
     }
-    # Quake II's pictures named for metal are many; sounds named for a menu a few; Quake has one model
-    # named for a soldier; and a kind that is none finds nothing.
-    assert found["pictures"] > 50 and 1 <= found["sounds"] < 40 and found["models"] == 1 and found["nothing"] == 0 , str(found);
-    # Two files tagged with one word are found by it, one of them when a kind is asked as well; the
-    # tag taken off is found on nothing. A tag of more than a word was not kept.
-    assert found["tagged"] == 2 and found["tagged_models"] == 1 and found["untagged"] == 0 , str(found);
-    assert kept == "q1:progs/soldier.mdl grunt\nq2:textures/e1u1/metal1_1.wal grunt\n" , kept;
-    assert "tags q2:textures/e1u1/metal1_1.wal grunt trim" in said["tagged"] and "tagged q1:progs/soldier.mdl grunt" in said["tagged"];
-    # A texture of each game: Quake II's with its flags and contents by name, Quake's sliding
-    # texture as one of seven frames, a plain one as one, Quake III's by its true size.
-    facts: dict[str, str] = {};
-    for line in said["known"] {
-        if line.startswith("texinfo ") {
-            facts[line.split()[1]] = line;
-        }
+    # Four views sharing the room evenly say nothing of a split.
+    assert held_lines(steps, "four", "views ")[0].startswith("views layout=4 ") and not held_lines(steps, "four", "split ");
+    # By numbers; then the bar between the columns dragged to a third, and the bar between the rows to the middle.
+    assert held_lines(steps, "split", "split ") == ["split x=65 y=35 sides=usual kept="] , str(held_lines(steps, "split", "split "));
+    assert held_lines(steps, "narrowed", "split ") == ["split x=32 y=35 sides=usual kept="] , str(held_lines(steps, "narrowed", "split "));
+    assert held_lines(steps, "levelled", "split ") == ["split x=32 y=50 sides=usual kept="] , str(held_lines(steps, "levelled", "split "));
+    assert held_lines(steps, "swapped", "split ") == ["split x=32 y=50 sides=swapped kept="];
+    # Kept as it stood: four views, the split, the sides and the log panel at four rows.
+    assert "studio: layout work 4 32 50 right on 4" in printed and "studio: layout plain 1 50 50 left off 4" in printed;
+    assert held_lines(steps, "plain", "views ")[0].startswith("views layout=1 ") and held_lines(steps, "plain", "split ") == [
+        "split x=50 y=50 sides=usual kept=work"
+    ] and not held_lines(steps, "plain", "logpanel ");
+    assert "studio: layouts 2" in printed and "studio: layout loaded work 4 32 50 right on 4" in printed;
+    # Brought back whole.
+    assert held_lines(steps, "loaded", "views ")[0].startswith("views layout=4 ");
+    assert held_lines(steps, "loaded", "split ") == ["split x=32 y=50 sides=swapped kept=plain,work"];
+    assert len(held_lines(steps, "loaded", "logpanel ")) == 1 and held_lines(steps, "loaded", "logpanel ")[0].startswith("logpanel rows=4 ");
+    # One dropped: it cannot be loaded, and the other is still kept.
+    assert held_lines(steps, "dropped", "split ") == ["split x=32 y=50 sides=swapped kept=work"] and printed.count("studio: layouts 1") == 1;
+    assert "ed_split x 32" in kept and "ed_split y 50" in kept and "ed_sides right" in kept and "ed_layout keep work 4 32 50 right on 4" in kept , str(kept);
+    # The next session opens as the first was left.
+    again = runs[1];
+    assert held_lines(again, "opened", "views ")[0].startswith("views layout=4 ") , str(held_lines(again, "opened", "views "));
+    assert held_lines(again, "opened", "split ") == ["split x=32 y=50 sides=swapped kept=work"] , str(held_lines(again, "opened", "split "));
+    assert len(held_lines(again, "opened", "logpanel ")) == 1 and held_lines(again, "loaded", "split ") == held_lines(steps, "loaded", "split ");
+    for shot in shots {
+        source = repo / f"layouts_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"layouts_{shot}.png");
+        source.unlink();
     }
-    assert len(facts) == 4 , str(facts);
-    assert " size=64x64 flags=none contents=none value=0 next=none frames=1 colours=" in facts["q2:e1u1/metal1_1"] , str(facts);
-    assert " size=64x64 frames=7 colours=" in facts["q1:e1m1/+0slip"] and " size=128x16 frames=1 " in facts["q1:e1m1/tech04_1"];
-    assert " size=256x512 shader=" in facts["q3:textures/base_wall/archpipe2_k_tall3fin"] , str(facts);
-    assert 1 < int(facts["q1:e1m1/tech04_1"].split("colours=")[1].split()[0]) <= 256;
-    # The level's textures of one size are some of them, and those named for tech and large are fewer.
-    square = [line for line in said["square"] if line.startswith("sized 64x64 ")];
-    large = [line for line in said["large"] if line.startswith("sized >=128 ")];
-    assert len(square) >= 1 and len(large) >= 1 , str(said["square"]);
-    whole = int(square[-1].split(" of ")[1]);
-    some = int(square[-1].split("shown=")[1].split()[0]);
-    fewer = int(large[-1].split("shown=")[1].split()[0]);
-    assert whole > 40 and 0 < some < whole and 0 < fewer < some , f"{square} {large}";
-    assert len([line for line in said["all"] if line.startswith("sized ")]) == 0;
     print(
-        f"FINDING PASS: {len(names)} steps, {found['pictures']} of Quake II's pictures named for metal and one soldier among "
-            + f"Quake's models found, two files found by a tag, a texture of each game told of, and {some} of {whole} of a "
-            + f"level's textures at 64 by 64"
-    );
-}
-
-"""The sixty-seventh session: a box drawn in the 3D view, and the scene tree said in words."""
-def treebox_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    with tempfile.TemporaryDirectory(prefix="qp-treebox-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/treebox_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "treebox.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The treebox session failed: {output / 'treebox.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["bare", "drawn", "again", "sky", "grouped"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'treebox.log'}";
-    }
-    counts: dict[str, int] = {};
-    for name in ["bare", "drawn", "again", "sky", "grouped"] {
-        counts[name] = int([line for line in steps[name] if line.startswith("brushes=")][0].split("=")[1].split()[0]);
-    }
-    # A drag across the floor in the one 3D view makes one brush: on the grid, standing on the floor,
-    # sixty-four high, with some width and depth.
-    drawn = [line for line in steps["drawn"] if line.startswith("brush #")];
-    assert counts["bare"] == 1 and counts["drawn"] == 2 and len(drawn) == 1 and "mode=draw " in steps["drawn"][-1] , str(steps["drawn"]);
-    box = brush_box(drawn[0]);
-    assert box[0][2] == 0 and box[1][2] == 64 and box[1][0] - box[0][0] >= 16 and box[1][1] - box[0][1] >= 16 , drawn[0];
-    assert all([value % 16 == 0 for value in box[0] + box[1]]) , drawn[0];
-    # It lies under where the drag was: ahead of the camera, which stands at y -420 looking along +y.
-    assert box[0][1] > -420 and box[0][0] < 0 < box[1][0] , drawn[0];
-    # The same rectangle by command is the same box; one that ends in the sky is none.
-    again = [line for line in steps["again"] if line.startswith("brush #")];
-    assert counts["again"] == 3 and len(again) == 1 and brush_box(again[0]) == box , str(again);
-    assert counts["sky"] == 3 and len([line for line in steps["sky"] if line.startswith("brush #")]) == 0;
-    # The tree in words: the group is a row under its class, marked as the duplicator it is.
-    rows = [line[12:] for line in ran.stdout.splitlines() if line.startswith("studio: row ")];
-    marked = [row for row in rows if "posts  (duplicator: 3 copies and mirrored)" in row];
-    assert len(marked) == 2 and marked[0].startswith("1 ") and marked[0].endswith("[1] *") , str(rows);
-    assert len([row for row in rows if row.startswith("0 class:func_group func_group")]) == 1 and len(rows) == 6 , str(rows);
-    assert len([row for row in rows if row.startswith("0 class:brushes brushes [4]")]) == 1 , str(rows);
-    print(
-        f"TREEBOX PASS: {len(steps) - 1} steps, a box {box[1][0] - box[0][0]} by {box[1][1] - box[0][1]} by 64 drawn on the "
-            + "floor by a drag in the 3D view and again by command, a drag into the sky refused, and a duplicator named in "
-            + "the scene tree"
-    );
-}
-
-"""The sixty-eighth session: a model's triangles cut along a plane, and a tag turned."""
-def meshcut_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "meshcut_cut.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-meshcut-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_MODELS"] = home + "/models";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/meshcut_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_MODELS");
-        (output / "meshcut.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The meshcut session failed: {output / 'meshcut.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["made", "cut", "cut_short", "undone", "turned"];
-    docs: dict[str, str] = {};
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'meshcut.log'}";
-        docs[name] = [line for line in steps[name] if line.startswith("modeldoc ")][0];
-    }
-    def number(line: str, key: str) -> int {
-        return int(line.split(" " + key + "=")[1].split()[0]);
-    }
-    # A cylinder of eight sides: sixteen triangles of wall and sixteen of caps, at two frames.
-    assert " frames=2 frame=1:tall points=18 triangles=32 " in docs["made"] and " open=0 " in docs["made"] , docs["made"];
-    # Cut across its height: each wall triangle becomes three, with a new point on each of the eight
-    # upright sides and each of the eight diagonals; it is closed still and holds what it held.
-    assert number(docs["cut"], "points") == 34 and number(docs["cut"], "triangles") == 64 and " open=0 " in docs["cut"] , docs["cut"];
-    assert number(docs["cut"], "volume") == number(docs["made"], "volume") and number(docs["cut"], "undo") == 2;
-    # The other frame has the same triangles and its own volume: the cut fell on both alike.
-    assert " frame=0:" in docs["cut_short"] and number(docs["cut_short"], "triangles") == 64 and " open=0 " in docs["cut_short"];
-    assert 0 < number(docs["cut_short"], "volume") < number(docs["cut"], "volume");
-    # A plane that misses is no edit; undone, the model is as it was made.
-    assert number(docs["undone"], "triangles") == 32 and number(docs["undone"], "points") == 18 and number(docs["undone"], "undo") == 1;
-    # The tag turned a quarter about the upright at one frame, tipped at both, and half round at
-    # the other: what it faces at each, a line a turn (a turn of nothing and of no tag say nothing).
-    faced = [line[8:] for line in ran.stdout.splitlines() if line.startswith("studio: tagaxes ")];
-    assert faced == [
-        "tagaxes tag_top frame=0 0.0,1.0,0.0 -1.0,0.0,0.0 0.0,0.0,1.0",
-        "tagaxes tag_top frame=0 0.0,0.0,1.0 -1.0,0.0,0.0 0.0,-1.0,0.0",
-        "tagaxes tag_top frame=1 -1.0,0.0,0.0 0.0,0.0,1.0 0.0,1.0,0.0"
-    ] , str(faced);
-    assert " tags=1 " in docs["turned"] and number(docs["turned"], "triangles") == 64;
-    source = repo / "meshcut_cut.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "meshcut_cut.png");
-    source.unlink();
-    print(
-        f"MESHCUT PASS: {len(steps) - 1} steps, a cylinder's sixteen wall triangles cut into forty-eight along a plane at both "
-            + "frames, closed and of the same volume, undone and done again, and a tag turned at one frame and at all"
-    );
-}
-
-"""The sixty-ninth session: a model written as a glb and read back."""
-def gltf_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    import json;
-    import struct;
-    data = b"";
-    with tempfile.TemporaryDirectory(prefix="qp-gltf-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_MODELS"] = home + "/models";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/gltf_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_MODELS");
-        (output / "gltf.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The gltf session failed: {output / 'gltf.log'}";
-        data = (Path(home) / "models/keep.glb").read_bytes();
-    }
-    steps = studio_steps(ran.stdout);
-    docs: dict[str, str] = {};
-    for name in ["made", "closed", "back", "box"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'gltf.log'}";
-        found = [line for line in steps[name] if line.startswith("modeldoc ")];
-        docs[name] = found[0] if found else "";
-    }
-    # The file as another program would read it: a glb whose description is JSON, one mesh of a
-    # primitive a part, with its points (y up), the ways they face, their places on the skin and
-    # its triangles.
-    assert data[:4] == b"glTF" and int(struct.unpack("<I", data[8:12])[0]) == len(data) and len(data) % 4 == 0;
-    long = int(struct.unpack("<I", data[12:16])[0]);
-    told = json.loads(data[20:20 + long].decode("utf-8"));
-    assert told["asset"]["version"] == "2.0" and len(told["meshes"]) == 1 and len(told["meshes"][0]["primitives"]) == 2;
-    first = told["meshes"][0]["primitives"][0];
-    assert sorted(first["attributes"].keys()) == ["NORMAL", "POSITION", "TEXCOORD_0"] and first["extras"]["part"] == "cylinder";
-    assert told["meshes"][0]["primitives"][1]["extras"]["part"] == "bbox";
-    points = told["accessors"][first["attributes"]["POSITION"]];
-    assert points["count"] == 18 and points["min"] == [-32, 0, -32] and points["max"] == [32, 96, 32] , str(points);
-    assert told["accessors"][first["indices"]]["count"] == 96;
-    # Read back it is the two parts under their names, each as it was: the same points and
-    # triangles, closed, of the same volume and in the same place.
-    assert docs["closed"] == "" and " parts=2 part=0 frames=1 " in docs["made"];
-    tail = docs["made"].split(" parts=")[1];
-    assert docs["back"].startswith("modeldoc keep parts=") and docs["back"].split(" parts=")[1] == tail , docs["back"];
-    assert " part=1 " in docs["box"] and " points=8 triangles=12 " in docs["box"] and " volume=393216 open=0 " in docs["box"] , docs["box"];
-    named = [line for line in ran.stdout.splitlines() if line.startswith("studio: part ")];
-    assert "studio: part 0 cylinder triangles=32" in named and "studio: part 1 bbox triangles=12 in hand" in named , str(named);
-    print(
-        f"GLTF PASS: {len(steps) - 1} steps, a cylinder and its box written as a glb of {len(data)} bytes that reads as glTF "
-            + "2.0 with y up, and opened again as the same two parts"
-    );
-}
-
-"""The forty-ninth session: a shipped level's entities listed and drawn as
-their game's models."""
-def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "preview_models.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-preview-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/preview_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "preview.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The preview session failed: {output / 'preview.log'}";
-        kept = (Path(home) / "overrides/studio.cfg").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["boxes", "models", "off"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'preview.log'}";
-    }
-    # The level's monsters and pickups each have the model their game gives them.
-    listed = [line for line in steps["boxes"] if line.startswith("model of ")];
-    known = [line for line in steps["boxes"] if line.startswith("models known=")];
-    assert known and int(known[0].split("=")[1]) == len(listed) and len(listed) >= 30 , str(known);
-    soldiers = [line for line in listed if line.startswith("model of monster_army q1:progs/soldier.mdl edges=")];
-    assert soldiers and int(soldiers[0].split("edges=")[1]) > 100 , str(listed[:4]);
-    assert [line for line in listed if line.startswith("model of item_armor1 q1:progs/armor.mdl ")];
-    assert not [line for line in steps["boxes"] if line.startswith("models shown=")];
-    # Drawn in the 3D view near the camera; and not once it is turned off.
-    shown = [line for line in steps["models"] if line.startswith("models shown=1 drawn=")];
-    assert shown and int(shown[0].split("drawn=")[1]) >= 1 , str(steps["models"]);
-    assert not [line for line in steps["off"] if line.startswith("models shown=")] and "ed_models off" in kept;
-    source = repo / "preview_models.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "preview_models.png");
-    source.unlink();
-    print(
-        f"PREVIEW PASS: {len(steps) - 1} steps, {len(listed)} entities of a shipped level given their game's models, "
-            + f"{shown[0].split('drawn=')[1]} of them drawn in the 3D view"
+        f"LAYOUTS PASS: {len(steps) - 1} steps twice, four views split 65 to 35 by numbers and to 32 and 50 by dragging the "
+            + "bars, the side panels swapped, two layouts kept and one brought back whole, and all of it there in the next session"
     );
 }
 
@@ -2795,7 +1935,7 @@ def skin_line(lines: list[str]) -> str {
     return found[0] if found else "";
 }
 
-"""The forty-eighth session: a part laid on its skin and its places changed,
+"""A session: a part laid on its skin and its places changed,
 a picture painted on the skin and through the model, shown and saved."""
 def skin_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     (repo / "skin_view.png").unlink(missing_ok=True);
@@ -2857,55 +1997,6 @@ def tga_texel(data: bytes, x: int, y: int) -> list[int] {
     return [data[at + 2], data[at + 1], data[at]];
 }
 
-"""The forty-seventh session: a prefab that holds prefabs, and an instance
-that differs from its prefab."""
-def nest_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "nest_gate.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-nest-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_PREFABS"] = home + "/prefabs";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/nest_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_PREFABS");
-        (output / "nest.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The nest session failed: {output / 'nest.log'}";
-        gate = (Path(home) / "prefabs/gate.map").read_text();
-        built = (Path(home) / "scenes/nesting.build.map").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["parts", "bare", "gate", "differs", "written"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'nest.log'}";
-    }
-    # The gate is kept as two instances of the post, one with a swap of its own, and a lintel.
-    parts = selected(steps["parts"]);
-    assert len(parts) == 3 and "prefab=post" in parts[0] and "_swap=blockout slate" in parts[1] and "_group_name=lintel" in parts[2] , str(parts);
-    assert gate.count('"classname" "misc_prefab"') == 2 and '"_swap" "blockout slate"' in gate;
-    # With everything taken out only the floor is built; the gate linked in builds a lintel and two posts with it.
-    assert made(steps["bare"]) == 1 and made(steps["gate"]) == 4 , str(steps["gate"]);
-    assert len(selected(steps["gate"])) == 1 and "prefab=gate" in selected(steps["gate"])[0];
-    # The instance's own swap changes what the gate left as it was; the post that was slate inside it stays slate.
-    assert "_swap=blockout brass" in selected(steps["differs"])[0] and "_names=_north" in selected(steps["differs"])[0];
-    sides = material_sides(built);
-    assert sides == [12, 6, 6] , str(sides);
-    assert "misc_prefab" not in built;
-    source = repo / "nest_gate.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "nest_gate.png");
-    source.unlink();
-    print(
-        f"NEST PASS: {len(steps) - 1} steps, a gate kept as a prefab of two posts and a lintel, built from one instance, "
-            + "and the instance's material swapped over what the gate itself swapped"
-    );
-}
-
 """How many sides of a written map are brass, slate and blockout."""
 def material_sides(text: str) -> list[int] {
     return [
@@ -2914,66 +2005,13 @@ def material_sides(text: str) -> list[int] {
     ];
 }
 
-"""The forty-sixth session: a sound converted, a wall texture's facts
-changed in a copy, and animated textures' frames listed."""
-def sounds_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    with tempfile.TemporaryDirectory(prefix="qp-sounds-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_SOUNDS"] = home + "/sounds";
-        env["QP_TEXTURES"] = home + "/textures";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/sounds_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_SOUNDS");
-        env.pop("QP_TEXTURES");
-        (output / "sounds.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The sounds session failed: {output / 'sounds.log'}";
-        blip = (Path(home) / "sounds/blip.wav").read_bytes();
-        quiet = (Path(home) / "sounds/quiet.wav").read_bytes();
-        plate = (Path(home) / "textures/lab/plate.wal").read_bytes();
-    }
-    before = (repo / "scripts/studio/fixtures/plate.wal").read_bytes();
-    steps = studio_steps(ran.stdout);
-    for name in ["begin", "wal", "frames"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'sounds.log'}";
-    }
-    # Two channels at 44100 made one at the games' rates: 22050 at 16 bits, 11025 at 8.
-    said = [line for line in steps["begin"] if line.startswith("sound ")];
-    assert said[0] == "sound blip.wav 44100 Hz, 16 bits, 2 channels, 0.1 s" , str(said);
-    assert said[1].startswith("sound blip.wav 22050 Hz, 16 bits, one channel, 0.1 s from ") , str(said);
-    assert said[2].startswith("sound quiet.wav 11025 Hz, 8 bits, one channel, 0.1 s from ") , str(said);
-    assert blip[:4] == b"RIFF" and int.from_bytes(blip[22:24], "little") == 1 and int.from_bytes(blip[24:28], "little") == 22050;
-    assert int.from_bytes(blip[40:44], "little") == 2205 * 2 and int.from_bytes(quiet[24:28], "little") == 11025;
-    assert int.from_bytes(quiet[34:36], "little") == 8;
-    # The texture's facts as they were, and as changed in the copy: its pictures untouched.
-    facts = [line for line in steps["wal"] if line.startswith("wal name=")];
-    assert facts[0] == "wal name=lab/plate size=32x32 flags=0 names=- contents=0 value=0 next=-" , str(facts);
-    assert facts[1] == "wal name=lab/plate size=32x32 flags=9 names=light,warp contents=0 value=300 next=lab/plate2" , str(facts);
-    assert len(plate) == len(before) and plate[100:] == before[100:] and plate[:56] == before[:56];
-    assert int.from_bytes(plate[88:92], "little") == 9 and int.from_bytes(plate[96:100], "little") == 300 and plate[56:66] == b"lab/plate2";
-    # Quake's slipgate texture is a row of seven; a plain name is one.
-    rows = [line for line in steps["frames"] if line.startswith("frames ")];
-    assert rows[0].startswith("frames 7 q1:e1m1/+0slip q1:e1m1/+1slip ") and rows[1] == "frames 1 nothing_animated" , str(rows);
-    print(
-        f"SOUNDS PASS: {len(steps) - 1} steps, a stereo sound made one channel at 22050 and at 11025, a wall texture's "
-            + "flags and value changed in a copy, and a row of seven animated frames found"
-    );
-}
-
 """A word of a step's `shaders` line: what follows `key=`."""
 def shader_word(lines: list[str], key: str) -> str {
     found = [line for line in lines if line.startswith("shaders file=")];
     return found[0].split(" " + key + "=")[1].split()[0] if found else "";
 }
 
-"""The forty-fifth session: a shader script made, changed, checked, mended,
+"""A session: a shader script made, changed, checked, mended,
 saved and opened again, and a broken one's faults listed."""
 def shader_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     (repo / "shader_faults.png").unlink(missing_ok=True);
@@ -3044,123 +2082,13 @@ def shader_session(repo: Path, binary: Path, env: dict[str, str], output: Path) 
     );
 }
 
-"""The forty-fourth session: entities that carry their game, camp spots,
-and the level played with what was placed spawned."""
-def games_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "games_camps.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-games-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/games_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "games.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The games session failed: {output / 'games.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["health", "ogre", "stray", "filled", "spots", "playing"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'games.log'}";
-    }
-    # A pickup and a monster added to a scene of no one game carry their own.
-    assert "classname=item_health" in selected(steps["health"])[0] and "asset_game=q1" in selected(steps["health"])[0];
-    assert "classname=monster_ogre" in selected(steps["ogre"])[0] and "asset_game=q1" in selected(steps["ogre"])[0];
-    # One left with none is found, and only it: a player start is every game's.
-    assert "asset_game" not in selected(steps["stray"])[0] , str(selected(steps["stray"]));
-    found = [line for line in steps["stray"] if line.startswith("finding ") and "carries no game" in line];
-    assert len(found) == 1 and found[0].startswith("finding item_armor2 ") , str(steps["stray"]);
-    assert "asset games set=1" in steps["stray"] , str(steps["stray"]);
-    assert not [line for line in steps["filled"] if "carries no game" in line] , str(steps["filled"]);
-    # Camp spots are listed with how far and how much.
-    spots = [line for line in steps["spots"] if line.startswith("camp ")];
-    assert len(spots) == 2 and spots[0].startswith("camp info_camp ") and spots[0].endswith("range=96 weight=2") , str(spots);
-    assert "camps 2" in steps["spots"];
-    # Played, they are spawned: the two pickups at least, and the ogre.
-    live = [line for line in steps["playing"] if line.startswith("live pickups=")];
-    assert live , str(steps["playing"]);
-    pickups = int(live[0].split("pickups=")[1].split()[0]);
-    opponents = int(live[0].split("opponents=")[1].split()[0]);
-    assert pickups >= 2 and opponents == 1 , live[0];
-    source = repo / "games_camps.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "games_camps.png");
-    source.unlink();
-    print(
-        f"GAMES PASS: {len(steps) - 1} steps, entities carrying their game as they are added, one found without and "
-            + f"given its class's, two spots for bots, and {pickups} pickups and {opponents} monster spawned in play"
-    );
-}
-
 """A terrain's heights from a step's dump."""
 def heights_of(lines: list[str]) -> list[int] {
     found = [line for line in lines if line.startswith("selected ") and "_heights=" in line];
     return [int(float(word)) for word in found[0].split("_heights=")[1].split(" owns=")[0].split()] if found else [];
 }
 
-"""The forty-third session: fine work on a terrain."""
-def touch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "touch_plot.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-touch-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/touch_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "touch.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The touch session failed: {output / 'touch.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["made", "terrace", "touched", "plot", "plotlift", "cleared", "pressed", "top", "bottom", "under", "both"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'touch.log'}";
-    }
-    # A terrace of fifteen corners at 32; touched, they all go up eight and the low ground stays.
-    terrace = heights_of(steps["terrace"]);
-    assert len(terrace) == 25 and terrace.count(32) == 15 and terrace.count(0) == 10 , str(terrace);
-    assert "touched 15" in steps["terrace"] , str(steps["terrace"]);
-    touched = heights_of(steps["touched"]);
-    assert touched.count(40) == 15 and touched.count(0) == 10 , str(touched);
-    # The plot: the four cells of the low ground; lifted, their ten corners go up sixteen.
-    assert "plot cells=4" in steps["touched"] , str(steps["touched"]);
-    lifted = heights_of(steps["plotlift"]);
-    assert lifted.count(16) == 10 and lifted.count(40) == 15 , str(lifted);
-    assert "plot painted 8" in steps["plotlift"] and "plot cells=0" in steps["plotlift"] , str(steps["plotlift"]);
-    # Alt and a press in sculpt mode picks a plot where the pointer is.
-    pressed = [line for line in steps["cleared"] if line.startswith("plot cells=")];
-    assert pressed and int(pressed[0].split("=")[1]) > 0 , str(steps["cleared"]);
-    # The top up eight; the underside down sixteen with the base that much thicker; then all of it up.
-    top = heights_of(steps["top"]);
-    assert top.count(24) == 10 and top.count(48) == 15 , str(top);
-    assert "_terrain=4 4 64 32" in selected(steps["bottom"])[0] and heights_of(steps["bottom"]) == top , str(steps["bottom"]);
-    under = brushes(steps["under"]);
-    assert len(under) == 1 and brush_box(under[0])[0][2] == -16 , str(under);
-    raised = brushes(steps["both"]);
-    assert len(raised) == 1 and brush_box(raised[0])[0][2] == 16 and brush_box(raised[0])[1][2] == brush_box(under[0])[1][2] + 32 , str(
-        raised
-    );
-    source = repo / "touch_plot.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "touch_plot.png");
-    source.unlink();
-    print(
-        f"TOUCH PASS: {len(steps) - 1} steps, a terrace's corners moved together, a plot of cells outlined, lifted and "
-            + "painted, a plot picked by a press, and the terrain's top and bottom moved apart"
-    );
-}
-
-"""The forty-second session: faces linked and pushed together, a carve
+"""A session: faces linked and pushed together, a carve
 that keeps divided faces linked, a mitred seam and a merged corner."""
 def links_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["miter", "merged"];
@@ -3226,7 +2154,7 @@ def links_counted(lines: list[str]) -> int {
     return int(found[0][6:]) if found else 0;
 }
 
-"""The forty-first session: a material, a class and a prefab dragged from
+"""A session: a material, a class and a prefab dragged from
 the side panels and dropped in the view."""
 def drop_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["materials", "classes", "library"];
@@ -3290,7 +2218,7 @@ def drop_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The fortieth session: a model's triangles and points picked by clicks,
+"""A session: a model's triangles and points picked by clicks,
 a point dragged, tags, a frame moved in the order, and skins."""
 def rig_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["faces", "tags"];
@@ -3361,7 +2289,7 @@ def rig_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The thirty-eighth session: a played game's firings counted, a firing
+"""A session: a played game's firings counted, a firing
 that holds the game, and the live player and signals changed while held."""
 def live_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     (repo / "live_graph.png").unlink(missing_ok=True);
@@ -3416,279 +2344,12 @@ def live_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The thirty-seventh session: outlines swept along a line and a path, a
-sweep swept again after its path moved, and a brush's own outline swept."""
-def sweep_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["rail", "ring"];
-    for shot in shots {
-        (repo / f"sweep_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-sweep-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/sweep_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "sweep.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The sweep session failed: {output / 'sweep.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["beam", "rail", "again", "piece", "undone", "ring"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'sweep.log'}";
-    }
-    # A square along a line with one turn: a group of two brushes that keeps what it was swept from.
-    beam = selected(steps["beam"]);
-    assert len(beam) == 1 and "_group_name=sweep" in beam[0] and "_sweep=square 32.0 16.0 8" in beam[0]
-        and beam[0].endswith("owns=2") , str(beam);
-    # A rail, three pieces, along two stretches of a path of named corners.
-    rail = selected(steps["rail"]);
-    assert len(rail) == 1 and "_along=c1" in rail[0] and "_sweep=rail 24.0 48.0 8" in rail[0] and rail[0].endswith("owns=6") , str(
-        rail
-    );
-    assert [line for line in steps["rail"] if line == "swept again brushes=6"] , str(steps["rail"]);
-    # Its last corner moved out and up: swept again, its last piece reaches there; undone, it is back.
-    moved = brushes(steps["piece"]);
-    assert len(moved) == 1 and brush_box(moved[0])[1][0] >= 120 and brush_box(moved[0])[1][2] >= 100 , str(moved);
-    back = brushes(steps["undone"]);
-    assert len(back) == 1 and brush_box(back[0])[1][0] <= 16 and brush_box(back[0])[1][2] <= 76 , str(back);
-    # A drawn brush's outline round a closed line: four brushes, mitred at every corner.
-    ring = selected(steps["ring"]);
-    assert len(ring) == 1 and "_sweep=brush " in ring[0] and "_closed=1" in ring[0] and "_outline=" in ring[0]
-        and ring[0].endswith("owns=4") , str(ring);
-    assert [line for line in steps["ring"] if line.startswith("brushes=14 ")] , str(steps["ring"]);
-    for shot in shots {
-        source = repo / f"sweep_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"sweep_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"SWEEP PASS: {len(steps) - 1} steps, a beam along a line, a rail along a path of corners and again after one "
-            + "moved, and a brush's own outline round a closed line"
-    );
-}
-
 """A step's line of the layers that are off, if it has one."""
 def off(lines: list[str]) -> list[str] {
     return [line for line in lines if line.startswith("layers off=")];
 }
 
-"""The thirty-sixth session: kept sets hidden and shown as layers."""
-def layers_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["hidden", "list"];
-    for shot in shots {
-        (repo / f"layers_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-layers-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/layers_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "layers.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The layers session failed: {output / 'layers.log'}";
-        saved = (Path(home) / "scenes/tiers.map").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["kept", "hid", "through", "both", "back", "only", "shown"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'layers.log'}";
-    }
-    assert [line for line in steps["kept"] if line == "sets=west:1,east:1,boxes:2"] , str(steps["kept"]);
-    assert not off(steps["kept"]) and hidden(steps["kept"]) == 0 and made(steps["kept"]) == 3 , str(steps["kept"]);
-    # One layer off: its box is hidden and is not in what the views are built from.
-    assert off(steps["hid"]) == ["layers off=west"] and hidden(steps["hid"]) == 1 and made(steps["hid"]) == 2 , str(
-        steps["hid"]
-    );
-    # A click where it stood finds the floor.
-    under = brushes(steps["through"]);
-    assert len(under) == 1 and under[0].split()[1] == "#1" , str(steps["through"]);
-    # The layer of both off, the first on again: both boxes stay hidden.
-    assert off(steps["both"]) == ["layers off=boxes"] and hidden(steps["both"]) == 2 and made(steps["both"]) == 1 , str(
-        steps["both"]
-    );
-    listed = [line for line in steps["both"] if line.startswith("layer ")];
-    assert listed == ["layer west shown holds=1", "layer east shown holds=1", "layer boxes hidden holds=2"] , str(listed);
-    # Toggled back, everything shows; one alone hides what the others hold, shared or not.
-    assert not off(steps["back"]) and hidden(steps["back"]) == 0 and made(steps["back"]) == 3 , str(steps["back"]);
-    assert off(steps["only"]) == ["layers off=boxes,west"] and hidden(steps["only"]) == 2 , str(steps["only"]);
-    assert '"_layers_off" "boxes west"' in saved and '"_set_east"' in saved , saved[:600];
-    # Showing everything turns every layer on.
-    assert not off(steps["shown"]) and hidden(steps["shown"]) == 0 and made(steps["shown"]) == 3 , str(steps["shown"]);
-    for shot in shots {
-        source = repo / f"layers_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"layers_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"LAYERS PASS: {len(steps) - 1} steps, three layers of two boxes hidden, shown and shown alone, what two share "
-            + "kept hidden while either is off, and the layers that are off saved with the map"
-    );
-}
-
-"""The thirty-fifth session: an axis view held to a band of depth, what is
-outside it greyed or left out, and axis views turned off their axes."""
-def depth_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["grey", "hidden", "oblique"];
-    for shot in shots {
-        (repo / f"depth_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-depth-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/depth_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "depth.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The depth session failed: {output / 'depth.log'}";
-        kept = (Path(home) / "overrides/studio.cfg").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = [
-        "made", "banded", "greyclick", "hideclick", "fitted", "unbanded", "oblique", "turned", "straight", "done"
-    ];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'depth.log'}";
-    }
-    # The second box, lifted: 192 to 256 up.
-    lifted = brushes(steps["made"]);
-    assert len(lifted) == 1 and brush_box(lifted[0])[0][2] == 192 and brush_box(lifted[0])[1][2] == 256 , str(lifted);
-    high = lifted[0].split()[1];
-    # Held to -32..96, the top view has one brush outside its band; greyed, it is still clicked.
-    band = [line for line in steps["banded"] if line.startswith("depth ")];
-    assert band == ["depth top=-32..96/1 outside=grey"] , str(steps["banded"]);
-    assert len(brushes(steps["greyclick"])) == 1 and brushes(steps["greyclick"])[0].split()[1] == high , str(
-        steps["greyclick"]
-    );
-    # Left out, the click goes to the floor beneath it.
-    under = brushes(steps["hideclick"]);
-    assert len(under) == 1 and under[0].split()[1] == "#1" and brush_box(under[0])[1][2] == 0 , str(steps["hideclick"]);
-    assert [line for line in steps["hideclick"] if line.startswith("depth top=-32..96/1 outside=hide")];
-    # From the selection: its own depths and eight more each way, the other two brushes outside.
-    assert [line for line in steps["fitted"] if line == "depth top=184..264/2 outside=hide"] , str(steps["fitted"]);
-    assert not [line for line in steps["unbanded"] if line.startswith("depth ")];
-    assert "ed_outside hide" in kept , kept;
-    # Oblique: the top view by command, the front by Alt and a hundred pixels of right drag.
-    assert [line for line in steps["oblique"] if line == "oblique top=45,-35"] , str(steps["oblique"]);
-    both = [line for line in steps["turned"] if line.startswith("oblique ")];
-    assert both and both[0].startswith("oblique top=45,-35 front=") , str(steps["turned"]);
-    front = [int(part) for part in both[0].split("front=")[1].split(",")];
-    assert 27 <= abs(front[0] - 90) and abs(front[0] - 90) <= 30 and front[1] == 0 , str(front);
-    # A press on the compass straightens the top view; a command the front.
-    one = [line for line in steps["straight"] if line.startswith("oblique ")];
-    assert one and one[0].startswith("oblique front=") , str(steps["straight"]);
-    assert not [line for line in steps["done"] if line.startswith("oblique ")];
-    for shot in shots {
-        source = repo / f"depth_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"depth_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"DEPTH PASS: {len(steps) - 1} steps, the top view held to a band with a box above it greyed, then left out and "
-            + "clicked through, the band taken from the selection, and two views turned off their axes and straightened"
-    );
-}
-
-"""The thirty-fourth session: a file opened with the program kept for its
-ending, an image changed outside read again, and the mouse's options."""
-def outside_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "outside_changed.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-outside-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_TEXTURES"] = home + "/textures";
-        (Path(home) / "textures").mkdir();
-        (Path(home) / "spare").mkdir();
-        # The image as it begins, four texels a side, and what the stand-in
-        # editor turns it into, eight.
-        (Path(home) / "textures/crate.png").write_bytes(checker_png(4));
-        (Path(home) / "spare/crate.png").write_bytes(checker_png(8));
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/outside_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_TEXTURES");
-        (output / "outside.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The outside session failed: {output / 'outside.log'}";
-        kept = (Path(home) / "overrides/studio.cfg").read_text();
-        edited = (Path(home) / "textures/crate.png").read_bytes() == checker_png(8);
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["own", "kept", "changed", "level", "turned", "faster", "wheeled", "reversed"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'outside.log'}";
-    }
-    # The image as it was: four texels across 128 units.
-    assert "scale=32.0,24.0" in faces(steps["own"])[0] , str(faces(steps["own"]));
-    # One program kept, the other forgotten; the material's file opened with it.
-    listed = [line for line in steps["kept"] if line.startswith("assoc ")];
-    assert listed == ["assoc png = sh scripts/studio/fixtures/fake_editor.sh %file%"] , str(listed);
-    opened = [line for line in steps["kept"] if line.startswith("opened ")];
-    assert opened and opened[0].endswith("/textures/crate.png with sh scripts/studio/fixtures/fake_editor.sh %file%") , str(
-        steps["kept"]
-    );
-    # It changed the file; the studio read it again unasked, and it fits at its new size.
-    assert edited , "The stand-in editor did not change the image";
-    again = [line for line in steps["kept"] if line.startswith("reloaded ")];
-    assert again == ["reloaded file:crate.png 8x8"] , str(steps["kept"]);
-    assert "scale=16.0,12.0" in faces(steps["changed"])[0] , str(faces(steps["changed"]));
-    assert 'ed_assoc png "sh scripts/studio/fixtures/fake_editor.sh %file%"' in kept and "ed_assoc tga" not in kept , kept;
-    # The mouse: a hundred pixels across and twenty down turn the camera
-    # about 29 degrees and 6; at twice the rate, 57 and 11, and upside down
-    # the other way up.
-    level_yaw = int(line_word(steps["level"], "mouse ", "yaw"));
-    level_pitch = int(line_word(steps["level"], "mouse ", "pitch"));
-    assert level_yaw == 90 and level_pitch == 0 , str(steps["level"]);
-    yaw = int(line_word(steps["turned"], "mouse ", "yaw")) - level_yaw;
-    pitch = int(line_word(steps["turned"], "mouse ", "pitch")) - level_pitch;
-    assert 27 <= abs(yaw) and abs(yaw) <= 30 and 5 <= abs(pitch) and abs(pitch) <= 7 , f"{yaw} {pitch}";
-    fast_yaw = int(line_word(steps["faster"], "mouse ", "yaw")) - level_yaw;
-    fast_pitch = int(line_word(steps["faster"], "mouse ", "pitch")) - level_pitch;
-    assert 56 <= abs(fast_yaw) and abs(fast_yaw) <= 59 and fast_yaw * yaw > 0 , f"{fast_yaw} against {yaw}";
-    assert 10 <= abs(fast_pitch) and abs(fast_pitch) <= 13 and fast_pitch * pitch < 0 , f"{fast_pitch} against {pitch}";
-    assert line_word(steps["faster"], "mouse ", "look") == "2.0" and line_word(steps["faster"], "mouse ", "invert") == "1";
-    # The wheel: sixty-four units forward a notch; twice as far and backward when told.
-    assert camera_at(steps["wheeled"]) == [0, -356, 260] , str(camera_at(steps["wheeled"]));
-    assert camera_at(steps["reversed"]) == [0, -548, 260] , str(camera_at(steps["reversed"]));
-    assert "ed_mouse look 2.0" in kept and "ed_mouse invert on" in kept and "ed_mouse wheel 2.0" in kept
-        and "ed_mouse reverse on" in kept , kept;
-    source = repo / "outside_changed.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "outside_changed.png");
-    source.unlink();
-    print(
-        f"OUTSIDE PASS: {len(steps) - 1} steps, an image opened with the program kept for it and read again when that "
-            + f"changed it, the camera turned {abs(yaw)} then {abs(fast_yaw)} degrees by the same drag, and the wheel reversed"
-    );
-}
-
-"""The thirty-third session: a project made and filled, another opened,
+"""A session: a project made and filled, another opened,
 add-ons of classes loaded and dropped, and what a game's scenes begin with."""
 def project_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["addon", "menu"];
@@ -3786,65 +2447,7 @@ def project_session(repo: Path, binary: Path, env: dict[str, str], output: Path)
     );
 }
 
-"""The thirtieth session: an entity's facing and a light's reach dragged by
-their handles, a path drawn, logic added from the library, a favourite."""
-def marks_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["faced", "light", "path"];
-    for shot in shots {
-        (repo / f"marks_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-marks-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/marks_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "marks.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The marks session failed: {output / 'marks.log'}";
-        kept = (Path(home) / "overrides/studio.cfg").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["start", "faced", "lamp", "brighter", "clicked", "counter", "favourite"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'marks.log'}";
-    }
-    # The arrow's tip swung a quarter round: from facing +y to facing +x.
-    assert "angle=90" in selected(steps["start"])[0] and "angle=0" in selected(steps["faced"])[0] , (
-        f"{selected(steps['start'])} {selected(steps['faced'])}"
-    );
-    # The light's reach pulled out from 200 units to 400: its value from 100 to 200.
-    lamp = selected(steps["lamp"])[0];
-    brighter = selected(steps["brighter"])[0];
-    assert "classname=light" in lamp and "light=100" in lamp and "light=200" in brighter , f"{lamp} {brighter}";
-    # A handle clicked and not dragged leaves it be.
-    assert steps["clicked"][0] == steps["brighter"][0] and "light=200" in selected(steps["clicked"])[0];
-    # The game's pieces of logic are listed, and a counter is one of its classes, named so it shows in the graph.
-    kinds = [line.split()[-1] for line in ran.stdout.splitlines() if line.startswith("studio: logic kind ")];
-    assert "relay" in kinds and "counter" in kinds and "delay" in kinds , str(kinds);
-    counter = selected(steps["counter"])[0];
-    assert "classname=trigger_counter" in counter and "targetname=counter1" in counter and "count=2" in counter , counter;
-    # The favourite is kept in the settings and adds one of its class.
-    favourite = selected(steps["favourite"])[0];
-    assert "classname=item_health" in favourite and "ed_fav item_health" in kept , f"{favourite} {kept}";
-    for shot in shots {
-        source = repo / f"marks_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"marks_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"MARKS PASS: {len(steps) - 1} steps, an entity turned by its arrow and a light's reach pulled out, a "
-            + "path drawn, logic from the library and a favourite class"
-    );
-}
-
-"""The twenty-ninth session: keys bound by hand, the settings list, the
+"""A session: keys bound by hand, the settings list, the
 grid hidden, flat tones, and the developer's readout, kept between runs."""
 def settings_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["list", "nogrid", "solid", "dev"];
@@ -3917,7 +2520,7 @@ def face_word(line: str, key: str) -> str {
     return line.split(key + "=")[1].split()[0];
 }
 
-"""The twenty-eighth session: a material wrapped round a corner from a
+"""A session: a material wrapped round a corner from a
 tagged face, projected, fitted in whole repeats and painted by a drag; and
 a face put in the tagged plane."""
 def wrap_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3973,232 +2576,13 @@ def wrap_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The twenty-seventh session: a slider, colour bars, a field of three
-numbers and a radio, each dragged or clicked in the inspector."""
-def controls_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["light", "brush"];
-    for shot in shots {
-        (repo / f"controls_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-controls-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/controls_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "controls.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The controls session failed: {output / 'controls.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["start", "bright", "tinted", "moved", "turn", "size", "box"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'controls.log'}";
-    }
-    start = selected(steps["start"])[0];
-    assert "classname=light" in start and "origin=0 -273 179" in start and "light=" not in start , start;
-    # The knob let go halfway along a bar that runs to a thousand.
-    assert "light=500" in selected(steps["bright"])[0] , str(selected(steps["bright"]));
-    # Half the green: one edit, as one word.
-    tinted = selected(steps["tinted"])[0];
-    assert "_color=1 0.5 1" in tinted and "light=500" in tinted , tinted;
-    # Five grid steps of eight, up.
-    assert "origin=0 -273 219" in selected(steps["moved"])[0] , str(selected(steps["moved"]));
-    edits = int(steps["moved"][0].split("undo=")[1].split()[0]) - int(steps["start"][0].split("undo=")[1].split()[0]);
-    assert edits == 3 , str(edits);
-    assert "handles=turn" in handles(steps["turn"]) and "handles=size" in handles(steps["size"]);
-    assert "handles=box" in handles(steps["box"]) , handles(steps["box"]);
-    for shot in shots {
-        source = repo / f"controls_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"controls_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"CONTROLS PASS: {len(steps) - 1} steps, a light's strength by a slider and colour by bars, its place by "
-            + "a field of three numbers, and a brush's handles by a radio"
-    );
-}
-
 """How many prisms a step's patch line counts, and its grid as "WxH"."""
 def patch_shape(lines: list[str]) -> list[str] {
     found = patches(lines);
     return [found[-1].split()[2], found[-1].split("prisms=")[1].split()[0]] if found else ["", "0"];
 }
 
-"""The twenty-sixth session: a curved sheet grown across and up, shrunk,
-thickened and made finer; and an endcap."""
-def quilt_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["grown", "endcap"];
-    for shot in shots {
-        (repo / f"quilt_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-quilt-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/quilt_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "quilt.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The quilt session failed: {output / 'quilt.log'}";
-        text = (Path(home) / "scenes/quilt.map").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["made", "wider", "taller", "narrower", "fine", "endcap"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'quilt.log'}";
-    }
-    made = patch_shape(steps["made"]);
-    wider = patch_shape(steps["wider"]);
-    taller = patch_shape(steps["taller"]);
-    narrower = patch_shape(steps["narrower"]);
-    fine = patch_shape(steps["fine"]);
-    assert made[0] == "3x3" and wider[0] == "5x3" and taller[0] == "5x5" and narrower[0] == "3x5" , (
-        f"{made} {wider} {taller} {narrower}"
-    );
-    # Each curve more doubles the prisms that way; one fewer halves them.
-    assert int(wider[1]) == 2 * int(made[1]) and int(taller[1]) == 4 * int(made[1]) and int(narrower[1]) == 2 * int(made[1]);
-    # Thicker and finer: its fields say so, and it is made of more prisms.
-    assert "_patch=3 5 8 24" in selected(steps["fine"])[0] and int(fine[1]) > int(narrower[1]) , str(steps["fine"]);
-    assert patch_shape(steps["endcap"])[0] == "5x3" and len(patches(steps["endcap"])) == 2;
-    assert '"_patch" "3 5 8 24"' in text and text.count('"_patch"') == 2;
-    for shot in shots {
-        source = repo / f"quilt_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"quilt_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"QUILT PASS: {len(steps) - 1} steps, a curved sheet grown across and up, shrunk, thickened and made "
-            + "finer, and an endcap"
-    );
-}
-
-"""The twenty-fifth session: a terrain lifted in a rectangle, split another
-way, worn down, painted, and left as plain brushes."""
-def land_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "land_worn.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-land-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/land_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "land.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The land session failed: {output / 'land.log'}";
-        text = (Path(home) / "scenes/land.map").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["made", "lifted", "split", "peak", "worn", "painted", "freed"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'land.log'}";
-    }
-    assert terrain(steps["made"]) == [0, 0] and "owns=32" in selected(steps["made"])[0];
-    # Lifted whole: each of its twenty-five corners is thirty-two up.
-    assert terrain(steps["lifted"]) == [32, 25] , str(terrain(steps["lifted"]));
-    # Split along alternate diagonals: as many brushes, as high, and the group says how.
-    split = selected(steps["split"])[0];
-    assert "_pattern=alt" in split and "owns=32" in split and terrain(steps["split"]) == [32, 25] , split;
-    # A peak, then worn: the tallest corner comes down, and nothing goes up.
-    peak = terrain(steps["peak"])[0];
-    worn = terrain(steps["worn"])[0];
-    assert peak > 100 and 32 <= worn < peak , f"{peak} {worn}";
-    # Painted: every prism's top has the material in hand.
-    assert text.count(" moss ") == 32 , str(text.count(" moss "));
-    # Freed: a group of thirty-two plain brushes, with no grid to sculpt.
-    freed = selected(steps["freed"])[0];
-    assert "_terrain" not in freed and "_heights" not in freed and "owns=32" in freed , freed;
-    assert terrain(steps["freed"]) == [-1, -1] and steps["freed"][0] == steps["painted"][0].replace("undo=6", "undo=7");
-    source = repo / "land_worn.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "land_worn.png");
-    source.unlink();
-    print(
-        f"LAND PASS: {len(steps) - 1} steps, a terrain lifted in a rectangle, split another way, worn down, "
-            + "painted and left as plain brushes"
-    );
-}
-
-"""The twenty-fourth session: stairs with a landing built again from other
-numbers, caulked and freed; one of each new kind of shape; and shapes made
-with their inner faces caulked."""
-def shapes_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["landing", "kinds"];
-    for shot in shots {
-        (repo / f"shapes_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-shapes-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/shapes_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "shapes.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The shapes session failed: {output / 'shapes.log'}";
-        text = (Path(home) / "scenes/shapes.map").read_text();
-        kept = (Path(home) / "overrides/studio.cfg").read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = ["landing", "rebuilt", "undone", "caulked", "freed", "kinds", "auto"];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'shapes.log'}";
-    }
-    # Four steps, a landing and four more, as a group that keeps its numbers.
-    landing = selected(steps["landing"]);
-    assert len(landing) == 1 and "_shape=landing 128 192 128 8 16" in landing[0] and "owns=9" in landing[0] , str(landing);
-    # Built again from other numbers: twelve steps and the landing; undone, the nine again.
-    rebuilt = selected(steps["rebuilt"])[0];
-    assert "_shape=landing 128 192 192 12 16" in rebuilt and "owns=13" in rebuilt , rebuilt;
-    assert "owns=9" in selected(steps["undone"])[0] and "_shape=landing 128 192 128 8 16" in selected(steps["undone"])[0];
-    # Caulked: some of its brushes now begin with a face that is not drawn, and the map says so.
-    assert len(brushes(steps["caulked"])) == 13 , str(len(brushes(steps["caulked"])));
-    assert text.count(" caulk ") >= 10 , str(text.count(" caulk "));
-    # Freed, it keeps no numbers, and cannot be built again.
-    freed = selected(steps["freed"])[0];
-    assert "_shape" not in freed and "owns=13" in freed , freed;
-    # Seven more shapes: the floor, the landing's thirteen, and theirs.
-    count = int(tally(steps["kinds"]).split()[0].split("=")[1]);
-    assert count == 1 + 13 + 1 + 12 + 3 + 8 + 6 + 1 + 3 , str(count);
-    # With the setting on, new stairs come caulked where a step backs onto the next.
-    auto = brushes(steps["auto"]);
-    assert len(auto) == 4 and "ed_autocaulk on" in kept , str(auto);
-    assert text.count(" caulk ") >= 13 , str(text.count(" caulk "));
-    for shot in shots {
-        source = repo / f"shapes_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"shapes_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"SHAPES PASS: {len(steps) - 1} steps, stairs with a landing built again, caulked and freed, seven more "
-            + "kinds of shape, and shapes that come caulked"
-    );
-}
-
-"""The twenty-third session: copies that grow, mirror on two axes, hide and
+"""A session: copies that grow, mirror on two axes, hide and
 show; images at named points and along a path, made real; and a door whose
 images are doors of their own."""
 def dups_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4265,7 +2649,7 @@ def dups_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
-"""The twenty-second session: several documents open, switched between,
+"""A session: several documents open, switched between,
 saved together, closed and reopened from the recent files; the selection's
 menu on a right click; a brush's faces stepped through; a map written
 without comments and in whole numbers."""
@@ -4358,7 +2742,7 @@ def hidden(lines: list[str]) -> int {
     return int(found[0].split("hidden=")[1].split()[0]) if found else -1;
 }
 
-"""The twenty-first session: the level as a skill or a mode would spawn it,
+"""A session: the level as a skill or a mode would spawn it,
 a value replaced across entities, the logic audit, a pasted gadget with
 names of its own, and a door fired by hand in a game held still."""
 def entities_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4426,7 +2810,7 @@ def played_at(lines: list[str]) -> list[float] {
     return [float(part) for part in played_word(lines, "player").split(",")];
 }
 
-"""The twentieth session: the level lit coarsely, finely and not at all; a
+"""A session: the level lit coarsely, finely and not at all; a
 game played from the studio held still, stepped by ticks and let run; and
 the selection played alone."""
 def play_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4486,73 +2870,6 @@ def tree_rows(lines: list[str]) -> int {
     return int(found[0].split("=")[1]) if found else -1;
 }
 
-"""The nineteenth session: a group shown as outlines only, locked, skipped
-by builds, tinted and hidden, and its row in the scene list."""
-def groups_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    shots = ["grey", "tinted", "hidden"];
-    for shot in shots {
-        (repo / f"groups_{shot}.png").unlink(missing_ok=True);
-    }
-    with tempfile.TemporaryDirectory(prefix="qp-groups-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/groups_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        (output / "groups.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The groups session failed: {output / 'groups.log'}";
-        saved = Path(home) / "scenes/groups.map";
-        assert saved.exists() , "Save wrote no map";
-        text = saved.read_text();
-    }
-    steps = studio_steps(ran.stdout);
-    names = [
-        "grouped", "grey", "through", "locked", "passed", "taken", "skipped", "tinted", "opened", "hidden"
-    ];
-    for name in names {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'groups.log'}";
-    }
-    group = selected(steps["grouped"]);
-    assert len(group) == 1 and "_group_name=pillar" in group[0] and "owns=1" in group[0] , str(group);
-    assert made(steps["grouped"]) == 2;
-    # As outlines only it is out of the level, and a click where it stands takes the floor.
-    assert "_view=grey" in selected(steps["grey"])[0] and made(steps["grey"]) == 1 , str(steps["grey"]);
-    floor = brushes(steps["through"]);
-    assert len(floor) == 1 and brush_box(floor[0])[1][2] == 0 and not selected(steps["through"]) , str(steps["through"]);
-    # Locked it is built, and still passed by.
-    locked = selected(steps["locked"])[0];
-    assert "_locked=1" in locked and "_view" not in locked and made(steps["locked"]) == 2 , locked;
-    assert brushes(steps["passed"]) == floor , str(steps["passed"]);
-    # Unlocked, the same click takes its brush.
-    taken = brushes(steps["taken"]);
-    assert len(taken) == 1 and brush_box(taken[0]) == [[-288, 112, 0], [-96, 208, 64]] , str(taken);
-    assert "owner=func_group" in taken[0];
-    # Skipped by builds.
-    assert "_skip=1" in selected(steps["skipped"])[0] and made(steps["skipped"]) == 1 , str(steps["skipped"]);
-    tinted = selected(steps["tinted"])[0];
-    assert "_tint=255 128 0" in tinted and "_skip" not in tinted and made(steps["tinted"]) == 2 , tinted;
-    # Opened, the group's row has its brush under it.
-    assert tree_rows(steps["opened"]) == tree_rows(steps["tinted"]) + 1 , f"{steps['tinted']} {steps['opened']}";
-    assert "_view=hidden" in selected(steps["hidden"])[0] and made(steps["hidden"]) == 1;
-    assert '"_view" "hidden"' in text and '"_tint" "255 128 0"' in text , text[:600];
-    for shot in shots {
-        source = repo / f"groups_{shot}.png";
-        check_capture(source, 6);
-        shutil.copyfile(source, output / f"groups_{shot}.png");
-        source.unlink();
-    }
-    print(
-        f"GROUPS PASS: {len(steps) - 1} steps, a group shown as outlines, locked, skipped by builds, tinted and "
-            + "hidden, with its row in the scene list"
-    );
-}
-
 """A word of a step's line about the views (`span`, `layout`, ...)."""
 def view_word(lines: list[str], key: str) -> str {
     found = [line for line in lines if line.startswith("views ")];
@@ -4565,7 +2882,7 @@ def camera_at(lines: list[str]) -> list[int] {
     return [int(part) for part in found[0].split()[1:4]];
 }
 
-"""The eighteenth session: the layouts, the ruler, zoom, names, remembered
+"""A session: the layouts, the ruler, zoom, names, remembered
 views, a backdrop picture, and the camera swung round and taken behind a
 face; then the studio opened again with its settings."""
 def views_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4655,7 +2972,7 @@ def made(lines: list[str]) -> int {
     return int(found[0].split("=")[1]) if found else -1;
 }
 
-"""The seventeenth session: walls, a cone and a pushed-out brush stood on a
+"""A session: walls, a cone and a pushed-out brush stood on a
 picked face, side flags, and a digger that leaves a shaft in what is built."""
 def faces_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     shots = ["walls", "cone", "dug"];
@@ -4738,7 +3055,7 @@ def kept_sets(lines: list[str]) -> str {
     return found[0][5:] if found else "";
 }
 
-"""The sixteenth session: clicks through two stacked boxes to the floor,
+"""A session: clicks through two stacked boxes to the floor,
 steps to the owner and back to its brushes, a brush by number, kept sets, a
 swap and a tour; then the saved map opened again with its sets."""
 def select_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4837,7 +3154,7 @@ def handles(lines: list[str]) -> str {
     return found[0] if found else "";
 }
 
-"""The fifteenth session: a box turned by the knob on its ring, stretched by
+"""A session: a box turned by the knob on its ring, stretched by
 a handle about its middle and about a pivot, inflated, and grouped with a
 pivot of its own."""
 def transform_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -4938,52 +3255,6 @@ def checker_png(size: int = 4) -> bytes {
         + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"");
 }
 
-"""The fourteenth session: materials at their true size, from Quake III's
-archives and from the project's own image files."""
-def material_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
-    (repo / "material_files.png").unlink(missing_ok=True);
-    with tempfile.TemporaryDirectory(prefix="qp-material-") as home {
-        env["QP_CONFIG_DIR"] = home;
-        env["QP_OVERRIDES"] = home + "/overrides";
-        env["QP_SCENES"] = home + "/scenes";
-        env["QP_TEXTURES"] = home + "/textures";
-        (Path(home) / "textures").mkdir();
-        (Path(home) / "textures/crate.png").write_bytes(checker_png(4));
-        ran = subprocess.run(
-            [str(binary), "+ed_exec", "scripts/studio/material_session.cfg"],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        );
-        env.pop("QP_TEXTURES");
-        (output / "material.log").write_text(ran.stdout + ran.stderr);
-        assert ran.returncode == 0 , f"The material session failed: {output / 'material.log'}";
-    }
-    steps = studio_steps(ran.stdout);
-    for name in ["arena", "own", "clicked"] {
-        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'material.log'}";
-    }
-    # A 256 by 512 image once across 128 units: half a unit a texel one way, a quarter the other.
-    arena = faces(steps["arena"]);
-    assert len(arena) == 1 and "material=q3:textures/base_wall/archpipe2_k_tall3fin" in arena[0] , str(arena);
-    assert "scale=0.5,0.25" in arena[0] , arena[0];
-    # The project's 4-texel image across a side 128 by 96: thirty-two units a texel, and twenty-four.
-    homemade = faces(steps["own"]);
-    assert len(homemade) == 1 and "material=file:crate.png" in homemade[0] and "scale=32.0,24.0" in homemade[0] , str(homemade);
-    # A click on its picture in the Materials tab gives it to the face then picked.
-    clicked = faces(steps["clicked"]);
-    assert len(clicked) == 1 and clicked[0].startswith("face #3/2 material=file:crate.png") , str(clicked);
-    # Both are in the archives or the folder: the check does not call them missing.
-    assert "No archive holds the material" not in ran.stdout;
-    source = repo / "material_files.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "material_files.png");
-    source.unlink();
-    print(f"MATERIAL PASS: {len(steps) - 1} steps, a Quake III texture and a project image fitted at their true sizes");
-}
-
 """Run some sessions one after another, each as a run of this script with
 `--only`. Answers (name, whether it passed, what it said last) for each."""
 def run_lane(names: list[str], binary: Path) -> list[tuple[str, bool, str]] {
@@ -5051,69 +3322,40 @@ def main() {
         "tools": tools_session,
         "logic": logic_session,
         "build": build_session,
-        "images": images_session,
         "assets": assets_session,
         "handy": handy_session,
         "terrain": terrain_session,
         "patch": patch_session,
-        "tidy": tidy_session,
         "draw": draw_session,
-        "material": material_session,
         "transform": transform_session,
         "select": select_session,
         "faces": faces_session,
         "views": views_session,
-        "groups": groups_session,
         "play": play_session,
         "entities": entities_session,
         "docs": docs_session,
         "dups": dups_session,
-        "shapes": shapes_session,
-        "land": land_session,
-        "quilt": quilt_session,
-        "controls": controls_session,
         "wrap": wrap_session,
         "settings": settings_session,
-        "marks": marks_session,
         "bake": bake_session,
         "steps": steps_session,
         "project": project_session,
-        "outside": outside_session,
-        "depth": depth_session,
-        "layers": layers_session,
-        "sweep": sweep_session,
         "live": live_session,
         "model": model_session,
         "rig": rig_session,
         "drop": drop_session,
         "links": links_session,
-        "touch": touch_session,
-        "games": games_session,
         "shader": shader_session,
-        "sounds": sounds_session,
-        "nest": nest_session,
         "skin": skin_session,
-        "preview": preview_session,
-        "lay": lay_session,
-        "lean": lean_session,
-        "arms": arms_session,
         "bones": bones_session,
-        "figure": figure_session,
-        "district": district_session,
         "float": float_session,
         "nav": nav_session,
-        "restrict": restrict_session,
-        "finds": finds_session,
-        "whole": whole_session,
-        "playview": playview_session,
-        "modelfiles": modelfiles_session,
         "stuck": stuck_session,
-        "turned": turned_session,
-        "repack": repack_session,
-        "finding": finding_session,
-        "treebox": treebox_session,
-        "meshcut": meshcut_session,
-        "gltf": gltf_session,
+        "q3map": q3map_session,
+        "treedrop": treedrop_session,
+        "needs": needs_session,
+        "uses": uses_session,
+        "layouts": layouts_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5235,69 +3477,40 @@ def main() {
     tools_session(repo, binary, env, output);
     logic_session(repo, binary, env, output);
     build_session(repo, binary, env, output);
-    images_session(repo, binary, env, output);
     assets_session(repo, binary, env, output);
     handy_session(repo, binary, env, output);
     terrain_session(repo, binary, env, output);
     patch_session(repo, binary, env, output);
-    tidy_session(repo, binary, env, output);
     draw_session(repo, binary, env, output);
-    material_session(repo, binary, env, output);
     transform_session(repo, binary, env, output);
     select_session(repo, binary, env, output);
     faces_session(repo, binary, env, output);
     views_session(repo, binary, env, output);
-    groups_session(repo, binary, env, output);
     play_session(repo, binary, env, output);
     entities_session(repo, binary, env, output);
     docs_session(repo, binary, env, output);
     dups_session(repo, binary, env, output);
-    shapes_session(repo, binary, env, output);
-    land_session(repo, binary, env, output);
-    quilt_session(repo, binary, env, output);
-    controls_session(repo, binary, env, output);
     wrap_session(repo, binary, env, output);
     settings_session(repo, binary, env, output);
-    marks_session(repo, binary, env, output);
     bake_session(repo, binary, env, output);
     steps_session(repo, binary, env, output);
     project_session(repo, binary, env, output);
-    outside_session(repo, binary, env, output);
-    depth_session(repo, binary, env, output);
-    layers_session(repo, binary, env, output);
-    sweep_session(repo, binary, env, output);
     live_session(repo, binary, env, output);
     model_session(repo, binary, env, output);
     rig_session(repo, binary, env, output);
     drop_session(repo, binary, env, output);
     links_session(repo, binary, env, output);
-    touch_session(repo, binary, env, output);
-    games_session(repo, binary, env, output);
     shader_session(repo, binary, env, output);
-    sounds_session(repo, binary, env, output);
-    nest_session(repo, binary, env, output);
     skin_session(repo, binary, env, output);
-    preview_session(repo, binary, env, output);
-    lay_session(repo, binary, env, output);
-    lean_session(repo, binary, env, output);
-    arms_session(repo, binary, env, output);
     bones_session(repo, binary, env, output);
-    figure_session(repo, binary, env, output);
-    district_session(repo, binary, env, output);
     float_session(repo, binary, env, output);
     nav_session(repo, binary, env, output);
-    restrict_session(repo, binary, env, output);
-    finds_session(repo, binary, env, output);
-    whole_session(repo, binary, env, output);
-    playview_session(repo, binary, env, output);
-    modelfiles_session(repo, binary, env, output);
     stuck_session(repo, binary, env, output);
-    turned_session(repo, binary, env, output);
-    repack_session(repo, binary, env, output);
-    finding_session(repo, binary, env, output);
-    treebox_session(repo, binary, env, output);
-    meshcut_session(repo, binary, env, output);
-    gltf_session(repo, binary, env, output);
+    q3map_session(repo, binary, env, output);
+    treedrop_session(repo, binary, env, output);
+    needs_session(repo, binary, env, output);
+    uses_session(repo, binary, env, output);
+    layouts_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

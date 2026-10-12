@@ -275,6 +275,27 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
     }
     if name == "ed_history" {
         done = scene.journal.done;
+        ahead = scene.journal.undone;
+        if len(args) > 1 and args[1] == "list" {
+            # Every edit made, oldest first, and then those undone, the next to be done again first.
+            print("studio: history done=" + str(len(done)) + " undone=" + str(len(ahead)));
+            for (place, made) in enumerate(done[-40:]) {
+                print("studio: edit " + str(len(done) - min(40, len(done)) + place + 1) + " " + made.label);
+            }
+            for back in range(min(40, len(ahead))) {
+                print("studio: undone " + str(back + 1) + " " + ahead[len(ahead) - 1 - back].label);
+            }
+            self.say(str(len(done)) + " edits made, " + str(len(ahead)) + " undone and waiting to be done again");
+            return True;
+        }
+        if len(args) > 2 and args[1] == "redo" and args[2].isdigit() {
+            again = min(int(args[2]), len(ahead));
+            for i in range(again) {
+                scene.redo();
+            }
+            self.say("Did " + str(again) + " edits again");
+            return True;
+        }
         if len(args) > 1 and args[1].isdigit() {
             count = min(int(args[1]), len(done));
             for i in range(count) {
@@ -283,7 +304,7 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
             self.say("Undid " + str(count) + " edits");
             return True;
         }
-        if len(done) == 0 or stage is None {
+        if (len(done) == 0 and len(ahead) == 0) or stage is None {
             self.say("Nothing has been edited yet");
             return True;
         }
@@ -292,6 +313,11 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         for back in range(min(20, len(done))) {
             step = done[len(done) - 1 - back];
             items.append(MenuItem(text="Undo back to before: " + step.label, command="ed_history " + str(back + 1)));
+        }
+        # And forward again: choosing one does it and all before it again.
+        for back in range(min(20, len(ahead))) {
+            step = ahead[len(ahead) - 1 - back];
+            items.append(MenuItem(text="Do again up to: " + step.label, command="ed_history redo " + str(back + 1)));
         }
         popup = MenuPopup(items=items);
         popup.open_at(stage, 300, 80);
@@ -402,6 +428,19 @@ impl Studio.keep_settings {
         lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
     }
     lines.append("ed_outside " + self.outside);
+    lines.append("ed_log panel " + ("on" if self.log_panel else "off") + " " + str(self.log_rows));
+    lines.append("ed_flyover " + ("on" if self.flyovers else "off"));
+    for tool in self.tools {
+        for tool_line in tool.settings_lines(self.host()) {
+            lines.append(tool_line);
+        }
+    }
+    lines.append("ed_split x " + str(self.split_x));
+    lines.append("ed_split y " + str(self.split_y));
+    lines.append("ed_sides " + ("right" if self.sides_swapped else "left"));
+    for kept_name in sorted(self.kept_layouts.keys()) {
+        lines.append("ed_layout keep " + kept_name + " " + self.kept_layouts[kept_name]);
+    }
     lines.append("ed_models " + ("on" if self.models_shown else "off"));
     lines.append("ed_mouse look " + str(round(self.look_rate, 2)));
     lines.append("ed_mouse invert " + ("on" if self.look_flipped else "off"));

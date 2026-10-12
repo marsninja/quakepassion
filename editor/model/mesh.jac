@@ -593,3 +593,28 @@ def mesh_welded(mesh: Mesh, slack: float = 0.001) -> Mesh {
     }
     return made;
 }
+
+"""What a point or a triangle of a mesh is, by its number: where the point
+stands and the triangles it is a corner of; or the triangle's three points,
+its area and the way it faces. Empty when there is none of that number."""
+def mesh_found(mesh: Mesh, faces: bool, index: int) -> str {
+    def short(value: float) -> str {
+        return str(int(value)) if value == float(int(value)) else str(round(value, 2));
+    }
+    if faces {
+        if index < 0 or index >= mesh.triangles() {
+            return "";
+        }
+        held = mesh.triangle(index);
+        across = held[1].sub(held[0]).cross(held[2].sub(held[0]));
+        facing = mesh.normal(index);
+        return "triangle " + str(index) + " points=" + ",".join([str(mesh.corners[index * 3 + place]) for place in range(3)])
+            + " area=" + short(across.length() * 0.5) + " facing=" + short(facing.x) + "," + short(facing.y) + "," + short(facing.z);
+    }
+    if index < 0 or index >= len(mesh.points) {
+        return "";
+    }
+    at = mesh.points[index];
+    return "point " + str(index) + " at=" + short(at.x) + "," + short(at.y) + "," + short(at.z) + " triangles="
+        + ",".join([str(face) for face in range(mesh.triangles()) if index in mesh.corners[face * 3:face * 3 + 3]]);
+}

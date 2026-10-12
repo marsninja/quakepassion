@@ -12,7 +12,8 @@ counted up. The copies are images: they follow the group whenever it is
 edited, and exist only in what is built until they are made real."""
 import math;
 import from engine.math.vec3 { Vec3 }
-import from ..formats.map { MapItem }
+import from ..formats.map { MapItem, MapPatch }
+import from ..geometry.patch { points_from, places_from }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, side_turned }
 import from ..geometry.mapping { side_stretched, side_spun, side_like }
 import from .scene { read_vector, write_vector, side_moved, field_number }
@@ -21,7 +22,7 @@ import from ..geometry.linear { Linear, linear_turn, linear_size, point_remapped
 
 """The keys that make a group a duplicator."""
 glob DUPLICATOR_KEYS: list[str] = [
-    "_copies", "_offset", "_turn", "_pivot", "_mirror", "_axis", "_grow", "_at", "_path", "_materials", "_each"
+    "_copies", "_offset", "_turn", "_pivot", "_mirror", "_axis", "_grow", "_at", "_path", "_materials", "_each", "_tile"
 ];
 
 """The axes a `_mirror` field names, in order."""
@@ -74,6 +75,48 @@ def:priv placed(brushes: list[list[Side]], pivot: Vec3, yaw: float, delta: Vec3)
         result.append(image);
     }
     return result;
+}
+
+"""Where copies lie along a path when they are laid a tile's length apart:
+each [x, y, z, the way it faces in radians]. Along every leg as many tiles
+as fit, spaced evenly and facing along it; at every bend between two legs
+an elbow, facing half way between them, with half a tile's room kept clear
+of it on either side. A leg too short for a tile has none."""
+def path_spots(corners: list[Vec3], tile: float) -> list[list[float]] {
+    found: list[list[float]] = [];
+    if tile <= 0.0 or len(corners) < 2 {
+        return found;
+    }
+    last = len(corners) - 1;
+    for index in range(last) {
+        leg = corners[index + 1].sub(corners[index]);
+        long = leg.length();
+        if long < 0.001 {
+            continue;
+        }
+        way = leg.scale(1.0 / long);
+        facing = math.atan2(way.y, way.x);
+        # Room for the elbows at the leg's ends that are bends.
+        before = tile * 0.5 if index > 0 else 0.0;
+        after = tile * 0.5 if index + 1 < last else 0.0;
+        fit = int((long - before - after + 0.001) / tile);
+        slack = (long - before - after - float(fit) * tile) * 0.5;
+        for place in range(fit) {
+            at = corners[index].add(way.scale(before + slack + tile * (float(place) + 0.5)));
+            found.append([at.x, at.y, at.z, facing]);
+        }
+        if index + 1 < last {
+            onward = corners[index + 2].sub(corners[index + 1]);
+            if onward.length() > 0.001 {
+                both = way.add(onward.normalized());
+                # Straight back on itself there is no half way: it faces on.
+                turned = math.atan2(both.y, both.x) if both.length() > 0.001 else math.atan2(onward.y, onward.x);
+                bend = corners[index + 1];
+                found.append([bend.x, bend.y, bend.z, turned]);
+            }
+        }
+    }
+    return found;
 }
 
 """The entities of a name, among a map's."""
@@ -174,11 +217,24 @@ def image_sets(
         corners.append(corner);
         name = found[0].fields.get("target", "");
     }
-    for index in range(len(corners)) {
-        ahead = corners[index + 1].sub(corners[index])
-            if index + 1 < len(corners)
-            else (corners[index].sub(corners[index - 1]) if index > 0 else Vec3(x=1.0));
-        made.append(placed(brushes, pivot, math.atan2(ahead.y, ahead.x), corners[index].sub(pivot)));
+    tile = 0.0;
+    try {
+        tile = float(fields.get("_tile", "0"));
+    } except ValueError {
+        tile = 0.0;
+    }
+    if tile > 0.0 {
+        # Laid along the path a tile's length apart, with one turned half way at each bend.
+        for laid in path_spots(corners, tile) {
+            made.append(placed(brushes, pivot, laid[3], Vec3(x=laid[0], y=laid[1], z=laid[2]).sub(pivot)));
+        }
+    } else {
+        for index in range(len(corners)) {
+            ahead = corners[index + 1].sub(corners[index])
+                if index + 1 < len(corners)
+                else (corners[index].sub(corners[index - 1]) if index > 0 else Vec3(x=1.0));
+            made.append(placed(brushes, pivot, math.atan2(ahead.y, ahead.x), corners[index].sub(pivot)));
+        }
     }
     # Materials in turn, for the images so far.
     cycle = fields.get("_materials", "").split();
@@ -561,4 +617,45 @@ def prefab_placed(held: list[MapItem], fields: dict[str, str]) -> list[MapItem] 
         moved = map_remapped(moved, at, change, prefab_yaw(fields));
     }
     return prefab_overridden(moved, fields);
+}
+
+"""A map with its patches as curved patches again. In a scene a patch is a
+group of thin prisms with its control points in its fields; a Quake III
+map keeps the control points themselves. Each such group gives way to a
+patch of the first entity (the world), with the material of its prisms and
+its places on that material when it has any."""
+def with_patches(items: list[MapItem]) -> list[MapItem] {
+    made: list[MapItem] = [];
+    bent: list[MapPatch] = [];
+    for item in items {
+        lay = item.fields.get("_patch", "").split();
+        if item.fields.get("classname", "") != "func_group" or len(lay) < 2 or not lay[0].isdigit() or not lay[1].isdigit() {
+            made.append(MapItem(fields=dict(item.fields), brushes=item.brushes, patches=list(item.patches)));
+            continue;
+        }
+        width = int(lay[0]);
+        height = int(lay[1]);
+        control = points_from(item.fields.get("_points", ""), width * height);
+        if control is None {
+            made.append(MapItem(fields=dict(item.fields), brushes=item.brushes, patches=list(item.patches)));
+            continue;
+        }
+        material = "";
+        if len(item.brushes) > 0 and len(item.brushes[0]) > 0 {
+            material = item.brushes[0][0].material;
+        }
+        bent.append(
+            MapPatch(
+                width=width, height=height, points=control, material=material,
+                places=places_from(item.fields.get("_st", ""), width * height)
+            )
+        );
+    }
+    if len(bent) > 0 {
+        if len(made) == 0 {
+            made.append(MapItem(fields={"classname": "worldspawn"}));
+        }
+        made[0].patches.extend(bent);
+    }
+    return made;
 }

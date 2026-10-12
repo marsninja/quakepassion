@@ -202,6 +202,10 @@ node PushButton(Widget) {
         lit: bool = False,
         bold: bool = False;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -291,6 +295,10 @@ node Check(Widget) {
         command: str = "",
         on_now: bool = False;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -348,6 +356,10 @@ node TextField(Widget) {
         anchor: int = 0,
         scroll: int = 0,
         editing: bool = False;
+
+    def asks -> str {
+        return self.command;
+    }
 
     """Show `text` as the committed value (no command is asked for)."""
     def show(text: str) {
@@ -702,6 +714,42 @@ node Splitter(Widget) {
     }
 }
 
+"""A bar between two widgets of a box that share its room. Dragged, it asks
+for `command` with how far along the box the pointer is, in hundredths of
+the box's length: the owner shares the room out by that."""
+node Sash(Widget) {
+    has command: str = "",
+        wide: int = 3;
+
+    def wanted(canvas: Canvas, across: bool) -> int {
+        return self.wide if across == self.along else 0;
+    }
+
+    def draw(canvas: Canvas) {
+        theme = canvas.theme;
+        if self.held or self.hovered {
+            canvas.fill(self.area, theme.accent if self.held else theme.dim);
+        }
+    }
+
+    def on(event: UiEvent, stage: Stage) -> bool {
+        holder = self.parent();
+        if event.kind == "drag" and self.command and holder is not None {
+            length = holder.area.w if self.along else holder.area.h;
+            gone = (event.x - holder.area.x) if self.along else (event.y - holder.area.y);
+            if length > 0 {
+                stage.emit(self.command + " " + str(max(0, min(100, (gone * 100 + length // 2) // length))));
+            }
+            return True;
+        }
+        return event.kind in ["press", "release", "click", "double"];
+    }
+
+    def solid -> bool {
+        return True;
+    }
+}
+
 """One row of a tree: `key` is what its commands name."""
 obj TreeRow {
     has key: str,
@@ -713,7 +761,9 @@ obj TreeRow {
         picked: bool = False,
         # Dim text at the right edge, and the tone of the row's text.
         note: str = "",
-        tone: str = "text";
+        tone: str = "text",
+        # A row that stays where it is: it is not offered to be dragged.
+        fixed: bool = False;
 }
 
 """A scrolling list of rows, indented as a tree. The rows are data the owner
@@ -729,10 +779,23 @@ node TreeView(Widget) {
         # When set, a row that is not a heading is offered when pressed, to
         # be dragged elsewhere, as this word and the row's key.
         drag: str = "",
+        # When set, something dragged and let go on this list asks for this
+        # word with the key of the row it was let go on (empty when on
+        # none) and what was carried.
+        drop: str = "",
+        # Whether headings are offered to be dragged as other rows are.
+        carry_branches: bool = False,
+        # A heading pressed where headings are carried: what a click on it
+        # asks for is kept until the button comes up without a drag.
+        pending: str = "",
         offset: int = 0,
         grabbing: bool = False,
         hover_row: int = -1,
         row_height: int = 20;
+
+    def asks -> str {
+        return self.pick;
+    }
 
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
@@ -838,8 +901,12 @@ node TreeView(Widget) {
             }
             row = self.rows[index];
             arrow = self.area.x + 6 + row.depth * 14;
+            self.pending = "";
             if row.branch and event.x >= arrow - 4 and event.x < arrow + 12 {
                 stage.emit(self.toggle + " " + quote_command_word(row.key));
+            } elif row.branch and self.carry_branches and self.drag and self.pick and kind == "press" {
+                # Opened by the click it becomes, not by the press: it may be carried away instead.
+                self.pending = self.pick + " " + quote_command_word(row.key);
             } elif kind == "double" and self.open_command {
                 stage.emit(self.open_command + " " + quote_command_word(row.key));
             } elif self.pick {
@@ -847,7 +914,7 @@ node TreeView(Widget) {
                     self.pick + " " + quote_command_word(row.key) + (" add" if event.ctrl or event.shift else "")
                 );
             }
-            if self.drag and not row.branch {
+            if self.drag and (self.carry_branches or not row.branch) and not row.fixed {
                 # A row that is a thing, not a heading, can be dragged elsewhere.
                 stage.offer(self.drag + " " + row.key, row.text);
             }
@@ -862,6 +929,23 @@ node TreeView(Widget) {
         }
         if kind == "release" {
             self.grabbing = False;
+            return True;
+        }
+        if kind == "click" and self.pending {
+            if not stage.carrying {
+                stage.emit(self.pending);
+            }
+            self.pending = "";
+            return True;
+        }
+        if kind == "drop" {
+            if self.drop {
+                index = self.row_at(event.y);
+                stage.emit(
+                    self.drop + " " + quote_command_word(self.rows[index].key if index >= 0 else "") + " "
+                        + quote_command_word(event.text)
+                );
+            }
             return True;
         }
         return kind == "click";
@@ -898,6 +982,10 @@ node Gallery(Widget) {
         gap: int = 6,
         grabbing: bool = False,
         hover_tile: int = -1;
+
+    def asks -> str {
+        return self.pick;
+    }
 
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
@@ -1426,6 +1514,14 @@ node ViewArea(Widget) {
     def focusable -> bool {
         return True;
     }
+
+    def tabbed -> bool {
+        return False;
+    }
+
+    def flies -> bool {
+        return False;
+    }
 }
 
 """One box of a graph view: `key` is what its commands name; `column` and
@@ -1472,6 +1568,10 @@ node GraphView(Widget) {
         sliding: bool = False,
         travelled: int = 0,
         hover_node: int = -1;
+
+    def flies -> bool {
+        return False;
+    }
 
     def node_area(index: int) -> Rect {
         shown = self.nodes[index];
@@ -1951,6 +2051,10 @@ node Slider(Widget) {
         # What it had when the knob was taken, to tell whether it changed.
         taken: float = 0.0;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -2026,6 +2130,10 @@ node Spinner(Widget) {
         # Where the drag began, and what the number was then.
         from_x: int = 0,
         taken: float = 0.0;
+
+    def asks -> str {
+        return self.command;
+    }
 
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
@@ -2158,6 +2266,10 @@ node VectorField(Widget) {
         from_x: int = 0,
         taken: float = 0.0;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -2237,6 +2349,10 @@ node ColourBars(Widget) {
         command: str = "",
         part: int = -1,
         taken: float = 0.0;
+
+    def asks -> str {
+        return self.command;
+    }
 
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {

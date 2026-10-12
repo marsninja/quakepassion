@@ -104,6 +104,31 @@ impl Studio.show_model_form(ui: StudioUi) -> bool {
     frames.adopt(
         Label(text="frame " + str(doc.frame) + " of " + str(doc.frames()) + "   " + doc.frame_name(doc.frame), tone="dim", grow=1)
     );
+    frames.adopt(
+        PushButton(
+            text="Hide list" if self.frames_listed else "List",
+            command="ed_model frames",
+            size=72,
+            hint="Every frame as a row: click one to go to it, drag it to another place in the order"
+        )
+    );
+    if self.frames_listed {
+        # Every frame, a row each: a click goes to it, a drag puts it elsewhere in the order.
+        listed = ui.frame_list;
+        listed.rows = [
+            TreeRow(key=str(number), text=doc.frame_name(number), note=str(number), picked=number == doc.frame)
+            for number in range(doc.frames())
+        ];
+        listed.reveal(doc.frame);
+        form.adopt(listed);
+        naming = Box(across=True, gap=4);
+        form.adopt(naming);
+        naming.adopt(
+            TextField(ghost="Name this frame", command="ed_model frame name", grow=1, hint="Enter gives the frame in hand this name")
+        );
+        naming.adopt(PushButton(text="Copy", command="ed_model frame copy", hint="A copy of the frame in hand, after it"));
+        naming.adopt(PushButton(text="Drop", command="ed_model frame drop", hint="Take the frame in hand out of the model"));
+    }
     tools = Box(across=True, gap=4);
     form.adopt(tools);
     tools.adopt(PushButton(text="Undo", command="ed_model undo", hint="Undo the last change to the model"));
@@ -325,12 +350,27 @@ impl Studio.draw_model_marks {
 
 impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
     name = args[0];
-    if name != "ed_model" and name != "ed_pick" and name != "ed_mesh" {
+    if name != "ed_model" and name != "ed_pick" and name != "ed_mesh" and name != "ed_framedrop" {
         return False;
     }
     app = self.app;
     doc = self.model_doc;
     how = args[1] if len(args) > 1 else "";
+    if name == "ed_framedrop" {
+        # A row of the frame list let go on another: that frame put there in the order.
+        row_words = (args[2] if len(args) > 2 else "").split(" ", 1);
+        if doc is None or row_words[0] != "frame" or len(row_words) < 2 or not row_words[1].isdigit() {
+            return True;
+        }
+        moved_frame = int(row_words[1]);
+        # Let go under the last row: to the end.
+        to_place = int(how) if how.isdigit() else doc.frames() - 1;
+        if moved_frame == to_place or moved_frame >= doc.frames() {
+            return True;
+        }
+        self.set_frame(moved_frame);
+        return self.model_command(scene, ["ed_model", "frame", "move", str(to_place)]);
+    }
     if name == "ed_model" and how in ["new", "add"] {
         kind = args[2] if len(args) > 2 else "";
         sizes = model_numbers(args[3:]);
@@ -452,6 +492,14 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             }
             print("studio: faults " + str(len(faults)));
             self.say(str(len(faults)) + " faults: " + "; ".join(faults[:3]) if faults else "Nothing is wrong with the model");
+        } elif how == "frames" {
+            # The list of frames in the panel, shown or put away.
+            word = args[2] if len(args) > 2 else "";
+            self.frames_listed = (not self.frames_listed) if word not in ["on", "off"] else word == "on";
+            doc.revision += 1;
+            print("studio: frames listed=" + ("1" if self.frames_listed else "0") + " " + ",".join([doc.frame_name(number) for number in range(doc.frames())]));
+            self.say("The frames are listed under the view: click one to go to it, drag it to move it" if self.frames_listed else "The list of frames is put away");
+            return True;
         } elif how == "frame" {
             # The frame in hand (ed_frame goes from one to another).
             what = args[2] if len(args) > 2 else "";
@@ -620,13 +668,31 @@ impl Studio.model_command(scene: Scene, args: list[str]) -> bool {
             # What a click in the view picks.
             self.model_pick = args[2];
             doc.revision += 1;
+        } elif how == "find" and len(args) > 3 and args[2] in ["points", "faces", "point", "face"] and args[3].isdigit() {
+            # By its number: picked, and said.
+            rest = [int(args[3])];
+            of_faces = args[2].startswith("face");
+            said_of = mesh_found(mesh, of_faces, rest[0]);
+            if not said_of {
+                self.say("There is no " + ("triangle" if of_faces else "point") + " " + str(rest[0]) + " in " + part.name);
+                return True;
+            }
+            if of_faces {
+                doc.pick_faces(rest);
+            } else {
+                doc.pick_points(rest);
+                part.picked_faces = [];
+            }
+            print("studio: found " + said_of);
+            self.say(said_of.replace("=", " ").replace(",", ", "));
+            return True;
         } elif how == "front" or how == "back" {
             doc.pick_facing(self.model_camera.forward(), how == "front");
         } elif how == "none" or not how {
             doc.pick_faces([]);
             doc.pick_points([]);
         } else {
-            self.say("ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces");
+            self.say("ed_pick points|faces <numbers|all> [add] | find points|faces <number> | front | back | none | mode points|faces");
             return True;
         }
         self.say("Picked " + str(len(part.picked_points)) + " points and " + str(len(part.picked_faces)) + " triangles");

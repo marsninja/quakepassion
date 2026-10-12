@@ -284,3 +284,23 @@ def image_heights(data: bytes, tallest: float = 256.0) -> tuple[int, int, list[f
     }
     return (wide - 1, tall - 1, heights);
 }
+
+"""How far outside a rectangle a lift falls away to nothing, from a word: so
+many units, or with a `%` after it that share of the rectangle's shorter
+side. Nothing, and what is no number, is no falloff."""
+def falloff_of(word: str, wide: float, deep: float) -> float {
+    text = word.strip();
+    share = text.endswith("%");
+    if share {
+        text = text[:-1];
+    }
+    try {
+        amount = float(text);
+    } except ValueError {
+        return 0.0;
+    }
+    if amount <= 0.0 {
+        return 0.0;
+    }
+    return amount * min(abs(wide), abs(deep)) / 100.0 if share else amount;
+}

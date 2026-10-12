@@ -37,6 +37,9 @@ import from vendor.raylib {
 }
 import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
+import from .ui.logview { log_reach, log_window, log_fitted }
+import from .ui.order { moved_before }
+import from .tools.host { ToolHost, StudioTool }
 import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.widgets {
     Box,
@@ -47,6 +50,7 @@ import from .ui.widgets {
     TextField,
     Scroll,
     Splitter,
+    Sash,
     TreeView,
     TreeRow,
     Tabs,
@@ -73,6 +77,7 @@ import from .ui.widgets {
     ColourBars
 }
 import from .assets.explorer { AssetIndex, AssetLook }
+import from .assets.needs { needed_files, missing_files, held_names, names_file }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
@@ -87,12 +92,12 @@ import from .classes.registry {
     ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes
 }
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
-import from .geometry.terrain { heights_from, heights_image, image_heights }
+import from .geometry.terrain { heights_from, heights_image, image_heights, falloff_of }
 import from .geometry.touchup { cell_at, kin_cells, cells_outline }
 import from .geometry.patch {
     patch_points, PATCH_KINDS, places_text, places_even, places_projected_from, places_slid
 }
-import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under }
+import from .model.mesh { Mesh, mesh_volume, open_edges, face_under, point_under, mesh_found }
 import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
 import from .model.wavefront { mesh_obj, obj_mesh }
 import from .model.skin {
@@ -136,7 +141,9 @@ import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
 import from .project { Project, MANIFEST_NAME, read_project, write_project, addon_classes, file_name }
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
-import from .compile.navigation { Floor, Way, floor_ways, floor_middle, nav_data, ways_count, route_time, NAV_STEP }
+import from .compile.navigation {
+    Floor, Way, Leg, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP
+}
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
 import from engine.formats.aas { TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE }
 import from .compile.leak { find_leak, LeakReport }
@@ -153,7 +160,8 @@ import from .document.generate {
     prefab_overridden,
     with_prefabs,
     prefab_placed,
-    prefab_turns
+    prefab_turns,
+    with_patches
 }
 import from .document.scene {
     Scene,
@@ -180,6 +188,8 @@ import from .geometry.mapping { spun_about, axis_vector, mapping_bad }
 import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
 import from .geometry.integral { faces_astray, sides_integral, sides_angled }
 import from .geometry.bits { bit_names, bit_of, bits_named }
+import from .geometry.snapto { loop_inside, loop_thinned, snapped_move }
+import from .document.overlays { brush_kind, kind_tint }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
@@ -191,7 +201,7 @@ import from engine.world.combat { Opponent, HasOpponent }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
-import from .formats.map { read_map, write_map, MapItem, MapFile }
+import from .formats.map { read_map, write_map, MapItem, MapFile, map_materials, map_renamed }
 import from .geometry.brush { brush_windings, windings_bounds, Side, Mapping }
 import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
 
@@ -249,7 +259,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_tree", "ed_tree [text]", "say every row the scene tree shows, or those that hold some text"),
     (
         "ed_terrain",
-        "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest] | lift <x0> <y0> <x1> <y1> <amount> [falloff] | pattern <same|alt|other> | free",
+        "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest] | lift <x0> <y0> <x1> <y1> <amount> [falloff|n%] | pattern <same|alt|other> | free",
         "add a terrain where the camera looks; write or read its heights as a grey image; lift a rectangle of it; split its cells another way; or leave it as plain brushes"
     ),
     (
@@ -257,16 +267,17 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_sculpt <raise|lower|smooth|flatten|noise|erode|paint> [radius] [amount] [at <x> <y>]",
         "a stroke of the sculpting brush on a terrain, where the camera looks or at a point"
     ),
-    ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
+    ("ed_brush", "ed_brush <radius> <amount> | rect [on|off] [falloff|n%]", "the sculpting brush's width and strength; rect makes a drag in sculpt mode draw a rectangle that is lifted whole"),
     ("ed_replace", "ed_replace <old> <new> [all]", "give sides of one material another, in the selection or everywhere"),
     ("ed_snap", "ed_snap [all] [size]", "put the selection's corners and origins on the grid, or everything's (a map off the grid mended)"),
-    ("ed_align", "ed_align <x|y|z> <low|high|middle>", "line the selected brushes up along an axis"),
+    ("ed_align", "ed_align <x|y|z> <low|high|middle> [to <set>]", "line the selected brushes up along an axis, with one another or with a kept set"),
+    ("ed_prune", "ed_prune [all]", "take out the sides that make no face, and the brushes that enclose nothing"),
     (
         "ed_faces",
-        "ed_faces <all|invert|extend|next|prev>",
-        "spread the face pick over the whole brush, to its other faces or across the plane; or step to the next face"
+        "ed_faces <all|invert|extend|adjoining|beside|next|prev>",
+        "spread the face pick over the whole brush, to its other faces, across the plane, to the faces that adjoin it in its plane or to those beside it; or step to the next face"
     ),
-    ("ed_tag", "ed_tag [clear]", "remember the picked face, to glue brushes against and take its material from; or forget it"),
+    ("ed_tag", "ed_tag [add|list|clear]", "remember the picked face, to glue brushes against and take its material from; add more faces to those remembered; say them; or forget them"),
     ("ed_glue", "ed_glue [face [link]]", "move the selection against the tagged face, or put the picked face in its plane (and link it to what lies there)"),
     ("ed_paintface", "ed_paintface <brush> <side>", "give one face the material in hand (Alt and a drag, in face mode)"),
     ("ed_reshape", "ed_reshape <w d h> [count] [thickness]", "build the selected shape again from other numbers, where it stands"),
@@ -298,7 +309,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages, check it for what the game would trip on, and save it"
     ),
     ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
-    ("ed_camps", "ed_camps", "list the spots bots camp at and roam through"),
+    ("ed_camps", "ed_camps [routes [on|off]]", "list the spots bots camp at and roam through; routes draws the ways bots take between them, or from the one thing picked to each"),
     ("ed_touch", "ed_touch <x> <y> <amount> [variance]", "move the corner of the terrain nearest a place, and the corners that stand with it"),
     (
         "ed_plot",
@@ -384,8 +395,10 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
-    ("ed_log", "ed_log [lines]", "show the console's last lines"),
+    ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
+    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; alone, count them"),
+    ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
     ("ed_refield", "ed_refield <key> <old> <new> [all]", "replace part of a field's value across the selection, or every entity"),
@@ -434,6 +447,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recall", "ed_recall <name> [add]", "select a set kept before, alone or added to the selection"),
     ("ed_forget", "ed_forget <name>", "drop a kept set"),
     ("ed_swap", "ed_swap", "the two selected things change places"),
+    ("ed_uses", "ed_uses [material|file]", "what the scene uses, with what no archive holds marked; or select every brush and entity that uses one material or file"),
+    ("ed_marked", "ed_marked [set|clear|take|pick|swap]", "mark the selected entity for later; then take hands it the selected brushes, pick selects it, swap changes its place with the selection's"),
     ("ed_browse", "ed_browse [next|prev]", "look at each selected thing in turn"),
     (
         "ed_gizmo",
@@ -476,6 +491,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_pickmat", "ed_pickmat [brush side]", "take the material of a face as the one new brushes and faces get"),
     ("ed_boxselect", "ed_boxselect <view> <x0> <y0> <x1> <y1> [add]", "select what lies in a rectangle of a view"),
+    ("ed_lasso", "ed_lasso <view> <x> <y> <x> <y> ... [add]", "select what lies inside a loop drawn in a view (Alt and a drag draws one)"),
+    ("ed_snapto", "ed_snapto <grid|corners|edges|faces> [reach]", "what a move ends on: where it is asked, or a corner, edge or face of another brush it comes within reach of"),
     ("ed_corner", "ed_corner <dx> <dy> <dz> <x> <y> <z> [...]", "move the corners of the selected brush at those points"),
     ("ed_display", "ed_display <wire|textured> [3d|axis|all]", "draw views as edges or textured (the axis views without a word)"),
     ("ed_check", "ed_check [number]", "list what is wrong with the document, or select the thing a finding is about"),
@@ -486,9 +503,14 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_matfilter", "ed_matfilter <text> [size:<WxH|N|>=N|<=N>]", "show only matching materials in the materials list, and only those of a size"),
     (
         "ed_layout",
-        "ed_layout <1|2|3|4|4b|logic|assets>",
-        "one level view, four (3D, top, front and side), the logic graph, or the asset explorer"
+        "ed_layout <1|2|3|4|4b|logic|assets> | save <name> | load <name> | drop <name> | list",
+        "one level view, four (3D, top, front and side), the logic graph, or the asset explorer; or keep the layout as it stands under a name and bring it back"
     ),
+    ("ed_help", "ed_help [command|doc]", "what the control under the pointer is for and the command it asks for (F1), or a command by name; doc opens the studio's book"),
+    ("ed_flyover", "ed_flyover [on|off]", "whether a control's hint is shown beside the pointer when it rests there"),
+    ("ed_rename", "ed_rename [name]", "name the selected entity (a group's own name, or the name it is fired by): typed over its row of the scene list (F2), or said"),
+    ("ed_split", "ed_split [x|y] <percent> | even", "how the level views share the room: the left views' share of the width, the upper views' of the height"),
+    ("ed_sides", "ed_sides [swap|left|right]", "which side the scene list is on: the inspector takes the other"),
     ("ed_palette", "ed_palette", "open the list of every studio command, to find one by typing"),
     ("ed_grid", "ed_grid <size|up|down>", "the grid moves and resizes snap to (1 to 256)"),
     ("ed_mark", "ed_mark [name]", "remember where the camera is, in the document"),
@@ -496,9 +518,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_hide", "ed_hide [others]", "put the selection, or everything else, out of sight while editing"),
     ("ed_show", "ed_show", "bring back everything hidden"),
     ("ed_drop", "ed_drop", "let the selection down onto what is beneath it"),
-    ("ed_history", "ed_history [steps]", "list the edits made, or undo that many"),
+    ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
     ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
+    ("ed_framedrop", "ed_framedrop <row> <what>", "what a row of the model's frame list let go on another asks for: that frame put there in the order"),
+    ("ed_assetdrop", "ed_assetdrop <row> <what>", "what a row of the explorer let go on the project's rows asks for: the file or folder copied into the project"),
     ("ed_extract", "ed_extract [to] | folder <game>:<folder> [to]", "write the file the explorer shows to disk, or every file under a folder of a game's archives"),
     ("ed_listen", "ed_listen", "play the sound the explorer shows"),
     ("ed_frame", "ed_frame <number|next|prev|play|stop> | fps <n> | range <first> <last>|all | smooth on|off|<frames between> | once | loop | clip <sequence|list>", "the frame of the model the explorer shows, and how its frames are played"),
@@ -519,9 +543,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
     ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),
+    ("ed_treedrop", "ed_treedrop <row> <what>", "what a row of the scene list let go on another asks for: a brush handed to the entity on that row"),
+    ("ed_libdrop", "ed_libdrop <row> <what>", "what a row of the Library tab let go on another asks for: a favourite put before another, or in the trash"),
     (
         "ed_shape",
-        "ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe> [w d h] [count] [thickness]",
+        "ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe|bicone|torus|xtree|cap|corner|bevel|column|landing|fan|free> [w d h] [count] [thickness]",
         "add a shape built of brushes where the camera looks"
     ),
     ("ed_class", "ed_class <classname>", "add an entity of a class, or make the selected brushes one"),
@@ -693,12 +719,47 @@ obj StudioUi {
         asset_box: Box,
         asset_form: Box,
         model_view: ViewArea,
+        frame_list: TreeView,
         logic: GraphView,
         prefab_name: TextField,
         modes: list[PushButton],
         center: Box,
+        body: Box,
+        left: Box,
+        right: Box,
         new_key: TextField | None = None,
         new_value: TextField | None = None;
+}
+
+"""The studio as its tools see it (see editor/tools/host.jac)."""
+obj StudioHost(ToolHost) {
+    has studio: Studio;
+
+    def say(message: str) {
+        self.studio.say(message);
+    }
+
+    def navigation -> NavMesh | None {
+        baked = self.studio.nav_mesh;
+        if baked is not None {
+            return baked;
+        }
+        app = self.studio.app;
+        if app is None {
+            return None;
+        }
+        # A shipped arena's own, when it came with one.
+        meshes = [app.world->:HasNavMesh:->][?:NavMesh];
+        return meshes[0] if len(meshes) > 0 else None;
+    }
+
+    def navigation_mark -> int {
+        return len(self.studio.nav_floors);
+    }
+
+    def line(start: Vec3, finish: Vec3, color: Ink) {
+        wire_line(start, finish, color);
+    }
 }
 
 obj Studio(Workbench) {
@@ -737,6 +798,34 @@ obj Studio(Workbench) {
         nav_cell: float = 32.0,
         nav_mesh: NavMesh | None = None,
         nav_shown: bool = False,
+        # The tools kept in modules of their own, in the order they were added.
+        tools: list[StudioTool] = [],
+        tool_host: ToolHost | None = None,
+        declared: bool = False,
+        # The log panel along the foot of the views: whether it is open,
+        # how many of the console's lines it holds, and how far back it
+        # is scrolled.
+        log_panel: bool = False,
+        log_rows: int = 6,
+        log_back: int = 0,
+        # The entity marked for what is done from the mark later (-1: none).
+        marked_item: int = -1,
+        # Whether the model editor lists the model's frames under its view.
+        frames_listed: bool = False,
+        # Whether hints fly beside the pointer, and the field a name is
+        # being typed in over a row of the scene list.
+        flyovers: bool = True,
+        rename_field: TextField | None = None,
+        # How the level views share the room: the left views' share of the
+        # width and the upper views' of the height, in hundredths; the rows
+        # and the column they are laid in; whether the side panels have
+        # changed sides; and layouts kept by name, as the words that set them.
+        split_x: int = 50,
+        split_y: int = 50,
+        split_rows: list[Box] = [],
+        split_column: Box | None = None,
+        sides_swapped: bool = False,
+        kept_layouts: dict[str, str] = {},
         # The part of a view its overlays are drawn in, when a floating
         # window covers the rest (the whole of it when this has no size).
         over_piece: Rect = Rect(),
@@ -786,6 +875,12 @@ obj Studio(Workbench) {
         settings_read: bool = False,
         # A rectangle dragged out over a view, to select what is in it.
         boxing: bool = False,
+        lassoing: bool = False,
+        lasso: list[int] = [],
+        snap_to: str = "grid",
+        show_triggers: bool = False,
+        show_unseen: bool = False,
+        snap_reach: float = 16.0,
         box_port: int = 0,
         # How far a dragged corner or edge has gone.
         corner_by: Vec3 = Vec3(),
@@ -883,6 +978,11 @@ obj Studio(Workbench) {
         painted_solid: int = -1,
         painted_side: int = -1,
         tagged_words: str = "",
+        # Every tagged face: its plane and what it was called; and the first one's brush and side.
+        tag_planes: list[Plane3] = [],
+        tag_names: list[str] = [],
+        tagged_solid: Solid | None = None,
+        tagged_index: int = -1,
         # The sculpting brush, whether a stroke is being drawn, drags since
         # its last dab, and where on a terrain the pointer is.
         brush_radius: float = 96.0,
@@ -892,6 +992,15 @@ obj Studio(Workbench) {
         sculpt_at: Vec3 | None = None,
         # The terrain under the pointer, by its number (-1 when none).
         sculpt_land: int = -1,
+        # The rectangle brush: whether a drag in sculpt mode draws a
+        # rectangle to lift, how far outside it the lift falls away (units,
+        # or a share of its shorter side as "50%"), its two corners while it
+        # is drawn and the terrain it is drawn on.
+        rect_brush: bool = False,
+        rect_fall: str = "",
+        rect_from: Vec3 | None = None,
+        rect_to: Vec3 | None = None,
+        rect_land: int = -1,
         # A build for playing takes everything; one for editing leaves out
         # what is hidden.
         play_build: bool = False,
@@ -1044,6 +1153,43 @@ obj Studio(Workbench) {
         for (name, usage, description) in STUDIO_COMMANDS {
             shell.command(name, "studio", usage, description);
         }
+        self.declared = True;
+        for tool in self.tools {
+            for (name, usage, description) in tool.commands() {
+                shell.command(name, "studio", usage, description);
+            }
+        }
+    }
+
+    """The studio as its tools see it."""
+    def host -> ToolHost {
+        known = self.tool_host;
+        if known is None {
+            known = StudioHost(studio=self);
+            self.tool_host = known;
+        }
+        return known;
+    }
+
+    """Take a tool on: its commands are the studio's from now on."""
+    def add_tool(tool: StudioTool) {
+        self.tools.append(tool);
+        app = self.app;
+        if self.declared and app is not None {
+            for (name, usage, description) in tool.commands() {
+                app.shell.command(name, "studio", usage, description);
+            }
+        }
+    }
+
+    """Offer a command to the tools, first added first. False when it is none of theirs."""
+    def plugin_command(scene: Scene, args: list[str]) -> bool {
+        for tool in self.tools {
+            if tool.command(self.host(), scene, args) {
+                return True;
+            }
+        }
+        return False;
     }
 
     """Say something: in the console, and in the status bar."""
@@ -1131,6 +1277,13 @@ obj Studio(Workbench) {
             app.menu.opened = False;
             self.say(app.menu.message);
             return False;
+        }
+        if self.nav_mesh is not None {
+            # Navigation baked for the level that was is of a world that is
+            # gone: its areas went with it, and are not to be asked the way.
+            self.nav_mesh = None;
+            self.nav_floors = [];
+            self.nav_ways = [];
         }
         return True;
     }
@@ -1460,7 +1613,8 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Bake navigation for bots", command="ed_nav bake"),
                     MenuItem(text="What the baked navigation cannot reach", command="ed_nav check"),
-                    MenuItem(text="Draw the baked ways", command="ed_nav show")
+                    MenuItem(text="Draw the baked ways", command="ed_nav show"),
+                    MenuItem(text="Draw the ways bots take between camp spots", command="ed_camps routes")
                 ],
                 [
                     MenuItem(text="Next document", command="ed_doc next"),
@@ -1503,7 +1657,9 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Another 3D window", command="ed_window new"),
                     MenuItem(text="Another 3D window, in outlines", command="ed_window new outlines"),
-                    MenuItem(text="Close the floating windows", command="ed_window close all")
+                    MenuItem(text="Close the floating windows", command="ed_window close all"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Log panel along the foot of the views", command="ed_log panel")
                 ]
             ]
         );
@@ -1572,8 +1728,10 @@ obj Studio(Workbench) {
             pick="ed_select",
             toggle="ed_fold",
             open_command="ed_focus",
+            drag="tree",
+            drop="ed_treedrop",
             grow=1,
-            hint="Click selects (Ctrl adds), double click looks at it"
+            hint="Click selects (Ctrl adds), double click looks at it; drag a brush onto the entity that is to hold it, or anything into a view"
         );
         scene_page.adopt(tree);
         material_page = Box();
@@ -1619,6 +1777,7 @@ obj Studio(Workbench) {
             pick="ed_library",
             toggle="ed_fold",
             drag="library",
+            drop="ed_libdrop",
             grow=1,
             hint="Click a scene to open it, or a prefab to add a copy where the camera looks; drag a prefab into a view"
         );
@@ -1659,8 +1818,11 @@ obj Studio(Workbench) {
         asset_tree = TreeView(
             pick="ed_asset",
             toggle="ed_asset",
+            drag="asset",
+            drop="ed_assetdrop",
+            carry_branches=True,
             grow=1,
-            hint="Click a folder to open it, a file to see it"
+            hint="Click a folder to open it, a file to see it; drag either onto Your project to copy it there"
         );
         asset_list.adopt(asset_tree);
         # No fill: the model is drawn before the interface, and shows through.
@@ -1742,10 +1904,20 @@ obj Studio(Workbench) {
             asset_box=asset_box,
             asset_form=asset_form,
             model_view=model_view,
+            frame_list=TreeView(
+                pick="ed_frame",
+                drag="frame",
+                drop="ed_framedrop",
+                size=104,
+                hint="Click goes to a frame; drag one onto another to put it there in the order"
+            ),
             logic=sheet,
             prefab_name=prefab_name,
             modes=modes,
-            center=center
+            center=center,
+            body=body,
+            left=left,
+            right=right
         );
     }
 
@@ -1995,6 +2167,7 @@ obj Studio(Workbench) {
         ui.library.track(stage);
         ui.classes.track(stage);
         ui.assets.track(stage);
+        ui.frame_list.track(stage);
         if self.assets_shown and self.assets_listed != self.folds {
             self.list_assets(ui);
             self.assets_listed = self.folds;
@@ -2029,6 +2202,12 @@ obj Studio(Workbench) {
         scene = self.scene;
         if app is None or stage is None or ui is None or scene is None {
             return;
+        }
+        typed = self.rename_field;
+        if typed is not None and not typed.focused {
+            # The name typed over a row is done with: entered, or left as it was.
+            stage.close(typed);
+            self.rename_field = None;
         }
         input = stage.input;
         happened: list[tuple[int, UiEvent]] = [];
@@ -2100,6 +2279,16 @@ obj Studio(Workbench) {
                     self.moved = True;
                     continue;
                 }
+                if self.mode == "sculpt" and self.rect_brush {
+                    # One corner of a rectangle drawn on the terrain.
+                    corner = self.terrain_point(scene, event.x, event.y);
+                    if corner is not None {
+                        self.rect_from = corner;
+                        self.rect_to = corner;
+                        self.rect_land = self.sculpt_land;
+                    }
+                    continue;
+                }
                 if self.mode == "sculpt" {
                     # The first dab of a stroke.
                     self.sculpting = True;
@@ -2131,6 +2320,11 @@ obj Studio(Workbench) {
                     # A press on nothing selected may become a rectangle.
                     self.boxing = True;
                     self.box_port = index;
+                } elif self.mode == "brush" {
+                    # With Alt it becomes a loop drawn freehand round what is wanted.
+                    self.lassoing = True;
+                    self.lasso = [event.x, event.y];
+                    self.box_port = index;
                 }
             } elif event.kind == "release" {
                 if event.button == 1 {
@@ -2141,6 +2335,10 @@ obj Studio(Workbench) {
                 }
                 if event.button == 0 and self.sculpting {
                     self.sculpting = False;
+                    self.moved = True;
+                }
+                if event.button == 0 and self.rect_from is not None {
+                    self.rect_lift(event.shift);
                     self.moved = True;
                 }
                 if event.button == 0 and self.lining {
@@ -2157,6 +2355,17 @@ obj Studio(Workbench) {
                             stage.emit("ed_box_draw " + ends);
                         }
                     }
+                }
+                if event.button == 0 and self.lassoing {
+                    self.lassoing = False;
+                    if len(self.lasso) >= 8 {
+                        self.moved = True;
+                        stage.emit(
+                            "ed_lasso " + str(self.box_port) + " " + " ".join([str(value) for value in loop_thinned(self.lasso, 48)])
+                                + (" add" if event.ctrl or event.shift else "")
+                        );
+                    }
+                    self.lasso = [];
                 }
                 if event.button == 0 and self.boxing {
                     self.boxing = False;
@@ -2240,6 +2449,12 @@ obj Studio(Workbench) {
                     self.moved = True;
                     stage.emit("ed_paintface " + str(brushed_solid.serial) + " " + str(brushed.side));
                 }
+            } elif event.kind == "drag" and self.rect_from is not None {
+                # The rectangle's other corner, while the pointer is over its terrain.
+                other = self.terrain_point(scene, event.x, event.y);
+                if other is not None and self.sculpt_land == self.rect_land {
+                    self.rect_to = other;
+                }
             } elif event.kind == "drag" and self.sculpting {
                 # A dab every few moves of the pointer, so a stroke builds up evenly.
                 self.sculpt_drags += 1;
@@ -2249,6 +2464,12 @@ obj Studio(Workbench) {
             } elif event.kind == "drag" and self.resizing {
                 self.held_shift = event.shift;
                 self.drag_handle(scene, event.x, event.y, event.ctrl);
+            } elif event.kind == "drag" and self.lassoing {
+                # A point of the loop wherever the pointer has gone a little way on.
+                if abs(event.x - self.lasso[-2]) + abs(event.y - self.lasso[-1]) >= 4 {
+                    self.lasso.append(event.x);
+                    self.lasso.append(event.y);
+                }
             } elif event.kind == "drag" and self.moving {
                 self.drag_selection(event.x, event.y, event.shift, event.ctrl);
             } elif event.kind == "drag" {
@@ -2401,6 +2622,10 @@ obj Studio(Workbench) {
             }
             if key == "F8" {
                 stage.emit("edit");
+            } elif key == "F1" {
+                stage.emit("ed_help");
+            } elif key == "F2" {
+                stage.emit("ed_rename");
             } elif key == "F5" {
                 stage.emit("ed_play");
             } elif key == "F6" {
@@ -2591,16 +2816,24 @@ obj Studio(Workbench) {
             self.assets_listed = -1;
             return;
         }
+        # A bar lies between the rows of four views, in place of the gap.
+        ui.center.gap = 0 if self.layout == 4 else 3;
         if self.layout == 1 {
             ui.center.adopt(self.ports[0].view);
             return;
         }
-        upper = Box(across=True, grow=1, gap=3);
+        # The views share the room by weight; a bar between them, where a
+        # gap was, is dragged to share it out otherwise (ed_split).
+        upper = Box(across=True, grow=1);
         ui.center.adopt(upper);
         upper.adopt(self.ports[0].view);
+        upper.adopt(Sash(command="ed_split x", hint="Drag to make the views wider or narrower"));
+        self.split_rows = [upper];
+        self.split_column = None;
         if self.layout == 2 {
             # The classic pair: the 3D view beside the plan.
             upper.adopt(self.ports[1].view);
+            self.apply_split();
             return;
         }
         if self.layout == 3 or self.layout == 5 {
@@ -2610,14 +2843,34 @@ obj Studio(Workbench) {
             for index in range(1, 3 if self.layout == 3 else 4) {
                 column.adopt(self.ports[index].view);
             }
+            self.split_column = column;
+            self.apply_split();
             return;
         }
-        lower = Box(across=True, grow=1, gap=3);
+        ui.center.adopt(Sash(command="ed_split y", hint="Drag to make the views taller or shorter"));
+        lower = Box(across=True, grow=1);
         ui.center.adopt(lower);
         upper.adopt(self.ports[1].view);
         lower.adopt(self.ports[2].view);
+        lower.adopt(Sash(command="ed_split x", hint="Drag to make the views wider or narrower"));
         lower.adopt(self.ports[3].view);
+        self.split_rows = [upper, lower];
+        self.apply_split();
     }
+
+    """Share the room among the level views by the split now set."""
+    def apply_split;
+    """The views' split, the side panels' sides and layouts kept by name."""
+    def layouts_command(scene: Scene, args: list[str]) -> bool;
+    """What the command table says of a command: its usage and what it does."""
+    def help_lines(asked: str) -> list[str];
+    """Help for what the pointer is on or for a command by name, hints
+    beside the pointer, and an entity named over its row."""
+    def help_command(scene: Scene, args: list[str]) -> bool;
+    """The layout as it stands, as the words that would set it again."""
+    def layout_words -> str;
+    """Put the side panels on the sides now set."""
+    def place_sides;
 
     """The entity under a point of the level view: the nearest whose box the
     line of sight enters before it meets a wall."""
@@ -2799,6 +3052,9 @@ obj Studio(Workbench) {
         }
         self.draw_paths();
         self.draw_camps();
+        for tool in self.tools {
+            tool.draw_through(self.host(), scene);
+        }
         self.draw_nav();
         self.draw_entity_models(scene);
         for shape in chosen {
@@ -2840,7 +3096,7 @@ obj Studio(Workbench) {
         }
         # Where the sculpting brush would fall, and how wide.
         ring = self.sculpt_at;
-        if ring is not None {
+        if ring is not None and not self.rect_brush {
             for i in range(24) {
                 first = 2.0 * math.pi * float(i) / 24.0;
                 second = 2.0 * math.pi * float(i + 1) / 24.0;
@@ -2851,6 +3107,7 @@ obj Studio(Workbench) {
                 );
             }
         }
+        self.draw_rect_brush();
         # The way out of a level that leaks.
         for i in range(1, len(self.leak)) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
@@ -2901,6 +3158,7 @@ obj Studio(Workbench) {
         self.over_piece = Rect();
         self.watch(watched);
         self.canvas.unclip();
+        self.draw_log_panel();
     }
 
     """Names over the selection and over what the pointer is on, the selected
@@ -2944,6 +3202,17 @@ obj Studio(Workbench) {
                     h=abs(stage.input.y - self.press_y)
                 );
                 canvas.outline(drawn, canvas.theme.accent);
+            }
+        }
+        if self.lassoing and self.port_now == self.box_port and len(self.lasso) >= 4 {
+            # The loop as drawn so far, and the line that would close it.
+            turns = len(self.lasso) // 2;
+            for at in range(turns) {
+                onward = (at + 1) % turns;
+                canvas.line(
+                    self.lasso[at * 2], self.lasso[at * 2 + 1], self.lasso[onward * 2], self.lasso[onward * 2 + 1],
+                    canvas.theme.accent if onward != 0 else canvas.theme.accent.faded(110)
+                );
             }
         }
         if self.boxing and stage is not None and self.port_now == self.box_port {
@@ -3113,6 +3382,9 @@ obj Studio(Workbench) {
     """Where on a terrain the line of sight through a point of the view
     lands, or none when it lands on none."""
     def terrain_point(scene: Scene, x: int, y: int) -> Vec3 | None;
+    """Lift (or lower) what the rectangle drawn on a terrain encloses, and forget it."""
+    def rect_lift(lower: bool);
+    def draw_rect_brush;
     """One dab of the sculpting brush under the pointer."""
     def dab(scene: Scene, x: int, y: int, lower: bool, smooth: bool);
 
@@ -3377,6 +3649,12 @@ obj Studio(Workbench) {
     def game_for(scene: Scene, classname: str) -> str;
     """Entities that carry no game, or one that has no such class."""
     def game_findings(scene: Scene) -> list[Finding];
+    """Entities of a class their game does not have, and the sounds and
+    models their fields name that no archive holds."""
+    def need_findings(scene: Scene) -> list[Finding];
+    """What the scene uses and what of it is missing; or, of one material
+    or file, the brushes and entities that use it."""
+    def uses_command(scene: Scene, args: list[str]) -> bool;
     def draw_camps;
     """Run an asset-game or camp-spot command. False when it is not one."""
     def games_command(scene: Scene, args: list[str]) -> bool;
@@ -3432,6 +3710,15 @@ obj Studio(Workbench) {
     def archive_command(scene: Scene, args: list[str]) -> bool;
     def finding_command(scene: Scene, args: list[str]) -> bool;
     def rows_command(scene: Scene, args: list[str]) -> bool;
+    def prune_command(scene: Scene, args: list[str]) -> bool;
+    def snapto_command(scene: Scene, args: list[str]) -> bool;
+    def q3map_command(scene: Scene, args: list[str]) -> bool;
+    def overlay_command(scene: Scene, args: list[str]) -> bool;
+    def file_material(name: str) -> str;
+    def scene_material(name: str) -> str;
+    def texture_sizes(names: list[str], as_file: bool) -> dict[str, list[int]];
+    def snap_delta(scene: Scene, delta: Vec3) -> Vec3;
+    def select_in_loop(scene: Scene, port: int, loop: list[int], add: bool);
     def tags_path -> str;
     def read_tags;
     """The edges of a frame as they are to be drawn: all, or those of the
@@ -3459,6 +3746,20 @@ obj Studio(Workbench) {
 
     """Run a navigation command. False when it is not one."""
     def nav_command(scene: Scene, args: list[str]) -> bool;
+    """Where the log panel lies: along the foot of the level views."""
+    def log_area -> Rect;
+    def log_said -> list[str];
+    def draw_log_panel;
+    def log_panel_words -> str;
+    def logpanel_command(scene: Scene, args: list[str]) -> bool;
+    """The entity a brush let go on a row of the scene list is handed to:
+    the row's own when it holds brushes, the holder of the brush on that
+    row, or the world for the brushes' heading."""
+    def drop_taker(scene: Scene, target: str) -> Item | None;
+    def treedrop_command(scene: Scene, args: list[str]) -> bool;
+    """Mark an entity, and later hand the selected brushes to it, pick it,
+    or change its place with the selection's."""
+    def marked_command(scene: Scene, args: list[str]) -> bool;
     """The places to stand in the built scene, sampled on a grid: floor
     under the whole of a cell and room for a head over it."""
     def nav_floors_of(scene: Scene, cell: float) -> list[Floor];
@@ -3705,7 +4006,10 @@ obj Studio(Workbench) {
             }
         } elif name == "ed_move" {
             if len(args) > 3 {
-                scene.shift_selection(Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3])), self.tex_lock);
+                # Where asked, or on to a corner, edge or face it comes within reach of.
+                scene.shift_selection(
+                    self.snap_delta(scene, Vec3(x=float(args[1]), y=float(args[2]), z=float(args[3]))), self.tex_lock
+                );
             }
         } elif name == "ed_undo" {
             label = scene.undo();
@@ -3730,6 +4034,8 @@ obj Studio(Workbench) {
                 self.main.yaw = math.radians(float(args[4]));
                 self.main.pitch = math.radians(float(args[5]));
             }
+        } elif name == "ed_layout" and len(args) > 1 and args[1] in ["save", "load", "drop", "list", "keep"] {
+            self.layouts_command(scene, args);
         } elif name == "ed_layout" {
             self.logic_shown = len(args) > 1 and args[1] == "logic";
             self.assets_shown = len(args) > 1 and args[1] == "assets";
@@ -3747,7 +4053,18 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.rows_command(scene, args) and not self.finding_command(scene, args)
+        } elif not self.plugin_command(scene, args) and not self.help_command(scene, args)
+            and not self.layouts_command(scene, args)
+            and not self.uses_command(scene, args)
+            and not self.marked_command(scene, args)
+            and not self.treedrop_command(scene, args)
+            and not self.logpanel_command(scene, args)
+            and not self.overlay_command(scene, args)
+            and not self.q3map_command(scene, args)
+            and not self.snapto_command(scene, args)
+            and not self.prune_command(scene, args)
+            and not self.rows_command(scene, args)
+            and not self.finding_command(scene, args)
             and not self.archive_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
@@ -4072,6 +4389,26 @@ obj Studio(Workbench) {
         if self.nav_mesh is not None {
             lines.append(self.nav_words());
         }
+        for tool in self.tools {
+            for tool_line in tool.dump_lines(self.host(), scene) {
+                lines.append(tool_line);
+            }
+        }
+        if self.log_panel {
+            lines.append(self.log_panel_words());
+        }
+        if self.split_x != 50 or self.split_y != 50 or self.sides_swapped or len(self.kept_layouts) > 0 {
+            lines.append(
+                "studio: split x=" + str(self.split_x) + " y=" + str(self.split_y) + " sides=" + ("swapped" if self.sides_swapped else "usual")
+                    + " kept=" + ",".join(sorted(self.kept_layouts.keys()))
+            );
+        }
+        if self.rect_brush {
+            lines.append("studio: rectbrush falloff=" + (self.rect_fall if self.rect_fall else "0"));
+        }
+        if self.marked_item >= 0 {
+            lines.append("studio: marked #" + str(self.marked_item));
+        }
         if self.pick_kind != "all" or len(self.kept_out_items) + len(self.kept_out_solids) > 0 {
             lines.append(
                 "studio: picks=" + self.pick_kind + " put_away="
@@ -4100,6 +4437,14 @@ obj Studio(Workbench) {
         }
         for words in self.depth_words() {
             lines.append(words);
+        }
+        if self.snap_to != "grid" {
+            lines.append("studio: snapto " + self.snap_to + " reach=" + str(int(round(self.snap_reach))));
+        }
+        if self.show_triggers or self.show_unseen {
+            lines.append(
+                "studio: overlays triggers=" + ("1" if self.show_triggers else "0") + " unseen=" + ("1" if self.show_unseen else "0")
+            );
         }
         # The mode's line stays the last: sessions look for it there.
         lines.append(self.mouse_words());
