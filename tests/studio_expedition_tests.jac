@@ -1,6 +1,8 @@
 import from engine.math.vec3 { Vec3 }
 import from games.passion.mission { Beat }
 import from games.passion.layout { Room }
+import from games.passion.interior { RECIPES, build_interior }
+import from games.passion.random { stream_for }
 import from editor.formats.map { MapItem }
 import from editor.geometry.brush { box_sides }
 import from editor.document.expedition { room_at, room_middle, brush_middle, room_name, room_groups, beat_words, room_words }
@@ -56,4 +58,22 @@ test "a beat and a room are each said in a line" {
     beat = Beat(id=3, kind="lock", section=1, district=2, order=5, tension=0.456, grants=["key_gold"], optional=True, pattern="lock_key");
     assert beat_words(beat) == "beat 3 lock section=1 district=2 order=5 tension=0.46 optional grants=key_gold pattern=lock_key";
     assert room_words(two_rooms()[1]) == "room 1 arena recipe=hall at=3,0 size=2x3 floor=64 ceiling=256 district=0 order=0";
+}
+
+test "a room asked for a recipe is made by it, and one made again rolls other dice" {
+    assert "pit" in RECIPES and "arena" in RECIPES and len(RECIPES) == 11;
+    made = 0;
+    for seed in range(1, 7) {
+        room = Room(beat=0, w=5, h=5, size=3, wanted="colonnade");
+        if build_interior(room, [], stream_for(seed, "t"), 0).recipe == "colonnade" {
+            made += 1;
+        }
+    }
+    # Asked for, it is what the room is made by unless it cannot be verified.
+    assert made >= 4;
+    # Nothing asked: the generator's own choice, the same for the same dice.
+    free = Room(beat=0, w=5, h=5, size=3);
+    first = build_interior(free, [], stream_for(3, "t"), 0);
+    again = build_interior(free, [], stream_for(3, "t"), 0);
+    assert first.recipe == again.recipe and first.floor == again.floor;
 }

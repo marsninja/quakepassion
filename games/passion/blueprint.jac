@@ -182,9 +182,12 @@ def carve_rooms(bp: Blueprint, site: Site, stream: Stream, verticality: float) -
         sockets = room_sockets(site, room);
         interior: Interior | None = None;
         try {
-            interior = build_interior(
-                room, sockets, stream.child("room", room.beat), room.district
-            );
+            # A room made again rolls its own dice again; the others keep theirs.
+            dice = stream.child("room", room.beat);
+            if room.roll > 0 {
+                dice = dice.child("roll", room.roll);
+            }
+            interior = build_interior(room, sockets, dice, room.district);
         } except ValueError {
             return False;
         }
@@ -230,6 +233,8 @@ def carve_rooms(bp: Blueprint, site: Site, stream: Stream, verticality: float) -
             }
         }
         bp.interiors[room.beat] = interior;
+        # The room says what its inside was made by.
+        room.recipe = interior.recipe;
     }
     return True;
 }

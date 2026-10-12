@@ -655,6 +655,10 @@ def teleporter(director: Director, passage: Passage) {
 # ---------------------------------------------------------------------------
 
 def budget_for(director: Director, room: Room, total_order: int) -> float {
+    if room.budget >= 0.0 {
+        # Said outright for this room.
+        return room.budget;
+    }
     if room.kind in ["start", "goal", "recovery", "cache", "vista"] {
         return 0.0 if room.kind != "vista" else 1.5 * director.density;
     }

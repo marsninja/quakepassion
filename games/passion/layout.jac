@@ -44,6 +44,13 @@ node Room {
         pattern: str = "",
         order: int = 0,
         span: int = 0;
+    # What an editor may ask of a room: the recipe its inside is made by
+    # ("" leaves the choice to the generator), how many times its inside
+    # has been made again (each a different roll of the same dice), and
+    # the threat it is filled to (below zero, what its tension earns it).
+    has wanted: str = "",
+        roll: int = 0,
+        budget: float = -1.0;
 
     def columns -> int {
         return CELL * self.w - 1;

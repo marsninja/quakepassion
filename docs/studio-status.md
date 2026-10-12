@@ -898,6 +898,25 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   secret). It is a tool in a module of its own
   (`editor/tools/expedition.jac`); it reads the generator's graph (beats
   and links, rooms and passages) as the generator left it.
+- **Parts of an expedition made again**: the tool runs the generator's
+  own stages again from where something changed, proves the result with
+  its playtest, and opens it in place of the document; one that cannot
+  be made or proved is refused and the expedition stays as it was.
+  `ed_exp again rooms` rolls the dice again for every room's inside
+  except those whose group is locked in the scene list, and a locked
+  room's group is kept as it was left, hand edits and all; `again
+  population` rolls who and what is in the rooms; `again layout` where
+  the rooms lie and the ways between them. `ed_exp fill <room>
+  <recipe|any>` asks a room for one of the eleven recipes (hall, court,
+  cavern, pit, arena ...), `ed_exp district <room> <n>` gives it a
+  district's materials, `ed_exp tension <room> <0..1>` and `ed_exp
+  budget <room> <threat|auto>` say how hard it is to be, `ed_exp density
+  <0.15..1>` how full the whole is, and `ed_exp niche` prints what the
+  expedition aimed at beside what it measures, what was put in it, and
+  each room's tension as a bar. A room is a group of plain brushes:
+  picked and copied into any scene, it is edited by hand there. (The
+  generator gained three things a room may be asked: a recipe, another
+  roll of its own dice, and a budget.)
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged
