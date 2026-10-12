@@ -10,6 +10,14 @@ impl Studio.help_lines(asked: str) -> list[str] {
             lines.append(description);
         }
     }
+    for tool in self.tools {
+        for (name, usage, description) in tool.commands() {
+            if name == word {
+                lines.append(usage);
+                lines.append(description);
+            }
+        }
+    }
     return lines;
 }
 

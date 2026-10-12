@@ -1773,6 +1773,27 @@ editor/impl/                 the workbench's scenes and brushes
   reopens them. It tries a generated expedition too and says when the
   expedition itself does not load.
 
+## Building quickly: tools in modules of their own
+
+A native build recompiles only the modules that changed, but to do so it
+analyses again, from source, everything a changed module imports. The
+studio (`editor/studio.jac` and its impl files, some nineteen thousand
+lines) imports nearly everything, so any change to it, or to a module that
+imports it, costs a rebuild of three and a half to four minutes. A module
+that imports little rebuilds in about a minute.
+
+So new features are written as tools: a module under `editor/tools/` with
+an `obj` that derives from `StudioTool` (`editor/tools/host.jac`), keeps
+its own state, and reaches the studio only through the `ToolHost` it is
+handed (say a message, the level's navigation, draw a line; more as tools
+need it, each added to `ToolHost` and to `StudioHost` in `studio.jac`).
+The studio asks its tools each command before its own, lets them draw in
+the level views, and takes their lines of the dump and of the settings.
+`editor/tools/install.jac` lists them and `main.jac` hands them over; a
+tool never imports `editor.studio`. `editor/tools/camproutes.jac` (the
+ways bots take between camp spots) is the first: a change to it rebuilds
+in about seventy seconds.
+
 ## What remains
 
 Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3

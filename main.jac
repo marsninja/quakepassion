@@ -25,6 +25,7 @@ import from engine.render.renderer { Renderer }
 import from engine.world.world { World }
 import from games.dev.arena { build_arena }
 import from editor.studio { attach_studio }
+import from editor.tools.install { studio_tools }
 
 
 with entry {
@@ -98,7 +99,10 @@ with entry {
         host=host
     );
     # The editing studio (`edit`, F8); QP_EDIT=1 starts in it.
-    attach_studio(app);
+    studio = attach_studio(app);
+    for tool in studio_tools() {
+        studio.add_tool(tool);
+    }
     # quake.rc's stuffcmds: `./qp +map e1m2 +god`.
     app.stuffed = command_line_text(sys.argv[1:]);
     if os.getenv("QP_EDIT", "") != "" {

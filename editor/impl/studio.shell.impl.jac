@@ -430,6 +430,11 @@ impl Studio.keep_settings {
     lines.append("ed_outside " + self.outside);
     lines.append("ed_log panel " + ("on" if self.log_panel else "off") + " " + str(self.log_rows));
     lines.append("ed_flyover " + ("on" if self.flyovers else "off"));
+    for tool in self.tools {
+        for tool_line in tool.settings_lines(self.host()) {
+            lines.append(tool_line);
+        }
+    }
     lines.append("ed_split x " + str(self.split_x));
     lines.append("ed_split y " + str(self.split_y));
     lines.append("ed_sides " + ("right" if self.sides_swapped else "left"));

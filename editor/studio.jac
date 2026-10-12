@@ -39,6 +39,7 @@ import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
+import from .tools.host { ToolHost, StudioTool }
 import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.widgets {
     Box,
@@ -730,6 +731,37 @@ obj StudioUi {
         new_value: TextField | None = None;
 }
 
+"""The studio as its tools see it (see editor/tools/host.jac)."""
+obj StudioHost(ToolHost) {
+    has studio: Studio;
+
+    def say(message: str) {
+        self.studio.say(message);
+    }
+
+    def navigation -> NavMesh | None {
+        baked = self.studio.nav_mesh;
+        if baked is not None {
+            return baked;
+        }
+        app = self.studio.app;
+        if app is None {
+            return None;
+        }
+        # A shipped arena's own, when it came with one.
+        meshes = [app.world->:HasNavMesh:->][?:NavMesh];
+        return meshes[0] if len(meshes) > 0 else None;
+    }
+
+    def navigation_mark -> int {
+        return len(self.studio.nav_floors);
+    }
+
+    def line(start: Vec3, finish: Vec3, color: Ink) {
+        wire_line(start, finish, color);
+    }
+}
+
 obj Studio(Workbench) {
     has app: App | None = None,
         canvas: ScreenCanvas = ScreenCanvas(),
@@ -766,14 +798,10 @@ obj Studio(Workbench) {
         nav_cell: float = 32.0,
         nav_mesh: NavMesh | None = None,
         nav_shown: bool = False,
-        # The ways bots take between camp spots: whether they are drawn,
-        # what is drawn of them, how many were found and not, and what
-        # the scene was when they were walked.
-        camp_routes: bool = False,
-        camp_legs: list[Leg] = [],
-        camp_found: int = 0,
-        camp_lost: int = 0,
-        camp_mark: int = -1,
+        # The tools kept in modules of their own, in the order they were added.
+        tools: list[StudioTool] = [],
+        tool_host: ToolHost | None = None,
+        declared: bool = False,
         # The log panel along the foot of the views: whether it is open,
         # how many of the console's lines it holds, and how far back it
         # is scrolled.
@@ -1125,6 +1153,43 @@ obj Studio(Workbench) {
         for (name, usage, description) in STUDIO_COMMANDS {
             shell.command(name, "studio", usage, description);
         }
+        self.declared = True;
+        for tool in self.tools {
+            for (name, usage, description) in tool.commands() {
+                shell.command(name, "studio", usage, description);
+            }
+        }
+    }
+
+    """The studio as its tools see it."""
+    def host -> ToolHost {
+        known = self.tool_host;
+        if known is None {
+            known = StudioHost(studio=self);
+            self.tool_host = known;
+        }
+        return known;
+    }
+
+    """Take a tool on: its commands are the studio's from now on."""
+    def add_tool(tool: StudioTool) {
+        self.tools.append(tool);
+        app = self.app;
+        if self.declared and app is not None {
+            for (name, usage, description) in tool.commands() {
+                app.shell.command(name, "studio", usage, description);
+            }
+        }
+    }
+
+    """Offer a command to the tools, first added first. False when it is none of theirs."""
+    def plugin_command(scene: Scene, args: list[str]) -> bool {
+        for tool in self.tools {
+            if tool.command(self.host(), scene, args) {
+                return True;
+            }
+        }
+        return False;
     }
 
     """Say something: in the console, and in the status bar."""
@@ -1212,6 +1277,13 @@ obj Studio(Workbench) {
             app.menu.opened = False;
             self.say(app.menu.message);
             return False;
+        }
+        if self.nav_mesh is not None {
+            # Navigation baked for the level that was is of a world that is
+            # gone: its areas went with it, and are not to be asked the way.
+            self.nav_mesh = None;
+            self.nav_floors = [];
+            self.nav_ways = [];
         }
         return True;
     }
@@ -2980,7 +3052,9 @@ obj Studio(Workbench) {
         }
         self.draw_paths();
         self.draw_camps();
-        self.draw_camp_routes(scene);
+        for tool in self.tools {
+            tool.draw_through(self.host(), scene);
+        }
         self.draw_nav();
         self.draw_entity_models(scene);
         for shape in chosen {
@@ -3672,13 +3746,6 @@ obj Studio(Workbench) {
 
     """Run a navigation command. False when it is not one."""
     def nav_command(scene: Scene, args: list[str]) -> bool;
-    """The level's navigation: what was baked here, or a shipped arena's own."""
-    def route_mesh -> NavMesh | None;
-    def camp_pairs(scene: Scene) -> list[tuple[Item, Item]];
-    def camp_route_lines(scene: Scene) -> list[str];
-    def camp_routes_words -> str;
-    def draw_camp_routes(scene: Scene);
-    def camproute_command(scene: Scene, args: list[str]) -> bool;
     """Where the log panel lies: along the foot of the level views."""
     def log_area -> Rect;
     def log_said -> list[str];
@@ -3986,12 +4053,12 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.help_command(scene, args) and not self.layouts_command(scene, args)
+        } elif not self.plugin_command(scene, args) and not self.help_command(scene, args)
+            and not self.layouts_command(scene, args)
             and not self.uses_command(scene, args)
             and not self.marked_command(scene, args)
             and not self.treedrop_command(scene, args)
             and not self.logpanel_command(scene, args)
-            and not self.camproute_command(scene, args)
             and not self.overlay_command(scene, args)
             and not self.q3map_command(scene, args)
             and not self.snapto_command(scene, args)
@@ -4322,8 +4389,10 @@ obj Studio(Workbench) {
         if self.nav_mesh is not None {
             lines.append(self.nav_words());
         }
-        if self.camp_routes {
-            lines.append(self.camp_routes_words());
+        for tool in self.tools {
+            for tool_line in tool.dump_lines(self.host(), scene) {
+                lines.append(tool_line);
+            }
         }
         if self.log_panel {
             lines.append(self.log_panel_words());
