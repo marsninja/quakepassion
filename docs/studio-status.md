@@ -1068,6 +1068,13 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   each picked point. `ed_skin import <game>:<file> [n]` takes a picture
   out of a game's archives as the skin to paint on: a PCX, a WAL, a plain
   TGA, or the n-th skin a Quake model carries inside it.
+- **A project packed to give away** (`editor/tools/packer.jac`):
+  `ed_pack project <out.pak|out.pk3>` packs the open project's scenes
+  and, of everything else, only what they use: the prefabs they link
+  (and what those use), the files their materials' pictures are in
+  (Quake II's WALs, Quake III's TGAs and JPEGs, the project's own image
+  files), and the sounds and models their entities name. What a scene
+  uses that is not found is named, and counted.
 - **Pictures written as the games' own textures**
   (`editor/tools/textures.jac`): `ed_texwal <material> [name]` writes a
   material's picture as a Quake II WAL among the project's textures, and

@@ -1,4 +1,4 @@
-import from editor.assets.needs { sound_file, model_file, needed_files, missing_files, held_names, names_file }
+import from editor.assets.needs { sound_file, model_file, needed_files, missing_files, held_names, names_file, material_spots }
 
 test "a sound field names a file by its game's rules" {
     assert sound_file("q1", "ambience/fire1.wav") == "sound/ambience/fire1.wav";
@@ -40,4 +40,13 @@ test "an entity names a file by its game's name for it or by the field's own wor
     assert names_file("q3", lamp, "MODELS/LAMP.MD3") and not names_file("q3", lamp, "lamp.md3");
     # A door's own brush model names no file.
     assert not names_file("q1", {"classname": "func_door", "model": "*4"}, "*4");
+}
+
+test "a material's picture is kept where its game keeps such things" {
+    assert material_spots("q2:e1u1/metal1_1") == [("q2", "textures/e1u1/metal1_1.wal")];
+    assert material_spots("q3:textures/base_wall/pipe") == [("q3", "textures/base_wall/pipe.tga"), ("q3", "textures/base_wall/pipe.jpg")];
+    assert material_spots("file:walls/crate.png") == [("file", "walls/crate.png")];
+    # Quake's are inside its levels; a plain name, and one that climbs out, are nobody's.
+    assert material_spots("q1:e1m1/tech04_1") == [] and material_spots("blockout") == [] and material_spots("file:../x.png") == [];
+    assert material_spots("q2:") == [];
 }

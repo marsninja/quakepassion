@@ -118,3 +118,25 @@ def field_choices(game: str, kind: str, names: list[str]) -> list[str] {
     }
     return sorted(found);
 }
+
+"""Where a material's picture is kept, as (game, file) in the order to try:
+Quake II's as a WAL under `textures/`, Quake III's as a TGA or a JPEG by
+its own name, an image file of the project's as ("file", its path under
+the project's textures). Quake's are kept inside its levels, and a plain
+name is nobody's: for those, none."""
+def material_spots(material: str) -> list[tuple[str, str]] {
+    parts = material.split(":", 1);
+    if len(parts) != 2 or not parts[1] or ".." in parts[1] {
+        return [];
+    }
+    if parts[0] == "q2" {
+        return [("q2", "textures/" + parts[1] + ".wal")];
+    }
+    if parts[0] == "q3" {
+        return [("q3", parts[1] + ".tga"), ("q3", parts[1] + ".jpg")];
+    }
+    if parts[0] == "file" {
+        return [("file", parts[1])];
+    }
+    return [];
+}
