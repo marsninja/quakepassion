@@ -105,8 +105,25 @@ impl Studio.build_mode_command(scene: Scene, args: list[str]) -> bool {
     } elif how == "fresh" {
         # Nothing built before is taken on trust.
         self.built_copies = [];
+    } elif how == "background" {
+        word = args[2] if len(args) > 2 else "";
+        self.light_background = (not self.light_background) if word not in ["on", "off"] else word == "on";
+        self.keep_settings();
+        print("studio: build background=" + ("1" if self.light_background else "0"));
+        self.say(
+            "Light is baked a slice a frame while the studio goes on (the level is shown unlit until it is done)"
+            if self.light_background
+            else "Light is baked before the level is shown"
+        );
+        return True;
+    } elif how == "cancel" {
+        task = self.light_task;
+        self.light_task = None;
+        print("studio: build cancelled=" + ("1" if task is not None else "0"));
+        self.say("The light under way was given up: the level stays unlit until it is built again" if task is not None else "No light is being baked");
+        return True;
     } elif how {
-        self.say("ed_build [full|quick|flat|fresh]");
+        self.say("ed_build [full|quick|flat|fresh] | background [on|off] | cancel");
         return True;
     }
     # Built again whatever has changed.

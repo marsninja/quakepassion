@@ -177,7 +177,7 @@ import from engine.formats.q1.model { parse_mdl }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
-import from .compile.light { bake_light, lamp_cone }
+import from .compile.light { bake_light, lamp_cone, light_job, LightJob }
 import from .compile.spot { Cone, cone_rim, cone_through, square_to }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
 import from .project {
@@ -495,8 +495,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_build",
-        "ed_build [full|quick|flat|fresh]",
-        "build the level again now; how it is lit: finely, coarsely, or not at all; or fresh, forgetting what was built before"
+        "ed_build [full|quick|flat|fresh] | background [on|off] | cancel",
+        "build the level again now; how it is lit: finely, coarsely, or not at all; or fresh, forgetting what was built before; light baked a slice a frame while the studio goes on, or that bake given up"
     ),
     ("ed_group_view", "ed_group_view <shown|grey|hidden>", "how the selected groups show: whole, as outlines only, or not at all"),
     ("ed_group_lock", "ed_group_lock [on|off]", "keep clicks in the views from selecting the selected groups"),
@@ -1283,6 +1283,10 @@ obj Studio(Workbench) {
         journal_last: Step | None = None,
         journal_kept: list[tuple[str, str]] = [],
         journal_clock: float = 0.0,
+        # Light baked a slice a frame, the studio going on meanwhile: whether
+        # it is, and the bake under way.
+        light_background: bool = False,
+        light_task: LightTask | None = None,
         overdraw: bool = False,
         overdraw_faces: int = 0,
         model_backs: bool = True,
@@ -2450,7 +2454,10 @@ obj Studio(Workbench) {
         }
         eye = self.main.eye;
         concealed = scene.hidden_count();
-        ui.place.text = self.dev_words(scene) + ("frozen   " if self.frozen else "")
+        lighting = self.light_task;
+        ui.place.text = (
+            "lighting " + str(int(lighting.job.share() * 100.0)) + "%   " if lighting is not None else ""
+        ) + self.dev_words(scene) + ("frozen   " if self.frozen else "")
             + (str(concealed) + " hidden   " if concealed else "")
             + (str(self.build_ms) + " ms   " if self.build_ms > 0 else "") + "grid " + str(int(self.grid)) + "   "
             + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
@@ -2670,6 +2677,7 @@ obj Studio(Workbench) {
         self.load_thumbs();
         self.keep_built();
         self.keep_journal(dt);
+        self.step_light();
         self.autosave(dt, False);
         self.watch_files(dt);
         hint = stage.hint();
@@ -4230,6 +4238,10 @@ obj Studio(Workbench) {
     twice a second; a step in between is named with the next), for the
     journal written beside the autosave."""
     def keep_journal(dt: float);
+    """Bake a slice more of the light under way (about a hundredth of a
+    second's worth), and when it is all lit keep it and build again, which
+    takes it."""
+    def step_light;
     """Where a scene's journal is kept."""
     def journal_path(name: str) -> str;
     """Run a breakpoint, trace, fired or live command. False when it is not one."""
@@ -5437,6 +5449,16 @@ def wire_line(start: Vec3, finish: Vec3, color: Ink) {
             tone
         );
     }
+}
+
+"""Light being baked while the studio goes on: the job, what it is the
+light of (the build's mark), and what the kept bake must measure."""
+obj LightTask {
+    has job: LightJob,
+        mark: str = "",
+        plane_base: int = 0,
+        warned: int = 0,
+        began: float = 0.0;
 }
 
 """How the explorer's model view is laid out: one view, or four."""

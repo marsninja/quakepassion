@@ -566,7 +566,8 @@ impl Studio.settings_lines -> list[str] {
         "ed_texlock " + ("axis" if self.tex_axis else ("on" if self.tex_lock else "off")),
         "ed_overlay width " + str(self.line_width),
         "ed_models skins " + ("on" if self.models_skinned else "off"),
-        "ed_corner lock " + ("on" if self.corner_lock else "off")
+        "ed_corner lock " + ("on" if self.corner_lock else "off"),
+        "ed_build background " + ("on" if self.light_background else "off")
     ];
     for kept_class in self.favourites {
         lines.append("ed_fav " + kept_class);

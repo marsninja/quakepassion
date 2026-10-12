@@ -201,6 +201,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   is played or stopped. The last six are kept; `ed_build fresh` forgets
   them. A dump's `build from=` line says whether the last build worked
   its bake out (`new`) or was given it (`copy`).
+- **Light baked in the background**: with `ed_build background on` (kept
+  in the settings) a level whose light is not kept is shown unlit at
+  once, and its light is baked on a copy of it a slice a frame (about a
+  hundredth of a second's worth), the studio going on meanwhile; the
+  status line says how far it has got (`lighting 45%`). When it is all
+  lit it is kept under the build's mark and the level is built again,
+  which takes it. An edit made meanwhile starts a bake of its own, and
+  `ed_build cancel` gives the one under way up. (A level cut into cells
+  is still baked at once.)
 - **Recipes**: `ed_recipe <name> "<command>; <command>"` keeps a row of
   editor commands under a name (in the settings, between sessions),
   `ed_make <name>` runs them, `ed_recipe <name>` alone forgets one, and

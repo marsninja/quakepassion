@@ -47,14 +47,30 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     } else {
         plane_base = len(made.bsp.planes);
         warned = len(made.warnings);
-        self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
-        if self.vis_cell > 0.0 {
-            # Cut into cells, each with what it can see.
-            self.vis_done = bake_cells(whole, made, self.vis_cell);
-        }
-        self.built_copies.append(keep_bake(made, mark, plane_base, warned, self.lit_samples, self.vis_done));
-        if len(self.built_copies) > 6 {
-            self.built_copies = self.built_copies[1:];
+        # Whatever was being lit was the light of another build.
+        self.light_task = None;
+        if self.lit and self.light_background and self.vis_cell <= 0.0 {
+            # Shown unlit now, and lit a slice a frame on a copy of its own:
+            # when that is done it is kept under this build's mark, and the
+            # build that follows takes it.
+            aside = compile_scene(whole, self.materials);
+            aside_base = len(aside.bsp.planes);
+            aside_warned = len(aside.warnings);
+            job = light_job(whole, aside, self.luxel);
+            self.lit_samples = 0;
+            if job is not None {
+                self.light_task = LightTask(job=job, mark=mark, plane_base=aside_base, warned=aside_warned, began=time.time());
+            }
+        } else {
+            self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
+            if self.vis_cell > 0.0 {
+                # Cut into cells, each with what it can see.
+                self.vis_done = bake_cells(whole, made, self.vis_cell);
+            }
+            self.built_copies.append(keep_bake(made, mark, plane_base, warned, self.lit_samples, self.vis_done));
+            if len(self.built_copies) > 6 {
+                self.built_copies = self.built_copies[1:];
+            }
         }
     }
     self.live = made;
@@ -1112,4 +1128,29 @@ impl Studio.list_materials(ui: StudioUi) {
     }
     ui.materials.rows = rows;
     self.fill_gallery(ui);
+}
+
+impl Studio.step_light {
+    task = self.light_task;
+    if task is None {
+        return;
+    }
+    job = task.job;
+    began = time.time();
+    while not job.finished() and time.time() - began < 0.012 {
+        job.step(4);
+    }
+    if not job.finished() {
+        return;
+    }
+    samples = job.finish();
+    kept = keep_bake(job.made, task.mark, task.plane_base, task.warned, samples, self.vis_done);
+    self.built_copies = [copy for copy in self.built_copies if copy.mark != task.mark] + [kept];
+    if len(self.built_copies) > 6 {
+        self.built_copies = self.built_copies[1:];
+    }
+    self.light_task = None;
+    print("studio: lit in the background samples=" + str(samples) + " seconds=" + str(round(time.time() - task.began, 1)));
+    # Built again: the build finds this light kept under its mark.
+    self.built_geometry = -1;
 }
