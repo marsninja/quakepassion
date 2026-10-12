@@ -3325,6 +3325,60 @@ def treedrop_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     );
 }
 
+"""The seventy-eighth session: classes a game does not have, and sounds and models no archive holds."""
+def needs_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    (repo / "needs_checks.png").unlink(missing_ok=True);
+    with tempfile.TemporaryDirectory(prefix="qp-needs-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/needs_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "needs.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The needs session failed: {output / 'needs.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["shipped", "railgun", "silent", "heard", "nomodel", "model", "misspelt"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'needs.log'}";
+    }
+    # What each check found of these kinds, under the step that follows it.
+    lacking: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            lacking[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: finding ") and (" is of a class " in line or " no archive of " in line) {
+            pending.append(line[16:]);
+        }
+    }
+    # A shipped level has every class it uses and every file it names.
+    assert lacking["shipped"] == [] , str(lacking["shipped"]);
+    # A railgun in Quake; a sound Quake's archives do not hold, and one they do.
+    assert lacking["railgun"] == ["weapon_railgun is of a class q1 does not have (it is of q2 and q3)"] , str(lacking["railgun"]);
+    assert lacking["silent"] == ["ambient_drip names a sound no archive of q1 holds: sound/misc/nothere.wav"] , str(lacking["silent"]);
+    assert lacking["heard"] == [] , str(lacking["heard"]);
+    # In a scene of the studio's own the model is asked of the game the entity carries.
+    assert lacking["nomodel"] == ["misc_model names a model no archive of q3 holds: models/mapobjects/nothere/lamp.md3"] , str(lacking["nomodel"]);
+    assert lacking["model"] == [] , str(lacking["model"]);
+    assert lacking["misspelt"] == ["info_playr_start is of a class no game's levels use and no add-on names (misspelt?)"] , str(lacking["misspelt"]);
+    source = repo / "needs_checks.png";
+    check_capture(source, 6);
+    shutil.copyfile(source, output / "needs_checks.png");
+    source.unlink();
+    print(
+        f"NEEDS PASS: {len(steps) - 1} steps, a shipped level lacking nothing, a class of another game, a sound and a model "
+            + "no archive holds and ones they do, and a misspelt class named"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5704,6 +5758,7 @@ def main() {
         "camproute": camproute_session,
         "logpanel": logpanel_session,
         "treedrop": treedrop_session,
+        "needs": needs_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5896,6 +5951,7 @@ def main() {
     camproute_session(repo, binary, env, output);
     logpanel_session(repo, binary, env, output);
     treedrop_session(repo, binary, env, output);
+    needs_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

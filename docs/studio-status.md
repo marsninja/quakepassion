@@ -865,7 +865,17 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   likely a mistake: no player start, a target nothing is named, an origin
   that is not three numbers, a brush entity without brushes, a brush that
   encloses nothing, is thinner than a unit or has corners off the grid. A
-  click on a finding selects what it is about.
+  click on a finding selects what it is about. It also names an entity of
+  a class the level's game does not have (a railgun in Quake), one of a
+  class no game's levels use and no add-on names (a misspelling), and a
+  sound or a model an entity's fields name that no archive of its game
+  holds (`noise`, Quake III's `music`, `model` and `model2`, each found
+  by its game's own rule for where such files are kept). In a scene of
+  the studio's own each entity is asked of the game it carries. A shipped
+  Quake III level's `misc_model`s are not asked for: the level compiler
+  built them in and their files were left out. The class table lists
+  every class the three games' own levels use (237 classes), with the
+  fields those levels give them, so the Classes tab offers them all.
 - Every edit that changes the brushes rebuilds the level at once, so the
   level view is what Play runs. Save writes the scene as a Valve 220 `.map`
   under `QP_SCENES` (default `./scenes`), which other Quake editors open.
@@ -1401,6 +1411,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_needs_tests.jac`: the file a sound field names by its
+  game's rules and a model field's; the files an entity needs and those
+  a game's list does not hold, whatever their case.
 - `tests/studio_treedrop_tests.jac`: a row carried onto another row of
   its list, onto a heading and onto none, from another list, and into a
   view; a list that takes no drops; a row that is never carried; selected
@@ -1638,6 +1651,11 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/needs_session.cfg` (7 steps: e1m1 checked, lacking no
+  class and no file; a railgun added to it; a sound Quake's archives do
+  not hold, then one they do; in a scene of the studio's own a
+  `misc_model` with a model Quake III's archives do not hold, then one
+  they do; and a misspelt class).
   `scripts/studio/treedrop_session.cfg` (11 steps: a box's row dragged
   onto the row of a box a wall holds, back onto the brushes' heading,
   onto the wall's class heading, undone, and onto the wall's own row; the

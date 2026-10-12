@@ -75,6 +75,7 @@ import from .ui.widgets {
     ColourBars
 }
 import from .assets.explorer { AssetIndex, AssetLook }
+import from .assets.needs { needed_files, missing_files, held_names }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
@@ -3457,6 +3458,9 @@ obj Studio(Workbench) {
     def game_for(scene: Scene, classname: str) -> str;
     """Entities that carry no game, or one that has no such class."""
     def game_findings(scene: Scene) -> list[Finding];
+    """Entities of a class their game does not have, and the sounds and
+    models their fields name that no archive holds."""
+    def need_findings(scene: Scene) -> list[Finding];
     def draw_camps;
     """Run an asset-game or camp-spot command. False when it is not one."""
     def games_command(scene: Scene, args: list[str]) -> bool;

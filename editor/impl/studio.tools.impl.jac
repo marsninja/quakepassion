@@ -389,6 +389,9 @@ impl Studio.check(scene: Scene, args: list[str]) {
     for stray in self.game_findings(scene) {
         self.findings.append(stray);
     }
+    for lacking in self.need_findings(scene) {
+        self.findings.append(lacking);
+    }
     for lost in self.nav_findings(scene) {
         # What the baked navigation says cannot be reached.
         self.findings.append(lost);
