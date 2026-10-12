@@ -867,6 +867,19 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   edited, and the shader script. A click goes to it (`ed_tab
   <doc:game/name|model|shader>`), and the x at the end closes the one
   shown.
+- **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
+  groups in another group, and a group's row dragged onto another group's
+  row in the scene list does the same; `ed_nest out`, or its row dragged
+  onto the groups' heading, takes it out again, and `ed_nest` alone lists
+  what is in what. A group that holds groups is picked, moved, turned,
+  copied, hidden and deleted with them (a click on it picks them all; a
+  group inside can still be picked alone), its row opens to show its
+  brushes and then its groups, and F2 names the group itself. A copy of
+  a group and what it holds is a group of its own. In the document it is
+  an edge from each group to the one that holds it, drawn from two
+  fields the map keeps (`_group_id`, `_group_in`), so a walker gathers
+  everything a group holds; no group can be put in itself or in one it
+  holds.
 - **Prefabs in folders**: a prefab's name may say folders (`ed_prefab save
   props/crate`), and the Library tab lists each folder of prefabs as a
   heading that opens and shuts, with how many it holds. `ed_prefab move

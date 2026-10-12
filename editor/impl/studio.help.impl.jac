@@ -95,7 +95,9 @@ impl Studio.help_command(scene: Scene, args: list[str]) -> bool {
     if name != "ed_rename" {
         return False;
     }
-    chosen = scene.selection();
+    picked_now = scene.selection();
+    # A group picked with the groups it holds is the one to name.
+    chosen = scene.tops(picked_now);
     if len(chosen) != 1 {
         self.say("Select the one entity to name");
         return True;
@@ -114,14 +116,14 @@ impl Studio.help_command(scene: Scene, args: list[str]) -> bool {
             return True;
         }
         if not wanted_name {
-            scene.unset_field(key);
+            scene.set_field_of(item, key, None, "Remove " + key);
         } else {
             reason = scene.refuses(key, wanted_name);
             if reason {
                 self.say(reason);
                 return True;
             }
-            scene.set_field(key, wanted_name);
+            scene.set_field_of(item, key, wanted_name, "Set " + key);
         }
         print("studio: renamed #" + str(item.serial) + " " + key + "=" + wanted_name);
         self.say(item.title() + " is named");

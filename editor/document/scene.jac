@@ -85,6 +85,14 @@ edge Fires: Item --> Item {
     has key: str = "target";
 }
 
+"""A group is held by another group: its `_group_in` is the other's
+`_group_id`. Drawn from the fields with the Fires edges (Scene.relink), so
+a walker gathers everything a group holds, through the groups it holds."""
+edge Within: Item --> Item {}
+
+glob GROUP_ID_KEY: str = "_group_id",
+     GROUP_IN_KEY: str = "_group_in";
+
 """An entity or a brush belongs to a named set: a selection kept with the
 document, to pick again later."""
 edge Member: Scene --> Item | Solid {
@@ -1331,6 +1339,25 @@ obj LogicNode {
         row: int = 0;
 }
 
+"""Gathers every group a group holds, and those they hold, once each: it
+starts at the group and goes back along the Within edges."""
+walker Nested {
+    has top: Item | None = None,
+        found: list[Item] = [];
+
+    can gather with Item entry {
+        if self.top is None {
+            self.top = here;
+        } elif here is self.top or here in self.found or not here.held {
+            # Come round to where it has been: fields can say a ring.
+            return;
+        } else {
+            self.found.append(here);
+        }
+        visit [here<-:Within:<-];
+    }
+}
+
 walker FindSolid {
     has serial: int,
         found: Solid | None = None;
@@ -1765,8 +1792,29 @@ node Scene {
     """Select every entity with a targetname. Answers how many."""
     def select_named(name: str) -> int;
 
-    """Draw the Fires edges again from the entities' fields."""
+    """Draw the Fires and Within edges again from the entities' fields."""
     def relink;
+    # Groups that hold groups (impl/scene.nest.impl.jac)
+    """The group a group is in, the groups it holds, and every group it
+    holds through those."""
+    def nested_in(item: Item) -> Item | None;
+    def nested(item: Item) -> list[Item];
+    def all_nested(item: Item) -> list[Item];
+    def fresh_group_id -> str;
+    """Put groups in a group, or with None take them out, as one step.
+    False when nothing changed or a group would be in itself."""
+    def nest(children: list[Item], holder: Item | None) -> bool;
+    """Those of some entities whose own group is not among them: a group
+    picked with what it holds is one thing to name or to move elsewhere."""
+    def tops(items: list[Item]) -> list[Item];
+    """Pick what the picked groups hold, however they came to be picked.
+    Answers how many it added."""
+    def pick_nested -> int;
+    """Give copies of groups ids of their own, and what was copied with
+    them follows: a copy of a group and what it holds is a group apart."""
+    def regroup(made: list[Item]);
+    """Set (or with None remove) one entity's field, whatever is selected."""
+    def set_field_of(item: Item, key: str, value: str | None, label: str = "Set field") -> bool;
     """Bring the Fires edges in line with the document when it has changed."""
     def links;
     def fires(item: Item) -> list[Item];
@@ -2024,12 +2072,24 @@ node Scene {
             self.clear_selection();
         }
         if item is not None {
+            # A group is picked, and let go, with the groups it holds.
+            inside = self.all_nested(item) if item.classname() == "func_group" else [];
             if self.is_selected(item) {
                 if add {
                     self del->:Selected:-> item;
+                    for each in inside {
+                        if self.is_selected(each) {
+                            self del->:Selected:-> each;
+                        }
+                    }
                 }
             } else {
                 self +>:Selected:+> item;
+                for each in inside {
+                    if not self.is_selected(each) {
+                        self +>:Selected:+> each;
+                    }
+                }
             }
         }
         self.picks += 1;
@@ -2149,6 +2209,7 @@ node Scene {
     def clone_selection(offset: Vec3) -> bool {
         step = Step(label="Duplicate");
         copier = self spawn Clone(offset=offset, step=step);
+        self.regroup(copier.made);
         if not self.commit(step) {
             return False;
         }

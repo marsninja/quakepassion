@@ -580,6 +580,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_paste", "ed_paste [here]", "paste what was copied: beside where it was, or where the camera looks"),
     ("ed_group", "ed_group [name]", "hold the selected brushes together as a group"),
     (
+        "ed_nest",
+        "ed_nest [<group's name|#number> | out]",
+        "put the selected groups in another group, which is then picked, moved, copied and deleted with them; or take them out; alone, list what is in what"
+    ),
+    (
         "ed_prefab",
         "ed_prefab <save|add|link|unlink> [name] | move <name> <new name> | swap|put|names|plain ... | turn <degrees> [pitch|roll] | scale <times>|<x y z>",
         "keep the selection as a prefab, add a copy of one, place a linked one, turn linked ones into copies, or change, turn and size the selected linked ones"
@@ -1291,6 +1296,8 @@ obj Studio(Workbench) {
         # the words its rows are found by.
         library_view: Picture | None = None,
         library_previewed: str = "",
+        # The scene's count of picks when its groups' groups were last picked with them.
+        nest_picks: int = -1,
         library_filter: str = "",
         model_painting: bool = False,
         model_pick: str = "faces",
@@ -2312,6 +2319,10 @@ obj Studio(Workbench) {
                 if picked and first_picked < 0 {
                     first_picked = len(rows);
                 }
+                if name == "func_group" and scene.nested_in(item) is not None {
+                    # Listed under the group that holds it.
+                    continue;
+                }
                 if name == "func_group" {
                     # A group by its own name, with its switches, and its
                     # brushes under it when it is opened.
@@ -2451,6 +2462,12 @@ obj Studio(Workbench) {
         self.keep_script_box();
         self.watch_settings();
         self.keep_settings_box();
+        doc_now = self.scene;
+        if doc_now is not None and doc_now.picks != self.nest_picks {
+            # A group picked in a view or the list shows what it holds as picked.
+            doc_now.pick_nested();
+            self.nest_picks = doc_now.picks;
+        }
         for tool in self.tools {
             tool.tick(self.host(), dt);
         }
@@ -4187,7 +4204,7 @@ obj Studio(Workbench) {
     """Run a group command. False when it is not one."""
     def group_command(scene: Scene, args: list[str]) -> bool;
     """A group's row in the scene tree, and its brushes' when it is open."""
-    def list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bool);
+    def list_group(scene: Scene, rows: list[TreeRow], item: Item, picked: bool, depth: int = 1);
     """The buttons for a selection that is all groups."""
     def fill_group(scene: Scene, ui: StudioUi, chosen: list[Item]);
 
@@ -4292,6 +4309,12 @@ obj Studio(Workbench) {
             return;
         }
         scene = self.scene;
+        if scene is not None and scene.picks != self.nest_picks {
+            # Whatever picked a group, what it holds is picked with it
+            # before anything is done to the selection.
+            scene.pick_nested();
+            self.nest_picks = scene.picks;
+        }
         if not self.active or scene is None {
             self.say(name + ": the studio is not open (edit opens it)");
             return;

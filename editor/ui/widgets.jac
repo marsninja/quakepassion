@@ -788,7 +788,10 @@ obj TreeRow {
         note: str = "",
         tone: str = "text",
         # A row that stays where it is: it is not offered to be dragged.
-        fixed: bool = False;
+        fixed: bool = False,
+        # A row that opens and shuts and is a thing all the same: it is
+        # offered to be dragged though its list does not carry headings.
+        carried: bool = False;
 }
 
 """A scrolling list of rows, indented as a tree. The rows are data the owner
@@ -939,7 +942,7 @@ node TreeView(Widget) {
                     self.pick + " " + quote_command_word(row.key) + (" add" if event.ctrl or event.shift else "")
                 );
             }
-            if self.drag and (self.carry_branches or not row.branch) and not row.fixed {
+            if self.drag and (self.carry_branches or not row.branch or row.carried) and not row.fixed {
                 # A row that is a thing, not a heading, can be dragged elsewhere.
                 stage.offer(self.drag + " " + row.key, row.text);
             }

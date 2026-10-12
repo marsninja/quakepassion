@@ -356,9 +356,17 @@ impl Scene.problems -> list[Finding] {
 impl Scene.relink {
     names: dict[str, list[Item]] = {};
     members = self.items();
+    ids: dict[str, Item] = {};
     for item in members {
         for other in [item->:Fires:->] {
             item del->:Fires:-> other;
+        }
+        for holder in [item->:Within:->] {
+            item del->:Within:-> holder;
+        }
+        known_id = item.fields.get(GROUP_ID_KEY, "");
+        if known_id and item.classname() == "func_group" and known_id not in ids {
+            ids[known_id] = item;
         }
         name = item.fields.get("targetname", "");
         if name {
@@ -379,6 +387,13 @@ impl Scene.relink {
                     item +>:Fires(key=field):+> other;
                 }
             }
+        }
+    }
+    # A group in a group: by the id the other goes by.
+    for item in members {
+        held_in = item.fields.get(GROUP_IN_KEY, "");
+        if held_in and held_in in ids and ids[held_in] is not item and item.classname() == "func_group" {
+            item +>:Within:+> ids[held_in];
         }
     }
     self.linked = self.revision;
@@ -561,6 +576,21 @@ impl Scene.insert_map(found: list[MapItem], offset: Vec3, label: str = "Paste", 
             }
         }
     }
+    # Groups that hold groups come as they were, among themselves: an id
+    # the document already uses gets a new one, and what is in it follows.
+    ids_taken: list[str] = [item.fields.get(GROUP_ID_KEY, "") for item in self.items()];
+    reidentified: dict[str, str] = {};
+    for read in found {
+        had = read.fields.get(GROUP_ID_KEY, "");
+        if had and had in ids_taken and had not in reidentified {
+            number = 1;
+            while "g" + str(number) in ids_taken {
+                number += 1;
+            }
+            reidentified[had] = "g" + str(number);
+            ids_taken.append("g" + str(number));
+        }
+    }
     renamed: dict[str, str] = {};
     for read in found {
         named = read.fields.get("targetname", "");
@@ -583,6 +613,12 @@ impl Scene.insert_map(found: list[MapItem], offset: Vec3, label: str = "Paste", 
             said = fields.get(key, "");
             if said in renamed {
                 fields[key] = renamed[said];
+            }
+        }
+        for key in [GROUP_ID_KEY, GROUP_IN_KEY] {
+            said = fields.get(key, "");
+            if said in reidentified {
+                fields[key] = reidentified[said];
             }
         }
         if fields.get("classname", "") == "worldspawn" {
