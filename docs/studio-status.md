@@ -1068,6 +1068,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   each picked point. `ed_skin import <game>:<file> [n]` takes a picture
   out of a game's archives as the skin to paint on: a PCX, a WAL, a plain
   TGA, or the n-th skin a Quake model carries inside it.
+- **A starter project** (`editor/tools/starter.jac`): `ed_starter [name]`
+  (the last entry of the File menu) makes a project with one scene in it,
+  a lit room with walls, a crate, a pillar and a player's start, saves it
+  and makes it the scene the project opens on, so that Play has something
+  to play the first time. A project of that name that is there already
+  is left as it is.
 - **Makers** (`editor/tools/makers.jac`, built in
   `editor/document/generate.jac`): a group whose brushes stay in the
   document as they are and are built as something made from them, as a
@@ -1881,7 +1887,8 @@ So new features are written as tools: a module under `editor/tools/` with
 an `obj` that derives from `StudioTool` (`editor/tools/host.jac`), keeps
 its own state, and reaches the studio only through the `ToolHost` it is
 handed (say a message, the level's navigation, draw a line, a material's
-picture, a game's colours and files, the project's folders; more as tools
+picture, a game's colours and files, the project's folders, run one of the
+studio's own commands; more as tools
 need it, each added to `ToolHost` and to `StudioHost` in `studio.jac`).
 The studio asks its tools each command before its own, lets them draw in
 the level views, and takes their lines of the dump and of the settings.

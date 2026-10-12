@@ -48,6 +48,11 @@ obj ToolHost {
 
     """Files have been written where the studio lists them: list them again."""
     def files_changed abst;
+
+    """Run one of the studio's own commands, as its words; and the scene
+    being edited now (a command may have changed which that is)."""
+    def run(words: list[str]) abst;
+    def scene_now -> Scene | None abst;
 }
 
 """A tool: the studio asks its tools each command before its own, lets them

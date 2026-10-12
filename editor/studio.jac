@@ -853,6 +853,14 @@ obj StudioHost(ToolHost) {
         self.studio.folds += 1;
         self.studio.materials_changed += 1;
     }
+
+    def run(words: list[str]) {
+        self.studio.command(words);
+    }
+
+    def scene_now -> Scene | None {
+        return self.studio.scene;
+    }
 }
 
 obj Studio(Workbench) {
@@ -1538,7 +1546,9 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="Run a command", command="ed_palette", keys="Ctrl+P"),
                     MenuItem(text="Leave the studio", command="edit", keys="F8"),
-                    MenuItem(text="Quit", command="quit")
+                    MenuItem(text="Quit", command="quit"),
+                    MenuItem(rule=True),
+                    MenuItem(text="Make a starter project to play in", command="ed_starter")
                 ],
                 [
                     MenuItem(text="Undo", command="ed_undo", keys="Ctrl+Z"),
