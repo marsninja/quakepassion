@@ -873,6 +873,13 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   <name> <new name>` gives one another name or folder; a prefab's row
   dragged onto a folder, onto a prefab in one, or onto Prefabs itself is
   moved there. A name never leads out of the shelf.
+- **Finding in the Library, and a prefab seen before it is placed**: the
+  field at the foot of the Library tab (`ed_libfind <words>`) lists only
+  the scenes, prefabs and autosaves whose names hold the words, flat
+  under their shelves whatever folder they are in. A prefab the pointer
+  rests on is sketched above the field: its brushes' edges seen from
+  above one corner, in the studio's highlight colour; it stays until the
+  pointer is on another.
 - **A field's file chosen from the game's own**: a field that names a
   sound or a model (`noise`, `music`, `model`, `model2`) has a `...`
   button beside it in the inspector, set or not: it opens a list of that

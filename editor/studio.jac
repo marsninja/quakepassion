@@ -90,6 +90,7 @@ import from .assets.shaders {
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
 import from .assets.moving { warps_name }
+import from .document.thumbs { sketch_edges, sketch }
 import from .document.chords { chord_parts, bind_chord, chord_command, bound_chords }
 import from .document.settingstable {
     Setting, SUBJECTS, settings_table, setting_value, setting_order, colour_parts
@@ -585,6 +586,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
     ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),
+    ("ed_libfind", "ed_libfind [words]", "show only the scenes and prefabs of the Library tab whose names hold the words"),
     ("ed_treedrop", "ed_treedrop <row> <what>", "what a row of the scene list let go on another asks for: a brush handed to the entity on that row"),
     ("ed_libdrop", "ed_libdrop <row> <what>", "what a row of the Library tab let go on another asks for: a favourite put before another, or in the trash"),
     (
@@ -1285,6 +1287,11 @@ obj Studio(Workbench) {
         skin_stale: bool = False,
         skin_shown: bool = False,
         skin_view: Picture | None = None,
+        # The Library tab's picture of a prefab, which prefab it is of, and
+        # the words its rows are found by.
+        library_view: Picture | None = None,
+        library_previewed: str = "",
+        library_filter: str = "",
         model_painting: bool = False,
         model_pick: str = "faces",
         model_travel: int = 0,
@@ -2014,6 +2021,21 @@ obj Studio(Workbench) {
             hint="Click a scene to open it, or a prefab to add a copy where the camera looks; drag a prefab into a view"
         );
         library_page.adopt(library);
+        # At the foot, so that the rows above stay where they were: a
+        # picture of the prefab the pointer is on, and a field to find by.
+        library_view = Picture(
+            key="library:preview", size=132, shown=False, hint="The prefab the pointer is on, seen from above one corner"
+        );
+        library_page.adopt(library_view);
+        self.library_view = library_view;
+        find_row = Box(pad=4);
+        library_page.adopt(find_row);
+        find_row.adopt(
+            TextField(
+                ghost="Find in the library", command="ed_libfind", live=True,
+                hint="Show only the scenes and prefabs whose names hold these words"
+            )
+        );
         class_page = Box();
         side.adopt(class_page);
         class_row = Box(pad=4);
@@ -2403,6 +2425,7 @@ obj Studio(Workbench) {
         ui.gallery.track(stage);
         ui.checks.track(stage);
         ui.library.track(stage);
+        self.preview_library(ui);
         ui.classes.track(stage);
         ui.assets.track(stage);
         ui.frame_list.track(stage);
@@ -3604,6 +3627,8 @@ obj Studio(Workbench) {
     brushes: what is built and played."""
     def expanded(scene: Scene) -> Scene;
     def list_library(ui: StudioUi);
+    """Sketch the prefab the pointer is on in the Library tab."""
+    def preview_library(ui: StudioUi);
     def fill_graph(scene: Scene, ui: StudioUi);
 
     # ------------------------------------------------------------------
@@ -4773,6 +4798,12 @@ obj Studio(Workbench) {
             lines.append(
                 "studio: materials links=" + ",".join(sorted(self.all_links().keys())) + " lists="
                     + ",".join([each + ":" + str(len(both_lists[each])) for each in sorted(both_lists.keys())])
+            );
+        }
+        if self.library_filter or self.library_previewed {
+            lines.append(
+                "studio: library find=" + (self.library_filter if self.library_filter else "-") + " preview="
+                    + (self.library_previewed if self.library_previewed else "-")
             );
         }
         if len(self.user_inks) > 0 {

@@ -152,8 +152,13 @@ impl Studio.list_library(ui: StudioUi) {
                 }
             }
         }
+        sought = self.library_filter.strip().lower();
+        if sought {
+            # Found by name: listed flat under their shelf, whatever folder they are in.
+            names = [known for known in names if sought in known.lower()];
+        }
         rows.append(TreeRow(key="shelf:" + named, text=named, tone="accent", note=str(len(names))));
-        if named == "Prefabs" {
+        if named == "Prefabs" and not sought {
             for shelved in shelf_rows(names, lead, "prefabdir:", self.opened) {
                 rows.append(
                     TreeRow(
@@ -174,7 +179,11 @@ impl Studio.list_library(ui: StudioUi) {
     }
     # What add-ons bring: each one's prefabs under its name.
     for label in sorted(self.addon_prefabs.keys()) {
-        brought = [each[:-4] for each in own_files(self.addon_prefabs[label]) if each.lower().endswith(".map")];
+        brought = [
+            each[:-4]
+            for each in own_files(self.addon_prefabs[label])
+            if each.lower().endswith(".map") and self.library_filter.strip().lower() in each.lower()
+        ];
         rows.append(TreeRow(key="shelf:addon:" + label, text="Add-on " + label, tone="accent", note=str(len(brought))));
         for each in brought {
             rows.append(TreeRow(key="prefab:addon:" + label + "/" + each, text=each, depth=1));
@@ -440,6 +449,14 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
         }
         return True;
     }
+    if name == "ed_libfind" {
+        self.library_filter = " ".join(args[1:]).strip();
+        if ui is not None {
+            self.list_library(ui);
+        }
+        print("studio: library find=" + (self.library_filter if self.library_filter else "-") + " rows=" + str(len(ui.library.rows) if ui is not None else 0));
+        return True;
+    }
     if name == "ed_library" {
         if ui is None {
             return True;
@@ -588,4 +605,36 @@ impl Studio.prefab_change(scene: Scene, args: list[str]) -> bool {
         self.say("This instance differs from its prefab: " + how);
     }
     return True;
+}
+
+impl Studio.preview_library(ui: StudioUi) {
+    view = self.library_view;
+    if view is None {
+        return;
+    }
+    rows = ui.library.rows;
+    at = ui.library.hover_row;
+    key = rows[at].key if at >= 0 and at < len(rows) else "";
+    if not key.startswith("prefab:") or key == self.library_previewed {
+        # What was last looked at stays until another prefab is.
+        return;
+    }
+    self.library_previewed = key;
+    brushes: list[list[Side]] = [];
+    try {
+        with open(self.prefab_path(key[7:]), "r") as file {
+            for item in read_map(file.read()).items {
+                for sides in item.brushes {
+                    brushes.append(sides);
+                }
+            }
+        }
+    } except Exception {
+        brushes = [];
+    }
+    view.shown = len(brushes) > 0;
+    if len(brushes) > 0 {
+        tint = self.canvas.theme.accent;
+        self.canvas.keep_picture("library:preview", 240, 180, sketch(sketch_edges(brushes), 240, 180, tint.r, tint.g, tint.b));
+    }
 }
