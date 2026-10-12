@@ -42,7 +42,11 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   delete is undone.
 - **N** looks at each selected thing in turn (Shift+N the other way,
   `ed_browse`), leaving the selection as it is. `ed_swap` has the two
-  selected things change places.
+  selected things change places. `ed_marked set` marks the selected
+  entity (or the one that holds the selected brushes) for later:
+  `ed_marked take` hands it the brushes selected then, `ed_marked pick`
+  selects it, `ed_marked swap` has it change places with the one thing
+  selected, and `ed_marked clear` forgets it.
   Ctrl+A selects everything, Ctrl+I the rest, `ed_select material:<name>`
   every brush with a side of that material.
 - **Scene** (left): the map's entities by class. A click selects, a click on
@@ -937,7 +941,14 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   lowest neighbour, and `ed_sculpt paint` gives the tops under the brush
   the material in hand. `ed_terrain lift <x0> <y0> <x1> <y1> <amount>
   [falloff]` raises (or lowers) every corner inside a rectangle, and
-  those within the falloff of it by less the farther out they are.
+  those within the falloff of it by less the farther out they are; the
+  falloff is so many units, or with a `%` after it that share of the
+  rectangle's shorter side. `ed_brush rect on [falloff]` makes the brush
+  a rectangle: in sculpt mode a drag draws one on the terrain (and how
+  far its falloff reaches), and letting go lifts it by the brush's
+  amount, or lowers it with Shift; `ed_brush rect off` is the round
+  brush again. In face mode Alt and a drag paints the material in hand
+  onto each top the pointer passes over.
   `ed_terrain pattern <same|alt|other>` splits the cells along the other
   diagonal, or along each in turn so ridges run either way.
   `ed_terrain free` leaves the terrain as the plain brushes it is made of.
@@ -1411,6 +1422,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_rectlift_tests.jac`: a falloff as units or as a share of
+  a rectangle's shorter side; a rectangle of terrain lifted and lowered
+  with one.
 - `tests/studio_needs_tests.jac`: the file a sound field names by its
   game's rules and a model field's; the files an entity needs and those
   a game's list does not hold, whatever their case.
@@ -1651,6 +1665,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/rectlift_session.cfg` (10 steps: a wall marked, handed
+  another box from the mark, picked from it, and swapped with a light;
+  the mark cleared; a rectangle of terrain lifted by numbers with a
+  falloff of half its side; one drawn on the terrain by a drag in sculpt
+  mode and lifted, another lowered with Shift; and the round brush
+  again).
   `scripts/studio/needs_session.cfg` (7 steps: e1m1 checked, lacking no
   class and no file; a railgun added to it; a sound Quake's archives do
   not hold, then one they do; in a scene of the studio's own a

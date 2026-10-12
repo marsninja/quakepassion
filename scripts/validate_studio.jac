@@ -3379,6 +3379,98 @@ def needs_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     );
 }
 
+"""The seventy-ninth session: an entity marked for later, and rectangles of terrain lifted by numbers and by a drag."""
+def rectlift_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["drawing", "lifted"];
+    for shot in shots {
+        (repo / f"rectlift_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-rectlift-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/rectlift_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "rectlift.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The rectlift session failed: {output / 'rectlift.log'}";
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["taken", "picked", "lightat", "swapped", "cleared", "numbers", "drawing", "dragged", "lowered", "round"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'rectlift.log'}";
+    }
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    def dumped(name: str, start: str) -> list[str] {
+        held = steps[name];
+        ends = [place for (place, line) in enumerate(held) if line.startswith("mode=")];
+        return [line for line in held[:ends[0]] if line.startswith(start)];
+    }
+    # Nothing is marked at first, and nothing is handed; then the wall is, and takes the other box.
+    marks = [line for line in said["taken"] if line.startswith("marked ") or line.startswith("handed ")];
+    assert marks == ["marked none", "marked #5 func_wall", "handed brushes=1 to #5 func_wall"] , str(marks);
+    assert dumped("taken", "marked ") == ["marked #5"];
+    # Picked from the mark with nothing selected: the wall, holding both boxes.
+    assert selected(steps["picked"]) == ["selected #5 classname=func_wall owns=2"] , str(selected(steps["picked"]));
+    # A light and the marked wall change places: the light stands where the wall's middle was.
+    before = selected(steps["lightat"]);
+    after = selected(steps["swapped"]);
+    assert len(before) == 1 and "classname=light origin=-160 " in before[0] , str(before);
+    assert len(after) == 2 and "classname=light origin=80 160 32" in after[0] and "classname=func_wall" in after[1] , str(after);
+    # Cleared: the dump says nothing of a mark, and nothing is handed from one.
+    assert not dumped("cleared", "marked ") and not [line for line in said["cleared"] if line.startswith("handed ")];
+    def heights(name: str) -> list[int] {
+        return heights_of(steps[name]);
+    }
+    # By numbers: a rectangle 128 square lifted by 32, falling off over half its side. Nine by nine
+    # corners; the three columns inside it are lifted, the columns 64 outside are at the falloff's edge.
+    lifts = [line for line in ran.stdout.splitlines() if line.startswith("studio: terrain lifted by ")];
+    assert len(lifts) == 3 and lifts[0] == "studio: terrain lifted by 32 falloff=64.0" , str(lifts);
+    flat = heights("numbers");
+    assert len(flat) == 81 and max(flat) == 32 and flat.count(32) == 6 and sum([1 for height in flat if height > 0]) == 12 , str(flat);
+    for row in range(9) {
+        assert flat[row * 9 + 2] == 0 and flat[row * 9 + 6] == 0;
+    }
+    # While it is drawn nothing has changed; let go, the rectangle is lifted by the brush's 24 with a
+    # falloff a quarter of its shorter side, and more corners are raised than before.
+    assert dumped("drawing", "rectbrush ") == ["rectbrush falloff=25%"] and heights("drawing") == flat;
+    assert lifts[1].startswith("studio: terrain lifted by 24 falloff=") and float(lifts[1].split("falloff=")[1]) > 16.0 , lifts[1];
+    drawn = heights("dragged");
+    assert max(drawn) == 56 and sum(drawn) > sum(flat) and sum([1 for height in drawn if height > 0]) > 20 , str(drawn);
+    assert all([drawn[index] >= flat[index] for index in range(81)]);
+    # With Shift another is lowered: nothing is higher than it was, and something is lower.
+    assert lifts[2].startswith("studio: terrain lifted by -24 falloff=") , lifts[2];
+    sunk = heights("lowered");
+    assert all([sunk[index] <= drawn[index] for index in range(81)]) and sum(sunk) < sum(drawn) and min(sunk) == 0;
+    # The round brush again: a drag is a stroke that raises, and no rectangle is lifted.
+    assert not dumped("round", "rectbrush ") and sum(heights("round")) > sum(sunk);
+    for shot in shots {
+        source = repo / f"rectlift_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"rectlift_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"RECTLIFT PASS: {len(steps) - 1} steps, a wall marked, handed a box, picked and swapped with a light; a rectangle of "
+            + f"terrain lifted by numbers with a falloff by share, one drawn by a drag ({lifts[1].split('falloff=')[1]} units of "
+            + "falloff) and one lowered with Shift"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -3786,13 +3878,21 @@ def touch_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert len(raised) == 1 and brush_box(raised[0])[0][2] == 16 and brush_box(raised[0])[1][2] == brush_box(under[0])[1][2] + 32 , str(
         raised
     );
-    source = repo / "touch_plot.png";
-    check_capture(source, 6);
-    shutil.copyfile(source, output / "touch_plot.png");
-    source.unlink();
+    # Alt and a drag in face mode: the tops the pointer passed over have the material in hand, and
+    # nothing else has (a top is one side of its prism).
+    assert "dragpaint" in steps , f"The session never reached 'dragpaint': {output / 'touch.log'}";
+    mossy = [line for line in ran.stdout.splitlines() if line.startswith("studio: stat ") and line.endswith(" sides of moss")];
+    assert len(mossy) == 1 and 2 <= int(mossy[0].split()[2]) <= 8 , str(mossy);
+    for shot in ["touch_plot.png", "touch_painted.png"] {
+        source = repo / shot;
+        check_capture(source, 6);
+        shutil.copyfile(source, output / shot);
+        source.unlink();
+    }
     print(
         f"TOUCH PASS: {len(steps) - 1} steps, a terrace's corners moved together, a plot of cells outlined, lifted and "
-            + "painted, a plot picked by a press, and the terrain's top and bottom moved apart"
+            + f"painted, a plot picked by a press, the terrain's top and bottom moved apart, and {mossy[0].split()[2]} tops "
+            + "painted by a drag of the pointer"
     );
 }
 
@@ -5759,6 +5859,7 @@ def main() {
         "logpanel": logpanel_session,
         "treedrop": treedrop_session,
         "needs": needs_session,
+        "rectlift": rectlift_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5952,6 +6053,7 @@ def main() {
     logpanel_session(repo, binary, env, output);
     treedrop_session(repo, binary, env, output);
     needs_session(repo, binary, env, output);
+    rectlift_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

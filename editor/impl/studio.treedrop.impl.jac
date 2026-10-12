@@ -96,3 +96,84 @@ impl Studio.treedrop_command(scene: Scene, args: list[str]) -> bool {
     }
     return True;
 }
+
+impl Studio.marked_command(scene: Scene, args: list[str]) -> bool {
+    if args[0] != "ed_marked" {
+        return False;
+    }
+    how = args[1] if len(args) > 1 else "";
+    kept = scene.find(self.marked_item) if self.marked_item >= 0 else None;
+    if kept is not None and not kept.held {
+        # Deleted since it was marked.
+        kept = None;
+    }
+    if how == "set" {
+        chosen = scene.selection();
+        picked_brushes = scene.selected_solids();
+        wanted: Item | None = chosen[0] if len(chosen) == 1 and len(picked_brushes) == 0 else None;
+        if wanted is None and len(chosen) == 0 and len(picked_brushes) > 0 {
+            # A brush stands for what holds it, when the selection has one holder.
+            holders = [scene.owner_of(brush) for brush in picked_brushes];
+            first = holders[0];
+            if first is not None and len([holder for holder in holders if holder is not first]) == 0 {
+                wanted = first;
+            }
+        }
+        if wanted is None {
+            self.say("Select the one entity to mark (or brushes of one entity)");
+            return True;
+        }
+        self.marked_item = wanted.serial;
+        print("studio: marked #" + str(wanted.serial) + " " + wanted.classname());
+        self.say(wanted.title() + " is marked: ed_marked take hands it the selected brushes, pick selects it, swap changes places with it");
+        return True;
+    }
+    if how == "clear" {
+        self.marked_item = -1;
+        self.say("Nothing is marked");
+        return True;
+    }
+    if kept is None {
+        self.marked_item = -1;
+        if how in ["take", "pick", "swap"] {
+            self.say("Nothing is marked: select an entity and ed_marked set");
+        } elif not how {
+            print("studio: marked none");
+            self.say("Nothing is marked");
+        } else {
+            self.say("ed_marked [set|clear|take|pick|swap]");
+        }
+        return True;
+    }
+    if not how {
+        print("studio: marked #" + str(kept.serial) + " " + kept.classname());
+        self.say(kept.title() + " is marked");
+    } elif how == "pick" {
+        scene.select(kept);
+        self.focus(scene, ["ed_focus"]);
+    } elif how == "take" {
+        if self.drop_taker(scene, str(kept.serial)) is None {
+            self.say(kept.title() + " holds no brushes: it cannot take any");
+            return True;
+        }
+        handed = scene.hand_selection(kept);
+        print("studio: handed brushes=" + str(handed) + " to #" + str(kept.serial) + " " + kept.classname());
+        self.say(
+            str(handed) + (" brush" if handed == 1 else " brushes") + " handed to " + kept.title()
+            if handed > 0
+            else "Select brushes " + kept.title() + " does not hold already"
+        );
+    } elif how == "swap" {
+        if scene.is_selected(kept) or len(scene.selection()) + len(scene.selected_solids()) != 1 {
+            self.say("Select one other thing to change places with " + kept.title());
+            return True;
+        }
+        scene.select(kept, add=True);
+        if not scene.swap_selection() {
+            self.say("Those two cannot change places");
+        }
+    } else {
+        self.say("ed_marked [set|clear|take|pick|swap]");
+    }
+    return True;
+}

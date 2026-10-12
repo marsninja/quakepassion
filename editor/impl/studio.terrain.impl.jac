@@ -79,6 +79,21 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
     if app is None {
         return False;
     }
+    if name == "ed_brush" and len(args) > 1 and args[1] == "rect" {
+        word = args[2] if len(args) > 2 else "";
+        self.rect_brush = (not self.rect_brush) if word not in ["on", "off"] else word == "on";
+        if len(args) > 3 {
+            self.rect_fall = args[3];
+        }
+        self.rect_from = None;
+        self.say(
+            "In sculpt mode a drag draws a rectangle on the terrain and lifts every corner in it (Shift lowers), falling off over "
+                + (self.rect_fall if self.rect_fall else "nothing")
+            if self.rect_brush
+            else "The sculpting brush is round again"
+        );
+        return True;
+    }
     if name == "ed_brush" {
         numbers = terrain_numbers(args[1:]);
         if len(numbers) < 2 {
@@ -95,6 +110,11 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
         how = args[1] if len(args) > 1 else "";
         if how == "lift" or how == "pattern" or how == "free" {
             ground = self.terrain_now(scene);
+            if how == "lift" and len(args) > 3 and args[-2] == "on" and args[-1].isdigit() {
+                # The terrain a drag was drawn on, said by its number.
+                ground = scene.find(int(args[-1]));
+                args = args[:-2];
+            }
             if ground is None or scene.terrain_grid(ground) is None {
                 self.say("Select the terrain to change");
                 return True;
@@ -115,19 +135,22 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
                 }
                 return True;
             }
-            lift_box = terrain_numbers(args[2:]);
+            lift_box = terrain_numbers(args[2:7]);
             if len(lift_box) < 5 {
-                self.say("ed_terrain lift <x0> <y0> <x1> <y1> <amount> [falloff]");
+                self.say("ed_terrain lift <x0> <y0> <x1> <y1> <amount> [falloff: units, or a share of the rectangle's shorter side as 50%]");
                 return True;
             }
+            fades = falloff_of(args[7] if len(args) > 7 else "", lift_box[2] - lift_box[0], lift_box[3] - lift_box[1]);
             if not scene.lift_terrain(
                 ground,
                 Vec3(x=min(lift_box[0], lift_box[2]), y=min(lift_box[1], lift_box[3])),
                 Vec3(x=max(lift_box[0], lift_box[2]), y=max(lift_box[1], lift_box[3])),
                 lift_box[4],
-                lift_box[5] if len(lift_box) > 5 else 0.0
+                fades
             ) {
                 self.say("No corner of the terrain is in that rectangle");
+            } else {
+                print("studio: terrain lifted by " + str(int(lift_box[4])) + " falloff=" + str(round(fades, 2)));
             }
             return True;
         }
@@ -281,4 +304,50 @@ impl Studio.terrain_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     return False;
+}
+
+impl Studio.rect_lift(lower: bool) {
+    stage = self.stage;
+    began = self.rect_from;
+    ended = self.rect_to;
+    self.rect_from = None;
+    self.rect_to = None;
+    if stage is None or began is None or ended is None {
+        return;
+    }
+    if abs(began.x - ended.x) < 1.0 or abs(began.y - ended.y) < 1.0 {
+        # A press that went nowhere encloses nothing.
+        return;
+    }
+    stage.emit(
+        "ed_terrain lift " + str(int(round(began.x))) + " " + str(int(round(began.y))) + " " + str(int(round(ended.x))) + " "
+            + str(int(round(ended.y))) + " " + str(int(-self.brush_amount if lower else self.brush_amount)) + " "
+            + (self.rect_fall if self.rect_fall else "0") + " on " + str(self.rect_land)
+    );
+}
+
+impl Studio.draw_rect_brush {
+    began = self.rect_from;
+    ended = self.rect_to;
+    if began is None or ended is None {
+        return;
+    }
+    level = max(began.z, ended.z) + 2.0;
+    corners = [
+        Vec3(x=began.x, y=began.y, z=level), Vec3(x=ended.x, y=began.y, z=level), Vec3(x=ended.x, y=ended.y, z=level),
+        Vec3(x=began.x, y=ended.y, z=level)
+    ];
+    for place in range(4) {
+        wire_line(corners[place], corners[(place + 1) % 4], ink(0xff7a18));
+    }
+    # And how far outside it the lift falls away.
+    fades = falloff_of(self.rect_fall, ended.x - began.x, ended.y - began.y);
+    if fades > 0.0 {
+        low = Vec3(x=min(began.x, ended.x) - fades, y=min(began.y, ended.y) - fades, z=level);
+        high = Vec3(x=max(began.x, ended.x) + fades, y=max(began.y, ended.y) + fades, z=level);
+        outer = [low, Vec3(x=high.x, y=low.y, z=level), high, Vec3(x=low.x, y=high.y, z=level)];
+        for place in range(4) {
+            wire_line(outer[place], outer[(place + 1) % 4], ink(0xff7a18, 110));
+        }
+    }
 }

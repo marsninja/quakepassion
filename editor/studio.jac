@@ -90,7 +90,7 @@ import from .classes.registry {
     ClassInfo, FieldInfo, class_info, class_names, class_family, field_of, flag_set, add_classes, drop_classes
 }
 import from .geometry.shapes { shape_brushes, caulked, SHAPE_KINDS }
-import from .geometry.terrain { heights_from, heights_image, image_heights }
+import from .geometry.terrain { heights_from, heights_image, image_heights, falloff_of }
 import from .geometry.touchup { cell_at, kin_cells, cells_outline }
 import from .geometry.patch {
     patch_points, PATCH_KINDS, places_text, places_even, places_projected_from, places_slid
@@ -257,7 +257,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_tree", "ed_tree [text]", "say every row the scene tree shows, or those that hold some text"),
     (
         "ed_terrain",
-        "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest] | lift <x0> <y0> <x1> <y1> <amount> [falloff] | pattern <same|alt|other> | free",
+        "ed_terrain [cols rows cell] | export <file.pgm> | import <file.pgm> [tallest] | lift <x0> <y0> <x1> <y1> <amount> [falloff|n%] | pattern <same|alt|other> | free",
         "add a terrain where the camera looks; write or read its heights as a grey image; lift a rectangle of it; split its cells another way; or leave it as plain brushes"
     ),
     (
@@ -265,7 +265,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_sculpt <raise|lower|smooth|flatten|noise|erode|paint> [radius] [amount] [at <x> <y>]",
         "a stroke of the sculpting brush on a terrain, where the camera looks or at a point"
     ),
-    ("ed_brush", "ed_brush <radius> <amount>", "the sculpting brush's width and strength"),
+    ("ed_brush", "ed_brush <radius> <amount> | rect [on|off] [falloff|n%]", "the sculpting brush's width and strength; rect makes a drag in sculpt mode draw a rectangle that is lifted whole"),
     ("ed_replace", "ed_replace <old> <new> [all]", "give sides of one material another, in the selection or everywhere"),
     ("ed_snap", "ed_snap [all] [size]", "put the selection's corners and origins on the grid, or everything's (a map off the grid mended)"),
     ("ed_align", "ed_align <x|y|z> <low|high|middle> [to <set>]", "line the selected brushes up along an axis, with one another or with a kept set"),
@@ -445,6 +445,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recall", "ed_recall <name> [add]", "select a set kept before, alone or added to the selection"),
     ("ed_forget", "ed_forget <name>", "drop a kept set"),
     ("ed_swap", "ed_swap", "the two selected things change places"),
+    ("ed_marked", "ed_marked [set|clear|take|pick|swap]", "mark the selected entity for later; then take hands it the selected brushes, pick selects it, swap changes its place with the selection's"),
     ("ed_browse", "ed_browse [next|prev]", "look at each selected thing in turn"),
     (
         "ed_gizmo",
@@ -766,6 +767,8 @@ obj Studio(Workbench) {
         log_panel: bool = False,
         log_rows: int = 6,
         log_back: int = 0,
+        # The entity marked for what is done from the mark later (-1: none).
+        marked_item: int = -1,
         # The part of a view its overlays are drawn in, when a floating
         # window covers the rest (the whole of it when this has no size).
         over_piece: Rect = Rect(),
@@ -932,6 +935,15 @@ obj Studio(Workbench) {
         sculpt_at: Vec3 | None = None,
         # The terrain under the pointer, by its number (-1 when none).
         sculpt_land: int = -1,
+        # The rectangle brush: whether a drag in sculpt mode draws a
+        # rectangle to lift, how far outside it the lift falls away (units,
+        # or a share of its shorter side as "50%"), its two corners while it
+        # is drawn and the terrain it is drawn on.
+        rect_brush: bool = False,
+        rect_fall: str = "",
+        rect_from: Vec3 | None = None,
+        rect_to: Vec3 | None = None,
+        rect_land: int = -1,
         # A build for playing takes everything; one for editing leaves out
         # what is hidden.
         play_build: bool = False,
@@ -2146,6 +2158,16 @@ obj Studio(Workbench) {
                     self.moved = True;
                     continue;
                 }
+                if self.mode == "sculpt" and self.rect_brush {
+                    # One corner of a rectangle drawn on the terrain.
+                    corner = self.terrain_point(scene, event.x, event.y);
+                    if corner is not None {
+                        self.rect_from = corner;
+                        self.rect_to = corner;
+                        self.rect_land = self.sculpt_land;
+                    }
+                    continue;
+                }
                 if self.mode == "sculpt" {
                     # The first dab of a stroke.
                     self.sculpting = True;
@@ -2192,6 +2214,10 @@ obj Studio(Workbench) {
                 }
                 if event.button == 0 and self.sculpting {
                     self.sculpting = False;
+                    self.moved = True;
+                }
+                if event.button == 0 and self.rect_from is not None {
+                    self.rect_lift(event.shift);
                     self.moved = True;
                 }
                 if event.button == 0 and self.lining {
@@ -2301,6 +2327,12 @@ obj Studio(Workbench) {
                     self.painted_side = brushed.side;
                     self.moved = True;
                     stage.emit("ed_paintface " + str(brushed_solid.serial) + " " + str(brushed.side));
+                }
+            } elif event.kind == "drag" and self.rect_from is not None {
+                # The rectangle's other corner, while the pointer is over its terrain.
+                other = self.terrain_point(scene, event.x, event.y);
+                if other is not None and self.sculpt_land == self.rect_land {
+                    self.rect_to = other;
                 }
             } elif event.kind == "drag" and self.sculpting {
                 # A dab every few moves of the pointer, so a stroke builds up evenly.
@@ -2909,7 +2941,7 @@ obj Studio(Workbench) {
         }
         # Where the sculpting brush would fall, and how wide.
         ring = self.sculpt_at;
-        if ring is not None {
+        if ring is not None and not self.rect_brush {
             for i in range(24) {
                 first = 2.0 * math.pi * float(i) / 24.0;
                 second = 2.0 * math.pi * float(i + 1) / 24.0;
@@ -2920,6 +2952,7 @@ obj Studio(Workbench) {
                 );
             }
         }
+        self.draw_rect_brush();
         # The way out of a level that leaks.
         for i in range(1, len(self.leak)) {
             wire_line(self.leak[i - 1], self.leak[i], ink(0xe5484d));
@@ -3194,6 +3227,9 @@ obj Studio(Workbench) {
     """Where on a terrain the line of sight through a point of the view
     lands, or none when it lands on none."""
     def terrain_point(scene: Scene, x: int, y: int) -> Vec3 | None;
+    """Lift (or lower) what the rectangle drawn on a terrain encloses, and forget it."""
+    def rect_lift(lower: bool);
+    def draw_rect_brush;
     """One dab of the sculpting brush under the pointer."""
     def dab(scene: Scene, x: int, y: int, lower: bool, smooth: bool);
 
@@ -3570,6 +3606,9 @@ obj Studio(Workbench) {
     row, or the world for the brushes' heading."""
     def drop_taker(scene: Scene, target: str) -> Item | None;
     def treedrop_command(scene: Scene, args: list[str]) -> bool;
+    """Mark an entity, and later hand the selected brushes to it, pick it,
+    or change its place with the selection's."""
+    def marked_command(scene: Scene, args: list[str]) -> bool;
     """The places to stand in the built scene, sampled on a grid: floor
     under the whole of a cell and room for a head over it."""
     def nav_floors_of(scene: Scene, cell: float) -> list[Floor];
@@ -3861,7 +3900,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.treedrop_command(scene, args) and not self.logpanel_command(scene, args)
+        } elif not self.marked_command(scene, args) and not self.treedrop_command(scene, args)
+            and not self.logpanel_command(scene, args)
             and not self.camproute_command(scene, args)
             and not self.overlay_command(scene, args)
             and not self.q3map_command(scene, args)
@@ -4198,6 +4238,12 @@ obj Studio(Workbench) {
         }
         if self.log_panel {
             lines.append(self.log_panel_words());
+        }
+        if self.rect_brush {
+            lines.append("studio: rectbrush falloff=" + (self.rect_fall if self.rect_fall else "0"));
+        }
+        if self.marked_item >= 0 {
+            lines.append("studio: marked #" + str(self.marked_item));
         }
         if self.pick_kind != "all" or len(self.kept_out_items) + len(self.kept_out_solids) > 0 {
             lines.append(
