@@ -19,6 +19,11 @@ impl Studio.played(dt: float) {
     if not self.playing or app is None {
         return;
     }
+    # The tools are given the frame while a game is played too: a script
+    # attached to what fires is theirs to run.
+    for tool in self.tools {
+        tool.tick(self.host(), dt);
+    }
     signals = [app.world->:HasSignal:->][?:Signal];
     if len(self.fired_seen) != len(signals) {
         # The level has only now been loaded: from here on is what counts.

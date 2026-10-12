@@ -41,7 +41,7 @@ import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside, Theme, lig
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
-import from .tools.host { ToolHost, StudioTool }
+import from .tools.host { ToolHost, StudioTool, PanelSpec }
 import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.controls { Combo, TextArea }
 import from .ui.widgets {
@@ -351,6 +351,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_matfind", "ed_matfind <text>", "find materials by name across every game, and show them as a shelf in the Materials tab"),
     ("ed_pickmode", "ed_pickmode <all|brushes|entities>", "what a click in a view picks: everything, brushes only, or entities only"),
     ("ed_restrict", "ed_restrict [on|off]", "keep editing to the selection: everything else is put away, and brought back when it is let go"),
+    ("ed_toolpanel", "ed_toolpanel close <name>", "close a box that a tool is showing"),
     (
         "ed_playtest",
         "ed_playtest [bake]",
@@ -889,6 +890,13 @@ obj StudioHost(ToolHost) {
         if kind == "scenes" {
             return os.path.dirname(self.studio.scene_path("x"));
         }
+        if kind == "scripts" {
+            if self.studio.project_folder {
+                return self.studio.project_folder + "/scripts";
+            }
+            kept = os.getenv("QP_SCRIPTS", "");
+            return kept if kept else os.getcwd() + "/scripts/user";
+        }
         return self.studio.project_folder;
     }
 
@@ -917,6 +925,26 @@ obj StudioHost(ToolHost) {
 
     def show_picture(material: str, width: int, height: int, rgba: bytes) {
         self.studio.canvas.keep_picture(material, width, height, rgba);
+    }
+
+    def panel(key: str, spec: PanelSpec) {
+        self.studio.tool_panel_set(key, spec);
+    }
+
+    def panel_text(key: str) -> str {
+        return self.studio.tool_panel_text(key);
+    }
+
+    def panel_close(key: str) {
+        self.studio.tool_panel_close(key);
+    }
+
+    def playing -> bool {
+        return self.studio.playing;
+    }
+
+    def fired_log -> list[str] {
+        return list(self.studio.fire_log);
     }
 
     def files_changed {
@@ -1320,6 +1348,12 @@ obj Studio(Workbench) {
         # the words its rows are found by.
         library_view: Picture | None = None,
         library_previewed: str = "",
+        # Boxes that tools show: each one's window and words by its name,
+        # what it is to show, and those to be filled again.
+        tool_boxes: dict[str, Floater] = {},
+        tool_areas: dict[str, TextArea] = {},
+        tool_specs: dict[str, PanelSpec] = {},
+        tool_stale: list[str] = [],
         # The collision hulls a navigation bake leaves out (what moves, when doors are taken as open).
         nav_exclude: list[int] = [],
         # The scene's count of picks when its groups' groups were last picked with them.
@@ -2487,6 +2521,7 @@ obj Studio(Workbench) {
         self.keep_floats();
         self.keep_weights_box();
         self.keep_script_box();
+        self.keep_tool_panels();
         self.watch_settings();
         self.keep_settings_box();
         doc_now = self.scene;
@@ -3223,6 +3258,13 @@ obj Studio(Workbench) {
     # The shader script as text (impl/studio.shadertext.impl.jac)
     """Fill the script's box again when the script has changed."""
     def keep_script_box;
+    # Boxes that tools show (impl/studio.toolpanel.impl.jac)
+    def tool_panel_set(key: str, spec: PanelSpec);
+    def tool_panel_text(key: str) -> str;
+    def tool_panel_close(key: str);
+    """Open and fill the tools' boxes that have something new to show."""
+    def keep_tool_panels;
+    def toolpanel_command(args: list[str]) -> bool;
     def script_words -> str;
     """Open or close the script's box, or read its words as the script.
     False for every other shader command, which goes on to its own."""
@@ -4502,6 +4544,7 @@ obj Studio(Workbench) {
             and not self.integral_command(scene, args)
             and not self.games_command(scene, args)
             and not self.script_command(scene, args) and not self.texlink_command(scene, args)
+            and not self.toolpanel_command(args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
             and not self.entity_command(scene, args)

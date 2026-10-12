@@ -882,6 +882,47 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   that arrow. `ed_axes lock <x|y|z|off>` keeps a selection dragged by
   hand to one of those axes. The rings that turn and the boxes that size
   still go by the world's axes.
+- **Scripts: walkers of a project's own**: a project keeps Jac scripts in
+  its `scripts/` folder (`ed_script new <file> [walker]` writes one to
+  begin from, `ed_script` lists them with their walkers and what they
+  are attached to). The studio is one native program and takes no new
+  code in: a script is run by the `jac` toolchain in a process of its
+  own (`ed_script jac <command>` says which), on the level made into a
+  graph, and all it can do is ask.
+  - *What a script may touch* is `qp.jac`, written beside the scripts
+    (the studio carries it; `editor/userland/qp.jac` is its source): a
+    `Level` that `Holds` a `Thing` for every entity, with its number,
+    class and fields, and a `Fires` edge wherever one's `target` is
+    another's `targetname`. A walker is set down on the thing it is
+    attached to, or on the level, and walks. What it may ask is five
+    things and no more: `thing.put(key, value)` to set a field,
+    `thing.fire()`, `thing.pick()`, `level.say(words)` and
+    `level.add(classname, origin, fields)`. The studio reads those back
+    as lines and does them with its own commands, each undoable; a line
+    of any other kind is not read. (A script is a program on the
+    machine all the same: what keeps it from the studio is that it runs
+    outside it, not that the machine is closed to it.)
+  - *Run*: `ed_script run <file> <walker> [words]` sets a walker down on
+    the level, which makes a command of it; `ed_script attach <file>
+    <walker>` attaches one to the selected entities (a field,
+    `_walker`), and `ed_script go` runs those attached to the selection
+    or, with nothing selected, all of them.
+  - *As behaviour*: in a game played from the studio, when an entity
+    that has a walker fires, the walker is run in the background on the
+    level as it stands with the event `fired`, and what it asks to fire
+    or say is done when it finishes, a moment later.
+  - *Edited with the compiler beside it*: `ed_script edit <file>` opens
+    the script in a box of numbered lines. Saving (Ctrl+Enter, or a
+    click outside the words) writes the file and asks the compiler
+    (`jac check`): its faults are listed beside the words by line, or
+    the walkers the script has. Nothing is restarted: the next run, and
+    the next firing, use the script as saved.
+  - *Classes declared in code*: a `node` of a script that derives from
+    `Thing` is an entity class: its `has` fields are the class's fields
+    (numbers and text told apart, with what they begin as) and the doc
+    string before it is its help. They are gathered on every save into
+    an add-on the studio loads, so they are in the Classes tab and the
+    inspector at once.
 - **A playtest of an authored scene**: `ed_playtest` (the Window menu's
   last entry) says whether a scene of brushes can be finished. It asks
   the scene's logic first (what can never be set off, a lock with no
