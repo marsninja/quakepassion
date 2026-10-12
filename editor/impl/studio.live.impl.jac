@@ -106,6 +106,9 @@ impl Studio.live_command(args: list[str]) -> bool {
         return True;
     }
     what = args[1] if len(args) > 1 else "";
+    if what in ["opponents", "doors", "pickups", "opponent", "door", "pickup"] {
+        return self.live_others(args);
+    }
     player = app.player;
     signals = [app.world->:HasSignal:->][?:Signal];
     entities = app.level.bsp.entities;
@@ -133,7 +136,7 @@ impl Studio.live_command(args: list[str]) -> bool {
             return True;
         }
     } elif what {
-        self.say("ed_live [player health <n> | player at <x y z> | signal <name> on|off]");
+        self.say("ed_live [player health <n> | player at <x y z> | signal <name> on|off | opponents | doors | pickups | opponent|door|pickup <number> ...]");
         return True;
     }
     # How the live game stands: the player, and every signal that has a name.

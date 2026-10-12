@@ -90,6 +90,7 @@ import from .assets.shaders {
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
 import from .assets.moving { warps_name }
+import from .document.liveroll { LiveRoll, opponent_words, door_words, pickup_words }
 import from .geometry.axes { world_axes, brush_axes, facing_axes, kept_to_axis }
 import from .document.thumbs { sketch_edges, sketch }
 import from .document.chords { chord_parts, bind_chord, chord_command, bound_chords }
@@ -452,7 +453,11 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_break", "ed_break [targetname|clear]", "hold a played game still when what has that name fires; or stop doing so; or list them"),
     ("ed_trace", "ed_trace [on|off]", "name each firing in a played game as it happens"),
     ("ed_fired", "ed_fired [label]", "print what has fired in the game played from here, how often and in what order"),
-    ("ed_live", "ed_live [player health <n> | player at <x y z> | signal <name> on|off]", "look at a played game's player and signals, or change them"),
+    (
+        "ed_live",
+        "ed_live [player health <n> | player at <x y z> | signal <name> on|off | opponents | doors | pickups | opponent <n> health <h>|at <x y z> | door <n> open|lock|unlock | pickup <n> at <x y z>]",
+        "look at a played game's player, signals, opponents, doors and pickups, or change them"
+    ),
     (
         "ed_build",
         "ed_build [full|quick|flat|fresh]",
@@ -3897,6 +3902,9 @@ obj Studio(Workbench) {
     def played(dt: float);
     """Run a breakpoint, trace, fired or live command. False when it is not one."""
     def live_command(args: list[str]) -> bool;
+    """Call over a played game's opponents, doors and pickups, or change
+    one by its number (impl/studio.liveroll.impl.jac)."""
+    def live_others(args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
     # A bake seen, recipes, and other programs' steps (impl/studio.steps.impl.jac)

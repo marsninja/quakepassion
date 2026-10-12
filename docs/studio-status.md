@@ -606,7 +606,13 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   health, and how every signal stands; `ed_live player health <n>` and
   `ed_live player at <x y z>` change the player, and `ed_live signal
   <name> on|off` switches a signal, before `ed_pause` lets the game run
-  on. (The engine counts firings on its signals and calls the workbench
+  on. The rest of what lives in the game is reached by number: `ed_live
+  opponents`, `ed_live doors` and `ed_live pickups` call them over (a
+  walker goes out from the world to what it holds of each kind), each
+  with where it is and how it stands, and `ed_live opponent <n> health
+  <h>` or `at <x y z>`, `ed_live door <n> open|lock|unlock` and `ed_live
+  pickup <n> at <x y z>` change one; a door asked to open opens when
+  the game goes on. (The engine counts firings on its signals and calls the workbench
   each frame of a game it is not showing; nothing else of it changed.)
 - **Sweeps**: `ed_sweep <outline> [wide tall] [count] along <name>`
   carries an outline along a path of entities, from the one of that
