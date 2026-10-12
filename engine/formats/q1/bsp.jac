@@ -29,6 +29,11 @@ import from ..bsp {
     decode_pvs
 }
 
+"""A number rounded to single precision, as a C float holds it."""
+def single(value: float) -> float {
+    return float(struct.unpack("<f", struct.pack("<f", value))[0]);
+}
+
 def parse_textures(data: bytes) -> list[Texture] {
     count = i32_at(data, 0);
     if count < 0 or count > 4096 {
@@ -185,10 +190,17 @@ def parse_bsp(data: bytes) -> Bsp {
             t = v.dot(info.t) + info.toff;
             face.uv.append(s / float(face_texture.width));
             face.uv.append(t / float(face_texture.height));
-            min_s = min(min_s, s);
-            max_s = max(max_s, s);
-            min_t = min(min_t, t);
-            max_t = max(max_t, t);
+            # CalcSurfaceExtents keeps each coordinate in a float: the sum is
+            # rounded to single precision before the extents are taken. The
+            # light compilers did the same, so a face's lightmap is the size
+            # they wrote only with that rounding; without it a coordinate a
+            # hair past a 16-unit line adds a texel the lump does not hold.
+            extent_s = single(s);
+            extent_t = single(t);
+            min_s = min(min_s, extent_s);
+            max_s = max(max_s, extent_s);
+            min_t = min(min_t, extent_t);
+            max_t = max(max_t, extent_t);
         }
         face.light_s = int(math.floor(min_s / 16.0));
         face.light_t = int(math.floor(min_t / 16.0));
