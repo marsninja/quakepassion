@@ -414,6 +414,29 @@ def read_chat_message(cursor: TokenCursor) -> ChatMessage {
     return message;
 }
 
+"""Whether a chat file holds a chat called `name` (case-insensitive).
+BotLoadInitialChat says "couldn't find chat" and gives nothing back when it
+does not: a character may name a chat its file does not have (the game's
+own bots/default_c.c names `player` in a file that has none)."""
+def chat_in_file(tokens: list[ScriptToken], name: str) -> bool {
+    cursor = TokenCursor(tokens=tokens);
+    depth = 0;
+    while cursor.more() {
+        token = cursor.next();
+        if token.kind == TT_PUNCTUATION and token.text == "{" {
+            depth += 1;
+        } elif token.kind == TT_PUNCTUATION and token.text == "}" {
+            depth -= 1;
+        } elif depth == 0 and token.text == "chat" and cursor.more() {
+            called = cursor.next();
+            if called.kind == TT_STRING and called.text.lower() == name.lower() {
+                return True;
+            }
+        }
+    }
+    return False;
+}
+
 """BotLoadInitialChat: the chat types of the chat `name` (case-insensitive)
 in a chat file, each with its messages."""
 def read_initial_chat(tokens: list[ScriptToken], name: str) -> dict[str, list[ChatMessage]] {

@@ -6,6 +6,7 @@ import from engine.formats.botconfig {
     read_item_config,
     read_weapon_names,
     read_initial_chat,
+    chat_in_file,
     read_random_strings,
     read_synonyms,
     read_match_templates,
@@ -278,4 +279,11 @@ test "chat lines are matched, their synonyms replaced, and answered by the reply
         "How odd of you to say that.",
         ""
     ];
+}
+
+test "a chat its file does not hold is told apart from one it does" {
+    tokens = precompile("bots/sample_t.c", CHAT_FILES);
+    assert chat_in_file(tokens, "Sample") and chat_in_file(tokens, "sample");
+    # The game's default character names a chat of this name in a file that has none.
+    assert not chat_in_file(tokens, "player") and not chat_in_file(tokens, "game_enter") and not chat_in_file([], "Sample");
 }

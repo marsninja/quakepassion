@@ -15,6 +15,7 @@ import from engine.formats.botconfig {
     read_item_config,
     read_weapon_names,
     read_initial_chat,
+    chat_in_file,
     read_random_strings,
     ReplyChat,
     SynonymList,
@@ -155,7 +156,15 @@ obj BotFiles {
     def initial_chat(path: str, name: str) -> dict[str, list[ChatMessage]] {
         key = path + ":" + name.lower();
         if key not in self.chats {
-            self.chats[key] = read_initial_chat(self.tokens(path), name);
+            found = self.tokens(path);
+            if chat_in_file(found, name) {
+                self.chats[key] = read_initial_chat(found, name);
+            } else {
+                # BotLoadInitialChat's own complaint: the bot is left with
+                # nothing to say rather than the level with no bot.
+                print("couldn't find chat " + name + " in " + path);
+                self.chats[key] = {};
+            }
         }
         copy: dict[str, list[ChatMessage]] = {};
         for (kind, messages) in self.chats[key].items() {
