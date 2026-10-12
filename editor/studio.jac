@@ -132,6 +132,7 @@ import from .model.skin {
     place_under, skin_tga, tga_skin, skin_colour
 }
 import from .model.pattern { SKIN_PATTERNS }
+import from .document.duplicate { with_regenerated, regenerate }
 import from .model.skinpick { skin_rect, skin_place, place_nearest, triangle_at }
 import from .ui.skinpane { SkinPane }
 import from .model.marks {
@@ -646,7 +647,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_leak", "ed_leak [clear]", "look for a way from the entities out to the void, and draw it"),
     (
         "ed_dup",
-        "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <axes> | axis <x|y|z> | grow <f> | at <name> | path <name> | materials <names> | each [on|off] | hide | show | off | apply",
+        "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <axes> | axis <x|y|z> | grow <f> | at <name> | path <name> | materials <names> | each [on|off] | hide | show | off | apply | images",
         "make the selected group build copies of itself (in a row, mirrored, at named points, along a path), stop it, or make the copies real"
     ),
     ("ed_link", "ed_link <from> <to>", "make one entity fire another"),

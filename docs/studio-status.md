@@ -1496,6 +1496,15 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
     `target` counted up, so three doors open one by one.
   - `ed_dup hide` builds the level without any images, and `show` with
     them.
+  - Duplicators nest: a group put in a duplicating group (`ed_nest`) is
+    copied by it whole, its own images and all, so a row of posts held
+    in a group that copies twice makes three rows. Each duplicator's
+    images are kept on a node of their own beside it in the scene's
+    graph, and a walker (`editor/document/duplicate.jac`) goes through
+    the groups, those held within first, making a duplicator's images
+    again only when its fields or what it copies have changed;
+    `ed_dup images` lists each duplicator's images and how many the
+    walker made again or kept.
 - **The leak finder** (Edit > Look for a leak, `ed_leak`): floods from the
   entities through the space the world's brushes leave; when it reaches
   the void, the way it took is drawn in red in every view.

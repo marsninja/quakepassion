@@ -128,6 +128,23 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
             self.say("Images are built" if self.images_shown else "Only what is in the document is built");
             return True;
         }
+        if how == "images" {
+            # The walker's work: which duplicators' images it made again and which it kept.
+            walked = regenerate(scene, scene_map(scene));
+            count = 0;
+            for serial in sorted(walked.sets.keys()) {
+                shown = scene.find(serial);
+                pieces = sum([len(image_set) for image_set in walked.sets[serial]]);
+                print(
+                    "studio: dup #" + str(serial) + " " + (shown.title() if shown is not None else "?") + " images="
+                        + str(len(walked.sets[serial])) + " brushes=" + str(pieces)
+                );
+                count += 1;
+            }
+            print("studio: dups " + str(count) + " made=" + str(walked.made) + " kept=" + str(walked.kept));
+            self.say(str(count) + " duplicators: " + str(walked.made) + " made again, " + str(walked.kept) + " as they were");
+            return True;
+        }
         # A group, or any entity made of brushes.
         groups = [item for item in scene.selection() if len(scene.solids_of(item)) > 0 and item.classname() != "worldspawn"];
         if len(groups) == 0 and scene.selected_solids() and how not in ["off", "apply", ""] {

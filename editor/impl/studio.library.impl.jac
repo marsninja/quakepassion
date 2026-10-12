@@ -109,7 +109,8 @@ impl Studio.expanded(scene: Scene) -> Scene {
     }
     plain: list[MapItem] = [];
     # Makers' brushes are made before the diggers cut: a hole goes through a made wall too.
-    for read in with_holes(with_makers(with_images(scene_map(scene)) if self.images_shown else scene_map(scene))) {
+    # Each duplicator's images, made again only where what they copy has changed.
+    for read in with_holes(with_makers(with_regenerated(scene, scene_map(scene)) if self.images_shown else scene_map(scene))) {
         if read.fields.get("classname", "") != "misc_prefab" {
             plain.append(read);
         }
