@@ -189,10 +189,14 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_nav check` names what cannot be reached from the first player
   start (they join the Checks tab's findings). `ed_nav show` draws the
   ways: walked green, jumped yellow, dropped red. `ed_nav clear`
-  forgets it. Not there yet: the mesh is not handed to the bots of a
-  game played from the scene, it is not written as an arena's file, and
-  it knows floors only (no ladders, water, lifts, jump pads or
-  teleporters).
+  forgets it. A teleporter (`trigger_teleport`) and a jump pad
+  (`trigger_push`) whose target is somewhere make a way of their own,
+  from the floor under the trigger to the floor under where it sends or
+  throws (`teleport=` and `jumppad=` on the dump's line), so a place
+  reached only through one is reached. A game played from the scene
+  hands the baked mesh to its bots, who route over it. Not there yet: it
+  is not written as an arena's file, and it knows no ladders, water or
+  lifts.
 - **A bake is worked out once**: a level is compiled afresh every time it
   is loaded, since a game played in it writes on it, but its light and its
   cells are kept apart under a mark of what it was built of (the scene's

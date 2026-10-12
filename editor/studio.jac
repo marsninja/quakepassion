@@ -186,10 +186,11 @@ import from .project {
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.navigation {
-    Floor, Way, Leg, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP
+    Floor, Way, Leg, Link, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP,
+    linked_ways
 }
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
-import from engine.formats.aas { TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE }
+import from engine.formats.aas { Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate {
@@ -1034,6 +1035,8 @@ obj Studio(Workbench) {
         nav_origin: Vec3 = Vec3(),
         nav_cell: float = 32.0,
         nav_mesh: NavMesh | None = None,
+        # The baked navigation's data, handed to the bots of a game played from the scene.
+        nav_aas: Aas | None = None,
         nav_shown: bool = False,
         # The tools kept in modules of their own, in the order they were added.
         tools: list[StudioTool] = [],
@@ -1730,6 +1733,15 @@ obj Studio(Workbench) {
         self.playing = True;
         self.holding = False;
         self.steps_owed = 0;
+        baked = self.nav_aas;
+        if baked is not None {
+            # The navigation baked for the scene is the played game's: its bots route over it.
+            for old_mesh in [app.world->:HasNavMesh:->][?:NavMesh] {
+                app.world del->:HasNavMesh:-> old_mesh;
+            }
+            build_navmesh(app.world, baked, app.level.bsp);
+            print("studio: bots route over the baked navigation areas=" + str(len(baked.areas) - 1));
+        }
         # What fires is counted from the start of each game.
         self.fired_seen = [];
         self.fired_names = {};
@@ -4538,6 +4550,9 @@ obj Studio(Workbench) {
     """What is baked, as a line of the dump; the ways drawn in a view; and
     what cannot be reached from the first player start."""
     def nav_words -> str;
+    """The ways the scene's teleporters and jump pads make: from where each
+    trigger is to where it sends or throws."""
+    def nav_links(scene: Scene) -> list[Link];
     def draw_nav;
     def nav_findings(scene: Scene) -> list[Finding];
     """What stops a scene being finished: what its logic can never set

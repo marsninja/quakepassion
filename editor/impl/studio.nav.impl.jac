@@ -117,7 +117,9 @@ impl Studio.nav_words -> str {
     counts = ways_count(self.nav_ways);
     return "studio: nav cell=" + str(int(self.nav_cell)) + " floors=" + str(len(self.nav_floors)) + " ways="
         + str(len(self.nav_ways)) + " walk=" + str(counts[0]) + " jump=" + str(counts[1]) + " drop=" + str(counts[2])
-        + " areas=" + str(len(mesh.areas) - 1) + " shown=" + ("1" if self.nav_shown else "0");
+        + " areas=" + str(len(mesh.areas) - 1) + " shown=" + ("1" if self.nav_shown else "0") + " teleport="
+        + str(len([way for way in self.nav_ways if way.kind == TRAVEL_TELEPORT])) + " jumppad="
+        + str(len([way for way in self.nav_ways if way.kind == TRAVEL_JUMPPAD]));
 }
 
 impl Studio.draw_nav {
@@ -246,14 +248,15 @@ impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
             self.say("That is " + str(len(floors)) + " places to stand: bake with a wider cell (ed_nav bake 64)");
             return True;
         }
-        ways = self.nav_clear_ways(floors, floor_ways(floors), cell);
+        ways = self.nav_clear_ways(floors, floor_ways(floors), cell) + linked_ways(floors, self.nav_origin, cell, self.nav_links(scene));
         for old in [app.world->:HasNavMesh:->][?:NavMesh] {
             app.world del->:HasNavMesh:-> old;
         }
         self.nav_floors = floors;
         self.nav_ways = ways;
         self.nav_cell = cell;
-        self.nav_mesh = build_navmesh(app.world, nav_data(floors, ways, self.nav_origin, cell), app.level.bsp);
+        self.nav_aas = nav_data(floors, ways, self.nav_origin, cell);
+        self.nav_mesh = build_navmesh(app.world, self.nav_aas, app.level.bsp);
         print(self.nav_words());
         self.say("Baked " + str(len(floors)) + " places to stand and " + str(len(ways)) + " ways between them");
         return True;
@@ -265,6 +268,7 @@ impl Studio.nav_command(scene: Scene, args: list[str]) -> bool {
             }
         }
         self.nav_mesh = None;
+        self.nav_aas = None;
         self.nav_floors = [];
         self.nav_ways = [];
         self.say("The baked navigation is forgotten");
@@ -348,6 +352,45 @@ impl Studio.playtest(scene: Scene) -> list[Finding] {
             found.append(Finding(words=called + " cannot be reached from " + starts[0].title() + " over the baked floors", item=item));
             break;
         }
+    }
+    return found;
+}
+
+impl Studio.nav_links(scene: Scene) -> list[Link] {
+    found: list[Link] = [];
+    named: dict[str, Vec3] = {};
+    for item in scene.items() {
+        at = item.origin();
+        called = item.fields.get("targetname", "");
+        if called and at is not None {
+            named[called] = at;
+        }
+    }
+    for item in scene.items() {
+        kind = item.classname();
+        if kind not in ["trigger_teleport", "trigger_push"] {
+            continue;
+        }
+        aim = named.get(item.fields.get("target", ""));
+        brushes = scene.solids_of(item);
+        if aim is None or len(brushes) == 0 {
+            continue;
+        }
+        # Where the trigger is: the middle of its brushes.
+        low = Vec3(x=1000000.0, y=1000000.0, z=1000000.0);
+        high = Vec3(x=-1000000.0, y=-1000000.0, z=-1000000.0);
+        for brush in brushes {
+            box = brush.bounds();
+            if box is not None {
+                low = Vec3(x=min(low.x, box[0].x), y=min(low.y, box[0].y), z=min(low.z, box[0].z));
+                high = Vec3(x=max(high.x, box[1].x), y=max(high.y, box[1].y), z=max(high.z, box[1].z));
+            }
+        }
+        if low.x > high.x {
+            continue;
+        }
+        middle = Vec3(x=(low.x + high.x) * 0.5, y=(low.y + high.y) * 0.5, z=low.z + 24.0);
+        found.append(Link(start=middle, finish=aim.add(Vec3(z=24.0)), kind=TRAVEL_TELEPORT if kind == "trigger_teleport" else TRAVEL_JUMPPAD));
     }
     return found;
 }

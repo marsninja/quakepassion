@@ -17,6 +17,8 @@ import from engine.formats.aas {
     TRAVEL_WALK,
     TRAVEL_BARRIERJUMP,
     TRAVEL_WALKOFFLEDGE,
+    TRAVEL_TELEPORT,
+    TRAVEL_JUMPPAD,
     TFL_DEFAULT,
     AREA_GROUNDED
 }
@@ -33,6 +35,51 @@ obj Way {
     has source: int,
         target: int,
         kind: int = TRAVEL_WALK;
+}
+
+"""A way the level's entities make, not its floors: a teleporter from where
+its trigger is to where it sends, a jump pad from its trigger to where it
+throws. By points in the level, and the kind of travel."""
+obj Link {
+    has start: Vec3,
+        finish: Vec3,
+        kind: int = TRAVEL_TELEPORT;
+}
+
+"""The floor whose middle is nearest a point: on the cell the point is over,
+or one beside it, the highest that is not above the point (where one would
+stand there). -1 when there is none."""
+def floor_under(floors: list[Floor], origin: Vec3, cell: float, point: Vec3) -> int {
+    column = int(math.floor((point.x - origin.x) / cell));
+    row = int(math.floor((point.y - origin.y) / cell));
+    found = -1;
+    best = 0.0;
+    for (index, floor) in enumerate(floors) {
+        if abs(floor.column - column) > 1 or abs(floor.row - row) > 1 or floor.z > point.z + 8.0 {
+            continue;
+        }
+        # Nearer cells first, then the floor nearest below.
+        score = float(abs(floor.column - column) + abs(floor.row - row)) * 10000.0 + (point.z - floor.z);
+        if found < 0 or score < best {
+            found = index;
+            best = score;
+        }
+    }
+    return found;
+}
+
+"""The ways the entities' links make between floors: from the floor under
+each link's start to the floor under its finish."""
+def linked_ways(floors: list[Floor], origin: Vec3, cell: float, links: list[Link]) -> list[Way] {
+    found: list[Way] = [];
+    for link in links {
+        source = floor_under(floors, origin, cell, link.start);
+        target = floor_under(floors, origin, cell, link.finish);
+        if source >= 0 and target >= 0 and source != target {
+            found.append(Way(source=source, target=target, kind=link.kind));
+        }
+    }
+    return found;
 }
 
 """How tall a step is walked up, how high a ledge is jumped onto, and how
@@ -184,7 +231,12 @@ def nav_data(floors: list[Floor], ways: list[Way], origin: Vec3, cell: float, ta
                 z=to_at.z + 24.0
             );
             time = 1;
-            if way.kind == TRAVEL_BARRIERJUMP {
+            if way.kind == TRAVEL_TELEPORT or way.kind == TRAVEL_JUMPPAD {
+                # Left from the middle of the floor the trigger is over, arrived at the far one's.
+                start = Vec3(x=from_at.x, y=from_at.y, z=from_at.z + 24.0);
+                finish = Vec3(x=to_at.x, y=to_at.y, z=to_at.z + 24.0);
+                time = 5 if way.kind == TRAVEL_TELEPORT else int(to_at.sub(from_at).length() / 4.0) + 50;
+            } elif way.kind == TRAVEL_BARRIERJUMP {
                 time = 50;
             } elif way.kind == TRAVEL_WALKOFFLEDGE {
                 # As long as the fall takes, in hundredths of a second, under the games' gravity.
