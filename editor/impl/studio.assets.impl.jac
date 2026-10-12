@@ -614,6 +614,7 @@ impl Studio.turn_model(dt: float) {
             self.model_reach = max(8.0, self.model_reach * (0.85 ** event.wheel));
         }
     }
+    self.skin_events();
     self.play_reel(dt);
     if figure is None {
         return;

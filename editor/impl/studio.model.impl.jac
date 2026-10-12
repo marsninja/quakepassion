@@ -155,7 +155,7 @@ impl Studio.show_model_form(ui: StudioUi) -> bool {
     self.skin_view = None;
     if self.skin_shown and self.model_skin is not None {
         # The picture being painted, with the part's triangles over it.
-        shown_skin = Picture(key="modelskin", size=168);
+        shown_skin = SkinPane(key="modelskin", size=168);
         form.adopt(shown_skin);
         self.skin_view = shown_skin;
     }

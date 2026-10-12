@@ -561,7 +561,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   many texels wide; `ed_skin pick <u> <v>` takes up the colour at a place
   on the skin, as does Alt and a click on the model while painting.
   `ed_model shade textured` draws the model with the picture as it is
-  painted. Not there yet: picking and dragging on the skin view itself.
+  painted. On the skin view itself a click picks the point whose place
+  is under the pointer (or, with Click picks triangles, the triangle that
+  holds it), Shift adds, and a drag from a picked point carries the
+  picked points' places with it, as one edit; what is picked there is
+  what is picked in the model, and the other way round. `ed_skin pickat
+  <u> <v> [add]` is such a click by numbers.
 - **The model in its view**: `ed_model shade <wire|solid|textured>` draws
   the model being edited as its edges, with its faces filled and lit from
   above, or with its skin; `ed_model about <model|origin|view|free>` says

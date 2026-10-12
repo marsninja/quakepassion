@@ -132,6 +132,8 @@ import from .model.skin {
     place_under, skin_tga, tga_skin, skin_colour
 }
 import from .model.pattern { SKIN_PATTERNS }
+import from .model.skinpick { skin_rect, skin_place, place_nearest, triangle_at }
+import from .ui.skinpane { SkinPane }
 import from .model.marks {
     MARK_STYLES, mark_lines, picks_middle, handle_tips, drag_along, drag_kept, locked_axes, tint_word, word_tint, face_light
 }
@@ -403,7 +405,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_skin",
-        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>|import <game>:<file> [n]] [colour <r g b>] [brush <radius> [soft]] [pattern <name> [grain]] [pick <u v>] [dab <u v>] [show]",
+        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>|import <game>:<file> [n]] [colour <r g b>] [brush <radius> [soft]] [pattern <name> [grain]] [pick <u v>] [pickat <u v> [add]] [dab <u v>] [show]",
         "the model's skin: move, stretch, turn, flip or lay flat where the picked points lie on it; make, open, paint and save its picture"
     ),
     (
@@ -1393,7 +1395,11 @@ obj Studio(Workbench) {
         skin_dabs: int = 0,
         skin_stale: bool = False,
         skin_shown: bool = False,
-        skin_view: Picture | None = None,
+        skin_view: SkinPane | None = None,
+        # A drag on the skin's picture: how far the picked points' places
+        # would go (a share of the picture across and down), and where it began.
+        skin_drag: list[float] = [0.0, 0.0],
+        skin_press: list[float] = [],
         # The Library tab's picture of a prefab, which prefab it is of, and
         # the words its rows are found by.
         library_view: Picture | None = None,
@@ -4423,6 +4429,10 @@ obj Studio(Workbench) {
     def fresh_skin;
     """The part's triangles and picked points as they lie on its picture."""
     def draw_skin_marks;
+    """Clicks and drags on the skin's picture: a click picks the point whose
+    place is under it (or, picking faces, the triangle), Shift adds, and a
+    drag from a picked point moves the picked points' places."""
+    def skin_events;
     """Run a skin command. False when it is not one."""
     def skin_command(scene: Scene, args: list[str]) -> bool;
 
