@@ -35,7 +35,7 @@ import from games.passion.materials {
     load_materials, editor_material_names
 }
 import from engine.world.weapons { ViewWeaponRule }
-import from engine.formats.animated { AnimatedModel }
+import from engine.formats.animated { AnimatedModel, AnimatedSurface, AnimationFrame }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
     # raylib's immediate batch, for the faces of the model being edited.
@@ -133,6 +133,8 @@ import from .model.skin {
     place_under, skin_tga, tga_skin, skin_colour
 }
 import from .model.pattern { SKIN_PATTERNS }
+import from engine.render.models { ModelRenderer }
+import from engine.assets.pk3 { Pk3Assets }
 import from .geometry.patchpreview { lattice_edges, render_rows, collide_rows }
 import from .document.duplicate { with_regenerated, regenerate }
 import from .model.skinpick {
@@ -351,7 +353,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_frames", "ed_frames [material]", "the frames of an animated texture: a Quake + name's row, or a Quake II texture's chain"),
     (
         "ed_shader",
-        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save|text [open|close]|write <words>]",
+        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save|preview|text [open|close]|write <words>]",
         "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages or its text in a box with the faults by line beside it, check it for what the game would trip on, and save it"
     ),
     ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
@@ -569,6 +571,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "add a curved patch where the camera looks; give the selected one another curve, thickness or fineness; or say where its control points lie on its material"
     ),
     ("ed_patch_point", "ed_patch_point <patch> <point> <dx> <dy> <dz>", "move one control point of a patch"),
+    ("ed_shaderbox", "ed_shaderbox [open|close]", "a box with the shader in hand: its lines and its stages' lines to change, stages to add, move and drop, and its preview"),
+    ("ed_shaderline", "ed_shaderline <stage|-1> <line|add> [words]", "change, add or (with no words) drop a line of the shader in hand, or of one of its stages"),
     ("ed_patchbox", "ed_patchbox [open|close]", "a box with the selected patch's material and where its control points lie on it, to drag them or set them by numbers"),
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
     (
@@ -1243,6 +1247,11 @@ obj Studio(Workbench) {
         tags_read: bool = False,
         sized_shown: int = -1,
         # Patches shown as the games make them, at the renderer's subdivision.
+        # The shader box: its window and what it was last made for; and the
+        # shader's preview, drawn by the engine's model renderer.
+        shader_box: Floater | None = None,
+        shader_box_for: str = "",
+        shader_drawer: ModelRenderer | None = None,
         patch_preview: bool = False,
         # The patch's material box: its window, its picture pane, what it was
         # last made for, the material's size in texels, and a place being dragged.
@@ -2032,6 +2041,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Undo in the model", command="ed_model undo"),
                     MenuItem(rule=True),
                     MenuItem(text="The shader script's shaders", command="ed_shader"),
+                    MenuItem(text="The shader in hand, stage by stage...", command="ed_shaderbox open"),
                     MenuItem(text="Check the shader script", command="ed_shader check"),
                     MenuItem(rule=True),
                     MenuItem(text="The model's bones", command="ed_bone"),
@@ -2627,6 +2637,7 @@ obj Studio(Workbench) {
         self.keep_floats();
         self.keep_weights_box();
         self.keep_patch_box();
+        self.keep_shader_box();
         self.patch_box_events();
         self.keep_script_box();
         self.keep_tool_panels();
@@ -3576,6 +3587,15 @@ obj Studio(Workbench) {
         _pen.hold(view, self.main.fov, self.line_width);
         if self.assets_shown {
             # The only view then is the explorer's model.
+            drawer = self.shader_drawer;
+            shown_now = self.model_now;
+            if drawer is not None and shown_now is not None and shown_now.name.startswith("shader:") {
+                # The shader as the game draws a model with it, moving as it moves.
+                rlDrawRenderBatchActive();
+                drawer.draw_immediate(Vec3(), 0.0, 0, 0, 0.0, view.eye, time.time() - _shader_clock.began);
+                rlDrawRenderBatchActive();
+                return;
+            }
             filled = self.model_doc is not None and self.model_shade != "wire";
             if filled {
                 self.draw_model_faces();
@@ -4018,6 +4038,17 @@ obj Studio(Workbench) {
     def patch_box_events;
     def draw_patch_box;
     def patch_box_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
+    # The shader box and preview (impl/studio.shaderbox.impl.jac)
+
+    """Make the shader box again when the shader in hand has changed; its
+    commands (`ed_shaderbox`, `ed_shaderline`); and the shader drawn on a
+    square in the explorer by the engine's model renderer ("" when it is,
+    else why not)."""
+    def keep_shader_box;
+    def shader_box_command(scene: Scene, args: list[str]) -> bool;
+    def preview_shader -> str;
 
     # ------------------------------------------------------------------
     # Turn and size handles, the pivot, inflating and the texture lock (impl/studio.transform.impl.jac)
@@ -4783,6 +4814,7 @@ obj Studio(Workbench) {
             and not self.archive_command(scene, args)
             and not self.modelview_command(scene, args)
             and not self.patch_box_command(scene, args)
+            and not self.shader_box_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)
@@ -5381,6 +5413,13 @@ obj ModelSplit {
 }
 
 glob _model_split: ModelSplit = ModelSplit();
+
+"""When the studio began, for a shader's preview to move by."""
+obj ShaderClock {
+    has began: float = 0.0;
+}
+
+glob _shader_clock: ShaderClock = ShaderClock(began=time.time());
 
 """Where the explorer's model view is ([0, 0, 0, 0] when it is not laid
 out): the turning view's place, the first quarter when there are four."""

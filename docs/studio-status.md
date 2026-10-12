@@ -356,8 +356,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   would trip on, by line: braces that do not match, names with no
   braces, lines it does not know or that belong to a stage (or to the
   shader), words a line does not take, and stages with no picture.
-  `ed_shader save` writes the script, a tab a brace. A changed shader is
-  not shown in the renderer until the game loads the script.
+  `ed_shader save` writes the script, a tab a brace. `ed_shaderbox`
+  (Window menu) opens the shader in hand stage by stage: its own lines
+  and each stage's lines as fields (Enter changes a line, an empty one
+  drops it, the last field of each adds one), with stages added, moved
+  up and dropped. `ed_shader preview` draws the shader on a square in the
+  explorer's model view as the game draws a model with it: the script is
+  read by the game's own shader parser over what the archives hold, its
+  stages' pictures loaded, and the engine's model renderer draws them,
+  blends, waves, `tcMod`s and all, moving as they move; while the box is
+  open the preview is drawn again with every change.
 - **The script as text**: `ed_shader text` (the Window menu's last entry)
   opens the whole script in a box of numbered lines that floats over the
   studio. Beside it are what the game would trip on, each at its own line

@@ -138,6 +138,14 @@ impl Studio.show_asset(ui: StudioUi) {
         # The model being edited has the panel.
         return;
     }
+    previewed = self.model_now;
+    if previewed is not None and previewed.name.startswith("shader:") and self.shader_drawer is not None {
+        # A shader's preview: the square it is drawn on, turned by a drag.
+        form.adopt(Label(text=previewed.name[7:], tone="accent"));
+        form.adopt(Label(text="As the game draws a model with it (ed_shader preview again after a change)", tone="faint", small=True));
+        form.adopt(ui.model_view);
+        return;
+    }
     seen = self.asset_now;
     if seen is None {
         form.adopt(Label(text="Nothing is shown.", tone="dim"));

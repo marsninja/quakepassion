@@ -172,6 +172,18 @@ impl Studio.shader_command(scene: Scene, args: list[str]) -> bool {
         self.say("The script has no shader in hand (ed_shader new <name>, ed_shader pick <name>)");
         return True;
     }
+    if how == "preview" {
+        refused = self.preview_shader();
+        previewed = self.shader_in_hand();
+        shader_name_now = previewed.name if previewed is not None else "-";
+        if refused {
+            self.say("ed_shader preview: " + refused);
+        } else {
+            print("studio: shader preview " + shader_name_now + " stages=" + str(len(self.shader_drawer.stages) if self.shader_drawer is not None else 0));
+            self.say("The shader is drawn on a square in the explorer, as the game draws a model with it");
+        }
+        return True;
+    }
     if how == "show" {
         for line in write_shaders([shader]).split("\n") {
             if line {
