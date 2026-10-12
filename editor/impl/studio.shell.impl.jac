@@ -460,8 +460,8 @@ impl Studio.settings_lines -> list[str] {
     for kept_class in self.favourites {
         lines.append("ed_fav " + kept_class);
     }
-    for chord in sorted(self.user_keys.keys()) {
-        lines.append("ed_bind " + chord + " " + quote_command_word(self.user_keys[chord]));
+    for (chord, order) in bound_chords(self.key_layers) {
+        lines.append("ed_bind " + chord + " " + quote_command_word(order));
     }
     lines.append("ed_outside " + self.outside);
     lines.append("ed_log panel " + ("on" if self.log_panel else "off") + " " + str(self.log_rows));

@@ -306,7 +306,7 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
             print(
                 "studio: tools commands=" + str(len(STUDIO_COMMANDS)) + " classes=" + str(len(class_names()))
                     + " addons=" + str(len(self.addons)) + " recipes=" + str(len(self.all_recipes())) + " keys="
-                    + str(len(self.user_keys))
+                    + str(len(bound_chords(self.key_layers)))
             );
             self.say(
                 str(len(self.addons)) + " add-ons: " + ", ".join([os.path.basename(path) for path in sorted(self.addons.keys())])

@@ -767,8 +767,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
 - **Keys of your own**: `ed_bind <key> <command>` gives a key (a letter,
   or `ctrl+` and `shift+` before one) any editor command, ahead of what
   the studio gives it; `ed_unbind` gives it back and `ed_binds` lists
-  them. They are kept in the studio's settings, apart from every game's
-  bindings.
+  them. They are held by the engine's own binding system: a keyboard of
+  its key nodes for each way Ctrl and Shift are held, so a key goes by
+  the name every game's `bind` knows it by (`F5`, `PGUP`, `SPACE`,
+  `MOUSE3`, a letter or a digit) and one it does not know is refused.
+  The studio's keyboards are its own: no game's bindings are touched,
+  and they are kept in the studio's settings.
 - **Settings** (Window > Settings, `ed_settings`) lists what is so, each
   line a click to change. The axis views' grid can be hidden
   (`ed_grid hide`), and when shown has the world's numbers along its

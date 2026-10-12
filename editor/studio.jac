@@ -19,6 +19,7 @@ import from engine.console.cvar { Cvar }
 import from engine.formats.bsp { Model, Bsp, MapEntity, Texture }
 import from engine.math.vec3 { Vec3, forward_from, right_from }
 import from engine.input.input { _capture, _release, mouse_captured }
+import from engine.input.keys { Keyboard }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
 import from games.levels { override_path, override_folder }
@@ -89,6 +90,7 @@ import from .assets.shaders {
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
 import from .assets.moving { warps_name }
+import from .document.chords { chord_parts, bind_chord, chord_command, bound_chords }
 import from .document.settingstable {
     Setting, SUBJECTS, settings_table, setting_value, setting_order, colour_parts
 }
@@ -1306,7 +1308,9 @@ obj Studio(Workbench) {
         # hand; and the developer's readout in the status bar.
         grid_shown: bool = True,
         solid_tones: bool = False,
-        user_keys: dict[str, str] = {},
+        # Keys bound by hand: a keyboard of the engine's for each way Ctrl
+        # and Shift are held (document/chords.jac), apart from every game's.
+        key_layers: dict[str, Keyboard] = {},
         dev_shown: bool = False,
         frame_ms: float = 0.0,
         # Whether a shape is built with the faces inside it caulked.
@@ -2858,9 +2862,9 @@ obj Studio(Workbench) {
         }
         for key in keys {
             # A key bound by hand comes before what the studio gives it.
-            chord = ("ctrl+" if ctrl else "") + ("shift+" if shift else "") + key.lower();
-            if chord in self.user_keys {
-                stage.emit(self.user_keys[chord]);
+            bound_order = chord_command(self.key_layers, ("ctrl+" if ctrl else "") + ("shift+" if shift else ""), key);
+            if bound_order {
+                stage.emit(bound_order);
                 continue;
             }
             if key == "F8" {
