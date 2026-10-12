@@ -30,7 +30,7 @@ import from games.arena_character { character_rig, animation_settings }
 import from games.viewweapons { view_weapons }
 import from games.passion.materials {
     DistrictTable, district_table, kept_table, table_text, districts_path, material_word, material_spec, SLOT_NAMES,
-    load_materials
+    load_materials, editor_material_names
 }
 import from engine.world.weapons { ViewWeaponRule }
 import from engine.formats.animated { AnimatedModel }

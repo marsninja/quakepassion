@@ -10,7 +10,10 @@ import from engine.formats.bsp { Texture }
 import from engine.assets.content { game_directory }
 import from games.passion.generate { Survey, Candidate, survey, measure, judge }
 import from games.passion.compile { compile_blueprint }
-import from games.passion.materials { load_materials, district_names }
+import from games.passion.materials {
+    load_materials, district_names, kept_table, material_word, editor_material_names, SLOT_NAMES
+}
+import from games.passion.director { ROSTER }
 import from games.passion.mission { Expedition, PATTERNS, beats_of, links_of }
 import from editor.document.missionedit {
     LINK_MODES, BEAT_KINDS, mission_copy, mission_fault, add_link, drop_link, set_link, set_grant, add_beat, lay_pattern
@@ -26,8 +29,8 @@ import from editor.formats.map { MapItem }
 import from editor.geometry.brush { box_sides }
 import from editor.document.expedition { room_groups, room_middle, beat_words, link_words, room_words }
 import from editor.formats.bspmap { bsp_items, level_material }
-import from editor.formats.map { write_map }
-import from editor.tools.host { ToolHost, StudioTool }
+import from editor.formats.map { write_map, map_renamed }
+import from editor.tools.host { ToolHost, StudioTool, PanelSpec }
 import from editor.ui.canvas { ink }
 
 obj Expeditions(StudioTool) {
@@ -42,13 +45,19 @@ obj Expeditions(StudioTool) {
         # Where rooms are being put ([x, y, w, h] by beat) while the site is
         # laid out again, and the floors rooms have been given by hand.
         places: dict[int, list[int]] = {},
-        floors: dict[int, int] = {};
+        floors: dict[int, int] = {},
+        # The foes the rooms are filled from ([] for the director's whole
+        # roster), materials given to one room's slot ("7:wall" by room and
+        # slot), the niche asked for, and whether the graphs are open.
+        roster: list[str] = [],
+        slots: dict[str, str] = {},
+        graphing: bool = False;
 
     def commands -> list[tuple[str, str, str]] {
         return [
             (
                 "ed_exp",
-                "ed_exp [open <seed> | mission | rooms | ways | proof | show [on|off] | again [rooms|population|layout] | fill <room> <recipe|any> | district <room> <n> | tension <room> <0..1> | budget <room> <threat|auto> | density <0.15..1> | niche | link <beat> <beat> [mode] [tokens] | unlink <link> | mode <link> <mode> [tokens] | grant|ungrant <beat> <token> | beat <from beat> [kind] [size] | pattern <name> <beat> <beat> | move <room> <dx> <dy> | size <room> <w> <h> | floor <room> <height|auto> | reroute]",
+                "ed_exp [open <seed> | mission | rooms | ways | proof | show [on|off] | again [rooms|population|layout] | fill <room> <recipe|any> | district <room> <n> | tension <room> <0..1> | budget <room> <threat|auto> | density <0.15..1> | niche | link <beat> <beat> [mode] [tokens] | unlink <link> | mode <link> <mode> [tokens] | grant|ungrant <beat> <token> | beat <from beat> [kind] [size] | pattern <name> <beat> <beat> | move <room> <dx> <dy> | size <room> <w> <h> | floor <room> <height|auto> | reroute | graphs | niche <measure> <0..1> | roster <classes>|all | budget route <threat|auto> | slot <room> <slot> <material|auto>]",
                 "a Passion expedition: generate a seed and open it as a document of brushes, a group a room; say its mission, rooms, ways and proof; draw the ways over the level; and make parts of it again while what is locked is kept: rooms' insides, who is in them, the layout; a room's recipe, district, tension and budget"
             )
         ];
@@ -74,20 +83,26 @@ obj Expeditions(StudioTool) {
         }
         bsp.textures = self.textures;
         # The size each texture is drawn at as a material.
+        # A Quake texture goes by its name alone in the level, and by its map
+        # and name as a material the studio can find: sizes are kept under both.
+        renames = editor_material_names();
         sizes: dict[str, list[int]] = {};
         for image in bsp.textures {
             named = level_material("passion", image.name);
             if named and named not in sizes {
-                seen = host.picture(named);
+                as_material = renames[named] if named in renames else named;
+                seen = host.picture(as_material);
                 sizes[named] = [max(1, seen.width), max(1, seen.height)]
                     if seen is not None
                     else [max(1, image.width), max(1, image.height)];
+                sizes[as_material] = sizes[named];
             }
         }
         found = bsp_items(bsp, [dict(each.fields) for each in bsp.entities], "blockout", sizes);
         if len(found) == 0 {
             return False;
         }
+        found = map_renamed(found, renames);
         grouped = room_groups(found, rooms_of(site));
         if len(compiled.exit_low) >= 3 and len(compiled.exit_high) >= 3 {
             # The way out is a volume of the generator's own, not an entity
@@ -105,6 +120,35 @@ obj Expeditions(StudioTool) {
                     ]
                 )
             );
+        }
+        if len(self.slots) > 0 {
+            # A room given a material of its own for a slot: its brushes
+            # that have the district's material there have that one.
+            table = kept_table();
+            painted = 0;
+            for item in grouped {
+                words = item.fields.get("_group_name", "").split();
+                if len(words) < 2 or words[0] != "room" or not words[1].isdigit() or int(words[1]) >= len(rooms_of(site)) {
+                    continue;
+                }
+                room = rooms_of(site)[int(words[1])];
+                for (number, slot) in enumerate(SLOT_NAMES) {
+                    wanted = self.slots.get(words[1] + ":" + slot, "");
+                    if not wanted or room.district >= len(table.slots) or number >= len(table.slots[room.district]) {
+                        continue;
+                    }
+                    usual = material_word(table.slots[room.district][number]);
+                    for sides in item.brushes {
+                        for side in sides {
+                            if side.material == usual {
+                                side.material = wanted;
+                                painted += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            print("studio: expedition slots=" + str(len(self.slots)) + " faces=" + str(painted));
         }
         if len(kept) > 0 {
             # Rooms that were locked are as they were left, hand edits and all.
@@ -202,7 +246,7 @@ obj Expeditions(StudioTool) {
         if len([door for door in bp.doors if door.kind == "invalid"]) > 0 {
             return "doors";
         }
-        economy = direct(plan, site, bp, stream.derive(self.dice("director")), plan.density);
+        economy = direct(plan, site, bp, stream.derive(self.dice("director")), plan.density, self.roster);
         starts = [mark for mark in bp.marks if mark.kind == "info_player_start"];
         if len(starts) == 0 {
             return "start";
@@ -252,7 +296,67 @@ obj Expeditions(StudioTool) {
         }
         self.open_document(host, self.locked_rooms(scene)[1]);
         print(self.words());
+        if self.graphing {
+            self.show_graphs(host);
+        }
         return True;
+    }
+
+    """The expedition as bars to drag: how full it is, what it aims at on
+    each of its four measures (with what it measures said beside), and
+    every room's tension in the order the rooms are come to."""
+    def show_graphs(host: ToolHost) {
+        record = self.record;
+        if record is None {
+            return;
+        }
+        plan = record.plan;
+        site = record.site;
+        if plan is None or site is None {
+            return;
+        }
+        bars: list[tuple[str, float, str]] = [("how full it is", plan.density, "ed_exp density")];
+        called = ["loops", "height", "density", "size"];
+        for axis in range(min(4, len(record.niche), len(record.measured))) {
+            bars.append(
+                (
+                    "aims at " + called[axis] + " (measures " + str(round(record.measured[axis], 2)) + ")",
+                    float(record.niche[axis]) / 2.0,
+                    "ed_exp niche " + called[axis]
+                )
+            );
+        }
+        ordered: list[int] = [];
+        rooms = rooms_of(site);
+        for room in rooms {
+            at = len(ordered);
+            while at > 0 and rooms[ordered[at - 1]].order > room.order {
+                at -= 1;
+            }
+            ordered.insert(at, room.beat);
+        }
+        for beat in ordered {
+            room = rooms[beat];
+            bars.append(("room " + str(beat) + " " + room.kind + " tension", room.tension, "ed_exp tension " + str(beat)));
+        }
+        economy = record.economy;
+        host.panel(
+            "expedition",
+            PanelSpec(
+                title="Expedition " + str(record.seed) + ": its tension along the way, and what it aims at",
+                notes=[
+                    record.briefing,
+                    "Quality " + str(round(record.quality, 2)) + (
+                        ", " + str(economy.monsters) + " opponents at a threat of " + str(round(economy.threat, 1))
+                        if economy is not None
+                        else ""
+                    ),
+                    "Drag a bar and let go: that part is made again and proved."
+                ],
+                bars=bars,
+                buttons=[("Rooms again", "ed_exp again rooms"), ("Population again", "ed_exp again population")]
+            )
+        );
     }
 
     """Prove a mission that was just changed by hand and lay the expedition
@@ -321,6 +425,8 @@ obj Expeditions(StudioTool) {
             self.floors = {};
             self.places = {};
             self.edits = 0;
+            self.roster = [];
+            self.slots = {};
             if not self.open_document(host) {
                 host.say("The expedition of seed " + args[2] + " could not be opened as a document");
                 return True;
@@ -541,7 +647,7 @@ obj Expeditions(StudioTool) {
             );
             return True;
         }
-        if how in ["fill", "district", "tension", "budget"] {
+        if how in ["fill", "district", "tension", "budget"] and not (how == "budget" and len(args) > 2 and args[2] == "route") {
             rooms = rooms_of(site);
             which = int(args[2]) if len(args) > 3 and args[2].isdigit() else -1;
             if which < 0 or which >= len(rooms) {
@@ -596,6 +702,131 @@ obj Expeditions(StudioTool) {
                 if how == "fill"
                 else "Room " + str(which) + ": " + how + " " + value
             );
+            return True;
+        }
+        if how == "graphs" {
+            word = args[2] if len(args) > 2 else "";
+            if word == "close" or (not word and self.graphing) {
+                self.graphing = False;
+                host.panel_close("expedition");
+                return True;
+            }
+            self.graphing = True;
+            self.show_graphs(host);
+            print("studio: expedition graphs rooms=" + str(len(rooms_of(site))));
+            return True;
+        }
+        if how == "roster" {
+            known = [foe.kind for foe in ROSTER];
+            chosen = [word.lower() for word in args[2:]];
+            if len(chosen) == 0 {
+                print("studio: expedition roster " + (",".join(self.roster) if self.roster else "all") + " of " + ",".join(known));
+                host.say("Filled from: " + (", ".join(self.roster) if self.roster else "the director's whole roster") + " (ed_exp roster <classes>|all)");
+                return True;
+            }
+            if chosen != ["all"] and len([each for each in chosen if each not in known]) > 0 {
+                host.say("ed_exp roster <" + "|".join(known) + " ...>|all");
+                return True;
+            }
+            was_roster = self.roster;
+            self.roster = [] if chosen == ["all"] else chosen;
+            if not self.remake(host, scene, "rooms") {
+                self.roster = was_roster;
+                self.rebuild("rooms");
+                return True;
+            }
+            economy = record.economy;
+            print("studio: expedition roster " + (",".join(self.roster) if self.roster else "all") + " opponents=" + str(economy.monsters if economy is not None else 0));
+            host.say("The rooms are filled from " + (", ".join(self.roster) if self.roster else "the whole roster"));
+            return True;
+        }
+        if how == "slot" {
+            rooms = rooms_of(site);
+            which = int(args[2]) if len(args) > 4 and args[2].isdigit() else -1;
+            slot = args[3].lower() if len(args) > 3 else "";
+            if which < 0 or which >= len(rooms) or slot not in SLOT_NAMES {
+                host.say("ed_exp slot <room> <" + "|".join(SLOT_NAMES) + "> <material|auto>");
+                return True;
+            }
+            if args[4] == "auto" {
+                self.slots.pop(str(which) + ":" + slot, None);
+            } else {
+                self.slots[str(which) + ":" + slot] = args[4];
+            }
+            self.open_document(host, self.locked_rooms(scene)[1]);
+            host.say(
+                "Room " + str(which) + " has its district's " + slot if args[4] == "auto"
+                else "Room " + str(which) + " has " + args[4] + " for its " + slot
+            );
+            return True;
+        }
+        if how == "budget" and len(args) > 3 and args[2] == "route" {
+            # Every room along the way the mission means to be taken.
+            rooms = rooms_of(site);
+            amount = -1.0;
+            try {
+                amount = float(args[3]) if args[3] != "auto" else -1.0;
+            } except ValueError {
+                host.say("ed_exp budget route <threat|auto>");
+                return True;
+            }
+            before = [room.budget for room in rooms];
+            along = [beat for beat in plan.route if beat >= 0 and beat < len(rooms)];
+            for beat in along {
+                rooms[beat].budget = amount if amount >= 0.0 else -1.0;
+            }
+            if not self.remake(host, scene, "rooms") {
+                for (number, room) in enumerate(rooms) {
+                    room.budget = before[number];
+                }
+                self.rebuild("rooms");
+                return True;
+            }
+            print("studio: expedition route rooms=" + ",".join([str(beat) for beat in along]) + " budget=" + args[3]);
+            host.say(str(len(along)) + " rooms along the way are filled to " + args[3]);
+            return True;
+        }
+        if how == "niche" and len(args) > 3 {
+            # A measure it aims at, set: the seed is surveyed again for that niche.
+            called = ["loops", "height", "density", "size"];
+            if args[2] not in called {
+                host.say("ed_exp niche <loops|height|density|size> <0..1>: low, middle or high");
+                return True;
+            }
+            level = 0.5;
+            try {
+                level = float(args[3]);
+            } except ValueError {
+                host.say("ed_exp niche <loops|height|density|size> <0..1>");
+                return True;
+            }
+            wanted_niche = list(record.niche);
+            wanted_niche[called.index(args[2])] = max(0, min(2, int(round(level * 2.0))));
+            fresh: Survey | None = None;
+            try {
+                fresh = survey(record.seed, wanted_niche);
+            } except ValueError {
+                fresh = None;
+            }
+            if fresh is None {
+                host.say("No expedition of this seed could be made for that niche: it is as it was");
+                return True;
+            }
+            self.record = fresh;
+            self.salts = {};
+            self.floors = {};
+            self.edits = 0;
+            if len(self.roster) > 0 {
+                # Filled from the roster that was asked for, as before.
+                self.rebuild("rooms");
+            }
+            self.open_document(host);
+            print(self.words());
+            print("studio: expedition niche set " + ",".join([str(each) for each in wanted_niche]));
+            if self.graphing {
+                self.show_graphs(host);
+            }
+            host.say("Surveyed again aiming at " + args[2] + " " + ["low", "middle", "high"][wanted_niche[called.index(args[2])]]);
             return True;
         }
         if how == "density" {

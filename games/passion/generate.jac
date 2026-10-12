@@ -353,8 +353,9 @@ def briefing_for(plan: Expedition) -> str {
     return route + " | " + ", ".join(parts).capitalize() + ", reach extraction";
 }
 
-def survey(seed: int) -> Survey {
-    niche = niche_for(seed);
+def survey(seed: int, wanted: list[int] = []) -> Survey {
+    # The niche is the seed's own unless an editor asks for another.
+    niche = list(wanted) if len(wanted) == 4 else niche_for(seed);
     archetype = ARCHETYPES[mix32(seed + 7919) % len(ARCHETYPES)];
     target = [
         BINS[niche[0]],

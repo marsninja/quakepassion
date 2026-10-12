@@ -23,7 +23,12 @@ obj PanelSpec {
         text: str = "",
         order: str = "",
         notes: list[str] = [],
-        buttons: list[tuple[str, str]] = [];
+        buttons: list[tuple[str, str]] = [],
+        # Bars to drag: what each is called, how far along it is from 0 to
+        # 1, and the command run with the new value when it is let go.
+        # With no `order` the box has no words to edit, and the bars and
+        # notes are all of it.
+        bars: list[tuple[str, float, str]] = [];
 }
 
 """What the studio does for its tools."""

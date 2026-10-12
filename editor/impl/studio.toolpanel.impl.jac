@@ -54,21 +54,38 @@ impl Studio.keep_tool_panels {
         box.clear();
         form = Box(across=True, pad=8, gap=8, fill="panel");
         box.adopt(form);
-        area = TextArea(
-            value=passage_line(spec.text),
-            command=spec.order,
-            numbered=True,
-            indents=True,
-            rows=12,
-            grow=1,
-            hint="Enter begins a line; Ctrl+Enter or a click elsewhere hands the words over; Escape cancels"
-        );
-        self.tool_areas[key] = area;
-        form.adopt(area);
-        side = Box(gap=2, size=300);
-        form.adopt(side);
-        for said in spec.notes[:14] {
+        if spec.order {
+            area = TextArea(
+                value=passage_line(spec.text),
+                command=spec.order,
+                numbered=True,
+                indents=True,
+                rows=12,
+                grow=1,
+                hint="Enter begins a line; Ctrl+Enter or a click elsewhere hands the words over; Escape cancels"
+            );
+            self.tool_areas[key] = area;
+            form.adopt(area);
+        }
+        # What the tool says and the bars it offers scroll when they are many.
+        side = Box(gap=2);
+        if spec.order {
+            window = Scroll(size=300);
+            window.adopt(side);
+            form.adopt(window);
+        } else {
+            window = Scroll(grow=1);
+            window.adopt(side);
+            form.adopt(window);
+        }
+        for said in spec.notes[:40] {
             side.adopt(Label(text=said, tone="text", small=True, hint=said));
+        }
+        for bar in spec.bars[:80] {
+            line = Box(across=True, gap=6);
+            side.adopt(line);
+            line.adopt(Label(text=bar[0], tone="dim", size=170, small=True, hint=bar[0]));
+            line.adopt(Slider(low=0.0, high=1.0, value=max(0.0, min(1.0, bar[1])), step=0.05, command=bar[2], grow=1, hint=bar[2] + " <0..1>"));
         }
         side.adopt(Spacer(grow=1));
         row: Box | None = None;

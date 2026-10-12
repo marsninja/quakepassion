@@ -923,6 +923,20 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
     string before it is its help. They are gathered on every save into
     an add-on the studio loads, so they are in the Classes tab and the
     inspector at once.
+- **An expedition as graphs, its roster, and a room's own materials**:
+  `ed_exp graphs` opens a box of bars to drag: how full the expedition
+  is, what it aims at on each of its four measures (loops, height,
+  density, size, with what it measures beside), and every room's
+  tension in the order the rooms are come to. A bar let go makes that
+  part again and proves it (`ed_exp density`, `ed_exp tension <room>`,
+  and `ed_exp niche <measure> <0..1>`, which surveys the seed again for
+  the niche asked). `ed_exp roster <classes>|all` says which foes the
+  rooms are filled from, `ed_exp budget route <threat|auto>` fills every
+  room along the way the mission means to be taken, and `ed_exp slot
+  <room> <floor|wall|ceiling|trim|accent> <material|auto>` gives one
+  room a material of its own in place of its district's, kept when the
+  expedition is made again. (Tools' boxes can hold bars: a tool gives
+  each a name, a value and the command to run with the new one.)
 - **A playtest of an authored scene**: `ed_playtest` (the Window menu's
   last entry) says whether a scene of brushes can be finished. It asks
   the scene's logic first (what can never be set off, a lock with no
