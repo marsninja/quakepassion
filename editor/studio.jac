@@ -23,7 +23,7 @@ import from engine.input.keys { Keyboard }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
 import from editor.geometry.thick { WIDEST_LINE, thick_shifts, line_across, pixel_reach }
-import from editor.document.readout { resident_megabytes, memory_words }
+import from editor.document.readout { resident_megabytes, memory_words, flash_level, graph_places }
 import from games.levels { override_path, override_folder }
 import from games.items { pickup_rule }
 import from games.enemies { enemy_rule }
@@ -482,7 +482,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_tick", "ed_tick [count]", "let a held game's time move by so many sixtieths of a second"),
     ("ed_played", "ed_played [label]", "print how a game played from the studio stands"),
     ("ed_break", "ed_break [targetname|clear]", "hold a played game still when what has that name fires; or stop doing so; or list them"),
-    ("ed_trace", "ed_trace [on|off]", "name each firing in a played game as it happens"),
+    ("ed_trace", "ed_trace [on|off] | graph [on|off]", "name each firing in a played game as it happens; or draw the scene's logic over the game, lit as it fires"),
     ("ed_fired", "ed_fired [label]", "print what has fired in the game played from here, how often and in what order"),
     (
         "ed_live",
@@ -1377,6 +1377,11 @@ obj Studio(Workbench) {
         fire_log: list[str] = [],
         breaks: list[str] = [],
         tracing: bool = False,
+        # The scene's logic drawn over the game as it runs: whether it is,
+        # the game's own time played since it began, and when each name last fired.
+        graph_over: bool = False,
+        play_clock: float = 0.0,
+        fired_when: dict[str, float] = {},
         # The model being edited (none when the explorer only shows one),
         # the revision of it that is drawn, and whether its box and its axes
         # are drawn with it.
@@ -1991,6 +1996,7 @@ obj Studio(Workbench) {
                     MenuItem(rule=True),
                     MenuItem(text="What fired in the last game", command="ed_fired"),
                     MenuItem(text="Name each firing as it happens", command="ed_trace"),
+                    MenuItem(text="The logic over the game, lit as it fires", command="ed_trace graph"),
                     MenuItem(text="Firings that hold the game", command="ed_break"),
                     MenuItem(rule=True),
                     MenuItem(text="Bake navigation for bots", command="ed_nav bake"),
@@ -4161,6 +4167,10 @@ obj Studio(Workbench) {
     def signal_label(fields: dict[str, str]) -> str;
     """One frame of a game played from here: note what has fired."""
     def played(dt: float);
+    """The scene's logic over the game as it runs: each entity that fires or
+    is fired a box, lit as it fires and fading after, with lines to what it
+    fires, a box that holds the game marked red."""
+    def draw_over_game(width: int, height: int);
     """Run a breakpoint, trace, fired or live command. False when it is not one."""
     def live_command(args: list[str]) -> bool;
     """Call over a played game's opponents, doors and pickups, or change

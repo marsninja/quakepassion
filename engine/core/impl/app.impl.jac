@@ -571,6 +571,10 @@ impl App.render_frame() {
                 ]
             );
         }
+        if not self.workbench.active and not self.loading {
+            # A game played from the workbench, watched as it runs.
+            self.workbench.draw_over_game(self.renderer.width, self.renderer.height);
+        }
         if self.loading {
             # SCR_DrawLoading: the plaque over the view, with no console.
             self.hud.draw_loading_plaque(self.renderer.width, self.renderer.height);

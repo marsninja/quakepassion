@@ -50,3 +50,13 @@ test "the folders set for games are a line each, and a folder may have spaces" {
     assert read_folders(folders_text(held)) == held;
     assert read_folders("") == {} and read_folders(folders_text({})) == {};
 }
+
+import from editor.document.readout { flash_level, graph_places }
+
+test "what fired flashes and fades, and a graph's boxes go in columns" {
+    assert flash_level(5.0, 5.0) == 1.0 and abs(flash_level(5.5, 5.0) - 0.5) < 0.0001 and flash_level(7.0, 5.0) == 0.0;
+    assert flash_level(5.0, -1.0) == 0.0 and flash_level(4.0, 5.0) == 0.0;
+    laid = graph_places([[0, 0], [1, 0], [1, 1]], 100, 20, 10);
+    assert laid[0] == [10, 10] and laid[1] == [120, 10] and laid[2] == [120, 40] and laid[3] == [230, 70];
+    assert graph_places([], 100, 20, 10) == [[0, 0]];
+}

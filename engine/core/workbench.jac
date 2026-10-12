@@ -73,6 +73,11 @@ obj Workbench {
     """Draw over the finished views, in screen units."""
     def draw(width: int, height: int) abst;
 
+    """Draw over a game being played while the workbench is not active, in
+    screen units, before the console and the menu (what is watched as it
+    runs: a graph of what fires, say)."""
+    def draw_over_game(width: int, height: int) abst;
+
     """A level's data when the workbench is where it comes from (a scene
     being edited), built afresh for each load; none for a level the game
     loads from its own files."""
@@ -96,6 +101,8 @@ obj NoWorkbench(Workbench) {
     def draw_scene(view: SceneView) {}
 
     def draw(width: int, height: int) {}
+
+    def draw_over_game(width: int, height: int) {}
 
     def build_level(game: str, name: str) -> Bsp | None {
         return None;

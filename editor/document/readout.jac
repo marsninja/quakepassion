@@ -23,3 +23,30 @@ def memory_words(megabytes: float) -> str {
     }
     return str(int(round(megabytes))) + " MB";
 }
+
+"""How brightly something that fired is shown: 1 as it fires, falling to
+nothing over `span` seconds; 0 for what has not fired (`last` below zero)."""
+def flash_level(now: float, last: float, span: float = 1.0) -> float {
+    if last < 0.0 or now < last {
+        return 0.0;
+    }
+    return max(0.0, 1.0 - (now - last) / max(0.001, span));
+}
+
+"""Where the boxes of a graph laid out in columns go in a panel: [x, y] of
+each box from the panel's corner, `wide` and `tall` a box with `gap`
+between, and the panel's own [width, height] last."""
+def graph_places(places: list[list[int]], wide: int, tall: int, gap: int) -> list[list[int]] {
+    found: list[list[int]] = [];
+    most_x = 0;
+    most_y = 0;
+    for place in places {
+        x = gap + place[0] * (wide + gap);
+        y = gap + place[1] * (tall + gap);
+        found.append([x, y]);
+        most_x = max(most_x, x + wide + gap);
+        most_y = max(most_y, y + tall + gap);
+    }
+    found.append([most_x, most_y]);
+    return found;
+}

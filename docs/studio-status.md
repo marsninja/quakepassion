@@ -651,7 +651,14 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the logic graph marks what fired and how often. `ed_break <name>`
   holds the game still the moment that name fires (`ed_break` lists
   them, `ed_break clear` forgets them; the graph marks them `[holds]`),
-  and `ed_trace on` names each firing on screen as it happens. While a
+  and `ed_trace on` names each firing on screen as it happens.
+  `ed_trace graph` (Play menu) draws the scene's logic over the game as
+  it runs: a box for each entity that fires or is fired, in the graph's
+  columns, with lines to what it fires; a box lights as its name fires
+  and fades over a second, keeps a darker tone once it has fired, counts
+  its firings, and is outlined red when it holds the game (the engine
+  hands a game played from the studio to it to draw over each frame,
+  before the console). While a
   game is played, `ed_live` says where the player stands, with what
   health, and how every signal stands; `ed_live player health <n>` and
   `ed_live player at <x y z>` change the player, and `ed_live signal
