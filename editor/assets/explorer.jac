@@ -8,6 +8,11 @@ import os;
 import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q2.model { parse_pcx }
+import from engine.formats.q1.sprite { parse_spr }
+import from engine.formats.q2.sprite { parse_sp2 }
+import from engine.formats.q2.cin { open_cin, cinematic_rgba }
+import from engine.formats.q3.roq { open_roq }
+import from engine.formats.film { Film }
 import from engine.formats.wav { parse_wav_pcm }
 import from engine.formats.q1.wad { indexed_rgba }
 import from ..formats.archive { folder_children, file_kind, wad_member, wad_names, wad_lump }
@@ -43,6 +48,67 @@ def own_files(folder: str) -> list[str] {
     return sorted(found);
 }
 
+"""A file that is a run of pictures: a sprite's frames, all of them; or a
+film, read a picture at a time as its decoder gives them (forward only).
+`index` is the picture showing; `total` how many there are (0 for a film,
+whose length is not known until it runs out)."""
+obj AssetReel {
+    has frames: list[Texture] = [],
+        film: Film | None = None,
+        total: int = 0,
+        index: int = 0,
+        rate: int = 10,
+        ended: bool = False;
+}
+
+"""The picture a film's decoder gives next, as a texture: None once the
+film has run out."""
+def film_picture(film: Film, name: str) -> Texture | None {
+    read = film.next_picture();
+    if read is None or film.width <= 0 or film.height <= 0 {
+        return None;
+    }
+    pixels = cinematic_rgba(read.pixels, read.palette) if len(read.palette) == 768 else read.pixels;
+    if len(pixels) < film.width * film.height * 4 {
+        return None;
+    }
+    return Texture(name=name, width=film.width, height=film.height, rgba=pixels);
+}
+
+"""The next picture of a reel, and the reel moved on to it: a sprite's
+frames go round; a film's are read on, and None is the answer once it has
+run out (the reel is then `ended`)."""
+def reel_next(reel: AssetReel, name: str = "") -> Texture | None {
+    film = reel.film;
+    if film is not None {
+        if reel.ended {
+            return None;
+        }
+        shown = film_picture(film, name);
+        if shown is None {
+            reel.ended = True;
+            return None;
+        }
+        reel.index += 1;
+        return shown;
+    }
+    if reel.total <= 0 {
+        return None;
+    }
+    reel.index = (reel.index + 1) % reel.total;
+    return reel.frames[reel.index];
+}
+
+"""The picture before, for a reel whose pictures are all there (a sprite);
+None for a film, which is read forward only."""
+def reel_before(reel: AssetReel) -> Texture | None {
+    if reel.film is not None or reel.total <= 0 {
+        return None;
+    }
+    reel.index = (reel.index + reel.total - 1) % reel.total;
+    return reel.frames[reel.index];
+}
+
 """What the explorer shows of one file."""
 obj AssetLook {
     has game: str = "",
@@ -56,7 +122,9 @@ obj AssetLook {
         # The first lines of a text file.
         lines: list[str] = [],
         # The material name a scene would use it by, when it is a texture.
-        material: str = "";
+        material: str = "",
+        # Its pictures, when it is a sprite or a film.
+        reel: AssetReel | None = None;
 }
 
 obj AssetIndex {
@@ -175,6 +243,34 @@ obj AssetIndex {
         }
     }
 
+    """A sprite's frames as pictures: Quake's carry their own, in Quake's
+    palette; Quake II's name a PCX file each. None when it does not read."""
+    def sprite_reel(game: str, name: str, data: bytes) -> AssetReel | None {
+        frames: list[Texture] = [];
+        try {
+            if name.lower().endswith(".spr") {
+                palette = self.read(game, "gfx/palette.lmp");
+                if palette is None or len(palette) != 768 {
+                    return None;
+                }
+                for held in parse_spr(data, palette, name) {
+                    frames.append(held.image);
+                }
+            } else {
+                for frame in parse_sp2(data) {
+                    picture = self.read(game, frame.image);
+                    if picture is None {
+                        continue;
+                    }
+                    frames.append(parse_pcx(picture, frame.image));
+                }
+            }
+        } except Exception {
+            return None;
+        }
+        return AssetReel(frames=frames, total=len(frames));
+    }
+
     """What to show of a file: its kind and size, and its picture, its
     first lines or what it says of itself."""
     def look(game: str, name: str, most: int = 200) -> AssetLook {
@@ -192,6 +288,36 @@ obj AssetIndex {
             shown.kind = "image" if picture is not None else "other";
             shown.image = picture;
             shown.note = str(picture.width) + " x " + str(picture.height) if picture is not None else "a lump of a WAD";
+            return shown;
+        }
+        if low.endswith(".spr") or low.endswith(".sp2") {
+            shown.kind = "sprite";
+            reel = self.sprite_reel(game, name, data);
+            if reel is not None and reel.total > 0 {
+                shown.reel = reel;
+                shown.image = reel.frames[0];
+                shown.note = str(reel.total) + (" picture, " if reel.total == 1 else " pictures, ") + str(reel.frames[0].width)
+                    + " x " + str(reel.frames[0].height);
+            } else {
+                shown.note = "a sprite that does not read";
+            }
+            return shown;
+        }
+        if low.endswith(".cin") or low.endswith(".roq") {
+            shown.kind = "film";
+            try {
+                film: Film = open_cin(data) if low.endswith(".cin") else open_roq(data);
+                first = film_picture(film, name);
+                if first is not None {
+                    shown.reel = AssetReel(film=film, index=0, rate=max(1, film.frame_rate));
+                    shown.image = first;
+                    shown.note = str(film.width) + " x " + str(film.height) + ", " + str(film.frame_rate) + " pictures a second";
+                } else {
+                    shown.note = "a film with no picture";
+                }
+            } except Exception {
+                shown.note = "a film that does not read";
+            }
             return shown;
         }
         if shown.kind == "image" {

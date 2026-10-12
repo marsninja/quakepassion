@@ -484,7 +484,8 @@ def build_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     assert "\"_group_name\" \"stairs\"" in saved_text and "\"classname\" \"light\"" in saved_text;
     for shot in shots {
         source = repo / f"build_{shot}.png";
-        check_capture(source, 6);
+        # While it is played the real pointer may turn the view to the floor: fewer colours, and still a picture.
+        check_capture(source, 4 if shot == "playing" else 6);
         shutil.copyfile(source, output / f"build_{shot}.png");
         source.unlink();
     }

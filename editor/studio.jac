@@ -78,7 +78,7 @@ import from .ui.widgets {
 }
 import from .assets.explorer { AssetIndex, AssetLook }
 import from .assets.needs { needed_files, missing_files, held_names, names_file, file_field, field_choices }
-import from .assets.explorer { own_files }
+import from .assets.explorer { own_files, reel_next, reel_before }
 import from .document.shelves { shelf_name, shelf_moved, shelf_rows }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
@@ -824,6 +824,11 @@ obj Studio(Workbench) {
         marked_item: int = -1,
         # Whether the model editor lists the model's frames under its view.
         frames_listed: bool = False,
+        # A sprite's or a film's pictures in the explorer: whether they are
+        # running, the time owed to the next, and which picture is kept.
+        reel_playing: bool = False,
+        reel_clock: float = 0.0,
+        reel_kept: str = "",
         # The tabs beside the menu bar: whether they are there (more than
         # one document is open), and what they were last filled for.
         tabs_on: bool = False,
@@ -2931,6 +2936,11 @@ obj Studio(Workbench) {
     def show_shape_box;
     """The colours, the bars, and the shape dialog."""
     def looks_command(scene: Scene, args: list[str]) -> bool;
+    """Go to the next picture of the sprite or film shown (the one before,
+    going `back`). False when there is none to go to."""
+    def reel_step(back: bool) -> bool;
+    def play_reel(dt: float);
+    def reel_command(args: list[str]) -> bool;
     """What the command table says of a command: its usage and what it does."""
     def help_lines(asked: str) -> list[str];
     """Help for what the pointer is on or for a command by name, hints

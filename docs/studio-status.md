@@ -773,6 +773,10 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the shape where the camera looks. The window is moved by its bar, and
   where it was left, whether it was open and what its fields held are
   kept between sessions.
+- **A path as a whole** (`editor/tools/paths.jac`): from any corner of a
+  path, `ed_path` picks every corner it leads to and is led to from (a
+  train that rides it too), and `ed_path move <dx> <dy> <dz>` moves them
+  all together as one step.
 - **Tabs for the open documents**: with more than one document open,
   each has a tab beside the menu bar (a star when it has changes not
   saved; the one shown is lit): the maps and scenes, the model being
@@ -1054,6 +1058,13 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **A folder out of an archive**: `ed_extract folder <game>:<folder> [to]`
   writes every file under a folder of a game's archives, as the
   explorer's Extract button writes one.
+- **Sprites and films in the explorer**: a Quake sprite (`.spr`) and a
+  Quake II sprite (`.sp2`, whose frames are PCX files) show their
+  pictures, and a Quake II cinematic (`.cin`) and a Quake III film
+  (`.RoQ`) show theirs as the engine's own decoders read them. The frame
+  buttons and `ed_frame next|prev|play|stop|<n>` step and play them as
+  they do a model's frames: a sprite's go round, a film is read forward
+  at its own pace and stops at its end.
 - **The project's own files in the explorer**: with a project open, its
   folder is listed under Your project beside the games', read from disk
   as it is; its files are shown as any other (an image in its textures
@@ -1500,6 +1511,8 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_paths_tests.jac`: a path as every corner reached from one
+  of them, either way, and nothing that is not on it.
 - `tests/studio_shelves_tests.jac`: a name with folders kept inside its
   shelf; a shelf's folders as headings, shut until opened, before its
   files; the values a sound or model field can take from a game's files.
