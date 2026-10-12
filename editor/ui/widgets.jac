@@ -1912,7 +1912,12 @@ node Palette(Widget) {
     has entries: list[PaletteEntry] = [],
         typed: str = "",
         lit: int = 0,
-        rows: int = 12;
+        rows: int = 12,
+        # What the empty field says; and whether this is a list to choose
+        # one thing from (each entry shown by its `usage`, and Enter always
+        # takes the lit one) and not a line to type a command on.
+        prompt: str = "Type a command",
+        choosing: bool = False;
 
     """The entries the typed letters find, best first."""
     def matches -> list[PaletteEntry] {
@@ -1948,7 +1953,7 @@ node Palette(Widget) {
         if self.typed {
             canvas.label(self.typed, line, theme.text, -1, 6);
         } else {
-            canvas.label("Type a command", line, theme.faint, -1, 6);
+            canvas.label(self.prompt, line, theme.faint, -1, 6);
         }
         found = self.matches();
         self.lit = max(0, min(self.lit, len(found) - 1));
@@ -1958,8 +1963,9 @@ node Palette(Widget) {
             if shown == self.lit {
                 canvas.fill(row, theme.select);
             }
-            name_wide = canvas.text_width(found[shown].command) + 16;
-            canvas.label(found[shown].command, row, theme.text, -1, 6);
+            said = found[shown].usage if self.choosing and found[shown].usage else found[shown].command;
+            name_wide = canvas.text_width(said) + 16;
+            canvas.label(said, row, theme.text, -1, 6);
             canvas.label(
                 found[shown].about,
                 Rect(x=row.x + name_wide, y=row.y, w=row.w - name_wide, h=row.h),
@@ -1971,7 +1977,7 @@ node Palette(Widget) {
         }
         if len(found) == 0 {
             canvas.label(
-                "Nothing by that name: Enter runs what is typed",
+                "Nothing by that name" if self.choosing else "Nothing by that name: Enter runs what is typed",
                 Rect(x=self.area.x + 4, y=self.area.y + 36, w=self.area.w - 8, h=22),
                 theme.faint,
                 -1,
@@ -2012,7 +2018,9 @@ node Palette(Widget) {
             }
         } elif key == "ENTER" or key == "KP_ENTER" {
             words = self.typed.strip();
-            if " " not in words and len(found) > 0 {
+            if self.choosing {
+                words = found[max(0, min(self.lit, len(found) - 1))].command if len(found) > 0 else "";
+            } elif " " not in words and len(found) > 0 {
                 words = found[max(0, min(self.lit, len(found) - 1))].command;
             }
             stage.close(self);

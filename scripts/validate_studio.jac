@@ -2690,6 +2690,10 @@ def docs_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
     listed = [line for line in ran.stdout.splitlines() if line.startswith("studio: doc ")];
     assert "studio: doc passion/studio:one dirty=1 current=0" in listed , str(listed[:6]);
     assert "studio: doc passion/studio:two dirty=1 current=1" in listed and "studio: doc q1/e1m1 dirty=0 current=0" in listed;
+    # Each has a tab beside the menu bar: the one shown marked, the edited ones starred.
+    assert "tabs 3 passion/studio:one*|passion/studio:two*<|q1/e1m1|model:|shader:|views" in steps["two"] , str(
+        [line for line in steps["two"] if line.startswith("tabs ")]
+    );
     # Back in the first, the camera is where it was left there; next goes on to the second.
     assert steps["one"][0].startswith("passion/studio:one ") and camera_at(steps["one"]) == [100, 100, 300] , str(steps["one"][:2]);
     assert steps["next"][0].startswith("passion/studio:two ") , steps["next"][0];

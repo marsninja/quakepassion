@@ -85,3 +85,36 @@ def names_file(game: str, fields: dict[str, str], name: str) -> bool {
     }
     return False;
 }
+
+"""What kind of file a field names, by its key: "sound", "model", or ""
+when it names none."""
+def file_field(key: str) -> str {
+    if key in ["noise", "noise1", "noise2", "noise3", "noise4", "music"] {
+        return "sound";
+    }
+    if key in ["model", "model2"] {
+        return "model";
+    }
+    return "";
+}
+
+"""The values a field of that kind can take in a game, from the game's
+files, as the field would name them: Quake and Quake II name a sound from
+`sound/` on, Quake III from the top; a model is named whole. Sorted."""
+def field_choices(game: str, kind: str, names: list[str]) -> list[str] {
+    found: list[str] = [];
+    for name in names {
+        low = name.lower();
+        if kind == "sound" and low.endswith(".wav") {
+            if game == "q3" {
+                found.append(name);
+            } elif low.startswith("sound/") {
+                found.append(name[6:]);
+            }
+        } elif kind == "model" and (low.endswith(".mdl") or low.endswith(".md2") or low.endswith(".md3") or low.endswith(".spr")
+            or low.endswith(".sp2")) {
+            found.append(name);
+        }
+    }
+    return sorted(found);
+}

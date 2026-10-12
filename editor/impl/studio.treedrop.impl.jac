@@ -64,6 +64,30 @@ impl Studio.treedrop_command(scene: Scene, args: list[str]) -> bool {
         }
         return True;
     }
+    if parts[0] == "library" and carried.startswith("prefab:") {
+        # A prefab let go on a folder of prefabs, or on the shelf's own heading: kept there.
+        into = "";
+        if target.startswith("prefabdir:") {
+            into = target[10:];
+        } elif target.startswith("prefab:") and "/" in target[7:] {
+            # On a prefab: beside it.
+            into = target[7:].rsplit("/", 1)[0];
+        } elif target != "shelf:Prefabs" and not target.startswith("prefab:") {
+            self.say("Put a prefab on a folder of prefabs, on a prefab in one, or on Prefabs itself");
+            return True;
+        }
+        named = carried[7:];
+        # The press that began the drag added a copy, as a click does: carried about the panel, it is taken back.
+        placed = scene.journal;
+        if len(placed.done) > 0 and placed.done[-1].label == "Add " + named {
+            scene.undo();
+        }
+        going = shelf_moved(named, into);
+        if going != shelf_name(named) {
+            return self.library_command(scene, ["ed_prefab", "move", named, going]);
+        }
+        return True;
+    }
     if parts[0] != "library" or not carried.startswith("fav:") {
         return True;
     }

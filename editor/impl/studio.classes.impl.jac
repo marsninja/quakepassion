@@ -93,6 +93,15 @@ impl Studio.fill_fields(scene: Scene, ui: StudioUi, chosen: list[Item]) {
                 }
                 row.adopt(Swatch(red=tint.x, green=tint.y, blue=tint.z, size=22));
             }
+        } elif file_field(key) {
+            row.adopt(
+                PushButton(
+                    text="...",
+                    command="ed_pickfile " + quote_command_word(key),
+                    size=26,
+                    hint="Choose from the game's own " + ("sounds" if file_field(key) == "sound" else "models") + ": type to find one"
+                )
+            );
         } elif known.kind == "link" and same and first {
             row.adopt(
                 PushButton(
@@ -184,6 +193,16 @@ impl Studio.fill_class(scene: Scene, ui: StudioUi, chosen: list[Item]) {
                     hint=(absent.help + " | " if absent.help else "") + "Enter gives the selection this field"
                 )
             );
+            if file_field(absent.name) {
+                row.adopt(
+                    PushButton(
+                        text="...",
+                        command="ed_pickfile " + quote_command_word(absent.name),
+                        size=26,
+                        hint="Choose from the game's own " + ("sounds" if file_field(absent.name) == "sound" else "models")
+                    )
+                );
+            }
         }
     }
 }

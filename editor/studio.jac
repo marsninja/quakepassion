@@ -77,7 +77,9 @@ import from .ui.widgets {
     ColourBars
 }
 import from .assets.explorer { AssetIndex, AssetLook }
-import from .assets.needs { needed_files, missing_files, held_names, names_file }
+import from .assets.needs { needed_files, missing_files, held_names, names_file, file_field, field_choices }
+import from .assets.explorer { own_files }
+import from .document.shelves { shelf_name, shelf_moved, shelf_rows }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
@@ -393,6 +395,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_dev", "ed_dev [on|off]", "show frame and build times and counts in the status bar"),
     ("ed_docs", "ed_docs", "list the open documents"),
     ("ed_doc", "ed_doc <name|next|prev>", "go to another open document"),
+    ("ed_tab", "ed_tab <doc:game/name|model|shader>", "go to an open document by its tab: a map or scene, the model being edited, or the shader script"),
+    ("ed_pickfile", "ed_pickfile <noise|music|model|model2>", "choose the selected entities' sound or model from the files of their game, in a list that is typed in to find one"),
     ("ed_close", "ed_close [force]", "close this document (force, when it has edits that are not saved)"),
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
@@ -538,7 +542,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_group", "ed_group [name]", "hold the selected brushes together as a group"),
     (
         "ed_prefab",
-        "ed_prefab <save|add|link|unlink> [name] | swap|put|names|plain ... | turn <degrees> [pitch|roll] | scale <times>|<x y z>",
+        "ed_prefab <save|add|link|unlink> [name] | move <name> <new name> | swap|put|names|plain ... | turn <degrees> [pitch|roll] | scale <times>|<x y z>",
         "keep the selection as a prefab, add a copy of one, place a linked one, turn linked ones into copies, or change, turn and size the selected linked ones"
     ),
     ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
@@ -718,6 +722,7 @@ obj StudioUi {
         assets: TreeView,
         asset_box: Box,
         asset_form: Box,
+        doc_strip: Box,
         model_view: ViewArea,
         frame_list: TreeView,
         logic: GraphView,
@@ -812,6 +817,10 @@ obj Studio(Workbench) {
         marked_item: int = -1,
         # Whether the model editor lists the model's frames under its view.
         frames_listed: bool = False,
+        # The tabs beside the menu bar: whether they are there (more than
+        # one document is open), and what they were last filled for.
+        tabs_on: bool = False,
+        tabs_for: str = "",
         # Whether hints fly beside the pointer, and the field a name is
         # being typed in over a row of the scene list.
         flyovers: bool = True,
@@ -1663,7 +1672,12 @@ obj Studio(Workbench) {
                 ]
             ]
         );
-        top.adopt(menu);
+        # The menu bar, and beside it in the same row the open documents' tabs.
+        bar_row = Box(across=True, fill="header");
+        top.adopt(bar_row);
+        bar_row.adopt(menu);
+        doc_strip = Box(across=True, gap=2, grow=1, fill="header");
+        bar_row.adopt(doc_strip);
 
         tools = Box(across=True, pad=4, gap=4, fill="panel");
         top.adopt(tools);
@@ -1903,6 +1917,7 @@ obj Studio(Workbench) {
             assets=asset_tree,
             asset_box=asset_box,
             asset_form=asset_form,
+            doc_strip=doc_strip,
             model_view=model_view,
             frame_list=TreeView(
                 pick="ed_frame",
@@ -2184,6 +2199,7 @@ obj Studio(Workbench) {
         if len(ui.library.rows) == 0 {
             self.list_library(ui);
         }
+        self.keep_tabs(ui);
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
@@ -2862,6 +2878,15 @@ obj Studio(Workbench) {
     def apply_split;
     """The views' split, the side panels' sides and layouts kept by name."""
     def layouts_command(scene: Scene, args: list[str]) -> bool;
+    """The open documents and which is shown, as one line: the tab strip is
+    filled again when it changes."""
+    def tabs_words -> str;
+    def tabs_count -> int;
+    def fill_doc_strip(ui: StudioUi);
+    def keep_tabs(ui: StudioUi);
+    """Go to an open document by its tab, or choose a field's file from the
+    game's own."""
+    def tabs_command(scene: Scene, args: list[str]) -> bool;
     """What the command table says of a command: its usage and what it does."""
     def help_lines(asked: str) -> list[str];
     """Help for what the pointer is on or for a command by name, hints
@@ -4053,7 +4078,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.plugin_command(scene, args) and not self.help_command(scene, args)
+        } elif not self.plugin_command(scene, args) and not self.tabs_command(scene, args)
+            and not self.help_command(scene, args)
             and not self.layouts_command(scene, args)
             and not self.uses_command(scene, args)
             and not self.marked_command(scene, args)
@@ -4402,6 +4428,9 @@ obj Studio(Workbench) {
                 "studio: split x=" + str(self.split_x) + " y=" + str(self.split_y) + " sides=" + ("swapped" if self.sides_swapped else "usual")
                     + " kept=" + ",".join(sorted(self.kept_layouts.keys()))
             );
+        }
+        if self.tabs_on {
+            lines.append("studio: tabs " + str(self.tabs_count()) + " " + self.tabs_words().replace(" ", "_"));
         }
         if self.rect_brush {
             lines.append("studio: rectbrush falloff=" + (self.rect_fall if self.rect_fall else "0"));

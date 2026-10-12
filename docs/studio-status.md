@@ -758,6 +758,23 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   beside the plan; beside the plan and the front view; all four in a
   square; or the 3D view beside the three axis views in a column. The
   layout is kept between sessions.
+- **Tabs for the open documents**: with more than one document open,
+  each has a tab beside the menu bar (a star when it has changes not
+  saved; the one shown is lit): the maps and scenes, the model being
+  edited, and the shader script. A click goes to it (`ed_tab
+  <doc:game/name|model|shader>`), and the x at the end closes the one
+  shown.
+- **Prefabs in folders**: a prefab's name may say folders (`ed_prefab save
+  props/crate`), and the Library tab lists each folder of prefabs as a
+  heading that opens and shuts, with how many it holds. `ed_prefab move
+  <name> <new name>` gives one another name or folder; a prefab's row
+  dragged onto a folder, onto a prefab in one, or onto Prefabs itself is
+  moved there. A name never leads out of the shelf.
+- **A field's file chosen from the game's own**: a field that names a
+  sound or a model (`noise`, `music`, `model`, `model2`) has a `...`
+  button beside it in the inspector, set or not: it opens a list of that
+  game's sounds or models, as the field would name them, that is typed in
+  to find one (`ed_pickfile <field>`); Enter sets it on the selection.
 - **Help where the pointer is**: a control's hint is shown beside the
   pointer once it has rested there most of a second, as well as in the
   bar at the foot (`ed_flyover off` keeps it to the bar; the level views
@@ -1468,6 +1485,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_shelves_tests.jac`: a name with folders kept inside its
+  shelf; a shelf's folders as headings, shut until opened, before its
+  files; the values a sound or model field can take from a game's files.
 - `tests/studio_flyover_tests.jac`: a hint beside the pointer after it
   has rested on a control, gone when it moves, never over a work surface
   and not when turned off; Tab from field to field and round, past what

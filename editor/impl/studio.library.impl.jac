@@ -45,7 +45,8 @@ impl Studio.prefab_path(name: str) -> str {
     } elif not folder {
         folder = os.getcwd() + "/prefabs";
     }
-    return folder + "/" + name.replace("/", "_") + ".map";
+    # A name may say folders of the shelf: no further up than the shelf itself.
+    return folder + "/" + shelf_name(name) + ".map";
 }
 
 impl Studio.read_fragment(path: str) -> list[MapItem] | None {
@@ -133,7 +134,10 @@ impl Studio.list_library(ui: StudioUi) {
     ];
     for (named, lead, folder) in shelves {
         names: list[str] = [];
-        if os.path.isdir(folder) {
+        if named == "Prefabs" {
+            # Prefabs are kept in folders: every map under the shelf, by its path from it.
+            names = [found_file[:-4] for found_file in own_files(folder) if found_file.lower().endswith(".map")];
+        } elif os.path.isdir(folder) {
             for entry_name in sorted(os.listdir(folder)) {
                 if entry_name.lower().endswith(".map") {
                     names.append(entry_name[:-4]);
@@ -141,6 +145,21 @@ impl Studio.list_library(ui: StudioUi) {
             }
         }
         rows.append(TreeRow(key="shelf:" + named, text=named, tone="accent", note=str(len(names))));
+        if named == "Prefabs" {
+            for shelved in shelf_rows(names, lead, "prefabdir:", self.opened) {
+                rows.append(
+                    TreeRow(
+                        key=shelved.key,
+                        text=shelved.text,
+                        depth=shelved.depth,
+                        branch=shelved.folder,
+                        opened=shelved.opened,
+                        note=str(shelved.count) if shelved.folder else ""
+                    )
+                );
+            }
+            continue;
+        }
         for known in names {
             rows.append(TreeRow(key=lead + known, text=known, depth=1));
         }
@@ -345,8 +364,30 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.say("Turned " + str(done) + " linked prefabs into copies" if done else "Select linked prefabs first");
             return True;
         }
+        if how == "move" {
+            # Another name, or another folder of the shelf: the file goes there.
+            going = shelf_name(args[3]) if len(args) > 3 else "";
+            came = self.prefab_path(named);
+            if not named or not going or not os.path.isfile(came) {
+                self.say("ed_prefab move <name> <new name>: a prefab that is there, and where it is to go (folders/name)");
+                return True;
+            }
+            went = self.prefab_path(going);
+            if os.path.exists(went) {
+                self.say("There is a prefab called " + going + " already");
+                return True;
+            }
+            os.makedirs(os.path.dirname(went), exist_ok=True);
+            os.rename(came, went);
+            print("studio: prefab moved " + shelf_name(named) + " > " + going);
+            self.say(shelf_name(named) + " is " + going + " now (entities that link it by its old name do not follow)");
+            if ui is not None {
+                self.list_library(ui);
+            }
+            return True;
+        }
         if how not in ["save", "add", "link"] or not named {
-            self.say("ed_prefab <save|add|link|unlink> [name]");
+            self.say("ed_prefab <save|add|link|unlink|move> [name]: a name may say folders (props/crate)");
             return True;
         }
         path = self.prefab_path(named);
@@ -392,6 +433,10 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.open_map(self.scene_path(word[6:]));
         } elif word.startswith("auto:") {
             self.open_map(self.autosave_path(word[5:]));
+        } elif word.startswith("prefabdir:") {
+            # A folder of prefabs: opened, or shut.
+            self.opened[word] = not self.opened.get(word, False);
+            self.list_library(ui);
         } elif word.startswith("prefab:") {
             self.library_command(scene, ["ed_prefab", "add", word[7:]]);
         } elif word.startswith("fav:") {
