@@ -60,3 +60,15 @@ test "what fired flashes and fades, and a graph's boxes go in columns" {
     assert laid[0] == [10, 10] and laid[1] == [120, 10] and laid[2] == [120, 40] and laid[3] == [230, 70];
     assert graph_places([], 100, 20, 10) == [[0, 0]];
 }
+
+import from editor.document.readout { journal_text, read_journal }
+
+test "a journal keeps each step's state under its name, and reads back" {
+    kept = [("Move", "{\n\"classname\" \"worldspawn\"\n}\n"), ("Set angle", "{\n\"classname\" \"worldspawn\"\n}\n{\n\"angle\" \"90\"\n}\n")];
+    text = journal_text(kept);
+    assert text.startswith("//@step Move\n");
+    assert read_journal(text) == kept;
+    assert read_journal("") == [] and read_journal("no steps here\n") == [];
+    # A name with a line break in it stays on its line.
+    assert read_journal(journal_text([("Two\nlines", "{\n}\n")]))[0][0] == "Two lines";
+}

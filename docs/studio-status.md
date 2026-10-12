@@ -1198,7 +1198,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   first.
 - **Autosave**: a scene that has changed is written every half minute to
   `autosave/` beside the saved scenes, and the Library tab lists those
-  files to open after a crash.
+  files to open after a crash. Beside each autosave its journal is
+  written: the state each of the scene's latest edits left it in (up to
+  sixteen, taken as the edits are made and named by them; edits within
+  half a second of each other share one). After a crash, with the
+  autosave opened, `ed_recover` lists them and `ed_recover <n>` opens the
+  scene as that edit left it, as a scene of its own beside the autosave.
 
 ### Scenes of brushes
 

@@ -50,3 +50,41 @@ def graph_places(places: list[list[int]], wide: int, tall: int, gap: int) -> lis
     found.append([most_x, most_y]);
     return found;
 }
+
+"""What the journal of a scene's edits keeps on disk beside its autosave:
+the state the scene was left in by each of its latest steps, each under
+the step's name. A step's block begins with a line of its own:
+`//@step <name>`, and what follows, to the next, is the map."""
+glob JOURNAL_MARK: str = "//@step ";
+
+def journal_text(steps: list[tuple[str, str]]) -> str {
+    blocks: list[str] = [];
+    for (label, text) in steps {
+        blocks.append(JOURNAL_MARK + label.replace("\n", " ") + "\n" + text.rstrip("\n") + "\n");
+    }
+    return "".join(blocks);
+}
+
+"""The steps such a text holds, in order: [name, map text] each."""
+def read_journal(text: str) -> list[tuple[str, str]] {
+    found: list[tuple[str, str]] = [];
+    label = "";
+    body: list[str] = [];
+    inside = False;
+    for line in text.split("\n") {
+        if line.startswith(JOURNAL_MARK) {
+            if inside {
+                found.append((label, "\n".join(body).rstrip("\n") + "\n"));
+            }
+            label = line[len(JOURNAL_MARK):].strip();
+            body = [];
+            inside = True;
+        } elif inside {
+            body.append(line);
+        }
+    }
+    if inside {
+        found.append((label, "\n".join(body).rstrip("\n") + "\n"));
+    }
+    return found;
+}

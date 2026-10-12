@@ -18,6 +18,47 @@ impl Studio.autosave_path(name: str) -> str {
     return os.path.dirname(self.scene_path("x")) + "/autosave/" + name.replace("/", "_") + ".map";
 }
 
+impl Studio.journal_path(name: str) -> str {
+    return self.autosave_path(name)[:-4] + ".journal";
+}
+
+impl Studio.keep_journal(dt: float) {
+    scene = self.scene;
+    if scene is None or not self.is_built_scene() {
+        return;
+    }
+    if scene.name != self.journal_of {
+        # Another scene: its own journal, begun from how it stands.
+        self.journal_of = scene.name;
+        self.journal_kept = [];
+        self.journal_last = scene.journal.done[-1] if len(scene.journal.done) > 0 else None;
+        return;
+    }
+    done = scene.journal.done;
+    newest = done[-1] if len(done) > 0 else None;
+    # Half a second of the clock's own time between states taken.
+    if newest is None or newest is self.journal_last or time.time() - self.journal_clock < 0.5 {
+        return;
+    }
+    # The steps since the last state taken, by name, and the state they left.
+    named: list[str] = [];
+    for step in reversed(done) {
+        if step is self.journal_last {
+            break;
+        }
+        named.insert(0, step.label);
+        if len(named) >= 4 {
+            break;
+        }
+    }
+    self.journal_last = newest;
+    self.journal_clock = time.time();
+    self.journal_kept.append((", ".join(named), write_map(scene_map(scene))));
+    if len(self.journal_kept) > 16 {
+        self.journal_kept = self.journal_kept[-16:];
+    }
+}
+
 impl Studio.autosave(dt: float, now: bool) {
     scene = self.scene;
     if scene is None or not self.is_built_scene() {
@@ -36,6 +77,16 @@ impl Studio.autosave(dt: float, now: bool) {
         os.makedirs(os.path.dirname(path), exist_ok=True);
         with open(path, "w") as file {
             file.write(write_map(scene_map(scene)));
+        }
+        # What the latest steps left, taken now if it has not been.
+        self.journal_clock = 0.0;
+        self.keep_journal(0.0);
+        if self.journal_of == scene.name and len(self.journal_kept) > 0 {
+            # Beside it, the states its latest steps left it in: after a crash
+            # any of them can be opened again (ed_recover).
+            with open(self.journal_path(scene.name[7:]), "w") as file {
+                file.write(journal_text(self.journal_kept));
+            }
         }
     } except OSError {
         return;
@@ -343,6 +394,51 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         self.say(
             "A changed scene is autosaved every " + str(int(seconds)) + " seconds" if seconds > 0.0 else "Scenes are not autosaved"
         );
+        return True;
+    }
+    if name == "ed_recover" {
+        # The scene in hand's name, or that of the autosave it was opened from.
+        stem = scene.name[7:] if scene.name.startswith("studio:") else scene.name;
+        if stem.endswith(".map") {
+            stem = stem[:-4];
+        }
+        kept_steps: list[tuple[str, str]] = [];
+        try {
+            with open(self.journal_path(stem), "r") as file {
+                kept_steps = read_journal(file.read());
+            }
+        } except OSError {
+            kept_steps = [];
+        }
+        if len(kept_steps) == 0 {
+            self.say("No journal was kept for " + stem + " (it is written with the autosave)");
+            return True;
+        }
+        which = args[1] if len(args) > 1 else "";
+        if not which.isdigit() {
+            for (number, kept) in enumerate(kept_steps) {
+                print("studio: journal " + str(number + 1) + " " + kept[0]);
+            }
+            self.say(str(len(kept_steps)) + " states kept: ed_recover <n> opens one as a scene of its own");
+            return True;
+        }
+        chosen_step = int(which) - 1;
+        if chosen_step < 0 or chosen_step >= len(kept_steps) {
+            self.say("ed_recover: the journal keeps 1 to " + str(len(kept_steps)));
+            return True;
+        }
+        out_path = os.path.dirname(self.autosave_path("x")) + "/" + stem.replace("/", "_") + "_step" + str(chosen_step + 1) + ".map";
+        try {
+            with open(out_path, "w") as file {
+                file.write(kept_steps[chosen_step][1]);
+            }
+        } except OSError {
+            self.say("ed_recover: could not write " + out_path);
+            return True;
+        }
+        print("studio: recovered " + out_path);
+        self.open_map(out_path);
+        self.say("The scene as it stood after " + kept_steps[chosen_step][0] + ", opened from the journal");
         return True;
     }
     if name == "ed_autosave" {

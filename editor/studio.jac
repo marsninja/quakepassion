@@ -23,7 +23,7 @@ import from engine.input.keys { Keyboard }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
 import from editor.geometry.thick { WIDEST_LINE, thick_shifts, line_across, pixel_reach }
-import from editor.document.readout { resident_megabytes, memory_words, flash_level, graph_places }
+import from editor.document.readout { resident_megabytes, memory_words, flash_level, graph_places, journal_text, read_journal }
 import from games.levels { override_path, override_folder }
 import from games.items { pickup_rule }
 import from games.enemies { enemy_rule }
@@ -611,6 +611,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_show", "ed_show", "bring back everything hidden"),
     ("ed_drop", "ed_drop", "let the selection down onto what is beneath it"),
     ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
+    ("ed_recover", "ed_recover [<n>]", "the steps the autosaved journal of the scene in hand kept, or the state one of them left it in opened as a scene of its own"),
     ("ed_autosave", "ed_autosave [every <seconds>]", "write the scene to its autosave file now, or say how often a changed scene is (0 for never)"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_framedrop", "ed_framedrop <row> <what>", "what a row of the model's frame list let go on another asks for: that frame put there in the order"),
@@ -1275,6 +1276,13 @@ obj Studio(Workbench) {
         model_float_reach: float = 160.0,
         # The overdraw view: every face the renderer would draw from the eye,
         # added up, and how many there were in the view last drawn.
+        # The journal kept for a crash: the scene it is of, the last step
+        # seen, the states its latest steps left it in (each under the step's
+        # name), and when one was last taken.
+        journal_of: str = "",
+        journal_last: Step | None = None,
+        journal_kept: list[tuple[str, str]] = [],
+        journal_clock: float = 0.0,
         overdraw: bool = False,
         overdraw_faces: int = 0,
         model_backs: bool = True,
@@ -2661,6 +2669,7 @@ obj Studio(Workbench) {
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
+        self.keep_journal(dt);
         self.autosave(dt, False);
         self.watch_files(dt);
         hint = stage.hint();
@@ -4217,6 +4226,12 @@ obj Studio(Workbench) {
     one faint colour, depth ignored: where many lie over one another it
     glows. Answers how many faces were drawn."""
     def draw_overdraw(view: SceneView) -> int;
+    """Take the state each new step leaves the scene in (no oftener than
+    twice a second; a step in between is named with the next), for the
+    journal written beside the autosave."""
+    def keep_journal(dt: float);
+    """Where a scene's journal is kept."""
+    def journal_path(name: str) -> str;
     """Run a breakpoint, trace, fired or live command. False when it is not one."""
     def live_command(args: list[str]) -> bool;
     """Call over a played game's opponents, doors and pickups, or change
