@@ -75,7 +75,7 @@ import from .ui.widgets {
     ColourBars
 }
 import from .assets.explorer { AssetIndex, AssetLook }
-import from .assets.needs { needed_files, missing_files, held_names }
+import from .assets.needs { needed_files, missing_files, held_names, names_file }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
 import from .assets.shaders {
@@ -445,6 +445,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recall", "ed_recall <name> [add]", "select a set kept before, alone or added to the selection"),
     ("ed_forget", "ed_forget <name>", "drop a kept set"),
     ("ed_swap", "ed_swap", "the two selected things change places"),
+    ("ed_uses", "ed_uses [material|file]", "what the scene uses, with what no archive holds marked; or select every brush and entity that uses one material or file"),
     ("ed_marked", "ed_marked [set|clear|take|pick|swap]", "mark the selected entity for later; then take hands it the selected brushes, pick selects it, swap changes its place with the selection's"),
     ("ed_browse", "ed_browse [next|prev]", "look at each selected thing in turn"),
     (
@@ -513,6 +514,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
     ("ed_autosave", "ed_autosave", "write the scene to its autosave file now"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
+    ("ed_assetdrop", "ed_assetdrop <row> <what>", "what a row of the explorer let go on the project's rows asks for: the file or folder copied into the project"),
     ("ed_extract", "ed_extract [to] | folder <game>:<folder> [to]", "write the file the explorer shows to disk, or every file under a folder of a game's archives"),
     ("ed_listen", "ed_listen", "play the sound the explorer shows"),
     ("ed_frame", "ed_frame <number|next|prev|play|stop> | fps <n> | range <first> <last>|all | smooth on|off|<frames between> | once | loop | clip <sequence|list>", "the frame of the model the explorer shows, and how its frames are played"),
@@ -1717,8 +1719,11 @@ obj Studio(Workbench) {
         asset_tree = TreeView(
             pick="ed_asset",
             toggle="ed_asset",
+            drag="asset",
+            drop="ed_assetdrop",
+            carry_branches=True,
             grow=1,
-            hint="Click a folder to open it, a file to see it"
+            hint="Click a folder to open it, a file to see it; drag either onto Your project to copy it there"
         );
         asset_list.adopt(asset_tree);
         # No fill: the model is drawn before the interface, and shows through.
@@ -3497,6 +3502,9 @@ obj Studio(Workbench) {
     """Entities of a class their game does not have, and the sounds and
     models their fields name that no archive holds."""
     def need_findings(scene: Scene) -> list[Finding];
+    """What the scene uses and what of it is missing; or, of one material
+    or file, the brushes and entities that use it."""
+    def uses_command(scene: Scene, args: list[str]) -> bool;
     def draw_camps;
     """Run an asset-game or camp-spot command. False when it is not one."""
     def games_command(scene: Scene, args: list[str]) -> bool;
@@ -3900,7 +3908,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.marked_command(scene, args) and not self.treedrop_command(scene, args)
+        } elif not self.uses_command(scene, args) and not self.marked_command(scene, args)
+            and not self.treedrop_command(scene, args)
             and not self.logpanel_command(scene, args)
             and not self.camproute_command(scene, args)
             and not self.overlay_command(scene, args)

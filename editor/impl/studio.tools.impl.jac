@@ -358,6 +358,14 @@ impl Studio.load_thumbs {
 
 impl Studio.check(scene: Scene, args: list[str]) {
     ui = self.ui;
+    if len(args) > 1 and args[1].startswith("uses:") {
+        # A row of what the scene uses: select what uses it.
+        self.uses_command(scene, ["ed_uses", args[1][5:]]);
+        return;
+    }
+    if len(args) > 1 and args[1] == "none" {
+        return;
+    }
     if len(args) > 1 and args[1].isdigit() {
         index = int(args[1]);
         if index < len(self.findings) {

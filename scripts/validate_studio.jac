@@ -3471,6 +3471,93 @@ def rectlift_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     );
 }
 
+"""The eightieth session: what a scene uses and what uses a thing, and a project's own files in the explorer."""
+def uses_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["listed", "project"];
+    for shot in shots {
+        (repo / f"uses_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-uses-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        env["QP_PROJECTS"] = home + "/projects";
+        env["QP_EXTRACT"] = home + "/out";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/uses_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        env.pop("QP_PROJECTS");
+        env.pop("QP_EXTRACT");
+        (output / "uses.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The uses session failed: {output / 'uses.log'}";
+        kept = Path(home) / "projects" / "keep";
+        copied = sorted([str(path.relative_to(kept)) for path in kept.rglob("*") if path.is_file()]);
+        config = (kept / "files" / "q1" / "default.cfg").read_bytes() if (kept / "files" / "q1" / "default.cfg").exists() else b"";
+        strays = [path for path in (Path(home) / "out").rglob("*") if path.is_file()] if (Path(home) / "out").exists() else [];
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["listed", "material", "model", "nothing", "noproject", "file", "folder", "shown"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'uses.log'}";
+    }
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    # Three materials, one of them no archive's; a model named by two entities and one that is not there.
+    used = [line for line in said["listed"] if line.startswith("uses ")];
+    assert used == [
+        "uses material blockout sides=6",
+        "uses material q1:e1m1/tech04_1 sides=6",
+        "uses material q1:nothere/thing sides=6 missing",
+        "uses model q3:models/mapobjects/nothere/lamp.md3 by=1 missing",
+        "uses model q3:models/powerups/holdable/teleporter.md3 by=2",
+        "uses materials=3 files=2 missing=2"
+    ] , str(used);
+    # What uses the material is one brush, and it is selected; the model, two entities; and nothing, nothing.
+    assert "used q1:e1m1/tech04_1 brushes=1 entities=0" in said["material"];
+    assert len([line for line in steps["material"] if line.startswith("brush #3 ")]) == 1 and not selected(steps["material"]);
+    assert "used models/powerups/holdable/teleporter.md3 brushes=0 entities=2" in said["model"];
+    chosen = selected(steps["model"]);
+    assert len(chosen) == 2 and all(["model=models/powerups/holdable/teleporter.md3" in line for line in chosen]) , str(chosen);
+    assert "used nothing/at/all brushes=0 entities=0" in said["nothing"] and not selected(steps["nothing"]);
+    # With no project there is nowhere to copy to: nothing is written anywhere.
+    assert not [line for line in said["noproject"] if line.startswith("copied ") or line.startswith("extracted ")];
+    assert strays == [] , str(strays[:3]);
+    # A file dragged onto the project is in it, whole; a folder dragged after it, with every file under it.
+    assert [line for line in said["file"] if line.startswith("copied ")] == [f"copied q1:default.cfg bytes={len(config)} into files/q1/default.cfg"];
+    assert len(config) > 1000 and b"bind" in config;
+    whole = [line for line in said["folder"] if line.startswith("extracted folder q1:gfx/ files=")];
+    assert len(whole) == 1 , str(said["folder"]);
+    count = int(whole[0].split("files=")[1].split()[0]);
+    under = [name for name in copied if name.startswith("files/q1/gfx/")];
+    assert count > 20 and len(under) == count and "project.qp" in copied and len(copied) == count + 2 , str(copied[:5]);
+    # The project's own files are in the explorer: the copy is shown from there, as the file it is.
+    shown = [line for line in steps["shown"] if line.startswith("asset own:files/q1/default.cfg ")];
+    assert len(shown) == 1 and "kind=text" in shown[0] and f"size={len(config)} " in shown[0] , str(steps["shown"]);
+    for shot in shots {
+        source = repo / f"uses_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"uses_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"USES PASS: {len(steps) - 1} steps, three materials and two models listed with what is missing, what uses one of "
+            + f"each selected, and a file and a folder of {count} files dragged out of Quake's archives into a project"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5860,6 +5947,7 @@ def main() {
         "treedrop": treedrop_session,
         "needs": needs_session,
         "rectlift": rectlift_session,
+        "uses": uses_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -6054,6 +6142,7 @@ def main() {
     treedrop_session(repo, binary, env, output);
     needs_session(repo, binary, env, output);
     rectlift_session(repo, binary, env, output);
+    uses_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

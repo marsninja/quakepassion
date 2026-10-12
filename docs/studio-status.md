@@ -989,6 +989,19 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **A folder out of an archive**: `ed_extract folder <game>:<folder> [to]`
   writes every file under a folder of a game's archives, as the
   explorer's Extract button writes one.
+- **The project's own files in the explorer**: with a project open, its
+  folder is listed under Your project beside the games', read from disk
+  as it is; its files are shown as any other (an image in its textures
+  folder says the material it is). A file or a folder of a game's
+  archives dragged onto Your project, or onto anything in it, is copied
+  into the project under `files/<game>/`. A folder is opened by a click
+  on it and not by the press that begins a drag.
+- **What a scene uses, and what uses a thing**: `ed_uses` lists in the
+  Checks tab every material on the scene's brushes with how many sides
+  have it, and every sound and model its entities name with how many
+  name it, each marked when no archive holds it. `ed_uses <material or
+  file>`, or a click on a row of that list, selects every brush with a
+  side of that material and every entity that names that file.
 - **A map forced on to the grid**: `ed_snap all [size]` (Edit menu) puts
   every brush's corners and every entity's origin on the grid, as one
   undoable step, and says how many things were off it, how many it
@@ -1422,6 +1435,9 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_ownfiles_tests.jac`: a folder on disk listed as its files
+  by their paths from it, dotted names left out, and as folders the way
+  the explorer lists a game's.
 - `tests/studio_rectlift_tests.jac`: a falloff as units or as a share of
   a rectangle's shorter side; a rectangle of terrain lifted and lowered
   with one.
@@ -1665,6 +1681,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/uses_session.cfg` (8 steps: three materials and two
+  models listed, one of each missing; what uses a material, a model and
+  a name nothing uses; a drag onto no project, which writes nothing; a
+  project made, a file of Quake's dragged onto it and then a folder of
+  57, each found on disk whole; and the copy shown in the explorer from
+  the project's own files).
   `scripts/studio/rectlift_session.cfg` (10 steps: a wall marked, handed
   another box from the mark, picked from it, and swapped with a light;
   the mark cleared; a rectangle of terrain lifted by numbers with a

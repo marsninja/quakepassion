@@ -122,6 +122,7 @@ impl Studio.close_project {
     }
     self.project = None;
     self.project_folder = "";
+    self.folds += 1;
     stock = self.archive;
     if stock is not None {
         stock.folder = "";
@@ -146,6 +147,7 @@ impl Studio.open_project(folder: str) -> bool {
     project = read_project(text);
     self.project = project;
     self.project_folder = folder;
+    self.folds += 1;
     stock = self.archive;
     if stock is not None {
         # Its image files are the ones offered as materials.
@@ -340,6 +342,7 @@ impl Studio.project_command(scene: Scene, args: list[str]) -> bool {
             words = " ".join(args[3:]).strip();
             self.project = Project(name=words if words else os.path.basename(folder), game="passion", material=self.material);
             self.project_folder = folder;
+            self.folds += 1;
             self.save_project();
             for part in ["scenes", "prefabs", "textures"] {
                 os.makedirs(folder + "/" + part, exist_ok=True);

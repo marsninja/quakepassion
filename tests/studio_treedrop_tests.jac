@@ -101,3 +101,37 @@ test "a name is moved to stand before another, or to the end" {
     assert moved_before(names, "func_door", "item_health") == ["light", "func_door", "item_health", "monster_ogre"];
     assert moved_before([], "light") == ["light"];
 }
+
+test "where headings are carried, a heading opens by a click and not by the press of a drag" {
+    top = Box(across=True);
+    rows = TreeView(pick="open", toggle="open", drag="asset", drop="put", carry_branches=True, size=200);
+    rows.rows = [
+        TreeRow(key="dir:a", text="A folder", branch=True), TreeRow(key="file:a", text="A file", depth=1),
+        TreeRow(key="dir:mine", text="Mine", branch=True)
+    ];
+    top.adopt(rows);
+    top.adopt(ViewArea(grow=1));
+    stage = Stage(canvas=TraceCanvas());
+    stage.open(top);
+    source = UiSource();
+    play(stage, source);
+    # A click on the heading's words opens it, as before, when the button comes up.
+    script_click(source, 80, 10);
+    play(stage, source);
+    assert stage.take_commands() == ["open \"dir:a\""];
+    # Carried onto another row it is not opened: only the drop is asked for.
+    script_drag(source, 80, 10, 80, 50);
+    play(stage, source);
+    assert stage.take_commands() == ["put \"dir:mine\" \"asset dir:a\""];
+    # Its arrow still opens it at once; a file is picked by the press, and carried.
+    script_click(source, 10, 10);
+    play(stage, source);
+    assert stage.take_commands() == ["open \"dir:a\""];
+    script_drag(source, 80, 30, 80, 50);
+    play(stage, source);
+    assert stage.take_commands() == ["open \"file:a\"", "put \"dir:mine\" \"asset file:a\""];
+    # Carried off the list and let go on nothing that takes it: nothing is opened.
+    script_drag(source, 80, 10, 500, 300);
+    play(stage, source);
+    assert stage.take_commands() == [];
+}

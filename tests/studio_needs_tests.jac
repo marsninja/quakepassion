@@ -1,4 +1,4 @@
-import from editor.assets.needs { sound_file, model_file, needed_files, missing_files, held_names }
+import from editor.assets.needs { sound_file, model_file, needed_files, missing_files, held_names, names_file }
 
 test "a sound field names a file by its game's rules" {
     assert sound_file("q1", "ambience/fire1.wav") == "sound/ambience/fire1.wav";
@@ -30,4 +30,14 @@ test "an entity's fields say which files it needs, and which a game does not hol
     held = held_names(["models/LAMP.md3", "hum.wav", "maps/q3dm1.bsp"]);
     assert missing_files(needs, held) == [("model2", "models/glow.md3")];
     assert missing_files(needs, held_names([])) == needs and missing_files([], held) == [];
+}
+
+test "an entity names a file by its game's name for it or by the field's own words" {
+    drip = {"classname": "ambient_drip", "noise": "misc/Talk.wav"};
+    assert names_file("q1", drip, "sound/misc/talk.wav") and names_file("q1", drip, "misc/talk.wav");
+    assert not names_file("q1", drip, "misc/other.wav") and not names_file("q1", drip, "") and not names_file("q1", {}, "x");
+    lamp = {"classname": "misc_model", "model": "models/lamp.md3"};
+    assert names_file("q3", lamp, "MODELS/LAMP.MD3") and not names_file("q3", lamp, "lamp.md3");
+    # A door's own brush model names no file.
+    assert not names_file("q1", {"classname": "func_door", "model": "*4"}, "*4");
 }

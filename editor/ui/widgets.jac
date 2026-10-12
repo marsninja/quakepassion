@@ -735,6 +735,11 @@ node TreeView(Widget) {
         # word with the key of the row it was let go on (empty when on
         # none) and what was carried.
         drop: str = "",
+        # Whether headings are offered to be dragged as other rows are.
+        carry_branches: bool = False,
+        # A heading pressed where headings are carried: what a click on it
+        # asks for is kept until the button comes up without a drag.
+        pending: str = "",
         offset: int = 0,
         grabbing: bool = False,
         hover_row: int = -1,
@@ -844,8 +849,12 @@ node TreeView(Widget) {
             }
             row = self.rows[index];
             arrow = self.area.x + 6 + row.depth * 14;
+            self.pending = "";
             if row.branch and event.x >= arrow - 4 and event.x < arrow + 12 {
                 stage.emit(self.toggle + " " + quote_command_word(row.key));
+            } elif row.branch and self.carry_branches and self.drag and self.pick and kind == "press" {
+                # Opened by the click it becomes, not by the press: it may be carried away instead.
+                self.pending = self.pick + " " + quote_command_word(row.key);
             } elif kind == "double" and self.open_command {
                 stage.emit(self.open_command + " " + quote_command_word(row.key));
             } elif self.pick {
@@ -853,7 +862,7 @@ node TreeView(Widget) {
                     self.pick + " " + quote_command_word(row.key) + (" add" if event.ctrl or event.shift else "")
                 );
             }
-            if self.drag and not row.branch and not row.fixed {
+            if self.drag and (self.carry_branches or not row.branch) and not row.fixed {
                 # A row that is a thing, not a heading, can be dragged elsewhere.
                 stage.offer(self.drag + " " + row.key, row.text);
             }
@@ -868,6 +877,13 @@ node TreeView(Widget) {
         }
         if kind == "release" {
             self.grabbing = False;
+            return True;
+        }
+        if kind == "click" and self.pending {
+            if not stage.carrying {
+                stage.emit(self.pending);
+            }
+            self.pending = "";
             return True;
         }
         if kind == "drop" {

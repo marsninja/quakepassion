@@ -69,3 +69,19 @@ def missing_files(needed: list[tuple[str, str]], held: set[str]) -> list[tuple[s
 def held_names(names: list[str]) -> set[str] {
     return {name.lower() for name in names};
 }
+
+"""Whether an entity's fields name a file: by the file its game would look
+for, or by the very words of the field (a sound named `misc/talk.wav` is
+found by that, and by `sound/misc/talk.wav`). Case does not matter."""
+def names_file(game: str, fields: dict[str, str], name: str) -> bool {
+    wanted = name.strip().replace("\\", "/").lower();
+    if not wanted {
+        return False;
+    }
+    for (key, file) in needed_files(game, fields) {
+        if file.lower() == wanted or fields.get(key, "").strip().replace("\\", "/").lower() == wanted {
+            return True;
+        }
+    }
+    return False;
+}
