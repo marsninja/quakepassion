@@ -1,4 +1,5 @@
 """Shared translating proximity doors. Unsupported activation stays static."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .combat { Opponent, HasOpponent, damage_opponent }
 import from .damage { Damage }
@@ -118,7 +119,7 @@ Q3 g_mover.c gives doors and plats a sound as they set off either way
 buttons one as they are pressed; nothing loops, since no mover sets a
 soundLoop and Reached_Train clears a train's `noise` at its first corner."""
 def mover_voices(game: str, kind: str, fields: dict[str, str]) -> list[str] {
-    style = int(float(fields.get("sounds", "0")));
+    style = int(atof(fields.get("sounds", "0")));
     if game == "q1" {
         if kind == "func_door" {
             pairs = [
@@ -782,7 +783,7 @@ def field_reach(game: str, field: AABB) -> AABB {
 }
 
 def door_direction(entity: MapEntity) -> Vec3 {
-    yaw = float(entity.fields.get("angle", "0"));
+    yaw = atof(entity.fields.get("angle", "0"));
     pitch = 0.0;
     if entity.fields.get("angles", "") {
         angles = entity.fields["angles"].split();
@@ -822,7 +823,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             continue;
         }
         # Keep unsupported members in the graph so a locked half disables its group.
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         allowed = 3840 if bsp.game == "q1" else (7936 if bsp.game == "q2" else 0);
         if kind == "func_door" {
             allowed |= 1;
@@ -861,7 +862,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         if water {
             allowed |= 1;
         }
-        health = max(0, int(float(fields.get("health", "0"))));
+        health = max(0, int(atof(fields.get("health", "0"))));
         reason = "";
         if flags & ~allowed {
             reason = "spawnflags " + str(flags & ~allowed);
@@ -882,12 +883,12 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         bounds = model_bounds(bsp, model, mover_origin(fields));
         direction = door_direction(entity);
         size = bounds.size();
-        lip = float(fields.get("lip", "4" if kind == "func_button" else "8"));
+        lip = atof(fields.get("lip", "4" if kind == "func_button" else "8"));
         if lip == 0.0 and bsp.game != "q3" {
             lip = 4.0 if kind == "func_button" else 8.0;
         }
         if water {
-            lip = float(fields.get("lip", "0"));
+            lip = atof(fields.get("lip", "0"));
         }
         distance = abs(direction.x) * size.x
             + abs(direction.y) * size.y
@@ -895,13 +896,13 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
             - lip;
         if kind == "func_plat" {
             direction = Vec3(z=1.0);
-            distance = float(fields.get("height", "0"));
+            distance = atof(fields.get("height", "0"));
             if distance == 0.0 {
                 distance = size.z - lip;
             }
         }
-        speed = float(fields.get("speed", "0"));
-        hold_time = float(fields.get("wait", "0"));
+        speed = atof(fields.get("speed", "0"));
+        hold_time = atof(fields.get("wait", "0"));
         if speed == 0.0 {
             speed = 40.0
                 if kind == "func_button"
@@ -913,19 +914,19 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
                 else (2.0 if bsp.game == "q3" else 3.0);
         }
         if kind == "func_plat" {
-            if float(fields.get("speed", "0")) == 0.0 {
+            if atof(fields.get("speed", "0")) == 0.0 {
                 speed = 150.0 if bsp.game == "q1" else 200.0;
             }
             hold_time = 1.0 if bsp.game == "q3" else 3.0;
         }
         # Water rises at 25 units a second and toggles unless given a wait.
         if water {
-            speed = float(fields.get("speed", "0")) or 25.0;
-            hold_time = float(fields.get("wait", "0")) or -1.0;
+            speed = atof(fields.get("speed", "0")) or 25.0;
+            hold_time = atof(fields.get("wait", "0")) or -1.0;
         }
         if rotating {
             # g_func.c SP_func_door_rotating: degrees, 90 by default.
-            distance = float(fields.get("distance", "0"));
+            distance = atof(fields.get("distance", "0"));
             if distance == 0.0 {
                 distance = 90.0;
             }
@@ -1023,7 +1024,7 @@ def load_doors(world: World, bsp: Bsp, collision: CollisionMap, connect: bool = 
         door.voices = mover_voices(bsp.game, kind, fields);
         door.voice_on_open = kind == "func_button";
         # Crush damage defaults: Q1 plats 1, other movers 2 (Q1/Q2/Q3 "dmg").
-        door.damage = int(float(fields.get("dmg", "0")));
+        door.damage = int(atof(fields.get("dmg", "0")));
         if door.damage == 0 and kind != "func_button" {
             door.damage = 1 if kind == "func_plat" and bsp.game == "q1" else 2;
         }
@@ -1329,12 +1330,12 @@ def connect_targets(world: World, bsp: Bsp) {
         # Touch triggers are relays of their own, so use by name, touch and
         # shooting all fire the same targets (Q1 multi_trigger, Q2 Touch_Multi).
         if kind in ["trigger_once", "trigger_multiple", "trigger_onlyregistered"] {
-            flags = int(fields.get("spawnflags", "0"));
+            flags = atoi(fields.get("spawnflags", "0"));
             signals.append(
                 Signal(
                     entities=[index],
                     relay=True,
-                    once=kind == "trigger_once" or float(fields.get("wait", "0")) < 0.0,
+                    once=kind == "trigger_once" or atof(fields.get("wait", "0")) < 0.0,
                     message=fields.get("message", ""),
                     cue=authored_cue(bsp.game, kind, fields),
                     armable=bsp.game == "q2" and flags & 4 != 0,
@@ -1343,7 +1344,7 @@ def connect_targets(world: World, bsp: Bsp) {
             );
         }
         if kind == "func_timer" and bsp.game in ["q2", "q3"] {
-            interval = float(fields.get("wait", "1"));
+            interval = atof(fields.get("wait", "1"));
             if interval <= 0.0 {
                 interval = 1.0;
             }
@@ -1354,11 +1355,11 @@ def connect_targets(world: World, bsp: Bsp) {
                 variance=max(
                     0.0,
                     min(
-                        float(fields.get("random", "1" if bsp.game == "q3" else "0")),
+                        atof(fields.get("random", "1" if bsp.game == "q3" else "0")),
                         interval - 0.1
                     )
                 ),
-                timer_running=int(fields.get("spawnflags", "0")) & 1 != 0
+                timer_running=atoi(fields.get("spawnflags", "0")) & 1 != 0
             );
             if timer.timer_running {
                 timer.timer_remaining = 0.1
@@ -1366,8 +1367,8 @@ def connect_targets(world: World, bsp: Bsp) {
                     else max(
                         0.0,
                         1.0
-                            + float(fields.get("pausetime", "0"))
-                            + float(fields.get("delay", "0"))
+                            + atof(fields.get("pausetime", "0"))
+                            + atof(fields.get("delay", "0"))
                             + timer.sample(interval)
                     );
             }
@@ -1378,7 +1379,7 @@ def connect_targets(world: World, bsp: Bsp) {
                 Signal(
                     entities=[index],
                     relay=True,
-                    grant_flags=int(fields.get("spawnflags", "0")) & 255
+                    grant_flags=atoi(fields.get("spawnflags", "0")) & 255
                 )
             );
         }
@@ -1386,15 +1387,15 @@ def connect_targets(world: World, bsp: Bsp) {
             signals.append(
                 Signal(
                     entities=[index],
-                    require_flags=int(fields.get("spawnflags", "0")) & 255,
-                    queued=[DelayedUse(remaining=float(fields.get("delay", "0")) or 1.0)]
+                    require_flags=atoi(fields.get("spawnflags", "0")) & 255,
+                    queued=[DelayedUse(remaining=atof(fields.get("delay", "0")) or 1.0)]
                 )
             );
         }
         if kind == "trigger_always" and bsp.game in ["q2", "q3"] {
             startup = 0.3
                 if bsp.game == "q3"
-                else max(0.2, float(fields.get("delay", "0")));
+                else max(0.2, atof(fields.get("delay", "0")));
             signals.append(
                 Signal(entities=[index], queued=[DelayedUse(remaining=startup)])
             );
@@ -1409,12 +1410,12 @@ def connect_targets(world: World, bsp: Bsp) {
                         entities=[index],
                         key=key,
                         once=True,
-                        remaining=max(1, int(fields.get("count", "2")))
+                        remaining=max(1, atoi(fields.get("count", "2")))
                             if kind == "trigger_counter"
                             else 0,
                         # NOMESSAGE (1) silences the counter's progress.
                         counter_style="silent"
-                            if int(fields.get("spawnflags", "0")) & 1
+                            if atoi(fields.get("spawnflags", "0")) & 1
                             else bsp.game,
                         message=fields.get("message", "")
                     )
@@ -1422,7 +1423,7 @@ def connect_targets(world: World, bsp: Bsp) {
             }
         }
         if kind in ["trigger_relay", "target_relay", "target_delay"]
-            and int(fields.get("spawnflags", "0")) == 0 {
+            and atoi(fields.get("spawnflags", "0")) == 0 {
             signal = Signal(
                 relay=True,
                 entities=[index],
@@ -1430,11 +1431,11 @@ def connect_targets(world: World, bsp: Bsp) {
                 cue=authored_cue(bsp.game, kind, fields)
             );
             if kind == "target_delay" and bsp.game == "q3" {
-                signal.delay = float(fields.get("delay", fields.get("wait", "1")));
+                signal.delay = atof(fields.get("delay", fields.get("wait", "1")));
                 if signal.delay <= 0.0 {
                     signal.delay = 1.0;
                 }
-                signal.variance = max(0.0, float(fields.get("random", "0")));
+                signal.variance = max(0.0, atof(fields.get("random", "0")));
                 signal.replace_pending = True;
                 signal.random_state = index + 1;
             }
@@ -1487,7 +1488,7 @@ def connect_targets(world: World, bsp: Bsp) {
             fields = bsp.entities[index].fields;
             kind = fields.get("classname", "");
             if bsp.game in ["q1", "q2"] {
-                signal.delay = max(signal.delay, float(fields.get("delay", "0")));
+                signal.delay = max(signal.delay, atof(fields.get("delay", "0")));
             }
             # Trains follow their target; Q2 changelevels never use theirs.
             if kind == "func_train" or kind == "target_changelevel" {
@@ -1575,7 +1576,7 @@ def connect_targets(world: World, bsp: Bsp) {
 beeps (Q1 SUB_UseTargets misc/talk, Q2 G_UseTargets misc/talk1 unless
 `noise`), Q1 secrets' default."""
 def authored_cue(game: str, kind: str, fields: dict[str, str]) -> str {
-    style = int(fields.get("sounds", "0"));
+    style = atoi(fields.get("sounds", "0"));
     if (game == "q1" and kind == "trigger_secret" or game == "q2" and kind in ["target_secret", "target_goal"]) and style == 0 and not fields.get("noise", "") {
         style = 1;
     }

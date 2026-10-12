@@ -1,4 +1,6 @@
 """Quake III BSP46 surfaces, quadratic patches, and cluster visibility."""
+import math;
+import struct;
 import from ..bsp {
     FogVolume,
     FlareSurface,
@@ -26,6 +28,14 @@ import from .curve {
     stitch_all_patches,
     fix_all_shared_lod_errors,
     CURVE_SUBDIVISIONS
+}
+
+"""A vertex's lightmap coordinate. q3map leaves the coordinates of surfaces
+it gave no lightmap (vertex-lit terrain) unset, and some are not numbers:
+they are never sampled, so they read as 0."""
+def lightmap_coordinate(data: bytes, p: int) -> float {
+    value = float(struct.unpack("<f", data[p:p + 4])[0]);
+    return value if math.isfinite(value) else 0.0;
 }
 
 def add_vertex(face: Face, v: Vertex) {
@@ -207,8 +217,8 @@ def parse_q3(data: bytes, subdivisions: float = CURVE_SUBDIVISIONS) -> Bsp {
             pos=vec_at(lumps[10], p),
             s=f32_at(lumps[10], p + 12),
             t=f32_at(lumps[10], p + 16),
-            ls=f32_at(lumps[10], p + 20),
-            lt=f32_at(lumps[10], p + 24)
+            ls=lightmap_coordinate(lumps[10], p + 20),
+            lt=lightmap_coordinate(lumps[10], p + 24)
         );
         for j in range(4) {
             v.colors.append(float(lumps[10][p + 40 + j]));

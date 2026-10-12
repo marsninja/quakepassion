@@ -9,28 +9,26 @@ tracked the local patch stacks used while each fix was in review.
 ## Current compiler
 
 The `jaseci` submodule pins the compiler source. It points at the
-`qp-pin-v3` branch of `marsninja/jac`: upstream main `5bb05689a` plus the
-Windows target work of [jaseci-labs/jac#9991](https://github.com/jaseci-labs/jac/pull/9991),
-which is in review. Everything earlier pins carried has merged upstream.
-`scripts/stage_compiler.sh` prepares that source (and the typeshed stubs it
-needs) and prints the `JAC_DEV_SOURCE` to export, so the released `jac`
-0.37.25 binary compiles QuakePassion with the pinned source. CI
-(`.github/workflows/jac-test.yml`) does the same and caches the native
-compiler kernel per pin. No local patch stacks or compiler worktrees are
-needed. Once #9991 merges, the submodule can return to `jaseci-labs/jac` main.
+`qp-pin-v4` branch of `marsninja/jac`: upstream main `875ef9d29` plus
+[jaseci-labs/jac#10002](https://github.com/jaseci-labs/jac/pull/10002), which
+has since merged. Everything earlier pins carried has merged upstream too,
+the Windows target work (#9991) among it. `scripts/stage_compiler.sh` prepares
+that source (and the typeshed stubs it needs) and prints the `JAC_DEV_SOURCE`
+to export, so the released `jac` 0.37.25 binary compiles QuakePassion with
+the pinned source. CI (`.github/workflows/jac-test.yml`) does the same and
+caches the native compiler kernel per pin. No local patch stacks or compiler
+worktrees are needed, and the submodule can return to `jaseci-labs/jac` main
+at the next pin change.
 
 ## Open upstream
-
-In the pin, in review upstream:
-
-| Defect | Upstream PR | Found by |
-| --- | --- | --- |
-| A Windows target (`--target-triple x86_64-pc-windows-msvc`) wrote an image that did not load: it imported pthread keys, `printf`, the standard streams and `setjmp` from `msvcrt.dll`, and nothing that touched a file, a directory or the clock built. Records crossed to C functions by the System V convention, `hashlib` needed OpenSSL, and the PE linker refused an object with more than 65,534 relocations | [#9991](https://github.com/jaseci-labs/jac/pull/9991) | Building `qp.exe`: a Linux `qp` under WSLg cannot capture the mouse |
 
 Merged upstream and in the pin, not yet in a release:
 
 | Defect | Upstream PR | Found by |
 | --- | --- | --- |
+| A read of a variable narrowed by an earlier `if x is None { return; }` was typed with its declared type and reported (E1099) when resolving an assignment to the same variable elsewhere in the function forced its scope to be checked: the narrowing queries refused any query for a symbol already being resolved, wherever it was asked | [#10002](https://github.com/jaseci-labs/jac/pull/10002) | `Studio.drag_lay` in `editor/impl/studio.layhandle.impl.jac`: `main` did not build |
+| A block whose last statement held a comprehension lost the narrowing of what followed it | [#9990](https://github.com/jaseci-labs/jac/pull/9990) | `Studio.float_views` in `editor/impl/studio.windows.impl.jac` |
+| A Windows target (`--target-triple x86_64-pc-windows-msvc`) wrote an image that did not load, and nothing that touched a file, a directory or the clock built for it | [#9991](https://github.com/jaseci-labs/jac/pull/9991) | Building `qp.exe`: a Linux `qp` under WSLg cannot capture the mouse |
 | `for (i, row) in enumerate(rows)` over a list of lists (or of dicts or sets) bound `row` as an untyped pointer, which later code took for a `str`: `len(row)` returned a wrong count and a nested `enumerate(row)` crashed. `zip` did the same | [#9971](https://github.com/jaseci-labs/jac/pull/9971) | The studio's `.map` writer (`editor/formats/map.jac`), which loops over an entity's brushes and each brush's sides |
 | A C record passed by value to a C function from a variable whose slot is optional (`font: Font \| None`, narrowed or defaulted before the call) emitted invalid LLVM IR; the build failed with only "native product emission failed" | [#9942](https://github.com/jaseci-labs/jac/pull/9942) | The studio's canvas (`editor/ui/canvas.jac`), which keeps its font as `UiFont \| None` |
 | The Mach-O linker merged same-named sections from different units but kept the first unit's alignment, so a later unit's 16-byte constant could land 8 bytes off a 16-byte boundary and a vectorised loop's `ldr q` read it 8 bytes early. Whether a binary is hit depends on how its units happen to pack: one program fails, a one-line change to it passes | [#9924](https://github.com/jaseci-labs/jac/pull/9924) | `scripts/validate_doors.jac` on Q3: `zipfile` raising "Invalid central directory bounds" on every pk3 |

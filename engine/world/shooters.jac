@@ -5,6 +5,7 @@ Q1 trap_spikeshooter fires when used and trap_shooter repeats every `wait`
 600 u/s for 15. Q1 misc_fireball lobs lava balls (20 damage) at random
 intervals up to five seconds. Q3 shooter_grenade/rocket/plasma fire when used,
 with the `random` spread of g_misc.c Use_Shooter."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World }
 import from .combat { Projectile, HasProjectile }
@@ -141,7 +142,7 @@ def move_direction(fields: dict[str, str]) -> Vec3 {
             );
         }
     }
-    angle = float(fields.get("angle", "0"));
+    angle = atof(fields.get("angle", "0"));
     if angle == -1.0 {
         return Vec3(z=1.0);
     }
@@ -161,7 +162,7 @@ def load_shooters(world: World, bsp: Bsp) {
             continue;
         }
         origin = Vec3(x=float(parts[0]), y=float(parts[1]), z=float(parts[2]));
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         shooter: Shooter | None = None;
         sound = "";
         if game == "q1" and kind in ["trap_spikeshooter", "trap_shooter"] {
@@ -169,15 +170,15 @@ def load_shooters(world: World, bsp: Bsp) {
             shooter = Shooter(origin=origin, direction=move_direction(fields), kind=style);
             sound = "sound/enforcer/enfire.wav" if style == "laser" else "sound/weapons/spike2.wav";
             if kind == "trap_shooter" {
-                shooter.interval = float(fields.get("wait", "0")) or 1.0;
-                shooter.clock = shooter.interval + float(fields.get("nextthink", "0"));
+                shooter.interval = atof(fields.get("wait", "0")) or 1.0;
+                shooter.clock = shooter.interval + atof(fields.get("nextthink", "0"));
             }
         } elif game == "q1" and kind == "misc_fireball" {
             shooter = Shooter(
                 origin=origin,
                 kind="fireball",
                 interval=5.0,
-                speed=float(fields.get("speed", "0")) or 1000.0
+                speed=atof(fields.get("speed", "0")) or 1000.0
             );
         } elif game == "q2" and kind == "target_blaster" {
             # g_target.c SP_target_blaster: 1000 u/s, 15 damage by default.
@@ -185,8 +186,8 @@ def load_shooters(world: World, bsp: Bsp) {
                 origin=origin,
                 direction=move_direction(fields),
                 kind="blaster",
-                speed=float(fields.get("speed", "0")) or 1000.0,
-                damage=int(float(fields.get("dmg", "0"))) or 15
+                speed=atof(fields.get("speed", "0")) or 1000.0,
+                damage=int(atof(fields.get("dmg", "0"))) or 15
             );
             sound = "sound/weapons/laser2.wav";
         } elif game == "q3" and kind in ["shooter_grenade", "shooter_rocket", "shooter_plasma"] {
@@ -194,7 +195,7 @@ def load_shooters(world: World, bsp: Bsp) {
                 origin=origin,
                 direction=move_direction(fields),
                 kind=kind[8:],
-                spread=float(fields.get("random", "0"))
+                spread=atof(fields.get("random", "0"))
             );
             sound = "sound/weapons/" + (
                 "grenade/grenlf1a.wav"

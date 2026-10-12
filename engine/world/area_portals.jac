@@ -12,6 +12,7 @@ back.
 
 The areas, the flood that numbers them and what it seals off are in
 engine/world/map_areas.jac."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World, Area }
 import from .doors { Door, HasDoor, DoorMember }
 import from .signals { Signal, HasSignal }
@@ -89,7 +90,7 @@ def:priv load_entity_portals(world: World, bsp: Bsp, chart: AreaMap | None) {
         }
         activation = Signal(entities=[index]);
         world +>:HasSignal:+> activation;
-        portal = AreaPortal(style=int(fields.get("style", "0")), activation=activation);
+        portal = AreaPortal(style=atoi(fields.get("style", "0")), activation=activation);
         world +>:HasAreaPortal:+> portal;
         if chart is not None {
             for area in range(min(len(bsp.areas), len(chart.areas))) {
@@ -140,7 +141,7 @@ def:priv load_door_portals(world: World, bsp: Bsp, chart: AreaMap, probe: AreaPr
             # areanum and areanum2: the first area met and the last other one.
             touched[0] +>:Joins:+> portal;
             touched[-1] +>:Joins:+> portal;
-            leader +>:OpensPortal:start_open=int(fields.get("spawnflags", "0")) & 1 != 0:+> portal;
+            leader +>:OpensPortal:start_open=atoi(fields.get("spawnflags", "0")) & 1 != 0:+> portal;
         }
     }
 }

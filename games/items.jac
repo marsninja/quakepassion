@@ -1,4 +1,5 @@
 """Original campaign/arena pickups adapted to shared engine item behavior."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .weapons { weapon_rules }
 import from engine.world.signals { Signal, HasSignal }
@@ -250,7 +251,7 @@ def item_rule(
     game: str, fields: dict[str, str], worldtype: int = 0
 ) -> PickupRule | None {
     kind = fields.get("classname", "");
-    flags = int(fields.get("spawnflags", "0"));
+    flags = atoi(fields.get("spawnflags", "0"));
     if kind.startswith("weapon_") {
         for weapon in weapon_rules(game) {
             if kind == "weapon_" + weapon.key and weapon.model {
@@ -548,7 +549,7 @@ def special_rule(game: str, kind: str, fields: dict[str, str]) -> PickupRule | N
             return None;
         }
         duration = rule.duration;
-        if game == "q3" and int(fields.get("count", "0")) > 0 {
+        if game == "q3" and atoi(fields.get("count", "0")) > 0 {
             duration = float(int(fields["count"]));
         }
         return PickupRule(
@@ -758,7 +759,7 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             if rule is None {
                 continue;
             }
-            flags = int(fields.get("spawnflags", "0"));
+            flags = atoi(fields.get("spawnflags", "0"));
             if level.bsp.game == "q1" and flags & 512 {
                 continue;
             }
@@ -825,9 +826,9 @@ def populate_pickups(world: World, level: Level, directory: str) -> int {
             pickup = Pickup(
                 rule=rule,
                 pos=position,
-                yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
+                yaw=atof(fields.get("angle", "0")) * math.pi / 180.0,
                 respawn=respawn,
-                jitter=max(0.0, float(fields.get("random", "0"))) if level.bsp.game == "q3" else 0.0,
+                jitter=max(0.0, atof(fields.get("random", "0"))) if level.bsp.game == "q3" else 0.0,
                 seed=1 + index * 7919,
                 untouchable=untouchable,
                 active=not waiting_for_use,

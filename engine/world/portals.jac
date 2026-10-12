@@ -4,6 +4,7 @@ misc_portal_camera, oriented as cgame's CG_Portal and g_misc.c locateCamera
 set it up (aimed at the camera's target or along its angle, rolled, and
 swaying or spinning). The view through a surface is tr_main.c's
 R_GetPortalOrientations and R_MirrorViewBySurface."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Entity }
 import from ..formats.bsp { Bsp, Face }
@@ -252,7 +253,7 @@ def portal_origin(fields: dict[str, str]) -> Vec3 {
 """G_SetMovedir: angle -1 is up, -2 down, otherwise the angles' forward."""
 def camera_direction(fields: dict[str, str]) -> Vec3 {
     pitch = 0.0;
-    yaw = float(fields.get("angle", "0"));
+    yaw = atof(fields.get("angle", "0"));
     parts = fields.get("angles", "").split();
     if len(parts) == 3 {
         pitch = float(parts[0]);

@@ -1,4 +1,5 @@
 """Q1/Q2 walls and Q2 destructible brushes using shared geometry and damage."""
+import from engine.formats.numbers { atof, atoi }
 import from .world { World, Player }
 import from .signals { Signal, HasSignal, Fire }
 import from .combat { Opponent, HasOpponent, CombatState, damage_opponent }
@@ -51,7 +52,7 @@ def load_brushes(world: World, bsp: Bsp, collision: CollisionMap) {
     for index in range(len(bsp.entities)) {
         fields = bsp.entities[index].fields;
         kind = fields.get("classname", "");
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         if kind != "func_wall" and (kind != "func_explosive" or bsp.game != "q2") {
             continue;
         }
@@ -80,8 +81,8 @@ def load_brushes(world: World, bsp: Bsp, collision: CollisionMap) {
             spawn_only=kind == "func_explosive" and flags & 1 != 0,
             shootable=kind == "func_explosive"
                 and (flags & 1 != 0 or not fields.get("targetname", "")),
-            health=int(fields.get("health", "100")) or 100,
-            damage=max(0, int(fields.get("dmg", "0"))),
+            health=atoi(fields.get("health", "100")) or 100,
+            damage=max(0, atoi(fields.get("dmg", "0"))),
             activation=Signal(entities=[index]),
             faces=list(range(record.first_face, record.first_face + record.face_count))
         );

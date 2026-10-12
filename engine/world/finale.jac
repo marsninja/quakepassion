@@ -1,5 +1,6 @@
 """Q1's last encounter: the spiked teleport train, the telefrag into
 Shub-Niggurath, the finale timeline, and intermission cameras and texts."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Entity, Player }
 import from .trains { TrackPoint, HasTrack, TrackNext }
@@ -147,7 +148,7 @@ def load_finale(world: World, bsp: Bsp) {
         if first is None {
             continue;
         }
-        speed = float(fields.get("speed", "0"));
+        speed = atof(fields.get("speed", "0"));
         if speed <= 0.0 {
             speed = 100.0;
         }

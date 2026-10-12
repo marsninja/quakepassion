@@ -1,4 +1,5 @@
 """Brush-contact activation of named doors through shared graph relationships."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent }
@@ -238,7 +239,7 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
         }
         # Q1 reads only NOTOUCH (1); Q2 only MONSTER, NOT_PLAYER and TRIGGERED
         # (1, 2, 4). Other bits are editor leftovers the games ignore.
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         if bsp.game == "q3" and flags != 0 {
             continue;
         }
@@ -259,10 +260,10 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
             relay = Signal(
                 entities=[index],
                 relay=True,
-                once=kind == "trigger_once" or float(fields.get("wait", "0")) < 0.0,
+                once=kind == "trigger_once" or atof(fields.get("wait", "0")) < 0.0,
                 message="" if kind == "trigger_onlyregistered" else fields.get("message", ""),
                 cue=authored_cue(bsp.game, kind, fields),
-                delay=float(fields.get("delay", "0")) if bsp.game != "q3" else 0.0,
+                delay=atof(fields.get("delay", "0")) if bsp.game != "q3" else 0.0,
                 armable=bsp.game == "q2" and flags & 4 != 0,
                 armed=not (bsp.game == "q2" and flags & 4 != 0)
             );
@@ -278,14 +279,14 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
         if not volume.hulls {
             continue;
         }
-        interval = float(fields.get("wait", "0"));
+        interval = atof(fields.get("wait", "0"));
         if interval == 0.0 {
             interval = 0.5 if bsp.game == "q3" else 0.2;
         }
         if bsp.game == "q3" {
-            interval += float(fields.get("random", "0"));
+            interval += atof(fields.get("random", "0"));
         }
-        health = int(float(fields.get("health", "0"))) if bsp.game == "q1" else 0;
+        health = int(atof(fields.get("health", "0"))) if bsp.game == "q1" else 0;
         trigger = TouchTrigger(
             model=model,
             volume=volume,
@@ -297,11 +298,11 @@ def load_triggers(world: World, bsp: Bsp, collision: CollisionMap | None = None)
             touchable=health == 0 and not (bsp.game == "q1" and flags & 1 != 0),
             health=health,
             max_health=health,
-            skill=int(float(fields.get("message", "1"))) if setskill else -1,
+            skill=int(atof(fields.get("message", "1"))) if setskill else -1,
             monsters=bsp.game == "q2" and flags & 1 != 0,
             players=not (bsp.game == "q2" and flags & 2 != 0)
         );
-        angle = float(fields.get("angle", "0"));
+        angle = atof(fields.get("angle", "0"));
         if bsp.game in ["q1", "q2"] and angle != 0.0 {
             trigger.facing = Vec3(z=1.0)
                 if angle == -1.0
@@ -425,13 +426,13 @@ def load_monster_jumps(world: World, bsp: Bsp) {
         if not volume.hulls {
             continue;
         }
-        angle = float(fields.get("angle", "0"));
+        angle = atof(fields.get("angle", "0"));
         heading = Vec3() if angle < 0.0 else forward_from(math.radians(angle), 0.0);
-        speed = float(fields.get("speed", "0")) or 200.0;
+        speed = atof(fields.get("speed", "0")) or 200.0;
         jump = MonsterJump(
             volume=volume,
             push=heading.scale(speed),
-            height=float(fields.get("height", "0")) or 200.0
+            height=atof(fields.get("height", "0")) or 200.0
         );
         if volume.groups {
             jump.reach = volume.groups[0].bounds;

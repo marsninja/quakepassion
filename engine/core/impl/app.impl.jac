@@ -680,6 +680,10 @@ impl App.smoke_step(frame: int) -> bool {
 }
 
 impl App.switch_level() {
+    # The menu lists one pack's maps: play that pack.
+    if self.menu.chosen_pack() {
+        play_pack(self.menu.chosen_pack());
+    }
     self.load_destination(
         self.menu.games[self.menu.game], self.menu.maps[self.menu.selected]
     );
@@ -2170,6 +2174,9 @@ impl App.quickload(slot: str = "") {
         for line in lines {
             if line.startswith("SKILL ") {
                 self.host.skill.assign(str(max(0, min(4, int(line[6:])))));
+            }
+            if line.startswith("PACK ") {
+                play_pack(line[5:].strip());
             }
         }
         self.load_destination(

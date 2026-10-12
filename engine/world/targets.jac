@@ -5,6 +5,7 @@ blast; target_splash sprays particles and optionally hurts; target_earthquake
 jolts grounded actors for `count` seconds; target_laser is a toggled damaging
 beam; target_help updates the help computer's objectives; target_temp_entity
 shows its client effect."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Player }
 import from .combat {
@@ -408,14 +409,14 @@ def load_targets(world: World, bsp: Bsp) {
             or kind not in (q2_kinds if bsp.game == "q2" else q3_kinds) {
             continue;
         }
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         event = TargetEvent(
             kind=kind[7:],
             origin=target_origin(fields),
             direction=move_direction(fields),
-            damage=int(float(fields.get("dmg", "0"))),
-            count=int(float(fields.get("count", "0"))),
-            speed=float(fields.get("speed", "0")) or 200.0,
+            damage=int(atof(fields.get("dmg", "0"))),
+            count=int(atof(fields.get("count", "0"))),
+            speed=atof(fields.get("speed", "0")) or 200.0,
             message=fields.get("message", ""),
             primary=flags & 1 != 0,
             random_state=1 + index * 7919,
@@ -436,7 +437,7 @@ def load_targets(world: World, bsp: Bsp) {
         } elif event.kind == "temp_entity" {
             # The effect number is `style`; boss1 uses TE_BOSSTPORT (22), which
             # the client shows as a big teleport burst with misc/bigtele.wav.
-            event.count = int(fields.get("style", "0"));
+            event.count = atoi(fields.get("style", "0"));
             if event.count == 22 {
                 sound = "sound/misc/bigtele.wav";
             }

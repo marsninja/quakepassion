@@ -3,6 +3,7 @@ stages, deforms, fog, portal ranges and sky parts the world and model
 renderers draw each material with.
 """
 import os;
+import from .content { archive_paths }
 import from zipfile { ZipFile }
 import from ..formats.bsp { Texture }
 import from .materials { ModelMaterial, model_materials, material_name }
@@ -19,15 +20,13 @@ obj Pk3Assets {
         model_shaders: dict[str, ModelMaterial] = {};
 
     def open(directory: str) {
-        for filename in sorted(os.listdir(directory)) {
-            if filename.lower().endswith(".pk3") {
-                archive = ZipFile(directory + "/" + filename);
-                index = len(self.archives);
-                self.archives.append(archive);
-                for name in archive.namelist() {
-                    self.owners[name] = index;
-                    self.canonical_names[name.lower()] = name;
-                }
+        for path in archive_paths(directory, ".pk3") {
+            archive = ZipFile(path);
+            index = len(self.archives);
+            self.archives.append(archive);
+            for name in archive.namelist() {
+                self.owners[name] = index;
+                self.canonical_names[name.lower()] = name;
             }
         }
         for name in sorted(self.owners.keys()) {

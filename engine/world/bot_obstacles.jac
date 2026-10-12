@@ -11,6 +11,7 @@ and delays that fire it. A `FindActivator` walker starts at the door and
 walks those edges backwards, through relays and delays up to ten deep, as
 BotGetActivateGoal's "tree-like activation" follows target and targetname
 keys through the BSP entities."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World }
 import from .doors { Door, HasDoor, DoorMember }
@@ -135,9 +136,9 @@ def button_goal(
     found.shoot = False;
     found.target = Vec3();
     found.entity = model;
-    movedir = activator_movedir(float(fields.get("angle", "0")));
+    movedir = activator_movedir(atof(fields.get("angle", "0")));
     middle = box.mins.add(box.maxs).scale(0.5);
-    if float(fields.get("health", "0")) != 0.0 {
+    if atof(fields.get("health", "0")) != 0.0 {
         face = middle.sub(movedir.scale(touch_distance(box, movedir, False)));
         found.target = face;
         found.shoot = True;
@@ -271,7 +272,7 @@ walker FindActivator {
         fields = self.bsp.entities[index].fields;
         classname = fields.get("classname", "");
         if classname == "func_door" {
-            if float(fields.get("health", "0")) != 0.0 {
+            if atof(fields.get("health", "0")) != 0.0 {
                 if door_goal(self.model, self.bsp, self.collision, self.origin, self.area, self.found) {
                     self.entity = index;
                 }
@@ -279,7 +280,7 @@ walker FindActivator {
             }
             # "if the door starts open then just wait for the door to return"
             # and "if the door is open or opening already".
-            if int(fields.get("spawnflags", "0")) & 1 or here.position != 0.0 or here.state != "closed" {
+            if atoi(fields.get("spawnflags", "0")) & 1 or here.position != 0.0 or here.state != "closed" {
                 return;
             }
             self.store_areas();

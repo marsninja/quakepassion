@@ -31,6 +31,20 @@ Assets are not included. Put your own archives here:
 | `~/quake-assets/baseq2` | Quake II `pak*.pak` (plus loose `video/`, `music/` if you have them) |
 | `~/quake-assets/baseq3` | Quake III `pak*.pk3` |
 
+Mission packs and the 2021 Quake re-release's episodes go under the same
+folder, in the folders their Steam installs use, and appear in the menu when
+present ([docs/content-packs-status.md](docs/content-packs-status.md)):
+
+| Directory | Contents |
+| --- | --- |
+| `~/quake-assets/quake/hipnotic`, `quake/rogue` | Scourge of Armagon, Dissolution of Eternity |
+| `~/quake-assets/quake/rerelease/id1`, `dopa`, `mg1`, `mg3`, `ctf` | The re-release's Quake, its episodes and Threewave CTF |
+| `~/quake-assets/quake2/xatrix`, `quake2/rogue`, `quake2/ctf` | The Reckoning, Ground Zero, Capture the Flag |
+| `~/quake-assets/quake3/missionpack` | Team Arena |
+
+Their maps load and can be walked; the monsters, weapons, items and map
+mechanics they add are not implemented yet.
+
 ### Compiler
 
 QuakePassion builds with the released [Jac 0.37.25](https://github.com/jaseci-labs/jac/releases/tag/v0.37.25)
@@ -102,6 +116,7 @@ QP_GAME=passion QP_SEED=42 ./qp     # a seeded Passion expedition
 | Variable | Effect |
 | --- | --- |
 | `QP_GAME` | `q1` (default), `q2`, `q3` or `passion` |
+| `QP_PACK` | A content pack to play instead: a mission pack or re-release episode (`hipnotic`, `rogue`, `xatrix`, `teamarena`, ...; see [docs/content-packs-status.md](docs/content-packs-status.md)) |
 | `QP_MAP` | Starting map basename (default `e1m1`, `base1`, `q3dm1`) |
 | `QP_ASSETS` | Asset directory for the selected game (for Passion, the parent of all three) |
 | `QP_SEED` | Passion expedition seed |
@@ -132,7 +147,8 @@ A click captures the mouse.
   `reset`, `cvarlist`, `cmdlist`, `alias`, `exec`, `vstr`, `map`, `god`,
   `noclip`, `give`, `impulse`, `save`, `load`, `screenshot`, `vid_restart` and
   `quit` work as in the originals; **Tab** completes names.
-- **Menu**: **Escape** opens the level menu: pick a game tab and a map, or open
+- **Menu**: **Escape** opens the level menu: pick a game tab, one of its
+  content packs (**Left**/**Right**) and a map, or open
   **Settings** (field of view, sensitivity, volume, skill, God mode and more,
   each a cvar) or **Controls** (the game's Customize Controls: Enter then a key
   binds, Backspace clears).

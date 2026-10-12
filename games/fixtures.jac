@@ -5,6 +5,7 @@ ambientsound call each makes; Q1 ambient_* entities, fluorescent lights and
 teleporters (the hum at the trigger's centre, unless SILENT) are static
 looping sounds at ATTN_STATIC. Q2 dead bodies, mine lights, banners and
 novelty models follow g_misc.c, and a Q2 teleporter pad hums world/amb10."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from engine.world.fixtures { Fixture, HasFixture, FIXTURE_USES, fixture_signal }
 import from engine.world.speakers { Speaker, HasSpeaker }
@@ -31,7 +32,7 @@ obj FixtureRule {
 
 def fixture_rule(game: str, fields: dict[str, str]) -> FixtureRule | None {
     kind = fields.get("classname", "");
-    flags = int(fields.get("spawnflags", "0"));
+    flags = atoi(fields.get("spawnflags", "0"));
     if game == "q1" {
         flame = "sound/ambience/fire1.wav";
         if kind == "light_torch_small_walltorch" {
@@ -186,7 +187,7 @@ def populate_fixtures(world: World, level: Level, directory: str) -> int {
             }
             fixture = Fixture(
                 pos=position,
-                yaw=float(fields.get("angle", "0")) * math.pi / 180.0,
+                yaw=atof(fields.get("angle", "0")) * math.pi / 180.0,
                 frames=rule.frames,
                 effect=rule.effect
             );

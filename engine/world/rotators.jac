@@ -9,6 +9,7 @@ the mover swings into are carried round its origin in their own boxes (SV_Push,
 G_MoverPush, engine/world/pusher.jac). A blocked Q2 func_rotating hurts the
 obstacle by `dmg` and waits, a Q3 one only waits, and bobbing and pendulum
 movers kill what they meet and never stop."""
+import from engine.formats.numbers { atof, atoi }
 import math;
 import from .world { World, Player }
 import from .combat { Opponent, HasOpponent, damage_opponent }
@@ -248,17 +249,17 @@ def load_rotators(world: World, bsp: Bsp, collision: CollisionMap) {
         if model <= 0 or model >= len(bsp.models) {
             raise ValueError("Invalid mover model");
         }
-        flags = int(fields.get("spawnflags", "0"));
+        flags = atoi(fields.get("spawnflags", "0"));
         mover = Rotator(
             model=model,
             pivot=mover_origin(fields),
-            damage=int(float(fields.get("dmg", "2"))),
+            damage=int(atof(fields.get("dmg", "2"))),
             activation=Signal(entities=[index])
         );
         if kind == "func_rotating" {
             # Default yaw; X_AXIS (4) rolls, Y_AXIS (8) pitches; REVERSE (2) in Q2.
             mover.axis = Vec3(z=1.0) if flags & 4 else (Vec3(x=1.0) if flags & 8 else Vec3(y=1.0));
-            mover.speed = float(fields.get("speed", "0")) or 100.0;
+            mover.speed = atof(fields.get("speed", "0")) or 100.0;
             if bsp.game == "q2" {
                 if flags & 2 {
                     mover.axis = mover.axis.scale(-1.0);
@@ -271,14 +272,14 @@ def load_rotators(world: World, bsp: Bsp, collision: CollisionMap) {
             # X_AXIS (1) and Y_AXIS (2); the default bobs vertically.
             mover.kind = "bob";
             mover.axis = Vec3(x=1.0) if flags & 1 else (Vec3(y=1.0) if flags & 2 else Vec3(z=1.0));
-            mover.height = float(fields.get("height", "32"));
-            mover.period = float(fields.get("speed", "4")) or 4.0;
-            mover.phase = float(fields.get("phase", "0"));
+            mover.height = atof(fields.get("height", "32"));
+            mover.period = atof(fields.get("speed", "4")) or 4.0;
+            mover.phase = atof(fields.get("phase", "0"));
         } else {
             mover.kind = "pendulum";
             mover.axis = Vec3(z=1.0);
-            mover.speed = float(fields.get("speed", "30"));
-            mover.phase = float(fields.get("phase", "0"));
+            mover.speed = atof(fields.get("speed", "30"));
+            mover.phase = atof(fields.get("phase", "0"));
             # SP_func_pendulum: fabs(r.mins[2]), at least 8. A model with an
             # origin brush stores its bounds relative to that origin.
             length = max(8.0, abs(model_bounds(bsp, model).mins.z));
