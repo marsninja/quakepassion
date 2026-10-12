@@ -1068,6 +1068,15 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   each picked point. `ed_skin import <game>:<file> [n]` takes a picture
   out of a game's archives as the skin to paint on: a PCX, a WAL, a plain
   TGA, or the n-th skin a Quake model carries inside it.
+- **Pictures written as the games' own textures**
+  (`editor/tools/textures.jac`): `ed_texwal <material> [name]` writes a
+  material's picture as a Quake II WAL among the project's textures, and
+  `ed_texwad <out.wad> <material ...|used>` writes several, or every one
+  the scene uses, as a Quake WAD. Each keeps the picture at four sizes
+  and in the game's own 256 colours, every texel the nearest of them. Any
+  material's picture will do: a game's texture, or an image file of the
+  project's (PNG, JPEG and packed TGA are read as the window reads them).
+  A picture whose sides are not whole sixteens is refused, and says so.
 - **Sprites and films in the explorer**: a Quake sprite (`.spr`) and a
   Quake II sprite (`.sp2`, whose frames are PCX files) show their
   pictures, and a Quake II cinematic (`.cin`) and a Quake III film
@@ -1521,6 +1530,10 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_texwrite_tests.jac`: a picture halved by the mean of each
+  four texels; a WAL that reads back as the texture it was; a Quake WAD
+  whose textures are found by name with their four sizes; sides that are
+  not whole sixteens refused; the name a material's picture goes by.
 - `tests/studio_paths_tests.jac`: a path as every corner reached from one
   of them, either way, and nothing that is not on it.
 - `tests/studio_shelves_tests.jac`: a name with folders kept inside its
@@ -1843,7 +1856,8 @@ that imports little rebuilds in about a minute.
 So new features are written as tools: a module under `editor/tools/` with
 an `obj` that derives from `StudioTool` (`editor/tools/host.jac`), keeps
 its own state, and reaches the studio only through the `ToolHost` it is
-handed (say a message, the level's navigation, draw a line; more as tools
+handed (say a message, the level's navigation, draw a line, a material's
+picture, a game's colours and files, the project's folders; more as tools
 need it, each added to `ToolHost` and to `StudioHost` in `studio.jac`).
 The studio asks its tools each command before its own, lets them draw in
 the level views, and takes their lines of the dump and of the settings.
