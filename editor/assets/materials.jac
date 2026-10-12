@@ -8,6 +8,7 @@ import os;
 import from engine.assets.catalog { AssetCatalog }
 import from engine.formats.bsp { Texture }
 import from engine.formats.q1.bsp { parse_bsp }
+import from engine.formats.q2.model { parse_pcx }
 import from games.passion.materials { Loader }
 import from ..compile.live { Materials, swatch_texture }
 import from ..formats.image { image_size, image_kind }
@@ -100,6 +101,16 @@ obj ArchiveMaterials(Materials) {
             size = image_size(data, kind);
             if size[0] <= 0 or size[1] <= 0 {
                 return None;
+            }
+            if kind == ".pcx" {
+                # The window reads no PCX: its colours are read here, as the games' own are.
+                try {
+                    read = parse_pcx(data, name);
+                    # The reader leaves its colours where a level keeps numbers into a palette: here they are colours.
+                    return Texture(name=name, width=read.width, height=read.height, rgba=read.pixels);
+                } except Exception {
+                    return None;
+                }
             }
             return Texture(name=name, width=size[0], height=size[1], encoded=data, extension=kind);
         }

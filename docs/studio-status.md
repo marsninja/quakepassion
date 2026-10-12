@@ -1077,6 +1077,8 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   material's picture will do: a game's texture, or an image file of the
   project's (PNG, JPEG and packed TGA are read as the window reads them).
   A picture whose sides are not whole sixteens is refused, and says so.
+  BMP and PCX files in the project's textures folder are materials too
+  now, beside PNG, TGA and JPEG.
 - **Sprites and films in the explorer**: a Quake sprite (`.spr`) and a
   Quake II sprite (`.sp2`, whose frames are PCX files) show their
   pictures, and a Quake II cinematic (`.cin`) and a Quake III film
