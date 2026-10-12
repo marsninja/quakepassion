@@ -9,8 +9,10 @@ import from editor.tools.packer { Packer }
 import from editor.tools.makers { Makers }
 import from editor.tools.starter { Starter }
 import from editor.tools.moving { MovingPictures }
+import from editor.tools.expedition { Expeditions }
+import from editor.tools.scripts { Scripts }
 
 """The tools, in the order the studio is to ask them."""
 def studio_tools -> list[StudioTool] {
-    return [CampRoutes(), Paths(), TextureWriter(), Packer(), Makers(), Starter(), MovingPictures()];
+    return [CampRoutes(), Paths(), TextureWriter(), Packer(), Makers(), Starter(), MovingPictures(), Expeditions(), Scripts()];
 }

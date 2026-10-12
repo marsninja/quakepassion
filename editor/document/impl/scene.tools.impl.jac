@@ -58,6 +58,8 @@ impl Scene.select_face(solid: Solid, index: int, add: bool = False) {
 impl Scene.reface(change: FaceEdit, label: str) -> bool {
     step = Step(label=label);
     self spawn Reface(change=change, step=step);
+    # Faces linked to those changed are changed with them.
+    self.share_linked(step, change);
     return self.commit(step);
 }
 
@@ -329,6 +331,43 @@ impl Scene.move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool {
         return False;
     }
     return self.reshape(solid, sides, "Move corner");
+}
+
+impl Scene.move_corners_shared(solid: Solid, spots: list[Vec3], delta: Vec3) -> int {
+    if delta.length() < 0.0001 {
+        return 0;
+    }
+    step = Step(label="Move shared corner");
+    # The brush in hand first: if it has no corner there, nothing moves.
+    for (number, each) in enumerate([solid] + [other for other in self.solids() if other is not solid]) {
+        if number > 0 {
+            stands = False;
+            for corner in brush_corners(each.sides) {
+                for spot in spots {
+                    if corner.sub(spot).length() < 0.1 {
+                        stands = True;
+                    }
+                }
+            }
+            if not stands {
+                # No corner of this one is at any of those points.
+                continue;
+            }
+        }
+        sides = corners_moved(each.sides, spots, delta);
+        if len(sides) == 0 or not sides_enclose(sides) {
+            # All of them or none.
+            for earlier in step.changes {
+                earlier.undo();
+            }
+            return 0;
+        }
+        change = SidesChange(solid=each, before=each.sides, after=sides);
+        change.redo();
+        step.changes.append(change);
+    }
+    count = len(step.changes);
+    return count if self.commit(step) else 0;
 }
 
 impl Scene.problems -> list[Finding] {

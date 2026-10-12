@@ -155,7 +155,7 @@ impl Studio.show_model_form(ui: StudioUi) -> bool {
     self.skin_view = None;
     if self.skin_shown and self.model_skin is not None {
         # The picture being painted, with the part's triangles over it.
-        shown_skin = Picture(key="modelskin", size=168);
+        shown_skin = SkinPane(key="modelskin", size=168);
         form.adopt(shown_skin);
         self.skin_view = shown_skin;
     }
@@ -204,6 +204,18 @@ impl Studio.model_event(event: UiEvent) -> bool {
     part = doc.part();
     if self.model_pick == "paint" and self.model_skin is not None {
         # The left button paints through the model; any other turns the view.
+        if event.kind == "press" and event.button == 0 and event.alt {
+            # With Alt the colour under the pointer is taken up, not painted over.
+            seen = self.model_camera.sight(ui_model_area(ui), event.x, event.y);
+            under = place_under(doc.mesh(part), seen[0], seen[1]) if part is not None else None;
+            painted = self.model_skin;
+            if under is not None and painted is not None {
+                self.skin_color = skin_colour(painted, under[0], under[1]);
+                print("studio: skin colour " + " ".join([str(level) for level in self.skin_color]));
+                self.say("The brush's colour is " + " ".join([str(level) for level in self.skin_color]));
+            }
+            return True;
+        }
         if event.kind == "press" and event.button == 0 {
             self.model_painting = True;
             self.paint_in_model(event.x, event.y);
@@ -261,6 +273,9 @@ impl Studio.model_event(event: UiEvent) -> bool {
         }
         return True;
     }
+    if self.handle_event(event) {
+        return True;
+    }
     if event.kind == "press" and event.button == 0 {
         self.model_travel = 0;
         self.model_drag = Vec3();
@@ -273,8 +288,9 @@ impl Studio.model_event(event: UiEvent) -> bool {
             # plane of the view; they are moved when the button is let go.
             through = self.model_camera;
             unit = 2.0 * self.model_reach * through.slope() / float(max(1, ui_model_area(ui).h));
-            self.model_drag = self.model_drag.add(through.right().scale(float(event.dx) * unit)).sub(
-                through.up().scale(float(event.dy) * unit)
+            self.model_drag = drag_kept(
+                self.model_drag.add(through.right().scale(float(event.dx) * unit)).sub(through.up().scale(float(event.dy) * unit)),
+                self.model_lock
             );
             return True;
         }
@@ -357,9 +373,7 @@ impl Studio.draw_model_marks {
                 # Where the drag would leave it.
                 at = at.add(self.model_drag);
             }
-            wire_line(at.sub(Vec3(x=tick * 2.0)), at.add(Vec3(x=tick * 2.0)), ink(0xffd166));
-            wire_line(at.sub(Vec3(y=tick * 2.0)), at.add(Vec3(y=tick * 2.0)), ink(0xffd166));
-            wire_line(at.sub(Vec3(z=tick * 2.0)), at.add(Vec3(z=tick * 2.0)), ink(0xffd166));
+            self.draw_mark(at, tick * 2.0, ink(0xffd166));
         }
     }
     self.draw_bones();
@@ -367,6 +381,14 @@ impl Studio.draw_model_marks {
         return;
     }
     mesh = doc.mesh(part);
+    if self.points_tinted and len(part.tints) == len(mesh.points) {
+        # Each point that was given a colour, in it.
+        for (index, tint) in enumerate(part.tints) {
+            if tint >= 0 {
+                self.draw_mark(mesh.points[index], tick * 0.8, ink(tint));
+            }
+        }
+    }
     for index in part.picked_faces {
         if index < mesh.triangles() {
             spots = mesh.triangle(index);
@@ -378,9 +400,7 @@ impl Studio.draw_model_marks {
     for index in part.picked_points {
         if index < len(mesh.points) {
             at = mesh.points[index];
-            wire_line(at.sub(Vec3(x=tick)), at.add(Vec3(x=tick)), ink(0xffffff));
-            wire_line(at.sub(Vec3(y=tick)), at.add(Vec3(y=tick)), ink(0xffffff));
-            wire_line(at.sub(Vec3(z=tick)), at.add(Vec3(z=tick)), ink(0xffffff));
+            self.draw_mark(at, tick, ink(0xffffff));
             if self.model_drag.length() > 0.01 {
                 # Where the drag would leave it.
                 wire_line(at, at.add(self.model_drag), ink(0xff7a18));

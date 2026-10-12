@@ -110,3 +110,45 @@ def sketch(edges: list[tuple[Vec3, Vec3]], width: int, height: int, red: int, gr
     }
     return bytes(made);
 }
+
+"""A sound's shape as a small picture: for each column of `width`, a line
+from the quietest to the loudest sample that column covers, in one colour on
+nothing. `samples` are 8-bit unsigned or 16-bit signed little-endian (`wide`
+bytes each), `channels` to a frame (the first is drawn). Four bytes a texel."""
+def waveform(samples: bytes, wide: int, channels: int, width: int, height: int, red: int, green: int, blue: int) -> bytes {
+    made = bytearray(max(0, width) * max(0, height) * 4);
+    frame = max(1, wide * max(1, channels));
+    count = len(samples) // frame;
+    if count == 0 or width <= 0 or height <= 2 or wide not in [1, 2] {
+        return bytes(made);
+    }
+    middle = height // 2;
+    for column in range(width) {
+        first = column * count // width;
+        last = max(first + 1, (column + 1) * count // width);
+        low = 0.0;
+        high = 0.0;
+        for index in range(first, min(last, count)) {
+            at = index * frame;
+            value = 0.0;
+            if wide == 1 {
+                value = float(int(samples[at]) - 128) / 128.0;
+            } else {
+                word = int(samples[at]) | (int(samples[at + 1]) << 8);
+                value = float(word - 65536 if word >= 32768 else word) / 32768.0;
+            }
+            low = min(low, value);
+            high = max(high, value);
+        }
+        top = max(0, min(height - 1, middle - int(high * float(middle - 1))));
+        bottom = max(0, min(height - 1, middle - int(low * float(middle - 1))));
+        for y in range(top, bottom + 1) {
+            place = (y * width + column) * 4;
+            made[place] = red;
+            made[place + 1] = green;
+            made[place + 2] = blue;
+            made[place + 3] = 255;
+        }
+    }
+    return bytes(made);
+}

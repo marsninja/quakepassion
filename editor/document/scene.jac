@@ -1691,6 +1691,11 @@ node Scene {
     def merge_selection -> bool;
     """Move the corners of a brush nearest `spots`."""
     def move_corners(solid: Solid, spots: list[Vec3], delta: Vec3) -> bool;
+    """Move those corners of a brush and, with them, the corners of every
+    other brush that stand at the same points, as one step: corners that
+    are shared stay shared. Answers how many brushes changed (none when the
+    move would leave any of them flat, and then none is changed)."""
+    def move_corners_shared(solid: Solid, spots: list[Vec3], delta: Vec3) -> int;
     """What is wrong with the document."""
     def problems -> list[Finding];
 
@@ -1911,6 +1916,12 @@ node Scene {
     """Every side linked to a side, through however many links: each brush
     still in the document, with the side of it that is still in the plane."""
     def linked_sides(solid: Solid, index: int) -> list[FacePick];
+    """Carry what a step did to sides' materials onto the sides linked to
+    them, so that faces that are linked share one material and one way of
+    laying it: each side the step changed, its links given the same edit
+    (or, with `material`, that material). Added to the step; each linked
+    side once."""
+    def share_linked(step: Step, change: FaceEdit | None, material: str = "");
     """Link a side of one brush to a side of another. They must lie in one
     plane. False when they do not, or are linked already."""
     def link_sides(first: Solid, index: int, second: Solid, other: int) -> bool;

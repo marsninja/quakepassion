@@ -17,8 +17,27 @@ impl Studio.overlay_command(scene: Scene, args: list[str]) -> bool {
             self.show_unseen = now;
         }
         self.outline_solids(scene);
+    } elif what == "overdraw" {
+        self.overdraw = (not self.overdraw) if word not in ["on", "off"] else word == "on";
+        print("studio: overlay overdraw=" + ("1" if self.overdraw else "0"));
+        self.say(
+            "The 3D view shows how many faces the renderer draws over each place: the brighter, the more"
+            if self.overdraw
+            else "The 3D view shows the level"
+        );
+        return True;
+    } elif what == "width" {
+        if not word.isdigit() or int(word) < 1 or int(word) > WIDEST_LINE {
+            self.say("ed_overlay width <1.." + str(WIDEST_LINE) + ">: how many pixels wide the studio's lines are drawn (now " + str(self.line_width) + ")");
+            return True;
+        }
+        self.line_width = int(word);
+        self.keep_settings();
+        print("studio: overlay width=" + str(self.line_width));
+        self.say("Lines are drawn " + str(self.line_width) + " wide");
+        return True;
     } elif what {
-        self.say("ed_overlay [triggers|unseen] [on|off]: outline trigger volumes, or clip, hint and caulk brushes, in colours of their own");
+        self.say("ed_overlay [triggers|unseen] [on|off] | width <1.." + str(WIDEST_LINE) + ">: outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; or how wide lines are drawn");
         return True;
     }
     # How many brushes there are of each kind, whether shown apart or not.
@@ -42,4 +61,43 @@ impl Studio.overlay_command(scene: Scene, args: list[str]) -> bool {
             + ("shown in magenta and blue" if self.show_unseen else "not shown apart") + ")"
     );
     return True;
+}
+
+impl Studio.draw_overdraw(view: SceneView) -> int {
+    app = self.app;
+    if app is None {
+        return 0;
+    }
+    faces = app.level.visible(app.world, view.eye, app.culling());
+    bsp = app.level.bsp;
+    rlDrawRenderBatchActive();
+    rlDisableDepthTest();
+    rlDisableBackfaceCulling();
+    # Additive: each face adds a little of the colour where it lies.
+    BeginBlendMode(i32(1));
+    rlSetTexture(u32(0));
+    rlBegin(i32(4));
+    drawn = 0;
+    for index in faces {
+        if index < 0 or index >= len(bsp.faces) {
+            continue;
+        }
+        corners = bsp.faces[index].vertices;
+        if len(corners) < 3 {
+            continue;
+        }
+        drawn += 1;
+        for k in range(1, len(corners) - 1) {
+            for spot in [corners[0], corners[k], corners[k + 1]] {
+                rlColor4ub(u8(46), u8(22), u8(8), u8(255));
+                rlVertex3f(f32(spot.x), f32(spot.y), f32(spot.z));
+            }
+        }
+    }
+    rlEnd();
+    rlDrawRenderBatchActive();
+    EndBlendMode();
+    rlEnableBackfaceCulling();
+    rlEnableDepthTest();
+    return drawn;
 }

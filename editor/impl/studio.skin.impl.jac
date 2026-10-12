@@ -45,7 +45,7 @@ impl Studio.paint_in_model(x: int, y: int) -> bool {
     if place is None {
         return False;
     }
-    skin_dab(image, place[0], place[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength);
+    skin_dab(image, place[0], place[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength, self.skin_pattern, self.skin_grain);
     self.skin_dabs += 1;
     self.skin_stale = True;
     print("studio: painted at " + str(round(place[0], 2)) + "," + str(round(place[1], 2)));
@@ -85,6 +85,8 @@ impl Studio.draw_skin_marks {
         tall = whole.h - 8;
     }
     area = Rect(x=whole.x + (whole.w - wide) // 2, y=whole.y + (whole.h - tall) // 2, w=wide, h=tall);
+    # While picked places are dragged, they are drawn where they would go.
+    moved_by = self.skin_drag;
     # The part's triangles as they lie on the picture, and what is picked.
     for index in range(len(part.corners) // 3) {
         for k in range(3) {
@@ -102,11 +104,96 @@ impl Studio.draw_skin_marks {
             );
         }
     }
+    for face in part.picked_faces {
+        # A picked triangle is outlined on the picture as in the model.
+        for k in range(3) {
+            if face * 3 + 2 >= len(part.corners) {
+                break;
+            }
+            first = part.corners[face * 3 + k];
+            second = part.corners[face * 3 + (k + 1) % 3];
+            if first * 2 + 1 < len(part.uvs) and second * 2 + 1 < len(part.uvs) {
+                canvas.line(
+                    area.x + int(part.uvs[first * 2] * float(area.w)),
+                    area.y + int(part.uvs[first * 2 + 1] * float(area.h)),
+                    area.x + int(part.uvs[second * 2] * float(area.w)),
+                    area.y + int(part.uvs[second * 2 + 1] * float(area.h)),
+                    ink(0xff7a18)
+                );
+            }
+        }
+    }
     for at in part.picked_points {
         if at * 2 + 1 < len(part.uvs) {
-            spot_x = area.x + int(part.uvs[at * 2] * float(area.w));
-            spot_y = area.y + int(part.uvs[at * 2 + 1] * float(area.h));
+            spot_x = area.x + int((part.uvs[at * 2] + moved_by[0]) * float(area.w));
+            spot_y = area.y + int((part.uvs[at * 2 + 1] + moved_by[1]) * float(area.h));
             canvas.fill(Rect(x=spot_x - 2, y=spot_y - 2, w=5, h=5), canvas.theme.accent);
+        }
+    }
+}
+
+impl Studio.skin_events {
+    view = self.skin_view;
+    doc = self.model_doc;
+    image = self.model_skin;
+    if view is None {
+        return;
+    }
+    taken = view.take();
+    part = doc.part() if doc is not None else None;
+    if doc is None or part is None or image is None or len(part.uvs) == 0 {
+        return;
+    }
+    whole = view.area;
+    rect = skin_rect(whole.w, whole.h, image.width, image.height);
+    for event in taken {
+        place = skin_place(rect, event.x - whole.x, event.y - whole.y);
+        if event.kind == "press" and event.button == 0 {
+            self.skin_drag = [0.0, 0.0];
+            self.skin_press = [];
+            under = place_nearest(part.uvs, place[0], place[1], 0.04) if len(place) == 2 else -1;
+            if under >= 0 and under in part.picked_points {
+                # A drag from a picked point carries all of the picked.
+                self.skin_press = place;
+            }
+        } elif event.kind == "drag" and len(self.skin_press) == 2 and len(place) == 2 {
+            self.skin_drag = [place[0] - self.skin_press[0], place[1] - self.skin_press[1]];
+        } elif event.kind == "release" and event.button == 0 and len(self.skin_press) == 2 {
+            moved = self.skin_drag;
+            self.skin_press = [];
+            self.skin_drag = [0.0, 0.0];
+            if abs(moved[0]) + abs(moved[1]) > 0.002 {
+                doc.reskin(places_moved(part.uvs, list(part.picked_points), moved[0], moved[1]), "Drag on skin");
+                print("studio: skin dragged by " + str(round(moved[0], 3)) + "," + str(round(moved[1], 3)));
+                # Let go after a drag: no click follows to pick.
+                self.skin_press = [-1.0];
+            }
+        } elif event.kind == "click" and event.button == 0 {
+            if len(self.skin_press) == 1 {
+                self.skin_press = [];
+                continue;
+            }
+            if len(place) != 2 {
+                continue;
+            }
+            if self.model_pick == "faces" {
+                face = triangle_at(part.corners, part.uvs, place[0], place[1]);
+                if face >= 0 {
+                    doc.pick_faces([face], event.shift);
+                } elif not event.shift {
+                    doc.pick_faces([]);
+                }
+                print("studio: skin clicked face " + str(face));
+            } else {
+                point = place_nearest(part.uvs, place[0], place[1], 0.04);
+                if point >= 0 {
+                    doc.pick_points([point], event.shift);
+                    part.picked_faces = [];
+                } elif not event.shift {
+                    doc.pick_points([]);
+                }
+                print("studio: skin clicked point " + str(point));
+            }
         }
     }
 }
@@ -197,9 +284,19 @@ impl Studio.skin_command(scene: Scene, args: list[str]) -> bool {
         self.skin_soft = "soft" in args;
         self.skin_strength = max(0.05, min(1.0, numbers[1])) if len(numbers) > 1 else 1.0;
     } elif how == "dab" and len(numbers) >= 2 and image is not None {
-        skin_dab(image, numbers[0], numbers[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength);
+        skin_dab(image, numbers[0], numbers[1], self.skin_radius, self.skin_color, self.skin_soft, self.skin_strength, self.skin_pattern, self.skin_grain);
         self.skin_dabs += 1;
         self.skin_stale = True;
+    } elif how == "pickat" and len(numbers) >= 2 {
+        # What a click on the picture at that place picks.
+        added = "add" in args;
+        if self.model_pick == "faces" {
+            face = triangle_at(part.corners, part.uvs, numbers[0], numbers[1]);
+            doc.pick_faces([face] if face >= 0 else [], added);
+        } else {
+            point = place_nearest(part.uvs, numbers[0], numbers[1], 0.04);
+            doc.pick_points([point] if point >= 0 else [], added);
+        }
     } elif how == "show" {
         self.skin_shown = not self.skin_shown;
         if len(args) > 2 and args[2] in ["on", "off"] {

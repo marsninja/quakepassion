@@ -44,6 +44,13 @@ node Room {
         pattern: str = "",
         order: int = 0,
         span: int = 0;
+    # What an editor may ask of a room: the recipe its inside is made by
+    # ("" leaves the choice to the generator), how many times its inside
+    # has been made again (each a different roll of the same dice), and
+    # the threat it is filled to (below zero, what its tension earns it).
+    has wanted: str = "",
+        roll: int = 0,
+        budget: float = -1.0;
 
     def columns -> int {
         return CELL * self.w - 1;
@@ -1014,3 +1021,67 @@ def embed(plan: Expedition, stream: Stream) -> Site {
     normalize(site);
     return site;
 }
+
+"""Lay a site out again with its rooms where an editor says: `places` gives
+a room's place and size by its beat as [x, y, w, h], in shares of the site,
+and the rest keep theirs. The ways between the rooms are routed afresh. The
+site that comes back says in `failures` what stopped it: rooms that
+overlap, or a way that could not be routed."""
+def relay(plan: Expedition, old: Site, places: dict[int, list[int]], stream: Stream) -> Site {
+    site = Site();
+    grid = Grid();
+    rooms: dict[int, Room] = {};
+    for room in rooms_of(old) {
+        spot = places[room.beat] if room.beat in places else [room.x, room.y, room.w, room.h];
+        if len(spot) < 4 or spot[2] < 2 or spot[3] < 2 or spot[2] > 8 or spot[3] > 8 {
+            site.failures = "room " + str(room.beat) + " is no size a room can be";
+            return site;
+        }
+        if not grid.rect_free(spot[0], spot[1], spot[2], spot[3], 0) {
+            site.failures = "room " + str(room.beat) + " would lie over another";
+            return site;
+        }
+        made = Room(
+            beat=room.beat,
+            kind=room.kind,
+            x=spot[0],
+            y=spot[1],
+            w=spot[2],
+            h=spot[3],
+            size=room.size,
+            district=room.district,
+            tension=room.tension,
+            optional=room.optional,
+            grants=list(room.grants),
+            pattern=room.pattern,
+            order=room.order,
+            wanted=room.wanted,
+            roll=room.roll,
+            budget=room.budget
+        );
+        for cx in range(made.x, made.x + made.w) {
+            for cy in range(made.y, made.y + made.h) {
+                grid.claim(cx, cy, made.beat);
+            }
+        }
+        rooms[made.beat] = made;
+    }
+    for beat in beats_of(plan) {
+        if beat.id not in rooms {
+            site.failures = "beat " + str(beat.id) + " has no room";
+            return site;
+        }
+        site +>:Hosts:+> rooms[beat.id];
+    }
+    if not route_all(plan, site, stream.derive("route"), grid) {
+        if not site.failures {
+            site.failures = "routing";
+        }
+        return site;
+    }
+    carve_windows(plan, site, grid);
+    sightlines(site, grid, stream.derive("sightlines"));
+    normalize(site);
+    return site;
+}
+

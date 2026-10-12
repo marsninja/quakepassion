@@ -22,6 +22,8 @@ import from engine.input.input { _capture, _release, mouse_captured }
 import from engine.input.keys { Keyboard }
 import from engine.world.world { move_to_area }
 import from engine.render.renderer { Color, Vector3, DrawCubeWires, DrawLine3D }
+import from editor.geometry.thick { WIDEST_LINE, thick_shifts, line_across, pixel_reach }
+import from editor.document.readout { resident_megabytes, memory_words, flash_level, graph_places, journal_text, read_journal }
 import from games.levels { override_path, override_folder }
 import from games.items { pickup_rule }
 import from games.enemies { enemy_rule }
@@ -30,18 +32,26 @@ import from games.arena_character { character_rig, animation_settings }
 import from games.viewweapons { view_weapons }
 import from games.passion.materials {
     DistrictTable, district_table, kept_table, table_text, districts_path, material_word, material_spec, SLOT_NAMES,
-    load_materials
+    load_materials, editor_material_names
 }
 import from engine.world.weapons { ViewWeaponRule }
-import from engine.formats.animated { AnimatedModel }
+import from engine.formats.animated { AnimatedModel, AnimatedSurface, AnimationFrame }
 import from vendor.raylib {
     def rlDisableDepthTest -> None;  def rlEnableDepthTest -> None;  def rlDrawRenderBatchActive -> None;
+    # raylib's immediate batch, for the faces of the model being edited.
+    def rlDisableBackfaceCulling -> None;  def rlEnableBackfaceCulling -> None;
+    def BeginBlendMode(mode: i32) -> None;  def EndBlendMode -> None;
+    def rlSetTexture(id: u32) -> None;  def rlBegin(mode: i32) -> None;  def rlEnd -> None;  def rlTexCoord2f(
+        x: f32, y: f32
+    ) -> None;  def rlVertex3f(x: f32, y: f32, z: f32) -> None;  def rlColor4ub(
+        r: u8, g: u8, b: u8, a: u8
+    ) -> None;
 }
 import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside, Theme, light_theme }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
 import from .ui.order { moved_before }
-import from .tools.host { ToolHost, StudioTool }
+import from .tools.host { ToolHost, StudioTool, PanelSpec }
 import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.controls { Combo, TextArea }
 import from .ui.widgets {
@@ -85,14 +95,17 @@ import from .assets.explorer { own_files, reel_next, reel_before, texture_rgba }
 import from .document.shelves { shelf_name, shelf_moved, shelf_rows }
 import from .assets.finding { Search, search_of, name_found, size_fits, tags_from, tags_text, tags_with, colours_used }
 import from .assets.models { ModelLook, load_model, is_model }
+import from .assets.entitylook { EntityLook, PreviewLook, is_sprite, class_sprite, sprite_corners, stood_at, frame_shown }
 import from .assets.shaders {
     ShaderText, ShaderStage, ShaderFault, read_shaders, write_shaders, with_directive, shader_named, shader_faults
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
 import from .assets.moving { warps_name }
+import from .document.playtest { objectives }
 import from .document.liveroll { LiveRoll, opponent_words, door_words, pickup_words }
 import from .geometry.axes { world_axes, brush_axes, facing_axes, kept_to_axis }
-import from .document.thumbs { sketch_edges, sketch }
+import from .document.thumbs { sketch_edges, sketch, waveform }
+import from engine.formats.wav { parse_wav_pcm }
 import from .document.chords { chord_parts, bind_chord, chord_command, bound_chords }
 import from .document.settingstable {
     Setting, SUBJECTS, settings_table, setting_value, setting_order, colour_parts
@@ -118,7 +131,19 @@ import from .model.primitives { primitive_mesh, PRIMITIVE_KINDS }
 import from .model.wavefront { mesh_obj, obj_mesh }
 import from .model.skin {
     Skin, places_box, places_moved, places_scaled, places_turned, places_flipped, places_projected, skin_filled, skin_dab,
-    place_under, skin_tga, tga_skin
+    place_under, skin_tga, tga_skin, skin_colour
+}
+import from .model.pattern { SKIN_PATTERNS }
+import from engine.render.models { ModelRenderer }
+import from engine.assets.pk3 { Pk3Assets }
+import from .geometry.patchpreview { lattice_edges, render_rows, collide_rows }
+import from .document.duplicate { with_regenerated, regenerate }
+import from .model.skinpick {
+    skin_rect, skin_place, place_nearest, triangle_at, place_frame, frame_fit, place_pixel, pixel_place, place_at_pixel
+}
+import from .ui.skinpane { SkinPane }
+import from .model.marks {
+    MARK_STYLES, mark_lines, picks_middle, handle_tips, drag_along, drag_kept, locked_axes, tint_word, word_tint, face_light
 }
 import from .model.document { ModelDoc, Part, Reshape, Bone }
 import from .model.bones { point_swung }
@@ -152,7 +177,8 @@ import from engine.formats.q1.model { parse_mdl }
 import from engine.formats.q3.model { parse_md3 }
 import from engine.formats.q2.model { parse_md2 }
 import from .geometry.extrude { profile_pieces, profile_of, sweep_brushes, PROFILE_KINDS }
-import from .compile.light { bake_light }
+import from .compile.light { bake_light, lamp_cone, light_job, LightJob }
+import from .compile.spot { Cone, cone_rim, cone_through, square_to }
 import from .compile.bake { bake_cells, cell_sees, leaf_at, VisReport }
 import from .project {
     Project, MANIFEST_NAME, read_project, write_project, addon_classes, addon_folders, addon_label, file_name
@@ -160,10 +186,11 @@ import from .project {
 import from .compile.kept { KeptBake, keep_bake, give_bake }
 import from .compile.steps { Place, recipe_steps, step_line, places_named, text_mark }
 import from .compile.navigation {
-    Floor, Way, Leg, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP
+    Floor, Way, Leg, Link, floor_ways, floor_middle, nav_data, ways_count, route_time, route_legs, legs_count, NAV_STEP,
+    linked_ways
 }
 import from engine.world.bot_routes { NavMesh, HasNavMesh, build_navmesh }
-import from engine.formats.aas { TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE }
+import from engine.formats.aas { Aas, TRAVEL_WALK, TRAVEL_BARRIERJUMP, TRAVEL_WALKOFFLEDGE, TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
 import from .compile.leak { find_leak, LeakReport }
 import from .formats.bspmap { bsp_items, level_material }
 import from .document.generate {
@@ -193,6 +220,7 @@ import from .document.scene {
     Step,
     FieldChange,
     read_vector,
+    write_vector,
     scene_of,
     scene_map,
     scene_from_map,
@@ -205,6 +233,7 @@ import from .document.scene {
 }
 import from .geometry.csg { brush_corners, brush_edges }
 import from .geometry.mapping { spun_about, axis_vector, mapping_bad }
+import from .geometry.axial { linear_about, linear_along, world_ways, point_sized }
 import from .geometry.layhandle { lay_arms, lay_dragged, swept_between }
 import from .geometry.integral { faces_astray, sides_integral, sides_angled }
 import from .geometry.bits { bit_names, bit_of, bits_named }
@@ -213,7 +242,7 @@ import from .document.overlays { brush_kind, kind_tint }
 import from .geometry.linear {
     Linear, BoxDrag, along_axis, box_part, box_drag, point_remapped, linear_shear, linear_from, linear_text
 }
-import from .camera { EditCamera, ray_enters_box, axis_camera }
+import from .camera { EditCamera, ray_enters_box, axis_camera, depth_cut, depth_of }
 import from engine.world.signals { Signal, Fire, HasSignal }
 import from engine.world.doors { Door, HasDoor }
 import from engine.world.pickups { Pickup, HasPickup }
@@ -221,6 +250,7 @@ import from engine.world.combat { Opponent, HasOpponent }
 import from .compile.live { compile_scene, LiveLevel, Materials, SwatchMaterials, swatch_texture }
 import from .assets.materials { ArchiveMaterials, small_picture }
 import from engine.core.menu { game_directory }
+import from engine.assets.content { shelf, pack_folder, folders_path, set_folders, keep_folder }
 import from .formats.map { read_map, write_map, MapItem, MapFile, map_materials, map_renamed }
 import from .geometry.brush { brush_windings, windings_bounds, Side, Mapping }
 import from .geometry.brush { box_sides, cylinder_sides, wedge_sides, ray_enters_brush, Plane3 }
@@ -314,8 +344,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "a project: a folder with a manifest and scenes, prefabs and textures of its own; with no word, the one open"
     ),
     ("ed_addon", "ed_addon [file] [reload|drop [file]]", "load a text file of entity classes, read it again, drop it, or list what is loaded"),
-    ("ed_game", "ed_game [game] [material|build|bake] [value]", "what a scene of a game begins with, or what each game is set up with"),
-    ("ed_models", "ed_models [on|off|list]", "draw entities in the 3D view as the models their game would show them as, or list those models"),
+    ("ed_game", "ed_game [game] [material|build|bake|dir] [value]", "what a scene of a game begins with and the folder its files are in, or what each game is set up with"),
+    ("ed_models", "ed_models [on|off|list] | skins [on|off]", "draw entities in the 3D view as the models and sprites their game would show them as, with their skins or as edges, or list them"),
     ("ed_sound", "ed_sound info <file> | convert <file> <name> [rate] [bits] [loud]", "say what a WAV file is, or make it one channel at a game's rate and width among the project's sounds"),
     (
         "ed_wal",
@@ -325,7 +355,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_frames", "ed_frames [material]", "the frames of an animated texture: a Quake + name's row, or a Quake II texture's chain"),
     (
         "ed_shader",
-        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save|text [open|close]|write <words>]",
+        "ed_shader [open <file>|take|new <name>|pick <name>|show|set <key> <value>|unset <key>|stage ...|drop|check|save|preview|text [open|close]|write <words>]",
         "a Quake III shader script: open one (or take the one the explorer shows), change a shader's lines and stages or its text in a box with the faults by line beside it, check it for what the game would trip on, and save it"
     ),
     ("ed_assetgame", "ed_assetgame <q1|q2|q3|none|fill>", "the game whose rules the selected entities are spawned by in a scene of no one game; fill gives every entity its class's"),
@@ -341,7 +371,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_merge", "ed_merge <x y z> <x y z>", "move a corner of the selected brush onto another of its corners"),
     (
         "ed_model",
-        "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame ...] [tag ...] [skin ...] [check] [match] [box] [axes] [undo|redo] [close]",
+        "ed_model [new|add <kind>] [edit] [open|save <file>] [part <n>] [frame ...] [tag ...] [skin ...] [check] [match] [box] [axes] [marks <style>] [shade wire|solid|textured] [about model|origin|view|free] [layout 1|4] [float [close]] [undo|redo] [close]",
         "the model editor: make a model from a primitive, edit the one shown in the explorer, open or save one (OBJ, MD3, MD2), and look after its parts"
     ),
     ("ed_pick", "ed_pick points|faces <numbers|all> [add] | front | back | none | mode points|faces|paint", "pick points or triangles of the model's part in hand, or say what a click in its view does"),
@@ -350,9 +380,15 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_matfind", "ed_matfind <text>", "find materials by name across every game, and show them as a shelf in the Materials tab"),
     ("ed_pickmode", "ed_pickmode <all|brushes|entities>", "what a click in a view picks: everything, brushes only, or entities only"),
     ("ed_restrict", "ed_restrict [on|off]", "keep editing to the selection: everything else is put away, and brought back when it is let go"),
+    ("ed_toolpanel", "ed_toolpanel close <name>", "close a box that a tool is showing"),
+    (
+        "ed_playtest",
+        "ed_playtest [bake]",
+        "say whether the scene can be finished: what its logic can never set off, then the first key, opener or way out that cannot be reached from the start over the baked floors (bake: walk the floors as they are now)"
+    ),
     (
         "ed_nav",
-        "ed_nav [bake [cell] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
+        "ed_nav [bake [cell] [open] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
         "navigation for bots: bake the built scene's floors into the areas and ways the games' bots route over, check what can be reached, and draw the ways"
     ),
     (
@@ -378,13 +414,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_skin",
-        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>|import <game>:<file> [n]] [colour <r g b>] [brush <radius> [soft]] [dab <u v>] [show]",
+        "ed_skin [move|scale|turn|flip|project ...] [new <w h>|open|save <file.tga>|import <game>:<file> [n]] [colour <r g b>] [brush <radius> [soft]] [pattern <name> [grain]] [pick <u v>] [pickat <u v> [add]] [dab <u v>] [show]",
         "the model's skin: move, stretch, turn, flip or lay flat where the picked points lie on it; make, open, paint and save its picture"
     ),
     (
         "ed_mesh",
-        "ed_mesh move|turn|scale|mirror|flip|subdivide|cut|extrude ...",
-        "move, turn or stretch the picked points; mirror the part; turn triangles round, cut them in 2, 3 or 4, or push them out"
+        "ed_mesh move|turn|scale|mirror|flip|subdivide|cut|extrude ... | lock <axes|off> | colour <rrggbb|none> | colours [on|off]",
+        "move, turn or stretch the picked points; mirror the part; turn triangles round, cut them in 2, 3 or 4, or push them out; keep drags off some axes; give points colours of their own"
     ),
     (
         "ed_sweep",
@@ -442,7 +478,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_recent", "ed_recent [number]", "list the files opened and saved lately, or open one of them"),
     ("ed_log", "ed_log [lines] | panel [on|off] [rows] | panel up|down [n] | panel end", "show the console's last lines; panel keeps them in sight along the foot of the views, and scrolls back through them"),
     ("ed_mapopts", "ed_mapopts [comments|whole] [on|off]", "how maps are written: with numbered comments, with whole coordinates only"),
-    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; alone, count them"),
+    ("ed_overlay", "ed_overlay [triggers|unseen] [on|off] | width <1..4> | overdraw [on|off]", "outline trigger volumes, or clip, hint and caulk brushes, in colours of their own; how wide the studio's lines are drawn; how many faces the renderer draws over each place; alone, count them"),
     ("ed_export", "ed_export <file.map> [valve|classic|q3]", "write the scene as a map for another tool: Valve's form, the classic one, or Quake III's brush primitives and patches"),
     ("ed_fire", "ed_fire <targetname>", "set off what has that name, in a game played from the studio"),
     ("ed_spawn", "ed_spawn <all|easy|normal|hard|deathmatch>", "show the level as it would spawn at a skill or in a mode"),
@@ -451,7 +487,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_tick", "ed_tick [count]", "let a held game's time move by so many sixtieths of a second"),
     ("ed_played", "ed_played [label]", "print how a game played from the studio stands"),
     ("ed_break", "ed_break [targetname|clear]", "hold a played game still when what has that name fires; or stop doing so; or list them"),
-    ("ed_trace", "ed_trace [on|off]", "name each firing in a played game as it happens"),
+    ("ed_trace", "ed_trace [on|off] | graph [on|off]", "name each firing in a played game as it happens; or draw the scene's logic over the game, lit as it fires"),
     ("ed_fired", "ed_fired [label]", "print what has fired in the game played from here, how often and in what order"),
     (
         "ed_live",
@@ -460,8 +496,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     (
         "ed_build",
-        "ed_build [full|quick|flat|fresh]",
-        "build the level again now; how it is lit: finely, coarsely, or not at all; or fresh, forgetting what was built before"
+        "ed_build [full|quick|flat|fresh] | background [on|off] | cancel",
+        "build the level again now; how it is lit: finely, coarsely, or not at all; or fresh, forgetting what was built before; light baked a slice a frame while the studio goes on, or that bake given up"
     ),
     ("ed_group_view", "ed_group_view <shown|grey|hidden>", "how the selected groups show: whole, as outlines only, or not at all"),
     ("ed_group_lock", "ed_group_lock [on|off]", "keep clicks in the views from selecting the selected groups"),
@@ -524,7 +560,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_anglesnap", "ed_anglesnap [degrees]", "what a dragged turn snaps to"),
     ("ed_inflate", "ed_inflate <units|up|down>", "push every side of the selected brushes out (or in) by a distance"),
-    ("ed_texlock", "ed_texlock [on|off]", "whether materials go with the faces a move, turn or stretch carries"),
+    ("ed_texlock", "ed_texlock [on|off|axis]", "whether materials go with the faces a move, turn or stretch carries; axis: with a move, but kept to the world's axes through a turn or stretch"),
     ("ed_stats", "ed_stats [file]", "count what the document holds, or write the materials it uses to a file"),
     ("ed_step", "ed_step <next|prev>", "select the entity after, or before, the selected one"),
     ("ed_freeze", "ed_freeze [on|off]", "keep clicks in the level from changing the selection, or let them"),
@@ -533,10 +569,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_texinfo", "ed_texinfo [material]", "what there is to know of a texture: its size, its flags and contents, its frames, the colours it uses"),
     (
         "ed_patch",
-        "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n> | uv [fit [n [m]] | project | point <col> <row> <s> <t> | row <n> <ds> <dt> | col <n> <ds> <dt> | all <ds> <dt> | clear]",
+        "ed_patch <sheet|arch|bevel|cylinder|cone|endcap> [w d h] | grow <u|v> | shrink <u|v> | thick <units> | fine <n> | preview [on|off|<subdivision>] | uv [fit [n [m]] | project | point <col> <row> <s> <t> | row <n> <ds> <dt> | col <n> <ds> <dt> | all <ds> <dt> | clear]",
         "add a curved patch where the camera looks; give the selected one another curve, thickness or fineness; or say where its control points lie on its material"
     ),
     ("ed_patch_point", "ed_patch_point <patch> <point> <dx> <dy> <dz>", "move one control point of a patch"),
+    ("ed_shaderbox", "ed_shaderbox [open|close]", "a box with the shader in hand: its lines and its stages' lines to change, stages to add, move and drop, and its preview"),
+    ("ed_shaderline", "ed_shaderline <stage|-1> <line|add> [words]", "change, add or (with no words) drop a line of the shader in hand, or of one of its stages"),
+    ("ed_patchbox", "ed_patchbox [open|close]", "a box with the selected patch's material and where its control points lie on it, to drag them or set them by numbers"),
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
     (
         "ed_tex",
@@ -547,7 +586,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_boxselect", "ed_boxselect <view> <x0> <y0> <x1> <y1> [add]", "select what lies in a rectangle of a view"),
     ("ed_lasso", "ed_lasso <view> <x> <y> <x> <y> ... [add]", "select what lies inside a loop drawn in a view (Alt and a drag draws one)"),
     ("ed_snapto", "ed_snapto <grid|corners|edges|faces> [reach]", "what a move ends on: where it is asked, or a corner, edge or face of another brush it comes within reach of"),
-    ("ed_corner", "ed_corner <dx> <dy> <dz> <x> <y> <z> [...]", "move the corners of the selected brush at those points"),
+    ("ed_corner", "ed_corner <dx> <dy> <dz> <x> <y> <z> [...] | lock [on|off]", "move the corners of the selected brush at those points; with the lock on, the corners of other brushes at those points go with them"),
     ("ed_display", "ed_display <wire|textured> [3d|axis|all]", "draw views as edges or textured (the axis views without a word)"),
     ("ed_check", "ed_check [number]", "list what is wrong with the document, or select the thing a finding is about"),
     ("ed_shelf", "ed_shelf <group>", "show a group's materials in the materials tab"),
@@ -573,6 +612,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_show", "ed_show", "bring back everything hidden"),
     ("ed_drop", "ed_drop", "let the selection down onto what is beneath it"),
     ("ed_history", "ed_history [steps] | redo <steps> | list", "list the edits made and those undone, undo so many, or do so many again"),
+    ("ed_recover", "ed_recover [<n>]", "the steps the autosaved journal of the scene in hand kept, or the state one of them left it in opened as a scene of its own"),
     ("ed_autosave", "ed_autosave [every <seconds>]", "write the scene to its autosave file now, or say how often a changed scene is (0 for never)"),
     ("ed_asset", "ed_asset <dir:game:folder|file:game:name>", "open or close a folder of the explorer, or show a file"),
     ("ed_framedrop", "ed_framedrop <row> <what>", "what a row of the model's frame list let go on another asks for: that frame put there in the order"),
@@ -619,7 +659,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_leak", "ed_leak [clear]", "look for a way from the entities out to the void, and draw it"),
     (
         "ed_dup",
-        "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <axes> | axis <x|y|z> | grow <f> | at <name> | path <name> | materials <names> | each [on|off] | hide | show | off | apply",
+        "ed_dup <copies> <dx> <dy> <dz> [turn] | mirror <axes> | axis <x|y|z> | grow <f> | at <name> | path <name> | materials <names> | each [on|off] | hide | show | off | apply | images",
         "make the selected group build copies of itself (in a row, mirrored, at named points, along a path), stop it, or make the copies real"
     ),
     ("ed_link", "ed_link <from> <to>", "make one entity fire another"),
@@ -880,6 +920,16 @@ obj StudioHost(ToolHost) {
             stock = self.studio.archive;
             return stock.files_folder() if stock is not None else "";
         }
+        if kind == "scenes" {
+            return os.path.dirname(self.studio.scene_path("x"));
+        }
+        if kind == "scripts" {
+            if self.studio.project_folder {
+                return self.studio.project_folder + "/scripts";
+            }
+            kept = os.getenv("QP_SCRIPTS", "");
+            return kept if kept else os.getcwd() + "/scripts/user";
+        }
         return self.studio.project_folder;
     }
 
@@ -908,6 +958,26 @@ obj StudioHost(ToolHost) {
 
     def show_picture(material: str, width: int, height: int, rgba: bytes) {
         self.studio.canvas.keep_picture(material, width, height, rgba);
+    }
+
+    def panel(key: str, spec: PanelSpec) {
+        self.studio.tool_panel_set(key, spec);
+    }
+
+    def panel_text(key: str) -> str {
+        return self.studio.tool_panel_text(key);
+    }
+
+    def panel_close(key: str) {
+        self.studio.tool_panel_close(key);
+    }
+
+    def playing -> bool {
+        return self.studio.playing;
+    }
+
+    def fired_log -> list[str] {
+        return list(self.studio.fire_log);
     }
 
     def files_changed {
@@ -965,6 +1035,8 @@ obj Studio(Workbench) {
         nav_origin: Vec3 = Vec3(),
         nav_cell: float = 32.0,
         nav_mesh: NavMesh | None = None,
+        # The baked navigation's data, handed to the bots of a game played from the scene.
+        nav_aas: Aas | None = None,
         nav_shown: bool = False,
         # The tools kept in modules of their own, in the order they were added.
         tools: list[StudioTool] = [],
@@ -997,6 +1069,8 @@ obj Studio(Workbench) {
         script_kept: str = "",
         shader_rev: int = 0,
         reel_playing: bool = False,
+        # How many bytes of a film's sound were handed to the engine to play.
+        reel_heard: int = 0,
         reel_clock: float = 0.0,
         reel_kept: str = "",
         # The tabs beside the menu bar: whether they are there (more than
@@ -1047,6 +1121,12 @@ obj Studio(Workbench) {
         moved: bool = False,
         move_from: Vec3 = Vec3(),
         move_by: Vec3 = Vec3(),
+        # Lights dragged: the level is lit where they would be left, coarsely,
+        # while the drag goes on (by how much, when it was last lit so, and
+        # whether the level shows such a light now).
+        preview_shift: Vec3 = Vec3(),
+        preview_at: float = 0.0,
+        previewed: bool = False,
         press_x: int = 0,
         press_y: int = 0,
         # Scenes of brushes: where their materials come from, what the scene
@@ -1113,6 +1193,13 @@ obj Studio(Workbench) {
         pivot_picks: int = -1,
         # Whether materials go with the faces a move, turn or stretch carries.
         tex_lock: bool = True,
+        # Materials go with a move but keep to the world's axes through a
+        # turn, a stretch or a shear (with `tex_lock`).
+        tex_axis: bool = False,
+        # The three ways the turn rings and size boxes go by, as last worked out.
+        gizmo_ways: list[Vec3] = [],
+        # A corner moved takes with it the corners of other brushes that stand at the same point.
+        corner_lock: bool = False,
         # A ruler along the selection in the axis views, a name on every
         # entity, and the picture laid behind an axis view.
         ruler: bool = True,
@@ -1164,8 +1251,62 @@ obj Studio(Workbench) {
         asset_tags: dict[str, list[str]] = {},
         tags_read: bool = False,
         sized_shown: int = -1,
+        # Patches shown as the games make them, at the renderer's subdivision.
+        # The shader box: its window and what it was last made for; and the
+        # shader's preview, drawn by the engine's model renderer.
+        shader_box: Floater | None = None,
+        shader_box_for: str = "",
+        shader_drawer: ModelRenderer | None = None,
+        patch_preview: bool = False,
+        # The patch's material box: its window, its picture pane, what it was
+        # last made for, the material's size in texels, and a place being dragged.
+        patch_box: Floater | None = None,
+        patch_pane: SkinPane | None = None,
+        patch_box_for: str = "",
+        patch_box_size: list[float] = [64.0, 64.0],
+        patch_held: int = -1,
+        patch_press: list[int] = [0, 0],
+        patch_drag: list[float] = [0.0, 0.0],
+        patch_fineness: float = 4.0,
+        preview_edges_kept: dict[str, list[list[list[Vec3]]]] = {},
+        # The model's floating window: its window, its view, and its own
+        # way of looking at the model (turned and drawn nearer by itself).
+        model_float_box: Floater | None = None,
+        model_float_pane: ViewArea | None = None,
+        model_float_lens: EditCamera = EditCamera(),
+        model_float_yaw: float = 2.4,
+        model_float_pitch: float = -0.35,
+        model_float_reach: float = 160.0,
+        # The overdraw view: every face the renderer would draw from the eye,
+        # added up, and how many there were in the view last drawn.
+        # The journal kept for a crash: the scene it is of, the last step
+        # seen, the states its latest steps left it in (each under the step's
+        # name), and when one was last taken.
+        journal_of: str = "",
+        journal_last: Step | None = None,
+        journal_kept: list[tuple[str, str]] = [],
+        journal_clock: float = 0.0,
+        # Light baked a slice a frame, the studio going on meanwhile: whether
+        # it is, and the bake under way.
+        light_background: bool = False,
+        light_task: LightTask | None = None,
+        overdraw: bool = False,
+        overdraw_faces: int = 0,
         model_backs: bool = True,
         model_ticks: float = 0.0,
+        # How the marks on the model's points are drawn; the model being
+        # edited as edges, filled or with its skin; and what its view turns about.
+        model_marks: str = "cross",
+        model_shade: str = "wire",
+        model_about: str = "model",
+        # The axes picked points are not dragged along, and the handle held (-1 for none).
+        model_lock: str = "",
+        model_handle: int = -1,
+        # The model's points shown in the colours they were given.
+        points_tinted: bool = False,
+        # What the skin's brush lays its colour in, and how wide its squares are.
+        skin_pattern: str = "solid",
+        skin_grain: int = 4,
         model_playing: bool = False,
         model_edges: list[list[Vec3]] = [],
         model_camera: EditCamera = EditCamera(),
@@ -1266,6 +1407,11 @@ obj Studio(Workbench) {
         fire_log: list[str] = [],
         breaks: list[str] = [],
         tracing: bool = False,
+        # The scene's logic drawn over the game as it runs: whether it is,
+        # the game's own time played since it began, and when each name last fired.
+        graph_over: bool = False,
+        play_clock: float = 0.0,
+        fired_when: dict[str, float] = {},
         # The model being edited (none when the explorer only shows one),
         # the revision of it that is drawn, and whether its box and its axes
         # are drawn with it.
@@ -1288,6 +1434,12 @@ obj Studio(Workbench) {
         models_shown: bool = False,
         preview_models: dict[str, list[list[Vec3]]] = {},
         models_drawn: int = 0,
+        # Entities drawn with their skins (and sprites as their pictures),
+        # not as edges; what was read for that, by look; and how many were
+        # drawn so in the view last drawn.
+        models_skinned: bool = True,
+        preview_looks: dict[str, PreviewLook] = {},
+        skins_drawn: int = 0,
         model_doc: ModelDoc | None = None,
         model_seen: int = -1,
         model_box: bool = False,
@@ -1306,11 +1458,23 @@ obj Studio(Workbench) {
         skin_dabs: int = 0,
         skin_stale: bool = False,
         skin_shown: bool = False,
-        skin_view: Picture | None = None,
+        skin_view: SkinPane | None = None,
+        # A drag on the skin's picture: how far the picked points' places
+        # would go (a share of the picture across and down), and where it began.
+        skin_drag: list[float] = [0.0, 0.0],
+        skin_press: list[float] = [],
         # The Library tab's picture of a prefab, which prefab it is of, and
         # the words its rows are found by.
         library_view: Picture | None = None,
         library_previewed: str = "",
+        # Boxes that tools show: each one's window and words by its name,
+        # what it is to show, and those to be filled again.
+        tool_boxes: dict[str, Floater] = {},
+        tool_areas: dict[str, TextArea] = {},
+        tool_specs: dict[str, PanelSpec] = {},
+        tool_stale: list[str] = [],
+        # The collision hulls a navigation bake leaves out (what moves, when doors are taken as open).
+        nav_exclude: list[int] = [],
         # The scene's count of picks when its groups' groups were last picked with them.
         nest_picks: int = -1,
         library_filter: str = "",
@@ -1342,6 +1506,12 @@ obj Studio(Workbench) {
         key_layers: dict[str, Keyboard] = {},
         dev_shown: bool = False,
         frame_ms: float = 0.0,
+        # What the program holds in memory, asked of the system once a
+        # second while the readout is shown (0 until it has answered).
+        memory_mb: float = 0.0,
+        memory_due: float = 0.0,
+        # How many pixels wide the studio's own lines are drawn in the views.
+        line_width: int = 1,
         # Whether a shape is built with the faces inside it caulked.
         autocaulk: bool = False,
         # Whether duplicators' images are in what is built.
@@ -1563,6 +1733,15 @@ obj Studio(Workbench) {
         self.playing = True;
         self.holding = False;
         self.steps_owed = 0;
+        baked = self.nav_aas;
+        if baked is not None {
+            # The navigation baked for the scene is the played game's: its bots route over it.
+            for old_mesh in [app.world->:HasNavMesh:->][?:NavMesh] {
+                app.world del->:HasNavMesh:-> old_mesh;
+            }
+            build_navmesh(app.world, baked, app.level.bsp);
+            print("studio: bots route over the baked navigation areas=" + str(len(baked.areas) - 1));
+        }
         # What fires is counted from the start of each game.
         self.fired_seen = [];
         self.fired_names = {};
@@ -1765,6 +1944,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Curved corner", command="ed_patch bevel"),
                     MenuItem(text="Curved cylinder", command="ed_patch cylinder"),
                     MenuItem(text="Curved cone", command="ed_patch cone"),
+                    MenuItem(text="The patch's material...", command="ed_patchbox open"),
                     MenuItem(rule=True),
                     MenuItem(text="Turn a quarter", command="ed_rotate 90", keys="R"),
                     MenuItem(text="Tip a quarter about x", command="ed_rotate 90 x"),
@@ -1850,11 +2030,13 @@ obj Studio(Workbench) {
                     MenuItem(text="Bake what each part can see", command="ed_bake"),
                     MenuItem(text="Build as one again", command="ed_bake off"),
                     MenuItem(text="Show the bake's cells", command="ed_cells"),
+                    MenuItem(text="Show how much is drawn over each place", command="ed_overlay overdraw"),
                     MenuItem(rule=True),
                     MenuItem(text="Recipes", command="ed_recipe"),
                     MenuItem(rule=True),
                     MenuItem(text="What fired in the last game", command="ed_fired"),
                     MenuItem(text="Name each firing as it happens", command="ed_trace"),
+                    MenuItem(text="The logic over the game, lit as it fires", command="ed_trace graph"),
                     MenuItem(text="Firings that hold the game", command="ed_break"),
                     MenuItem(rule=True),
                     MenuItem(text="Bake navigation for bots", command="ed_nav bake"),
@@ -1889,6 +2071,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Undo in the model", command="ed_model undo"),
                     MenuItem(rule=True),
                     MenuItem(text="The shader script's shaders", command="ed_shader"),
+                    MenuItem(text="The shader in hand, stage by stage...", command="ed_shaderbox open"),
                     MenuItem(text="Check the shader script", command="ed_shader check"),
                     MenuItem(rule=True),
                     MenuItem(text="The model's bones", command="ed_bone"),
@@ -1915,7 +2098,8 @@ obj Studio(Workbench) {
                     MenuItem(text="The picked points' weights...", command="ed_weights open"),
                     MenuItem(text="The shader script as text...", command="ed_shader text open"),
                     MenuItem(text="Play the materials that move", command="ed_animate"),
-                    MenuItem(text="Settings by subject...", command="ed_settings box open")
+                    MenuItem(text="Settings by subject...", command="ed_settings box open"),
+                    MenuItem(text="Playtest: can it be finished?", command="ed_playtest bake")
                 ]
             ]
         );
@@ -2282,7 +2466,10 @@ obj Studio(Workbench) {
         }
         eye = self.main.eye;
         concealed = scene.hidden_count();
-        ui.place.text = self.dev_words(scene) + ("frozen   " if self.frozen else "")
+        lighting = self.light_task;
+        ui.place.text = (
+            "lighting " + str(int(lighting.job.share() * 100.0)) + "%   " if lighting is not None else ""
+        ) + self.dev_words(scene) + ("frozen   " if self.frozen else "")
             + (str(concealed) + " hidden   " if concealed else "")
             + (str(self.build_ms) + " ms   " if self.build_ms > 0 else "") + "grid " + str(int(self.grid)) + "   "
             + str(int(eye.x)) + " " + str(int(eye.y)) + " " + str(int(eye.z));
@@ -2423,6 +2610,14 @@ obj Studio(Workbench) {
         }
         # A running mean of how long a frame takes, for the developer's readout.
         self.frame_ms = self.frame_ms * 0.9 + dt * 100.0;
+        if self.dev_shown {
+            self.memory_due -= dt;
+            if self.memory_due <= 0.0 {
+                self.sample_memory();
+                # The first answer is looked for sooner than the rest.
+                self.memory_due = 1.0 if self.memory_mb > 0.0 else 0.25;
+            }
+        }
         if self.source.pending() > 0 {
             self.quiet = 0;
         } else {
@@ -2474,7 +2669,11 @@ obj Studio(Workbench) {
         self.keep_tabs(ui);
         self.keep_floats();
         self.keep_weights_box();
+        self.keep_patch_box();
+        self.keep_shader_box();
+        self.patch_box_events();
         self.keep_script_box();
+        self.keep_tool_panels();
         self.watch_settings();
         self.keep_settings_box();
         doc_now = self.scene;
@@ -2489,6 +2688,8 @@ obj Studio(Workbench) {
         ui.logic.track(stage);
         self.load_thumbs();
         self.keep_built();
+        self.keep_journal(dt);
+        self.step_light();
         self.autosave(dt, False);
         self.watch_files(dt);
         hint = stage.hint();
@@ -3211,6 +3412,13 @@ obj Studio(Workbench) {
     # The shader script as text (impl/studio.shadertext.impl.jac)
     """Fill the script's box again when the script has changed."""
     def keep_script_box;
+    # Boxes that tools show (impl/studio.toolpanel.impl.jac)
+    def tool_panel_set(key: str, spec: PanelSpec);
+    def tool_panel_text(key: str) -> str;
+    def tool_panel_close(key: str);
+    """Open and fill the tools' boxes that have something new to show."""
+    def keep_tool_panels;
+    def toolpanel_command(args: list[str]) -> bool;
     def script_words -> str;
     """Open or close the script's box, or read its words as the script.
     False for every other shader command, which goes on to its own."""
@@ -3273,7 +3481,9 @@ obj Studio(Workbench) {
         built = self.is_built_scene();
         shown_model = self.model_now;
         if self.assets_shown and shown_model is not None and ui_model_area(self.ui).w > 0 {
-            # The explorer's model, alone in its own view.
+            # The explorer's model, alone in its own view (in the first of
+            # four, with views from above, the front and the side, when it is
+            # laid out so).
             spot = ui_model_area(self.ui);
             seen.append(
                 SceneView(
@@ -3289,6 +3499,43 @@ obj Studio(Workbench) {
                     bare=True
                 )
             );
+            for (kind, quarter) in model_quarters(self.ui) {
+                flat = axis_camera(kind, self.model_reach * 1.1);
+                seen.append(
+                    SceneView(
+                        x=quarter.x,
+                        y=quarter.y,
+                        width=quarter.w,
+                        height=quarter.h,
+                        eye=self.model_middle.sub(flat.forward().scale(self.model_reach * 4.0)),
+                        yaw=flat.yaw,
+                        pitch=flat.pitch,
+                        span=flat.span,
+                        everything=True,
+                        bare=True
+                    )
+                );
+            }
+            pane = self.model_float_pane;
+            if pane is not None and pane.parent() is not None and pane.area.w > 0 {
+                # The model's floating window, with its own way of looking at it.
+                lens = self.model_float_lens;
+                seen.append(
+                    SceneView(
+                        x=pane.area.x,
+                        y=pane.area.y,
+                        width=pane.area.w,
+                        height=pane.area.h,
+                        eye=lens.eye,
+                        yaw=lens.yaw,
+                        pitch=lens.pitch,
+                        span=0.0,
+                        everything=True,
+                        bare=True,
+                        over=True
+                    )
+                );
+            }
         }
         for (index, port) in enumerate(self.ports[:self.showing()]) {
             area = port.view.area;
@@ -3296,6 +3543,9 @@ obj Studio(Workbench) {
                 continue;
             }
             edges = self.wire_main if index == 0 else self.wire_axis;
+            # A view held to a band of depth shows the level only within it
+            # (unless what lies outside is to be shown whole).
+            band = depth_cut(port.camera) if self.outside != "whole" else [0.0, 0.0];
             seen.append(
                 SceneView(
                     x=area.x,
@@ -3310,7 +3560,9 @@ obj Studio(Workbench) {
                     # A scene's own brushes are drawn by their outlines; a
                     # shipped map has only its triangles to show.
                     wire=edges and not built,
-                    bare=edges and built
+                    bare=edges and built,
+                    near=band[0],
+                    far=band[1]
                 )
             );
         }
@@ -3367,13 +3619,32 @@ obj Studio(Workbench) {
         if scene is None {
             return;
         }
+        _pen.hold(view, self.main.fov, self.line_width);
         if self.assets_shown {
             # The only view then is the explorer's model.
-            for pair in self.model_edges {
-                wire_line(pair[0], pair[1], ink(0xe6dfd4));
+            drawer = self.shader_drawer;
+            shown_now = self.model_now;
+            if drawer is not None and shown_now is not None and shown_now.name.startswith("shader:") {
+                # The shader as the game draws a model with it, moving as it moves.
+                rlDrawRenderBatchActive();
+                drawer.draw_immediate(Vec3(), 0.0, 0, 0, 0.0, view.eye, time.time() - _shader_clock.began);
+                rlDrawRenderBatchActive();
+                return;
+            }
+            filled = self.model_doc is not None and self.model_shade != "wire";
+            if filled {
+                self.draw_model_faces();
+                rlDrawRenderBatchActive();
+            }
+            if not (filled and self.model_shade == "textured") {
+                # Over faces that are filled the edges are fainter; over the skin there are none.
+                for pair in self.model_edges {
+                    wire_line(pair[0], pair[1], ink(0x1b1916, 120) if filled else ink(0xe6dfd4));
+                }
             }
             self.draw_model_ticks();
             self.draw_model_marks();
+            self.draw_model_handles();
             return;
         }
         self.lens_now = self.lens_of(view);
@@ -3395,6 +3666,10 @@ obj Studio(Workbench) {
                 }
             }
         }
+        self.draw_entity_skins(scene);
+        if self.overdraw and view.span <= 0.0 {
+            self.overdraw_faces = self.draw_overdraw(view);
+        }
         # The selection, what it targets and what is pointed at show through
         # the walls.
         rlDrawRenderBatchActive();
@@ -3405,6 +3680,7 @@ obj Studio(Workbench) {
         }
         self.draw_paths();
         self.draw_camps();
+        self.draw_patch_preview(scene);
         for tool in self.tools {
             tool.draw_through(self.host(), scene);
         }
@@ -3481,6 +3757,7 @@ obj Studio(Workbench) {
         }
         stage.paint();
         self.draw_skin_marks();
+        self.draw_patch_box();
         # Over each level view, through its own camera: unless a menu, a
         # list or the palette is open over them.
         if self.over_layers(stage) > 0 {
@@ -3488,7 +3765,9 @@ obj Studio(Workbench) {
             return;
         }
         watched = self.port_now;
-        covered = [port.window.area for port in self.float_ports() if port.window is not None];
+        # Whatever floats over the views: their own windows, and the boxes.
+        floating = [layer for layer in stage.layers() if isinstance(layer, Floater)];
+        covered = [layer.area for layer in floating];
         for index in range(self.showing()) {
             self.watch(index);
             # Only where no floating window covers the view.
@@ -3502,7 +3781,16 @@ obj Studio(Workbench) {
             # A floating window says its own name on its bar; and it draws
             # nothing where a window opened after it floats above it.
             self.watch(index);
-            above = [port.window.area for port in self.ports[index + 1:] if port.window is not None];
+            casing = self.ports[index].window;
+            above: list[Rect] = [];
+            reached = False;
+            for layer in floating {
+                if layer is casing {
+                    reached = True;
+                } elif reached {
+                    above.append(layer.area);
+                }
+            }
             for piece in rects_outside(self.view_area(), above) {
                 self.over_piece = piece;
                 self.draw_over_view(scene, "");
@@ -3543,6 +3831,7 @@ obj Studio(Workbench) {
             );
         }
         self.draw_handles(scene, area);
+        self.draw_depth_knobs(area);
         stage = self.stage;
         if self.lining and stage is not None and self.port_now == self.box_port {
             if self.mode == "clip" {
@@ -3612,6 +3901,9 @@ obj Studio(Workbench) {
     def draw_handles(scene: Scene, area: Rect);
     """Start dragging a side handle under the pointer."""
     def grab_handle(scene: Scene, x: int, y: int) -> bool;
+    """While only lights are dragged, light the level as they would be left,
+    at most four times a second and coarsely. True while that is so."""
+    def preview_light(scene: Scene) -> bool;
     def drag_handle(scene: Scene, x: int, y: int, free: bool);
     """Add a brush of a shape ("box", "cylinder" or "wedge") where the
     camera looks, resting on what is beneath it."""
@@ -3765,6 +4057,36 @@ obj Studio(Workbench) {
     def patch_command(scene: Scene, args: list[str]) -> bool;
     """The one selected entity, when it is a patch."""
     def patch_now(scene: Scene) -> Item | None;
+    """A patch as the games make it, by the engine's own code: the edges of
+    the triangles its renderer draws and of the lattice its collision is
+    traced against (kept until the patch changes); they drawn over every
+    patch; and a line of the dump saying how many."""
+    def patch_preview_lines(scene: Scene, item: Item) -> list[list[list[Vec3]]];
+    def draw_patch_preview(scene: Scene);
+    def patch_preview_words(scene: Scene) -> str;
+
+    # ------------------------------------------------------------------
+    # The patch's material box (impl/studio.patchbox.impl.jac)
+
+    """The selected patch's places on its material (none when no patch is)."""
+    def patch_box_state(scene: Scene) -> list[float];
+    """Make the box again when what it shows has changed; take its pane's
+    drags; draw the places over the picture; open or close it."""
+    def keep_patch_box;
+    def patch_box_events;
+    def draw_patch_box;
+    def patch_box_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
+    # The shader box and preview (impl/studio.shaderbox.impl.jac)
+
+    """Make the shader box again when the shader in hand has changed; its
+    commands (`ed_shaderbox`, `ed_shaderline`); and the shader drawn on a
+    square in the explorer by the engine's model renderer ("" when it is,
+    else why not)."""
+    def keep_shader_box;
+    def shader_box_command(scene: Scene, args: list[str]) -> bool;
+    def preview_shader -> str;
 
     # ------------------------------------------------------------------
     # Turn and size handles, the pivot, inflating and the texture lock (impl/studio.transform.impl.jac)
@@ -3784,6 +4106,12 @@ obj Studio(Workbench) {
     """The three ways the move arrows run now: the world's axes, the
     selection's own, or across, into and up the view."""
     def gizmo_basis(scene: Scene) -> list[Vec3];
+    """One of the ways the rings and boxes go by (the world's when none are worked out)."""
+    def gizmo_way(index: int) -> Vec3;
+    """Whether materials go with their faces through a turn, a stretch or a shear."""
+    def tex_turns -> bool {
+        return self.tex_lock and not self.tex_axis;
+    }
     def draw_transform_handles(scene: Scene, area: Rect);
     def drag_transform(scene: Scene, x: int, y: int, free: bool);
     """Where a point goes under the turn or stretch being dragged."""
@@ -3843,6 +4171,9 @@ obj Studio(Workbench) {
     def settings_command(scene: Scene, args: list[str]) -> bool;
     """What the developer's readout says, when it is shown."""
     def dev_words(scene: Scene) -> str;
+    """Take what the system last said the program holds in memory, and ask
+    it again."""
+    def sample_memory;
     """Numbers along the edges of an axis view, at the grid's stronger lines."""
     def draw_grid_numbers(area: Rect);
 
@@ -3874,8 +4205,14 @@ obj Studio(Workbench) {
     """The options every class shares: which skills and modes leave it out."""
     def fill_skill(scene: Scene, ui: StudioUi, chosen: list[Item]);
     """The handles one selected entity has beside its arrows: the tip of
-    the arrow it faces along (940) and the edge of a light's reach (941)."""
+    the arrow it faces along (940), the edge of a light's reach (941), and
+    the edge of the cone of a light that shines one way (942)."""
     def mark_handles(scene: Scene) -> list[tuple[int, Vec3]];
+    """The cone a light shines in (none for one that shines every way, or
+    for what is no light), and where the handle on its edge stands when
+    half its angle is so many degrees."""
+    def spot_of(item: Item) -> Cone | None;
+    def cone_knob(middle: Vec3, cone: Cone, half: float) -> Vec3;
     def draw_mark_handles(scene: Scene, area: Rect);
     """A drag of one of those: the angle or the reach it would leave."""
     def drag_mark(scene: Scene, x: int, y: int, free: bool);
@@ -3900,6 +4237,25 @@ obj Studio(Workbench) {
     def signal_label(fields: dict[str, str]) -> str;
     """One frame of a game played from here: note what has fired."""
     def played(dt: float);
+    """The scene's logic over the game as it runs: each entity that fires or
+    is fired a box, lit as it fires and fading after, with lines to what it
+    fires, a box that holds the game marked red."""
+    def draw_over_game(width: int, height: int);
+    """Every face the engine would draw from a 3D view's eye (through the
+    level's PVS when culling is on), each added over what is behind it in
+    one faint colour, depth ignored: where many lie over one another it
+    glows. Answers how many faces were drawn."""
+    def draw_overdraw(view: SceneView) -> int;
+    """Take the state each new step leaves the scene in (no oftener than
+    twice a second; a step in between is named with the next), for the
+    journal written beside the autosave."""
+    def keep_journal(dt: float);
+    """Bake a slice more of the light under way (about a hundredth of a
+    second's worth), and when it is all lit keep it and build again, which
+    takes it."""
+    def step_light;
+    """Where a scene's journal is kept."""
+    def journal_path(name: str) -> str;
     """Run a breakpoint, trace, fired or live command. False when it is not one."""
     def live_command(args: list[str]) -> bool;
     """Call over a played game's opponents, doors and pickups, or change
@@ -3983,6 +4339,13 @@ obj Studio(Workbench) {
     def unpickable(low: Vec3, high: Vec3) -> bool;
     """The edges of the other views' bands of depth, across this one."""
     def draw_depth_lines(view: SceneView);
+    """Knobs on the red lines, to drag an edge of another view's band
+    (970 + the view's number * 2, and one more for the far edge); a drag of
+    one; the command it ends in; and the knobs drawn."""
+    def depth_knobs -> list[tuple[int, Vec3]];
+    def drag_depth(x: int, y: int, free: bool);
+    def depth_order -> str;
+    def draw_depth_knobs(area: Rect);
     """Where an oblique view's compass is: its middle and its radius."""
     def compass_at(area: Rect) -> list[int];
     def draw_compass(area: Rect);
@@ -4018,6 +4381,13 @@ obj Studio(Workbench) {
     """A model's edges at its first frame, read once."""
     def preview_edges(name: str) -> list[list[Vec3]];
     def draw_entity_models(scene: Scene);
+    """What an entity's game shows it as when it is spawned: a model or a
+    sprite, with its skin and frame (none when its game shows nothing)."""
+    def entity_look(scene: Scene, item: Item) -> EntityLook | None;
+    """A look's model and pictures, read once."""
+    def preview_look(look: EntityLook) -> PreviewLook;
+    """Entities with their skins on, and sprites, where the level hides them as it hides anything."""
+    def draw_entity_skins(scene: Scene);
     def preview_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
@@ -4096,6 +4466,29 @@ obj Studio(Workbench) {
     """Run one of those commands (asked before the model's own, whose words
     they share). False when it is not one."""
     def playview_command(scene: Scene, args: list[str]) -> bool;
+
+    # ------------------------------------------------------------------
+    # The model being edited in its view (impl/studio.modelview.impl.jac)
+
+    def modelview_words -> str;
+    """A mark on a point, drawn the way marks are set to be."""
+    def draw_mark(at: Vec3, reach: float, color: Ink);
+    """The model's faces, filled or with its skin, when it is not drawn as edges."""
+    def draw_model_faces;
+    """How long the handles of what is picked are, which of them is under
+    the pointer (-1 for none), and they drawn."""
+    def handle_reach -> float;
+    def handle_under(x: int, y: int) -> int;
+    def draw_model_handles;
+    """A pointer event for a handle: true when it was."""
+    def handle_event(event: UiEvent) -> bool;
+    """Put what the view turns about where the way it turns says."""
+    def frame_model_about;
+    """Run one of those commands (asked before the model's own). False when it is not one."""
+    def modelview_command(scene: Scene, args: list[str]) -> bool;
+    """The model's floating window: its view's drags and wheel turned into
+    its own way of looking, each frame."""
+    def turn_model_float;
     def archive_command(scene: Scene, args: list[str]) -> bool;
     def finding_command(scene: Scene, args: list[str]) -> bool;
     def rows_command(scene: Scene, args: list[str]) -> bool;
@@ -4157,8 +4550,15 @@ obj Studio(Workbench) {
     """What is baked, as a line of the dump; the ways drawn in a view; and
     what cannot be reached from the first player start."""
     def nav_words -> str;
+    """The ways the scene's teleporters and jump pads make: from where each
+    trigger is to where it sends or throws."""
+    def nav_links(scene: Scene) -> list[Link];
     def draw_nav;
     def nav_findings(scene: Scene) -> list[Finding];
+    """What stops a scene being finished: what its logic can never set
+    off, then the first objective (a key, what opens the way, the way
+    out) that cannot be reached from the start over the baked floors."""
+    def playtest(scene: Scene) -> list[Finding];
 
     # ------------------------------------------------------------------
     # Floating 3D windows (impl/studio.windows.impl.jac)
@@ -4221,6 +4621,10 @@ obj Studio(Workbench) {
     def fresh_skin;
     """The part's triangles and picked points as they lie on its picture."""
     def draw_skin_marks;
+    """Clicks and drags on the skin's picture: a click picks the point whose
+    place is under it (or, picking faces, the triangle), Shift adds, and a
+    drag from a picked point moves the picked points' places."""
+    def skin_events;
     """Run a skin command. False when it is not one."""
     def skin_command(scene: Scene, args: list[str]) -> bool;
 
@@ -4464,6 +4868,9 @@ obj Studio(Workbench) {
             and not self.rows_command(scene, args)
             and not self.finding_command(scene, args)
             and not self.archive_command(scene, args)
+            and not self.modelview_command(scene, args)
+            and not self.patch_box_command(scene, args)
+            and not self.shader_box_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)
@@ -4486,6 +4893,7 @@ obj Studio(Workbench) {
             and not self.integral_command(scene, args)
             and not self.games_command(scene, args)
             and not self.script_command(scene, args) and not self.texlink_command(scene, args)
+            and not self.toolpanel_command(args)
             and not self.shader_command(scene, args) and not self.sound_command(scene, args)
             and not self.preview_command(scene, args)
             and not self.entity_command(scene, args)
@@ -4644,7 +5052,7 @@ obj Studio(Workbench) {
                     else "none"
                 ),
             "studio: handles=" + self.gizmo + " anglesnap=" + str(int(self.angle_snap)) + " texlock="
-                + ("1" if self.tex_lock else "0") + " pivot="
+                + ("axis" if self.tex_axis else ("1" if self.tex_lock else "0")) + " pivot="
                 + (
                     str(int(self.pivot_at.x)) + "," + str(int(self.pivot_at.y)) + "," + str(int(self.pivot_at.z))
                     if self.pivot_set
@@ -4773,6 +5181,10 @@ obj Studio(Workbench) {
         ) {
             lines.append(self.playview_words());
         }
+        if self.model_marks != "cross" or self.model_shade != "wire" or self.model_about != "model" or self.model_lock
+            or self.points_tinted or self.skin_pattern != "solid" or _model_split.four or self.model_float_box is not None {
+            lines.append(self.modelview_words());
+        }
         seen_asset = self.asset_now;
         if seen_asset is not None {
             lines.append(
@@ -4782,7 +5194,10 @@ obj Studio(Workbench) {
             );
         }
         if self.models_shown {
-            lines.append("studio: models shown=1 drawn=" + str(self.models_drawn));
+            lines.append(
+                "studio: models shown=1 drawn=" + str(self.models_drawn) + " skinned=" + str(self.skins_drawn)
+                    + ("" if self.models_skinned else " skins=off")
+            );
         }
         for window_line in self.window_lines() {
             lines.append(window_line);
@@ -4875,9 +5290,16 @@ obj Studio(Workbench) {
         if self.snap_to != "grid" {
             lines.append("studio: snapto " + self.snap_to + " reach=" + str(int(round(self.snap_reach))));
         }
-        if self.show_triggers or self.show_unseen {
+        if self.patch_preview {
+            lines.append(self.patch_preview_words(scene));
+        }
+        if self.overdraw {
+            lines.append("studio: overdraw faces=" + str(self.overdraw_faces));
+        }
+        if self.show_triggers or self.show_unseen or self.line_width != 1 {
             lines.append(
                 "studio: overlays triggers=" + ("1" if self.show_triggers else "0") + " unseen=" + ("1" if self.show_unseen else "0")
+                    + " width=" + str(self.line_width)
             );
         }
         # The mode's line stays the last: sessions look for it there.
@@ -4966,8 +5388,49 @@ def:priv wire_color(color: Ink) -> Color {
     return Color(r=u8(color.r), g=u8(color.g), b=u8(color.b), a=u8(color.a));
 }
 
+"""How the studio's lines are drawn in the view being drawn now: how wide,
+and what the view sees as across and up, where it looks from and how much
+of the world a pixel of it covers."""
+obj WirePen {
+    has shifts: list[float] = [],
+        eye: Vec3 = Vec3(),
+        ahead: Vec3 = Vec3(x=1.0),
+        right: Vec3 = Vec3(y=-1.0),
+        up: Vec3 = Vec3(z=1.0),
+        tall: int = 1,
+        span: float = 0.0,
+        fov: float = 73.74;
+
+    def hold(view: SceneView, fov: float, width: int) {
+        self.shifts = thick_shifts(width);
+        self.eye = view.eye;
+        self.ahead = forward_from(view.yaw, view.pitch);
+        self.right = right_from(view.yaw);
+        self.up = self.right.cross(self.ahead);
+        self.tall = view.height;
+        self.span = view.span;
+        self.fov = fov;
+    }
+}
+
+glob _pen: WirePen = WirePen();
+
 """A box's twelve edges, in the level."""
 def wire_box(low: Vec3, high: Vec3, color: Ink) {
+    if len(_pen.shifts) > 0 {
+        # Each edge a line, so that each is as wide as lines are.
+        xs = [low.x, high.x];
+        ys = [low.y, high.y];
+        zs = [low.z, high.z];
+        for a in range(2) {
+            for b in range(2) {
+                wire_line(Vec3(x=low.x, y=ys[a], z=zs[b]), Vec3(x=high.x, y=ys[a], z=zs[b]), color);
+                wire_line(Vec3(x=xs[a], y=low.y, z=zs[b]), Vec3(x=xs[a], y=high.y, z=zs[b]), color);
+                wire_line(Vec3(x=xs[a], y=ys[b], z=low.z), Vec3(x=xs[a], y=ys[b], z=high.z), color);
+            }
+        }
+        return;
+    }
     DrawCubeWires(
         Vector3(x=f32((low.x + high.x) * 0.5), y=f32((low.y + high.y) * 0.5), z=f32((low.z + high.z) * 0.5)),
         f32(high.x - low.x),
@@ -4977,20 +5440,84 @@ def wire_box(low: Vec3, high: Vec3, color: Ink) {
     );
 }
 
+"""A line in the level, as wide as the studio's lines are set to be: drawn
+again to either side of itself, as the view sees it."""
 def wire_line(start: Vec3, finish: Vec3, color: Ink) {
+    tone = wire_color(color);
     DrawLine3D(
         Vector3(x=f32(start.x), y=f32(start.y), z=f32(start.z)),
         Vector3(x=f32(finish.x), y=f32(finish.y), z=f32(finish.z)),
-        wire_color(color)
+        tone
     );
+    if len(_pen.shifts) == 0 {
+        return;
+    }
+    over = line_across(start, finish, _pen.right, _pen.up);
+    here_reach = pixel_reach(start.sub(_pen.eye).dot(_pen.ahead), _pen.tall, _pen.span, _pen.fov);
+    there_reach = pixel_reach(finish.sub(_pen.eye).dot(_pen.ahead), _pen.tall, _pen.span, _pen.fov);
+    for shift in _pen.shifts {
+        first = start.add(over.scale(shift * here_reach));
+        second = finish.add(over.scale(shift * there_reach));
+        DrawLine3D(
+            Vector3(x=f32(first.x), y=f32(first.y), z=f32(first.z)),
+            Vector3(x=f32(second.x), y=f32(second.y), z=f32(second.z)),
+            tone
+        );
+    }
 }
 
-"""Where the explorer's model view is ([0, 0, 0, 0] when it is not laid out)."""
+"""Light being baked while the studio goes on: the job, what it is the
+light of (the build's mark), and what the kept bake must measure."""
+obj LightTask {
+    has job: LightJob,
+        mark: str = "",
+        plane_base: int = 0,
+        warned: int = 0,
+        began: float = 0.0;
+}
+
+"""How the explorer's model view is laid out: one view, or four."""
+obj ModelSplit {
+    has four: bool = False;
+}
+
+glob _model_split: ModelSplit = ModelSplit();
+
+"""When the studio began, for a shader's preview to move by."""
+obj ShaderClock {
+    has began: float = 0.0;
+}
+
+glob _shader_clock: ShaderClock = ShaderClock(began=time.time());
+
+"""Where the explorer's model view is ([0, 0, 0, 0] when it is not laid
+out): the turning view's place, the first quarter when there are four."""
 def ui_model_area(ui: StudioUi | None) -> Rect {
     if ui is None or ui.model_view.parent() is None {
         return Rect();
     }
-    return ui.model_view.area;
+    whole = ui.model_view.area;
+    if _model_split.four {
+        # The turning view is the first of four.
+        return Rect(x=whole.x, y=whole.y, w=whole.w // 2 - 1, h=whole.h // 2 - 1);
+    }
+    return whole;
+}
+
+"""The other three of the model's four views: from above, the front and the
+side, each its quarter of the model's view (none when there is one view)."""
+def model_quarters(ui: StudioUi | None) -> list[tuple[str, Rect]] {
+    if not _model_split.four or ui is None or ui.model_view.parent() is None {
+        return [];
+    }
+    whole = ui.model_view.area;
+    half_w = whole.w // 2;
+    half_h = whole.h // 2;
+    return [
+        ("top", Rect(x=whole.x + half_w + 1, y=whole.y, w=whole.w - half_w - 1, h=half_h - 1)),
+        ("front", Rect(x=whole.x, y=whole.y + half_h + 1, w=half_w - 1, h=whole.h - half_h - 1)),
+        ("side", Rect(x=whole.x + half_w + 1, y=whole.y + half_h + 1, w=whole.w - half_w - 1, h=whole.h - half_h - 1))
+    ];
 }
 
 """The game whose classes a document may hold ("" before there is one)."""

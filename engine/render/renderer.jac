@@ -213,7 +213,12 @@ obj Renderer {
         height: int = 720,
         title: str = "QuakePassion",
         batch: Pinned[rlRenderBatch] | None = None,
-        cubes: CubeBatch = CubeBatch();
+        cubes: CubeBatch = CubeBatch(),
+        # The view being drawn: how much of the world fits its height when it
+        # is orthographic (nothing in perspective), and its size.
+        view_span: float = 0.0,
+        view_width: int = 1,
+        view_height: int = 1;
 
     """Register the renderer's cvars."""
     def declare(shell: Shell);
@@ -240,6 +245,9 @@ obj Renderer {
     def begin_view(
         x: int, y: int, width: int, height: int, eye: Vec3, yaw: float, pitch: float, span: float = 0.0
     );
+    """Hold an orthographic view to what lies between `near` and `far` along
+    its line of sight, or with both nothing let it see every depth again."""
+    def view_depth(near: float, far: float);
     """End a view: back to the whole window and screen space."""
     def end_view();
     """Clear a rectangle of the window, in screen units: its colour and how

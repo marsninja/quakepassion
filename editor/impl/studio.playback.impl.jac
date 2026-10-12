@@ -76,9 +76,7 @@ impl Studio.draw_model_ticks {
             if drawn >= 6000 {
                 return;
             }
-            wire_line(point.sub(Vec3(x=reach)), point.add(Vec3(x=reach)), ink(0x4cc38a));
-            wire_line(point.sub(Vec3(y=reach)), point.add(Vec3(y=reach)), ink(0x4cc38a));
-            wire_line(point.sub(Vec3(z=reach)), point.add(Vec3(z=reach)), ink(0x4cc38a));
+            self.draw_mark(point, reach, ink(0x4cc38a));
             drawn += 1;
         }
     }

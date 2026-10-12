@@ -138,6 +138,14 @@ impl Studio.show_asset(ui: StudioUi) {
         # The model being edited has the panel.
         return;
     }
+    previewed = self.model_now;
+    if previewed is not None and previewed.name.startswith("shader:") and self.shader_drawer is not None {
+        # A shader's preview: the square it is drawn on, turned by a drag.
+        form.adopt(Label(text=previewed.name[7:], tone="accent"));
+        form.adopt(Label(text="As the game draws a model with it (ed_shader preview again after a change)", tone="faint", small=True));
+        form.adopt(ui.model_view);
+        return;
+    }
     seen = self.asset_now;
     if seen is None {
         form.adopt(Label(text="Nothing is shown.", tone="dim"));
@@ -293,7 +301,11 @@ impl Studio.asset_command(scene: Scene, args: list[str]) -> bool {
         }
         known.home = self.project_folder;
         self.asset_now = known.look(parts[1], parts[2]);
+        if self.reel_playing and self.app is not None {
+            self.app.audio.end_cinematic();
+        }
         self.reel_playing = False;
+        self.reel_heard = 0;
         self.reel_kept = "";
         self.model_now = None;
         self.model_playing = False;
@@ -595,13 +607,27 @@ impl Studio.turn_model(dt: float) {
             # A click or a drag that was for the model being edited.
             continue;
         }
-        if event.kind == "drag" {
+        if event.kind == "drag" and event.shift and self.model_about in ["view", "free"] {
+            # What the view looks at goes the other way from the drag, so that the model goes with it.
+            lens = self.model_camera;
+            unit = 2.0 * self.model_reach * lens.slope() / float(max(1, ui_model_area(ui).h));
+            self.model_middle = self.model_middle.sub(lens.right().scale(float(event.dx) * unit)).add(
+                lens.up().scale(float(event.dy) * unit)
+            );
+        } elif event.kind == "drag" {
+            stood = self.model_camera.eye;
             self.model_yaw -= float(event.dx) * 0.01;
             self.model_pitch = max(-1.5, min(1.5, self.model_pitch - float(event.dy) * 0.01));
+            if self.model_about == "free" {
+                # The eye stays where it is: what it looks at swings round it.
+                self.model_middle = stood.add(forward_from(self.model_yaw, self.model_pitch).scale(self.model_reach));
+            }
         } elif event.kind == "wheel" {
             self.model_reach = max(8.0, self.model_reach * (0.85 ** event.wheel));
         }
     }
+    self.skin_events();
+    self.turn_model_float();
     self.play_reel(dt);
     if figure is None {
         return;
@@ -622,6 +648,15 @@ impl Studio.reel_step(back: bool) -> bool {
         return False;
     }
     shown = reel_before(reel) if back else reel_next(reel, seen.name);
+    if len(reel.heard) > 0 {
+        app = self.app;
+        if app is not None and self.reel_playing {
+            # A film played has its sound played with it, through the cinematic channel.
+            app.audio.cinematic_samples(reel.heard_rate, reel.heard_width, reel.heard_channels, reel.heard);
+            self.reel_heard += len(reel.heard);
+        }
+        reel.heard = b"";
+    }
     if shown is None {
         return False;
     }
@@ -668,6 +703,10 @@ impl Studio.reel_command(args: list[str]) -> bool {
     if word == "play" or word == "stop" {
         self.reel_playing = word == "play" and not reel.ended;
         self.reel_clock = 0.0;
+        app = self.app;
+        if not self.reel_playing and app is not None {
+            app.audio.end_cinematic();
+        }
     } elif word == "next" {
         if not self.reel_step(False) {
             self.say("That was its last picture" if reel.film is not None else "It has no pictures");
@@ -691,7 +730,8 @@ impl Studio.reel_command(args: list[str]) -> bool {
     print(
         "studio: reel " + seen.game + ":" + seen.name + " picture=" + str(reel.index) + " of=" + str(reel.total) + " ended="
             + ("1" if reel.ended else "0") + " playing=" + ("1" if self.reel_playing else "0") + " size="
-            + (str(seen.image.width) + "x" + str(seen.image.height) if seen.image is not None else "0x0")
+            + (str(seen.image.width) + "x" + str(seen.image.height) if seen.image is not None else "0x0") + " heard="
+            + str(self.reel_heard)
     );
     if ui is not None {
         self.show_asset(ui);

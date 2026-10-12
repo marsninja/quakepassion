@@ -201,10 +201,7 @@ impl Studio.draw_bones {
     spots = doc.mesh(part).points;
     for (index, tint) in enumerate(doc.point_tints(part)) {
         if index < len(spots) {
-            tone = ink(tint);
-            wire_line(spots[index].sub(Vec3(x=tick * 0.6)), spots[index].add(Vec3(x=tick * 0.6)), tone);
-            wire_line(spots[index].sub(Vec3(y=tick * 0.6)), spots[index].add(Vec3(y=tick * 0.6)), tone);
-            wire_line(spots[index].sub(Vec3(z=tick * 0.6)), spots[index].add(Vec3(z=tick * 0.6)), tone);
+            self.draw_mark(spots[index], tick * 0.6, ink(tint));
         }
     }
 }

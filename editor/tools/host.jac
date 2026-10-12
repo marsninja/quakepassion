@@ -14,6 +14,23 @@ import from editor.document.scene { Scene }
 import from editor.ui.canvas { Ink }
 import from engine.formats.bsp { Texture }
 
+"""A box a tool shows floating over the studio: words to edit, with their
+lines numbered, what the tool has to say of them beside, and buttons. When
+the words are let go (Ctrl+Enter, a press elsewhere) the studio runs
+`order`; the tool then asks for the words as they stand."""
+obj PanelSpec {
+    has title: str = "",
+        text: str = "",
+        order: str = "",
+        notes: list[str] = [],
+        buttons: list[tuple[str, str]] = [],
+        # Bars to drag: what each is called, how far along it is from 0 to
+        # 1, and the command run with the new value when it is let go.
+        # With no `order` the box has no words to edit, and the bars and
+        # notes are all of it.
+        bars: list[tuple[str, float, str]] = [];
+}
+
 """What the studio does for its tools."""
 obj ToolHost {
     """Say something: in the console, and in the status bar."""
@@ -38,8 +55,9 @@ obj ToolHost {
     def palette(game: str) -> bytes abst;
 
     """Where files of a kind are kept: "textures" for the image files that
-    are materials, "" for the open project's own folder ("" back when
-    there is none)."""
+    are materials, "scenes" for saved scenes, "scripts" for a project's
+    scripts, "" for the open project's own folder ("" back when there is
+    none)."""
     def folder(kind: str) -> str abst;
 
     """A file out of a game's archives, or None; and every file's name there."""
@@ -64,6 +82,17 @@ obj ToolHost {
     """Show a picture in the browser in place of a material's own: `rgba`
     is four bytes a texel."""
     def show_picture(material: str, width: int, height: int, rgba: bytes) abst;
+
+    """Show a box of the tool's own under a name (or show it anew), give
+    the words in it as they stand ("" when it is not open), and close it."""
+    def panel(key: str, spec: PanelSpec) abst;
+    def panel_text(key: str) -> str abst;
+    def panel_close(key: str) abst;
+
+    """Whether a game is being played from the studio, and the names that
+    have fired in it so far, in order."""
+    def playing -> bool abst;
+    def fired_log -> list[str] abst;
 }
 
 """A tool: the studio asks its tools each command before its own, lets them

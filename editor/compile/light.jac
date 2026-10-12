@@ -13,6 +13,7 @@ import from engine.world.lighting { Lamp, Occluder, shade }
 import from ..document.scene { Scene, Item, Solid, read_vector }
 import from ..geometry.brush { Side, brush_windings, windings_bounds, ray_enters_brush }
 import from .live { LiveLevel, material_hidden }
+import from .spot { Cone, spot_cone }
 
 """Shadows cast by brushes: a sample sees a lamp when no brush stands
 between them."""
@@ -67,22 +68,27 @@ def:priv lamp_color(words: str) -> Vec3 {
     return found;
 }
 
+"""How far a lamp reaches at full strength: its `light` (300 when it does
+not say), or nothing for an entity that is no lamp, is nowhere, or is put out."""
+def lamp_level(item: Item) -> float {
+    if item.origin() is None or not item.classname().startswith("light") {
+        return 0.0;
+    }
+    try {
+        return max(0.0, float(item.fields.get("light", item.fields.get("_light", "300")).split()[0]));
+    } except (ValueError, IndexError) {
+        return 300.0;
+    }
+}
+
 """The scene's lamps: every `light*` entity that is somewhere. Its `light`
 is how far it reaches at full strength (300 when it does not say)."""
 def scene_lamps(scene: Scene) -> list[Lamp] {
     lamps: list[Lamp] = [];
     for item in scene.items() {
         at = item.origin();
-        if at is None or not item.classname().startswith("light") {
-            continue;
-        }
-        level = 300.0;
-        try {
-            level = float(item.fields.get("light", item.fields.get("_light", "300")).split()[0]);
-        } except (ValueError, IndexError) {
-            level = 300.0;
-        }
-        if level <= 0.0 {
+        level = lamp_level(item);
+        if at is None or level <= 0.0 {
             continue;
         }
         lamps.append(
@@ -95,6 +101,60 @@ def scene_lamps(scene: Scene) -> list[Lamp] {
         );
     }
     return lamps;
+}
+
+"""The cone a lamp shines in, or None for one that shines every way: toward
+the entity its `target` names, when one of that name is somewhere, else the
+way its `mangle` points."""
+def lamp_cone(scene: Scene, item: Item) -> Cone | None {
+    at = item.origin();
+    if at is None {
+        return None;
+    }
+    aimed_at: Vec3 | None = None;
+    wanted = item.fields.get("target", "");
+    if wanted {
+        for other in scene.items() {
+            if other is not item and other.fields.get("targetname", "") == wanted and other.origin() is not None {
+                aimed_at = other.origin();
+                break;
+            }
+        }
+    }
+    return spot_cone(dict(item.fields), at, aimed_at);
+}
+
+"""A cone for each of the scene's lamps, in the lamps' order: None for a
+lamp that shines every way."""
+def scene_cones(scene: Scene) -> list[Cone | None] {
+    cones: list[Cone | None] = [];
+    for item in scene.items() {
+        if lamp_level(item) > 0.0 {
+            cones.append(lamp_cone(scene, item));
+        }
+    }
+    return cones;
+}
+
+"""The lamps that light a point: those that shine every way, those whose
+cone it is inside, and for a point on a cone's rim that lamp at half its
+strength (`dims` has each lamp so)."""
+def lamps_at(point: Vec3, lamps: list[Lamp], dims: list[Lamp], cones: list[Cone | None]) -> list[Lamp] {
+    reaching: list[Lamp] = [];
+    for (index, lamp) in enumerate(lamps) {
+        cone = cones[index] if index < len(cones) else None;
+        if cone is None {
+            reaching.append(lamp);
+            continue;
+        }
+        share = cone.share(lamp.origin, point);
+        if share == 2 {
+            reaching.append(lamp);
+        } elif share == 1 and index < len(dims) {
+            reaching.append(dims[index]);
+        }
+    }
+    return reaching;
 }
 
 """The least light anything in a scene gets, as a part of one: the world's
@@ -117,16 +177,139 @@ def scene_floor(scene: Scene) -> float {
     return 0.25;
 }
 
-"""Light the level a scene compiled to. Answers how many samples were lit:
-none when the scene has no lamps, or when it would take more than `budget`
-of them (the level is then left flat)."""
-def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 400000) -> int {
+"""Lighting a level a slice at a time: everything the bake needs worked out
+once, then the faces of the world lit a few at a time (`step`), and the
+lightmap and the corners of what moves written when all are (`finish`). A
+bake done all at once is the same job stepped through at once."""
+obj LightJob {
+    has made: LiveLevel,
+        lamps: list[Lamp] = [],
+        dims: list[Lamp] = [],
+        cones: list[Cone | None] = [],
+        spotted: bool = False,
+        occluder: BrushOccluder = BrushOccluder(),
+        least: float = 0.25,
+        luxel: float = 16.0,
+        frames: list[list[Vec3]] = [],
+        sizes: list[list[float]] = [],
+        pixels: bytearray = bytearray(),
+        offset: int = 0,
+        next_face: int = 0,
+        first: int = 0,
+        last: int = 0,
+        total: int = 0;
+
+    """The lamps that light a point."""
+    def lit_by(point: Vec3) -> list[Lamp] {
+        return lamps_at(point, self.lamps, self.dims, self.cones) if self.spotted else self.lamps;
+    }
+
+    """How far it has got: from 0 to 1."""
+    def share -> float {
+        span = max(1, self.last - self.first);
+        return float(self.next_face - self.first) / float(span);
+    }
+
+    def finished -> bool {
+        return self.next_face >= self.last;
+    }
+
+    """Light up to `limit` more faces of the world. True when every face is."""
+    def step(limit: int) -> bool {
+        bsp = self.made.bsp;
+        luxel = self.luxel;
+        least = self.least;
+        pixels = self.pixels;
+        stop = min(self.last, self.next_face + max(1, limit));
+        for index in range(self.next_face, stop) {
+            face = bsp.faces[index];
+            u = self.frames[index - self.first][0];
+            v = self.frames[index - self.first][1];
+            span = self.sizes[index - self.first];
+            wide = max(0.001, span[1] - span[0]);
+            tall = max(0.001, span[3] - span[2]);
+            across = int(math.ceil(wide / luxel)) + 1;
+            down = int(math.ceil(tall / luxel)) + 1;
+            face.light_width = across;
+            face.light_height = down;
+            face.light_offset = self.offset;
+            face.styles = [0];
+            face.colors = [];
+            face.light_uv = [];
+            for vertex in face.vertices {
+                face.light_uv.extend(
+                    [
+                        (vertex.dot(u) - span[0]) / wide * float(across - 1),
+                        (vertex.dot(v) - span[2]) / tall * float(down - 1)
+                    ]
+                );
+            }
+            # The corner of the face's rectangle, on its plane.
+            start = face.vertices[0];
+            corner = start.add(u.scale(span[0] - start.dot(u))).add(v.scale(span[2] - start.dot(v)));
+            offset = self.offset;
+            for y in range(down) {
+                for x in range(across) {
+                    # Samples on the rim sit a little inside it, off the neighbouring wall.
+                    s = max(0.5, min(wide - 0.5, wide * float(x) / float(max(1, across - 1))));
+                    t = max(0.5, min(tall - 0.5, tall * float(y) / float(max(1, down - 1))));
+                    point = corner.add(u.scale(s)).add(v.scale(t)).add(face.normal.scale(0.25));
+                    sample = shade(point, face.normal, self.lit_by(point), self.occluder);
+                    color = sample.ambient.add(sample.directed);
+                    pixels[offset] = u8(int(max(0.0, min(127.0, max(least, color.x) * 127.5))));
+                    pixels[offset + 1] = u8(int(max(0.0, min(127.0, max(least, color.y) * 127.5))));
+                    pixels[offset + 2] = u8(int(max(0.0, min(127.0, max(least, color.z) * 127.5))));
+                    offset += 3;
+                }
+            }
+            self.offset = offset;
+        }
+        self.next_face = stop;
+        return self.finished();
+    }
+
+    """Write what was lit into the level, and light the corners of what
+    moves. Answers how many samples were lit."""
+    def finish -> int {
+        bsp = self.made.bsp;
+        least = self.least;
+        bsp.lighting = bytes(self.pixels);
+        bsp.light_channels = 3;
+        # What moves has no lightmap: each of its corners takes the light where
+        # it stands when the level is built.
+        for index in range(self.last, len(bsp.faces)) {
+            face = bsp.faces[index];
+            if len(face.colors) < len(face.vertices) * 4 {
+                continue;
+            }
+            for (corner_index, vertex) in enumerate(face.vertices) {
+                sample = shade(vertex.add(face.normal.scale(0.25)), face.normal, self.lit_by(vertex), self.occluder);
+                color = sample.ambient.add(sample.directed);
+                face.colors[corner_index * 4] = int(max(0.0, min(255.0, max(least, color.x) * 255.0)));
+                face.colors[corner_index * 4 + 1] = int(max(0.0, min(255.0, max(least, color.y) * 255.0)));
+                face.colors[corner_index * 4 + 2] = int(max(0.0, min(255.0, max(least, color.z) * 255.0)));
+            }
+        }
+        return self.total;
+    }
+}
+
+"""The job of lighting the level a scene compiled to, or none when the
+scene has no lamps or it would take more than `budget` samples (the level
+is then left flat, with a warning)."""
+def light_job(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 400000) -> LightJob | None {
     lamps = scene_lamps(scene);
-    least = scene_floor(scene);
     bsp = made.bsp;
     if len(lamps) == 0 or len(bsp.models) == 0 {
-        return 0;
+        return None;
     }
+    job = LightJob(made=made, lamps=lamps, least=scene_floor(scene), luxel=luxel);
+    # Lamps that shine one way light only what is in their cones.
+    job.cones = scene_cones(scene);
+    job.spotted = len([cone for cone in job.cones if cone is not None]) > 0;
+    job.dims = [
+        Lamp(origin=lamp.origin, color=lamp.color, radius=lamp.radius, strength=lamp.strength * 0.5) for lamp in lamps
+    ] if job.spotted else [];
     occluder = BrushOccluder();
     for item in scene.items() {
         # What moves, and what is only a volume, casts no fixed shadow.
@@ -139,13 +322,14 @@ def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int =
             }
         }
     }
+    job.occluder = occluder;
     world = bsp.models[0];
-    last = world.first_face + world.face_count;
+    job.first = world.first_face;
+    job.last = world.first_face + world.face_count;
+    job.next_face = job.first;
     # The size of every face's lightmap first, to hold to the budget.
-    frames: list[list[Vec3]] = [];
-    sizes: list[list[float]] = [];
     total = 0;
-    for index in range(world.first_face, last) {
+    for index in range(job.first, job.last) {
         face = bsp.faces[index];
         u = face.vertices[1].sub(face.vertices[0]).normalized();
         v = face.normal.cross(u).normalized();
@@ -159,73 +343,27 @@ def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int =
             v_low = min(v_low, vertex.dot(v));
             v_high = max(v_high, vertex.dot(v));
         }
-        frames.append([u, v]);
-        sizes.append([u_low, u_high, v_low, v_high]);
+        job.frames.append([u, v]);
+        job.sizes.append([u_low, u_high, v_low, v_high]);
         total += (int(math.ceil((u_high - u_low) / luxel)) + 1) * (int(math.ceil((v_high - v_low) / luxel)) + 1);
     }
     if total > budget {
         made.warnings.append("The scene is too large to light at once (" + str(total) + " samples)");
+        return None;
+    }
+    job.total = total;
+    job.pixels = bytearray(total * 3);
+    return job;
+}
+
+"""Light the level a scene compiled to. Answers how many samples were lit:
+none when the scene has no lamps, or when it would take more than `budget`
+of them (the level is then left flat)."""
+def bake_light(scene: Scene, made: LiveLevel, luxel: float = 16.0, budget: int = 400000) -> int {
+    job = light_job(scene, made, luxel, budget);
+    if job is None {
         return 0;
     }
-    pixels = bytearray(total * 3);
-    offset = 0;
-    for index in range(world.first_face, last) {
-        face = bsp.faces[index];
-        u = frames[index - world.first_face][0];
-        v = frames[index - world.first_face][1];
-        span = sizes[index - world.first_face];
-        wide = max(0.001, span[1] - span[0]);
-        tall = max(0.001, span[3] - span[2]);
-        across = int(math.ceil(wide / luxel)) + 1;
-        down = int(math.ceil(tall / luxel)) + 1;
-        face.light_width = across;
-        face.light_height = down;
-        face.light_offset = offset;
-        face.styles = [0];
-        face.colors = [];
-        face.light_uv = [];
-        for vertex in face.vertices {
-            face.light_uv.extend(
-                [
-                    (vertex.dot(u) - span[0]) / wide * float(across - 1),
-                    (vertex.dot(v) - span[2]) / tall * float(down - 1)
-                ]
-            );
-        }
-        # The corner of the face's rectangle, on its plane.
-        start = face.vertices[0];
-        corner = start.add(u.scale(span[0] - start.dot(u))).add(v.scale(span[2] - start.dot(v)));
-        for y in range(down) {
-            for x in range(across) {
-                # Samples on the rim sit a little inside it, off the neighbouring wall.
-                s = max(0.5, min(wide - 0.5, wide * float(x) / float(max(1, across - 1))));
-                t = max(0.5, min(tall - 0.5, tall * float(y) / float(max(1, down - 1))));
-                point = corner.add(u.scale(s)).add(v.scale(t)).add(face.normal.scale(0.25));
-                sample = shade(point, face.normal, lamps, occluder);
-                color = sample.ambient.add(sample.directed);
-                pixels[offset] = u8(int(max(0.0, min(127.0, max(least, color.x) * 127.5))));
-                pixels[offset + 1] = u8(int(max(0.0, min(127.0, max(least, color.y) * 127.5))));
-                pixels[offset + 2] = u8(int(max(0.0, min(127.0, max(least, color.z) * 127.5))));
-                offset += 3;
-            }
-        }
-    }
-    bsp.lighting = bytes(pixels);
-    bsp.light_channels = 3;
-    # What moves has no lightmap: each of its corners takes the light where
-    # it stands when the level is built.
-    for index in range(last, len(bsp.faces)) {
-        face = bsp.faces[index];
-        if len(face.colors) < len(face.vertices) * 4 {
-            continue;
-        }
-        for (corner_index, vertex) in enumerate(face.vertices) {
-            sample = shade(vertex.add(face.normal.scale(0.25)), face.normal, lamps, occluder);
-            color = sample.ambient.add(sample.directed);
-            face.colors[corner_index * 4] = int(max(0.0, min(255.0, max(least, color.x) * 255.0)));
-            face.colors[corner_index * 4 + 1] = int(max(0.0, min(255.0, max(least, color.y) * 255.0)));
-            face.colors[corner_index * 4 + 2] = int(max(0.0, min(255.0, max(least, color.z) * 255.0)));
-        }
-    }
-    return total;
+    job.step(job.last - job.first);
+    return job.finish();
 }

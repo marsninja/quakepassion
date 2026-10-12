@@ -124,7 +124,11 @@ node Shelf {
 pack each game is playing (by game, a pack id)."""
 obj ContentState {
     has shelf: Shelf | None = None,
-        playing: dict[str, str] = {};
+        playing: dict[str, str] = {},
+        # The folders someone has set for their packs (by pack id, and "root"
+        # for the folder they are all under), once read.
+        folders: dict[str, str] = {},
+        folders_read: bool = False;
 }
 
 glob _content: ContentState = ContentState();
@@ -154,13 +158,85 @@ def shelf() -> Shelf {
     return made;
 }
 
+"""The file that keeps the folders someone has set for their games, beside
+the settings."""
+def folders_path() -> str {
+    configured = os.getenv("QP_CONFIG_DIR", "");
+    return (configured if configured else os.path.expanduser("~")) + "/.quakepassion-folders.txt";
+}
+
+"""The folders such a file's text names: a line is a pack's id (or `root`,
+for the folder every pack is under) and then its folder, which may have
+spaces in it. A line that begins with # says nothing."""
+def read_folders(text: str) -> dict[str, str] {
+    found: dict[str, str] = {};
+    for raw in text.replace("\r", "").split("\n") {
+        line = raw.strip();
+        cut = line.find(" ");
+        if line.startswith("#") or cut <= 0 {
+            continue;
+        }
+        folder = line[cut + 1:].strip();
+        if folder {
+            found[line[:cut]] = folder;
+        }
+    }
+    return found;
+}
+
+"""The text of such a file."""
+def folders_text(folders: dict[str, str]) -> str {
+    lines = ["# QuakePassion: where each game's files are (ed_game <game> dir <folder>)"];
+    for id in sorted(folders.keys()) {
+        lines.append(id + " " + folders[id]);
+    }
+    return "\n".join(lines) + "\n";
+}
+
+"""The folders set, read from their file on first use."""
+def set_folders() -> dict[str, str] {
+    if not _content.folders_read {
+        _content.folders_read = True;
+        try {
+            with open(folders_path(), "r") as file {
+                _content.folders = read_folders(file.read());
+            }
+        } except OSError {
+            _content.folders = {};
+        }
+    }
+    return _content.folders;
+}
+
+"""Set a pack's folder (or the root's), or with no folder give it up, and
+keep it. What is opened from then on is looked for there. False when the
+file could not be written."""
+def keep_folder(id: str, folder: str) -> bool {
+    folders = set_folders();
+    if folder {
+        folders[id] = folder;
+    } else {
+        folders.pop(id, None);
+    }
+    try {
+        with open(folders_path(), "w") as file {
+            file.write(folders_text(folders));
+        }
+    } except OSError {
+        return False;
+    }
+    return True;
+}
+
 """The folder every pack's folder is under. QP_ASSETS names the base folder
 of the game QP_GAME selects (for Passion, the root itself), so the root is
-that folder's parent; without it, ~/quake-assets."""
+that folder's parent; without it, the root someone has set, or
+~/quake-assets."""
 def assets_root() -> str {
     configured = os.getenv("QP_ASSETS", "");
     if configured == "" {
-        return os.path.expanduser("~") + "/quake-assets";
+        chosen = set_folders().get("root", "");
+        return chosen if chosen else os.path.expanduser("~") + "/quake-assets";
     }
     if os.getenv("QP_GAME", "q1") == "passion" {
         return configured;
@@ -175,6 +251,10 @@ def pack_folder(pack: ContentPack) -> str {
     configured = os.getenv("QP_ASSETS", "");
     if configured != "" and pack.id == os.getenv("QP_GAME", "q1") {
         return configured;
+    }
+    chosen = set_folders().get(pack.id, "");
+    if chosen {
+        return chosen;
     }
     return assets_root() + "/" + pack.folder;
 }

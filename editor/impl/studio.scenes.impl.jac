@@ -47,14 +47,30 @@ impl Studio.build_level(game: str, name: str) -> Bsp | None {
     } else {
         plane_base = len(made.bsp.planes);
         warned = len(made.warnings);
-        self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
-        if self.vis_cell > 0.0 {
-            # Cut into cells, each with what it can see.
-            self.vis_done = bake_cells(whole, made, self.vis_cell);
-        }
-        self.built_copies.append(keep_bake(made, mark, plane_base, warned, self.lit_samples, self.vis_done));
-        if len(self.built_copies) > 6 {
-            self.built_copies = self.built_copies[1:];
+        # Whatever was being lit was the light of another build.
+        self.light_task = None;
+        if self.lit and self.light_background and self.vis_cell <= 0.0 {
+            # Shown unlit now, and lit a slice a frame on a copy of its own:
+            # when that is done it is kept under this build's mark, and the
+            # build that follows takes it.
+            aside = compile_scene(whole, self.materials);
+            aside_base = len(aside.bsp.planes);
+            aside_warned = len(aside.warnings);
+            job = light_job(whole, aside, self.luxel);
+            self.lit_samples = 0;
+            if job is not None {
+                self.light_task = LightTask(job=job, mark=mark, plane_base=aside_base, warned=aside_warned, began=time.time());
+            }
+        } else {
+            self.lit_samples = bake_light(whole, made, self.luxel) if self.lit else 0;
+            if self.vis_cell > 0.0 {
+                # Cut into cells, each with what it can see.
+                self.vis_done = bake_cells(whole, made, self.vis_cell);
+            }
+            self.built_copies.append(keep_bake(made, mark, plane_base, warned, self.lit_samples, self.vis_done));
+            if len(self.built_copies) > 6 {
+                self.built_copies = self.built_copies[1:];
+            }
         }
     }
     self.live = made;
@@ -204,6 +220,15 @@ impl Studio.keep_built {
     if app is None or scene is None or not self.is_built_scene() {
         return;
     }
+    if self.moving and self.preview_light(scene) {
+        return;
+    }
+    if self.previewed and not self.moving {
+        # The drag is over: the level as the scene now has it, finely lit.
+        self.previewed = False;
+        self.preview_shift = Vec3();
+        self.built_geometry = -1;
+    }
     if scene.geometry == self.built_geometry or self.moving or self.resizing {
         return;
     }
@@ -217,6 +242,45 @@ impl Studio.keep_built {
         return;
     }
     self.seen_revision = -1;
+}
+
+impl Studio.preview_light(scene: Scene) -> bool {
+    picked = scene.selection();
+    if not self.lit or len(picked) == 0 or len(scene.selected_solids()) > 0 {
+        return False;
+    }
+    for item in picked {
+        if not item.classname().startswith("light") or item.origin() is None {
+            return False;
+        }
+    }
+    shift = self.move_by;
+    if shift.sub(self.preview_shift).length() < 0.5 or time.time() - self.preview_at < 0.25 {
+        return True;
+    }
+    # The lights put where the drag would leave them, the level lit, and the
+    # lights put back: the scene itself is not changed until the drag ends.
+    kept: list[str] = [];
+    for item in picked {
+        stood = item.origin();
+        kept.append(item.fields.get("origin", ""));
+        if stood is not None {
+            item.fields["origin"] = write_vector(stood.add(shift));
+        }
+    }
+    fine = self.luxel;
+    self.luxel = max(self.luxel, 32.0);
+    self.load(scene.game, scene.name, quiet=True);
+    _release();
+    self.luxel = fine;
+    for (index, item) in enumerate(picked) {
+        item.fields["origin"] = kept[index];
+    }
+    self.preview_shift = shift;
+    self.preview_at = time.time();
+    self.previewed = True;
+    print("studio: light previewed at " + write_vector(shift));
+    return True;
 }
 
 impl Studio.outline_solids(scene: Scene) {
@@ -399,6 +463,14 @@ impl Studio.handles(scene: Scene) -> list[tuple[int, Vec3]] {
             for (number, point) in enumerate(control) {
                 found.append((number, point));
             }
+            if len(control) > 0 {
+                # One more, at their middle: the whole patch goes with it.
+                summed = Vec3();
+                for point in control {
+                    summed = summed.add(point);
+                }
+                found.append((len(control), summed.scale(1.0 / float(len(control)))));
+            }
         }
         return found;
     }
@@ -466,10 +538,20 @@ impl Studio.draw_handles(scene: Scene, area: Rect) {
         return;
     }
     if self.mode == "corner" and self.patch_now(scene) is not None {
-        for (index, spot) in self.handles(scene) {
+        knobs = self.handles(scene);
+        # The last is the whole patch's: while it is held every point goes with it.
+        whole = self.resizing and len(knobs) > 0 and self.resize_side == knobs[-1][0];
+        for (index, spot) in knobs {
             grabbed = self.resizing and index == self.resize_side;
-            at = self.camera.project(area, spot.add(self.corner_by) if grabbed else spot);
+            at = self.camera.project(area, spot.add(self.corner_by) if grabbed or whole else spot);
             if at is None {
+                continue;
+            }
+            if index == knobs[-1][0] {
+                # Larger, and in another colour, so that it is not taken for a point.
+                box = Rect(x=at[0] - 6, y=at[1] - 6, w=13, h=13);
+                canvas.fill(box, canvas.theme.accent if grabbed else ink(0xe5484d));
+                canvas.outline(box, canvas.theme.header);
                 continue;
             }
             box = Rect(x=at[0] - 4, y=at[1] - 4, w=9, h=9);
@@ -557,7 +639,7 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
         hub = self.turn_hub(scene);
     }
     centre = self.camera.project(area, hub) if hub is not None else None;
-    for (index, middle) in self.handles(scene) {
+    for (index, middle) in self.depth_knobs() + self.handles(scene) {
         at = self.camera.project(area, middle);
         if index >= 900 and index < 930 and at is not None and centre is not None
             and abs(at[0] - centre[0]) + abs(at[1] - centre[1]) < 6 {
@@ -575,6 +657,11 @@ impl Studio.grab_handle(scene: Scene, x: int, y: int) -> bool {
             # A mark's handle says nothing until it has been dragged.
             self.turn_by = -1.0 if index >= 940 else 0.0;
             self.size_by = Vec3(x=1.0, y=1.0, z=1.0);
+            if index >= 970 and index <= 977 {
+                # An edge of another view's band: the drag starts where it is.
+                banded = self.ports[(index - 970) // 2].camera;
+                self.resize_by = banded.depth_low if (index - 970) % 2 == 0 else banded.depth_high;
+            }
             return True;
         }
     }
@@ -910,7 +997,7 @@ impl Studio.scene_command(scene: Scene, args: list[str]) -> bool {
         if len(args) > 2 and args[2] in ["x", "y"] {
             about = 0 if args[2] == "x" else 1;
         }
-        if not scene.turn_selection(degrees, self.grid, about, self.pivot_for(scene), self.tex_lock) {
+        if not scene.turn_selection(degrees, self.grid, about, self.pivot_for(scene), self.tex_turns()) {
             self.say("Nothing to turn");
         }
         return True;
@@ -1041,4 +1128,29 @@ impl Studio.list_materials(ui: StudioUi) {
     }
     ui.materials.rows = rows;
     self.fill_gallery(ui);
+}
+
+impl Studio.step_light {
+    task = self.light_task;
+    if task is None {
+        return;
+    }
+    job = task.job;
+    began = time.time();
+    while not job.finished() and time.time() - began < 0.012 {
+        job.step(4);
+    }
+    if not job.finished() {
+        return;
+    }
+    samples = job.finish();
+    kept = keep_bake(job.made, task.mark, task.plane_base, task.warned, samples, self.vis_done);
+    self.built_copies = [copy for copy in self.built_copies if copy.mark != task.mark] + [kept];
+    if len(self.built_copies) > 6 {
+        self.built_copies = self.built_copies[1:];
+    }
+    self.light_task = None;
+    print("studio: lit in the background samples=" + str(samples) + " seconds=" + str(round(time.time() - task.began, 1)));
+    # Built again: the build finds this light kept under its mark.
+    self.built_geometry = -1;
 }

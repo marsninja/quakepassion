@@ -19,6 +19,12 @@ impl Studio.played(dt: float) {
     if not self.playing or app is None {
         return;
     }
+    # The tools are given the frame while a game is played too: a script
+    # attached to what fires is theirs to run.
+    for tool in self.tools {
+        tool.tick(self.host(), dt);
+    }
+    self.play_clock += dt;
     signals = [app.world->:HasSignal:->][?:Signal];
     if len(self.fired_seen) != len(signals) {
         # The level has only now been loaded: from here on is what counts.
@@ -40,6 +46,7 @@ impl Studio.played(dt: float) {
             continue;
         }
         self.fired_names[label] = self.fired_names.get(label, 0) + more;
+        self.fired_when[label] = self.play_clock;
         if len(self.fire_log) < 400 {
             self.fire_log.append(label);
         }
@@ -76,6 +83,14 @@ impl Studio.live_command(args: list[str]) -> bool {
             "A played game is held when one of these fires: " + ", ".join(sorted(self.breaks))
             if self.breaks
             else "No firing holds a played game (ed_break <targetname>)"
+        );
+        return True;
+    }
+    if name == "ed_trace" and len(args) > 1 and args[1] == "graph" {
+        self.graph_over = (not self.graph_over) if len(args) < 3 or args[2] not in ["on", "off"] else args[2] == "on";
+        print("studio: trace graph=" + ("1" if self.graph_over else "0"));
+        self.say(
+            "The scene's logic is drawn over a played game, lit as it fires" if self.graph_over else "Nothing is drawn over a played game"
         );
         return True;
     }
@@ -164,4 +179,56 @@ impl Studio.live_command(args: list[str]) -> bool {
     self.say("Live: the player at " + str(int(round(at.x))) + " " + str(int(round(at.y))) + " " + str(int(round(at.z)))
         + " with " + str(player.health) + " health, " + str(shown) + " signals");
     return True;
+}
+
+impl Studio.draw_over_game(width: int, height: int) {
+    scene = self.scene;
+    if not self.graph_over or not self.playing or scene is None {
+        return;
+    }
+    nodes = scene.logic_nodes();
+    if len(nodes) == 0 {
+        return;
+    }
+    canvas = self.canvas;
+    canvas.unclip();
+    theme = canvas.theme;
+    wide = 112;
+    tall = 18;
+    laid = graph_places([[placed.column, placed.row] for placed in nodes[:48]], wide, tall, 6);
+    room = laid[-1];
+    panel = Rect(x=max(4, width - room[0] - 8), y=34, w=room[0], h=room[1] + 16);
+    canvas.fill(panel, theme.panel.faded(200));
+    canvas.outline(panel, theme.border);
+    canvas.text("Logic" + ("  (held)" if self.holding else ""), panel.x + 6, panel.y + 2, theme.dim, theme.small);
+    places: dict[int, list[int]] = {};
+    for (index, placed) in enumerate(nodes[:48]) {
+        places[placed.item.serial] = [panel.x + laid[index][0], panel.y + 16 + laid[index][1]];
+    }
+    # What fires what first, under the boxes.
+    for placed in nodes[:48] {
+        here_at = places[placed.item.serial];
+        for aimed in scene.fires(placed.item) {
+            there = places.get(aimed.serial);
+            if there is not None {
+                canvas.line(here_at[0] + wide, here_at[1] + tall // 2, there[0], there[1] + tall // 2, theme.dim);
+            }
+        }
+    }
+    for placed in nodes[:48] {
+        at = places[placed.item.serial];
+        label = self.signal_label(placed.item.fields);
+        lit = flash_level(self.play_clock, self.fired_when.get(label, -1.0), 1.0);
+        box = Rect(x=at[0], y=at[1], w=wide, h=tall);
+        tone = theme.field;
+        if lit > 0.0 {
+            tone = ink(0xff7a18, 90 + int(165.0 * lit));
+        } elif label in self.fired_names {
+            tone = ink(0x3a5a3a);
+        }
+        canvas.fill(box, tone);
+        canvas.outline(box, ink(0xe5484d) if label in self.breaks else theme.border);
+        count = self.fired_names.get(label, 0);
+        canvas.label(label + (" " + str(count) if count else ""), box, theme.text, -1, 4, theme.small);
+    }
 }

@@ -30,7 +30,12 @@ obj SceneView {
         bare: bool = False,
         # It lies over views drawn before it: what they drew in its
         # rectangle, and how deep, is cleared first.
-        over: bool = False;
+        over: bool = False,
+        # An orthographic view held to a band of depth: what the level draws
+        # lies between `near` and `far` along the line of sight from the eye
+        # (both nothing for every depth). The workbench's own drawing is not cut.
+        near: float = 0.0,
+        far: float = 0.0;
 }
 
 """The methods are abstract so that a workbench in another module is reached
@@ -68,6 +73,11 @@ obj Workbench {
     """Draw over the finished views, in screen units."""
     def draw(width: int, height: int) abst;
 
+    """Draw over a game being played while the workbench is not active, in
+    screen units, before the console and the menu (what is watched as it
+    runs: a graph of what fires, say)."""
+    def draw_over_game(width: int, height: int) abst;
+
     """A level's data when the workbench is where it comes from (a scene
     being edited), built afresh for each load; none for a level the game
     loads from its own files."""
@@ -91,6 +101,8 @@ obj NoWorkbench(Workbench) {
     def draw_scene(view: SceneView) {}
 
     def draw(width: int, height: int) {}
+
+    def draw_over_game(width: int, height: int) {}
 
     def build_level(game: str, name: str) -> Bsp | None {
         return None;

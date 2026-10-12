@@ -242,7 +242,9 @@ obj Director {
         stream: Stream,
         density: float = 0.5,
         economy: Economy = Economy(),
-        used: dict[int, list[int]] = {};
+        used: dict[int, list[int]] = {},
+        # The only foes to draw on, by class, when an editor says ([] for the whole roster).
+        only: list[str] = [];
 
     def room_of(beat: int) -> Room {
         return rooms_of(self.site)[beat];
@@ -655,6 +657,10 @@ def teleporter(director: Director, passage: Passage) {
 # ---------------------------------------------------------------------------
 
 def budget_for(director: Director, room: Room, total_order: int) -> float {
+    if room.budget >= 0.0 {
+        # Said outright for this room.
+        return room.budget;
+    }
     if room.kind in ["start", "goal", "recovery", "cache", "vista"] {
         return 0.0 if room.kind != "vista" else 1.5 * director.density;
     }
@@ -670,6 +676,9 @@ def pick_foe(
     weights: list[float] = [];
     for foe in ROSTER {
         if foe.cost > remaining or foe.rank > max_rank {
+            continue;
+        }
+        if len(director.only) > 0 and foe.kind not in director.only {
             continue;
         }
         if role and foe.role != role {
@@ -1054,9 +1063,9 @@ def lockdowns(director: Director) {
 }
 
 def direct(
-    plan: Expedition, site: Site, bp: Blueprint, stream: Stream, density: float
+    plan: Expedition, site: Site, bp: Blueprint, stream: Stream, density: float, only: list[str] = []
 ) -> Economy {
-    director = Director(plan=plan, site=site, bp=bp, stream=stream, density=density);
+    director = Director(plan=plan, site=site, bp=bp, stream=stream, density=density, only=list(only));
     stage_objectives(director);
     populate(director);
     lockdowns(director);

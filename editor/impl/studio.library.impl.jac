@@ -109,7 +109,8 @@ impl Studio.expanded(scene: Scene) -> Scene {
     }
     plain: list[MapItem] = [];
     # Makers' brushes are made before the diggers cut: a hole goes through a made wall too.
-    for read in with_holes(with_makers(with_images(scene_map(scene)) if self.images_shown else scene_map(scene))) {
+    # Each duplicator's images, made again only where what they copy has changed.
+    for read in with_holes(with_makers(with_regenerated(scene, scene_map(scene)) if self.images_shown else scene_map(scene))) {
         if read.fields.get("classname", "") != "misc_prefab" {
             plain.append(read);
         }
@@ -215,6 +216,75 @@ impl Studio.list_library(ui: StudioUi) {
     }
     if len(self.favourites) > 0 {
         rows.append(TreeRow(key="trash:fav", text="Trash: drag a favourite here to forget it", depth=1, tone="faint", fixed=True));
+    }
+    # Pieces of logic as the scene's game has them.
+    sought_now = self.library_filter.strip().lower();
+    scene_now = self.scene;
+    logic_game = scene_now.game if scene_now is not None and scene_now.game in ["q1", "q2", "q3"] else "q1";
+    gadgets = [piece[0] for piece in LOGIC_PIECES if piece[1] == logic_game and (not sought_now or sought_now in piece[0])];
+    rows.append(TreeRow(key="shelf:Logic", text="Logic", tone="accent", note=str(len(gadgets))));
+    for gadget in gadgets {
+        rows.append(TreeRow(key="gadget:" + gadget, text=gadget, depth=1));
+    }
+    # Materials, models and sounds: so many that they are listed only for
+    # what the find field asks for, forty of each at most.
+    if sought_now {
+        # Those the Materials tab shows, its shelf's, those lately in hand
+        # and those the scene's brushes are made of.
+        offered: list[str] = [tile.key for tile in ui.gallery.tiles] + list(self.recent_materials);
+        shelf_now = self.archive;
+        if shelf_now is not None and self.shelf and ":" in self.shelf {
+            offered.extend(shelf_now.names(self.shelf));
+        }
+        if scene_now is not None {
+            for brush in scene_now.solids()[:2000] {
+                for side in brush.sides {
+                    offered.append(side.material);
+                }
+            }
+        }
+        materials: list[str] = [];
+        for material in offered {
+            if material and sought_now in material.lower() and material not in materials {
+                materials.append(material);
+            }
+        }
+        materials = materials[:40];
+        rows.append(TreeRow(key="shelf:Materials", text="Materials", tone="accent", note=str(len(materials))));
+        for material in materials {
+            rows.append(TreeRow(key="mat:" + material, text=material.split("/")[-1].split(":")[-1], depth=1, note=material));
+        }
+        listing = self.asset_index;
+        stock = self.archive;
+        if listing is None and stock is not None {
+            listing = AssetIndex(shelf=stock);
+            self.asset_index = listing;
+        }
+        for (called, lead, endings) in [
+            ("Models", "model:", [".mdl", ".md2", ".md3"]), ("Sounds", "sound:", [".wav"])
+        ] {
+            found: list[str] = [];
+            if listing is not None {
+                for game in listing.games() {
+                    for file_name in listing.names(game) {
+                        low = file_name.lower();
+                        if sought_now in low and len([ending for ending in endings if low.endswith(ending)]) > 0 {
+                            found.append(game + ":" + file_name);
+                        }
+                        if len(found) >= 40 {
+                            break;
+                        }
+                    }
+                }
+            }
+            rows.append(TreeRow(key="shelf:" + called, text=called, tone="accent", note=str(len(found))));
+            for whole_name in found {
+                halves = whole_name.split(":", 1);
+                rows.append(
+                    TreeRow(key=lead + whole_name, text=halves[1].split("/")[-1] + "  (" + halves[0] + ")", depth=1, note=halves[1])
+                );
+            }
+        }
     }
     ui.library.rows = rows;
 }
@@ -474,6 +544,13 @@ impl Studio.library_command(scene: Scene, args: list[str]) -> bool {
             self.library_command(scene, ["ed_prefab", "add", word[7:]]);
         } elif word.startswith("fav:") {
             self.class_command(scene, ["ed_class", word[4:]]);
+        } elif word.startswith("gadget:") {
+            self.command(["ed_logic", word[7:]]);
+        } elif word.startswith("mat:") {
+            self.command(["ed_material", word[4:]]);
+        } elif word.startswith("model:") or word.startswith("sound:") {
+            # Shown in the explorer, as any file of a game is.
+            self.command(["ed_asset", "file:" + word[6:]]);
         } elif word.startswith("doc:") {
             self.show_doc(word[4:]);
         } elif word.startswith("recent:") {
@@ -615,11 +692,51 @@ impl Studio.preview_library(ui: StudioUi) {
     rows = ui.library.rows;
     at = ui.library.hover_row;
     key = rows[at].key if at >= 0 and at < len(rows) else "";
-    if not key.startswith("prefab:") or key == self.library_previewed {
-        # What was last looked at stays until another prefab is.
+    shown_kinds = ["prefab:", "model:", "sound:", "mat:"];
+    if len([lead for lead in shown_kinds if key.startswith(lead)]) == 0 or key == self.library_previewed {
+        # What was last looked at stays until another thing with a picture is.
         return;
     }
     self.library_previewed = key;
+    tint = self.canvas.theme.accent;
+    if key.startswith("model:") {
+        # A model as its first frame's edges.
+        edges = [(pair[0], pair[1]) for pair in self.preview_edges(key[6:])];
+        view.shown = len(edges) > 0;
+        if len(edges) > 0 {
+            self.canvas.keep_picture("library:preview", 240, 180, sketch(edges, 240, 180, tint.r, tint.g, tint.b));
+        }
+        return;
+    }
+    if key.startswith("sound:") {
+        # A sound as its shape.
+        halves = key[6:].split(":", 1);
+        listing = self.asset_index;
+        data = listing.read(halves[0], halves[1]) if listing is not None and len(halves) == 2 else None;
+        view.shown = False;
+        if data is not None {
+            try {
+                layout = parse_wav_pcm(data);
+                heard = data[layout.offset:layout.offset + layout.length];
+                self.canvas.keep_picture(
+                    "library:preview", 240, 90, waveform(heard, layout.width, layout.channels, 240, 90, tint.r, tint.g, tint.b)
+                );
+                view.shown = True;
+            } except Exception {
+                view.shown = False;
+            }
+        }
+        return;
+    }
+    if key.startswith("mat:") {
+        picture = self.materials.texture(key[4:]);
+        colours = texture_rgba(picture) if picture is not None else b"";
+        view.shown = len(colours) > 0;
+        if len(colours) > 0 {
+            self.canvas.keep_picture("library:preview", picture.width, picture.height, colours);
+        }
+        return;
+    }
     brushes: list[list[Side]] = [];
     try {
         with open(self.prefab_path(key[7:]), "r") as file {
@@ -634,7 +751,6 @@ impl Studio.preview_library(ui: StudioUi) {
     }
     view.shown = len(brushes) > 0;
     if len(brushes) > 0 {
-        tint = self.canvas.theme.accent;
         self.canvas.keep_picture("library:preview", 240, 180, sketch(sketch_edges(brushes), 240, 180, tint.r, tint.g, tint.b));
     }
 }

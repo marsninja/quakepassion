@@ -1,5 +1,5 @@
 import from engine.math.vec3 { Vec3 }
-import from editor.document.scene { Scene, scene_map, scene_from_map, planes_meet }
+import from editor.document.scene { Scene, FaceEdit, scene_map, scene_from_map, planes_meet }
 import from editor.geometry.brush { box_sides, brush_volume, Plane3 }
 import from editor.formats.map { read_map, write_map }
 
@@ -163,4 +163,35 @@ test "a corner moved onto another leaves one where two were" {
     assert high is not None and about(high[1].z, 64.0);
     assert scene.undo() == "Merge corners" and about(brush_volume(box.sides), 262144.0);
     assert not scene.merge_corners(box, Vec3(x=64.0, y=64.0, z=64.0), Vec3(x=64.0, y=64.0, z=64.0));
+}
+
+test "linked faces share one material, painted or edited from any of them, as one step" {
+    scene = row();
+    boxes = scene.solids();
+    top = Vec3(z=1.0);
+    assert scene.link_sides(boxes[0], facing(scene, 0, top), boxes[1], facing(scene, 1, top));
+    assert scene.link_sides(boxes[2], facing(scene, 2, top), boxes[1], facing(scene, 1, top));
+    # One top painted: all three tops take it; their sides and the fourth keep theirs.
+    assert scene.paint_face(boxes[2], facing(scene, 2, top), "metal");
+    for index in range(3) {
+        assert boxes[index].sides[facing(scene, index, top)].material == "metal" , str(index);
+        assert boxes[index].sides[facing(scene, index, Vec3(y=-1.0))].material == "wall";
+    }
+    assert boxes[3].sides[facing(scene, 3, top)].material == "wall";
+    assert scene.undo() == "Paint face";
+    for index in range(3) {
+        assert boxes[index].sides[facing(scene, index, top)].material == "wall";
+    }
+    # An edit of a picked face reaches its links once, however many links lead there.
+    scene.select_face(boxes[0], facing(scene, 0, top));
+    assert scene.reface(FaceEdit(how="shift", s=8.0, t=0.0), "Shift");
+    shifted = [boxes[index].sides[facing(scene, index, top)].mapping.s_shift for index in range(3)];
+    assert shifted[0] == shifted[1] and shifted[1] == shifted[2] and shifted[0] != 0.0;
+    assert boxes[3].sides[facing(scene, 3, top)].mapping.s_shift == 0.0;
+    # A material given the whole of one brush gives its linked top to the others too.
+    scene.clear_selection();
+    scene.select_solid(boxes[1]);
+    assert scene.reface(FaceEdit(how="material", material="stone"), "Material");
+    assert boxes[0].sides[facing(scene, 0, top)].material == "stone" and boxes[2].sides[facing(scene, 2, top)].material == "stone";
+    assert boxes[0].sides[facing(scene, 0, Vec3(y=-1.0))].material == "wall";
 }

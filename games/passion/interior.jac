@@ -691,6 +691,11 @@ def collapse_cover(
 # Recipe selection and assembly
 # ---------------------------------------------------------------------------
 
+"""The recipes a room's inside is made by."""
+glob RECIPES: list[str] = [
+    "hall", "clipped", "cross", "court", "cavern", "pit", "balcony", "terraces", "split", "arena", "colonnade"
+];
+
 def choose_recipe(room: Room, stream: Stream, sockets: list[Socket]) -> str {
     spread = 0;
     for socket in sockets {
@@ -744,7 +749,8 @@ def build_interior(
     w = room.columns();
     h = room.rows();
     for attempt in range(6) {
-        recipe = choose_recipe(room, stream, sockets) if attempt < 5 else "hall";
+        # A recipe asked for is tried as often as a chosen one would be.
+        recipe = (room.wanted if room.wanted in RECIPES else choose_recipe(room, stream, sockets)) if attempt < 5 else "hall";
         interior = Interior(width=w, height=h, recipe=recipe);
         n = w * h;
         interior.floor = fill(n, 0);

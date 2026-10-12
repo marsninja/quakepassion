@@ -355,6 +355,28 @@ obj Loader {
     }
 }
 
+"""What a generated level's textures are called as materials an editor can
+find again: a Quake texture goes by its name alone in the level
+(`q1:stone1_3`) and by its map and name as a material (`q1:e1m2/stone1_3`).
+The others are called the same in both."""
+def editor_material_names(table: DistrictTable | None = None) -> dict[str, str] {
+    chosen = table if table is not None else kept_table();
+    names: dict[str, str] = {};
+    for district in chosen.slots {
+        for spec in district {
+            if len(spec) >= 3 and spec[0] == "q1" {
+                names["q1:" + spec[2]] = material_word(spec);
+            }
+        }
+    }
+    for spec in SPECIAL_TEXTURES {
+        if len(spec) >= 3 and spec[0] == "q1" {
+            names["q1:" + spec[2]] = material_word(spec);
+        }
+    }
+    return names;
+}
+
 def load_materials(directory: str, table: DistrictTable | None = None) -> list[Texture] {
     catalog = AssetCatalog(game="passion", directory=directory);
     result: list[Texture] = [];

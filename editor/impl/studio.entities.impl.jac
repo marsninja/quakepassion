@@ -93,8 +93,26 @@ impl Studio.mark_handles(scene: Scene) -> list[tuple[int, Vec3]] {
             reach = float(words[0]);
         }
         found.append((941, middle.add(self.camera.right().scale(max(64.0, reach * 2.0)))));
+        beam = self.spot_of(chosen[0]);
+        if beam is not None {
+            # On the edge of its cone, a little way along it.
+            found.append((942, self.cone_knob(middle, beam, beam.half)));
+        }
     }
     return found;
+}
+
+impl Studio.spot_of(item: Item) -> Cone | None {
+    scene = self.scene;
+    if scene is None or not item.classname().startswith("light") {
+        return None;
+    }
+    return lamp_cone(scene, item);
+}
+
+impl Studio.cone_knob(middle: Vec3, cone: Cone, half: float) -> Vec3 {
+    side = square_to(cone.aim, self.camera.right());
+    return middle.add(cone.aim.scale(96.0)).add(side.scale(96.0 * math.tan(math.radians(half))));
 }
 
 impl Studio.drag_mark(scene: Scene, x: int, y: int, free: bool) {
@@ -104,6 +122,17 @@ impl Studio.drag_mark(scene: Scene, x: int, y: int, free: bool) {
         return;
     }
     middle = boxed.center();
+    if self.resize_side == 942 {
+        beam = self.spot_of(chosen[0]);
+        if beam is None {
+            return;
+        }
+        # As wide as a cone whose edge passes where the pointer is, in the plane facing the view.
+        pointed = self.on_view_plane(x, y, middle.add(beam.aim.scale(96.0)));
+        notch = 1.0 if free else 5.0;
+        self.turn_by = max(1.0, min(85.0, float(round(cone_through(middle, beam.aim, pointed) / notch)) * notch));
+        return;
+    }
     if self.resize_side == 941 {
         # As far from the light as the pointer is, in the plane facing the view.
         far = self.on_view_plane(x, y, middle).sub(middle).length();
@@ -147,12 +176,18 @@ impl Studio.draw_mark_handles(scene: Scene, area: Rect) {
         } elif held == index and index == 941 {
             shown_at = middle.add(self.camera.right().scale(max(64.0, self.turn_by * 2.0)));
             words = "light " + str(int(round(self.turn_by)));
+        } elif held == index and index == 942 {
+            beam = self.spot_of(chosen[0]);
+            if beam is not None {
+                shown_at = self.cone_knob(middle, beam, self.turn_by);
+            }
+            words = "cone " + str(int(round(self.turn_by)));
         }
         at = self.camera.project(area, shown_at);
         if at is None {
             continue;
         }
-        tone = ink(0x4cc38a) if index == 940 else ink(0xf5d90a);
+        tone = ink(0x4cc38a) if index == 940 else (ink(0xff9d3d) if index == 942 else ink(0xf5d90a));
         knob = Rect(x=at[0] - 4, y=at[1] - 4, w=9, h=9);
         canvas.fill(knob, canvas.theme.accent if held == index else tone);
         canvas.outline(knob, canvas.theme.header);

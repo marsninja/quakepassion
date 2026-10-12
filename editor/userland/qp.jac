@@ -1,0 +1,129 @@
+"""What a script of a QuakePassion project may touch: the level it is run
+on, as a graph of its entities, and the few things it may ask of the studio.
+A script is a walker; it is set down on the entity it is attached to (or on
+the level itself) and walks from there. Nothing it does reaches the studio
+but what it asks for here."""
+
+import json;
+
+"""What the script has asked for, in order: the studio reads these."""
+glob ASKED: list[str] = [];
+
+"""One word of a request: spaces and line ends cannot break it."""
+def word(text: str) -> str {
+    return json.dumps(str(text));
+}
+
+"""An entity of the level: its number in the document, its class and its
+fields as the map has them."""
+node Thing {
+    has number: int = 0,
+        classname: str = "",
+        fields: dict[str, str] = {};
+
+    """Ask that a field of it be set."""
+    def put(key: str, value: str) {
+        self.fields[key] = str(value);
+        ASKED.append("set " + str(self.number) + " " + word(key) + " " + word(value));
+    }
+
+    """Ask that it be fired, as what targets it would fire it."""
+    def fire {
+        name = self.fields.get("targetname", "");
+        if name {
+            ASKED.append("fire " + word(name));
+        }
+    }
+
+    """Ask that it be selected in the studio."""
+    def pick {
+        ASKED.append("pick " + str(self.number));
+    }
+}
+
+"""The level: what holds every entity."""
+node Level {
+    has name: str = "",
+        game: str = "",
+        event: str = "run",
+        words: list[str] = [];
+
+    """Say something in the studio's status bar and console."""
+    def say(text: str) {
+        ASKED.append("say " + word(text));
+    }
+
+    """Ask for a new entity of a class at a place, with fields."""
+    def add(classname: str, origin: str, fields: dict[str, str] = {}) {
+        asked = "add " + word(classname) + " " + word(origin);
+        for (key, value) in fields.items() {
+            asked += " " + word(key) + " " + word(value);
+        }
+        ASKED.append(asked);
+    }
+}
+
+"""The level holds an entity; an entity fires another (its `target` is the
+other's `targetname`); an entity is in the group that holds it."""
+edge Holds: Level --> Thing {}
+edge Fires: Thing --> Thing {}
+
+"""Build the level's graph from what the studio wrote: every entity a
+Thing the Level holds, with a Fires edge wherever one targets another."""
+def read_level(source: str) -> Level {
+    data: dict[str, any] = {};
+    with open(source, "r") as file {
+        data = json.loads(file.read());
+    }
+    level = Level(
+        name=str(data.get("name", "")), game=str(data.get("game", "")), event=str(data.get("event", "run")),
+        words=[str(each) for each in data.get("words", [])]
+    );
+    things: dict[int, Thing] = {};
+    for each in data.get("entities", []) {
+        fields: dict[str, str] = {};
+        for (key, value) in each["fields"].items() {
+            fields[str(key)] = str(value);
+        }
+        thing = Thing(number=int(each["number"]), classname=fields.get("classname", ""), fields=fields);
+        level +>:Holds:+> thing;
+        things[thing.number] = thing;
+    }
+    for thing in things.values() {
+        for key in ["target", "killtarget"] {
+            aim = thing.fields.get(key, "");
+            if not aim {
+                continue;
+            }
+            for other in things.values() {
+                if other is not thing and other.fields.get("targetname", "") == aim {
+                    thing +>:Fires:+> other;
+                }
+            }
+        }
+    }
+    ASKED.append("on " + str(int(data.get("on", -1))));
+    return level;
+}
+
+"""The entity the script is attached to, when it is attached to one (the
+studio says a number below zero for the level itself)."""
+def attached(level: Level) -> Thing | None {
+    wanted = int(ASKED[0].split()[1]) if len(ASKED) > 0 and ASKED[0].startswith("on ") else -1;
+    if wanted < 0 {
+        return None;
+    }
+    for thing in [level->:Holds:->][?:Thing] {
+        if thing.number == wanted {
+            return thing;
+        }
+    }
+    return None;
+}
+
+"""Write what the script asked for, for the studio to read."""
+def write_asked(result: str) {
+    with open(result, "w") as file {
+        file.write(chr(10).join([line for line in ASKED if not line.startswith("on ")]) + chr(10));
+    }
+}

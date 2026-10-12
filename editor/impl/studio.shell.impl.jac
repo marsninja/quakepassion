@@ -18,6 +18,47 @@ impl Studio.autosave_path(name: str) -> str {
     return os.path.dirname(self.scene_path("x")) + "/autosave/" + name.replace("/", "_") + ".map";
 }
 
+impl Studio.journal_path(name: str) -> str {
+    return self.autosave_path(name)[:-4] + ".journal";
+}
+
+impl Studio.keep_journal(dt: float) {
+    scene = self.scene;
+    if scene is None or not self.is_built_scene() {
+        return;
+    }
+    if scene.name != self.journal_of {
+        # Another scene: its own journal, begun from how it stands.
+        self.journal_of = scene.name;
+        self.journal_kept = [];
+        self.journal_last = scene.journal.done[-1] if len(scene.journal.done) > 0 else None;
+        return;
+    }
+    done = scene.journal.done;
+    newest = done[-1] if len(done) > 0 else None;
+    # Half a second of the clock's own time between states taken.
+    if newest is None or newest is self.journal_last or time.time() - self.journal_clock < 0.5 {
+        return;
+    }
+    # The steps since the last state taken, by name, and the state they left.
+    named: list[str] = [];
+    for step in reversed(done) {
+        if step is self.journal_last {
+            break;
+        }
+        named.insert(0, step.label);
+        if len(named) >= 4 {
+            break;
+        }
+    }
+    self.journal_last = newest;
+    self.journal_clock = time.time();
+    self.journal_kept.append((", ".join(named), write_map(scene_map(scene))));
+    if len(self.journal_kept) > 16 {
+        self.journal_kept = self.journal_kept[-16:];
+    }
+}
+
 impl Studio.autosave(dt: float, now: bool) {
     scene = self.scene;
     if scene is None or not self.is_built_scene() {
@@ -36,6 +77,16 @@ impl Studio.autosave(dt: float, now: bool) {
         os.makedirs(os.path.dirname(path), exist_ok=True);
         with open(path, "w") as file {
             file.write(write_map(scene_map(scene)));
+        }
+        # What the latest steps left, taken now if it has not been.
+        self.journal_clock = 0.0;
+        self.keep_journal(0.0);
+        if self.journal_of == scene.name and len(self.journal_kept) > 0 {
+            # Beside it, the states its latest steps left it in: after a crash
+            # any of them can be opened again (ed_recover).
+            with open(self.journal_path(scene.name[7:]), "w") as file {
+                file.write(journal_text(self.journal_kept));
+            }
         }
     } except OSError {
         return;
@@ -345,6 +396,51 @@ impl Studio.shell_command(scene: Scene, args: list[str]) -> bool {
         );
         return True;
     }
+    if name == "ed_recover" {
+        # The scene in hand's name, or that of the autosave it was opened from.
+        stem = scene.name[7:] if scene.name.startswith("studio:") else scene.name;
+        if stem.endswith(".map") {
+            stem = stem[:-4];
+        }
+        kept_steps: list[tuple[str, str]] = [];
+        try {
+            with open(self.journal_path(stem), "r") as file {
+                kept_steps = read_journal(file.read());
+            }
+        } except OSError {
+            kept_steps = [];
+        }
+        if len(kept_steps) == 0 {
+            self.say("No journal was kept for " + stem + " (it is written with the autosave)");
+            return True;
+        }
+        which = args[1] if len(args) > 1 else "";
+        if not which.isdigit() {
+            for (number, kept) in enumerate(kept_steps) {
+                print("studio: journal " + str(number + 1) + " " + kept[0]);
+            }
+            self.say(str(len(kept_steps)) + " states kept: ed_recover <n> opens one as a scene of its own");
+            return True;
+        }
+        chosen_step = int(which) - 1;
+        if chosen_step < 0 or chosen_step >= len(kept_steps) {
+            self.say("ed_recover: the journal keeps 1 to " + str(len(kept_steps)));
+            return True;
+        }
+        out_path = os.path.dirname(self.autosave_path("x")) + "/" + stem.replace("/", "_") + "_step" + str(chosen_step + 1) + ".map";
+        try {
+            with open(out_path, "w") as file {
+                file.write(kept_steps[chosen_step][1]);
+            }
+        } except OSError {
+            self.say("ed_recover: could not write " + out_path);
+            return True;
+        }
+        print("studio: recovered " + out_path);
+        self.open_map(out_path);
+        self.say("The scene as it stood after " + kept_steps[chosen_step][0] + ", opened from the journal");
+        return True;
+    }
     if name == "ed_autosave" {
         self.autosave(0.0, True);
         return True;
@@ -394,6 +490,18 @@ impl Studio.draw_marks(shape: Shape) {
             wire_line(middle.add(Vec3(x=a, y=b)), middle.add(Vec3(x=c, y=d)), ink(0xf5d90a, 150));
             wire_line(middle.add(Vec3(x=a, z=b)), middle.add(Vec3(x=c, z=d)), ink(0xf5d90a, 90));
             wire_line(middle.add(Vec3(y=a, z=b)), middle.add(Vec3(y=c, z=d)), ink(0xf5d90a, 90));
+        }
+        beam = self.spot_of(item);
+        if beam is not None {
+            # The cone it shines in: its edge as far as it lights, and the way it points.
+            rim = cone_rim(middle, beam, far * math.cos(math.radians(beam.half)), 16);
+            for (index, point) in enumerate(rim) {
+                wire_line(point, rim[(index + 1) % len(rim)], ink(0xff9d3d, 200));
+                if index % 4 == 0 {
+                    wire_line(middle, point, ink(0xff9d3d, 200));
+                }
+            }
+            wire_line(middle, middle.add(beam.aim.scale(far)), ink(0xff9d3d, 110));
         }
     }
 }
@@ -455,7 +563,11 @@ impl Studio.settings_lines -> list[str] {
         "ed_ruler " + ("on" if self.ruler else "off"),
         "ed_names " + ("on" if self.names else "off"),
         "ed_anglesnap " + str(int(self.angle_snap)),
-        "ed_texlock " + ("on" if self.tex_lock else "off")
+        "ed_texlock " + ("axis" if self.tex_axis else ("on" if self.tex_lock else "off")),
+        "ed_overlay width " + str(self.line_width),
+        "ed_models skins " + ("on" if self.models_skinned else "off"),
+        "ed_corner lock " + ("on" if self.corner_lock else "off"),
+        "ed_build background " + ("on" if self.light_background else "off")
     ];
     for kept_class in self.favourites {
         lines.append("ed_fav " + kept_class);

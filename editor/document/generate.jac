@@ -291,15 +291,17 @@ def counted_name(name: str, more: int) -> str {
 """A map with every duplicator's images put in: as brushes of its own
 entity (the world's, for a group), or, when it asks for `_each`, as
 entities of their own with their names counted up. What is built and
-played."""
-def with_images(items: list[MapItem]) -> list[MapItem] {
+played. `found` has the images already made, by the entity's place among
+`items`."""
+def with_images(items: list[MapItem], found: dict[int, list[list[list[Side]]]] = {}) -> list[MapItem] {
     result: list[MapItem] = [];
-    for read in items {
-        if not duplicates(read.fields) or len(read.brushes) == 0 {
+    for (index, read) in enumerate(items) {
+        if not duplicates(read.fields) or (len(read.brushes) == 0 and index not in found) {
             result.append(read);
             continue;
         }
-        sets = image_sets(read.fields, read.brushes, items);
+        # Made already (with what the group holds copied too), or made here.
+        sets = found[index] if index in found else image_sets(read.fields, read.brushes, items);
         kind = read.fields.get("classname", "");
         if read.fields.get("_each", "0").strip() == "1" and kind != "worldspawn" and kind != "func_group" {
             result.append(read);

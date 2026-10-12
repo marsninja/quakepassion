@@ -123,7 +123,9 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   handle at the tip of its arrow; dragged round it in the plan or the 3D
   view, it turns the entity, in steps of the angle snap. A selected light
   has a handle at the edge of its reach; pulled in or out, it sets the
-  light's value. Each drag is one edit. Paths are drawn corner to corner
+  light's value. A light that shines one way also has its cone drawn and
+  a handle on the cone's edge: pulled out or in, it sets `_cone`, half the
+  cone's angle. Each drag is one edit. Paths are drawn corner to corner
   in every view.
 - **Logic from a library**: `ed_logic` lists the pieces of logic the
   scene's game has (a relay, a delay, a counter, a trigger that fires once
@@ -187,10 +189,14 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_nav check` names what cannot be reached from the first player
   start (they join the Checks tab's findings). `ed_nav show` draws the
   ways: walked green, jumped yellow, dropped red. `ed_nav clear`
-  forgets it. Not there yet: the mesh is not handed to the bots of a
-  game played from the scene, it is not written as an arena's file, and
-  it knows floors only (no ladders, water, lifts, jump pads or
-  teleporters).
+  forgets it. A teleporter (`trigger_teleport`) and a jump pad
+  (`trigger_push`) whose target is somewhere make a way of their own,
+  from the floor under the trigger to the floor under where it sends or
+  throws (`teleport=` and `jumppad=` on the dump's line), so a place
+  reached only through one is reached. A game played from the scene
+  hands the baked mesh to its bots, who route over it. Not there yet: it
+  is not written as an arena's file, and it knows no ladders, water or
+  lifts.
 - **A bake is worked out once**: a level is compiled afresh every time it
   is loaded, since a game played in it writes on it, but its light and its
   cells are kept apart under a mark of what it was built of (the scene's
@@ -199,6 +205,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   is played or stopped. The last six are kept; `ed_build fresh` forgets
   them. A dump's `build from=` line says whether the last build worked
   its bake out (`new`) or was given it (`copy`).
+- **Light baked in the background**: with `ed_build background on` (kept
+  in the settings) a level whose light is not kept is shown unlit at
+  once, and its light is baked on a copy of it a slice a frame (about a
+  hundredth of a second's worth), the studio going on meanwhile; the
+  status line says how far it has got (`lighting 45%`). When it is all
+  lit it is kept under the build's mark and the level is built again,
+  which takes it. An edit made meanwhile starts a bake of its own, and
+  `ed_build cancel` gives the one under way up. (A level cut into cells
+  is still baked at once.)
 - **Recipes**: `ed_recipe <name> "<command>; <command>"` keeps a row of
   editor commands under a name (in the settings, between sessions),
   `ed_make <name>` runs them, `ed_recipe <name>` alone forgets one, and
@@ -274,8 +289,15 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   of, how levels are lit and how wide a bake's cells are for scenes of
   that game, taken up when one is first shown outside a project and kept
   in the settings; `ed_game` alone lists the four with the folder each is
-  read from (those folders are still set by `QP_ASSETS` and
-  `~/quake-assets`, not from the studio).
+  read from. `ed_game <game> dir <folder>` says where a game's files are
+  (`q1`, `q2`, `q3`, or a pack laid over one, such as `hipnotic`), and
+  `ed_game passion dir <folder>` where the folder they are all under is;
+  with no folder it is found as before (`QP_ASSETS`, else
+  `~/quake-assets`). The folders are kept in `.quakepassion-folders.txt`
+  beside the settings, read by the engine when it starts, so the game
+  menu looks there too; what is opened next is looked for there. The
+  Settings box lists them under Files, each in a field, with whether the
+  folder is there.
 - **Prefabs within prefabs**: a prefab may hold linked prefabs
   (`misc_prefab` entities) of its own; when a linked prefab is built, or
   unlinked into a copy, the prefabs it holds are put in too, each
@@ -347,8 +369,16 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   would trip on, by line: braces that do not match, names with no
   braces, lines it does not know or that belong to a stage (or to the
   shader), words a line does not take, and stages with no picture.
-  `ed_shader save` writes the script, a tab a brace. A changed shader is
-  not shown in the renderer until the game loads the script.
+  `ed_shader save` writes the script, a tab a brace. `ed_shaderbox`
+  (Window menu) opens the shader in hand stage by stage: its own lines
+  and each stage's lines as fields (Enter changes a line, an empty one
+  drops it, the last field of each adds one), with stages added, moved
+  up and dropped. `ed_shader preview` draws the shader on a square in the
+  explorer's model view as the game draws a model with it: the script is
+  read by the game's own shader parser over what the archives hold, its
+  stages' pictures loaded, and the engine's model renderer draws them,
+  blends, waves, `tcMod`s and all, moving as they move; while the box is
+  open the preview is drawn again with every change.
 - **The script as text**: `ed_shader text` (the Window menu's last entry)
   opens the whole script in a box of numbered lines that floats over the
   studio. Beside it are what the game would trip on, each at its own line
@@ -367,11 +397,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   pickup, monster and fixture in the 3D view as the model its own game's
   rules give it (the engine's own rules are asked: the game is the
   level's, or the entity's `asset_game` in a scene of no one game),
-  standing where the entity is and turned the way it faces, in the
-  entity's colour and through the walls like the other overlays;
-  `ed_models list` says which model each entity has. The models are
-  drawn as their edges at their first frame; pickups that are little
-  maps of their own (Quake's health and ammo boxes) keep their boxes.
+  standing where the entity is and turned the way it faces. Each is
+  drawn as the game would spawn it: with the skin its rule names (the
+  yellow armour is the green one's model with another skin) at the frame
+  it starts on, hidden by walls as anything in the level is; a class the
+  game shows as a sprite (Quake's bubbles) is its picture facing the
+  eye, clear where the sprite is clear. What is selected has its edges
+  over its skin, and `ed_models skins off` draws edges alone, in the
+  entity's colour and through the walls like the other overlays.
+  `ed_models list` says which model or sprite each entity has, with its
+  skin and frame. Pickups that are little maps of their own (Quake's
+  health and ammo boxes) keep their boxes.
 - **Entities' games**: a scene of the studio's own is no one game's, and
   a pickup, a monster or a fixture in it is spawned by the rules of the
   game named in its `asset_game` field, as in a generated level (without
@@ -418,7 +454,10 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   way. Linked sides are kept in one plane: pushing one (a side handle, or
   `ed_push`) pushes every side tied to it, through however many links, as
   one step, and not at all if any brush would be left with nothing
-  inside. `ed_facelink clear` takes the picked faces, or every side of
+  inside. Linked sides share one material too: a material given to one
+  of them, by Alt and a drag or by the Faces tools, and a change of how
+  it lies (a shift, a turn, a fit), goes to every side tied to it, in the
+  same step. `ed_facelink clear` takes the picked faces, or every side of
   the selected brushes, out of their links. `ed_carve link` carves and
   links the faces the cut divided between the pieces it leaves, and
   `ed_glue face link` puts the picked face in the tagged plane and links
@@ -537,9 +576,41 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   in the model's view paints through the model, where the line of sight
   meets the part's skin. `ed_skin show` puts the picture under the
   model in its panel with the part's triangles and picked points drawn
-  over it, and `ed_skin save <file.tga>` writes it. Not there yet:
-  picking and dragging on the skin view itself, patterns, and the
-  picture drawn on the model.
+  over it, and `ed_skin save <file.tga>` writes it. `ed_skin pattern
+  <solid|checks|stripes|bars|dots> [grain]` has the brush lay its colour
+  only where that pattern covers, in squares, rows, columns or discs so
+  many texels wide; `ed_skin pick <u> <v>` takes up the colour at a place
+  on the skin, as does Alt and a click on the model while painting.
+  `ed_model shade textured` draws the model with the picture as it is
+  painted. On the skin view itself a click picks the point whose place
+  is under the pointer (or, with Click picks triangles, the triangle that
+  holds it), Shift adds, and a drag from a picked point carries the
+  picked points' places with it, as one edit; what is picked there is
+  what is picked in the model, and the other way round. `ed_skin pickat
+  <u> <v> [add]` is such a click by numbers.
+- **The model in its view**: `ed_model shade <wire|solid|textured>` draws
+  the model being edited as its edges, with its faces filled and lit from
+  above, or with its skin; `ed_model about <model|origin|view|free>` says
+  what the view turns about: the model's middle, its origin, where the
+  view looks (Shift and a drag moves that), or the eye itself. What is
+  picked has three handles from its middle, one along each axis: a drag
+  from a handle's tip moves the picked points along that axis alone, at
+  the frame shown. `ed_mesh lock <x|y|z|xy|...|off>` keeps drags off the
+  axes named (their handles are drawn faint and cannot be taken), for
+  Ctrl and a drag as well. `ed_model marks <cross|box|diamond>` says how
+  the marks on points and tags are drawn. `ed_model layout 4` shows the
+  model in four views: the one that turns, and flat views from above,
+  the front and the side (`layout 1` goes back to one; kept in the
+  settings). `ed_model float` opens a floating window over the model's
+  views that looks at the model from its own angle: dragged in, it turns
+  that window's view alone, and the wheel draws it nearer.
+- **Points' own colours**: `ed_mesh colour <rrggbb|none>` gives the
+  picked points a colour (undone with the model's other edits), and
+  `ed_mesh colours [on|off]` shows them: each point marked in its colour,
+  and the faces between them in those colours when the model is drawn
+  filled. A tool that makes points gives each the colour of the nearest
+  point there was. The games' model files have no place for them, so they
+  are written with the bones (`ed_bone save`), a line for each part.
 - **The districts' materials** (`ed_district`, Window menu): a generated
   (Passion) level is built of six districts, each with five slots: floor,
   wall, ceiling, trim and accent. What fills them is data now: a table
@@ -601,7 +672,14 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   the logic graph marks what fired and how often. `ed_break <name>`
   holds the game still the moment that name fires (`ed_break` lists
   them, `ed_break clear` forgets them; the graph marks them `[holds]`),
-  and `ed_trace on` names each firing on screen as it happens. While a
+  and `ed_trace on` names each firing on screen as it happens.
+  `ed_trace graph` (Play menu) draws the scene's logic over the game as
+  it runs: a box for each entity that fires or is fired, in the graph's
+  columns, with lines to what it fires; a box lights as its name fires
+  and fades over a second, keeps a darker tone once it has fired, counts
+  its firings, and is outlined red when it holds the game (the engine
+  hands a game played from the studio to it to draw over each frame,
+  before the console). While a
   game is played, `ed_live` says where the player stands, with what
   health, and how every signal stands; `ed_live player health <n>` and
   `ed_live player at <x y z>` change the player, and `ed_live signal
@@ -645,9 +723,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   lies wholly outside a view's band is greyed there, left out and no
   longer clicked there, or drawn as ever: `ed_outside grey|hide|whole`
   (kept in the settings; with no word it steps through them). The edges
-  of each band are drawn as red lines across the other axis views. The
-  textured picture of the level in an axis view is not cut to the band:
-  it is the outlines, the entities' boxes and what a click finds that are.
+  of each band are drawn as red lines across the other axis views, each
+  with a red knob: dragged, it moves that edge of the band (one step,
+  `ed_depth` with the new numbers). The level itself is cut to the band
+  in the view held to it (unless `ed_outside whole`): the engine draws
+  only what lies between the band's edges, so a floor or a ceiling
+  outside it is gone from the picture, not only from the outlines.
 - **Oblique views**: Alt and a right drag turns an axis view off its
   axis, and `ed_oblique [top|front|side] <yaw> <pitch>` sets how it looks
   in degrees. A view so turned has no grid; a compass in its corner shows
@@ -742,9 +823,11 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   `ed_digger off` fills it in.
 - `ed_inflate <units|up|down>` pushes every side of the selected brushes
   out, or in; a brush that would be left with nothing stays as it is.
-- `ed_texlock [on|off]` (Brush menu) says whether materials go with the
-  faces a move, turn or stretch carries, or stay where they lie in the
-  world while the faces move through them. It is kept between sessions.
+- `ed_texlock [on|off|axis]` (Brush menu) says whether materials go with
+  the faces a move, turn or stretch carries, or stay where they lie in
+  the world while the faces move through them. With `axis` they go with a
+  move, but a turn, a stretch or a shear leaves them lying along the
+  world's axes. It is kept between sessions.
 - A field that would break the map is refused: an `origin` that is not three
   numbers, an empty `classname`.
 - **Controls to drag** end an entity's form: its place as three numbers,
@@ -784,8 +867,9 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   (`ed_grid hide`), and when shown has the world's numbers along its
   edges. `ed_display solid` shows materials as flat tones in place of
   their textures. `ed_dev` puts frame and build times, how many brushes
-  the level was built from, and how many entities and light samples there
-  are, in the status bar.
+  the level was built from, how many entities and light samples there
+  are, and how much memory the program holds (asked of the system once a
+  second, in the background) in the status bar.
 - **Settings by subject**: `ed_settings box` (the Window menu's last
   entry) opens the settings in a box with a subject down its left:
   General, Display, 3D view, Map, Model, Files, Colours. Each row is a
@@ -881,7 +965,143 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   into and up the view. A move along an arrow goes in grid steps along
   that arrow. `ed_axes lock <x|y|z|off>` keeps a selection dragged by
   hand to one of those axes. The rings that turn and the boxes that size
-  still go by the world's axes.
+  go by the same axes: a brush turned thirty degrees is turned about its
+  own upright and stretched along its own length, and stays square. (A
+  change about ways that are not the world's is carried out as the change
+  itself, `ed_linear` with its nine numbers.)
+- **Scripts: walkers of a project's own**: a project keeps Jac scripts in
+  its `scripts/` folder (`ed_script new <file> [walker]` writes one to
+  begin from, `ed_script` lists them with their walkers and what they
+  are attached to). The studio is one native program and takes no new
+  code in: a script is run by the `jac` toolchain in a process of its
+  own (`ed_script jac <command>` says which), on the level made into a
+  graph, and all it can do is ask.
+  - *What a script may touch* is `qp.jac`, written beside the scripts
+    (the studio carries it; `editor/userland/qp.jac` is its source): a
+    `Level` that `Holds` a `Thing` for every entity, with its number,
+    class and fields, and a `Fires` edge wherever one's `target` is
+    another's `targetname`. A walker is set down on the thing it is
+    attached to, or on the level, and walks. What it may ask is five
+    things and no more: `thing.put(key, value)` to set a field,
+    `thing.fire()`, `thing.pick()`, `level.say(words)` and
+    `level.add(classname, origin, fields)`. The studio reads those back
+    as lines and does them with its own commands, each undoable; a line
+    of any other kind is not read. (A script is a program on the
+    machine all the same: what keeps it from the studio is that it runs
+    outside it, not that the machine is closed to it.)
+  - *Run*: `ed_script run <file> <walker> [words]` sets a walker down on
+    the level, which makes a command of it; `ed_script attach <file>
+    <walker>` attaches one to the selected entities (a field,
+    `_walker`), and `ed_script go` runs those attached to the selection
+    or, with nothing selected, all of them.
+  - *As behaviour*: in a game played from the studio, when an entity
+    that has a walker fires, the walker is run in the background on the
+    level as it stands with the event `fired`, and what it asks to fire
+    or say is done when it finishes, a moment later.
+  - *Edited with the compiler beside it*: `ed_script edit <file>` opens
+    the script in a box of numbered lines. Saving (Ctrl+Enter, or a
+    click outside the words) writes the file and asks the compiler
+    (`jac check`): its faults are listed beside the words by line, or
+    the walkers the script has. Nothing is restarted: the next run, and
+    the next firing, use the script as saved.
+  - *Classes declared in code*: a `node` of a script that derives from
+    `Thing` is an entity class: its `has` fields are the class's fields
+    (numbers and text told apart, with what they begin as) and the doc
+    string before it is its help. They are gathered on every save into
+    an add-on the studio loads, so they are in the Classes tab and the
+    inspector at once.
+- **An expedition as graphs, its roster, and a room's own materials**:
+  `ed_exp graphs` opens a box of bars to drag: how full the expedition
+  is, what it aims at on each of its four measures (loops, height,
+  density, size, with what it measures beside), and every room's
+  tension in the order the rooms are come to. A bar let go makes that
+  part again and proves it (`ed_exp density`, `ed_exp tension <room>`,
+  and `ed_exp niche <measure> <0..1>`, which surveys the seed again for
+  the niche asked). `ed_exp roster <classes>|all` says which foes the
+  rooms are filled from, `ed_exp budget route <threat|auto>` fills every
+  room along the way the mission means to be taken, and `ed_exp slot
+  <room> <floor|wall|ceiling|trim|accent> <material|auto>` gives one
+  room a material of its own in place of its district's, kept when the
+  expedition is made again. (Tools' boxes can hold bars: a tool gives
+  each a name, a value and the command to run with the new one.)
+- **A playtest of an authored scene**: `ed_playtest` (the Window menu's
+  last entry) says whether a scene of brushes can be finished. It asks
+  the scene's logic first (what can never be set off, a lock with no
+  key), then goes down the level's objectives in the order a player
+  comes to them (the keys, then the buttons and the triggers that fire
+  something, then the way out) and says the first that cannot be reached
+  from the player's start over the baked floors; a thing on a wall is
+  come to from beside it. The floors are walked with what moves (doors,
+  platforms, buttons) left out, as if every door stood open (`ed_nav
+  bake [cell] open`): whether a door can be opened is the logic's to
+  say, and whether what is behind it can be walked to is the floors'. What stops the level is listed in the Checks
+  tab, a click from being looked at. `ed_playtest bake` walks the floors
+  again as they are built now. An opened expedition has its way out as
+  an entity (`trigger_changelevel`, where the generator's own exit
+  volume is), so it is seen, kept in the map, and played to.
+- **Passion expeditions**: `ed_exp open <seed>` runs the generator on a
+  seed and opens what it made as a document of brushes, saved among the
+  scenes as `expedition_<seed>.map`: its entities as they are, and the
+  world's brushes handed to a group for every room (`room 7 arena`, named
+  for its beat and its recipe) and one for the ways between, so a room is
+  picked, hidden, locked or copied into another scene as one thing. The
+  expedition's own account of itself is kept beside the document:
+  `ed_exp` says its seed, archetype and sizes, `ed_exp mission` its beats
+  and the links between them with what each needs, `ed_exp rooms` its
+  rooms and `ed_exp ways` the ways between them, `ed_exp proof` runs the
+  generator's own playtest (whether the exit is reached, in how many
+  rounds, with which tokens), and `ed_exp show` draws the ways over the
+  level, each in the colour of its kind (open, locked, one-way, shortcut,
+  secret). It is a tool in a module of its own
+  (`editor/tools/expedition.jac`); it reads the generator's graph (beats
+  and links, rooms and passages) as the generator left it.
+- **Parts of an expedition made again**: the tool runs the generator's
+  own stages again from where something changed, proves the result with
+  its playtest, and opens it in place of the document; one that cannot
+  be made or proved is refused and the expedition stays as it was.
+  `ed_exp again rooms` rolls the dice again for every room's inside
+  except those whose group is locked in the scene list, and a locked
+  room's group is kept as it was left, hand edits and all; `again
+  population` rolls who and what is in the rooms; `again layout` where
+  the rooms lie and the ways between them. `ed_exp fill <room>
+  <recipe|any>` asks a room for one of the eleven recipes (hall, court,
+  cavern, pit, arena ...), `ed_exp district <room> <n>` gives it a
+  district's materials, `ed_exp tension <room> <0..1>` and `ed_exp
+  budget <room> <threat|auto>` say how hard it is to be, `ed_exp density
+  <0.15..1>` how full the whole is, and `ed_exp niche` prints what the
+  expedition aimed at beside what it measures, what was put in it, and
+  each room's tension as a bar. A room is a group of plain brushes:
+  picked and copied into any scene, it is edited by hand there. (The
+  generator gained three things a room may be asked: a recipe, another
+  roll of its own dice, and a budget.)
+- **An expedition's mission changed by hand**: the mission is the
+  generator's own graph of beats and the links between them, and the tool
+  changes that graph. `ed_exp link <beat> <beat> [mode] [tokens]` adds a
+  link (open, valve, locked, shortcut, secret, window or gate, with the
+  tokens it needs), `ed_exp unlink <link>` takes one away, `ed_exp mode
+  <link> <mode> [tokens]` changes one, `ed_exp grant|ungrant <beat>
+  <token>` says what a beat gives, `ed_exp beat <from beat> [kind]
+  [size]` adds a beat reached from another, and `ed_exp pattern <name>
+  <beat> <beat>` lays one of the generator's cycle patterns between two
+  beats (alternatives, lock_key, far_key, shortcut, hidden, foreshadow,
+  switch, gambit) and opens its arcs out into rooms. After every change
+  the generator's proof is run on the mission (every token granted, the
+  goal reached, no corner it can be played into, every beat reached) and
+  what it finds is said in its own words ("Mission needs an ungranted
+  token: key_blue"); a mission that is sound is laid out again, carved,
+  filled and played through by the generator's playtest. A change that
+  fails any of it is given up, and the expedition is as it was.
+- **An expedition's layout changed by hand**: `ed_exp move <room> <dx>
+  <dy>` puts a room elsewhere on the site and `ed_exp size <room> <w>
+  <h>` makes it another size (both in shares of the site, five cells of
+  32 units each way); `ed_exp floor <room> <height|auto>` says how high
+  its floor is to be; `ed_exp reroute` rolls the routing again with the
+  rooms where they are. Each lays the site out again with every room
+  where it is said to be (the generator's new `relay`), routes every way
+  between them afresh, solves the floors again so that every way can be
+  walked, and then carves, fills and proves as before. A room laid over
+  another, a size no room can be, or a way that cannot be routed is
+  refused, and the site is as it was.
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged
@@ -908,6 +1128,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   rests on is sketched above the field: its brushes' edges seen from
   above one corner, in the studio's highlight colour; it stays until the
   pointer is on another.
+- **One library of everything**: below the scenes, prefabs and
+  favourites, the Library tab has the scene's game's pieces of logic
+  (Logic: a click adds one, as `ed_logic` does) and, for what the find
+  field asks for, materials (those the Materials tab and its shelf show,
+  those lately in hand and those the scene is made of), models and
+  sounds from every installed game's archives (forty of each at most). A
+  click on a material takes it in hand, on a model or a sound shows it in
+  the explorer. Under the pointer a model is sketched as its first
+  frame's edges, a sound drawn as its shape (each column its quietest to
+  its loudest sample) and a material shown as its picture, where a
+  prefab's sketch goes.
 - **A field's file chosen from the game's own**: a field that names a
   sound or a model (`noise`, `music`, `model`, `model2`) has a `...`
   button beside it in the inspector, set or not: it opens a list of that
@@ -980,7 +1211,12 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   first.
 - **Autosave**: a scene that has changed is written every half minute to
   `autosave/` beside the saved scenes, and the Library tab lists those
-  files to open after a crash.
+  files to open after a crash. Beside each autosave its journal is
+  written: the state each of the scene's latest edits left it in (up to
+  sixteen, taken as the edits are made and named by them; edits within
+  half a second of each other share one). After a crash, with the
+  autosave opened, `ed_recover` lists them and `ed_recover <n>` opens the
+  scene as that edit left it, as a scene of its own beside the autosave.
 
 ### Scenes of brushes
 
@@ -1023,7 +1259,13 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   light's `light` is its reach and `_color` its colour; moving one builds
   the level again. Where no light reaches, the world's `_minlight` (a
   quarter of full when it names none) keeps the level readable. `ed_light off` (View > Flat light) shows the flat shade
-  a scene without lights has.
+  a scene without lights has. While lights alone are dragged the level
+  is lit, coarsely and a few times a second, as they would be left, and
+  lit finely again where the drag ends. A light with a `target` that names an
+  entity, or with a `mangle` (yaw, pitch and roll), is a spotlight: it
+  lights only what lies within `_cone` degrees of the way it points (20
+  when it does not say), and half lights a rim of four degrees about the
+  cone's edge, as Quake II's and Quake III's light tools have it.
 - More in the Brush menu: turn about x or y (`ed_rotate 90 x`), mirror
   (`ed_mirror <x|y|z>`), stretch (`ed_resize <fx> [fy fz]`), carve the
   selection out of every brush it reaches (`ed_carve`), keep what the
@@ -1040,7 +1282,10 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
 - **Corners** (3): the selected brush shows its corners and the middles of
   its edges; dragging one moves it in the plane that faces the camera and
   the brush is rebuilt round its corners (`ed_corner`). A move that would
-  leave the brush flat is refused.
+  leave the brush flat is refused. With `ed_corner lock on` a corner that
+  is moved takes with it the corners of every other brush that stand at
+  the same point, as one step, so corners that are shared stay shared; if
+  that would leave any of those brushes flat, none is moved.
 - The inspector shows a brush's material (`ed_material <name>`), size and
   owner, and hands the selected brushes to a new entity (`ed_tie
   func_door`) or back to the world.
@@ -1110,6 +1355,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   going) and gives one up (`ed_patch shrink <u|v>`); `ed_patch thick
   <units>` changes how thick it is built and `ed_patch fine <n>` how many
   prisms a curve it is built of. Each is one undoable step.
+  `ed_patch preview [on|off|<subdivision>]` draws over every patch what
+  the games would make of it, worked out by the engine's own code: in
+  blue the triangles Quake III's renderer tessellates it into
+  (`engine/formats/q3/curve.jac`, at that `r_subdivisions`; 4 unless
+  told, smaller is finer) and in magenta the lattice its collision is
+  traced against (`engine/physics/patch_collide.jac`).
 - **A patch's material by its control points**: `ed_patch uv` says where
   each control point of the selected patch lies on its material, in
   texels, and where its built faces have the material at its first corner
@@ -1124,7 +1375,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   forgets them, and the faces lie plainly again. The places bend between
   the control points as the surface does, are kept in the scene (`_st`)
   through every bend and move, and are let go when the patch takes
-  another grid of points. Each is one undoable step.
+  another grid of points. Each is one undoable step. `ed_patchbox` (Brush
+  > The patch's material...) opens a box with the selected patch's
+  material and its control points' places drawn over it, in a grid as
+  the points stand: a place is dragged there in whole texels, and fields
+  take a point's place, a row's or a column's slide, or the whole
+  surface's, by numbers (each is the `ed_patch uv` command it says).
 - **More for terrain**: `ed_sculpt erode` wears down what stands above its
   lowest neighbour, and `ed_sculpt paint` gives the tops under the brush
   the material in hand. `ed_terrain lift <x0> <y0> <x1> <y1> <amount>
@@ -1228,7 +1484,9 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   (`.RoQ`) show theirs as the engine's own decoders read them. The frame
   buttons and `ed_frame next|prev|play|stop|<n>` step and play them as
   they do a model's frames: a sprite's go round, a film is read forward
-  at its own pace and stops at its end.
+  at its own pace and stops at its end. A film played has its sound
+  played with it, through the engine's cinematic sound channel (the one
+  the games play their cinematics' sound through), and stopped with it.
 - **The project's own files in the explorer**: with a project open, its
   folder is listed under Your project beside the games', read from disk
   as it is; its files are shown as any other (an image in its textures
@@ -1267,7 +1525,9 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   group, so a patch draws, collides and takes materials in any game's
   scenes. With the patch selected, Corners (3) shows its control points; a
   drag moves one and the surface is built again (`ed_patch_point <patch>
-  <point> <dx> <dy> <dz>`). Moved as a whole, its control points go with it.
+  <point> <dx> <dy> <dz>`). Moved as a whole, its control points go with
+  it: the larger red handle at their middle is the whole patch's, and a
+  drag from it moves every point together.
 - **A shipped level as brushes** (File > Turn this level into brushes,
   `ed_convert`): a Quake II or Quake III level being looked at becomes a
   scene of its own brushes, each side with the material of the face drawn
@@ -1298,6 +1558,15 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
     `target` counted up, so three doors open one by one.
   - `ed_dup hide` builds the level without any images, and `show` with
     them.
+  - Duplicators nest: a group put in a duplicating group (`ed_nest`) is
+    copied by it whole, its own images and all, so a row of posts held
+    in a group that copies twice makes three rows. Each duplicator's
+    images are kept on a node of their own beside it in the scene's
+    graph, and a walker (`editor/document/duplicate.jac`) goes through
+    the groups, those held within first, making a duplicator's images
+    again only when its fields or what it copies have changed;
+    `ed_dup images` lists each duplicator's images and how many the
+    walker made again or kept.
 - **The leak finder** (Edit > Look for a leak, `ed_leak`): floods from the
   entities through the space the world's brushes leave; when it reaches
   the void, the way it took is drawn in red in every view.
@@ -1365,6 +1634,17 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   brushes a player never sees in magenta (clip) and blue (hint, skip,
   caulk, nodraw), told by the last word of every side's material. A group
   with a colour of its own keeps it. `ed_overlay` alone counts each kind.
+  `ed_overlay overdraw` (View menu) lays over the 3D view every face the
+  engine would draw from the eye (through the level's PVS when culling
+  is on), each adding a little colour where it lies whatever is in front
+  of it: where many are drawn over one another it glows, which is what
+  the renderer pays for there. The developer's readout has the frame's
+  time beside it, and `ed_cells` what a cell sees.
+  `ed_overlay width <1..4>` says how many pixels wide the studio's own
+  lines are drawn in every view (outlines, arrows, paths, rings, a
+  model's edges): a wide line is the line drawn again to either side of
+  itself as the view sees it, so it is as wide far off as near. Kept in
+  the settings, and in the Settings box under 3D view.
 - **Maps for other tools** (`ed_export <file.map> [valve|classic|q3]`):
   the scene written as a map in Valve's form (the form scenes are saved
   in), the classic one, or Quake III's own. In Quake III's a brush is a
@@ -1990,8 +2270,8 @@ editor/impl/                 the workbench's scenes and brushes
   model with the triangles over it, and saved as a TGA with the two dabs in
   it). `scripts/studio/convert_session.cfg` turns Quake II's base1 (1,750
   brushes) and Quake III's q3dm1 (987) into scenes, saves them as maps and
-  reopens them. It tries a generated expedition too and says when the
-  expedition itself does not load.
+  reopens them, and turns a generated expedition (seed 42: 1,919 brushes)
+  into a scene too.
 
 ## Building quickly: tools in modules of their own
 
@@ -2024,8 +2304,7 @@ Milestones 1 (the shell) and 2 (blockout) of #73 are done, and most of 3
 (views and texturing), 4 (brush tools) and 5 (logic and reuse), with parts
 of 6, 7 and 9. The checklist in #73 says item by item what exists.
 
-- Left over in what is built: the handles work along the world's axes only
-  (not a brush's own); a shipped
+- Left over in what is built: a shipped
   map takes new brushes only once it is turned into a scene; a level's
   patches are left behind by `ed_convert` (a map file's `patchDef2` patches
   do open, as patches of the scene); a patch mirrored keeps its control points' order, so its
@@ -2035,5 +2314,5 @@ of 6, 7 and 9. The checklist in #73 says item by item what exists.
   planes with portals between its leaves, in place of cells of the plan;
   bounced light); the Passion tools; user walkers.
 - Within the shell: generated (Passion) levels can be edited but not saved as
-  they are (`ed_convert` is meant to turn one into a scene, but expeditions
-  do not load in the test environment at present: #76).
+  they are; `ed_convert` turns one into a scene of brushes, and `ed_exp open
+  <seed>` generates one and opens it so.

@@ -31,14 +31,20 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
         }
         # The size each of the level's textures is drawn at as a material.
         drawn: dict[str, list[int]] = {};
+        # A generated level's Quake textures go by their names alone: as
+        # materials they are found by their maps too.
+        renames: dict[str, str] = editor_material_names() if app.level.bsp.game == "passion" else {};
         for image in app.level.bsp.textures {
             named = level_material(app.level.bsp.game, image.name);
             if named and named not in drawn {
-                seen_as = self.materials.texture(named);
+                seen_as = self.materials.texture(renames[named] if named in renames else named);
                 drawn[named] = [max(1, seen_as.width), max(1, seen_as.height)];
             }
         }
         found = bsp_items(app.level.bsp, fields, self.material, drawn);
+        if len(renames) > 0 {
+            found = map_renamed(found, renames);
+        }
         if len(found) == 0 {
             self.say(
                 "This level keeps no brushes to turn back into a scene (Quake's own format does not; "
@@ -120,6 +126,23 @@ impl Studio.build_command(scene: Scene, args: list[str]) -> bool {
             self.images_shown = how == "show";
             self.built_geometry = -1;
             self.say("Images are built" if self.images_shown else "Only what is in the document is built");
+            return True;
+        }
+        if how == "images" {
+            # The walker's work: which duplicators' images it made again and which it kept.
+            walked = regenerate(scene, scene_map(scene));
+            count = 0;
+            for serial in sorted(walked.sets.keys()) {
+                shown = scene.find(serial);
+                pieces = sum([len(image_set) for image_set in walked.sets[serial]]);
+                print(
+                    "studio: dup #" + str(serial) + " " + (shown.title() if shown is not None else "?") + " images="
+                        + str(len(walked.sets[serial])) + " brushes=" + str(pieces)
+                );
+                count += 1;
+            }
+            print("studio: dups " + str(count) + " made=" + str(walked.made) + " kept=" + str(walked.kept));
+            self.say(str(count) + " duplicators: " + str(walked.made) + " made again, " + str(walked.kept) + " as they were");
             return True;
         }
         # A group, or any entity made of brushes.

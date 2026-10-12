@@ -220,3 +220,30 @@ def axis_camera(kind: str, span: float = 1024.0) -> EditCamera {
     }
     return EditCamera(yaw=math.pi * 0.5, pitch=0.0, span=span);
 }
+
+"""The band of depth an orthographic camera is held to, as distances along
+its line of sight from its eye: [near, far], or [0, 0] when it sees every
+depth. A band measured along an axis the view looks against is turned
+round, as the far side of it is the nearer."""
+def depth_cut(lens: EditCamera) -> list[float] {
+    if not lens.bounded or lens.span <= 0.0 or lens.depth_high <= lens.depth_low {
+        return [0.0, 0.0];
+    }
+    ahead = lens.forward();
+    axis = lens.depth_axis();
+    along = ahead.dot(axis);
+    if abs(along) < 0.0001 {
+        return [0.0, 0.0];
+    }
+    # A point at depth d along the axis is (d - eye . axis) / along ahead of the eye.
+    base = lens.eye.dot(axis);
+    first = (lens.depth_low - base) / along;
+    second = (lens.depth_high - base) / along;
+    return [min(first, second), max(first, second)];
+}
+
+"""What depth a point lies at along the axis an orthographic camera's band
+is measured along."""
+def depth_of(lens: EditCamera, point: Vec3) -> float {
+    return point.dot(lens.depth_axis());
+}

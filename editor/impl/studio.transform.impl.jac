@@ -73,6 +73,12 @@ impl Studio.transform_handles(scene: Scene) -> list[tuple[int, Vec3]] {
         return found;
     }
     arm = self.arm_of(middle);
+    # The rings and the boxes go by the same axes as the arrows: the world's,
+    # the selection's own, or the view's. Kept while a handle is held, so
+    # that what is dragged does not change what it is dragged along.
+    if not self.resizing or len(self.gizmo_ways) != 3 {
+        self.gizmo_ways = self.gizmo_basis(scene);
+    }
     if self.gizmo == "turn" {
         # A ring seen edge on cannot be turned by: only those that face the view.
         sightline = self.camera.forward();
@@ -80,15 +86,17 @@ impl Studio.transform_handles(scene: Scene) -> list[tuple[int, Vec3]] {
             sightline = middle.sub(self.camera.eye).normalized();
         }
         for about in range(3) {
-            if abs(sightline.dot(axis_vector(about))) > 0.2 {
-                found.append((910 + about, middle.add(axis_vector((about + 1) % 3).scale(arm))));
+            if abs(sightline.dot(self.gizmo_way(about))) > 0.2 {
+                found.append((910 + about, middle.add(self.gizmo_way((about + 1) % 3).scale(arm))));
             }
         }
     } else {
         for along in range(3) {
-            found.append((920 + along, middle.add(axis_vector(along).scale(arm))));
+            found.append((920 + along, middle.add(self.gizmo_way(along).scale(arm))));
         }
-        found.append((923, middle.add(Vec3(x=arm * 0.55, y=arm * 0.55, z=arm * 0.55))));
+        found.append(
+            (923, middle.add(self.gizmo_way(0).add(self.gizmo_way(1)).add(self.gizmo_way(2)).scale(arm * 0.55)))
+        );
     }
     found.append((930, middle));
     return found;
@@ -100,20 +108,27 @@ impl Studio.dragged_point(point: Vec3, middle: Vec3) -> Vec3 {
         return point_remapped(point, self.box_pull.pivot, self.box_pull.change).add(self.box_pull.move);
     }
     if held >= 920 and held <= 923 {
+        if not world_ways(self.gizmo_ways) {
+            return point_sized(point, middle, self.gizmo_ways, self.size_by);
+        }
         away = point.sub(middle);
         return middle.add(
             Vec3(x=away.x * self.size_by.x, y=away.y * self.size_by.y, z=away.z * self.size_by.z)
         );
     }
     if held >= 910 and held <= 912 {
-        return middle.add(spun_about(point.sub(middle), axis_vector(held - 910), math.radians(self.turn_by)));
+        return middle.add(spun_about(point.sub(middle), self.gizmo_way(held - 910), math.radians(self.turn_by)));
     }
     return point;
 }
 
 impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
     held = self.resize_side;
-    if held == 940 or held == 941 {
+    if held >= 970 and held <= 977 {
+        self.drag_depth(x, y, free);
+        return;
+    }
+    if held >= 940 and held <= 942 {
         self.drag_mark(scene, x, y, free);
         return;
     }
@@ -148,7 +163,7 @@ impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
         return;
     }
     if held >= 920 {
-        axis = axis_vector(held - 920);
+        axis = self.gizmo_way(held - 920);
         arm = self.arm_of(middle);
         from_at = self.camera.project(view, middle);
         to_at = self.camera.project(view, middle.add(axis.scale(arm)));
@@ -169,8 +184,8 @@ impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
         );
         return;
     }
-    about = axis_vector(held - 910);
-    across = axis_vector((held - 910 + 1) % 3);
+    about = self.gizmo_way(held - 910);
+    across = self.gizmo_way((held - 910 + 1) % 3);
     over = about.cross(across);
     began = ring_angle(self.camera.sight(view, self.press_x, self.press_y), middle, about, across, over);
     now = ring_angle(self.camera.sight(view, x, y), middle, about, across, over);
@@ -190,12 +205,15 @@ impl Studio.drag_transform(scene: Scene, x: int, y: int, free: bool) {
 
 impl Studio.transform_words(scene: Scene) -> str {
     held = self.resize_side;
-    if held == 940 or held == 941 {
-        # The way it faces, or how far it lights, as the drag left it.
+    if held >= 970 and held <= 977 {
+        return self.depth_order();
+    }
+    if held >= 940 and held <= 942 {
+        # The way it faces, how far it lights, or how wide its cone is, as the drag left it.
         if self.turn_by < 0.0 {
             return "";
         }
-        return ("ed_set angle " if held == 940 else "ed_set light ") + str(int(round(self.turn_by)));
+        return ["ed_set angle ", "ed_set light ", "ed_set _cone "][held - 940] + str(int(round(self.turn_by)));
     }
     if held >= 950 and held <= 958 {
         return self.box_words();
@@ -207,12 +225,19 @@ impl Studio.transform_words(scene: Scene) -> str {
         if self.turn_by == 0.0 {
             return "";
         }
+        if not world_ways(self.gizmo_ways) {
+            # About a way that is not one of the world's: the change itself, as nine numbers.
+            return "ed_linear " + linear_text(linear_about(self.gizmo_way(held - 910), self.turn_by)) + " Turn";
+        }
         return "ed_rotate " + factor_words(self.turn_by) + " " + ["x", "y", "z"][held - 910];
     }
     if held >= 920 and held <= 923 {
         factors = self.size_by;
         if factors.x == 1.0 and factors.y == 1.0 and factors.z == 1.0 {
             return "";
+        }
+        if not world_ways(self.gizmo_ways) {
+            return "ed_linear " + linear_text(linear_along(self.gizmo_ways, factors)) + " Stretch";
         }
         return "ed_resize " + factor_words(factors.x) + " " + factor_words(factors.y) + " " + factor_words(factors.z);
     }
@@ -312,8 +337,8 @@ impl Studio.draw_transform_handles(scene: Scene, area: Rect) {
         }
         if index >= 910 and index <= 912 {
             # The ring the knob runs round.
-            about = axis_vector(index - 910);
-            across = axis_vector((index - 910 + 1) % 3);
+            about = self.gizmo_way(index - 910);
+            across = self.gizmo_way((index - 910 + 1) % 3);
             over = about.cross(across);
             before: list[int] | None = None;
             for part in range(49) {
@@ -521,18 +546,33 @@ impl Studio.transform_command(scene: Scene, args: list[str]) -> bool {
         return True;
     }
     if name == "ed_texlock" {
-        if len(args) > 1 and args[1] in ["on", "off", "1", "0"] {
-            self.tex_lock = args[1] in ["on", "1"];
+        if len(args) > 1 and args[1] in ["on", "off", "1", "0", "axis"] {
+            self.tex_lock = args[1] in ["on", "1", "axis"];
+            self.tex_axis = args[1] == "axis";
         } else {
             self.tex_lock = not self.tex_lock;
+            self.tex_axis = False;
         }
         self.keep_settings();
         self.say(
-            "Materials go with their faces" if self.tex_lock else "Materials stay where they lie as faces move"
+            (
+                "Materials go with their faces when moved, and keep to the world's axes when turned or stretched"
+                if self.tex_axis
+                else "Materials go with their faces"
+            )
+            if self.tex_lock
+            else "Materials stay where they lie as faces move"
         );
         return True;
     }
     return False;
+}
+
+impl Studio.gizmo_way(index: int) -> Vec3 {
+    if len(self.gizmo_ways) == 3 and index >= 0 and index < 3 {
+        return self.gizmo_ways[index];
+    }
+    return axis_vector(index);
 }
 
 impl Studio.gizmo_basis(scene: Scene) -> list[Vec3] {

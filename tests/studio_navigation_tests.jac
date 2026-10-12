@@ -102,3 +102,31 @@ test "the engine's router finds its way over what was baked" {
     hop = build_navmesh(World(), nav_data(ledge, floor_ways(ledge), Vec3(), 64.0));
     assert route_time(hop, Vec3(x=32.0, y=32.0, z=24.0), Vec3(x=96.0, y=32.0, z=64.0)) > next_door;
 }
+
+import from editor.compile.navigation { Link, floor_under, linked_ways }
+import from engine.formats.aas { TRAVEL_TELEPORT, TRAVEL_JUMPPAD }
+
+test "teleporters and jump pads join the floors under their two ends" {
+    # Two rooms of floor apart, one high, with nothing between them.
+    floors: list[Floor] = [];
+    for column in range(3) {
+        floors.append(Floor(column=column, row=0, z=0.0));
+        floors.append(Floor(column=column + 10, row=0, z=128.0));
+    }
+    origin = Vec3();
+    assert floor_under(floors, origin, 32.0, Vec3(x=48.0, y=16.0, z=24.0)) == 2;
+    # Over the high room: its floor, not one above the point.
+    assert floors[floor_under(floors, origin, 32.0, Vec3(x=336.0, y=16.0, z=200.0))].column == 10;
+    assert floor_under(floors, origin, 32.0, Vec3(x=900.0, y=16.0, z=24.0)) == -1;
+    links = [
+        Link(start=Vec3(x=16.0, y=16.0, z=24.0), finish=Vec3(x=368.0, y=16.0, z=152.0), kind=TRAVEL_TELEPORT),
+        Link(start=Vec3(x=80.0, y=16.0, z=24.0), finish=Vec3(x=336.0, y=16.0, z=160.0), kind=TRAVEL_JUMPPAD),
+        Link(start=Vec3(x=900.0, y=16.0, z=24.0), finish=Vec3(x=336.0, y=16.0, z=160.0))
+    ];
+    ways = linked_ways(floors, origin, 32.0, links);
+    assert len(ways) == 2 and ways[0].kind == TRAVEL_TELEPORT and ways[1].kind == TRAVEL_JUMPPAD;
+    assert floors[ways[0].source].column == 0 and floors[ways[0].target].column == 11;
+    # The router goes through the teleporter: the two rooms are joined.
+    aas = nav_data(floors, floor_ways(floors) + ways, origin, 32.0);
+    assert len([reach for reach in aas.reaches if reach.kind == TRAVEL_TELEPORT]) == 1;
+}

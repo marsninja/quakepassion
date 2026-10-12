@@ -16,7 +16,11 @@ impl Studio.setting_lines_all -> list[str] {
         "ed_colour text default",
         "ed_colour panel default",
         "ed_model backs " + ("on" if self.model_backs else "off"),
-        "ed_model ticks " + plain_number(self.model_ticks)
+        "ed_model ticks " + plain_number(self.model_ticks),
+        "ed_model marks " + self.model_marks,
+        "ed_model shade " + self.model_shade,
+        "ed_model about " + self.model_about,
+        "ed_model layout " + ("4" if _model_split.four else "1")
     ];
     for line in self.settings_lines() {
         lines.append(line);
@@ -87,7 +91,9 @@ impl Studio.watch_settings {
         # Whatever the command made of it is what the variable says next.
         self.settings_mark = "";
     }
-    mark = str(self.settings_rev) + "|" + ("1" if self.model_backs else "0") + "|" + plain_number(self.model_ticks);
+    mark = str(self.settings_rev) + "|" + ("1" if self.model_backs else "0") + "|" + plain_number(self.model_ticks) + "|"
+        + self.model_marks + "|" + self.model_shade + "|" + self.model_about + "|" + str(self.line_width) + "|"
+        + ("4" if _model_split.four else "1");
     if mark != self.settings_mark {
         # Something was set: every console variable says what is so now.
         self.settings_mark = mark;
@@ -188,6 +194,26 @@ impl Studio.keep_settings_box {
             row.adopt(
                 Label(text=folder if len(folder) <= 60 else "..." + folder[len(folder) - 57:], tone="faint", small=True, hint=folder)
             );
+        }
+        # Where each game's files are looked for: set here, they are kept
+        # beside the settings and the engine starts with them.
+        sheet.adopt(Spacer(size=4));
+        sheet.adopt(Label(text="Game files (a folder and Enter; nothing gives it up)", tone="dim", small=True));
+        for (called, game) in [("Every game is under", "passion"), ("Quake", "q1"), ("Quake II", "q2"), ("Quake III Arena", "q3")] {
+            pack = shelf().find(game);
+            row = Box(across=True, gap=6);
+            sheet.adopt(row);
+            row.adopt(Label(text=called, tone="dim", size=210));
+            row.adopt(
+                TextField(
+                    value=game_directory("passion") if pack is None else pack_folder(pack),
+                    command="ed_game " + game + " dir",
+                    grow=1,
+                    hint="ed_game " + game + " dir <folder>"
+                )
+            );
+            there = os.path.isdir(game_directory("passion") if pack is None else pack_folder(pack));
+            row.adopt(Label(text="found" if there else "not there", tone="faint" if there else "warn", small=True, size=64));
         }
         sheet.adopt(PushButton(text="Programs kept for files...", command="ed_assoc", hint="Which program opens each kind of file outside the studio"));
     } elif self.settings_subject == "colours" {
