@@ -90,6 +90,7 @@ import from .assets.shaders {
 }
 import from .assets.shadertext { script_shown, script_faults, shader_brief }
 import from .assets.moving { warps_name }
+import from .document.playtest { objectives }
 import from .document.liveroll { LiveRoll, opponent_words, door_words, pickup_words }
 import from .geometry.axes { world_axes, brush_axes, facing_axes, kept_to_axis }
 import from .document.thumbs { sketch_edges, sketch }
@@ -351,8 +352,13 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ("ed_pickmode", "ed_pickmode <all|brushes|entities>", "what a click in a view picks: everything, brushes only, or entities only"),
     ("ed_restrict", "ed_restrict [on|off]", "keep editing to the selection: everything else is put away, and brought back when it is let go"),
     (
+        "ed_playtest",
+        "ed_playtest [bake]",
+        "say whether the scene can be finished: what its logic can never set off, then the first key, opener or way out that cannot be reached from the start over the baked floors (bake: walk the floors as they are now)"
+    ),
+    (
         "ed_nav",
-        "ed_nav [bake [cell] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
+        "ed_nav [bake [cell] [open] | check | route <from xyz> <to xyz> | show [on|off] | clear]",
         "navigation for bots: bake the built scene's floors into the areas and ways the games' bots route over, check what can be reached, and draw the ways"
     ),
     (
@@ -1314,6 +1320,8 @@ obj Studio(Workbench) {
         # the words its rows are found by.
         library_view: Picture | None = None,
         library_previewed: str = "",
+        # The collision hulls a navigation bake leaves out (what moves, when doors are taken as open).
+        nav_exclude: list[int] = [],
         # The scene's count of picks when its groups' groups were last picked with them.
         nest_picks: int = -1,
         library_filter: str = "",
@@ -1918,7 +1926,8 @@ obj Studio(Workbench) {
                     MenuItem(text="The picked points' weights...", command="ed_weights open"),
                     MenuItem(text="The shader script as text...", command="ed_shader text open"),
                     MenuItem(text="Play the materials that move", command="ed_animate"),
-                    MenuItem(text="Settings by subject...", command="ed_settings box open")
+                    MenuItem(text="Settings by subject...", command="ed_settings box open"),
+                    MenuItem(text="Playtest: can it be finished?", command="ed_playtest bake")
                 ]
             ]
         );
@@ -4162,6 +4171,10 @@ obj Studio(Workbench) {
     def nav_words -> str;
     def draw_nav;
     def nav_findings(scene: Scene) -> list[Finding];
+    """What stops a scene being finished: what its logic can never set
+    off, then the first objective (a key, what opens the way, the way
+    out) that cannot be reached from the start over the baked floors."""
+    def playtest(scene: Scene) -> list[Finding];
 
     # ------------------------------------------------------------------
     # Floating 3D windows (impl/studio.windows.impl.jac)

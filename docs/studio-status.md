@@ -882,6 +882,21 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   that arrow. `ed_axes lock <x|y|z|off>` keeps a selection dragged by
   hand to one of those axes. The rings that turn and the boxes that size
   still go by the world's axes.
+- **A playtest of an authored scene**: `ed_playtest` (the Window menu's
+  last entry) says whether a scene of brushes can be finished. It asks
+  the scene's logic first (what can never be set off, a lock with no
+  key), then goes down the level's objectives in the order a player
+  comes to them (the keys, then the buttons and the triggers that fire
+  something, then the way out) and says the first that cannot be reached
+  from the player's start over the baked floors; a thing on a wall is
+  come to from beside it. The floors are walked with what moves (doors,
+  platforms, buttons) left out, as if every door stood open (`ed_nav
+  bake [cell] open`): whether a door can be opened is the logic's to
+  say, and whether what is behind it can be walked to is the floors'. What stops the level is listed in the Checks
+  tab, a click from being looked at. `ed_playtest bake` walks the floors
+  again as they are built now. An opened expedition has its way out as
+  an entity (`trigger_changelevel`, where the generator's own exit
+  volume is), so it is seen, kept in the map, and played to.
 - **Passion expeditions**: `ed_exp open <seed>` runs the generator on a
   seed and opens what it made as a document of brushes, saved among the
   scenes as `expedition_<seed>.map`: its entities as they are, and the
@@ -934,6 +949,17 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   token: key_blue"); a mission that is sound is laid out again, carved,
   filled and played through by the generator's playtest. A change that
   fails any of it is given up, and the expedition is as it was.
+- **An expedition's layout changed by hand**: `ed_exp move <room> <dx>
+  <dy>` puts a room elsewhere on the site and `ed_exp size <room> <w>
+  <h>` makes it another size (both in shares of the site, five cells of
+  32 units each way); `ed_exp floor <room> <height|auto>` says how high
+  its floor is to be; `ed_exp reroute` rolls the routing again with the
+  rooms where they are. Each lays the site out again with every room
+  where it is said to be (the generator's new `relay`), routes every way
+  between them afresh, solves the floors again so that every way can be
+  walked, and then carves, fills and proves as before. A room laid over
+  another, a size no room can be, or a way that cannot be routed is
+  refused, and the site is as it was.
 - **Groups in groups**: `ed_nest <group's name|#number>` puts the selected
   groups in another group, and a group's row dragged onto another group's
   row in the scene list does the same; `ed_nest out`, or its row dragged
