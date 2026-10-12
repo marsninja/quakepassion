@@ -49,7 +49,12 @@ impl Studio.patch_command(scene: Scene, args: list[str]) -> bool {
             now_places = scene.patch_places(bent_patch);
             how = args[2] if len(args) > 2 else "";
             amounts: list[float] = [];
-            for word in args[3:] {
+            # A field of the patch's material box hands its numbers as one word.
+            spoken: list[str] = [];
+            for given in args[3:] {
+                spoken.extend(given.split());
+            }
+            for word in spoken {
                 try {
                     amounts.append(float(word));
                 } except ValueError {

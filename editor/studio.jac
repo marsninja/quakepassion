@@ -134,7 +134,9 @@ import from .model.skin {
 import from .model.pattern { SKIN_PATTERNS }
 import from .geometry.patchpreview { lattice_edges, render_rows, collide_rows }
 import from .document.duplicate { with_regenerated, regenerate }
-import from .model.skinpick { skin_rect, skin_place, place_nearest, triangle_at }
+import from .model.skinpick {
+    skin_rect, skin_place, place_nearest, triangle_at, place_frame, frame_fit, place_pixel, pixel_place, place_at_pixel
+}
 import from .ui.skinpane { SkinPane }
 import from .model.marks {
     MARK_STYLES, mark_lines, picks_middle, handle_tips, drag_along, drag_kept, locked_axes, tint_word, word_tint, face_light
@@ -566,6 +568,7 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "add a curved patch where the camera looks; give the selected one another curve, thickness or fineness; or say where its control points lie on its material"
     ),
     ("ed_patch_point", "ed_patch_point <patch> <point> <dx> <dy> <dz>", "move one control point of a patch"),
+    ("ed_patchbox", "ed_patchbox [open|close]", "a box with the selected patch's material and where its control points lie on it, to drag them or set them by numbers"),
     ("ed_face", "ed_face <brush> <side> [add]", "select a face of a brush"),
     (
         "ed_tex",
@@ -1240,6 +1243,15 @@ obj Studio(Workbench) {
         sized_shown: int = -1,
         # Patches shown as the games make them, at the renderer's subdivision.
         patch_preview: bool = False,
+        # The patch's material box: its window, its picture pane, what it was
+        # last made for, the material's size in texels, and a place being dragged.
+        patch_box: Floater | None = None,
+        patch_pane: SkinPane | None = None,
+        patch_box_for: str = "",
+        patch_box_size: list[float] = [64.0, 64.0],
+        patch_held: int = -1,
+        patch_press: list[int] = [0, 0],
+        patch_drag: list[float] = [0.0, 0.0],
         patch_fineness: float = 4.0,
         preview_edges_kept: dict[str, list[list[list[Vec3]]]] = {},
         model_backs: bool = True,
@@ -1880,6 +1892,7 @@ obj Studio(Workbench) {
                     MenuItem(text="Curved corner", command="ed_patch bevel"),
                     MenuItem(text="Curved cylinder", command="ed_patch cylinder"),
                     MenuItem(text="Curved cone", command="ed_patch cone"),
+                    MenuItem(text="The patch's material...", command="ed_patchbox open"),
                     MenuItem(rule=True),
                     MenuItem(text="Turn a quarter", command="ed_rotate 90", keys="R"),
                     MenuItem(text="Tip a quarter about x", command="ed_rotate 90 x"),
@@ -2598,6 +2611,8 @@ obj Studio(Workbench) {
         self.keep_tabs(ui);
         self.keep_floats();
         self.keep_weights_box();
+        self.keep_patch_box();
+        self.patch_box_events();
         self.keep_script_box();
         self.keep_tool_panels();
         self.watch_settings();
@@ -3630,6 +3645,7 @@ obj Studio(Workbench) {
         }
         stage.paint();
         self.draw_skin_marks();
+        self.draw_patch_box();
         # Over each level view, through its own camera: unless a menu, a
         # list or the palette is open over them.
         if self.over_layers(stage) > 0 {
@@ -3936,6 +3952,18 @@ obj Studio(Workbench) {
     def patch_preview_lines(scene: Scene, item: Item) -> list[list[list[Vec3]]];
     def draw_patch_preview(scene: Scene);
     def patch_preview_words(scene: Scene) -> str;
+
+    # ------------------------------------------------------------------
+    # The patch's material box (impl/studio.patchbox.impl.jac)
+
+    """The selected patch's places on its material (none when no patch is)."""
+    def patch_box_state(scene: Scene) -> list[float];
+    """Make the box again when what it shows has changed; take its pane's
+    drags; draw the places over the picture; open or close it."""
+    def keep_patch_box;
+    def patch_box_events;
+    def draw_patch_box;
+    def patch_box_command(scene: Scene, args: list[str]) -> bool;
 
     # ------------------------------------------------------------------
     # Turn and size handles, the pivot, inflating and the texture lock (impl/studio.transform.impl.jac)
@@ -4693,6 +4721,7 @@ obj Studio(Workbench) {
             and not self.finding_command(scene, args)
             and not self.archive_command(scene, args)
             and not self.modelview_command(scene, args)
+            and not self.patch_box_command(scene, args)
             and not self.playview_command(scene, args)
             and not self.links_command(scene, args)
             and not self.prefab_change(scene, args)

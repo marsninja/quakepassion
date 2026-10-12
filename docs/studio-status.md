@@ -1326,7 +1326,12 @@ floor and a player start. `ed_open <file.map>` opens a map file as one.
   forgets them, and the faces lie plainly again. The places bend between
   the control points as the surface does, are kept in the scene (`_st`)
   through every bend and move, and are let go when the patch takes
-  another grid of points. Each is one undoable step.
+  another grid of points. Each is one undoable step. `ed_patchbox` (Brush
+  > The patch's material...) opens a box with the selected patch's
+  material and its control points' places drawn over it, in a grid as
+  the points stand: a place is dragged there in whole texels, and fields
+  take a point's place, a row's or a column's slide, or the whole
+  surface's, by numbers (each is the `ed_patch uv` command it says).
 - **More for terrain**: `ed_sculpt erode` wears down what stands above its
   lowest neighbour, and `ed_sculpt paint` gives the tops under the brush
   the material in hand. `ed_terrain lift <x0> <y0> <x1> <y1> <amount>
