@@ -224,10 +224,29 @@ obj HudRenderer {
             flags=CVAR_ARCHIVE,
             aliases=["cg_drawCrosshair"],
             description="draw the crosshair"
+        ),
+        # Quake's HUD: 0 is the status bar of sbar.c across the bottom, 1 the
+        # corner HUD of the re-release and the modern ports, which leaves the
+        # view clear: health and armor at the lower left, ammo at the lower
+        # right.
+        style: Cvar = Cvar(
+            name="scr_hudstyle",
+            reset_text="1",
+            kind="int",
+            low=0.0,
+            high=1.0,
+            flags=CVAR_ARCHIVE,
+            description="Quake HUD: 0 status bar, 1 corners"
         );
 
     def declare(shell: Shell) {
         self.crosshair = shell.register(self.crosshair);
+        self.style = shell.register(self.style);
+    }
+
+    """Whether Quake draws its corner HUD rather than the status bar."""
+    def corners() -> bool {
+        return self.style.integer != 0;
     }
 
     """SCR_DrawCrosshair's test: the game asks for one and the crosshair cvar
@@ -342,11 +361,12 @@ obj HudRenderer {
         }
     }
 
-    """Screen pixels the status bars cover at the bottom of the view. Quake's
-    full status bar (viewsize 100) shrinks the 3D view to sit above its two
-    bars (sbar.c sb_lines 48); the later games overlay their HUD on the view."""
+    """Screen pixels the status bars cover at the bottom of the view, which
+    the view weapon is raised by so the bars do not hide it. Quake's status
+    bar is 48 units of two bars (sbar.c sb_lines 48); its corner HUD and the
+    later games' HUDs lie over the view and cover none of it."""
     def view_inset(game: str, width: int, height: int) -> float {
-        if not self.ready or game != "q1" {
+        if not self.ready or game != "q1" or self.corners() {
             return 0.0;
         }
         scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
@@ -501,7 +521,85 @@ obj HudRenderer {
         self.blit("conchars", x, y, 8.0 * scale, 8.0 * scale, [255, 255, 255, 255], column, row, column + 1.0 / 16.0, row + 1.0 / 16.0);
     }
 
+    """Sbar_DrawFace: the face for the health band, its pain frame, or a
+    powerup's."""
+    def q1_face(status: HudStatus) -> str {
+        band = str(5 - min(4, max(0, status.health) // 20));
+        if "invisibility" in status.powerups and "invulnerability" in status.powerups {
+            return "face_inv2";
+        }
+        if "quad" in status.powerups {
+            return "face_quad";
+        }
+        if "invisibility" in status.powerups {
+            return "face_invis";
+        }
+        if "invulnerability" in status.powerups {
+            return "face_invul2";
+        }
+        return ("face_p" if status.pain > 0.0 else "face") + band;
+    }
+
+    """SCR_DrawCrosshair / Draw_Character: the conchars '+'. The 3D view
+    fills the whole window, so the glyph's own centre, pixel (4, 5) of its
+    cell, sits on the aim."""
+    def q1_crosshair(status: HudStatus, width: int, height: int, scale: float) {
+        if self.shows_crosshair(status) {
+            self.q1_char(43, float(width) * 0.5 - 4.0 * scale, float(height) * 0.5 - 5.0 * scale, scale);
+        }
+    }
+
+    """The corner HUD: sbar.c's own art and numbers with no bars behind them.
+    Lower left, the face and health, with the armor above them when there is
+    any; lower right, the ammo of the weapon in hand, with the keys, powerups
+    and runes held above it."""
+    def draw_q1_corners(status: HudStatus, width: int, height: int) {
+        scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
+        margin = 8.0 * scale;
+        row = float(height) - margin - 24.0 * scale;
+        above = row - 28.0 * scale;
+        self.pic(self.q1_face(status), margin, row, scale);
+        self.q1_number(status.health, 3, margin + 28.0 * scale, row, scale, status.health <= 25);
+        if "invulnerability" in status.powerups {
+            self.pic("disc", margin, above, scale);
+            self.q1_number(666, 3, margin + 28.0 * scale, above, scale, True);
+        } elif status.armor > 0 {
+            armor = "sb_armor3" if status.armor_ratio >= 0.8 else ("sb_armor2" if status.armor_ratio >= 0.6 else "sb_armor1");
+            self.pic(armor, margin, above, scale);
+            self.q1_number(status.armor, 3, margin + 28.0 * scale, above, scale, status.armor <= 25);
+        }
+        right = float(width) - margin;
+        ammo_icons: dict[str, str] = {"shells": "sb_shells", "nails": "sb_nails", "rockets": "sb_rocket", "cells": "sb_cells"};
+        if status.ammo_kind in ammo_icons and status.ammo >= 0 {
+            self.pic(ammo_icons[status.ammo_kind], right - 24.0 * scale, row, scale);
+            self.q1_number(status.ammo, 3, right - 100.0 * scale, row, scale, status.ammo <= 10);
+        }
+        # What is held, from the right edge leftward: runes, then powerups
+        # and keys.
+        held = right;
+        shelf = row - 20.0 * scale;
+        for i in range(4) {
+            if status.sigils & (1 << (3 - i)) {
+                held -= 8.0 * scale;
+                self.pic("sb_sigil" + str(4 - i), held, shelf, scale);
+            }
+        }
+        items = ["quad", "suit", "invulnerability", "invisibility", "key2", "key1"];
+        icons = ["sb_quad", "sb_suit", "sb_invuln", "sb_invis", "sb_key2", "sb_key1"];
+        for i in range(len(items)) {
+            if items[i] in status.keys or items[i] in status.powerups {
+                held -= 18.0 * scale;
+                self.pic(icons[i], held, shelf, scale);
+            }
+        }
+        self.q1_crosshair(status, width, height, scale);
+    }
+
     def draw_q1(status: HudStatus, width: int, height: int) {
+        if self.corners() {
+            self.draw_q1_corners(status, width, height);
+            return;
+        }
         scale = float(max(1, int(min(float(width) / 320.0, float(height) / 240.0))));
         left = (float(width) - 320.0 * scale) * 0.5;
         bar = float(height) - 24.0 * scale;
@@ -552,21 +650,7 @@ obj HudRenderer {
             armor = "sb_armor3" if status.armor_ratio >= 0.8 else ("sb_armor2" if status.armor_ratio >= 0.6 else "sb_armor1");
             self.pic(armor, left, bar, scale);
         }
-        # Sbar_DrawFace: health bands, pain frames and powerup faces.
-        face = "face" + str(5 - min(4, max(0, status.health) // 20));
-        if status.pain > 0.0 {
-            face = "face_p" + str(5 - min(4, max(0, status.health) // 20));
-        }
-        if "invisibility" in status.powerups and "invulnerability" in status.powerups {
-            face = "face_inv2";
-        } elif "quad" in status.powerups {
-            face = "face_quad";
-        } elif "invisibility" in status.powerups {
-            face = "face_invis";
-        } elif "invulnerability" in status.powerups {
-            face = "face_invul2";
-        }
-        self.pic(face, left + 112.0 * scale, bar, scale);
+        self.pic(self.q1_face(status), left + 112.0 * scale, bar, scale);
         self.q1_number(status.health, 3, left + 136.0 * scale, bar, scale, status.health <= 25);
         ammo_icons: dict[str, str] = {"shells": "sb_shells", "nails": "sb_nails", "rockets": "sb_rocket", "cells": "sb_cells"};
         if status.ammo_kind in ammo_icons {
@@ -575,12 +659,7 @@ obj HudRenderer {
         if status.ammo >= 0 {
             self.q1_number(status.ammo, 3, left + 248.0 * scale, bar, scale, status.ammo <= 10);
         }
-        # SCR_DrawCrosshair / Draw_Character: the conchars '+'. The 3D view
-        # fills the whole window (not the vrect above the status bars), so
-        # the glyph's own centre, pixel (4, 5) of its cell, sits on the aim.
-        if self.shows_crosshair(status) {
-            self.q1_char(43, float(width) * 0.5 - 4.0 * scale, float(height) * 0.5 - 5.0 * scale, scale);
-        }
+        self.q1_crosshair(status, width, height, scale);
     }
 
     """Draw_String with the conchars sheet."""

@@ -44,7 +44,10 @@ obj ViewBase {
         kick_pitch: float = 0.0,
         kick_roll: float = 0.0,
         punch: float = 0.0,
-        dip: float = 0.0;
+        dip: float = 0.0,
+        # Quake's status bar covers the bottom of the view; false when its
+        # HUD leaves the whole view clear.
+        barred: bool = True;
 }
 
 """Degrees (Quake's sense) to radians in the engine's pitch sense."""
@@ -124,15 +127,17 @@ def q1_view_roll(yaw: float, velocity: Vec3) -> float {
 
 obj Q1ViewSway(ViewSway) {
     """V_CalcRefdef: the eye rises by the bob and rolls with a strafe; the
-    gun rises by the bob, moves forward by 0.4 of it and sits 2 units higher
-    (the viewsize 100 fudge), pointing along the aim with the damage kick's
-    pitch but neither roll nor punch (CalcGunAngle, before the punch)."""
+    gun rises by the bob and moves forward by 0.4 of it, pointing along the
+    aim with the damage kick's pitch but neither roll nor punch (CalcGunAngle,
+    before the punch). Under the status bar it sits 2 units higher, the
+    viewsize 100 fudge that keeps it clear of the bar; with the whole view
+    clear (viewsize 120) there is none."""
     def place(player: Player, base: ViewBase, clock: float, share: float) -> ViewPlacement {
         bob = q1_view_bob(clock, flat_speed(player.velocity));
         eye = base.eye.add(Vec3(z=bob));
         pitch = base.pitch + up_radians(base.kick_pitch);
         gun = base.eye.add(forward_from(base.yaw, base.pitch).scale(bob * 0.4)).add(
-            Vec3(z=bob + 2.0)
+            Vec3(z=bob + (2.0 if base.barred else 0.0))
         );
         return ViewPlacement(
             eye=eye,

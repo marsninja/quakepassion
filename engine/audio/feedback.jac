@@ -1,4 +1,5 @@
 """Archive-backed gameplay sound palette with explicit native audio ownership."""
+import from engine.formats.wav { streamable_wav }
 import from ..assets.library { AssetLibrary }
 import from ..world.world { World, Player }
 import from ..world.speakers { Speaker, HasSpeaker }
@@ -289,7 +290,10 @@ obj Feedback {
                 return;
             }
             try {
-                data = library.read(path);
+                if path not in self.clips {
+                    self.clips[path] = streamable_wav(library.read(path));
+                }
+                data = self.clips[path];
                 music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));
                 if not IsMusicValid(music) {
                     raise ValueError("Cannot decode ambience: " + path);
@@ -357,7 +361,9 @@ obj Feedback {
                 }
                 try {
                     if speaker.path not in self.clips {
-                        self.clips[speaker.path] = library.read(speaker.path);
+                        self.clips[speaker.path] = streamable_wav(
+                            library.read(speaker.path)
+                        );
                     }
                     data = self.clips[speaker.path];
                     music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));
@@ -419,7 +425,7 @@ obj Feedback {
         }
         try {
             if path not in self.clips {
-                self.clips[path] = library.read(path);
+                self.clips[path] = streamable_wav(library.read(path));
             }
             data = self.clips[path];
             music = LoadMusicStreamFromMemory(".wav", data, i32(len(data)));

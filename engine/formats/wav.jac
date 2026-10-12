@@ -65,3 +65,43 @@ def parse_wav_pcm(data: bytes) -> WavPcm {
     }
     raise ValueError("No WAVE data chunk");
 }
+
+"""A WAVE file as a streaming decoder can take it. Quake's sounds are 8-bit,
+and raylib's music streams decode WAVE at 16 or 32 bits only: an 8-bit file
+opens and then plays nothing. An 8-bit file comes back rewritten at 16 bits
+(unsigned bytes centred on 128 become signed words); any other file, and
+anything that is not a PCM WAVE, comes back as it was."""
+def streamable_wav(data: bytes) -> bytes {
+    try {
+        pcm = parse_wav_pcm(data);
+    } except ValueError {
+        return data;
+    }
+    if pcm.width != 1 {
+        return data;
+    }
+    count = pcm.length;
+    samples = bytearray(count * 2);
+    for i in range(count) {
+        # (byte - 128) * 256, as a little-endian signed word: the low byte is
+        # zero and the high byte is the sample with its top bit flipped.
+        samples[i * 2 + 1] = u8(int(data[pcm.offset + i]) ^ 128);
+    }
+    header = b"RIFF"
+        + struct.pack("<I", 36 + count * 2)
+        + b"WAVEfmt "
+        + struct.pack(
+            "<IHHIIHH",
+            16,
+            1,
+            pcm.channels,
+            pcm.rate,
+            pcm.rate * pcm.channels * 2,
+            pcm.channels * 2,
+            16
+        )
+        + b"data"
+        + struct.pack("<I", count * 2);
+    return header + bytes(samples);
+}
+

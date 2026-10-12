@@ -239,6 +239,7 @@ impl App.render_frame() {
         blend = self.tick_blend;
         # The simulation time the frame shows, a fraction of a tick behind.
         shown_time = self.simulation_time - (1.0 - blend.alpha) * self.physics_clock.tick_rate;
+        self.view.barred = not self.hud.corners();
         placed = self.view.place(
             p,
             blend.place(p.tick_pose, p.pos),
@@ -391,8 +392,9 @@ impl App.render_frame() {
                 }
             }
             if self.hud.ready {
-                if not self.finale_active and self.postgame is None {
-                    # The status bar layer draws each game's crosshair art.
+                if not self.finale_active and self.postgame is None and self.host.overlay.on() {
+                    # The status bar layer draws each game's crosshair art;
+                    # the hit marker is the diagnostic overlay's.
                     self.renderer.draw_aim(self.combat, False, score);
                 }
             } else {
@@ -403,8 +405,11 @@ impl App.render_frame() {
                     score=score
                 );
             }
+            # With the original art the HUD shows what is held, and the score
+            # bar the secrets: the summary lines are the diagnostic overlay's.
+            diagnostic = not self.hud.ready or self.host.overlay.on();
             self.renderer.draw_keys(
-                " | ".join(
+                "" if not diagnostic else " | ".join(
                     [
                         text
                         for text in [
@@ -432,7 +437,9 @@ impl App.render_frame() {
             if self.notice_wait > 0.0 and not self.hud.ready {
                 self.renderer.draw_message(self.notice);
             }
-            self.renderer.draw_powerups(self.powerup_lines());
+            if diagnostic {
+                self.renderer.draw_powerups(self.powerup_lines());
+            }
             # p_hud.c HelpComputer (F1): skill, level name, the primary and
             # secondary objectives, and kills, goals and secrets so far.
             if self.level.bsp.game == "q2"
