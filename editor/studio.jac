@@ -38,6 +38,7 @@ import from vendor.raylib {
 import from .ui.canvas { ScreenCanvas, Rect, Ink, ink, rects_outside }
 import from .ui.input { UiSource, UiStep, script_click, script_drag }
 import from .ui.logview { log_reach, log_window, log_fitted }
+import from .ui.order { moved_before }
 import from .ui.widget { Widget, Stage, UiEvent }
 import from .ui.widgets {
     Box,
@@ -530,6 +531,8 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
     ),
     ("ed_import", "ed_import <file.map> [group]", "add a map file's entities and brushes to the scene"),
     ("ed_library", "ed_library [row]", "list the saved scenes and prefabs, or open the one a row names"),
+    ("ed_treedrop", "ed_treedrop <row> <what>", "what a row of the scene list let go on another asks for: a brush handed to the entity on that row"),
+    ("ed_libdrop", "ed_libdrop <row> <what>", "what a row of the Library tab let go on another asks for: a favourite put before another, or in the trash"),
     (
         "ed_shape",
         "ed_shape <cone|pyramid|ball|dome|stairs|spiral|arch|pipe|bicone|torus|xtree|cap|corner|bevel|column|landing|fan|free> [w d h] [count] [thickness]",
@@ -1611,8 +1614,10 @@ obj Studio(Workbench) {
             pick="ed_select",
             toggle="ed_fold",
             open_command="ed_focus",
+            drag="tree",
+            drop="ed_treedrop",
             grow=1,
-            hint="Click selects (Ctrl adds), double click looks at it"
+            hint="Click selects (Ctrl adds), double click looks at it; drag a brush onto the entity that is to hold it, or anything into a view"
         );
         scene_page.adopt(tree);
         material_page = Box();
@@ -1658,6 +1663,7 @@ obj Studio(Workbench) {
             pick="ed_library",
             toggle="ed_fold",
             drag="library",
+            drop="ed_libdrop",
             grow=1,
             hint="Click a scene to open it, or a prefab to add a copy where the camera looks; drag a prefab into a view"
         );
@@ -3555,6 +3561,11 @@ obj Studio(Workbench) {
     def draw_log_panel;
     def log_panel_words -> str;
     def logpanel_command(scene: Scene, args: list[str]) -> bool;
+    """The entity a brush let go on a row of the scene list is handed to:
+    the row's own when it holds brushes, the holder of the brush on that
+    row, or the world for the brushes' heading."""
+    def drop_taker(scene: Scene, target: str) -> Item | None;
+    def treedrop_command(scene: Scene, args: list[str]) -> bool;
     """The places to stand in the built scene, sampled on a grid: floor
     under the whole of a cell and room for a head over it."""
     def nav_floors_of(scene: Scene, cell: float) -> list[Floor];
@@ -3846,7 +3857,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.logpanel_command(scene, args) and not self.camproute_command(scene, args)
+        } elif not self.treedrop_command(scene, args) and not self.logpanel_command(scene, args)
+            and not self.camproute_command(scene, args)
             and not self.overlay_command(scene, args)
             and not self.q3map_command(scene, args)
             and not self.snapto_command(scene, args)

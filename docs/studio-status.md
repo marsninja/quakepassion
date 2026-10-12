@@ -392,6 +392,19 @@ QP_GAME=q3 QP_MAP=q3dm7 ./qp +edit
   then puts it where it was dropped. In the toolkit a widget offers
   what was pressed (`Stage.offer`), and the stage sends a `drop` event
   to whatever is under the pointer when the button comes up.
+- **Dragging within the lists**: a brush's row in the Scene tab is
+  carried onto the entity that is to hold it and the brush changes hands
+  as one step (with Ctrl, the whole selection): onto the row of an entity
+  that holds brushes, onto a brush that entity holds, onto a class's
+  heading when the class has one entity, or onto the brushes' heading for
+  the world. An entity is not held by another, and is told so. A row
+  carried on into a view is put where it is let go, as a class is. In the
+  Library tab a favourite is carried onto another to stand before it, or
+  onto the Trash row under the favourites to be forgotten (what the press
+  added to the scene is taken back), or into a view to stand there. In
+  the toolkit a list with `drop` set asks for that word with the row let
+  go on and what was carried, also when both are rows of the one list; a
+  row marked `fixed` is never carried.
 - **The model editor** (the start of it): a model is edited as a graph of
   its parts (each a mesh with skins of its own), each part's poses (where
   its points stand at each frame) and its tags. `ed_model new <kind> [w d
@@ -1388,6 +1401,11 @@ editor/impl/                 the workbench's scenes and brushes
 - `tests/studio_snapto_tests.jac`: a point inside a loop of any shape,
   drawn either way round; a long loop thinned; a move that ends on a
   corner, an edge or a face within reach, and is left alone out of reach.
+- `tests/studio_treedrop_tests.jac`: a row carried onto another row of
+  its list, onto a heading and onto none, from another list, and into a
+  view; a list that takes no drops; a row that is never carried; selected
+  brushes handed to an entity already there as one step, undone and done
+  again; a name moved before another or to the end.
 - `tests/studio_camproute_tests.jac`: a way walked area by area down the
   time still to go, taking what the router said it takes and going by
   the only bridge; no legs within one area; no route off the floors or
@@ -1620,6 +1638,12 @@ editor/impl/                 the workbench's scenes and brushes
   hundred units to four hundred; a handle clicked without a drag, which
   changes nothing; two path corners joined by a line; a counter from the
   logic library; a favourite class kept and added).
+  `scripts/studio/treedrop_session.cfg` (11 steps: a box's row dragged
+  onto the row of a box a wall holds, back onto the brushes' heading,
+  onto the wall's class heading, undone, and onto the wall's own row; the
+  player's start put on the wall, which changes nothing, and carried into
+  the view onto the floor; in the Library tab one favourite dragged
+  before another, one into the trash, and one into the view).
   `scripts/studio/camproute_session.cfg` (8 steps: four camp spots, two
   on the floor, one on a low box and one on a tall; nothing to ask before
   the navigation is baked; each spot to the next, with a jump onto the

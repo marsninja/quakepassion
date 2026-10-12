@@ -445,6 +445,13 @@ node Stage {
                     landed = self.pick(input.x, input.y);
                     if landed is holder {
                         self.send(holder, self.pointer_event("click", button));
+                        if button == 0 and self.carrying {
+                            # Carried and let go within the widget it came from:
+                            # a row put on another row of its own list.
+                            within = self.pointer_event("drop", 0);
+                            within.text = self.offered;
+                            self.send(holder, within);
+                        }
                     } elif button == 0 and self.carrying and landed is not None {
                         # What was carried is dropped on what is under the pointer.
                         dropped = self.pointer_event("drop", 0);

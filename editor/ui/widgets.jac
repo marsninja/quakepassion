@@ -713,7 +713,9 @@ obj TreeRow {
         picked: bool = False,
         # Dim text at the right edge, and the tone of the row's text.
         note: str = "",
-        tone: str = "text";
+        tone: str = "text",
+        # A row that stays where it is: it is not offered to be dragged.
+        fixed: bool = False;
 }
 
 """A scrolling list of rows, indented as a tree. The rows are data the owner
@@ -729,6 +731,10 @@ node TreeView(Widget) {
         # When set, a row that is not a heading is offered when pressed, to
         # be dragged elsewhere, as this word and the row's key.
         drag: str = "",
+        # When set, something dragged and let go on this list asks for this
+        # word with the key of the row it was let go on (empty when on
+        # none) and what was carried.
+        drop: str = "",
         offset: int = 0,
         grabbing: bool = False,
         hover_row: int = -1,
@@ -847,7 +853,7 @@ node TreeView(Widget) {
                     self.pick + " " + quote_command_word(row.key) + (" add" if event.ctrl or event.shift else "")
                 );
             }
-            if self.drag and not row.branch {
+            if self.drag and not row.branch and not row.fixed {
                 # A row that is a thing, not a heading, can be dragged elsewhere.
                 stage.offer(self.drag + " " + row.key, row.text);
             }
@@ -862,6 +868,16 @@ node TreeView(Widget) {
         }
         if kind == "release" {
             self.grabbing = False;
+            return True;
+        }
+        if kind == "drop" {
+            if self.drop {
+                index = self.row_at(event.y);
+                stage.emit(
+                    self.drop + " " + quote_command_word(self.rows[index].key if index >= 0 else "") + " "
+                        + quote_command_word(event.text)
+                );
+            }
             return True;
         }
         return kind == "click";

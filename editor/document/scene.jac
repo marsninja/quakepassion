@@ -1988,6 +1988,10 @@ node Scene {
         return taker;
     }
 
+    """Hand the selected brushes to an entity that is already there (the
+    world, a group, a door), as one step. Answers how many changed hands."""
+    def hand_selection(taker: Item) -> int;
+
     """Give the selected brushes a material (on one side when `side` names
     it)."""
     def paint_selection(material: str, side: int = -1) -> bool {

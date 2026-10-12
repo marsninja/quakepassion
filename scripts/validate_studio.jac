@@ -3233,6 +3233,98 @@ def logpanel_session(repo: Path, binary: Path, env: dict[str, str], output: Path
     );
 }
 
+"""The seventy-seventh session: rows carried in the lists: brushes handed to entities, and favourites ordered and forgotten."""
+def treedrop_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
+    shots = ["handed", "favourites"];
+    for shot in shots {
+        (repo / f"treedrop_{shot}.png").unlink(missing_ok=True);
+    }
+    with tempfile.TemporaryDirectory(prefix="qp-treedrop-") as home {
+        env["QP_CONFIG_DIR"] = home;
+        env["QP_OVERRIDES"] = home + "/overrides";
+        env["QP_SCENES"] = home + "/scenes";
+        ran = subprocess.run(
+            [str(binary), "+ed_exec", "scripts/studio/treedrop_session.cfg"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        );
+        (output / "treedrop.log").write_text(ran.stdout + ran.stderr);
+        assert ran.returncode == 0 , f"The treedrop session failed: {output / 'treedrop.log'}";
+        kept = (Path(home) / "overrides" / "studio.cfg").read_text().splitlines();
+    }
+    steps = studio_steps(ran.stdout);
+    names = ["listed", "beside", "world", "heading", "undone", "wall", "refused", "carried", "ordered", "trashed", "light"];
+    for name in names {
+        assert name in steps and steps[name] , f"The session never reached '{name}': {output / 'treedrop.log'}";
+    }
+    # What was printed before each step, under that step's name.
+    said: dict[str, list[str]] = {};
+    pending: list[str] = [];
+    for line in ran.stdout.splitlines() {
+        if line.startswith("STEP ") {
+            said[line[5:].strip()] = pending;
+            pending = [];
+        } elif line.startswith("studio: ") {
+            pending.append(line[8:]);
+        }
+    }
+    def rows(name: str) -> list[str] {
+        return [line[4:] for line in said[name] if line.startswith("row ")];
+    }
+    def handed(name: str) -> list[str] {
+        return [line for line in said[name] if line.startswith("handed ")];
+    }
+    def undo_count(name: str) -> int {
+        return int([line for line in steps[name] if " undo=" in line][0].split(" undo=")[1].split()[0]);
+    }
+    # A floor and a box of the world's, and a box a wall holds.
+    assert rows("listed")[-3:] == ["1 solid:1 blockout [#1]", "1 solid:3 blockout [#3]", "1 solid:4 blockout  in func_wall [#4]"] , str(rows("listed"));
+    # The world's box put on the wall's box is the wall's too, and is listed so; it was one step.
+    assert handed("beside") == ["handed brushes=1 to #5 func_wall"] , str(said["beside"]);
+    assert "1 solid:3 blockout  in func_wall [#3] *" in rows("beside") and "1 solid:4 blockout  in func_wall [#4]" in rows("beside");
+    assert undo_count("beside") == undo_count("listed") + 1;
+    # On the brushes' heading one goes back to the world; on the wall's class heading it is the wall's again.
+    assert handed("world") == ["handed brushes=1 to #0 worldspawn"] and handed("heading") == ["handed brushes=1 to #5 func_wall"];
+    # Undone, the step is there to do again; then put on the wall's own row.
+    assert undo_count("undone") == undo_count("heading") - 1 and not handed("undone");
+    assert handed("wall") == ["handed brushes=1 to #5 func_wall"] and undo_count("wall") == undo_count("heading");
+    # An entity put on another changes nothing.
+    assert not handed("refused") and undo_count("refused") == undo_count("wall");
+    assert not [line for line in said["refused"] if line.startswith("dropped ")];
+    # The start carried into the view stands on the floor where it was let go, off to one side.
+    put = [line for line in said["carried"] if line.startswith("dropped entity #2 at ")];
+    assert len(put) == 1 , str(said["carried"]);
+    place = [int(part) for part in put[0].split(" at ")[1].split(",")];
+    assert place[0] > 32 and 0 < place[2] and place[2] <= 32 , str(place);
+    assert f"selected #2 classname=info_player_start origin={place[0]} {place[1]} {place[2]} angle=90" in steps["carried"];
+    # Three favourites: the last put before the first; nothing was added to the scene by carrying it.
+    assert said["ordered"][-1] == "favourites monster_ogre,light,item_health" , str(said["ordered"][-3:]);
+    assert said["trashed"][-1] == "favourite dropped item_health left=monster_ogre,light" , str(said["trashed"][-3:]);
+    def entities(name: str) -> int {
+        return int([line for line in steps[name] if " entities=" in line][0].split(" entities=")[1].split()[0]);
+    }
+    assert entities("ordered") == entities("carried") and entities("trashed") == entities("carried");
+    assert [line for line in kept if line.startswith("ed_fav ")] == ["ed_fav monster_ogre", "ed_fav light"] , str(kept);
+    # A favourite carried into the view is one more entity, where it was let go.
+    lamp = [line for line in said["light"] if line.startswith("dropped class light at ")];
+    assert len(lamp) == 1 and entities("light") == entities("carried") + 1 , str(said["light"]);
+    spot = lamp[0].split(" at ")[1].replace(",", " ");
+    assert len([line for line in steps["light"] if line.startswith("selected #") and "classname=light origin=" + spot in line]) == 1;
+    for shot in shots {
+        source = repo / f"treedrop_{shot}.png";
+        check_capture(source, 6);
+        shutil.copyfile(source, output / f"treedrop_{shot}.png");
+        source.unlink();
+    }
+    print(
+        f"TREEDROP PASS: {len(steps) - 1} steps, a brush handed to a wall by its brush, its class heading and its row and "
+            + "back to the world, the start carried into the view, and favourites put in order, in the trash and in the view"
+    );
+}
+
 """The forty-ninth session: a shipped level's entities listed and drawn as
 their game's models."""
 def preview_session(repo: Path, binary: Path, env: dict[str, str], output: Path) {
@@ -5611,6 +5703,7 @@ def main() {
         "tagwrap": tagwrap_session,
         "camproute": camproute_session,
         "logpanel": logpanel_session,
+        "treedrop": treedrop_session,
         "convert": convert_session
     };
     if "--jobs" in sys.argv {
@@ -5802,6 +5895,7 @@ def main() {
     tagwrap_session(repo, binary, env, output);
     camproute_session(repo, binary, env, output);
     logpanel_session(repo, binary, env, output);
+    treedrop_session(repo, binary, env, output);
     convert_session(repo, binary, env, output);
     print(f"Screenshots and logs: {output}");
 }

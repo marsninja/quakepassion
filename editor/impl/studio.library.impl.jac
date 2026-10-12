@@ -169,6 +169,9 @@ impl Studio.list_library(ui: StudioUi) {
     for kept_class in self.favourites {
         rows.append(TreeRow(key="fav:" + kept_class, text=kept_class, depth=1));
     }
+    if len(self.favourites) > 0 {
+        rows.append(TreeRow(key="trash:fav", text="Trash: drag a favourite here to forget it", depth=1, tone="faint", fixed=True));
+    }
     ui.library.rows = rows;
 }
 
