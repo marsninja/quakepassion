@@ -202,6 +202,10 @@ node PushButton(Widget) {
         lit: bool = False,
         bold: bool = False;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -291,6 +295,10 @@ node Check(Widget) {
         command: str = "",
         on_now: bool = False;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -348,6 +356,10 @@ node TextField(Widget) {
         anchor: int = 0,
         scroll: int = 0,
         editing: bool = False;
+
+    def asks -> str {
+        return self.command;
+    }
 
     """Show `text` as the committed value (no command is asked for)."""
     def show(text: str) {
@@ -781,6 +793,10 @@ node TreeView(Widget) {
         hover_row: int = -1,
         row_height: int = 20;
 
+    def asks -> str {
+        return self.pick;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -966,6 +982,10 @@ node Gallery(Widget) {
         gap: int = 6,
         grabbing: bool = False,
         hover_tile: int = -1;
+
+    def asks -> str {
+        return self.pick;
+    }
 
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
@@ -1494,6 +1514,14 @@ node ViewArea(Widget) {
     def focusable -> bool {
         return True;
     }
+
+    def tabbed -> bool {
+        return False;
+    }
+
+    def flies -> bool {
+        return False;
+    }
 }
 
 """One box of a graph view: `key` is what its commands name; `column` and
@@ -1540,6 +1568,10 @@ node GraphView(Widget) {
         sliding: bool = False,
         travelled: int = 0,
         hover_node: int = -1;
+
+    def flies -> bool {
+        return False;
+    }
 
     def node_area(index: int) -> Rect {
         shown = self.nodes[index];
@@ -2019,6 +2051,10 @@ node Slider(Widget) {
         # What it had when the knob was taken, to tell whether it changed.
         taken: float = 0.0;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -2094,6 +2130,10 @@ node Spinner(Widget) {
         # Where the drag began, and what the number was then.
         from_x: int = 0,
         taken: float = 0.0;
+
+    def asks -> str {
+        return self.command;
+    }
 
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
@@ -2226,6 +2266,10 @@ node VectorField(Widget) {
         from_x: int = 0,
         taken: float = 0.0;
 
+    def asks -> str {
+        return self.command;
+    }
+
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {
             return self.size;
@@ -2305,6 +2349,10 @@ node ColourBars(Widget) {
         command: str = "",
         part: int = -1,
         taken: float = 0.0;
+
+    def asks -> str {
+        return self.command;
+    }
 
     def wanted(canvas: Canvas, across: bool) -> int {
         if self.fixed(across) > 0 {

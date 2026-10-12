@@ -505,6 +505,9 @@ glob STUDIO_COMMANDS: list[tuple[str, str, str]] = [
         "ed_layout <1|2|3|4|4b|logic|assets> | save <name> | load <name> | drop <name> | list",
         "one level view, four (3D, top, front and side), the logic graph, or the asset explorer; or keep the layout as it stands under a name and bring it back"
     ),
+    ("ed_help", "ed_help [command|doc]", "what the control under the pointer is for and the command it asks for (F1), or a command by name; doc opens the studio's book"),
+    ("ed_flyover", "ed_flyover [on|off]", "whether a control's hint is shown beside the pointer when it rests there"),
+    ("ed_rename", "ed_rename [name]", "name the selected entity (a group's own name, or the name it is fired by): typed over its row of the scene list (F2), or said"),
     ("ed_split", "ed_split [x|y] <percent> | even", "how the level views share the room: the left views' share of the width, the upper views' of the height"),
     ("ed_sides", "ed_sides [swap|left|right]", "which side the scene list is on: the inspector takes the other"),
     ("ed_palette", "ed_palette", "open the list of every studio command, to find one by typing"),
@@ -781,6 +784,10 @@ obj Studio(Workbench) {
         marked_item: int = -1,
         # Whether the model editor lists the model's frames under its view.
         frames_listed: bool = False,
+        # Whether hints fly beside the pointer, and the field a name is
+        # being typed in over a row of the scene list.
+        flyovers: bool = True,
+        rename_field: TextField | None = None,
         # How the level views share the room: the left views' share of the
         # width and the upper views' of the height, in hundredths; the rows
         # and the column they are laid in; whether the side panels have
@@ -2124,6 +2131,12 @@ obj Studio(Workbench) {
         if app is None or stage is None or ui is None or scene is None {
             return;
         }
+        typed = self.rename_field;
+        if typed is not None and not typed.focused {
+            # The name typed over a row is done with: entered, or left as it was.
+            stage.close(typed);
+            self.rename_field = None;
+        }
         input = stage.input;
         happened: list[tuple[int, UiEvent]] = [];
         for (index, port) in enumerate(self.ports) {
@@ -2537,6 +2550,10 @@ obj Studio(Workbench) {
             }
             if key == "F8" {
                 stage.emit("edit");
+            } elif key == "F1" {
+                stage.emit("ed_help");
+            } elif key == "F2" {
+                stage.emit("ed_rename");
             } elif key == "F5" {
                 stage.emit("ed_play");
             } elif key == "F6" {
@@ -2773,6 +2790,11 @@ obj Studio(Workbench) {
     def apply_split;
     """The views' split, the side panels' sides and layouts kept by name."""
     def layouts_command(scene: Scene, args: list[str]) -> bool;
+    """What the command table says of a command: its usage and what it does."""
+    def help_lines(asked: str) -> list[str];
+    """Help for what the pointer is on or for a command by name, hints
+    beside the pointer, and an entity named over its row."""
+    def help_command(scene: Scene, args: list[str]) -> bool;
     """The layout as it stands, as the words that would set it again."""
     def layout_words -> str;
     """Put the side panels on the sides now set."""
@@ -3964,7 +3986,8 @@ obj Studio(Workbench) {
                 print("STEP " + args[1]);
             }
             self.dump(scene);
-        } elif not self.layouts_command(scene, args) and not self.uses_command(scene, args)
+        } elif not self.help_command(scene, args) and not self.layouts_command(scene, args)
+            and not self.uses_command(scene, args)
             and not self.marked_command(scene, args)
             and not self.treedrop_command(scene, args)
             and not self.logpanel_command(scene, args)

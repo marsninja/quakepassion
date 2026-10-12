@@ -130,6 +130,24 @@ node Widget {
     def focusable -> bool {
         return False;
     }
+
+    """Whether Tab stops at this widget on its way round those that take
+    the keyboard."""
+    def tabbed -> bool {
+        return self.focusable();
+    }
+
+    """Whether its hint is shown beside the pointer when the pointer rests
+    on it (a surface that is worked on says no)."""
+    def flies -> bool {
+        return True;
+    }
+
+    """The command this widget asks for, when it asks for one: what help
+    is looked up by."""
+    def asks -> str {
+        return "";
+    }
 }
 
 """Lay a tree out: each widget places its children, which are clipped to what
@@ -212,6 +230,22 @@ walker Deliver {
     }
 }
 
+"""Gathers the widgets Tab goes round, in the order they are laid out.
+What is not shown is passed over with everything in it."""
+walker Focusables {
+    has found: list[Widget] = [];
+
+    can look with Widget entry {
+        if not here.shown {
+            return;
+        }
+        if here.tabbed() {
+            self.found.append(here);
+        }
+        visit :0: [here->:Child:->];
+    }
+}
+
 walker FindWidget {
     has name: str,
         found: Widget | None = None;
@@ -249,7 +283,44 @@ node Stage {
         offered_words: str = "",
         offered_x: int = 0,
         offered_y: int = 0,
-        carrying: bool = False;
+        carrying: bool = False,
+        # How long the pointer has rested where it is, and whether a hint
+        # is shown beside it once it has rested a while.
+        rested: float = 0.0,
+        flyovers: bool = True;
+
+    """Give the keyboard to the next widget that takes it after the one
+    that has it (the one before, going `back`), round again at the end.
+    False when there is no other."""
+    def next_focus(back: bool = False) -> bool {
+        keyed = self.focus;
+        if keyed is None {
+            return False;
+        }
+        for layer in self.layers() {
+            tour = layer spawn Focusables();
+            if keyed not in tour.found {
+                continue;
+            }
+            if len(tour.found) < 2 {
+                return False;
+            }
+            place = tour.found.index(keyed);
+            self.focus_on(tour.found[(place + (len(tour.found) - 1 if back else 1)) % len(tour.found)]);
+            return True;
+        }
+        return False;
+    }
+
+    """The hint to show beside the pointer now: that of the widget it has
+    rested on a while, when hints fly and nothing is held or carried."""
+    def flyover -> str {
+        target = self.hover;
+        if not self.flyovers or self.rested < 0.7 or self.held is not None or self.carrying or target is None or not target.flies() {
+            return "";
+        }
+        return self.hint();
+    }
 
     """Offer what was just pressed to be dragged to another widget. It is
     carried once the pointer has gone a little way with the button down,
@@ -394,6 +465,11 @@ node Stage {
 
         under = self.pick(input.x, input.y);
         old = self.hover;
+        if under is not old or input.dx != 0 or input.dy != 0 or input.wheel != 0.0 or len(input.keys) > 0 {
+            self.rested = 0.0;
+        } else {
+            self.rested += dt;
+        }
         if under is not old {
             if old is not None {
                 old.hovered = False;
@@ -485,6 +561,10 @@ node Stage {
                 kind="key", key=key, x=input.x, y=input.y, shift=input.shift, ctrl=input.ctrl, alt=input.alt
             );
             keyed = self.focus;
+            if key == "TAB" and keyed is not None and self.next_focus(input.shift) {
+                # On to the next field, or back to the one before.
+                continue;
+            }
             if keyed is None or not self.send(keyed, event) {
                 self.loose_keys.append(key);
             }
@@ -529,6 +609,23 @@ node Stage {
             self.canvas.fill(tag, theme.header);
             self.canvas.outline(tag, theme.accent);
             self.canvas.text(self.offered_words, tag.x + 6, tag.y + 3, theme.text, theme.small);
+        }
+        said = self.flyover();
+        if said {
+            # The hint of what the pointer rests on, beside it and inside the window.
+            theme = self.canvas.theme;
+            wide = min(self.canvas.text_width(said, theme.small) + 12, max(40, self.width - 8));
+            tag = Rect(
+                x=max(4, min(self.input.x + 14, self.width - wide - 4)),
+                y=self.input.y + 20 if self.input.y + 20 + theme.row < self.height else self.input.y - theme.row - 4,
+                w=wide,
+                h=theme.row - 4
+            );
+            self.canvas.clip(tag);
+            self.canvas.fill(tag, theme.header);
+            self.canvas.outline(tag, theme.dim);
+            self.canvas.text(said, tag.x + 6, tag.y + 3, theme.text, theme.small);
+            self.canvas.unclip();
         }
         return drawn;
     }
